@@ -1316,6 +1316,18 @@ A value cannot be added to `oauthScope` through the console or `/admin-api`
 (`STS-REG-0361`); what a client may be issued is `oauthAllowedScope`. A value
 can still be removed.
 
+**The token response types an application may use** are a list of their own,
+`oauthAllowedTokenResponseTypes` (#1296): a checkbox each for `token`,
+`code token`, `id_token token` and `code id_token token`, empty by default.
+Where RFC 9700 mode is in force — product mode always — and the realm waives
+section 2.1.2 (`oauth2.allowImplicitTokenResponses`), the authorization
+endpoint honours one of those four only for an application that lists it.
+The OAuth block shows the enabled ones, each with a warning mark, and a
+sentence saying whether this realm honours them, with RFC 9700's reason for
+not using them. A value can be added only while the realm allows these types
+(`STS-REG-0364`); a value can always be removed. The application's owner may
+set it too. See [the implicit grant](oauth-security.md#the-implicit-grant-section-212).
+
 In the `oauthGrantType` checkboxes, a grant named by a URN is labelled by its
 last two sections (`grant-type:token-exchange`). Its tooltip gives the full
 name and what the grant is.

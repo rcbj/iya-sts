@@ -313,6 +313,40 @@ so must `admin-ui/admin.ts`.
    grow a second waiver by analogy: the argument is section 2.1.2's level, and
    the next row has its own.
 
+   **THE REALM MAKES THEM POSSIBLE; EACH APPLICATION ENABLES THEM (#1296,
+   rcbj's decision, 2026-11-03: "a realm allowing the token response types
+   must not turn them on for every client").** A waived realm honours a token
+   response type only for an application whose
+   `oauthAllowedTokenResponseTypes` lists it — a permission, empty by default
+   and empty meaning NONE, unlike `oauthResponseType`, whose empty list
+   restricts nothing (#289) and which is therefore not reused. Three answers,
+   one function each, and every door asks the same three:
+   `checkAuthorizationRequest()` refuses `0126` (`unsupported_response_type`)
+   where the realm does not allow the type, and `0998` (`unauthorized_client`,
+   RFC 6749 4.1.2.1 / 4.2.2.1) where it does and the application does not
+   list it — so the authorization endpoint, PAR and a request object, all of
+   which go through `vetAuthorizationRequest()`, agree;
+   `checkClientRegistration()` refuses `0999` (`invalid_client_metadata`) for
+   a token type outside `oauth2.dynamicRegistrationTokenResponseTypes` (admin
+   only, runtime, EMPTY by default — a production realm waiving the section
+   for one administered application does not open it to every self-registered
+   client), for RFC 7592's update too, and `applyRegistrationFields()` records
+   what it let through on the attribute, REPLACED like the declared lists; and
+   `tokenResponsesAllowed()` (mode off, or waived) is what `applications.js`
+   asks before an administrator's or an owner's ADD — refused `STS-REG-0364`
+   rather than recorded, the mirror rule above applied to the console. A
+   remove is never refused. **Outside RFC 9700 mode nothing reads the
+   attribute**: section 2.1.2 is not enforced there, and holding a
+   development-mode client to a list it never needed would break every
+   implicit-flow job for no rule. Discovery still advertises what the REALM
+   allows (#1295, unchanged): the metadata describes the server, not one
+   client. The waiver's report data (`waivers()`, drawn on `/admin/mode`) says
+   it is per application and carries the dynamic-registration setting with its
+   value. The OWNER may write the attribute (rcbj's decision): it is on the
+   access-control template's default `ownerApplicationAttributes`, the
+   management API's `OWNER_APPLICATION_FIELDS` and the portal's owned-object
+   form (`xacml/CLAUDE.md`).
+
    **ONE DECISION ABOUT FORWARDED HEADERS, SHARED.** `helpers.forwardedFrom()`
    decides whether `X-Forwarded-Proto`/`X-Forwarded-Host` are believed, and both
    `baseUrlOf()` and `dpop.ts`'s `htuOf()` go through it. They used to disagree

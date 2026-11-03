@@ -1309,6 +1309,48 @@ const SCHEMA = {
             '(unauthorized_client), in every mode; an empty list restricts ' +
             'nothing. What the client has actually asked for is ' +
             'oauthResponseTypeObserved.' },
+    // ---------------------------------------------------------------------
+    // THE TOKEN RESPONSE TYPES, ENABLED PER APPLICATION (#1296, rcbj's
+    // decision, 2026-11-03: "a realm allowing the token response types must
+    // not turn them on for every client. The realm setting makes them
+    // POSSIBLE; each application still has to have the specific flow
+    // ENABLED by an administrator or by its owner").
+    //
+    // A SEPARATE ATTRIBUTE FROM `oauthResponseType`, and not a reading of
+    // it, for two reasons. `oauthResponseType` is what a client DECLARED it
+    // would use, and an empty list there restricts nothing (#289) — so a
+    // client that declares nothing would have every token response type the
+    // moment a realm waived section 2.1.2, which is the exact outcome this
+    // row exists to prevent. And a registration writes that one verbatim,
+    // where it writes this one only within
+    // `oauth2.dynamicRegistrationTokenResponseTypes`. So this list is a
+    // PERMISSION whose empty value means NONE, read beside the declaration
+    // rather than instead of it: the authorization endpoint asks both.
+    //
+    // READ ONLY WHERE RFC 9700 MODE IS IN FORCE (which product mode always
+    // is), by `oauth2_bcp.js`'s checkAuthorizationRequest(): outside that
+    // mode section 2.1.2 is not enforced and nothing here narrows it. Added
+    // only while the realm allows the token response types
+    // (`oauth2_bcp.js`'s tokenResponsesAllowed()), so the console and
+    // `/admin-api` cannot record a permission the realm would refuse — the
+    // registration endpoint's mirror rule (rule 3f) applied to an
+    // administrator's write. Owners may write it: it is on the
+    // access-control template's default `ownerApplicationAttributes` (rule
+    // 3cn), rcbj's decision.
+    { name: 'oauthAllowedTokenResponseTypes', kind: 'multi',
+      from: 'OAuth 2.0 / OIDC',
+      what: 'The response types that issue an access token from the ' +
+            'authorization endpoint — token, code token, id_token token, ' +
+            'code id_token token — this client may use where RFC 9700 mode ' +
+            'is in force (product mode always is). Honoured only while the ' +
+            'realm waives RFC 9700 section 2.1.2 ' +
+            '(oauth2.allowImplicitTokenResponses, never under OAuth 2.1 or ' +
+            'FAPI); then a type not listed here is refused ' +
+            '(unauthorized_client). EMPTY BY DEFAULT, and empty means none. ' +
+            'Written by an administrator or the application\'s owner while ' +
+            'the realm allows these types, or by a dynamic registration ' +
+            'within oauth2.dynamicRegistrationTokenResponseTypes. RFC 9700 ' +
+            'section 2.1.2 says clients SHOULD NOT use them.' },
     { name: 'oauthGrantTypeObserved', kind: 'multi', from: 'OAuth 2.0 / OIDC',
       what: 'A grant type this client was seen using at the token endpoint. ' +
             'A record, not a permission: oauthGrantType is what it may use.' },
@@ -5200,6 +5242,8 @@ const EDITABLE = {
   oauthBackchannelLogoutSessionRequired: 'set',
   oauthGrantType: 'multi',
   oauthResponseType: 'multi',
+  // #1296: the token response types this client may use. See its SCHEMA row.
+  oauthAllowedTokenResponseTypes: 'multi',
   oauthScope: 'multi',
   // DECLARED (#110): what the client may be issued. See its SCHEMA row.
   oauthAllowedScope: 'multi',
@@ -6121,6 +6165,12 @@ const LAUNCH_PROTOCOLS = ['saml2', 'saml11', 'wsfed', 'oidc'];
 // metadata's (canonicalResponseType()).
 const FLOW_RESPONSE_TYPES = ['code', 'token', 'id_token', 'code token',
   'code id_token', 'id_token token', 'code id_token token', 'none'];
+// THE FOUR OF THEM THAT ISSUE AN ACCESS TOKEN FROM THE AUTHORIZATION
+// ENDPOINT (RFC 9700 section 2.1.2), in the same word order: the closed set
+// of `oauthAllowedTokenResponseTypes` and of the setting
+// `oauth2.dynamicRegistrationTokenResponseTypes` (#1296).
+const TOKEN_RESPONSE_TYPES = ['token', 'code token', 'id_token token',
+  'code id_token token'];
 const FLOW_GRANT_TYPES = ['authorization_code', 'implicit', 'refresh_token',
   'client_credentials', 'password',
   'urn:ietf:params:oauth:grant-type:token-exchange',
@@ -6149,12 +6199,54 @@ function canonicalResponseType(value) {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// AN APPLICATION MAY LIST A TOKEN RESPONSE TYPE ONLY WHILE ITS REALM ALLOWS
+// THEM (#1296, rcbj's decision 2). `oauthAllowedTokenResponseTypes` is a
+// permission the authorization endpoint honours only where the realm waives
+// RFC 9700 section 2.1.2, so a value written while it does not is a
+// permission nothing would ever honour — and one that would come into force,
+// unseen, the day an administrator turned the realm's waiver on. REFUSED
+// rather than recorded (the choice the ticket left open): the same reasoning
+// as the registration endpoint's mirror rule (oauth-oidc/CLAUDE.md rule 3f),
+// that a stored permission the server will refuse is a promise broken, and a
+// refusal names the attribute and the setting so the administrator knows
+// which switch comes first. Asked of `oauth2_bcp.js` LAZILY: it requires this
+// module at load.
+// ---------------------------------------------------------------------------
+/**
+ * Refuses token response types the ambient realm does not allow.
+ *
+ * @param values - the values being written; nothing is refused when empty
+ * @returns the refusal, or '' when allowed
+ */
+function tokenResponseTypesProblem(values) {
+  log.debug("Entering tokenResponseTypesProblem().");
+  const asked = valuesOf(values).map(function (one) {
+    return String(one).trim();
+  }).filter(Boolean);
+  if (!asked.length ||
+      require('../oauth-oidc/oauth2_bcp').tokenResponsesAllowed()) {
+    log.debug("Leaving tokenResponseTypesProblem(). Allowed.");
+    return '';
+  }
+  log.debug("Leaving tokenResponseTypesProblem(). Not in this realm.");
+  return 'oauthAllowedTokenResponseTypes cannot list ' + asked.join(', ') +
+    ': this realm does not allow the response types that issue an access ' +
+    'token from the authorization endpoint (RFC 9700 section 2.1.2). An ' +
+    'administrator allows them with oauth2.allowImplicitTokenResponses, ' +
+    'which OAuth 2.1 mode and the FAPI profiles override.';
+}
+
 const ATTRIBUTE_CHOICES = {
   oauthGrantType: function () {
     return FLOW_GRANT_TYPES.slice(0);
   },
   oauthResponseType: function () {
     return FLOW_RESPONSE_TYPES.slice(0);
+  },
+  // #1296: the four token response types.
+  oauthAllowedTokenResponseTypes: function () {
+    return TOKEN_RESPONSE_TYPES.slice(0);
   },
   // #426: the protocols /launch/{app} can start.
   appLaunchProtocol: function () {
@@ -6402,6 +6494,8 @@ const CHOICES_CHECKED_HERE = ['oauthTokenEndpointAuthMethod',
   // #706: a grant or response type this service does not implement is one
   // no request could ever be allowed by.
   'oauthGrantType', 'oauthResponseType',
+  // #1296: only the four token response types.
+  'oauthAllowedTokenResponseTypes',
   // #430: a misspelt word would be `inherit`, which widens.
   'krb5ForeignTgtDelegation'];
 
@@ -7125,6 +7219,7 @@ const FIELD_EXAMPLES = {
   oauthInitiateLoginUri: 'https://app.example.com/login/initiate',
   oauthGrantType: 'authorization_code',
   oauthResponseType: 'code',
+  oauthAllowedTokenResponseTypes: 'id_token token',
   oauthAllowedScope: 'profile',
   oauthPermissionBaseUri: 'https://api.example.com/',
   oauthPermission: 'read|Read your widgets',
@@ -12021,7 +12116,8 @@ function normaliseFields(value) {
     // #706: a response type STORED in the console's word order, as the CORS
     // origins above are stored normalised. The closed set is checked by
     // createApplication() after this walk.
-    if (name === 'oauthResponseType') {
+    if (name === 'oauthResponseType' ||
+        name === 'oauthAllowedTokenResponseTypes') {
       fields[name] = values.map(canonicalResponseType)
                            .filter(function (one, index, all) {
         return one !== '' && all.indexOf(one) === index;
@@ -14017,6 +14113,22 @@ function applyRegistrationFields(record, registration, statement) {
   delete record.fields.oauthResponseType;
   setField(record, 'oauthGrantType', meta.grant_types);
   setField(record, 'oauthResponseType', meta.response_types);
+  // #1296: the token response types the registration asked for are ALSO
+  // the client's permission to use them, `oauthAllowedTokenResponseTypes`
+  // — REPLACED for the same reason. The registration endpoint has already
+  // refused any outside `oauth2.dynamicRegistrationTokenResponseTypes`
+  // where RFC 9700 mode is in force (`oauth2_bcp.js`'s
+  // checkClientRegistration(), STS-OAUTH-0999), so what reaches this line
+  // is what the realm let a client enable for itself; outside that mode the
+  // attribute is read by nothing and records what was asked.
+  delete record.fields.oauthAllowedTokenResponseTypes;
+  setField(record, 'oauthAllowedTokenResponseTypes',
+           (Array.isArray(meta.response_types) ? meta.response_types : [])
+             .map(canonicalResponseType)
+             .filter(function (one, index, all) {
+               return TOKEN_RESPONSE_TYPES.indexOf(one) >= 0 &&
+                      all.indexOf(one) === index;
+             }));
   // RFC 7591 section 2's `scope` is a DECLARATION — "the list that the
   // client can use when requesting access tokens" — so it goes on the
   // declared attribute and never on `oauthScope`, which is what the client
@@ -15050,6 +15162,15 @@ function createApplication(detail) {
     return errorCodes.mark({ ok: false, errors: choiceProblems },
                            'STS-REG-0203');
   }
+  // #1296: a token response type only while the realm allows them.
+  const tokenTypesProblem = tokenResponseTypesProblem(
+    valuesOf(given.fields.oauthAllowedTokenResponseTypes));
+  if (tokenTypesProblem) {
+    log.debug("Leaving createApplication(). The realm does not allow the " +
+              "token response types.");
+    return errorCodes.mark({ ok: false, errors: [tokenTypesProblem] },
+                           'STS-REG-0364');
+  }
   const methodsProblem =
     authMethodsProblem(given.fields.oauthTokenEndpointAuthMethod);
   if (methodsProblem) {
@@ -15517,7 +15638,8 @@ function updateApplication(identifier, change) {
   // read in it by the closed-set check below. A REMOVE takes the value as
   // typed or, when that is not on the entry, its canonical spelling — the
   // CORS origins' rule, so a value an `ldapmodify` wrote can still go.
-  if (attribute === 'oauthResponseType' && (mode === 'add' ||
+  if ((attribute === 'oauthResponseType' ||
+       attribute === 'oauthAllowedTokenResponseTypes') && (mode === 'add' ||
       (mode === 'remove' &&
        valuesOf(loaded.record.fields[attribute]).indexOf(value) < 0))) {
     value = canonicalResponseType(value);
@@ -15592,6 +15714,19 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). Not one of the values.");
       return errorCodes.mark({ ok: false, errors: [notAChoice] },
                              'STS-REG-0203');
+    }
+    // #1296: a token response type only while the realm allows them. A
+    // remove is not here, so it is never refused — the tidy-up door every
+    // list keeps, which matters most for this one: a realm that withdrew
+    // its waiver leaves values behind that an administrator must be able
+    // to take off.
+    const tokenTypesProblem = attribute === 'oauthAllowedTokenResponseTypes'
+      ? tokenResponseTypesProblem([value]) : '';
+    if (tokenTypesProblem) {
+      log.debug("Leaving updateApplication(). The realm does not allow the " +
+                "token response types.");
+      return errorCodes.mark({ ok: false, errors: [tokenTypesProblem] },
+                             'STS-REG-0364');
     }
     if (attribute === 'oauthTokenEndpointAuthMethod' && mode === 'add') {
       const methodsProblem = authMethodsProblem(
@@ -18588,6 +18723,35 @@ function declaredFlowsOf(clientId) {
   }
   log.debug("Leaving declaredFlowsOf().");
   return { grant_types: grants, response_types: responses };
+}
+
+// THE TOKEN RESPONSE TYPES A CLIENT IS ALLOWED (#1296): its
+// `oauthAllowedTokenResponseTypes`, in the canonical word order. Unlike the
+// declared lists above, AN EMPTY LIST MEANS NONE — see the attribute's SCHEMA
+// row. Asked by `oauth2_bcp.js`'s checkAuthorizationRequest() only where RFC
+// 9700 mode is in force and the realm waives section 2.1.2.
+/**
+ * Returns the token response types a client may use, as its
+ * `oauthAllowedTokenResponseTypes` lists them.
+ *
+ * @param clientId - the client id
+ * @returns the canonical values; empty for a client unknown or listing none
+ */
+function allowedTokenResponseTypesOf(clientId) {
+  log.debug("Entering allowedTokenResponseTypesOf().");
+  const loaded = load(String(clientId || ''));
+  if (!loaded.known || federationExpired(loaded.record.fields)) {
+    log.debug("Leaving allowedTokenResponseTypesOf(). Not known.");
+    return [];
+  }
+  const values = valuesOf(loaded.record.fields.oauthAllowedTokenResponseTypes)
+    .map(canonicalResponseType)
+    .filter(function (one, index, all) {
+      return one !== '' && all.indexOf(one) === index;
+    });
+  log.debug("Leaving allowedTokenResponseTypesOf(). " + values.length +
+            " value(s).");
+  return values;
 }
 
 // RFC 7592 SECTION 2 (#120): a registration access token presented for a
@@ -21797,6 +21961,9 @@ module.exports = {
   oidcRegistrationProblem: oidcRegistrationProblem,
   revokeRegistrationAccessToken: revokeRegistrationAccessToken,
   declaredFlowsOf: declaredFlowsOf,
+  // #1296: the token response types a client is allowed, and the four.
+  allowedTokenResponseTypesOf: allowedTokenResponseTypesOf,
+  TOKEN_RESPONSE_TYPES: TOKEN_RESPONSE_TYPES,
   grantsAndResponseTypesOf: grantsAndResponseTypesOf,
   OIDC_SUBJECT_ATTRIBUTES: OIDC_SUBJECT_ATTRIBUTES,
   pushedAuthorizationMetadataProblem: pushedAuthorizationMetadataProblem,

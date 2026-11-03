@@ -27,5 +27,7 @@
   "anythingBut": "anything but ",
   "ignoredMark": " — ignored",
   "notYetHeading": "What product mode still does not check",
-  "waivedBy": "WAIVED IN THIS REALM BY AN ADMINISTRATOR: <code>{requirement}</code> ({section}, a {level}), because <code>{setting}</code> is on. Every other requirement of the BCP stays in force."
+  "waivedBy": "WAIVED IN THIS REALM BY AN ADMINISTRATOR: <code>{requirement}</code> ({section}, a {level}), because <code>{setting}</code> is on. Every other requirement of the BCP stays in force.",
+  "waivedPerApplication": "PER APPLICATION: an application uses these response types only when its <code>{attribute}</code> lists the one it asks for, set by an administrator or the application's owner. A client registering itself may enable only what <code>{setting}</code> names: {value}.",
+  "waivedPerApplicationNone": "PER APPLICATION: an application uses these response types only when its <code>{attribute}</code> lists the one it asks for, set by an administrator or the application's owner. A client registering itself may enable none of them, because <code>{setting}</code> is empty."
 }

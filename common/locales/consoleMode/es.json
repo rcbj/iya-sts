@@ -27,5 +27,7 @@
   "anythingBut": "cualquier cosa menos ",
   "ignoredMark": " — ignorado",
   "notYetHeading": "Lo que el modo product todavía no comprueba",
-  "waivedBy": "EXENTO EN ESTE DOMINIO POR UN ADMINISTRADOR: <code>{requirement}</code> ({section}, un {level}), porque <code>{setting}</code> está activado. Todos los demás requisitos de la BCP siguen en vigor."
+  "waivedBy": "EXENTO EN ESTE DOMINIO POR UN ADMINISTRADOR: <code>{requirement}</code> ({section}, un {level}), porque <code>{setting}</code> está activado. Todos los demás requisitos de la BCP siguen en vigor.",
+  "waivedPerApplication": "POR APLICACIÓN: una aplicación usa estos tipos de respuesta solo cuando su <code>{attribute}</code> incluye el que solicita, establecido por un administrador o por el propietario de la aplicación. Un cliente que se registra a sí mismo solo puede habilitar lo que nombra <code>{setting}</code>: {value}.",
+  "waivedPerApplicationNone": "POR APLICACIÓN: una aplicación usa estos tipos de respuesta solo cuando su <code>{attribute}</code> incluye el que solicita, establecido por un administrador o por el propietario de la aplicación. Un cliente que se registra a sí mismo no puede habilitar ninguno, porque <code>{setting}</code> está vacío."
 }

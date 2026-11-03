@@ -27,5 +27,7 @@
   "anythingBut": "tout sauf ",
   "ignoredMark": " — ignoré",
   "notYetHeading": "Ce que le mode product ne vérifie toujours pas",
-  "waivedBy": "LEVÉE DANS CE DOMAINE PAR UN ADMINISTRATEUR : <code>{requirement}</code> ({section}, un {level}), car <code>{setting}</code> est activé. Toutes les autres exigences de la BCP restent en vigueur."
+  "waivedBy": "LEVÉE DANS CE DOMAINE PAR UN ADMINISTRATEUR : <code>{requirement}</code> ({section}, un {level}), car <code>{setting}</code> est activé. Toutes les autres exigences de la BCP restent en vigueur.",
+  "waivedPerApplication": "PAR APPLICATION : une application n’utilise ces types de réponse que si son <code>{attribute}</code> contient celui qu’elle demande, défini par un administrateur ou par le propriétaire de l’application. Un client qui s’enregistre lui-même ne peut activer que ce que <code>{setting}</code> nomme : {value}.",
+  "waivedPerApplicationNone": "PAR APPLICATION : une application n’utilise ces types de réponse que si son <code>{attribute}</code> contient celui qu’elle demande, défini par un administrateur ou par le propriétaire de l’application. Un client qui s’enregistre lui-même ne peut en activer aucun, car <code>{setting}</code> est vide."
 }

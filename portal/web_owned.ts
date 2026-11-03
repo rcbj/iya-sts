@@ -49,7 +49,9 @@ const APPLICATION_FIELDS: { name: string; lines: boolean }[] = [
   { name: 'oauthFrontchannelLogoutUri', lines: false },
   { name: 'oauthBackchannelLogoutUri', lines: false },
   { name: 'samlAssertionConsumerService', lines: true },
-  { name: 'samlSingleLogoutService', lines: true }
+  { name: 'samlSingleLogoutService', lines: true },
+  // #1296: the token response types the owner may enable, one a line.
+  { name: 'oauthAllowedTokenResponseTypes', lines: true }
 ];
 
 /**

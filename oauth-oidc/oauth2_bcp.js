@@ -1522,13 +1522,63 @@ function implicitWaived() {
   return waived;
 }
 
+// ---------------------------------------------------------------------------
+// WHETHER THE REALM ALLOWS THE TOKEN RESPONSE TYPES AT ALL (#1296): where RFC
+// 9700 mode is off section 2.1.2 is not enforced, and where it is on only
+// the waiver above lifts it. What an application may LIST in
+// `oauthAllowedTokenResponseTypes` (applications.js refuses a value written
+// while this is false, STS-REG-0364) — the realm making the flows POSSIBLE,
+// rcbj's words on #1296, beside each application ENABLING them.
+// ---------------------------------------------------------------------------
+/**
+ * Tells whether the ambient realm allows the token response types: RFC 9700
+ * mode is off, or section 2.1.2 is waived in it.
+ *
+ * @returns true when an application may have them enabled
+ */
+function tokenResponsesAllowed() {
+  log.debug("Entering tokenResponsesAllowed().");
+  const allowed = !enabled() || implicitWaived();
+  log.debug("Leaving tokenResponsesAllowed(). " + allowed);
+  return allowed;
+}
+
+// The token response types a client registering itself may enable for
+// itself in the ambient realm (#1296, rcbj's decision 3), each in the
+// canonical word order; empty by default.
+/**
+ * Reads `oauth2.dynamicRegistrationTokenResponseTypes`.
+ *
+ * @returns the canonical values
+ */
+function dynamicRegistrationTokenResponseTypes() {
+  log.debug("Entering dynamicRegistrationTokenResponseTypes().");
+  const raw = config.value('oauth2.dynamicRegistrationTokenResponseTypes');
+  const values = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).split(/\s+/).filter(Boolean).sort().join(' ');
+    })
+    .filter(function (one, index, all) {
+      return one !== '' && all.indexOf(one) === index;
+    });
+  log.debug("Leaving dynamicRegistrationTokenResponseTypes(). " +
+            values.length + " value(s).");
+  return values;
+}
+
 // The sentence the report carries when the row is waived: who, by what, and
 // what is still in force — so a reader of GET /oauth2/rfc9700 does not
-// conclude the mode is off.
+// conclude the mode is off. Since #1296 it says the waiver is per
+// application, and names the setting that lets a client enable a type for
+// itself.
 const WAIVER_NOTE = 'WAIVED IN THIS REALM BY AN ADMINISTRATOR: ' +
   'oauth2.allowImplicitTokenResponses is on, so the response types below ' +
-  'are accepted and advertised. Section 2.1.2 is a SHOULD NOT, and every ' +
-  'other requirement of this mode stays in force.';
+  'are advertised and accepted — but only for an application whose ' +
+  'oauthAllowedTokenResponseTypes lists the one asked for, set by an ' +
+  'administrator or the application\'s owner, or by a client registering ' +
+  'itself within oauth2.dynamicRegistrationTokenResponseTypes. Section ' +
+  '2.1.2 is a SHOULD NOT, and every other requirement of this mode stays ' +
+  'in force.';
 
 /**
  * The requirements an administrator waived in the ambient realm, as data for
@@ -1544,9 +1594,17 @@ function waivers() {
     return [];
   }
   log.debug("Leaving waivers(). no-implicit.");
+  // #1296: the waiver is PER APPLICATION — `attribute` is what enables a
+  // type on one, and `dynamicRegistration` the setting naming which a client
+  // registering itself may enable, with its value.
   return [{ requirement: 'no-implicit', section: 'RFC 9700 2.1.2',
             level: 'SHOULD NOT',
-            setting: 'oauth2.allowImplicitTokenResponses' }];
+            setting: 'oauth2.allowImplicitTokenResponses',
+            perApplication: true,
+            attribute: 'oauthAllowedTokenResponseTypes',
+            dynamicRegistration: {
+              setting: 'oauth2.dynamicRegistrationTokenResponseTypes',
+              value: dynamicRegistrationTokenResponseTypes() } }];
 }
 
 // OAuth 2.1 section 8.4.2 makes the wildcard a MUST, so that mode ignores the
@@ -2219,7 +2277,8 @@ function checkAuthorizationRequest(opts) {
   const client = opts.client;
 
   // Section 2.1.2 — no access token from the authorization endpoint, unless
-  // an administrator waived it in this realm (#1295).
+  // an administrator waived it in this realm (#1295) AND the application has
+  // the type enabled (#1296, below).
   if (types.indexOf('token') >= 0 && !implicitWaived()) {
     log.debug("Leaving checkAuthorizationRequest(). The response type issues " +
               "an access token.");
@@ -2231,6 +2290,37 @@ function checkAuthorizationRequest(opts) {
                           'authorization endpoint. Use response_type=code' +
                           (types.indexOf('id_token') >= 0 ?
                            ' or code id_token' : '') + '.' };
+  }
+
+  // THE REALM MAKES THEM POSSIBLE; THE APPLICATION ENABLES THEM (#1296,
+  // rcbj's decision 2). A waived realm honours a token response type only
+  // for a client whose `oauthAllowedTokenResponseTypes` lists it — empty by
+  // default, and empty means none — written by an administrator, the
+  // application's owner, or a dynamic registration within the realm's own
+  // list. `unauthorized_client`, RFC 6749 sections 4.1.2.1 and 4.2.2.1's
+  // word for a client "not authorized to request an authorization code [or
+  // access token] using this method": the server supports the response
+  // type, which is why it is not 0126's `unsupported_response_type`, and
+  // this client may not use it.
+  if (types.indexOf('token') >= 0) {
+    const asked = types.slice(0).sort().join(' ');
+    const allowed = applications.allowedTokenResponseTypesOf(
+      query.client_id);
+    if (allowed.indexOf(asked) < 0) {
+      log.debug("Leaving checkAuthorizationRequest(). The application does " +
+                "not have the token response type enabled.");
+      return { ok: false, errorCode: 'STS-OAUTH-0998',
+               error: 'unauthorized_client', requirement: 'no-implicit',
+               description: 'RFC 9700 section 2.1.2: this realm allows the ' +
+                            'response types that issue an access token from ' +
+                            'the authorization endpoint only to applications ' +
+                            'that have them enabled, and client "' +
+                            String(query.client_id || '') + '" does not ' +
+                            'have "' + asked + '" enabled ' +
+                            '(oauthAllowedTokenResponseTypes). An ' +
+                            'administrator or the application\'s owner ' +
+                            'enables it.' };
+    }
   }
 
   // OAUTH 2.1 — PKCE FOR CONFIDENTIAL CLIENTS TOO, and the method REQUIRED.
@@ -2468,6 +2558,49 @@ function checkClientRegistration(metadata) {
                           'honour. `code` and `code id_token` issue no ' +
                           'access token from that endpoint and are ' +
                           'registrable.' };
+  }
+  // A CLIENT ENABLES A TOKEN RESPONSE TYPE FOR ITSELF ONLY WITHIN THE
+  // REALM'S LIST (#1296, rcbj's decision 3). A waived realm makes these
+  // response types POSSIBLE; each client still needs them enabled, and a
+  // registration that asks for one is the client enabling it for itself —
+  // the types it registers are recorded as its
+  // `oauthAllowedTokenResponseTypes` (applications.js,
+  // applyRegistrationFields()). So it may ask only for what
+  // `oauth2.dynamicRegistrationTokenResponseTypes` names, EMPTY by default:
+  // a production realm that waives section 2.1.2 for one administered
+  // application does not thereby open the flows to every client that
+  // registers itself, and a realm that wants open self-registration of them
+  // (the OpenID Foundation's Dynamic OP plan) says so in a setting of its
+  // own. Its own code rather than 0134's: 0134 says the realm refuses the
+  // types, and this realm allows them — to clients it was told about.
+  // RFC 7592's update asks this same function, so an update follows the
+  // same rule.
+  if (withToken.length) {
+    const selfService = dynamicRegistrationTokenResponseTypes();
+    const outside = withToken.map(function (one) {
+      return one.split(/\s+/).filter(Boolean).sort().join(' ');
+    }).filter(function (one, index, all) {
+      return selfService.indexOf(one) < 0 && all.indexOf(one) === index;
+    });
+    if (outside.length) {
+      log.debug("Leaving checkClientRegistration(). A token response type " +
+                "outside the realm's dynamic-registration list.");
+      return { ok: false, errorCode: 'STS-OAUTH-0999',
+               error: 'invalid_client_metadata', requirement: 'no-implicit',
+               description: 'RFC 9700 section 2.1.2: this realm allows the ' +
+                            'response types that issue an access token from ' +
+                            'the authorization endpoint only to applications ' +
+                            'that have them enabled, and a client ' +
+                            'registering itself may enable only ' +
+                            (selfService.length
+                              ? '"' + selfService.join('", "') + '"'
+                              : 'none of them') +
+                            ' (oauth2.dynamicRegistrationTokenResponseTypes' +
+                            '). ' +
+                            '"' + outside.join('", "') + '" is not on that ' +
+                            'list; ask an administrator to enable it on the ' +
+                            'application, or register for `code`.' };
+    }
   }
   // PRODUCT MODE: A PUBLIC CLIENT MAY NOT REGISTER FOR client_credentials
   // (2026-09-17). OAuth 2.1 refuses the same combination in its own mode
@@ -4638,6 +4771,9 @@ function state() {
       // is in force (OAuth 2.1 and FAPI ignore it).
       'oauth2.allowImplicitTokenResponses':
         !!config.value('oauth2.allowImplicitTokenResponses'),
+      // #1296: what a client registering itself may enable, canonical.
+      'oauth2.dynamicRegistrationTokenResponseTypes':
+        dynamicRegistrationTokenResponseTypes(),
       'global.https': mainPortIsTls(),
       // Not part of this mode and reported beside it anyway: a client author
       // reading this page to find out what it is talking to needs to know that
@@ -4724,6 +4860,10 @@ module.exports = {
   // #1295: section 2.1.2 waived by an administrator, and the list of waivers.
   implicitWaived: implicitWaived,
   waivers: waivers,
+  // #1296: whether an application may have them enabled, and what a client
+  // registering itself may enable.
+  tokenResponsesAllowed: tokenResponsesAllowed,
+  dynamicRegistrationTokenResponseTypes: dynamicRegistrationTokenResponseTypes,
   impliesImplicitGrant: impliesImplicitGrant,
   isConfidential: isConfidential,
   declaredPublic: declaredPublic,
