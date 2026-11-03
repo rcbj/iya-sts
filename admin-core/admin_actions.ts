@@ -3649,6 +3649,19 @@ class AdminActions {
         return siop.enrolByValue(who, subject, body.label, ctx.actor)
           .then(answer);
       }
+      // A DID THIS REALM PUBLISHED FOR THEM (#1291) is DEACTIVATED, never
+      // just removed from the list: its address is kept and answers 410,
+      // and the subject goes with it — `deactivate-published-did`'s act.
+      const personDid = require('../oid4vc/person_did');
+      if (personDid.isHosted(siop.normalise(subject))) {
+        const done = personDid.deactivate(who, siop.normalise(subject),
+                                          ctx.actor, 'admin');
+        log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
+                  ", a published DID deactivated.");
+        return answer(done.ok ? { ok: true, removed: done.record.did }
+                              : { ok: false, code: done.code,
+                                  error: done.error });
+      }
       log.debug("Leaving AdminActions.credentialAdminAction(). " + action +
                 ".");
       return answer(siop.remove(who, subject, ctx.actor));
