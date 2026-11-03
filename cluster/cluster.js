@@ -60,6 +60,8 @@ const config = require('../common/config');
 // over `config`, so this require cannot close a cycle.
 const stsCrypto = require('../common/crypto');
 const errorCodes = require('../common/error_codes');
+// Which persistence modes are a database (#677). A LEAF.
+const storeModes = require('../persistence/store_modes');
 const capabilities = require('./cluster_capabilities');
 // A leaf requiring only `config` and `error_codes` (rule 3ap), so this adds
 // nothing to what loads before the store's gate.
@@ -190,24 +192,25 @@ function resolve() {
     return { mode: 'off', why: 'cluster.mode is off' };
   }
   if (configured === 'auto') {
-    if (product && store === 'postgres') {
+    if (product && storeModes.isDatabase(store)) {
       log.debug("Leaving resolve(). Auto: active-passive.");
       return { mode: 'active-passive',
                why: 'cluster.mode is auto, and this is product mode on a ' +
-                    'postgres store' };
+                    'database store' };
     }
     log.debug("Leaving resolve(). Auto: off.");
     return { mode: 'off',
              why: 'cluster.mode is auto, which is off outside product mode ' +
                   'on a postgres store' };
   }
-  if (store !== 'postgres') {
-    log.debug("Leaving resolve(). Refused: no postgres store.");
+  if (!storeModes.isDatabase(store)) {
+    log.debug("Leaving resolve(). Refused: no database store.");
     return { mode: configured, refused: errorCodes.tag('STS-CLUSTER-0007') +
              'cluster.mode is "' + configured + '" and persistence.mode is "' +
-             store + '". Only a postgres store can hold a membership table, ' +
-             'leases and atomic claims that several containers agree on. Set ' +
-             'persistence.mode=postgres, or cluster.mode=off for one node.' };
+             store + '". Only a database store (postgres, or mariadb) can ' +
+             'hold a membership table, leases and atomic claims that several ' +
+             'containers agree on. Set persistence.mode=postgres, or ' +
+             'cluster.mode=off for one node.' };
   }
   if (configured === 'active-active' &&
       String(config.value('keys.source')) !== 'persisted' &&

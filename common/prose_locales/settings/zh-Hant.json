@@ -9644,8 +9644,8 @@
     "text": "持久化模式"
   },
   "persistence.mode|description": {
-    "en": "3b1c6fa9ec185404",
-    "text": "嵌入式目錄、信任領域登錄庫與執行時期 appconfig 覆寫的寫入位置。memory 不寫入任何東西，這是此服務一向的做法——重新啟動後一切都會消失。ldif 會為每個領域寫入一個 RFC 2849 檔案，另在 persistence.dataDir 中寫入兩個 JSON 檔案，這是本機開發的解決方案，不需要資料庫。postgres 會寫入一組資料表（postgres/schema.sql 列出它們），是共用儲存區。此服務所產生的東西——工作階段、權杖、代碼、成品、Kerberos 主體、重送快取、計數器與稽核記錄——只在「產品」模式且使用 postgres 時才會持久保存，在其他任何組態下都不會；請參閱 persistence.minted。開發模式不持久保存其中任何一項，因為該模式下簽署金鑰在每次啟動時都會重新產生，而比它存活更久的權杖將無法對任何東西通過驗證。ldif 儲存區在兩種模式下都不保存其中任何一項，並在啟動時說明，因為它每次清寫都會寫入完整檔案。"
+    "en": "9017af2918cf94be",
+    "text": "嵌入式目錄、信任領域登錄庫與執行時期 appconfig 覆寫的寫入位置。memory 不寫入任何東西，這是此服務一向的做法——重新啟動後一切都會消失。ldif 會為每個領域寫入一個 RFC 2849 檔案，另在 persistence.dataDir 中寫入兩個 JSON 檔案，這是本機開發的解決方案，不需要資料庫。postgres 會寫入一組資料表（postgres/schema.sql 列出它們），是共用儲存區。mariadb 是 MariaDB 上的同一儲存（mariadb/schema.sql），是測試套件所針對的第二種引擎：此時 persistence.databaseUrl 是一個 mariadb:// 位址，必須安裝 mysql2 套件，而需要 PostgreSQL 本身的功能（儲存格、大量匯入、目錄視窗）會被拒絕。此服務所產生的東西——工作階段、權杖、代碼、成品、Kerberos 主體、重送快取、計數器與稽核記錄——只在「產品」模式且使用 postgres 時才會持久保存，在其他任何組態下都不會；請參閱 persistence.minted。開發模式不持久保存其中任何一項，因為該模式下簽署金鑰在每次啟動時都會重新產生，而比它存活更久的權杖將無法對任何東西通過驗證。ldif 儲存區在兩種模式下都不保存其中任何一項，並在啟動時說明，因為它每次清寫都會寫入完整檔案。"
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",

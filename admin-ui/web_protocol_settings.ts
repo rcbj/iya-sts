@@ -728,7 +728,7 @@ class ProtocolSettingsPage {
       // no other way to see that this process agreed: the row above looks
       // identical either way, because it never printed the password.
       [t.text('consoleProtocolSettings.thPassword'),
-        off || info.mode !== 'postgres'
+        off || (info.mode !== 'postgres' && info.mode !== 'mariadb')
         ? t.html('consoleProtocolSettings.perNoCred')
         : (info.database
             ? (info.database.passwordProvider &&
@@ -747,7 +747,7 @@ class ProtocolSettingsPage {
       // authenticated" and a single tick would have to round that one way or
       // the other.
       [t.text('consoleProtocolSettings.thTransport'),
-        off || info.mode !== 'postgres'
+        off || (info.mode !== 'postgres' && info.mode !== 'mariadb')
         ? (info.mode === 'ldif'
             ? t.html('consoleProtocolSettings.perTransportFile')
             : t.html('consoleProtocolSettings.perTransportNone'))
