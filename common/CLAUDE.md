@@ -51,7 +51,7 @@ more than one family needs it, not because it felt general.
 | `security_operations.ts` | **WHICH WRITES ARE THE SECURITY ADMINISTRATOR'S (#645, 2026-11-02).** One answer for the management API's gate, the LDAP socket and SCIM: a Directory → Policies save, reset or act (read off `admin-core/policy_kinds.ts`, so a new kind is covered), a policy REFERENCE that changes (each kind's `REFERENCES` and `PolicySelection`'s declarations; a grid posting it unchanged is not a change, `''` and `default` are one value), a grant of the role by any door (the roster, `SECURITY_ADMIN`, `cn=security-admin`, `admin.securityGroup`), and an act on a holder's account. XACML, FGA, AuthZEN, delegation policy and the `xacml.*` switches stay Admin Write's (rcbj's decision). It reads nothing itself: the caller hands it `SecurityHooks` (`admin_rbac.ts`'s `holdsSecurity()`, `personValues()`, `groupValues()`, `applications.get()`). A static utility class, `policy_kinds` required lazily. `tests/security_admin.js`. |
 | `secret_destinations.ts` | **WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06) — rule 3ce.** The register of secret push destinations, which is the realm's application entries declared for `secret-destination` and not a store of its own; `list()`, `get()`, `push()`, `testPush()`, `isDestination()`, the console's and the API's `act()`. The write path itself is `secrets.js`'s `pushSecret()`. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
-| `vendored/` | Byte-identical copies of the parent project's files. **Do not edit them here** — see `common/crypto_impl/CLAUDE.md`. |
+| `crypto_impl/` | The crypto engines `crypto.js` rests on; copies of the parent project's files until #1280, this service's own since — see `common/crypto_impl/CLAUDE.md`. |
 
 **`config_file.js` is new with the 2026-08-23 reorganisation and it exists
 because of it.** Fourteen modules read the appconfig file directly for the one
@@ -68,9 +68,10 @@ first and between them cover every way this service is loaded — `server.js`,
 removed it) — and it is
 idempotent, so all of them calling costs nothing. Those counts are from
 2026-08-23; on 2026-09-16 nineteen modules read the file directly and sixteen of
-them are VENDORED (the `common/crypto_impl/` modules and the Kerberos codec copies)
-this repository may not edit, which is why the fix is a mutation of
-`process.env` rather than an edit per reader. `config_file.js`'s header keeps
+them were VENDORED then (the `common/crypto_impl/` modules and the Kerberos
+codec copies, this service's own since #1280) and could not be edited here,
+which is why the fix is a mutation of `process.env` rather than an edit per
+reader. `config_file.js`'s header keeps
 the list.
 
 ---

@@ -62,7 +62,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | Directory | What is in it |
 |---|---|
 | `common/` | Everything more than one family reads: settings, the express app, `crypto.js` (the one place this service signs, verifies, encrypts and decrypts), realms, the registers, `pki.js`, `mode.js`, the error codes, mail, cells, the hosted applications, the static surfaces' `web_*.ts`. `common/CLAUDE.md`. |
-| `common/crypto_impl/` | Byte-identical copies of the parent project's files. **Do not edit them here** (except `pqc.js`, `pqc_x509.js`, `xmldsig.js`, and `bbs2023.js` with `contexts/iya_identity_v1.json` since #663). `common/crypto_impl/CLAUDE.md`. |
+| `common/crypto_impl/` | The crypto engines `common/crypto.js` rests on: X.509, keys, JWE, post-quantum, XML Signature, bbs-2023. Copies of the parent project's files until #1280, this service's own since. `common/crypto_impl/CLAUDE.md`. |
 | `home/` | The front door, `GET /`, and `/home-api`. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `/logout`, and the one model of a live session. `logout/CLAUDE.md`. |
 | `launch/` | `/launch/{app}`, the one identity-provider-initiated sign-in link per application (#426). `launch/CLAUDE.md`. |
@@ -77,7 +77,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `pki/` | The certificate authority's PUBLIC surface (CRL, OCSP, chains) and `/crypto/metadata`; no gate. No `CLAUDE.md`: each file's header is its documentation. |
 | `federation/` | Bilateral federation relationships, in either direction. `federation/CLAUDE.md`. |
 | `oidfed/` | OpenID Federation 1.1. `oidfed/CLAUDE.md`. |
-| `kerberos/` | The KDC, the acceptor, SPNEGO, and eight codec modules **VENDORED and not editable here**. `kerberos/CLAUDE.md`. |
+| `kerberos/` | The KDC, the acceptor, SPNEGO, and the eight codec modules (copies of the parent's until #1280). `kerberos/CLAUDE.md`. |
 | `ldap/` | The embedded directory, the store for people, groups and applications. `ldap/CLAUDE.md`. |
 | `cluster/` | Several containers against one postgres store, and the scheduler every periodic job runs on. `cluster/CLAUDE.md`. |
 | `persistence/` | The one place this service writes anything down. `persistence/CLAUDE.md`. |
@@ -943,9 +943,10 @@ design.
 
 **THESE ARE THE PARENT PROJECT'S RULES SINCE 2026-09-12** — its root
 `CLAUDE.md`'s *Style Notes* — adopted here and swept across the tree that day.
-They bind every `.js` file except `common/crypto_impl/`, the eight Kerberos codec
-copies, the `node-ldapjs` submodule and the non-`local` copies in
-`tests/protocol/`, none of which may be edited here.
+They bind every `.js` file except the `node-ldapjs` submodule and the
+non-`local` copies in `tests/protocol/`, neither of which may be edited here.
+`common/crypto_impl/` and the eight Kerberos codec modules were on that list
+as the parent's copies until #1280, and are bound like the rest since.
 
 * **Every named function is entered and left out loud.** Its first statement
   is `log.debug("Entering NAME().")` and every exit goes through
@@ -992,9 +993,9 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
   and the licence identifier BUSL-1.1 (the Business Source License 1.1 since
   2026-09-30; MIT until then), in the form `LICENSE.md` shows, after a `#!`
   line or `// @ts-check`, in the file's own comment syntax. A file that cannot carry a
-  comment, a vendored copy and third-party material are declared in
-  `REUSE.toml` instead, and never given a header — the parent project's
-  copies stay MIT there. `tests/copyright_notices.js` fails on a missing
+  comment, a vendored copy (the non-`local` jobs in `tests/protocol/`) and
+  third-party material are declared in `REUSE.toml` instead, and never given
+  a header — the parent project's copies stay MIT there. `tests/copyright_notices.js` fails on a missing
   one; `LICENSE.md` says what is not under the BSL, and `reuse lint` is the
   whole-repository check.
 * **The log level is `info` in every appconfig file in `env/`** (2026-09-12),

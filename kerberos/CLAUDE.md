@@ -15,39 +15,33 @@ group and are described at the foot.
 load in a test with no configuration at all — which is what the guarded
 `require(process.env.CONFIG_FILE)` at the top of each is for.
 
-**EVERY ONE OF THOSE SEVEN IS VENDORED, and so is `krb5_spnego.js` below —
-eight files in this directory are somebody else's, and NONE of them may be
-edited here.** They are byte-identical copies of the parent project's
-`common/krb5/*.js`, written by that repository's
+**THEY ARE THIS SERVICE'S OWN SINCE #1280 (2026-11-02), and so is
+`krb5_spnego.js` below.** Until then the eight were byte-identical copies of
+the parent project's `common/krb5/*.js`, written by its
 `common/krb5/sync-to-mock-sts.sh` and held to byte equality by its
-`tests/krb5_codec_sync.js`. A change made here is reverted by the next sync and
-fails that test in the meantime — which is what happened on 2026-08-25, when a
-logging sweep added `log.debug()` pairs to `krb5_primitives.js`,
-`krb5_asn1.js` and `krb5_messages.js`: 48 lines, no behaviour, and a red test in
-a repository that does not contain them. **A sweep over this repository must
-skip these eight**, the way it already skips `../common/crypto_impl/` and
-`../spiffe/protos/`.
+`tests/krb5_codec_sync.js`, and could not be edited here. rcbj ended that
+after #663: they are edited here, follow this repository's rules (SPDX lines,
+Entering/Leaving, 80 columns, `tests/error_codes.js` scans them), and are not
+re-synced. The parent's sync script and byte-compare test are the parent's
+business, and a sweep over this repository no longer skips them.
 
-The fix for a real defect in one of them is to change it in the parent project,
-run that script, then commit here — in that order, because the script overwrites
-whatever is here. Note that the behavioural half of `krb5_codec_sync.js` can
-still PASS while the byte comparison fails: two copies can differ in comments or
-log lines and agree perfectly on the wire, right up until the day the difference
-stops being cosmetic.
+**What did not change is that the parent's tests image still COPYs them**,
+because `krb5_kdc.js`, `krb5_service.js` and `spnego.js` require them and are
+in its COPY closure (the *"LOCKED"* paragraph below). So a new `require`
+reachable from one of the eight still owes the parent a COPY line, exactly as
+it does from the three.
 
 **The service**: `krb5_principals.js` (the principal database and every long-term
 key in it), `krb5_kdc.js` (AS and TGS, plus `/KdcProxy`; `/krb5/principals` until #595),
 `krb5_service.js` (the acceptor; its TCP socket and `/krb5/service` until
 #595).
 
-**`krb5_spnego.js` is VENDORED too**, and is called out separately only because
-it is the one that reads as this service's own: `spnego.js` sits beside it and IS
-ours. Like the seven above it is a byte-identical copy of the parent project's
-`common/krb5/krb5_spnego.js`, kept honest by `tests/krb5_codec_sync.js` over
-there. None of the eight is in `../common/crypto_impl/` with the other five copies,
-because they belong to the codec they sit beside and moving them would put the
-whole Kerberos wire format in a directory that has nothing else Kerberos in it.
-**Do not edit any of them here.**
+**`krb5_spnego.js` is the eighth**, and is called out separately only because
+it sits beside `spnego.js` and the two are easy to confuse: `krb5_spnego.js` is
+the RFC 4178 codec, `spnego.js` the sign-in's page shell. None of the eight is
+in `../common/crypto_impl/`, because they belong to the codec they sit beside
+and moving them would put the whole Kerberos wire format in a directory that
+has nothing else Kerberos in it.
 
 **"LOCKED" DOES NOT MEAN "THE PARENT'S".** Where this file, the root
 `CLAUDE.md` and the source comments call `krb5_kdc.js`, `krb5_service.js` and
@@ -56,23 +50,23 @@ whole Kerberos wire format in a directory that has nothing else Kerberos in it.
 JavaScript in its in-process Kerberos jobs. So each stays JavaScript (#50
 cannot convert it), and a new `require` reachable from one owes the parent a
 COPY line in the commit that bumps its `sts/` pin (root `CLAUDE.md`, *The parent project's paths
-into this repository*, below). **None of the three is a vendored copy**, and
+into this repository*, below). **None of the three was ever a vendored copy**, and
 they are edited here — rcbj's ruling of 2026-10-12 on #585, for `spnego.js`
 first and then for the KDC's two, after the root file's "the parent
 project's locked Kerberos files" had been read as making them unchangeable
 here. Reasoning that rested on that reading ("the KDC is locked and cannot
 place its own") was reworded the same day; the designs it explained stand,
-and are now argued from the closure. The eight codec files above are the
-ones that may not be edited.
+and are now argued from the closure. The eight codec files above may be
+edited here too since #1280.
 
 **`spnego.js` stays after `krb5_service.js` in the require order.** Until
 #595 that was a dependency — it called that module's `accept()` for every
 Kerberos check — and since #595 it registers nothing and calls nothing: it is
 the sign-in's page shell (`page()`, `checksTable()`), and
-`spnego_exchange.js` is what calls the acceptor. Note the naming: `krb5_spnego.js` beside it is the VENDORED RFC 4178
-codec (a byte-identical copy of the parent project's `common/krb5/krb5_spnego.js`,
-kept honest by `tests/krb5_codec_sync.js` there), and `spnego.js` is this repo's own.
-Do not merge the two — one of them is somebody else's file.
+`spnego_exchange.js` is what calls the acceptor. Note the naming:
+`krb5_spnego.js` beside it is the RFC 4178 codec and `spnego.js` the page
+shell. Do not merge the two — one is a wire format that knows nothing about
+this service, the other is this service's page.
 
 **`spnego_authn.ts` must stay after `spnego.js` AND after `authn/authn.ts` in the
 require order.** It draws with `spnego.js`'s page shell and negotiates through
@@ -450,7 +444,7 @@ policy. rcbj's decisions on #186, each load-bearing:
   (`update_delegation_info()`) write and Samba's s4u_tests expect of
   Windows (`host/<service1>@<REALM>`). [MS-PAC] 2.9 fixes no syntax. Both are
   built in `krb5_kdc.js` (`resolveS4u()`'s `transited`, `answerTgsReq()`'s
-  `delegationInfo`); the vendored PAC codec only encodes what it is given,
+  `delegationInfo`); the PAC codec only encodes what it is given,
   and was not changed. An evidence ticket from before #489 keeps its bare
   entries, and the new one is appended after them.
 * **ENTRIES ONLY.** `krb5_principals.js` keeps no delegation field on a
@@ -1271,7 +1265,7 @@ development partner is `principals.DEV_PARTNER_REALM` where it was
 ## DELEGATION ACROSS A TRUST, BUILT (#430 Phases 2 and 3, 2026-10-19)
 
 The flows of *DELEGATION ACROSS A TRUST* above, in `krb5_kdc.js`, with the
-vendored codec untouched. Every decision is the issuance policy's; the KDC
+codec untouched. Every decision is the issuance policy's; the KDC
 sends it facts and turns its refusal kinds into codes.
 
 * **S4U2SELF** (`crossRealmSelf()`): four places a KDC stands in the walk,
@@ -1424,7 +1418,7 @@ records mark within-forest.
 | 20 | The Member boundary (AlwaysFilter and the member server's own prefix) | Member | — | [MS-PAC] 4.1.2.2 | **No test: cannot apply** — this KDC is not a member server receiving a PAC; its acceptor validates its own realm's tickets |
 | 21 | WithinDomain: no filtering between a domain's own controllers | WithinDomain | — | [MS-PAC] 4.1.2.2 | **No test: cannot apply** — a realm's KDC is one controller; there is no trust within a domain to cross |
 | 22 | WithinForest (not quarantined): only AlwaysFilter and DomainSpecific apply | WithinForest | ExtraSids | [MS-PAC] 4.1.2.2 | SF-R22 |
-| 23 | Invalid SIDs are AlwaysFilter | all | ExtraSids | [MS-PAC] 4.1.2.2 | **No test: cannot arise** — a structurally invalid SID fails NDR decoding, and the vendored codec then refuses the whole PAC before any filtering; `sidClass()` still classes a malformed text as AlwaysFilter |
+| 23 | Invalid SIDs are AlwaysFilter | all | ExtraSids | [MS-PAC] 4.1.2.2 | **No test: cannot arise** — a structurally invalid SID fails NDR decoding, and the codec then refuses the whole PAC before any filtering; `sidClass()` still classes a malformed text as AlwaysFilter |
 | 24 | CROSS_ORGANIZATION adds OTHER_ORGANIZATION (S-1-5-1000) to ExtraSids. **Partial:** its ACL check (ACTRL_DS_CONTROL_ACCESS on the server's account) has no account security descriptor here to check | all with cross-organization | ExtraSids | [MS-KILE] 3.3.5.7.5; [MS-ADTS] 6.1.6.7.9 TACO | SF-R24 |
 
 **24 rows; 21 tested** (20, 21 and 23 say why not). Where filtering happens:
@@ -1555,7 +1549,7 @@ database is byte-for-byte what it was. When the names differ the fixture stays b
 because the delegation cases name it. `ok-as-delegate` is on only where the fixtures are.
 
 **Settings that replaced literals** (defaults unchanged): `krb5.enctypes` (validated
-against the vendored codec — an unimplemented number is FATAL at startup rather than
+against the codec — an unimplemented number is FATAL at startup rather than
 silently dropped), `krb5.kvno` (rotation is not modelled), `krb5.ticketLifetimeSeconds`,
 `krb5.renewLifetimeSeconds`, `krb5.logonServer`, `krb5.maxRequestBytes` (the KDC's
 inbound TCP cap — the old `MAX_REPLY_BYTES` name described a different limit from the one
@@ -2029,8 +2023,9 @@ each section; the decisions a reader needs here:
   key that opened it; the acceptor reads it only from a CAMMAC whose svc-verifier
   checks under its own key (`STS-KRB-0153` otherwise, and the indicator is
   dropped).
-* **THE PRF AND KRB-FX-CF2 ARE `common/crypto.js`'s** (section 9) — the vendored
-  codec has no PRF and may not be edited — held to RFC 3961's n-fold vectors and
+* **THE PRF AND KRB-FX-CF2 ARE `common/crypto.js`'s** (section 9) — the codec
+  has no PRF, and could not be edited when this was built (it was a copy
+  until #1280) — held to RFC 3961's n-fold vectors and
   MIT's `t_prf.c` and `t_cf2.expected`.
 
 **NO REQUIRE REACHES THE PARENT PROJECT'S COPY SET.** `krb5_fast.ts` is built by
@@ -2106,7 +2101,7 @@ decisions a reader needs here:
   profile for the same reason). `pki.issueKdcKeyPair()` makes one per realm
   per PROCESS on first use, with id-pkinit-KPKdc, digitalSignature and an
   id-pkinit-san of krbtgt/REALM@REALM, the KRB5PrincipalName encoded by the
-  codec (the vendored encoder's `krb5` SAN kind writes a UTF8String, which no
+  codec (the X.509 encoder's `krb5` SAN kind writes a UTF8String, which no
   client reads). The private key lives in that process's memory only; a slot
   per node, pid and thread keeps one process from superseding another's.
 * **THE CLIENT'S PATH** is built to the service Root through the realm's own
@@ -2497,7 +2492,7 @@ sAMAccountName resolution (`krbtgt` as a single-component sname); AD's PAC
 hardening (a PAC in every TGT, a PAC-less TGT refused); [MS-SFU]'s HMAC-MD5 as the
 only PA-FOR-USER checksum; Windows' fixed "Microsoft" FX cookie and its
 AS-only PA-REQ-ENC-PA-REP; this KDC's KDC_ERR_PREAUTH_FAILED for armor that is
-not a TGT; and a non-ASCII principal name, which the VENDORED codec decodes as
+not a TGT; and a non-ASCII principal name, which the codec decodes as
 Latin-1 and encodes as UTF-8 — the fix is the parent's
 (rcbj/id-proto-debugger#308). Heimdal has no RFC 6560 OTP client and no MS-KKDCP
 transport, so those two halves of #205 are recorded rather than driven.
@@ -2533,7 +2528,7 @@ unframes the KDC-PROXY-MESSAGE, finds the client, relays the whole request to
 its home over the inter-cell channel, and calls `next()` for everything else —
 after which the KDC's own handler runs unchanged. It sits IN FRONT of the KDC
 rather than inside `krb5_kdc.js` so that the KDC's require closure, which the
-parent's tests image copies, does not grow. It requires the vendored codec
+parent's tests image copies, does not grow. It requires the codec
 and `krb5_principals.js` and edits none of them; nothing in the COPY closure requires it, so **the closure is unchanged**.
 
 * **AS-REQ**: the body's `cname`, one component, in the realm's own Kerberos

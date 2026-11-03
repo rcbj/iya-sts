@@ -142,7 +142,8 @@ bump, and after any commit here that adds a require reachable from `krb5_kdc.js`
   is the same and the environment still wins over the appconfig file.
 * **Every vendored file, byte for byte.** Nothing in `common/crypto_impl/` or
   `kerberos/krb5_spnego.js` was edited for any of this — they were moved, and the
-  two byte-compare tests pass against them where they now sit.
+  two byte-compare tests passed against them where they then sat. (Since
+  #1280 none of them is a copy, and those tests are the parent's own.)
 
 ---
 
