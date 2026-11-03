@@ -3121,6 +3121,36 @@ random keys are the same pair under `ou=applications`, `krb5ServiceKeys` and
   that sentence back destroys the keys**, which the KDC then reports as unreadable; the
   next password set or verified sign-in makes new ones.
 
+## `stsPublishedDid`: A PERSON'S PUBLISHED DIDs, AND WHY AN ATTRIBUTE OF ITS OWN (#1291, 2026-11-03)
+
+Each did:web this realm publishes for a person (`oid4vc/person_did.ts`) is
+one JSON value of `stsPublishedDid` on their entry: its random id, the DID,
+the custody, every version of its keys with what authorized each, a pending
+authorization, its deactivation, and — `realm` custody — the private key,
+sealed. **A NEW ATTRIBUTE rather than more members on the
+`stsSelfIssuedSubject` value**, because the two have different lifetimes: a
+deactivated DID LEAVES the self-issued list (it no longer signs in, is
+preferred or is released) while its record must STAY (its address answers 410
+for good and its versions stay resolvable). Folding the record into the
+subject's value would have made every reader of the subject list —
+`ownerOf()`, `list()`, the sign-in, the claim — skip deactivated values, and
+one that forgot would sign a person in with a DID they deactivated.
+
+* **Withheld from every read** (`SECRET_ATTRIBUTES`): the versions are not
+  secret, but the value carries a sealed private key in `realm` custody and a
+  pending authorization, and a document's history is answered by its own
+  address and the resolver, never by a directory dump.
+  `CREDENTIAL_ATTRIBUTE_DOORS` names the portal and the console as its only
+  writers, and `persistence/directory_merge.js` keeps it whole-valued
+  (`SINGLE`): two nodes' lists are never merged value by value.
+* **No holder query and no index here.** The random id finds its entry
+  through the per-realm persisted index `did.personDids` (`<rid> -> { did,
+  sub }`), and the entry through `nameForSubject()` and `locateEntry()` — two
+  lookups, never a walk — so the attribute is not in `ASKED_ATTRIBUTES` and
+  no `SCHEMA_VERSION` changed.
+* `readPublishedDids()` / `writePublishedDids()` only carry the strings,
+  as `readSelfIssuedSubjects()` does; `common/credentials.ts` passes them on.
+
 ## PRODUCT MODE SEEDS THE TREE AND NOTHING ELSE (2026-09-12)
 
 **`seed()` builds two things and only the first is structural.** The base and the

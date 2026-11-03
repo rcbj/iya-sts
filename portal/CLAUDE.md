@@ -1805,6 +1805,34 @@ and gets no link to a console that would refuse them. The roster is asked
 only when the sign-in is off, and one that throws reads as "may not".
 `tests/self_issued_off_note.js`.
 
+### A DID THIS REALM PUBLISHES FOR THE PERSON (#1291, 2026-11-03)
+
+The same page carries *DIDs this realm publishes for you* where
+`did.personPublishing` is on (or the person still holds one): the custody,
+the cap, *Publish a DID*, and each DID's document link, custody, versions and
+state, with *Add key*, *Rotate key* and *Deactivate*. `oid4vc/person_did.ts`
+and `oid4vc/CLAUDE.md` (*A PERSON'S PUBLISHED did:web*) are the design; what
+is the portal's:
+
+* **A WALLET ACT IS A LINK, NOT A FORM** — Publish in `wallet` custody, and
+  both proofs of a change (`authorize-add.<rid>` / `authorize-rotate.<rid>`,
+  then *Prove the new key*, `key.<rid>`) — to
+  `/authn/wallet?siop=1&enrol=1&did_act=…&login_hint=…`, for *Enrol a
+  wallet*'s reason: it is a sign-in round trip. It comes back with
+  `?did=published|authorized|changed&rid=…`, which the GET's `did` query
+  turns into the notice.
+* **THE REALM'S OWN ACTS ARE `POST /account-api/self-issued/dids`**
+  (mirrors `POST /portal/self-issued/dids`): `publish` in `realm` or
+  `download` custody, `add-key` / `rotate-key` of a `realm`-custody DID, and
+  `deactivate` of any. The identity is the token's; the body names only the
+  DID's `rid`. Refusals carry the library's code (`STS-VC-0167` to `0176`).
+* **A DOWNLOADED KEY IS ANSWERED ONCE**, as `view.fresh` (`kind: 'did-key'`,
+  a `data:` file), drawn in a `.fresh` pane by `freshPane()`, #671's
+  pattern; no GET ever carries it again.
+* **REMOVING A PUBLISHED DID FROM THE SUBJECT LIST DEACTIVATES IT** (the
+  POST's `remove` routes to `didAct('deactivate')`): its address is kept, so
+  a removal that left the document published would say something false.
+
 ## `/portal/wallet`: A CREDENTIAL ABOUT YOURSELF, INTO YOUR OWN WALLET (2026-10-12, #589)
 
 The third page here that HANDS SOMEBODY A CREDENTIAL, and the first whose
