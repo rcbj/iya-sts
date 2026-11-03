@@ -5803,6 +5803,30 @@
     "en": "8cc9cdf9a93a0260",
     "text": "驗證器要求出示之 SD-JWT VC 具備的 `vct`。預設是此簽發者產生的類型；將它設定為其他簽發者以自身類型產生的類型，即可接受該憑證。"
   },
+  "oid4vp.mdocTrustAnchors|label": {
+    "en": "f20c6a38b3c5c0ed",
+    "text": "受信任的 mdoc 簽發機構（IACA 憑證，PEM）"
+  },
+  "oid4vp.mdocTrustAnchors|description": {
+    "en": "bc0c2fd840ac9688",
+    "text": "PEM 憑證，串接在一起：出示之 mdoc 的文件簽署者憑證必須鏈結到的簽發機構 CA 憑證（ISO/IEC 18013-5 附錄 B）。憑證鏈依 RFC 5280 的規定建立與檢查，會查詢文件簽署者的撤銷狀態（pki.revocationCheck），簽署者未鏈結到其中任何一張的 mdoc 會被拒絕。空白（預設值）時不信任任何 mdoc 簽發者，因此在指名一個之前，mso_mdoc 呈現都會被拒絕。"
+  },
+  "oid4vp.expectedDoctype|label": {
+    "en": "49833f72d06c775d",
+    "text": "預期的 mdoc 文件類型（docType）"
+  },
+  "oid4vp.expectedDoctype|description": {
+    "en": "d718e92b610b1ae9",
+    "text": "mso_mdoc 請求所要求的 `docType`（`meta.doctype_value`），也是驗證者要求出示之文件及其 Mobile Security Object 所具有的類型。預設值是 ISO/IEC 18013-5 的行動駕照。"
+  },
+  "oid4vp.mdocNamespace|label": {
+    "en": "8e0371b0c93613a5",
+    "text": "讀取所要求宣告的 mdoc 命名空間"
+  },
+  "oid4vp.mdocNamespace|description": {
+    "en": "119af9b2a1680a4c",
+    "text": "mso_mdoc 請求之宣告路徑所指名的命名空間（`[namespace, element]`，OpenID4VP 1.0 附錄 B.2.3）。每個要求的宣告都以同名的資料元素要求，但 birthdate（birth_date）與 address（resident_address）除外，ISO/IEC 18013-5 對它們的命名不同。預設值是行動駕照的命名空間。"
+  },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
     "text": "單一要求可要求的宣告數"

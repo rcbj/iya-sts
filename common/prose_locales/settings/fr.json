@@ -5803,6 +5803,30 @@
     "en": "8cc9cdf9a93a0260",
     "text": "Le `vct` que le vérificateur exige d’une SD-JWT VC présentée. La valeur par défaut est le type que produit cet émetteur ; modifiez-la pour accepter une attestation qu’un autre émetteur produit sous son propre type."
   },
+  "oid4vp.mdocTrustAnchors|label": {
+    "en": "f20c6a38b3c5c0ed",
+    "text": "Autorités émettrices de mdoc de confiance (certificats IACA, PEM)"
+  },
+  "oid4vp.mdocTrustAnchors|description": {
+    "en": "bc0c2fd840ac9688",
+    "text": "Des certificats PEM, concaténés : les certificats d’AC de l’autorité émettrice (ISO/IEC 18013-5, annexe B) auxquels le certificat du signataire de document d’un mdoc présenté doit se chaîner. La chaîne est construite et vérifiée comme le dit la RFC 5280, la révocation du signataire de document est consultée (pki.revocationCheck), et un mdoc dont le signataire ne se chaîne à aucun d’eux est refusé. Vide — la valeur par défaut — ne fait confiance à aucun émetteur de mdoc, de sorte qu’une présentation mso_mdoc est refusée tant qu’aucun n’est nommé."
+  },
+  "oid4vp.expectedDoctype|label": {
+    "en": "49833f72d06c775d",
+    "text": "Type de document mdoc attendu (docType)"
+  },
+  "oid4vp.expectedDoctype|description": {
+    "en": "d718e92b610b1ae9",
+    "text": "Le `docType` que demande une requête mso_mdoc (`meta.doctype_value`) et que le vérificateur exige du document présenté et de son Mobile Security Object. La valeur par défaut est le permis de conduire mobile de l’ISO/IEC 18013-5."
+  },
+  "oid4vp.mdocNamespace|label": {
+    "en": "8e0371b0c93613a5",
+    "text": "Espace de noms mdoc où sont lues les revendications demandées"
+  },
+  "oid4vp.mdocNamespace|description": {
+    "en": "119af9b2a1680a4c",
+    "text": "L’espace de noms que nomment les chemins de revendication d’une requête mso_mdoc (`[namespace, element]`, OpenID4VP 1.0, annexe B.2.3). Chaque revendication demandée l’est comme l’élément de données du même nom, sauf birthdate (birth_date) et address (resident_address), que l’ISO/IEC 18013-5 nomme autrement. La valeur par défaut est celle du permis de conduire mobile."
+  },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
     "text": "Revendications demandées par requête"

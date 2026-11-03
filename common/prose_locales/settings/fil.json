@@ -5803,6 +5803,30 @@
     "en": "8cc9cdf9a93a0260",
     "text": "Ang `vct` na hinihingi ng Verifier sa isang ipinresent na SD-JWT VC. Ang default ay ang type na mini-mint ng issuer na ito; itakda ito para tanggapin ang credential na mini-mint ng ibang issuer sa ilalim ng sarili nitong type."
   },
+  "oid4vp.mdocTrustAnchors|label": {
+    "en": "f20c6a38b3c5c0ed",
+    "text": "Mga pinagkakatiwalaang mdoc issuing authority (mga IACA certificate, PEM)"
+  },
+  "oid4vp.mdocTrustAnchors|description": {
+    "en": "bc0c2fd840ac9688",
+    "text": "Mga PEM certificate, pinagdugtong: ang mga Issuing Authority CA certificate (ISO/IEC 18013-5 Annex B) na dapat pag-chain-an ng document signer certificate ng ipinakitang mdoc. Binubuo at sinusuri ang chain ayon sa RFC 5280, kinokonsulta ang revocation ng document signer (pki.revocationCheck), at tinatanggihan ang mdoc na ang signer ay hindi naka-chain sa alinman sa mga ito. Walang laman — ang default — ay walang pinagkakatiwalaang mdoc issuer, kaya tinatanggihan ang mso_mdoc presentation hanggang may mapangalanan."
+  },
+  "oid4vp.expectedDoctype|label": {
+    "en": "49833f72d06c775d",
+    "text": "Inaasahang mdoc document type (docType)"
+  },
+  "oid4vp.expectedDoctype|description": {
+    "en": "d718e92b610b1ae9",
+    "text": "Ang `docType` na hinihingi ng mso_mdoc request (`meta.doctype_value`) at kinakailangan ng Verifier sa ipinakitang dokumento at sa Mobile Security Object nito. Ang default ay ang mobile driving licence ng ISO/IEC 18013-5."
+  },
+  "oid4vp.mdocNamespace|label": {
+    "en": "8e0371b0c93613a5",
+    "text": "mdoc namespace na pinagbabasahan ng mga hinihinging claim"
+  },
+  "oid4vp.mdocNamespace|description": {
+    "en": "119af9b2a1680a4c",
+    "text": "Ang namespace na pinangangalanan ng mga claim path ng mso_mdoc request (`[namespace, element]`, OpenID4VP 1.0 Appendix B.2.3). Hinihingi ang bawat claim bilang data element na may parehong pangalan, maliban sa birthdate (birth_date) at address (resident_address), na iba ang pangalan sa ISO/IEC 18013-5. Ang default ay sa mobile driving licence."
+  },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
     "text": "Mga claim na maaaring hingin ng isang request"
