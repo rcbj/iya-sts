@@ -806,7 +806,15 @@ function certificatesForParty(fields) {
   // (#1290) — the managed-certificate slot's shape, several times over.
   // `issuerEntry()` builds this member from `person_assertions.js`'s record
   // and nothing else does, so an application entry never carries it.
-  ((fields && fields.personSamlCertificates) || []).forEach(function (one) {
+  // ONLY THAT RECORD'S SHAPE IS READ: a list of objects. The store is
+  // schemaless, so an `ldapmodify` could write an attribute of this name onto
+  // an application entry, and its values would be strings: those are skipped
+  // here rather than thrown on or read as certificates.
+  const held = fields && Array.isArray(fields.personSamlCertificates)
+    ? fields.personSamlCertificates : [];
+  held.filter(function (one) {
+    return !!one && typeof one === 'object';
+  }).forEach(function (one) {
     const thumbprint = thumbprintOf(one.pem);
     if (!thumbprint) {
       problems.push('stsSamlAssertionKeyPair: a certificate in it could not ' +
