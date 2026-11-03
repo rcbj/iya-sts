@@ -577,6 +577,7 @@ var config = {
     personSelfServicePerIdentity: 5,            // Self-issued key pairs one person may ask for per window
     personSelfServicePerAddress: 5,             // Self-issued key pairs one address may ask for per window
     personTlsClientCertificateMax: 5,           // TLS client certificates one person may hold
+    personSigningKeyMax: 5,                     // Signing key pairs one person may hold per profile
     applicationTlsClientCertificateMax: 5,      // TLS client certificates one application may hold
     messageSigningCertificateMax: 5,            // Message-signing certificates one holder may hold
     pinnedSigners: false,                       // Sign with a pinned key pair

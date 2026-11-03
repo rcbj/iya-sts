@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 153
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 209
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 212
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
@@ -93,7 +93,7 @@ is an ordinary outcome.
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 258
 * [Management API (`STS-API`)](#sts-api) — 88
-* [User portal (`STS-PORTAL`)](#sts-portal) — 109
+* [User portal (`STS-PORTAL`)](#sts-portal) — 110
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -859,7 +859,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0108` *(retired)* | An RFC 7522 (SAML) signing key pair was asked for a person; only applications may hold one. Retired 2026-09-13: a person may hold an RFC 7522 key pair, and the SAML bearer grant reads it. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0109` | A person key-pair action named nobody in this realm. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0110` | A person's signing key pair was issued and could not be written onto their entry. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-PKI-0111` | A person key-pair removal found nothing to take off. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0111` *(retired)* | A person key-pair removal found nothing to take off. Retired 2026-11-03 (#1290): a person's key pair is revoked one at a time and is no longer taken off; a revocation naming nothing they hold is STS-PKI-0224. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0112` | A scoped PKI action named a realm's branch that this realm's console does not draw. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0113` | An application key-pair issue or removal named no application. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0114` | An application key-pair issue named an application that is not in this realm. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
@@ -958,6 +958,9 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0220` | A person or an application already holds pki.messageSigningCertificateMax valid message-signing certificates, so another was not issued (#521). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0221` | A message-signing certificate revocation named a serial the holder holds no certificate under (#521). | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-PKI-0222` | PKI.js could not be given the WebCrypto engine when common/crypto_impl/key_material.js loaded, so its certificate and key operations fall back to PKI.js's default engine (#1280). | none (logged at load) |
+| `STS-PKI-0223` | A person already holds pki.personSigningKeyMax valid RFC 7523 (or RFC 7522) signing key pairs, so another was not issued or uploaded (#1290). | the caller's refusal: /account-api/signing-key HTTP 400, a console refusal banner, /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0224` | A signing key pair revocation named a kid, thumbprint or serial the person holds no key pair of that profile under (#1290). | the caller's refusal: /account-api/signing-key HTTP 400, a console refusal banner, /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0225` | A signing key pair was asked for with a label that is not a short name (at most 40 letters, digits, spaces, dots, dashes, underscores and brackets) (#1290). | the caller's refusal: /account-api/signing-key HTTP 400, a console refusal banner, /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-ENROLL
 
@@ -1725,8 +1728,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0086` | A person's RFC 7523 private key could not be sealed under the key-encryption key; nothing was written and the issued key pair is lost. | — |
 | `STS-OAUTH-0087` | An attribute of a person's RFC 7523 key pair could not be written to their directory entry; the issued key pair is lost. | — |
 | `STS-OAUTH-0088` | A person's sealed RFC 7523 private key will not open under this process's key-encryption key (it was sealed under a different one). | — |
-| `STS-OAUTH-0089` | Taking a person's RFC 7523 key pair off was refused: this process has no directory, or no person was named. | — |
-| `STS-OAUTH-0090` | Taking a person's RFC 7523 key pair off was refused: nobody by that name holds one. | — |
+| `STS-OAUTH-0089` *(retired)* | Taking a person's RFC 7523 key pair off was refused: this process has no directory, or no person was named. Retired 2026-11-03 (#1290): a person's key pair is revoked, not taken off. | — |
+| `STS-OAUTH-0090` *(retired)* | Taking a person's RFC 7523 key pair off was refused: nobody by that name holds one. Retired 2026-11-03 (#1290): a person's key pair is revoked, not taken off (STS-PKI-0224). | — |
 | `STS-OAUTH-0091` | A certificate-bound token (cnf x5t#S256) was presented on a connection carrying no client certificate (RFC 8705 section 3.1). | invalid_token (HTTP 401 at a protected endpoint; HTTP 400 invalid_grant at the refresh grant) |
 | `STS-OAUTH-0092` | A certificate-bound token was presented on a connection made with a different client certificate (RFC 8705 section 3.1). | invalid_token (HTTP 401 at a protected endpoint; HTTP 400 invalid_grant at the refresh grant) |
 | `STS-OAUTH-0093` | A DPoP proof was required and none was presented. | invalid_dpop_proof (HTTP 400 at the token endpoint, HTTP 401 at a protected endpoint) |
@@ -5447,7 +5450,7 @@ Raised from: portal/.
 | `STS-PORTAL-0024` | A set of recovery codes could not be generated for the signed-in person. | HTTP 400 page |
 | `STS-PORTAL-0025` | A confirmed set of recovery codes could not be stored (the pending set was gone or the write failed). | HTTP 400 page |
 | `STS-PORTAL-0026` | A portal form post named no action, or one its handler does not have. | HTTP 400 page |
-| `STS-PORTAL-0027` | Taking a signing key off was refused because the person holds none. | HTTP 400 page |
+| `STS-PORTAL-0027` *(retired)* | Taking a signing key off was refused because the person holds none. Retired 2026-11-03 (#1290): the portal revokes a signing key pair row by row and has no take-off act. | HTTP 400 page |
 | `STS-PORTAL-0028` | A person tried to issue themselves a signing key while pki.personSelfService is off. | HTTP 403 page |
 | `STS-PORTAL-0029` | The certificate authority could not issue a self-service signing key pair. | HTTP 400 page |
 | `STS-PORTAL-0030` | A self-service signing key pair was issued but could not be written to the person's entry; the key pair is discarded. | HTTP 500 page |
@@ -5530,6 +5533,7 @@ Raised from: portal/.
 | `STS-PORTAL-0622` | A search on /portal/delegate could not be answered: no directory was installed, or the store could not be read. The page says so and the DN form still works (2026-10-20). | HTTP 503 JSON |
 | `STS-PORTAL-0623` | A pseudonym change on /account-api could not be attempted: the directory module was not loaded. A directory refusal records its own STS-LDAP code instead (#644). | HTTP 503 JSON |
 | `STS-PORTAL-0624` | A /portal/verify-pseudonym link is unknown, expired, mismatched or already spent (#644). | HTTP 400 JSON |
+| `STS-PORTAL-0625` | A person's revocation of their own signing key pair on /account-api/signing-key was refused without a more specific code (#1290). | HTTP 400 JSON |
 
 ## STS-ACCOUNT
 

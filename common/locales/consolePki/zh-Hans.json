@@ -372,6 +372,8 @@
   "person": "人员",
   "personPlaceholder": "ou=users 中的用户名",
   "declaredIssuer": "声明的颁发者",
+  "keyLabel": "名称（可选）",
+  "revokePersonKey": "吊销",
   "theirUsername": "（其用户名）",
   "takeOff": "移除此密钥对",
   "noDirectory": "此进程没有目录，因此任何人都不能持有断言密钥对，以个人为颁发者的断言会因缺少已注册的颁发者而被拒绝。",

@@ -458,14 +458,21 @@ class CertificateViews {
       });
     });
     this.fromSource('persons', function () {
+      // EVERY KEY PAIR A PERSON HOLDS, per profile (#1290): several each,
+      // revoked and expired ones included — a certificate this service
+      // issued is in the catalogue whatever became of it.
       personAssertions.holders().forEach(function (one) {
-        catalogue.add(one.certificatePem, 'Person "' + one.username +
-                      '", RFC 7523 key pair', 'persons');
-        // A person's RFC 7522 key pair too, since 2026-09-13.
-        if (one.saml && one.saml.certificatePem) {
-          catalogue.add(one.saml.certificatePem, 'Person "' + one.username +
-                        '", RFC 7522 key pair', 'persons');
-        }
+        [['jwt', 'RFC 7523'], ['saml', 'RFC 7522']].forEach(function (p) {
+          ((one[p[0]] || {}).keys || []).forEach(function (key) {
+            if (!key.certificatePem) {
+              return;
+            }
+            catalogue.add(key.certificatePem, 'Person "' + one.username +
+                          '", ' + p[1] + ' key pair' +
+                          (key.label ? ' "' + key.label + '"' : ''),
+                          'persons', details.splitPem(key.chainPem));
+          });
+        });
       });
     });
     log.debug("Leaving CertificateViews.addHolders().");

@@ -372,6 +372,8 @@
   "person": "Person",
   "personPlaceholder": "ett användarnamn i ou=users",
   "declaredIssuer": "Deklarerad utfärdare",
+  "keyLabel": "Namn (valfritt)",
+  "revokePersonKey": "Återkalla",
   "theirUsername": "(personens användarnamn)",
   "takeOff": "Ta bort nyckelparet",
   "noDirectory": "Processen har ingen katalog, så ingen kan ha ett nyckelpar för assertions, och en assertion som anger en person som utfärdare avvisas i brist på en registrerad utfärdare.",

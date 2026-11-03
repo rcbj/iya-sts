@@ -482,8 +482,8 @@ function childMain() {
         const refusedWrites = [];
         for (const type of ['stsTotpCredential', 'stsWebauthnCredential',
                             'stsAppPassword', 'stsBackupCodes',
-                            'hobaPublicKey', 'stsAssertionJwks',
-                            'stsSamlAssertionCertificate',
+                            'hobaPublicKey', 'stsAssertionKeyPair',
+                            'stsSamlAssertionKeyPair',
                             'stsSelfIssuedSubject', 'stsCibaUserCode',
                             'stsKrb5Keys']) {
           const answer = await modify('replace', type, ['x']);

@@ -372,6 +372,8 @@
   "person": "Tao",
   "personPlaceholder": "isang username sa ou=users",
   "declaredIssuer": "Idineklarang issuer",
+  "keyLabel": "Pangalan (opsyonal)",
+  "revokePersonKey": "I-revoke",
   "theirUsername": "(ang username nila)",
   "takeOff": "Alisin ang key pair na ito",
   "noDirectory": "Walang directory ang prosesong ito, kaya walang makakahawak ng assertion key pair at tinatanggihan ang assertion na nagpapangalan sa tao bilang issuer nito dahil walang nakarehistrong issuer.",

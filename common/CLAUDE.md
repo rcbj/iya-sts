@@ -8646,6 +8646,53 @@ making them**. `common/service_state.ts` supplies it as
 that — the fix lives in two files, and a mutation run showed that pinning only
 `pki.js` leaves the production wiring free to be deleted with everything green.
 
+### 3ab, continued: SEVERAL KEY PAIRS PER PROFILE, REVOKED ONE AT A TIME (#1290, 2026-11-03)
+
+rcbj's decisions on #1290: a person may hold **several** key pairs per
+profile, Generate ADDS one (optionally labelled) instead of replacing, a key
+pair is removed by **revoking** it row by row with the TLS card's two reasons
+(`REVOCATION_REASONS`), and `pki.personSigningKeyMax` (5) caps the VALID ones
+per profile. Everything above about the refusal, the seal and the one-time
+hand-over still holds; what changed is the storage and the lifecycle.
+
+* **ONE RECORD PER KEY PAIR, ON THE ENTRY.** `stsAssertionKeyPair` /
+  `stsSamlAssertionKeyPair` hold one JSON record per key pair (handle, label,
+  source, serial, `caId`, certificate, chain, for JWT the public JWK, validity,
+  and `withdrawnAt`/`withdrawnReason` when revoked here);
+  `stsAssertionPrivateKey` / `stsSamlAssertionPrivateKey` hold one value per
+  key pair issued here, `{ id, pem }` with the WHOLE VALUE sealed so that
+  `cell_rehome.ts` re-seals it like any other. The seven single-valued
+  attributes per profile are gone (no back-compat, rcbj's standing rule).
+* **WHY NOT THE TLS CARD'S REGISTER.** `tls_client_certificates.js` keeps a
+  person's certificates in `pki.certify()`'s register by slot. A signing key is
+  found by the VERIFIER off the entry its `iss` resolves to (`kid` in a JWKS,
+  a certificate thumbprint), the register holds no JWK, and an uploaded
+  certificate from an external authority is in no register of ours — so the
+  records stay on the entry and the BEHAVIOUR is mirrored: states, labels, the
+  cap counting valid ones, revocation through `pki_revocation.js`, expired
+  records forgotten at the next write.
+* **STATE IS READ FROM THE AUTHORITY.** A record names the authority that
+  signed it (`pki.issueSigningKeyPair()` returns `useCase` now; an uploaded
+  realm certificate's is found by `issuedHere()`), and `isRevoked()` on that
+  list wins over the record — so a serial revoked on `/admin/pki`'s revocation
+  pane reads revoked here too. An external authority's certificate has only
+  the record's own mark.
+* **THE VERIFIERS READ VALID KEY PAIRS ONLY**: `recordFor()` answers `jwks`
+  (RFC 7523) and `samlCertificates` (RFC 7522) built from the valid records, so
+  a revoked or expired key finds no registered key and is refused; the `x5c`
+  path is refused by the CRL as before. `issuerFor()` needs a VALID key pair.
+* **`revoke()` REPLACED `clear()`** on every door (portal, console, API): it
+  revokes on the CRL where the certificate is ours, marks the record, drops the
+  private half, clears the profile's issuer declaration when the last valid key
+  pair goes (take-off's old invariant), and raises CAEP `revoke` (and RISC
+  credential-compromise for `keyCompromise`). There is no per-key clear for
+  administrators either: the ticket retired take-off, and an administrator who
+  wants a key pair gone wants it revoked.
+* **THE CAP** is checked by every door BEFORE a key pair is generated
+  (`atCap()`), and again in `write()` (`STS-PKI-0223`); a label is held to the
+  TLS card's rule (`labelProblem()`, `STS-PKI-0225`); a handle the person holds
+  nothing under is `STS-PKI-0224`.
+
 ## 3ad. `revocation_status.js`: REVOCATION, CONSULTED (2026-09-12)
 
 `pki_revocation.js` PUBLISHES; this CONSULTS. Until it existed a client

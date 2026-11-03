@@ -1393,6 +1393,21 @@ considered and refused: it is an argument about the section's TITLE rather than
 about what the section holds, and moving the heading's meaning to fit one page
 would misfile the other three.
 
+### SEVERAL KEY PAIRS PER CARD, REVOKED ROW BY ROW (#1290, 2026-11-03)
+
+rcbj asked for the two signing-key cards to work like the TLS card. Each now
+LISTS every key pair the person holds (`view.profiles[].held.keys`, newest
+first, each with its `handle`, label, state and certificate), with a *Revoke*
+form on each valid row (`action: 'revoke'`, `handle`, `reason`
+`cessationOfOperation` or `keyCompromise`) and a *Generate* that ADDS one under
+an optional label. **Take off and its `remove` act are gone**: revoking puts
+the certificate on the CRL, which take-off never did. At
+`pki.personSigningKeyMax` valid key pairs (`profiles[].atCap`) the Generate form
+is replaced by a folded note, and the act is refused before a key is generated
+(`STS-PKI-0223`). The new key pair's row carries the two downloads
+(`view.fresh.handle` names it), as the TLS card's new row does.
+`common/CLAUDE.md` 3ab, continued, argues the storage.
+
 ## A TLS CLIENT CERTIFICATE, THE THIRD CARD ON `/portal/signing-key` (2026-09-13)
 
 Asked for by rcbj beside the RFC 7523 and RFC 7522 key pairs: a person generates

@@ -119,19 +119,21 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 
 ### Assertion key pairs (RFC 7523 and RFC 7522)
 
-A person may hold a key pair to sign assertions **about themselves only**. The
+A person may hold key pairs to sign assertions **about themselves only** —
+several per profile since #1290, up to `pki.personSigningKeyMax` valid ones. The
 two sets share no names.
 
 | JWT (RFC 7523) | SAML (RFC 7522) |
 |---|---|
 | `stsAssertionIssuer` | `stsSamlAssertionIssuer` |
-| `stsAssertionJwks`, `stsAssertionKid` | `stsSamlAssertionThumbprint` |
-| `stsAssertionCertificate`, `stsAssertionCertificateChain` | `stsSamlAssertionCertificate`, `stsSamlAssertionCertificateChain` |
-| `stsAssertionPrivateKey` (**sealed, withheld**) | `stsSamlAssertionPrivateKey` (**sealed**) |
-| `stsAssertionExpiresAt`, `stsAssertionKeySource` | `stsSamlAssertionExpiresAt`, `stsSamlAssertionKeySource` |
+| `stsAssertionKeyPair` (one JSON record per key pair) | `stsSamlAssertionKeyPair` (one JSON record per key pair) |
+| `stsAssertionPrivateKey` (one value per key pair issued here; **sealed, withheld**) | `stsSamlAssertionPrivateKey` (**sealed, withheld**) |
 
-`…KeySource` says whether the pair was issued here or a certificate was
-uploaded instead.
+A record carries the handle (`kid`, or the certificate thumbprint), the
+certificate and its chain (and for JWT the public JWK with `x5c`), the serial
+and the authority that signed it, the label, `source` (issued here or a
+certificate uploaded instead), the validity, and — when it was revoked here —
+`withdrawnAt` and `withdrawnReason`.
 
 ### Certificates issued by enrollment (ACME, EST, SCEP)
 

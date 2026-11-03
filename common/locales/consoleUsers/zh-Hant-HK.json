@@ -80,15 +80,13 @@
   "userCredentialsSection.certPem": "證書（PEM）",
   "userCredentialsSection.certAreaTip": "證書，PEM 格式。",
   "userCredentialsSection.chainTip": "簽發它的證書，PEM 格式：每個中繼證書和根證書。",
-  "userCredentialsSection.uploadTip": "將此證書放到其此設定檔的項目上，取代為其持有的金鑰組。",
-  "userCredentialsSection.replaceUpload": "以此證書取代",
+  "userCredentialsSection.uploadTip": "將此證書加入其此設定檔的金鑰組；已有的金鑰組繼續有效。",
   "userCredentialsSection.upload": "上傳證書",
-  "userCredentialsSection.takeOffTip": "從此項目移除金鑰組。這不是撤銷：證書仍然有效，只是本服務不再接受它簽署的內容。",
-  "userCredentialsSection.notRevocation": "這不是撤銷：證書仍然有效，只是本服務不再接受它簽署的內容。宣告的簽發者會一併移除；另一個設定檔的金鑰組不受影響。",
-  "userCredentialsSection.replaceNote": "<strong>兩種方式都會取代此項目上的金鑰組。</strong>簽發會在此產生新的金鑰組並由本領域的簽發 CA 簽署；私密金鑰密封在項目上，並在按鈕開啟的頁面上<strong>只顯示一次</strong>。上傳會登記當事人已持有的證書，本服務不為其保管私密金鑰。來自本領域授權單位的證書可以單獨上傳，且必須是簽發給此人的。<strong>來自其他任何授權單位的證書必須附上完整鏈結</strong> &mdash; 每個中繼證書和自我簽署的根證書 &mdash; 且每個環節都會經過驗證。攜帶私密金鑰的上傳會被拒絕。",
   "userGnapGrantsSection.lead": "此人身為資源擁有者的每個 GNAP（RFC 9635）授予：由他們在核准頁面上核准，或由出示關於他們之已驗證斷言的受信任客戶端代為處理。<strong>撤銷</strong>是代他們執行客戶端自己的第 5.4 節動作：依該授予簽發的每個權杖都會失效，授予會以 <code>revoked</code> 完成，並送出 CAEP <code>session-revoked</code>。當事人也可以在自己的 <code>/portal/gnap</code> 上執行相同動作。",
   "userKerberosSection.developmentKdc": "開發 — 每個用戶都以 <code>krb5.userPassword</code> 產生金鑰，而不是以其本人密碼",
   "personFieldsSection.namingRest": "。密碼和其他所有認證位於「認證」，用戶名稱、二進位值和群組成員資格不在這裡編輯。",
   "personFieldsSection.notOnTabsList": "密碼和其他所有認證（認證）、用戶名稱、憑證和相片等二進位值，以及群組成員資格（",
-  "userAttributesSection.willNotBefore": "<strong>這些不會變更的內容。</strong>密碼和其他所有認證（「認證」分頁）、地址（在「屬性」分頁有自己的表單，因為寫入它會被標記為已驗證）、用戶名稱以及為項目命名的屬性、憑證和相片等二進位值、群組成員資格（"
+  "userAttributesSection.willNotBefore": "<strong>這些不會變更的內容。</strong>密碼和其他所有認證（「認證」分頁）、地址（在「屬性」分頁有自己的表單，因為寫入它會被標記為已驗證）、用戶名稱以及為項目命名的屬性、憑證和相片等二進位值、群組成員資格（",
+  "userCredentialsSection.revokeTip": "撤銷此金鑰組：其證書列入 CRL，私密金鑰部分被刪除，本服務拒絕它簽署的內容。其他金鑰組繼續有效。此動作無法復原。",
+  "userCredentialsSection.addNote": "<strong>兩種方式都會為此項目新增一組金鑰組</strong>，已有的金鑰組繼續有效，每個設定檔最多 {max} 組有效金鑰組。簽發會在此產生新的金鑰組並由本領域的簽發 CA 簽署；私密金鑰密封在項目上，並在按鈕開啟的頁面上<strong>只顯示一次</strong>。上傳會登記當事人已持有的證書，本服務不為其保管私密金鑰。來自本領域授權單位的證書可以單獨上傳，且必須是簽發給此人的。<strong>來自其他任何授權單位的證書必須附上完整鏈結</strong> &mdash; 每個中繼證書和自我簽署的根證書 &mdash; 且每個環節都會經過驗證。攜帶私密金鑰的上傳會被拒絕。"
 }

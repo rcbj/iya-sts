@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "一個人可在使用者入口網站上自行簽發多少張仍有效的 TLS 用戶端憑證——每個瀏覽器或裝置一張。已撤銷或已過期的憑證不計入。超過此數時入口網站會拒絕（STS-PKI-0170），而不是撤銷某人可能仍在使用的舊憑證。簽發也受 pki.personSelfService 與上方兩項自助速率限制的約束。"
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "每人每個設定檔可持有的簽章金鑰組"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "一個人對每個設定檔（RFC 7523 JWT 與 RFC 7522 SAML 2.0 分別計算）最多可持有多少組仍然有效的斷言簽章金鑰組——無論是在使用者入口網站上簽發、由管理員簽發或是上傳的。已撤銷或已過期的金鑰組不計入。超過上限時，入口網站會將「產生」按鈕換成一則說明，每個入口都會拒絕（STS-PKI-0223），而不是撤銷某人可能仍在使用的較舊金鑰組。"
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "每個應用程式可持有的 TLS 用戶端憑證數"

@@ -372,6 +372,8 @@
   "person": "Person",
   "personPlaceholder": "a username in ou=users",
   "declaredIssuer": "Declared issuer",
+  "keyLabel": "Name (optional)",
+  "revokePersonKey": "Revoke",
   "theirUsername": "(their username)",
   "takeOff": "Take this key pair off",
   "noDirectory": "This process has no directory, so nobody can hold an assertion key pair and an assertion naming a person as its issuer is refused for want of a registered issuer.",

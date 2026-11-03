@@ -16,8 +16,13 @@
 // to the act that made them and are drawn in place — never on a URL, never in
 // the history. The files are `data:` links with `download` on them, the same
 // two on all three cards (`downloads()`), and they sit IN THE CERTIFICATE'S
-// ROW of that card's table: the signing key's *Certificate* row, the TLS
-// client certificate's row in the list of them (rcbj, #671, 2026-11-03).
+// ROW of that card's table — the new key pair's or TLS client
+// certificate's row in the card's list (rcbj, #671 and #1290, 2026-11-03).
+//
+// **SEVERAL SIGNING KEY PAIRS PER PROFILE, REVOKED ROW BY ROW (#1290).** The
+// two signing-key cards are drawn the TLS card's way: a list with a state
+// per row and a Revoke on each valid one, Generate ADDING a key pair under
+// an optional name, and a note in Generate's place at the cap.
 //
 // **AND IN THE PANE WHOSE BUTTON MADE IT (#671).** Until 2026-11-03 the
 // one-time block was a card of its own at the TOP of the page, while the
@@ -116,31 +121,6 @@ class SigningKeyPages {
     return fresh;
   }
 
-  /**
-   * A held signing key's *Certificate* row (#671): the two downloads, in the
-   * one answer that issued it, and the public certificate to read.
-   *
-   * @param profile - the profile, with `held`
-   * @param view - the page's view
-   * @param t - the translator
-   * @returns the row's HTML, or ''
-   */
-  static certificateRow(profile: Json, view: Json, t: Json): string {
-    const mine = profile.held || {};
-    const fresh = SigningKeyPages.freshFor(profile, view);
-    const files = fresh ? SigningKeyPages.downloads(fresh.files, t) : '';
-    if (!files && !mine.certificate) {
-      return '';
-    }
-    return '<tr' + (files ? ' class="fresh-row"' : '') + '><th>' +
-      t.html('portal.signingKey.certificateRow') + '</th><td>' + files +
-      (mine.certificate
-        ? '<details><summary>' + t.html('portal.signingKey.certificate') +
-          '</summary><pre class="pem">' + kit.esc(mine.certificate) +
-          '</pre></details>'
-        : '') + '</td></tr>';
-  }
-
   // EVERY BLOCK OF TEXT FOLDS (#1289, rcbj, 2026-11-03: "the UI is messy
   // the way it currently is"). A block whose catalog text OPENS WITH ITS OWN
   // BOLD LEAD folds under that lead, so the summary is the block's first
@@ -208,55 +188,105 @@ class SigningKeyPages {
   }
 
   /**
-   * One profile's card: what is held, and its two controls.
+   * One profile's card (#1290): every key pair held, each with its state and
+   * its own Revoke, and Generate — which ADDS one — or, at the cap, a note.
+   * The TLS client certificate card's arrangement, for rcbj's reason that
+   * the three cards should work alike.
    *
-   * @param profile - the profile, with `held`
+   * @param profile - the profile, with `held` (`keys`, `issuers`) and
+   *   `atCap`
    * @param view - the page's view
    * @param t - the translator
    * @returns the card's HTML
    */
   static profileCard(profile: Json, view: Json, t: Json): string {
-    const mine = profile.held;
+    const mine = profile.held || {};
+    const keys: Json[] = mine.keys || [];
     const saml = profile.id === 'saml';
     const rfc = profile.rfc;
+    const fresh = SigningKeyPages.freshFor(profile, view);
+    const purpose = '<input type="hidden" name="purpose" value="' +
+      kit.esc(profile.id) + '">';
     const heading = '<h2 id="' + kit.esc(profile.id) + '">' + kit.esc(rfc) +
       ': ' + (saml ? t.html('portal.signingKey.samlTitle')
                    : t.html('portal.signingKey.jwtTitle')) + '</h2>';
-    const status = !view.entry ? ''
-      : (mine
-        ? '<table><tr><th>' + (saml ? t.html('portal.signingKey.thumbprint')
-                                    : t.html('portal.signingKey.key')) +
-          '</th><td><code>' + kit.esc(mine.handle) + '</code></td></tr>' +
-          '<tr><th>' + t.html('portal.signingKey.assertAs') + '</th><td>' +
+    const active = keys.filter(function (one: Json): boolean {
+      return one.state === 'valid';
+    });
+    const rows = !view.entry ? ''
+      : (keys.length
+        ? '<table class="grid"><tr><th>' + t.html('portal.tls.name') +
+          '</th><th>' + (saml ? t.html('portal.signingKey.thumbprint')
+                              : t.html('portal.signingKey.key')) +
+          '</th><th>' + t.html('portal.signingKey.goodUntil') + '</th><th>' +
+          t.html('portal.tls.state') + '</th><th></th></tr>' +
+          keys.map(function (one: Json): string {
+            // THE KEY PAIR JUST ISSUED carries its two files in its own row
+            // (#671), beside its Revoke.
+            const files = fresh && String(one.handle) === String(fresh.handle)
+              ? SigningKeyPages.downloads(fresh.files, t) : '';
+            const revokeForm = one.state === 'valid'
+              ? SigningKeyPages.form('revoke', purpose +
+                  '<input type="hidden" name="handle" value="' +
+                  kit.esc(one.handle) + '"><select name="reason" ' +
+                  'aria-label="' + kit.esc(t.text('portal.tls.why')) + '">' +
+                  '<option value="cessationOfOperation">' +
+                  t.html('portal.tls.noLongerUse') + '</option>' +
+                  '<option value="keyCompromise">' +
+                  t.html('portal.tls.compromised') + '</option></select> ' +
+                  '<button class="danger">' + t.html('portal.tls.revoke') +
+                  '</button>')
+              : (one.revokedAt ? '<span class="note">' +
+                  t.html('portal.tls.revokedOn',
+                         { day: String(one.revokedAt).slice(0, 10) }) +
+                  '</span>' : '');
+            // The state is the register's own word, drawn as data; the
+            // certificate is public and folds.
+            return '<tr' + (files ? ' class="fresh-row"' : '') + '><td>' +
+              kit.esc(one.label) + '</td><td><code>' +
+              kit.esc(one.handle) + '</code>' +
+              (one.certificate
+                ? '<details><summary>' +
+                  t.html('portal.signingKey.certificate') +
+                  '</summary><pre class="pem">' + kit.esc(one.certificate) +
+                  '</pre></details>' : '') + '</td><td>' +
+              kit.esc(SigningKeyPages.readableDate(one.expiresAt, t)) +
+              '</td><td><span class="state-' + kit.esc(one.state) + '">' +
+              kit.esc(one.state) +
+              (one.reason && one.state === 'revoked'
+                ? ' (' + kit.esc(one.reason) + ')' : '') +
+              '</span></td><td>' + files + revokeForm + '</td></tr>';
+          }).join('') + '</table>' +
+          '<p class="sub">' + t.html('portal.signingKey.assertAs') + ' ' +
           (mine.issuers || []).map(function (one: string): string {
             return '<code>' + kit.esc(one) + '</code>';
-          }).join(' ') + '</td></tr><tr><th>' +
-          t.html('portal.signingKey.goodUntil') + '</th><td>' +
-          kit.esc(SigningKeyPages.readableDate(mine.expiresAt, t)) +
-          '</td></tr>' + SigningKeyPages.certificateRow(profile, view, t) +
-          '</table>' + SigningKeyPages.keyFresh(profile, view, t)
+          }).join(' ') + '</p>'
         : '<p class="sub">' + t.html('portal.signingKey.noneHeld',
             { rfc: rfc }) + '</p>');
-    const purpose = '<input type="hidden" name="purpose" value="' +
-      kit.esc(profile.id) + '">';
     let controls = '';
     if (view.entry && view.issuable && view.offered) {
-      controls = SigningKeyPages.form('generate', purpose + '<button' +
-          (mine ? ' class="secondary"' : '') + '>' +
-          (mine ? t.html('portal.signingKey.generateNew', { rfc: rfc })
-                : t.html('portal.signingKey.generateMine', { rfc: rfc })) +
-          '</button>') +
-        (mine ? SigningKeyPages.fold(t.html('portal.signingKey.replaces',
-                  { rfc: rfc }))
-              : '<p class="note">' + t.html('portal.signingKey.shownOnce') +
-                '</p>');
+      if (profile.atCap) {
+        controls = SigningKeyPages.fold(t.html('portal.signingKey.atCap',
+          { n: active.length, rfc: rfc }));
+      } else {
+        const id = kit.esc(profile.id) + '-label';
+        controls = SigningKeyPages.form('generate', purpose +
+            '<label for="' + id + '">' +
+            t.html('portal.signingKey.labelName') + '</label>' +
+            '<input type="text" id="' + id + '" name="label" ' +
+            'maxlength="40" placeholder="' +
+            kit.esc(t.text('portal.signingKey.labelPlaceholder')) + '">' +
+            '<button>' + t.html('portal.signingKey.generateMine',
+                                { rfc: rfc }) + '</button>') +
+          SigningKeyPages.fold(t.html('portal.signingKey.several',
+            { max: view.maxPerPerson })) +
+          '<p class="note">' + t.html('portal.signingKey.shownOnce') + '</p>';
+      }
     }
-    const removeForm = mine
-      ? SigningKeyPages.form('remove', purpose + '<button class="danger">' +
-          t.html('portal.signingKey.takeOff', { rfc: rfc }) + '</button>') +
-        SigningKeyPages.fold(t.html('portal.signingKey.notRevocation'))
-      : '';
-    return '<div class="card">' + heading + status + controls + removeForm +
+    return '<div class="card">' + heading + rows +
+      SigningKeyPages.keyFresh(profile, view, t) + controls +
+      (active.length
+        ? SigningKeyPages.fold(t.html('portal.signingKey.revokingIs')) : '') +
       '</div>';
   }
 
@@ -382,7 +412,7 @@ class SigningKeyPages {
 
   /**
    * What to do with a signing key pair just issued, drawn under its card's
-   * table (#671); the downloads are in the table's *Certificate* row.
+   * table (#671); the downloads are in the new key pair's row.
    *
    * @param profile - the card's profile
    * @param view - the page's view

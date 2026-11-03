@@ -7047,6 +7047,22 @@ const SETTINGS = [
                  'revoking an older certificate somebody may still be using. ' +
                  'Issuing one is also held to pki.personSelfService and to ' +
                  'the two self-service rate limits above.' },
+  // AND FOR A PERSON'S SIGNING KEY PAIRS (#1290, rcbj, 2026-11-03): the RFC
+  // 7523 and RFC 7522 key pairs on /portal/signing-key hold several per
+  // profile now, the TLS card's way, and this is that card's cap again —
+  // per profile, valid key pairs only (`common/person_assertions.js`).
+  { key: 'pki.personSigningKeyMax', group: 'PKI',
+    label: 'Signing key pairs one person may hold per profile',
+    env: 'STS_PKI_PERSON_SIGNING_KEY_MAX', type: 'int', dflt: 5,
+    min: 1, max: 100, runtime: true,
+    description: 'How many still-valid assertion signing key pairs one ' +
+                 'person may hold for EACH profile — RFC 7523 (JWT) and RFC ' +
+                 '7522 (SAML 2.0) are counted separately — whether issued ' +
+                 'on the user portal, issued by an administrator or ' +
+                 'uploaded. A revoked or expired key pair does not count. ' +
+                 'Past it the portal replaces its Generate button with a ' +
+                 'note and every door refuses (STS-PKI-0223) rather than ' +
+                 'revoking an older key pair somebody may still be using.' },
   // THE SAME CAP FOR AN APPLICATION (2026-09-13), which holds one to
   // authenticate at the token endpoint under RFC 8705 section 2.1 and to bind
   // its tokens under section 3. A setting of its own because the reason for
