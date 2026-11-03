@@ -276,6 +276,78 @@ which is a single mount at `/var/lib/postgresql` from 18 onwards. Throwing the
 volume away costs the directory, the realm registry and the setting overrides,
 and in product mode the sealed signing keys and everything minted under them.
 
+### A second engine: `mariadb`
+
+PostgreSQL is this service's primary store, and the one to choose for a
+deployment. **MariaDB is a second engine** that runs the same store: the same
+tables, the same change log, the same coordination between processes and
+nodes, compiled for MariaDB. This project's test suite runs against it, and
+you can too:
+
+```bash
+STS_PERSISTENCE_MODE=mariadb \
+STS_DATABASE_URL='mariadb://sts_app:PASSWORD@db-host:3306/sts_store' \
+node server.js
+```
+
+**What it needs:**
+
+- **MariaDB 11.8** (the version it is tested against) with InnoDB.
+- **The `mysql2` package in the image.** It is optional, like the attribute
+  sources' drivers: build the image with `--build-arg STS_CLOUD_SDKS=mysql2`.
+- **The schema, built once by an owner.** `mariadb/schema.sql` creates every
+  table and an application account that may read and write the rows and
+  nothing else (no `CREATE`, `ALTER` or `DROP`):
+
+  ```bash
+  mariadb -u root -p \
+    --init-command="SET @sts_app_password='...'" \
+    sts_store < mariadb/schema.sql
+  ```
+
+  `@sts_app_user`, `@sts_app_host` and `@sts_app_require_ssl` name the rest.
+  Like PostgreSQL's script it is idempotent, and running it again rotates the
+  password. Against a schema built this way the service creates nothing; with
+  an object missing, the application account is refused at start and the
+  message names the script.
+- **TLS.** A `mariadb://` string is held to the same rule as a `postgres://`
+  one: the connection is always TLS, `ssl=false` or `ssl-mode=DISABLED` stops
+  the service starting, and the server's certificate is verified by default
+  against `persistence.databaseTlsCaFile`. Run the server with
+  `--require-secure-transport=ON` and a certificate whose name is the host in
+  the connection string.
+- **A change log with no gaps.** The server's `auto_increment_increment` must
+  be 1 and `innodb_autoinc_lock_mode` 0 or 1 (1 is MariaDB's default). Other
+  values hand out numbers that every reader would wait for, so the service
+  refuses to start on them (`STS-STORE-0091`).
+
+**What is different on MariaDB:**
+
+- **No change notification.** MariaDB has nothing like PostgreSQL's
+  `LISTEN`/`NOTIFY`, so another process's change is found by polling the
+  change log, every second unless `persistence.pollInterval` says otherwise.
+- **Held whole, not windowed.** The directory window and the session window
+  read through a PostgreSQL connection of their own, so on MariaDB the
+  directory, the sessions and the stores read on demand are held in memory in
+  every process. `ldap.workerDirectory=postgres-lru` and
+  `authn.sessionWindow=on` are refused there.
+- **Refused:** cells, the bulk import, cell conversion and the risk dataset
+  installer need PostgreSQL itself, and say so if asked to run on MariaDB.
+- **Key lengths.** MariaDB's index keys are bounded, so a directory entry
+  whose normalised DN is longer than 352 characters (or a realm id longer than
+  64) is refused when it is created or renamed (`STS-LDAP-0204`). PostgreSQL
+  has no such limit.
+- **[Monitoring → Database](#checking-on-it)** reads MariaDB's own counters
+  (`information_schema`): the cache hit rate, commits and rollbacks, the
+  connections the account can see, the tables and indexes. Counts MariaDB
+  does not keep, such as an index's scans, are left out rather than shown as
+  zero.
+
+`persistence.sqlDialect=portable` is the other half of this: on PostgreSQL it
+sends the statements MariaDB runs for coordinating processes and minted
+state, with no change notification. It exists so the test suite can prove
+that code on PostgreSQL. Leave it at `native` for anything else.
+
 ## The settings
 
 | Setting | Environment variable | Default |
@@ -283,6 +355,7 @@ and in product mode the sealed signing keys and everything minted under them.
 | `persistence.mode` | `STS_PERSISTENCE_MODE` | `memory` |
 | `persistence.dataDir` | `STS_PERSISTENCE_DATA_DIR` | `./data` |
 | `persistence.databaseUrl` | `STS_DATABASE_URL` | `postgres://sts:sts@localhost:5432/sts` |
+| `persistence.sqlDialect` | `STS_PERSISTENCE_SQL_DIALECT` | `native` |
 | `persistence.databaseTlsRejectUnauthorized` | `STS_DATABASE_TLS_REJECT_UNAUTHORIZED` | `true` |
 | `persistence.databaseTlsCaFile` | `STS_DATABASE_TLS_CA_FILE` | *(empty)* |
 | `persistence.writeDelay` | `STS_PERSISTENCE_WRITE_DELAY` | `1500` |
