@@ -141,6 +141,38 @@ class SigningKeyPages {
         : '') + '</td></tr>';
   }
 
+  // EVERY BLOCK OF TEXT FOLDS (#1289, rcbj, 2026-11-03: "the UI is messy
+  // the way it currently is"). A block whose catalog text OPENS WITH ITS OWN
+  // BOLD LEAD folds under that lead, so the summary is the block's first
+  // words in every language and nothing is split by hand; a block with no
+  // lead gets a short title of its own. A block that is only its lead, or a
+  // one-sentence note, stays as it is — folding it would hide nothing but
+  // the same words. `<details>` is markup, so this needs no script.
+  /**
+   * A block of text, folded under its bold lead or a title.
+   *
+   * @param html - the block's translated HTML
+   * @param extra - more HTML that belongs inside the fold, after the text
+   * @param title - the summary for a block with no bold lead
+   * @returns the fold's HTML, or the block as a note when nothing would fold
+   */
+  static fold(html: string, extra?: string, title?: string): string {
+    const more = extra || '';
+    if (title) {
+      return '<details class="prose"><summary>' + title + '</summary>' +
+        '<div class="prose-body">' + html + more + '</div></details>';
+    }
+    const lead = /^\s*<strong>([\s\S]*?)<\/strong>\s*([\s\S]*)$/
+      .exec(String(html));
+    if (!lead || (!lead[2] && !more)) {
+      return '<p class="note">' + html + '</p>' + more;
+    }
+    return '<details class="prose"><summary>' + lead[1] + '</summary>' +
+      '<div class="prose-body">' +
+      (lead[2] ? '<p class="note">' + lead[2] + '</p>' : '') + more +
+      '</div></details>';
+  }
+
   // The one-time card's instructions, per profile. The prose is translated
   // (#539); the commands and the claim names are protocol and stay as they
   // are.
@@ -158,21 +190,21 @@ class SigningKeyPages {
     const who = String(fresh.issuer || view.username);
     const endpoint = view.tokenEndpoint;
     if (profile.id === 'saml') {
-      return '<p class="note">' + t.html('portal.signingKey.samlHow',
+      return SigningKeyPages.fold(t.html('portal.signingKey.samlHow',
           { who: who, endpoint: endpoint,
-            thumbprint: String(fresh.thumbprint || '') }) + '</p>' +
+            thumbprint: String(fresh.thumbprint || '') }),
         '<pre class="pem">' + kit.esc('curl -X POST ' + endpoint + ' \\\n' +
           '  -d grant_type=' + profile.grantType + ' \\\n' +
-          '  -d assertion=<the signed assertion, base64url>') + '</pre>' +
-        '<p class="note">' + t.html('portal.signingKey.samlOnlyYou') + '</p>';
+          '  -d assertion=<the signed assertion, base64url>') + '</pre>') +
+        SigningKeyPages.fold(t.html('portal.signingKey.samlOnlyYou'));
     }
-    return '<p class="note">' + t.html('portal.signingKey.jwtHow',
+    return SigningKeyPages.fold(t.html('portal.signingKey.jwtHow',
         { who: who, endpoint: endpoint, alg: String(fresh.jwsAlg || ''),
-          kid: String(fresh.kid || '') }) + '</p>' +
+          kid: String(fresh.kid || '') }),
       '<pre class="pem">' + kit.esc('curl -X POST ' + endpoint + ' \\\n' +
         '  -d grant_type=' + profile.grantType + ' \\\n' +
-        '  -d assertion=<the signed JWT>') + '</pre>' +
-      '<p class="note">' + t.html('portal.signingKey.jwtOnlyYou') + '</p>';
+        '  -d assertion=<the signed JWT>') + '</pre>') +
+      SigningKeyPages.fold(t.html('portal.signingKey.jwtOnlyYou'));
   }
 
   /**
@@ -214,16 +246,15 @@ class SigningKeyPages {
           (mine ? t.html('portal.signingKey.generateNew', { rfc: rfc })
                 : t.html('portal.signingKey.generateMine', { rfc: rfc })) +
           '</button>') +
-        (mine ? '<p class="note">' + t.html('portal.signingKey.replaces',
-                  { rfc: rfc }) + '</p>'
+        (mine ? SigningKeyPages.fold(t.html('portal.signingKey.replaces',
+                  { rfc: rfc }))
               : '<p class="note">' + t.html('portal.signingKey.shownOnce') +
                 '</p>');
     }
     const removeForm = mine
       ? SigningKeyPages.form('remove', purpose + '<button class="danger">' +
           t.html('portal.signingKey.takeOff', { rfc: rfc }) + '</button>') +
-        '<p class="note">' + t.html('portal.signingKey.notRevocation') +
-        '</p>'
+        SigningKeyPages.fold(t.html('portal.signingKey.notRevocation'))
       : '';
     return '<div class="card">' + heading + status + controls + removeForm +
       '</div>';
@@ -246,15 +277,15 @@ class SigningKeyPages {
     });
     // The sign-in address is a link, so its sentence is two messages around
     // it (#539); the register's note is its own words.
-    const what = '<p class="sub">' + t.html('portal.tls.what',
-        { name: view.username }) + '</p><p class="note">' +
-      t.html('portal.tls.whereWorks') + ' <a href="' + kit.esc(tls.signIn) +
-      '">' + kit.esc(tls.signIn) + '</a>' +
-      t.html('portal.tls.whereWorksAfter') + '</p>' +
+    const what = SigningKeyPages.fold('<p class="sub">' +
+        t.html('portal.tls.what', { name: view.username }) +
+        '</p><p class="note">' + t.html('portal.tls.whereWorks') +
+        ' <a href="' + kit.esc(tls.signIn) + '">' + kit.esc(tls.signIn) +
+        '</a>' + t.html('portal.tls.whereWorksAfter') + '</p>', '',
+        t.html('portal.tls.aboutTitle')) +
       (tls.trusted ? ''
-        : '<p class="note">' + t.html('portal.tls.notAccepted') + ' ' +
-          kit.esc(tls.note) + ' ' + t.html('portal.tls.adminCanChange') +
-          '</p>');
+        : SigningKeyPages.fold(t.html('portal.tls.notAccepted') + ' ' +
+          kit.esc(tls.note) + ' ' + t.html('portal.tls.adminCanChange')));
     const rows = held.length
       ? '<table class="grid"><tr><th>' + t.html('portal.tls.name') +
         '</th><th>' + t.html('portal.tls.serial') + '</th><th>' +
@@ -297,8 +328,8 @@ class SigningKeyPages {
     let controls = '';
     if (view.issuable && view.offered) {
       if (active.length >= tls.maxPerPerson) {
-        controls = '<p class="note">' + t.html('portal.tls.atCap',
-          { n: active.length }) + '</p>';
+        controls = SigningKeyPages.fold(t.html('portal.tls.atCap',
+          { n: active.length }));
       } else {
         controls = SigningKeyPages.form('generate-tls-client',
           '<label for="tls-label">' + t.html('portal.tls.labelName') +
@@ -322,8 +353,9 @@ class SigningKeyPages {
       t.html('portal.tls.heading') + '</h2>' + what + rows +
       (fresh ? SigningKeyPages.tlsClientFresh(fresh, view, t) : '') +
       controls +
-      (active.length ? '<p class="note">' + t.html('portal.tls.revokingIs') +
-                       '</p>' : '') + '</div>';
+      (active.length
+        ? SigningKeyPages.fold(t.html('portal.tls.revokingIs')) : '') +
+      '</div>';
   }
 
   /**
@@ -339,12 +371,13 @@ class SigningKeyPages {
     const files = fresh.files || {};
     const signIn = (view.tls || {}).signIn || '';
     return '<div class="fresh" id="tls-client-fresh"><h3>' +
-      t.html('portal.tlsFresh.heading') + '</h3><p class="sub">' +
-      t.html('portal.tlsFresh.onlyTime') + '</p><p class="note">' +
-      t.html('portal.tlsFresh.files') + '</p><h4>' +
-      t.html('portal.tlsFresh.curlTitle') + '</h4><pre class="pem">' +
-      kit.esc('curl --cert ' + files.chain.name + ' --key ' +
-              files.key.name + ' ' + signIn) + '</pre></div>';
+      t.html('portal.tlsFresh.heading') + '</h3>' +
+      SigningKeyPages.fold(t.html('portal.tlsFresh.onlyTime'),
+        '<p class="note">' + t.html('portal.tlsFresh.files') + '</p>') +
+      SigningKeyPages.fold('<pre class="pem">' +
+        kit.esc('curl --cert ' + files.chain.name + ' --key ' +
+                files.key.name + ' ' + signIn) + '</pre>', '',
+        t.html('portal.tlsFresh.curlTitle')) + '</div>';
   }
 
   /**
@@ -363,8 +396,8 @@ class SigningKeyPages {
     }
     return '<div class="fresh" id="' + kit.esc(profile.id) + '-fresh"><h3>' +
       t.html('portal.signingKey.saveHeading', { rfc: profile.rfc }) +
-      '</h3><p class="sub">' + t.html('portal.signingKey.onlyTime') +
-      '</p>' + SigningKeyPages.freshInstructions(profile, fresh, view, t) +
+      '</h3>' + SigningKeyPages.fold(t.html('portal.signingKey.onlyTime')) +
+      SigningKeyPages.freshInstructions(profile, fresh, view, t) +
       '</div>';
   }
 
@@ -379,23 +412,23 @@ class SigningKeyPages {
     const t = ctx.t;
     // WHAT IT IS FOR, drawn whether or not one is held: this is the page
     // somebody arrives at not knowing what a signing key would be for.
-    const what = '<p class="sub">' + t.html('portal.signingKey.what') +
-      '</p><p class="note">' + t.html('portal.signingKey.twoKinds') +
-      '</p><p class="note">' + t.html('portal.signingKey.thirdCard') +
-      ' <a href="#tls-client">' + t.html('portal.tls.heading') + '</a>' +
-      t.html('portal.signingKey.thirdCardAfter') + '</p>';
+    const what = SigningKeyPages.fold('<p class="sub">' +
+      t.html('portal.signingKey.what') + '</p><p class="note">' +
+      t.html('portal.signingKey.twoKinds') + '</p><p class="note">' +
+      t.html('portal.signingKey.thirdCard') + ' <a href="#tls-client">' +
+      t.html('portal.tls.heading') + '</a>' +
+      t.html('portal.signingKey.thirdCardAfter') + '</p>', '',
+      t.html('portal.signingKey.aboutTitle'));
     // WHAT APPLIES TO BOTH, said once rather than once per profile.
     let shared = '';
     if (!view.entry) {
       shared = '<p class="sub">' + t.html('portal.signingKey.noEntry') +
         '</p>';
     } else if (!view.issuable) {
-      shared = '<p class="note">' + t.html('portal.signingKey.noAuthority') +
-        '</p>';
+      shared = SigningKeyPages.fold(t.html('portal.signingKey.noAuthority'));
     } else if (!view.offered) {
-      shared = '<p class="note">' + t.html('portal.signingKey.notOffered') +
-        (view.holdsAny ? ' ' + t.html('portal.signingKey.unaffected') : '') +
-        '</p>';
+      shared = SigningKeyPages.fold(t.html('portal.signingKey.notOffered') +
+        (view.holdsAny ? ' ' + t.html('portal.signingKey.unaffected') : ''));
     }
     return '<div class="card">' + what + shared + '</div>' +
       (view.profiles || []).map(function (profile: Json): string {

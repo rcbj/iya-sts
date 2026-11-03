@@ -30,6 +30,7 @@
 // ---------------------------------------------------------------------------
 
 import WebNavSections = require('../common/web_nav_sections');
+import WebLocale = require('../common/web_locale');
 
 type Json = any;
 
@@ -64,6 +65,8 @@ const STYLE =
   '28px;margin-bottom:18px;box-shadow:0 2px 10px ' +
   'rgba(0,0,0,.04)}h1{font-size:1.4em;margin:0 0 ' +
   '4px}h2{font-size:1.05em;margin:0 0 12px}' +
+  // The language chooser, a collapsed row in the header (#1289).
+  WebLocale.ROW_CSS +
   // The heading and its one control on the same line. `align-items:start` and
   // not `center`: the button is a small box beside a large heading and centring
   // it drags it down past the heading's baseline. The form's margin is reset
@@ -171,6 +174,12 @@ const STYLE =
   'details summary{cursor:pointer;color:#2c5cc5;font-size:.85em;' +
   'padding:4px 0}' +
   'details table{margin-top:4px}' +
+  // A FOLDED BLOCK OF TEXT (#1289): its bold lead (or title) as the summary,
+  // read as the start of the text rather than as a link, and the rest under
+  // it, indented to the disclosure mark.
+  'details.prose{margin:8px 0 0}details.prose>summary{color:#333;' +
+  'font-size:.88em;font-weight:600}details.prose>summary:hover{color:#2c5cc5}' +
+  '.prose-body{margin:2px 0 0 1.1em}.prose-body p:first-child{margin-top:0}' +
   // THE PASSKEY LIST (#470): one row per passkey, an icon, a body that
   // wraps, and the actions at the end; the two calls to action side by side.
   'svg.ico{vertical-align:-5px;margin-right:6px;color:#2c5cc5}' +

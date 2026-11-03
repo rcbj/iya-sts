@@ -40,6 +40,7 @@ import kit = require('./web_portal_kit');
 import DocLinks = require('../common/web_doc_links');
 import WebAccounts = require('../common/web_accounts');
 import WebNavSections = require('../common/web_nav_sections');
+import WebLocale = require('../common/web_locale');
 
 type Json = any;
 
@@ -252,8 +253,12 @@ class PortalShell {
     const same = offered.filter(function (one: Json): boolean {
       return String(one.tag).toLowerCase().split('-')[0] === language;
     })[0];
-    const selected = (exact || same || offered[0]).tag;
-    return '<form class="language-chooser" method="post" ' +
+    const chosen = exact || same || offered[0];
+    const selected = chosen.tag;
+    // THE SAME COLLAPSED ROW AS EVERY OTHER PAGE'S (#1289): `WebLocale.row()`.
+    return WebLocale.row(t.html('chooser.label'),
+      { tag: String(chosen.tag), name: String(chosen.name) },
+      '<form class="language-chooser" method="post" ' +
       'action="/authn/language">' +
       '<input type="hidden" name="return" value="' + kit.esc(returnTo) +
       '"><label for="sts-language">' + t.html('chooser.label') +
@@ -263,7 +268,7 @@ class PortalShell {
           kit.esc(one.tag) + '"' + (one.tag === selected ? ' selected' : '') +
           '>' + kit.esc(one.name) + '</option>';
       }).join('') + '</select> <button type="submit">' +
-      t.html('chooser.change') + '</button></form>';
+      t.html('chooser.change') + '</button></form>');
   }
 
   // WHICH BUILD THIS IS, on every page including the ones nobody is signed

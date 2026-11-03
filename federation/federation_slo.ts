@@ -232,7 +232,10 @@ const STYLE = 'body{font-family:system-ui,Segoe UI,Helvetica,Arial,' +
   'cursor:pointer}table{border-collapse:collapse;width:100%;margin:.6rem 0}' +
   'th,td{border:1px solid #ddd;padding:.35rem .5rem;text-align:left;' +
   'font-size:.9rem;vertical-align:top}.sub{color:#555;font-size:.9rem}' +
-  '.cannot{color:#a00}';
+  '.cannot{color:#a00}' +
+  // The language chooser, a collapsed row (#1289).
+  'details.language-row{float:right;margin:0 0 .5rem 1rem}' +
+  PageLocale.ROW_CSS;
 
 /**
  * A federation partner's sign-out, in both directions: the endpoints a

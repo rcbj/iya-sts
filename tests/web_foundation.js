@@ -259,7 +259,10 @@ function childMain() {
          'chooser, the browser, a populated preferredLanguage last — the ' +
          'same from a request and from a browser\'s inputs',
          JSON.stringify(order));
-    // THE CHOOSER AS `PageLocale.chooser()` DREW IT BEFORE #570.
+    // THE CHOOSER AS `PageLocale.chooser()` DREW IT BEFORE #570, and since
+    // #1289 (2026-11-03) inside the collapsed row: a `<details>` whose
+    // summary is *Language* and the selected locale's own name. Written out
+    // here rather than through `WebLocale.row()`, so the two must agree.
     const chooserBefore = function (t, returnTo) {
       const esc = function (value) {
         return String(value == null ? '' : value)
@@ -275,20 +278,25 @@ function childMain() {
       const sameCatalog = offered.filter(function (one) {
         return i18n.negotiate([one.tag]).catalog === t.negotiated.catalog;
       })[0];
-      const selected = (exact || sameCatalog || offered[0] || { tag: '' }).tag;
+      const chosen = exact || sameCatalog || offered[0];
+      const selected = (chosen || { tag: '' }).tag;
       const drawn = offered.map(function (one) {
         return '<option value="' + esc(one.tag) + '" lang="' +
           esc(one.tag) + '"' +
           (one.tag === selected ? ' selected' : '') + '>' +
           esc(one.name) + '</option>';
       }).join('');
-      return '<form class="language-chooser" method="post" action="' +
+      return '<details class="language-row"><summary>' +
+        '<span class="lr-label">' + t.html('chooser.label') + '</span>' +
+        (chosen ? ' <span class="lr-current" lang="' + esc(chosen.tag) +
+                  '">' + esc(chosen.name) + '</span>' : '') + '</summary>' +
+        '<form class="language-chooser" method="post" action="' +
         esc('/authn/language') + '">' +
         '<input type="hidden" name="return" value="' + esc(here) +
         '"><label for="sts-language">' + t.html('chooser.label') +
         '</label> <select id="sts-language" name="lang">' + drawn +
         '</select> <button type="submit">' + t.html('chooser.change') +
-        '</button></form>';
+        '</button></form></details>';
     };
     const chooserDiffers = [];
     ['en', 'fr', 'fr-CA', 'es-AR', 'zh-TW', 'de'].forEach(function (tag) {
@@ -526,7 +534,7 @@ function childMain() {
     const body1 = one.env.document.body.innerHTML;
     note(body1.indexOf('<p>' + fr.html('chooser.change') +
                        ' &lt;b&gt;x&lt;/b&gt;</p>') >= 0 &&
-         body1.indexOf('<form class="language-chooser"') === 0 &&
+         body1.indexOf('<details class="language-row">') === 0 &&
          one.attrs.lang === 'fr' && one.env.document.title ===
            'Demo — IYA STS',
          'E1. a surface draws its page from the operation\'s JSON in the ' +
