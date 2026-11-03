@@ -3260,8 +3260,8 @@
     "text": "Native SSO 设备密钥也会被吊销（#130）。确实生效的吊销：此后自省会报告 inactive。客户端需要认证（在开发模式下仅当其出示凭据时），只能吊销自己的令牌，刷新令牌被吊销时会连同其授权一起吊销。"
   },
   "stsmetadata.endpoints./oauth2/register.what": {
-    "en": "80ba1f611099c06a",
-    "text": "注册一个客户端，并返回其凭据以及一个注册访问令牌。注册就是 ou=applications 下的应用条目——没有第二个存储——因此 /admin/applications 和 ldapsearch 看到的是同一个客户端。在 RFC 9700 模式下，它会拒绝其他端点在使用时会拒绝的元数据：password 授权（section 2.4）、隐式授权以及任何指定 token 的响应类型（2.1.2），以及环回地址以外的 http 重定向 URI（2.6），每项都以 invalid_client_metadata 及相应章节拒绝。记录一个令牌端点总会拒绝的权限，就是从另一个方向违背了发现文档的承诺。产品模式会将其关闭（403），除非开启了 oauth2.openRegistration——或者注册携带本领域信任的软件声明且开启了 oauth2.softwareStatementOpensRegistration，此时 registration_endpoint 仍会被公布；两者都不满足时，它会从两个发现文档中消失，应用需在 /admin 或 /admin-api 上创建。软件声明（RFC 7591 section 2.3）在对元数据进行任何其他检查之前验证：由本领域颁发（类型为 software-statement+jwt），或由在 oauthSoftwareStatementIssuer 中声明该颁发者的应用颁发；受信任声明的声明内容优先，并原样回显；否则返回 invalid_software_statement 或 unapproved_software_statement。client_id 前缀、随机长度和 client_secret_expires_at 都是设置（oauth2.registeredClientIdPrefix 及相关设置）。"
+    "en": "2a1a65e6a8ada54e",
+    "text": "注册一个客户端，并返回其凭据以及一个注册访问令牌。注册就是 ou=applications 下的应用条目——没有第二个存储——因此 /admin/applications 和 ldapsearch 看到的是同一个客户端。在 RFC 9700 模式下，它会拒绝其他端点在使用时会拒绝的元数据：password 授权（section 2.4）、任何指定 token 的响应类型，以及隐式授权（除非 id_token 或 code id_token 需要它）（2.1.2，管理员可通过 oauth2.allowImplicitTokenResponses 按领域豁免），以及环回地址以外的 http 重定向 URI（2.6），每项都以 invalid_client_metadata 及相应章节拒绝。记录一个令牌端点总会拒绝的权限，就是从另一个方向违背了发现文档的承诺。产品模式会将其关闭（403），除非开启了 oauth2.openRegistration——或者注册携带本领域信任的软件声明且开启了 oauth2.softwareStatementOpensRegistration，此时 registration_endpoint 仍会被公布；两者都不满足时，它会从两个发现文档中消失，应用需在 /admin 或 /admin-api 上创建。软件声明（RFC 7591 section 2.3）在对元数据进行任何其他检查之前验证：由本领域颁发（类型为 software-statement+jwt），或由在 oauthSoftwareStatementIssuer 中声明该颁发者的应用颁发；受信任声明的声明内容优先，并原样回显；否则返回 invalid_software_statement 或 unapproved_software_statement。client_id 前缀、随机长度和 client_secret_expires_at 都是设置（oauth2.registeredClientIdPrefix 及相关设置）。"
   },
   "stsmetadata.endpoints./oauth2/register/:client_id.what": {
     "en": "53b9b1f559379ceb",

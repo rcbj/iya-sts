@@ -9440,8 +9440,10 @@ const ENDPOINTS: EndpointEntry[] = [
           'entry under ou=applications — there is no second store — so ' +
           '/admin/applications and an ldapsearch see the same client. In RFC ' +
           '9700 mode it REFUSES metadata the other endpoints would refuse in ' +
-          'use: the password grant (section 2.4), the implicit grant and any ' +
-          'response type naming token (2.1.2), and an http redirect URI off ' +
+          'use: the password grant (section 2.4), any response type naming ' +
+          'token and the implicit grant unless id_token or code id_token ' +
+          'needs it (2.1.2, which an administrator may waive per realm with ' +
+          'oauth2.allowImplicitTokenResponses), and an http redirect URI off ' +
           'the loopback (2.6), each with invalid_client_metadata and the ' +
           'section. Recording a permission the token endpoint will always ' +
           'refuse is the discovery document\'s promise broken in the other ' +

@@ -3260,8 +3260,8 @@
     "text": "Native SSO 裝置密鑰也會被撤銷（#130）。會生效的撤銷：之後內省會回報 inactive。用戶端需驗證（在開發模式下僅在其出示認證時），只能撤銷自己的權杖，而重新整理權杖會連同其授權一併撤銷。"
   },
   "stsmetadata.endpoints./oauth2/register.what": {
-    "en": "80ba1f611099c06a",
-    "text": "註冊一個用戶端，並傳回其認證資訊及一個註冊存取權杖。註冊「就是」ou=applications 下的應用程式項目——沒有第二個儲存區——因此 /admin/applications 與 ldapsearch 看到的是同一個用戶端。在 RFC 9700 模式下，它會「拒絕」其他端點在使用時會拒絕的中繼資料：密碼授權類型（section 2.4）、隱含授權類型及任何指名 token 的回應類型（2.1.2），以及非迴路位址的 http 重新導向 URI（2.6），各以 invalid_client_metadata 及章節回應。記錄一個權杖端點永遠會拒絕的權限，就是從另一個方向違背探索文件的承諾。「產品模式會將其關閉」（403），除非 oauth2.openRegistration 開啟——或註冊帶有此領域信任的軟體聲明且 oauth2.softwareStatementOpensRegistration 開啟，此時 registration_endpoint 會持續公告；兩者皆非時，它會從兩份探索文件中移除，應用程式則在 /admin 或 /admin-api 上建立。「軟體聲明」（RFC 7591 section 2.3）會在對中繼資料進行任何其他檢查之前驗證：由此領域簽發（型別為 software-statement+jwt），或由在 oauthSoftwareStatementIssuer 中宣告該簽發者的應用程式簽發；受信任者的宣告優先，並原封不動回傳；否則為 invalid_software_statement 或 unapproved_software_statement。client_id 前置字串、隨機大小與 client_secret_expires_at 都是設定（oauth2.registeredClientIdPrefix 及其相鄰設定）。"
+    "en": "2a1a65e6a8ada54e",
+    "text": "註冊一個用戶端，並傳回其認證資訊及一個註冊存取權杖。註冊「就是」ou=applications 下的應用程式項目——沒有第二個儲存區——因此 /admin/applications 與 ldapsearch 看到的是同一個用戶端。在 RFC 9700 模式下，它會「拒絕」其他端點在使用時會拒絕的中繼資料：密碼授權類型（section 2.4）、任何指名 token 的回應類型，以及隱含授權類型（除非 id_token 或 code id_token 需要它）（2.1.2，管理員可透過 oauth2.allowImplicitTokenResponses 依領域豁免），以及非迴路位址的 http 重新導向 URI（2.6），各以 invalid_client_metadata 及章節回應。記錄一個權杖端點永遠會拒絕的權限，就是從另一個方向違背探索文件的承諾。「產品模式會將其關閉」（403），除非 oauth2.openRegistration 開啟——或註冊帶有此領域信任的軟體聲明且 oauth2.softwareStatementOpensRegistration 開啟，此時 registration_endpoint 會持續公告；兩者皆非時，它會從兩份探索文件中移除，應用程式則在 /admin 或 /admin-api 上建立。「軟體聲明」（RFC 7591 section 2.3）會在對中繼資料進行任何其他檢查之前驗證：由此領域簽發（型別為 software-statement+jwt），或由在 oauthSoftwareStatementIssuer 中宣告該簽發者的應用程式簽發；受信任者的宣告優先，並原封不動回傳；否則為 invalid_software_statement 或 unapproved_software_statement。client_id 前置字串、隨機大小與 client_secret_expires_at 都是設定（oauth2.registeredClientIdPrefix 及其相鄰設定）。"
   },
   "stsmetadata.endpoints./oauth2/register/:client_id.what": {
     "en": "53b9b1f559379ceb",
