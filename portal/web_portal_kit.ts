@@ -277,6 +277,11 @@ const STYLE =
   'a.dl{display:inline-block;background:#2c5cc5;color:#fff;' +
   'text-decoration:none;border-radius:6px;padding:9px 14px;' +
   'margin:6px 8px 0 0;font-size:.9em}a.dl.secondary{background:#5a5a68}' +
+  // WHAT A GENERATE JUST ANSWERED, ONCE (#671): drawn at the head of the card
+  // whose button made it, and set apart from the card around it so that the
+  // one thing on the page that will not come back is the thing that shows.
+  '.fresh{border:2px solid #2c5cc5;background:#f3f6fd;border-radius:8px;' +
+  'padding:4px 14px 12px;margin:8px 0 14px}.fresh h3{margin-top:10px}' +
   // /portal/wallet's offer (#589): the Transaction Code a person reads off
   // the screen into a wallet, large and spaced, and the offer URI, which
   // breaks anywhere rather than running off the card.

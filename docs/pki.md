@@ -610,7 +610,8 @@ signed-in person, from the realm's own **TLS Client Issuing CA**:
   subjectAltName and, where the directory holds one, your email address;
 * you choose the key (RSA 2048 by default, RSA 3072, ECDSA P-256 or P-384) and a
   **file password**, typed twice;
-* the page that comes back offers three downloads, **once**: a `.p12` (the key,
+* the card itself then offers three downloads, **once**, at its head and
+  scrolled into view, where you pressed the button: a `.p12` (the key,
   the certificate and the two CAs above it, AES-256 protected by that password), an
   encrypted `-key.pem` and a `-chain.pem`, with install steps for Windows, macOS,
   Firefox, Chrome on Linux and curl. Nothing keeps the private key.

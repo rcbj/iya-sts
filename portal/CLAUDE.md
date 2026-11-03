@@ -1290,6 +1290,14 @@ verifies exactly like a SAML one — the certificate's subjectAltName is the onl
 place the difference shows; five mutants, all caught, that one only after the
 check was added.
 
+**THE ONE-TIME BLOCK IS DRAWN IN THE CARD WHOSE BUTTON MADE IT (#671,
+2026-11-03)**, at that card's head, and the runtime scrolls it to the top of
+the window (`showFresh()`). It was a card of its own at the top of the page,
+three cards above the TLS client certificate's Generate: rcbj pressed Generate,
+saw the bottom of the page drawn again with nothing new on it, and reported that
+nothing was downloaded. A new Generate on this page draws its answer the same
+way, as a `.fresh` block inside its own card.
+
 **IT IS THE SAME ACT AND NOT A SECOND IMPLEMENTATION**, which is the whole
 reason this page requires `common/pki.js` and `common/person_assertions.js`
 rather than calling `/admin-api`. One write path onto a person's entry, whoever
