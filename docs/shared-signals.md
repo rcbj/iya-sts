@@ -519,7 +519,10 @@ nobody in here — a device manager, an endpoint agent, an HR system — is an
    (`fedSignalsDelivery` `poll`) is polled every `ssf.foreignPollS` seconds.
    A push stream is given `/federation/signals/{id}` and an authorization
    header only the two services know. `fedSignalsEvents` is what the stream
-   asks for.
+   asks for. The stream can then be read, updated, replaced (a PUT of every
+   setting this realm supplies), paused or enabled, its status read,
+   verified and deleted from the same page; the token asks for
+   `ssf.read ssf.manage` unless `fedSignalsScope` says otherwise.
 4. **Link people.** For a partner people sign in through, the links its
    sign-ins wrote are what its `iss_sub` subjects match: `iss` is the
    partner (or its SSF issuer) and `sub` the identifier it signs them in
@@ -532,7 +535,8 @@ nobody in here — a device manager, an endpoint agent, an HR system — is an
 A Security Event Token is acted on only if it verified: its signature against
 the keys the partner's SSF configuration names, `typ`, `iss`, the stream's
 `aud`, and a `jti` never seen before. Product mode refuses an unverified one.
-What it leads to is the `signal-response` XACML policy's decision. By
+What it leads to is the `signal-response` XACML policy's decision; a
+`session-revoked` is a revocation whatever its `initiating_entity`. By
 default:
 
 | Partner | Events | Reaction here |
