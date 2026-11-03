@@ -5029,6 +5029,35 @@ const SETTINGS = [
                  'such. WARNING: anybody who holds such a token — every ' +
                  'relying party it was issued to — can then exchange it; ' +
                  'turn it on only where that is the design.' },
+  // KERBEROS TOKENS IN THE TOKEN EXCHANGE (#658), named by the Kerberos
+  // Token Profile 1.1's URIs (rcbj's decision D1). Input is verified by the
+  // acceptor in both modes and is on; output is a new kind of token and is
+  // off (D6).
+  { key: 'oauth2.tokenExchangeKerberosInput', group: 'OAuth 2.0 / OIDC',
+    label: 'Accept a Kerberos token in a token exchange',
+    env: 'STS_OAUTH2_TOKEN_EXCHANGE_KERBEROS_INPUT', type: 'bool',
+    dflt: true, runtime: true,
+    description: 'Whether an RFC 8693 subject_token or actor_token may be a ' +
+                 'Kerberos token (an AP-REQ for this authorization server\'s ' +
+                 'own SPN, base64url, typed by one of the Kerberos Token ' +
+                 'Profile 1.1\'s six URIs). It is checked by the acceptor ' +
+                 'in both modes. A delegated subject token names the ' +
+                 'exchanging client as the last service in its PAC\'s ' +
+                 'S4U_DELEGATION_INFO, and the chain becomes the issued ' +
+                 'token\'s nested act claim. Off, such a token type is ' +
+                 'refused.' },
+  { key: 'oauth2.tokenExchangeKerberosOutput', group: 'OAuth 2.0 / OIDC',
+    label: 'Issue a Kerberos token from a token exchange',
+    env: 'STS_OAUTH2_TOKEN_EXCHANGE_KERBEROS_OUTPUT', type: 'bool',
+    dflt: false, runtime: true,
+    description: 'Whether a requested_token_type naming one of the ' +
+                 'Kerberos Token Profile 1.1\'s six URIs is answered with a ' +
+                 'Kerberos token: an AP-REQ for the one audience or ' +
+                 'resource, which must be an application that is a Kerberos ' +
+                 'service, in access_token with issued_token_type that URI ' +
+                 'and token_type N_A. A delegation\'s act chain becomes the ' +
+                 'ticket\'s S4U_DELEGATION_INFO. Off, such a request is ' +
+                 'refused.' },
   { key: 'oauth2.tokenExchangeRefreshToken', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token from a token exchange',
     env: 'STS_OAUTH2_TOKEN_EXCHANGE_REFRESH_TOKEN', type: 'enum',
@@ -9991,6 +10020,38 @@ const SETTINGS = [
                  'certificate was used: TLSClient in a SAML 2.0 assertion, ' +
                  'urn:ietf:rfc:2246 in a SAML 1.1 one, amr swk in a JWT. ' +
                  'Off, the certificate is ignored here.' },
+
+  // KERBEROS TOKENS (#658): the Web Services Security Kerberos Token Profile
+  // 1.1's AP-REQ in a BinarySecurityToken, as the requester's credential and
+  // inside OnBehalfOf / ActAs (accepted by the acceptor, so verified in both
+  // modes: rcbj's decision D6 has input on), and as a wst:TokenType (issued
+  // by the KDC: off, a new kind of token a realm turns on).
+  { key: 'wstrust.acceptKerberos', group: 'WS-Trust',
+    label: 'Accept a Kerberos token',
+    env: 'STS_WSTRUST_ACCEPT_KERBEROS', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a request to /sts may present a Kerberos token ' +
+                 '(an AP-REQ for this service\'s own SPN, in a ' +
+                 'BinarySecurityToken of one of the Kerberos Token Profile ' +
+                 '1.1\'s six ValueTypes) as the requester\'s credential or ' +
+                 'inside wst:OnBehalfOf or wst14:ActAs. The ticket is ' +
+                 'checked by the acceptor in both modes. Inside either ' +
+                 'element it must be a delegated ticket: one the requester ' +
+                 'obtained by S4U2Proxy (its PAC names the requester last), ' +
+                 'or one bought with a TGT forwarded to a requester trusted ' +
+                 'for delegation. Off, such a token is refused.' },
+  { key: 'wstrust.issueKerberos', group: 'WS-Trust',
+    label: 'Issue Kerberos tokens',
+    env: 'STS_WSTRUST_ISSUE_KERBEROS', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Whether a wst:TokenType naming one of the Kerberos Token ' +
+                 'Profile 1.1\'s six ValueTypes is answered with a Kerberos ' +
+                 'token: an AP-REQ carrying a service ticket this realm\'s ' +
+                 'KDC issued for the subject to the Kerberos service the ' +
+                 'AppliesTo names, with the Authenticator\'s subkey returned ' +
+                 'as the proof token over TLS. An ActAs ticket names every ' +
+                 'party that acted in its PAC\'s S4U_DELEGATION_INFO. Off, ' +
+                 'such a request is refused.' },
 
   // WHO MAY START A SIGN-IN (#426, #710), the WS-Federation pair. A
   // wsignin1.0 at /wsfed is the relying party's (WS-Federation 1.2 section

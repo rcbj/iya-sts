@@ -56,9 +56,9 @@ kind of act, with `curl` wherever the protocol is HTTP.
 
 | Protocol | Mechanism | Semantics | What the request presents | What is issued | Where the actor shows in the result |
 |---|---|---|---|---|---|
-| OAuth 2.0 (RFC 8693) | token exchange, `exchange_semantics=delegation` or an actor token | delegation | `subject_token` (+ optional `actor_token`) of type `access_token`, `refresh_token`, `id_token`, `jwt`, `saml2` or `saml1` | an access token (`issued_token_type` `…:access_token`); a refresh token on request; an ID Token when `openid` survives | nested `act` claim |
+| OAuth 2.0 (RFC 8693) | token exchange, `exchange_semantics=delegation` or an actor token | delegation | `subject_token` (+ optional `actor_token`) of type `access_token`, `refresh_token`, `id_token`, `jwt`, `saml2`, `saml1` or a Kerberos token | an access token (`issued_token_type` `…:access_token`); a refresh token on request; an ID Token when `openid` survives; a Kerberos token when `requested_token_type` asks for one | nested `act` claim; `S4U_DELEGATION_INFO` in a Kerberos token |
 | OAuth 2.0 (RFC 8693) | token exchange, `exchange_semantics=impersonation` | impersonation | the same | the same | nowhere (a prior `act` is kept) |
-| WS-Trust 1.4 | `<wst14:ActAs>` | delegation | a SAML 2.0 or SAML 1.1 assertion or a JWT this STS issued, plus the requester's own credential | SAML 2.0, SAML 1.1 or JWT (`wst:TokenType`) | SAML 2.0: `del:Delegate` in a Delegation Restriction condition; JWT: nested `act`; SAML 1.1: a `delegates` attribute |
+| WS-Trust 1.4 | `<wst14:ActAs>` | delegation | a SAML 2.0 or SAML 1.1 assertion or a JWT this STS issued, or a Kerberos ticket obtained by S4U2Proxy or with a forwarded TGT, plus the requester's own credential | SAML 2.0, SAML 1.1, JWT or a Kerberos token (`wst:TokenType`) | SAML 2.0: `del:Delegate` in a Delegation Restriction condition; JWT: nested `act`; SAML 1.1: a `delegates` attribute; Kerberos: `S4U_DELEGATION_INFO` |
 | WS-Trust 1.3 | `<wst:OnBehalfOf>` | impersonation | the same | the same | nowhere (a prior chain is kept) |
 | Kerberos (MS-SFU) | S4U2Self (`PA-FOR-USER`, `PA-S4U-X509-USER`) | impersonation | the service's own TGT | a service ticket to the service itself, forwardable only when allowed | nowhere |
 | Kerberos (MS-SFU) | S4U2Proxy, classic or resource-based | delegation | the service's TGT and the user's forwardable evidence ticket | a service ticket to the back end | `S4U_DELEGATION_INFO` in the PAC |
@@ -81,7 +81,7 @@ Every act names four parties. Each protocol finds them in its own message:
 |---|---|---|---|---|---|
 | **Subject** | who the new token is about | the `subject_token`'s subject | the subject of the token inside `OnBehalfOf` / `ActAs` | the user named in S4U2Self (`PA-FOR-USER` or `PA-S4U-X509-USER`), or the client of S4U2Proxy's evidence ticket | the person the user assertion names, or the original token's person |
 | **Actor** | who is asking | the `actor_token`'s subject; without one, the authenticated client | the requester (whoever authenticated the RST) | S4U2Self: the service asking for a ticket to itself; S4U2Proxy: the front end presenting the evidence ticket | the client instance, or the deriving resource server |
-| **S** (source) | the application the subject's token was issued *for* | the `subject_token`'s `aud`, else its `client_id` / `azp` | the delegated assertion's `Audience` | the service the evidence ticket was issued for | none for a user assertion; the deriving resource server for a derivation |
+| **S** (source) | the application the subject's token was issued *for* | the `subject_token`'s `aud`, else its `client_id` / `azp`; for a Kerberos ticket, the exchanging client | the delegated assertion's `Audience`; for a Kerberos ticket, the requester | the service the evidence ticket was issued for | none for a user assertion; the deriving resource server for a derivation |
 | **R** (target) | the application the new token is *for* | the one `audience` or `resource` | the `AppliesTo` | the service named in the TGS-REQ | each resource server the requested rights resolve to |
 
 **Parties are entries in the directory.**
@@ -395,7 +395,7 @@ The grant type is `urn:ietf:params:oauth:grant-type:token-exchange`, at
 | `actor_token_type` | exactly when `actor_token` is sent | One of the types below, or Native SSO's device secret. |
 | `audience` / `resource` | for anything but a self exchange | The target. Both may be sent, but together they must name **one** target, registered on an application (`oauthAudience`, or its client ID). |
 | `scope` | no | May narrow the subject token's scope, never widen it. Omitted, the subject token's scope is carried forward. |
-| `requested_token_type` | no | `urn:ietf:params:oauth:token-type:refresh_token` asks for a refresh token beside the access token. Any other value is read as a request and answered with an access token, never refused. |
+| `requested_token_type` | no | `urn:ietf:params:oauth:token-type:refresh_token` asks for a refresh token beside the access token. A Kerberos token type asks for a Kerberos token for the one target, with `oauth2.tokenExchangeKerberosOutput` on (refused while it is off). Any other value is read as a request and answered with an access token, never refused. |
 | `exchange_semantics` | no | **This service's extension**: `delegation` or `impersonation`, sent at most once. Any other value is `invalid_request` (`STS-OAUTH-0795`). |
 | `authorization_details` | no | RFC 9396, as for a direct grant. |
 
@@ -409,6 +409,7 @@ The grant type is `urn:ietf:params:oauth:grant-type:token-exchange`, at
 | `urn:ietf:params:oauth:token-type:jwt` | any other JWT this realm signed (a WS-Trust JWT, for one), or an RFC 7523 assertion from a declared issuer |
 | `urn:ietf:params:oauth:token-type:saml2` | an RFC 7522 SAML 2.0 assertion from a declared issuer, base64url-encoded |
 | `urn:ietf:params:oauth:token-type:saml1` | a SAML 1.1 assertion from a declared issuer, base64url-encoded |
+| `http://docs.oasis-open.org/wss/oasis-wss-kerberos-token-profile-1.1#GSS_Kerberosv5_AP_REQ`, and the profile's five other ValueTypes | a Kerberos ticket for this service's own SPN in an AP-REQ, base64url: as the subject, obtained by Kerberos delegation (S4U2Proxy naming the client last, or a forwarded TGT); as the actor, the client's own. `oauth2.tokenExchangeKerberosInput` |
 | `urn:openid:params:token-type:device-secret` | as `actor_token_type` only, beside an `id_token` subject: OpenID Connect Native SSO, which is not a delegation ([OpenID Connect flows](configure-oidc-flows.md#native-sso)) |
 
 Anything else is `invalid_request` (`STS-OAUTH-0627`).
@@ -438,6 +439,16 @@ What is issued is chosen by `wst:TokenType`:
 | anything else, or none (`http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV2.0` is the usual one) | a SAML 2.0 assertion |
 
 See [WS-Trust](ws-trust.md#token-types).
+
+**A Kerberos ticket** in either protocol is the
+[Kerberos Token Profile 1.1](ws-trust.md#kerberos-tokens)'s AP-REQ, for this
+service's own SPN. Delegated, it must have been obtained by Kerberos
+delegation: by S4U2Proxy, its PAC naming the party that presents it last, or
+with a TGT forwarded to a party trusted for delegation. A ticket the subject
+made for this service and handed over is refused in every mode. Issued, it is
+a ticket for the target's Kerberos service whose PAC names every party that
+acted. See [WS-Trust](ws-trust.md#kerberos-tokens) and
+[the token exchange](configure-oauth2-grants.md#a-kerberos-ticket-as-the-subject-the-actor-or-the-token-issued).
 
 ### Kerberos and GNAP
 

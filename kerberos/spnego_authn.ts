@@ -156,6 +156,9 @@ import spnegoPage = require('./spnego.js');
 // ERROR CODES, a leaf. A negotiation's refusal is marked by
 // exchange.applyVerdict(); the three marked here are this door's own.
 import errorCodes = require('../common/error_codes');
+// The reading of a ticket's flags into `amr` / `acr` (#658): a library
+// that requires only `common/` modules at load, so it moves no route.
+import krb5Tokens = require('./krb5_tokens');
 // THE LANGUAGE OF THE PAGE (#539). Libraries: the catalogs, the request's
 // language and the chooser, and the realm prefix the chooser posts under.
 import i18n = require('../common/i18n');
@@ -379,54 +382,14 @@ class SpnegoAuthn {
    */
   factorsFor(ticketFlags, indicators?, ownRealm?) {
     const { log } = this.deps;
-    log.debug('Entering SpnegoAuthn.factorsFor(). flags=' +
-              (ticketFlags || []).join(',') + ' indicators=' +
-              (indicators || []).join(','));
-    const flags = ticketFlags || [];
-    const own = ownRealm !== false ? (indicators || []) : [];
-    const pkinit = own.indexOf('pkinit') !== -1;
-    const password = flags.indexOf('pre-authent') !== -1 && !pkinit;
-    const hardware = flags.indexOf('hw-authent') !== -1;
-    const otp = own.indexOf('otp') !== -1;
-    const amr = [];
-    if (password) {
-      amr.push('pwd');
-    }
-    if (hardware) {
-      amr.push('hwk');
-    } else if (pkinit) {
-      amr.push('swk');
-    }
-    if (otp) {
-      amr.push('otp');
-    }
-    // "mfa" only where TWO are claimed, and for the reason authn.js gives
-    // about the passwordless WebAuthn path: one factor does not become two by
-    // being phishing-resistant, and a relying party that asked for two must not
-    // be told it got them.
-    const acr = (password && (hardware || otp)) ? 'mfa'
-      : (amr.length ? '1' : '0');
-    const method = 'Kerberos ticket over SPNEGO' +
-      (pkinit
-         ? ' (the KDC checked a certificate with PKINIT' +
-           (hardware ? ', a smart-card logon certificate whose key this ' +
-                       'service never held' : '') + ')'
-         : password && otp
-         ? ' (the KDC checked the password and an authenticator app code, ' +
-           'with FAST and OTP pre-authentication)'
-         : password && hardware
-         ? ' (the KDC required pre-authentication AND hardware)'
-         : password
-           ? ' (the KDC required pre-authentication, so a long-term key ' +
-             'derived from a password was proven to it)'
-           : hardware
-             ? ' (the KDC required hardware for the initial authentication)'
-             : ' (the ticket claims no pre-authentication at all, so nothing ' +
-               'here knows what the KDC checked)');
-    log.debug('Leaving SpnegoAuthn.factorsFor(). amr=' + amr.join(',') +
-              ', acr=' + acr);
-    return { amr: amr, acr: acr, method: method, password: password,
-             hardware: hardware, otp: otp, pkinit: pkinit };
+    log.debug('Entering SpnegoAuthn.factorsFor().');
+    // ONE COPY OF THE RULE (#658): a Kerberos token presented to WS-Trust or
+    // the token exchange says what the KDC checked exactly as a SPNEGO
+    // ticket does, so the reading moved to `krb5_tokens.ts` and both ask it.
+    const out = krb5Tokens.factorsFor(ticketFlags, indicators, ownRealm,
+                                      'Kerberos ticket over SPNEGO');
+    log.debug('Leaving SpnegoAuthn.factorsFor(). amr=' + out.amr.join(','));
+    return out;
   }
 
   // Is this door open at all? A function rather than a constant, because the

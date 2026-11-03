@@ -157,6 +157,11 @@ import samlAssertionGrant = require('./saml_assertion_grant');
 // #114: RFC 7523 / RFC 7522 / SAML 1.1 assertions from declared issuers as
 // RFC 8693 subject and actor tokens. A library over the two above.
 import exchangeAssertions = require('./exchange_assertions');
+// #658: a Kerberos ticket as a subject, actor or issued token, named by the
+// Kerberos Token Profile 1.1's URIs. A library that requires only `common/`
+// modules at load and every Kerberos module lazily, so this module (9) does
+// not drag the KDC's routes (15) forward.
+import krb5Tokens = require('../kerberos/krb5_tokens');
 // The mode. A LEAF (rule 3): registers nothing, requires only `config` (and
 // bunyan).
 import mode = require('../common/mode');
@@ -920,6 +925,12 @@ const EXCHANGE_TOKEN_TYPES = {
   'urn:ietf:params:oauth:token-type:saml2': 'saml2',
   'urn:ietf:params:oauth:token-type:saml1': 'saml1'
 };
+// #658: the Kerberos Token Profile 1.1's six token types (rcbj's decision D1
+// on #658: one vocabulary with WS-Trust), each a Kerberos ticket in an
+// AP-REQ, base64url — see `kerberos/krb5_tokens.ts`.
+Object.keys(krb5Tokens.VALUE_TYPES).forEach(function (one: string): void {
+  EXCHANGE_TOKEN_TYPES[krb5Tokens.VALUE_TYPES[one]] = 'kerberos';
+});
 const DEVICE_SECRET_TYPE = 'urn:openid:params:token-type:device-secret';
 // The `client_id` an access token carries when a wallet redeemed an OID4VCI
 // pre-authorized code without naming a client (section 6.1's anonymous
@@ -6550,6 +6561,19 @@ class OAuth2Server {
                        verified: boolean): Json {
     helpers.log.debug("Entering OAuth2Server.consumedInput().");
     let out: Json;
+    if (assertion && assertion.format === 'kerberos') {
+      // #658: a Kerberos ticket, accepted by the acceptor in every mode.
+      out = { kind: which + ' (Kerberos AP-REQ)', identifier: identifier,
+              note: 'a Kerberos ticket for this authorization server\'s own ' +
+                    'SPN, accepted under its key in every mode' +
+                    (assertion.shape === 's4u2proxy'
+                      ? ', obtained by S4U2Proxy (its PAC\'s ' +
+                        'S4U_DELEGATION_INFO names the exchanging client last)'
+                      : assertion.shape === 'forwarded'
+                        ? ', bought with a forwarded TGT' : '') };
+      helpers.log.debug("Leaving OAuth2Server.consumedInput(). Kerberos.");
+      return out;
+    }
     if (assertion) {
       const label = assertion.format === 'jwt' ? 'RFC 7523 JWT assertion'
         : (assertion.format === 'saml11' ? 'SAML 1.1 assertion'
@@ -7899,6 +7923,24 @@ class OAuth2Server {
                   'takes ' + supported + ', or ' + DEVICE_SECRET_TYPE +
                   ' for Native SSO.' };
     }
+    // #658: a Kerberos subject or actor token is accepted only while
+    // `oauth2.tokenExchangeKerberosInput` is on (on by default: the acceptor
+    // checks it in both modes), and a Kerberos token is issued only while
+    // `oauth2.tokenExchangeKerberosOutput` is (off by default, rcbj's D6).
+    if (!problem && (krb5Tokens.isType(subjectType) ||
+                     krb5Tokens.isType(actorType)) &&
+        !krb5Tokens.settingOn('oauth2.tokenExchangeKerberosInput')) {
+      problem = { code: 'STS-OAUTH-0987', description: 'Kerberos token ' +
+                  'types are not exchanged here: ' +
+                  'oauth2.tokenExchangeKerberosInput is off.' };
+    }
+    if (!problem &&
+        krb5Tokens.isType(String(body.requested_token_type || '')) &&
+        !krb5Tokens.settingOn('oauth2.tokenExchangeKerberosOutput')) {
+      problem = { code: 'STS-OAUTH-0994', description: 'A Kerberos token ' +
+                  'is not issued here: oauth2.tokenExchangeKerberosOutput ' +
+                  'is off.' };
+    }
     log.debug("Leaving OAuth2Server.exchangeTypeProblem(). " +
               (problem ? problem.code : 'None.'));
     return problem;
@@ -8399,6 +8441,366 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.clientCredentialsAudience(). " +
               (audience.join(', ') || '(none)') + ".");
     return audience;
+  }
+
+  /**
+   * Says whether an application is the client a client_id names: its
+   * identifier, or a client_id it registers (#658).
+   *
+   * @param application - the application entry, or null
+   * @param clientId - the client_id
+   * @returns true when it is that client
+   */
+  static registersClient(application: Json, clientId: Json): boolean {
+    helpers.log.debug("Entering OAuth2Server.registersClient().");
+    const id = String(clientId || '');
+    const registered = application && application.fields
+      ? [].concat(application.fields.oauthClientId || []).map(String) : [];
+    const out = !!application && !!id &&
+      (String(application.identifier) === id || registered.indexOf(id) >= 0);
+    helpers.log.debug("Leaving OAuth2Server.registersClient(). " + out);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // KERBEROS TOKENS IN THE TOKEN EXCHANGE (#658, 2026-11-02).
+  //
+  // A `subject_token` / `actor_token` typed by one of the Kerberos Token
+  // Profile 1.1's six URIs is an AP-REQ (base64url) for THIS authorization
+  // server's own SPN, accepted by `krb5_service.js`'s acceptor in every mode
+  // (`kerberos/krb5_tokens.ts`). The acceptor's rule — a ticket for one
+  // service proves nothing to another — is what makes a DELEGATED subject
+  // token one obtained for this server by Kerberos delegation:
+  //
+  //   * by S4U2Proxy: its PAC's S4U_DELEGATION_INFO names the services it
+  //     passed through, the last of them the party that asked the KDC, which
+  //     must be the exchanging client (`STS-OAUTH-0989`, every mode); the
+  //     ones before become the issued token's nested `act`, under the client;
+  //   * with a TGT the subject forwarded: FORWARDED, unconstrained delegation,
+  //     which only a client trusted for it may present (`krb5TrustedFor-
+  //     Delegation`, `STS-OAUTH-0990`);
+  //   * neither: a ticket the subject made for this server and handed over,
+  //     REFUSED IN EVERY MODE (rcbj's decision D2, `STS-OAUTH-0991`) — unless
+  //     its client IS the exchanging client's own service principal, which
+  //     is a self exchange and delegates nothing.
+  //
+  // S, the application the subject token was issued for, is the exchanging
+  // client's own (rcbj, D3): the exchange continues the Kerberos chain.
+  // ---------------------------------------------------------------------------
+  /**
+   * Accepts a Kerberos subject_token and reads who it is about.
+   *
+   * @param token - the subject_token
+   * @param type - its declared Kerberos token type
+   * @param client - the exchanging client
+   * @param kerberosOut - whether a Kerberos token is asked for, which a
+   *   subject of another realm with no entry here may be issued
+   * @returns `{ subject, verdict }`, or `{ error, code, description }`
+   */
+  async kerberosSubject(token: string, type: string, client: Json,
+                        kerberosOut: boolean): Promise<Json> {
+    const { log, stats } = this.deps;
+    log.debug("Entering OAuth2Server.kerberosSubject().");
+    const refuse = function (code: string, description: string): Json {
+      log.debug("Entering refuse().");
+      log.debug("Leaving refuse().");
+      return { error: 'invalid_request', code: code,
+               description: description };
+    };
+    const verdict = await krb5Tokens.accept(token, type,
+      { via: 'an RFC 8693 subject_token' });
+    if (!verdict.ok) {
+      log.info('oauth2: a Kerberos subject_token from "' + client.client_id +
+               '" was refused (' + verdict.errorCode + '): ' + verdict.reason);
+      log.debug("Leaving OAuth2Server.kerberosSubject(). Refused.");
+      return refuse('STS-OAUTH-0988', verdict.reason);
+    }
+    // WHETHER A PARTY IS THE EXCHANGING CLIENT is asked of the PARTY's
+    // application — does it register this client_id? — rather than by
+    // resolving the client_id to one application, which another entry
+    // registering the same client_id (a sighting) could answer first.
+    const clientApp = applications.forClientId(String(client.client_id)) ||
+      applications.get(String(client.client_id));
+    const subjectApp = verdict.isService ? applications.get(verdict.name)
+                                         : null;
+    const selfExchange = OAuth2Server.registersClient(subjectApp,
+                                                      client.client_id);
+    const transited = (verdict.transited || []).map(String);
+    const lastApp = verdict.shape === 's4u2proxy' && transited.length
+      ? applications.get(krb5Tokens.applicationOfTransited(
+        transited[transited.length - 1])) : null;
+    const clientId = lastApp && OAuth2Server.registersClient(lastApp,
+      client.client_id) ? String(lastApp.identifier)
+      : (selfExchange ? String(subjectApp.identifier)
+         : (clientApp ? String(clientApp.identifier)
+                      : String(client.client_id)));
+    if (verdict.shape === 'none' && !selfExchange) {
+      log.debug("Leaving OAuth2Server.kerberosSubject(). Not delegated.");
+      return refuse('STS-OAUTH-0991', 'The Kerberos subject_token was not ' +
+        'obtained by Kerberos delegation: its PAC carries no ' +
+        'S4U_DELEGATION_INFO and it is not FORWARDED. A ticket the subject ' +
+        'made for this authorization server and handed over is not evidence ' +
+        'that anybody may act for them; obtain one by S4U2Proxy to this ' +
+        'server, or with a TGT the subject forwarded.');
+    }
+    if (verdict.shape === 's4u2proxy') {
+      const last = transited.length ? transited[transited.length - 1] : '';
+      if (!last || !OAuth2Server.registersClient(lastApp, client.client_id)) {
+        log.debug("Leaving OAuth2Server.kerberosSubject(). Another's.");
+        return refuse('STS-OAUTH-0989', 'The Kerberos subject_token\'s ' +
+                      'S4U_DELEGATION_INFO names ' + (last || 'nobody') +
+                      ' as the service that obtained it, and the exchanging ' +
+                      'client is ' + String(client.client_id) +
+                      '. Only the party a ticket ' +
+                      'was delegated to may exchange it.');
+      }
+    } else if (verdict.shape === 'forwarded' &&
+               !krb5Tokens.trustedForDelegation(clientApp)) {
+      log.debug("Leaving OAuth2Server.kerberosSubject(). Not trusted.");
+      return refuse('STS-OAUTH-0990', 'The Kerberos subject_token was bought ' +
+                    'with a forwarded TGT, and the client ' + clientId +
+                    ' is not trusted for unconstrained delegation ' +
+                    '(krb5TrustedForDelegation).');
+    }
+    stats.recordAuthentication({
+      presented: verdict.principal, protocol: 'OAuth 2.0',
+      method: 'RFC 8693 token exchange of a Kerberos token (subject_token)',
+      client_id: client.client_id,
+      note: 'The ticket was accepted by this service\'s Kerberos acceptor ' +
+            'under its own key, in every mode (' + verdict.method + '), ' +
+            (verdict.shape === 's4u2proxy'
+              ? 'and the client obtained it by S4U2Proxy.'
+              : verdict.shape === 'forwarded'
+                ? 'and it was bought with a forwarded TGT.'
+                : 'and it is the client\'s own.')
+    });
+    const namespaced = bcp.enabled();
+    const clientSubjectOf = function (identifier: string): string {
+      log.debug("Entering clientSubjectOf().");
+      const app = identifier ? applications.get(identifier) : null;
+      const registered = app && app.fields ? app.fields.oauthClientId : null;
+      const id = String((Array.isArray(registered) ? registered[0]
+                                                   : registered) ||
+                        (app ? app.identifier : identifier));
+      log.debug("Leaving clientSubjectOf().");
+      return app ? OAuth2Server.clientActorSubject(id, namespaced)
+                 : identifier;
+    };
+    // The prior chain, least to most recent, as nested `act`: the most
+    // recent outermost (RFC 8693 section 4.1).
+    const prior = verdict.shape === 's4u2proxy' ? transited.slice(0, -1) : [];
+    let act: Json = null;
+    prior.forEach(function (one: string): void {
+      const entry: Json = {
+        sub: clientSubjectOf(krb5Tokens.applicationOfTransited(one)) };
+      if (act) {
+        entry.act = act;
+      }
+      act = entry;
+    });
+    let subject: Json;
+    if (subjectApp) {
+      subject = { sub: clientSubjectOf(String(subjectApp.identifier)),
+                  username: String(subjectApp.identifier) };
+    } else if (verdict.ownRealm) {
+      const person = this.provisionedPerson(verdict.name);
+      if (!person) {
+        log.debug("Leaving OAuth2Server.kerberosSubject(). Nobody.");
+        return refuse('STS-OAUTH-0992', 'The Kerberos subject_token names "' +
+                      verdict.name + '", who has no directory entry here, so ' +
+                      'there is nobody to issue a token about.');
+      }
+      subject = { sub: person.sub || '', username: person.username ||
+                                                   verdict.name };
+    } else if (kerberosOut) {
+      // A person of another Kerberos realm, who has no entry here and needs
+      // none for a Kerberos ticket: it carries the PAC their own realm wrote.
+      subject = { sub: '', username: verdict.name };
+    } else {
+      log.debug("Leaving OAuth2Server.kerberosSubject(). Foreign.");
+      return refuse('STS-OAUTH-0992', 'The Kerberos subject_token names ' +
+                    verdict.name + ', a principal of another Kerberos realm ' +
+                    'with no directory entry here; only a Kerberos token ' +
+                    'can be issued about them.');
+    }
+    subject.aud = [clientId];
+    subject.client_id = String(client.client_id);
+    subject.jti = String(verdict.keyIdentifier || '');
+    if (act) {
+      subject.act = act;
+    }
+    log.debug("Leaving OAuth2Server.kerberosSubject(). " + subject.username);
+    return { subject: subject, verdict: verdict };
+  }
+
+  /**
+   * Accepts a Kerberos actor_token: a ticket for this authorization server
+   * whose client is the exchanging client's own service principal.
+   *
+   * @param token - the actor_token
+   * @param type - its declared Kerberos token type
+   * @param client - the exchanging client
+   * @returns `{ claims, verdict }`, or `{ error, code, description }`
+   */
+  async kerberosActor(token: string, type: string, client: Json):
+      Promise<Json> {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.kerberosActor().");
+    const verdict = await krb5Tokens.accept(token, type,
+      { via: 'an RFC 8693 actor_token' });
+    if (!verdict.ok) {
+      log.debug("Leaving OAuth2Server.kerberosActor(). Refused.");
+      return { error: 'invalid_request', code: 'STS-OAUTH-0988',
+               description: verdict.reason };
+    }
+    const actorApp = verdict.isService ? applications.get(verdict.name)
+                                       : null;
+    if (!OAuth2Server.registersClient(actorApp, client.client_id)) {
+      log.debug("Leaving OAuth2Server.kerberosActor(). Another's.");
+      return { error: 'invalid_request', code: 'STS-OAUTH-0993',
+               description: 'The Kerberos actor_token\'s client is ' +
+                            verdict.principal + ', not the exchanging ' +
+                            'client\'s own service principal; an ' +
+                            'actor_token is the exchanging client\'s own.' };
+    }
+    log.debug("Leaving OAuth2Server.kerberosActor().");
+    return {
+      verdict: verdict,
+      claims: { sub: OAuth2Server.clientActorSubject(String(client.client_id),
+                                                     bcp.enabled()),
+                client_id: String(client.client_id), iss: '',
+                jti: String(verdict.keyIdentifier || '') }
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // A KERBEROS TOKEN ISSUED FROM AN EXCHANGE (#658): `requested_token_type`
+  // naming one of the six URIs. The one target — `audience` or `resource`,
+  // resolved as every exchange resolves it — must be an application that is
+  // a Kerberos service (an `SPN@REALM` identifier, or its
+  // `krb5ServicePrincipalName`); the ticket is this realm's KDC's, for the
+  // subject; a delegation's `act` chain, innermost first, becomes the PAC's
+  // S4U_DELEGATION_INFO, each party by `SPN@REALM` or, with no SPN, its
+  // identifier (D4). The answer is RFC 8693 section 2.2.1's with the token
+  // in `access_token`, `issued_token_type` the type asked for and
+  // `token_type` `N_A` — the section's value for a token that is not an
+  // access token — and the Authenticator's subkey, which the holder needs to
+  // use it, as `session_key` and `session_key_etype` (rcbj's D5: the one key
+  // of that one AP-REQ, sent only over TLS). `expires_in` is the AP-REQ's own
+  // window: it is good once, within the clock skew of when it was made. A
+  // target in another Kerberos realm is reached through the trusts (D8).
+  // ---------------------------------------------------------------------------
+  /**
+   * Issues the Kerberos token a token exchange asked for.
+   *
+   * @param c - `{ req, body, client, subject, subjectKerberos, act,
+   *   audiences, decision, base }`
+   * @returns `{ token, response }`, or `{ error, code, description }`
+   */
+  async kerberosExchangeToken(c: Json): Promise<Json> {
+    const { log, nameForSubject } = this.deps;
+    log.debug("Entering OAuth2Server.kerberosExchangeToken().");
+    const type = String(c.body.requested_token_type || '').trim();
+    const secure = !!(c.req && (c.req.secure ||
+                                (c.req.socket && c.req.socket.encrypted))) ||
+      /^https:/i.test(String(c.base || ''));
+    if (!secure) {
+      log.debug("Leaving OAuth2Server.kerberosExchangeToken(). Not TLS.");
+      return { error: 'invalid_request', code: 'STS-OAUTH-0996',
+               description: 'A Kerberos token is answered with its session ' +
+                            'key, which is sent only over TLS; this request ' +
+                            'arrived without it.' };
+    }
+    const audiences = (c.audiences || []).map(String);
+    if (audiences.length !== 1) {
+      log.debug("Leaving OAuth2Server.kerberosExchangeToken(). Targets.");
+      return { error: 'invalid_target', code: 'STS-OAUTH-0995',
+               description: 'A Kerberos token is for one service: name ' +
+                            'exactly one audience or resource.' };
+    }
+    const first = c.decision && c.decision.targets && c.decision.targets[0];
+    const application = (first && first.application
+      ? applications.get(String(first.application)) : null) ||
+      applications.forAudience(audiences[0]) ||
+      applications.get(audiences[0]);
+    const target = krb5Tokens.servicePrincipalOf(application) ||
+      krb5Tokens.servicePrincipalOf({ identifier: audiences[0] });
+    if (!target) {
+      log.debug("Leaving OAuth2Server.kerberosExchangeToken(). No SPN.");
+      return { error: 'invalid_target', code: 'STS-OAUTH-0995',
+               description: 'The audience "' + audiences[0] + '" is not a ' +
+                            'Kerberos service: no application registered ' +
+                            'for it has an SPN@REALM identifier or a ' +
+                            'krb5ServicePrincipalName.' };
+    }
+    // WHO EACH PARTY IS, IN KERBEROS'S WORDS.
+    const kerberosNameOf = function (sub: string): string {
+      log.debug("Entering kerberosNameOf().");
+      const raw = String(sub || '');
+      const clientId = /^urn:sts:client:/.test(raw)
+        ? raw.slice('urn:sts:client:'.length) : raw;
+      const app = applications.forClientId(clientId) ||
+        applications.get(clientId);
+      if (app) {
+        const sp = krb5Tokens.servicePrincipalOf(app);
+        log.debug("Leaving kerberosNameOf(). An application.");
+        return sp ? sp.spn + '@' + sp.realm : String(app.identifier);
+      }
+      const person = /^urn:uuid:/i.test(raw) ? nameForSubject(raw) : '';
+      log.debug("Leaving kerberosNameOf().");
+      return String(person || raw);
+    };
+    const chain: string[] = [];
+    for (let one = c.act; one && typeof one === 'object'; one = one.act) {
+      chain.unshift(kerberosNameOf(String(one.sub || '')));
+    }
+    const verdict = c.subjectKerberos;
+    let subjectName = String(c.subject.username || '');
+    let subjectRealm = '';
+    let carriedPac = null;
+    const subjectApp = subjectName ? applications.get(subjectName) : null;
+    const subjectSpn = subjectApp ? krb5Tokens.servicePrincipalOf(subjectApp)
+                                  : null;
+    if (verdict && !verdict.ownRealm) {
+      subjectName = (verdict.components || []).join('/');
+      subjectRealm = String(verdict.realm || '');
+      carriedPac = verdict.pac || null;
+    } else if (subjectSpn) {
+      subjectName = subjectSpn.spn;
+      subjectRealm = subjectSpn.realm;
+    }
+    const minted = await krb5Tokens.issue({
+      valueType: type,
+      subject: { name: subjectName, realm: subjectRealm || undefined },
+      target: target,
+      delegationInfo: chain.length
+        ? { s4u2proxyTarget: target.spn, transitedServices: chain } : null,
+      forwardable: true,
+      carriedPac: carriedPac
+    });
+    if (!minted.ok) {
+      log.info('oauth2: the KDC did not issue a Kerberos ticket (' +
+               minted.errorCode + '): ' + minted.reason);
+      log.debug("Leaving OAuth2Server.kerberosExchangeToken(). Refused.");
+      return { error: 'invalid_request', code: 'STS-OAUTH-0997',
+               description: 'The Kerberos ticket could not be issued: ' +
+                            minted.reason + '.' };
+    }
+    log.debug("Leaving OAuth2Server.kerberosExchangeToken(). " +
+              minted.servicePrincipal);
+    return {
+      token: minted,
+      response: {
+        access_token: Buffer.from(minted.bytes).toString('base64url'),
+        issued_token_type: type,
+        token_type: 'N_A',
+        expires_in: Math.max(1, Math.round((minted.expires.getTime() -
+                                            Date.now()) / 1000)),
+        session_key: Buffer.from(minted.sessionKey.key)
+          .toString('base64url'),
+        session_key_etype: minted.sessionKey.etype
+      }
+    };
   }
 
   // ---------------------------------------------------------------------------
@@ -17131,7 +17533,27 @@ class OAuth2Server {
       // path below refuses it and development reads it as it always read a
       // non-JWT.
       let subjectFromOpaque = false;
-      if (!subjectIsSaml && subjectToken.indexOf('.') < 0) {
+      // A KERBEROS SUBJECT TOKEN (#658): accepted by the acceptor in every
+      // mode, its subject the ticket's client, its chain the PAC's
+      // S4U_DELEGATION_INFO. See kerberosSubject().
+      let subjectKerberos: Json = null;
+      if (krb5Tokens.isType(subjectType)) {
+        const fromKerberos = await self.kerberosSubject(subjectToken,
+          subjectType, client,
+          krb5Tokens.isType(String(body.requested_token_type || '')));
+        if (fromKerberos.error) {
+          errorCodes.mark(res, fromKerberos.code);
+          log.debug("Leaving OAuth2Server.tokenGrant(). " + fromKerberos.code);
+          // error-code: none — marked above: 0988 to 0992, by the problem.
+          return self.oauthError(res, 400, fromKerberos.error,
+                                 fromKerberos.description);
+        }
+        subject = fromKerberos.subject;
+        subjectKerberos = fromKerberos.verdict;
+        ownSubject = true;
+      }
+      if (!subjectIsSaml && !subjectKerberos &&
+          subjectToken.indexOf('.') < 0) {
         const foundSubject = opaqueAccessToken.lookup(subjectToken);
         if (foundSubject.kind === 'inactive' &&
             foundSubject.why === 'expired') {
@@ -17155,7 +17577,7 @@ class OAuth2Server {
           subjectFromOpaque = true;
         }
       }
-      if (!subjectIsSaml && !subjectFromOpaque) {
+      if (!subjectIsSaml && !subjectFromOpaque && !subjectKerberos) {
         try {
           subject = helpers.verifyOwnJws(subjectJws);
           ownSubject = true;
@@ -17249,7 +17671,8 @@ class OAuth2Server {
       // A VERIFIED TOKEN MUST BE THE TYPE IT WAS DECLARED AS (#130). One this
       // realm cannot verify — development's token from anywhere — is held
       // only to the list of types, above: its shape is somebody else's.
-      const subjectKind = subjectVerified && !subjectAssertion ?
+      const subjectKind = subjectVerified && !subjectAssertion &&
+        !subjectKerberos ?
         self.ownTokenKind(subjectToken, subject) : '';
       const subjectMismatch = subjectKind &&
         self.kindProblem(String(body.subject_token_type).trim(), subjectKind,
@@ -17299,6 +17722,25 @@ class OAuth2Server {
       // names; `act.sub` is then taken from the verified assertion.
       const actorType = String(body.actor_token_type || '').trim();
       let actorAssertion: Json = null;
+      // A KERBEROS ACTOR TOKEN (#658): a ticket for this authorization
+      // server's SPN whose client is the exchanging client's own service
+      // principal — the Kerberos form of #550's rule that an actor_token is
+      // the exchanging client's own. See kerberosActor().
+      let actorKerberos: Json = null;
+      if (body.actor_token && krb5Tokens.isType(actorType)) {
+        const kerberosActor = await self.kerberosActor(
+          String(body.actor_token), actorType, client);
+        if (kerberosActor.error) {
+          errorCodes.mark(res, kerberosActor.code);
+          log.debug("Leaving OAuth2Server.tokenGrant(). " + kerberosActor.code);
+          // error-code: none — marked above: 0988 or 0993.
+          return self.oauthError(res, 400, kerberosActor.error,
+                                 kerberosActor.description);
+        }
+        actorKerberos = kerberosActor.verdict;
+        actorClaims = kerberosActor.claims;
+        act = { sub: actorClaims.sub };
+      }
       if (body.actor_token && exchangeAssertions.isAssertionType(actorType)) {
         let actorOwn = false;
         if (actorType === exchangeAssertions.TYPES.jwt) {
@@ -17341,7 +17783,7 @@ class OAuth2Server {
           }
         }
       }
-      if (body.actor_token && !actorAssertion) {
+      if (body.actor_token && !actorAssertion && !actorKerberos) {
         // THE ACTOR IS VERIFIED BY THE SAME RULE, for the same reason: `act`
         // is the record, inside the token that comes out, of who acted on the
         // subject's behalf, and a name read out of an unverified token puts a
@@ -17551,7 +17993,8 @@ class OAuth2Server {
         delegationPolicy.mayActNames(mayAct, actorIdentity);
       // An assertion's subject was recorded where it was verified (#114,
       // `assertionSubject()`), with what vouched for it.
-      if (!subjectAssertion) {
+      // A Kerberos subject was recorded where it was accepted (#658).
+      if (!subjectAssertion && !subjectKerberos) {
         stats.recordAuthentication({
           presented: subject.username || subject.sub || 'urn:sts:exchanged',
           protocol: 'OAuth 2.0', method: 'token exchange (RFC 8693)',
@@ -17831,7 +18274,11 @@ class OAuth2Server {
           authorizedBy: delegationPolicy.rowText(decision),
           reason: decision.why,
           consumed: [OAuth2Server.consumedInput('subject_token',
-                                                subjectAssertion,
+                                                subjectAssertion ||
+                                                (subjectKerberos
+                                                  ? { format: 'kerberos',
+                                                      shape: subjectKerberos
+                                                        .shape } : null),
                                                 String(subject.jti || ''),
                                                 subjectVerified)],
           produced: [], sessionId: ''
@@ -17974,7 +18421,8 @@ class OAuth2Server {
       // `exchange`, as for every grant.
       const exchangeBound = richAuthorization.exchangeBoundProblem(
         requestedDetails, subject && subject.authorization_details,
-        ownSubject && subjectVerified && !subjectAssertion);
+        ownSubject && subjectVerified && !subjectAssertion &&
+        !subjectKerberos);
       if (exchangeBound) {
         errorCodes.mark(res, String(errorCodes.codeOf(exchangeBound) ||
                                     'STS-FGA-0017'));
@@ -17984,78 +18432,102 @@ class OAuth2Server {
         return self.oauthError(res, 400, 'invalid_authorization_details',
                                exchangeBound.description);
       }
-      const exchanged = await issue({
-        jkt: dpopJkt,
-        sub: subject.sub || 'urn:sts:exchanged',
-        user: Object.assign(userFor(subject.username),
-                            subject.sub ? { sub: subject.sub } : {}),
-        client_id: client.client_id,
-        // AN EXCHANGE THAT NAMES NO `scope` CARRIES THE SUBJECT'S FORWARD
-        // (#156). RFC 8693 section 2.1 leaves the scope of the new token to
-        // the server's policy, and this server's is the one rule for every
-        // exchange — an access, refresh or ID Token, a JWT or SAML assertion
-        // (#114): the `scope` asked for, which may narrow and never widen
-        // (above); else the subject_token's `scope` claim; else none. Either
-        // way it then goes through tokenSet()'s narrowing like every other
-        // grant — the client's declared scopes (#110), the roles (#302), and
-        // RFC 9068's audience plan, which takes the OpenID Connect scopes off
-        // a token for another resource server. What survives is the response's
-        // `scope` member, left out when nothing did, and an ID Token comes
-        // back only when `openid` survived (idTokenFollowsIssuedScope).
-        // A requested scope the policy narrowed (#549) is the list that
-        // survived — empty included, so a dropped permission never brings
-        // the subject's own scope back in its place.
-        scope: exchangeScope !== null ? exchangeScope
-          : String(subject.scope || ''),
-        idTokenFollowsIssuedScope: true,
-        audience: self.audienceClaim(issuedAudiences), act: act,
-        // RFC 9396 on an exchange: the details asked for, as for a direct
-        // grant. The audience rule is tokenSet()'s backstop, as the header
-        // above says.
-        authorization_details: grantIdentifiers(requestedDetails,
-                                                userFor(subject.username)),
-        // Section 2.2.1's `refresh_token` member — and this flag is the ONLY
-        // thing this branch decides about it. It is minted by the same
-        // refreshToken(), through the same tokenSet(), as the token every other
-        // grant here hands back, which is what makes "treat it as any other
-        // refresh token" true by construction rather than by six things having
-        // been remembered: the same `typ: 'Refresh'`, the same jti in the same
-        // revocation set, the same `oauth2.refreshTokenTtlS`, the same RFC 9700
-        // family bookkeeping and rotation on redemption, and the same
-        // confirmations — an exchange made with a DPoP proof or over a client
-        // certificate mints a BOUND refresh token, which is the whole of RFC
-        // 9449 section 5 and RFC 8705 section 3 on the long-lived half of a
-        // grant.
-        withRefresh: wantsRefresh,
-        // RFC 8707, reached through RFC 8693 section 2.1, and only relevant now
-        // that there is a refresh token to carry it: `resources` is what the
-        // refresh grant compares a renewal against, so an exchange addressed to
-        // one audience must not be renewable into a token carrying this
-        // service's default. A grant cannot widen itself by being renewed, and
-        // an exchange is a grant like the rest. The AUDIENCES go on it rather
-        // than `requestedResources` alone, because `aud` on the token being
-        // minted is the union of both and the two must not come to describe
-        // different resource servers.
-        resources: wantsRefresh ? issuedAudiences : undefined,
-        grant: 'token exchange'
-      });
-      // RFC 8693 section 2.2.1: `issued_token_type` describes THE TOKEN IN THE
-      // `access_token` MEMBER, and that member holds an access token here
-      // whatever was asked for — so it says access token even when a refresh
-      // token was requested and came back beside it.
-      //
-      // The other reading of section 2.1 is that a client asking for a refresh
-      // token should be handed one IN `access_token` with `issued_token_type`
-      // naming it — the section does say that member is called `access_token`
-      // for historical reasons and need not carry one. That is deliberately not
-      // what happens here. A client would then hold a `typ: 'Refresh'` JWT
-      // under the name every other grant in this service uses for the
-      // credential a resource server is presented with, and this service's own
-      // protected endpoints would refuse it. The refresh token goes where every
-      // other grant puts one, which is what "the same as any other refresh
-      // token" means, and the client gets both halves of a grant out of one
-      // exchange rather than a credential it has to know not to present.
-      exchanged.issued_token_type = ACCESS_TOKEN_TYPE;
+      // A KERBEROS TOKEN ASKED FOR (#658): `requested_token_type` naming one of
+      // the Kerberos Token Profile's six URIs is answered with that token in
+      // `access_token` (RFC 8693 section 2.2.1), not an access token: see
+      // kerberosExchangeToken(). No refresh token and no ID Token ride along.
+      const kerberosAsked = krb5Tokens.isType(
+        String(body.requested_token_type || ''));
+      let kerberosMinted: Json = null;
+      let exchanged: Json;
+      if (kerberosAsked) {
+        const minted = await self.kerberosExchangeToken({
+          req: req, body: body, client: client, subject: subject,
+          subjectKerberos: subjectKerberos, act: act,
+          audiences: issuedAudiences, decision: decision, base: base });
+        if (minted.error) {
+          errorCodes.mark(res, minted.code);
+          log.debug("Leaving OAuth2Server.tokenGrant(). " + minted.code);
+          // error-code: none — marked above: 0995 to 0997.
+          return self.oauthError(res, 400, minted.error, minted.description);
+        }
+        kerberosMinted = minted.token;
+        exchanged = minted.response;
+      } else {
+        exchanged = await issue({
+          jkt: dpopJkt,
+          sub: subject.sub || 'urn:sts:exchanged',
+          user: Object.assign(userFor(subject.username),
+                              subject.sub ? { sub: subject.sub } : {}),
+          client_id: client.client_id,
+          // AN EXCHANGE THAT NAMES NO `scope` CARRIES THE SUBJECT'S FORWARD
+          // (#156). RFC 8693 section 2.1 leaves the scope of the new token to
+          // the server's policy, and this server's is the one rule for every
+          // exchange — an access, refresh or ID Token, a JWT or SAML assertion
+          // (#114): the `scope` asked for, which may narrow and never widen
+          // (above); else the subject_token's `scope` claim; else none. Either
+          // way it then goes through tokenSet()'s narrowing like every other
+          // grant — the client's declared scopes (#110), the roles (#302), and
+          // RFC 9068's audience plan, which takes the OpenID Connect scopes off
+          // a token for another resource server. What survives is the
+          // response's `scope` member, left out when nothing did, and an ID
+          // Token comes back only when `openid` survived
+          // (idTokenFollowsIssuedScope). A requested scope the policy narrowed
+          // (#549) is the list that survived — empty included, so a dropped
+          // permission never brings the subject's own scope back in its place.
+          scope: exchangeScope !== null ? exchangeScope
+            : String(subject.scope || ''),
+          idTokenFollowsIssuedScope: true,
+          audience: self.audienceClaim(issuedAudiences), act: act,
+          // RFC 9396 on an exchange: the details asked for, as for a direct
+          // grant. The audience rule is tokenSet()'s backstop, as the header
+          // above says.
+          authorization_details: grantIdentifiers(requestedDetails,
+                                                  userFor(subject.username)),
+          // Section 2.2.1's `refresh_token` member — and this flag is the ONLY
+          // thing this branch decides about it. It is minted by the same
+          // refreshToken(), through the same tokenSet(), as the token every
+          // other grant here hands back, which is what makes "treat it as any
+          // other refresh token" true by construction rather than by six things
+          // having been remembered: the same `typ: 'Refresh'`, the same jti in
+          // the same revocation set, the same `oauth2.refreshTokenTtlS`, the
+          // same RFC 9700 family bookkeeping and rotation on redemption, and
+          // the same confirmations — an exchange made with a DPoP proof or over
+          // a client certificate mints a BOUND refresh token, which is the
+          // whole of RFC 9449 section 5 and RFC 8705 section 3 on the long-
+          // lived half of a grant.
+          withRefresh: wantsRefresh,
+          // RFC 8707, reached through RFC 8693 section 2.1, and only relevant
+          // now that there is a refresh token to carry it: `resources` is what
+          // the refresh grant compares a renewal against, so an exchange
+          // addressed to one audience must not be renewable into a token
+          // carrying this service's default. A grant cannot widen itself by
+          // being renewed, and an exchange is a grant like the rest. The
+          // AUDIENCES go on it rather than `requestedResources` alone, because
+          // `aud` on the token being minted is the union of both and the two
+          // must not come to describe different resource servers.
+          resources: wantsRefresh ? issuedAudiences : undefined,
+          grant: 'token exchange'
+        });
+        // RFC 8693 section 2.2.1: `issued_token_type` describes THE TOKEN IN
+        // THE `access_token` MEMBER, and that member holds an access token here
+        // whatever was asked for — so it says access token even when a refresh
+        // token was requested and came back beside it.
+        //
+        // The other reading of section 2.1 is that a client asking for a
+        // refresh token should be handed one IN `access_token` with
+        // `issued_token_type` naming it — the section does say that member is
+        // called `access_token` for historical reasons and need not carry one.
+        // That is deliberately not what happens here. A client would then hold
+        // a `typ: 'Refresh'` JWT under the name every other grant in this
+        // service uses for the credential a resource server is presented with,
+        // and this service's own protected endpoints would refuse it. The
+        // refresh token goes where every other grant puts one, which is what
+        // "the same as any other refresh token" means, and the client gets both
+        // halves of a grant out of one exchange rather than a credential it has
+        // to know not to present.
+        exchanged.issued_token_type = ACCESS_TOKEN_TYPE;
+      }
 
       // -----------------------------------------------------------------------
       // THE DELEGATION ACT, for /admin/delegation.
@@ -18188,11 +18660,16 @@ class OAuth2Server {
         // refused it. See `common/delegation_policy.ts`.
         authorizedBy: delegationPolicy.rowText(decision),
         consumed: ([OAuth2Server.consumedInput('subject_token',
-                                               subjectAssertion,
+                                               subjectAssertion ||
+                                               (subjectKerberos
+                                                 ? { format: 'kerberos',
+                                                     shape: subjectKerberos
+                                                       .shape } : null),
                                                String(subject.jti || ''),
                                                subjectVerified)] as Json[])
-          .concat(actorClaims ? [actorAssertion
-            ? OAuth2Server.consumedInput('actor_token', actorAssertion,
+          .concat(actorClaims ? [actorAssertion || actorKerberos
+            ? OAuth2Server.consumedInput('actor_token', actorAssertion ||
+                                         { format: 'kerberos', shape: '' },
                                          String(actorClaims.jti || ''), true)
             : {
               kind: 'actor_token',
@@ -18201,7 +18678,15 @@ class OAuth2Server {
                                     : 'read without verifying') + ' — its ' +
                     '`sub` is what goes into the `act` claim'
             }] : []),
-        produced: [{
+        produced: [kerberosMinted ? {
+          kind: 'Kerberos AP-REQ',
+          identifier: kerberosMinted.keyIdentifier,
+          note: 'its Kerberosv5APREQSHA1 key identifier; the ticket inside ' +
+                'is for ' + kerberosMinted.servicePrincipal +
+                (act ? ', and its PAC\'s S4U_DELEGATION_INFO names every ' +
+                       'party that acted, ' + String(act.sub || '') +
+                       ' last' : '')
+        } : {
           kind: 'access_token',
           identifier: issuedJti,
           note: act

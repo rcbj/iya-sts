@@ -1453,6 +1453,21 @@ const SPECS: Spec[] = [
               'an application (#1046), or where it is from an outside ' +
               'certificate authority and stored in userCertificate on ' +
               'exactly one of their entries (#1061).' },
+  { id: 'wss-kerberos', name: 'WS-Security Kerberos Token Profile 1.1',
+    where: 'OASIS wss',
+    url: 'https://docs.oasis-open.org/wss-m/wss/v1.1.1/os/wss-KerberosTokenProfile-v1.1.1-os.html',
+    coverage: 'partial: all six AP-REQ ValueTypes are accepted at /sts (as ' +
+              'the requester\'s credential, and inside OnBehalfOf or ActAs ' +
+              'when the ticket was obtained by S4U2Proxy or with a ' +
+              'forwarded TGT) and as RFC 8693 token types, for this ' +
+              'service\'s own SPN only, checked by the acceptor in both ' +
+              'modes; a signature with the token\'s session key is a ' +
+              'credential; and with wstrust.issueKerberos (off by default) ' +
+              'a wst:TokenType asking for one is answered with a ticket this ' +
+              'realm\'s KDC issued, the subkey as the proof token. Not ' +
+              'done: a key derived from the session key (a DerivedKeyToken) ' +
+              'and an encryption with it; a target realm whose KDC is not a ' +
+              'trust realm of this service.' },
   { id: 'wss-username', name: 'WS-Security UsernameToken Profile 1.1',
     where: 'OASIS wss',
     url: 'https://docs.oasis-open.org/wss/v1.1/wss-v1.1-spec-os-UsernameTokenProfile.pdf',
@@ -7504,7 +7519,7 @@ const ENDPOINTS: EndpointEntry[] = [
 
   // --- WS-Trust ---
   { path: '/sts', group: 'WS-Trust', name: 'Security Token Service',
-    specs: ['ws-trust', 'wss-username', 'saml2', 'xmldsig'],
+    specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'saml2', 'xmldsig'],
     what: 'POST a SOAP RequestSecurityToken; dispatches on wst:RequestType ' +
           '(Issue, Renew, Validate, Cancel) and returns an RSTR. GET ' +
           'describes the endpoint. Add ?encrypt=1 to have the issued ' +
@@ -9012,7 +9027,7 @@ const ENDPOINTS: EndpointEntry[] = [
             'rfc7800', 'rfc9700', 'oidc-native-sso', 'oidc-ciba',
             'rfc8628', 'oidc-key-binding',
             'rfc8705', 'rfc8707', 'rfc7523', 'rfc7522', 'rfc9068',
-            'oauth-attestation'],
+            'oauth-attestation', 'wss-kerberos'],
     what: 'authorization_code, refresh_token, client_credentials, password, ' +
           'token-exchange, RFC 8628\'s device_code (#150), and OID4VCI\'s ' +
           'pre-authorized_code with tx_code ' +
@@ -10319,10 +10334,11 @@ const PROTOCOLS: Protocol[] = [
           'dispatching on wa, the sign-in screen, signed federation ' +
           'metadata at the AD FS path, and wsignout1.0.' },
   { name: 'WS-Trust', groups: ['WS-Trust'],
-    specs: ['ws-trust', 'wss-username', 'xmldsig'],
+    specs: ['ws-trust', 'wss-username', 'wss-kerberos', 'xmldsig'],
     what: 'RST / RSTR over SOAP at /sts, in all four versions (1.0 through ' +
           '1.4), issuing either SAML dialect with the assertion signed and ' +
-          'optionally encrypted to the requestor\'s certificate.' },
+          'optionally encrypted to the requestor\'s certificate, a JWT, ' +
+          'or a Kerberos ticket.' },
   { name: 'Kerberos', groups: ['Kerberos'],
     specs: ['rfc4120', 'rfc3961', 'ms-pac', 'ms-kkdcp'],
     what: 'A KDC: AS-REQ / TGS-REQ, pre-authentication, four ' +

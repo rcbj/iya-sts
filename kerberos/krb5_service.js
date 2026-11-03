@@ -823,6 +823,33 @@ async function acceptInRealm(tokenBytes, opts) {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // WHAT THE TICKET SAID, FOR A CALLER THAT READS MORE THAN THE CLIENT
+  // (#658). A Kerberos token presented to WS-Trust or the RFC 8693 token
+  // exchange is the same AP-REQ, accepted here by the same checks; what
+  // those callers read beside the client is the ticket's own record — its
+  // times, its flags (FORWARDED says it came from a forwarded TGT), its
+  // authorization data (the PAC, whose S4U_DELEGATION_INFO names the
+  // services it was delegated through) and the service it was issued for.
+  // Nothing here is re-derived or decided: it is the decrypted EncTicketPart
+  // as it is, carried on the result. No require was added for it.
+  // ---------------------------------------------------------------------
+  const ticketFacts = {
+    cname: ticketPart.cname,
+    crealm: ticketPart.crealm,
+    sname: apReq.ticket.sname,
+    realm: apReq.ticket.realm,
+    flags: msgs.ticketFlagNames(ticketPart.flags),
+    authtime: ticketPart.authtime,
+    starttime: ticketPart.starttime || null,
+    endtime: ticketPart.endtime,
+    renewTill: ticketPart.renewTill || null,
+    authorizationData: ticketPart.authorizationData || [],
+    etype: apReq.ticket.encPart.etype,
+    ctime: authenticator.ctime,
+    cusec: authenticator.cusec
+  };
+
   if (!mutualWanted) {
     log.debug("Leaving acceptInRealm().");
     // Nothing to send back. Worth noting rather than silently returning
@@ -846,6 +873,7 @@ async function acceptInRealm(tokenBytes, opts) {
       initiatorSubkey: authenticator.subkey || null,
       sessionKey: sessionKey,
       sessionKeyEtype: ticketPart.key.etype,
+      ticket: ticketFacts,
       mutual: false,
       note: 'mutual authentication was not requested, so this service sends ' +
             'nothing back and the client has no proof it reached the real ' +
@@ -889,7 +917,8 @@ async function acceptInRealm(tokenBytes, opts) {
     // is computed rather than chosen.
     initiatorSubkey: authenticator.subkey || null,
     sessionKey: sessionKey,
-    sessionKeyEtype: ticketPart.key.etype
+    sessionKeyEtype: ticketPart.key.etype,
+    ticket: ticketFacts
   };
 }
 

@@ -255,6 +255,10 @@
     "en": "cafeffef561dcd9a",
     "text": "partial：透過 SOAP 1.1 與 1.2 的 Issue、Renew、Validate 與 Cancel。請求簽章不會被驗證。OnBehalfOf 與 ActAs 由簽發原則決定（#186，權杖交換與 Kerberos S4U 共用的規則）——OnBehalfOf 要求的是模擬身分，ActAs 要求的是委派，項目的委派語意必須允許，AppliesTo 必須是委派關係所允許的已註冊應用程式，而個人請求者需要 delegation.actorRole——在產品模式下以 wst:RequestFailed 錯誤（第 11 節）拒絕；兩個元素同時出現為 wst:InvalidRequest；開發模式則記錄原本會被拒絕的內容。在「產品」模式下（2026-09-12），每項操作都需要認證資料——依目錄驗證的 UsernameToken，或由此 STS 簽署且在其 Conditions 範圍內的 SAML 斷言——而 OnBehalfOf/ActAs 需要請求者自己的認證資料，且其中要有這樣的斷言；開發模式則一如以往什麼都不要求。在兩種模式下，所要求的 wst:Lifetime 都會被限制（wstrust.maxTokenLifetimeMin），且所簽發斷言的 AuthnContext 會指名實際的認證資料，而不是密碼。若請求者的 wsse:Security 未攜帶任何認證資料，則在兩種模式下皆以連線上的 TLS 用戶端憑證驗證請求者，前提是該憑證由本領域核發給某個人或某個應用程式（#1046），或者來自外部憑證授權單位並儲存在其恰好一個項目的 userCertificate 中（#1061）。"
   },
+  "stsmetadata.specs.wss-kerberos.coverage": {
+    "en": "a6d4bfc032b7d23e",
+    "text": "partial: 六種 AP-REQ ValueType 都在 /sts 上接受（作為請求者的憑證；當票證透過 S4U2Proxy 或轉送的 TGT 取得時，也可放在 OnBehalfOf 或 ActAs 中），也作為 RFC 8693 權杖類型接受，僅限本服務自身的 SPN，接受器在兩種模式下都會檢查；用權杖工作階段金鑰做的簽章是一種憑證；開啟 wstrust.issueKerberos（預設關閉）時，請求 Kerberos 權杖的 wst:TokenType 會得到本領域 KDC 簽發的票證，子金鑰作為證明權杖。未實作：從工作階段金鑰衍生的金鑰（DerivedKeyToken）以及用它進行的加密；其 KDC 不是本服務信任領域的目標領域。"
+  },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",
     "text": "minimal（開發模式）：只要兩個成員都存在，UsernameToken 就會被接受，不檢查任何密碼，唯一例外是字面值 \"invalid\" 會被拒絕，讓負面測試可以強制失敗。在產品模式下會驗證密碼——人員的密碼對照其經雜湊的 userPassword，應用程式的密碼對照其用戶端密碼。"
@@ -3776,8 +3780,8 @@
     "text": "1.2 Web（被動）請求者設定檔：依 wa 分派的 /wsfed、登入畫面、位於 AD FS 路徑的已簽署同盟中繼資料，以及 wsignout1.0。"
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "32437a522ad16a77",
-    "text": "在 /sts 上透過 SOAP 進行的 RST / RSTR，涵蓋全部四個版本（1.0 至 1.4），簽發任一種 SAML 方言，判斷提示已簽署，並可選擇加密給請求者的憑證。"
+    "en": "3d88db91fab2cd5f",
+    "text": "在 /sts 上透過 SOAP 進行 RST / RSTR，支援全部四個版本（1.0 至 1.4），簽發任一種 SAML 方言（判斷提示已簽署，並可選擇加密給請求者的憑證）、JWT 或 Kerberos 票證。"
   },
   "stsmetadata.protocols.Kerberos.what": {
     "en": "3048c833f899933d",

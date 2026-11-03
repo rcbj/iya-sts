@@ -2035,6 +2035,22 @@
     "en": "3f48d3e7de647a63",
     "text": "作为 RFC 8693 subject_token 或 actor_token 出示的 RFC 7523 JWT 或 RFC 7522 / SAML 1.1 断言可以以什么为受众。AUTHORIZATION-SERVER（默认）是断言授权自身的规则：其受众指明本令牌端点或颁发者，SAML Recipient 指明令牌端点。ANY-DECLARED-RELYING-PARTY 还接受指明此领域中已注册应用的受众（对于 SAML，还接受作为交换方客户端上已注册断言使用者服务的 Recipient）——即令牌转发：签发给一个依赖方的令牌被换成给另一个依赖方的令牌，/admin/delegation 上的操作会如实记录这一点。警告：此后任何持有此类令牌的人——它被签发给的每个依赖方——都能交换它；只在设计如此的地方开启。"
   },
+  "oauth2.tokenExchangeKerberosInput|label": {
+    "en": "9fb1b4d9b1b510bc",
+    "text": "在令牌交换中接受 Kerberos 令牌"
+  },
+  "oauth2.tokenExchangeKerberosInput|description": {
+    "en": "36c738a4d9dbae66",
+    "text": "RFC 8693 的 subject_token 或 actor_token 是否可以是 Kerberos 令牌（发给本授权服务器自身 SPN 的 AP-REQ，base64url 编码，类型为 Kerberos Token Profile 1.1 的六个 URI 之一）。接受器在两种模式下都会检查它。委派的主体令牌在其 PAC 的 S4U_DELEGATION_INFO 中把执行交换的客户端列为最后一个服务，该链成为所签发令牌的嵌套 act 声明。关闭时，拒绝此类令牌类型。"
+  },
+  "oauth2.tokenExchangeKerberosOutput|label": {
+    "en": "7711b5c35b5a2730",
+    "text": "通过令牌交换签发 Kerberos 令牌"
+  },
+  "oauth2.tokenExchangeKerberosOutput|description": {
+    "en": "e0da8bfdb68b27ed",
+    "text": "指定 Kerberos Token Profile 1.1 六个 URI 之一的 requested_token_type 是否以 Kerberos 令牌应答：一个发给唯一受众或资源的 AP-REQ（该受众或资源必须是作为 Kerberos 服务的应用程序），放在 access_token 中，issued_token_type 为该 URI，token_type 为 N_A。委派的 act 链成为票据的 S4U_DELEGATION_INFO。关闭时，拒绝此类请求。"
+  },
   "oauth2.tokenExchangeRefreshToken|label": {
     "en": "07090990e1118ef0",
     "text": "令牌交换返回的刷新令牌"
@@ -4850,6 +4866,22 @@
   "wstrust.acceptClientCertificate|description": {
     "en": "23d9a8fba459f61c",
     "text": "当发往 /sts 的请求的 wsse:Security 头不携带任何凭据时，是否通过连接上的 TLS 客户端证书来认证请求方。只有在握手时验证通过、且由本领域颁发给某个人或某个应用程序的证书（来自用户门户或应用程序 Credentials 的 TLS 客户端证书，或通过 ACME、EST 或 SCEP 注册的证书）才是凭据，两种模式皆然；已吊销的证书、来自其他领域的证书以及持有者已不再持有的证书会以 wst:FailedAuthentication 拒绝。颁发的令牌会表明使用了证书：SAML 2.0 断言中为 TLSClient，SAML 1.1 断言中为 urn:ietf:rfc:2246，JWT 中为 amr swk。关闭时，此处忽略该证书。"
+  },
+  "wstrust.acceptKerberos|label": {
+    "en": "ed45753aa5e54768",
+    "text": "接受 Kerberos 令牌"
+  },
+  "wstrust.acceptKerberos|description": {
+    "en": "a17dc237154329df",
+    "text": "对 /sts 的请求是否可以出示 Kerberos 令牌（发给本服务自身 SPN 的 AP-REQ，放在 ValueType 为 Kerberos Token Profile 1.1 六种之一的 BinarySecurityToken 中），作为请求者的凭据，或放在 wst:OnBehalfOf 或 wst14:ActAs 中。接受器在两种模式下都会检查票据。在这两个元素中，它必须是委派票据：请求者通过 S4U2Proxy 获得的票据（其 PAC 把请求者列在最后），或用转发给受信任可委派的请求者的 TGT 换得的票据。关闭时，拒绝此类令牌。"
+  },
+  "wstrust.issueKerberos|label": {
+    "en": "285465dcff30aee0",
+    "text": "签发 Kerberos 令牌"
+  },
+  "wstrust.issueKerberos|description": {
+    "en": "52a63db9be2c6460",
+    "text": "指定 Kerberos Token Profile 1.1 六种 ValueType 之一的 wst:TokenType 是否以 Kerberos 令牌应答：一个 AP-REQ，携带本领域 KDC 为主体签发、发给 AppliesTo 所指 Kerberos 服务的服务票据，并通过 TLS 把 Authenticator 的子密钥作为证明令牌返回。ActAs 票据在其 PAC 的 S4U_DELEGATION_INFO 中列出每个执行过操作的参与方。关闭时，拒绝此类请求。"
   },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",

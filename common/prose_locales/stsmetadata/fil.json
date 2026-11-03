@@ -255,6 +255,10 @@
     "en": "cafeffef561dcd9a",
     "text": "partial: Issue, Renew, Validate at Cancel sa SOAP 1.1 at 1.2. Hindi vine-verify ang mga request signature. Ang OnBehalfOf at ActAs ay pinagpapasyahan ng issuance policy (#186, ang mga patakarang pinagsasaluhan ng token exchange at Kerberos S4U) — humihingi ang OnBehalfOf ng impersonation at ang ActAs ng delegation, dapat itong payagan ng delegation semantics ng mga entry, ang AppliesTo ay dapat isang nakarehistrong application na pinapayagan ng mga delegation relationship, at kailangan ng taong requester ang delegation.actorRole — at tinatanggihan ng wst:RequestFailed fault (section 11) sa product mode; wst:InvalidRequest ang dalawang element nang sabay; itinatala ng development ang sana ay tinanggihan. Sa PRODUCT mode (2026-09-12), bawat operation ay nangangailangan ng credential — isang UsernameToken na vine-verify laban sa directory, o isang SAML assertion na sina-sign ng STS na ito at nasa loob ng Conditions nito — at ang OnBehalfOf/ActAs ay nangangailangan ng sariling credential ng requester at ng ganoong assertion sa loob nito; walang tinatanggap ang development, gaya ng dati. Sa parehong mode, nililimitahan ang hinihinging wst:Lifetime (wstrust.maxTokenLifetimeMin) at pinangangalanan ng AuthnContext ng inissue na assertion ang credential sa halip na password. Ang humihiling na walang dalang credential ang wsse:Security ay pinapatunayan, sa parehong mode, ng TLS client certificate sa koneksyon kapag inisyu ito ng realm na ito sa isang tao o isang application (#1046), o kapag galing ito sa isang panlabas na certificate authority at nakaimbak sa userCertificate sa eksaktong isa sa kanilang mga entry (#1061)."
   },
+  "stsmetadata.specs.wss-kerberos.coverage": {
+    "en": "a6d4bfc032b7d23e",
+    "text": "partial: tinatanggap ang lahat ng anim na ValueType ng AP-REQ sa /sts (bilang credential ng humihiling, at sa loob ng OnBehalfOf o ActAs kapag nakuha ang ticket sa pamamagitan ng S4U2Proxy o gamit ang ipinasang TGT) at bilang mga uri ng token ng RFC 8693, para lamang sa sariling SPN ng serbisyong ito, na sinusuri ng acceptor sa parehong mode; ang lagdang gamit ang session key ng token ay isang credential; at kapag naka-on ang wstrust.issueKerberos (naka-off bilang default) sinasagot ang wst:TokenType na humihingi nito ng ticket na inilabas ng KDC ng realm na ito, na ang subkey ang proof token. Hindi pa nagagawa: isang key na hinango mula sa session key (isang DerivedKeyToken) at encryption gamit ito; isang target realm na ang KDC ay hindi isang trust realm ng serbisyong ito."
+  },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",
     "text": "minimal sa development mode: tinatanggap ang UsernameToken kapag naroon ang parehong member at walang password na sinusuri, maliban sa tinatanggihan ang literal na \"invalid\" para mapilit ng negative test ang isang pagkabigo. Sa product mode, vine-verify ang password — ang sa tao laban sa kanilang naka-hash na userPassword, ang sa application laban sa mga client secret nito."
@@ -3776,8 +3780,8 @@
     "text": "Ang 1.2 Web (Passive) Requestor Profile: /wsfed na nagdi-dispatch ayon sa wa, ang sign-in screen, signed federation metadata sa AD FS path, at wsignout1.0."
   },
   "stsmetadata.protocols.WS-Trust.what": {
-    "en": "32437a522ad16a77",
-    "text": "RST / RSTR sa SOAP sa /sts, sa lahat ng apat na bersyon (1.0 hanggang 1.4), nag-iisyu ng alinmang SAML dialect na signed ang assertion at opsyonal na encrypted para sa certificate ng requestor."
+    "en": "3d88db91fab2cd5f",
+    "text": "RST / RSTR sa SOAP sa /sts, sa lahat ng apat na bersyon (1.0 hanggang 1.4), na naglalabas ng alinmang SAML dialect na naka-sign ang assertion at opsyonal na naka-encrypt sa certificate ng humihiling, isang JWT, o isang Kerberos ticket."
   },
   "stsmetadata.protocols.Kerberos.what": {
     "en": "3048c833f899933d",

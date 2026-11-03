@@ -205,6 +205,25 @@ Every refusal draws a page linking back to the sign-in screen, because a bare
 `network.negotiate-auth.trusted-uris`, plus a credential cache in the realm).
 With `krb5.spnegoAuthentication` off the door answers 403 naming the setting.
 
+### A ticket as a WS-Trust or token-exchange token (#658)
+
+A Kerberos ticket is also a token in the two exchanges this service runs, in
+the Kerberos Token Profile 1.1's form: an AP-REQ, bare or GSS-wrapped. See
+[WS-Trust](ws-trust.md#kerberos-tokens) and
+[the token exchange](configure-oauth2-grants.md#a-kerberos-ticket-as-the-subject-the-actor-or-the-token-issued).
+
+* **Presented**, it is checked by the acceptor `/authn/spnego` uses, so it must
+  be for `krb5.servicePrincipal`. A delegated one is the ticket the middle
+  tier obtained for this service by S4U2Proxy, or with a TGT the user
+  forwarded to it, never the user's own ticket to the middle tier.
+* **Issued**, it is sealed by this KDC for the subject and the target's SPN,
+  with the PAC every ticket of the realm carries. A delegation names who
+  acted in `S4U_DELEGATION_INFO`. The ticket does not claim
+  pre-authentication, because the KDC did not run an AS exchange for it. A
+  target in another Kerberos realm is reached through the
+  [trusts](#kerberos-trusts), through the KDCs of this service's own trust
+  realms.
+
 ### The demonstration: the companion's Kerberos-protected page and service
 
 Until #595 the service also ran a demonstration: `/spnego` and
@@ -1313,6 +1332,9 @@ decoded and never produced.
 
 * [Authentication](authentication.md) — the sign-in screen and its Kerberos
   button
+* [WS-Trust](ws-trust.md#kerberos-tokens) and
+  [the token exchange](configure-oauth2-grants.md#a-kerberos-ticket-as-the-subject-the-actor-or-the-token-issued)
+  — a ticket as a token (#658)
 * [Sessions](sessions.md) and [Signing out](signing-out.md)
 * [Federation](federation.md) — `fedAuthnMechanism: spnego`
 * [Trust realms](trust-realms.md) — a KDC per realm

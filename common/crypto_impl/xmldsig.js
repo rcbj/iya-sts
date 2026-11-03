@@ -787,7 +787,11 @@ function signWsSecurity(soapXml, opts) {
   // the same three reasons: only a URI in the registry takes this path, the
   // RSA family is byte-for-byte what it was, and `sigAlgSpec()` must not be
   // asked about an identifier it does not know because it answers SHA-256.
-  var pqSpec = (SIG_METHODS[sigAlg] && SIG_METHODS[sigAlg].postQuantum)
+  // An HMAC (iya-sts #658, a Kerberos token's session key) takes the same
+  // path: the caller's `opts.signer` holds the key, and the KeyInfo is the
+  // caller's `opts.keyInfoXml`.
+  var pqSpec = (SIG_METHODS[sigAlg] && (SIG_METHODS[sigAlg].postQuantum ||
+                                        SIG_METHODS[sigAlg].family === 'hmac'))
     ? SIG_METHODS[sigAlg] : null;
   if (pqSpec && typeof opts.signer !== 'function') {
     log.debug("Leaving signWsSecurity(). Post-quantum with no signer.");
@@ -1611,6 +1615,24 @@ var FORGE_MD = { sha1: forge.md.sha1, sha256: forge.md.sha256,
 // RSASSA-PSS is under the 2007/05 namespace with the hash FIRST
 // (sha256-rsa-MGF1), not the 2001/04 one with the hash last.
 var SIG_METHODS = {};
+// THE HMAC METHODS (iya-sts #658): a WS-Security signature made with a
+// Kerberos token's session key (the Kerberos Token Profile 1.1, section 3.2).
+// Listed so that a SignedInfo naming one is read; this module verifies none
+// of them itself — the caller's `opts.verifier` holds the key — and signs
+// with none of them.
+[['http://www.w3.org/2000/09/xmldsig#hmac-sha1', 'sha1', 'HMAC-SHA1',
+  'http://www.w3.org/2000/09/xmldsig#sha1'],
+ ['http://www.w3.org/2001/04/xmldsig-more#hmac-sha256', 'sha256',
+  'HMAC-SHA256', 'http://www.w3.org/2001/04/xmlenc#sha256'],
+ ['http://www.w3.org/2001/04/xmldsig-more#hmac-sha384', 'sha384',
+  'HMAC-SHA384', 'http://www.w3.org/2001/04/xmldsig-more#sha384'],
+ ['http://www.w3.org/2001/04/xmldsig-more#hmac-sha512', 'sha512',
+  'HMAC-SHA512', 'http://www.w3.org/2001/04/xmlenc#sha512']
+].forEach(function (row) {
+  SIG_METHODS[row[0]] = { family: 'hmac', hash: row[1], keyKind: 'secret',
+                          digestUri: row[3],
+                          label: row[2] + ' (a shared key)' };
+});
 SIG_METHODS['http://www.w3.org/2000/09/xmldsig#rsa-sha1'] =
   { family: 'rsa', pad: 'v1_5', hash: 'sha1', keyKind: 'rsa',
     digestUri: 'http://www.w3.org/2000/09/xmldsig#sha1',

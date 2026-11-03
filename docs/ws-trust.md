@@ -61,6 +61,7 @@ Cancel too.
 |---|---|
 | `urn:ietf:params:oauth:token-type:jwt` | a JWT signed with `wstrust.jwtAlgorithm` |
 | `http://docs.oasis-open.org/wss/oasis-wss-saml-token-profile-1.1#SAMLV1.1` or `urn:oasis:names:tc:SAML:1.0:assertion` | a signed SAML 1.1 assertion, from the SAML 1.1 builder, with the application's SAML 1.1 attributes (#487). An ActAs in SAML 1.1 names who acted in a `delegates` attribute (namespace `urn:iya:sts:delegation`, one value per party, earliest first), because SAML 1.1 has no Delegation Restriction |
+| one of the [Kerberos Token Profile 1.1](#kerberos-tokens)'s six ValueTypes (`…#GSS_Kerberosv5_AP_REQ` and the others) | a Kerberos token: an AP-REQ carrying a service ticket for the `AppliesTo`'s Kerberos service, with its session key as the proof token. Off by default (`wstrust.issueKerberos`) |
 | anything else, or none | a signed SAML 2.0 assertion, the default |
 
 **The SAML assertion** comes from the same builder the
@@ -72,7 +73,8 @@ its audience is the `AppliesTo`, its validity window is widened by
 `AuthnContextClassRef` names the credential that was presented:
 `PasswordProtectedTransport` for a UsernameToken, `PreviousSession` for an
 assertion, `TLSClient` for a TLS client certificate, `X509` for a
-WS-Security signature over the request, `unspecified` for a
+WS-Security signature over the request, `Kerberos` for a Kerberos token,
+`unspecified` for a
 delegation or nothing. The `wsu:Lifetime` around
 it states the lifetime without the skew.
 
@@ -140,6 +142,8 @@ element that holds somebody else's token:
   hands one back in (ValueType `urn:ietf:params:oauth:token-type:jwt`);
 * a **WS-Security signature over the request** (#521), made with a
   message-signing certificate — see below. It is asked first;
+* a **Kerberos token** for this service's own SPN, alone or with a signature
+  made with its session key — see [Kerberos tokens](#kerberos-tokens);
 * the **TLS client certificate** on the connection, when `wsse:Security`
   carries none of the above (#1046) — see below;
 * a request with **no credential** (development only — see below).
@@ -322,6 +326,100 @@ the SOAP 1.1 `faultcode`. In **development** the token is issued and the act on
 The policy is listed at `GET /admin-api/delegation/policy`. An `ActAs` token
 does not state in the assertion that a middle tier acted.
 
+### Kerberos tokens
+
+A Kerberos ticket is a WS-Trust token in each place a token goes, in the
+form the [Web Services Security Kerberos Token Profile 1.1](https://docs.oasis-open.org/wss-m/wss/v1.1.1/os/wss-KerberosTokenProfile-v1.1.1-os.html)
+defines: a `wsse:BinarySecurityToken` (`EncodingType` `…#Base64Binary`)
+holding an RFC 4120 AP-REQ. The `ValueType` says which form, and all six are
+accepted (prefix `http://docs.oasis-open.org/wss/oasis-wss-kerberos-token-profile-1.1`):
+
+| ValueType | The bytes |
+|---|---|
+| `#GSS_Kerberosv5_AP_REQ` (also `…1510`, `…4120`) | the RFC 4121 GSS `InitialContextToken` around the AP-REQ, as SPNEGO carries one |
+| `#Kerberosv5_AP_REQ` (also `…1510`, `…4120`) | the AP-REQ alone |
+
+A token whose bytes are the other form from the one its `ValueType` names is
+refused. A token is named elsewhere in a request by its key identifier,
+`#Kerberosv5APREQSHA1`: the base64 SHA-1 of the token's bytes.
+
+**A ticket presented here is for THIS service's own SPN**, the acceptor's
+`krb5.servicePrincipal` (`GET /admin-api/kerberos/principals` names it). It is
+checked by the same acceptor as the [Kerberos sign-in](kerberos.md), in both
+modes, and it is good once: presenting the same AP-REQ again is a replay.
+`wstrust.acceptKerberos` (on by default) turns Kerberos input off.
+
+**As the requester's credential**, the ticket's client is the requester:
+
+* a person by their name, the local Kerberos realm left off
+  (`alice@EXAMPLE.COM` is `alice`);
+* a service principal (`HTTP/front.example.com@EXAMPLE.COM`) as the
+  application whose identifier is that name. It gets a token about the
+  application and starts no session;
+* a principal of a [trusted Kerberos realm](configure-kerberos.md) by its whole
+  name, holding only the roles granted to that name.
+
+The issued token says how the KDC authenticated them: `amr` and the SAML
+authentication class are read from the ticket's flags, exactly as the
+Kerberos sign-in reads them (`pwd` for pre-authentication, `otp`, `hwk`,
+`swk` for PKINIT). A person's Kerberos token starts a session.
+
+**A signature made with the token's session key** is also a credential: an
+HMAC (`xmldsig-more#hmac-sha256`, `-sha384`, `-sha512`; `xmldsig#hmac-sha1`
+only while `saml.allowSha1Signatures` allows SHA-1) over the SOAP Body and
+the `wsu:Timestamp`. Its `KeyInfo` names the Kerberos token in the same
+header, by a `wsse:Reference` to the BinarySecurityToken or by the
+`#Kerberosv5APREQSHA1` key identifier. The key is the Authenticator's subkey,
+or the ticket's session key when the Authenticator carries none. The signing
+rules of [A signed request](#a-signed-request) apply: what is read must be
+inside the signed Body, the Timestamp must be fresh, and an
+`HMACOutputLength` is refused.
+
+**Inside `OnBehalfOf` or `ActAs`**, the ticket's client is the subject, and
+the ticket must have been obtained by **Kerberos delegation** for this
+service:
+
+| How the requester obtained it | What it carries | Accepted when |
+|---|---|---|
+| S4U2Proxy to this service's SPN (after S4U2Self, or with the user's own ticket as evidence) | `S4U_DELEGATION_INFO` in its PAC | the requester is the last service the PAC names. The services before it are the earlier delegates |
+| a TGT the user forwarded to the requester | the `FORWARDED` flag | the requester's application has `krb5TrustedForDelegation` |
+| neither | | never: a ticket the user made for this service and handed over is refused |
+
+The application the delegated token was issued for (S, to the
+[delegation policy](delegation.md)) is the requester's own, and the
+`AppliesTo` is the target, as for any other delegated token.
+
+**Issued**, with `wst:TokenType` naming one of the six ValueTypes and
+`wstrust.issueKerberos` on (it is off by default):
+
+* the `AppliesTo` must be an application that is a Kerberos service: one
+  whose identifier is `SPN@REALM`, or that carries `krb5ServicePrincipalName`;
+* the ticket is this realm's KDC's, for the subject, with the PAC this KDC
+  builds for anybody (a subject from another Kerberos realm keeps the PAC
+  their own realm wrote);
+* an `ActAs` ticket names every party that acted in its PAC's
+  `S4U_DELEGATION_INFO`, the requester last: a Kerberos service by
+  `SPN@REALM`, an application with no SPN by its identifier. An
+  `OnBehalfOf` ticket adds nobody;
+* the Authenticator's subkey is returned in `wst:RequestedProofToken` as a
+  `wst:BinarySecret`, so the request must arrive over TLS;
+* `wst:Lifetime` is the AP-REQ's own window: it is good once, within
+  `krb5.clockSkew` of when it was made. The ticket inside lives for the KDC's
+  ticket lifetime;
+* `wst:Forwardable` (default true) makes the ticket forwardable, never for a
+  person who may not be delegated. `wst:Delegatable` set to `true` puts a
+  forwarded TGT for the subject in the Authenticator (a KRB-CRED with
+  `GSS_C_DELEG_FLAG`), only to a target with `krb5TrustedForDelegation`;
+* a target in another Kerberos realm is reached through the
+  [trusts](configure-kerberos.md): the service walks the referral path itself,
+  through the KDCs of the trust realms of this service, with their path
+  checks and SID filtering. A realm that no trust realm here serves is
+  refused: no trust record carries a KDC's address.
+
+`Validate` of a Kerberos token for this service answers `valid` when the
+acceptor accepts it. A Kerberos token is never renewed or cancelled through
+WS-Trust: its ticket is renewed at the KDC.
+
 ### The `AppliesTo`
 
 The `AppliesTo` address is the token's audience, and it is resolved through the
@@ -356,7 +454,8 @@ stored one is sent in a `BinarySecurityToken`. Only a signature over the
 request is read: a signed or encrypted response is not offered, and
 `?encrypt=1` reads its recipient from an `X509Certificate`, not a
 `BinarySecurityToken`. `Validate` reports whether a token is
-**present**, not whether it verifies; `Cancel` recalls nothing already issued;
+**present**, not whether it verifies, except for a Kerberos token, which it
+accepts; `Cancel` recalls nothing already issued;
 and a SAML assertion presented as a credential is trusted only when **this**
 STS signed it — there is no register of foreign issuers.
 
@@ -375,6 +474,10 @@ codes, in the request's own trust namespace: on SOAP 1.1 it is the
 | A signed request whose signature does not cover the Body or the Timestamp | `wst:AuthenticationBadElements` |
 | An assertion or a JWT, as the credential or inside `OnBehalfOf` / `ActAs`, that has expired; a signed request whose Timestamp has expired (product) | `wst:ExpiredData` |
 | The token inside `OnBehalfOf` / `ActAs` is not an assertion or a JWT this STS issued, or does not verify, is not yet valid or names nobody (product) | `wst:InvalidRequest` |
+| A Kerberos token refused by the acceptor, turned off, or (inside `OnBehalfOf` / `ActAs`) not obtained by delegation or not delegated to the requester | `wst:FailedAuthentication` as the credential, `wst:InvalidRequest` inside an element |
+| A Kerberos token asked for while `wstrust.issueKerberos` is off, or for an `AppliesTo` that is no Kerberos service | `wst:BadRequest` |
+| A Kerberos token asked for without TLS; a Renew or Cancel of a Kerberos token | `wst:InvalidRequest` |
+| A forwarded Kerberos ticket from a requester not trusted for delegation; `wst:Delegatable` to a target not trusted for it; the KDC could not issue the ticket | `wst:RequestFailed` |
 | Both `OnBehalfOf` and `ActAs`; `Cancel` in WS-Trust 2004/04; `?encrypt=1` with no recipient certificate (product) | `wst:InvalidRequest` |
 | The issuance policy refuses the token or the delegation; a JWT about somebody the directory does not hold; `?encrypt=1` to a certificate that cannot be used (product); a delegation about a person in another cell that cannot be fetched | `wst:RequestFailed` |
 
@@ -396,7 +499,8 @@ in [Error codes](error-codes.md).
 | A TLS client certificate as the credential | the same as product: it must verify and be this realm's, for a person or an application; a refused one is a fault | as development |
 | A signed request | its structure and certificate reference are read and the certificate's holder believed; the signature, Timestamp, revocation and replay are not checked | every check in [A signed request](#a-signed-request) |
 | A JWT as the credential | believed | must verify with this realm's own key (`/oauth2/jwks`), be within its `exp`, carry the realm's OAuth issuer, and name a person or an application this realm holds |
-| `OnBehalfOf` / `ActAs` | needs no requester credential | needs the requester's own credential, and the inner token must be an assertion or a JWT this STS signed |
+| `OnBehalfOf` / `ActAs` | needs no requester credential | needs the requester's own credential, and the inner token must be an assertion or a JWT this STS signed, or a delegated Kerberos ticket |
+| A Kerberos token, anywhere | checked by the acceptor, the same as product | checked by the acceptor: the ticket under this service's key, the Authenticator, the clock and the replay cache |
 | Who may act for whom | the issuance policy is asked and the act says what would have been refused; the token is issued | the policy must allow the act ([Delegation and impersonation](delegation.md)), or a `wst:RequestFailed` fault |
 | An assertion with no NameID | subjects such as `saml-subject` are invented | refused |
 | `?encrypt=1` that cannot encrypt | plaintext, logged | refused |
@@ -414,6 +518,8 @@ The lifetime clamp, the authentication context, the JWT's `jti` and `kid`, and
 | `wstrust.jwtAlgorithm` | `STS_WSTRUST_JWT_ALGORITHM` | `RS256` | yes | The JWT's `alg`: `RS256`–`RS512`, `PS256`–`PS512`, `ES256`–`ES512` or `EdDSA`. |
 | `wstrust.jwtCertificateHeader` | `STS_WSTRUST_JWT_CERTIFICATE_HEADER` | `x5u` | yes | Whether a JWT names its signing chain: `x5u` (an address), `x5c` (inline), `both` or `none`. |
 | `wstrust.acceptClientCertificate` | `STS_WSTRUST_ACCEPT_CLIENT_CERTIFICATE` | `true` | yes | Whether the verified TLS client certificate on the connection authenticates a requester whose `wsse:Security` carries no credential (see [Credentials](#credentials)). |
+| `wstrust.acceptKerberos` | `STS_WSTRUST_ACCEPT_KERBEROS` | `true` | yes | Whether a [Kerberos token](#kerberos-tokens) is accepted as the requester's credential and inside `OnBehalfOf` / `ActAs`. |
+| `wstrust.issueKerberos` | `STS_WSTRUST_ISSUE_KERBEROS` | `false` | yes | Whether a `wst:TokenType` naming a Kerberos token is answered with one (see [Kerberos tokens](#kerberos-tokens)). |
 
 A SAML token is shaped by the shared `saml.*` settings and the SAML 2.0
 assertion settings — see the

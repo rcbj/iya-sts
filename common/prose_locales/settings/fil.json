@@ -2035,6 +2035,22 @@
     "en": "3f48d3e7de647a63",
     "text": "Kung saan puwedeng naka-address ang RFC 7523 JWT o RFC 7522 / SAML 1.1 assertion na ipinakita bilang RFC 8693 subject_token o actor_token. Ang AUTHORIZATION-SERVER (ang default) ay sariling patakaran ng assertion grant: pinangangalanan ng audience nito ang token endpoint o issuer na ito, at ng SAML Recipient ang token endpoint. Tumatanggap din ang ANY-DECLARED-RELYING-PARTY ng audience na nagpapangalan ng application na naka-register sa realm na ito (at, para sa SAML, ng Recipient na isang assertion consumer service na naka-register sa nag-e-exchange na client) — TOKEN FORWARDING: ang token na in-issue sa isang relying party ay ipinagpapalit para sa iba, na itinatala ng act sa /admin/delegation bilang ganoon. BABALA: ang sinumang may hawak ng ganoong token — bawat relying party na pinag-issue-han nito — ay makakapag-exchange na nito; i-on lang ito kung iyon ang disenyo."
   },
+  "oauth2.tokenExchangeKerberosInput|label": {
+    "en": "9fb1b4d9b1b510bc",
+    "text": "Tanggapin ang Kerberos token sa isang token exchange"
+  },
+  "oauth2.tokenExchangeKerberosInput|description": {
+    "en": "36c738a4d9dbae66",
+    "text": "Kung maaaring maging Kerberos token ang subject_token o actor_token ng RFC 8693 (isang AP-REQ para sa sariling SPN ng authorization server na ito, base64url, na may uri ayon sa isa sa anim na URI ng Kerberos Token Profile 1.1). Sinusuri ito ng acceptor sa parehong mode. Pinapangalanan ng isang delegated subject token ang client na nag-e-exchange bilang huling serbisyo sa S4U_DELEGATION_INFO ng PAC nito, at ang chain ay nagiging nested na act claim ng token na inilabas. Kapag naka-off, tinatanggihan ang ganitong uri ng token."
+  },
+  "oauth2.tokenExchangeKerberosOutput|label": {
+    "en": "7711b5c35b5a2730",
+    "text": "Maglabas ng Kerberos token mula sa isang token exchange"
+  },
+  "oauth2.tokenExchangeKerberosOutput|description": {
+    "en": "e0da8bfdb68b27ed",
+    "text": "Kung sinasagot ng Kerberos token ang requested_token_type na nagpapangalan sa isa sa anim na URI ng Kerberos Token Profile 1.1: isang AP-REQ para sa iisang audience o resource, na dapat ay isang application na Kerberos service, sa access_token na may issued_token_type na URI na iyon at token_type na N_A. Ang act chain ng isang delegation ay nagiging S4U_DELEGATION_INFO ng ticket. Kapag naka-off, tinatanggihan ang ganitong kahilingan."
+  },
   "oauth2.tokenExchangeRefreshToken|label": {
     "en": "07090990e1118ef0",
     "text": "Refresh token mula sa isang token exchange"
@@ -4850,6 +4866,22 @@
   "wstrust.acceptClientCertificate|description": {
     "en": "23d9a8fba459f61c",
     "text": "Kung ang isang request sa /sts na walang dalang kredensyal ang wsse:Security header ay magpapatunay sa humihiling nito sa pamamagitan ng TLS client certificate sa koneksyon. Tanging ang certificate na na-verify sa handshake at inisyu ng realm na ito sa isang tao o isang application (isang TLS client certificate mula sa user portal o sa Credentials ng application, o isang na-enroll sa ACME, EST o SCEP) ang isang kredensyal, sa parehong mode; ang na-revoke, ang galing sa ibang realm, at ang hindi na hawak ng may-ari nito ay tinatanggihan ng wst:FailedAuthentication. Sinasabi ng inisyung token na may ginamit na certificate: TLSClient sa isang SAML 2.0 assertion, urn:ietf:rfc:2246 sa isang SAML 1.1, amr swk sa isang JWT. Kapag naka-off, binabalewala rito ang certificate."
+  },
+  "wstrust.acceptKerberos|label": {
+    "en": "ed45753aa5e54768",
+    "text": "Tanggapin ang Kerberos token"
+  },
+  "wstrust.acceptKerberos|description": {
+    "en": "a17dc237154329df",
+    "text": "Kung maaaring magharap ang isang kahilingan sa /sts ng Kerberos token (isang AP-REQ para sa sariling SPN ng serbisyong ito, sa isang BinarySecurityToken ng isa sa anim na ValueType ng Kerberos Token Profile 1.1) bilang credential ng humihiling o sa loob ng wst:OnBehalfOf o wst14:ActAs. Sinusuri ng acceptor ang ticket sa parehong mode. Sa loob ng alinmang element, dapat itong delegated ticket: isang nakuha ng humihiling sa pamamagitan ng S4U2Proxy (pinapangalanan ng PAC nito ang humihiling sa huli), o isang binili gamit ang TGT na ipinasa sa humihiling na pinagkakatiwalaan para sa delegation. Kapag naka-off, tinatanggihan ang ganitong token."
+  },
+  "wstrust.issueKerberos|label": {
+    "en": "285465dcff30aee0",
+    "text": "Maglabas ng mga Kerberos token"
+  },
+  "wstrust.issueKerberos|description": {
+    "en": "52a63db9be2c6460",
+    "text": "Kung sinasagot ng Kerberos token ang wst:TokenType na nagpapangalan sa isa sa anim na ValueType ng Kerberos Token Profile 1.1: isang AP-REQ na may dalang service ticket na inilabas ng KDC ng realm na ito para sa subject patungo sa Kerberos service na pinapangalanan ng AppliesTo, at ibinabalik ang subkey ng Authenticator bilang proof token sa TLS. Pinapangalanan ng isang ActAs ticket ang bawat partidong kumilos sa S4U_DELEGATION_INFO ng PAC nito. Kapag naka-off, tinatanggihan ang ganitong kahilingan."
   },
   "wsfed.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
