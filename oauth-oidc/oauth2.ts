@@ -10689,7 +10689,22 @@ class OAuth2Server {
                  '7591, an LDAP add under ou=applications or an OpenID ' +
                  'Federation).' };
     }
-    if (IssuerNames.registeredApplication(id)) {
+    // A client_id is an `oauthClientId` value, which may differ from the
+    // entry's identifier: an operator who adds a client_id to a Kerberos
+    // service's entry has registered that client. registeredApplication()
+    // looks up by identifier only, so the client_id is resolved to its entry
+    // first, as WS-Trust resolves an AppliesTo (2026-11-03,
+    // sts_kerberos_tokens in product mode).
+    let identifier = id;
+    try {
+      const entry: Json = applications.forClientId(id);
+      identifier = entry && entry.identifier ? String(entry.identifier) : id;
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.unregisteredClientRefusal(): " +
+                ((e && e.message) || e));
+      identifier = id;
+    }
+    if (IssuerNames.registeredApplication(identifier)) {
       log.debug("Leaving OAuth2Server.unregisteredClientRefusal(). " +
                 "Registered.");
       return null;

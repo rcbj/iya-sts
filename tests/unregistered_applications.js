@@ -35,7 +35,8 @@
 //       registered wtrealm passes the check; development is unchanged;
 //   O1. OAuth, product: an authorization request naming a client_id nobody
 //       registered, one only seen, or none is a 400 that is not redirected
-//       (STS-OAUTH-0947 / 0948); a registered one passes the check;
+//       (STS-OAUTH-0947 / 0948); a registered one passes the check, and so
+//       does a client_id registered on an entry under another identifier;
 //       development asks nothing;
 //   O2. OAuth, product: a token request naming an unregistered or seen-only
 //       client is 401 invalid_client (STS-OAUTH-0949) and writes nothing on
@@ -530,6 +531,11 @@ async function oauth(t, seenOnlyClient) {
           dev.code !== 'STS-OAUTH-0947' && dev.code !== 'STS-OAUTH-0948',
           'O1b. a registered client passes the check in product, and ' +
           'development asks nothing', JSON.stringify([registered, dev]));
+  const aliased = vet('product', 'ua-alias-client');
+  t.check(aliased.code !== 'STS-OAUTH-0947',
+          'O1c. product: a client_id registered as an oauthClientId on an ' +
+          'entry whose identifier differs passes the check',
+          JSON.stringify(aliased));
 
   const token = async function (m, clientId) {
     log.debug("Entering token(). " + m + ' ' + clientId);
@@ -839,7 +845,16 @@ function fixtures(t) {
                 oauthTokenEndpointAuthMethod: 'none',
                 oauthGrantType: ['authorization_code'] } }),
     applications.createApplication({ identifier: 'ua-sp',
-      protocols: ['saml2', 'saml11'], fields: {} })
+      protocols: ['saml2', 'saml11'], fields: {} }),
+    // A client_id that is NOT the entry's identifier: an operator added it
+    // to an entry made for something else (a Kerberos service's, in
+    // sts_kerberos_tokens), which registers that client too (O1c).
+    applications.createApplication({ identifier: 'ua-aliased-entry',
+      protocols: ['oauth2'],
+      fields: { oauthClientId: 'ua-alias-client',
+                oauthRedirectUri: ['https://ua-client.example/cb'],
+                oauthTokenEndpointAuthMethod: 'none',
+                oauthGrantType: ['authorization_code'] } })
   ];
   t.check(made.every(function (one) { return one && one.ok; }),
           'precondition: the applications were registered',
