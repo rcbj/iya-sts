@@ -1812,6 +1812,19 @@ STS-LDAP-0197). Express does not wait on that promise; the handler's
 `.then` sends. An in-process caller waits on the return
 (`tests/admin_api_nominated_actor.js`).
 
+## A PERSON'S KEY PAIRS: SEVERAL, AND `revoke` REVOKES ONE (#1290, 2026-11-03)
+
+Rule 7 for #1290: the console's person controls changed and so did the
+operations behind them, with no new action. `POST /admin-api/pki/issue` and
+`/pki/upload-certificate` with `target=person` ADD a key pair (an optional
+`label`; `STS-PKI-0223` at `pki.personSigningKeyMax`), and `/pki/revoke` with
+`target=person` REVOKES the one named by `handle` (its `kid` or thumbprint, or
+its serial) with `reason` — on the CRL, the private half dropped, the
+declaration cleared with the last valid one. The person arm no longer takes
+anything off, and there is no per-key clear for administrators: a clear is
+what the ticket retired. The application arm of `revoke` is unchanged.
+`GET /admin-api/users?user=` answers `credentials.keyPairs[].keys` per profile.
+
 ## `upload-certificate` AND `regenerate-secret` (2026-09-13)
 
 Two operations for the Credentials section of an application's console page,

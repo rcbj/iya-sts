@@ -2341,7 +2341,15 @@ on every visit, or a key this service holds that no human can collect.
 the feature exists for: a person's key may assert about that person and about
 nobody else.
 
-**THE TAKE-OFF CONTROL IS THE SAME `revoke` ACTION with the same `target`**, and
+**~~THE TAKE-OFF CONTROL~~ — REPLACED BY REVOCATION, #1290 (2026-11-03).** A
+person holds several key pairs per profile now, and `/admin/pki`'s People table
+and `/admin/users`' Credentials section draw a row per key pair with a *Revoke*
+form (a reason select) on each valid row: the same `revoke` action with
+`target=person` and the key pair's `handle`, which puts the certificate on its
+authority's CRL (`person_assertions.revoke()`). Issue and Upload ADD a key pair
+under an optional label and are replaced by a note at
+`pki.personSigningKeyMax`. What follows is the take-off it replaced:
+**THE TAKE-OFF CONTROL WAS THE SAME `revoke` ACTION with the same `target`**, and
 it clears the `stsAssertionIssuer` declaration with the key pair where the
 application arm deliberately leaves `oauthAssertionIssuer` alone. An application
 may hold a JWKS it registered itself beside the one this service issued; a
