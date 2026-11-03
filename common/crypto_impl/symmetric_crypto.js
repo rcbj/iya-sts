@@ -36,16 +36,22 @@ var bytes = require("./crypto_bytes");
 
 // A node consumer (the tests load this module directly) may have no
 // CONFIG_FILE, so fall back to info rather than failing to load.
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "symmetric_crypto",
   level: (function () {
     try {
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in symmetric_crypto log level: " + logLevelProblem);
+}
 
 var asBytes = bytes.asBytes;
 var concatBytes = bytes.concatBytes;
@@ -392,6 +398,8 @@ function rotl32(value, count) {
   return ((value << count) | (value >>> (32 - count))) >>> 0;
 }
 
+// A hot path: called once per quarter-round of every ChaCha20 block (eighty per
+// block), so no Entering/Leaving pair here — it would drown the log.
 function quarterRound(state, a, b, c, d) {
   state[a] = (state[a] + state[b]) >>> 0;
   state[d] = rotl32(state[d] ^ state[a], 16);
@@ -403,12 +411,16 @@ function quarterRound(state, a, b, c, d) {
   state[b] = rotl32(state[b] ^ state[c], 7);
 }
 
+// A hot path: called once per key and nonce word of every ChaCha20 block, so no
+// Entering/Leaving pair here — it would drown the log.
 function le32(buffer, offset) {
   return (buffer[offset] | (buffer[offset + 1] << 8) |
           (buffer[offset + 2] << 16) | (buffer[offset + 3] << 24)) >>> 0;
 }
 
 // One 64-byte keystream block for the given counter.
+// A hot path: called once per 64 bytes of every ChaCha20 message, so no
+// Entering/Leaving pair here — it would drown the log.
 function chacha20Block(key, nonce, counter) {
   var state = new Uint32Array(16);
   // "expand 32-byte k"
@@ -681,6 +693,7 @@ function siphash24(key, message) {
     log.debug("Leaving rotl().");
     return ((x << BigInt(b)) | (x >> BigInt(64 - b))) & M;
   }
+
   function rd(buffer, offset) {
     log.debug("Entering rd().");
     var v = _B0;

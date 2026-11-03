@@ -53,16 +53,22 @@ var pqx = require("./pqc_x509");
 var pkijs = require("pkijs");
 var asn1js = require("asn1js");
 
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "x509",
   level: (function () {
     try {
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in x509 log level: " + logLevelProblem);
+}
 
 var derToPem = jose.derToPem;
 var pemToDer = jose.pemToDer;
@@ -2881,6 +2887,9 @@ async function verifyChain(pems) {
     try {
       link.signatureValid = await verifySignature(certs[i], issuer);
     } catch (e) {
+      // Reported on the link rather than thrown: one unverifiable link must
+      // not hide what the rest of the chain says.
+      log.debug("Caught in verifyChain(): " + ((e && e.message) || e));
       link.error = e.message;
     }
     // The alternative signature is reported BESIDE the conventional one and
@@ -2890,6 +2899,8 @@ async function verifyChain(pems) {
     try {
       link.alternative = await verifyAlternativeSignature(certs[i], issuer);
     } catch (e) {
+      // Reported beside the conventional result, for the reason above.
+      log.debug("Caught in verifyChain(): " + ((e && e.message) || e));
       link.alternative = { present: true, valid: null, reason: e.message };
     }
     var now = new Date();

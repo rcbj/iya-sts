@@ -47,16 +47,22 @@ var errorCodes = require("../error_codes");
 
 // A node consumer (the tests load this module directly) may have no
 // CONFIG_FILE, so fall back to info rather than failing to load.
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "key_material",
   level: (function () {
     try {
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in key_material log level: " + logLevelProblem);
+}
 
 // PKI.js needs a Web Crypto engine. In the browser the global `crypto` object
 // provides it; in node (v18+) the same global exists, which is what lets the
