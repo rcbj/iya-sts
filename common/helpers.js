@@ -63,9 +63,9 @@ const bunyan = require("bunyan");
 // THE VENDORED BBS SUITE IS REQUIRED AT FIRST USE (#348), through
 // `bbs2023Suite()` below: it requires `jsonld` at its top, and the two are
 // resident memory in every request worker that never makes a BBS key. By
-// hand rather than through `common/lazy_module.ts`, because this file is in
-// the parent project's Kerberos COPY closure (kerberos/CLAUDE.md) and a new
-// require here would add that file to it.
+// hand rather than through `common/lazy_module.ts`, because this file was in
+// the parent project's Kerberos COPY closure and a new require here would
+// have owed the parent a line (until #1280; it is owed nothing now).
 /** @type {typeof import('./crypto_impl/bbs2023.js') | null} */
 let bbs2023Loaded = null;
 // ---------------------------------------------------------------------------
@@ -119,8 +119,7 @@ const joseKid = require('./jose_kid');
 // WHICH HOPS MAY SAY WHERE A REQUEST CAME FROM (2026-09-14, #46). A LEAF that
 // requires `net`, bunyan and `config` only. `forwardedFrom()` below asks it
 // whether a request's forwarded headers are believed at all — the connection's
-// peer must be one of `global.trustedProxies` when that is set. It is in the
-// parent project's Kerberos COPY set through this file (kerberos/CLAUDE.md).
+// peer must be one of `global.trustedProxies` when that is set.
 const clientAddress = require('./client_address');
 /**
  * The service's logger, registered so that `global.logLevel` changes take

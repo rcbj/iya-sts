@@ -76,11 +76,11 @@
 
 const { log } = require('../common/helpers');
 // `common/crypto.js`, for a pending exchange's id. `helpers.js` above already
-// requires it at load, so this adds no file to the parent project's copy set
+// requires it at load, so this adds no file to what this module loads
 // (#453).
 const stsCrypto = require('../common/crypto');
 // For the two limits below. `helpers.js` above already requires it, so this
-// adds no file to the parent project's copy set.
+// adds no file to what this module loads.
 const config = require('../common/config');
 const prim = require('./krb5_primitives.js');
 const gss = require('./krb5_gss.js');
@@ -99,9 +99,8 @@ const realms = require('../common/realms');
 const errorCodes = require('../common/error_codes');
 // ONCE ACROSS THE CLUSTER (2026-09-14, #46 section 5): a request-mic
 // continuation is spent through an atomic claim, and the table active-active
-// mode is held to. **NEITHER ADDS A FILE TO THE PARENT PROJECT'S COPY SET**:
-// `krb5_service.js` above already requires both, so both are in that closure
-// already (kerberos/CLAUDE.md).
+// mode is held to. Neither adds a file to what this module loads:
+// `krb5_service.js` above already requires both.
 const clusterClaims = require('../cluster/cluster_claims');
 const capabilities = require('../cluster/cluster_capabilities');
 

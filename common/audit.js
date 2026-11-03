@@ -93,15 +93,15 @@ const replication = require('../persistence/persistence_replication');
 // never sent to the client whose request produced it.
 const errorCodes = require('./error_codes');
 // WHO A REQUEST CAME FROM (2026-09-18). A LEAF (rule 3) that `helpers.js`
-// already requires, so it adds nothing to what this file loads — and nothing
-// to the parent project's Kerberos COPY closure, which reaches this file.
+// already requires, so it adds nothing to what this file loads.
 const clientAddress = require('./client_address');
 const { AsyncLocalStorage } = require('async_hooks');
 
 // ---------------------------------------------------------------------------
-// THE SEQUENCE NUMBER AND THE ORIGIN OF A ROW (#465), both required LAZILY:
-// this file is in the parent project's in-process Kerberos COPY closure
-// (kerberos/CLAUDE.md), and a top-level require would owe it two more files.
+// THE SEQUENCE NUMBER AND THE ORIGIN OF A ROW (#465), both required LAZILY,
+// which kept two files out of the parent project's in-process Kerberos COPY
+// closure that reached this file (an obligation until #1280; the
+// arrangement stands).
 // `seq_allocator` hands out a number unique across every process of the
 // service; the origin is this process's stable name in the store, or '' with
 // no shared store. Neither throws: a failure is the caller's own counter and

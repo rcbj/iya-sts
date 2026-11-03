@@ -682,8 +682,8 @@ their score would have moved. Now:
   ambient audit source), RECORDS it — so the TGS-REQs after it decide on it
   — and asks the gate with no application, so only a Deny about risk
   refuses: `KDC_ERR_POLICY` with `STS-RISK-0016` / `0017`. An OTP meets a
-  second-factor step-up, a hardware PKINIT key a security-key one. No new
-  require reaches the parent project's COPY set (`kerberos/CLAUDE.md`).
+  second-factor step-up, a hardware PKINIT key a security-key one. (No new
+  require reached the parent project's COPY set, owed until #1280.)
 
 The evidence signals refuse exactly as before: they are in the assessment the
 door now decides on. `tests/risk_decisions.js` M1–M3 hold both doors: a

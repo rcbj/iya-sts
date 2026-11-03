@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
 // File: krb5_messages.js
 //
 // ---------------------------------------------------------------------------
@@ -8,11 +10,11 @@
 // `kdc-options` becomes `kdcOptions`, `enc-part` becomes `encPart` — and keeps
 // the raw bytes of anything encrypted so the caller can decrypt it later with a
 // key it may not have yet. Every writer takes the same shape back. That
-// symmetry is what lets the decoder page re-encode what it read and compare, and
-// it is what `tests/krb5_codec.js` uses as its round-trip oracle.
+// symmetry is what lets the decoder page re-encode what it read and compare,
+// and it is what `tests/krb5_codec.js` uses as its round-trip oracle.
 //
-// FIVE COMPATIBILITY POINTS, each of which is a thing that only shows up against
-// a real KDC:
+// FIVE COMPATIBILITY POINTS, each of which is a thing that only shows up
+// against a real KDC:
 //
 //  * **An AS-REP's enc-part may be tagged EncTGSRepPart.** RFC 4120 section
 //    5.4.2 records that implementations exist which encode it as [APPLICATION
@@ -33,14 +35,15 @@
 //    until it does not.
 //  * **A Ticket is opaque to its holder.** It is re-encoded byte-for-byte when
 //    relayed (into an AP-REQ, or as an additional-ticket in S4U2Proxy), because
-//    it is encrypted under a key the client does not have and its DER is covered
-//    by a checksum. Every reader here keeps `raw` for exactly that.
+//    it is encrypted under a key the client does not have and its DER is
+//    covered by a checksum. Every reader here keeps `raw` for exactly that.
 // ---------------------------------------------------------------------------
 
 var prim = require("./krb5_primitives.js");
 var asn1 = require("./krb5_asn1.js");
 var kcrypto = require("./krb5_crypto.js");
 var bunyan = require("bunyan");
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "krb5_messages",
   level: (function () {
@@ -48,10 +51,15 @@ var log = bunyan.createLogger({
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
       // No CONFIG_FILE resolvable here — a node caller rather than a bundle.
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in krb5_messages log level: " + logLevelProblem);
+}
 
 var toBytes = prim.toBytes;
 
@@ -272,7 +280,9 @@ var ERROR_CODE = {
 };
 
 function describeError(code) {
+  log.debug("Entering describeError().");
   var e = ERROR_CODE[code];
+  log.debug("Leaving describeError().");
   return e ? { code: code, name: e[0], meaning: e[1] }
            : {
              code: code,
@@ -303,7 +313,9 @@ function encPrincipalName(principal) {
 }
 
 function readPrincipalName(t) {
+  log.debug("Entering readPrincipalName().");
   var f = asn1.readTaggedSequence(t.value);
+  log.debug("Leaving readPrincipalName().");
   return {
     type: asn1.decInteger(f[0]),
     name: asn1.decSequenceOf(f[1]).map(asn1.decGeneralString)
@@ -313,7 +325,9 @@ function readPrincipalName(t) {
 // "alice", "krbtgt/EXAMPLE.COM", "HTTP/web.example.com" — the display form, and
 // the form a user types.
 function principalToString(principal, realm) {
+  log.debug("Entering principalToString().");
   var s = (principal.name || []).join("/");
+  log.debug("Leaving principalToString().");
   return realm ? s + "@" + realm : s;
 }
 
@@ -343,8 +357,8 @@ function parsePrincipal(text, defaultType) {
 // EncryptedData ::= SEQUENCE { etype [0] Int32, kvno [1] UInt32 OPTIONAL,
 // cipher [2] OCTET STRING }
 function encEncryptedData(d) {
-  log.debug("Leaving encEncryptedData().");
   log.debug("Entering encEncryptedData().");
+  log.debug("Leaving encEncryptedData().");
   return asn1.encTaggedSequence([
     { tag: 0, value: asn1.encInteger(d.etype) },
     {
@@ -357,7 +371,9 @@ function encEncryptedData(d) {
 }
 
 function readEncryptedData(t) {
+  log.debug("Entering readEncryptedData().");
   var f = asn1.readTaggedSequence(t.value);
+  log.debug("Leaving readEncryptedData().");
   return {
     etype: asn1.decInteger(f[0]),
     etypeName: kcrypto.etypeName(asn1.decInteger(f[0])),
@@ -368,6 +384,8 @@ function readEncryptedData(t) {
 
 // EncryptionKey ::= SEQUENCE { keytype [0] Int32, keyvalue [1] OCTET STRING }
 function encEncryptionKey(k) {
+  log.debug("Entering encEncryptionKey().");
+  log.debug("Leaving encEncryptionKey().");
   return asn1.encTaggedSequence([
     { tag: 0, value: asn1.encInteger(k.etype) },
     { tag: 1, value: asn1.encOctetString(k.key) }
@@ -375,8 +393,10 @@ function encEncryptionKey(k) {
 }
 
 function readEncryptionKey(t) {
+  log.debug("Entering readEncryptionKey().");
   var f = asn1.readTaggedSequence(t.value);
   var etype = asn1.decInteger(f[0]);
+  log.debug("Leaving readEncryptionKey().");
   return {
     etype: etype,
     etypeName: kcrypto.etypeName(etype),
@@ -387,6 +407,8 @@ function readEncryptionKey(t) {
 // Checksum ::= SEQUENCE { cksumtype [0] Int32, checksum [1] OCTET STRING }
 // cksumtype is where negative integers show up: -138 is HMAC-MD5.
 function encChecksum(c) {
+  log.debug("Entering encChecksum().");
+  log.debug("Leaving encChecksum().");
   return asn1.encTaggedSequence([
     { tag: 0, value: asn1.encInteger(c.type) },
     { tag: 1, value: asn1.encOctetString(c.checksum) }
@@ -394,13 +416,17 @@ function encChecksum(c) {
 }
 
 function readChecksum(t) {
+  log.debug("Entering readChecksum().");
   var f = asn1.readTaggedSequence(t.value);
+  log.debug("Leaving readChecksum().");
   return { type: asn1.decInteger(f[0]), checksum: asn1.decOctetString(f[1]) };
 }
 
 // PA-DATA ::= SEQUENCE { padata-type [1] Int32, padata-value [2] OCTET STRING }
 // NOTE the tag numbers: [1] and [2]. This is the irregularity in the grammar.
 function encPaData(pa) {
+  log.debug("Entering encPaData().");
+  log.debug("Leaving encPaData().");
   return asn1.encTaggedSequence([
     { tag: 1, value: asn1.encInteger(pa.type) },
     { tag: 2, value: asn1.encOctetString(pa.value) }
@@ -408,8 +434,10 @@ function encPaData(pa) {
 }
 
 function readPaData(t) {
+  log.debug("Entering readPaData().");
   var f = asn1.readTaggedSequence(t.value);
   var type = asn1.decInteger(f[1]);
+  log.debug("Leaving readPaData().");
   return {
     type: type,
     typeName: PA_TYPE_NAMES[type] || ("PA-" + type),
@@ -427,6 +455,8 @@ function readPaData(t) {
 // relayed request must go back out as it came in — so a field the reader
 // understands and the writer drops turns into silently different bytes.
 function encHostAddresses(addresses) {
+  log.debug("Entering encHostAddresses().");
+  log.debug("Leaving encHostAddresses().");
   return asn1.encSequenceOf((addresses || []).map(function (a) {
     return asn1.encTaggedSequence([
       { tag: 0, value: asn1.encInteger(a.type) },
@@ -436,6 +466,8 @@ function encHostAddresses(addresses) {
 }
 
 function readHostAddresses(t) {
+  log.debug("Entering readHostAddresses().");
+  log.debug("Leaving readHostAddresses().");
   return asn1.decSequenceOf(t).map(function (a) {
     var f = asn1.readTaggedSequence(a.value);
     return { type: asn1.decInteger(f[0]), address: asn1.decOctetString(f[1]) };
@@ -447,6 +479,8 @@ function readHostAddresses(t) {
 // wraps them in an extra SEQUENCE, which decodes as a HostAddress whose type
 // field is a whole structure.
 function encHostAddress(a) {
+  log.debug("Entering encHostAddress().");
+  log.debug("Leaving encHostAddress().");
   return asn1.encTaggedSequence([
     { tag: 0, value: asn1.encInteger(a.type) },
     { tag: 1, value: asn1.encOctetString(a.address) }
@@ -454,7 +488,9 @@ function encHostAddress(a) {
 }
 
 function readHostAddress(t) {
+  log.debug("Entering readHostAddress().");
   var f = asn1.readTaggedSequence(t.value);
+  log.debug("Leaving readHostAddress().");
   return { type: asn1.decInteger(f[0]), address: asn1.decOctetString(f[1]) };
 }
 
@@ -465,6 +501,8 @@ function readHostAddress(t) {
 // for ad-type 128 at the top level finds nothing on a ticket that has one,
 // because AD-IF-RELEVANT is a container.
 function readAuthorizationData(t) {
+  log.debug("Entering readAuthorizationData().");
+  log.debug("Leaving readAuthorizationData().");
   return asn1.decSequenceOf(t).map(function (a) {
     var f = asn1.readTaggedSequence(a.value);
     return { type: asn1.decInteger(f[0]), data: asn1.decOctetString(f[1]) };
@@ -472,6 +510,8 @@ function readAuthorizationData(t) {
 }
 
 function encAuthorizationData(entries) {
+  log.debug("Entering encAuthorizationData().");
+  log.debug("Leaving encAuthorizationData().");
   return asn1.encSequenceOf((entries || []).map(function (e) {
     return asn1.encTaggedSequence([
       { tag: 0, value: asn1.encInteger(e.type) },
@@ -506,12 +546,16 @@ function encTicket(ticket) {
 // is how it arrives as field [5] of a KDC-REP). Either way `raw` comes out as
 // the ticket's ORIGINAL bytes, because that is what must go back on the wire.
 function elementBytes(t) {
+  log.debug("Entering elementBytes().");
   if (t instanceof Uint8Array) {
+    log.debug("Leaving elementBytes().");
     return t;
   }
   if (t && t.raw) {
+    log.debug("Leaving elementBytes().");
     return t.raw;
   }
+  log.debug("Leaving elementBytes().");
   throw new Error("krb5: expected bytes or a parsed ASN.1 element");
 }
 
@@ -558,8 +602,8 @@ function readEncTicketPart(bytes) {
 }
 
 function encEncTicketPart(p) {
-  log.debug("Leaving encEncTicketPart().");
   log.debug("Entering encEncTicketPart().");
+  log.debug("Leaving encEncTicketPart().");
   return asn1.encApplication(APPLICATION.ENC_TICKET_PART,
       asn1.encTaggedSequence([
     { tag: 0, value: asn1.encFlags(p.flags) },
@@ -600,8 +644,8 @@ function encEncTicketPart(p) {
 // KDC-REQ (AS-REQ / TGS-REQ).
 // ---------------------------------------------------------------------------
 function encKdcReqBody(body) {
-  log.debug("Leaving encKdcReqBody().");
   log.debug("Entering encKdcReqBody().");
+  log.debug("Leaving encKdcReqBody().");
   return asn1.encTaggedSequence([
     { tag: 0, value: asn1.encFlags(body.kdcOptions || []) },
     { tag: 1, value: body.cname ? encPrincipalName(body.cname) : null },
@@ -683,6 +727,7 @@ function readKdcReq(bytes) {
   var app = asn1.readApplication(bytes);
   if (app.applicationNumber !== APPLICATION.AS_REQ &&
       app.applicationNumber !== APPLICATION.TGS_REQ) {
+    log.debug("Leaving readKdcReq().");
     throw new Error("krb5: expected AS-REQ [APPLICATION 10] or TGS-REQ " +
         "[APPLICATION 12], found [APPLICATION " +
       app.applicationNumber + "]");
@@ -695,6 +740,7 @@ function readKdcReq(bytes) {
     reqBody: readKdcReqBody(f[4])
   };
   if (out.pvno !== PVNO) {
+    log.debug("Leaving readKdcReq().");
     throw new Error("krb5: protocol version " + out.pvno + ", expected 5");
   }
   log.debug("Leaving readKdcReq(). msgType=" + out.msgType);
@@ -729,6 +775,7 @@ function readKdcRep(bytes) {
   var app = asn1.readApplication(bytes);
   if (app.applicationNumber !== APPLICATION.AS_REP &&
       app.applicationNumber !== APPLICATION.TGS_REP) {
+    log.debug("Leaving readKdcRep().");
     throw new Error("krb5: expected AS-REP [APPLICATION 11] or TGS-REP " +
         "[APPLICATION 13], found [APPLICATION " +
       app.applicationNumber + "]");
@@ -795,8 +842,8 @@ function readEncKdcRepPart(bytes) {
 }
 
 function encEncKdcRepPart(p, applicationNumber) {
-  log.debug("Leaving encEncKdcRepPart().");
   log.debug("Entering encEncKdcRepPart().");
+  log.debug("Leaving encEncKdcRepPart().");
   return asn1.encApplication(applicationNumber || APPLICATION.ENC_AS_REP_PART,
       asn1.encTaggedSequence([
     { tag: 0, value: encEncryptionKey(p.key) },
@@ -837,8 +884,8 @@ function encEncKdcRepPart(p, applicationNumber) {
 // AP-REQ / AP-REP / Authenticator.
 // ---------------------------------------------------------------------------
 function encAuthenticator(a) {
-  log.debug("Leaving encAuthenticator().");
   log.debug("Entering encAuthenticator().");
+  log.debug("Leaving encAuthenticator().");
   return asn1.encApplication(APPLICATION.AUTHENTICATOR, asn1.encTaggedSequence([
     { tag: 0, value: asn1.encInteger(PVNO) },
     { tag: 1, value: asn1.encGeneralString(a.crealm) },
@@ -879,6 +926,8 @@ function readAuthenticator(bytes) {
 }
 
 function encApReq(r) {
+  log.debug("Entering encApReq().");
+  log.debug("Leaving encApReq().");
   return asn1.encApplication(APPLICATION.AP_REQ, asn1.encTaggedSequence([
     { tag: 0, value: asn1.encInteger(PVNO) },
     { tag: 1, value: asn1.encInteger(MSG_TYPE.AP_REQ) },
@@ -903,6 +952,8 @@ function readApReq(bytes) {
 }
 
 function encApRep(r) {
+  log.debug("Entering encApRep().");
+  log.debug("Leaving encApRep().");
   return asn1.encApplication(APPLICATION.AP_REP, asn1.encTaggedSequence([
     { tag: 0, value: asn1.encInteger(PVNO) },
     { tag: 1, value: asn1.encInteger(MSG_TYPE.AP_REP) },
@@ -911,8 +962,10 @@ function encApRep(r) {
 }
 
 function readApRep(bytes) {
+  log.debug("Entering readApRep().");
   var app = asn1.readApplication(bytes, APPLICATION.AP_REP);
   var f = asn1.readTaggedSequence(app.sequence.value);
+  log.debug("Leaving readApRep().");
   return {
     pvno: asn1.decInteger(f[0]),
     msgType: asn1.decInteger(f[1]),
@@ -921,8 +974,8 @@ function readApRep(bytes) {
 }
 
 function encEncApRepPart(p) {
-  log.debug("Leaving encEncApRepPart().");
   log.debug("Entering encEncApRepPart().");
+  log.debug("Leaving encEncApRepPart().");
   return asn1.encApplication(APPLICATION.ENC_AP_REP_PART,
       asn1.encTaggedSequence([
     { tag: 0, value: asn1.encKerberosTime(p.ctime) },
@@ -937,8 +990,10 @@ function encEncApRepPart(p) {
 }
 
 function readEncApRepPart(bytes) {
+  log.debug("Entering readEncApRepPart().");
   var app = asn1.readApplication(bytes, APPLICATION.ENC_AP_REP_PART);
   var f = asn1.readTaggedSequence(app.sequence.value);
+  log.debug("Leaving readEncApRepPart().");
   return {
     ctime: asn1.decKerberosTime(f[0]),
     cusec: asn1.decInteger(f[1]),
@@ -951,8 +1006,8 @@ function readEncApRepPart(bytes) {
 // KRB-ERROR.
 // ---------------------------------------------------------------------------
 function encKrbError(e) {
-  log.debug("Leaving encKrbError().");
   log.debug("Entering encKrbError().");
+  log.debug("Leaving encKrbError().");
   return asn1.encApplication(APPLICATION.KRB_ERROR, asn1.encTaggedSequence([
     { tag: 0, value: asn1.encInteger(PVNO) },
     { tag: 1, value: asn1.encInteger(MSG_TYPE.ERROR) },
@@ -1004,6 +1059,8 @@ function readKrbError(bytes) {
       out.eDataPaData = asn1.readChildren(asn1.readTlv(out.eData,
           0).value).map(readPaData);
     } catch (err) {
+      // Tolerated, as above: the note carries the reason to the caller.
+      log.debug("Caught in readKrbError(): " + ((err && err.message) || err));
       out.eDataPaData = null;
       out.eDataNote = "e-data is not a SEQUENCE OF PA-DATA (" + err.message +
           ")";
@@ -1021,6 +1078,8 @@ function readKrbError(bytes) {
 // PA-ENC-TS-ENC ::= SEQUENCE { patimestamp [0] KerberosTime, pausec [1]
 // Microseconds OPTIONAL }
 function encPaEncTsEnc(when, usec) {
+  log.debug("Entering encPaEncTsEnc().");
+  log.debug("Leaving encPaEncTsEnc().");
   return asn1.encTaggedSequence([
     { tag: 0, value: asn1.encKerberosTime(when) },
     {
@@ -1032,8 +1091,10 @@ function encPaEncTsEnc(when, usec) {
 }
 
 function readPaEncTsEnc(bytes) {
+  log.debug("Entering readPaEncTsEnc().");
   var t = asn1.readTlv(bytes, 0);
   var f = asn1.readTaggedSequence(t.value);
+  log.debug("Leaving readPaEncTsEnc().");
   return {
     patimestamp: asn1.decKerberosTime(f[0]),
     pausec: f[1] ? asn1.decInteger(f[1]) : null
@@ -1060,8 +1121,8 @@ function readEtypeInfo2(bytes) {
 }
 
 function encEtypeInfo2(entries) {
-  log.debug("Leaving encEtypeInfo2().");
   log.debug("Entering encEtypeInfo2().");
+  log.debug("Leaving encEtypeInfo2().");
   return asn1.encSequenceOf(entries.map(function (e) {
     return asn1.encTaggedSequence([
       { tag: 0, value: asn1.encInteger(e.etype) },
@@ -1096,13 +1157,17 @@ function readEtypeInfo(bytes) {
 // to ask for a ticket WITHOUT a PAC and watch a service's behaviour change is
 // one of the more useful things this tool can do.
 function encPaPacRequest(include) {
+  log.debug("Entering encPaPacRequest().");
+  log.debug("Leaving encPaPacRequest().");
   return asn1.encSequence([asn1.encContext(0, asn1.tlv(0x01,
       new Uint8Array([include ? 0xff : 0x00])))]);
 }
 
 function readPaPacRequest(bytes) {
+  log.debug("Entering readPaPacRequest().");
   var t = asn1.readTlv(bytes, 0);
   var f = asn1.readTaggedSequence(t.value);
+  log.debug("Leaving readPaPacRequest().");
   return { includePac: f[0] && f[0].value.length > 0 && f[0].value[0] !== 0 };
 }
 
@@ -1111,6 +1176,8 @@ function readPaPacRequest(bytes) {
 // negative-integer support in the DER layer is load-bearing rather than
 // theoretical.
 function encPaForUser(u) {
+  log.debug("Entering encPaForUser().");
+  log.debug("Leaving encPaForUser().");
   return asn1.encTaggedSequence([
     { tag: 0, value: encPrincipalName(u.userName) },
     { tag: 1, value: asn1.encGeneralString(u.userRealm) },
@@ -1122,29 +1189,33 @@ function encPaForUser(u) {
 // ---------------------------------------------------------------------------
 // KRB-CRED — RFC 4120 section 5.8.1. **Unconstrained delegation.**
 //
-// This is how a client hands its own ticket-granting ticket to a service so that the
-// service can go and get tickets to anything, as the client. Not "as the client for one
-// named service" — that is constrained delegation and the KDC polices it. This is
-// everything, everywhere, for the ticket's lifetime, and the KDC never sees it happen.
+// This is how a client hands its own ticket-granting ticket to a service so
+// that the service can go and get tickets to anything, as the client. Not "as
+// the client for one named service" — that is constrained delegation and the
+// KDC polices it. This is everything, everywhere, for the ticket's lifetime,
+// and the KDC never sees it happen.
 //
-// Which is why the interesting parts of this structure are the ones people forget:
+// Which is why the interesting parts of this structure are the ones people
+// forget:
 //
-//  * **It travels in the AP-REQ Authenticator's 0x8003 checksum**, in the Deleg field,
-//    when GSS_C_DELEG_FLAG is set — not as a message of its own. See krb5_gss.js, which
-//    already carries that field.
-//  * **Its enc-part is encrypted at key usage 14** under the AP exchange's subkey (or the
-//    session key when there is none), so only the service the client chose can open it.
-//  * **The tickets and their session keys are separated.** `tickets` holds the opaque
-//    Tickets and the encrypted `ticket-info` holds each one's session key — because a
-//    ticket is useless without its key, and that separation is what makes the whole
-//    structure safe to put in a checksum field.
+//  * **It travels in the AP-REQ Authenticator's 0x8003 checksum**, in the Deleg
+//    field, when GSS_C_DELEG_FLAG is set — not as a message of its own. See
+//    krb5_gss.js, which already carries that field.
+//  * **Its enc-part is encrypted at key usage 14** under the AP exchange's
+//    subkey (or the session key when there is none), so only the service the
+//    client chose can open it.
+//  * **The tickets and their session keys are separated.** `tickets` holds the
+//    opaque Tickets and the encrypted `ticket-info` holds each one's session
+//    key — because a ticket is useless without its key, and that separation is
+//    what makes the whole structure safe to put in a checksum field.
 //
-// Nearly every field of KrbCredInfo is OPTIONAL, and a sender that omits the session key
-// has forwarded something unusable. That is checked on read rather than assumed.
+// Nearly every field of KrbCredInfo is OPTIONAL, and a sender that omits the
+// session key has forwarded something unusable. That is checked on read rather
+// than assumed.
 // ---------------------------------------------------------------------------
 function encKrbCredInfo(info) {
-  log.debug("Leaving encKrbCredInfo().");
   log.debug("Entering encKrbCredInfo().");
+  log.debug("Leaving encKrbCredInfo().");
   return asn1.encTaggedSequence([
     { tag: 0, value: encEncryptionKey(info.key) },
     { tag: 1, value: info.prealm ? asn1.encGeneralString(info.prealm) : null },
@@ -1200,8 +1271,8 @@ function readKrbCredInfo(t) {
 }
 
 function encEncKrbCredPart(p) {
-  log.debug("Leaving encEncKrbCredPart().");
   log.debug("Entering encEncKrbCredPart().");
+  log.debug("Leaving encEncKrbCredPart().");
   return asn1.encApplication(APPLICATION.ENC_KRB_CRED_PART,
       asn1.encTaggedSequence([
     {
@@ -1240,6 +1311,8 @@ function readEncKrbCredPart(bytes) {
 }
 
 function encKrbCred(c) {
+  log.debug("Entering encKrbCred().");
+  log.debug("Leaving encKrbCred().");
   return asn1.encApplication(APPLICATION.KRB_CRED, asn1.encTaggedSequence([
     { tag: 0, value: asn1.encInteger(PVNO) },
     { tag: 1, value: asn1.encInteger(MSG_TYPE.CRED) },
@@ -1294,17 +1367,23 @@ var PAC_OPTION = {
 };
 
 function encPaPacOptions(bits) {
+  log.debug("Entering encPaPacOptions().");
+  log.debug("Leaving encPaPacOptions().");
   return asn1.encTaggedSequence([{ tag: 0, value: asn1.encFlags(bits || []) }]);
 }
 
 function readPaPacOptions(bytes) {
+  log.debug("Entering readPaPacOptions().");
   var f = asn1.readTaggedSequence(asn1.readTlv(prim.toBytes(bytes), 0).value);
+  log.debug("Leaving readPaPacOptions().");
   return { flags: asn1.bitsFromFlags(asn1.decFlags(f[0])) };
 }
 
 function readPaForUser(bytes) {
+  log.debug("Entering readPaForUser().");
   var t = asn1.readTlv(bytes, 0);
   var f = asn1.readTaggedSequence(t.value);
+  log.debug("Leaving readPaForUser().");
   return {
     userName: readPrincipalName(f[0]),
     userRealm: asn1.decGeneralString(f[1]),
@@ -1317,17 +1396,33 @@ function readPaForUser(bytes) {
 // Flag helpers for display and for building.
 // ---------------------------------------------------------------------------
 function flagNames(table, bits) {
+  log.debug("Entering flagNames().");
   var byNumber = {};
   Object.keys(table).forEach(function (name) { byNumber[table[name]] = name; });
+  log.debug("Leaving flagNames().");
   return (bits || []).map(function (b) {
     return byNumber[b] ? byNumber[b].toLowerCase().replace(/_/g, "-") : (
         "bit-" + b);
   });
 }
 
-function kdcOptionNames(bits) { return flagNames(KDC_OPTION, bits); }
-function ticketFlagNames(bits) { return flagNames(TICKET_FLAG, bits); }
-function apOptionNames(bits) { return flagNames(AP_OPTION, bits); }
+function kdcOptionNames(bits) {
+  log.debug("Entering kdcOptionNames().");
+  log.debug("Leaving kdcOptionNames().");
+  return flagNames(KDC_OPTION, bits);
+}
+
+function ticketFlagNames(bits) {
+  log.debug("Entering ticketFlagNames().");
+  log.debug("Leaving ticketFlagNames().");
+  return flagNames(TICKET_FLAG, bits);
+}
+
+function apOptionNames(bits) {
+  log.debug("Entering apOptionNames().");
+  log.debug("Leaving apOptionNames().");
+  return flagNames(AP_OPTION, bits);
+}
 
 // Which message a buffer holds, without committing to parsing it. Used by the
 // decoder page to choose a reader and by the api's relay to decide whether a
@@ -1352,10 +1447,13 @@ var APPLICATION_NAMES = {
 };
 
 function identify(bytes) {
+  log.debug("Entering identify().");
   var n = asn1.peekApplicationNumber(bytes);
   if (n === null) {
+    log.debug("Leaving identify().");
     return null;
   }
+  log.debug("Leaving identify().");
   return {
     applicationNumber: n,
     name: APPLICATION_NAMES[n] || ("[APPLICATION " + n + "]")

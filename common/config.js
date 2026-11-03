@@ -227,8 +227,9 @@ const bunyan = require('bunyan');
 // helpers.js, realms.js, persistence and nearly every module that makes a
 // logger require before they make it. Being on the PROTOTYPE is what makes it
 // central rather than a call-site edit, and it is in this file rather than a
-// new one because this file is already in the parent project's Kerberos COPY
-// closure (kerberos/CLAUDE.md), which a new require would have grown:
+// new one because every process already loads it (and it was in the parent
+// project's Kerberos COPY closure, which a new require would have grown, an
+// obligation until #1280):
 //
 // * every logger is covered: the shared `sts` logger, the hundred or so that
 //   modules make for themselves, child loggers, and the vendored and

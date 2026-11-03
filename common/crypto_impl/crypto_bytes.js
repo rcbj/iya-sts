@@ -1,3 +1,5 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
 // File: crypto_bytes.js
 //
 // ---------------------------------------------------------------------------
@@ -27,16 +29,22 @@
 var bunyan = require("bunyan");
 // A node consumer (the tests load this module directly) may have no
 // CONFIG_FILE, so fall back to info rather than failing to load.
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "crypto_bytes",
   level: (function () {
     try {
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in crypto_bytes log level: " + logLevelProblem);
+}
 
 // ---------------------------------------------------------------------------
 // Text

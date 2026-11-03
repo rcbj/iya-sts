@@ -98,7 +98,7 @@
 // `krb5_person_keys.ts` and handed to `krb5_principals.js` INSIDE the key
 // source, beside FAST (`setKeySource({ ..., fast, pkinit })`), so the KDC
 // reaches it through `principals.pkinitProvider()` and `krb5_kdc.js` gains
-// no require — the parent project's COPY set is what it was. A process
+// no require (the parent project's COPY set was owed, until #1280). A process
 // without the key source has no PKINIT, and PA-PK-AS-REQ is unknown padata
 // to it as it always was.
 // ===========================================================================

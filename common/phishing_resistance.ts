@@ -107,9 +107,9 @@
 // earned, or '' so the caller keeps the vocabulary it already asserts.
 //
 // A LEAF, `authn_mechanisms.ts`'s shape: bunyan and nothing of this service,
-// so `common/issuance_gate.js` — in the parent project's Kerberos COPY
-// closure — can require it LAZILY on a browser issuance without owing a COPY
-// line, and `step_up.ts` and `authn.ts` without a cycle.
+// so `common/issuance_gate.js` can require it LAZILY on a browser issuance
+// (which kept it out of the parent project's Kerberos COPY closure, an
+// obligation until #1280), and `step_up.ts` and `authn.ts` without a cycle.
 // ---------------------------------------------------------------------------
 
 // This module's own logger, for `common/mode.js`'s reason: a leaf cannot

@@ -111,9 +111,10 @@ const stats = require('./admin_stats');
 const replication = require('../persistence/persistence_replication');
 
 // ---------------------------------------------------------------------------
-// THE SEQUENCE NUMBER AND THE ORIGIN OF A ROW (#465), both required LAZILY:
-// this file is in the parent project's in-process Kerberos COPY closure
-// (kerberos/CLAUDE.md), and a top-level require would owe it two more files.
+// THE SEQUENCE NUMBER AND THE ORIGIN OF A ROW (#465), both required LAZILY,
+// which kept two files out of the parent project's in-process Kerberos COPY
+// closure that reached this file (an obligation until #1280; the
+// arrangement stands).
 // `seq_allocator` hands out a number unique across every process of the
 // service; the origin is this process's stable name in the store, or '' with
 // no shared store. Neither throws: a failure is the caller's own counter and

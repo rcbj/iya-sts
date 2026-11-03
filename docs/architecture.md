@@ -213,7 +213,7 @@ against the shared express app from `common/app.js`. A module written in
 TypeScript registers nothing when it is required: it exports
 `registerRoutes(app)`, and the composition root calls it at the place in the
 sequence where its routes belong. The modules still written in JavaScript (the
-locked Kerberos files, `tls/tls_server.js` and `ldap/ldap_server.js`) still
+three Kerberos route modules, `tls/tls_server.js` and `ldap/ldap_server.js`) still
 register when they are required, and the composition root requires them at
 their places, so the two kinds interleave in a fixed order. That order is the
 order in which routes match. The middleware lives in `app.js` because express
@@ -327,7 +327,7 @@ they are written; what they cannot do is stay correct together.
 
 Three things it holds are worth knowing as a *user* of this service:
 
-* **The XML signer is the debugger's own**, vendored byte-identical into
+* **The XML signer began as the debugger's own**, copied into
   `common/crypto_impl/xmldsig.js`. Both ends of a SAML or WS-Federation exchange
   with this service canonicalize with the same code. That matters because a
   disagreement about canonicalization is invisible until it is a signature
@@ -351,8 +351,8 @@ independent implementation, in both directions.
 
 `common/crypto_impl/bbs2023.js` reads the three files in
 `common/crypto_impl/contexts/` **when it is loaded**, at module scope. A missing
-one is not a degraded feature: the service does not start at all. They are
-vendored rather than fetched because a signature is computed over canonicalized
+one is not a degraded feature: the service does not start at all. They ship
+with the service rather than being fetched because a signature is computed over canonicalized
 statements. A one-byte difference in a context fails every signature later,
 which looks like a crypto bug and is not one.
 
@@ -365,10 +365,8 @@ than copied:
 * the **Dockerfile**, whose `COPY` paths were relative to the parent
   repository's root and are now relative to this one;
 * the **JSON-LD contexts**, which live in the parent project's client tree.
-  `bbs2023.js` resolves two layouts, and a sibling `contexts/` directory is its
-  second candidate, so no code changed. That is also why the contexts sit
-  beside `bbs2023.js` in `common/crypto_impl/` rather than anywhere else: keeping
-  them a sibling is what lets a vendored file stay byte-identical.
+  They sit beside `bbs2023.js` in `common/crypto_impl/`, which reads its
+  sibling `contexts/` directory.
 
 The protocol suite is written in the parent project and a copy of it runs here,
 in `tests/protocol/`; jobs that only this service needs are written here and

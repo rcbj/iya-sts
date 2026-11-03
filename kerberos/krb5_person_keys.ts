@@ -129,10 +129,10 @@
 //     directory slot in this service is.
 //
 // **IT IS REACHABLE FROM NONE OF `krb5_kdc.js`, `krb5_service.js` AND
-// `spnego.js`**, which is what leaves the parent project's `tests/Dockerfile`
-// COPY set exactly as it was: the principal database reaches it only through a
-// slot, and the modules that require it are `ldap/ldap_server.js` and the two
-// `admin-core/` halves.
+// `spnego.js`**, which kept it out of the parent project's `tests/Dockerfile`
+// COPY set (an obligation until #1280; the arrangement stands): the principal
+// database reaches it only through a slot, and the modules that require it
+// are `ldap/ldap_server.js` and the two `admin-core/` halves.
 // ===========================================================================
 
 // ---------------------------------------------------------------------------
@@ -143,7 +143,7 @@
 //     (`Krb5PersonKeysDeps`): the logger, the settings, the realm registry,
 //     the key store, the credential store, the application registry, the
 //     audit log, the error codes, the Kerberos codec and principal database
-//     (both JavaScript in the parent's COPY set, and required as they were),
+//     (both JavaScript, and required as they were),
 //     the keytab writer
 //     and `common/crypto.js`. The principal database is typed by what this
 //     file reads of it, because several of those members are getters its
@@ -1092,9 +1092,7 @@ class Krb5PersonKeys {
   //
   // Answers `{ refused, errorCode, eText }`, or null: not refused, nobody to
   // assess, development observing, or the engine not loaded (each a module
-  // required LAZILY — this file is built long before the risk modules and
-  // must never pull them into the parent project's COPY closure, which it is
-  // outside of anyway).
+  // required LAZILY — this file is built long before the risk modules).
   // -------------------------------------------------------------------------
   /**
    * Assesses an AS-REQ's sign-in for risk and asks the issuance policy, once

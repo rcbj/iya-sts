@@ -1022,7 +1022,8 @@ above) and is a different thing.
 
 **A job registered at first use** (the four purges) requires the scheduler
 LAZILY, at that use: `scheduler.ts` requires `cluster_claims.js`, and
-`used_assertions.js` is in the parent project's Kerberos COPY closure.
+`used_assertions.js` was in the parent project's Kerberos COPY closure (an
+obligation until #1280; the arrangement stands).
 
 ## Every node on two pages (#332, 2026-09-28)
 

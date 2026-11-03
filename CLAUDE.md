@@ -45,7 +45,7 @@ detail.
 | **2026-09-13** — `/admin-api`'s access token | `mgmt-api/CLAUDE.md` |
 | **2026-09-13** — the per-slot arguments of rule 3e, the second metadata page, the account menu and certificate dialog refusals | `admin-ui/CLAUDE.md` |
 | **2026-09-13** — `portal.setDirectory()`, `/portal/keys`' script | `portal/CLAUDE.md` |
-| **2026-09-13** — the parent project's Kerberos COPY closure, and what it is owed | `kerberos/CLAUDE.md` |
+| **2026-09-13** — the parent project's Kerberos COPY closure, and what it is owed (owed nothing since #1280) | `kerberos/CLAUDE.md` |
 | **2026-09-13** — where a new test goes, the negatives note | `tests/CLAUDE.md` |
 | **2026-09-13** — the prose of every row of *Things this service deliberately does not do* | the file each row names |
 | **2026-10-13** — the eighteen URLs this service dials that a caller's kind of URL could name | `federation/CLAUDE.md` |
@@ -62,7 +62,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | Directory | What is in it |
 |---|---|
 | `common/` | Everything more than one family reads: settings, the express app, `crypto.js` (the one place this service signs, verifies, encrypts and decrypts), realms, the registers, `pki.js`, `mode.js`, the error codes, mail, cells, the hosted applications, the static surfaces' `web_*.ts`. `common/CLAUDE.md`. |
-| `common/crypto_impl/` | Byte-identical copies of the parent project's files. **Do not edit them here** (except `pqc.js`, `pqc_x509.js`, `xmldsig.js`, and `bbs2023.js` with `contexts/iya_identity_v1.json` since #663). `common/crypto_impl/CLAUDE.md`. |
+| `common/crypto_impl/` | The crypto engines `common/crypto.js` rests on: X.509, keys, JWE, post-quantum, XML Signature, bbs-2023. Copies of the parent project's files until #1280, this service's own since. `common/crypto_impl/CLAUDE.md`. |
 | `home/` | The front door, `GET /`, and `/home-api`. `home/CLAUDE.md`. |
 | `logout/` | The protocol-independent sign-out at `/logout`, and the one model of a live session. `logout/CLAUDE.md`. |
 | `launch/` | `/launch/{app}`, the one identity-provider-initiated sign-in link per application (#426). `launch/CLAUDE.md`. |
@@ -77,7 +77,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `pki/` | The certificate authority's PUBLIC surface (CRL, OCSP, chains) and `/crypto/metadata`; no gate. No `CLAUDE.md`: each file's header is its documentation. |
 | `federation/` | Bilateral federation relationships, in either direction. `federation/CLAUDE.md`. |
 | `oidfed/` | OpenID Federation 1.1. `oidfed/CLAUDE.md`. |
-| `kerberos/` | The KDC, the acceptor, SPNEGO, and eight codec modules **VENDORED and not editable here**. `kerberos/CLAUDE.md`. |
+| `kerberos/` | The KDC, the acceptor, SPNEGO, and the eight codec modules (copies of the parent's until #1280). `kerberos/CLAUDE.md`. |
 | `ldap/` | The embedded directory, the store for people, groups and applications. `ldap/CLAUDE.md`. |
 | `cluster/` | Several containers against one postgres store, and the scheduler every periodic job runs on. `cluster/CLAUDE.md`. |
 | `persistence/` | The one place this service writes anything down. `persistence/CLAUDE.md`. |
@@ -254,9 +254,9 @@ holds is the table above; what each module is for is that directory's
    `ProtocolStack`) calls each one against the shared app from `app.js`, at
    the point where requiring that module used to register the routes. **The
    modules still written in JavaScript still register when they are
-   required** — `krb5_kdc`, `krb5_service` and `spnego` (in the parent
-   project's test-image COPY closure; what "locked" means is in
-   `kerberos/CLAUDE.md`), `tls/tls_server.js` and `ldap/ldap_server.js` — and
+   required** — `krb5_kdc`, `krb5_service` and `spnego` (no longer held
+   back for the parent's test image since #1280; `kerberos/CLAUDE.md`),
+   `tls/tls_server.js` and `ldap/ldap_server.js` — and
    `protocol_stack.ts` requires them at their old places, so the two kinds
    interleave exactly as they did (`common/CLAUDE.md`, `protocol_stack.ts`).
    `debugger/debugger_server.ts` registers on an express app of its OWN and is
@@ -513,9 +513,9 @@ preference; this table says what the constraint is and the named file says why.
 | 14-vcapi | `oid4vc/vc_api` (and its libraries) | After `vc_verifier`, whose libraries it reads; requires no route module. | `oid4vc/CLAUDE.md` |
 | 14a | `oid4vc/vc_signin` | After `vc_verifier`, whose transactions it reads, and after `authn` (8), whose session it starts; `authn` requires nothing here — `spnego_authn`'s arrangement (#38). | `oid4vc/CLAUDE.md` |
 | 14b | `oidfed/federation_keys`, `oidfed/oidfed` | After `oauth2` and `vc_verifier`, whose metadata the Entity Configuration carries (read lazily). | `oidfed/CLAUDE.md` |
-| 14c | `kerberos/krb5_home` | Just BEFORE `krb5_kdc` (#98): its `POST /KdcProxy` must run first and call `next()` for a request homed here, so the KDC's handler and the parent's COPY closure stay unchanged; `install()` hands it the KDC just after `krb5_kdc` is required. | `kerberos/CLAUDE.md` |
-| 15–16 | `kerberos/krb5_kdc`, `krb5_service` | JavaScript, in the parent's COPY closure (a new require owes the parent a COPY line): the KDC's routes register at this require. Listeners start from `listen()`, not here. | `kerberos/CLAUDE.md` |
-| 17 | `kerberos/spnego` | JavaScript, in the parent's COPY closure: registers nothing since #595. After `krb5_service`, in the order `spnego_exchange.js` needs them. | `kerberos/CLAUDE.md` |
+| 14c | `kerberos/krb5_home` | Just BEFORE `krb5_kdc` (#98): its `POST /KdcProxy` must run first and call `next()` for a request homed here, so the KDC's handler stays unchanged; `install()` hands it the KDC just after `krb5_kdc` is required. | `kerberos/CLAUDE.md` |
+| 15–16 | `kerberos/krb5_kdc`, `krb5_service` | JavaScript: the KDC's routes register at this require. Listeners start from `listen()`, not here. | `kerberos/CLAUDE.md` |
+| 17 | `kerberos/spnego` | JavaScript: registers nothing since #595. After `krb5_service`, in the order `spnego_exchange.js` needs them. | `kerberos/CLAUDE.md` |
 | 17a | `kerberos/spnego_authn` | After `spnego` AND after `authn/authn`; it lives in `kerberos/` so that `authn` never requires it, which would load the JavaScript `spnego` early and drag its routes ahead of `oauth2`. | `kerberos/CLAUDE.md`, `authn/CLAUDE.md` |
 | 17b | `pki/pki_service` | No constraint: it requires only libraries. Here, ahead of the console, so `/admin/sts-metadata` groups the revocation endpoints with the protocols. | `common/protocol_stack.ts` (17b) |
 | 17c | `pki/crypto_metadata_document` | 17b's reason (#42): libraries only, each LAZILY, so it may sit beside the revocation endpoints. | `common/protocol_stack.ts` (17c) |
@@ -943,9 +943,10 @@ design.
 
 **THESE ARE THE PARENT PROJECT'S RULES SINCE 2026-09-12** — its root
 `CLAUDE.md`'s *Style Notes* — adopted here and swept across the tree that day.
-They bind every `.js` file except `common/crypto_impl/`, the eight Kerberos codec
-copies, the `node-ldapjs` submodule and the non-`local` copies in
-`tests/protocol/`, none of which may be edited here.
+They bind every `.js` file except the `node-ldapjs` submodule and the
+non-`local` copies in `tests/protocol/`, neither of which may be edited here.
+`common/crypto_impl/` and the eight Kerberos codec modules were on that list
+as the parent's copies until #1280, and are bound like the rest since.
 
 * **Every named function is entered and left out loud.** Its first statement
   is `log.debug("Entering NAME().")` and every exit goes through
@@ -992,9 +993,9 @@ copies, the `node-ldapjs` submodule and the non-`local` copies in
   and the licence identifier BUSL-1.1 (the Business Source License 1.1 since
   2026-09-30; MIT until then), in the form `LICENSE.md` shows, after a `#!`
   line or `// @ts-check`, in the file's own comment syntax. A file that cannot carry a
-  comment, a vendored copy and third-party material are declared in
-  `REUSE.toml` instead, and never given a header — the parent project's
-  copies stay MIT there. `tests/copyright_notices.js` fails on a missing
+  comment, a vendored copy (the non-`local` jobs in `tests/protocol/`) and
+  third-party material are declared in `REUSE.toml` instead, and never given
+  a header — the parent project's copies stay MIT there. `tests/copyright_notices.js` fails on a missing
   one; `LICENSE.md` says what is not under the BSL, and `reuse lint` is the
   whole-repository check.
 * **The log level is `info` in every appconfig file in `env/`** (2026-09-12),
@@ -1176,11 +1177,10 @@ the file the row names.
 
 ## The parent project's paths into this repository
 
-**The `sts/` COPY set in the parent's `tests/Dockerfile` is the transitive
-closure of what `krb5_kdc.js`, `krb5_service.js` and `spnego.js` require, and it
-moves on THIS repository's schedule.** Add a require reachable from any of them
-and the commit that bumps the `sts/` pin must add the COPY line too, or four
-in-process Kerberos jobs die at load with `Cannot find module`, which names a
-file nobody edited. What is owed now, and why `mockStsModule()`'s callers pass
-bare filenames: `kerberos/CLAUDE.md`. The walk itself:
-`docs/parent-project-migration.md`.
+**Nothing in this repository is vendored to or from the parent project since
+#1280 (2026-11-02)**, the Kerberos test-image COPY closure included. The
+parent's `tests/Dockerfile` may still copy `krb5_kdc.js`, `krb5_service.js`,
+`spnego.js` and what they require, but what it copies is the parent's
+business: a require added here owes it no COPY line, and those three may be
+converted to TypeScript like any other module. `kerberos/CLAUDE.md` says what
+that ended; `docs/parent-project-migration.md` is the history.

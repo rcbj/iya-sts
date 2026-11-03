@@ -13,8 +13,8 @@ sts_metadata.ts      reads the router to list what everything else registered
 
 common/              config, helpers, the express app, the counters, the audit
                      log, the application registry, the claim catalogues
-common/crypto_impl/     byte-identical copies of the parent project's PKI and
-                     JSON-LD modules, plus the contexts they read
+common/crypto_impl/  the crypto engines common/crypto.js rests on (X.509,
+                     keys, JWE, XML Signature, bbs-2023), and the contexts
 oauth-oidc/          the authorization server, RFC 9700 mode, DPoP, mTLS,
                      client authentication, the multi-AS profiles
 authn/               the sign-in screen and the WebAuthn relying party
@@ -56,11 +56,12 @@ after it, so that one sequence decides which handler wins. There is a table of
 the ordering constraints in the root `CLAUDE.md`; each one is a real dependency
 rather than a preference.
 
-**`common/crypto_impl/` is not to be edited.** Those files are byte-identical copies
-of files in the [OAuth2/OIDC Debugger](https://idptools.com), and two of that
-project's tests exist to keep them that way. `contexts/` sits inside that
-directory rather than at the root precisely so that `bbs2023.js` — which resolves
-`path.join(__dirname, 'contexts')` — did not have to be edited when it moved.
+**`common/crypto_impl/` began as copies** of files in the
+[OAuth2/OIDC Debugger](https://idptools.com) and is this service's own code
+now. Most of it is the far end of an exchange with the debugger, so a change
+there is made with care for what the other end does. `contexts/` sits inside
+that directory because `bbs2023.js` resolves `path.join(__dirname,
+'contexts')`.
 
 **`node-ldapjs` is a submodule and must sit inside this package root.** npm
 installs a `file:` dependency as a symlink and node resolves that package's own

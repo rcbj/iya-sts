@@ -158,20 +158,16 @@ const delegation = require('../common/delegation');
 // parent project's in-process Kerberos jobs — which load this file and never
 // the XACML family — behave exactly as they did.
 //
-// **IT ADDS ONE LINE TO THE PARENT PROJECT'S `sts/` COPY SET**, which is the
-// standing obligation CLAUDE.md's last section describes: the closure of what
-// `krb5_kdc.js`, `krb5_service.js` and `spnego.js` require is copied into that
-// project's `tests/Dockerfile`, and a require added here needs
-// `COPY sts/common/issuance_gate.js ./sts/common/` in the commit that bumps
-// the pin across this change. `docs/parent-project-migration.md` records it.
+// (History: when it was added, this require owed the parent project's `sts/`
+// COPY set a line, `COPY sts/common/issuance_gate.js ./sts/common/`. Nothing
+// is owed since #1280; `docs/parent-project-migration.md` records it.)
 const gate = require('../common/issuance_gate');
-// THE MODE. A LEAF (rule 3) requiring only `config`, and already in the parent
-// project's copy set: `common/helpers.js` requires it, and `krb5_principals.js`
-// below does too — so this line adds no file to that closure.
+// THE MODE. A LEAF (rule 3) requiring only `config`, and already loaded:
+// `common/helpers.js` requires it, and `krb5_principals.js` below does too.
 const mode = require('../common/mode');
 // ERROR CODES (common/error_codes.js) and the audit log. Both are already in
-// this module's closure through admin_stats.js, so neither adds a file to the
-// parent project's copy set. A KRB-ERROR on TCP or UDP 88 has no HTTP funnel to
+// this module's closure through admin_stats.js, so neither adds a file to
+// what it loads. A KRB-ERROR on TCP or UDP 88 has no HTTP funnel to
 // carry its code, so the transport records it with audit.failure(); over
 // /KdcProxy the code is marked on the response instead, which is ONE row.
 const audit = require('../common/audit');
@@ -186,17 +182,17 @@ const kpac = require('./krb5_pac.js');
 const KDC_PORT = config.value('krb5.kdcPort');
 // The realms library, for the one thing this file does with it: entering the
 // trust realm a request is FOR before answering it (see routeOf()). A LEAF that
-// registers no route, already in the parent project's copy set through
-// `common/app.js` and `krb5_principals.js`.
+// registers no route, already loaded through `common/app.js` and
+// `krb5_principals.js`.
 const realms = require('../common/realms');
 
 // WHO MAY ACT FOR WHOM (#186): `kerberos/krb5_delegation.ts`, the Kerberos
 // side of the one delegation policy — the parties of an S4U request named as
 // the directory's entries, the issuance policy asked, the evidence ticket's
 // PAC checked, PA-S4U-X509-USER read and answered. Required LAZILY: only a
-// request that delegates (or asks for a forwardable ticket) needs it, and the
-// parent project's in-process jobs load this file without a directory. See
-// `kerberos/CLAUDE.md` for what that closure is owed.
+// request that delegates (or asks for a forwardable ticket) needs it, and a
+// process can load this file without a directory (the parent project's
+// in-process jobs do).
 let delegationFacts = null;
 function krb5Delegation() {
   log.debug("Entering krb5Delegation().");
@@ -261,7 +257,7 @@ function renewLifetimeSeconds() {
 // since #181 (2026-09-23): read through `mode.valueInForce()`, so a product
 // realm's KDC runs on the machine's clock whatever is stored, and says so
 // once (STS-CORE-0106). `mode` was already required here, so this adds no
-// require to the parent project's COPY closure.
+// require.
 function clockOffsetSeconds() {
   log.debug("Entering clockOffsetSeconds().");
   log.debug("Leaving clockOffsetSeconds().");
@@ -409,8 +405,7 @@ function isTgtRequest(sname) {
 //
 // WHERE THE CLAIMS COME FROM is admin_stats.js's sixth claim set,
 // `kerberos-pac` (rcbj's decision 1 on #493) — reached through that module,
-// which this file already requires, so the parent project's in-process
-// Kerberos jobs gain no file in their COPY closure. Three shapes:
+// which this file already requires, so no require is added. Three shapes:
 //
 //  * A TGT, and a ticket the AS exchange issues straight to a service, carry
 //    the REALM's set for the client, with their realm-wide roles under it
@@ -2832,12 +2827,13 @@ async function checkEncTimestamp(client, etype, padata) {
 // which is what lets a KRB-ERROR name a FAST factor to the client without an
 // attacker on the path reading or rewriting it.
 //
-// **THE FAST CODE IS NOT IN THIS FILE**, which belongs to the parent project
-// and may gain no require outside its `sts/` COPY set (kerberos/CLAUDE.md). It
-// is `krb5_fast.ts`, handed over inside the KEY SOURCE the principal database
-// already takes (`principals.preauthProvider()`). A process without that
-// source — the parent's in-process jobs — has no provider, so PA-FX-FAST is
-// ignored as unknown padata was before, and nothing here changes for it.
+// **THE FAST CODE IS NOT IN THIS FILE**, which kept it out of the parent
+// project's `sts/` COPY set (an obligation until #1280; the arrangement
+// stands). It is `krb5_fast.ts`, handed over inside the KEY SOURCE the
+// principal database already takes (`principals.preauthProvider()`). A
+// process without that source — the parent's in-process jobs — has no
+// provider, so PA-FX-FAST is ignored as unknown padata was before, and
+// nothing here changes for it.
 // ---------------------------------------------------------------------------
 // A pause inside one AS exchange, for awaitSignOutSecond(). Not periodic and
 // not a timer of this module's: it resolves once, and the exchange waits on it.
@@ -5714,9 +5710,10 @@ async function answerTgsReq(request, state) {
 //
 // Only with `logout.kerberosSignOut` on, and only in active-active: nothing
 // else reads replicated state here, and a single node is exactly as it was.
-// The requires are LAZY and guarded, because the parent project loads this
-// file in-process from a COPY set (kerberos/CLAUDE.md); both modules are
-// already in that closure through common/app.js.
+// The requires are LAZY and guarded, because the parent project loaded this
+// file in-process from a COPY set (an obligation until #1280; the
+// arrangement stands); both modules are already loaded through
+// common/app.js.
 // ---------------------------------------------------------------------------
 // **AND WITH REQUEST WORKERS, ON ONE NODE TOO (2026-09-23).** A password
 // set, a principal created, an authenticator enrolled or a sign-out stamped is
@@ -5730,7 +5727,7 @@ async function answerTgsReq(request, state) {
 // `workers.readYourWrite` is on and workers exist, the front process waits
 // for what the workers have answered to commit and pulls it — the same two
 // steps `request_pool.js` takes for an HTTP request it keeps. Lazy and
-// guarded for the parent's COPY set, as below.
+// guarded, as below (for the parent's COPY set, until #1280).
 //
 // **AND NOT IN A REQUEST WORKER (2026-10-07).** Port 88's messages are
 // answered in a worker now (`answerSocketMessage()`, below), and so is
@@ -6014,8 +6011,9 @@ async function handleMessage(bytes, options) {
 // which MIT's and Heimdal's clients read as "this KDC did not answer" and
 // retry, against the next KDC in their list or this one again.
 //
-// The require of the pool is LAZY and guarded, for the parent project's COPY
-// set (kerberos/CLAUDE.md): a process without it answers here, as before.
+// The require of the pool is LAZY and guarded (for the parent project's COPY
+// set, until #1280; the arrangement stands): a process without it answers
+// here, as before.
 // ---------------------------------------------------------------------------
 const MESSAGE_OPERATION = 'krb5.message';
 
@@ -6170,11 +6168,11 @@ async function answerSocketMessage(bytes, transport, address, port) {
 // here: a placement that failed must not leave a client waiting for a reply
 // that never comes, and the KDC's own answer is what it got before this seam.
 //
-// THE ROUTER IS NOT THIS FILE'S, ON PURPOSE. This file is in the parent
-// project's tests-image COPY closure (`kerberos/CLAUDE.md`), so it requires
-// nothing new: `krb5_home.ts` installs the router from outside
-// (`common/protocol_stack.ts`, right after requiring this file), and only in a
-// service deployed as cells. With no router — single-cell mode, and every
+// THE ROUTER IS NOT THIS FILE'S, ON PURPOSE. This file was in the parent
+// project's tests-image COPY closure, so it required nothing new (an
+// obligation until #1280; the arrangement stands): `krb5_home.ts` installs
+// the router from outside (`common/protocol_stack.ts`, right after requiring
+// this file), and only in a service deployed as cells. With no router — single-cell mode, and every
 // in-process loader of this file — `answerFromSocket()` calls
 // `answerSocketMessage()` and nothing else, byte for byte what the sockets
 // did before. No realm is passed, because the sockets have none: `routeOf()`
@@ -6326,8 +6324,7 @@ function startTcp(port) {
     // the AS-REQ's `authentication` row is written by `admin_stats.js`, which
     // is handed no socket, so each chunk is handled inside an audit source
     // naming the peer (`common/audit.js`, `withSource()`). No require is
-    // added — `audit` was already one — so the parent project's COPY closure
-    // does not move.
+    // added — `audit` was already one.
     socket.on('data', function (chunk) {
       audit.withSource({ address: socket.remoteAddress || '' }, function () {
         buffer = Buffer.concat([buffer, chunk]);

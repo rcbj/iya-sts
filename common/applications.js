@@ -11571,8 +11571,8 @@ function authorizationDetailsAttributeProblem(attribute, value) {
 // `fga_map.ts` is required LAZILY and only for an enforcing application —
 // the arrangement `authorizationDetailsTypeOf()` takes for the mapping
 // grammar — so nothing reaches for it unless an administrator switched
-// enforcement on, which none of the parent project's in-process Kerberos
-// jobs (whose COPY closure reaches this module) ever does; and it is a pure
+// enforcement on, which no process without the console (the parent
+// project's in-process Kerberos jobs among them) ever does; and it is a pure
 // library that registers nothing and fills no slot, so loading it here
 // moves nothing. The lifecycle's slot (`setFgaLifecycle()`) is not the
 // door for this: the question is about a definition, not a policy.
@@ -21348,14 +21348,13 @@ function seedInternalApplications(options) {
 // attributes — and would load the XACML store and templates into whatever
 // first requires this module, which is nearly everything and long before
 // 23c: their `InstanceSlot`s would build default instances there and the
-// composition root's install would then be refused. It would also put the
-// XACML family into the parent project's Kerberos COPY closure, which
-// reaches this module through `kerberos/krb5_delegation.ts`
-// (`kerberos/CLAUDE.md`). A LAZY require at the write, as
-// `authzenAttributeProblem()` takes, avoids the cycle and the early build
-// but not the closure: a create or delete in those in-process jobs would
-// then reach for a file their image does not carry. The slot adds no
-// require at all. The other way round is the natural direction and is
+// composition root's install would then be refused. (It would also have put
+// the XACML family into the parent project's Kerberos COPY closure, which
+// reached this module through `kerberos/krb5_delegation.ts` — an obligation
+// until #1280, and the reason a LAZY require at the write, as
+// `authzenAttributeProblem()` takes, was not enough; that one avoids the
+// cycle and the early build.) The slot adds no require at all, and the
+// arrangement stands. The other way round is the natural direction and is
 // what `fga_policies.ts` does.
 //
 // **WHAT IS CALLED, AND WHAT IS NOT.** `createApplication()` — the console,

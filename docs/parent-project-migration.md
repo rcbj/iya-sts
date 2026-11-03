@@ -15,8 +15,11 @@ in-process Kerberos jobs load their modules out of this repository's
 subdirectories without complaint. If a document here still reads as though a
 reorganisation is pending, that document is the one that is wrong.
 
-What remains is not a migration but a **standing obligation**, and it is the
-whole reason this page is still here — see *The COPY set is a closure* below.
+**THE STANDING OBLIGATION ENDED WITH #1280 (2026-11-02).** This page used to
+say that what remained was a standing obligation — *The COPY set is a closure*
+below — to keep the parent's `tests/Dockerfile` able to load this repository's
+Kerberos modules. Nothing in this repository is vendored to or from the parent
+any more, so that is the parent's business now, and this page is history.
 
 ---
 
@@ -142,7 +145,8 @@ bump, and after any commit here that adds a require reachable from `krb5_kdc.js`
   is the same and the environment still wins over the appconfig file.
 * **Every vendored file, byte for byte.** Nothing in `common/crypto_impl/` or
   `kerberos/krb5_spnego.js` was edited for any of this — they were moved, and the
-  two byte-compare tests pass against them where they now sit.
+  two byte-compare tests passed against them where they then sat. (Since
+  #1280 none of them is a copy, and those tests are the parent's own.)
 
 ---
 

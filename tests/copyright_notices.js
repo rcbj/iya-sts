@@ -72,11 +72,10 @@ const SKIP_PATHS = ['.claude', 'node-ldapjs', 'debugger/embedded',
 // upstream: REUSE.toml declares them.
 const THIRD_PARTY = ['spiffe/protos/',
                          'xacml/conformance/', 'admin-ui/natural_earth/'];
-const MIT_SNAPSHOTS = ['common/crypto_impl/', 'tests/protocol/',
-  'kerberos/krb5_primitives.js', 'kerberos/krb5_asn1.js',
-  'kerberos/krb5_crypto.js', 'kerberos/krb5_messages.js',
-  'kerberos/krb5_ndr.js', 'kerberos/krb5_pac.js',
-  'kerberos/krb5_gss.js', 'kerberos/krb5_spnego.js'];
+// The parent project's protocol jobs, copied here unedited. common/crypto_impl/
+// and the eight Kerberos codec modules left this list in #1280: they are this
+// service's own and carry its header.
+const MIT_SNAPSHOTS = ['tests/protocol/'];
 
 // Which files can carry a comment, and so must carry the header.
 const COMMENTED = new Set(['js', 'ts', 'cjs', 'mjs', 'java', 'c', 'php',

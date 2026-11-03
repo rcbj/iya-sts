@@ -4397,6 +4397,11 @@ const CODES = [
     summary: 'A message-signing certificate revocation named a serial the ' +
       'holder holds no certificate under (#521).',
     spec: 'the caller\'s refusal (errors on a console or /admin-api reply)' },
+  { code: 'STS-PKI-0222',
+    summary: 'PKI.js could not be given the WebCrypto engine when ' +
+      'common/crypto_impl/key_material.js loaded, so its certificate and ' +
+      'key operations fall back to PKI.js\'s default engine (#1280).',
+    spec: 'none (logged at load)' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

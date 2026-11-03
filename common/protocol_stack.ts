@@ -14,9 +14,9 @@
 // required**: it exports `registerRoutes(app)`, and this file calls each one,
 // at the point in the sequence where requiring that module used to register
 // its routes. The route order is therefore the order of the `register()` calls
-// below, and the modules still written in JavaScript (the parent project's
-// Kerberos closure, `tls_server`, `ldap_server`) still register when they are
-// required, at the require that loads them. The two sequences
+// below, and the modules still written in JavaScript (`krb5_kdc`,
+// `krb5_service`, `spnego`, `tls_server`, `ldap_server`) still register when
+// they are required, at the require that loads them. The two sequences
 // are interleaved exactly as they ran before, and the router's layer list was
 // compared before and after the change and is identical.
 //
@@ -924,8 +924,8 @@ class ProtocolStack {
     // required so it runs first — it relays a request whose client is homed
     // in another cell and calls next() for everything else, after which the
     // KDC's own handler answers exactly as it did. It is not inside
-    // krb5_kdc.js so that the KDC's require closure, which the parent's
-    // tests image copies, does not grow.
+    // krb5_kdc.js, which kept the KDC's require closure (then copied by the
+    // parent's tests image, an obligation until #1280) from growing.
     // It requires only the vendored codec (a leaf set) at load and the
     // principal database lazily, so nothing moves and no cycle closes.
     // -------------------------------------------------------------------------
@@ -933,8 +933,8 @@ class ProtocolStack {
     this.register(app, require('../kerberos/krb5_home'), 'kerberos/krb5_home');
     // The Kerberos KDC. Requiring it registers /KdcProxy (/krb5/principals
     // until #595 deleted it)
-    // — it is one of the JavaScript files the parent's tests image copies,
-    // which still register at require (rule 1) — but NOT the raw TCP/UDP
+    // — it is one of the JavaScript modules that still register at require
+    // (rule 1) — but NOT the raw TCP/UDP
     // listeners on port 88, which are started by krb5.listen() below.
     // Binding a privileged port can fail, and a require that throws takes the
     // whole service down; a route cannot.

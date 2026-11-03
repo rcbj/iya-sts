@@ -1,17 +1,20 @@
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
 // File: krb5_pac.js
 //
 // ---------------------------------------------------------------------------
 // The Windows PAC — [MS-PAC], the Privilege Attribute Certificate.
 //
-// This is the part of Kerberos that Windows added and that RFC 4120 knows nothing
-// about, and it is the part that actually decides what you can do. A Kerberos ticket
-// proves WHO you are; it says nothing about your group memberships, and a Windows
-// service authorizes on groups. So the KDC puts a structure inside the ticket listing
-// the account's SID, its primary group, every group it belongs to, its account flags
-// and its logon times — and the service reads THAT, not the ticket's cname. Which is
-// why a debugger that decodes a ticket and stops at `cname` has shown you the least
-// interesting half: "authentication succeeded but access was denied" is nearly always
-// a question about this structure, and until you can read it you are guessing.
+// This is the part of Kerberos that Windows added and that RFC 4120 knows
+// nothing about, and it is the part that actually decides what you can do. A
+// Kerberos ticket proves WHO you are; it says nothing about your group
+// memberships, and a Windows service authorizes on groups. So the KDC puts a
+// structure inside the ticket listing the account's SID, its primary group,
+// every group it belongs to, its account flags and its logon times — and the
+// service reads THAT, not the ticket's cname. Which is why a debugger that
+// decodes a ticket and stops at `cname` has shown you the least interesting
+// half: "authentication succeeded but access was denied" is nearly always a
+// question about this structure, and until you can read it you are guessing.
 //
 // ---------------------------------------------------------------------------
 // WHERE IT LIVES, which is three layers deep and easy to get lost in.
@@ -21,25 +24,28 @@
 //         └── ad-type 128, AD-WIN2K-PAC              another AuthorizationData
 //             └── PACTYPE  ← this module starts here
 //
-// AD-IF-RELEVANT means "ignore what you do not understand rather than failing", which
-// is the only reason a non-Windows Kerberos client can use an AD ticket at all. A
-// reader that looks for ad-type 128 at the top level finds nothing, and concludes
-// there is no PAC, on a ticket that has one. `findPac()` unwraps the containers.
+// AD-IF-RELEVANT means "ignore what you do not understand rather than failing",
+// which is the only reason a non-Windows Kerberos client can use an AD ticket
+// at all. A reader that looks for ad-type 128 at the top level finds nothing,
+// and concludes there is no PAC, on a ticket that has one. `findPac()` unwraps
+// the containers.
 //
 // ---------------------------------------------------------------------------
-// TWO ENCODINGS IN ONE TICKET. Everything outside is ASN.1 DER, big-endian lengths,
-// tag-length-value. Everything from PACTYPE inward is a **little-endian C struct
-// layout**, and the logon information inside it is **NDR** — the RPC marshalling,
-// with referent-id pointers and alignment padding (see `krb5_ndr.js`, whose header
-// lists the five rules that each cause a silent misread). Nothing signals the
-// transition. The give-away in a hex dump is `01 10 08 00 cc cc cc cc` at the start
-// of the logon-information buffer: that is [MS-RPCE]'s type-marshalling header, and
-// the 0xCC filler bytes are the landmark.
+// TWO ENCODINGS IN ONE TICKET. Everything outside is ASN.1 DER, big-endian
+// lengths, tag-length-value. Everything from PACTYPE inward is a
+// **little-endian C struct layout**, and the logon information inside it is
+// **NDR** — the RPC marshalling, with referent-id pointers and alignment
+// padding (see `krb5_ndr.js`, whose header lists the five rules that each cause
+// a silent misread). Nothing signals the transition. The give-away in a hex
+// dump is `01 10 08 00 cc cc cc cc` at the start of the logon-information
+// buffer: that is [MS-RPCE]'s type-marshalling header, and the 0xCC filler
+// bytes are the landmark.
 //
 // ---------------------------------------------------------------------------
-// FOUR SIGNATURES, AND THEY ARE NOT INTERCHANGEABLE. This is the part worth reading
-// before touching `verifySignatures()`, because the four are computed over DIFFERENT
-// bytes with DIFFERENT keys, and the ORDER they are generated in is load-bearing:
+// FOUR SIGNATURES, AND THEY ARE NOT INTERCHANGEABLE. This is the part worth
+// reading before touching `verifySignatures()`, because the four are computed
+// over DIFFERENT bytes with DIFFERENT keys, and the ORDER they are generated in
+// is load-bearing:
 //
 //   Ticket signature       (type 16) — over the DER of the EncTicketPart with the
 //                                      PAC's own ad-data replaced by a SINGLE ZERO
@@ -52,25 +58,26 @@
 //   KDC signature          (type  7) — over the SERVER SIGNATURE'S BYTES ALONE, not
 //                                      over the PAC. krbtgt key. Generated LAST.
 //
-// Two consequences. First, a service can verify the server signature but NOT the KDC
-// signature — it does not have the krbtgt key, which is the whole point: only a KDC
-// can confirm a KDC issued this. Second, the zeroing rule is what makes verification
-// possible at all, and it follows from the generation order rather than from a
-// separate rule: at the moment each signature is computed, the ones generated after
-// it are still zero, so a verifier reconstructs that state by zeroing them again.
-// [MS-PAC] states this explicitly for the server signature ("with the Signature
-// fields of both PAC_SIGNATURE_DATA structures set to zero") and leaves it implied
-// for the extended one, where the ordering statement in section 2.8.3 supplies it.
+// Two consequences. First, a service can verify the server signature but NOT
+// the KDC signature — it does not have the krbtgt key, which is the whole
+// point: only a KDC can confirm a KDC issued this. Second, the zeroing rule is
+// what makes verification possible at all, and it follows from the generation
+// order rather than from a separate rule: at the moment each signature is
+// computed, the ones generated after it are still zero, so a verifier
+// reconstructs that state by zeroing them again. [MS-PAC] states this
+// explicitly for the server signature ("with the Signature fields of both
+// PAC_SIGNATURE_DATA structures set to zero") and leaves it implied for the
+// extended one, where the ordering statement in section 2.8.3 supplies it.
 //
 // All four use key usage **KERB_NON_KERB_CKSUM_SALT (17)** — the same number
 // PA-FOR-USER uses, which is not a coincidence so much as a reused constant.
 //
 // Golden Ticket, Silver Ticket and CVE-2022-37967 all live in these four lines.
-// A forged PAC needs the key for whichever signature the verifier actually checks;
-// the ticket and extended KDC signatures exist precisely because for years nobody
-// checked enough of them. This module verifies each one it can and reports the rest
-// BY NAME as unverifiable-for-want-of-a-key, rather than reducing four different
-// facts to one green tick.
+// A forged PAC needs the key for whichever signature the verifier actually
+// checks; the ticket and extended KDC signatures exist precisely because for
+// years nobody checked enough of them. This module verifies each one it can and
+// reports the rest BY NAME as unverifiable-for-want-of-a-key, rather than
+// reducing four different facts to one green tick.
 // ---------------------------------------------------------------------------
 
 var prim = require("./krb5_primitives.js");
@@ -79,6 +86,7 @@ var asn1 = require("./krb5_asn1.js");
 var msgs = require("./krb5_messages.js");
 var ndr = require("./krb5_ndr.js");
 var bunyan = require("bunyan");
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "krb5_pac",
   level: (function () {
@@ -86,10 +94,15 @@ var log = bunyan.createLogger({
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
       // No CONFIG_FILE resolvable here — a node caller rather than a bundle.
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in krb5_pac log level: " + logLevelProblem);
+}
 
 // The authorization-data types this module has to walk through or name. The
 // first two are RFC 4120's; the rest are MS-KILE's.
@@ -120,6 +133,8 @@ var AD_TYPE_NAMES = {
 };
 
 function adTypeName(t) {
+  log.debug("Entering adTypeName().");
+  log.debug("Leaving adTypeName().");
   return AD_TYPE_NAMES[t] || ("ad-type " + t);
 }
 
@@ -161,6 +176,8 @@ var TYPE_NAMES = {
 };
 
 function bufferTypeName(t) {
+  log.debug("Entering bufferTypeName().");
+  log.debug("Leaving bufferTypeName().");
   return TYPE_NAMES[t] || ("unknown buffer type " + t);
 }
 
@@ -175,6 +192,8 @@ var SIGNATURE_TYPES_IN_GENERATION_ORDER = [
 ];
 
 function isSignatureBuffer(t) {
+  log.debug("Entering isSignatureBuffer().");
+  log.debug("Leaving isSignatureBuffer().");
   return SIGNATURE_TYPES_IN_GENERATION_ORDER.indexOf(t) !== -1;
 }
 
@@ -210,16 +229,21 @@ var SIGNATURE_TYPE_NAMES = {
 var KERB_NON_KERB_CKSUM_SALT = 17;
 
 function profileForSignatureType(signatureType) {
+  log.debug("Entering profileForSignatureType().");
   var etype = SIGNATURE_TYPE_TO_ETYPE[String(signatureType)];
   if (etype === undefined) {
+    log.debug("Leaving profileForSignatureType().");
     throw new Error("krb5: PAC signature type " + signatureType +
         " is not one this code can compute" +
       " ([MS-PAC] section 2.8 defines -138, 15 and 16)");
   }
+  log.debug("Leaving profileForSignatureType().");
   return kcrypto.etypeById(etype);
 }
 
 function signatureTypeName(t) {
+  log.debug("Entering signatureTypeName().");
+  log.debug("Leaving signatureTypeName().");
   return SIGNATURE_TYPE_NAMES[String(t)] || ("signature type " + t);
 }
 
@@ -385,18 +409,22 @@ var WELL_KNOWN_SIDS = {
 };
 
 function flagNames(table, value) {
+  log.debug("Entering flagNames().");
   var out = [];
   table.forEach(function (entry) {
     // >>> 0 because 0x80000000 is negative as a signed 32-bit int, and a bare &
     // would make SE_GROUP_LOGON_ID never match.
     if (((value >>> 0) & (entry[0] >>> 0)) !== 0) out.push(entry[1]);
   });
+  log.debug("Leaving flagNames().");
   return out;
 }
 
 function unknownFlagBits(table, value) {
+  log.debug("Entering unknownFlagBits().");
   var known = 0;
   table.forEach(function (e) { known = (known | e[0]) >>> 0; });
+  log.debug("Leaving unknownFlagBits().");
   return ((value >>> 0) & ~known) >>> 0;
 }
 
@@ -423,6 +451,8 @@ function groupAttributeNames(value) {
 }
 
 function ridName(rid) {
+  log.debug("Entering ridName().");
+  log.debug("Leaving ridName().");
   return WELL_KNOWN_RIDS[rid] || null;
 }
 
@@ -584,6 +614,7 @@ function parsePac(bytes) {
       // One unreadable buffer must not cost the reader the other six. Record it
       // against the buffer and carry on — the whole point of this page is
       // looking at something that is already wrong.
+      log.debug("Caught in parsePac(): " + ((e && e.message) || e));
       entry.error = e.message;
       problems.push(entry.typeName + " did not parse: " + e.message);
     }
@@ -595,15 +626,20 @@ function parsePac(bytes) {
 }
 
 function bufferOfType(pac, type) {
+  log.debug("Entering bufferOfType().");
   for (var i = 0; i < pac.buffers.length; i++) {
     if (pac.buffers[i].type === type) {
+      log.debug("Leaving bufferOfType().");
       return pac.buffers[i];
     }
   }
+  log.debug("Leaving bufferOfType().");
   return null;
 }
 
 function countOfType(pac, type) {
+  log.debug("Entering countOfType().");
+  log.debug("Leaving countOfType().");
   return pac.buffers.filter(function (b) { return b.type === type; }).length;
 }
 
@@ -704,6 +740,7 @@ function parseSignature(bytes) {
   } catch (e) {
     // An unknown signature type is a fact to report, not a parse failure: the
     // signature bytes are still worth showing.
+    log.debug("Caught in parseSignature(): " + ((e && e.message) || e));
     expected = null;
   }
   var signature = expected === null ? rest : rest.subarray(0,
@@ -850,8 +887,10 @@ function parseAttributesInfo(bytes) {
 // PAC_REQUESTOR_SID, [MS-PAC] section 2.15: "a single SID structure", with no
 // NDR conformance ahead of it.
 function parseRequestorSid(bytes) {
+  log.debug("Entering parseRequestorSid().");
   var r = ndr.createReader(bytes);
   var sid = ndr.readSid(r);
+  log.debug("Leaving parseRequestorSid().");
   return { sid: sid, name: sidName(sid.text) };
 }
 
@@ -865,11 +904,15 @@ function parseRequestorGuid(bytes) {
   }
   // A GUID's first three fields are little-endian and its last two are not,
   // which is why it cannot just be hex-dumped in order.
+  // A hot path: called once per field of every GUID read, so no
+  // Entering/Leaving pair here — it would drown the log.
   function le(o, n) {
     var v = 0;
     for (var i = n - 1; i >= 0; i--) v = v * 256 + b[o + i];
     return v;
   }
+  // A hot path: called once per byte of every GUID read, so no Entering/Leaving
+  // pair here — it would drown the log.
   var hex = function (v, w) {
     var s = v.toString(16);
     while (s.length < w) s = "0" + s;
@@ -926,7 +969,9 @@ function parseDelegationInfo(bytes) {
     // array's elements — and only then each one's characters, in the same
     // order.
     var headersList = [];
-    for (var i = 0; i < declared; i++) headersList.push(ndr.readUnicodeStringHeader(r));
+    for (var i = 0; i < declared; i++) {
+      headersList.push(ndr.readUnicodeStringHeader(r));
+    }
     headersList.forEach(function (h) {
       ndr.readUnicodeStringValue(r, h);
       services.push(h.value);
@@ -1080,10 +1125,14 @@ var CLAIMS_COMPRESSION_NAMES = {
 var CLAIMS_MAX_SIZE = 10 * 1024 * 1024;
 
 function claimTypeName(t) {
+  log.debug("Entering claimTypeName().");
+  log.debug("Leaving claimTypeName().");
   return CLAIM_TYPE_NAMES[t] || ("claim type " + t);
 }
 
 // A 64-bit value from the two halves NDR leaves it in, as a decimal string.
+// A hot path: called once per 64-bit claim value of every claims set read, so
+// no Entering/Leaving pair here — it would drown the log.
 function u64Text(r, signed) {
   var lo = BigInt(r.u32());
   var hi = BigInt(r.u32());
@@ -1133,6 +1182,8 @@ function claimBigInt(value, type, id) {
   return v;
 }
 
+// A hot path: called once per 64-bit claim value of every claims set written,
+// so no Entering/Leaving pair here — it would drown the log.
 function writeU64(w, big) {
   var u = big < BigInt(0) ? big + (BigInt(1) << BigInt(64)) : big;
   w.align(8);
@@ -1142,6 +1193,8 @@ function writeU64(w, big) {
 
 // A `[string]` LPWSTR's deferred half: maximum count, offset, actual count —
 // all three counting the terminating NUL — then the code units and the NUL.
+// A hot path: called once per string claim value of every claims set written,
+// so no Entering/Leaving pair here — it would drown the log.
 function writeTerminatedString(w, text) {
   var s = String(text);
   w.u32(s.length + 1);
@@ -1506,6 +1559,7 @@ function parseClaimsInfo(bytes) {
 // Every claim of a parsed set, flattened, each carrying its source type — the
 // shape a reader usually wants ("what does this ticket claim?").
 function claimsOf(claimsSet) {
+  log.debug("Entering claimsOf().");
   var out = [];
   ((claimsSet && claimsSet.arrays) || []).forEach(function (array) {
     array.claims.forEach(function (claim) {
@@ -1514,6 +1568,7 @@ function claimsOf(claimsSet) {
                  values: claim.values.slice() });
     });
   });
+  log.debug("Leaving claimsOf().");
   return out;
 }
 
@@ -1603,9 +1658,14 @@ function decompressXpressHuffman(input, outputSize) {
   // Reads past the end are zero: the stream's last word may be padding, and
   // every read is bounded by the output size rather than by trusting the
   // input to end where it says.
+  // A hot path: called once per byte of every decompressed claims set, so no
+  // Entering/Leaving pair here — it would drown the log.
   function byteAt(p) {
     return p < src.length ? src[p] : 0;
   }
+
+  // A hot path: called once per symbol of every decompressed claims set, so no
+  // Entering/Leaving pair here — it would drown the log.
   function u16At(p) {
     return byteAt(p) | (byteAt(p + 1) << 8);
   }
@@ -1887,7 +1947,9 @@ function consistencyNotes(info, sidCount, resourceGroupCount) {
         "SID in ExtraSids " +
       "rather than LogonDomainId + UserId.");
   }
-  var ntlmOnly = info.userFlagNames.filter(function (n) { return n.indexOf("NTLM only") !== -1; });
+  var ntlmOnly = info.userFlagNames.filter(function (n) {
+    return n.indexOf("NTLM only") !== -1;
+  });
   if (ntlmOnly.length) {
     notes.push("UserFlags carries " + ntlmOnly.join(", ") + ". [MS-PAC] " +
         "section 2.5 says these are " +
@@ -1922,11 +1984,11 @@ function consistencyNotes(info, sidCount, resourceGroupCount) {
 // ---------------------------------------------------------------------------
 // Signature verification.
 //
-// Each signature is checked SEPARATELY and reported by name, because they answer
-// different questions and a caller almost never has all the keys. A service has its
-// own key and can confirm the server signature; only a KDC can confirm the other
-// three. Collapsing that into one boolean is how "the PAC is valid" comes to mean
-// nothing in particular.
+// Each signature is checked SEPARATELY and reported by name, because they
+// answer different questions and a caller almost never has all the keys. A
+// service has its own key and can confirm the server signature; only a KDC can
+// confirm the other three. Collapsing that into one boolean is how "the PAC is
+// valid" comes to mean nothing in particular.
 // ---------------------------------------------------------------------------
 
 // Reproduces the PAC as it stood when a given signature was computed, by
@@ -2075,6 +2137,9 @@ async function verifySignatures(pac, keys) {
             "key is wrong or the PAC " +
           "has been altered since it was signed.";
     } catch (e) {
+      // Reported on the result rather than thrown: one signature that cannot
+      // be checked must not hide the verdict on the others.
+      log.debug("Caught in check(): " + ((e && e.message) || e));
       out.verified = false;
       out.note = "Could not be checked: " + e.message;
     }
@@ -2152,6 +2217,9 @@ async function verifySignaturesWithAnyKey(pac, keys, opts) {
     try {
       profile = profileForSignatureType(entry.parsed.signatureType);
     } catch (e) {
+      // An unknown signature type is reported on its result, as in check().
+      log.debug("Caught in verifySignaturesWithAnyKey(): " +
+          ((e && e.message) || e));
       out.verified = false;
       out.note = e.message;
       results.push(out);
@@ -2221,7 +2289,8 @@ async function verifySignaturesWithAnyKey(pac, keys, opts) {
 }
 
 // ---------------------------------------------------------------------------
-// Building — for the mock KDC, and for tests that need a PAC with one field wrong.
+// Building — for the mock KDC, and for tests that need a PAC with one field
+// wrong.
 // ---------------------------------------------------------------------------
 
 function encodeLogonInfo(spec) {
@@ -2347,11 +2416,13 @@ function encodeLogonInfo(spec) {
 }
 
 function encodeClientInfo(spec) {
+  log.debug("Entering encodeClientInfo().");
   var w = ndr.createWriter();
   w.fileTime(spec.clientId || null);
   var name = spec.name || "";
   w.u16(name.length * 2);
   for (var i = 0; i < name.length; i++) w.u16(name.charCodeAt(i));
+  log.debug("Leaving encodeClientInfo().");
   return w.build();
 }
 
@@ -2408,24 +2479,30 @@ function encodeUpnDnsInfo(spec) {
 }
 
 function encodeAttributesInfo(flags) {
+  log.debug("Entering encodeAttributesInfo().");
   var w = ndr.createWriter();
   w.u32(2);            // FlagsLength, in BITS: two flags are defined
   w.u32(flags);
+  log.debug("Leaving encodeAttributesInfo().");
   return w.build();
 }
 
 function encodeRequestorSid(sid) {
+  log.debug("Entering encodeRequestorSid().");
   var w = ndr.createWriter();
   ndr.writeSid(w, sid);
+  log.debug("Leaving encodeRequestorSid().");
   return w.build();
 }
 
 function encodeSignaturePlaceholder(signatureType, length, rodcIdentifier) {
+  log.debug("Entering encodeSignaturePlaceholder().");
   var w = ndr.createWriter();
   w.u32(signatureType < 0 ? signatureType + 0x100000000 : signatureType);
   w.zeros(length);
   if (rodcIdentifier !== undefined &&
       rodcIdentifier !== null) w.u16(rodcIdentifier);
+  log.debug("Leaving encodeSignaturePlaceholder().");
   return w.build();
 }
 
@@ -2469,10 +2546,11 @@ function assemblePac(entries) {
 //
 // `clientClaims` is encodeClaimsSet()'s spec, written uncompressed as type 13.
 //
-// The four signatures are filled in the order [MS-PAC] requires — ticket, extended
-// KDC, server, KDC — because each covers bytes the later ones have not written yet.
-// Doing them in any other order produces a PAC whose signatures do not verify, and
-// the error a Windows service returns for that is indistinguishable from a wrong key.
+// The four signatures are filled in the order [MS-PAC] requires — ticket,
+// extended KDC, server, KDC — because each covers bytes the later ones have not
+// written yet. Doing them in any other order produces a PAC whose signatures do
+// not verify, and the error a Windows service returns for that is
+// indistinguishable from a wrong key.
 async function buildPac(spec) {
   log.debug("Entering buildPac(). client=" + (spec.clientInfo &&
       spec.clientInfo.name));
@@ -2564,21 +2642,33 @@ async function signAssembled(assembled, spec) {
   var bytes = assembled.bytes;
 
   function signatureAt(type) {
+    log.debug("Entering signatureAt().");
     for (var i = 0; i < assembled.placed.length; i++) {
       if (assembled.placed[i].type === type) {
+        log.debug("Leaving signatureAt().");
         return assembled.placed[i].offset + 4;
       }
     }
+    log.debug("Leaving signatureAt().");
     return -1;
   }
-  function has(type) { return signatureAt(type) >= 0; }
+
+  function has(type) {
+    log.debug("Entering has().");
+    log.debug("Leaving has().");
+    return signatureAt(type) >= 0;
+  }
+
   function write(type, sig) {
+    log.debug("Entering write().");
     var at = signatureAt(type);
     if (at < 0) {
+      log.debug("Leaving write().");
       throw new Error("krb5: no " + bufferTypeName(type) + " buffer to write " +
           "into");
     }
     bytes.set(sig, at);
+    log.debug("Leaving write().");
   }
 
   // 1. The ticket signature, over bytes the caller supplies (only it has the
@@ -2657,6 +2747,7 @@ async function resignPac(pacBytes, spec) {
     .filter(function (b) { return b.bytes && !isSignatureBuffer(b.type); })
     .map(function (b) { return { type: b.type, bytes: b.bytes }; });
   if (!entries.length) {
+    log.debug("Leaving resignPac().");
     throw new Error("krb5: this PAC has no content buffers to re-sign");
   }
 
@@ -2689,7 +2780,9 @@ async function resignPac(pacBytes, spec) {
   }
 
   if (spec.delegationInfo) {
-    entries = entries.filter(function (e) { return e.type !== TYPE.DELEGATION_INFO; });
+    entries = entries.filter(function (e) {
+      return e.type !== TYPE.DELEGATION_INFO;
+    });
     entries.push({
       type: TYPE.DELEGATION_INFO,
       bytes: encodeDelegationInfo(spec.delegationInfo)
@@ -2734,6 +2827,8 @@ async function resignPac(pacBytes, spec) {
 // Wraps a PAC as an EncTicketPart authorization-data element: ad-type 128
 // inside ad-type 1. The nesting is not optional — see the file header.
 function wrapPacAsAuthorizationData(pacBytes) {
+  log.debug("Entering wrapPacAsAuthorizationData().");
+  log.debug("Leaving wrapPacAsAuthorizationData().");
   return [{
     type: AD_TYPE.IF_RELEVANT,
     data: msgs.encAuthorizationData([{

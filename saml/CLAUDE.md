@@ -186,9 +186,10 @@ hand.
 published per service provider, and three shell scripts over there build it
 rather than guessing it — so **a change to `slugOf()` breaks three files nothing
 in this repository can see**, and it breaks them in the parent's suite rather
-than here. That is the same standing obligation the root `CLAUDE.md`'s last
-section describes for the Kerberos COPY set: this repository moves, and the
-other one has to be moved with it in the same change. Nothing is provisioned for
+than here: this repository moves, and the other one has to be moved with it
+in the same change. (It was once likened to the Kerberos COPY set, an
+obligation #1280 ended; this one is a URL the parent's scripts compute, not a
+file it copies.) Nothing is provisioned for
 the `sts` side of those jobs — any entityID is accepted, the metadata is minted
 on the ask, and the application entry is created by the first valid AuthnRequest
 — which is why there is no `configureX` step for it anywhere in those launchers,

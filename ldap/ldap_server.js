@@ -16632,8 +16632,7 @@ if (typeof krb5PersonKeys.setDirectory === 'function') {
 // both ways round, for the key register's reason one slot up: the register
 // is reached by the KDC (15) and the principal database, so a require from
 // there to this module would register every `/admin/ldap/*` page ahead of
-// the KDC's own routes — and drag the whole directory into the parent
-// project's Kerberos COPY closure — and this module requires the register,
+// the KDC's own routes, and this module requires the register,
 // so a require back closes a cycle. Three functions, validated whole by the
 // register. They run in the AMBIENT realm, which is what makes the register
 // per realm: the KDC enters the realm a request is for.

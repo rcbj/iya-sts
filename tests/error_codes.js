@@ -71,8 +71,9 @@ const ROOT = path.join(__dirname, '..');
 //
 // First-party service source. NOT scanned, each for a stated reason:
 //   node_modules, node-ldapjs      somebody else's code
-//   common/crypto_impl, the Kerberos  byte-identical copies of the parent
-//     codec modules                project's files, not editable here
+//   (common/crypto_impl and the Kerberos codec modules were skipped here as
+//   the parent project's copies until #1280; they are this service's own and
+//   scanned like the rest)
 //   tests                          assertions, not failures this service raises
 //   docs                           prose
 //   openbao                        a separate container's seed scripts, not
@@ -102,16 +103,7 @@ const SKIP_DIRS = ['node_modules', 'node-ldapjs', 'tests', 'docs',
                    'openbao', 'env', '.git', 'coverage', 'protos',
                    '.claude', 'companion'];
 
-const SKIP_PATHS = ['common/crypto_impl', 'xacml/conformance',
-                    'debugger/embedded', 'rust/target'];
-
-// kerberos/CLAUDE.md: the eight codec modules are vendored from the parent
-// project and not editable here, despite not living under common/crypto_impl.
-const VENDORED_FILES = ['kerberos/krb5_asn1.js', 'kerberos/krb5_crypto.js',
-                        'kerberos/krb5_gss.js', 'kerberos/krb5_messages.js',
-                        'kerberos/krb5_ndr.js', 'kerberos/krb5_pac.js',
-                        'kerberos/krb5_primitives.js',
-                        'kerberos/krb5_spnego.js'];
+const SKIP_PATHS = ['xacml/conformance', 'debugger/embedded', 'rust/target'];
 
 // The two console bundles (#446) are esbuild's output of the `web_` modules
 // this scan already reads; `console.js` is MINIFIED since 2026-10-05, so one
@@ -145,7 +137,6 @@ function sourceFiles() {
       // or the Rust conversion's `.rs` (#444).
       const rust = rel.indexOf('rust/') === 0 && /\.rs$/.test(entry.name);
       if (!rust && !isSourceFile(entry.name, names)) return;
-      if (VENDORED_FILES.indexOf(rel) >= 0) return;
       if (GENERATED_FILES.indexOf(rel) >= 0) return;
       out.push(rel);
     });
