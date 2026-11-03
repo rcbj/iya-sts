@@ -102,6 +102,9 @@ import pki = require('../common/pki');
 // instead.
 import stats = require('../common/admin_stats');
 import vcConfigs = require('./vc_configs');
+// Which JWS algorithms are offered, signed with and accepted, and the wallet
+// compatibility mode (#657).
+import VcAlgorithms = require('./vc_algorithms');
 import vcDid = require('./vc_did');
 // WHICH claims a credential carries, and what each one's value is. A library
 // like dpop.js — it registers nothing, so its place in the require order does
@@ -738,8 +741,11 @@ class VcIssuer {
       cryptographic_binding_methods_supported: ['jwk'],
       credential_signing_alg_values_supported:
         this.deps.vciSigningAlgsFor(VCI_CONFIG_ID),
+      // `oid4vc.walletCompatibility` narrows it (#657); ldp_vc's holder
+      // suites below are not this mode's.
       proof_types_supported:
-        this.proofTypesSupported(stsCrypto.JWS_ASYMMETRIC_ALGS),
+        this.proofTypesSupported(
+          VcAlgorithms.offered(stsCrypto.JWS_ASYMMETRIC_ALGS)),
       display: [{
         name: 'Identity Credential',
         locale: 'en-US',
@@ -768,8 +774,11 @@ class VcIssuer {
       cryptographic_binding_methods_supported: ['jwk'],
       credential_signing_alg_values_supported:
         this.deps.vciSigningAlgsFor(VCI_JWT_CONFIG_ID),
+      // `oid4vc.walletCompatibility` narrows it (#657); ldp_vc's holder
+      // suites below are not this mode's.
       proof_types_supported:
-        this.proofTypesSupported(stsCrypto.JWS_ASYMMETRIC_ALGS),
+        this.proofTypesSupported(
+          VcAlgorithms.offered(stsCrypto.JWS_ASYMMETRIC_ALGS)),
       display: [{
         name: 'Identity Credential (JWT VC, no selective disclosure)',
         locale: 'en-US',
@@ -1371,6 +1380,13 @@ class VcIssuer {
     if (stsCrypto.JWS_ASYMMETRIC_ALGS.indexOf(header.alg) < 0) {
       throw new Error('unsupported proof alg "' + header.alg + '"; this ' +
         'issuer accepts ' + stsCrypto.JWS_ASYMMETRIC_ALGS.join(', ') + '.');
+    }
+    // Not one the wallet compatibility mode turns off (#657, STS-VC-0153);
+    // the metadata does not advertise it then either.
+    const compatRefused = VcAlgorithms.acceptanceRefusal(String(header.alg),
+                                                         'the proof');
+    if (compatRefused) {
+      throw compatRefused;
     }
     if (claims.aud !== credentialIssuer) {
       throw new Error('the proof aud ("' + claims.aud + '") is not this ' +
@@ -2035,6 +2051,21 @@ class VcIssuer {
     // checked it when the offer was made, and the configured algorithm may
     // have changed since. A JOSE algorithm only — ldp_vc is bbs-2023.
     const chosen = String(signingAlg || '');
+    // THE WALLET COMPATIBILITY MODE (#657) refuses a post-quantum or
+    // composite algorithm here, before a status index is allocated, and
+    // signs nothing in its place (STS-VC-0152): the offer's choice, else the
+    // configured one. ldp_vc is bbs-2023 and not this mode's.
+    if (format !== 'ldp_vc') {
+      const effective = chosen || String(this.deps.config.value(
+        'oid4vci.credentialSigningAlgorithm') || 'RS256');
+      const refused = VcAlgorithms.signingRefusal(effective, chosen ?
+        'the offer\'s signingAlg' : 'oid4vci.credentialSigningAlgorithm');
+      if (refused) {
+        log.debug("Leaving VcIssuer.buildCredentialFor(). Wallet " +
+                  "compatibility mode.");
+        throw refused;
+      }
+    }
     if (chosen && vciSigningAlgsFor(configId).indexOf(chosen) < 0) {
       throw new Error('the offer chose ' + chosen + ', which ' + configId +
                       ' credentials are not signed with: ' +
@@ -3613,6 +3644,14 @@ class VcIssuer {
       } catch (e) {
         log.debug("Caught in the OID4VCI credential endpoint: " +
                   ((e && e.message) || e));
+        if (e && e.code === 'STS-VC-0152') {
+          // Wallet compatibility mode (#657): a refusal of the request,
+          // section 8.3.1.2, logged with its code where it was found.
+          errorCodes.mark(res, 'STS-VC-0152');
+          log.debug("Leaving the OID4VCI credential endpoint. Wallet " +
+                    "compatibility mode.");
+          return vciError(res, 400, 'credential_request_denied', e.message);
+        }
         log.error(errorCodes.tag('STS-VC-0079') + 'the credential could not ' +
                   'be built: ' + e.message);
         errorCodes.mark(res, 'STS-VC-0079');
@@ -3745,6 +3784,13 @@ class VcIssuer {
       } catch (e) {
         log.debug("Caught in the OID4VCI deferred credential endpoint: " +
                   ((e && e.message) || e));
+        if (e && e.code === 'STS-VC-0152') {
+          // Wallet compatibility mode (#657), as at the credential endpoint.
+          errorCodes.mark(res, 'STS-VC-0152');
+          log.debug("Leaving the OID4VCI deferred credential endpoint. " +
+                    "Wallet compatibility mode.");
+          return vciError(res, 400, 'credential_request_denied', e.message);
+        }
         log.error(errorCodes.tag('STS-VC-0079') + 'the deferred credential ' +
                   'could not be built: ' + e.message);
         errorCodes.mark(res, 'STS-VC-0079');

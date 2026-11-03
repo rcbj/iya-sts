@@ -4669,6 +4669,96 @@ function ownPublicKeyFor(alg) {
   return { kid: signer.kid, publicKeyPem: publicKeyPem };
 }
 
+// THE PUBLIC JWK OF THE KEY A REQUEST OBJECT IS SIGNED WITH, POST-QUANTUM
+// INCLUDED (#657): what the OpenID4VP Verifier certifies (x509 prefixes), and
+// what it names in a Verifier Attestation's `cnf`, its Entity
+// Configuration's `jwks` and its DID document. The signer is the one
+// `signJwt()` (classical) or `signJwtAsync()` (post-quantum) signs `alg`
+// with, so the published key and the signature cannot name different keys.
+//
+// The synchronous door never MAKES a post-quantum key — eleven key
+// generations on this thread are keyListFor()'s reason — and refuses where
+// the realm has not made them yet; `ownPublicJwkForAsync()` makes them on
+// libuv's thread pool, and the Verifier awaits it before its synchronous
+// build (`VcVerifier.prepareSignedClientId()`).
+/**
+ * Returns the public JWK, and the internal `kid`, of the key this realm signs
+ * an algorithm with, without making a post-quantum key.
+ *
+ * @param alg - the JWS algorithm
+ * @param useCaseId - the certificate-header use case the signature is made
+ * under, which decides the signer group, as `signJwt()`'s `certificateHeader`
+ * @returns `{ kid, publicJwk }`
+ * @throws Error when this realm holds no key for the algorithm, or has not
+ * made its post-quantum keys yet
+ */
+function ownPublicJwkFor(alg, useCaseId) {
+  log.debug("Entering ownPublicJwkFor(). alg=" + alg);
+  if (!stsCrypto.isPqJwsAlg(alg)) {
+    // signJwt()'s choice, in its order.
+    const signer = pinnedJoseSigner(alg, false) ||
+                   groupSignerFor(useCaseId, alg, false) ||
+                   ownSignerFor(alg);
+    const jwk = /** @type {any} */ (stsCrypto.publicKeyOf(signer.key)
+      .export({ format: 'jwk' }));
+    jwk.kid = signer.kid;
+    jwk.use = 'sig';
+    jwk.alg = alg;
+    log.debug("Leaving ownPublicJwkFor(). Classical.");
+    return { kid: signer.kid, publicJwk: jwk };
+  }
+  const refused = pqSignatureRefusal(alg);
+  if (refused) {
+    log.debug("Leaving ownPublicJwkFor(). Post-quantum signing is off.");
+    throw refused;
+  }
+  // signingKeyFor()'s choice, in its order, without making the list.
+  const keys = stsKeysFor();
+  const signer = pinnedJoseSigner(alg, true) ||
+                 groupSignerFor(useCaseId, alg, true) ||
+                 (keys.pqKeys ? signingKeyFromList(alg, keys.pqKeys) : null);
+  if (!signer) {
+    log.debug("Leaving ownPublicJwkFor(). Not made yet.");
+    throw new Error('this realm has not made its ' + alg + ' key yet.');
+  }
+  const found = allVerificationKeys().filter(function (one) {
+    return one.publicJwk && one.publicJwk.kid === signer.kid;
+  })[0];
+  if (!found) {
+    log.debug("Leaving ownPublicJwkFor(). No public key.");
+    throw new Error('this realm holds no public key for its ' + alg +
+                    ' signing key.');
+  }
+  log.debug("Leaving ownPublicJwkFor(). Post-quantum.");
+  return { kid: signer.kid, publicJwk: found.publicJwk };
+}
+
+/**
+ * The same answer as `ownPublicJwkFor()`, with the realm's post-quantum keys
+ * made on libuv's thread pool where they are not made yet.
+ *
+ * @param alg - the JWS algorithm
+ * @param useCaseId - as for `ownPublicJwkFor()`
+ * @returns a promise of `{ kid, publicJwk }`
+ */
+function ownPublicJwkForAsync(alg, useCaseId) {
+  log.debug("Entering ownPublicJwkForAsync(). alg=" + alg);
+  if (!stsCrypto.isPqJwsAlg(alg)) {
+    try {
+      const out = ownPublicJwkFor(alg, useCaseId);
+      log.debug("Leaving ownPublicJwkForAsync(). Classical.");
+      return Promise.resolve(out);
+    } catch (e) {
+      log.debug("Leaving ownPublicJwkForAsync(). Refused.");
+      return Promise.reject(e);
+    }
+  }
+  log.debug("Leaving ownPublicJwkForAsync(). Waiting on the key list.");
+  return allSigningKeysAsync().then(function () {
+    return ownPublicJwkFor(alg, useCaseId);
+  });
+}
+
 // The curve keys of the current key set that sign `alg` — the EdDSA pair
 // narrowed by `oauth2.eddsaCurve`, as `signingKeyFromList()` narrows it.
 function classicalKeysFor(alg) {
@@ -7815,43 +7905,55 @@ function signJwt(payload, context, opts) {
 function signJwtAsync(payload, context, opts) {
   log.debug("Entering signJwtAsync(). typ=" + (payload.typ || '(none)'));
   const alg = String((opts && opts.algorithm) || 'RS256');
-  let signer;
-  try {
-    signer = pinnedJoseSigner(alg, false) ||
-             groupSignerFor(opts && opts.certificateHeader, alg, false) ||
-             ownSignerFor(alg);
-  } catch (e) {
-    log.debug("Leaving signJwtAsync(). No signer.");
-    return Promise.reject(e);
+  // A POST-QUANTUM ALGORITHM IS SIGNED HERE TOO SINCE #657: the key comes
+  // from `signingKeyForAsync()`, which makes the realm's post-quantum keys on
+  // libuv's thread pool where they are not made yet and refuses one while
+  // keys.postQuantumSigning is off (STS-KEYS-0158). Every other algorithm
+  // keeps `ownSignerFor()`'s key, which `signJwt()` signs with, so the two
+  // doors cannot pick different keys for it.
+  const pq = stsCrypto.isPqJwsAlg(alg);
+  let found;
+  if (pq) {
+    found = signingKeyForAsync(alg, opts && opts.certificateHeader);
+  } else {
+    try {
+      found = Promise.resolve(pinnedJoseSigner(alg, false) ||
+               groupSignerFor(opts && opts.certificateHeader, alg, false) ||
+               ownSignerFor(alg));
+    } catch (e) {
+      log.debug("Leaving signJwtAsync(). No signer.");
+      return Promise.reject(e);
+    }
   }
-  const certificateHeaderMembers = withCertificateHeader(
-    (opts && opts.header) || undefined,
-    opts && opts.certificateHeader, alg, signer.kid);
-  const kid = (opts && opts.kidDid) ? opts.kidDid + '#' + signer.kid :
-    publishedKidFor(signer.kid);
-  logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before ' +
-      'signing',
-              { header: Object.assign({ alg: alg, kid: kid },
-                                      certificateHeaderMembers || {}),
-                payload: payload });
   log.debug("Leaving signJwtAsync().");
-  return stsCrypto.signJwsAsync(payload, signer.key,
-                                { algorithm: alg, keyid: kid,
-                                  header: certificateHeaderMembers })
-    .then(function (signed) {
-      logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')',
-                  'after signing', signed);
-      if (jwtRecorder) {
-        try {
-          jwtRecorder(payload, signed, context || null);
-        } catch (e) {
-          log.error(errorCodes.tag('STS-CORE-0027') +
-                    'the JWT recorder threw and was ignored; the token ' +
-                    'itself is unaffected: ' + e.message);
-        }
+  return found.then(function (signer) {
+    const certificateHeaderMembers = withCertificateHeader(
+      (opts && opts.header) || undefined,
+      opts && opts.certificateHeader, alg, signer.kid);
+    const kid = (opts && opts.kidDid) ? opts.kidDid + '#' + signer.kid :
+      publishedKidFor(signer.kid);
+    logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')', 'before ' +
+        'signing',
+                { header: Object.assign({ alg: alg, kid: kid },
+                                        certificateHeaderMembers || {}),
+                  payload: payload });
+    return stsCrypto.signJwsAsync(payload, signer.key,
+                                  { algorithm: alg, keyid: kid,
+                                    header: certificateHeaderMembers });
+  }).then(function (signed) {
+    logArtifact('OAuth token (' + (payload.typ || 'unknown') + ')',
+                'after signing', signed);
+    if (jwtRecorder) {
+      try {
+        jwtRecorder(payload, signed, context || null);
+      } catch (e) {
+        log.error(errorCodes.tag('STS-CORE-0027') +
+                  'the JWT recorder threw and was ignored; the token ' +
+                  'itself is unaffected: ' + e.message);
       }
-      return signed;
-    });
+    }
+    return signed;
+  });
 }
 
 /**
@@ -8651,6 +8753,8 @@ module.exports = {
   vciError: vciError,
   signJwt: signJwt,
   signJwtAsync: signJwtAsync,
+  ownPublicJwkFor: ownPublicJwkFor,
+  ownPublicJwkForAsync: ownPublicJwkForAsync,
   ownPublicKeyFor: ownPublicKeyFor,
   setJwtRecorder: setJwtRecorder,
   userFor: userFor,

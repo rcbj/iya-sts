@@ -64,6 +64,8 @@ import config = require('../common/config');
 // is marked on the response object and never written into a response.
 import errorCodes = require('../common/error_codes');
 import vcConfigs = require('./vc_configs');
+// The wallet compatibility mode (#657).
+import VcAlgorithms = require('./vc_algorithms');
 
 interface VcDidDeps {
   log: typeof helpers.log;
@@ -678,6 +680,35 @@ class VcDid {
                   'the ' + signer.alg + ' key credentials are signed with ' +
                   'is not in this realm\'s key set, so the DID document ' +
                   'cannot publish it.');
+      }
+    }
+    // THE KEY A SIGNED OPENID4VP REQUEST IS SIGNED WITH (#657), where it is
+    // not one already listed: under the decentralized_identifier prefix the
+    // request names its key as `<this DID>#<kid>`, so a wallet resolving this
+    // document must find it — `oid4vp.requestObjectSigningAlgorithm`'s key,
+    // which may be a curve or post-quantum one. Not one the wallet
+    // compatibility mode or keys.postQuantumSigning turns off: no request is
+    // signed with it then.
+    const requestAlg = String(this.deps.config.value(
+      'oid4vp.requestObjectSigningAlgorithm') || 'RS256');
+    if (requestAlg !== 'RS256' && !VcAlgorithms.turnedOff(requestAlg) &&
+        !(stsCrypto.isPqJwsAlg(requestAlg) &&
+          !stsCrypto.postQuantumSigningOn())) {
+      try {
+        const own = await helpers.ownPublicJwkForAsync(requestAlg,
+                                                      'vp-request-object');
+        const id = did + '#' + own.kid;
+        if (!methods.some(function (m: any) { return m.id === id; })) {
+          methods.push({ id: id, type: 'JsonWebKey2020', controller: did,
+                         publicKeyJwk: own.publicJwk });
+        }
+      } catch (e) {
+        log.debug("Caught in VcDid.stsDidDocument(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-VC-0155') + 'the ' + requestAlg +
+                  ' key OpenID4VP requests are signed with could not be ' +
+                  'published in the DID document: ' +
+                  ((e && e.message) || e));
       }
     }
     try {

@@ -777,7 +777,7 @@ class VcSignin {
       : (ctx.mfaId ? '?mfa=' + encodeURIComponent(ctx.mfaId) : '');
     let tx: any = null;
     try {
-      tx = verifier.buildVpRequest(req, {
+      tx = await verifier.buildVpRequestAsync(req, {
         responseType: selfIssued ? 'id_token' : 'vp_token',
         signIn: {
           authnId: record.id,

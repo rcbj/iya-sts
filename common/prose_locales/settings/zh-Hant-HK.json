@@ -1788,8 +1788,8 @@
     "text": "驗證器證書在其 subjectAltName 中攜帶、且 x509_san_dns Client Identifier 所指名的 DNS 名稱（OpenID4VP 1.0 section 5.9.3）。它「必須」是 Response URI 的主機，未另行信任驗證器的錢包會檢查這一點，因此 Response URI 位於其他主機的要求會被拒絕。留空（預設值）：若已固定 global.publicBaseUrl 則使用其主機，否則——僅限開發模式——使用要求抵達的主機。產品模式絕不為 Host 標頭簽發證書：否則送出該標頭的人就能決定一個已簽署、受信任的要求將出示內容送往何處。"
   },
   "oid4vp.x509SigningAlgorithm|description": {
-    "en": "f85d7f30b92687ec",
-    "text": "使用 x509_san_dns 或 x509_hash Client Identifier 的 Request Object 以哪種 JWS 演算法簽署，從而決定驗證器證書是針對哪把領域金鑰簽發。預設為 ES256，OpenID4VC HAIP 要求錢包接受它。目前尚未提供後量子演算法：Request Object 在要求路徑上簽署，而此領域的後量子金鑰在 libuv 的線程池上簽署（oid4vc/CLAUDE.md，x509 前置詞）。"
+    "en": "aa2c5eaf7760ef3f",
+    "text": "使用 x509_san_dns 或 x509_hash Client Identifier 的 Request Object 以哪種 JWS 演算法簽署，從而決定驗證器證書是針對哪把領域金鑰簽發。預設為 ES256，OpenID4VC HAIP 要求錢包接受它。後量子與複合演算法也一併提供，供接受它們的錢包使用；oid4vc.walletCompatibility 會拒絕它們，關閉 keys.postQuantumSigning 時也會拒絕。"
   },
   "oidfed.organizationName|description": {
     "en": "cb6f9fba93962006",

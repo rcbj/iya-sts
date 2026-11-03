@@ -833,6 +833,17 @@ const OID4VP_RESPONSE_KEY_ALGS = ['ECDH-ES'].concat(
     return !/^HPKE-\d+$/.test(alg);
   }));
 
+// THE JWS ALGORITHMS AN OPENID4VP REQUEST OBJECT MAY BE SIGNED WITH (#657):
+// the classical ones a wallet accepts today first, then the post-quantum and
+// composite ones, which `oid4vc.walletCompatibility` turns off. ML-DSA-44, -65
+// and -87 are RFC 9964's; SLH-DSA and the composites are Internet-Drafts
+// (draft-ietf-cose-sphincs-plus, draft-ietf-jose-pq-composite-sigs), and no
+// wallet in use accepts any of the eleven.
+const VC_PQ_SIGNING_ALGS = ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87',
+  'SLH-DSA-SHA2-128s', 'SLH-DSA-SHAKE-128s', 'ML-DSA-44-ES256',
+  'ML-DSA-65-ES256', 'ML-DSA-87-ES384', 'ML-DSA-44-Ed25519',
+  'ML-DSA-65-Ed25519', 'ML-DSA-87-Ed448'];
+
 // A list of short event-type names, and each again under its URI. The CAEP
 // and RISC readers strip ssf/ssf_events.js's CAEP_PREFIX / RISC_PREFIX before
 // they match, so a whole URI is a spelling they accept.
@@ -10779,7 +10790,9 @@ const SETTINGS = [
                  '/oauth2/jwks and /.well-known/did.json publish the key, ' +
                  'and this service\'s Verifier checks against it. ldp_vc is ' +
                  'bbs-2023 and is not affected. A credential already issued ' +
-                 'keeps the algorithm it was signed with.' },
+                 'keeps the algorithm it was signed with. ' +
+                 'oid4vc.walletCompatibility refuses a post-quantum or ' +
+                 'composite one here.' },
 
   // `x5c` BY DEFAULT (2026-10-16): eudi-dev's wallet refused every
   // credential's Token Status List with "no key to verify the status list
@@ -11049,16 +11062,65 @@ const SETTINGS = [
   { key: 'oid4vp.x509SigningAlgorithm', group: 'OID4VP',
     label: 'Signing algorithm of an x509 Client Identifier request',
     env: 'OID4VP_X509_SIGNING_ALGORITHM', type: 'enum',
-    enumValues: ['ES256', 'ES384', 'ES512', 'PS256', 'RS256', 'EdDSA'],
+    // POST-QUANTUM SINCE #657: the Request Object is signed after the build
+    // (VcVerifier.buildVpRequestAsync()), so an ML-DSA, SLH-DSA or composite
+    // signature is made on libuv's thread pool, and the Verifier's
+    // certificate is issued over the realm's key for that algorithm.
+    enumValues: ['ES256', 'ES384', 'ES512', 'PS256', 'RS256', 'EdDSA']
+      .concat(VC_PQ_SIGNING_ALGS),
     dflt: 'ES256', runtime: true,
     description: 'The JWS algorithm a Request Object with the x509_san_dns ' +
                  'or x509_hash Client Identifier is signed with, and so the ' +
                  'realm key the Verifier\'s certificate is issued over. ' +
                  'ES256 by default, which OpenID4VC HAIP requires a wallet ' +
-                 'to accept. A post-quantum algorithm is not offered yet: ' +
-                 'the Request Object is signed on the request path, and ' +
-                 'this realm\'s post-quantum keys sign on libuv\'s thread ' +
-                 'pool (oid4vc/CLAUDE.md, the x509 prefixes).' },
+                 'to accept. The post-quantum and composite algorithms are ' +
+                 'offered too, for a wallet that accepts them; ' +
+                 'oid4vc.walletCompatibility refuses them, and so does ' +
+                 'keys.postQuantumSigning off.' },
+
+  { key: 'oid4vp.requestObjectSigningAlgorithm', group: 'OID4VP',
+    label: 'Signing algorithm of a signed request',
+    env: 'OID4VP_REQUEST_OBJECT_SIGNING_ALGORITHM', type: 'enum',
+    enumValues: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
+                 'ES256', 'ES384', 'ES512', 'EdDSA']
+      .concat(VC_PQ_SIGNING_ALGS),
+    dflt: 'RS256', runtime: true,
+    description: 'The JWS algorithm a signed Request Object is signed with ' +
+                 'under the pre-registered, decentralized_identifier, ' +
+                 'verifier_attestation and openid_federation Client ' +
+                 'Identifier prefixes (the x509 prefixes use ' +
+                 'oid4vp.x509SigningAlgorithm). The realm key for it is the ' +
+                 'one the request names: in /oauth2/jwks, in the DID ' +
+                 'document, in a self-issued Verifier Attestation\'s cnf ' +
+                 'and in the Entity Configuration\'s ' +
+                 'openid_credential_verifier jwks. RS256 by default, which ' +
+                 'is what every signed request used before this setting. ' +
+                 'The post-quantum and composite algorithms are offered ' +
+                 'for a wallet that accepts them; ' +
+                 'oid4vc.walletCompatibility refuses them, and so does ' +
+                 'keys.postQuantumSigning off.' },
+
+  { key: 'oid4vc.walletCompatibility', group: 'OID4VCI',
+    label: 'Wallet compatibility mode',
+    env: 'OID4VC_WALLET_COMPATIBILITY', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Turns off, for OpenID4VCI and OpenID4VP, every JWS ' +
+                 'algorithm a wallet in use today refuses or that no ' +
+                 'published specification defines for these protocols: the ' +
+                 'post-quantum and composite ones (ML-DSA-44, -65 and -87 ' +
+                 'are RFC 9964\'s, but no wallet accepts them yet; SLH-DSA ' +
+                 'and the composite ML-DSA algorithms are Internet-Drafts). ' +
+                 'On: none of them is in the issuer\'s or the Verifier\'s ' +
+                 'metadata, a dc+sd-jwt or jwt_vc_json credential, an ' +
+                 'OpenID4VP Request Object or a portal offer is never ' +
+                 'signed with one (a setting naming one is refused rather ' +
+                 'than replaced), and a credential, Key Binding JWT, VP ' +
+                 'JWT, proof of possession or foreign status list signed ' +
+                 'with one is refused. OFF, the default: every algorithm ' +
+                 'this realm holds is offered and accepted, as before. ' +
+                 'ldp_vc (bbs-2023 and its holder cryptosuites) is not ' +
+                 'affected, and neither is any other protocol: ' +
+                 'keys.postQuantumSigning is the realm-wide switch.' },
 
   { key: 'oid4vp.verifierAttestation', group: 'OID4VP',
     label: 'Verifier Attestation JWT',
@@ -11398,7 +11460,10 @@ const SETTINGS = [
                  'what it always did. A certificate is used as a KEY: no ' +
                  'chain is built, though its revocation is consulted when it ' +
                  'verifies a credential (pki.revocationCheck, since ' +
-                 '2026-09-12).' },
+                 '2026-09-12). A certificate whose key is ML-DSA, SLH-DSA ' +
+                 'or composite ML-DSA verifies a credential and a status ' +
+                 'list signed with that algorithm (#657), unless ' +
+                 'oid4vc.walletCompatibility is on.' },
 
   { key: 'oid4vp.expectedVct', group: 'OID4VP',
     label: 'Expected SD-JWT VC type (vct)',

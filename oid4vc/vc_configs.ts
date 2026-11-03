@@ -34,6 +34,8 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
+// The wallet compatibility mode (#657).
+import VcAlgorithms = require('./vc_algorithms');
 
 // One credential configuration.
 interface VciConfig {
@@ -398,9 +400,15 @@ class VcConfigs {
     })[0];
     const allowed: string[] = c.issuerDid ? ['RS256']
       : [].concat((row && row.enumValues) || []);
-    const out = [configured].concat(allowed.filter(function (alg) {
-      return alg !== configured;
-    }));
+    // NOT ONE THE WALLET COMPATIBILITY MODE TURNS OFF (#657): a post-quantum
+    // or composite algorithm is neither advertised nor offered while
+    // `oid4vc.walletCompatibility` is on — the configured one included, which
+    // then signs nothing (STS-VC-0152) — and none while keys.postQuantumSigning
+    // is off, which the issuer metadata's own narrowing already said.
+    const out = VcAlgorithms.offered([configured].concat(
+      allowed.filter(function (alg) {
+        return alg !== configured;
+      })));
     log.debug("Leaving VcConfigs.vciSigningAlgsFor(). " + out.length + ".");
     return out;
   }

@@ -69,7 +69,9 @@ The holder binding in the table is the default. Any configuration named in
 
 `dc+sd-jwt` and `jwt_vc_json` credentials are signed with
 `oid4vci.credentialSigningAlgorithm` (RS256 by default; ML-DSA, SLH-DSA and
-the composites are allowed and are signed in the worker pool). `ldp_vc` is
+the composites are allowed and are signed in the worker pool, unless the realm
+is in [wallet compatibility mode](oid4vp.md#wallet-compatibility-mode), which
+refuses them with `credential_request_denied`). `ldp_vc` is
 signed with the realm's BBS key, which is published at `/bbs/keys/{kid}` and in
 the DID document, and which rotates like any other signing key. A credential
 and the Token Status List Token its status names carry the certificate chain
@@ -238,7 +240,9 @@ means the whole configured set.
   one).
 * **Proofs** (section 8.2.1, Appendix F): the `jwt` proof type
   (`openid4vci-proof+jwt`, every asymmetric algorithm this service signs with,
-  post-quantum included) and the `attestation` proof type. A `c_nonce` is spent
+  post-quantum included except in
+  [wallet compatibility mode](oid4vp.md#wallet-compatibility-mode)) and the
+  `attestation` proof type. A `c_nonce` is spent
   once across the whole cluster. A proof's `iat` must be within
   `oid4vci.proofIatWindowS` of now.
 * **The key, by value or by DID** (Appendix F.1). A `jwt` proof names its key
@@ -437,8 +441,9 @@ unverifiable, not invalid: it is somebody else's conforming document.
 ### Not implemented
 
 * No historical status lists: `?time=` on the status list endpoint answers 501.
-* A key attestation or trusted issuer **certificate** with a post-quantum key,
-  because such certificates cannot be read here.
+* A key attestation **certificate** with a post-quantum key. (A trusted
+  issuer certificate may hold one; see
+  [OpenID4VP](oid4vp.md#trusted-issuers).)
 
 ## Development and product mode
 
@@ -475,6 +480,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.responseEncryptionRequired` | `OID4VCI_RESPONSE_ENCRYPTION_REQUIRED` | `false` | yes | Refuse a request that does not ask for an encrypted response. |
 | `oid4vci.credentialLifetimeS` | `OID4VCI_CREDENTIAL_LIFETIME_S` | `2592000` | yes | How long every minted credential is valid (thirty days). |
 | `oid4vci.credentialSigningAlgorithm` | `OID4VCI_CREDENTIAL_SIGNING_ALGORITHM` | `RS256` | yes | The JWS algorithm for `dc+sd-jwt` and `jwt_vc_json` credentials, the status lists and the Domain Linkage Credential — the default a `/portal/wallet` offer may change for its own credential. |
+| `oid4vc.walletCompatibility` | `OID4VC_WALLET_COMPATIBILITY` | `false` | yes | [Wallet compatibility mode](oid4vp.md#wallet-compatibility-mode): no post-quantum or composite algorithm offered, signed with or accepted in OpenID4VCI and OpenID4VP. |
 | `oid4vci.credentialCertificateHeader` | `OID4VCI_CREDENTIAL_CERTIFICATE_HEADER` | `x5c` | yes | Whether a credential and its Status List Token carry their signing key's chain: `x5c` (inline, without the Root), `x5u`, `both` or `none`. |
 | `oid4vci.signedMetadataCertificateHeader` | `OID4VCI_SIGNED_METADATA_CERTIFICATE_HEADER` | `x5u` | yes | The same for the metadata's `signed_metadata`. |
 | `oid4vci.trustedListCertificateHeader` | `OID4VCI_TRUSTED_LIST_CERTIFICATE_HEADER` | `x5c` | yes | Whether the trusted list carries its signer's chain; `x5c` or `both`, or the list is not served. |

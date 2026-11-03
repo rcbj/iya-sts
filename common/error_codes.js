@@ -17186,6 +17186,36 @@ const CODES = [
       'answer and the index entry is KEPT as it was, since a read that ' +
       'failed says nothing about whether the row is gone (2026-10-20).',
     spec: 'logged; the read answers the rows it could read' },
+  { code: 'STS-VC-0152',
+    summary: 'oid4vc.walletCompatibility is on and a setting or an offer ' +
+      'asks this realm to SIGN with a post-quantum or composite algorithm ' +
+      '(oid4vci.credentialSigningAlgorithm, a portal offer\'s signingAlg, ' +
+      'oid4vp.x509SigningAlgorithm or oid4vp.requestObjectSigningAlgorithm). ' +
+      'Nothing is signed with it, and nothing is signed with another ' +
+      'algorithm in its place (#657).',
+    spec: 'OID4VCI: HTTP 400 {error: credential_request_denied}; OID4VP: ' +
+      'HTTP 500 JSON `errors` at POST /admin-api/verifications/start, the ' +
+      'sign-in\'s error page' },
+  { code: 'STS-VC-0153',
+    summary: 'oid4vc.walletCompatibility is on and a credential, Key ' +
+      'Binding JWT, VP JWT, OpenID4VCI proof of possession or foreign ' +
+      'status list presented to this realm is signed with a post-quantum ' +
+      'or composite algorithm, which the mode refuses (#657).',
+    spec: 'the presentation is refused (a failed check in its verdict); ' +
+      'OID4VCI: HTTP 400 {error: invalid_proof}' },
+  { code: 'STS-VC-0154',
+    summary: 'A certificate in oid4vp.trustedIssuerCertificates holds a ' +
+      'post-quantum key with no JOSE algorithm this service speaks (an ' +
+      'SLH-DSA parameter set other than SHA2-128s and SHAKE-128s), so it ' +
+      'verifies no credential and is ignored for JOSE signatures (#657).',
+    spec: 'logged; the certificate is skipped' },
+  { code: 'STS-VC-0155',
+    summary: 'oid4vp.requestObjectSigningAlgorithm names an algorithm this ' +
+      'realm holds no signing key for, so no signed request can be built ' +
+      'under the pre-registered, decentralized_identifier, ' +
+      'verifier_attestation or openid_federation prefixes (#657).',
+    spec: 'HTTP 500 JSON `errors` at POST /admin-api/verifications/start; ' +
+      'the sign-in\'s error page' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',

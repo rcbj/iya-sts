@@ -85,6 +85,8 @@ import codec = require('./vc_status_codec');
 // List credential (#197). A library that requires nothing in this directory
 // but `vc_jsonld.ts`.
 import vcDataIntegrity = require('./vc_data_integrity');
+// The wallet compatibility mode (#657).
+import VcAlgorithms = require('./vc_algorithms');
 
 type RouteApp = typeof app;
 
@@ -1336,7 +1338,7 @@ class VcStatus {
   // A fetched list, from the cache or the network. `accept` names the form.
   private async fetchList(uri: string, accept: string,
                           parse: (body: Buffer, contentType: string)
-                            => any): Promise<any> {
+                            => any | Promise<any>): Promise<any> {
     const { log, fetchPublished, now } = this.deps;
     log.debug("Entering VcStatus.fetchList().");
     const cacheKey = accept + ' ' + uri;
@@ -1354,7 +1356,9 @@ class VcStatus {
               until: now() + NEGATIVE_CACHE_MS };
     } else {
       try {
-        const parsed = parse(got.body, got.contentType);
+        // AWAITED SINCE #657: a list signed with a post-quantum key is
+        // verified on libuv's thread pool.
+        const parsed = await parse(got.body, got.contentType);
         const ttlMs = Math.max(0, Number(parsed.ttlMs) || 0);
         let until = now() + Math.min(ttlMs || this.maxCacheMs(),
                                      this.maxCacheMs());
@@ -1381,8 +1385,17 @@ class VcStatus {
     const { log, stsCrypto, now } = this.deps;
     log.debug("Entering VcStatus.foreignTsl().");
     const list = await this.fetchList(ref.uri, JWT_TYPE,
-      function (body: Buffer): any {
-        const verified = stsCrypto.verifyCompactJws(body.toString('ascii'),
+      async function (body: Buffer): Promise<any> {
+        const text = body.toString('ascii');
+        // Not an algorithm the wallet compatibility mode turns off (#657).
+        const refused = VcAlgorithms.acceptanceRefusal(
+          VcAlgorithms.algOf(text), 'the Token Status List');
+        if (refused) {
+          throw refused;
+        }
+        // Asynchronously (#657): a trusted issuer certificate with an
+        // ML-DSA, SLH-DSA or composite key signs its list with it.
+        const verified = await stsCrypto.verifyCompactJwsAsync(text,
           opts.key, { algorithms: opts.algs });
         const read = codec.readStatusListJwtPayload(verified.header,
           verified.claims, { now: Math.floor(now() / 1000) });
@@ -1429,8 +1442,15 @@ class VcStatus {
                'malformed: ' + e.message };
     }
     const list = await this.fetchList(read.credential,
-      VC_JWT_TYPE, function (body: Buffer): any {
-        const verified = stsCrypto.verifyCompactJws(body.toString('ascii'),
+      VC_JWT_TYPE, async function (body: Buffer): Promise<any> {
+        const text = body.toString('ascii');
+        // See foreignTsl() (#657).
+        const refused = VcAlgorithms.acceptanceRefusal(
+          VcAlgorithms.algOf(text), 'the status list credential');
+        if (refused) {
+          throw refused;
+        }
+        const verified = await stsCrypto.verifyCompactJwsAsync(text,
           opts.key, { algorithms: opts.algs });
         const vc = verified.claims.vc || verified.claims;
         const subject = vc.credentialSubject || {};
