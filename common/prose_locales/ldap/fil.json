@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "Ang mga response_type value na puwedeng hingin ng client na ito — ang response_types ng RFC 7591 section 2, mula sa isang registration o isinulat ng isang administrator, bawat value ay isang response type (\"code\", \"code id_token\"). Tinatanggihan ng authorization endpoint ang anumang iba (unauthorized_client), sa bawat mode; walang nililimitahan ang walang lamang listahan. Ang talagang hiningi ng client ay ang oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "Ang mga response type na naglalabas ng access token mula sa authorization endpoint — token, code token, id_token token, code id_token token — na maaaring gamitin ng client na ito kung saan umiiral ang RFC 9700 mode (laging umiiral ito sa product mode). Iginagalang lang habang iniuurong ng realm ang RFC 9700 section 2.1.2 (oauth2.allowImplicitTokenResponses, hindi kailanman sa ilalim ng OAuth 2.1 o FAPI); kung gayon ay tinatanggihan ang type na hindi nakalista rito (unauthorized_client). WALANG LAMAN bilang default, at ang walang laman ay nangangahulugang wala. Isinusulat ng isang administrator o ng may-ari ng application habang pinapayagan ng realm ang mga type na ito, o ng isang dynamic registration sa loob ng oauth2.dynamicRegistrationTokenResponseTypes. Sinasabi ng RFC 9700 section 2.1.2 na HINDI DAPAT gamitin ng mga client ang mga ito."
+  },
   "applications.schema.attributes.oauthGrantTypeObserved.what": {
     "en": "377bd68db76fa783",
     "text": "Isang grant type na nakitang ginagamit ng client na ito sa token endpoint. Record ito, hindi permission: ang oauthGrantType ang puwede nitong gamitin."

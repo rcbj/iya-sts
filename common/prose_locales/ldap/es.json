@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "Los valores de response_type que puede pedir este cliente — el response_types de RFC 7591 sección 2, de un registro o escrito por un administrador, cada valor un tipo de respuesta (\"code\", \"code id_token\"). El endpoint de autorización rechaza cualquier otro (unauthorized_client), en todos los modos; una lista vacía no restringe nada. Lo que el cliente ha pedido realmente es oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "Los tipos de respuesta que emiten un token de acceso desde el punto de autorización — token, code token, id_token token, code id_token token — que este cliente puede usar donde rige el modo RFC 9700 (el modo producto siempre lo hace). Se respetan solo mientras el dominio exime la sección 2.1.2 de RFC 9700 (oauth2.allowImplicitTokenResponses, nunca bajo OAuth 2.1 ni FAPI); entonces un tipo no listado aquí se rechaza (unauthorized_client). VACÍO por defecto, y vacío significa ninguno. Lo escribe un administrador o el propietario de la aplicación mientras el dominio permite estos tipos, o un registro dinámico dentro de oauth2.dynamicRegistrationTokenResponseTypes. RFC 9700 sección 2.1.2 dice que los clientes NO DEBERÍAN usarlos."
+  },
   "applications.schema.attributes.oauthGrantTypeObserved.what": {
     "en": "377bd68db76fa783",
     "text": "Un tipo de concesión que se vio usar a este cliente en el endpoint de token. Un registro, no un permiso: oauthGrantType es lo que puede usar."

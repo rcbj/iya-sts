@@ -300,8 +300,8 @@
     "text": "full：覆盖其所发出的内容：封装签名、排他规范化，默认 RSA-SHA256，通过 saml.signatureAlgorithm 可选 RSA-SHA384/512 或已被攻破的 RSA-SHA1（2026-09-12；自 #181 起仅限开发模式）；AES-GCM 或 AES-CBC 内容加密，密钥以 RSA-OAEP（rsa-oaep-mgf1p，或 XML Encryption 1.1 中配 SHA-256 和 MGF1-SHA-256 的 rsa-oaep，#168）封装，或仅在开发模式下以 RSA-1_5 封装——产品模式既不以 RSA-1_5 封装也不以其解封（XML Encryption 1.1 第 6.1.2 节）——对于 EC 接收方，则使用带 ConcatKDF 和 AES 密钥封装的 ECDH-ES 密钥协商（第 5.6.4 节；#168）。联合关系只按其公布的算法解密伙伴的 EncryptedAssertion、EncryptedID 和 EncryptedAttribute，并在每种模式下拒绝 AES-CBC 和 rsa-1_5。没有为 XML Encryption 注册任何 ML-KEM 方法。验证（自 2026-09-17 起）node 的 OpenSSL 所实现的 RFC 9231 和 XMLDSig 1.1 的每个 SignatureMethod——RSA PKCS#1 v1.5 和 RSASSA-PSS（带或不带 RSAPSSParams）、ECDSA、EdDSA Ed25519/Ed448、DSA——以及草案 draft-eastlake-rfc9231bis-xmlsec-uris 中的 ML-DSA 和 SLH-DSA 标识符；SHA-224、SHA-2、SHA-3 和 RIPEMD-160 摘要；SHA-1 仅在开发模式下配合 saml.allowSha1Signatures 可用。不验证并按名称拒绝的：MD5、各种 MAC、Whirlpool、ESIGN、预哈希 EdDSA 以及有状态的 HSS/LMS 和 XMSS。"
   },
   "stsmetadata.specs.rfc6749.coverage": {
-    "en": "0c6fe743b64b0d08",
-    "text": "partial：authorization_code、implicit、password、client_credentials 和 refresh_token。客户端身份验证被接受但不验证——RFC 9700 模式除外，在该模式下，在此注册为机密客户端的客户端必须出示本服务签发给它的 client_secret（第 2.5 节，本服务中唯一被检查的凭据）。该模式还会直接拒绝 password 和 implicit 授权，并轮换刷新令牌。第 3.3 节：范围与客户端绑定（#110）——本服务自己的受保护范围（admin:*、SCIM 和共享信号范围、调试器权限）在每种模式下都只签发给其 oauthAllowedScope 声明了它们的客户端，在产品模式下每个范围都受限于该列表或一组有文档记载的默认范围；超出范围的请求为 invalid_scope。"
+    "en": "56137411ddc592b3",
+    "text": "partial：authorization_code、implicit、password、client_credentials 和 refresh_token。客户端身份验证被接受但不验证——RFC 9700 模式除外，在该模式下，在此注册为机密客户端的客户端必须出示本服务签发给它的 client_secret（第 2.5 节，本服务中唯一被检查的凭据）。该模式还会直接拒绝 password 授权；拒绝 implicit 授权的访问令牌——即每一种从授权端点签发访问令牌的响应类型——除非管理员为该领域豁免 RFC 9700 第 2.1.2 节，且即便如此也只对已启用该类型的应用程序生效（#1295、#1296）；并轮换刷新令牌。第 3.3 节：范围与客户端绑定（#110）——本服务自己的受保护范围（admin:*、SCIM 和共享信号范围、调试器权限）在每种模式下都只签发给其 oauthAllowedScope 声明了它们的客户端，在产品模式下每个范围都受限于该列表或一组有文档记载的默认范围；超出范围的请求为 invalid_scope。"
   },
   "stsmetadata.specs.rfc6750.coverage": {
     "en": "32af4b1d310ee331",

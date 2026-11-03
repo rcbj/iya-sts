@@ -1960,8 +1960,16 @@
     "text": "Tillåt svarstyper med token under RFC 9700"
   },
   "oauth2.allowImplicitTokenResponses|description": {
-    "en": "4e3ee63eb21efc37",
-    "text": "Gör undantag från RFC 9700 avsnitt 2.1.2 (no-implicit, ett SHOULD NOT) där RFC 9700-läget gäller — vilket det alltid gör i läget product. På accepteras de svarstyper som utfärdar en åtkomsttoken från auktoriseringsslutpunkten (token, id_token token, code token, code id_token token) vid auktoriseringsslutpunkten och vid dynamisk registrering, och båda upptäcktsdokumenten annonserar dem och det implicita beviljandet. Alla andra krav i RFC 9700, och resten av läget product, gäller fortfarande, och GET /oauth2/rfc9700 och /admin/mode rapporterar kravet som undantaget. Den finns för profilerna OpenID Connect Implicit, Hybrid och Dynamic OP. INGEN VERKAN medan läget OAuth 2.1 eller en FAPI-profil är på: OAuth 2.1 tar bort det implicita beviljandet helt, och en FAPI-profil är en striktare profil som den här inställningen inte lättar på. AV som standard; ställs in per sfär."
+    "en": "7ae0908c5a3cc1b9",
+    "text": "Gör undantag från RFC 9700 avsnitt 2.1.2 (no-implicit, ett SHOULD NOT) där RFC 9700-läget gäller — vilket det alltid gör i läget product. På accepteras de svarstyper som utfärdar en åtkomsttoken från auktoriseringsslutpunkten (token, id_token token, code token, code id_token token) vid auktoriseringsslutpunkten och vid dynamisk registrering, och båda upptäcktsdokumenten annonserar dem och det implicita beviljandet. Alla andra krav i RFC 9700, och resten av läget product, gäller fortfarande, och GET /oauth2/rfc9700 och /admin/mode rapporterar kravet som undantaget. Den finns för profilerna OpenID Connect Implicit, Hybrid och Dynamic OP. INGEN VERKAN medan läget OAuth 2.1 eller en FAPI-profil är på: OAuth 2.1 tar bort det implicita beviljandet helt, och en FAPI-profil är en striktare profil som den här inställningen inte lättar på. PER APPLIKATION (#1296): den gör dessa svarstyper möjliga, och en applikation använder en bara när dess oauthAllowedTokenResponseTypes listar den (annars unauthorized_client), satt av en administratör eller applikationens ägare, eller av en klient som registrerar sig själv inom oauth2.dynamicRegistrationTokenResponseTypes. AV som standard; ställs in per sfär."
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|label": {
+    "en": "4475090bccf20d35",
+    "text": "Svarstyper med token som en självregistrerande klient får aktivera"
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|description": {
+    "en": "acccf2f947729707",
+    "text": "Vilka av svarstyperna som utfärdar en åtkomsttoken från auktoriseringsslutpunkten (token, code token, id_token token, code id_token token) en klient som registrerar sig själv på POST /oauth2/register får aktivera för sig själv där oauth2.allowImplicitTokenResponses undantar RFC 9700 avsnitt 2.1.2. En registrering som ber om en listad typ får den sparad som sitt oauthAllowedTokenResponseTypes; en som ber om en typ som inte listas nekas (invalid_client_metadata), och en RFC 7592-uppdatering hålls till samma lista. TOM som standard: bara en administratör eller en applikations ägare aktiverar dessa typer. Lista dem för en sfär avsedd för öppen självregistrering av de implicita och hybrida flödena, som profilen OpenID Connect Dynamic OP. Ingen effekt medan undantaget är av, eller under OAuth 2.1-läge eller en FAPI-profil."
   },
   "oauth2.oauth21|label": {
     "en": "49dcc27abcaff0ba",
