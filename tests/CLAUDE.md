@@ -2148,7 +2148,15 @@ profile, pinned by tag (`CONFORMANCE_SUITE_TAG`, `release-v5.3.1`).
   355-minute timeout, because no number the `tests` job may have fits the
   plans (`tests/teardown_bounds.js` holds both jobs' arithmetic, and the
   six hours GitHub allows any job are why 15600 s is the most that bound
-  can be).
+  can be). **Since #930 (2026-11-03) it is two jobs, split by lane, and
+  neither passes `--no-browser`** (rcbj: the Chrome-driven conformance jobs
+  run in CI): `openid-conformance` runs `--not-lanes=conformance` (FAPI, the
+  relying-party plans, and `conformance-b`) and `openid-conformance-oidcc`
+  runs `--lanes=conformance` (the OpenID Provider job, the long pole), each
+  under the same 355 minutes. `run-report.js`'s `--lanes=` and
+  `--not-lanes=` name lanes exactly, so a job added to a lane lands in the
+  CI job that runs it; `tests/teardown_bounds.js` holds both jobs and that
+  together they cover every lane.
   `memory` because FAPI-CIBA
   approves through a development-mode test control, and each plan runs in a
   realm of its own under its FAPI profile, so a persisting mode would check the
