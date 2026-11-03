@@ -34,8 +34,8 @@
 // ("Passkey" or "Security key") — `credentials.ts`'s `defaultKeyName()`.
 //
 // A DATA MODULE, and it requires nothing but the logger, so it can be loaded
-// lazily from `common/credentials.ts` without joining the parent project's
-// Kerberos COPY closure (`kerberos/CLAUDE.md`).
+// lazily from `common/credentials.ts`. (That kept it out of the parent
+// project's Kerberos COPY closure, which nothing here is owed since #1280.)
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');

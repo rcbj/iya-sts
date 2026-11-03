@@ -71,7 +71,7 @@
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s
 // shape: `WebauthnPolicy` takes `config`, the logger, the verifier's tables
-// (`./webauthn`, which stays JavaScript: the parent project copies it) and
+// (`./webauthn`, still JavaScript: the parent project copies it — #453) and
 // the error codes through its constructor. The two tables stay module-level
 // data, and `ALG_IDS` is still filled at load from the verifier's table.
 // Since #50's R2 the composition root builds the instance; every old name is

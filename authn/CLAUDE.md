@@ -3957,8 +3957,8 @@ and the feature off does not refuse even when a profile still says
 required. The wait is `authn.deviceBoundIssuanceWaitS`, default 60
 seconds, minimum 0, read at the issuance. Zero means the wait has already
 elapsed. The fact inside `common/issuance_gate.js` is computed there.
-That file is in the Kerberos COPY closure and does not require this
-module; the two readings have to stay the same.
+That file does not require this module (it kept the parent's Kerberos COPY
+closure small until #1280), so the two readings have to stay the same.
 
 ## A SESSION HELD FOR A POST-LOGIN ACTIVITY (#1096, 2026-10-28; rule 3ct)
 

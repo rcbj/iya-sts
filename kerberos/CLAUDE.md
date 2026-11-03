@@ -25,12 +25,6 @@ Entering/Leaving, 80 columns, `tests/error_codes.js` scans them), and are not
 re-synced. The parent's sync script and byte-compare test are the parent's
 business, and a sweep over this repository no longer skips them.
 
-**What did not change is that the parent's tests image still COPYs them**,
-because `krb5_kdc.js`, `krb5_service.js` and `spnego.js` require them and are
-in its COPY closure (the *"LOCKED"* paragraph below). So a new `require`
-reachable from one of the eight still owes the parent a COPY line, exactly as
-it does from the three.
-
 **The service**: `krb5_principals.js` (the principal database and every long-term
 key in it), `krb5_kdc.js` (AS and TGS, plus `/KdcProxy`; `/krb5/principals` until #595),
 `krb5_service.js` (the acceptor; its TCP socket and `/krb5/service` until
@@ -43,21 +37,21 @@ in `../common/crypto_impl/`, because they belong to the codec they sit beside
 and moving them would put the whole Kerberos wire format in a directory that
 has nothing else Kerberos in it.
 
-**"LOCKED" DOES NOT MEAN "THE PARENT'S".** Where this file, the root
-`CLAUDE.md` and the source comments call `krb5_kdc.js`, `krb5_service.js` and
-`spnego.js` *locked*, the word means one thing: the parent project's
-`tests/Dockerfile` COPYs them (and everything they require) and runs them as
-JavaScript in its in-process Kerberos jobs. So each stays JavaScript (#50
-cannot convert it), and a new `require` reachable from one owes the parent a
-COPY line in the commit that bumps its `sts/` pin (root `CLAUDE.md`, *The parent project's paths
-into this repository*, below). **None of the three was ever a vendored copy**, and
-they are edited here — rcbj's ruling of 2026-10-12 on #585, for `spnego.js`
-first and then for the KDC's two, after the root file's "the parent
-project's locked Kerberos files" had been read as making them unchangeable
-here. Reasoning that rested on that reading ("the KDC is locked and cannot
-place its own") was reworded the same day; the designs it explained stand,
-and are now argued from the closure. The eight codec files above may be
-edited here too since #1280.
+**NOTHING IN THIS DIRECTORY IS OWED TO THE PARENT PROJECT ANY MORE (#1280,
+2026-11-02).** Until then `krb5_kdc.js`, `krb5_service.js` and `spnego.js`
+were called *locked*: the parent's `tests/Dockerfile` COPYs them and the
+transitive closure of what they require, and runs them as JavaScript in its
+in-process Kerberos jobs, so each had to stay JavaScript (#50 could not
+convert it) and a new `require` reachable from one owed the parent a COPY
+line in the commit that bumped its `sts/` pin. rcbj ended that with the rest
+of the vendoring: what the parent copies, and whether its four in-process
+jobs keep loading these files, is the parent's business. **So the three may
+be converted to TypeScript under #50 like any other route module, and a
+require reachable from them owes nothing.** Several designs here were placed
+to keep that closure small (a slot instead of a require, an install from
+`server.js` rather than `krb5_kdc.js`, a hand-rolled lazy require in
+`helpers.js`); they still work and are not undone by this, but none of them
+is a constraint any more, and the next change to one may move it.
 
 **`spnego.js` stays after `krb5_service.js` in the require order.** Until
 #595 that was a dependency — it called that module's `accept()` for every
@@ -222,7 +216,7 @@ RFC 4178's NegTokenResp can carry a context handle, so:
 * the key is `door|credentialDigest(id)` and the row's `id` is that digest
   (#614): the cookie value is the negotiation's bearer and the store only
   looks it up and spends it. No new require — `spnego_exchange.js` already
-  had `common/crypto.js`, so the parent's COPY closure is unchanged. The
+  had `common/crypto.js`. The
   initiator and acceptor keys stay whole: the MIC is verified with them;
 * the row holds its keys and mechanism list as HEX: the store was persisted
   already, and a `Uint8Array` through JSON comes back as `{"0":…}`, so a
@@ -339,8 +333,7 @@ binding 88 needs root, and on a host run it usually fails.
   browser's `HTTP/localhost` was refused `KDC_ERR_S_PRINCIPAL_UNKNOWN`. A
   product deployment reached at `localhost` sets `krb5.servicePrincipal` to
   `HTTP/localhost` — which `docker-compose.yml` now does, and the acceptor is
-  keyed at random (*THE ACCEPTOR'S KEY IN A BASE INSTALLATION*, below). No require was added
-  to the parent's COPY closure. Service,
+  keyed at random (*THE ACCEPTOR'S KEY IN A BASE INSTALLATION*, below). Service,
   computer and `krbtgt` accounts keep their own distinct passwords — the two krbtgts
   and the trust must be three different secrets or assertions about which key sealed
   what pass for the wrong reason.
@@ -530,187 +523,21 @@ anybody tries it.
 
 ---
 
-## The parent project loads these modules in-process
+## The parent project loads these modules in-process — its business since #1280
 
 `tests/krb5_as_exchange.js`, `tests/krb5_tgs_ap.js`, `tests/krb5_spnego_http.js`
-and `tests/krb5_delegation_interop.js` require `krb5_kdc.js` and
+and `tests/krb5_delegation_interop.js` over there require `krb5_kdc.js` and
 `krb5_service.js` directly, through `tests/module_paths.js`'s `mockStsModule()`,
-and `tests/Dockerfile` copies the transitive closure of what those two require
-into its image. The 2026-08-23 reorganisation broke both, because they named flat
-paths (`sts/krb5_kdc.js`); **both were repaired over there on 2026-08-28** and
-this paragraph described the breakage as open until then.
-
-**THE 2026-09-15 REALM ROUTING ADDED NO FILE TO THAT CLOSURE**, which is the
-thing to check whenever this directory grows a require. `krb5_kdc.js` gained
-`require('../common/realms')` — already in the closure through
-`krb5_principals.js`, which has required it since the store was declared there —
-and `krb5_principals.js` gained nothing at all: the context, the router and the
-three refusals are functions in files those four jobs already load. So the
-`sts/` COPY set is exactly what it was.
-
-**Those four callers still pass BARE filenames, and that is correct — do not add
-directories to them.** `mockStsModule()` was fixed by making the RESOLVER search
-the mock's subdirectories rather than by making every caller name one, so
-`mockStsModule("krb5_kdc.js")` finds `kerberos/krb5_kdc.js` on its own and a
-future move of a module between directories here costs that project nothing.
-
-What is still live is the CLOSURE rather than the paths: give any module those
-three reach a new `require()`, and `tests/Dockerfile` needs a COPY line in the
-commit that bumps the `sts/` gitlink across the change, or the four jobs die at
-load with `Cannot find module` naming a file nobody edited. See
-`docs/parent-project-migration.md`.
-
-**`kerberos/spnego.js` WAS EDITED HERE ON 2026-10-09 (#539), with rcbj's leave**
-("go ahead and update the kerberos sign-in page. I'll deal with the drift from
-the parent project"). `page()` takes an optional third argument, `framing`,
-holding the `<html>` attributes, a block drawn first in the card, and extra
-CSS. With it, `spnego_authn.ts` draws `/authn/spnego`'s continuation in the
-reader's language with the language chooser (its first 401 and "Signed in"
-page did too until #575 made them the sign-in surface's). Without it, the output is byte-for-byte what it was, so the
-parent's own `/spnego/protected` is unchanged. It added **no require**, so the
-COPY closure did not grow. rcbj reconciles the difference with the parent
-project; until then the next `--sync` of the parent's copy would undo it.
-
-**AND OWED AGAIN AS OF 2026-10-03 (#186): `kerberos/krb5_delegation.ts` and
-what it reaches.** `krb5_kdc.js` requires it LAZILY — on the first request
-that asks about delegation (an AS-REQ for a forwardable TGT is one) — and it
-requires `common/applications.js`, `common/delegation_policy.ts` (with
-`credentials`, `roles`, `issuance_gate` and, lazily,
-`xacml/xacml_exchange_verdicts.js`, `xacml_request.js`, `xacml_templates.ts`
-and the engine) and, lazily, `common/tls_client_certificates.js`. A pin bump
-across #186 owes those COPY lines, compiled: the TypeScript is built inside
-an image (`../build-typescript.sh`). Without a directory the registry answers
-empty, so the in-process delegation jobs lose their fixture rules whatever is
-copied — rcbj's decision on #186 is that they change over there.
-
-**AND IT IS OWED AGAIN AS OF 2026-09-12: `common/error_codes.js`.** The error
-code registry is required by `common/audit.js`, `config.js`, `helpers.js`,
-`realms.js`, `crypto.js`, `krb5_kdc.js`,
-`krb5_service.js` and `spnego_exchange.js` — all inside that closure — so the
-commit that bumps the `sts/` pin across it needs `COPY
-sts/common/error_codes.js ./sts/common/` in the parent's `tests/Dockerfile`, or
-the four in-process Kerberos jobs die at load with `Cannot find module
-'./error_codes'`. It is a leaf and requires nothing, so it is one line and no
-more.
-
-**AND OWED AGAIN AS OF 2026-09-14: `cluster/cluster_claims.js`** (#46).
-`krb5_service.js` requires it to spend an Authenticator across the cluster, so
-the commit that bumps the `sts/` pin across it needs `COPY
-sts/cluster/cluster_claims.js ./sts/cluster/`. Everything it requires —
-`config`, `realms`, `error_codes`, `cluster_capabilities`, and
-`persistence/persistence.js` LAZILY — is already in that closure through
-`common/app.js`, which requires `cluster/cluster_barrier.js`; if the parent's set
-does not yet carry `cluster/` at all, the whole directory is owed with it. With
-no store a claim is that process's memory, so the four in-process jobs behave
-exactly as before.
-
-**AND OWED AGAIN AS OF 2026-09-14: `common/client_address.js`** (#46 section 8).
-`common/helpers.js` requires it to decide whether a request's forwarded headers
-are believed, so the commit that bumps the `sts/` pin across it needs `COPY
-sts/common/client_address.js ./sts/common/`. It requires only `net`, bunyan and
-`config`, which is already in the closure. `spnego_exchange.js`'s new requires
-of `cluster/cluster_claims.js` and `cluster/cluster_capabilities.js` add nothing:
-`krb5_service.js` already requires both. `common/websecurity.ts` now requires
-`cluster/cluster_counters.js`, which is owed only if websecurity is in the
-parent's set (it is reached from `authn.js`, not from the three Kerberos
-modules).
-
-**AND NOT OWED FOR THE PROXY PROTOCOL (2026-09-14, #46), ON PURPOSE.** The
-KDC's TCP listener takes a PROXY protocol v2 header when `global.proxyProtocol`
-is `v2`, and `common/proxy_protocol.ts` is installed on it from `server.js`
-(`proxyProtocol.install(kdcListeners.tcp, …)` right after `krb5.listen()`)
-rather than from `krb5_kdc.js`, so the closure gains nothing. That is not a race:
-`listen()` returns before any `connection` event can be delivered. `startTcp()`
-now reads `socket.remoteAddress` once per connection for its debug line and its
-two refusal warnings, which is the header's source when one was read. The UDP
-socket is not covered — a datagram has no stream to put a header in front of —
-so behind a load balancer Kerberos clients use TCP.
-
-**AND OWED AGAIN AS OF 2026-09-30, BOTH WAYS: `common/pq_native.js` IN,
-`common/worker.js` AND `common/worker_pool.js` OUT** (#363). `crypto.js` no
-longer requires the post-quantum pool (it was deleted), and `pq_jose.js` and
-`vendored/pqc.js` now require `pq_native.js`. So the commit that bumps the
-`sts/` pin across #363 must change the parent's `tests/Dockerfile` line
-`COPY sts/common/pq_jose.js sts/common/worker.js sts/common/worker_pool.js
-./sts/common/` to copy `pq_jose.js` and `pq_native.js` — a COPY of a file that
-no longer exists fails the image build, and a missing `pq_native.js` fails
-four Kerberos jobs at load with `Cannot find module './pq_native'`. The
-parent's closure also no longer needs `@noble/post-quantum` for this tree.
-
-**AND OWED AGAIN AS OF 2026-09-17: `common/cache_registry.js`** (#74).
-`common/helpers.js`, `keystore.js`, `revocation_status.js`, `jose_kid.js`,
-`jose_certificate_header.js`, `applications.js`, `federation/federation.js`
-and `kerberos/krb5_principals.js` require it to describe their caches to
-`/admin/caches`, so the commit that bumps the `sts/` pin across it needs `COPY
-sts/common/cache_registry.js ./sts/common/`. It requires only bunyan, `config`
-and `error_codes`, all already in the closure. `realms.js`'s `keyed()` gained an
-optional second argument in the same change, which adds no require.
-`krb5_service.js`'s replay cache is DESCRIBED from outside and not counted,
-because that file is not edited here.
-
-**AND OWED AGAIN AS OF 2026-09-23: `authn/webauthn_attestation.js`** (#105),
-compiled from its `.ts`. `common/credentials.ts` requires it at load, and
-credentials is in the closure through `common/issuance_gate.js`'s lazy require
-of `account_state.ts` (reached when the KDC asks whether a principal is
-disabled), so the commit that bumps the `sts/` pin across it needs `COPY
-sts/authn/webauthn_attestation.js ./sts/authn/` wherever the parent's set
-carries `common/credentials.js`. It requires `helpers`, `instance_slot`,
-`crypto`, `pki`, `error_codes` and `./webauthn_policy` at load — all already
-there with credentials — and `risk/risk_datasets` and
-`common/revocation_status.js` only lazily, inside a registration.
-
-**AND OWED AGAIN AS OF 2026-09-26: `common/enrollment_profiles.js`** (#251).
-`common/realms.js` requires it at load — it holds the
-EST label names a realm may not take and that `matchPath()` must not read as a
-realm — and realms.js is in the closure through `krb5_principals.js`, so the
-commit that bumps the `sts/` pin across it needs `COPY
-sts/common/enrollment_profiles.js ./sts/common/`. It is data and requires
-nothing, so it is one line and no more.
-
-**AND SINCE 2026-10-13 THAT LINE IS AN ORDINARY COPY FROM THE CHECKOUT (#300).**
-The file was written as `enrollment_profiles.ts`, whose `.js` exists only after
-`tsc` runs inside an image build, so the parent took the compiled file out of a
-built service image — `COPY --from=mocksts` in its `tests/Dockerfile`, with
-`additional_contexts: mocksts: service:sts` in `docker-compose-run-tests.yml`,
-the one place its tests image depended on one. It is now plain JavaScript with
-`// @ts-check`, and the parent owes: both of those lines deleted, and `COPY
-sts/common/enrollment_profiles.js ./sts/common/` in their place
-(`stsModuleClosureIsCopied()` in its `tests/jwk_pem_encoding.js` confirms it).
-A lazy require in realms.js was the other fix offered and is not enough:
-`matchPath()` reaches `isEstLabel()` from the realm middleware, so the closure
-loads it anyway. **The rule it leaves: a module the closure requires AT LOAD is
-`.js` in the checkout**; `authn/webauthn_attestation`, above, is still
-compiled from its `.ts`, so wherever the parent's set carries
-`common/credentials.js` it is owed the same conversion.
-
-**AND NOT OWED FOR #236 (2026-09-26), ON PURPOSE.** `krb5_person_keys.ts`
-sends CAEP `credential-change` (`urn:iya:sts:credential-type:kerberos-key`)
-when a person's keys are first derived (create), derived from a new password
-(update), their previous versions dropped (revoke) or cleared (delete) —
-`ssf/CLAUDE.md` has the table. It reaches `ssf/account_signals.ts` with a
-LAZY `require()` inside a `try`, at the moment an event is due, so nothing is
-added to what those three modules load, and a copy without the file sends
-nothing and says so at debug.
-
-**#575 (2026-10-12) ADDED NO REQUIRE TO THE CLOSURE EITHER**: only
-`spnego_authn.ts`, which is outside it, changed, and `spnego.js` still draws
-the continuation and terminal-refusal 401s with `page()` and `checksTable()`
-as before.
-
-**#583 (2026-10-12) ADDED A LAZY ONE, AND OWED NOTHING**: `spnego.js` asked
-for `./spnego_pages` inside a `try` when it drew `/spnego` or
-`/spnego/protected`. **#595 REMOVED IT WITH THE PAGES**, and removed requires
-from the closure besides (`krb5_service.js` no longer requires `net`,
-`common/app` or `common/audit`, and `spnego.js` no longer `common/app`,
-`config`, `krb5_spnego.js`, `krb5_principals.js`, `spnego_exchange.js` or
-`error_codes` — each still in the closure through another file). Removing code
-owes the parent no COPY line. What it DOES owe the parent is a re-point of the
-jobs that drove the removed routes — *The demonstration left the runtime*, at
-the foot.
-
-`MOCK_STS_DIR=/path/to/iya-sts` still points those tests at a working copy,
-unchanged; below it there is now a sibling-checkout candidate that resolves and
-says loudly that the run reflects an unpushed working copy.
+and its `tests/Dockerfile` copies the closure of what they require. Until
+#1280 this section was a ledger of the COPY lines each change here owed that
+file (`error_codes.js`, `cluster/cluster_claims.js`, `client_address.js`,
+`pq_native.js`, `cache_registry.js`, `webauthn_attestation`,
+`enrollment_profiles.js`, `krb5_delegation.ts` and what it reaches); git
+history keeps it. **Nothing is owed now**: a change here need not ask what
+those four jobs load, and a module may be TypeScript whatever reaches it.
+The feature sections below still carry the *COPY closure* / *COPY set* notes
+they were written with ("no new require reaches…", "owed…"); they are
+history, and none of them is owed.
 
 ---
 
@@ -1234,7 +1061,7 @@ Phase 4 built them (*THE TRUSTS IN THE CONSOLE AND `/admin-api`*, below), as
 Phases 2 and 3 built SID filtering, ok-as-delegate across a trust, S4U across
 realms, the product honour rule and classic delegation across realms.
 
-**OWED TO THE PARENT PROJECT'S COPY CLOSURE (#430).** `krb5_kdc.js` asks the
+**WAS OWED TO THE PARENT PROJECT'S COPY CLOSURE (#430; nothing is since #1280).** `krb5_kdc.js` asks the
 register on EVERY TGS-REQ (`crossRealmPath()`) and `krb5_principals.js` on
 every cross-realm name and every routing miss, both through
 `principals.trustRegister()`, a LAZY `require('./krb5_trusts')` inside a `try`
@@ -1359,7 +1186,7 @@ sends it facts and turns its refusal kinds into codes.
   the write against `acceptsRealm()`, `STS-REG-0362`) and
   `krb5ForeignTgtDelegation` (`inherit` | `deny`, a closed set).
 
-**OWED TO THE PARENT PROJECT'S COPY CLOSURE**: nothing new beyond Phase 1's
+**WAS OWED TO THE PARENT PROJECT'S COPY CLOSURE (until #1280)**: nothing new beyond Phase 1's
 line for `kerberos/krb5_trusts.js` — `krb5_trusts.ts` now requires
 `krb5_pac.js`, already in the closure, and the KDC's new requires are none.
 `kerberos/krb5_delegation.ts`, already owed since #186, reaches
@@ -2926,7 +2753,7 @@ than moved.
   `/krb5/service` and the TCP service on 8888, without the knobs and the
   per-check table, which were properties of this service's acceptor.
 
-**WHAT THE PARENT PROJECT OWES, WITH ITS `sts/` PIN BUMP.** No COPY line:
+**WHAT THE PARENT PROJECT OWED, WITH ITS `sts/` PIN BUMP (history; its business since #1280).** No COPY line:
 nothing was added to the closure. But it loads `krb5_kdc.js`,
 `krb5_service.js` and `spnego.js` in process and drove the removed routes:
 

@@ -142,8 +142,9 @@ const APP_VERSION = version.load();
 //     `async` handler reaches `next()` as a 500 instead of becoming an
 //     unhandled rejection. It patches the one prototype every express app in
 //     this process shares, the debugger's own included. Here and not in
-//     `common/app.js`, because that file is in the parent project's Kerberos
-//     COPY closure and a require there would owe a COPY line over there;
+//     `common/app.js` because that file was in the parent project's Kerberos
+//     COPY closure when this was written; nothing is owed there since #1280,
+//     and the install stays where it works;
 //   * the PROCESS HANDLERS in announce(), once the service has STARTED — a
 //     failure while starting is still fatal, as it always was.
 // ---------------------------------------------------------------------------
@@ -379,12 +380,12 @@ function announce() {
   // cannot see a raw socket, so the listener has its own entry there.
   const kdcListeners = krb5.listen();
   // THE KDC'S TCP LISTENER TAKES THE PROXY PROTOCOL FROM HERE, not from
-  // `krb5_kdc.js`: a require there would put `common/proxy_protocol.ts` into
-  // the parent project's Kerberos COPY set (`kerberos/CLAUDE.md`). Installing
-  // after `listen()` returned is not a race — `listen()` is synchronous up to
-  // the bind, and a `connection` event is delivered from the event loop,
-  // after this line. UDP is not covered: a datagram has no stream to put a
-  // header at the front of.
+  // `krb5_kdc.js`, which kept `common/proxy_protocol.ts` out of the parent
+  // project's Kerberos COPY set while this repository owed it one (until
+  // #1280). Installing after `listen()` returned is not a race — `listen()`
+  // is synchronous up to the bind, and a `connection` event is delivered from
+  // the event loop, after this line. UDP is not covered: a datagram has no
+  // stream to put a header at the front of.
   proxyProtocol.install(kdcListeners.tcp, {
     label: 'the KDC (TCP ' + kdcListeners.port + ')', channel: 'kerberos' });
   kdcListeners.whenReady.then(function (ready) {

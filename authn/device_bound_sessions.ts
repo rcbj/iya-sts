@@ -381,8 +381,9 @@ class DeviceBoundSessions {
    * at this read when a pending offer is older than
    * `authn.deviceBoundIssuanceWaitS`; nothing stores that word and no timer
    * flips it. `common/issuance_gate.js`'s `deviceBoundFactOf()` is the same
-   * reading and must stay the same: the gate cannot require this module
-   * (the Kerberos COPY closure).
+   * reading and must stay the same: the gate does not require this module
+   * (it kept the parent's Kerberos COPY closure small, until #1280; the two
+   * readings are still two).
    *
    * Precedence: a key (`jkt` and `id`) is `bound`, even if a skip header
    * arrived later; stored skip reasons are `skipped`; an offer whose age

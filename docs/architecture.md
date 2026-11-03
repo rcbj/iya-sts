@@ -213,7 +213,7 @@ against the shared express app from `common/app.js`. A module written in
 TypeScript registers nothing when it is required: it exports
 `registerRoutes(app)`, and the composition root calls it at the place in the
 sequence where its routes belong. The modules still written in JavaScript (the
-locked Kerberos files, `tls/tls_server.js` and `ldap/ldap_server.js`) still
+three Kerberos route modules, `tls/tls_server.js` and `ldap/ldap_server.js`) still
 register when they are required, and the composition root requires them at
 their places, so the two kinds interleave in a fixed order. That order is the
 order in which routes match. The middleware lives in `app.js` because express
