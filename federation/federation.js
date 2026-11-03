@@ -3102,10 +3102,12 @@ function signalsCredentialOf(record) {
          clientSecretOf(r)),
     // BOTH OF THE CAEP INTEROPERABILITY PROFILE'S SCOPES (#932; section
     // 2.7.3): `ssf.read` for reading the stream and its status and for
-    // polling, `ssf.manage` for creating, changing and verifying it. It was
-    // `ssf.manage` alone, which this service's own transmitter reads as
-    // including read and a transmitter keeping to the profile refuses at
-    // the first poll.
+    // polling, `ssf.manage` for creating, changing and verifying it — every
+    // act this realm takes at the partner. It was `ssf.manage` alone, which
+    // the profile says includes read; but a transmitter that checks each
+    // scope by name (the conformance suite's does) then refused the first
+    // read and the first poll, and asking for what is used is the
+    // straightforward reading of RFC 6749 section 3.3.
     scope: String(r.fedSignalsScope || '').trim() || 'ssf.read ssf.manage'
   };
 }
