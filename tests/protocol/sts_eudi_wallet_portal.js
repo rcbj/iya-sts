@@ -336,7 +336,14 @@ async function startWallet() {
                 "--listen", "127.0.0.1", "--base-url", url,
                 "--wallet-dir", dir, "--storage", "file",
                 "--mode", "debug", "--no-open", "--no-register",
-                "--tls-verify", "--tls-ca", serviceAnchor()];
+                "--tls-verify", "--tls-ca", serviceAnchor(),
+                // THE SERVICE IS ON A PRIVATE ADDRESS IN EVERY STACK
+                // (2026-11-03): `sts` on the suite's bridge is 172.30.0.10,
+                // and the wallet refuses to dial a private network unless
+                // told it may — "connections to internal address … are not
+                // allowed", so it never read the issuer's metadata and the
+                // offer stopped at the consent page on its first suite run.
+                "--allow-private-networks"];
   // Nothing of the runner's environment that the wallet reads as a flag
   // (EUDI_DEV_*), and no auto-accept: every consent is pressed in Chrome.
   const env = {};
