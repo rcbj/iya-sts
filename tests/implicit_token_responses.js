@@ -318,8 +318,12 @@ function childMain() {
              'client with no PKCE is still refused', codeOf(pkce));
         note(codeOf(bcp.checkGrantType('password')) === 'STS-OAUTH-0131',
              'B9. ' + on + ': and the password grant');
+        // The client B4 enabled id_token token on, so that the nonce is
+        // what is left to refuse (#1296).
         const noNonce = bcp.checkAuthorizationRequest({
           query: { scope: 'openid',
+                   client_id: 'itr-b4-' + on.toLowerCase().replace(/_/g, '') +
+                     '-id_token-token',
                    code_challenge:
                      'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM',
                    code_challenge_method: 'S256' },
@@ -777,9 +781,15 @@ function childMain() {
     const one = await registerOver('BCP_DYN1', {
       grant_types: ['authorization_code', 'implicit'],
       response_types: ['code', 'id_token token'] });
-    note(one.status === 201,
-         'G8. BCP_DYN1: registering id_token token, the one listed, is 201',
-         one.status + ' ' + one.text.slice(0, 300));
+    const recorded = one.json && one.json.client_id
+      ? realms.run(realms.get(made.BCP_DYN1.id), function () {
+        return listed(one.json.client_id);
+      }) : null;
+    note(one.status === 201 &&
+         JSON.stringify(recorded) === '["id_token token"]',
+         'G8. BCP_DYN1: registering id_token token, the one listed, is 201 ' +
+         'and records it', one.status + ' ' + JSON.stringify(recorded) + ' ' +
+         one.text.slice(0, 300));
     if (one.json && one.json.registration_access_token) {
       const where = '/realm/' + made.BCP_DYN1.id + '/oauth2/register/' +
         encodeURIComponent(one.json.client_id);
@@ -938,8 +948,10 @@ async function run(t) {
   });
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
+      // Fourteen realms and the default one: over realms.maxCount's ten.
       env: Object.assign(clean,
-                         { LOG_LEVEL: 'fatal', ITR_ROOT: ROOT, ITR_OUT: out }),
+                         { LOG_LEVEL: 'fatal', ITR_ROOT: ROOT, ITR_OUT: out,
+                           STS_REALMS_MAX_COUNT: '30' }),
       encoding: 'utf8', timeout: 300000, cwd: ROOT
     });
   let findings = null;
