@@ -165,9 +165,47 @@ async function quit() {
 }
 
 // One visit at a time, whatever plans run side by side.
+// A VISIT HAS A DEADLINE (#1293, 2026-11-03). On the hosted suite one visit
+// never returned — a WebDriver call that hung, with Chrome idle — and since
+// visits hold one lock, every module after it timed out too: a 27-plan run
+// lost to one stuck call. Past the deadline the visit is abandoned and its
+// Chrome thrown away (closed in the background, never awaited, because the
+// call that hung may hang the close as well); the next visit opens a fresh
+// one. The module whose visit it was times out on its own and is re-run.
+const VISIT_MS = Number(process.env.CONFORMANCE_BROWSER_VISIT_MS) || 180000;
+
+function withDeadline(work) {
+  log.debug("Entering withDeadline().");
+  let timer = null;
+  const deadline = new Promise(function (resolve) {
+    timer = setTimeout(function () {
+      log.warn("A browser visit ran past " + VISIT_MS + " ms; abandoning " +
+               "it and replacing the browser.");
+      const was = shared;
+      shared = null;
+      if (was) {
+        was.quit().catch(function (e) {
+          log.debug("Caught closing a stuck browser: " +
+                    ((e && e.message) || e));
+          // Gone or stuck: either way it is no longer the browser.
+        });
+      }
+      resolve(null);
+    }, VISIT_MS);
+  });
+  const done = Promise.resolve().then(work);
+  log.debug("Leaving withDeadline().");
+  return Promise.race([done, deadline]).finally(function () {
+    clearTimeout(timer);
+  });
+}
+
 function serially(work) {
   log.debug("Entering serially().");
-  const run = queue.then(work, work);
+  const guarded = function () {
+    return withDeadline(work);
+  };
+  const run = queue.then(guarded, guarded);
   queue = run.then(function () {
     return null;
   }, function () {
