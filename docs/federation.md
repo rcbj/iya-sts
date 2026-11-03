@@ -183,11 +183,23 @@ What it does, in every mode:
   Off by default, because any page could otherwise start a sign-in in a
   person's browser.
 
-Three things the plans test are not done, by design:
+* **`fedRefreshTokens`** (off by default) keeps the refresh token the
+  partner issues at sign-in, sealed, for the session it started. Every
+  `fedRefreshEverySeconds` (empty: when the access token expires, or hourly)
+  the scheduler job `federation.partner-refresh` refreshes it. The new ID
+  Token must name the same `iss` and `sub`, and UserInfo must still answer
+  for that `sub`. **A refresh the partner refuses, or an answer that fails
+  those checks, ends the session** (`STS-FED-0210`, `0211`, `0202`). The
+  token is dropped when the session ends. Off, the partner's tokens are used
+  once and discarded. **Turning it on is a warning**: this service then holds
+  a long-lived credential at the partner. A partner that issues refresh
+  tokens only for `offline_access` needs that in `fedScope`.
+* **A signed or encrypted UserInfo answer** is verified against the
+  partner's keys (`fedUserinfoSignedResponseAlg` pins its algorithm) before it
+  is used.
 
-* **Refresh tokens.** The partner's tokens are used once to learn who the
-  person is, and then discarded. The session here ends when the partner signs
-  the person out or sends a Shared Signal.
+Two things the plans test are not done, by design:
+
 * **Session Management.** This service does not poll the partner's
   `check_session_iframe`. Back-Channel Logout tells it the same thing.
 * **Dynamic registration, WebFinger and request objects.** A relationship is
@@ -759,6 +771,8 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedClientId`, `fedClientSecret` | SP | this service's client credentials at the partner |
 | `fedScope`, `fedResponseType` | SP | the scope asked for (`openid profile email` by default for OIDC); `code` (default), `id_token`, `id_token token`, `code id_token`, `code token` or `code id_token token` |
 | `fedResponseMode` | SP | empty, `query`, `form_post` or (OIDC) `fragment` — **`fragment` is a warning**: see [OpenID Connect as the relying party](#openid-connect-as-the-relying-party) |
+| `fedRefreshTokens`, `fedRefreshEverySeconds` | SP (OIDC) | keep and use the partner's refresh token for each session (`FALSE` by default — **a warning** when on); how often, in seconds |
+| `fedUserinfoSignedResponseAlg` | SP (OIDC) | the algorithm a signed UserInfo answer must use |
 | `fedIdTokenSignedResponseAlg` | SP (OIDC) | the one algorithm the partner signs ID Tokens and Logout Tokens with (what was registered as `id_token_signed_response_alg`); a token under another is refused even when a partner key verifies it. **Empty is a warning**: any algorithm of the key's family is accepted |
 | `fedDiscovery`, `fedInitiateLogin` | SP (OIDC) | read the endpoints from the partner's discovery document; answer a sign-in the partner starts. Both `FALSE` by default |
 | `fedBinding`, `fedSignRequest` | SP | the outbound SAML binding; whether the `AuthnRequest` is signed |

@@ -283,6 +283,18 @@
     "en": "3d9af9fdc895c49c",
     "text": "OPENID CONNECT LAMANG. ANG IISANG ALGORITHM na ginagamit ng partner sa pag-sign ng mga ID Token at Logout Token ng ugnayang ito — ang inirehistro sa partner bilang id_token_signed_response_alg (OpenID Connect Core 1.0 seksiyon 3.1.3.7 hakbang 7, Back-Channel Logout 1.0 seksiyon 2.6). Tinatanggihan ang token na naka-sign sa iba, kahit mabe-verify ito ng key ng partner. Walang laman, ang default: anumang algorithm ng pamilya ng nagve-verify na key na pinapayagan ng federation.jwtAlgorithms. Itakda ito: kapag walang laman, tinatanggap ang token na naka-sign ng ibang key ng partner sa ibang algorithm."
   },
+  "fed.schema.attributes.fedUserinfoSignedResponseAlg.what": {
+    "en": "dfebb4c3fc05d0ca",
+    "text": "OPENID CONNECT LAMANG. Ang algorithm na dapat gamitin sa pag-sign ng isang NAKA-SIGN na sagot ng UserInfo — ang inirehistro sa partner bilang userinfo_signed_response_alg (OpenID Connect Core 1.0 seksiyon 5.3.2). Ang naka-sign na sagot ay vine-verify gamit ang mga key ng partner nakatakda man ito o hindi; kapag nakatakda, hindi ginagamit ang naka-sign sa ibang algorithm. Walang laman, ang default: isang JSON na sagot, o naka-sign sa anumang algorithm ng pamilya ng key nito."
+  },
+  "fed.schema.attributes.fedRefreshTokens.what": {
+    "en": "eaa1a36d346a058b",
+    "text": "OPENID CONNECT LAMANG. Ang TRUE ay nag-iingat, naka-seal, sa refresh token na inilalabas ng partner sa pag-sign in, kasama ng session na sinimulan nito, at ginagamit ito upang panatilihing kasalukuyan ang pagkakakilanlan ng session na iyon (OpenID Connect Core 1.0 seksiyon 12): bawat fedRefreshEverySeconds ay nire-refresh ang mga token ng session, ang bagong ID Token ay dapat pangalanan ang parehong iss at sub, at ang UserInfo ay dapat pa ring sumagot para sa sub na iyon. Ang refresh na tinanggihan ng partner, o sagot na hindi pumasa sa mga pagsusuring iyon, ay TINATAPOS ang session. Namamatay ang token kasama ng session. FALSE, ang default: ang mga token ng partner ay ginagamit nang isang beses, sa pag-sign in, at itinatapon — walang anuman dito na may hawak na credential sa ibang serbisyo, at ang sariling sign-out ng partner at ang mga Shared Signal nito ang tumatapos nang maaga sa session."
+  },
+  "fed.schema.attributes.fedRefreshEverySeconds.what": {
+    "en": "d839fb1f30532e3a",
+    "text": "Kapag naka-on ang fedRefreshTokens: gaano kadalas, sa segundo, nire-refresh ang mga token ng isang session. Walang laman: kapag nag-expire ang access token (ang expires_in nito), o bawat oras kung walang expiry na binanggit ang partner. Tumitingin ang scheduler job na federation.partner-refresh bawat labinlimang segundo."
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "OPENID CONNECT LAMANG. Ang TRUE ay binabasa ang mga endpoint ng partner at ang jwks_uri nito mula sa discovery document nito, {fedPeer}/.well-known/openid-configuration, sa simula ng bawat pag-sign in (OpenID Connect Discovery 1.0 seksiyon 4), na ang issuer ay dapat eksaktong fedPeer; ang fedSsoUrl, fedTokenUrl, fedUserinfoUrl at fedJwksUri ay hindi na binabasa. Ang address ay hinango mula sa fedPeer, na kinumpigura ng isang administrator, at hindi kailanman mula sa isang request. FALSE, ang default: ang mga endpoint ay kinukumpigura nang mano-mano."

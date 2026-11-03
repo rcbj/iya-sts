@@ -1322,7 +1322,7 @@ provider**, which is exactly the moment a deliberate click is worth having.
 | ~~Decrypt an `<EncryptedAssertion>`~~ — **reversed 2026-09-23 (#168)** | See *A PARTNER'S ENCRYPTED ASSERTION*. Product mode now refuses a PLAINTEXT one unless `fedAllowUnencrypted`. |
 | Verify the partner's certificate against a CA, or check its validity dates | `fedSigningCertificate` is trusted because an administrator pasted it there. It is a pinned key, not a chain, and pinning is the stronger of the two for this purpose. **Its REVOCATION is checked since 2026-09-12** — the one question a pin cannot answer — see *The signature check is the line*. |
 | ~~Consume a federated SIGN-OUT~~ — **reversed 2026-09-23 (#167)** | See *A PARTNER'S SIGN-OUT*. The ACS still refuses a sign-out sent to it (`STS-FED-0024`) and names the path that consumes one. |
-| Refresh anything | The tokens a partner issues are used once, to learn who the person is, and are then discarded. Nothing here holds a refresh token belonging to somebody else's service. **Kept by #930**, whose refresh-token plan this costs: see *THE OPENID CONNECT RELYING PARTY PLANS*. |
+| ~~Refresh anything~~ — **reversed by rcbj on #930 (2026-11-03), for a relationship that turns `fedRefreshTokens` on** | The default is unchanged: the tokens a partner issues are used once, to learn who the person is, and discarded. See *A PARTNER'S REFRESH TOKEN* below for what the switch does. |
 | Re-verify a person on a later request | The session is this service's from the moment it is created, and nothing here polls the partner. What reaches it since #167 is what the partner SENDS — its sign-out, which ends the session — and what it SAID at sign-in: a SAML `SessionNotOnOrAfter` bounds the session. |
 | Act as an OpenID Connect Session Management relying party (#167, rcbj's decision 3) | Polling a partner's `check_session_iframe` needs a script in this service's page, the root `CLAUDE.md` admits a script only where a page cannot work without one, and Back-Channel Logout already tells this relying party what that script would find out. The logout plan's session-management module is argued in #930's ledger on this decision. |
 | Register itself at a partner, discover a partner by WebFinger, or send a request object (#930) | A relationship is CONFIGURED by an administrator, which is the whole of *THE ONE FEATURE HERE THAT REFUSES BY DEFAULT*; the dynamic plan's eleven modules are argued in #930's ledger, and whether to build the three is rcbj's question on #930. |
@@ -2450,14 +2450,6 @@ needed, built here:
 allows either, and each of these is a decision recorded here, not a gap
 noticed):
 
-* **Refresh tokens** — *Things this half deliberately does not do*'s
-  "Refresh anything", kept. The refresh-token plan (not part of the
-  certification program) wants the relying party to hold the partner's
-  refresh token and use it later. That is a long-lived credential at another
-  service held for nothing this service does with it: the session here is its
-  own, and what ends it early is what the partner SENDS — its Back-Channel,
-  Front-Channel or RP-Initiated sign-out, its Shared Signals. Most secure by
-  default, and rcbj may reverse it.
 * **Session Management** — rcbj's decision 3 on #167, above; the logout
   plan's one module that needs it.
 * **The dynamic plan** — registering itself at a partner (RFC 7591), finding
@@ -2473,3 +2465,52 @@ noticed):
 `tests/federation_oidc_rp.js` pins each refusal's code in process, and that
 nothing is dialled after it — no UserInfo after a refused ID Token, no token
 request after a refused front channel.
+
+### A PARTNER'S REFRESH TOKEN (#930, rcbj's decision, 2026-11-03)
+
+rcbj decided the refresh-token plan is built. **It is a switch,
+`fedRefreshTokens`, OFF by default**, because what it adds is a long-lived
+credential at another service held by this one; off, nothing changed.
+
+* **HELD FOR ONE SESSION.** The refresh token the token endpoint returns at
+  sign-in is sealed at once (`federation.js`'s `sealPartnerToken()`, the
+  client secret's arrangement under a label of its own — under a durable
+  key-encryption key, in clear where keys do not persist) and carried on the
+  sign-in's result, so a held step (linking, step-up, profile) never holds
+  it in clear. When the session starts, `holdPartnerRefresh()` writes it to
+  `federation_sp.partnerRefresh`, keyed by the SESSION's id: per realm,
+  persisted, cell-minted (`persistence/tiers.js`), as the session is.
+* **USED BY A SCHEDULER JOB**, `federation.partner-refresh` (per realm,
+  every fifteen seconds; rcbj's directive that periodic work is a job). It
+  reads that store alone — never the session store, so it is no scan of the
+  sessions — and refreshes an entry when it is due: `fedRefreshEverySeconds`
+  after the last, else the access token's `expires_in`, else an hour. The
+  client authentication is the code redemption's (Basic, the body, a public
+  client, or an OpenID Federation OP's `private_key_jwt`); a consumer
+  provider's own adapters are not repeated.
+* **WHAT IT HOLDS THE ANSWER TO** is Core section 12.2: a new ID Token is
+  verified as any is (the registered algorithm included) and must name the
+  session's `iss` and `sub`; UserInfo, asked with the new access token, must
+  answer for that `sub`. The person's attributes are NOT rewritten on a
+  refresh: what it keeps current is that the partner still vouches for the
+  subject.
+* **A FAILED REFRESH ENDS THE SESSION** — the partner refusing it
+  (`STS-FED-0210`), the token not opening, the new ID Token failing
+  (`STS-FED-0211`), UserInfo naming another `sub` (`STS-FED-0202`) —
+  through `logout.ts`'s `endPartnerSession()`, so the cascade is the one
+  every sign-out has. An RP that can no longer show the partner vouches for
+  the person has nothing to keep the session on. A refresh that could not be
+  MADE (no answer at all, a 5xx) is not the partner's answer and is tried
+  again a minute later.
+* **IT DIES WITH THE SESSION.** An entry whose session is gone — ended here,
+  by the partner, by expiry — is dropped the next time the job reads it, and
+  so is one whose relationship turned the switch off.
+
+**Signed and encrypted UserInfo** came with it (the dynamic plan's
+`userinfo-signed` module asks for it): a UserInfo answer that is a JWT is
+decrypted where it is a JWE, verified against the partner's keys under
+`fedUserinfoSignedResponseAlg` where one is registered, its `iss` and `aud`
+held to the partner and this service where present, and then used as a JSON
+answer is (`userinfoClaims()`). One that does not verify is not used, which
+costs its attributes and not the sign-in, as an unanswered UserInfo always
+has.

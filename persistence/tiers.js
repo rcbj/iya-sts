@@ -388,6 +388,9 @@ const CELL_MINTED = [
   'devices.androidRecheck',
   'devices.events', 'dpop.issuedNonces', 'federation.signalBlocks',
   'federation.unmapped', 'federation_sp.contexts',
+  // A partner's refresh token held for one session (#930): the session's
+  // cell's, as the session is.
+  'federation_sp.partnerRefresh',
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',

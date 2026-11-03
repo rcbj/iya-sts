@@ -283,6 +283,18 @@
     "en": "3d9af9fdc895c49c",
     "text": "SOLO OPENID CONNECT. EL ÚNICO ALGORITMO con el que el socio firma los ID Tokens y Logout Tokens de esta relación: lo que se registró en el socio como id_token_signed_response_alg (OpenID Connect Core 1.0 sección 3.1.3.7 paso 7, Back-Channel Logout 1.0 sección 2.6). Un token firmado con cualquier otro se rechaza, aunque la clave del socio lo verifique. Vacío, el valor predeterminado: cualquier algoritmo de la familia de la clave que verifica que federation.jwtAlgorithms permita. Establézcalo: vacío acepta un token firmado por otra de las claves del socio con otro algoritmo."
   },
+  "fed.schema.attributes.fedUserinfoSignedResponseAlg.what": {
+    "en": "dfebb4c3fc05d0ca",
+    "text": "SOLO OPENID CONNECT. El algoritmo con el que debe estar firmada una respuesta UserInfo FIRMADA: lo que se registró en el socio como userinfo_signed_response_alg (OpenID Connect Core 1.0 sección 5.3.2). Una respuesta firmada se verifica con las claves del socio esté o no establecido; establecido, una firmada con otro algoritmo no se usa. Vacío, el valor predeterminado: una respuesta JSON, o una firmada con cualquier algoritmo de la familia de su clave."
+  },
+  "fed.schema.attributes.fedRefreshTokens.what": {
+    "en": "eaa1a36d346a058b",
+    "text": "SOLO OPENID CONNECT. TRUE conserva, sellado, el token de actualización que el socio emite al iniciar sesión, con la sesión que inició, y lo usa para mantener al día la identidad de esa sesión (OpenID Connect Core 1.0 sección 12): cada fedRefreshEverySeconds se actualizan los tokens de la sesión, un nuevo ID Token debe nombrar los mismos iss y sub, y UserInfo debe seguir respondiendo por ese sub. Una actualización que el socio rechaza, o una respuesta que no supera esas comprobaciones, TERMINA la sesión. El token muere con la sesión. FALSE, el valor predeterminado: los tokens del socio se usan una vez, al iniciar sesión, y se descartan; aquí nada guarda una credencial de otro servicio, y son el cierre de sesión del socio y sus Shared Signals los que terminan antes la sesión."
+  },
+  "fed.schema.attributes.fedRefreshEverySeconds.what": {
+    "en": "d839fb1f30532e3a",
+    "text": "Con fedRefreshTokens activado: cada cuántos segundos se actualizan los tokens de una sesión. Vacío: cuando caduca el token de acceso (su expires_in), o cada hora si el socio no indica caducidad. El trabajo programado federation.partner-refresh revisa cada quince segundos."
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "SOLO OPENID CONNECT. TRUE lee los puntos de conexión del socio y su jwks_uri de su documento de descubrimiento, {fedPeer}/.well-known/openid-configuration, al comienzo de cada inicio de sesión (OpenID Connect Discovery 1.0 sección 4), cuyo issuer debe ser exactamente fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl y fedJwksUri no se leen entonces. La dirección se deriva de fedPeer, que configuró un administrador, y nunca de una solicitud. FALSE, el valor predeterminado: los puntos de conexión se configuran a mano."

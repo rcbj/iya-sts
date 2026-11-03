@@ -134,7 +134,7 @@ const PLANS = [
   { key: "logout", name: "oidcc-client-logout-test-plan",
     variant: WHOLE, responseMode: "fragment", logout: true },
   { key: "refresh", name: "oidcc-client-refreshtoken-test-plan",
-    variant: WHOLE, responseMode: "fragment" }
+    variant: WHOLE, responseMode: "fragment", refresh: true }
 ];
 
 // ---------------------------------------------------------------------------
@@ -148,19 +148,12 @@ const SESSION_MANAGEMENT = "this relying party does not poll the " +
   "(federation/CLAUDE.md), because the script it needs is admitted only " +
   "where a page cannot work without one and Back-Channel Logout tells " +
   "this relying party what it would find out";
-const NO_REFRESH = "this relying party holds no partner's refresh token: " +
-  "the partner's tokens learn who the person is and are discarded, and " +
-  "its sign-out and Shared Signals end the session (federation/CLAUDE.md, " +
-  "*Things this half deliberately does not do*, kept by #930)";
 const NO_DYNAMIC = "this relying party is configured by an administrator: " +
   "it does not register itself at a partner (RFC 7591), discover a partner " +
   "by WebFinger from an identifier somebody types, or send request " +
   "objects by reference (federation/CLAUDE.md, #930)";
 const EXPECTED = {
-  "logout/oidcc-client-test-session-management": SESSION_MANAGEMENT,
-  "refresh/oidcc-client-test-refresh-token": NO_REFRESH,
-  "refresh/oidcc-client-test-refresh-token-invalid-issuer": NO_REFRESH,
-  "refresh/oidcc-client-test-refresh-token-invalid-sub": NO_REFRESH
+  "logout/oidcc-client-test-session-management": SESSION_MANAGEMENT
 };
 // Every module of the dynamic plan.
 const EXPECTED_PLANS = { dynamic: NO_DYNAMIC };
@@ -285,6 +278,13 @@ async function prepare(plan) {
   }
   if (plan.initiate) {
     fields.fedInitiateLogin = "TRUE";
+  }
+  // THE REFRESH-TOKEN PLAN (#930): the partner's refresh token kept for the
+  // session and used every five seconds, so the federation.partner-refresh
+  // job (every fifteen) refreshes well inside a module's five minutes.
+  if (plan.refresh) {
+    fields.fedRefreshTokens = "TRUE";
+    fields.fedRefreshEverySeconds = "5";
   }
   // PRODUCT MODE requires a partner to encrypt an ID Token that crosses the
   // browser, to the relationship's key. The suite could only be told to

@@ -186,6 +186,7 @@ import audit = require('./../common/audit');
 // error_codes.js and nothing else here, so it registers no route and cannot
 // join a cycle — rule 3m.
 import realms = require('./../common/realms');
+import scheduler = require('./../cluster/scheduler');
 // The configured XML signature algorithms, for a signed outbound AuthnRequest.
 // A leaf in saml/ that registers nothing — the same answer every SAML signer in
 // this service reads, so a partner verifying our request and our assertions is
@@ -381,6 +382,15 @@ const contexts = realms.map({ persist: 'federation_sp.contexts',
                               retain: 'age',
                               // #333: the context's `expires`, ms.
                               expiresAt: realms.expiryField('expires', 1) });
+
+// A PARTNER'S REFRESH TOKEN, HELD FOR ONE SESSION (#930, rcbj's decision on
+// #930): keyed by the session's id, the token sealed, with the issuer and
+// subject the session started with and when the next refresh is due. Per
+// realm and persisted, as the session it serves is; an entry whose session
+// is gone is dropped by the job that reads it, so the token dies with the
+// session. Only a relationship with fedRefreshTokens on writes here.
+const partnerRefresh = realms.map({ persist: 'federation_sp.partnerRefresh' });
+const PARTNER_REFRESH_JOB = 'federation.partner-refresh';
 
 // ---------------------------------------------------------------------------
 // PAGES. This module draws two: a refusal and an index. Both are plain HTML
@@ -4015,6 +4025,10 @@ class FederationSp {
              ', ' + decision.how + '). ' + mapped.mapped.length +
              ' attribute(s) mapped, ' +
              mapped.unmapped.length + ' unmapped. Session ' + session.id + '.');
+    // THE PARTNER'S REFRESH TOKEN (#930), held for this session alone.
+    if (result.partnerRefresh) {
+      this.holdPartnerRefresh(record, session, result.partnerRefresh);
+    }
     // AN ACCOUNT THIS SIGN-IN CREATED (#565), recorded for risk scoring's
     // `network-signups`: who, from which network, when, in the failures
     // register's shape and under its own door, which no password signal
@@ -4931,6 +4945,296 @@ class FederationSp {
       log.debug("Leaving FederationSp.discovered(). Read.");
       return { ok: true, endpoints: endpoints };
     });
+  }
+
+  // ---------------------------------------------------------------------------
+  // A PARTNER'S REFRESH TOKEN, KEPT AND USED (#930; rcbj decided to build it,
+  // reversing "Refresh anything" in federation/CLAUDE.md for a relationship
+  // that turns fedRefreshTokens on). The token the partner issued at sign-in
+  // is held, sealed, for the one session it came with; the scheduler job
+  // federation.partner-refresh refreshes it when it is due (OpenID Connect
+  // Core 1.0 section 12) and holds the answer to section 12.2: a new ID Token
+  // must name the same iss and sub, and UserInfo must still answer for that
+  // sub. The partner refusing the refresh, or an answer failing a check,
+  // ENDS the session (logout.ts's endPartnerSession(), the cascade every
+  // sign-out has): an RP that can no longer show the partner still vouches
+  // for the person has nothing to keep the session on. A refresh that could
+  // not be MADE — the partner unreachable — is tried again a minute later;
+  // that is not the partner's answer.
+  // ---------------------------------------------------------------------------
+  /**
+   * Holds a partner's sealed refresh token for the session a sign-in
+   * started.
+   *
+   * @param record - the relationship
+   * @param session - the session just started
+   * @param held - `{ token, expiresIn, iss, sub, endpoints }`
+   */
+  holdPartnerRefresh(record, session, held) {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.holdPartnerRefresh().");
+    const after = federation.refreshAfterSeconds(record, held.expiresIn);
+    partnerRefresh.set(String(session.id), {
+      fedId: record.fedId, sessionId: String(session.id),
+      token: held.token, iss: held.iss, sub: held.sub,
+      endpoints: held.endpoints || null, refreshes: 0,
+      due: Date.now() + after * 1000 });
+    log.debug("Leaving FederationSp.holdPartnerRefresh(). Due in " + after +
+              "s.");
+  }
+
+  /**
+   * Registers the scheduler job that refreshes partners' tokens, once. It
+   * runs per realm every fifteen seconds while `federation.enabled` is on,
+   * and looks only at the sessions that hold a partner's refresh token.
+   */
+  static registerRefreshJob(): void {
+    helpers.log.debug("Entering FederationSp.registerRefreshJob().");
+    if (scheduler.job(PARTNER_REFRESH_JOB)) {
+      helpers.log.debug("Leaving FederationSp.registerRefreshJob(). " +
+                        "Registered.");
+      return;
+    }
+    scheduler.register({
+      id: PARTNER_REFRESH_JOB,
+      title: 'Federated sessions\' partner refresh',
+      describe: 'For an OpenID Connect relationship with fedRefreshTokens ' +
+                'on: refreshes the partner\'s tokens of each session that ' +
+                'holds one when it is due, checks the new ID Token and ' +
+                'UserInfo still name the person, and ends the session ' +
+                'when the partner refuses or the answer does not (#930).',
+      owner: 'federation/federation_sp.ts',
+      scope: 'realm',
+      everyMs: function (): number {
+        return 15000;
+      },
+      off: function (): string {
+        return config.value('federation.enabled') ? ''
+          : 'federation.enabled is off';
+      },
+      run: function (ctx: any): Promise<any> {
+        return slot.get().refreshDue(ctx.nowMs());
+      }
+    });
+    helpers.log.debug("Leaving FederationSp.registerRefreshJob().");
+  }
+
+  /**
+   * Refreshes, in the current realm, every held partner token that is due.
+   * The scheduler job's body.
+   *
+   * @param nowMs - the time to check against
+   * @returns a promise of `{ refreshed, ended, dropped }`
+   */
+  async refreshDue(nowMs?: number): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.refreshDue().");
+    const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+    const due: any[] = [];
+    partnerRefresh.forEach(function (value) {
+      if (value && Number(value.due) <= now) {
+        due.push(value);
+      }
+    });
+    const counts = { refreshed: 0, ended: 0, dropped: 0, retried: 0 };
+    for (let i = 0; i < due.length; i++) {
+      const outcome = await this.refreshOne(due[i]);
+      counts[outcome] = (counts[outcome] || 0) + 1;
+    }
+    log.debug("Leaving FederationSp.refreshDue(). " + JSON.stringify(counts));
+    return counts;
+  }
+
+  // One held token: `refreshed`, `ended` (the session), `dropped` (no
+  // session or relationship to refresh for) or `retried` (not made).
+  private async refreshOne(entry): Promise<string> {
+    const { federation, fedHttp, authn, log, errorCodes } = this.deps;
+    log.debug("Entering FederationSp.refreshOne(). session=" +
+              entry.sessionId);
+    const session = authn.sessionById(entry.sessionId);
+    const stored = federation.get(entry.fedId);
+    if (!session || !stored || !federation.refreshesTokens(stored) ||
+        !federation.isUsable(stored)) {
+      partnerRefresh.delete(String(entry.sessionId));
+      log.debug("Leaving FederationSp.refreshOne(). Dropped.");
+      return 'dropped';
+    }
+    const record = Object.assign({}, stored, entry.endpoints || {});
+    const token = federation.openPartnerToken(entry.token);
+    if (!token) {
+      log.debug("Leaving FederationSp.refreshOne(). The token will not open.");
+      return this.endForRefresh(session, record, entry, 'STS-FED-0210',
+                                'the held refresh token will not open');
+    }
+    const form: any = { grant_type: 'refresh_token', refresh_token: token };
+    const options: any = { method: 'POST', form: form };
+    let authenticated: Promise<any> = Promise.resolve(null);
+    if (record.fedTokenAuth === 'private_key_jwt' &&
+        this.deps.oidfedRp().isFederated(stored)) {
+      form.client_id = String(record.fedClientId || '');
+      form.client_assertion_type =
+        'urn:ietf:params:oauth:client-assertion-type:jwt-bearer';
+      authenticated = this.deps.oidfedRp().clientAssertion(record)
+        .then(function (assertion) {
+          form.client_assertion = assertion;
+        });
+    } else if (federation.clientSecretOf(record) &&
+               record.fedTokenAuth === 'client_secret_post') {
+      form.client_id = String(record.fedClientId || '');
+      form.client_secret = federation.clientSecretOf(record);
+    } else if (federation.clientSecretOf(record)) {
+      options.basic = { user: record.fedClientId,
+                        pass: federation.clientSecretOf(record) };
+    } else {
+      form.client_id = String(record.fedClientId || '');
+    }
+    await authenticated;
+    const answer = await fedHttp.fetchJson(record, 'fedTokenUrl', options);
+    if (!answer.ok || !answer.json) {
+      if (answer.status >= 400 && answer.status < 500) {
+        // The partner's ANSWER: it will not refresh for this session.
+        log.debug("Leaving FederationSp.refreshOne(). Refused.");
+        return this.endForRefresh(session, record, entry, 'STS-FED-0210',
+          'the partner refused the refresh (' + answer.why + ')');
+      }
+      log.warn(errorCodes.tag('STS-FED-0210') + 'federation: ' +
+               record.fedId + ' could not be asked to refresh session ' +
+               entry.sessionId + ' (' + answer.why + '); trying again in ' +
+               'a minute.');
+      partnerRefresh.set(String(entry.sessionId), Object.assign({}, entry,
+        { due: Date.now() + 60000 }));
+      log.debug("Leaving FederationSp.refreshOne(). Retried.");
+      return 'retried';
+    }
+    const tokens = answer.json;
+    if (tokens.id_token) {
+      const keySet = await this.keysFor(record);
+      const verified: any = keySet.ok
+        ? this.verifyForeignJwt(String(tokens.id_token), record,
+            keySet.keys, { audience: String(record.fedClientId || '') ||
+                             undefined,
+                           issuer: entry.iss,
+                           expectAlg: String(
+                             record.fedIdTokenSignedResponseAlg || '') })
+        : { ok: false, why: (keySet as any).why };
+      const payload = verified.ok ? (verified.payload || {}) : {};
+      // Section 12.2: the same iss and sub as the original ID Token.
+      if (!verified.ok || String(payload.sub || '') !== entry.sub ||
+          String(payload.iss || '') !== entry.iss) {
+        log.debug("Leaving FederationSp.refreshOne(). The new ID Token.");
+        return this.endForRefresh(session, record, entry, 'STS-FED-0211',
+          verified.ok ? 'the refreshed ID Token names iss "' +
+                        String(payload.iss || '') + '" and sub "' +
+                        String(payload.sub || '') + '", not the ' +
+                        'session\'s'
+                      : 'the refreshed ID Token did not verify: ' +
+                        verified.why);
+      }
+    }
+    const access = String(tokens.access_token || '');
+    if (access && String(record.fedUserinfoUrl || '').trim()) {
+      const info = await fedHttp.fetchJson(record, 'fedUserinfoUrl',
+        { method: 'GET', bearer: access });
+      const claims = info.ok ? await this.userinfoClaims(record, info) : null;
+      if (claims && String(claims.sub || '') !== entry.sub) {
+        log.debug("Leaving FederationSp.refreshOne(). UserInfo's sub.");
+        return this.endForRefresh(session, record, entry, 'STS-FED-0202',
+          'UserInfo answered the refreshed access token for sub "' +
+          String(claims.sub || '') + '"');
+      }
+    }
+    const next = tokens.refresh_token
+      ? federation.sealPartnerToken(String(tokens.refresh_token)) : null;
+    partnerRefresh.set(String(entry.sessionId), Object.assign({}, entry, {
+      token: next && next.ok ? next.value : entry.token,
+      refreshes: Number(entry.refreshes || 0) + 1,
+      due: Date.now() + federation.refreshAfterSeconds(stored,
+                                                       tokens.expires_in) *
+           1000 }));
+    log.info('federation: ' + record.fedId + ' refreshed the partner\'s ' +
+             'tokens for session ' + entry.sessionId + '; the partner ' +
+             'still vouches for ' + entry.sub + '.');
+    log.debug("Leaving FederationSp.refreshOne(). Refreshed.");
+    return 'refreshed';
+  }
+
+  /**
+   * Reads a partner's UserInfo answer: JSON as it is, or a signed (and
+   * possibly encrypted) JWT verified against the partner's keys (OpenID
+   * Connect Core 1.0 section 5.3.2) — under fedUserinfoSignedResponseAlg
+   * where the relationship registered one — whose iss and aud, when
+   * present, must be the partner and this service.
+   *
+   * @param record - the relationship
+   * @param answer - what fetchJson() answered
+   * @returns a promise of the claims, or null when the answer cannot be used
+   */
+  async userinfoClaims(record, answer): Promise<any> {
+    const { fedEncryption, log } = this.deps;
+    log.debug("Entering FederationSp.userinfoClaims().");
+    if (answer && answer.json && typeof answer.json === 'object' &&
+        !Array.isArray(answer.json)) {
+      log.debug("Leaving FederationSp.userinfoClaims(). JSON.");
+      return answer.json;
+    }
+    let jws = String((answer && answer.text) || '').trim();
+    if (jws.split('.').length === 5) {
+      const opened = fedEncryption.decryptJwe(record, jws);
+      if (!opened.ok) {
+        log.debug("Leaving FederationSp.userinfoClaims(). Not decrypted.");
+        return null;
+      }
+      jws = String(opened.plaintext || '').trim();
+    }
+    if (jws.split('.').length !== 3) {
+      log.debug("Leaving FederationSp.userinfoClaims(). Not a JWT.");
+      return null;
+    }
+    const keySet = await this.keysFor(record);
+    if (!keySet.ok) {
+      log.debug("Leaving FederationSp.userinfoClaims(). No keys.");
+      return null;
+    }
+    const verified = this.verifyForeignJwt(jws, record, keySet.keys, {
+      expectAlg: String(record.fedUserinfoSignedResponseAlg || '') });
+    const claims = verified.ok ? (verified.payload || {}) : null;
+    if (!claims ||
+        (claims.iss !== undefined &&
+         String(claims.iss) !== String(record.fedPeer || '').trim()) ||
+        (claims.aud !== undefined &&
+         [].concat(claims.aud).indexOf(String(record.fedClientId || '')) <
+           0)) {
+      log.debug("Leaving FederationSp.userinfoClaims(). Did not verify.");
+      return null;
+    }
+    log.debug("Leaving FederationSp.userinfoClaims(). A verified JWT.");
+    return claims;
+  }
+
+  // The session a refresh could not keep, ended through the one model of a
+  // live session, and its held token dropped with it.
+  private endForRefresh(session, record, entry, code, why): string {
+    const { audit, log, errorCodes } = this.deps;
+    log.debug("Entering FederationSp.endForRefresh(). " + code);
+    partnerRefresh.delete(String(entry.sessionId));
+    log.warn(errorCodes.tag(code) + 'federation: ' + record.fedId + ' ' +
+             'ends session ' + entry.sessionId + ': ' + why + '.');
+    audit.failure(code, {
+      protocol: 'Federation', channel: 'http', target: record.fedId,
+      summary: 'the federated session of ' + entry.sub + ' through ' +
+               record.fedId + ' was ended at its partner refresh: ' + why,
+      outcome: 'denied', detail: { session: entry.sessionId } });
+    try {
+      require('./../logout/logout').endPartnerSession(session, {
+        issuer: entry.iss, by: 'federation:' + record.fedId,
+        initiatingEntity: 'policy', channel: 'http' });
+    } catch (e) {
+      log.error(errorCodes.tag('STS-FED-0210') + 'federation: the session ' +
+                entry.sessionId + ' could not be ended: ' +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving FederationSp.endForRefresh().");
+    return 'ended';
   }
 
   // ---------------------------------------------------------------------------
@@ -6333,7 +6637,7 @@ class FederationSp {
         return this.finishOidc(req, res, record, context,
                                String(tokens.id_token),
                                String(tokens.access_token || frontAccess || ''),
-                               front);
+                               front, tokens);
       }
       return this.finishOauth2(req, res, record, context, tokens);
     }).catch((e) => {
@@ -6425,7 +6729,7 @@ class FederationSp {
   // somebody other than the person the front channel named.
   // ---------------------------------------------------------------------------
   private finishOidc(req, res, record, context, sentToken, accessToken,
-                     front?: any) {
+                     front?: any, tokens?: any) {
     const { errorCodes, log } = this.deps;
     log.debug("Entering FederationSp.finishOidc().");
     log.debug("Leaving FederationSp.finishOidc().");
@@ -6450,7 +6754,7 @@ class FederationSp {
             'section 3.3.3.6 requires them to be identical.');
         }
         return this.completeOidc(req, res, record, context, verified,
-                                 accessToken);
+                                 accessToken, tokens);
       });
   }
 
@@ -6629,11 +6933,24 @@ class FederationSp {
   // access token and an endpoint allow (whose `sub` must be the ID Token's,
   // #930), and the session.
   // ---------------------------------------------------------------------------
-  private completeOidc(req, res, record, context, verified, accessToken) {
-    const { fedHttp, errorCodes, audit, log } = this.deps;
+  private completeOidc(req, res, record, context, verified, accessToken,
+                       tokens?: any) {
+    const { fedHttp, errorCodes, audit, log, federation } = this.deps;
     log.debug("Entering FederationSp.completeOidc().");
     const payload = verified.payload;
     const idToken = verified.token;
+    // THE PARTNER'S REFRESH TOKEN (#930), sealed at once, where the
+    // relationship keeps one: held for the session this sign-in starts
+    // (startFederatedSession()), never in clear on a held step's context.
+    const refreshToken = tokens && tokens.refresh_token &&
+      federation.refreshesTokens(record) ? String(tokens.refresh_token) : '';
+    const sealedRefresh = refreshToken
+      ? federation.sealPartnerToken(refreshToken) : null;
+    const partnerRefresh = sealedRefresh && sealedRefresh.ok
+      ? { token: sealedRefresh.value, expiresIn: Number(tokens.expires_in) ||
+          0, iss: String(payload.iss || ''), sub: String(payload.sub || ''),
+          endpoints: context.discovered || null }
+      : null;
     const bag = {};
     Object.keys(payload).forEach((name) => {
       // The protocol's own members are not attributes about a person and must
@@ -6717,6 +7034,7 @@ class FederationSp {
             ? String(idToken) : '',
           acr: reading.acr,
           signer: FederationSp.signerOf('jwk', verified.jwk),
+          partnerRefresh: partnerRefresh,
           returnTo: this.fromContext(context).returnTo,
           connect: this.fromContext(context).connect,
           application: this.fromContext(context).application,
@@ -6732,7 +7050,20 @@ class FederationSp {
               'well.');
     return fedHttp.fetchJson(record, 'fedUserinfoUrl',
                              { method: 'GET', bearer: accessToken })
-                  .then((answer) => {
+                  .then((fetched) => {
+      // A SIGNED OR ENCRYPTED UserInfo response (#930, Core 5.3.2) is a JWT
+      // rather than JSON: verified against the partner's keys, and its
+      // claims taken as the JSON answer's would be.
+      return (fetched.ok ? this.userinfoClaims(record, fetched)
+                         : Promise.resolve(null)).then((claims) => {
+        return Object.assign({}, fetched, {
+          json: claims,
+          ok: !!claims && fetched.ok,
+          why: fetched.ok && !claims
+            ? 'its answer is neither JSON nor a JWT that verifies against ' +
+              'the partner\'s keys' : fetched.why });
+      });
+    }).then((answer) => {
       if (!answer.ok || !answer.json) {
         // NOT a failure of the sign-in. The ID Token has already verified and
         // named the person; UserInfo adds attributes. Failing the whole
@@ -7468,6 +7799,7 @@ slot.buildNowUnlessDeferred();
 // A PEER'S QUESTION ABOUT A PARTNER'S LINK (#98 D9): see homeOfSubject().
 // Registered once at load; registering binds and dials nothing.
 fedProvision.registerIdleJob();
+FederationSp.registerRefreshJob();
 require('./../common/cell_channel').registerOp(LINK_HOME_OP,
   function (body: any) {
     return FederationSp.answerLinkHome(body);
@@ -7584,6 +7916,11 @@ export = {
    * Forwards to `FederationSp.checkPartner()` (#930).
    */
   checkPartner: slot.forward('checkPartner'),
+  /**
+   * Forwards to `FederationSp.refreshDue()` (#930), the partner refresh
+   * job's body.
+   */
+  refreshDue: slot.forward('refreshDue'),
   SLO_PATH: SLO_PATH,
   // For tests/revocation_status.js: the check a configured signing certificate
   // or partner key gets once it has verified a response.

@@ -283,6 +283,18 @@
     "en": "3d9af9fdc895c49c",
     "text": "ENDAST OPENID CONNECT. DEN ENDA ALGORITM som partnern signerar den här relationens ID-token och utloggningstoken med — det som registrerades hos partnern som id_token_signed_response_alg (OpenID Connect Core 1.0 avsnitt 3.1.3.7 steg 7, Back-Channel Logout 1.0 avsnitt 2.6). En token signerad med någon annan avvisas, även en som partnerns nyckel verifierar. Tomt, standardvärdet: vilken algoritm som helst i den verifierande nyckelns familj som federation.jwtAlgorithms tillåter. Ange den: tomt godtar en token signerad med en annan av partnerns nycklar under en annan algoritm."
   },
+  "fed.schema.attributes.fedUserinfoSignedResponseAlg.what": {
+    "en": "dfebb4c3fc05d0ca",
+    "text": "ENDAST OPENID CONNECT. Den algoritm ett SIGNERAT UserInfo-svar måste vara signerat med — det som registrerades hos partnern som userinfo_signed_response_alg (OpenID Connect Core 1.0 avsnitt 5.3.2). Ett signerat svar verifieras mot partnerns nycklar oavsett om detta är angivet; angivet används inte ett som är signerat med en annan algoritm. Tomt, standardvärdet: ett JSON-svar, eller ett signerat med vilken algoritm som helst i dess nyckels familj."
+  },
+  "fed.schema.attributes.fedRefreshTokens.what": {
+    "en": "eaa1a36d346a058b",
+    "text": "ENDAST OPENID CONNECT. TRUE behåller, förseglad, den uppdateringstoken partnern utfärdar vid inloggning, tillsammans med sessionen den startade, och använder den för att hålla den sessionens identitet aktuell (OpenID Connect Core 1.0 avsnitt 12): var fedRefreshEverySeconds uppdateras sessionens token, en ny ID-token måste namnge samma iss och sub, och UserInfo måste fortfarande svara för den sub. En uppdatering som partnern avvisar, eller ett svar som inte klarar dessa kontroller, AVSLUTAR sessionen. Token dör med sessionen. FALSE, standardvärdet: partnerns token används en gång, vid inloggning, och kastas — inget här håller en autentiseringsuppgift hos en annan tjänst, och partnerns egen utloggning och Shared Signals är det som avslutar sessionen tidigare."
+  },
+  "fed.schema.attributes.fedRefreshEverySeconds.what": {
+    "en": "d839fb1f30532e3a",
+    "text": "Med fedRefreshTokens på: hur ofta, i sekunder, en sessions token uppdateras. Tomt: när åtkomsttoken går ut (dess expires_in), eller varje timme om partnern inte anger någon utgång. Det schemalagda jobbet federation.partner-refresh tittar var femtonde sekund."
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "ENDAST OPENID CONNECT. TRUE läser partnerns slutpunkter och dess jwks_uri från dess upptäcktsdokument, {fedPeer}/.well-known/openid-configuration, i början av varje inloggning (OpenID Connect Discovery 1.0 avsnitt 4), vars issuer måste vara exakt fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl och fedJwksUri läses då inte. Adressen härleds från fedPeer, som en administratör har konfigurerat, och aldrig från en begäran. FALSE, standardvärdet: slutpunkterna konfigureras för hand."

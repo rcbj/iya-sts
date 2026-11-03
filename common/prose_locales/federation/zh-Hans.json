@@ -283,6 +283,18 @@
     "en": "3d9af9fdc895c49c",
     "text": "仅限 OPENID CONNECT。合作伙伴签署此关系的 ID Token 和 Logout Token 所用的唯一算法——即在合作伙伴处注册为 id_token_signed_response_alg 的算法（OpenID Connect Core 1.0 第 3.1.3.7 节第 7 步，Back-Channel Logout 1.0 第 2.6 节）。以其他算法签署的令牌会被拒绝，即使合作伙伴的密钥能够验证它。为空即默认值：federation.jwtAlgorithms 允许的、验证密钥所属家族的任何算法。请设置它：为空时，会接受由合作伙伴另一把密钥以另一种算法签署的令牌。"
   },
+  "fed.schema.attributes.fedUserinfoSignedResponseAlg.what": {
+    "en": "dfebb4c3fc05d0ca",
+    "text": "仅限 OPENID CONNECT。已签名的 UserInfo 响应必须使用的签名算法——即在合作伙伴处注册为 userinfo_signed_response_alg 的算法（OpenID Connect Core 1.0 第 5.3.2 节）。无论是否设置此项，已签名的响应都会用合作伙伴的密钥验证；设置后，以其他算法签名的响应不会被使用。为空即默认值：JSON 响应，或以其密钥所属家族任何算法签名的响应。"
+  },
+  "fed.schema.attributes.fedRefreshTokens.what": {
+    "en": "eaa1a36d346a058b",
+    "text": "仅限 OPENID CONNECT。TRUE 会将合作伙伴在登录时签发的刷新令牌加密保存，与其开启的会话放在一起，并用它保持该会话的身份为最新（OpenID Connect Core 1.0 第 12 节）：每隔 fedRefreshEverySeconds 刷新一次会话的令牌，新的 ID Token 必须标明相同的 iss 和 sub，并且 UserInfo 必须仍为该 sub 作答。合作伙伴拒绝的刷新，或未通过这些检查的响应，会结束该会话。令牌随会话一起消亡。FALSE 为默认值：合作伙伴的令牌只在登录时使用一次，随后丢弃——这里不持有其他服务的任何凭据，而合作伙伴自己的注销和 Shared Signals 才是提前结束会话的方式。"
+  },
+  "fed.schema.attributes.fedRefreshEverySeconds.what": {
+    "en": "d839fb1f30532e3a",
+    "text": "在 fedRefreshTokens 开启时：会话的令牌每隔多少秒刷新一次。为空：在访问令牌过期时（其 expires_in），若合作伙伴未给出过期时间则每小时一次。计划任务 federation.partner-refresh 每十五秒检查一次。"
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "仅限 OPENID CONNECT。TRUE 会在每次登录开始时（OpenID Connect Discovery 1.0 第 4 节）从合作伙伴的发现文档 {fedPeer}/.well-known/openid-configuration 读取其端点和 jwks_uri，该文档的 issuer 必须与 fedPeer 完全一致；此时不读取 fedSsoUrl、fedTokenUrl、fedUserinfoUrl 和 fedJwksUri。该地址由管理员配置的 fedPeer 推导而来，绝不来自请求。FALSE 为默认值：端点由人工配置。"

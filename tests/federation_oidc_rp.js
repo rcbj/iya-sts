@@ -30,7 +30,11 @@
 //      issuer refused (0204);
 //   5. the login initiation endpoint: off refuses (0205), another iss
 //      refuses (0206), the right one starts the sign-in with the
-//      login_hint passed on.
+//      login_hint passed on;
+//   6. refresh tokens (fedRefreshTokens): a held token refreshed when due
+//      and UserInfo asked with the new access token; a refreshed ID Token
+//      naming another iss (0211) and a refused refresh (0210) end the
+//      session; an ended session's token is gone.
 // The conformance suite's relying-party plans drive the same code over the
 // wire (`tests/protocol/sts_oidcc_rp_conformance.js`); this pins each
 // refusal's code and that nothing is dialled after it.
@@ -88,7 +92,7 @@ function childMain() {
     jwk.kid = 'frp-1';
     jwk.use = 'sig';
     jwk.alg = 'RS256';
-    const op = { calls: [], scenario: {} };
+    const op = { calls: [], scenario: {}, byToken: {} };
     const sign = function (claims) {
       const input = b64u({ alg: 'RS256', kid: 'frp-1', typ: 'JWT' }) + '.' +
                     b64u(claims);
@@ -121,7 +125,19 @@ function childMain() {
           return send(200, { keys: [jwk] });
         }
         if (/\/token$/.test(url.pathname)) {
+          // A refresh answers by the token it was sent, so each held
+          // session keeps its own case whatever order they are refreshed in.
+          if (/grant_type=refresh_token/.test(body)) {
+            const rt = new URLSearchParams(body).get('refresh_token');
+            const how = op.byToken[rt] || {};
+            return how.refuse
+              ? send(400, { error: 'invalid_grant' })
+              : send(200, { access_token: 'at-' + rt,
+                            token_type: 'Bearer', refresh_token: rt,
+                            id_token: sign(how.claims()) });
+          }
           return send(200, { access_token: 'at-back', token_type: 'Bearer',
+                             refresh_token: s.rt || 'rt-none',
                              id_token: sign(s.backClaims()) });
         }
         if (/\/userinfo$/.test(url.pathname)) {
@@ -445,6 +461,60 @@ function childMain() {
     note(started.status === 502 && coded('STS-FED-0204') === before + 1,
          '4c. a document naming another issuer is refused (STS-FED-0204)',
          started.status);
+
+    // --- 6. refresh tokens ---------------------------------------------------
+    const fedSp = require(ROOT_DIR + '/federation/federation_sp');
+    const REFRESH = make('frp-ref-' + stamp, { fedRefreshTokens: 'TRUE',
+                                               fedRefreshEverySeconds: '1' });
+    const fresh = function () {
+      const now = Math.floor(Date.now() / 1000);
+      return { iss: opBase, sub: 'frp-person', aud: 'frp-client', iat: now,
+               exp: now + 300 };
+    };
+    const refreshCase = async function (rt, how) {
+      const jar = {};
+      const started = await begin(REFRESH, jar);
+      op.byToken[rt] = how;
+      op.scenario = { rt: rt, backClaims: function () {
+        return claims(started);
+      } };
+      await call('GET', '/federation/acs/' + REFRESH + '?state=' +
+        encodeURIComponent(started.params.get('state')) + '&code=c-r', null,
+        jar);
+      op.calls = [];
+      return fedSp.refreshDue(Date.now() + 5000);
+    };
+    const bearers = function () {
+      return op.calls.filter(function (c) {
+        return c.path === '/op/userinfo';
+      }).map(function (c) {
+        return c.auth;
+      });
+    };
+    let counts = await refreshCase('rt-good', { claims: fresh });
+    note(counts.refreshed === 1 && counts.ended === 0 &&
+         bearers().indexOf('Bearer at-rt-good') >= 0,
+         '6a. a held refresh token is refreshed when due, and UserInfo asked ' +
+         'with the new access token', JSON.stringify(counts) + ' ' +
+         JSON.stringify(bearers()));
+    before = coded('STS-FED-0211');
+    counts = await refreshCase('rt-iss', { claims: function () {
+      return Object.assign(fresh(), { iss: 'https://another.example/' });
+    } });
+    note(counts.ended === 1 && coded('STS-FED-0211') === before + 1 &&
+         bearers().indexOf('Bearer at-rt-iss') < 0,
+         '6b. a refreshed ID Token naming another iss ends the session ' +
+         '(STS-FED-0211), and UserInfo is not asked for it',
+         JSON.stringify(counts) + ' ' + JSON.stringify(bearers()));
+    before = coded('STS-FED-0210');
+    counts = await refreshCase('rt-refused', { refuse: true });
+    note(counts.ended === 1 && coded('STS-FED-0210') === before + 1,
+         '6c. a refresh the partner refuses ends the session (STS-FED-0210)',
+         JSON.stringify(counts));
+    counts = await fedSp.refreshDue(Date.now() + 5000);
+    note(counts.refreshed === 1 && counts.ended === 0,
+         '6d. an ended session\'s token is gone: only the live one is ' +
+         'refreshed again', JSON.stringify(counts));
 
     // --- 5. the login initiation endpoint ------------------------------------
     before = coded('STS-FED-0205');

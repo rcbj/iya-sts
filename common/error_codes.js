@@ -12730,6 +12730,19 @@ const CODES = [
       'asked of a relationship that is not a service-provider-side OpenID ' +
       'Connect one, or the partner\'s key set could not be read (#930).',
     spec: 'HTTP 400 (API) or a 303 with error='},
+  { code: 'STS-FED-0210',
+    summary: 'A federated session\'s partner refresh (fedRefreshTokens, ' +
+      'the federation.partner-refresh job) was refused by the partner, or ' +
+      'its held refresh token would not open, so the session was ended; ' +
+      'or the partner could not be reached, and the refresh is tried ' +
+      'again in a minute (#930).',
+    spec: 'none — the job\'s audit row and log' },
+  { code: 'STS-FED-0211',
+    summary: 'The ID Token a partner returned for a federated session\'s ' +
+      'refresh did not verify, or named another iss or sub than the ' +
+      'session\'s (OpenID Connect Core 1.0 section 12.2), so the session ' +
+      'was ended (#930).',
+    spec: 'none — the job\'s audit row and log' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

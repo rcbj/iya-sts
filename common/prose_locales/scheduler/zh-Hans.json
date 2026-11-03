@@ -103,6 +103,14 @@
     "en": "c8990a4ca5b5163e",
     "text": "在 federation.encryptionKeyGraceS 过后，从每个联合关系中移除被轮换替换的加密密钥。该密钥在那一刻就已停止解密；此作业只是将它从条目上移除。"
   },
+  "sched.jobs.federation.partner-refresh.title": {
+    "en": "5354cb5ed3b1e58f",
+    "text": "联合会话的合作伙伴刷新"
+  },
+  "sched.jobs.federation.partner-refresh.describe": {
+    "en": "6fc466ab1fe4b653",
+    "text": "对于开启了 fedRefreshTokens 的 OpenID Connect 关系：在到期时刷新每个持有合作伙伴令牌的会话的令牌，检查新的 ID Token 和 UserInfo 是否仍指向此人，并在合作伙伴拒绝或响应不再指向此人时结束会话（#930）。"
+  },
   "sched.jobs.federation.provision-idle.title": {
     "en": "20200542bb3c76b9",
     "text": "联合预配闲置清理"

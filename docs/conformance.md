@@ -132,9 +132,8 @@ the End-User for the OpenID4VP verifier.
 * Reading the provider's endpoints from its discovery document, and a sign-in
   the provider starts (`initiate_login_uri`). Both are off by default.
 
-**Relying-party modules that are argued, not passed:** the refresh-token
-plan, because iya-sts keeps no refresh token issued by a partner; the logout
-plan's Session Management module, because iya-sts does not poll a partner's
+**Relying-party modules that are argued, not passed:** the logout plan's
+Session Management module, because iya-sts does not poll a partner's
 `check_session_iframe` (Back-Channel Logout tells it the same thing); and the
 Dynamic plan, because a relationship is configured by an administrator rather
 than registered by iya-sts itself, found by WebFinger, or sent request

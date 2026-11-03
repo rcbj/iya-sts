@@ -508,7 +508,8 @@ class FederationPage {
               // OpenID Connect's discovery and partner-started sign-in
               // (#930), both off by default.
               .concat(row.protocol === 'oidc'
-                ? ['fedDiscovery', 'fedInitiateLogin'] : [])
+                ? ['fedDiscovery', 'fedInitiateLogin', 'fedRefreshTokens']
+                : [])
           : []).map(function (name) {
         const field = json.schema.filter(
             function (f) { return f.name === name; })[0];

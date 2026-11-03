@@ -1172,6 +1172,38 @@ const SCHEMA = {
             'federation.jwtAlgorithms allows. Set it: an empty one accepts ' +
             'a token signed by another of the partner\'s keys under ' +
             'another algorithm.' },
+    { name: 'fedUserinfoSignedResponseAlg', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      enum: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256',
+             'ES384', 'ES512'],
+      what: 'OPENID CONNECT ONLY. The algorithm a SIGNED UserInfo answer ' +
+            'must be signed with — what was registered at the partner as ' +
+            'userinfo_signed_response_alg (OpenID Connect Core 1.0 section ' +
+            '5.3.2). A signed answer is verified against the partner\'s ' +
+            'keys whether or not this is set; set, one under another ' +
+            'algorithm is not used. Empty, the default: a JSON answer, or a ' +
+            'signed one under any algorithm of its key\'s family.' },
+    { name: 'fedRefreshTokens', kind: 'single', role: 'service-provider',
+      from: 'this register',
+      what: 'OPENID CONNECT ONLY. TRUE keeps the refresh token the partner ' +
+            'issues at sign-in, sealed, with the session it started, and ' +
+            'uses it to keep that session\'s identity current (OpenID ' +
+            'Connect Core 1.0 section 12): every fedRefreshEverySeconds the ' +
+            'session\'s tokens are refreshed, a new ID Token must name the ' +
+            'same iss and sub, and UserInfo must still answer for that sub. ' +
+            'A refresh the partner refuses, or an answer that fails those ' +
+            'checks, ENDS the session. The token dies with the session. ' +
+            'FALSE, the default: the partner\'s tokens are used once, at ' +
+            'sign-in, and discarded — nothing here holds a credential at ' +
+            'another service, and the partner\'s own sign-out and Shared ' +
+            'Signals are what end the session early.' },
+    { name: 'fedRefreshEverySeconds', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      what: 'With fedRefreshTokens on: how often, in seconds, a session\'s ' +
+            'tokens are refreshed. Empty: when the access token expires ' +
+            '(its expires_in), or hourly where the partner names no expiry. ' +
+            'The scheduler job federation.partner-refresh looks every ' +
+            'fifteen seconds.' },
     { name: 'fedDiscovery', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'OPENID CONNECT ONLY. TRUE reads the partner\'s endpoints and ' +
@@ -1705,6 +1737,9 @@ const EDITABLE = {
   fedScope: 'set',
   fedResponseType: 'set',
   fedIdTokenSignedResponseAlg: 'set',
+  fedUserinfoSignedResponseAlg: 'set',
+  fedRefreshTokens: 'set',
+  fedRefreshEverySeconds: 'set',
   fedDiscovery: 'set',
   fedInitiateLogin: 'set',
   fedBinding: 'set',
@@ -3209,6 +3244,81 @@ function clientSecretOf(record) {
   log.debug("Leaving clientSecretOf(). " + (opened ? 'Opened.' :
                                                      'Will not open.'));
   return opened ? String(opened) : '';
+}
+
+// A PARTNER'S REFRESH TOKEN (#930), sealed as the client secret is — under a
+// durable key-encryption key, with a label of its own — while it is held for
+// the session it came with.
+const PARTNER_REFRESH_SEAL_LABEL = 'federation-partner-refresh-token';
+
+/**
+ * Seals a partner's refresh token where the process holds a durable
+ * key-encryption key; returns it as given where it does not.
+ *
+ * @param value - the refresh token
+ * @returns `{ ok, value }`
+ */
+function sealPartnerToken(value) {
+  log.debug("Entering sealPartnerToken().");
+  log.debug("Leaving sealPartnerToken().");
+  return sealClientSecret(value, PARTNER_REFRESH_SEAL_LABEL);
+}
+
+/**
+ * Opens a partner's refresh token sealed by `sealPartnerToken()`.
+ *
+ * @param stored - what was stored
+ * @returns the token, or empty when it will not open
+ */
+function openPartnerToken(stored) {
+  log.debug("Entering openPartnerToken().");
+  const text = String(stored || '');
+  if (text.indexOf(SEALED_PREFIX) !== 0) {
+    log.debug("Leaving openPartnerToken(). In clear.");
+    return text;
+  }
+  const keystore = require('../common/keystore');
+  const opened = keystore.open(text.slice(SEALED_PREFIX.length),
+                               PARTNER_REFRESH_SEAL_LABEL);
+  log.debug("Leaving openPartnerToken(). " + (opened ? 'Opened.' :
+                                                       'Will not open.'));
+  return opened ? String(opened) : '';
+}
+
+/**
+ * Says whether an OpenID Connect relationship keeps the partner's refresh
+ * token to keep its sessions' identity current (`fedRefreshTokens`, #930).
+ *
+ * @param record - the relationship
+ * @returns whether it does
+ */
+function refreshesTokens(record) {
+  log.debug("Entering refreshesTokens().");
+  log.debug("Leaving refreshesTokens().");
+  return !!record && record.fedProtocol === 'oidc' &&
+         boolOf(record.fedRefreshTokens, false);
+}
+
+/**
+ * Returns how many seconds after a refresh the next one is due: the
+ * relationship's fedRefreshEverySeconds, else the access token's expires_in,
+ * else an hour.
+ *
+ * @param record - the relationship
+ * @param expiresIn - the access token's expires_in, if the partner sent one
+ * @returns the seconds
+ */
+function refreshAfterSeconds(record, expiresIn) {
+  log.debug("Entering refreshAfterSeconds().");
+  const every = parseInt(String((record && record.fedRefreshEverySeconds) ||
+                                ''), 10);
+  if (every > 0) {
+    log.debug("Leaving refreshAfterSeconds(). Configured.");
+    return every;
+  }
+  const expiry = Number(expiresIn);
+  log.debug("Leaving refreshAfterSeconds().");
+  return expiry > 0 ? expiry : 3600;
 }
 
 /**
@@ -5321,6 +5431,10 @@ module.exports = {
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
   clientSecretOf: clientSecretOf,
+  sealPartnerToken: sealPartnerToken,
+  openPartnerToken: openPartnerToken,
+  refreshesTokens: refreshesTokens,
+  refreshAfterSeconds: refreshAfterSeconds,
   clientSigningKeyOf: clientSigningKeyOf,
   // The authorization request parameters fedAuthorizeParams may not name
   // (#565), for federation_sp.ts's request builder.

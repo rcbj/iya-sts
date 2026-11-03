@@ -2361,9 +2361,12 @@ CONNECT RELYING PARTY PLANS*.
   (`TWO_SIGN_INS`). The static client and the relationship register
   `RS256` as `id_token_signed_response_alg`, which is what made the wrong-alg
   Logout Token a refusal (`STS-FED-0208`).
+* **The refresh-token plan** runs against a relationship with
+  `fedRefreshTokens` on and `fedRefreshEverySeconds` 5, so the
+  `federation.partner-refresh` job (every fifteen seconds) refreshes inside
+  the module's time (rcbj's decision, 2026-11-03).
 * **Argued, not passed** (`EXPECTED` and `EXPECTED_PLANS` in the driver): the
-  refresh-token plan, the logout plan's session-management module and the
-  whole dynamic plan, each a decision `federation/CLAUDE.md` records. A
+  logout plan's session-management module and the whole dynamic plan, each a decision `federation/CLAUDE.md` records. A
   module argued to wait out its time is given `ARGUED_SECONDS` (30) through
   `runModule()`'s new deadline argument rather than `MODULE_SECONDS`, and is
   not run again.
