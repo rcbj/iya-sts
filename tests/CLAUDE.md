@@ -2418,6 +2418,34 @@ does. The suite's
 own pages at `https://localhost.emobix.co.uk:8443/plan-detail.html?plan=<id>`
 (the job logs the id) show every module's log.
 
+### The HOSTED suite, for certification (#1293, 2026-11-03)
+
+**`tests/tools/oidf_certification.js` is not a job**: it is how the runs an
+OpenID Provider certification is submitted from are made, on
+`www.certification.openid.net` against a deployment the suite can reach
+(`test-idp.iyasec.io` by default). It shares `conformance_suite.js` and
+`conformance_browser.js` with `sts_oidcc_conformance.js` (the key-rotation
+operator moved into the helper so the two have one copy), and differs where
+certification differs:
+
+* **One kept realm** (`oidf-cert`), product mode unless `--development`,
+  post-quantum signing off; one alias (`iya-sts`), the plans one at a time,
+  because two plans under one alias interfere.
+* **A report, not a verdict**: certification reads the module result, not our
+  ledger, so every module that did not PASS is listed and a plan with a FAILED
+  or INTERRUPTED module is marked not certifiable. Nothing is published.
+* **Only the certification profiles**, the logout ones once per
+  `--logout-response-types`; Session Management only when named (the suite's
+  HtmlUnit cannot load the OP iframe, `EXPECTED` in the job).
+* **The tokens are passed in and never written down**: the suite's API token
+  (`--token-file` / `CONFORMANCE_SUITE_TOKEN`, which `conformance_suite.js`
+  sends as a Bearer token and which turns certificate verification on against
+  the system roots) and the target's `sts-api-client` secret
+  (`--admin-secret-file` / `STS_ADMIN_API_CLIENT_SECRET`).
+* **The target must admit the suite.** `testidp-deploy.yml`'s `allowed_ip`
+  has to let in the OpenID Foundation's servers (their addresses are not
+  published) and the machine running the tool, whose Chrome is the person.
+
 ## THE SCIM CONFORMANCE HARNESSES (#206, 2026-09-26)
 
 **No official SCIM conformance suite exists** — the IETF working group
