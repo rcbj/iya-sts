@@ -5622,6 +5622,15 @@ function create(options) {
 
     open: function () {
       log.debug('Entering the postgres driver open().');
+      // A MARIADB STORE IS OPENED BY ITS OWN STEPS (#677): its catalog is
+      // `information_schema`, its DDL commits on its own, and it has nothing
+      // older to bring forward. `persistence/open_mariadb.js` argues each.
+      if (engine === 'mariadb') {
+        log.debug('Leaving the postgres driver open(). MariaDB.');
+        return require('./open_mariadb').open(pool, log).then(function () {
+          return null;
+        });
+      }
       const created = [];
       let late = [];
       log.debug("Leaving open().");
@@ -6008,9 +6017,16 @@ function create(options) {
       out.pool = pool.stats();
 
       log.debug("Leaving metrics().");
+      // MariaDB's probes and its statement bound (#677): `max_statement_time`
+      // is in seconds, and setting it back to 0 is its RESET.
+      const mariadb = engine === 'mariadb';
+      const probes = mariadb ? require('./metrics_mariadb').METRIC_PROBES
+        : METRIC_PROBES;
       return pool.connect().then(function (client) {
         const unguard = guardClient(client, 'the metrics page');
-        return client.query('SET statement_timeout = ' + timeoutMs)
+        return client.query(mariadb
+          ? 'SET SESSION max_statement_time = ' + (timeoutMs / 1000)
+          : 'SET statement_timeout = ' + timeoutMs)
           .catch(function (err) {
             // Swallowed with a reason: a server that refuses to set a
             // statement timeout is a server this page can still report on,
@@ -6025,7 +6041,7 @@ function create(options) {
               out.timeoutSet = true;
             }
             let chain = Promise.resolve();
-            METRIC_PROBES.forEach(function (probe) {
+            probes.forEach(function (probe) {
               chain = chain.then(function () {
                 const started = Date.now();
                 return client.query(probe.sql).then(function (result) {
@@ -6073,7 +6089,9 @@ function create(options) {
             // server and the connection string say, which is the only
             // definition of "as we found it" that stays right when somebody
             // changes either.
-            return client.query('RESET ALL').catch(function (err) {
+            return client.query(mariadb
+              ? 'SET SESSION max_statement_time = 0' : 'RESET ALL'
+            ).catch(function (err) {
               log.warn(errorCodes.tag('STS-STORE-0033') +
                        'persistence: a metrics connection could not be reset ' +
                        '(' + err.message + '); it is being discarded rather ' +

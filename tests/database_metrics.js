@@ -117,6 +117,28 @@ async function run(t) {
             'thing that varies is which of them ran');
   });
 
+  // MARIADB'S PROBES (#677) ARE HELD TO THE SAME RULES: a read, a literal,
+  // no separator, no parameter, in a group the page draws.
+  const mariaProbes = require('../persistence/metrics_mariadb').METRIC_PROBES;
+  t.check(mariaProbes.length >= 8,
+          'MariaDB\'s probe table is published too', mariaProbes.length +
+          ' probe(s)');
+  mariaProbes.forEach(function (probe) {
+    const upper = probe.sql.toUpperCase();
+    const found = FORBIDDEN.filter(function (verb) {
+      return new RegExp('\\b' + verb + '\\b').test(upper);
+    });
+    t.check(/^\s*SELECT\b/i.test(probe.sql) && found.length === 0 &&
+            probe.sql.indexOf(';') < 0 && probe.sql.indexOf('?') < 0,
+            'the MariaDB "' + probe.id + '" probe is a SELECT with no write ' +
+            'verb, separator or parameter', found.join(','));
+  });
+  ['server', 'size', 'database', 'tables', 'indexes'].forEach(function (id) {
+    t.check(mariaProbes.some(function (probe) {
+      return probe.id === id;
+    }), 'MariaDB answers the "' + id + '" probe the page derives from');
+  });
+
   t.log.info('=== B. the probe table and the page\'s sections agree ===');
 
   const sections = database.sections();
@@ -130,6 +152,16 @@ async function run(t) {
             'render, costs a round trip, and is shown to nobody — and that ' +
             'is an error NOWHERE: the page renders perfectly without it',
             probe.group);
+  });
+  mariaProbes.forEach(function (probe) {
+    t.check(sectionGroups.indexOf(probe.group) >= 0,
+            'the MariaDB "' + probe.id + '" probe is in a group the page has ' +
+            'a section for', probe.group);
+  });
+  sections.forEach(function (section) {
+    t.check(mariaProbes.some(function (probe) {
+      return probe.group === section.group;
+    }), 'the "' + section.group + '" section has a MariaDB probe too');
   });
   sections.forEach(function (section) {
     t.check(probeGroups.indexOf(section.group) >= 0,
