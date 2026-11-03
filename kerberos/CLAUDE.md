@@ -3,7 +3,7 @@
 Kerberos v5 — a KDC on raw TCP and UDP 88 and over MS-KKDCP, an acceptor over
 HTTP as SPNEGO (RFC 4559/4178), and **a way of signing in with it**. (The
 Kerberos-protected demonstration service and pages left for the development
-companion on #595 — *The demonstration left the runtime*, at the foot.) Twenty-one files, and they divide into three groups — the
+companion on #595 — *The demonstration left the runtime*, at the foot.) Twenty-two files, and they divide into three groups — the
 two stored-key modules of 2026-09-12, the two FAST modules of 2026-09-22, the
 krbtgt rotation of 2026-09-23, the two PKINIT modules of 2026-10-05 and the
 trust register of 2026-10-19 (#430, `krb5_trusts.ts`) belong to the service
@@ -2961,3 +2961,48 @@ nothing was added to the closure. But it loads `krb5_kdc.js`,
 * `tests/random_username.js` (vendored here, not `local`) parses
   `/krb5/principals`; it must read `GET /admin-api/kerberos/principals`
   (`accountPolicy`, `database`).
+
+## A TICKET AS A WS-TRUST OR TOKEN-EXCHANGE TOKEN (#658, 2026-11-03)
+
+**`krb5_tokens.ts` is the one place either protocol touches Kerberos.** It
+covers the Kerberos Token Profile 1.1's six AP-REQ forms, accepting and
+issuing; WS-Trust and the token endpoint read seats and speak their own
+errors. It requires only `common/` modules at load and every module of this
+directory lazily: `krb5_kdc.js` registers `/KdcProxy` when required, and
+WS-Trust (7) and `oauth2` (9) are required before it (15).
+
+* **ACCEPTING is `accept()`, unchanged**, with `record: false`, so only a
+  ticket for the acceptor's own SPN is a token. `krb5_service.js` now returns
+  the decrypted ticket's facts (`ticket`: cname, times, flags, authorization
+  data, sname) on both success results. No require was added. The library
+  reads the PAC's S4U_DELEGATION_INFO and the FORWARDED flag off them and
+  reports the shape; the callers decide.
+* **ISSUING is `krb5_kdc.js`'s `mintTicket()`**: a ticket sealed with the
+  realm's keys and `buildPacFor()`, for a subject and a service the caller has
+  already decided on. It runs no AS or TGS exchange and decides no policy.
+  PRE-AUTHENT is not set (no AS exchange verified anything). FORWARDABLE is set
+  only when asked, never for a protected person; OK-AS-DELEGATE comes from
+  `krb5TrustedForDelegation`. S4U_DELEGATION_INFO is written when the caller
+  names a chain. A `krbtgt/<other realm>` service is a referral: its PAC is
+  signed with the trust key, as `issueReferral()` signs one. A foreign subject
+  needs the PAC their own token carried (`STS-KRB-0248`). Codes
+  `STS-KRB-0244`–`0248`. No require was added.
+* **ACROSS A TRUST (D8)** the library is the CLIENT. It mints the subject's
+  referral TGT toward the next hop, then sends real TGS-REQs through
+  `handleMessage()`, so every hop's KDC applies its own trust record. Only a
+  realm a trust realm of this process serves is reachable (`STS-KRB-0252`):
+  no trust record carries a KDC's address, and none is dialled.
+* **A FORWARDED TGT IN AN ISSUED TOKEN (D7)** is a `mintTicket()` of
+  `krbtgt/<realm>` with FORWARDED, wrapped in a KRB-CRED under the
+  Authenticator's subkey at key usage 14, in the 0x8003 checksum with
+  GSS_C_DELEG_FLAG.
+* **`factorsFor()` MOVED HERE** from `spnego_authn.ts`, which now asks it: a
+  Kerberos token's `amr` / `acr` is read exactly as a SPNEGO ticket's.
+
+**THE PARENT PROJECT'S COPY CLOSURE IS UNCHANGED.** `krb5_kdc.js` and
+`krb5_service.js` gained code and no require; `krb5_tokens.ts` is reached
+only from WS-Trust and the token endpoint, neither in the closure.
+
+`tests/kerberos_tokens.js` holds it in process (W, D, O, X, S, R), and
+`tests/protocol/sts_kerberos_tokens.js` over TCP 88. The interop jobs (MIT
+`kvno`, Samba) were not extended to present a token to WS-Trust.

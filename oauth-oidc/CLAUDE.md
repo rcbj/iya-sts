@@ -6020,3 +6020,40 @@ Left whole elsewhere in this family, each for its reason: `request_object.ts`'s
 token, a `jti`, a grant id, a pairwise subject and a GNAP management handle are
 identifiers or are already digests; `consent_screen.pending`'s id is bound to
 the person's session and answers nothing without it.
+
+## KERBEROS TOKENS IN THE TOKEN EXCHANGE (#658, 2026-11-03)
+
+The six Kerberos Token Profile 1.1 URIs are `EXCHANGE_TOKEN_TYPES` kind
+`kerberos` (rcbj's D1: WS-Trust's vocabulary). The token is the AP-REQ (or
+its GSS wrapping), base64url. Everything Kerberos is
+`kerberos/krb5_tokens.ts`'s; this file has three methods:
+
+* **`kerberosSubject()`**: accepted by the acceptor in every mode, for this
+  server's own SPN. A delegated subject is an S4U2Proxy ticket whose last
+  transited service's application registers the client's `client_id`
+  (`registersClient()`, `0989`), or a FORWARDED one to a client with
+  `krb5TrustedForDelegation` (`0990`). Anything else is `0991` (D2), unless the
+  ticket's client is the client's own service principal (a self exchange). The
+  prior transited services become `act`, the most recent outermost. S is the
+  client's application (D3). A person needs an entry (`0992`); a principal of
+  another realm is allowed only when a Kerberos token is asked for. The
+  subject is recorded there, not by the generic row.
+* **`kerberosActor()`**: the ticket's client is the client's own service
+  principal (`0993`).
+* **`kerberosExchangeToken()`**: one Kerberos target (`0995`). TLS is required
+  (`0996`, D5: the subkey goes back as `session_key`). The act chain, innermost
+  first, becomes S4U_DELEGATION_INFO (D4 for a party with no SPN). The answer
+  is `issued_token_type` the URI, `token_type` `N_A`, and `expires_in` the
+  AP-REQ's own window. No refresh token or ID Token is issued.
+
+**WHY `registersClient()` AND NOT `forClientId()`.** A party is matched by
+asking whether ITS application registers the client_id. Resolving the
+client_id to one application was flaky in testing: another entry registering
+the same client_id was found first about one run in nine.
+
+Settings: `oauth2.tokenExchangeKerberosInput` (on, `0987`) and
+`oauth2.tokenExchangeKerberosOutput` (off, `0994`), both checked in
+`exchangeTypeProblem()`. A `requested_token_type` naming a Kerberos type is
+the one value no longer "read as a request and answered with an access
+token". Tests: `tests/kerberos_tokens.js` X and
+`tests/protocol/sts_kerberos_tokens.js` 4.

@@ -212,3 +212,16 @@ reads the Ecdsa-Sig-Value itself. P-256 and P-384 encodings are unchanged.
 
 `@noble/post-quantum` was already a dependency (`common/pq_jose.js`) and its own
 nested `@noble/hashes` is unaffected.
+
+## `xmldsig.js` READS AND SIGNS HMAC SINCE #658 (2026-11-03)
+
+Four HMAC SignatureMethods (`xmldsig#hmac-sha1`, `xmldsig-more#hmac-sha256`,
+`-sha384`, `-sha512`) are in `SIG_METHODS`, family `hmac`, keyKind `secret`,
+for a WS-Security signature keyed by a Kerberos token's session key (the
+Kerberos Token Profile 1.1 section 3.2). The engine verifies none itself:
+`verifyXml()` hands the octets to the caller's `opts.verifier`, which
+`common/crypto.js`'s `verifyWsSecurityHmac()` supplies. `signWsSecurity()`
+takes the post-quantum path's `opts.signer` / `opts.keyInfoXml` for one. An
+X.509 path that meets an HMAC method refuses it at
+`verifyXmlSignatureValue()`'s key-type check, because no public key is
+`secret`. The rows also appear on `/admin/crypto-metadata`'s XML table.

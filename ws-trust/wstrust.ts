@@ -1696,6 +1696,16 @@ class WsTrust {
                      errorCodes.codeOf(reading) === 'STS-KEYS-0163'
                        ? 'AuthenticationBadElements' : undefined);
     }
+    // A SIGNATURE MADE WITH A KERBEROS TOKEN'S KEY (#658, rcbj's D7): its
+    // KeyInfo names a Kerberos token in this header, and nothing about it is
+    // X.509 — see kerberosSignature(). Nothing to prepare: the token was
+    // accepted (and spent) by prepareKerberosAt(), which is its replay check.
+    const named = reading.keyReference || {};
+    if (named.kind === 'kerberos' || named.kind === 'kerberos-id') {
+      log.debug("Leaving WsTrust.messageSignature(). A Kerberos key.");
+      return prepare ? null
+        : this.kerberosSignature(doc, xml, reading, connection, refused);
+    }
     let gates: any = null;
     try {
       gates = loadTlsClientCertificates();
@@ -1773,40 +1783,13 @@ class WsTrust {
       log.debug("Leaving WsTrust.messageSignature(). It does not verify.");
       return refused('STS-WSTRUST-0045', String(verified.why));
     }
-    const body = this.signedBodyOf(doc);
-    const outside = RST_PARTS.filter((name: string): boolean => {
-      const all = doc.getElementsByTagNameNS('*', name);
-      for (let i = 0; i < all.length; i++) {
-        if (!body || !this.isWithin(all[i], body)) {
-          return true;
-        }
-      }
-      return false;
-    });
-    if (outside.length) {
-      log.debug("Leaving WsTrust.messageSignature(). Parts outside the Body.");
-      return refused('STS-WSTRUST-0046', 'the request carries ' +
-                     outside.join(', ') + ' outside the signed SOAP Body, ' +
-                     'and this service reads the request from the whole ' +
-                     'document');
+    const parts = this.signedPartsProblem(doc, reading, refused);
+    if (parts.refusal) {
+      log.debug("Leaving WsTrust.messageSignature(). The signed parts.");
+      return parts.refusal;
     }
-    const skewMs =
-      Math.max(0, Number(config.value('oauth2.clockSkewS')) || 0) * 1000;
-    const now = Date.now();
-    const created = Date.parse(String(reading.timestamp.created || ''));
-    const expires = Date.parse(String(reading.timestamp.expires || ''));
-    if (isNaN(created) || isNaN(expires) || created - skewMs > now) {
-      log.debug("Leaving WsTrust.messageSignature(). The Timestamp.");
-      return refused('STS-WSTRUST-0047', isNaN(created) || isNaN(expires)
-        ? 'its wsu:Timestamp does not carry a readable Created and Expires'
-        : 'its wsu:Timestamp was Created at ' + reading.timestamp.created +
-          ', ahead of this service\'s clock by more than oauth2.clockSkewS');
-    }
-    if (expires + skewMs <= now) {
-      log.debug("Leaving WsTrust.messageSignature(). Expired.");
-      return refused('STS-WSTRUST-0048', 'its wsu:Timestamp expired at ' +
-                     reading.timestamp.expires, 'ExpiredData');
-    }
+    const skewMs = parts.skewMs;
+    const expires = parts.expires;
     const name = String(identity.username);
     const isClient = identity.kind === 'application';
     const fingerprint = stsCrypto.digest('sha256', identity.leaf, 'hex');
@@ -1866,6 +1849,123 @@ class WsTrust {
 
   // THE Body: the direct child of the Envelope, which is the element the
   // signature reading checked by position.
+  // ---------------------------------------------------------------------------
+  // WHAT A SIGNED REQUEST MUST HAVE SIGNED, for both kinds of key (#521;
+  // shared since #658): every RST_PARTS element inside the signed Body
+  // (`0046`) and a Timestamp that is fresh (`0047`, `0048`). Answers
+  // `{ refusal }` or `{ skewMs, expires }`.
+  // ---------------------------------------------------------------------------
+  private signedPartsProblem(doc, reading, refused): any {
+    const { config, log } = this.deps;
+    log.debug("Entering WsTrust.signedPartsProblem().");
+    const body = this.signedBodyOf(doc);
+    const outside = RST_PARTS.filter((name: string): boolean => {
+      const all = doc.getElementsByTagNameNS('*', name);
+      for (let i = 0; i < all.length; i++) {
+        if (!body || !this.isWithin(all[i], body)) {
+          return true;
+        }
+      }
+      return false;
+    });
+    if (outside.length) {
+      log.debug("Leaving WsTrust.signedPartsProblem(). Outside the Body.");
+      return { refusal: refused('STS-WSTRUST-0046', 'the request carries ' +
+                     outside.join(', ') + ' outside the signed SOAP Body, ' +
+                     'and this service reads the request from the whole ' +
+                     'document') };
+    }
+    const skewMs =
+      Math.max(0, Number(config.value('oauth2.clockSkewS')) || 0) * 1000;
+    const now = Date.now();
+    const created = Date.parse(String(reading.timestamp.created || ''));
+    const expires = Date.parse(String(reading.timestamp.expires || ''));
+    if (isNaN(created) || isNaN(expires) || created - skewMs > now) {
+      log.debug("Leaving WsTrust.signedPartsProblem(). The Timestamp.");
+      return { refusal: refused('STS-WSTRUST-0047',
+        isNaN(created) || isNaN(expires)
+          ? 'its wsu:Timestamp does not carry a readable Created and Expires'
+          : 'its wsu:Timestamp was Created at ' + reading.timestamp.created +
+            ', ahead of this service\'s clock by more than ' +
+            'oauth2.clockSkewS') };
+    }
+    if (expires + skewMs <= now) {
+      log.debug("Leaving WsTrust.signedPartsProblem(). Expired.");
+      return { refusal: refused('STS-WSTRUST-0048', 'its wsu:Timestamp ' +
+                                'expired at ' + reading.timestamp.expires,
+                                'ExpiredData') };
+    }
+    log.debug("Leaving WsTrust.signedPartsProblem().");
+    return { skewMs: skewMs, expires: expires };
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REQUESTER AUTHENTICATED BY A SIGNATURE WITH A KERBEROS TOKEN'S
+  // SESSION KEY (#658, rcbj's decision D7). The Kerberos Token Profile 1.1
+  // section 3.2: the signature's KeyInfo names a Kerberos token in this
+  // header — by a Reference to its BinarySecurityToken, or by its
+  // `#Kerberosv5APREQSHA1` key identifier — and it is an HMAC keyed with the
+  // token's session key (the Authenticator's subkey where it carries one),
+  // which the acceptor established when it accepted the token. So:
+  //
+  //   * the token is the requester's credential first (kerberosCredential():
+  //     accepted, not disabled, its codes `0054`–`0057`);
+  //   * the HMAC verifies with its key (`crypto.verifyWsSecurityHmac()`,
+  //     every guard readWsSecuritySignature() applies, no truncated HMAC) —
+  //     `0045` otherwise, the code a signature that does not verify has;
+  //   * the signed parts and the Timestamp, as for an X.509 signature
+  //     (`0046`–`0048`);
+  //   * a signature naming a Kerberos token the header does not carry is
+  //     `0069`.
+  //
+  // REPLAY needs nothing of its own: the token inside was accepted once and
+  // spent, so the same signed request presented again is refused at the
+  // token (`0056`). Both modes check all of it: nothing here is a credential
+  // development believes, because the key is the acceptor's to establish.
+  // ---------------------------------------------------------------------------
+  private kerberosSignature(doc, xml, reading, connection, refused): any {
+    const { stsCrypto, log } = this.deps;
+    log.debug("Entering WsTrust.kerberosSignature().");
+    const ref = reading.keyReference || {};
+    const tokens = this.kerberosElementsIn(this.credentialScope(doc))
+      .filter((one) => !this.insideAnotherPartysToken(one));
+    const el = tokens.filter((one) => {
+      const text = this.kerberosTextOf(one);
+      return ref.kind === 'kerberos'
+        ? text === String(ref.tokenB64 || '')
+        : krb5Tokens.keyIdentifierOf(Buffer.from(text, 'base64')) ===
+          String(ref.keyIdentifier || '');
+    })[0] || null;
+    if (!el) {
+      log.debug("Leaving WsTrust.kerberosSignature(). No such token.");
+      return refused('STS-WSTRUST-0069', 'its KeyInfo names a Kerberos ' +
+                     'token this security header does not carry');
+    }
+    const credential = this.kerberosCredential(el, connection);
+    if (!credential.ok) {
+      log.debug("Leaving WsTrust.kerberosSignature(). The token.");
+      return credential;
+    }
+    const verdict = credential.kerberos;
+    const key = verdict.subkey && verdict.subkey.key ? verdict.subkey.key
+      : (verdict.sessionKey ? verdict.sessionKey.key : null);
+    const verified = stsCrypto.verifyWsSecurityHmac(xml, { key: key });
+    if (!verified.ok) {
+      log.debug("Leaving WsTrust.kerberosSignature(). It does not verify.");
+      return refused('STS-WSTRUST-0045', String(verified.why));
+    }
+    const parts = this.signedPartsProblem(doc, reading, refused);
+    if (parts.refusal) {
+      log.debug("Leaving WsTrust.kerberosSignature(). The signed parts.");
+      return parts.refusal;
+    }
+    log.debug("Leaving WsTrust.kerberosSignature(). " + credential.subject);
+    return Object.assign({}, credential, {
+      method: 'a WS-Security signature with a Kerberos token\'s session key',
+      note: credential.note + ' The signature over the SOAP Body and ' +
+            'Timestamp verified with the token\'s session key.' });
+  }
+
   private signedBodyOf(doc): any {
     const { log } = this.deps;
     log.debug("Entering WsTrust.signedBodyOf().");
@@ -2788,8 +2888,11 @@ class WsTrust {
                    'which is sent only over TLS; this request arrived ' +
                    'without it.');
     }
-    const application = c.audience ? this.appliesToApplication(c.audience)
-                                   : null;
+    // appliesToApplication() answers the identifier; the entry is read for
+    // its SPN and its krb5TrustedForDelegation.
+    const appliedTo = c.audience ? this.appliesToApplication(c.audience) : '';
+    const application = appliedTo
+      ? this.deps.applications.get(appliedTo) : null;
     const target = krb5Tokens.servicePrincipalOf(application) ||
       krb5Tokens.servicePrincipalOf({ identifier: c.audience });
     if (!target) {

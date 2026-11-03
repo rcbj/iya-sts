@@ -279,6 +279,24 @@ DIRECT CHILD, and additionally refuses a signature whose reference names
 something else, which none of the four ever checked. `tests/crypto_module.js`
 asserts all of it and was mutation-tested against eight mutants.
 
+**HMAC, FOR A KERBEROS TOKEN'S KEY, AND THE PROFILE'S SHA-1 IDENTIFIER (#658,
+2026-11-03).** Three additions, each confined to the one caller that needs it:
+
+* **`verifyWsSecurityHmac()`**: a WS-Security signature keyed by the session
+  key a Kerberos token established (the Kerberos Token Profile 1.1 section
+  3.2). It applies every guard of `readWsSecuritySignature()`, then requires
+  an HMAC method, refuses an `HMACOutputLength` (CVE-2009-0217), and compares
+  in constant time.
+* **The four HMAC methods** are registered with key type `secret`. Every path
+  that verifies with a certificate therefore refuses one at
+  `verifyXmlSignatureValue()`'s key-type check. HMAC-SHA1 is SHA-1 to the
+  algorithm policy.
+* **Key references.** `keyReferenceOf()` reads a Reference to a Kerberos
+  BinarySecurityToken and the `#Kerberosv5APREQSHA1` KeyIdentifier.
+  `kerberosTokenKeyIdentifier()` is the SHA-1 that identifier is: the
+  profile fixes it, it is compared and never trusted for integrity, so
+  `digest()`'s list, which refuses SHA-1 to anything new, was not widened.
+
 **EVERY SIGNATURE FAMILY NODE VERIFIES IS VERIFIED, AND SHA-1 IS A SETTING
 (2026-09-17, #37 follow-up; section 1a of the file).** Until then every XML
 signature this service checked had to be RSA: the vendored engine implements

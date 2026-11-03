@@ -829,8 +829,10 @@ most `devices.maxPerPerson` (20); the whole register is
 
 **Token exchange reads its token types.** Every RFC 8693 exchange must send
 `subject_token_type` (and `actor_token_type` with an `actor_token`); each
-must be `access_token`, `refresh_token`, `id_token` or `jwt`; and a token this
-service issued must be the type it is declared as. Anything else is refused
+must be `access_token`, `refresh_token`, `id_token`, `jwt`, `saml2`, `saml1`
+or one of the six Kerberos token types
+([a Kerberos ticket](configure-oauth2-grants.md#a-kerberos-ticket-as-the-subject-the-actor-or-the-token-issued));
+and a token this service issued must be the type it is declared as. Anything else is refused
 `invalid_request`.
 
 ### Backchannel sign-in (OpenID Connect CIBA Core 1.0)

@@ -1098,6 +1098,13 @@ const JOBS = [
   // either mode. It replaces, here, the parent's in-process delegation jobs,
   // which lose their fixture rules without a directory (kerberos/CLAUDE.md).
   { file: 'sts_kerberos_delegation.js',  browser: false },
+  // KERBEROS TOKENS IN WS-TRUST AND THE TOKEN EXCHANGE (#658, 2026-11-03):
+  // over TCP 88 and HTTP, in either mode (it builds its own services and
+  // person): a person's AP-REQ for the service SPN as the WS-Trust
+  // requester, an S4U2Proxy ticket inside ActAs, a GSS Kerberos token issued
+  // for the back end and opened with its keytab, and the same ticket as an
+  // RFC 8693 subject_token for an access token and for a Kerberos token.
+  { file: 'sts_kerberos_tokens.js',      browser: false },
   // A KERBEROS SIGN-OUT OUTLIVES THE NEXT AS EXCHANGE (#111, 2026-09-23):
   // over TCP 88, a TGT from before a global sign-out refused
   // KDC_ERR_TGT_REVOKED, a new AS exchange straight after it accepted, the

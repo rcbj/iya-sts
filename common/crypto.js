@@ -552,6 +552,20 @@ addSignatureMethod(XMLDSIG_MORE_2021 + 'eddsa-ed25519', 'eddsa', null,
 addSignatureMethod(XMLDSIG_MORE_2021 + 'eddsa-ed448', 'eddsa', null,
                    ['ed448'], 'EdDSA Ed448 (RFC 9231)');
 addSignatureMethod(DS_NS + 'dsa-sha1', 'dsa', 'sha1', ['dsa'], 'DSA-SHA1');
+// THE HMAC METHODS (#658): a WS-Security signature keyed by a Kerberos
+// token's session key (Kerberos Token Profile 1.1 section 3.2). Their key
+// type is `secret`, which no certificate's public key is, so every path that
+// verifies with a certificate refuses one (verifyXmlSignatureValue()); only
+// verifyWsSecurityHmac() checks them, with the key the acceptor established.
+// HMAC-SHA1 is SHA-1 to the algorithm policy, as every SHA-1 method is.
+[['sha1', DS_NS + 'hmac-sha1'],
+ ['sha256', XMLDSIG_MORE + 'hmac-sha256'],
+ ['sha384', XMLDSIG_MORE + 'hmac-sha384'],
+ ['sha512', XMLDSIG_MORE + 'hmac-sha512']].forEach(function (row) {
+  addSignatureMethod(row[1], 'hmac', row[0], ['secret'],
+                     'HMAC-' + hashLabel(row[0]) + ' (a Kerberos token\'s ' +
+                     'session key)');
+});
 addSignatureMethod(XMLDSIG11 + 'dsa-sha256', 'dsa', 'sha256', ['dsa'],
                    'DSA-SHA256 (XMLDSig 1.1)');
 // The post-quantum rows come from the vendored registry, so the two cannot
@@ -1453,6 +1467,11 @@ function directChildrenByLocal(parent, localName) {
 // section 7.2, which names a certificate and signs nothing with SHA-1), its
 // issuer and serial, or its Subject Key Identifier. `{ kind, … }` or
 // `{ problem }`.
+// The Kerberos Token Profile 1.1's six ValueTypes (#658).
+const KERBEROS_TOKEN_TYPE = new RegExp('^http://docs\\.oasis-open\\.org/wss/' +
+  'oasis-wss-kerberos-token-profile-1\\.1#(GSS_)?Kerberosv5_AP_REQ' +
+  '(1510|4120)?$');
+
 function keyReferenceOf(sigEl, security) {
   log.debug("Entering keyReferenceOf().");
   const keyInfo = directChildByLocal(sigEl, 'KeyInfo');
@@ -1478,6 +1497,13 @@ function keyReferenceOf(sigEl, security) {
                         'security header' };
     }
     const valueType = String(tokens[0].getAttribute('ValueType') || '');
+    // #658: a Kerberos token, whose session key the signature is made with.
+    if (KERBEROS_TOKEN_TYPE.test(valueType)) {
+      log.debug("Leaving keyReferenceOf(). A Kerberos token.");
+      return { kind: 'kerberos', id: id, valueType: valueType,
+               tokenB64: String(tokens[0].textContent || '')
+                 .replace(/\s+/g, '') };
+    }
     if (!/#X509v3$/.test(valueType)) {
       log.debug("Leaving keyReferenceOf(). Not an X.509 token.");
       return { problem: 'the referenced wsse:BinarySecurityToken is a "' +
@@ -1497,6 +1523,12 @@ function keyReferenceOf(sigEl, security) {
     const hex = /#HexBinary$/.test(encoding)
       ? text.toLowerCase()
       : Buffer.from(text, 'base64').toString('hex');
+    // #658: the Kerberos Token Profile's own key identifier, the SHA-1 of
+    // the token, which names a Kerberos token in the same header.
+    if (/#Kerberosv5APREQSHA1$/.test(valueType) && text) {
+      log.debug("Leaving keyReferenceOf(). A Kerberos key identifier.");
+      return { kind: 'kerberos-id', keyIdentifier: text };
+    }
     if (/#ThumbprintSHA1$/.test(valueType) && hex.length === 40) {
       log.debug("Leaving keyReferenceOf(). A thumbprint.");
       return { kind: 'thumbprint', sha1: hex };
@@ -1792,6 +1824,100 @@ function verifyWsSecuritySignature(xml, opts) {
   return Object.assign({}, reading, { ok: true, signatureValid: true,
                                       referencesValid: true,
                                       signerSubject: found.subject });
+}
+
+// ---------------------------------------------------------------------------
+// A WS-SECURITY SIGNATURE MADE WITH A KERBEROS TOKEN'S KEY (#658). The
+// Kerberos Token Profile 1.1, section 3.2: a signature whose KeyInfo names a
+// Kerberos token is keyed with that token's session key — the
+// Authenticator's subkey where it carries one, the ticket's session key
+// otherwise — which the acceptor established when it accepted the token.
+// Every guard readWsSecuritySignature() applies is applied first (one
+// signature, unique ids, exclusive c14n, the Body and the Timestamp covered
+// by position); then the method must be an HMAC one, with NO
+// HMACOutputLength (a truncated HMAC is CVE-2009-0217's forgery), and the
+// value is compared in constant time.
+// ---------------------------------------------------------------------------
+/**
+ * Verifies a WS-Security signature made with a shared key (an HMAC), the key
+ * a Kerberos token established. It answers rather than throws.
+ *
+ * @param xml - the SOAP envelope
+ * @param opts - `key`: the key bytes
+ * @returns the reading, with `ok` now meaning the HMAC and every reference's
+ *   digest verified; a refusal marked with its code
+ */
+function verifyWsSecurityHmac(xml, opts) {
+  log.debug("Entering verifyWsSecurityHmac().");
+  const options = opts || {};
+  const reading = readWsSecuritySignature(xml);
+  if (!reading.present || !reading.ok) {
+    log.debug("Leaving verifyWsSecurityHmac(). The reading refused it.");
+    return reading;
+  }
+  const row = XML_SIGNATURE_METHODS[String(reading.signatureMethod || '')];
+  if (!row || row.family !== 'hmac' || !options.key ||
+      !Buffer.from(options.key).length) {
+    log.debug("Leaving verifyWsSecurityHmac(). Not an HMAC, or no key.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: 'a signature keyed by a Kerberos token is an HMAC; this ' +
+                  'one is ' + String(reading.signatureMethod || 'nothing') }),
+                           'STS-KEYS-0061');
+  }
+  const doc = new xmldom.DOMParser().parseFromString(String(xml), 'text/xml');
+  const header = directChildByLocal(doc.documentElement, 'Header');
+  const security = directChildByLocal(header, 'Security');
+  const sigEl = directChildByLocal(security, 'Signature', DS_NS);
+  const methodEl = directChildByLocal(
+    directChildByLocal(sigEl, 'SignedInfo', DS_NS), 'SignatureMethod', DS_NS);
+  if (methodEl && directChildByLocal(methodEl, 'HMACOutputLength')) {
+    log.debug("Leaving verifyWsSecurityHmac(). A truncated HMAC.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: 'the SignatureMethod carries an HMACOutputLength; a ' +
+                  'truncated HMAC is refused (CVE-2009-0217)' }),
+                           'STS-KEYS-0061');
+  }
+  const key = Buffer.from(options.key);
+  let result;
+  try {
+    result = xmldsig.verifyXml(new xmldom.XMLSerializer()
+      .serializeToString(sigEl), {
+      referencedXml: String(xml),
+      verifier: function (octets, signatureBytes) {
+        const expected = nodeCrypto.createHmac(row.hash, key)
+          .update(Buffer.from(String(octets), 'binary')).digest();
+        const given = Buffer.from(String(signatureBytes), 'binary');
+        return given.length === expected.length &&
+          nodeCrypto.timingSafeEqual(given, expected);
+      }
+    });
+  } catch (e) {
+    log.debug("Caught in verifyWsSecurityHmac(): " + ((e && e.message) || e));
+    log.debug("Leaving verifyWsSecurityHmac(). The engine threw.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             why: (e && e.message) || String(e) }), 'STS-KEYS-0011');
+  }
+  if (!result.signatureValid) {
+    log.debug("Leaving verifyWsSecurityHmac(). The value.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             signatureValid: false,
+             why: 'the HMAC does not verify with the Kerberos token\'s ' +
+                  'session key' }), 'STS-KEYS-0012');
+  }
+  if (!result.referencesValid) {
+    const bad = (result.references || []).filter(function (one) {
+      return !one.ok;
+    })[0];
+    log.debug("Leaving verifyWsSecurityHmac(). A digest.");
+    return errorCodes.mark(Object.assign({}, reading, { ok: false,
+             signatureValid: true, referencesValid: false,
+             why: 'the HMAC is genuine but the part ' +
+                  (bad ? bad.uri + ' ' : '') + 'was altered after it was ' +
+                  'signed' }), 'STS-KEYS-0013');
+  }
+  log.debug("Leaving verifyWsSecurityHmac(). Verified.");
+  return Object.assign({}, reading, { ok: true, signatureValid: true,
+                                      referencesValid: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -17307,6 +17433,7 @@ module.exports = {
   verifyXmlSignature: verifyXmlSignature,
   readWsSecuritySignature: readWsSecuritySignature,
   verifyWsSecuritySignature: verifyWsSecuritySignature,
+  verifyWsSecurityHmac: verifyWsSecurityHmac,
   signQueryString: signQueryString,
   verifyQueryString: verifyQueryString,
   idOf: idOf,

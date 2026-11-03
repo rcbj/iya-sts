@@ -8443,6 +8443,25 @@ class OAuth2Server {
     return audience;
   }
 
+  /**
+   * Says whether an application is the client a client_id names: its
+   * identifier, or a client_id it registers (#658).
+   *
+   * @param application - the application entry, or null
+   * @param clientId - the client_id
+   * @returns true when it is that client
+   */
+  static registersClient(application: Json, clientId: Json): boolean {
+    helpers.log.debug("Entering OAuth2Server.registersClient().");
+    const id = String(clientId || '');
+    const registered = application && application.fields
+      ? [].concat(application.fields.oauthClientId || []).map(String) : [];
+    const out = !!application && !!id &&
+      (String(application.identifier) === id || registered.indexOf(id) >= 0);
+    helpers.log.debug("Leaving OAuth2Server.registersClient(). " + out);
+    return out;
+  }
+
   // ---------------------------------------------------------------------------
   // KERBEROS TOKENS IN THE TOKEN EXCHANGE (#658, 2026-11-02).
   //
@@ -8496,15 +8515,25 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.kerberosSubject(). Refused.");
       return refuse('STS-OAUTH-0988', verdict.reason);
     }
+    // WHETHER A PARTY IS THE EXCHANGING CLIENT is asked of the PARTY's
+    // application — does it register this client_id? — rather than by
+    // resolving the client_id to one application, which another entry
+    // registering the same client_id (a sighting) could answer first.
     const clientApp = applications.forClientId(String(client.client_id)) ||
       applications.get(String(client.client_id));
-    const clientId = clientApp ? String(clientApp.identifier)
-                               : String(client.client_id);
     const subjectApp = verdict.isService ? applications.get(verdict.name)
                                          : null;
-    const selfExchange = !!subjectApp && !!clientApp &&
-      String(subjectApp.identifier) === String(clientApp.identifier);
+    const selfExchange = OAuth2Server.registersClient(subjectApp,
+                                                      client.client_id);
     const transited = (verdict.transited || []).map(String);
+    const lastApp = verdict.shape === 's4u2proxy' && transited.length
+      ? applications.get(krb5Tokens.applicationOfTransited(
+        transited[transited.length - 1])) : null;
+    const clientId = lastApp && OAuth2Server.registersClient(lastApp,
+      client.client_id) ? String(lastApp.identifier)
+      : (selfExchange ? String(subjectApp.identifier)
+         : (clientApp ? String(clientApp.identifier)
+                      : String(client.client_id)));
     if (verdict.shape === 'none' && !selfExchange) {
       log.debug("Leaving OAuth2Server.kerberosSubject(). Not delegated.");
       return refuse('STS-OAUTH-0991', 'The Kerberos subject_token was not ' +
@@ -8516,12 +8545,13 @@ class OAuth2Server {
     }
     if (verdict.shape === 's4u2proxy') {
       const last = transited.length ? transited[transited.length - 1] : '';
-      if (!last || krb5Tokens.applicationOfTransited(last) !== clientId) {
+      if (!last || !OAuth2Server.registersClient(lastApp, client.client_id)) {
         log.debug("Leaving OAuth2Server.kerberosSubject(). Another's.");
         return refuse('STS-OAUTH-0989', 'The Kerberos subject_token\'s ' +
                       'S4U_DELEGATION_INFO names ' + (last || 'nobody') +
                       ' as the service that obtained it, and the exchanging ' +
-                      'client is ' + clientId + '. Only the party a ticket ' +
+                      'client is ' + String(client.client_id) +
+                      '. Only the party a ticket ' +
                       'was delegated to may exchange it.');
       }
     } else if (verdict.shape === 'forwarded' &&
@@ -8623,12 +8653,9 @@ class OAuth2Server {
       return { error: 'invalid_request', code: 'STS-OAUTH-0988',
                description: verdict.reason };
     }
-    const clientApp = applications.forClientId(String(client.client_id)) ||
-      applications.get(String(client.client_id));
     const actorApp = verdict.isService ? applications.get(verdict.name)
                                        : null;
-    if (!clientApp || !actorApp ||
-        String(actorApp.identifier) !== String(clientApp.identifier)) {
+    if (!OAuth2Server.registersClient(actorApp, client.client_id)) {
       log.debug("Leaving OAuth2Server.kerberosActor(). Another's.");
       return { error: 'invalid_request', code: 'STS-OAUTH-0993',
                description: 'The Kerberos actor_token\'s client is ' +
