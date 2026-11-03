@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "Cuántos certificados de cliente TLS aún válidos puede emitirse una persona en el portal de usuario — uno por navegador o dispositivo. Un certificado revocado o caducado no cuenta. Por encima, el portal rechaza (STS-PKI-0170) en lugar de revocar un certificado anterior que alguien puede seguir usando. La emisión también está sujeta a pki.personSelfService y a los dos límites de frecuencia de autoservicio de arriba."
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "Pares de claves de firma que una persona puede tener por perfil"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "Cuántos pares de claves de firma de aserciones todavía válidos puede tener una persona para CADA perfil —RFC 7523 (JWT) y RFC 7522 (SAML 2.0) se cuentan por separado—, ya se hayan emitido en el portal de usuario, los haya emitido un administrador o se hayan subido. Un par de claves revocado o caducado no cuenta. Al superarlo, el portal sustituye su botón Generar por una nota y todas las puertas lo rechazan (STS-PKI-0223) en lugar de revocar un par de claves anterior que alguien todavía puede estar usando."
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "Certificados de cliente TLS por aplicación"

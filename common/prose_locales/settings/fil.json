@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "Ilang valid pang TLS client certificate ang puwedeng iisyu ng isang tao para sa sarili nila sa user portal — isa bawat browser o device. Hindi binibilang ang revoked o expired na certificate. Lampas dito, tumatanggi ang portal (STS-PKI-0170) sa halip na i-revoke ang mas lumang certificate na baka ginagamit pa ng isang tao. Sakop din ng pki.personSelfService at ng dalawang self-service rate limit sa itaas ang pag-isyu ng isa."
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "Mga signing key pair na puwedeng hawakan ng isang tao bawat profile"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "Ilang valid pa na assertion signing key pair ang puwedeng hawakan ng isang tao para sa BAWAT profile — hiwalay na binibilang ang RFC 7523 (JWT) at RFC 7522 (SAML 2.0) — na-issue man sa user portal, na-issue ng isang administrator o na-upload. Hindi binibilang ang key pair na na-revoke o nag-expire. Kapag nalampasan ito, papalitan ng portal ng isang tala ang Generate button nito at tatanggi ang bawat pinto (STS-PKI-0223) sa halip na i-revoke ang mas lumang key pair na baka ginagamit pa ng isang tao."
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "Mga TLS client certificate na puwedeng hawakan ng isang application"

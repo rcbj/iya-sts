@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "Hur många fortfarande giltiga TLS-klientcertifikat en person får utfärda till sig själv i användarportalen — ett per webbläsare eller enhet. Ett återkallat eller utgånget certifikat räknas inte. Därutöver avvisar portalen (STS-PKI-0170) i stället för att återkalla ett äldre certifikat som någon kanske fortfarande använder. Utfärdandet omfattas också av pki.personSelfService och av de två hastighetsgränserna för självbetjäning ovan."
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "Signeringsnyckelpar som en person får ha per profil"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "Hur många fortfarande giltiga nyckelpar för signering av intyganden en person får ha för VARJE profil — RFC 7523 (JWT) och RFC 7522 (SAML 2.0) räknas var för sig — oavsett om de utfärdats på användarportalen, av en administratör eller laddats upp. Ett återkallat eller utgånget nyckelpar räknas inte. Därutöver ersätter portalen sin Skapa-knapp med en notis och varje dörr nekar (STS-PKI-0223) i stället för att återkalla ett äldre nyckelpar som någon kanske fortfarande använder."
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "TLS-klientcertifikat som en applikation får ha"
