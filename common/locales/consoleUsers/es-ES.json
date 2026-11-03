@@ -24,5 +24,6 @@
   "mfaSection.siopLocationAppTip": "Nombre que dio la aplicación de cartera: {name}",
   "mfaSection.siopLocationAppUnnamedTip": "Una aplicación de cartera respondió a la solicitud; no indicó su nombre.",
   "mfaSection.siopLocationAdminTip": "Registrado por valor por un administrador; no intervino ninguna cartera.",
-  "mfaSection.siopLocationNoneTip": "Se registró antes de que este servicio anotara de dónde procede una clave. Si la persona la demuestra de nuevo con su cartera, queda anotado."
+  "mfaSection.siopLocationNoneTip": "Se registró antes de que este servicio anotara de dónde procede una clave. Si la persona la demuestra de nuevo con su cartera, queda anotado.",
+  "mfaSection.pubCustodyWallet": "La cartera de la persona"
 }

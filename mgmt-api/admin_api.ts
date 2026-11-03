@@ -7144,6 +7144,40 @@ class AdminApi {
                     "endpoint.");
         } },
 
+      // PUBLISHED DIDs, ONE PERSON'S (#1291). The list the Published DIDs
+      // block on /admin/users draws.
+      { method: 'GET', path: BASE + '/users/published-dids',
+        tag: 'Users', operationId: 'getUserPublishedDids',
+        summary: 'The did:web DIDs this realm publishes for one person',
+        description: 'Each did:web this realm publishes for the person ' +
+                     '(#1291): its random id (`rid`), the DID, where its ' +
+                     'document is (`documentUrl`), who holds its key ' +
+                     '(`custody`: `wallet`, `realm` or `download`), its ' +
+                     '`state` (`active`, `deactivated`, or `suspended` ' +
+                     'while the account is disabled), the provenance of ' +
+                     'its self-issued subject (`proof`), whether it is the ' +
+                     'preferred DID, its `currentVersion`, any change ' +
+                     'waiting for its new key (`pending`), and every ' +
+                     'version with its keys (ids and algorithms, never a ' +
+                     'private key) and what authorized it. Beside them, ' +
+                     'whether the realm publishes DIDs now ' +
+                     '(`did.personPublishing`), its custody and how many ' +
+                     'active ones a person may hold. An administrator may ' +
+                     'deactivate one (`deactivate-published-did`) and ' +
+                     'never create or change one.',
+        mirrors: 'GET /admin/users',
+        parameters: [
+          { name: 'user', in: 'query', required: true,
+            schema: { type: 'string' },
+            description: 'The person, as /admin-api/users names them.' }
+        ],
+        responseDescription: 'The published DIDs.',
+        handler: function (req, res) {
+          log.debug("Entering the management API published DIDs endpoint.");
+          self.sendJson(res, 200, adminViews.publishedDidsJson(req.query));
+          log.debug("Leaving the management API published DIDs endpoint.");
+        } },
+
       // IDENTITY VERIFICATIONS, ONE PERSON'S, PAGED (#127). The list the
       // Identity verifications block on /admin/users draws.
       { method: 'GET', path: BASE + '/users/verifications', tag: 'Users',
@@ -8985,6 +9019,44 @@ class AdminApi {
               additionalProperties: false
             },
             responseDescription: 'The preferred DID, or none.' },
+
+          { action: 'deactivate-published-did',
+            operationId: 'deactivateUserPublishedDid',
+            summary: 'Deactivate a did:web this realm publishes for ' +
+                     'somebody',
+            description: 'Deactivates one of the person\'s published DIDs ' +
+                         '(#1291): its address answers 410 Gone with ' +
+                         '`{ id, deactivated: true }` for good, a resolver ' +
+                         'reports `deactivated: true`, its version history ' +
+                         'stays resolvable, and it no longer signs the ' +
+                         'person in, nor is it preferred or released in the ' +
+                         '`did` claim. A deactivated DID is never ' +
+                         'reactivated. An administrator never creates or ' +
+                         'changes one: that is the person\'s act on ' +
+                         '/portal/self-issued. A DID the person does not ' +
+                         'hold, or one already deactivated, is refused ' +
+                         '(STS-VC-0172).',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                user: { type: 'string',
+                        description:
+                          'The person, as /admin-api/users names them.' },
+                username: { type: 'string',
+                            description: 'Accepted for `user`.' },
+                did: { type: 'string',
+                       description: 'The DID, or its random id (`rid`), ' +
+                                    'as GET /admin-api/users/' +
+                                    'published-dids lists it.' }
+              },
+              required: ['user', 'did'],
+              examples: [{ user: 'alice',
+                           did: 'did:web:sts.example:users:' +
+                                'qL8R4QIcQ_ZsRqOAbeRfcZ' }],
+              additionalProperties: false
+            },
+            responseDescription: 'The DID deactivated.' },
 
           { action: 'record-verification',
             operationId: 'recordUserVerification',
