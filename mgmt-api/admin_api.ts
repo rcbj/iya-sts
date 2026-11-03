@@ -13952,8 +13952,19 @@ class AdminApi {
              'Send fedSignalsEvents to the stream',
              'A PATCH of `events_requested` to the relationship\'s ' +
              '`fedSignalsEvents`. Audited.'],
+            ['signals-replace-stream', 'replaceFederationSignalsStream',
+             'Replace the stream\'s configuration at the partner',
+             'SSF 1.0 section 8.1.1.4: a PUT of the stream_id and every ' +
+             'receiver-supplied property — the delivery the stream has, ' +
+             '`fedSignalsEvents` as `events_requested`, the description. A ' +
+             'push stream is given a new authorization header, held once ' +
+             'the partner accepts it. Audited.'],
             ['signals-delete-stream', 'deleteFederationSignalsStream',
              'Delete the stream at the partner', 'Audited.'],
+            ['signals-read-status', 'readFederationSignalsStatus',
+             'Read the stream\'s status from the partner',
+             'SSF 1.0 section 8.1.2.1; the status is held and shown. ' +
+             'Audited.'],
             ['signals-verify', 'verifyFederationSignalsStream',
              'Ask the partner for a verification event',
              'SSF 1.0 section 8.1.4.2: its state is checked when the event ' +

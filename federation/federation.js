@@ -1358,7 +1358,8 @@ const SCHEMA = {
     { name: 'fedSignalsScope', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'The scope asked for with client credentials. Empty asks for ' +
-            '`ssf.manage`, which includes read.' },
+            '`ssf.read ssf.manage`, the CAEP Interoperability Profile\'s ' +
+            'two (section 2.7.3).' },
     { name: 'fedSignalsBearer', kind: 'single', role: 'service-provider',
       sensitive: true, from: 'this register',
       what: 'A BEARER TOKEN THE PARTNER ISSUED, instead of client ' +
@@ -3099,7 +3100,13 @@ function signalsCredentialOf(record) {
     clientSecret: own ? openSignalsSecret(r.fedSignalsClientSecret)
       : (openSignalsSecret(r.fedSignalsClientSecret) ||
          clientSecretOf(r)),
-    scope: String(r.fedSignalsScope || '').trim() || 'ssf.manage'
+    // BOTH OF THE CAEP INTEROPERABILITY PROFILE'S SCOPES (#932; section
+    // 2.7.3): `ssf.read` for reading the stream and its status and for
+    // polling, `ssf.manage` for creating, changing and verifying it. It was
+    // `ssf.manage` alone, which this service's own transmitter reads as
+    // including read and a transmitter keeping to the profile refuses at
+    // the first poll.
+    scope: String(r.fedSignalsScope || '').trim() || 'ssf.read ssf.manage'
   };
 }
 
