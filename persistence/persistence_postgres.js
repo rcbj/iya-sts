@@ -136,6 +136,9 @@ const storePortable = require('./store_portable');
 // What this service mints, in statements a second engine runs (#677, 3b).
 // A LIBRARY, built in create() only when it is used.
 const mintedPortable = require('./minted_portable');
+// The embedded directory's store on MariaDB (#677, phase 3b). A LIBRARY, built
+// in create() only when the engine is not PostgreSQL.
+const directoryPortable = require('./directory_portable');
 // The directory's lookups as SQL (#349): one builder for this driver and the
 // bridge's thread. A leaf.
 const directoryQueries = require('./directory_queries');
@@ -3993,6 +3996,12 @@ function create(options) {
   // sequential scan — which, once none is NULL, reads the whole table.
   function unindexedRemain() {
     log.debug("Entering unindexedRemain().");
+    if (directoryStore) {
+      // No MariaDB entry was ever written without its keys
+      // (`directory_portable.js`), and asking would be a scan.
+      log.debug("Leaving unindexedRemain(). MariaDB.");
+      return Promise.resolve(false);
+    }
     log.debug("Leaving unindexedRemain().");
     return maintenanceQuery('the data-key index',
       'SELECT 1 AS remain FROM sts_ldap_entries WHERE dek_keys IS NULL ' +
@@ -4017,6 +4026,11 @@ function create(options) {
   // ---------------------------------------------------------------------------
   async function indexSealedEntries(budgetMs) {
     log.debug("Entering indexSealedEntries().");
+    if (directoryStore) {
+      // Nothing to catch up on MariaDB (unindexedRemain()).
+      log.debug("Leaving indexSealedEntries(). MariaDB.");
+      return { indexed: 0, remaining: false };
+    }
     const started = Date.now();
     const budget = Math.max(0, Number(budgetMs) || 0);
     let afterRealm = '';
@@ -4083,6 +4097,10 @@ function create(options) {
   // ---------------------------------------------------------------------------
   function directoryDekCounts(wanted) {
     log.debug("Entering directoryDekCounts().");
+    if (directoryStore) {
+      log.debug("Leaving directoryDekCounts(). MariaDB.");
+      return directoryStore.directoryDekCounts(wanted);
+    }
     const ids = wanted ? Array.from(wanted).map(String) : null;
     log.debug("Leaving directoryDekCounts().");
     return unindexedRemain().then(function (remain) {
@@ -4639,6 +4657,31 @@ function create(options) {
         tombstone: TOMBSTONE, indexMark: MINTED_INDEX_MARK,
         sessionMark: { realm: SESSION_INDEX_MARK_REALM,
                        key: SESSION_INDEX_MARK_KEY }
+      })
+    : null;
+
+  // ---------------------------------------------------------------------
+  // THE DIRECTORY'S STORE ON MARIADB (#677, phase 3b), or null for
+  // PostgreSQL's own statements. ONLY WHEN THE ENGINE IS NOT POSTGRESQL, and
+  // not under `persistence.sqlDialect=portable`: it writes
+  // `sts_ldap_entry_keys`, which PostgreSQL's schema has not got. It runs in
+  // this driver's transactions (`withTransaction()`, the fence first), records
+  // its change rows through `recordChanges()`, and gives the creates' claims
+  // back through the portable cluster statements.
+  // `persistence/directory_portable.js` argues each contract.
+  // ---------------------------------------------------------------------
+  const directoryStore = dialect.engine !== 'postgres'
+    ? directoryPortable.forDriver({
+        dialect: dialect, pool: pool, readPool: readPool,
+        ensurePool: tallyPool,
+        entryCodec: entryCodec, entryFromRow: entryFromRow,
+        openedOfRow: openedOfRow, withTransaction: withTransaction,
+        recordChanges: recordChanges, maintenance: maintenance,
+        extraSealed: EXTRA_SEALED, sealedLike: sealedLike,
+        resealText: resealText,
+        releaseClaims: function (client, rows) {
+          return portable.releaseClaims(client, rows);
+        }
       })
     : null;
 
@@ -6242,10 +6285,11 @@ function create(options) {
     loadDirectory: function () {
       log.debug('Entering the postgres driver loadDirectory().');
       log.debug("Leaving loadDirectory().");
-      return readPool.query(
+      // On MariaDB a primary-key page at a time (`directory_portable.js`).
+      return (directoryStore ? directoryStore.loadRows() : readPool.query(
         'SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at ' +
         'FROM sts_ldap_entries ORDER BY realm, dn_key'
-      ).then(function (result) {
+      )).then(function (result) {
         if (!result.rows.length) {
           log.debug('Leaving loadDirectory(). The table is empty.');
           return null;
@@ -6436,7 +6480,9 @@ function create(options) {
         ordered.forEach(function (row) {
           chain = chain.then(function () {
             return withTransaction(function (client) {
-              return mergeLostRow(client, row, outcomes);
+              return directoryStore
+                ? directoryStore.mergeLostRow(client, row, outcomes)
+                : mergeLostRow(client, row, outcomes);
             });
           });
         });
@@ -6488,6 +6534,17 @@ function create(options) {
         throw last;
       };
       const transactionBody = function (client) {
+        if (directoryStore) {
+          // MARIADB'S FLUSH (#677): the same locks, merge, writes, claims and
+          // change rows, and the key rows and counts this engine keeps in
+          // the driver (`directory_portable.js`).
+          return directoryStore.flushBody(client, {
+            merging: merging, blind: blind, deletes: change.deletes,
+            removedRealms: change.removedRealms,
+            releasing: change.releaseClaims || [], outcomes: outcomes,
+            pendingLost: pendingLost
+          });
+        }
         let chain = Promise.resolve();
         const moved = [];
         const stored = new Map();
@@ -7516,10 +7573,11 @@ function create(options) {
     readEntry: function (realmId, dnKey) {
       log.debug("Entering readEntry().");
       log.debug("Leaving readEntry().");
-      return readPool.query(
-        'SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at ' +
-        'FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2',
-        [realmId, dnKey]
+      return (directoryStore ? directoryStore.readRow(realmId, dnKey)
+        : readPool.query(
+          'SELECT realm, dn_key, dn, attrs, origin, created_at, modified_at ' +
+          'FROM sts_ldap_entries WHERE realm = $1 AND dn_key = $2',
+          [realmId, dnKey])
       ).then(function (r) {
         const row = (r.rows || [])[0];
         if (!row) {
@@ -7546,6 +7604,17 @@ function create(options) {
       log.debug("Entering directoryQuery(). " + name);
       let statement;
       const codecModule = require('./directory_codec');
+      if (directoryStore) {
+        // MariaDB's spelling of the same question (#677): keyed the same
+        // way, answered in the same shape, opened the same way.
+        log.debug("Leaving directoryQuery(). MariaDB.");
+        return Promise.resolve().then(function () {
+          return directoryStore.query(name, codecModule.keyArgs(name, args));
+        }).then(function (rows) {
+          return codecModule.openAnswer(entryCodec, name,
+            directoryQueries.answerOf(name, rows));
+        });
+      }
       try {
         // The values looked up, keyed; the answer, opened (#391 phase 6).
         statement = directoryQueries.build(name,
@@ -10360,6 +10429,10 @@ function create(options) {
     countSealed: function (dekIds) {
       log.debug("Entering countSealed().");
       const ids = (dekIds || []).map(String);
+      if (directoryStore) {
+        log.debug("Leaving countSealed(). MariaDB.");
+        return directoryStore.countSealed(ids);
+      }
       log.debug("Leaving countSealed().");
       return inTurns(ids, MAINTENANCE_CONCURRENCY, function (id) {
         const like = sealedLike(id);
@@ -10399,6 +10472,10 @@ function create(options) {
     // count of VALUES, which is what re-encryption has to re-seal.
     countAllSealed: function () {
       log.debug("Entering countAllSealed().");
+      if (directoryStore) {
+        log.debug("Leaving countAllSealed(). MariaDB.");
+        return directoryStore.countAllSealed();
+      }
       const pattern = '\\$aes(?:gcm|siv)\\$2\\$([A-Za-z0-9_.-]+)\\$';
       const one = function (table, column, where) {
         log.debug("Entering countAllSealed.one().");
@@ -10446,6 +10523,10 @@ function create(options) {
     resealSealed: function (dekIds, reseal, options) {
       log.debug("Entering resealSealed().");
       const ids = (dekIds || []).map(String);
+      if (directoryStore) {
+        log.debug("Leaving resealSealed(). MariaDB.");
+        return directoryStore.resealSealed(ids, reseal, options);
+      }
       const limit = Math.max(1, Number(options && options.limit) || 500);
       const ownHandle = (options && options.ownHandle) || function () {
         return false;

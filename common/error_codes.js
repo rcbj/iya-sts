@@ -1900,6 +1900,18 @@ const CODES = [
       'writers kept inserting and removing while it wrote it; the flush is ' +
       'rolled back and tried again later.',
     spec: '' },
+  { code: 'STS-STORE-0140',
+    summary: 'A directory flush was refused on MariaDB before it wrote: an ' +
+      'entry\'s DN key is longer than the 352 characters `dn_key` holds ' +
+      '(or its realm than 64), which InnoDB\'s key limit fixes; nothing ' +
+      'of the flush was written.',
+    spec: '' },
+  { code: 'STS-STORE-0141',
+    summary: 'A directory write on MariaDB found one of the count rows it ' +
+      'folds into gone between making it and adding to it (its realm was ' +
+      'removed meanwhile); the write was rolled back rather than counted ' +
+      'into nothing.',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
