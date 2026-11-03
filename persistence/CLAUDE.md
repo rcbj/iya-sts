@@ -187,11 +187,36 @@ windowed directory and on-demand minted stores are held whole. **What runs
 on MariaDB today**: the connection layer, the schema, and the coordination
 statements (`cluster_portable.js`, proved against MariaDB 11.8 by
 `tests/cluster_portable.js` section C). **What does not yet**: every other
-family's PostgreSQL text (the directory, minted state, sessions, keys,
-realms, settings, risk, reports, the metrics probes and open()'s catalog
-probes) — the next steps of phase 3, each proved the same way before it is
-switched on. Refused on MariaDB, each for its own reason: cells, the bulk
-import, cell conversion, the directory window, the risk installer.
+family's PostgreSQL text (the directory, minted state, sessions, risk, the
+metrics probes and open()'s catalog probes) — the next steps of phase 3,
+each proved the same way before it is switched on. Refused on MariaDB, each
+for its own reason: cells, the bulk import, cell conversion, the directory
+window, the risk installer.
+
+**The smaller tables run on MariaDB (#677, phase 3b): `store_portable.js`**,
+built where `cluster_portable.js` is and on the same rule — the realm
+registry and settings, the keys (`mergeKeys()` included), the change rows
+(`recordChanges()` keeps its counting and nudge and sends each chunk through
+`insertChanges()`, on the caller's connection, so the directory and minted
+flushes' transactions write them too), `latestBlockingChangeSeq()`,
+`purgeChanges()`, the node snapshots, the used assertions and the report
+artifacts. Every statement also runs on PostgreSQL's schema, so
+`sqlDialect=portable` uses them there; PostgreSQL's native text is
+unchanged. How each keeps its contract is in the file's header: a jsonb
+merge is the row locked FOR UPDATE and merged in JavaScript; `RETURNING` and
+a data-modifying CTE are statements in one transaction; an assertion is
+still accepted once because the primary key decides (`INSERT IGNORE`), and a
+keyed value too long for its column is refused (STS-STORE-0100) because
+`INSERT IGNORE` would truncate it; MariaDB deadlocks are run again.
+`replicaLagMs()` answers null on MariaDB (the account may not read replica
+status). `seq` is dense on MariaDB as on PostgreSQL only while
+`innodb_autoinc_lock_mode` is 1 and the increment 1 — the open-time check of
+that is `checkChangeLogDense()`'s, still PostgreSQL's. `committedMark()` and
+`committedSince()` send nothing and needed nothing. `tests/store_portable.js`:
+A static, B the library on PostgreSQL, C on MariaDB 11.8 with the races
+(twenty-five claims of one assertion, ten merges into one key row, ten
+override deltas on one realm, ten change-row transactions), D through the
+driver with `engine: 'mariadb'`.
 
 **A TRANSACTION IS STILL `BEGIN`/`COMMIT` ON ONE HELD CONNECTION**
 (`transactionOnce()`, `queryWithoutJit()`, the metrics client,

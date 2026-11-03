@@ -130,6 +130,9 @@ const sqlDialect = require('./sql_dialect');
 // The cluster's statements without PostgreSQL's features (#677). A LIBRARY,
 // built in create() only when they are used.
 const clusterPortable = require('./cluster_portable');
+// The smaller tables' statements and the change log's, the same way (#677).
+// A LIBRARY, built in create() only when they are used.
+const storePortable = require('./store_portable');
 // The directory's lookups as SQL (#349): one builder for this driver and the
 // bridge's thread. A leaf.
 const directoryQueries = require('./directory_queries');
@@ -4599,6 +4602,25 @@ function create(options) {
       })
     : null;
 
+  // THE SMALLER TABLES' PORTABLE STATEMENTS (#677), or null for
+  // PostgreSQL's own, under the same rule as `portable` above: the realm
+  // registry and settings, the keys, the change rows and the change log's
+  // own reads and purge, the node snapshots, the used assertions and the
+  // report artifacts. They run inside this driver's own transactions
+  // (`withTransaction()`, `transactionOnce()`) and record their change rows
+  // through `recordChanges()`. `persistence/store_portable.js` argues each.
+  const small = (dialect.engine !== 'postgres' ||
+                 options.sqlDialect === 'portable')
+    ? storePortable.forDriver({
+        dialect: dialect, pool: pool, readPool: readPool,
+        withTransaction: withTransaction, transactionOnce: transactionOnce,
+        recordChanges: recordChanges,
+        processId: function () {
+          return processId;
+        }
+      })
+    : null;
+
   // ---------------------------------------------------------------------
   // THE FENCE (2026-09-14, #46), installed by `cluster/cluster.js`.
   //
@@ -5071,6 +5093,11 @@ function create(options) {
         CHANGE_ROWS_PER_STATEMENT) {
       const chunk = rows.slice(start, start + CHANGE_ROWS_PER_STATEMENT);
       chain = chain.then(function () {
+        if (small) {
+          // The same rows as one builder INSERT (#677): `key` is a reserved
+          // word in MariaDB, and the builder quotes it.
+          return small.insertChanges(client, processId, chunk);
+        }
         const values = [];
         const params = [];
         chunk.forEach(function (row, i) {
@@ -6184,6 +6211,10 @@ function create(options) {
 
     loadRealms: function () {
       log.debug('Entering the postgres driver loadRealms().');
+      if (small) {
+        log.debug("Leaving loadRealms(). Portable.");
+        return small.loadRealms();
+      }
       log.debug("Leaving loadRealms().");
       return readPool.query(
         'SELECT id, name, description, created_at, overrides, domain, ' +
@@ -6217,6 +6248,10 @@ function create(options) {
 
     loadOverrides: function () {
       log.debug('Entering the postgres driver loadOverrides().');
+      if (small) {
+        log.debug("Leaving loadOverrides(). Portable.");
+        return small.loadOverrides();
+      }
       log.debug("Leaving loadOverrides().");
       return readPool.query('SELECT key, value FROM sts_appconfig')
         .then(function (result) {
@@ -6635,6 +6670,10 @@ function create(options) {
         });
       const removed = delta && Array.isArray(delta.removed) ? delta.removed
         : [];
+      if (small) {
+        log.debug("Leaving saveRealms(). Portable.");
+        return small.saveRealms(upserts, removed);
+      }
       log.debug("Leaving saveRealms().");
       return withTransaction(function (client) {
         let chain = Promise.resolve();
@@ -6703,6 +6742,10 @@ function create(options) {
       const set = delta && delta.set ? delta.set : (map || {});
       const cleared = delta && Array.isArray(delta.cleared) ? delta.cleared
         : [];
+      if (small) {
+        log.debug("Leaving saveOverrides(). Portable.");
+        return small.saveOverrides(set, cleared);
+      }
       log.debug("Leaving saveOverrides().");
       return withTransaction(function (client) {
         let chain = Promise.resolve();
@@ -6741,6 +6784,10 @@ function create(options) {
     // -----------------------------------------------------------------------
     loadKeys: function () {
       log.debug('Entering the postgres driver loadKeys().');
+      if (small) {
+        log.debug("Leaving loadKeys(). Portable.");
+        return small.loadKeys();
+      }
       log.debug("Leaving loadKeys().");
       return readPool.query('SELECT realm, material FROM sts_keys')
                  .then(function (r) {
@@ -6759,6 +6806,10 @@ function create(options) {
     // The write itself is unchanged.
     saveKeys: function (realmId, ciphertext) {
       log.debug('Entering the postgres driver saveKeys(). realm=' + realmId);
+      if (small) {
+        log.debug("Leaving saveKeys(). Portable.");
+        return small.saveKeys(realmId, ciphertext);
+      }
       log.debug("Leaving saveKeys().");
       return withTransaction(function (client) {
         return client.query(
@@ -6783,6 +6834,10 @@ function create(options) {
     // node reads the row gone.
     deleteKeys: function (realmId) {
       log.debug('Entering the postgres driver deleteKeys(). realm=' + realmId);
+      if (small) {
+        log.debug("Leaving deleteKeys(). Portable.");
+        return small.deleteKeys(realmId);
+      }
       log.debug("Leaving deleteKeys().");
       return withTransaction(function (client) {
         return client.query('DELETE FROM sts_keys WHERE realm = $1',
@@ -7018,6 +7073,10 @@ function create(options) {
 
     latestBlockingChangeSeq: function () {
       log.debug("Entering latestBlockingChangeSeq().");
+      if (small) {
+        log.debug("Leaving latestBlockingChangeSeq(). Portable.");
+        return small.latestBlockingChangeSeq();
+      }
       log.debug("Leaving latestBlockingChangeSeq().");
       // ---------------------------------------------------------------------
       // AND NOT THIS PROCESS'S OWN ROWS (2026-09-08). `changesSince()` above
@@ -7852,6 +7911,10 @@ function create(options) {
     // grows for ever.
     purgeChanges: function (beforeSeq) {
       log.debug("Entering purgeChanges().");
+      if (small) {
+        log.debug("Leaving purgeChanges(). Portable.");
+        return small.purgeChanges(beforeSeq);
+      }
       log.debug("Leaving purgeChanges().");
       return pool.query('DELETE FROM sts_changes WHERE seq < $1',
                         [Number(beforeSeq) || 0])
@@ -8166,6 +8229,10 @@ function create(options) {
     // on its next heartbeat anyway; a stale write is shown with its age.
     putNodeSnapshot: function (name, nodeId, body) {
       log.debug("Entering putNodeSnapshot(). name=" + name);
+      if (small) {
+        log.debug("Leaving putNodeSnapshot(). Portable.");
+        return small.putNodeSnapshot(name, nodeId, body);
+      }
       log.debug("Leaving putNodeSnapshot().");
       return pool.query(
         'INSERT INTO sts_node_snapshots (name, node_id, taken_at, body) ' +
@@ -8192,6 +8259,10 @@ function create(options) {
         return Promise.reject(new Error('purgeNodeSnapshots needs the live ' +
           'names and an age'));
       }
+      if (small) {
+        log.debug("Leaving purgeNodeSnapshots(). Portable.");
+        return small.purgeNodeSnapshots(olderThanMs, keep);
+      }
       log.debug("Leaving purgeNodeSnapshots().");
       return pool.query(
         'DELETE FROM sts_node_snapshots WHERE taken_at < ' + DB_NOW +
@@ -8208,6 +8279,10 @@ function create(options) {
     // their ages against. Bounded twice: a row per name, and at most 64.
     nodeSnapshots: function () {
       log.debug("Entering nodeSnapshots().");
+      if (small) {
+        log.debug("Leaving nodeSnapshots(). Portable.");
+        return small.nodeSnapshots();
+      }
       log.debug("Leaving nodeSnapshots().");
       return Promise.all([
         pool.query('SELECT name, node_id, taken_at, body FROM ' +
@@ -8914,6 +8989,12 @@ function create(options) {
     // its keepalive interval.
     replicaLagMs: function () {
       log.debug("Entering replicaLagMs().");
+      if (small && dialect.engine !== 'postgres') {
+        // PostgreSQL's replication probe is the answer on PostgreSQL in
+        // either dialect; MariaDB's is null (`store_portable.js`).
+        log.debug("Leaving replicaLagMs(). Portable.");
+        return small.replicaLagMs();
+      }
       if (readPool === pool) {
         log.debug("Leaving replicaLagMs(). No replica.");
         return Promise.resolve(null);
@@ -8936,6 +9017,10 @@ function create(options) {
 
     loadKey: function (realmId) {
       log.debug("Entering loadKey(). realm=" + realmId);
+      if (small) {
+        log.debug("Leaving loadKey(). Portable.");
+        return small.loadKey(realmId);
+      }
       log.debug("Leaving loadKey().");
       return readPool.query('SELECT material FROM sts_keys WHERE realm = $1',
                         [String(realmId)]).then(function (r) {
@@ -10065,6 +10150,10 @@ function create(options) {
 
     mergeKeys: function (realmId, ciphertext, merge) {
       log.debug("Entering mergeKeys(). realm=" + realmId);
+      if (small) {
+        log.debug("Leaving mergeKeys(). Portable.");
+        return small.mergeKeys(realmId, merge);
+      }
       const id = String(realmId);
       log.debug("Leaving mergeKeys().");
       return withTransaction(function (client) {
@@ -10457,6 +10546,10 @@ function create(options) {
     // and an accepted assertion costs one round trip.
     claimUsedAssertion: function (row, opts) {
       log.debug("Entering claimUsedAssertion().");
+      if (small) {
+        log.debug("Leaving claimUsedAssertion(). Portable.");
+        return small.claimUsedAssertion(row, opts);
+      }
       const now = Number(opts.now);
       const cap = Number(opts.cap);
       log.debug("Leaving claimUsedAssertion().");
@@ -10511,6 +10604,10 @@ function create(options) {
     // settle a row that is not its own.
     settleUsedAssertion: function (realm, key, reservation, spent, at) {
       log.debug("Entering settleUsedAssertion(). spent=" + spent);
+      if (small) {
+        log.debug("Leaving settleUsedAssertion(). Portable.");
+        return small.settleUsedAssertion(realm, key, reservation, spent, at);
+      }
       log.debug("Leaving settleUsedAssertion().");
       return (spent
         ? pool.query(
@@ -10532,6 +10629,10 @@ function create(options) {
     // above is what decides.
     findUsedAssertion: function (realm, key, nowMs) {
       log.debug("Entering findUsedAssertion(). realm=" + realm);
+      if (small) {
+        log.debug("Leaving findUsedAssertion(). Portable.");
+        return small.findUsedAssertion(realm, key, nowMs);
+      }
       log.debug("Leaving findUsedAssertion().");
       return pool.query(
         'SELECT format, used_as, issuer, identifier, client_id, subject, ' +
@@ -10551,6 +10652,10 @@ function create(options) {
     // a pattern.
     listUsedAssertions: function (realm, opts) {
       log.debug("Entering listUsedAssertions(). realm=" + realm);
+      if (small) {
+        log.debug("Leaving listUsedAssertions(). Portable.");
+        return small.listUsedAssertions(realm, opts);
+      }
       const o = opts || {};
       const now = Number(o.now);
       const where = 'WHERE realm = $1 AND expires_at >= $2 ' +
@@ -10586,6 +10691,10 @@ function create(options) {
     // replaces the artifact rather than leaving the first one.
     putReportArtifact: function (row) {
       log.debug("Entering putReportArtifact().");
+      if (small) {
+        log.debug("Leaving putReportArtifact(). Portable.");
+        return small.putReportArtifact(row);
+      }
       log.debug("Leaving putReportArtifact().");
       return pool.query(
         'INSERT INTO sts_report_artifacts (realm, job_id, bytes, sha256, ' +
@@ -10607,6 +10716,10 @@ function create(options) {
     // the job's, which says so.
     putReportArtifactPieces: function (row, pieces) {
       log.debug("Entering putReportArtifactPieces().");
+      if (small) {
+        log.debug("Leaving putReportArtifactPieces(). Portable.");
+        return small.putReportArtifactPieces(row, pieces);
+      }
       log.debug("Leaving putReportArtifactPieces().");
       return transactionOnce(async function (client) {
         await client.query(
@@ -10637,6 +10750,10 @@ function create(options) {
 
     getReportArtifactPiece: function (key) {
       log.debug("Entering getReportArtifactPiece().");
+      if (small) {
+        log.debug("Leaving getReportArtifactPiece(). Portable.");
+        return small.getReportArtifactPiece(key);
+      }
       log.debug("Leaving getReportArtifactPiece().");
       return pool.query(
         'SELECT bytes FROM sts_report_artifact_pieces WHERE realm = $1 ' +
@@ -10650,6 +10767,10 @@ function create(options) {
 
     getReportArtifact: function (key) {
       log.debug("Entering getReportArtifact().");
+      if (small) {
+        log.debug("Leaving getReportArtifact(). Portable.");
+        return small.getReportArtifact(key);
+      }
       log.debug("Leaving getReportArtifact().");
       return pool.query(
         'SELECT bytes, sha256, media_type, created_at FROM ' +
@@ -10671,6 +10792,10 @@ function create(options) {
 
     deleteReportArtifact: function (key) {
       log.debug("Entering deleteReportArtifact().");
+      if (small) {
+        log.debug("Leaving deleteReportArtifact(). Portable.");
+        return small.deleteReportArtifact(key);
+      }
       log.debug("Leaving deleteReportArtifact().");
       // The pieces and the row in one statement (#1045), so neither is
       // left without the other.
@@ -10684,6 +10809,10 @@ function create(options) {
 
     purgeUsedAssertions: function (nowMs) {
       log.debug("Entering purgeUsedAssertions().");
+      if (small) {
+        log.debug("Leaving purgeUsedAssertions(). Portable.");
+        return small.purgeUsedAssertions(nowMs);
+      }
       log.debug("Leaving purgeUsedAssertions().");
       return pool.query('DELETE FROM sts_used_assertions WHERE expires_at < $1',
                         [Number(nowMs)])
@@ -10694,6 +10823,10 @@ function create(options) {
 
     removeUsedAssertions: function (realm) {
       log.debug("Entering removeUsedAssertions(). realm=" + realm);
+      if (small) {
+        log.debug("Leaving removeUsedAssertions(). Portable.");
+        return small.removeUsedAssertions(realm);
+      }
       log.debug("Leaving removeUsedAssertions().");
       return pool.query('DELETE FROM sts_used_assertions WHERE realm = $1',
                         [realm])
