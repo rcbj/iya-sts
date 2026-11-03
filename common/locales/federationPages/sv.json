@@ -41,10 +41,10 @@
   "profile.note": "Uppgifterna sparas på ditt konto här. En e-postadress som du skriver registreras som overifierad.",
   "webfinger.title": "Hitta din inloggning",
   "webfinger.heading": "Hitta var du loggar in",
-  "webfinger.lead": "Skriv adressen du loggar in med hos {{partner}}, så frågar den här tjänsten adressens värd var ditt konto finns.",
+  "webfinger.lead": "Skriv adressen du loggar in med hos {partner}, så frågar den här tjänsten adressens värd var ditt konto finns.",
   "webfinger.label": "Din adress eller URL",
   "webfinger.submit": "Slå upp",
-  "webfinger.found": "{{identifier}} loggar in hos {{issuer}}.",
+  "webfinger.found": "{identifier} loggar in hos {issuer}.",
   "webfinger.continue": "Fortsätt för att logga in där",
   "webfinger.note": "Inget händer förrän du fortsätter: kontrollera att det är där du väntar dig att logga in."
 }

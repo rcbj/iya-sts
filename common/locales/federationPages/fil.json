@@ -41,10 +41,10 @@
   "profile.note": "Itinatago ang mga detalyeng ito sa iyong account dito. Itinatala bilang hindi verified ang email address na itina-type mo.",
   "webfinger.title": "Hanapin ang iyong sign-in",
   "webfinger.heading": "Hanapin kung saan ka nagsa-sign in",
-  "webfinger.lead": "I-type ang address na ginagamit mo sa pag-sign in sa {{partner}}, at itatanong ng serbisyong ito sa host ng address na iyon kung nasaan ang iyong account.",
+  "webfinger.lead": "I-type ang address na ginagamit mo sa pag-sign in sa {partner}, at itatanong ng serbisyong ito sa host ng address na iyon kung nasaan ang iyong account.",
   "webfinger.label": "Ang iyong address o URL",
   "webfinger.submit": "Hanapin",
-  "webfinger.found": "Nagsa-sign in ang {{identifier}} sa {{issuer}}.",
+  "webfinger.found": "Nagsa-sign in ang {identifier} sa {issuer}.",
   "webfinger.continue": "Magpatuloy upang mag-sign in doon",
   "webfinger.note": "Walang mangyayari hanggang magpatuloy ka: tiyaking dito mo inaasahang mag-sign in."
 }
