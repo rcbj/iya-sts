@@ -982,8 +982,15 @@ async function selfIssued(driver, wallet, state) {
   const web = await hrefOf(driver, "#wallet-web");
   await driver.get(web);
   const asked = await walletConsent(driver, "the SIOPv2 enrolment");
-  check("the enrolment asks the wallet for an ID Token only", function () {
-    assert.ok(asked.length > 0);
+  // THE WALLET HOLDS NO CREDENTIAL HERE (section 4 deleted it), so what the
+  // dialog can show is the request alone: signed by this realm's Verifier,
+  // asking for no credential — the self-issued ID Token is the wallet's own.
+  check("the enrolment shows the wallet a signed request from this realm's " +
+        "Verifier that asks for no credential", function () {
+    assert.ok(/x509_hash:/.test(asked) && /Signed/.test(asked),
+              asked.slice(0, 300));
+    assert.ok(!/SD-JWT|Identity Credential|field/.test(asked),
+              asked.slice(0, 300));
   });
   await click(driver, "#consent-approve");
   const subject = String(await until(driver,
@@ -1031,12 +1038,17 @@ async function selfIssued(driver, wallet, state) {
   // page has nothing to collect and goes on saying it waits. Its own words
   // say what to do — "check now" — and that asks the status operation,
   // which answers the refusal (403, STS-VC-0091) the page then draws.
-  await until(driver,
-    "location.href.indexOf(" + JSON.stringify(base) + ") === 0 && " +
+  const landed = await until(driver,
+    "((" + portalDrawn("/portal") + ") && 'portal') || " +
+    "(location.href.indexOf(" + JSON.stringify(base) + ") === 0 && " +
     "location.pathname.indexOf('/authn/wallet/wait') >= 0 && " +
     "!/response_code=/.test(location.search) && " +
-    "document.querySelector('#wallet-check')",
+    "document.querySelector('#wallet-check') && 'wait')",
     "the wait page the wallet returns to");
+  check("the removed key signs nobody in: the wallet is sent back to the " +
+        "wait page, not to the portal", function () {
+    assert.strictEqual(landed, "wait");
+  });
   await click(driver, "#wallet-check");
   const said = String(await until(driver,
     "/not enrolled/.test(document.body.innerText) && " +
