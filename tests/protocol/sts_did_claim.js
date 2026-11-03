@@ -418,7 +418,12 @@ async function relyingParty(clientId, scopes, extraFields) {
                               "client_secret_basic",
                             oauthRedirectUri: [RP_REDIRECT],
                             oauthResponseType: ["code"],
-                            oauthScope: scopes }, extraFields || {}),
+                            oauthScope: scopes,
+                            // What the client DECLARES, which is what the
+                            // did claim reads (`scopePolicy.declares()`) —
+                            // `oauthScope` alone is not a declaration.
+                            oauthAllowedScope: scopes },
+                          extraFields || {}),
     why: "a relying party sts_did_claim.js asks for the did claim as"
   });
   log.debug("Leaving relyingParty().");
