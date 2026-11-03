@@ -2119,7 +2119,7 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6ImRjK3NkLWp3dCIsImtpZCI6InN0cy1m…3m3pJKQqQq-XHjPUI
   "iss": "https://127.0.0.1:38081",
   "nbf": 1790110682,
   "exp": 1792702682,
-  "vct": "urn:idptools:sd-jwt-vc:identity",
+  "vct": "urn:iya:sts:sd-jwt-vc:identity",
   "sub": "urn:uuid:016dc8f1-1bc4-55d9-9657-9b2ebb3cd4d2",
   "cnf": {
     "jwk": {
@@ -2263,7 +2263,7 @@ the holder's key as a `did:jwk`.
 {
   "@context": [
     "https://www.w3.org/ns/credentials/v2",
-    "https://idptools.com/contexts/identity/v1"
+    "https://iyasec.io/contexts/identity/v1"
   ],
   "type": [
     "VerifiableCredential",
@@ -2448,7 +2448,7 @@ eyJhbGciOiJSUzI1NiIsInR5cCI6Im9hdXRoLWF1dGh6LXJlcStqd3QiLCJr…5TwyyUHNDoTzk47sX
         "format": "dc+sd-jwt",
         "meta": {
           "vct_values": [
-            "urn:idptools:sd-jwt-vc:identity"
+            "urn:iya:sts:sd-jwt-vc:identity"
           ]
         },
         "claims": [

@@ -1406,8 +1406,8 @@ mid-request.
 
 **Deferred, because a worker never needs them**: `@grpc/grpc-js` and
 `@grpc/proto-loader` in `spiffe/spiffe_grpc.ts` (the protos too — see
-`spiffe/CLAUDE.md`), `jsonld` in `oid4vc/vc_jsonld.ts`, and the vendored
-`bbs2023.js`, which requires `jsonld` at its top, in `vc_issuer`, `vc_did`,
+`spiffe/CLAUDE.md`), `jsonld` in `oid4vc/vc_jsonld.ts`, and
+`common/crypto_impl/bbs2023.js`, which requires `jsonld` at its top, in `vc_issuer`, `vc_did`,
 `vc_verifier` and `admin-ui/crypto_metadata`. **`helpers.js` defers
 `bbs2023.js` BY HAND** (`bbs2023Suite()`), because it is in the parent
 project's Kerberos COPY closure and a require of `lazy_module` from it would

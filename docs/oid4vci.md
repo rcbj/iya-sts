@@ -52,7 +52,7 @@ instant that would let verifiers link them (RFC 9901 section 10.1).
 
 | Configuration | Format | Scope | Holder binding |
 |---|---|---|---|
-| `IdentityCredential` | `dc+sd-jwt`, `vct` `urn:idptools:sd-jwt-vc:identity` | `identity_credential` | `jwk` |
+| `IdentityCredential` | `dc+sd-jwt`, `vct` `urn:iya:sts:sd-jwt-vc:identity` | `identity_credential` | `jwk` |
 | `IdentityCredentialJwtVcJson` | `jwt_vc_json` | `identity_credential_jwt` | `jwk` |
 | `IdentityCredentialLdpVc` | `ldp_vc`, secured with `bbs-2023` | `identity_credential_ldp` | `did:jwk` |
 | `IdentityCredentialDid` | `dc+sd-jwt`, issuer named by `did:web` | `identity_credential_did` | `jwk` |
@@ -494,7 +494,7 @@ in, in either mode. See [What is not checked](what-is-not-checked.md).
 | `oid4vci.didHolderBinding` | `OID4VCI_DID_HOLDER_BINDING` | *(empty)* | yes | The configurations bound to the person's proved `did:jwk` or `did:key` instead of to a key. |
 | `oid4vci.statusListTtlS` | `OID4VCI_STATUS_LIST_TTL_S` | `300` | yes | The `ttl` (and HTTP `max-age`) of this realm's status lists. |
 | `oid4vci.statusListLifetimeS` | `OID4VCI_STATUS_LIST_LIFETIME_S` | `86400` | yes | How long a status list token, or a Bitstring Status List credential, says it is valid. |
-| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `IdP Tools Credential Issuer` | yes | The metadata's `display.name`. |
+| `oid4vci.issuerDisplayName` | `OID4VCI_ISSUER_DISPLAY_NAME` | `Iya STS Credential Issuer` | yes | The metadata's `display.name`. |
 | `oid4vci.domainLinkageLifetimeS` | `OID4VCI_DOMAIN_LINKAGE_LIFETIME_S` | `31536000` | yes | How long the Domain Linkage Credential says it is valid. |
 | `oid4vci.sdJwtIssuerDid` | `OID4VCI_SD_JWT_ISSUER_DID` | `false` | restart | Name the plain `dc+sd-jwt` configuration's issuer by `did:web`. |
 | `oid4vci.ldpVcIssuerDid` | `OID4VCI_LDP_VC_ISSUER_DID` | `false` | restart | The same for the plain `ldp_vc` configuration. |

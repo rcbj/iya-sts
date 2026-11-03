@@ -1,7 +1,8 @@
 # common/vendored/
 
 **Every file in this directory is somebody else's. DO NOT EDIT THEM HERE —
-except three, which are this service's own since #363 (2026-09-30).**
+except four: three this service's own since #363 (2026-09-30), and
+`bbs2023.js` with its identity context since #663 (2026-11-02).**
 
 `pqc.js`, `pqc_x509.js` and `xmldsig.js` STOPPED BEING COPIES on rcbj's
 decision on #363: "this is its own project that has different requirements."
@@ -14,11 +15,29 @@ those two as well. `pqc.js` and `pqc_x509.js` rest on `common/pq_native.js`
 `@noble/post-quantum`; `common/CLAUDE.md` argues it. A re-sync from the
 parent must skip these three.
 
-They are byte-identical copies of files in the parent project
-(`../id-proto-debugger`), and two of the parent's tests exist to keep them
-that way — `tests/krb5_codec_sync.js` compares the Kerberos codec, and
-`tests/bbs2023_cryptosuite.js` drives BOTH implementations of the cryptosuite
-against the same vectors. A local "improvement" here is not a change to this
+**`bbs2023.js` and `contexts/iya_identity_v1.json` STOPPED BEING COPIES on
+rcbj's decision on #663**: a credential this service mints may not carry
+another project's name, and the parent's copy signs against
+`https://idptools.com/contexts/identity/v1`. The identity context is now
+`https://iyasec.io/contexts/identity/v1`, its own terms
+(`IdentityCredential`, `isOver18`, `isOver21`) under
+`https://iyasec.io/contexts/identity#`, and the file follows this
+repository's rules. **The cost was accepted knowingly**: the parent's
+`tests/bbs2023_cryptosuite.js` drives this file against the debugger's
+wallet (`client/src/bbs2023.js`), whose closed loader knows only the old
+context, and its tests image copies this file flat beside the parent's
+`contexts/` — so the parent's next `sts/` pin bump needs the new context in
+`client/src/contexts/` and the wallet's loader, or that job fails at load.
+A credential issued before #663 named the old context and is refused by
+both loaders here now; there is no back-compatibility row for it. A re-sync
+must skip these two as well.
+
+The rest are byte-identical copies of files in the parent project
+(`../id-proto-debugger`), and the parent's tests exist to keep them that way
+— `tests/krb5_codec_sync.js` compares the Kerberos codec, and
+`tests/bbs2023_cryptosuite.js` drives BOTH implementations of the
+cryptosuite against the same vectors (and so is the parent's test that #663
+breaks until the parent takes the new context). A local "improvement" here is not a change to this
 service, it is a divergence between two halves of one exchange, and the symptom
 arrives as a signature that does not verify rather than as a diff.
 
@@ -30,17 +49,16 @@ arrives as a signature that does not verify rather than as a diff.
 | `key_material.js` | Key generation and JWK/PEM conversion. What `x509.js` rests on. |
 | `jose_jwe.js` | JWE, for the same reason. |
 | `crypto_bytes.js` | The byte-level helpers those three rest on. |
-| `bbs2023.js` | The bbs-2023 Data Integrity cryptosuite, for `ldp_vc`. |
+| `bbs2023.js` | **THIS SERVICE'S OWN since #663 — not a copy.** The bbs-2023 Data Integrity cryptosuite, for `ldp_vc`. |
 | `xmldsig.js` | **THIS SERVICE'S OWN since #363 — not a copy.** **XML Signature and XML Encryption, and since 2026-08-27 the signer behind every signed document this service emits.** It is not a library somebody found — it is the OTHER END of most of these exchanges: the debugger signs, verifies, encrypts and decrypts with this exact file on its WS-Trust, SAML and Digital Signature pages. Both ends of a SAML exchange now canonicalize with the same code, which matters because a disagreement about c14n is invisible until it is a signature that verifies on one side and not the other. |
-| `contexts/` | The three JSON-LD contexts `bbs2023.js` reads. |
+| `contexts/` | The three JSON-LD contexts `bbs2023.js` reads: the two W3C ones (copies) and `iya_identity_v1.json`, this issuer's own since #663. |
 
 **`contexts/` is inside this directory because `bbs2023.js` resolves
 `path.join(__dirname, 'contexts')`.** That is the whole reason it moved here in
 the 2026-08-23 reorganisation rather than staying at the package root: the
-alternative was editing a vendored file, which is the one thing this directory
-forbids. Its first candidate — `path.join(__dirname, '..', 'client', 'src',
-'contexts')` — is the parent project's layout and resolves to nothing here,
-which is exactly what that `existsSync` guard is for.
+alternative, then, was editing a vendored file. Its second candidate, the
+parent project's `../client/src/contexts`, resolved to nothing here and was
+dropped in #663, once the file was this service's own.
 
 Nothing in here requires anything outside this directory, and that is what makes
 the copies possible: `x509.js` requires `./jose_jwe`, `./key_material` and
@@ -95,9 +113,9 @@ are vendored rather than fetched because Data Integrity signs canonicalized
 statements, so a one-byte difference in a context fails every signature later and
 looks like a crypto bug.
 
-`bbs2023.js` resolves two layouts: `../client/src/contexts` (its position in the
-parent project) and `./contexts` (this repo). Do not simplify that away — it is what
-let the file be copied here unchanged.
+`bbs2023.js` reads `./contexts` only, since #663. The parent's tests image
+still copies it flat beside the parent's own `contexts/`, which is why that
+directory needs `iya_identity_v1.json` before the parent's next pin bump.
 
 ---
 

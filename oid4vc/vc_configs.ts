@@ -52,7 +52,7 @@ interface VcConfigsDeps {
 
 const VCI_CONFIG_ID = 'IdentityCredential';
 
-const VCI_VCT = 'urn:idptools:sd-jwt-vc:identity';
+const VCI_VCT = 'urn:iya:sts:sd-jwt-vc:identity';
 
 const VCI_SCOPE = 'identity_credential';
 

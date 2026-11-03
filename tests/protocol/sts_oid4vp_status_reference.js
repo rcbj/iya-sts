@@ -88,7 +88,7 @@ const KEY = "oid4vp.requireStatusReference";
 const EXEMPT = "oid4vp.statusOptionalIssuers";
 // What this Verifier asks an SD-JWT VC and a W3C credential to be, as the
 // issuer here mints them (`oid4vc/vc_configs.ts`).
-const VCT = "urn:idptools:sd-jwt-vc:identity";
+const VCT = "urn:iya:sts:sd-jwt-vc:identity";
 const W3C_TYPES = ["VerifiableCredential", "IdentityCredential"];
 const FLOOR = 30;
 
