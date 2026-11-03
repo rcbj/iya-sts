@@ -23,7 +23,7 @@ library is under the MIT License.
 | Python | [PyPI](https://pypi.org/) |
 | Java | [Maven Central](https://central.sonatype.com/namespace/com.iyasec), group `com.iyasec` |
 | Rust | [crates.io](https://crates.io/), with API documentation on [docs.rs](https://docs.rs/) |
-| Go | No tagged release yet; `go get` resolves the latest commit through the Go module proxy |
+| Go | Git tags `v<version>`, served by the [Go module proxy](https://pkg.go.dev/), with API documentation on pkg.go.dev |
 | C# | [NuGet](https://www.nuget.org/profiles/IyaSec) |
 | C and C++ | Not published to a package manager; build it from the repository |
 | Swift | [GitHub Releases](https://github.com/rcbj/swift-oidc-caep-native-app/releases), through Swift Package Manager |
@@ -56,6 +56,75 @@ Run the install script again and rebuild the image when you point the demo
 at a different iya-sts. The libraries trust only that chain when the
 setting is present, and they check the host name against the certificate.
 
+## What the OpenID Connect confidential client checks
+
+The seven server-side OpenID Connect libraries (`oidc-caep-risc` in every
+language) behave the same way, with the same JSON configuration keys and
+the same defaults. Every check below applies however the client is
+created: loaded from a configuration file, or built directly in code.
+
+- **PKCE, `state`, `nonce` and issuer identification.** Every
+  authorization request carries an S256 code challenge, a `state` and a
+  `nonce`. The response's `iss` parameter (RFC 9207) is checked when the
+  provider advertises it, and iya-sts does.
+- **Pushed Authorization Requests (RFC 9126).** `par` is `auto` (the
+  default), `always` or `never`. `auto` pushes whenever the provider has a
+  PAR endpoint. When the provider sets
+  `require_pushed_authorization_requests`, `par: never` fails when the
+  client is created, and so does `par: always` against a provider with no
+  PAR endpoint.
+- **DPoP (RFC 9449).** `dpop` is `auto` (the default), `always` or
+  `never`. `auto` turns DPoP on when the provider lists ES256 in
+  `dpop_signing_alg_values_supported`, which iya-sts does. The client
+  sends a proof to the PAR and token endpoints, and to UserInfo and the
+  Shared Signals transmitter with the access token's hash (`ath`). It
+  sends `dpop_jkt` on the authorization request. When a server answers
+  `use_dpop_nonce`, the client retries once with the nonce it was given.
+  The token response's `token_type` must be `DPoP` when a proof was sent
+  and `Bearer` when none was. The key is an ES256 key pair generated when
+  the client is created and held in memory. An application that runs
+  several processes names one P-256 key for all of them with `dpopKey`.
+- **The ID token's signature.** `idTokenSigningAlgs` is the list of
+  algorithms the client accepts, `["RS256"]` by default. Only the
+  algorithms in that list that the provider also advertises are used, and
+  the client fails at creation when none are left. `none` is never
+  accepted, and an HMAC algorithm only when the list names it.
+- **The ID token's `typ`, `at_hash` and `iat`.** The header's `typ` must be
+  `JWT` or `application/jwt`. When the token response carries an access
+  token, the ID token must carry a matching `at_hash`. Setting
+  `requireIdTokenTypAndAtHash` to `false` checks each only when it is
+  present, for a provider that leaves them out; iya-sts includes both. An
+  ID token issued more than `maxIdTokenAgeSec` ago (600 seconds by
+  default), or more than `clockToleranceSec` in the future (30 seconds by
+  default), is refused.
+- **`acr`.** `acrValues` (a string or a list) is sent as `acr_values` on
+  every authorization request, and a single sign-in can name its own. When
+  values were requested, the ID token must carry an `acr` that is one of
+  them. A refresh does not check `acr` again.
+- **TLS.** The issuer and every provider endpoint must be `https`, unless
+  `allowInsecure` is set, which is for development only. A redirect URI
+  and the post-logout redirect URI must be `https`, or `http` on a
+  loopback host (`localhost`, `127.0.0.1`, `[::1]`), and so must a
+  redirect URI a single sign-in overrides. `allowInsecure` does not relax
+  that rule.
+- **A token cache per session.** After a sign-in, the client keeps its
+  tokens under a session identifier the application chooses. Asking for
+  that session's access token returns the cached one while it has more
+  than 30 seconds left, and otherwise refreshes it, with a DPoP proof
+  when DPoP is on. A failed refresh removes the session. So does a CAEP
+  `session-revoked` event for that person, and so does the application
+  signing the person out. The cache is in memory by default; an
+  application that runs several processes can replace it with a shared
+  store. Each library's README names the calls in that language.
+
+**Changes for an application upgrading from an earlier version.** A
+provider that does not advertise RS256 needs `idTokenSigningAlgs` set, and
+a provider that leaves out `typ` or `at_hash` needs
+`requireIdTokenTypAndAtHash: false`. `allowInsecure` no longer allows a
+plain `http` redirect URI outside loopback. Each repository's install
+script registers its demo at iya-sts with `RS256` as the ID token
+algorithm.
+
 ## Node.js (TypeScript and JavaScript)
 
 Six modules, published on npm by
@@ -67,7 +136,7 @@ pre-release from `develop`.
 | Module | Description | Repository | Documentation |
 |---|---|---|---|
 | [`oidc-caep-client`](https://www.npmjs.com/package/oidc-caep-client) | In-browser OpenID Connect public client (PKCE, PAR, DPoP, RFC 9207) with token caching and auto-refresh, and a Shared Signals (SSF) / CAEP event receiver | [rcbj/oidc-caep-client](https://github.com/rcbj/oidc-caep-client) | [documentation](https://rcbj.github.io/oidc-caep-client/) |
-| [`oidc-caep-risc-nodejs`](https://www.npmjs.com/package/oidc-caep-risc-nodejs) | Server-side OpenID Connect confidential client: Authorization Code with PKCE, client authentication, and a CAEP and RISC Shared Signals receiver | [rcbj/oidc-caep-risc-nodejs](https://github.com/rcbj/oidc-caep-risc-nodejs) | [documentation](https://rcbj.github.io/oidc-caep-risc-nodejs/) |
+| [`oidc-caep-risc-nodejs`](https://www.npmjs.com/package/oidc-caep-risc-nodejs) | Server-side OpenID Connect confidential client: Authorization Code with PKCE, PAR and DPoP, client authentication, a per-session token cache with auto-refresh, and a CAEP and RISC Shared Signals receiver ([what it checks](#what-the-openid-connect-confidential-client-checks)) | [rcbj/oidc-caep-risc-nodejs](https://github.com/rcbj/oidc-caep-risc-nodejs) | [documentation](https://rcbj.github.io/oidc-caep-risc-nodejs/) |
 | [`gnap-caep-client`](https://www.npmjs.com/package/gnap-caep-client) | In-browser GNAP (RFC 9635) client: HTTP message signature key proofs, redirect interaction, subject information for user sign-in, key-bound token caching and rotation, and a Shared Signals (SSF) / CAEP event receiver | [rcbj/gnap-caep-js](https://github.com/rcbj/gnap-caep-js) | [documentation](https://rcbj.github.io/gnap-caep-js/) |
 | [`gnap-caep-risc-nodejs`](https://www.npmjs.com/package/gnap-caep-risc-nodejs) | Server-side GNAP (RFC 9635) client for traditional web applications: a registered key proved by mutual TLS, HTTP message signatures or detached JWS, key-bound tokens, redirect and push interaction finish, and a CAEP and RISC Shared Signals receiver | [rcbj/gnap-caep-risc-nodejs](https://github.com/rcbj/gnap-caep-risc-nodejs) | [documentation](https://rcbj.github.io/gnap-caep-risc-nodejs/) |
 | [`saml2-sp-nodejs`](https://www.npmjs.com/package/saml2-sp-nodejs) | Server-side SAML 2.0 service provider: signed AuthnRequests on HTTP-Redirect or HTTP-POST, and Responses on HTTP-POST, HTTP-Redirect or HTTP-Artifact (with SOAP artifact resolution), validated strictly | [rcbj/saml2-sp-nodejs](https://github.com/rcbj/saml2-sp-nodejs) | [documentation](https://rcbj.github.io/saml2-sp-nodejs/) |
@@ -142,9 +211,9 @@ Add one with `cargo add <crate>`.
 ### Go
 
 The module path is `github.com/rcbj/` plus the repository name. The
-repositories require Go 1.27. There is no tagged release yet, so
-`go get github.com/rcbj/<repository>@latest` resolves the latest commit on
-`main` through the Go module proxy.
+repositories require Go 1.27. Each release is a `v<version>` git tag, so
+`go get github.com/rcbj/<repository>@latest` resolves the latest release
+through the Go module proxy, and `@v<version>` pins one.
 
 | Module | Protocol | Repository | Documentation |
 |---|---|---|---|
