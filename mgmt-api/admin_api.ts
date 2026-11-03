@@ -20741,11 +20741,13 @@ class AdminApi {
                          'MAY BE A PERSON.** `target=person` issues to ' +
                          'somebody in `ou=users` instead: the same ' +
                          'hierarchy, the same profile, the same certificate, ' +
-                         'written onto their own entry as ' +
-                         '`stsAssertionJwks`, `stsAssertionCertificate`, ' +
-                         '`stsAssertionCertificateChain`, `stsAssertionKid`, ' +
-                         '`stsAssertionExpiresAt` and a SEALED ' +
-                         '`stsAssertionPrivateKey` — an attribute set that ' +
+                         'ADDED to the key pairs on their own entry — a ' +
+                         '`stsAssertionKeyPair` record and a SEALED ' +
+                         '`stsAssertionPrivateKey` value per key pair, ' +
+                         'several per profile since #1290, up to ' +
+                         '`pki.personSigningKeyMax` valid ones (STS-PKI-0223 ' +
+                         'past it), each named by an optional `label` — an ' +
+                         'attribute set that ' +
                          'shares no name with the application\'s and is read ' +
                          'by nothing else, which is the same rule the two ' +
                          'profiles above follow. RFC 7523 section 3 asks ' +
@@ -20775,10 +20777,11 @@ class AdminApi {
                          'and in no other answer this API gives, and it is ' +
                          'not shown again.\n\n**AND SINCE 2026-09-13 A ' +
                          'PERSON MAY HOLD AN RFC 7522 KEY PAIR TOO**: ' +
-                         '`target=person` with `purpose=saml` writes ' +
-                         '`stsSamlAssertionCertificate`, its chain, a ' +
-                         'thumbprint, the expiry, the provenance and a ' +
-                         'sealed `stsSamlAssertionPrivateKey` — a fourth ' +
+                         '`target=person` with `purpose=saml` adds a ' +
+                         '`stsSamlAssertionKeyPair` record (the ' +
+                         'certificate, its chain, its thumbprint, expiry and ' +
+                         'provenance) and a sealed ' +
+                         '`stsSamlAssertionPrivateKey` value — a fourth ' +
                          'attribute set sharing no name with the others. The ' +
                          'SAML 2.0 bearer grant reads it under the same ' +
                          'rule: the `<Subject>` must be that person.',
@@ -20799,12 +20802,18 @@ class AdminApi {
                           description: 'WHO the key pair is for. Defaults to ' +
                                        '`application`, which is what every ' +
                                        'caller written before this field ' +
-                                       'existed sends. `person` writes ' +
-                                       '`stsAssertion*` (or ' +
+                                       'existed sends. `person` adds a key ' +
+                                       'pair to `stsAssertion*` (or ' +
                                        '`stsSamlAssertion*` for ' +
-                                       '`purpose=saml`) onto a `ou=users` ' +
+                                       '`purpose=saml`) on a `ou=users` ' +
                                        'entry instead and returns the ' +
                                        'private key once.' },
+                label: { type: 'string',
+                         description: '`target=person` only: what the ' +
+                                      'person calls this key pair — at most ' +
+                                      '40 letters, digits, spaces, dots, ' +
+                                      'dashes, underscores and brackets ' +
+                                      '(#1290). Optional.' },
                 issuer: { type: 'string',
                           description: '`target=person` only: the `iss` (or ' +
                                        'SAML `<Issuer>`) their assertions ' +
@@ -20865,8 +20874,8 @@ class AdminApi {
                                  'application entry.' },
 
           { action: 'revoke', operationId: 'revokePkiKeyPair',
-            summary: 'Take an issued key pair off an application, or off a ' +
-                     'person — which is NOT revocation',
+            summary: 'Take an issued key pair off an application — which is ' +
+                     'NOT revocation — or revoke one of a person\'s',
             description: 'Clears the attributes the issue wrote FOR ONE ' +
                          'PROFILE — seven for `jwt` and six for `saml`. An ' +
                          'application commonly holds both key pairs and this ' +
@@ -20885,20 +20894,25 @@ class AdminApi {
                          'is no longer registered against the application. ' +
                          'The name is `revoke` because that is the word on ' +
                          'the button; the description is where the claim is ' +
-                         'kept honest.\n\n**`target=person` TAKES A ' +
-                         'PERSON\'S KEY PAIR OFF INSTEAD**, and it clears ' +
-                         'the `stsAssertionIssuer` DECLARATION with it where ' +
-                         'the application arm deliberately leaves ' +
-                         '`oauthAssertionIssuer` alone. The difference is a ' +
-                         'fact about the two: an application may hold a JWKS ' +
-                         'it registered itself beside the one this service ' +
-                         'issued, and a person may not — everything in ' +
-                         '`stsAssertion*` was put there by the issue, so ' +
-                         'leaving the declaration would leave somebody ' +
-                         'declared as an issuer with no key to issue with. ' +
-                         'Since 2026-09-13 it takes ONE PROFILE ' +
-                         'off a person too — `stsSamlAssertion*` for ' +
-                         '`purpose=saml` — and leaves the other.',
+                         'kept honest.\n\n' +
+                         '**`target=person` REVOKES ONE OF A PERSON\'s KEY ' +
+                         'PAIRS** (#1290, rcbj: a person\'s key pair is ' +
+                         'removed by revoking it, as on /portal/signing-key, ' +
+                         'and this replaced taking it off). Name it by ' +
+                         '`handle` — its `kid` for `jwt`, its certificate ' +
+                         'thumbprint for `saml` — and give one of the two ' +
+                         'reasons a holder may give, `cessationOfOperation` ' +
+                         '(the default) or `keyCompromise`. Its certificate ' +
+                         'goes on its issuing authority\'s CRL and the OCSP ' +
+                         'responder answers `revoked` (a certificate an ' +
+                         'external authority issued is marked revoked here ' +
+                         'only), its private half is dropped, and this ' +
+                         'service stops accepting what it signs; the ' +
+                         'person\'s other key pairs keep working. Revoking ' +
+                         'the LAST valid key pair of a profile clears that ' +
+                         'profile\'s issuer declaration with it, because a ' +
+                         'person declared as an issuer with no key to issue ' +
+                         'with is a key pair that would not go away.',
             requestBodyRequired: true,
             requestBody: {
               type: 'object',
@@ -20911,22 +20925,40 @@ class AdminApi {
                           description: 'WHOSE key pair. Defaults to ' +
                                        '`application`, which is what every ' +
                                        'caller written before this field ' +
-                                       'existed sends. `person` clears one ' +
-                                       'profile\'s set off a `ou=users` ' +
-                                       'entry, the declaration included — ' +
-                                       '`stsAssertion*` or, for ' +
-                                       '`purpose=saml`, `stsSamlAssertion*`.' },
+                                       'existed sends. `person` revokes one ' +
+                                       'of a `ou=users` entry\'s key pairs, ' +
+                                       'named by `handle`.' },
                 purpose: { type: 'string', enum: ['jwt', 'saml'],
-                           description: 'Which profile\'s key pair to take ' +
-                                        'off. Defaults to `jwt`. The other ' +
-                                        'one is untouched either way.' }
+                           description: 'Which profile\'s key pair. ' +
+                                        'Defaults to `jwt`. The other ' +
+                                        'profile is untouched either way.' },
+                handle: { type: 'string',
+                          description: '`target=person` only: the key ' +
+                                       'pair to revoke — its `kid` ' +
+                                       '(`jwt`) or certificate thumbprint ' +
+                                       '(`saml`), as GET ' +
+                                       '/admin-api/users?user= lists it, ' +
+                                       'or its certificate\'s serial in ' +
+                                       'hex. Only that person\'s key pairs ' +
+                                       'are searched.' },
+                reason: { type: 'string',
+                          enum: ['cessationOfOperation', 'keyCompromise'],
+                          description: '`target=person` only: why. ' +
+                                       'Defaults to `cessationOfOperation`; ' +
+                                       '`keyCompromise` also raises a RISC ' +
+                                       'credential-compromise event.' }
               },
               required: ['identifier'],
               examples: [{ identifier: 'webapp1' },
                          { identifier: 'webapp1', purpose: 'saml' },
-                         { identifier: 'alice', target: 'person' },
                          { identifier: 'alice', target: 'person',
-                           purpose: 'saml' }],
+                           handle: 'person-abcdefghijklmnop',
+                           reason: 'cessationOfOperation' },
+                         { identifier: 'alice', target: 'person',
+                           purpose: 'saml',
+                           handle: 'lqvDqZ8Ys2Q9Qn3Jw5kZ0bOq7ZdJ8Hc9mX5b' +
+                                   'oJbZr1E',
+                           reason: 'keyCompromise' }],
               additionalProperties: false
             },
             responseDescription: 'Whether anything was taken off, and the ' +
@@ -20982,10 +21014,13 @@ class AdminApi {
                          '`x5c`.\n\nLike `issue`, a key pair is not a trust ' +
                          'decision: the issuer the application will assert ' +
                          'as still has to be declared for section ' +
-                         '2.1.\n\n**`target=person` (2026-09-13) REPLACES A ' +
-                         'PERSON\'s KEY PAIR** — `stsAssertion*` or ' +
-                         '`stsSamlAssertion*` on their `ou=users` entry — ' +
-                         'under the same chain rules, with one more: a ' +
+                         '2.1.\n\n**`target=person` (2026-09-13) ADDS A KEY ' +
+                         'PAIR TO A PERSON\'s** (since #1290; it replaced ' +
+                         'the one held until then) — `stsAssertion*` or ' +
+                         '`stsSamlAssertion*` on their `ou=users` entry, ' +
+                         'with an optional `label`, under ' +
+                         '`pki.personSigningKeyMax` — under the same chain ' +
+                         'rules, with one more: a ' +
                          'certificate this realm issued must name THAT ' +
                          'person (`urn:sts:person:<name>`), so an ' +
                          'application\'s leaf or another person\'s is ' +
@@ -21021,9 +21056,13 @@ class AdminApi {
                                      'Ignored by this API.' },
                 target: { type: 'string', enum: ['application', 'person'],
                           description: 'WHOSE key pair. Defaults to ' +
-                                       '`application`; `person` replaces the ' +
-                                       'key pair on a `ou=users` entry, ' +
-                                       'which must already exist.' }
+                                       '`application`; `person` ADDS a key ' +
+                                       'pair to a `ou=users` entry, which ' +
+                                       'must already exist (#1290).' },
+                label: { type: 'string',
+                         description: '`target=person` only: what the ' +
+                                      'person calls this key pair, at most ' +
+                                      '40 characters. Optional.' }
               },
               required: ['identifier', 'certificate'],
               examples: [{ identifier: 'webapp1', purpose: 'jwt',

@@ -3849,9 +3849,12 @@ const CODES = [
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-PKI-0111',
-    summary: 'A person key-pair removal found nothing to take off.',
+    summary: 'A person key-pair removal found nothing to take off. Retired ' +
+      '2026-11-03 (#1290): a person\'s key pair is revoked one at a time ' +
+      'and is no longer taken off; a revocation naming nothing they hold ' +
+      'is STS-PKI-0224.',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
-      'errors}' },
+      'errors}', retired: true },
   { code: 'STS-PKI-0112',
     summary: 'A scoped PKI action named a realm\'s branch that this realm\'s ' +
       'console does not draw.',
@@ -4413,6 +4416,23 @@ const CODES = [
       'common/crypto_impl/key_material.js loaded, so its certificate and ' +
       'key operations fall back to PKI.js\'s default engine (#1280).',
     spec: 'none (logged at load)' },
+  { code: 'STS-PKI-0223',
+    summary: 'A person already holds pki.personSigningKeyMax valid RFC 7523 ' +
+      '(or RFC 7522) signing key pairs, so another was not issued or ' +
+      'uploaded (#1290).',
+    spec: 'the caller\'s refusal: /account-api/signing-key HTTP 400, a ' +
+      'console refusal banner, /admin-api HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-PKI-0224',
+    summary: 'A signing key pair revocation named a kid, thumbprint or ' +
+      'serial the person holds no key pair of that profile under (#1290).',
+    spec: 'the caller\'s refusal: /account-api/signing-key HTTP 400, a ' +
+      'console refusal banner, /admin-api HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-PKI-0225',
+    summary: 'A signing key pair was asked for with a label that is not a ' +
+      'short name (at most 40 letters, digits, spaces, dots, dashes, ' +
+      'underscores and brackets) (#1290).',
+    spec: 'the caller\'s refusal: /account-api/signing-key HTTP 400, a ' +
+      'console refusal banner, /admin-api HTTP 400 with {ok:false, errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -7673,12 +7693,14 @@ const CODES = [
     spec: '' },
   { code: 'STS-OAUTH-0089',
     summary: 'Taking a person\'s RFC 7523 key pair off was refused: this ' +
-      'process has no directory, or no person was named.',
-    spec: '' },
+      'process has no directory, or no person was named. Retired ' +
+      '2026-11-03 (#1290): a person\'s key pair is revoked, not taken off.',
+    spec: '', retired: true },
   { code: 'STS-OAUTH-0090',
     summary: 'Taking a person\'s RFC 7523 key pair off was refused: nobody ' +
-      'by that name holds one.',
-    spec: '' },
+      'by that name holds one. Retired 2026-11-03 (#1290): a person\'s key ' +
+      'pair is revoked, not taken off (STS-PKI-0224).',
+    spec: '', retired: true },
   { code: 'STS-OAUTH-0091',
     summary: 'A certificate-bound token (cnf x5t#S256) was presented on a ' +
       'connection carrying no client certificate (RFC 8705 section ' +
@@ -24504,8 +24526,9 @@ const CODES = [
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0027',
     summary: 'Taking a signing key off was refused because the person holds ' +
-      'none.',
-    spec: 'HTTP 400 page' },
+      'none. Retired 2026-11-03 (#1290): the portal revokes a signing key ' +
+      'pair row by row and has no take-off act.',
+    spec: 'HTTP 400 page', retired: true },
   { code: 'STS-PORTAL-0028',
     summary: 'A person tried to issue themselves a signing key while ' +
       'pki.personSelfService is off.',
@@ -24901,6 +24924,11 @@ const CODES = [
   { code: 'STS-PORTAL-0624',
     summary: 'A /portal/verify-pseudonym link is unknown, expired, ' +
       'mismatched or already spent (#644).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0625',
+    summary: 'A person\'s revocation of their own signing key pair on ' +
+      '/account-api/signing-key was refused without a more specific code ' +
+      '(#1290).',
     spec: 'HTTP 400 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',

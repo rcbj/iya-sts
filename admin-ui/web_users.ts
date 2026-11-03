@@ -3059,16 +3059,17 @@ class UsersPage {
   // A PERSON'S CREDENTIALS: THEIR RFC 7523 AND RFC 7522 KEY PAIRS, ON THEIR OWN
   // PAGE (2026-09-13).
   //
-  // The application page's Credentials section, for a person. Per profile: the
-  // key pair on their entry and where it came from, and the controls that
-  // REPLACE it — issue one from this realm's certificate authority, or upload a
-  // certificate the person already holds (this realm's alone, or another
-  // authority's with its whole chain) — and take it off.
+  // The application page's Credentials section, for a person. Per profile:
+  // every key pair on their entry (several since #1290) with its state and
+  // where it came from, a Revoke form on each valid one, and the controls
+  // that ADD one — issue one from this realm's certificate authority, or
+  // upload a certificate the person already holds (this realm's alone, or
+  // another authority's with its whole chain) — up to the cap.
   //
   // **THE SAME ACTIONS AND NOT NEW ONES.** Issue is `/admin/pki`'s `issue` with
   // `target=person`, posted to `/admin/pki/person` because what comes back is a
   // PRIVATE KEY and that route answers with a page rather than a redirect;
-  // Upload is `upload-certificate` and Take off is `revoke`, both to
+  // Upload is `upload-certificate` and Revoke is `revoke`, both to
   // `/admin/pki`. All three carry `from`, so the handler sends the reader back
   // here through userReturnTo(), and all three are `/admin-api/pki/{action}`
   // with no second operation — moving a form is not moving an action.
@@ -3121,132 +3122,144 @@ class UsersPage {
       return '<option value="' + kit.esc(one.id) + '">' + kit.esc(one.label) +
              '</option>';
     }).join('');
+    const T = function (k, v?) {
+      return t.html('consoleUsers.userCredentialsSection.' + k, v);
+    };
+    const reasons = (state.revocationReasons ||
+                     ['cessationOfOperation', 'keyCompromise'])
+      .map(function (one) {
+        return '<option value="' + kit.esc(one) + '">' +
+               (one === 'keyCompromise' ? T('reasonCompromise')
+                                        : T('reasonCessation')) +
+               '</option>';
+      }).join('');
+    const stateWord = function (one) {
+      const word = { valid: 'stateValid', expired: 'stateExpired',
+                     revoked: 'stateRevoked',
+                     superseded: 'stateSuperseded' }[one.state];
+      return '<span class="state-' + (one.state === 'valid' ? 'valid'
+                                                            : 'none') + '">' +
+             (word ? T(word) : kit.esc(one.state)) + '</span>' +
+             (one.reason ? ' <span class="sub">(' + kit.esc(one.reason) +
+                           (one.revokedAt ? ', ' +
+                             kit.esc(one.revokedAt.slice(0, 10)) : '') +
+                           ')</span>' : '');
+    };
+    // SEVERAL KEY PAIRS PER PROFILE (#1290): a table of every one with its
+    // state, a Revoke form on each valid row (Admin Write), and the issue
+    // and upload forms that ADD one — replaced by a note at the cap, as the
+    // portal's TLS card does.
     const purposeHtml = state.purposes.map(function (p) {
       const names = p.attributes;
       const anchor = 'credentials-' + p.id;
-      const chainCells = p.chain.length
-        ? '<ol>' + p.chain.map(function (link) {
-            return '<li>' + ApplicationsPage.certificateCells(link, t) +
-                   '</li>';
-          }).join('') + '</ol>'
-        : (p.held
-          ? '<span class="state-none">' +
-            t.html('consoleUsers.userCredentialsSection.noneStored') +
-            '</span>'
-          : '&mdash;');
-      const managed = p.held
-        ? '<table><tr><th>' +
-          t.html('consoleUsers.userCredentialsSection.thFact') + '</th><th>' +
-          t.html('consoleUsers.userCredentialsSection.thValue') +
-          '</th></tr>' +
-          '<tr><td>' + t.html('consoleUsers.mfaSection.thSource') +
-          '<div class="sub"><code>' + kit.esc(names.source) +
-          '</code></div></td><td><code>' + kit.esc(p.source) + '</code>' +
-          '<div class="sub">' + (PERSON_KEY_SOURCE_SENTENCES[p.source] ||
-                                 kit.esc(p.source)) + '</div></td></tr>' +
-          '<tr><td>' +
-          t.html('consoleUsers.userCredentialsSection.certificate') +
-          '<div class="sub"><code>' +
-          kit.esc(names.certificate) +
-          '</code></div></td><td>' +
-          ApplicationsPage.certificateCells(p.certificate, t) +
-          '</td></tr>' +
-          '<tr><td>' + t.html('consoleUsers.userCredentialsSection.chain') +
-          '<div class="sub"><code>' + kit.esc(names.chain) +
-          '</code></div></td><td>' + chainCells + '</td></tr>' +
-          '<tr><td>' + t.html('consoleUsers.userCredentialsSection.handle') +
-          '<div class="sub"><code>' + kit.esc(names.handle) +
-          '</code></div></td><td><code>' + kit.esc(p.handle || '—') +
-          '</code> <span class="sub">(' + kit.esc(p.handleLabel) +
-          ')</span></td></tr>' +
-          '<tr><td>' +
-          t.html('consoleUsers.userCredentialsSection.privateKey') +
-          '<div class="sub"><code>' +
-          kit.esc(names.privateKey) + '</code></div></td><td>' +
-          (p.privateKeyHeld
-            ? '<span class="state-valid">' +
-              t.html('consoleUsers.userCredentialsSection.heldHere') +
-              '</span>' +
-              (state.sealsAtRest
-                ? t.html('consoleUsers.userCredentialsSection.sealedAtRest')
-                : '') +
-              '<div class="sub">' +
-              t.html('consoleUsers.userCredentialsSection.shownOnce') +
-              '</div>'
-            : '<span class="state-none">' +
-              t.html('consoleUsers.userCredentialsSection.notHeld') +
-              '</span><div class="sub">' +
-              t.html('consoleUsers.userCredentialsSection.theyKeep') +
-              '</div>') +
-          '</td></tr>' +
-          '<tr><td>' +
-          t.html('consoleUsers.userCredentialsSection.assertsAs') +
-          '<div class="sub"><code>' + kit.esc(names.issuer) +
-          '</code></div></td><td>' + p.effectiveIssuers.map(function (iss) {
-            return '<code>' + kit.esc(iss) + '</code>';
-          }).join('<br>') + (p.issuers.length ? ''
-            : ' <span class="sub">' +
-              t.html('consoleUsers.userCredentialsSection.ownName') +
-              '</span>') + '</td></tr></table>'
-        : kit.note(t.html('consoleUsers.userCredentialsSection.noneHeld')) +
-          // The issuers are markup (each in its <code>), so the sentence is
-          // two messages around them.
-          (p.issuers.length
-            ? kit.note(
-                t.html('consoleUsers.userCredentialsSection.declaredBefore') +
-                p.issuers.map(function (iss) {
-                  return '<code>' + kit.esc(iss) + '</code>';
-                }).join(', ') +
-                t.html('consoleUsers.userCredentialsSection.declaredAfter'))
-            : '');
+      const revokeForm = function (one) {
+        return '<form method="post" action="/admin/pki">' +
+          hidden('action', 'revoke') + hidden('target', 'person') +
+          hidden('from', '/admin/users') + hidden('back', back) +
+          hidden('identifier', username) + hidden('purpose', p.id) +
+          hidden('handle', one.handle) +
+          '<select name="reason" aria-label="' +
+          kit.esc(t.text('consoleUsers.userCredentialsSection.reason')) +
+          '">' + reasons + '</select> ' +
+          '<button type="submit" class="danger"' +
+          kit.tip(t.text('consoleUsers.userCredentialsSection.revokeTip')) +
+          '>' + T('revoke') + '</button></form>';
+      };
+      const rows = p.keys.map(function (one) {
+        const chain = one.chain.length
+          ? '<ol>' + one.chain.map(function (link) {
+              return '<li>' + ApplicationsPage.certificateCells(link, t) +
+                     '</li>';
+            }).join('') + '</ol>'
+          : '<span class="state-none">' + T('noneStored') + '</span>';
+        return '<tr><td>' + (one.label ? kit.esc(one.label) : '&mdash;') +
+          '</td><td><code>' + kit.esc(one.handle || '—') + '</code>' +
+          '<div class="sub">' + kit.esc(p.handleLabel) + '</div></td><td>' +
+          '<code>' + kit.esc(one.source) + '</code><div class="sub">' +
+          (PERSON_KEY_SOURCE_SENTENCES[one.source] || '') + '</div></td><td>' +
+          stateWord(one) + '</td><td>' +
+          kit.esc(one.notAfter ? one.notAfter.slice(0, 10) : '—') +
+          '</td><td>' + (one.privateKeyHeld
+            ? '<span class="state-valid">' + T('heldHere') + '</span>' +
+              (state.sealsAtRest ? T('sealedAtRest') : '')
+            : '<span class="state-none">' + T('notHeld') + '</span>') +
+          '</td><td>' + ApplicationsPage.certificateCells(one.certificate, t) +
+          '<details><summary>' + T('chain') + '</summary>' + chain +
+          '</details></td>' +
+          (gate.write ? '<td>' + (one.state === 'valid' ? revokeForm(one)
+                                                       : '') + '</td>' : '') +
+          '</tr>';
+      }).join('');
+      const table = p.keys.length
+        ? '<table><thead><tr><th>' + T('thLabel') + '</th><th>' +
+          T('handle') + '</th><th>' +
+          t.html('consoleUsers.mfaSection.thSource') + '</th><th>' +
+          T('thState') + '</th><th>' + T('thExpires') + '</th><th>' +
+          T('privateKey') + '</th><th>' + T('certificate') + '</th>' +
+          (gate.write ? '<th></th>' : '') + '</tr></thead><tbody>' + rows +
+          '</tbody></table>' +
+          '<p class="sub"><code>' + kit.esc(names.keys) + '</code>, <code>' +
+          kit.esc(names.privateKey) + '</code></p>'
+        : kit.note(T('noneHeld'));
+      const assertsAs = '<p>' + T('assertsAs') + ' <span class="sub">(<code>' +
+        kit.esc(names.issuer) + '</code>)</span>: ' +
+        p.effectiveIssuers.map(function (iss) {
+          return '<code>' + kit.esc(iss) + '</code>';
+        }).join(', ') + (p.issuers.length ? ''
+          : ' <span class="sub">' + T('ownName') + '</span>') + '</p>' +
+        // The issuers are markup (each in its <code>), so the sentence is
+        // two messages around them.
+        (!p.held && p.issuers.length
+          ? kit.note(T('declaredBefore') + p.issuers.map(function (iss) {
+              return '<code>' + kit.esc(iss) + '</code>';
+            }).join(', ') + T('declaredAfter'))
+          : '');
+      const managed = table + assertsAs;
 
       if (!gate.write) {
         return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
-               managed +
-          kit.note(t.html('consoleUsers.userCredentialsSection.needsWrite'));
+               managed + kit.note(T('needsWrite'));
       }
+      const labelField = function (suffix) {
+        return '<label for="' + anchor + '-' + suffix + '-label">' +
+          T('labelField') + '</label>' +
+          '<input id="' + anchor + '-' + suffix + '-label" name="label" ' +
+          'maxlength="40" placeholder="' +
+          kit.esc(t.text('consoleUsers.userCredentialsSection.labelHint')) +
+          '">';
+      };
       const issueForm = state.ca.available
         ? '<form method="post" action="/admin/pki/person">' +
           '<div class="formrow">' + hidden('action', 'issue') +
           hidden('target', 'person') + hidden('from', '/admin/users') +
           hidden('back', back) + hidden('identifier', username) +
-          hidden('purpose', p.id) +
-          '<label for="' + anchor + '-alg">' +
-          t.html('consoleUsers.userCredentialsSection.keyAlgorithm') +
+          hidden('purpose', p.id) + labelField('issue') +
+          '<label for="' + anchor + '-alg">' + T('keyAlgorithm') +
           '</label>' +
           '<select id="' + anchor + '-alg" name="leafKeyAlg">' +
-          '<option value="">' +
-          t.html('consoleUsers.userCredentialsSection.caDefault',
-                 { alg: state.ca.keyAlg }) +
+          '<option value="">' + T('caDefault', { alg: state.ca.keyAlg }) +
           '</option>' + algOptions + '</select>' +
-          '<label for="' + anchor + '-days">' +
-          t.html('consoleUsers.userCredentialsSection.days') + '</label>' +
+          '<label for="' + anchor + '-days">' + T('days') + '</label>' +
           '<input type="number" id="' + anchor + '-days" name="days" min="1" ' +
           'value="' + kit.esc(String(state.ca.leafLifetimeDays)) + '">' +
-          '<label for="' + anchor + '-issuer">' +
-          t.html('consoleUsers.userCredentialsSection.declaredIssuer') +
+          '<label for="' + anchor + '-issuer">' + T('declaredIssuer') +
           '</label>' +
           '<input id="' + anchor + '-issuer" name="issuer" placeholder="' +
           kit.esc(t.text('consoleUsers.userCredentialsSection.issuerHint')) +
           '">' +
-          '<button type="submit">' + (p.held
-            ? t.html('consoleUsers.userCredentialsSection.replaceIssue')
-            : t.html('consoleUsers.userCredentialsSection.issue')) +
-          '</button>' +
+          '<button type="submit">' + T('issue') + '</button>' +
           '</div></form>'
-        : kit.note(t.html('consoleUsers.userCredentialsSection.noCaBefore') +
-                    '<a href="/admin/pki">' +
-                    t.html('consoleUsers.userCredentialsSection.buildOne') +
-                    '</a>' +
-                    t.html('consoleUsers.userCredentialsSection.noCaAfter'));
+        : kit.note(T('noCaBefore') + '<a href="/admin/pki">' +
+                   T('buildOne') + '</a>' + T('noCaAfter'));
 
       const uploadForm = '<form method="post" action="/admin/pki">' +
         hidden('action', 'upload-certificate') + hidden('target', 'person') +
         hidden('from', '/admin/users') + hidden('back', back) +
         hidden('identifier', username) + hidden('purpose', p.id) +
+        '<div class="formrow">' + labelField('upload') + '</div>' +
         '<div class="formrow"><label for="' + anchor + '-cert"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.certTip')) + '>' +
-        t.html('consoleUsers.userCredentialsSection.certPem') +
+        T('certPem') +
         '</label><textarea id="' + anchor + '-cert" name="certificate" ' +
         'rows="6" required' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.certAreaTip')) +
@@ -3254,40 +3267,20 @@ class UsersPage {
         'CERTIFICATE-----"></textarea></div><div class="formrow"><label ' +
         'for="' + anchor + '-chain"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.chainTip')) +
-        '>' + t.html('consoleUsers.userCredentialsSection.chainPem') +
-        '</label><textarea id="' +
-        anchor +
+        '>' + T('chainPem') + '</label><textarea id="' + anchor +
         '-chain" name="chain" rows="6"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.chainAreaTip')) +
         ' placeholder="-----BEGIN ' +
         'CERTIFICATE-----"></textarea></div><div class="formrow"><button ' +
         'type="submit"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.uploadTip')) +
-        '>' +
-        (p.held ? t.html('consoleUsers.userCredentialsSection.replaceUpload')
-                : t.html('consoleUsers.userCredentialsSection.upload')) +
-        '</button></div></form>';
-
-      const takeOff = p.held || p.issuers.length
-        ? '<form method="post" action="/admin/pki">' +
-          '<div class="formrow">' + hidden('action', 'revoke') +
-          hidden('target', 'person') + hidden('from', '/admin/users') +
-          hidden('back', back) + hidden('identifier', username) +
-          hidden('purpose', p.id) +
-          '<button type="submit" class="danger"' +
-          kit.tip(t.text('consoleUsers.userCredentialsSection.takeOffTip')) +
-          '>' + t.html('consoleUsers.userCredentialsSection.takeOff') +
-          '</button><span class="sub">' +
-          t.html('consoleUsers.userCredentialsSection.notRevocation') +
-          '</span></div></form>'
-        : '';
+        '>' + T('upload') + '</button></div></form>';
 
       return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
-             managed +
-        '<h4>' + t.html('consoleUsers.userCredentialsSection.replaceHeading') +
-        '</h4>' +
-        kit.note(t.html('consoleUsers.userCredentialsSection.replaceNote')) +
-        issueForm + uploadForm + takeOff;
+             managed + '<h4>' + T('addHeading') + '</h4>' +
+             (p.atCap
+               ? kit.note(T('atCap', { max: String(state.maxPerPerson) }))
+               : kit.note(T('addNote')) + issueForm + uploadForm);
     }).join('');
     return heading + purposeHtml +
       (state.selfService
