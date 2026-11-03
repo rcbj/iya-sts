@@ -296,7 +296,13 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // locked FOR UPDATE by the portable cluster statements in place of
 // `pg_advisory_xact_lock` (`persistence/cluster_portable.js`). Empty and
 // unread on a store that runs the native statements.
-const SCHEMA_VERSION = 30;
+// 31 SINCE 2026-11-03 (#1290): `sts_ldap_entries_asked_names` rebuilt with
+// `stsassertionkeypair` and `stssamlassertionkeypair` among the asked names
+// in place of `stsassertionjwks` and `stssamlassertioncertificate`: a
+// person's RFC 7523 and RFC 7522 key pairs are several records per profile
+// now, and `person_assertions.js` asks for their holders by the new names.
+// The same advisory step as 27 and 28, looking for the newest name.
+const SCHEMA_VERSION = 31;
 // How many times a directory flush re-reads the data-key rows and tries
 // again when a locked row is sealed under a key this process does not hold
 // yet, and the pause between tries (2026-10-27; saveDirectory()).
@@ -1931,11 +1937,15 @@ const SCHEMA_UPGRADES = [
   // dropped and built again from SCHEMA_OBJECTS' statement. Advisory: on a
   // large store the build takes minutes and locks writes, which is the
   // owner's call (`postgres/schema.sql`), not a start-up's.
-  { name: 'sts_ldap_entries_asked_names_v28', table: 'sts_ldap_entries',
-    advisory: true, issue: '#1028',
+  // And again for #1290 (schema version 31), whose names replace two: a
+  // definition still spelling `stsassertionjwks` answers "nobody" for the
+  // new key pair records.
+  { name: 'sts_ldap_entries_asked_names_v31', table: 'sts_ldap_entries',
+    advisory: true, issue: '#1290',
     when: 'EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = ' +
           '\'sts_ldap_entries_asked_names\' AND (position(\'stsbackupcodes\' ' +
           'in indexdef) = 0 OR position(\'pwdaccountlockedtime\' in ' +
+          'indexdef) = 0 OR position(\'stsassertionkeypair\' in ' +
           'indexdef) = 0))',
     statements: ['DROP INDEX IF EXISTS sts_ldap_entries_asked_names',
       SCHEMA_OBJECTS.filter(function (object) {

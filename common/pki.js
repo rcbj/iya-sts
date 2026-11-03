@@ -2950,6 +2950,10 @@ async function issueSigningKeyPair(realmId, opts) {
     subjectKind: subjectKind.id,
     subjectKindLabel: subjectKind.label,
     subjectUri: subjectKind.urnPrefix + identifier,
+    // WHICH AUTHORITY SIGNED IT, by the id its revocation list is kept
+    // under (#1290): a person's key pairs are revoked one at a time on
+    // `/portal/signing-key`, and a serial is unique only within one issuer.
+    useCase: issuing.useCase || primaryUseCaseFor(id),
     kid: publicJwk.kid,
     keyAlg: keyAlgId,
     signatureAlg: sigAlgId,

@@ -802,6 +802,29 @@ function certificatesForParty(fields) {
                      : [] });
     });
   });
+  // A PERSON'S, one per valid key pair, each travelling with its own chain
+  // (#1290) — the managed-certificate slot's shape, several times over.
+  // `issuerEntry()` builds this member from `person_assertions.js`'s record
+  // and nothing else does, so an application entry never carries it.
+  // ONLY THAT RECORD'S SHAPE IS READ: a list of objects. The store is
+  // schemaless, so an `ldapmodify` could write an attribute of this name onto
+  // an application entry, and its values would be strings: those are skipped
+  // here rather than thrown on or read as certificates.
+  const held = fields && Array.isArray(fields.personSamlCertificates)
+    ? fields.personSamlCertificates : [];
+  held.filter(function (one) {
+    return !!one && typeof one === 'object';
+  }).forEach(function (one) {
+    const thumbprint = thumbprintOf(one.pem);
+    if (!thumbprint) {
+      problems.push('stsSamlAssertionKeyPair: a certificate in it could not ' +
+                    'be read');
+      return;
+    }
+    found.push({ pem: String(one.pem), source: 'issued',
+                 thumbprint: thumbprint, chain: String(one.chain || ''),
+                 siblings: [] });
+  });
   log.debug('Leaving certificatesForParty(). ' + found.length + ' ' +
       'certificate(s).');
   return { certificates: found, problems: problems };
@@ -818,12 +841,13 @@ function certificatesForParty(fields) {
 // and before an application's own identifier — `assertion_grant.js`'s order,
 // for its reason: every declaration in the realm first, then the two ways a
 // party is found by its own name. A person is an issuer here only while they
-// hold an RFC 7522 key pair of their own (`stsSamlAssertion*`), and what comes
-// back carries `kind: 'person'` so `verify()` can hold them to asserting about
-// themselves. **Their certificate is handed to `certificatesForParty()` in the
-// shape section 2.2 already uses**, the managed-certificate slot and its chain
-// — a person has no registered-by-value certificate — so the reader that
-// refuses to cross into the RFC 7523 set is the same one reading this.
+// hold a valid RFC 7522 key pair of their own (`stsSamlAssertion*`), and what
+// comes back carries `kind: 'person'` so `verify()` can hold them to
+// asserting about themselves. **Their certificates are handed to
+// `certificatesForParty()` as `personSamlCertificates`** — every valid one
+// with its own chain, since a person may hold several (#1290) — and a person
+// has no registered-by-value certificate, so the reader that refuses to cross
+// into the RFC 7523 set is the same one reading this.
 function issuerEntry(iss) {
   log.debug('Entering issuerEntry(). iss=' + iss);
   // RFC 7522 section 3 item 1: Simple String Comparison, RFC 3986 section
@@ -852,12 +876,11 @@ function issuerEntry(iss) {
   if (person) {
     log.debug('Leaving issuerEntry(). A person: ' + person.identifier + '.');
     return { identifier: person.identifier,
-             fields: {
-               oauthSamlAssertionCertificate:
-                 person.record.stsSamlAssertionCertificate,
-               oauthSamlAssertionCertificateChain:
-                 person.record.stsSamlAssertionCertificateChain
-             },
+             // THE PERSON'S VALID CERTIFICATES, EACH WITH ITS OWN CHAIN
+             // (#1290): several key pairs per person, any of them matched by
+             // thumbprint, and a revoked or expired one not among them.
+             fields: { personSamlCertificates:
+                         person.record.samlCertificates || [] },
              declared: person.declared, kind: 'person',
              person: person.record };
   }

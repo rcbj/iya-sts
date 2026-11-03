@@ -2930,7 +2930,12 @@ writes to:
   slow one; a new caller adds its name to the list, which changes the index
   expression and so is a schema version. `tests/directory_asked_names.js`
   reads the names out of the call sites and fails on one the list lacks, or a
-  listed name nobody asks.
+  listed name nobody asks. **Schema version 31 (#1290, 2026-11-03)** swapped
+  `stsassertionjwks` and `stssamlassertioncertificate` for
+  `stsassertionkeypair` and `stssamlassertionkeypair` — a person's signing key
+  pairs became one record each — and the advisory step
+  `sts_ldap_entries_asked_names_v31` rebuilds an index whose definition lacks
+  the new name.
 * **`userpassword` is not in the list**: nearly every person holds one. The
   two questions asked about it are the counters' — `countHolding()` already,
   and `anyWithAttribute()` (`anybodyHoldsACredential()`) now reads the

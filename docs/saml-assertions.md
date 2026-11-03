@@ -241,31 +241,39 @@ issued for.
 
 `/admin/pki` shows **one row per application per profile**, because every fact
 on such a row — the key handle, the expiry, the declared issuer, whether there
-is a key pair to take off — is per profile.
+is a key pair to take off — is per profile. A person's key pairs are one row
+each.
 
 ## A person can be the issuer too
 
-A person may hold an RFC 7522 key pair on their own directory entry —
-`stsSamlAssertionCertificate`, its chain, `stsSamlAssertionThumbprint` and a
-sealed `stsSamlAssertionPrivateKey`, a set sharing no name with the JWT one — and
-sign a SAML assertion **about themselves**: the `<Issuer>` is their username (or
+A person may hold RFC 7522 key pairs on their own directory entry — several,
+up to `pki.personSigningKeyMax` (5) valid ones, each a `stsSamlAssertionKeyPair`
+record (the certificate, its chain, its thumbprint, its expiry, where it came
+from and an optional label) with a sealed `stsSamlAssertionPrivateKey` value for
+one issued here, a set sharing no name with the JWT one — and sign a SAML
+assertion **about themselves** with any valid one: the `<Issuer>` is their username (or
 `stsSamlAssertionIssuer`, if one is declared) and the `<Subject>` must name the
 same person. One naming anybody else is refused `invalid_grant` with a sentence
 saying why; a party that may assert about other people is an application with
 `oauthSamlAssertionIssuer` declared on it.
 
-The key pair is issued, uploaded or taken off from the **Credentials** section of
+A key pair is issued, uploaded or revoked from the **Credentials** section of
 `/admin/users?user=<name>`, or through `/admin-api/pki/issue`,
 `/pki/upload-certificate` and `/pki/revoke` with `target: "person"` and
-`purpose: "saml"`. As for an application, the verifier checks only the
-certificate registered on the person's entry — a chain to the Root alone is still
+`purpose: "saml"` — `revoke` naming the certificate's thumbprint as `handle`.
+Revoking puts the certificate on its authority's CRL (a certificate an external
+authority issued is marked revoked here only) and the verifier refuses it from
+then on; the person's other key pairs keep working. As for an application, the
+verifier checks only the certificates registered on the person's entry, matched
+by thumbprint — a chain to the Root alone is still
 refused, and the person's RFC 7523 key does not sign for this profile.
 
-**A person can issue it themselves**, on `/portal/signing-key`: the RFC 7522 card
-has its own *Generate* and *Take off*, the private key and the certificate
-chain are offered once as downloads in the card's *Certificate* row, with the
-`<Issuer>`, `<Subject>`, audience and certificate thumbprint to use, and taking
-it off leaves their RFC 7523 key working. `pki.personSelfService` turns the
+**A person can issue them themselves**, on `/portal/signing-key`: the RFC 7522
+card lists every key pair they hold, each with its own *Revoke*, and *Generate*
+adds another (replaced by a note at the cap); the private key and the
+certificate chain are offered once as downloads in the new key pair's row, with
+the `<Issuer>`, `<Subject>`, audience and certificate thumbprint to use, and
+revoking one leaves the others — and their RFC 7523 keys — working. `pki.personSelfService` turns the
 self-service door off for both profiles; it takes away no key already held.
 
 ## It can be exchanged, too

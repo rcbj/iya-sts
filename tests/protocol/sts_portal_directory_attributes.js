@@ -679,16 +679,14 @@ async function theCredentialsAreNotOnIt(b) {
      // private half is an attribute in this directory that can be read back
      // and USED, so it belongs on this list beside the authenticator's
      // secret (the recovery codes are hashes since 2026-09-11, and stay on
-     // the list by name) — and the public five belong on it too,
+     // the list by name) — and the public records belong on it too,
      // because the page draws a FIXED LIST and an attribute arriving on it by
      // accident is the defect this section exists to catch, whatever that
-     // attribute happens to hold.
-     "stsAssertionPrivateKey", "stsAssertionJwks", "stsAssertionCertificate",
-     "stsAssertionCertificateChain", "stsAssertionKid",
-     "stsAssertionExpiresAt", "stsAssertionIssuer",
-     "stsassertionprivatekey", "stsassertionjwks", "stsassertioncertificate",
-     "stsassertioncertificatechain", "stsassertionkid",
-     "stsassertionexpiresat", "stsassertionissuer",
+     // attribute happens to hold. One record per key pair since #1290.
+     "stsAssertionPrivateKey", "stsAssertionKeyPair", "stsAssertionIssuer",
+     "stsSamlAssertionPrivateKey", "stsSamlAssertionKeyPair",
+     "stsassertionprivatekey", "stsassertionkeypair", "stsassertionissuer",
+     "stssamlassertionprivatekey", "stssamlassertionkeypair",
      // The stored spellings too: this directory lower-cases every attribute
      // name on the way in, so a dump of the entry would print THESE rather
      // than the canonical ones above.

@@ -2078,16 +2078,20 @@ const SCHEMAS = {
       credentials: openObject(
         'This person\'s assertion key pairs (2026-09-13): `keyPairs`, one ' +
         'per profile — `jwt` (RFC 7523, `stsAssertion*`) and `saml` (RFC ' +
-        '7522, `stsSamlAssertion*`) — each with `held`, `source` (`issued`, ' +
-        '`uploaded-realm-ca`, `uploaded-external-ca`), `privateKeyHeld`, the ' +
-        'parsed `certificate` and `chain`, the key `handle`, the declared ' +
-        'and effective issuers and the attribute names. **No private key is ' +
-        'in it**: a person\'s is shown once, by the issue, and has no read ' +
-        'door. Replaced through POST /admin-api/pki/issue and ' +
-        '/pki/upload-certificate with `target=person`, and taken off with ' +
-        '/pki/revoke.', {
+        '7522, `stsSamlAssertion*`) — each with `keys` (EVERY key pair, ' +
+        'several since #1290, newest first: its `handle`, `label`, `source` ' +
+        '(`issued`, `uploaded-realm-ca`, `uploaded-external-ca`), `state` ' +
+        '(`valid`, `expired`, `revoked`, `superseded`), `reason`, ' +
+        '`privateKeyHeld`, the parsed `certificate` and `chain`), `held` (a ' +
+        'valid one is), `valid`, `atCap` (`pki.personSigningKeyMax`), the ' +
+        'declared and effective issuers and the attribute names. **No ' +
+        'private key is in it**: a person\'s is shown once, by the issue, ' +
+        'and has no read door. Added through POST /admin-api/pki/issue and ' +
+        '/pki/upload-certificate with `target=person`, and revoked one at a ' +
+        'time with /pki/revoke and its `handle`.', {
           keyPairs: { type: 'array',
-                      items: openObject('One profile\'s key pair.', {}) },
+                      items: openObject('One profile\'s key pairs.', {}) },
+          maxPerPerson: { type: 'integer' },
           storable: { type: 'boolean' },
           found: { type: 'boolean' },
           caAvailable: { type: 'boolean' }

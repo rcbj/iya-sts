@@ -539,34 +539,40 @@ curl -sk -X POST https://localhost:8081/admin-api/applications/regenerate-secret
 ## A person's credentials, on their own page
 
 `/admin/users?user=<name>` has a **Credentials** section too:
-the person's own assertion key pairs, one per profile — RFC 7523 (JWT, on
+the person's own assertion key pairs per profile — RFC 7523 (JWT, on
 `stsAssertion*`) and RFC 7522 (SAML 2.0, on `stsSamlAssertion*`). **A person may
-hold an RFC 7522 key pair**, and the SAML 2.0 bearer grant reads it.
+hold several of each** (#1290), up to `pki.personSigningKeyMax` (5) valid ones
+per profile, and the two bearer grants accept any valid one.
 
-It shows what the application's section shows — the certificate, its issuer, the
-chain, the key handle (`kid` for JWT, the certificate thumbprint for SAML),
-where the key pair came from (`stsAssertionKeySource` /
-`stsSamlAssertionKeySource`, with the same three values) and the issuer the
-person asserts as — with one difference: **it says whether this service holds
+It lists every key pair with its state (valid, expired, revoked, superseded)
+and shows what the application's section shows — the certificate, its issuer,
+the chain, the key handle (`kid` for JWT, the certificate thumbprint for SAML),
+where the key pair came from (`issued`, `uploaded-realm-ca`,
+`uploaded-external-ca`), its label, and the issuer the person asserts as — with one difference: **it says whether this service holds
 the private key and never shows it.** A person's private key is shown once, on
 the page the Issue button opens, and nothing opens it again.
 
-The controls are the same three, needing Admin Write:
+The controls need Admin Write. The first two ADD a key pair — the ones held go
+on working — and are replaced by a note at the cap:
 
 * **Issue from this realm's CA** — generates a key pair for that profile,
   signs it with the realm's Issuing CA, seals the private key on the entry and
   shows it once, with a link back to the person.
 * **Upload a certificate** the person already holds, under exactly the chain
   rules above — this realm's alone, or another CA's with its full chain to a
-  self-signed root. No private key is taken, and the one an earlier issue left
-  is cleared. **A certificate this realm issued must have been issued to this
+  self-signed root. No private key is taken. **A certificate this realm issued must have been issued to this
   person**: an application's leaf, or another person's, is refused, because a
   person's key pair is that one person's credential and registering somebody
   else's would let its holder assert as them. (For the same reason a person's
   leaf is refused for an application.) A self-signed certificate is refused —
   a person has no by-value registration.
-* **Take this key pair off** — that profile's key pair and its declared issuer;
-  the other profile's is untouched. Not revocation.
+* **Revoke**, on each valid row, with a reason (`cessationOfOperation` or
+  `keyCompromise`) — the certificate goes on its authority's CRL and the OCSP
+  responder answers `revoked` (an external authority's certificate is marked
+  revoked here only), the private half is dropped, and this service refuses
+  what the key signs. The person's other key pairs are untouched; revoking the
+  last valid one of a profile clears that profile's declared issuer. This
+  replaced *Take this key pair off*, which put nothing on any list (#1290).
 
 **Whichever way the key pair got there, a person's assertion may only be about
 themselves**: the JWT grant refuses a `sub`, and the SAML grant a `<Subject>`,
@@ -580,7 +586,7 @@ curl -sk -X POST https://localhost:8081/admin-api/pki/issue \
   -H "$H" -H 'Content-Type: application/json' \
   -d '{"identifier":"alice","target":"person","purpose":"saml"}' > saml.json
 
-# Or replace it with a certificate alice already holds from another CA.
+# Or add a certificate alice already holds from another CA.
 curl -sk -X POST https://localhost:8081/admin-api/pki/upload-certificate \
   -H "$H" -H 'Content-Type: application/json' \
   -d "$(jq -n --rawfile c leaf.pem --rawfile ch chain.pem \
@@ -591,15 +597,18 @@ curl -sk -X POST https://localhost:8081/admin-api/pki/upload-certificate \
 curl -sk "https://localhost:8081/admin-api/users?user=alice" \
   -H "$H" | jq .credentials
 
-# Take the SAML key pair off, leaving the JWT one.
+# Revoke one SAML key pair by its thumbprint, leaving every other key pair.
 curl -sk -X POST https://localhost:8081/admin-api/pki/revoke \
   -H "$H" -H 'Content-Type: application/json' \
-  -d '{"identifier":"alice","target":"person","purpose":"saml"}'
+  -d '{"identifier":"alice","target":"person","purpose":"saml",
+       "handle":"<thumbprint>","reason":"cessationOfOperation"}'
 ```
 
-`/portal/signing-key`, where a person issues themselves a key pair, offers both
-profiles: a card each, with its own Generate and its own Take
-off, and the one-time page describing the grant the new key is for.
+`/portal/signing-key`, where a person issues themselves key pairs, offers both
+profiles the TLS card's way: a card each, listing every key pair with a
+*Revoke* on each valid row, a *Generate* that adds one under an optional name
+(a note in its place at the cap), and the one-time block describing the grant
+the new key is for.
 
 ## A TLS client certificate from the portal
 
@@ -741,7 +750,7 @@ USED** — the same sources and the same policy, refused as `STS-PKI-0129`:
 
 | Where a registered certificate verifies something | What is checked |
 |---|---|
-| **An RFC 7523 grant or `private_key_jwt` client authentication** | the `x5c` of the key in `jwks` / `oauthAssertionJwks` / a person's `stsAssertionJwks` that verified the assertion. A key with **no** `x5c` is a bare key: nothing to look up, and the result says `bare` rather than good |
+| **An RFC 7523 grant or `private_key_jwt` client authentication** | the `x5c` of the key in `jwks` / `oauthAssertionJwks` / a person's valid `stsAssertionKeyPair` records that verified the assertion. A key with **no** `x5c` is a bare key: nothing to look up, and the result says `bare` rather than good |
 | **An RFC 7522 grant or client authentication** | the registered or issued certificate that verified the assertion |
 | **A federated sign-in** (SAML 2.0, SAML 1.1, WS-Federation, OpenID Connect, OAuth 2.0 with a JWT access token) | `fedSigningCertificate`, or the `x5c` of the partner key that verified the token — before the session starts |
 | **The OID4VP response endpoint** | the certificate in `oid4vp.trustedIssuerCertificates` that verified the credential, as a check row |
@@ -1590,6 +1599,7 @@ is checked — see
 | `pki.personSelfServicePerIdentity` | `STS_PKI_PERSON_SELF_SERVICE_PER_IDENTITY` | `5` | yes | How often one person may press Generate on `/portal/signing-key` in a `security.rateLimitWindowS` window. |
 | `pki.personSelfServicePerAddress` | `STS_PKI_PERSON_SELF_SERVICE_PER_ADDRESS` | `5` | yes | The same limit counted per client address, for everybody behind one NAT or proxy. |
 | `pki.personTlsClientCertificateMax` | `STS_PKI_PERSON_TLS_CLIENT_CERTIFICATE_MAX` | `5` | yes | Valid TLS client certificates one person may issue themselves on the portal; past it the portal refuses (`STS-PKI-0170`) rather than revoking an older one. |
+| `pki.personSigningKeyMax` | `STS_PKI_PERSON_SIGNING_KEY_MAX` | `5` | yes | Valid RFC 7523 / RFC 7522 signing key pairs one person may hold, per profile; past it every door refuses (`STS-PKI-0223`) rather than revoking an older one. |
 | `pki.applicationTlsClientCertificateMax` | `STS_PKI_APPLICATION_TLS_CLIENT_CERTIFICATE_MAX` | `5` | yes | Valid TLS client certificates an administrator may issue one application; past it the issue is refused (`STS-PKI-0180`). |
 | `pki.messageSigningCertificateMax` | `STS_PKI_MESSAGE_SIGNING_CERTIFICATE_MAX` | `5` | yes | Valid message-signing certificates (what a WS-Trust requester signs its request with) an administrator may issue one person or one application; past it the issue is refused (`STS-PKI-0220`). |
 | `pki.enrollmentMaxCertificatesPerEntry` | `STS_PKI_ENROLLMENT_MAX_CERTIFICATES_PER_ENTRY` | `20` | yes | Certificates issued over [ACME](acme.md), [EST](est.md) or [SCEP](scep.md) one entry may carry at once; past it a request is refused (`STS-ENROLL-0040`) rather than an older certificate being forgotten. |

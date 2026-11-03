@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "一个人可以在用户门户上为自己签发多少个仍然有效的 TLS 客户端证书——每个浏览器或设备一个。已吊销或已过期的证书不计入。超出后门户会拒绝（STS-PKI-0170），而不是吊销某人可能仍在使用的较旧证书。签发证书还受 pki.personSelfService 以及上面两项自助服务速率限制的约束。"
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "每人每个配置文件可持有的签名密钥对"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "一个人对每个配置文件（RFC 7523 JWT 与 RFC 7522 SAML 2.0 分别计算）最多可持有多少个仍然有效的断言签名密钥对——无论是在用户门户上签发、由管理员签发还是上传的。已吊销或已过期的密钥对不计入。超过上限时，门户会把“生成”按钮换成一条说明，每个入口都会拒绝（STS-PKI-0223），而不是吊销某人可能仍在使用的较旧密钥对。"
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "每个应用可持有的 TLS 客户端证书数"

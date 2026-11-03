@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "Nombre de certificats client TLS encore valides qu’une personne peut s’émettre elle-même sur le portail utilisateur — un par navigateur ou appareil. Un certificat révoqué ou expiré n’est pas compté. Au-delà, le portail refuse (STS-PKI-0170) plutôt que de révoquer un certificat plus ancien que quelqu’un utilise peut-être encore. L’émission est également soumise à pki.personSelfService et aux deux limites de débit en libre-service ci-dessus."
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "Paires de clés de signature qu’une personne peut détenir par profil"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "Combien de paires de clés de signature d’assertions encore valides une personne peut détenir pour CHAQUE profil — RFC 7523 (JWT) et RFC 7522 (SAML 2.0) sont comptés séparément —, qu’elles aient été émises sur le portail utilisateur, émises par un administrateur ou téléversées. Une paire de clés révoquée ou expirée ne compte pas. Au-delà, le portail remplace son bouton Générer par une note et chaque porte refuse (STS-PKI-0223) plutôt que de révoquer une paire de clés plus ancienne que quelqu’un utilise peut-être encore."
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "Certificats client TLS qu’une application peut détenir"

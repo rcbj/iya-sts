@@ -372,6 +372,8 @@
   "person": "Persona",
   "personPlaceholder": "un nombre de usuario en ou=users",
   "declaredIssuer": "Emisor declarado",
+  "keyLabel": "Nombre (opcional)",
+  "revokePersonKey": "Revocar",
   "theirUsername": "(su nombre de usuario)",
   "takeOff": "Quitar este par de claves",
   "noDirectory": "Este proceso no tiene directorio, así que nadie puede tener un par de claves de aserción, y se rechaza una aserción que nombre a una persona como emisor por falta de un emisor registrado.",

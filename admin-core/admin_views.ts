@@ -12704,11 +12704,12 @@ class AdminViews {
   // A PERSON'S KEY PAIRS, ON THEIR OWN PAGE (2026-09-13).
   //
   // The application's section above, for the other kind of holder: for each
-  // assertion profile, the key pair on the person's own entry — issued here or
-  // a certificate uploaded in its place — read into which certificate, issued
-  // by whom, through what chain, and whether this service holds the private
-  // half. `person_assertions.KEY_PAIR_ATTRIBUTES` names the attributes, which
-  // is the table the writer uses.
+  // assertion profile, EVERY key pair on the person's own entry (several
+  // since #1290, each with its state) — issued here or a certificate uploaded
+  // — read into which certificate, issued by whom, through what chain, and
+  // whether this service holds the private half.
+  // `person_assertions.KEY_PAIR_ATTRIBUTES` names the attributes, which is
+  // the table the writer uses.
   //
   // **THERE IS NO PRIVATE KEY IN THE STATE, EITHER HALF**, and that is a
   // difference from the application's which is the point rather than an
@@ -12738,37 +12739,45 @@ class AdminViews {
     pki.PURPOSES.forEach(function (purpose) {
       labels[purpose.id] = purpose.label;
     });
+    // SEVERAL KEY PAIRS PER PROFILE SINCE #1290, each a row with its state,
+    // and the cap the issue and upload controls are held to.
+    const max = Number(personAssertions.maxPerPerson() || 0);
     const purposes = personAssertions.PURPOSE_IDS.map(function (id) {
       const names = personAssertions.KEY_PAIR_ATTRIBUTES[id];
-      const value = function (name) {
-        log.debug("Entering value().");
-        log.debug("Leaving value().");
-        return record && name ? String(record[name] || '') : '';
-      };
-      const certificatePem = value(names.certificate);
-      const privateKeyHeld = !!value(names.privateKey);
-      const held = !!(record && (id === 'saml' ? record.hasSamlKeyPair
-                                               : record.hasKeyPair));
+      const keys = ((record && record.keys && record.keys[id]) || [])
+        .map(function (one) {
+          return {
+            handle: String(one.id || ''),
+            label: String(one.label || ''),
+            source: String(one.source || ''),
+            state: String(one.state || ''),
+            reason: String(one.reason || ''),
+            revokedAt: String(one.revokedAt || ''),
+            serialHex: String(one.serialHex || ''),
+            expiresAt: String(one.expiresAt || ''),
+            notAfter: String(one.notAfter || ''),
+            privateKeyHeld: !!one.privateKeyHeld,
+            certificate: one.certificatePem
+              ? self.certificateSummary(one.certificatePem) : null,
+            chain: self.pemCertificatesIn(String(one.chainPem || ''))
+              .map(self.certificateSummary.bind(self))
+          };
+        });
+      const valid = keys.filter(function (one) {
+        return one.state === 'valid';
+      }).length;
       const declared = record
         ? (id === 'saml' ? record.samlIssuers : record.issuers) : [];
       return {
         id: id,
         label: labels[id] || id,
-        attributes: { issuer: names.issuer, certificate: names.certificate,
-                      chain: names.chain, privateKey: names.privateKey,
-                      handle: names.handle, source: names.source,
-                      expiresAt: names.expiresAt, jwks: names.jwks },
-        held: held,
-        source: value(names.source) ||
-          (privateKeyHeld ? 'issued' : (certificatePem ? 'unrecorded' : '')),
-        privateKeyHeld: privateKeyHeld,
-        certificate: certificatePem ? self.certificateSummary(certificatePem) :
-                     null,
-        chain: self.pemCertificatesIn(value(names.chain))
-          .map(self.certificateSummary.bind(self)),
-        handle: value(names.handle),
+        attributes: { issuer: names.issuer, keys: names.keys,
+                      privateKey: names.privateKey },
+        held: valid > 0,
+        keys: keys,
+        valid: valid,
+        atCap: max > 0 && valid >= max,
         handleLabel: names.handleLabel,
-        expiresAt: value(names.expiresAt),
         issuers: declared.slice(),
         effectiveIssuers: record
           ? (id === 'saml' ? record.samlEffectiveIssuers
@@ -12788,19 +12797,21 @@ class AdminViews {
       },
       sealsAtRest: storable && keystore.persists(),
       selfService: !!config.value('pki.personSelfService'),
-      sources: applications.KEY_SOURCES.slice()
+      sources: applications.KEY_SOURCES.slice(),
+      maxPerPerson: max,
+      revocationReasons: personAssertions.REVOCATION_REASONS.slice()
     };
     state.json = {
       storable: storable,
       found: state.found,
       keyPairs: purposes.map(function (p) {
-        return { purpose: p.id, label: p.label, held: p.held, source: p.source,
-                 privateKeyHeld: p.privateKeyHeld, certificate: p.certificate,
-                 chain: p.chain, handle: p.handle, handleLabel: p.handleLabel,
-                 expiresAt: p.expiresAt, issuers: p.issuers,
-                 effectiveIssuers: p.effectiveIssuers,
+        return { purpose: p.id, label: p.label, held: p.held, keys: p.keys,
+                 valid: p.valid, atCap: p.atCap, handleLabel: p.handleLabel,
+                 issuers: p.issuers, effectiveIssuers: p.effectiveIssuers,
                  attributes: p.attributes };
       }),
+      maxPerPerson: max,
+      revocationReasons: personAssertions.REVOCATION_REASONS.slice(),
       caAvailable: chainAvailable,
       sealsAtRest: state.sealsAtRest,
       selfService: state.selfService,

@@ -5493,13 +5493,15 @@ const ENDPOINTS: EndpointEntry[] = [
           'handlers in this API that await (/admin-api/ssf is the other). ' +
           '`issue` HANDS THE PRIVATE KEY OVER ONCE and this service keeps no ' +
           'second copy of it; `export` returns key material base64\'d, like ' +
-          '/admin-api/keys/export and for its reason. **`revoke` REVOKES ' +
-          'NOTHING**: it takes the key pair off the application, so this ' +
-          'service stops ACCEPTING what that key signs, and the certificate ' +
-          'goes on chaining — the reply says so in those words. `issue` and ' +
-          '`revoke` take a `target` of application (the default) or person — ' +
-          'a person\'s key pair goes onto their ou=users entry as ' +
-          'stsAssertion* and may only assert about themselves. Mirrors POST ' +
+          '/admin-api/keys/export and for its reason. **For an application ' +
+          '`revoke` REVOKES NOTHING**: it takes the key pair off the ' +
+          'application, so this service stops ACCEPTING what that key signs, ' +
+          'and the certificate goes on chaining — the reply says so in those ' +
+          'words. `issue` and `revoke` take a `target` of application (the ' +
+          'default) or person — a person holds several key pairs on their ' +
+          'ou=users entry as stsAssertion*, each may only assert about ' +
+          'themselves, and `revoke` with a `handle` puts ONE of them on its ' +
+          'authority\'s CRL (#1290). Mirrors POST ' +
           '/admin/pki, POST /admin/pki/certificate and POST ' +
           '/admin/pki/person.' },
   { path: '/admin-api/certificates', group: 'Management API',
