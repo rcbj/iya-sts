@@ -139,6 +139,7 @@ person's act.
 | | Development | Product |
 |---|---|---|
 | The base a DID is minted on | The pinned base, or the request's own address | The pinned base only (otherwise refused) |
+| A `realm`-custody private key at rest | Kept as written: development's key-encryption key does not outlive the process | Sealed under the key-encryption key; a key that cannot be sealed publishes nothing |
 
 Everything else is the same in both modes.
 
