@@ -513,7 +513,10 @@ async function test() {
   await delegatedSection(w);
   await issuedSection(w);
   await exchangeSection(w);
-  assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
+  // SEVEN CHECKS: 1a 1b 2a 2b 3a 4a 4b. The floor said eight, one more
+  // than the file has ever made, so the first run that passed every check
+  // still failed here (2026-11-03). A check added here raises it.
+  assert.ok(checks >= 7, "only " + checks + " checks ran; a section has " +
             "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

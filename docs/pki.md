@@ -601,27 +601,28 @@ curl -sk -X POST https://localhost:8081/admin-api/pki/revoke \
 profiles: a card each, with its own Generate and its own Take
 off, and the one-time page describing the grant the new key is for.
 
-## A TLS client certificate for your browser
+## A TLS client certificate from the portal
 
 A third card on `/portal/signing-key` issues a **TLS client certificate** to the
 signed-in person, from the realm's own **TLS Client Issuing CA**:
 
 * it carries `clientAuth`, `CN=<username>`, a `urn:sts:person:<username>`
   subjectAltName and, where the directory holds one, your email address;
-* you choose the key (RSA 2048 by default, RSA 3072, ECDSA P-256 or P-384) and a
-  **file password**, typed twice;
-* the page that comes back offers three downloads, **once**: a `.p12` (the key,
-  the certificate and the two CAs above it, AES-256 protected by that password), an
-  encrypted `-key.pem` and a `-chain.pem`, with install steps for Windows, macOS,
-  Firefox, Chrome on Linux and curl. Nothing keeps the private key.
+* you choose the key (RSA 2048 by default, RSA 3072, ECDSA P-256 or P-384);
+  there is no file password;
+* the new certificate's row in the card's list then offers two downloads,
+  **once**, scrolled into view: the private key as an unencrypted PKCS#8
+  `-key.pem`, and a `-chain.pem` holding the certificate and the two CAs above
+  it — the same two files the RFC 7523 and RFC 7522 cards offer in their
+  *Certificate* row. Nothing keeps the private key. There is no `.p12`, so a
+  browser cannot import the result; an administrator's issue still answers
+  one.
 
 **This service trusts its own Root for client certificates**
 (`tls.trustIssuedClientCertificates`, on by default), and **the main port asks
-every connection for a client certificate and requires none** — so after
-importing the `.p12`, opening `https://<host>:8081/tls/sign-in` and choosing the
-certificate when the browser asks signs you in, **in the realm whose portal
-issued it**. Your other applications on this service then sign you in without
-asking.
+every connection for a client certificate and requires none** — so
+presenting the certificate at `https://<host>:8081/tls/sign-in` signs you in,
+**in the realm whose portal issued it**.
 
 Presenting a certificate is the client's own decision rather than the port's demand: the browser sends it because you
 chose it, and `GET /tls/sign-in` answers what arrived, whether it verified, its
@@ -640,7 +641,7 @@ responder, and every door that reads a certificate refuse it.
 
 ```bash
 curl --cert alice-laptop-tls-client-chain.pem \
-     --key alice-laptop-tls-client-key.pem --pass '<file password>' \
+     --key alice-laptop-tls-client-key.pem \
      https://localhost:8081/tls/sign-in
 ```
 

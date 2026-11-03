@@ -11,11 +11,23 @@
 // profiles (RFC 7523's JWT key pair and RFC 7522's SAML one) and the TLS
 // client certificates. The cards are `Portal.signingKeyPage()`'s, moved.
 //
-// THE CARD THAT ONLY EXISTS FOR ONE ANSWER: a private key, or the files of a
-// TLS client certificate, which arrive in `view.fresh` only in the answer to
-// the act that made them and are drawn in place — never on a URL, never in
-// the history. The files are `data:` links with `download` on them, the
-// arrangement that lets the page carrying them carry the install steps too.
+// WHAT ONLY EXISTS FOR ONE ANSWER: the private key and the certificate chain
+// a generation answers, which arrive in `view.fresh.files` only in the answer
+// to the act that made them and are drawn in place — never on a URL, never in
+// the history. The files are `data:` links with `download` on them, the same
+// two on all three cards (`downloads()`), and they sit IN THE CERTIFICATE'S
+// ROW of that card's table: the signing key's *Certificate* row, the TLS
+// client certificate's row in the list of them (rcbj, #671, 2026-11-03).
+//
+// **AND IN THE PANE WHOSE BUTTON MADE IT (#671).** Until 2026-11-03 the
+// one-time block was a card of its own at the TOP of the page, while the
+// TLS client certificate's Generate is in the LAST card: a person pressed
+// Generate at the bottom, the page was drawn again with nothing new where
+// they were looking, and the downloads sat three cards above. rcbj read it
+// as "nothing was downloaded". So everything a generation answers is drawn
+// in the card that offered the act: the buttons in the certificate's row
+// (`tr.fresh-row`, which the runtime scrolls to), and what to do with the
+// files in a `.fresh` block just below the table.
 //
 // A `web_` MODULE: it requires other `web_` modules only and logs nothing.
 // ---------------------------------------------------------------------------
@@ -58,6 +70,75 @@ class SigningKeyPages {
     return '<form method="post" action="' + PATH + '">' +
       '<input type="hidden" name="action" value="' + action + '">' + inner +
       '</form>';
+  }
+
+  /**
+   * The two download links a generation answers (#671): the private key
+   * and the certificate chain, in the certificate's row. The label is short,
+   * since it sits in a table cell; the file name is the link's `download`
+   * and its title.
+   *
+   * @param files - `view.fresh.files`
+   * @param t - the translator
+   * @returns the links' HTML, or ''
+   */
+  static downloads(files: Json, t: Json): string {
+    if (!files || !files.key || !files.chain) {
+      return '';
+    }
+    const link = function (file: Json, label: string, cls: string): string {
+      return '<a class="dl' + cls + '" download="' + kit.esc(file.name) +
+        '" title="' + kit.esc(file.name) + '" href="' +
+        kit.esc('data:' + file.mime + ';base64,' + file.base64) + '">' +
+        label + '</a>';
+    };
+    return '<div class="dl-row">' +
+      link(files.key, t.html('portal.signingKey.downloadKey'), '') +
+      link(files.chain, t.html('portal.signingKey.downloadChain'),
+           ' secondary') + '</div>';
+  }
+
+  /**
+   * What a generation just answered for this signing key profile, or null.
+   *
+   * @param profile - the card's profile
+   * @param view - the page's view
+   * @returns `view.fresh`, or null
+   */
+  static freshFor(profile: Json, view: Json): Json {
+    const fresh = view.fresh;
+    // A generation always names its profile; absent is `jwt`, as the form's
+    // own `purpose` is.
+    if (!fresh || fresh.kind === 'tls-client' || !fresh.files ||
+        String(fresh.purpose || 'jwt') !== profile.id) {
+      return null;
+    }
+    return fresh;
+  }
+
+  /**
+   * A held signing key's *Certificate* row (#671): the two downloads, in the
+   * one answer that issued it, and the public certificate to read.
+   *
+   * @param profile - the profile, with `held`
+   * @param view - the page's view
+   * @param t - the translator
+   * @returns the row's HTML, or ''
+   */
+  static certificateRow(profile: Json, view: Json, t: Json): string {
+    const mine = profile.held || {};
+    const fresh = SigningKeyPages.freshFor(profile, view);
+    const files = fresh ? SigningKeyPages.downloads(fresh.files, t) : '';
+    if (!files && !mine.certificate) {
+      return '';
+    }
+    return '<tr' + (files ? ' class="fresh-row"' : '') + '><th>' +
+      t.html('portal.signingKey.certificateRow') + '</th><td>' + files +
+      (mine.certificate
+        ? '<details><summary>' + t.html('portal.signingKey.certificate') +
+          '</summary><pre class="pem">' + kit.esc(mine.certificate) +
+          '</pre></details>'
+        : '') + '</td></tr>';
   }
 
   // The one-time card's instructions, per profile. The prose is translated
@@ -120,12 +201,8 @@ class SigningKeyPages {
           }).join(' ') + '</td></tr><tr><th>' +
           t.html('portal.signingKey.goodUntil') + '</th><td>' +
           kit.esc(SigningKeyPages.readableDate(mine.expiresAt, t)) +
-          '</td></tr></table>' +
-          (mine.certificate
-            ? '<details><summary>' + t.html('portal.signingKey.certificate') +
-              '</summary><pre class="pem">' + kit.esc(mine.certificate) +
-              '</pre></details>'
-            : '')
+          '</td></tr>' + SigningKeyPages.certificateRow(profile, view, t) +
+          '</table>' + SigningKeyPages.keyFresh(profile, view, t)
         : '<p class="sub">' + t.html('portal.signingKey.noneHeld',
             { rfc: rfc }) + '</p>');
     const purpose = '<input type="hidden" name="purpose" value="' +
@@ -162,6 +239,8 @@ class SigningKeyPages {
   static tlsClientCard(view: Json, t: Json): string {
     const tls = view.tls || {};
     const held: Json[] = tls.held || [];
+    const fresh = view.fresh && view.fresh.kind === 'tls-client' &&
+                  view.fresh.files ? view.fresh : null;
     const active = held.filter(function (one: Json): boolean {
       return one.state === 'valid';
     });
@@ -183,6 +262,11 @@ class SigningKeyPages {
         t.html('portal.signingKey.goodUntil') + '</th><th>' +
         t.html('portal.tls.state') + '</th><th></th></tr>' +
         held.map(function (one: Json): string {
+          // THE CERTIFICATE JUST ISSUED carries its two files in its own row
+          // (#671), beside its Revoke.
+          const files = fresh && String(one.serialHex) ===
+                          String((fresh.issued || {}).serialHex)
+            ? SigningKeyPages.downloads(fresh.files, t) : '';
           const revokeForm = one.state === 'valid'
             ? SigningKeyPages.form('revoke-tls-client',
                 '<input type="hidden" name="serial" value="' +
@@ -199,14 +283,15 @@ class SigningKeyPages {
                        { day: String(one.revokedAt).slice(0, 10) }) +
                 '</span>' : '');
           // The state is the register's own word, drawn as data.
-          return '<tr><td>' + kit.esc(one.label) + '</td><td><code>' +
+          return '<tr' + (files ? ' class="fresh-row"' : '') + '><td>' +
+            kit.esc(one.label) + '</td><td><code>' +
             kit.esc(String(one.serialHex).slice(-16)) + '</code></td><td>' +
             kit.esc(one.keyAlg) + '</td><td>' +
             kit.esc(String(one.notAfter).slice(0, 10)) + '</td><td><span ' +
             'class="state-' + kit.esc(one.state) + '">' + kit.esc(one.state) +
             (one.reason && one.state === 'revoked'
               ? ' (' + kit.esc(one.reason) + ')' : '') +
-            '</span></td><td>' + revokeForm + '</td></tr>';
+            '</span></td><td>' + files + revokeForm + '</td></tr>';
         }).join('') + '</table>'
       : '<p class="sub">' + t.html('portal.tls.noneHeld') + '</p>';
     let controls = '';
@@ -229,123 +314,58 @@ class SigningKeyPages {
                 : kit.esc(one === 'rsa-3072' ? 'RSA 3072'
                   : one === 'ec-p256' ? 'ECDSA P-256' : 'ECDSA P-384')) +
               '</option>';
-          }).join('') + '</select>' +
-          '<label for="tls-p12-password">' +
-          t.html('portal.tls.p12Password') + '</label><input ' +
-          'type="password" id="tls-p12-password" name="p12_password" ' +
-          'minlength="' + kit.esc(tls.passwordMin) + '" ' +
-          'autocomplete="new-password" required><label ' +
-          'for="tls-p12-confirm">' + t.html('portal.tls.p12Again') +
-          '</label><input type="password" id="tls-p12-confirm" ' +
-          'name="p12_confirm" minlength="' + kit.esc(tls.passwordMin) + '" ' +
-          'autocomplete="new-password" required><p class="note">' +
-          t.html('portal.tls.p12Note') + '</p><button>' +
+          }).join('') + '</select><button>' +
           t.html('portal.tls.generate') + '</button>');
       }
     }
     return '<div class="card"><h2 id="tls-client">' +
-      t.html('portal.tls.heading') + '</h2>' + what + rows + controls +
+      t.html('portal.tls.heading') + '</h2>' + what + rows +
+      (fresh ? SigningKeyPages.tlsClientFresh(fresh, view, t) : '') +
+      controls +
       (active.length ? '<p class="note">' + t.html('portal.tls.revokingIs') +
                        '</p>' : '') + '</div>';
   }
 
   /**
-   * The one-time card of a TLS client certificate: the three files, and
-   * what to do with them.
+   * What to do with a TLS client certificate just issued, drawn under the
+   * card's list of them (#671); the downloads are in the certificate's row.
    *
    * @param fresh - `view.fresh`
    * @param view - the page's view
    * @param t - the translator
-   * @returns the card's HTML
+   * @returns the block's HTML
    */
-  static tlsClientFreshCard(fresh: Json, view: Json, t: Json): string {
+  static tlsClientFresh(fresh: Json, view: Json, t: Json): string {
     const files = fresh.files || {};
-    const issued = fresh.issued || {};
     const signIn = (view.tls || {}).signIn || '';
-    const link = function (file: Json, cls: string): string {
-      return '<a class="dl' + cls + '" download="' + kit.esc(file.name) +
-        '" href="' + kit.esc('data:' + file.mime + ';base64,' + file.base64) +
-        '">' + t.html('portal.tlsFresh.download', { file: file.name }) +
-        '</a>';
-    };
-    const p12 = files.pkcs12.name;
-    const key = files.key.name;
-    const chain = files.chain.name;
-    const step = function (title: string, items: string[]): string {
-      return '<details><summary>' + title + '</summary><ol class="steps">' +
-        items.map(function (one: string): string {
-          return '<li>' + one + '</li>';
-        }).join('') + '</ol></details>';
-    };
-    return '<div class="card"><h2>' + t.html('portal.tlsFresh.heading') +
-      '</h2><p class="sub">' + t.html('portal.tlsFresh.onlyTime') + '</p>' +
-      '<p>' + link(files.pkcs12, '') + link(files.key, ' secondary') +
-      link(files.chain, ' secondary') + '</p>' +
-      '<table><tr><th>' + t.html('portal.tlsFresh.issuedTo') +
-      '</th><td><code>' + kit.esc(issued.subject) +
-      '</code></td></tr><tr><th>' +
-      t.html('portal.tls.serial') + '</th><td><code>' +
-      kit.esc(issued.serialHex) + '</code></td></tr><tr><th>' +
-      t.html('portal.tls.key') + '</th><td>' + kit.esc(issued.keyAlg) +
-      '</td></tr><tr><th>' + t.html('portal.signingKey.goodUntil') +
-      '</th><td>' + kit.esc(String(issued.notAfter).slice(0, 10)) +
-      '</td></tr></table><p class="note">' + t.html('portal.tlsFresh.files') +
-      '</p><h3>' + t.html('portal.tlsFresh.install') + '</h3>' +
-      step(t.html('portal.tlsFresh.winTitle'), [
-        t.html('portal.tlsFresh.win1', { file: p12 }),
-        t.html('portal.tlsFresh.win2'), t.html('portal.tlsFresh.win3'),
-        t.html('portal.tlsFresh.win4')]) +
-      step(t.html('portal.tlsFresh.macTitle'), [
-        t.html('portal.tlsFresh.mac1', { file: p12 }),
-        t.html('portal.tlsFresh.mac2'), t.html('portal.tlsFresh.mac3')]) +
-      step(t.html('portal.tlsFresh.firefoxTitle'), [
-        t.html('portal.tlsFresh.firefox1'),
-        t.html('portal.tlsFresh.firefox2'),
-        t.html('portal.tlsFresh.firefox3', { file: p12 })]) +
-      step(t.html('portal.tlsFresh.linuxTitle'), [
-        t.html('portal.tlsFresh.linux1'),
-        t.html('portal.tlsFresh.linux2', { file: p12 }),
-        t.html('portal.tlsFresh.linux3', { file: p12 })]) +
-      step(t.html('portal.tlsFresh.curlTitle'), [
-        '<code>curl --cert ' + kit.esc(chain) + ' --key ' + kit.esc(key) +
-        ' --pass &lt;' + t.html('portal.tlsFresh.filePassword') + '&gt; ' +
-        kit.esc(signIn) + '</code>',
-        t.html('portal.tlsFresh.legacy', { key: key, chain: chain })]) +
-      // The two links are markup, so the sentence is three messages around
-      // them (#539).
-      '<h3>' + t.html('portal.tlsFresh.use') + '</h3><p>' +
-      t.html('portal.tlsFresh.useOpen') + ' <a href="' + kit.esc(signIn) +
-      '">' + kit.esc(signIn) + '</a> ' + t.html('portal.tlsFresh.useChoose') +
-      ' <a href="' + kit.BASE + '">' + t.html('portal.tlsFresh.yourAccount') +
-      '</a>' + t.html('portal.tlsFresh.useAfter') + '</p></div>';
+    return '<div class="fresh" id="tls-client-fresh"><h3>' +
+      t.html('portal.tlsFresh.heading') + '</h3><p class="sub">' +
+      t.html('portal.tlsFresh.onlyTime') + '</p><p class="note">' +
+      t.html('portal.tlsFresh.files') + '</p><h4>' +
+      t.html('portal.tlsFresh.curlTitle') + '</h4><pre class="pem">' +
+      kit.esc('curl --cert ' + files.chain.name + ' --key ' +
+              files.key.name + ' ' + signIn) + '</pre></div>';
   }
 
   /**
-   * The one-time card, of whichever kind the answer carried.
+   * What to do with a signing key pair just issued, drawn under its card's
+   * table (#671); the downloads are in the table's *Certificate* row.
    *
+   * @param profile - the card's profile
    * @param view - the page's view
    * @param t - the translator
-   * @returns the card's HTML, or ''
+   * @returns the block's HTML, or ''
    */
-  static freshCard(view: Json, t: Json): string {
-    const fresh = view.fresh;
+  static keyFresh(profile: Json, view: Json, t: Json): string {
+    const fresh = SigningKeyPages.freshFor(profile, view);
     if (!fresh) {
       return '';
     }
-    if (fresh.kind === 'tls-client' && fresh.files) {
-      return SigningKeyPages.tlsClientFreshCard(fresh, view, t);
-    }
-    if (!fresh.privateKeyPem) {
-      return '';
-    }
-    const profile = (view.profiles || []).filter(function (one: Json) {
-      return one.id === fresh.purpose;
-    })[0] || (view.profiles || [])[0] || { id: 'jwt', rfc: 'RFC 7523' };
-    return '<div class="card"><h2>' + t.html('portal.signingKey.saveHeading',
-        { rfc: profile.rfc }) + '</h2><p class="sub">' +
-      t.html('portal.signingKey.onlyTime') + '</p><pre class="pem">' +
-      kit.esc(String(fresh.privateKeyPem)) + '</pre>' +
-      SigningKeyPages.freshInstructions(profile, fresh, view, t) + '</div>';
+    return '<div class="fresh" id="' + kit.esc(profile.id) + '-fresh"><h3>' +
+      t.html('portal.signingKey.saveHeading', { rfc: profile.rfc }) +
+      '</h3><p class="sub">' + t.html('portal.signingKey.onlyTime') +
+      '</p>' + SigningKeyPages.freshInstructions(profile, fresh, view, t) +
+      '</div>';
   }
 
   /**
@@ -377,8 +397,7 @@ class SigningKeyPages {
         (view.holdsAny ? ' ' + t.html('portal.signingKey.unaffected') : '') +
         '</p>';
     }
-    return SigningKeyPages.freshCard(view, t) +
-      '<div class="card">' + what + shared + '</div>' +
+    return '<div class="card">' + what + shared + '</div>' +
       (view.profiles || []).map(function (profile: Json): string {
         return SigningKeyPages.profileCard(profile, view, t);
       }).join('') + SigningKeyPages.tlsClientCard(view, t);

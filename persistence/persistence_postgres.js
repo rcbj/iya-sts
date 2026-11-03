@@ -3391,8 +3391,10 @@ function checkChangeLogDense(client, log) {
     }
     const increment = Number(row.increment);
     const cache = Number(row.cache);
-    // EVIDENCE ONLY: a row without both numbers (a server, or a test's
-    // double, answering something else) says nothing about the sequence.
+    // A row that names neither number is no evidence either: it opens, as
+    // no row does. directory_counts' and directory_queries' pg doubles
+    // answer every query with a row of their own shape, and NaN was read
+    // as a sparse sequence (2026-11-03).
     if (!Number.isFinite(increment) || !Number.isFinite(cache)) {
       return null;
     }

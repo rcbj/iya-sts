@@ -1116,6 +1116,7 @@ class PortalRuntime extends SpaClient {
           ? this.view.query : {}, json: json.view };
         this.flash = said;
         this.drawView();
+        this.showFresh();
         return;
       }
     }
@@ -1125,6 +1126,32 @@ class PortalRuntime extends SpaClient {
       return;
     }
     await this.route();
+  }
+
+  // WHAT AN ACT ANSWERED ONCE IS BROUGHT INTO VIEW (#671). A page drawn
+  // again keeps the window where it was, which is right for everything but
+  // what a Generate just answered: the person is looking at the button, and
+  // the files are the one thing on the page that will not come back. Their
+  // downloads sit in the certificate's row (`tr.fresh-row`), so the TABLE
+  // holding that row is scrolled to the top of the window — its header says
+  // what the row is — and a `.fresh` block alone is scrolled to where there
+  // is no row. A page with neither is left where it was.
+  /**
+   * Scrolls what an act answered once into view, if anything was drawn.
+   *
+   * @returns nothing
+   */
+  showFresh(): void {
+    const doc = this.env.document;
+    if (!doc || !doc.querySelector) {
+      return;
+    }
+    const row = doc.querySelector('tr.fresh-row');
+    const target = (row && row.closest ? row.closest('table') : row) ||
+                   doc.querySelector('.fresh');
+    if (target && target.scrollIntoView) {
+      target.scrollIntoView({ block: 'start' });
+    }
   }
 
   // `saveBase64()` is `WebPage`'s (#570), inherited.

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5156** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5154** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -5460,9 +5460,9 @@ Raised from: portal/.
 | `STS-PORTAL-0037` | Removing one of the person's own security keys was refused (no such key on their entry, or removing it would leave no way in). | HTTP 400 page |
 | `STS-PORTAL-0038` | The portal's Shared Signals receive endpoint refused a push that carried no more specific code of its own (receivers off, no stream, wrong bearer token, empty or malformed token, wrong audience, or an unverified signature). | SSF error JSON (HTTP 400, 401, 404, 500 or 501) |
 | `STS-PORTAL-0039` | A person's revocation of their own TLS client certificate was refused (a serial they hold no certificate under, or the revocation register refused it). | HTTP 400 page |
-| `STS-PORTAL-0040` | A TLS client certificate was asked for with a file password that is too short, too long, or not the same twice. | HTTP 400 page |
+| `STS-PORTAL-0040` *(retired)* | A TLS client certificate was asked for with a file password that is too short, too long, or not the same twice. Retired 2026-11-03 (#671): the portal asks for no file password. | HTTP 400 page |
 | `STS-PORTAL-0041` | A self-service TLS client certificate could not be issued (no certificate authority, a refused key algorithm or label, or the cap reached). | HTTP 400 page |
-| `STS-PORTAL-0042` | A TLS client certificate was issued and its PKCS#12 and PEM files could not be built; the certificate was revoked at once. | HTTP 500 page |
+| `STS-PORTAL-0042` *(retired)* | A TLS client certificate was issued and its PKCS#12 and PEM files could not be built; the certificate was revoked at once. Retired 2026-11-03 (#671): the portal answers the key and chain as issued, and builds nothing that can fail. | HTTP 500 page |
 | `STS-PORTAL-0047` | A person's own ACME account binding key or SCEP challenge password was not made on /portal/certificates (the enrollment core refused it; its own code is on the monitor row). | HTTP 4xx page |
 | `STS-PORTAL-0048` | A person asked /portal/certificates to delete an account binding key or challenge password they do not hold. | HTTP 404 page |
 | `STS-PORTAL-0049` | A person asked /portal/certificates to revoke a certificate they do not hold, or the revocation was refused. | HTTP 404 or 400 page |

@@ -1290,6 +1290,23 @@ verifies exactly like a SAML one — the certificate's subjectAltName is the onl
 place the difference shows; five mutants, all caught, that one only after the
 check was added.
 
+**WHAT A GENERATE ANSWERS IS DRAWN IN THE CARD WHOSE BUTTON MADE IT, AND THE
+FILES IN THE CERTIFICATE'S ROW (#671, 2026-11-03).** It was a card of its own
+at the top of the page, three cards above the TLS client certificate's
+Generate: rcbj pressed Generate, saw the bottom of the page drawn again with
+nothing new on it, and reported that nothing was downloaded. Now all three
+cards answer the SAME TWO FILES (`view.fresh.files.key`, the private key as
+unencrypted PKCS#8 PEM, and `.chain`, the leaf and its issuers), drawn as
+download links in the certificate's row — a signing key's *Certificate* row,
+the TLS certificate's row in the list — tinted (`tr.fresh-row`), with what to
+do with them in a `.fresh` block under the table. The runtime scrolls that
+row's table to the top of the window (`showFresh()`). **No private key is
+printed on the page any more**, and **the TLS card asks for no file password
+and answers no `.p12`** (rcbj's decision, the same day): a browser cannot
+import what the portal hands out, and that was accepted for three cards that
+work alike. The console's issue still answers a password-protected `.p12`
+(`tlsClient.bundle()`); the portal's is `tlsClient.pemFiles()`.
+
 **IT IS THE SAME ACT AND NOT A SECOND IMPLEMENTATION**, which is the whole
 reason this page requires `common/pki.js` and `common/person_assertions.js`
 rather than calling `/admin-api`. One write path onto a person's entry, whoever
@@ -1312,7 +1329,7 @@ in a token as every other person — which is why the rule is enforced in the
 grant rather than on the page: a check the page performed would be a check the
 `/admin-api` door did not.
 
-### The private key is shown once, and `generate` therefore RENDERS
+### The private key is offered once, and `generate` therefore RENDERS
 
 Every other write here answers 303 with a message on the query string. This one
 cannot, for the reason `generate-codes` on `/portal/mfa` cannot: **a redirect
@@ -1322,11 +1339,12 @@ and the person.
 
 **AND THERE IS NO SECOND CHANCE AT IT.** The key is sealed on the entry and
 nothing in this service opens it again — not this page, not `/admin/pki`, not
-`/admin-api`. The page says so at the moment it shows it, and *generate again*
+`/admin-api`. The page says so at the moment it offers it, and *generate again*
 is the only answer to having lost it. That is the same position the recovery
 codes reached from the other direction, and `tests/protocol/sts_portal_signing_key.js`
-asserts it by fetching the page a second time and looking for a PEM block that
-must not be there.
+asserts it by fetching the page a second time and looking for a PEM block, or a
+key download, that must not be there. **Since #671 it is a download, not a
+printed block** (above).
 
 ### What it deliberately does not ask
 
@@ -1378,22 +1396,24 @@ would misfile the other three.
 ## A TLS CLIENT CERTIFICATE, THE THIRD CARD ON `/portal/signing-key` (2026-09-13)
 
 Asked for by rcbj beside the RFC 7523 and RFC 7522 key pairs: a person generates
-a TLS client certificate that maps to their identity and installs it in their
-browser. `common/tls_client_certificates.js` issues, packages and revokes;
+a TLS client certificate that maps to their identity. Since #671 (2026-11-03)
+the portal hands out PEM files only, which a browser cannot import; the
+console's issue still answers a `.p12`. `common/tls_client_certificates.js` issues, packages and revokes;
 `common/CLAUDE.md` 3ag argues the gate that makes trusting the
 service Root safe, and `tls/CLAUDE.md` what a presented certificate is worth.
 What is this page's:
 
-* **THE DOWNLOAD IS THE RESPONSE TO THE POST.** `generate-tls-client` renders a
-  one-time card with three `data:` links carrying `download` — the `.p12`, an
-  encrypted `-key.pem`, the `-chain.pem` — which is the console keytab page's
-  arrangement and was the only way a file left a page with `script-src 'none'`;
-  the static portal (#568) kept it, the links drawn by the renderer.
-  Nothing keeps the private key; the page says so, and the install steps
-  (Windows, macOS, Firefox, Linux Chrome, curl) are folds on the same card.
-* **THE FILE PASSWORD IS TYPED TWICE, CHECKED, USED ONCE AND NOT KEPT** — not
-  audited, not logged. A mismatch is 400 `STS-PORTAL-0040` before any key is
-  generated.
+* **THE DOWNLOAD IS THE RESPONSE TO THE POST.** `generate-tls-client` answers
+  two `data:` links carrying `download`, the unencrypted `-key.pem` and the
+  `-chain.pem`, drawn in the new certificate's row (#671) — the console keytab
+  page's arrangement, which was the only way a file left a page with
+  `script-src 'none'`; the static portal (#568) kept it. Nothing keeps the
+  private key; the page says so, and a `curl` line under the list says how to
+  present the files.
+* **NO FILE PASSWORD AND NO `.p12` SINCE #671** (rcbj, 2026-11-03). The
+  password was typed twice and a mismatch was 400 `STS-PORTAL-0040`, now
+  retired with the field: a body still carrying `p12_password` is refused at
+  the form's shape.
 * **IT SHARES THE PAGE'S SAFEGUARDS RATHER THAN GROWING ITS OWN**:
   `pki.personSelfService`, the two self-service rate limits (an RSA key
   generation costs the same CPU whatever it certifies), the CSRF token. The one
@@ -1405,9 +1425,10 @@ What is this page's:
   revocation (the CRL, OCSP, and every door that reads a certificate refusing
   it), with two reasons a person
   can honestly give: `cessationOfOperation` and `keyCompromise`.
-* **A PACKAGING FAILURE REVOKES THE CERTIFICATE AT ONCE** (`STS-PORTAL-0042`): its
-  key is gone, and a valid certificate nobody can present or knows to revoke is
-  worse than a line on a list.
+* **NOTHING IS PACKAGED, SO NOTHING CAN FAIL BETWEEN THE ISSUE AND THE
+  ANSWER** (#671). A packaging failure used to revoke the certificate at once
+  (`STS-PORTAL-0042`, now retired): the key and the chain are answered as the
+  issue handed them over (`tlsClient.pemFiles()`).
 * **WHERE IT WORKS IS ONE ADDRESS SINCE 2026-09-16**, and the card says so:
   `GET /tls/sign-in` on the host the page was reached at. It named two — the
   8443 and 9443 listeners, built from `tls.port` and `tls.mutualPort`, because

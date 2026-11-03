@@ -262,7 +262,8 @@ certificate registered on the person's entry — a chain to the Root alone is st
 refused, and the person's RFC 7523 key does not sign for this profile.
 
 **A person can issue it themselves**, on `/portal/signing-key`: the RFC 7522 card
-has its own *Generate* and *Take off*, the private key is shown once with the
+has its own *Generate* and *Take off*, the private key and the certificate
+chain are offered once as downloads in the card's *Certificate* row, with the
 `<Issuer>`, `<Subject>`, audience and certificate thumbprint to use, and taking
 it off leaves their RFC 7523 key working. `pki.personSelfService` turns the
 self-service door off for both profiles; it takes away no key already held.
