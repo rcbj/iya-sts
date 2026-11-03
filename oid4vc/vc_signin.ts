@@ -176,8 +176,15 @@ const { log } = helpers;
 
 type Json = any;
 
-// What the console and the audit log call a sign-in that came through here.
+// What the console, the audit log, the person's Recent sign-ins and the risk
+// engine's door call a sign-in that came through here — ONE PER KIND OF
+// TRANSACTION (#667). A self-issued ID Token (SIOPv2, `response_type=
+// id_token`) is signed by a key the person enrolled, not a credential this
+// realm issued, and until #667 both answered `VIA`, so `/portal/sign-ins`
+// said "OpenID4VP (a wallet)" for a sign-in the log already called SIOPv2
+// and the risk model counted the two as one door. `viaOf()` chooses.
 const VIA = 'OpenID4VP (a wallet)';
+const VIA_SELF_ISSUED = 'SIOPv2 (a self-issued ID)';
 
 // The cookie that ties a sign-in to the browser that started it.
 const BINDING_COOKIE = 'sts_wallet_binding';
@@ -256,6 +263,26 @@ class VcSignin {
    * What the console and the audit log call a sign-in that came through here.
    */
   static readonly VIA = VIA;
+  /**
+   * What the same surfaces call a sign-in with a self-issued ID Token
+   * (SIOPv2) through here (#667).
+   */
+  static readonly VIA_SELF_ISSUED = VIA_SELF_ISSUED;
+
+  /**
+   * The `via` of a transaction's sign-in: SIOPv2's for a self-issued ID
+   * Token, OpenID4VP's for a presentation (#667).
+   *
+   * @param tx - the Verifier's transaction
+   * @returns the label
+   */
+  static viaOf(tx: any): string {
+    helpers.log.debug("Entering VcSignin.viaOf().");
+    const selfIssued = !!tx && tx.responseType === 'id_token';
+    helpers.log.debug("Leaving VcSignin.viaOf(). " +
+                      (selfIssued ? 'SIOPv2.' : 'OpenID4VP.'));
+    return selfIssued ? VIA_SELF_ISSUED : VIA;
+  }
   /**
    * The cookie that ties a sign-in to the browser that started it.
    */
@@ -1326,9 +1353,16 @@ class VcSignin {
     // handed on: the issuance policy decides on it with the roles, and a
     // step-up it names is asked for after the wallet, as a demanded second
     // factor is.
-    const assessed = await authn.assessSignIn(req, username, VIA,
+    // Its own door and its own credential for a self-issued ID Token
+    // (#667): the enrolled key's subject is the credential's identifier, so
+    // the model learns that key apart from any presented credential.
+    const via = VcSignin.viaOf(tx);
+    const credential: Json = selfIssued
+      ? { kind: 'wallet', id: String(outcome.subject || '') }
+      : { kind: 'wallet' };
+    const assessed = await authn.assessSignIn(req, username, via,
       { application: record.application || '',
-        credential: { kind: 'wallet' },
+        credential: credential,
         // A key may answer as the second factor (#259).
         deviceAwaited: true });
 
@@ -1360,10 +1394,11 @@ class VcSignin {
     }
 
     const session = authn.startSession(res, username, outcome.amr || ['pop'],
-      outcome.acr || '1', VIA, {
+      outcome.acr || '1', via, {
         request: req,
-        // Which credential answered (#62 P0): a wallet presentation.
-        credential: { kind: 'wallet' },
+        // Which credential answered (#62 P0): a wallet presentation, or the
+        // enrolled key of a self-issued ID Token (#667).
+        credential: credential,
         // The sign-in's assessment (#62 P3).
         risk: assessed || undefined,
         application: record.application || '',
@@ -1390,7 +1425,8 @@ class VcSignin {
               (record.protocol || 'unnamed') + ' one' +
               (record.application ? ' for "' + record.application + '"' :
                                     '') + '.',
-        summary: username + ' was signed in with a wallet'
+        summary: username + ' was signed in with a wallet' +
+                 (selfIssued ? ' (a self-issued ID Token)' : '')
       });
     if (!session) {
       log.info('oid4vp-signin: the issuance policy refused a session for ' +
@@ -1526,6 +1562,8 @@ export = {
    */
   instanceOrigin: (): string => slot.origin(),
   VIA: VcSignin.VIA,
+  VIA_SELF_ISSUED: VcSignin.VIA_SELF_ISSUED,
+  viaOf: VcSignin.viaOf,
   BINDING_COOKIE: VcSignin.BINDING_COOKIE,
   enabled: slot.forward('enabled'),
   // The `/authn-api/wallet` operations (#574), which `authn/authn_api.ts`

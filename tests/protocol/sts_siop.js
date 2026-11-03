@@ -31,6 +31,7 @@
 //      #693 the proved key is recorded as `proof: wallet` and the
 //      administrator's as `admin`, the page says which, and the enrolment
 //      writes a `portal.siop.enrol` audit row.
+//      Recent sign-ins names section 3's sign-in SIOPv2's door (#667).
 //   6. A REMOVED KEY signs nobody in.
 //   7. THE VERIFIER, started at POST /admin-api/verifications/start
 //      (#587): a by-value SIOPv2 request with response_mode form_post,
@@ -538,6 +539,19 @@ async function test() {
     assert.ok(page.html.indexOf("Proved with your wallet") >= 0 &&
               page.html.indexOf("Added by an administrator") >= 0,
               "the page does not say how each key was enrolled");
+  });
+  // THE SIGN-IN SAYS WHAT IT WAS (#667): section 3's sign-in was a
+  // self-issued ID Token, and Recent sign-ins names it SIOPv2's door rather
+  // than OpenID4VP's, which both kinds of wallet sign-in answered until then.
+  const signIns = await portal.draw("/portal/sign-ins", {});
+  check("Recent sign-ins lists the self-issued sign-in as SIOPv2, not as " +
+        "an OpenID4VP presentation", function () {
+    assert.strictEqual(signIns.status, 200, JSON.stringify(signIns.json)
+      .slice(0, 300));
+    assert.ok(signIns.html.indexOf("SIOPv2 (a self-issued ID)") >= 0,
+              "no SIOPv2 sign-in listed: " + signIns.html.slice(0, 600));
+    assert.ok(signIns.html.indexOf("OpenID4VP (a wallet)") < 0,
+              "a self-issued sign-in is listed as OpenID4VP (a wallet)");
   });
   const gone = await portal.act("/portal/self-issued",
                                 { action: "remove", subject: secondUri });
