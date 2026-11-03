@@ -642,6 +642,26 @@ rules read for a token:
   `sts_second_factor_doors` disables, enables and signs the person in to
   the portal within one second. Asked of `account_state.isDisabled()` per
   token; where nothing can be asked the event acts. G7 and G8.
+* **and a RISC event reporting the ACCOUNT HOLDER'S OWN act reaches nothing
+  (2026-11-03)** — the `initiating_entity: user` rule for the profile that
+  has no such member. A person revoking their own RFC 7523/7522 key pair
+  (#1290) or TLS client certificate for `keyCompromise` on the portal sends
+  CAEP's `credential-change` revoke (`user`, skipped) AND RISC's
+  `credential-compromise`; the portal acted on the second and revoked the
+  token the person had just made the report with, refresh token included,
+  so the portal's next call was `STS-ACCOUNT-0007`
+  (`sts_portal_signing_key` section 9, single-node: development only
+  observes). **The fact is not put on the wire**, since RISC defines no
+  member for it: `ssf.ts`'s `sendOneRiscEvent()` notes the act's `txn` on
+  the account's RISC row (`risc.ts`'s `noteOwnAct()`, `ownActs`, bounded by
+  `risc.eventsPerAccount`) when the door said `initiatingEntity: 'user'`,
+  before any SET of it is built, and `actOn()` skips a RISC SET whose `txn`
+  that row names (`ownAct()`). Only this service's own receivers share the
+  register, so a partner or a remote receiver is told exactly what it was.
+  A detector's compromise, an administrator's, and a SET whose row the
+  receiving process has not yet applied still act — the last is a race the
+  change-log's latency bounds (the row is written before the SET is
+  queued), and it errs towards acting. H1 to H4.
 
 **FOUND THROUGH THE INDEX, NEVER A WALK** (`tokenKeysNamed()`): the token
 register's `u:` and `s:` keys for every identifier the SET spells, and for
