@@ -2636,6 +2636,53 @@ of this directory needs:
 `tests/protocol/sts_ssf_foreign_receiver.js` (`local: true`) over HTTP, with
 one realm's transmitter as the partner.
 
+### WHAT THE CONFORMANCE SUITE'S RECEIVER PLANS FOUND (#932, 2026-11-02)
+
+`tests/protocol/sts_ssf_receiver_conformance.js` runs the OpenID
+Foundation's `openid-ssf-receiver-test-plan` and its CAEP interop twin, push
+and poll, with the suite as the partner's transmitter and an `ssf`
+relationship as the receiver. Each module waits for the receiver's acts, so
+the job presses the relationship's buttons. What the receiver lacked or got
+wrong, each fixed here and held by `tests/ssf_transmitters.js` section L:
+
+* **`signals-replace-stream`** (section 8.1.1.4): a PUT of the stream_id
+  and EVERY receiver-supplied property — `receiverSupplied()` builds them
+  for creation and replacement alike. A push stream gets a NEW
+  authorization header, and the digest held moves only once the partner
+  accepted it, so a refused replacement leaves the old header working.
+* **`signals-read-status`** (section 8.1.2.1). The status is held
+  (`streamStatus`), from a read, a set, or a `stream-updated` event
+  (section 8.1.5, which was received and ignored).
+* **A 401 asks for one fresh token.** The token cache trusted
+  `expires_in`; a transmitter that restarted or forgot the token refused
+  every act until the cached one ran out. A pasted `fedSignalsBearer` is
+  not retried.
+* **Discovery forgets the cached key set** (`client_jwks.forget()`): a
+  rediscovered partner with a new key had every SET unverified for
+  `oauth2.clientJwksRefetchS`, the throttle on refetching for an unknown
+  kid.
+* **`fedSignalsScope` defaults to `ssf.read ssf.manage`.** The profile
+  makes `ssf.manage` include read (this service's own transmitter does,
+  #334), but a transmitter checking each scope by name refused the reads
+  and the polls; asking for both is right under either reading.
+* **A `session-revoked` initiated by `policy` is a revocation.** It was
+  dropped as "an expiry at the partner", because THIS service's
+  transmitter says `policy` for a lifetime that ran out (*`initiating_entity`
+  IS NOT ALWAYS `admin` OR `user`*, above). CAEP 1.0 section 2 makes
+  `policy` a policy evaluation — the suite's own example is a device
+  policy violation — and section 3.1 says the session has been revoked. The
+  signal-response policy decides, as for every entity.
+* **A verification with no `state`** (transmitter-initiated, section 8.1.4)
+  is recorded as such and leaves `verifiedAt` alone; only the state this
+  realm asked with verifies the stream.
+
+**The job asserts the effect.** A signals-only partner's events change
+nothing by default (#374, rcbj's decision, unchanged), so the job builds
+the `signal-response` template with `signalsOnlyEndSessionEvents` and
+chooses it through `xacml.signalResponsePolicy`, signs the person in, and
+requires the suite's `session-revoked` to have ended the person's sessions
+with the reaction recorded.
+
 ## DETECTED COMPROMISES, AND THE LAST CREDENTIALS (#231, #236, #237, 2026-09-26)
 
 **Every row goes through `account_signals.ts`**, so `caep.autoEmitTypes`,

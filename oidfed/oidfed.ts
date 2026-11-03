@@ -894,6 +894,20 @@ class Oidfed {
     const now = this.nowSec();
     const lifetime = Math.max(60, Number(config.value(
       'oidfed.statementLifetimeS')));
+    // THE VERIFIER'S REQUEST-SIGNING KEY MADE FIRST (#657): its
+    // `openid_credential_verifier` jwks names the key
+    // oid4vp.requestObjectSigningAlgorithm signs with, which may be a
+    // post-quantum key made on libuv's thread pool. A key it cannot use is
+    // refused, and logged, where the metadata is built.
+    const verifier = this.deps.verifier();
+    if (verifier && typeof verifier.prepareRequestSigner === 'function') {
+      try {
+        await verifier.prepareRequestSigner();
+      } catch (e) {
+        log.debug("Caught in Oidfed.configuration(): " +
+                  ((e && e.message) || e));
+      }
+    }
     const metadata = Object.assign({ federation_entity:
                                        this.federationEntity(req) },
                                    this.protocolMetadata(req));

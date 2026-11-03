@@ -5320,8 +5320,8 @@
     "text": "Algoritm som autentiseringsuppgifter signeras med"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "6503fe55086c7b70",
-    "text": "Den JWS-algoritm som dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter signeras med — postkvantalgoritmer inräknade — och den som den här sfärens statuslistor signeras med, och den som DID Configurations Domain Linkage Credential använder. Metadatans credential_signing_alg_values_supported anger den, /oauth2/jwks och /.well-known/did.json publicerar nyckeln, och den här tjänstens Verifier kontrollerar mot den. ldp_vc är bbs-2023 och påverkas inte. En redan utfärdad autentiseringsuppgift behåller den algoritm den signerades med."
+    "en": "64dfa4a593f7ec50",
+    "text": "Den JWS-algoritm som dc+sd-jwt- och jwt_vc_json-autentiseringsuppgifter signeras med — postkvantalgoritmer inräknade — och den som den här sfärens statuslistor signeras med, och den som DID Configurations Domain Linkage Credential använder. Metadatans credential_signing_alg_values_supported anger den, /oauth2/jwks och /.well-known/did.json publicerar nyckeln, och den här tjänstens Verifier kontrollerar mot den. ldp_vc är bbs-2023 och påverkas inte. En redan utfärdad autentiseringsuppgift behåller den algoritm den signerades med. oid4vc.walletCompatibility avvisar här en postkvant- eller kompositalgoritm."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5504,8 +5504,24 @@
     "text": "Signeringsalgoritm för en begäran med x509-Client Identifier"
   },
   "oid4vp.x509SigningAlgorithm|description": {
-    "en": "f85d7f30b92687ec",
-    "text": "Den JWS-algoritm som ett Request Object med Client Identifier x509_san_dns eller x509_hash signeras med, och därmed den sfärnyckel som Verifierns certifikat utfärdas för. ES256 som standard, vilket OpenID4VC HAIP kräver att en plånbok accepterar. En postkvantalgoritm erbjuds inte ännu: Request Object signeras i begärans väg, och den här sfärens postkvantnycklar signerar i libuv:s trådpool (oid4vc/CLAUDE.md, x509-prefixen)."
+    "en": "aa2c5eaf7760ef3f",
+    "text": "Den JWS-algoritm som ett Request Object med Client Identifier x509_san_dns eller x509_hash signeras med, och därmed den sfärnyckel som Verifierns certifikat utfärdas för. ES256 som standard, vilket OpenID4VC HAIP kräver att en plånbok accepterar. Postkvant- och kompositalgoritmerna erbjuds också, för en plånbok som accepterar dem; oid4vc.walletCompatibility avvisar dem, och det gör även keys.postQuantumSigning avslaget."
+  },
+  "oid4vp.requestObjectSigningAlgorithm|label": {
+    "en": "f3337ef9c128d22c",
+    "text": "Signeringsalgoritm för en signerad begäran"
+  },
+  "oid4vp.requestObjectSigningAlgorithm|description": {
+    "en": "c8e10b889bf92533",
+    "text": "Den JWS-algoritm som ett signerat Request Object signeras med under Client Identifier-prefixen pre-registered, decentralized_identifier, verifier_attestation och openid_federation (x509-prefixen använder oid4vp.x509SigningAlgorithm). Sfärnyckeln för den är den som begäran anger: i /oauth2/jwks, i DID-dokumentet, i cnf för en självutfärdad Verifier Attestation och i Entity Configurations openid_credential_verifier-jwks. RS256 som standard, vilket varje signerad begäran använde före den här inställningen. Postkvant- och kompositalgoritmerna erbjuds för en plånbok som accepterar dem; oid4vc.walletCompatibility avvisar dem, och det gör även keys.postQuantumSigning avslaget."
+  },
+  "oid4vc.walletCompatibility|label": {
+    "en": "50234c10261cc298",
+    "text": "Plånbokskompatibilitetsläge"
+  },
+  "oid4vc.walletCompatibility|description": {
+    "en": "a8207c4165957956",
+    "text": "Stänger av, för OpenID4VCI och OpenID4VP, varje JWS-algoritm som en plånbok i bruk i dag avvisar eller som ingen publicerad specifikation definierar för dessa protokoll: postkvant- och kompositalgoritmerna (ML-DSA-44, -65 och -87 hör till RFC 9964, men ingen plånbok accepterar dem ännu; SLH-DSA och de sammansatta ML-DSA-algoritmerna är Internet-Drafts). På: ingen av dem finns i utfärdarens eller Verifierns metadata, ett dc+sd-jwt- eller jwt_vc_json-intyg, ett OpenID4VP Request Object eller ett erbjudande från portalen signeras aldrig med någon av dem (en inställning som anger en avvisas i stället för att ersättas), och ett intyg, Key Binding JWT, VP JWT, innehavsbevis eller en främmande statuslista som signerats med en avvisas. AV, standardvärdet: varje algoritm som den här sfären har erbjuds och accepteras, som tidigare. ldp_vc (bbs-2023 och dess innehavar-cryptosuites) påverkas inte, och inte heller något annat protokoll: keys.postQuantumSigning är brytaren för hela sfären."
   },
   "oid4vp.verifierAttestation|label": {
     "en": "43be5976a5b30428",
@@ -5792,8 +5808,8 @@
     "text": "Andra betrodda intygsutfärdare (PEM)"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "60a2c73b8c2c6aec",
-    "text": "PEM-certifikat, sammanfogade, vars nycklar den här tjänstens Verifier accepterar en signatur på ett SD-JWT VC- eller jwt_vc_json-intyg från UTÖVER den här sfärens egen utfärdare. Tomt — standardvärdet — litar bara på den här utfärdaren, vilket är vad den alltid gjorde. Ett certifikat används som en NYCKEL: ingen kedja byggs, men dess återkallelse kontrolleras när det verifierar ett intyg (pki.revocationCheck, sedan 2026-09-12)."
+    "en": "bbe880b9d434d9ab",
+    "text": "PEM-certifikat, sammanfogade, vars nycklar den här tjänstens Verifier accepterar en signatur på ett SD-JWT VC- eller jwt_vc_json-intyg från UTÖVER den här sfärens egen utfärdare. Tomt — standardvärdet — litar bara på den här utfärdaren, vilket är vad den alltid gjorde. Ett certifikat används som en NYCKEL: ingen kedja byggs, men dess återkallelse kontrolleras när det verifierar ett intyg (pki.revocationCheck, sedan 2026-09-12). Ett certifikat vars nyckel är ML-DSA, SLH-DSA eller sammansatt ML-DSA verifierar ett intyg och en statuslista som signerats med den algoritmen (#657), om inte oid4vc.walletCompatibility är på."
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",
@@ -5802,6 +5818,30 @@
   "oid4vp.expectedVct|description": {
     "en": "8cc9cdf9a93a0260",
     "text": "Den `vct` som Verifiern kräver av ett presenterat SD-JWT VC. Standardvärdet är typen som den här utfärdaren skapar; ställ in den för att acceptera ett intyg som en annan utfärdare skapar under sin egen typ."
+  },
+  "oid4vp.mdocTrustAnchors|label": {
+    "en": "f20c6a38b3c5c0ed",
+    "text": "Betrodda utfärdande mdoc-myndigheter (IACA-certifikat, PEM)"
+  },
+  "oid4vp.mdocTrustAnchors|description": {
+    "en": "bc0c2fd840ac9688",
+    "text": "PEM-certifikat, sammanfogade: de CA-certifikat för utfärdande myndighet (ISO/IEC 18013-5 bilaga B) som ett uppvisat mdoc:s dokumentsignerarcertifikat måste kedja till. Kedjan byggs och kontrolleras enligt RFC 5280, dokumentsignerarens återkallelse kontrolleras (pki.revocationCheck), och ett mdoc vars signerare inte kedjar till något av dem nekas. Tomt — standardvärdet — litar inte på någon mdoc-utfärdare, så en mso_mdoc-presentation nekas tills en anges."
+  },
+  "oid4vp.expectedDoctype|label": {
+    "en": "49833f72d06c775d",
+    "text": "Förväntad mdoc-dokumenttyp (docType)"
+  },
+  "oid4vp.expectedDoctype|description": {
+    "en": "d718e92b610b1ae9",
+    "text": "Den `docType` som en mso_mdoc-förfrågan ber om (`meta.doctype_value`) och som verifieraren kräver av det uppvisade dokumentet och dess Mobile Security Object. Standardvärdet är det mobila körkortet i ISO/IEC 18013-5."
+  },
+  "oid4vp.mdocNamespace|label": {
+    "en": "8e0371b0c93613a5",
+    "text": "mdoc-namnrymd som de begärda anspråken läses från"
+  },
+  "oid4vp.mdocNamespace|description": {
+    "en": "119af9b2a1680a4c",
+    "text": "Den namnrymd som en mso_mdoc-förfrågans anspråkssökvägar namnger (`[namespace, element]`, OpenID4VP 1.0 bilaga B.2.3). Varje begärt anspråk begärs som dataelementet med samma namn, utom birthdate (birth_date) och address (resident_address), som ISO/IEC 18013-5 namnger annorlunda. Standardvärdet är det mobila körkortets."
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",

@@ -1402,7 +1402,8 @@ const SCHEMA = {
     { name: 'fedSignalsScope', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'The scope asked for with client credentials. Empty asks for ' +
-            '`ssf.manage`, which includes read.' },
+            '`ssf.read ssf.manage`, the CAEP Interoperability Profile\'s ' +
+            'two (section 2.7.3).' },
     { name: 'fedSignalsBearer', kind: 'single', role: 'service-provider',
       sensitive: true, from: 'this register',
       what: 'A BEARER TOKEN THE PARTNER ISSUED, instead of client ' +
@@ -3224,7 +3225,15 @@ function signalsCredentialOf(record) {
     clientSecret: own ? openSignalsSecret(r.fedSignalsClientSecret)
       : (openSignalsSecret(r.fedSignalsClientSecret) ||
          clientSecretOf(r)),
-    scope: String(r.fedSignalsScope || '').trim() || 'ssf.manage'
+    // BOTH OF THE CAEP INTEROPERABILITY PROFILE'S SCOPES (#932; section
+    // 2.7.3): `ssf.read` for reading the stream and its status and for
+    // polling, `ssf.manage` for creating, changing and verifying it — every
+    // act this realm takes at the partner. It was `ssf.manage` alone, which
+    // the profile says includes read; but a transmitter that checks each
+    // scope by name (the conformance suite's does) then refused the first
+    // read and the first poll, and asking for what is used is the
+    // straightforward reading of RFC 6749 section 3.3.
+    scope: String(r.fedSignalsScope || '').trim() || 'ssf.read ssf.manage'
   };
 }
 

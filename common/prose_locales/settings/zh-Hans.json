@@ -5320,8 +5320,8 @@
     "text": "凭证签名算法"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "6503fe55086c7b70",
-    "text": "dc+sd-jwt 和 jwt_vc_json 凭证签名所用的 JWS 算法——包括后量子算法——也是此领域状态列表签名所用的算法，以及 DID Configuration 的 Domain Linkage Credential 所用的算法。元数据的 credential_signing_alg_values_supported 会指明它，/oauth2/jwks 和 /.well-known/did.json 会发布该密钥，本服务的验证方也会据此进行检查。ldp_vc 使用 bbs-2023，不受影响。已签发的凭证保留其签名时所用的算法。"
+    "en": "64dfa4a593f7ec50",
+    "text": "dc+sd-jwt 和 jwt_vc_json 凭证签名所用的 JWS 算法——包括后量子算法——也是此领域状态列表签名所用的算法，以及 DID Configuration 的 Domain Linkage Credential 所用的算法。元数据的 credential_signing_alg_values_supported 会指明它，/oauth2/jwks 和 /.well-known/did.json 会发布该密钥，本服务的验证方也会据此进行检查。ldp_vc 使用 bbs-2023，不受影响。已签发的凭证保留其签名时所用的算法。oid4vc.walletCompatibility 会在此拒绝后量子或组合算法。"
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5504,8 +5504,24 @@
     "text": "x509 客户端标识符请求的签名算法"
   },
   "oid4vp.x509SigningAlgorithm|description": {
-    "en": "f85d7f30b92687ec",
-    "text": "使用 x509_san_dns 或 x509_hash 客户端标识符的请求对象所采用的 JWS 签名算法，因此也决定了验证方证书所签发的领域密钥。默认为 ES256，OpenID4VC HAIP 要求钱包接受该算法。目前尚不提供后量子算法：请求对象在请求路径上签署，而此领域的后量子密钥在 libuv 的线程池上签名（oid4vc/CLAUDE.md，x509 前缀）。"
+    "en": "aa2c5eaf7760ef3f",
+    "text": "使用 x509_san_dns 或 x509_hash 客户端标识符的请求对象所采用的 JWS 签名算法，因此也决定了验证方证书所签发的领域密钥。默认为 ES256，OpenID4VC HAIP 要求钱包接受该算法。后量子算法和组合算法也同样提供，供接受它们的钱包使用；oid4vc.walletCompatibility 会拒绝它们，关闭 keys.postQuantumSigning 时也会拒绝。"
+  },
+  "oid4vp.requestObjectSigningAlgorithm|label": {
+    "en": "f3337ef9c128d22c",
+    "text": "已签名请求的签名算法"
+  },
+  "oid4vp.requestObjectSigningAlgorithm|description": {
+    "en": "c8e10b889bf92533",
+    "text": "在 pre-registered、decentralized_identifier、verifier_attestation 和 openid_federation 客户端标识符前缀下，已签名请求对象所用的 JWS 签名算法（x509 前缀使用 oid4vp.x509SigningAlgorithm）。对应的领域密钥就是请求所指明的那把：在 /oauth2/jwks 中、在 DID 文档中、在自签发的 Verifier Attestation 的 cnf 中，以及在 Entity Configuration 的 openid_credential_verifier jwks 中。默认为 RS256，即此设置出现之前所有已签名请求所用的算法。后量子算法和组合算法也提供给接受它们的钱包；oid4vc.walletCompatibility 会拒绝它们，关闭 keys.postQuantumSigning 时也会拒绝。"
+  },
+  "oid4vc.walletCompatibility|label": {
+    "en": "50234c10261cc298",
+    "text": "钱包兼容模式"
+  },
+  "oid4vc.walletCompatibility|description": {
+    "en": "a8207c4165957956",
+    "text": "在 OpenID4VCI 和 OpenID4VP 中关闭所有当前在用钱包会拒绝、或没有任何已发布规范为这些协议定义的 JWS 算法：即后量子算法和组合算法（ML-DSA-44、-65 和 -87 出自 RFC 9964，但目前还没有钱包接受它们；SLH-DSA 和组合 ML-DSA 算法是互联网草案）。开启时：颁发者和验证方的元数据中都不出现它们，dc+sd-jwt 或 jwt_vc_json 凭证、OpenID4VP 请求对象或门户的凭证要约都不会用它们签名（指明其中之一的设置会被拒绝，而不会被替换），用它们签名的凭证、Key Binding JWT、VP JWT、持有证明或外部状态列表都会被拒绝。关闭（默认值）：此领域拥有的每种算法都照旧提供和接受。ldp_vc（bbs-2023 及其持有者密码套件）不受影响，其他任何协议也不受影响：keys.postQuantumSigning 才是整个领域的开关。"
   },
   "oid4vp.verifierAttestation|label": {
     "en": "43be5976a5b30428",
@@ -5792,8 +5808,8 @@
     "text": "其他受信任的凭证颁发者（PEM）"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "60a2c73b8c2c6aec",
-    "text": "串联在一起的 PEM 证书，除此领域自身的颁发者之外，本服务的验证方还接受来自这些证书密钥的 SD-JWT VC 或 jwt_vc_json 凭证签名。为空（默认值）时只信任此颁发者，这也是它一贯的行为。证书被当作密钥使用：不构建证书链，但在用它验证凭证时会查询其吊销状态（pki.revocationCheck，自 2026-09-12 起）。"
+    "en": "bbe880b9d434d9ab",
+    "text": "串联在一起的 PEM 证书，除此领域自身的颁发者之外，本服务的验证方还接受来自这些证书密钥的 SD-JWT VC 或 jwt_vc_json 凭证签名。为空（默认值）时只信任此颁发者，这也是它一贯的行为。证书被当作密钥使用：不构建证书链，但在用它验证凭证时会查询其吊销状态（pki.revocationCheck，自 2026-09-12 起）。密钥为 ML-DSA、SLH-DSA 或组合 ML-DSA 的证书可以验证用该算法签名的凭证和状态列表（#657），除非 oid4vc.walletCompatibility 已开启。"
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",
@@ -5802,6 +5818,30 @@
   "oid4vp.expectedVct|description": {
     "en": "8cc9cdf9a93a0260",
     "text": "验证方对出示的 SD-JWT VC 所要求的 `vct`。默认是此颁发者签发的类型；设置它可以接受另一颁发者以其自身类型签发的凭证。"
+  },
+  "oid4vp.mdocTrustAnchors|label": {
+    "en": "f20c6a38b3c5c0ed",
+    "text": "受信任的 mdoc 签发机构（IACA 证书，PEM）"
+  },
+  "oid4vp.mdocTrustAnchors|description": {
+    "en": "bc0c2fd840ac9688",
+    "text": "PEM 证书，串联在一起：出示的 mdoc 的文档签名者证书必须链接到的签发机构 CA 证书（ISO/IEC 18013-5 附录 B）。证书链按 RFC 5280 的规定构建和检查，会查询文档签名者的吊销状态（pki.revocationCheck），签名者未链接到其中任何一个证书的 mdoc 会被拒绝。为空（默认值）时不信任任何 mdoc 签发者，因此在指定一个之前，mso_mdoc 出示会被拒绝。"
+  },
+  "oid4vp.expectedDoctype|label": {
+    "en": "49833f72d06c775d",
+    "text": "预期的 mdoc 文档类型（docType）"
+  },
+  "oid4vp.expectedDoctype|description": {
+    "en": "d718e92b610b1ae9",
+    "text": "mso_mdoc 请求所请求的 `docType`（`meta.doctype_value`），也是验证方要求出示的文档及其 Mobile Security Object 所具有的类型。默认值是 ISO/IEC 18013-5 的移动驾照。"
+  },
+  "oid4vp.mdocNamespace|label": {
+    "en": "8e0371b0c93613a5",
+    "text": "读取所请求声明的 mdoc 命名空间"
+  },
+  "oid4vp.mdocNamespace|description": {
+    "en": "119af9b2a1680a4c",
+    "text": "mso_mdoc 请求的声明路径所指明的命名空间（`[namespace, element]`，OpenID4VP 1.0 附录 B.2.3）。每个请求的声明都以同名的数据元素请求，但 birthdate（birth_date）和 address（resident_address）除外，ISO/IEC 18013-5 对它们的命名不同。默认值是移动驾照的命名空间。"
   },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",

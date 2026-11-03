@@ -3042,9 +3042,13 @@ const SPECS: Spec[] = [
     coverage: 'partial: Authorization Requests by value and as a signed ' +
               'Request Object by reference, response_mode=direct_post, a ' +
               'DCQL query (credential_sets included), and full verification ' +
-              'of what comes back in all three formats — a Key Binding JWT, ' +
+              'of what comes back in all four formats — a Key Binding JWT, ' +
               'a VP JWT with nonce, aud and iat, a VerifiablePresentation ' +
-              'with a Data Integrity proof (B.1.3.2.5) — and each ' +
+              'with a Data Integrity proof (B.1.3.2.5), and since #935 an ' +
+              'ISO mdoc (B.2: the document signer chained to ' +
+              'oid4vp.mdocTrustAnchors, the MSO, each element\'s digest, ' +
+              'the device signature over the B.2.6.1 session transcript; ' +
+              'deviceMac refused) — and each ' +
               'credential\'s status, which every presented credential must ' +
               'name (oid4vp.requireStatusReference, all by default; an ' +
               'ldp_vc query asks for credentialStatus and one that ' +
@@ -3058,7 +3062,8 @@ const SPECS: Spec[] = [
               'in any of the three formats, and only as the directory entry ' +
               'it was issued for; anything else verifies and signs nobody ' +
               'in. No presentation_definition (DIF PE) — DCQL only; no ' +
-              'unsigned or multi-signed DC API request; no mso_mdoc; no ' +
+              'unsigned or multi-signed DC API request; no mdoc through ' +
+              'the DC API or for a sign-in; no ' +
               'wallet attestation; no transaction_data. SINCE #129 a signed ' +
               'request names its Client Identifier by the prefix ' +
               'oid4vp.clientIdPrefix chooses (section 5.9): pre-registered, ' +
@@ -3292,8 +3297,11 @@ const SPECS: Spec[] = [
               'every GNAP jwt-signed and jwt-encrypted token carrying its ' +
               'status claim, advertised as status_list_aggregation_endpoint ' +
               '(section 9.1) in the authorization server metadata. No ' +
-              'historical resolution (501), no redirects followed, no mdoc ' +
-              '(none is issued).' },
+              'historical resolution (501), no redirects followed. No mdoc is ' +
+              'issued; the Verifier resolves the CWT list a presented ' +
+              'mdoc\'s Mobile Security Object names, signed by a certificate ' +
+              'in its x5chain that chains to oid4vp.mdocTrustAnchors ' +
+              '(#935).' },
   { id: 'etsi-ts-119-602',
     name: 'ETSI TS 119 602 V1.1.1, Lists of trusted entities (LoTE)',
     where: 'ETSI',

@@ -53,7 +53,7 @@ Every suite below passed in the full runs of 2026-09-26 and 2026-09-27.
 | FAPI | the same suite | OpenID Foundation | FAPI 2.0 Security Profile, FAPI 2.0 Message Signing, FAPI 1.0 Advanced, FAPI-CIBA, with their variants |
 | Shared Signals, CAEP | the same suite | OpenID Foundation | SSF transmitter and CAEP interop transmitter, by push and by poll |
 | OpenID Federation | the same suite | OpenID Foundation | Leaf and Trust Anchor entity plans, and automatic registration into a federation the suite plays |
-| OpenID4VCI, OpenID4VP | the same suite | OpenID Foundation | issuer (wallet- and issuer-initiated, pre-authorized, HAIP) and verifier (`direct_post`, `direct_post.jwt`, x509 client identifiers) |
+| OpenID4VCI, OpenID4VP | the same suite | OpenID Foundation | issuer (wallet- and issuer-initiated, pre-authorized, HAIP) and verifier (`direct_post`, `direct_post.jwt`, x509 client identifiers, HAIP with SD-JWT VC and ISO mdoc) |
 | Verifiable Credentials | [W3C VC test suites](#w3c-verifiable-credentials-and-did-suites) | W3C VC Working Group | VC Data Model 2.0, Data Integrity EdDSA, Data Integrity ECDSA (incl. `ecdsa-sd-2023`), Bitstring Status List, VC-JOSE-COSE |
 | DIDs | [did-test-suite](#w3c-verifiable-credentials-and-did-suites) | W3C DID Working Group | DID Core: did:web, did:key, did:jwk, resolution and dereferencing |
 | XACML 3.0 | [OASIS conformance tests](#xacml-30) (via AT&T and AuthzForce) | OASIS XACML TC | **454 of 455** mandatory cases |
@@ -81,8 +81,9 @@ configured for the profile it tests. The job does everything a human tester
 would do in the suite's UI: it registers clients with keys made at run
 time, signs a person in on `/authn/login` and approves consent, approves
 CIBA requests through `/admin-api`, emits CAEP events for the SSF interop
-module, delivers credential offers and transaction codes, and acts as the
-End-User for the OpenID4VP verifier.
+module, presses a receiver's stream buttons when the suite is the SSF
+transmitter, delivers credential offers and transaction codes, and acts as
+the End-User for the OpenID4VP verifier.
 
 | Job | Plans |
 |---|---|
@@ -90,9 +91,10 @@ End-User for the OpenID4VP verifier.
 | `sts_oidcc_rp_conformance` | the relying-party plans, with iya-sts as the relying party of an inbound OpenID Connect [federation relationship](federation.md) and the suite as the OpenID Provider: Basic, Implicit and Hybrid (every response type), Config (the endpoints read from the provider's discovery document), Dynamic, the three form_post plans, third-party-initiated login, logout (RP-Initiated, Back-Channel and Front-Channel, OP- and RP-initiated) and refresh tokens |
 | `sts_fapi_conformance` | FAPI 2.0 Security Profile, FAPI 2.0 Message Signing (with Grant Management), FAPI 1.0 Advanced (with PAR and JARM), FAPI-CIBA (poll and ping), with mutual TLS as both client authentication and sender constraint |
 | `sts_ssf_oidf_conformance` | the SSF transmitter plan and the CAEP interop transmitter plan, each by push and by poll |
+| `sts_ssf_receiver_conformance` | the SSF receiver plan and the CAEP interop receiver plan, each by push and by poll, against a realm receiving through a signals-only federation relationship; the job also checks that the suite's CAEP `session-revoked` ended the person's sessions |
 | `sts_oidfed_conformance` | the deployed-entity plan for a Leaf realm and for the default realm as Trust Anchor; the plan in which the suite runs a federation that a realm's OP joins, registering the RP automatically |
 | `sts_oid4vci_conformance` | the issuer plan (SD-JWT VC) wallet-initiated, issuer-initiated and pre-authorized with a transaction code; the HAIP issuer plan (`attest_jwt_client_auth`) |
-| `sts_oid4vp_conformance` | the verifier plan for SD-JWT VC by `direct_post` and `direct_post.jwt`, with the `redirect_uri`, `x509_san_dns` and `x509_hash` client identifier prefixes |
+| `sts_oid4vp_conformance` | the verifier plan for SD-JWT VC by `direct_post` and `direct_post.jwt`, with the `redirect_uri`, `x509_san_dns` and `x509_hash` client identifier prefixes; the HAIP verifier plan (`oid4vp-1final-verifier-haip-test-plan`: `x509_hash`, a signed request by reference, encrypted `direct_post.jwt`) for SD-JWT VC and for an ISO mdoc, the realm trusting the suite's mdoc IACA root |
 
 **What it found**, each now fixed in every mode:
 
@@ -109,6 +111,13 @@ End-User for the OpenID4VP verifier.
 * FAPI 1.0 Advanced accepted `code` without JARM.
 * Several SSF, OpenID Federation and OpenID4VCI details departed from the
   final specification texts.
+* As an SSF receiver: no stream replacement or status read, a default scope
+  without `ssf.read`, no new token after a 401, cached keys kept across a
+  rediscovery, and a CAEP `session-revoked` initiated by `policy` ignored.
+* The OpenID4VP Verifier could not verify an ISO mdoc, which the HAIP
+  verifier plan certifies a Verifier for. It now can (see
+  [Accept an ISO mdoc](configure-oid4vp.md#accept-an-iso-mdoc)), and both
+  HAIP variants pass, the classical twins with no exemption.
 
 **What the relying-party plans needed**, built in every mode
 ([federation](federation.md#openid-connect-as-the-relying-party)):
@@ -141,8 +150,9 @@ OpenID4VP jobs therefore also runs as a classical twin (`<plan>-cl`), in a
 realm with [`keys.postQuantumSigning`](oauth-oidc.md#post-quantum-signing-switched-off)
 off, where none of those exemptions applies: a twin that passes is a clean
 result with nothing post-quantum excused. The FAPI plans already pass with
-no such exemption, and so do the relying-party plans: iya-sts signs and
-publishes nothing the suite reads in them.
+no such exemption, and so do the SSF receiver plans, in which the suite
+verifies nothing the realm signs, and the relying-party plans: iya-sts signs
+and publishes nothing the suite reads in them.
 
 **Warnings that stay.** In the post-quantum realms, every module warns that
 the realm's JWKS carries post-quantum keys the suite cannot parse. The OpenID Connect realms turn off
@@ -153,7 +163,6 @@ check.
 **Not run, and why:**
 
 * The Brazil, panva and superseded-draft plans, and AuthZEN.
-* The SSF receiver plans.
 * FAPI 1.0 Baseline: the suite no longer publishes a plan for it, so the
   repository's own `sts_fapi_baseline.js` is Baseline's only check.
 * FAPI 2.0 Message Signing's `plain_response` variant: section 5.4.1 has the

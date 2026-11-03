@@ -384,8 +384,8 @@
     "text": "ANG SECRET PARA SA fedSignalsClientId, NAKA-SEAL sa ilalim ng key-encryption key saanman nagpe-persist ang mga key at hindi kailanman ipinapakita. Kapag walang laman, ginagamit ang fedClientSecret, na naka-seal sa parehong paraan."
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "ed55c437fcd421f1",
-    "text": "Ang scope na hinihingi gamit ang client credentials. Kapag walang laman, hinihingi ang `ssf.manage`, na kasama ang pagbasa."
+    "en": "9a4b1c668a3d1dd5",
+    "text": "Ang scope na hinihingi gamit ang client credentials. Kapag walang laman, `ssf.read ssf.manage` ang hinihingi, ang dalawa ng CAEP Interoperability Profile (seksyon 2.7.3)."
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",

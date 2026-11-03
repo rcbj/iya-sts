@@ -25,6 +25,20 @@
 // certificate (`/oid4vp/verifier-certificate`) and hands the suite its
 // trust anchor, and for x509_san_dns the bare DNS name as client_id.
 //
+// `oid4vp-1final-verifier-haip-test-plan` (#935, 2026-11-02), the plan the
+// suite certifies a Verifier with: OpenID4VC HAIP 1.0, which fixes the
+// x509_hash Client Identifier Prefix, a signed request by reference and an
+// ENCRYPTED `direct_post.jwt` response, and leaves the credential format —
+// run here as an SD-JWT VC and as an ISO mdoc (`mso_mdoc`, which the
+// Verifier checks since #935, `oid4vc/vc_mdoc.ts`). A HAIP realm names
+// `haip-vp://` as its wallet scheme (`oid4vp.walletInvocation`, section
+// 5.1), and each start names the page the wallet is sent to afterwards,
+// because HAIP section 5.1 requires the Response Endpoint to answer a
+// `redirect_uri` (#594's `redirect_uri` on the start). The mdoc realm trusts
+// the suite's IACA root, which the job fetches from the suite at run time
+// (`/mdoc-iaca-root.pem`, the anchor its document signer chains to), and
+// asks for the mobile driving licence the suite's wallet holds.
+//
 // A module waits for the Verifier to send the End-User to the wallet. This
 // job is that End-User: it asks the realm's start page for a request — the
 // realm's `oid4vp.walletUrl` is the suite's authorization endpoint — and
@@ -110,8 +124,32 @@ const PLANS = oidf.withClassicalTwins([
     variant: { vp_profile: "plain_vp", credential_format: "sd_jwt_vc",
                client_id_prefix: "x509_hash",
                request_method: "request_uri_signed",
+               response_mode: "direct_post.jwt" } },
+  // #935: HAIP. The plan fixes vp_profile haip, x509_hash and
+  // request_uri_signed, and offers only direct_post.jwt; the credential
+  // format is the one variable left.
+  { key: "vp-haip", name: "oid4vp-1final-verifier-haip-test-plan",
+    haip: true, responseMode: "direct_post.jwt", prefix: "x509_hash",
+    format: "dc+sd-jwt",
+    variant: { credential_format: "sd_jwt_vc",
+               response_mode: "direct_post.jwt" } },
+  { key: "vp-haip-mdoc", name: "oid4vp-1final-verifier-haip-test-plan",
+    haip: true, responseMode: "direct_post.jwt", prefix: "x509_hash",
+    format: "mso_mdoc",
+    variant: { credential_format: "iso_mdl",
                response_mode: "direct_post.jwt" } }
 ]);
+// Where a HAIP start sends the wallet once the Verifier has answered (HAIP
+// 1.0 section 5.1): a page of no consequence, since the End-User here is
+// this job, which does not follow it. Development accepts any absolute URL
+// (#594); a product realm only the calling client's registered redirect
+// URIs, and this job's token is the management client's, which registers
+// none — so a product run names none and argues the one condition below.
+const COMPLETION = "https://verifier.conformance.test/verified";
+// The suite's mdoc trust anchor, which its document signer certificate is
+// issued under at run time (ISO/IEC 18013-5 Annex B); published by the
+// suite, fetched here, never in git.
+const IACA_PATH = "mdoc-iaca-root.pem";
 
 const EXPECTED = {};
 // Conditions whose WARNING this service keeps, and why — the same sentences
@@ -134,6 +172,17 @@ const KNOWN_FAILURES = {
 // is judged without (`oidf.ledgerFor()`).
 const PQ_ONLY = ["WarnOnUnusableJwksKeys",
                  "VP1FinalValidateVpFormatsSupportedInClientMetadata"];
+// IN PRODUCT ONLY (see COMPLETION): a HAIP start names no page there, so
+// the Response Endpoint answers no redirect_uri. The conformance modes are
+// development ones (`STS_TEST_CONFORMANCE_MODES`, `memory`), so a run of
+// the suite never reads this entry; it is here so a product run says why
+// rather than failing on a value the job chose.
+const PRODUCT_FAILURES = {
+  VP1FinalEnsureDirectPostResponseHasRedirectUriForHaip: "a product realm " +
+    "sends a wallet only to a redirect URI the starting client registered " +
+    "(#594), and the management client this job starts with registers none"
+};
+let product = false;
 
 let checks = 0;
 function check(what, fn) {
@@ -160,6 +209,18 @@ async function prepare(plan) {
     ["oid4vp.requireStatusReference", "own-only"],
     ["federation.outboundCaFile", oidf.suiteCaFile()]]
     .concat(plan.settings || []);
+  if (plan.haip) {
+    // HAIP 1.0 section 5.1: a wallet app is handed the request under
+    // `haip-vp://` (the start below names the suite's web wallet, so this
+    // is what the realm WOULD hand an app).
+    settings.push(["oid4vp.walletInvocation", "haip-vp"]);
+  }
+  if (plan.format === "mso_mdoc") {
+    const iaca = await oidf.suite("GET", IACA_PATH);
+    assert.strictEqual(iaca.status, 200, "the suite's IACA root: " +
+                       String(iaca.raw || "").slice(0, 200));
+    settings.push(["oid4vp.mdocTrustAnchors", String(iaca.raw)]);
+  }
   // See the header: signing post-quantum off does not drop the encrypted
   // response's HPKE-10-KE key. ECDH-ES is the key HAIP requires.
   if (plan.classical && plan.responseMode === "direct_post.jwt") {
@@ -228,9 +289,10 @@ function userFor(plan, prepared) {
     try {
       const r = await oidf.ok(prepared.realm.base +
         "/admin-api/verifications/start", Object.assign(
-          { mode: "same-device", format: "dc+sd-jwt",
+          { mode: "same-device", format: plan.format || "dc+sd-jwt",
             response_mode: plan.responseMode },
-          plan.prefix ? { client_id_prefix: plan.prefix } : {}),
+          plan.prefix ? { client_id_prefix: plan.prefix } : {},
+          plan.haip && !product ? { redirect_uri: COMPLETION } : {}),
         "started a verification");
       const to = String(r.walletUrl || "");
       assert.ok(to.indexOf(oidf.SUITE) === 0, "the start sent nobody to " +
@@ -249,7 +311,7 @@ function userFor(plan, prepared) {
 
 async function test() {
   log.debug("Entering test().");
-  await registry.isProduct(root);
+  product = await registry.isProduct(root);
   await oidf.waitForSuite();
   const unexpected = [];
   for (const plan of PLANS) {
@@ -271,10 +333,12 @@ async function test() {
                       ((e && e.message) || e));
       continue;
     }
+    const failures = plan.haip && product
+      ? Object.assign({}, KNOWN_FAILURES, PRODUCT_FAILURES) : KNOWN_FAILURES;
     const judged = oidf.judge(plan.key, ran,
                               oidf.ledgerFor(plan, EXPECTED, PQ_ONLY),
                               oidf.ledgerFor(plan, KNOWN_WARNINGS, PQ_ONLY),
-                              oidf.ledgerFor(plan, KNOWN_FAILURES, PQ_ONLY));
+                              oidf.ledgerFor(plan, failures, PQ_ONLY));
     log.info("  " + plan.key + ": " + JSON.stringify(judged.counts) +
              ", plan " + oidf.SUITE + "plan-detail.html?plan=" + ran.planId);
     judged.unexplained.forEach(function (line) {
@@ -295,8 +359,9 @@ async function test() {
 
 new Command()
   .description("The OpenID Foundation conformance suite's OpenID4VP " +
-    "verifier plan (#187), against this service — each variant also as " +
-    "its classical twin, post-quantum signing off.")
+    "verifier plans (#187) and its HAIP verifier plan (#935), against this " +
+    "service — each variant also as its classical twin, post-quantum " +
+    "signing off.")
   .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
                                            "needs no browser)"))
   .parse(process.argv);

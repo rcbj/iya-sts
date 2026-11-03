@@ -524,7 +524,9 @@ realm A's issuer, which it reads from A's configuration document.
   SSF issuer.
 * **Instead of client credentials**, set `fedSignalsBearer` to a token the
   partner issued. `fedSignalsScope` is the scope asked for; empty asks for
-  `ssf.manage`. Both secrets are sealed and never shown.
+  `ssf.read ssf.manage`, the two scopes of the CAEP Interop Profile: every
+  act this realm takes needs one of them. Both secrets are sealed and never shown. A
+  token the partner refuses with 401 is replaced once, with a fresh one.
 * **`fedSignalsEvents`** lists the event types to ask for. Empty asks for
   whatever the partner supports.
 * **A poll stream** is polled every `ssf.foreignPollS` seconds (30 by
@@ -535,6 +537,16 @@ realm A's issuer, which it reads from A's configuration document.
   and create it again to change it.
 * **The outbound connection** is verified against `federation.outboundCaFile`
   where the partner's certificate needs a private CA.
+
+**The other stream buttons**, each also `federation/signals-<act>`:
+**Read stream** (`signals-read-stream`), **Send fedSignalsEvents**
+(`signals-update-stream`, a PATCH of `events_requested`), **Replace stream**
+(`signals-replace-stream`, a PUT of every setting this realm supplies; a push
+stream gets a new authorization header), **Read status**
+(`signals-read-status`), **Pause** and **Enable** (`signals-set-status`, with
+`status`), **Verify** and **Delete stream**. The status the partner last
+reported, by a read or a `stream-updated` event, is shown beside the stream.
+**Discover** fetches the configuration and the partner's keys again.
 
 **Link people.** For a sign-in partner, the links its sign-ins wrote are what
 its `iss_sub` subjects match. For an `ssf` relationship, link each person
@@ -555,7 +567,20 @@ An `email` subject is matched only where the relationship sets
 one. The `signal-response` XACML policy decides the reaction. By default a
 sign-in partner's `account-disabled` blocks that partner's sign-ins of the
 person and ends the sessions it started, and `account-enabled` lifts the
-block; an `ssf` partner's events are recorded and do nothing. The full table is
+block; an `ssf` partner's events are recorded and do nothing. A
+`session-revoked` is a revocation whatever its `initiating_entity`. To let an
+`ssf` partner end a person's sessions, build the `signal-response` template
+with `signalsOnlyEndSessionEvents` and choose it, as
+`sts_ssf_receiver_conformance.js` does:
+
+```bash
+api xacml/create-from-template '{"template":"signal-response",
+  "name":"my-signal-response",
+  "p_signalsOnlyEndSessionEvents":"session-revoked, credential-change"}'
+api config/set '{"key":"xacml.signalResponsePolicy","value":"my-signal-response"}'
+```
+
+The full table is
 in [Shared Signals → Receiving from a federation partner](shared-signals.md#receiving-from-a-federation-partner).
 `ssf.signalsRevokeGrants` (on by default) also revokes the person's grants and
 tokens on the strongest events. **In development** none of this happens unless

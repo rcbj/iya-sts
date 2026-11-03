@@ -83,6 +83,14 @@ precedence = "override"
 SPDX-FileCopyrightText = "World Wide Web Consortium (W3C)"
 SPDX-License-Identifier = "W3C-20150513"
 
+# The identity JSON-LD context this issuer signs ldp_vc credentials against,
+# its own since #663, inside the directory of MIT copies above.
+[[annotations]]
+path = "common/crypto_impl/contexts/iya_identity_v1.json"
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Iya CyberSecurity Solutions, LLC"
+SPDX-License-Identifier = "BUSL-1.1"
+
 # Country outlines derived from Natural Earth, which is public domain.
 [[annotations]]
 path = "admin-ui/natural_earth/**"

@@ -384,8 +384,8 @@
     "text": "EL SECRETO PARA fedSignalsClientId, SELLADO con la clave de cifrado de claves dondequiera que las claves persistan y nunca mostrado. Vacío usa fedClientSecret, sellado de la misma forma."
   },
   "fed.schema.attributes.fedSignalsScope.what": {
-    "en": "ed55c437fcd421f1",
-    "text": "El ámbito que se pide con credenciales de cliente. Vacío pide `ssf.manage`, que incluye la lectura."
+    "en": "9a4b1c668a3d1dd5",
+    "text": "El ámbito que se pide con las credenciales de cliente. Vacío pide `ssf.read ssf.manage`, los dos del Perfil de Interoperabilidad de CAEP (sección 2.7.3)."
   },
   "fed.schema.attributes.fedSignalsBearer.what": {
     "en": "75ae4009add7e2d2",
