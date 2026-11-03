@@ -18,6 +18,7 @@ DID Core with DIF domain linkage.
 | `vc_status_codec.ts` | Their encodings: the compressed byte array, CBOR, COSE_Sign1, the JWT and CWT tokens, and the W3C bitstring (rule 3as). A pure library. |
 | `vc_data_integrity.ts` | The holder's Data Integrity proof on a presentation (`ecdsa-jcs-2019`, `eddsa-jcs-2022`, `mldsa44-jcs-2024`, `slhdsa128-jcs-2024`), `did:jwk` and `did:key` (rule 3at). A pure library — and since 2026-09-22 (#43) also the signer and verifier of a GNAP zcap token's JCS proof (`gnap/token_zcap.ts`), through `signDocument()`, `multikeyOf()` and a caller-supplied `resolveVerificationMethod`; and since #195/#196 the RDFC suites (`eddsa-rdfc-2022`, `ecdsa-rdfc-2019`), `ecdsa-sd-2023` (through `vc_ecdsa_sd.ts`), proof sets and chains (`verifyAllProofs()`) and the realm's own keys as did:keys (`realmKeyFor()`) — asked for by name, never the default. |
 | `vc_did.ts` | `did:web`, `did:jwk`, and the domain linkage document. |
+| `vc_algorithms.ts` | Which JWS algorithms OpenID4VCI and OpenID4VP offer, sign with and accept, and the wallet compatibility mode `oid4vc.walletCompatibility` (#657). A static utility class; *POST-QUANTUM REQUEST OBJECTS, TRUSTED ISSUERS AND THE WALLET COMPATIBILITY MODE* below. |
 | `vc_jsonld.ts` | The CLOSED JSON-LD loader (the contexts in `contexts/` and `../common/crypto_impl/contexts/`, each held to its SHA-256; nothing is fetched) and RDFC-1.0 over it (#194-#196). A library. |
 | `vc_data_model.ts` | The VC Data Model 2.0 and 1.1 MUSTs a credential or presentation is refused for (#194). A library. |
 | `vc_ecdsa_sd.ts` | `ecdsa-sd-2023`: base proofs, derived proofs and their verification, the specification's own steps (#196). A library `vc_data_integrity.ts` dispatches to. |
@@ -494,10 +495,12 @@ to an ML-DSA-44 key and prove a Key Binding JWT, a VP JWT or — through
 `mldsa44-jcs-2024` — a Data Integrity proof with it; and since 2026-09-22 an
 SLH-DSA-SHA2-128s key through `slhdsa128-jcs-2024`, the draft's other JCS suite
 for an algorithm this service holds (its FALCON-512 and SQIsign-I suites have
-multicodec codes the draft itself calls preliminary and unregistered). What is
-NOT possible: a trusted issuer CERTIFICATE with a post-quantum key (node reads
-no ML-DSA certificate into a `KeyObject` here), and an ldp_vc holder key of any
-other post-quantum kind, because no cryptosuite defines one.
+multicodec codes the draft itself calls preliminary and unregistered). A
+trusted issuer CERTIFICATE with a post-quantum key verifies too since #657
+(*POST-QUANTUM REQUEST OBJECTS, TRUSTED ISSUERS AND THE WALLET COMPATIBILITY
+MODE*, below); this sentence said node could not read one. What is NOT
+possible: an ldp_vc holder key of any other post-quantum kind, because no
+cryptosuite defines one.
 
 ### What the reports read off this family (#1021, 2026-10-27)
 
@@ -1017,10 +1020,10 @@ the start's format list is the issuer's formats plus the Verifier's
   ML-DSA (-48..-50) is offered and accepted only while
   `keys.postQuantumSigning` is on (`vc_mdoc.coseAlgs()`), as the JOSE lists
   are by `helpers.offeredJwsAlgs()`.
-* **Refused**: `deviceMac` (`STS-VC-0155`; its key is agreed with a reader's
+* **Refused**: `deviceMac` (`STS-VC-0159`; its key is agreed with a reader's
   ephemeral key that no OpenID4VP request carries), a device-signed element
   the MSO's `keyAuthorizations` do not name, more than one Document. Codes
-  `STS-VC-0152`..`0156`, logged where each is found; the Response URI answers
+  `STS-VC-0156`..`0160`, logged where each is found; the Response URI answers
   `STS-VC-0041` as for any refused presentation.
 * **Status**: an MSO's `status.status_list` is a COSE reference
   (`codec.referenceOfCose()`), resolved by `vc_status.ts`'s `foreignCwt()`;
@@ -1112,9 +1115,11 @@ the leaf, and `x509_hash:<b64url SHA-256 of the leaf's DER>` must be its hash.
   `recertifyUseCase()` and `recertifyOrphanedSlots()` pass it back. Before
   this, renewing the JOSE or `pep-tls` Issuing CA's certificates re-minted
   a named leaf WITHOUT its subjectAltName.
-* **NOT BUILT: a post-quantum signing algorithm.** The Request Object is
-  signed on the request path, and the post-quantum keys sign in the worker
-  pool. The setting's description says so.
+* **POST-QUANTUM SINCE #657.** It read *NOT BUILT* here: the Request Object
+  is signed on the request path, and the post-quantum keys sign on libuv's
+  thread pool. The answer is a deferred signature
+  (`buildVpRequestAsync()`), and `x509Signer()` certifies the realm's
+  post-quantum key for the algorithm — *POST-QUANTUM REQUEST OBJECTS*, below.
 
 `tests/oid4vp_x509_client_id.js` holds this in process.
 `tests/protocol/sts_oid4vp_x509.js` (local) checks each prefix over HTTP as a
@@ -1128,6 +1133,84 @@ prefix itself) and `client.request_object_trust_anchor_pem` = the
 `request_method: request_uri_signed`. A verification is started at `POST
 /admin-api/verifications/start` with `client_id_prefix: <prefix>`. In product mode, also set
 `oid4vp.x509DnsName` to the realm's host.
+
+## POST-QUANTUM REQUEST OBJECTS, TRUSTED ISSUERS AND THE WALLET COMPATIBILITY MODE (#657, 2026-11-02)
+
+The ticket said the post-quantum algorithms were missing from OpenID4VP's
+drop-down, which was `oid4vp.x509SigningAlgorithm`. rcbj's scope: every
+credential format that can carry a post-quantum JWS — `dc+sd-jwt` and
+`jwt_vc_json`, and the Request Object — and NOT `ldp_vc`, which stays
+bbs-2023 with its holder cryptosuites unchanged. And a switch that turns off
+everything a wallet would refuse today or that no published specification
+defines, as a backwards compatibility mode. `tests/oid4vc_pq_algorithms.js`
+holds all of it, for each of the eleven algorithms.
+
+* **THE REQUEST OBJECT IS SIGNED AFTER THE BUILD.** `buildVpRequest()` stays
+  synchronous: everything it does but the signature is fast, and its callers
+  and the tests read its record. `signRequestObject()` is the one door every
+  Request Object goes through (the request, and a sign-in's Digital
+  Credentials API request). A classical algorithm is signed there, exactly as
+  before. A post-quantum one is pushed onto `opts.deferred` with `''`
+  standing in. `buildVpRequestAsync()` signs each with
+  `helpers.signJwtAsync()`, which signs post-quantum since #657, writes the
+  JWS back and stores the transaction again. A failure DELETES the stored
+  transaction, so a wallet never fetches an unsigned request. A synchronous
+  caller of a post-quantum configuration is refused (`STS-VC-0113` or
+  `-0155`), never answered unsigned. The two production callers,
+  `startVerification()` and `vc_signin.ts`, call the async one.
+* **ONE KEY, NAMED IN EVERY PLACE.** `helpers.ownPublicJwkFor(alg, useCase)`
+  answers the key `signJwt()` (classical) or `signingKeyFor()`
+  (post-quantum) picks, in the same order (pinned, signer group, own), so
+  the published key and the signature cannot differ. It never MAKES a
+  post-quantum key (keyListFor()'s reason). `ownPublicJwkForAsync()` does,
+  and `prepareSignedClientId()` awaits it before the build. That is already
+  awaited by every caller for the x509 prefixes, and now runs
+  `prepareRequestSigner()` for the others. The Entity Configuration awaits
+  `prepareRequestSigner()` too, because `federationVerifierMetadata()` is
+  synchronous.
+* **x509.** `x509Signer()` certifies the realm's post-quantum key through
+  `pki.pqSubjectPublicKeyPem()`, with the X.509 `keyAlg` `certifyPqKeys()`
+  gives it, under the same classical Issuing CA.
+* **THE OTHER SIGNED PREFIXES got a setting**,
+  `oid4vp.requestObjectSigningAlgorithm`, RS256 by default. That is what they
+  were all signed with, `requestSigningJwk()` having been the RSA key. The
+  key is in `/oauth2/jwks`. `vc_did.ts` adds it to the DID document where it
+  is not already there (decentralized_identifier's `kid` is a DID URL). It is
+  the self-issued attestation's `cnf` and the Entity Configuration's
+  `jwks`. The self-attestation itself is still signed RS256: it is not the
+  request. **A configured `oid4vp.verifierAttestation` must name the new
+  key** when the setting changes.
+* **TRUSTED ISSUERS WITH A POST-QUANTUM KEY.** `pki.pqJwkFromCertificate()`
+  is `pqSubjectPublicKeyPem()` backwards: an ECDSA composite's X.509 point
+  loses its `0x04`. `trustedIssuerPqKeys()` adds them to
+  `verifyIssuerSignatureAsync()`'s candidates after this realm's own.
+  `trustedIssuerKeys()` (the synchronous, classical list) skips them, where
+  node failed to read a composite one and logged `STS-VC-0031` for a good
+  certificate. A post-quantum key with no JOSE name (another SLH-DSA
+  parameter set) is `STS-VC-0154`. `statusCheck()` hands `vc_status.ts` the
+  AKP JWK and that one algorithm. `fetchList()`'s parse is awaited, so a
+  foreign list verifies on libuv's thread pool.
+* **THE WALLET COMPATIBILITY MODE** (`oid4vc.walletCompatibility`, off,
+  per realm) is `vc_algorithms.ts`'s, and turns off the whole `pq` family.
+  ML-DSA is RFC 9964's, but no wallet accepts it, so it fails one test. SLH-DSA
+  and the composites are drafts, so they fail both. The classical algorithms
+  stay, ES256K included (RFC 8812). Off, in the metadata:
+  `vciSigningAlgsFor()`, the JOSE configurations' proof types and
+  `vpFormatsSupported()`. Refused when SIGNING (`signingRefusal()`,
+  `STS-VC-0152`), never replaced: `buildCredentialFor()` answers
+  `credential_request_denied` (section 8.3.1.2), and `x509Signer()` and
+  `requestObjectAlgorithm()` refuse the build. Refused when ACCEPTED
+  (`acceptanceRefusal()`, `STS-VC-0153`): the issuer signature, the KB-JWT,
+  the VP JWT, the proof of possession and a foreign status list. It narrows
+  inside these two protocols only. `keys.postQuantumSigning` is still the
+  realm-wide switch, and `offered()` applies both.
+* **`vciSigningAlgsFor()` is narrowed now** (by both switches). So a
+  `/portal/wallet` offer's default is the first algorithm left when the
+  configured one is turned off. A credential the person chooses that way is
+  their choice. The wallet-initiated path, which names none, is refused.
+
+**What has no test:** an HTTP job (`tests/protocol/`, `local: true`), and a
+real wallet reading a post-quantum Request Object (none exists).
 
 ## AN APPLICATION'S DID (rcbj, 2026-10-01)
 

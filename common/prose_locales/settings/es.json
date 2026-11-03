@@ -5320,8 +5320,8 @@
     "text": "Algoritmo de firma de las credenciales"
   },
   "oid4vci.credentialSigningAlgorithm|description": {
-    "en": "6503fe55086c7b70",
-    "text": "El algoritmo JWS con el que se firman las credenciales dc+sd-jwt y jwt_vc_json — incluidos los poscuánticos — y con el que se firman las listas de estado de este dominio, y el que usa la Domain Linkage Credential de la DID Configuration. El credential_signing_alg_values_supported de los metadatos lo nombra, /oauth2/jwks y /.well-known/did.json publican la clave, y el Verifier de este servicio comprueba contra él. ldp_vc es bbs-2023 y no se ve afectado. Una credencial ya emitida conserva el algoritmo con el que se firmó."
+    "en": "64dfa4a593f7ec50",
+    "text": "El algoritmo JWS con el que se firman las credenciales dc+sd-jwt y jwt_vc_json — incluidos los poscuánticos — y con el que se firman las listas de estado de este dominio, y el que usa la Domain Linkage Credential de la DID Configuration. El credential_signing_alg_values_supported de los metadatos lo nombra, /oauth2/jwks y /.well-known/did.json publican la clave, y el Verifier de este servicio comprueba contra él. ldp_vc es bbs-2023 y no se ve afectado. Una credencial ya emitida conserva el algoritmo con el que se firmó. oid4vc.walletCompatibility rechaza aquí uno poscuántico o compuesto."
   },
   "oid4vci.credentialCertificateHeader|label": {
     "en": "dce4ddde19bfc321",
@@ -5504,8 +5504,24 @@
     "text": "Algoritmo de firma de una solicitud con Client Identifier x509"
   },
   "oid4vp.x509SigningAlgorithm|description": {
-    "en": "f85d7f30b92687ec",
-    "text": "El algoritmo JWS con el que se firma un Request Object con el Client Identifier x509_san_dns o x509_hash, y por tanto la clave del dominio sobre la que se emite el certificado del verificador. ES256 por defecto, que OpenID4VC HAIP exige que una billetera acepte. Aún no se ofrece un algoritmo poscuántico: el Request Object se firma en la ruta de la solicitud, y las claves poscuánticas de este dominio firman en el grupo de hilos de libuv (oid4vc/CLAUDE.md, los prefijos x509)."
+    "en": "aa2c5eaf7760ef3f",
+    "text": "El algoritmo JWS con el que se firma un Request Object con el Client Identifier x509_san_dns o x509_hash, y por tanto la clave del dominio sobre la que se emite el certificado del verificador. ES256 por defecto, que OpenID4VC HAIP exige que una billetera acepte. También se ofrecen los algoritmos poscuánticos y compuestos, para una billetera que los acepte; oid4vc.walletCompatibility los rechaza, y también keys.postQuantumSigning desactivado."
+  },
+  "oid4vp.requestObjectSigningAlgorithm|label": {
+    "en": "f3337ef9c128d22c",
+    "text": "Algoritmo de firma de una solicitud firmada"
+  },
+  "oid4vp.requestObjectSigningAlgorithm|description": {
+    "en": "c8e10b889bf92533",
+    "text": "El algoritmo JWS con el que se firma un Request Object firmado con los prefijos de Client Identifier pre-registered, decentralized_identifier, verifier_attestation y openid_federation (los prefijos x509 usan oid4vp.x509SigningAlgorithm). La clave del dominio para él es la que nombra la solicitud: en /oauth2/jwks, en el documento DID, en el cnf de una Verifier Attestation autoemitida y en el jwks openid_credential_verifier de la Entity Configuration. RS256 por defecto, que es lo que usaba toda solicitud firmada antes de este ajuste. Los algoritmos poscuánticos y compuestos se ofrecen para una billetera que los acepte; oid4vc.walletCompatibility los rechaza, y también keys.postQuantumSigning desactivado."
+  },
+  "oid4vc.walletCompatibility|label": {
+    "en": "50234c10261cc298",
+    "text": "Modo de compatibilidad con billeteras"
+  },
+  "oid4vc.walletCompatibility|description": {
+    "en": "a8207c4165957956",
+    "text": "Desactiva, para OpenID4VCI y OpenID4VP, todo algoritmo JWS que una billetera en uso hoy rechaza o que ninguna especificación publicada define para estos protocolos: los poscuánticos y compuestos (ML-DSA-44, -65 y -87 son de la RFC 9964, pero ninguna billetera los acepta aún; SLH-DSA y los algoritmos ML-DSA compuestos son Internet-Drafts). Activado: ninguno figura en los metadatos del emisor ni del verificador, una credencial dc+sd-jwt o jwt_vc_json, un Request Object de OpenID4VP o una oferta del portal nunca se firma con uno (un ajuste que nombra uno se rechaza en lugar de reemplazarse), y se rechaza una credencial, Key Binding JWT, VP JWT, prueba de posesión o lista de estado ajena firmada con uno. DESACTIVADO, el valor predeterminado: se ofrece y acepta todo algoritmo que tenga este dominio, como antes. ldp_vc (bbs-2023 y sus cryptosuites de titular) no se ve afectado, ni ningún otro protocolo: keys.postQuantumSigning es el interruptor de todo el dominio."
   },
   "oid4vp.verifierAttestation|label": {
     "en": "43be5976a5b30428",
@@ -5792,8 +5808,8 @@
     "text": "Otros emisores de credenciales de confianza (PEM)"
   },
   "oid4vp.trustedIssuerCertificates|description": {
-    "en": "60a2c73b8c2c6aec",
-    "text": "Certificados PEM, concatenados, de cuyas claves el verificador de este servicio acepta una firma de credencial SD-JWT VC o jwt_vc_json ADEMÁS de la del emisor propio de este dominio. Vacío — el predeterminado — confía solo en este emisor, que es lo que siempre hizo. Un certificado se usa como CLAVE: no se construye ninguna cadena, aunque su revocación se consulta cuando verifica una credencial (pki.revocationCheck, desde 2026-09-12)."
+    "en": "bbe880b9d434d9ab",
+    "text": "Certificados PEM, concatenados, de cuyas claves el verificador de este servicio acepta una firma de credencial SD-JWT VC o jwt_vc_json ADEMÁS de la del emisor propio de este dominio. Vacío — el predeterminado — confía solo en este emisor, que es lo que siempre hizo. Un certificado se usa como CLAVE: no se construye ninguna cadena, aunque su revocación se consulta cuando verifica una credencial (pki.revocationCheck, desde 2026-09-12). Un certificado cuya clave es ML-DSA, SLH-DSA o ML-DSA compuesta verifica una credencial y una lista de estado firmadas con ese algoritmo (#657), salvo que oid4vc.walletCompatibility esté activado."
   },
   "oid4vp.expectedVct|label": {
     "en": "c6d5edeb9f60281c",

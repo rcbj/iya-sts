@@ -17,7 +17,7 @@
 //      (`oid4vp.expectedDoctype`), each claim a `[namespace, element]` path
 //      with birthdate as `birth_date`, and `vp_formats_supported.mso_mdoc`
 //      offering COSE identifiers — ML-DSA among them, and not while
-//      `keys.postQuantumSigning` is off;
+//      `keys.postQuantumSigning` is off or `oid4vc.walletCompatibility` on;
 //   2. an mdoc answering a `direct_post.jwt` request, its device signature
 //      over the transcript naming the ENCRYPTION KEY's thumbprint, accepted
 //      through `verifyAnswer()` with its claims, and the same over
@@ -55,7 +55,7 @@ const NS = 'org.iso.18013.5.1';
 const QUERY_ID = 'identity_credential';
 const OVERRIDES = ['oid4vp.mdocTrustAnchors', 'oid4vp.requireStatusReference',
                    'oid4vp.expectedDoctype', 'keys.postQuantumSigning',
-                   'oid4vp.claims'];
+                   'oid4vp.claims', 'oid4vc.walletCompatibility'];
 
 // --- this file's own CBOR (RFC 8949), encoding only -------------------------
 class Tag {
@@ -394,6 +394,11 @@ async function body(t) {
           vcMdoc.vpFormat().issuerauth_alg_values.indexOf(-7) >= 0,
           '1d. and none of ML-DSA while keys.postQuantumSigning is off');
   config.clearOverride('keys.postQuantumSigning');
+  config.setOverride('oid4vc.walletCompatibility', true);
+  t.check(vcMdoc.vpFormat().deviceauth_alg_values.indexOf(-49) < 0 &&
+          vcMdoc.vpFormat().deviceauth_alg_values.indexOf(-9) >= 0,
+          '1e. nor while the wallet compatibility mode is on (#657)');
+  config.clearOverride('oid4vc.walletCompatibility');
 
   t.log.info('=== 2. accepted ===');
   const jwtCtx = contextOf(jwtRecord);

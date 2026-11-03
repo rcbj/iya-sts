@@ -102,6 +102,9 @@ import pki = require('../common/pki');
 // instead.
 import stats = require('../common/admin_stats');
 import vcConfigs = require('./vc_configs');
+// Which JWS algorithms are offered, signed with and accepted, and the wallet
+// compatibility mode (#657).
+import VcAlgorithms = require('./vc_algorithms');
 import vcDid = require('./vc_did');
 // WHICH claims a credential carries, and what each one's value is. A library
 // like dpop.js — it registers nothing, so its place in the require order does
@@ -728,7 +731,7 @@ class VcIssuer {
       display: [{
         name: String(config.value('oid4vci.issuerDisplayName') || ''),
         locale: 'en-US',
-        logo: { uri: base + '/images/logo.png', alt_text: 'IdP Tools' }
+        logo: { uri: base + '/images/logo.png', alt_text: 'Iya STS' }
       }]
     };
     meta.credential_configurations_supported[VCI_CONFIG_ID] = {
@@ -738,8 +741,11 @@ class VcIssuer {
       cryptographic_binding_methods_supported: ['jwk'],
       credential_signing_alg_values_supported:
         this.deps.vciSigningAlgsFor(VCI_CONFIG_ID),
+      // `oid4vc.walletCompatibility` narrows it (#657); ldp_vc's holder
+      // suites below are not this mode's.
       proof_types_supported:
-        this.proofTypesSupported(stsCrypto.JWS_ASYMMETRIC_ALGS),
+        this.proofTypesSupported(
+          VcAlgorithms.offered(stsCrypto.JWS_ASYMMETRIC_ALGS)),
       display: [{
         name: 'Identity Credential',
         locale: 'en-US',
@@ -768,8 +774,11 @@ class VcIssuer {
       cryptographic_binding_methods_supported: ['jwk'],
       credential_signing_alg_values_supported:
         this.deps.vciSigningAlgsFor(VCI_JWT_CONFIG_ID),
+      // `oid4vc.walletCompatibility` narrows it (#657); ldp_vc's holder
+      // suites below are not this mode's.
       proof_types_supported:
-        this.proofTypesSupported(stsCrypto.JWS_ASYMMETRIC_ALGS),
+        this.proofTypesSupported(
+          VcAlgorithms.offered(stsCrypto.JWS_ASYMMETRIC_ALGS)),
       display: [{
         name: 'Identity Credential (JWT VC, no selective disclosure)',
         locale: 'en-US',
@@ -803,7 +812,7 @@ class VcIssuer {
       }],
       // NOT the same list as the two above, and the difference is the format's
       // rather than a choice: an ldp_vc credential is signed over canonicalized
-      // JSON-LD, so it can only carry terms the vendored context defines. The
+      // JSON-LD, so it can only carry terms the identity context defines. The
       // claims a selection asks for and this format cannot express are named on
       // /admin/vc rather than being quietly missing here.
       claims: vcClaims.advertisedClaims('ldp_vc')
@@ -1372,6 +1381,13 @@ class VcIssuer {
       throw new Error('unsupported proof alg "' + header.alg + '"; this ' +
         'issuer accepts ' + stsCrypto.JWS_ASYMMETRIC_ALGS.join(', ') + '.');
     }
+    // Not one the wallet compatibility mode turns off (#657, STS-VC-0153);
+    // the metadata does not advertise it then either.
+    const compatRefused = VcAlgorithms.acceptanceRefusal(String(header.alg),
+                                                         'the proof');
+    if (compatRefused) {
+      throw compatRefused;
+    }
     if (claims.aud !== credentialIssuer) {
       throw new Error('the proof aud ("' + claims.aud + '") is not this ' +
                       'credential issuer ("' +
@@ -1745,7 +1761,7 @@ class VcIssuer {
   // context this process actually loaded rather than against a list.
   //
   // vc_claims.ts names a JSON-LD term per configurable attribute, and those
-  // names were read off contexts/idptools_identity_v1.json by hand. Two files
+  // names were read off contexts/iya_identity_v1.json by hand. Two files
   // agreeing by hand is a drift waiting to happen, and the way this one would
   // announce itself is the worst available: jsonld canonicalizes with `safe:
   // true`, so an undefined term THROWS, inside a cryptosuite, at the moment a
@@ -1771,9 +1787,10 @@ class VcIssuer {
     } catch (e) {
       log.debug("Caught in VcIssuer.identityContextTerms(): " +
                 ((e && e.message) || e));
-      // Cannot happen while the context is vendored — bbs2023.js reads it at
-      // require time and this service does not start without it — but a caught
-      // failure here costs one claim and an uncaught one costs the credential.
+      // Cannot happen while the context ships with the service — bbs2023.js
+      // reads it at require time and this service does not start without it
+      // — but a caught failure here costs one claim and an uncaught one costs
+      // the credential.
       log.error(errorCodes.tag('STS-VC-0004') +
                 'the identity JSON-LD context could not be read; no ' +
                 'configured claim will be put in an ldp_vc credential this ' +
@@ -1794,7 +1811,7 @@ class VcIssuer {
         log.error(errorCodes.tag('STS-VC-0005') +
                   'vc_claims.js maps a configured attribute to the JSON-LD ' +
                   'term "' + term +
-                  '", which contexts/idptools_identity_v1.json does not ' +
+                  '", which contexts/iya_identity_v1.json does not ' +
                   'define; it is left out of this credential rather than ' +
                   'failing the signature.');
         delete members[term];
@@ -1886,8 +1903,8 @@ class VcIssuer {
       // the document canonicalising differently than it did at signing — the
       // statements or the header differ — or the key: same statements, same
       // header, and a signature that does not verify under this public key.
-      // Both halves are here rather than in the vendored module, which may
-      // not be edited in this repository.
+      // Both halves are here rather than in bbs2023.js, which was a vendored
+      // copy when this was written and is kept a plain cryptosuite (#663).
       const signedStatements = (issued.statements || []) as string[];
       const checkedStatements = (check.statements || []) as string[];
       const differing = signedStatements.filter(function (one, i) {
@@ -2035,6 +2052,21 @@ class VcIssuer {
     // checked it when the offer was made, and the configured algorithm may
     // have changed since. A JOSE algorithm only — ldp_vc is bbs-2023.
     const chosen = String(signingAlg || '');
+    // THE WALLET COMPATIBILITY MODE (#657) refuses a post-quantum or
+    // composite algorithm here, before a status index is allocated, and
+    // signs nothing in its place (STS-VC-0152): the offer's choice, else the
+    // configured one. ldp_vc is bbs-2023 and not this mode's.
+    if (format !== 'ldp_vc') {
+      const effective = chosen || String(this.deps.config.value(
+        'oid4vci.credentialSigningAlgorithm') || 'RS256');
+      const refused = VcAlgorithms.signingRefusal(effective, chosen ?
+        'the offer\'s signingAlg' : 'oid4vci.credentialSigningAlgorithm');
+      if (refused) {
+        log.debug("Leaving VcIssuer.buildCredentialFor(). Wallet " +
+                  "compatibility mode.");
+        throw refused;
+      }
+    }
     if (chosen && vciSigningAlgsFor(configId).indexOf(chosen) < 0) {
       throw new Error('the offer chose ' + chosen + ', which ' + configId +
                       ' credentials are not signed with: ' +
@@ -3613,6 +3645,14 @@ class VcIssuer {
       } catch (e) {
         log.debug("Caught in the OID4VCI credential endpoint: " +
                   ((e && e.message) || e));
+        if (e && e.code === 'STS-VC-0152') {
+          // Wallet compatibility mode (#657): a refusal of the request,
+          // section 8.3.1.2, logged with its code where it was found.
+          errorCodes.mark(res, 'STS-VC-0152');
+          log.debug("Leaving the OID4VCI credential endpoint. Wallet " +
+                    "compatibility mode.");
+          return vciError(res, 400, 'credential_request_denied', e.message);
+        }
         log.error(errorCodes.tag('STS-VC-0079') + 'the credential could not ' +
                   'be built: ' + e.message);
         errorCodes.mark(res, 'STS-VC-0079');
@@ -3745,6 +3785,13 @@ class VcIssuer {
       } catch (e) {
         log.debug("Caught in the OID4VCI deferred credential endpoint: " +
                   ((e && e.message) || e));
+        if (e && e.code === 'STS-VC-0152') {
+          // Wallet compatibility mode (#657), as at the credential endpoint.
+          errorCodes.mark(res, 'STS-VC-0152');
+          log.debug("Leaving the OID4VCI deferred credential endpoint. " +
+                    "Wallet compatibility mode.");
+          return vciError(res, 400, 'credential_request_denied', e.message);
+        }
         log.error(errorCodes.tag('STS-VC-0079') + 'the deferred credential ' +
                   'could not be built: ' + e.message);
         errorCodes.mark(res, 'STS-VC-0079');

@@ -821,41 +821,41 @@ var config = {
 
   // --- OID4VCI ---------------------------------------------------------
   oid4vci: {
-    walletUrl: "",                                    // Web wallet URL
-    walletInvocation: "openid-credential-offer",      // How a wallet app is handed an offer
-    authorizationServer: "",                          // Authorization server
-    batchSize: 4,                                     // Batch size
-    deferredReadyMs: 4000,                            // Deferred: ready after (ms)
-    deferredIntervalS: 2,                             // Deferred: poll interval (s)
-    offerUsername: "diploma.student",                 // Offer username
-    requestEncryptionRequired: false,                 // Require encrypted credential requests
-    txCodeLength: 5,                                  // Transaction Code length (digits)
-    txCodeMaxAttempts: 5,                             // Wrong Transaction Codes before the code is spent (product)
-    offerTtlS: 600,                                   // Credential Offer lifetime (s)
-    walletIssuancePath: "",                           // Web wallet issuance page
-    requestEncryptionKeyBits: 2048,                   // Request encryption key size (bits)
-    requestEncryptionEncValues: "A128GCM,A256GCM",    // Request encryption: enc values
-    responseEncryptionEncValues: "A128GCM,A256GCM",   // Response encryption: enc values
-    responseEncryptionRequired: false,                // Require encrypted credential responses
-    credentialLifetimeS: 2592000,                     // Issued credential lifetime (s)
-    credentialSigningAlgorithm: "RS256",              // Algorithm credentials are signed with
-    credentialCertificateHeader: "x5c",               // Credential certificate header
-    trustedListCertificateHeader: "x5c",              // Trusted list certificate header
-    trustedListTerritory: "",                         // Trusted list scheme territory
-    trustedListLifetimeH: 24,                         // Trusted list lifetime (hours)
-    signedMetadataCertificateHeader: "x5u",           // Issuer signed_metadata certificate header
-    proofIatWindowS: 600,                             // Proof of possession iat window (s)
-    cNonceTtlS: 300,                                  // c_nonce lifetime (s)
-    cNonceCacheSize: 10000,                           // c_nonce values held (per realm)
-    issuerDisplayName: "IdP Tools Credential Issuer", // Issuer display name
-    domainLinkageLifetimeS: 31536000,                 // Domain Linkage Credential lifetime (s)
-    sdJwtIssuerDid: false,                            // Name the SD-JWT VC issuer by DID; restart to apply
-    ldpVcIssuerDid: false,                            // Name the ldp_vc issuer by DID; restart to apply
-    statusListTtlS: 300,                              // Status list time to live (s)
-    statusListLifetimeS: 86400,                       // Status list lifetime (s)
-    keyAttestationRequired: false,                    // Require a key attestation
-    keyAttestationTrustedCertificates: "",            // Trusted key attesters (PEM)
-    didHolderBinding: ""                              // Bind to the person's DID
+    walletUrl: "",                                  // Web wallet URL
+    walletInvocation: "openid-credential-offer",    // How a wallet app is handed an offer
+    authorizationServer: "",                        // Authorization server
+    batchSize: 4,                                   // Batch size
+    deferredReadyMs: 4000,                          // Deferred: ready after (ms)
+    deferredIntervalS: 2,                           // Deferred: poll interval (s)
+    offerUsername: "diploma.student",               // Offer username
+    requestEncryptionRequired: false,               // Require encrypted credential requests
+    txCodeLength: 5,                                // Transaction Code length (digits)
+    txCodeMaxAttempts: 5,                           // Wrong Transaction Codes before the code is spent (product)
+    offerTtlS: 600,                                 // Credential Offer lifetime (s)
+    walletIssuancePath: "",                         // Web wallet issuance page
+    requestEncryptionKeyBits: 2048,                 // Request encryption key size (bits)
+    requestEncryptionEncValues: "A128GCM,A256GCM",  // Request encryption: enc values
+    responseEncryptionEncValues: "A128GCM,A256GCM", // Response encryption: enc values
+    responseEncryptionRequired: false,              // Require encrypted credential responses
+    credentialLifetimeS: 2592000,                   // Issued credential lifetime (s)
+    credentialSigningAlgorithm: "RS256",            // Algorithm credentials are signed with
+    credentialCertificateHeader: "x5c",             // Credential certificate header
+    trustedListCertificateHeader: "x5c",            // Trusted list certificate header
+    trustedListTerritory: "",                       // Trusted list scheme territory
+    trustedListLifetimeH: 24,                       // Trusted list lifetime (hours)
+    signedMetadataCertificateHeader: "x5u",         // Issuer signed_metadata certificate header
+    proofIatWindowS: 600,                           // Proof of possession iat window (s)
+    cNonceTtlS: 300,                                // c_nonce lifetime (s)
+    cNonceCacheSize: 10000,                         // c_nonce values held (per realm)
+    issuerDisplayName: "Iya STS Credential Issuer", // Issuer display name
+    domainLinkageLifetimeS: 31536000,               // Domain Linkage Credential lifetime (s)
+    sdJwtIssuerDid: false,                          // Name the SD-JWT VC issuer by DID; restart to apply
+    ldpVcIssuerDid: false,                          // Name the ldp_vc issuer by DID; restart to apply
+    statusListTtlS: 300,                            // Status list time to live (s)
+    statusListLifetimeS: 86400,                     // Status list lifetime (s)
+    keyAttestationRequired: false,                  // Require a key attestation
+    keyAttestationTrustedCertificates: "",          // Trusted key attesters (PEM)
+    didHolderBinding: ""                            // Bind to the person's DID
   },
 
   // --- OID4VP ----------------------------------------------------------
@@ -869,6 +869,7 @@ var config = {
     clientIdPrefix: "pre-registered",                // Client Identifier prefix of a signed request
     x509DnsName: "",                                 // DNS name of the x509_san_dns Client Identifier
     x509SigningAlgorithm: "ES256",                   // Signing algorithm of an x509 Client Identifier request
+    requestObjectSigningAlgorithm: "RS256",          // Signing algorithm of a signed request
     verifierAttestation: "",                         // Verifier Attestation JWT
     claims: "given_name,family_name",                // Requested claims
     presentationRequestTtlS: 600,                    // Presentation request lifetime (s)
@@ -877,7 +878,7 @@ var config = {
     walletPresentationPath: "",                      // Web wallet presentation page
     allowedWalletUrls: "",                           // Other wallet URLs a request link may name (product)
     trustedIssuerCertificates: "",                   // Other trusted credential issuers (PEM)
-    expectedVct: "urn:idptools:sd-jwt-vc:identity",  // Expected SD-JWT VC type (vct)
+    expectedVct: "urn:iya:sts:sd-jwt-vc:identity",   // Expected SD-JWT VC type (vct)
     mdocTrustAnchors: "",                            // Trusted mdoc issuing authorities (IACA certificates, PEM)
     expectedDoctype: "org.iso.18013.5.1.mDL",        // Expected mdoc document type (docType)
     mdocNamespace: "org.iso.18013.5.1",              // mdoc namespace the requested claims are read from
@@ -894,6 +895,11 @@ var config = {
     statusListMaxCacheS: 3600,                       // Longest a fetched status list is kept (s)
     requireStatusReference: "all",                   // Require a status reference on every presented credential
     statusOptionalIssuers: ""                        // Trusted issuers exempt from the status reference
+  },
+
+  // --- OID4VCI ---------------------------------------------------------
+  oid4vc: {
+    walletCompatibility: false  // Wallet compatibility mode
   },
 
   // --- OpenID Federation -----------------------------------------------

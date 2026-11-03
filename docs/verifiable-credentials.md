@@ -949,10 +949,11 @@ and the wallet sees the specification's error (`invalid_proof`,
 * **The Digital Credentials API:** the unsigned and multi-signed request forms
   and `transaction_data` are not implemented.
 * **Historical status lists** (`?time=`) answer `501`.
-* **Post-quantum:** a trusted issuer certificate or a key attestation
-  certificate with a post-quantum key cannot be read, and the x509 request
-  certificate cannot be post-quantum. Credentials can be signed with ML-DSA,
-  SLH-DSA or a composite, which are drafts many wallets do not accept.
+* **Post-quantum:** a key attestation certificate with a post-quantum key
+  cannot be read. Credentials, Request Objects (x509 and the other prefixes)
+  and trusted issuer certificates may use ML-DSA, SLH-DSA or a composite,
+  which no wallet in use accepts yet; `oid4vc.walletCompatibility` turns them
+  all off ([Wallet compatibility mode](oid4vp.md#wallet-compatibility-mode)).
 * **The sign-in register is bounded** (`oid4vp.signInRegisterMaxEntries`,
   10000 per realm). Past it the oldest row is dropped, and that credential no
   longer signs anybody in.

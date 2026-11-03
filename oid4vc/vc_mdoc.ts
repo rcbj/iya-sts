@@ -31,7 +31,7 @@
 //     WAS RECEIVED — `vc_status_codec.ts` keeps a decoded tag's bytes for
 //     exactly this — and must equal the MSO's `valueDigests` entry under its
 //     namespace and `digestID`; an element the issuer never signed is the
-//     forgery this catches (`STS-VC-0154`).
+//     forgery this catches (`STS-VC-0158`).
 //   * THE HOLDER. `deviceAuth.deviceSignature`, a COSE_Sign1 with a detached
 //     payload, by the MSO's `deviceKey` over DeviceAuthenticationBytes —
 //     `["DeviceAuthentication", SessionTranscript, DocType,
@@ -40,9 +40,9 @@
 //     SHA-256(CBOR([client_id, nonce, jwkThumbprint, response_uri]))]]`,
 //     built HERE from this request, so a presentation made for another
 //     Verifier, another nonce, another response URI or another encryption
-//     key does not verify (`STS-VC-0156`). The thumbprint is RFC 7638's of
+//     key does not verify (`STS-VC-0160`). The thumbprint is RFC 7638's of
 //     the key the response was ENCRYPTED to, as raw bytes, and null for a
-//     plaintext `direct_post`. `deviceMac` is refused (`STS-VC-0155`): its
+//     plaintext `direct_post`. `deviceMac` is refused (`STS-VC-0159`): its
 //     key is agreed with a reader's ephemeral key, and an OpenID4VP request
 //     carries none.
 //   * DEVICE-SIGNED ELEMENTS, which a wallet may add, are accepted only where
@@ -59,8 +59,9 @@
 // `verifyCoseSignature()`, whose table carries ML-DSA-44/65/87 (RFC 9964)
 // beside ECDSA (raw r||s here, RFC 9053 section 2.1) and EdDSA, and RFC
 // 9864's fully specified ESP256/384/512 and Ed25519/Ed448. While
-// `keys.postQuantumSigning` is off the ML-DSA identifiers are neither
-// offered nor accepted.
+// `keys.postQuantumSigning` is off, or the wallet compatibility mode
+// (`oid4vc.walletCompatibility`, #657) is on, the ML-DSA identifiers are
+// neither offered nor accepted.
 //
 // A LIBRARY (rule 3): it registers no route. It requires `common/` leaves,
 // the codec, and `authn/webauthn.js` for its COSE_Key reader (a library
@@ -73,6 +74,9 @@ import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import codec = require('./vc_status_codec');
 import webauthn = require('../authn/webauthn');
+// The wallet compatibility mode (#657), which turns the post-quantum
+// algorithms off inside OpenID4VCI and OpenID4VP; a static utility class.
+import VcAlgorithms = require('./vc_algorithms');
 
 const { Tagged } = codec;
 
@@ -102,6 +106,7 @@ interface VcMdocDeps {
   codec: typeof codec;
   coseKeyToJwk: (coseKey: unknown) => any;
   pki: () => any;
+  walletCompatibility: () => boolean;
 }
 
 /**
@@ -166,20 +171,25 @@ class VcMdoc {
       // presented.
       pki: function () {
         return require('../common/pki');
+      },
+      walletCompatibility: function () {
+        return VcAlgorithms.walletCompatibility();
       }
     };
   }
 
   /**
    * Returns the COSE algorithms offered and accepted now: every one, less
-   * ML-DSA while `keys.postQuantumSigning` is off.
+   * ML-DSA while `keys.postQuantumSigning` is off or the wallet
+   * compatibility mode (`oid4vc.walletCompatibility`, #657) is on.
    *
    * @returns the COSE algorithm identifiers
    */
   coseAlgs(): number[] {
     const { log, stsCrypto } = this.deps;
     log.debug("Entering VcMdoc.coseAlgs().");
-    const on = stsCrypto.postQuantumSigningOn();
+    const on = stsCrypto.postQuantumSigningOn() &&
+               !this.deps.walletCompatibility();
     log.debug("Leaving VcMdoc.coseAlgs(). PQ " + on);
     return COSE_SIGNATURE_IDS.filter(function (id) {
       return on || PQ_IDS.indexOf(id) < 0;
@@ -460,7 +470,7 @@ class VcMdoc {
       document = documents[0];
     } catch (e) {
       log.debug("Caught in VcMdoc.verify(): " + ((e && e.message) || e));
-      log.error(errorCodes.tag('STS-VC-0152') + 'oid4vp: an mso_mdoc ' +
+      log.error(errorCodes.tag('STS-VC-0156') + 'oid4vp: an mso_mdoc ' +
                 'presentation could not be read: ' + e.message);
       this.check(checks, 'Format', false, 'an mso_mdoc presentation is a ' +
                  'base64url DeviceResponse holding one Document; ' +
@@ -488,7 +498,7 @@ class VcMdoc {
       }
     } catch (e) {
       log.debug("Caught in VcMdoc.verify(): " + ((e && e.message) || e));
-      log.error(errorCodes.tag('STS-VC-0152') + 'oid4vp: an mdoc\'s ' +
+      log.error(errorCodes.tag('STS-VC-0156') + 'oid4vp: an mdoc\'s ' +
                 'issuerAuth could not be read: ' + e.message);
       this.check(checks, 'Issuer signature', false, 'issuerAuth cannot be ' +
                  'read: ' + e.message + '.');
@@ -497,7 +507,7 @@ class VcMdoc {
     const chained = await this.chainToAnchors(this.x5chainOf(issuerAuth),
                                               ctx.anchorsPem, now);
     if (!chained.ok) {
-      log.error(errorCodes.tag('STS-VC-0153') + 'oid4vp: an mdoc was ' +
+      log.error(errorCodes.tag('STS-VC-0157') + 'oid4vp: an mdoc was ' +
                 'refused: ' + chained.reason);
     }
     this.check(checks, 'Issuer certificate chain', chained.ok,
@@ -532,7 +542,7 @@ class VcMdoc {
       }
     } catch (e) {
       log.debug("Caught in VcMdoc.verify(): " + ((e && e.message) || e));
-      log.error(errorCodes.tag('STS-VC-0152') + 'oid4vp: an mdoc\'s MSO ' +
+      log.error(errorCodes.tag('STS-VC-0156') + 'oid4vp: an mdoc\'s MSO ' +
                 'could not be read: ' + e.message);
       this.check(checks, 'Mobile Security Object', false, e.message + '.');
       return done('No MSO.');
@@ -598,7 +608,7 @@ class VcMdoc {
             log.debug("Caught in VcMdoc.verify(): " +
                       ((e && e.message) || e));
             unmatched++;
-            log.error(errorCodes.tag('STS-VC-0154') + 'oid4vp: ' + e.message);
+            log.error(errorCodes.tag('STS-VC-0158') + 'oid4vp: ' + e.message);
           }
         });
         if (!Array.isArray(items)) {
@@ -631,7 +641,7 @@ class VcMdoc {
         throw new Error('the Document has no deviceAuth map');
       }
       if (deviceAuth.has('deviceMac')) {
-        log.error(errorCodes.tag('STS-VC-0155') + 'oid4vp: an mdoc ' +
+        log.error(errorCodes.tag('STS-VC-0159') + 'oid4vp: an mdoc ' +
                   'authenticated its device by MAC, which an OpenID4VP ' +
                   'request gives it no reader key for.');
         throw new Error('deviceAuth is a deviceMac, whose key is agreed ' +
@@ -657,7 +667,7 @@ class VcMdoc {
       deviceProblem = this.coseVerifies(deviceSignature, authentication,
                                         deviceKey);
       if (deviceProblem) {
-        log.error(errorCodes.tag('STS-VC-0156') + 'oid4vp: an mdoc\'s ' +
+        log.error(errorCodes.tag('STS-VC-0160') + 'oid4vp: an mdoc\'s ' +
                   'device signature was refused: ' + deviceProblem);
         deviceProblem += ' over this request\'s session transcript (its ' +
           'client_id, nonce, response URI and encryption key) under the ' +

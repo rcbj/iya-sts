@@ -200,6 +200,37 @@ rotation, or when `oid4vp.x509SigningAlgorithm` (default `ES256`) changes.
 | `verifier_attestation` | `oid4vp.verifierAttestation`: a Verifier Attestation JWT an attestation issuer signed. Empty, the realm attests itself, which only a wallet that already trusts it accepts. |
 | `openid_federation` | nothing: the realm's Entity Configuration; see [OpenID Federation](oidfed.md) |
 
+Requests under these prefixes are signed with
+`oid4vp.requestObjectSigningAlgorithm` (RS256 by default). The x509 prefixes
+use `oid4vp.x509SigningAlgorithm`.
+
+### Sign requests with a post-quantum algorithm
+
+Either setting may name ML-DSA, SLH-DSA or a composite ML-DSA algorithm. Only
+a wallet that reads that algorithm can verify the request.
+
+**API:**
+```bash
+api config/set '{"key":"oid4vp.x509SigningAlgorithm","value":"ML-DSA-65"}'
+api config/set '{"key":"oid4vp.requestObjectSigningAlgorithm","value":"ML-DSA-65"}'
+```
+
+The x509 certificate is then issued over the realm's ML-DSA-65 key the next
+time a request needs it.
+
+### Wallet compatibility mode
+
+To turn every post-quantum and composite algorithm off in OpenID4VCI and
+OpenID4VP for a realm, set `oid4vc.walletCompatibility`:
+
+```bash
+api config/set '{"key":"oid4vc.walletCompatibility","value":true}'
+```
+
+A setting that still names one of those algorithms then refuses to sign
+(`STS-VC-0152`) until a classical one is chosen. See
+[Wallet compatibility mode](oid4vp.md#wallet-compatibility-mode).
+
 ## Trust another issuer, and the status rules
 
 By default the Verifier trusts only this realm's own issuer. Taken from
@@ -265,8 +296,8 @@ nonce, Response URI and, for `direct_post.jwt`, the encryption key. An mdoc
 that authenticates its device by MAC (`deviceMac`) is refused. Without a
 status reference, an mdoc is refused under `oid4vp.requireStatusReference` =
 `all`. You can exempt the issuer by the thumbprint of its IACA certificate in
-`oid4vp.statusOptionalIssuers`. The refusals are `STS-VC-0152` to
-`STS-VC-0156`.
+`oid4vp.statusOptionalIssuers`. The refusals are `STS-VC-0156` to
+`STS-VC-0160`.
 
 An mdoc is not accepted for a wallet sign-in or through the Digital
 Credentials API.
