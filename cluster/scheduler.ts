@@ -612,6 +612,15 @@ class Scheduler {
   // -------------------------------------------------------------------------
   private readonly pendingRows = new Map<string, Json>();
   // -------------------------------------------------------------------------
+  // THE RUNS SOMEBODY LEFT RUNNING (2026-11-03): `{ realm, runId }` of every
+  // run row seen in the `running` state, kept exactly as `pendingRows` is —
+  // added wherever a row enters the store, dropped on read once the row has
+  // left that state — so `abandonOrphans()` reads O(running), never the
+  // history. `orphanClaims` holds the runIds an orphan claim is out for.
+  // -------------------------------------------------------------------------
+  private readonly runningRows = new Map<string, Json>();
+  private readonly orphanClaims = new Set<string>();
+  // -------------------------------------------------------------------------
   // #408's BOOKKEEPING, all of it in memory and none of it a row: a run's
   // history is the store's, and these only say what this process is doing.
   //
@@ -1359,12 +1368,18 @@ class Scheduler {
   // A hot path (every row written, and every run row a start reads back or
   // the change log brings): no Entering/Leaving pair.
   private notePending(realmId: string, row: Json): void {
-    if (!Scheduler.isPending(row) || !row.runId) {
+    if (!row || !row.runId) {
       return;
     }
     const realm = String(realmId || realms.DEFAULT_ID);
-    this.pendingRows.set(realm + '\n' + String(row.runId),
-                         { realm: realm, runId: String(row.runId) });
+    const key = realm + '\n' + String(row.runId);
+    if (row.kind === 'run' && row.state === 'running') {
+      this.runningRows.set(key, { realm: realm, runId: String(row.runId) });
+    }
+    if (!Scheduler.isPending(row)) {
+      return;
+    }
+    this.pendingRows.set(key, { realm: realm, runId: String(row.runId) });
   }
 
   // THE ROWS A TICK HAS TO SEE, read through the index (#623): each entry's
@@ -1450,6 +1465,12 @@ class Scheduler {
     Array.from(pendingRows.keys()).forEach(function (key: string): void {
       if (key.startsWith(prefix)) {
         pendingRows.delete(key);
+      }
+    });
+    const runningRows = this.runningRows;
+    Array.from(runningRows.keys()).forEach(function (key: string): void {
+      if (key.startsWith(prefix)) {
+        runningRows.delete(key);
       }
     });
     [this.processSlots, this.quietRecorded].forEach(function (m) {
@@ -1845,7 +1866,108 @@ class Scheduler {
         self.deferredMs.delete(runId);
       }
     });
+    this.abandonOrphans(at);
     log.debug("Leaving Scheduler.tickOnce().");
+  }
+
+  // -------------------------------------------------------------------------
+  // A RUN A DEAD NODE LEFT RUNNING IN A SLOT THAT HAS PASSED (2026-11-03).
+  //
+  // A takeover (`runClaimed()`) happens only when a tick attempts the row
+  // again, and a tick attempts only the CURRENT slot's run. A run's claim
+  // lasts its timeout and a second (600 s by default) while many jobs fall
+  // due every two minutes, so the slot a crash left `running` had always
+  // moved on before its claim lapsed: no tick looked at the row again, and
+  // it stayed `running` in the history for good, with no `abandoned` beside
+  // it — the crash takeover's step 4 (`tests/tools/scheduler-takeover.js`)
+  // waited its whole bound for one, on 2026-11-03.
+  //
+  // So the leader looks, each tick, at the rows `runningRows` holds: a
+  // scheduled run of a cluster job, attempted by nobody here, whose slot is
+  // not the current one, and past its expected end (started, plus its
+  // timeout, plus the claim's second). Its claim is asked for — which is
+  // the proof: it is granted only once the runner's claim has lapsed, so a
+  // slow run still holding its claim is left alone — and, if the row is
+  // still that attempt, it is recorded ABANDONED (STS-SCHED-0011, as a
+  // takeover records it) and the claim given back. The slot is not run
+  // again: its time has passed, and the job's next slot is already due.
+  // The current slot's row is left to the takeover path, which runs it.
+  // -------------------------------------------------------------------------
+  private abandonOrphans(at: number): void {
+    const { log, claims, audit, errorCodes } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.abandonOrphans().");
+    Array.from(this.runningRows.entries()).forEach(function (pair: Json[]) {
+      const entry = pair[1];
+      if (!self.realmDefined(entry.realm)) {
+        return;
+      }
+      const row = self.storeOf(entry.realm).get(entry.runId);
+      if (!row || row.kind !== 'run' || row.state !== 'running') {
+        self.runningRows.delete(pair[0]);
+        return;
+      }
+      if (row.trigger !== 'schedule' || self.inFlight.has(row.runId) ||
+          self.orphanClaims.has(row.runId)) {
+        return;
+      }
+      const job = self.job(row.jobId);
+      if (!job || (job.kind && job.kind !== 'cluster')) {
+        return;
+      }
+      if (at < (Number(row.startedAt) || 0) + self.timeoutMsOf(job) + 1000) {
+        return;
+      }
+      const slot = self.slotAt(job, at);
+      if (slot && slot.slot !== null &&
+          self.runIdFor(job, entry.realm, slot.slot) === row.runId) {
+        return;
+      }
+      self.orphanClaims.add(row.runId);
+      claims.claim({ scope: self.runScopeOf(job), value: row.runId,
+                     realm: entry.realm, ttlMs: 30000 })
+        .then(function (answer: Json): void {
+          if (!answer.ok) {
+            return;
+          }
+          const stored = self.storeOf(entry.realm).get(row.runId);
+          if (stored && stored.state === 'running' &&
+              Number(stored.fenceAt) === Number(row.fenceAt)) {
+            self.writeRow(entry.realm, Object.assign({}, stored, {
+              state: 'abandoned', endedAt: self.nowMs(),
+              errorCode: 'STS-SCHED-0011',
+              why: 'The attempt on ' + (stored.nodeName || stored.node ||
+                   '?') + ' (pid ' + stored.pid + ') stopped holding its ' +
+                   'claim before it finished, and its slot passed; the ' +
+                   'job\'s next slot runs instead.',
+              abandonedOf: stored.runId }));
+            audit.record({ action: 'scheduler.run', protocol: 'scheduler',
+                           channel: 'internal', target: job.id,
+                           errorCode: 'STS-SCHED-0011', outcome: 'failure',
+                           summarised: true,
+                           summary: 'Scheduler run ' + stored.runId + ' of ' +
+                                    job.id + ' was abandoned: its node ' +
+                                    'stopped and its slot passed.',
+                           detail: { runId: stored.runId,
+                                     realm: entry.realm, node: stored.node,
+                                     pid: stored.pid } });
+            log.warn(errorCodes.tag('STS-SCHED-0011') + 'scheduler: run ' +
+                     stored.runId + ' of ' + job.id + ' was left running ' +
+                     'on ' + (stored.nodeName || stored.node || '?') +
+                     ' and its slot has passed; it is recorded abandoned.');
+          }
+          claims.release(answer.handle);
+        })
+        .catch(function (e: Json): void {
+          log.error(errorCodes.tag('STS-SCHED-0013') + 'scheduler: run ' +
+                    row.runId + ' of ' + job.id + ' could not be checked ' +
+                    'for abandonment: ' + ((e && e.message) || e) + '.');
+        })
+        .then(function (): void {
+          self.orphanClaims.delete(row.runId);
+        });
+    });
+    log.debug("Leaving Scheduler.abandonOrphans().");
   }
 
   // Every queued manual run in every realm, oldest first — from the index

@@ -686,6 +686,19 @@ remembers a failure as a success.
   recorded `abandoned` (`STS-SCHED-0011`), and the late outcome is fenced out
   (`STS-SCHED-0003`). `ctx.stillOwner()` is the question a job asks before a
   step it cannot take back.
+* **A run left running in a slot that has PASSED is abandoned too
+  (2026-11-03).** The takeover above happens only when a tick attempts the
+  row again, and a tick attempts only the current slot's run; a claim lasts
+  the run's time limit (600 s by default) while many jobs fall due every two
+  minutes, so a crash's run usually outlived its slot and stayed `running`
+  for good. `abandonOrphans()`, at the end of each leader tick, reads the
+  `runningRows` index (kept as `pendingRows` is: added on every write and
+  every admitted row, pruned on read): a scheduled cluster run nobody here
+  is attempting, not in the current slot and past its expected end, has its
+  claim asked for — granted only once the runner's has lapsed — and is
+  recorded `abandoned` (`STS-SCHED-0011`, `abandonedOf` its own id). The
+  passed slot is not run again. `tests/scheduler_cluster.js` I holds it;
+  the live crash takeover's step 4 found it.
 * **It never starts at require time or in a standby, and a request worker
   never SCHEDULES a cluster job — but since #408 it RUNS one's body.**
   `server.js` calls `start('front')` after the state is restored and before
