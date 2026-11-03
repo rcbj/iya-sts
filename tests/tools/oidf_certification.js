@@ -257,7 +257,18 @@ async function ensureRealm() {
                     // hung on 2026-11-03. Raised for THIS realm only, below
                     // HIGH (1000), so risk is still scored and enforced; the
                     // setting's own description says to tune it per realm.
-                    ["risk.mediumScorePercent", 800]];
+                    ["risk.mediumScorePercent", 800],
+                    // THE TOKEN RESPONSE TYPES (#1295, #1296). Product mode
+                    // refuses them (RFC 9700 section 2.1.2); the Implicit,
+                    // Hybrid and Dynamic OP profiles need them. The realm
+                    // waives the section, and lets a client registering
+                    // itself enable all four for itself, which is how the
+                    // suite's clients arrive. A production realm leaves
+                    // both off; each application then needs an
+                    // administrator or its owner to enable a type.
+                    ["oauth2.allowImplicitTokenResponses", true],
+                    ["oauth2.dynamicRegistrationTokenResponseTypes",
+                     "token,id_token token,code token,code id_token token"]];
   if (!opts.development) {
     settings.push(["global.mode", "product"]);
   }
