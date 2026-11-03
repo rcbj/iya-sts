@@ -5204,7 +5204,10 @@ function create(options) {
     log.debug("Entering retryableConflict().");
     const code = err && err.code;
     log.debug("Leaving retryableConflict().");
-    return !(err && err.fenced) && (code === '40P01' || code === '40001');
+    // The dialect's list (#677): PostgreSQL's deadlock and serialization
+    // failure, and InnoDB's deadlock and lock-wait timeout on MariaDB.
+    return !(err && err.fenced) &&
+      (code === '40P01' || code === '40001' || dialect.isRetryable(err));
   }
 
   // ---------------------------------------------------------------------------
