@@ -1912,6 +1912,12 @@ const CODES = [
       'removed meanwhile); the write was rolled back rather than counted ' +
       'into nothing.',
     spec: '' },
+  { code: 'STS-STORE-0160',
+    summary: 'A risk row was refused on MariaDB because a value is not what ' +
+      'its column holds (an address that is not one, a number that is not ' +
+      'an integer); the batch is refused whole rather than stored with a ' +
+      'substitute.',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5160** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5161** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 95
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 97
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 98
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
@@ -417,6 +417,7 @@ Raised from: persistence/.
 | `STS-STORE-0121` | A minted flush on MariaDB gave up on a new key that other writers kept inserting and removing while it wrote it; the flush is rolled back and tried again later. | — |
 | `STS-STORE-0140` | A directory flush was refused on MariaDB before it wrote: an entry's DN key is longer than the 352 characters `dn_key` holds (or its realm than 64), which InnoDB's key limit fixes; nothing of the flush was written. | — |
 | `STS-STORE-0141` | A directory write on MariaDB found one of the count rows it folds into gone between making it and adding to it (its realm was removed meanwhile); the write was rolled back rather than counted into nothing. | — |
+| `STS-STORE-0160` | A risk row was refused on MariaDB because a value is not what its column holds (an address that is not one, a number that is not an integer); the batch is refused whole rather than stored with a substitute. | — |
 
 ## STS-CLUSTER
 

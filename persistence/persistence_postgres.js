@@ -139,6 +139,9 @@ const mintedPortable = require('./minted_portable');
 // The embedded directory's store on MariaDB (#677, phase 3b). A LIBRARY, built
 // in create() only when the engine is not PostgreSQL.
 const directoryPortable = require('./directory_portable');
+// The risk engine's statements on MariaDB (#677). A LIBRARY, built in
+// create() only on an engine that is not PostgreSQL.
+const riskPortable = require('./risk_portable');
 // The directory's lookups as SQL (#349): one builder for this driver and the
 // bridge's thread. A leaf.
 const directoryQueries = require('./directory_queries');
@@ -4639,6 +4642,23 @@ function create(options) {
         processId: function () {
           return processId;
         }
+      })
+    : null;
+
+  // THE RISK ENGINE'S STATEMENTS ON MARIADB (#677), or null for
+  // PostgreSQL's own. NOT under `persistence.sqlDialect=portable`: they are
+  // written for MariaDB's INET6, prefix text and JSON lists, which are not
+  // PostgreSQL's `inet`, `cidr` and `text[]`, so on PostgreSQL this family
+  // keeps its native text. `persistence/risk_portable.js` argues each.
+  const riskLib = dialect.engine !== 'postgres'
+    ? riskPortable.forDriver({
+        dialect: dialect, pool: pool, tallyPool: tallyPool,
+        withTransaction: withTransaction, recordChanges: recordChanges,
+        processId: function () {
+          return processId;
+        },
+        shapes: { dataset: riskDatasetFrom, version: riskVersionFrom,
+                  range: riskRangeFrom, failure: riskFailureFrom }
       })
     : null;
 
@@ -9225,6 +9245,10 @@ function create(options) {
     // Every dataset's live version and state, for every realm.
     riskListDatasets: function () {
       log.debug("Entering riskListDatasets().");
+      if (riskLib) {
+        log.debug("Leaving riskListDatasets(). Portable.");
+        return riskLib.riskListDatasets();
+      }
       log.debug("Leaving riskListDatasets().");
       return pool.query(
         'SELECT realm, dataset, kind, active_version, previous_version, ' +
@@ -9239,6 +9263,10 @@ function create(options) {
     // record of what was loaded.
     riskListVersions: function (realm, dataset) {
       log.debug("Entering riskListVersions(). dataset=" + dataset);
+      if (riskLib) {
+        log.debug("Leaving riskListVersions(). Portable.");
+        return riskLib.riskListVersions(realm, dataset);
+      }
       log.debug("Leaving riskListVersions().");
       return pool.query(
         'SELECT * FROM sts_risk_dataset_versions ' +
@@ -9261,6 +9289,10 @@ function create(options) {
     riskBeginVersion: function (v, reloadDeleted) {
       log.debug("Entering riskBeginVersion(). " + v.dataset + " " +
                 v.version);
+      if (riskLib) {
+        log.debug("Leaving riskBeginVersion(). Portable.");
+        return riskLib.riskBeginVersion(v, reloadDeleted);
+      }
       log.debug("Leaving riskBeginVersion().");
       return pool.query(
         'INSERT INTO sts_risk_dataset_versions (realm, dataset, version, ' +
@@ -9306,6 +9338,10 @@ function create(options) {
     riskInsertRows: function (kind, realm, dataset, version, rows) {
       log.debug("Entering riskInsertRows(). kind=" + kind + " rows=" +
                 rows.length);
+      if (riskLib) {
+        log.debug("Leaving riskInsertRows(). Portable.");
+        return riskLib.riskInsertRows(kind, realm, dataset, version, rows);
+      }
       // A column's values, with its default where a row has none: an
       // explicit null in an unnest() array is a NULL, which a NOT NULL
       // column refuses whatever its DEFAULT says. `null` as the default is
@@ -9389,6 +9425,10 @@ function create(options) {
     riskFinishVersion: function (realm, dataset, version, patch) {
       log.debug("Entering riskFinishVersion(). " + dataset + " " + version +
                 " " + patch.state);
+      if (riskLib) {
+        log.debug("Leaving riskFinishVersion(). Portable.");
+        return riskLib.riskFinishVersion(realm, dataset, version, patch);
+      }
       log.debug("Leaving riskFinishVersion().");
       return pool.query(
         'UPDATE sts_risk_dataset_versions SET state = $4, row_count = $5, ' +
@@ -9409,6 +9449,10 @@ function create(options) {
     // the importer the stalled-import job refused it and it must stop.
     riskTouchVersion: function (realm, dataset, version, at, rows) {
       log.debug("Entering riskTouchVersion(). " + dataset + " " + version);
+      if (riskLib) {
+        log.debug("Leaving riskTouchVersion(). Portable.");
+        return riskLib.riskTouchVersion(realm, dataset, version, at, rows);
+      }
       log.debug("Leaving riskTouchVersion().");
       return pool.query(
         'UPDATE sts_risk_dataset_versions SET parameters = parameters || ' +
@@ -9427,6 +9471,10 @@ function create(options) {
     // asking at once refuse each version once; answers what it refused.
     riskAbandonStalled: function (before, at, why, code) {
       log.debug("Entering riskAbandonStalled().");
+      if (riskLib) {
+        log.debug("Leaving riskAbandonStalled(). Portable.");
+        return riskLib.riskAbandonStalled(before, at, why, code);
+      }
       log.debug("Leaving riskAbandonStalled().");
       return pool.query(
         'UPDATE sts_risk_dataset_versions SET state = \'refused\', ' +
@@ -9455,6 +9503,10 @@ function create(options) {
     // -------------------------------------------------------------------------
     riskActivate: function (realm, dataset, kind, version, now) {
       log.debug("Entering riskActivate(). " + dataset + " " + version);
+      if (riskLib) {
+        log.debug("Leaving riskActivate(). Portable.");
+        return riskLib.riskActivate(realm, dataset, kind, version, now);
+      }
       const r0 = String(realm || '');
       log.debug("Leaving riskActivate().");
       return withTransaction(function (client) {
@@ -9514,6 +9566,10 @@ function create(options) {
     riskDeleteRows: function (kind, realm, dataset, version, limit) {
       log.debug("Entering riskDeleteRows(). kind=" + kind + " " + dataset +
                 " " + version);
+      if (riskLib) {
+        log.debug("Leaving riskDeleteRows(). Portable.");
+        return riskLib.riskDeleteRows(kind, realm, dataset, version, limit);
+      }
       const table = { geo: 'sts_risk_geo_ranges',
                       asn: 'sts_risk_asn_ranges',
                       iplist: 'sts_risk_ip_lists',
@@ -9547,6 +9603,10 @@ function create(options) {
     // -------------------------------------------------------------------------
     riskDeactivate: function (realm, dataset, version, now) {
       log.debug("Entering riskDeactivate(). " + dataset + " " + version);
+      if (riskLib) {
+        log.debug("Leaving riskDeactivate(). Portable.");
+        return riskLib.riskDeactivate(realm, dataset, version, now);
+      }
       const r0 = String(realm || '');
       log.debug("Leaving riskDeactivate().");
       return withTransaction(function (client) {
@@ -9581,6 +9641,10 @@ function create(options) {
     // The version's rows are gone; its row stays, as the record.
     riskMarkRowsDeleted: function (realm, dataset, version, now) {
       log.debug("Entering riskMarkRowsDeleted(). " + dataset + " " + version);
+      if (riskLib) {
+        log.debug("Leaving riskMarkRowsDeleted(). Portable.");
+        return riskLib.riskMarkRowsDeleted(realm, dataset, version, now);
+      }
       log.debug("Leaving riskMarkRowsDeleted().");
       return pool.query(
         'UPDATE sts_risk_dataset_versions SET state = \'deleted\', ' +
@@ -9603,6 +9667,10 @@ function create(options) {
     // P5), by the kind of key it is listed under and the key; or null.
     riskLookupFido: function (dataset, version, keyKind, key) {
       log.debug("Entering riskLookupFido(). " + keyKind);
+      if (riskLib) {
+        log.debug("Leaving riskLookupFido(). Portable.");
+        return riskLib.riskLookupFido(dataset, version, keyKind, key);
+      }
       log.debug("Leaving riskLookupFido().");
       return pool.query(
         'SELECT key_kind, authenticator_key, description, protocol_family, ' +
@@ -9632,6 +9700,10 @@ function create(options) {
 
     riskLookupRange: function (kind, realm, dataset, version, address) {
       log.debug("Entering riskLookupRange(). kind=" + kind);
+      if (riskLib) {
+        log.debug("Leaving riskLookupRange(). Portable.");
+        return riskLib.riskLookupRange(kind, realm, dataset, version, address);
+      }
       const table = { geo: 'sts_risk_geo_ranges',
                       asn: 'sts_risk_asn_ranges',
                       iplist: 'sts_risk_ip_lists' }[kind];
@@ -9659,6 +9731,10 @@ function create(options) {
     // the name as a subject or a keyed digest — never as typed.
     riskRecordFailure: function (row) {
       log.debug("Entering riskRecordFailure(). door=" + row.door);
+      if (riskLib) {
+        log.debug("Leaving riskRecordFailure(). Portable.");
+        return riskLib.riskRecordFailure(row);
+      }
       log.debug("Leaving riskRecordFailure().");
       return tallyPool.query(
         'INSERT INTO sts_risk_failures (realm, at, door, subject, name_hmac, ' +
@@ -9676,6 +9752,10 @@ function create(options) {
     // to one subject, one name digest or one prefix; with the matching count.
     riskListFailures: function (realm, opts) {
       log.debug("Entering riskListFailures(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskListFailures(). Portable.");
+        return riskLib.riskListFailures(realm, opts);
+      }
       const o = opts || {};
       const where = 'WHERE realm = $1 AND at >= $2 ' +
         'AND ($3 = \'\' OR subject = $3) AND ($4 = \'\' OR name_hmac = $4) ' +
@@ -9708,6 +9788,10 @@ function create(options) {
     // Failures older than `beforeMs`, deleted a batch at a time.
     riskPurgeFailures: function (beforeMs, limit) {
       log.debug("Entering riskPurgeFailures().");
+      if (riskLib) {
+        log.debug("Leaving riskPurgeFailures(). Portable.");
+        return riskLib.riskPurgeFailures(beforeMs, limit);
+      }
       log.debug("Leaving riskPurgeFailures().");
       return pool.query(
         'DELETE FROM sts_risk_failures WHERE ctid IN (SELECT ctid FROM ' +
@@ -9725,6 +9809,10 @@ function create(options) {
     // no row and is left out; the caller reads it as 0.
     riskFeatureCounts: function (realm, subject, pairs) {
       log.debug("Entering riskFeatureCounts(). pairs=" + pairs.length);
+      if (riskLib) {
+        log.debug("Leaving riskFeatureCounts(). Portable.");
+        return riskLib.riskFeatureCounts(realm, subject, pairs);
+      }
       log.debug("Leaving riskFeatureCounts().");
       return pool.query(
         'SELECT c.feature, c.value, c.count FROM sts_risk_feature_counts c ' +
@@ -9750,6 +9838,10 @@ function create(options) {
     // this address been seen in".
     riskDistinctValues: function (realm, subject, feature, prefix) {
       log.debug("Entering riskDistinctValues(). " + feature);
+      if (riskLib) {
+        log.debug("Leaving riskDistinctValues(). Portable.");
+        return riskLib.riskDistinctValues(realm, subject, feature, prefix);
+      }
       log.debug("Leaving riskDistinctValues().");
       return pool.query(
         'SELECT count(*) AS n FROM sts_risk_feature_counts WHERE realm = $1 ' +
@@ -9768,6 +9860,10 @@ function create(options) {
     // answer is the counts in the same order.
     riskDistinctValuesMany: function (realm, subject, asks) {
       log.debug("Entering riskDistinctValuesMany(). asks=" + asks.length);
+      if (riskLib) {
+        log.debug("Leaving riskDistinctValuesMany(). Portable.");
+        return riskLib.riskDistinctValuesMany(realm, subject, asks);
+      }
       log.debug("Leaving riskDistinctValuesMany().");
       return pool.query(
         'SELECT a.i, (SELECT count(*) FROM sts_risk_feature_counts c WHERE ' +
@@ -9795,6 +9891,10 @@ function create(options) {
     // caller has made the rows distinct (a statement may touch a row once).
     riskIncrementCounts: function (realm, rows, at) {
       log.debug("Entering riskIncrementCounts(). rows=" + rows.length);
+      if (riskLib) {
+        log.debug("Leaving riskIncrementCounts(). Portable.");
+        return riskLib.riskIncrementCounts(realm, rows, at);
+      }
       log.debug("Leaving riskIncrementCounts().");
       return tallyPool.query(
         'INSERT INTO sts_risk_feature_counts (realm, subject, feature, value, ' +
@@ -9819,6 +9919,10 @@ function create(options) {
     // sealed and as a prefix, as a failure's does.
     riskRecordAssessment: function (a) {
       log.debug("Entering riskRecordAssessment(). " + a.id);
+      if (riskLib) {
+        log.debug("Leaving riskRecordAssessment(). Portable.");
+        return riskLib.riskRecordAssessment(a);
+      }
       log.debug("Leaving riskRecordAssessment().");
       return tallyPool.query(
         'INSERT INTO sts_risk_assessments (realm, id, at, phase, door, ' +
@@ -9860,6 +9964,10 @@ function create(options) {
     // address.
     riskListAssessments: function (realm, opts) {
       log.debug("Entering riskListAssessments(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskListAssessments(). Portable.");
+        return riskLib.riskListAssessments(realm, opts);
+      }
       const o = opts || {};
       const where = 'WHERE realm = $1 AND at >= $2 AND ($3 = \'\' OR ' +
         'subject = $3) AND ($4 = \'\' OR level = $4)';
@@ -9910,6 +10018,10 @@ function create(options) {
     // an assessment of that subject is touched, and only once.
     riskSetFeedback: function (realm, id, subject, feedback, at) {
       log.debug("Entering riskSetFeedback(). " + id);
+      if (riskLib) {
+        log.debug("Leaving riskSetFeedback(). Portable.");
+        return riskLib.riskSetFeedback(realm, id, subject, feedback, at);
+      }
       log.debug("Leaving riskSetFeedback().");
       return pool.query(
         'UPDATE sts_risk_assessments SET feedback = $4, feedback_at = $5 ' +
@@ -9927,6 +10039,10 @@ function create(options) {
     // session id is only ever filled in, never cleared.
     riskSettleAssessment: function (a) {
       log.debug("Entering riskSettleAssessment(). " + a.id);
+      if (riskLib) {
+        log.debug("Leaving riskSettleAssessment(). Portable.");
+        return riskLib.riskSettleAssessment(a);
+      }
       log.debug("Leaving riskSettleAssessment().");
       return tallyPool.query(
         'UPDATE sts_risk_assessments SET decision = $3, policy_id = $4, ' +
@@ -9945,6 +10061,10 @@ function create(options) {
     // ceremony proved is known. The decision stays `riskSettleAssessment()`'s.
     riskAmendAssessment: function (a) {
       log.debug("Entering riskAmendAssessment(). " + a.id);
+      if (riskLib) {
+        log.debug("Leaving riskAmendAssessment(). Portable.");
+        return riskLib.riskAmendAssessment(a);
+      }
       log.debug("Leaving riskAmendAssessment().");
       return tallyPool.query(
         'UPDATE sts_risk_assessments SET signals = $3::jsonb, score = $4, ' +
@@ -9963,6 +10083,10 @@ function create(options) {
     // somebody's sessions twice. Bounded by the number of reactions.
     riskClaimAction: function (realm, subject, reaction, assessmentId) {
       log.debug("Entering riskClaimAction(). " + reaction);
+      if (riskLib) {
+        log.debug("Leaving riskClaimAction(). Portable.");
+        return riskLib.riskClaimAction(realm, subject, reaction, assessmentId);
+      }
       log.debug("Leaving riskClaimAction().");
       return pool.query(
         'UPDATE sts_risk_subjects SET actions = actions || ' +
@@ -9978,6 +10102,10 @@ function create(options) {
     // read its risk from stands on (#62 P3).
     riskSubjectOf: function (realm, subject) {
       log.debug("Entering riskSubjectOf(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskSubjectOf(). Portable.");
+        return riskLib.riskSubjectOf(realm, subject);
+      }
       log.debug("Leaving riskSubjectOf().");
       return pool.query(
         'SELECT subject, score, level, previous_level, reason, ' +
@@ -10009,6 +10137,10 @@ function create(options) {
     // row had before this statement, '' for an insert.
     riskUpsertSubject: function (s) {
       log.debug("Entering riskUpsertSubject().");
+      if (riskLib) {
+        log.debug("Leaving riskUpsertSubject(). Portable.");
+        return riskLib.riskUpsertSubject(s);
+      }
       log.debug("Leaving riskUpsertSubject().");
       return tallyPool.query(
         'INSERT INTO sts_risk_subjects (realm, subject, score, level, ' +
@@ -10054,6 +10186,10 @@ function create(options) {
     // because the table has a row for every person ever assessed.
     riskListSubjects: function (realm, opts) {
       log.debug("Entering riskListSubjects(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskListSubjects(). Portable.");
+        return riskLib.riskListSubjects(realm, opts);
+      }
       const o = opts || {};
       log.debug("Leaving riskListSubjects().");
       return Promise.all([
@@ -10088,6 +10224,10 @@ function create(options) {
     // two to the same answer for the same rows.
     riskAssessmentMetrics: function (realm, opts) {
       log.debug("Entering riskAssessmentMetrics(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskAssessmentMetrics(). Portable.");
+        return riskLib.riskAssessmentMetrics(realm, opts);
+      }
       const o = opts || {};
       const where = 'WHERE realm = $1 AND at >= $2';
       const params = [realm || '', Number(o.since) || 0];
@@ -10173,6 +10313,10 @@ function create(options) {
     // How many of one realm's people stand at each level now.
     riskSubjectLevels: function (realm) {
       log.debug("Entering riskSubjectLevels(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskSubjectLevels(). Portable.");
+        return riskLib.riskSubjectLevels(realm);
+      }
       log.debug("Leaving riskSubjectLevels().");
       return pool.query(
         'SELECT level, count(*) AS n FROM sts_risk_subjects ' +
@@ -10197,6 +10341,10 @@ function create(options) {
     // assessment only.
     riskGeography: function (realm, opts) {
       log.debug("Entering riskGeography(). realm=" + realm);
+      if (riskLib) {
+        log.debug("Leaving riskGeography(). Portable.");
+        return riskLib.riskGeography(realm, opts);
+      }
       const o = opts || {};
       const live = Array.isArray(o.sessionIds);
       const params = [realm || '', Number(o.since) || 0,
@@ -10252,6 +10400,10 @@ function create(options) {
     // continuous evaluation (P4) compares a later request with.
     riskUpsertSessionContext: function (c) {
       log.debug("Entering riskUpsertSessionContext().");
+      if (riskLib) {
+        log.debug("Leaving riskUpsertSessionContext(). Portable.");
+        return riskLib.riskUpsertSessionContext(c);
+      }
       log.debug("Leaving riskUpsertSessionContext().");
       return tallyPool.query(
         'INSERT INTO sts_risk_session_context (realm, session_id, subject, ' +
@@ -10275,6 +10427,10 @@ function create(options) {
     // retention, a batch at a time.
     riskPurgeHistory: function (table, beforeMs, limit) {
       log.debug("Entering riskPurgeHistory(). " + table);
+      if (riskLib) {
+        log.debug("Leaving riskPurgeHistory(). Portable.");
+        return riskLib.riskPurgeHistory(table, beforeMs, limit);
+      }
       const column = { assessments: 'at', counts: 'last_at',
                        sessions: 'updated_at' }[table];
       const name = { assessments: 'sts_risk_assessments',
@@ -10300,6 +10456,10 @@ function create(options) {
     // record of who agreed to hold a provider's data on what terms.
     riskRecordAcceptance: function (a) {
       log.debug("Entering riskRecordAcceptance(). " + a.provider);
+      if (riskLib) {
+        log.debug("Leaving riskRecordAcceptance(). Portable.");
+        return riskLib.riskRecordAcceptance(a);
+      }
       log.debug("Leaving riskRecordAcceptance().");
       return pool.query(
         'INSERT INTO sts_risk_terms_acceptances (provider, terms_digest, ' +
@@ -10317,6 +10477,10 @@ function create(options) {
     // Every acceptance, newest first.
     riskListAcceptances: function () {
       log.debug("Entering riskListAcceptances().");
+      if (riskLib) {
+        log.debug("Leaving riskListAcceptances(). Portable.");
+        return riskLib.riskListAcceptances();
+      }
       log.debug("Leaving riskListAcceptances().");
       return pool.query(
         'SELECT id, provider, terms_digest, terms_text, accepted_by, ' +
