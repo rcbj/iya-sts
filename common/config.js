@@ -17523,6 +17523,33 @@ const SETTINGS = [
                  'flush.' },
 
   // ---------------------------------------------------------------------
+  // WHICH SQL THE POSTGRES STORE SPEAKS FOR CLUSTER COORDINATION (#677).
+  // `native` is PostgreSQL's own statements; `portable` is the statements a
+  // second engine (MariaDB) runs, sent to PostgreSQL so the suite proves
+  // them on the reference engine. Restart-only: the driver chooses its
+  // statements when it is built.
+  // ---------------------------------------------------------------------
+  { key: 'persistence.sqlDialect', group: 'Persistence',
+    label: 'Cluster SQL dialect',
+    env: 'STS_PERSISTENCE_SQL_DIALECT', type: 'enum',
+    enumValues: ['native', 'portable'], dflt: 'native',
+    runtime: false,
+    restartReason: 'the store driver chooses its statements when it is built',
+    description: 'Which statements a postgres store sends to coordinate ' +
+                 'several processes: the claims, leases, counters, rate ' +
+                 'windows, budgets, write fences, the cluster join lock, ' +
+                 'the heartbeat and the change-log trim. native is ' +
+                 'PostgreSQL\'s own (conditional upserts, advisory locks, ' +
+                 'LISTEN/NOTIFY) and is what production runs. portable is ' +
+                 'the statements a second database engine runs (plain ' +
+                 'inserts that do nothing on a duplicate, row locks in ' +
+                 'sts_cluster_locks, and no change notification, so the ' +
+                 'change log is polled every second unless ' +
+                 'persistence.pollInterval is set); it exists so the test ' +
+                 'suite can prove that code on PostgreSQL. Both are correct; ' +
+                 'portable costs more statements per operation.' },
+
+  // ---------------------------------------------------------------------
   // HOW LONG A METRICS PROBE MAY RUN (2026-09-11), for `/admin/database`.
   //
   // It becomes `statement_timeout` on the ONE connection that page borrows.
@@ -18046,8 +18073,10 @@ const SETTINGS = [
                  'is lost — a dropped listener, a database restart — and the ' +
                  'typical lag is a few milliseconds. Five seconds because ' +
                  'the nudge normally arrives first and a shorter interval ' +
-                 'buys nothing but queries; 250ms is the floor. It is also ' +
-                 'the size of the replay-cache window described under ' +
+                 'buys nothing but queries; 250ms is the floor. Where the ' +
+                 'store sends no nudge (persistence.sqlDialect portable) ' +
+                 'and this is not set, the interval is one second. It is ' +
+                 'also the size of the replay-cache window described under ' +
                  'persistence.coordinate.' },
 
   // Added 2026-09-14 (#46 section 8): `sts_changes` was never trimmed.

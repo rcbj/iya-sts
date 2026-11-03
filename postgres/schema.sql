@@ -290,10 +290,10 @@ CREATE INDEX IF NOT EXISTS sts_ldap_entries_values ON sts_ldap_entries USING gin
 -- THE ASKED NAMES GREW (#1024 then #1028, schema versions 27 and 28):
 -- `stsbackupcodes` and `pwdaccountlockedtime` joined them, so an index
 -- built before answers "nobody" for those names through
--- the index. AND CHANGED (#1290, schema version 30): a person's signing key
+-- the index. AND CHANGED (#1290, schema version 31): a person's signing key
 -- pairs are `stsassertionkeypair` and `stssamlassertionkeypair`, in place
 -- of `stsassertionjwks` and `stssamlassertioncertificate`. It is dropped here and built again by the CREATE below, which
--- is the driver's advisory upgrade step `sts_ldap_entries_asked_names_v30`
+-- is the driver's advisory upgrade step `sts_ldap_entries_asked_names_v31`
 -- for a role that owns the table. On a large store the build takes minutes
 -- and locks writes; `CREATE INDEX CONCURRENTLY` under another name, a
 -- DROP and a RENAME do the same without the lock, outside a transaction.
@@ -814,6 +814,12 @@ CREATE TABLE IF NOT EXISTS sts_cluster_secrets (
   created_by text   NOT NULL DEFAULT '',
   created_at bigint NOT NULL);
 
+-- A NAMED LOCK AS A ROW (#677, schema version 30): the portable cluster
+-- statements lock a row here FOR UPDATE where the native ones take
+-- pg_advisory_xact_lock. `persistence/cluster_portable.js` argues it.
+CREATE TABLE IF NOT EXISTS sts_cluster_locks (
+  name text PRIMARY KEY);
+
 -- A VALUE THAT ONLY GOES UP (#46 section 2): a WebAuthn signature counter and
 -- the last RFC 6238 step spent, advanced by one conditional upsert so a lower
 -- value never overwrites a higher one. `cluster/cluster_counters.js` argues it.
@@ -1177,7 +1183,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (30) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (31) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

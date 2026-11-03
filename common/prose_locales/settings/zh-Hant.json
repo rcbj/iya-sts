@@ -9659,6 +9659,18 @@
     "en": "22887c233a0a0adf",
     "text": "儲存區在監聽器繫結之前開啟並讀取"
   },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "叢集 SQL 方言"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "postgres 儲存為了協調多個行程而送出的陳述式：認領、租約、計數器、限速視窗、預算、寫入柵欄、叢集加入鎖、心跳以及變更日誌修剪。native 是 PostgreSQL 自身的陳述式（條件 upsert、諮詢鎖、LISTEN/NOTIFY），也是正式環境執行的方式。portable 是第二種資料庫引擎執行的陳述式（遇到重複時不做任何事的一般插入、sts_cluster_locks 中的列鎖，且沒有變更通知，因此除非設定了 persistence.pollInterval，否則每秒輪詢一次變更日誌）；它的存在是為了讓測試套件能在 PostgreSQL 上驗證這些程式碼。兩者都是正確的；portable 每次操作需要更多陳述式。"
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "儲存驅動程式在建構時選擇其陳述式"
+  },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
     "text": "資料庫指標陳述式逾時（毫秒）"
@@ -9928,8 +9940,8 @@
     "text": "變更輪詢間隔（毫秒）"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "此程序向變更記錄詢問其他程序已提交內容的頻率。這才是「契約」，LISTEN/NOTIFY 提示只是在其之上的最佳化，因此這是通知遺失時——監聽器中斷、資料庫重新啟動——最壞情況下的收斂延遲，而一般延遲只有幾毫秒。設為五秒，是因為提示通常會先到達，較短的間隔除了增加查詢之外毫無益處；下限為 250ms。它也是 persistence.coordinate 中所述重送快取時間窗口的大小。"
+    "en": "0620a679e69c0d43",
+    "text": "此行程多久向變更日誌詢問一次其他行程已提交的內容。這是契約，LISTEN/NOTIFY 提示只是對它的一種最佳化，因此當通知遺失時——監聽器中斷、資料庫重新啟動——這就是最壞情況下的收斂延遲，而一般延遲只有幾毫秒。取五秒是因為提示通常先到達，較短的間隔除了更多查詢之外毫無所得；250 毫秒是下限。當儲存不送出提示（persistence.sqlDialect 為 portable）且未設定此項時，間隔為一秒。它也是 persistence.coordinate 下所述重播快取視窗的大小。"
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",

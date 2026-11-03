@@ -244,9 +244,42 @@ function create(engine) {
       ? result.rowCount : result.affectedRows)) || 0);
   }
 
+  /**
+   * An instant this many milliseconds before the start of the statement, as
+   * a fragment comparable with a timestamp column (`sts_changes.at`).
+   *
+   * @param ms - how long ago; a bound value
+   * @returns a `knex.raw()` fragment
+   */
+  function ago(ms) {
+    log.debug("Entering ago().");
+    const span = Math.max(0, Math.floor(Number(ms) || 0));
+    log.debug("Leaving ago().");
+    return engine === 'postgres'
+      ? kx.raw('(now() - (? * interval \'1 millisecond\'))', [span])
+      : kx.raw('(NOW(6) - INTERVAL ? MICROSECOND)', [span * 1000]);
+  }
+
+  /**
+   * Whether a refusal is a unique-key violation — the answer a portable
+   * "once" reads as "somebody else holds it".
+   *
+   * @param err - what the connection rejected with
+   * @returns true for a duplicate key
+   */
+  function isUniqueViolation(err) {
+    log.debug("Entering isUniqueViolation().");
+    const code = err && err.code;
+    log.debug("Leaving isUniqueViolation().");
+    return code === '23505' || code === 'ER_DUP_ENTRY' ||
+      (err && err.errno === 1062) || false;
+  }
+
   log.debug("Leaving create().");
   return {
     engine: engine,
+    ago: ago,
+    isUniqueViolation: isUniqueViolation,
     kx: kx,
     compile: compile,
     run: run,

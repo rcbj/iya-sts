@@ -9659,6 +9659,18 @@
     "en": "22887c233a0a0adf",
     "text": "binubuksan at binabasa ang store bago mag-bind ang listener"
   },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "SQL dialect ng cluster"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "Kung aling mga statement ang ipinapadala ng isang postgres store para i-coordinate ang ilang proseso: ang mga claim, lease, counter, rate window, budget, write fence, ang join lock ng cluster, ang heartbeat at ang pag-trim ng change log. Ang native ay ang sariling mga statement ng PostgreSQL (conditional upsert, advisory lock, LISTEN/NOTIFY) at ito ang pinapatakbo ng production. Ang portable ay ang mga statement na pinapatakbo ng pangalawang database engine (mga simpleng insert na walang ginagawa kapag duplicate, mga row lock sa sts_cluster_locks, at walang abiso ng pagbabago, kaya tinatanong ang change log bawat segundo maliban kung nakatakda ang persistence.pollInterval); umiiral ito para mapatunayan ng test suite ang code na iyon sa PostgreSQL. Parehong tama; mas maraming statement bawat operasyon ang gastos ng portable."
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "pinipili ng store driver ang mga statement nito kapag binubuo ito"
+  },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
     "text": "Statement timeout ng database metrics (ms)"
@@ -9928,8 +9940,8 @@
     "text": "Change poll interval (ms)"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "Gaano kadalas tinatanong ng process na ito ang change log kung ano ang kinommit ng ibang process. Ito ang KONTRATA at ang LISTEN/NOTIFY nudge ay optimisasyon lang dito, kaya ito ang pinakamasamang convergence lag kapag nawala ang isang notification — isang nalaglag na listener, isang restart ng database — at ilang millisecond ang karaniwang lag. Limang segundo dahil karaniwang nauunang dumating ang nudge at walang nabibili ang mas maikling interval kundi mga query; 250ms ang pinakamababa. Ito rin ang laki ng replay-cache window na inilalarawan sa ilalim ng persistence.coordinate."
+    "en": "0620a679e69c0d43",
+    "text": "Kung gaano kadalas tinatanong ng prosesong ito ang change log kung ano ang na-commit ng ibang mga proseso. Ito ang KONTRATA at ang LISTEN/NOTIFY na pagsundot ay optimisasyon lamang dito, kaya ito ang pinakamasamang pagkaantala ng convergence kapag nawala ang isang abiso — naputol na listener, pag-restart ng database — at ang karaniwang pagkaantala ay ilang millisecond. Limang segundo dahil karaniwang nauuna ang pagsundot at walang nabibili ang mas maikling interval kundi mga query; 250ms ang pinakamababa. Kapag walang ipinapadalang pagsundot ang store (persistence.sqlDialect portable) at hindi ito nakatakda, isang segundo ang interval. Ito rin ang laki ng replay-cache window na inilarawan sa ilalim ng persistence.coordinate."
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",

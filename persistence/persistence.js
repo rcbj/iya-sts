@@ -2855,7 +2855,11 @@ function openStore(chosen, resolvedUrl, globalUrls) {
       ? require('./persistence_postgres').create({
           url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls(),
           tlsCa: tlsCa,
-          poolMax: require('./persistence_postgres').poolMax(workerCount())
+          poolMax: require('./persistence_postgres').poolMax(workerCount()),
+          // Which coordination statements it sends (#677): read here, for
+          // the reason `verifyTls` is.
+          sqlDialect: String(config.value('persistence.sqlDialect') ||
+                             'native')
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
     // A CELL'S STORE IS TWO DATABASES (#98): the one just made is the cell's
@@ -2872,7 +2876,9 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         entryTier: 'service',
         verifyTls: verifiesDatabaseTls(),
         tlsCa: tlsCa,
-        poolMax: require('./persistence_postgres').poolMax(workerCount())
+        poolMax: require('./persistence_postgres').poolMax(workerCount()),
+        sqlDialect: String(config.value('persistence.sqlDialect') ||
+                           'native')
       });
       driver = tiered.create({
         global: globalDriver, cell: driver, cellId: cells.id(),

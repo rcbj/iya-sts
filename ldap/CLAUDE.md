@@ -3621,7 +3621,7 @@ fourteen single-valued ones. The slot's `write(username, name, value)` takes
 an ARRAY as well as one value and still ASSIGNS rather than appends: the
 register hands over the attribute's whole set, so a revoked key pair's private
 half is gone when the register says so. The asked-names index carries the two
-`…keypair` names (schema version 30, `persistence/CLAUDE.md`).
+`…keypair` names (schema version 31, `persistence/CLAUDE.md`).
 
 ## `stsMfaRequired` AND THE PASSWORD RESET LINK (2026-09-13)
 

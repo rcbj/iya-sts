@@ -9659,6 +9659,18 @@
     "en": "22887c233a0a0adf",
     "text": "el almacén se abre y se lee antes de que se vincule la escucha"
   },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "Dialecto SQL del clúster"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "Las sentencias que un almacén postgres envía para coordinar varios procesos: las reclamaciones, los arrendamientos, los contadores, las ventanas de limitación de tasa, los presupuestos, las barreras de escritura, el bloqueo de unión al clúster, el latido y el recorte del registro de cambios. native son las propias de PostgreSQL (upserts condicionales, bloqueos consultivos, LISTEN/NOTIFY) y es lo que ejecuta producción. portable son las sentencias que ejecuta un segundo motor de base de datos (inserciones simples que no hacen nada ante un duplicado, bloqueos de fila en sts_cluster_locks y ninguna notificación de cambios, por lo que el registro de cambios se consulta cada segundo salvo que persistence.pollInterval esté definido); existe para que la batería de pruebas pueda comprobar ese código en PostgreSQL. Ambos son correctos; portable cuesta más sentencias por operación."
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "el controlador del almacén elige sus sentencias al construirse"
+  },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
     "text": "Tiempo límite de sentencias de las métricas de la base de datos (ms)"
@@ -9928,8 +9940,8 @@
     "text": "Intervalo de sondeo de cambios (ms)"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "Cada cuánto este proceso pregunta al registro de cambios qué han confirmado otros procesos. Esto es el CONTRATO y el aviso LISTEN/NOTIFY es solo una optimización sobre él, así que este es el retraso de convergencia en el peor caso cuando se pierde una notificación —una escucha caída, un reinicio de la base de datos—, y el retraso típico es de unos pocos milisegundos. Cinco segundos porque el aviso normalmente llega primero y un intervalo más corto no aporta nada más que consultas; 250ms es el mínimo. También es el tamaño de la ventana de la caché de reproducción descrita en persistence.coordinate."
+    "en": "0620a679e69c0d43",
+    "text": "Con qué frecuencia este proceso pregunta al registro de cambios qué han confirmado otros procesos. Este es el CONTRATO, y el aviso LISTEN/NOTIFY es solo una optimización sobre él, así que este es el retraso de convergencia en el peor caso cuando se pierde una notificación —un oyente caído, un reinicio de la base de datos— y el retraso habitual es de unos pocos milisegundos. Cinco segundos porque el aviso normalmente llega primero y un intervalo más corto no compra más que consultas; 250 ms es el mínimo. Cuando el almacén no envía aviso (persistence.sqlDialect portable) y esto no está definido, el intervalo es de un segundo. También es el tamaño de la ventana de la caché contra repeticiones descrita en persistence.coordinate."
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",

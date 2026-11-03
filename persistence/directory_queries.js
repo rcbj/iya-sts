@@ -807,7 +807,7 @@ function page(realm, baseKey, afterKey, limit, options) {
 // counters (`COUNTED_ATTRIBUTES`).
 // ---------------------------------------------------------------------------
 // `stsassertionkeypair` and `stssamlassertionkeypair` replaced
-// `stsassertionjwks` and `stssamlassertioncertificate` in version 30 (#1290),
+// `stsassertionjwks` and `stssamlassertioncertificate` in version 31 (#1290),
 // when a person's signing key pairs became several records per profile.
 const ASKED_ATTRIBUTES = Object.freeze([
   'federationlink', 'hobapublickey', 'memberof', 'oauthconsent',

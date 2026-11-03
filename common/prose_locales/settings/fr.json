@@ -9659,6 +9659,18 @@
     "en": "22887c233a0a0adf",
     "text": "le stockage est ouvert et lu avant que l’écouteur ne se lie"
   },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "Dialecte SQL du cluster"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "Les instructions qu’un magasin postgres envoie pour coordonner plusieurs processus : les réclamations, les baux, les compteurs, les fenêtres de limitation de débit, les budgets, les barrières d’écriture, le verrou d’adhésion au cluster, le battement de cœur et l’élagage du journal des modifications. native désigne celles propres à PostgreSQL (upserts conditionnels, verrous consultatifs, LISTEN/NOTIFY) et c’est ce que la production exécute. portable désigne les instructions qu’exécute un second moteur de base de données (des insertions simples qui ne font rien sur un doublon, des verrous de ligne dans sts_cluster_locks, et aucune notification de modification, si bien que le journal des modifications est interrogé chaque seconde sauf si persistence.pollInterval est défini) ; il existe pour que la suite de tests puisse éprouver ce code sur PostgreSQL. Les deux sont corrects ; portable coûte davantage d’instructions par opération."
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "le pilote du magasin choisit ses instructions lorsqu’il est construit"
+  },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
     "text": "Délai d’exécution des requêtes de métriques de la base (ms)"
@@ -9928,8 +9940,8 @@
     "text": "Intervalle d’interrogation des modifications (ms)"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "À quelle fréquence ce processus demande au journal des modifications ce que d’autres processus ont validé. C’est le CONTRAT, et le signal LISTEN/NOTIFY n’en est qu’une optimisation ; c’est donc le délai de convergence dans le pire des cas lorsqu’une notification est perdue — un écouteur abandonné, un redémarrage de la base — et le délai habituel est de quelques millisecondes. Cinq secondes, car le signal arrive normalement en premier et un intervalle plus court n’apporte que des requêtes ; 250 ms est le minimum. C’est aussi la taille de la fenêtre des caches anti-rejeu décrite sous persistence.coordinate."
+    "en": "0620a679e69c0d43",
+    "text": "La fréquence à laquelle ce processus demande au journal des modifications ce que d’autres processus ont validé. C’est le CONTRAT, et le signal LISTEN/NOTIFY n’en est qu’une optimisation : c’est donc le délai de convergence au pire lorsqu’une notification est perdue — un écouteur interrompu, un redémarrage de la base — et le délai habituel est de quelques millisecondes. Cinq secondes, parce que le signal arrive normalement en premier et qu’un intervalle plus court n’achète que des requêtes ; 250 ms est le plancher. Lorsque le magasin n’envoie aucun signal (persistence.sqlDialect portable) et que ce réglage n’est pas défini, l’intervalle est d’une seconde. C’est aussi la taille de la fenêtre du cache anti-rejeu décrite sous persistence.coordinate."
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",

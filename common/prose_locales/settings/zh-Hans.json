@@ -9659,6 +9659,18 @@
     "en": "22887c233a0a0adf",
     "text": "存储在监听器绑定之前打开并读取"
   },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "集群 SQL 方言"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "postgres 存储用于协调多个进程而发送的语句：认领、租约、计数器、限速窗口、预算、写入栅栏、集群加入锁、心跳以及变更日志修剪。native 是 PostgreSQL 自身的语句（条件 upsert、咨询锁、LISTEN/NOTIFY），也是生产环境运行的方式。portable 是第二种数据库引擎运行的语句（遇到重复时不做任何事的普通插入、sts_cluster_locks 中的行锁，且没有变更通知，因此除非设置了 persistence.pollInterval，否则每秒轮询一次变更日志）；它的存在是为了让测试套件能够在 PostgreSQL 上验证这些代码。两者都是正确的；portable 每次操作需要更多语句。"
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "存储驱动在构建时选择其语句"
+  },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
     "text": "数据库指标语句超时（毫秒）"
@@ -9928,8 +9940,8 @@
     "text": "变更轮询间隔（毫秒）"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "本进程多久向变更日志询问一次其他进程提交了什么。这是契约，LISTEN/NOTIFY 提醒只是在其之上的优化，因此这是通知丢失时——监听器断开、数据库重启——最坏情况下的收敛延迟，而典型延迟为几毫秒。设为五秒，是因为提醒通常会先到达，更短的间隔除了增加查询之外毫无收益；250ms 是下限。它也是 persistence.coordinate 下所述重放缓存窗口的大小。"
+    "en": "0620a679e69c0d43",
+    "text": "此进程多久向变更日志询问一次其他进程已提交的内容。这是契约，LISTEN/NOTIFY 提示只是对它的一种优化，因此当通知丢失时——监听器断开、数据库重启——这就是最坏情况下的收敛延迟，而典型延迟只有几毫秒。取五秒是因为提示通常先到达，更短的间隔除了更多查询之外一无所获；250 毫秒是下限。当存储不发送提示（persistence.sqlDialect 为 portable）且未设置此项时，间隔为一秒。它也是 persistence.coordinate 下所述重放缓存窗口的大小。"
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",

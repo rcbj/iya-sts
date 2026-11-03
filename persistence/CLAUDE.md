@@ -154,6 +154,24 @@ by text is fine until that statement moves. The cluster family's ordinary
 statements moved first (28 of them); the classification of all 293 is on
 #677. Still no ORM and no ORM-level cache.
 
+**THE PORTABLE COORDINATION STATEMENTS (#677, phase 2).** Every tier-B
+statement of the cluster family — the claims, `claimMany()`, the leases, the
+heartbeat, the counters, the rate windows, the budgets, the fences, the
+origin takeover, the change readers, the trim and the join lock — has its
+contract written a second time in `cluster_portable.js`, in builder
+statements both engines run. The driver uses them when the engine is not
+PostgreSQL, or when `persistence.sqlDialect` is `portable`; then it also
+offers no `watchChanges()` and sends no `NOTIFY`, and the replication module
+polls every second unless `persistence.pollInterval` is set. The join lock
+is a row of `sts_cluster_locks` (schema version 30) locked FOR UPDATE.
+**What portable mode does NOT yet cover**: the minted flush (one statement
+with the fence inside, `MINTED_FLUSH`), the directory flush, the counts and
+everything else outside the cluster family still send PostgreSQL's text —
+those are phase 3, the MariaDB driver. `tests/cluster_portable.js` holds the
+contracts, statically for MariaDB and against a real PostgreSQL when
+`STS_TEST_POSTGRES_URL` is set; `./run-tests.sh --modes=cluster-portable`
+runs the two-node mode on them (`tests/CLAUDE.md`).
+
 **A TRANSACTION IS STILL `BEGIN`/`COMMIT` ON ONE HELD CONNECTION**
 (`transactionOnce()`, `queryWithoutJit()`, the metrics client,
 `bulk_import.js`, `cell_convert.js`), not `knex.transaction()`: that runs its
@@ -2891,11 +2909,11 @@ writes to:
   slow one; a new caller adds its name to the list, which changes the index
   expression and so is a schema version. `tests/directory_asked_names.js`
   reads the names out of the call sites and fails on one the list lacks, or a
-  listed name nobody asks. **Schema version 30 (#1290, 2026-11-03)** swapped
+  listed name nobody asks. **Schema version 31 (#1290, 2026-11-03)** swapped
   `stsassertionjwks` and `stssamlassertioncertificate` for
   `stsassertionkeypair` and `stssamlassertionkeypair` — a person's signing key
   pairs became one record each — and the advisory step
-  `sts_ldap_entries_asked_names_v30` rebuilds an index whose definition lacks
+  `sts_ldap_entries_asked_names_v31` rebuilds an index whose definition lacks
   the new name.
 * **`userpassword` is not in the list**: nearly every person holds one. The
   two questions asked about it are the counters' — `countHolding()` already,
