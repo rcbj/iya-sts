@@ -6038,7 +6038,6 @@ function reset() {
   publisher = null;
   pkiPublisher = null;
   ephemeral = false;
-  log.debug('Entering reset().');
   purgeAll();
   material.clear();
   // The data encryption keys go with the key-encryption key that wrapped

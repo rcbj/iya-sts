@@ -267,9 +267,23 @@ async function run(t) {
     // The write is queued rather than awaited by the property read, so let it
     // land. This is the one place this file waits on anything.
     await new Promise(function (r) { setTimeout(r, 50); });
-    t.equal(Array.from(store.rows.keys()).filter(function (key) {
-      return key.indexOf('dek:') !== 0;
-    }).length, 1, 'and it was written to the store');
+    // THE SIGNING-KEY ROWS ONLY (#1281). The store also holds data
+    // encryption keys (`dek:`, asserted below) and, when anything in this
+    // process has built the realm's certificate authority, that authority's
+    // row (`pki:default`) — which the keystore writes into whatever store it
+    // is handed. Run alone this file builds no authority; run after one that
+    // does (`npm test` shares one process), the count was 2 and the rotation
+    // left one, and neither row was a signing key. Counting what is asked
+    // about is the fix, not clearing the authority: a rotation of the
+    // signing keys must leave the CA's row where it is.
+    const signingKeyRows = function () {
+      return Array.from(store.rows.keys()).filter(function (key) {
+        return key.indexOf('dek:') !== 0 && key.indexOf('pki:') !== 0;
+      });
+    };
+    const writtenRows = signingKeyRows();
+    t.check(writtenRows.length === 1, 'and it was written to the store',
+            JSON.stringify(writtenRows));
     const dekRow = store.rows.get('dek:service:default') || '';
     t.check(/"wrapped":"\$dekwrap\$1\$/.test(dekRow),
             'BESIDE THE DATA ENCRYPTION KEY IT IS SEALED UNDER, which is ' +
@@ -418,10 +432,10 @@ async function run(t) {
     t.log.info('=== rotation ===');
     const rotated = await keystore.rotate('default');
     t.equal(rotated.ok, true, 'rotating removes the stored material');
-    t.equal(Array.from(store.rows.keys()).filter(function (key) {
-      return key.indexOf('dek:') !== 0;
-    }).length, 0, 'and the store no longer holds it (its data encryption ' +
-                  'keys stay: other rows of the realm are sealed under them)');
+    const leftRows = signingKeyRows();
+    t.check(leftRows.length === 0, 'and the store no longer holds it (its ' +
+            'data encryption keys stay: other rows of the realm are sealed ' +
+            'under them)', JSON.stringify(leftRows));
 
     keystore.reset();
     keystore.setStore(store);
