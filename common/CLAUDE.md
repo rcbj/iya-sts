@@ -81,10 +81,10 @@ the list.
 **AND THE FIRST TWO ARE TYPESCRIPT**: `realm_chooser.ts`, the pilot — a
 `RealmChooser` class built from injected dependencies, with a transitional
 instance exporting the old names for `admin-ui/admin.ts` and
-`portal/portal.ts` — and `html.ts`. Neither is in the parent project's
-Kerberos COPY set (`kerberos/CLAUDE.md`), which is the constraint on choosing
-what to convert next: a file on that list cannot become `.ts` without the
-parent building it.
+`portal/portal.ts` — and `html.ts`. Neither was in the parent project's
+Kerberos COPY set, which was then the constraint on choosing what to convert
+next; that obligation ended with #1280 (`kerberos/CLAUDE.md`), and any file
+here may now become `.ts`.
 
 **`common/` went first and every other service directory followed the same
 day**, with the same three kinds of fix below; the second pass also gave
@@ -979,10 +979,11 @@ store and templates into whatever first requires this module — nearly
 everything, long before 23c — where their `InstanceSlot`s would build
 default instances and the composition root's install would then be refused.
 A LAZY require at the write, as `authzenAttributeProblem()` takes, avoids
-both but not the third cost: this module is in the parent project's Kerberos
-COPY closure through `kerberos/krb5_delegation.ts`, and a create or delete
-in those jobs would reach for a file their image does not carry. The slot
-adds no require at all. The other direction is the natural one, and is what
+both, and was passed over for a third cost that ended with #1280: this module
+was in the parent project's Kerberos COPY closure through
+`kerberos/krb5_delegation.ts`, and a create or delete in those jobs would have
+reached for a file their image did not carry. The slot adds no require at
+all, and stands. The other direction is the natural one, and is what
 `fga_policies.ts` does; its wire step at 23c fills the slot. VALIDATED WHOLE
 (`STS-FGA-0011`): `created` without `deleted` would make policies nothing
 retires. `fgaLifecycleInstalled()` is for a test that replaces it.
@@ -994,8 +995,8 @@ it (`fgaCoverageProblem()`, `STS-FGA-0019`) — the same rule `enable()`
 holds at the switch (`STS-FGA-0018`). `fga_map.ts` is required LAZILY and
 only for an enforcing application, which is `authorizationDetailsTypeOf()`'s
 arrangement for the mapping grammar: the slot above is about the policy's
-lifecycle, not about a definition, and no Kerberos COPY-closure job ever
-switches enforcement on.
+lifecycle, not about a definition, and no process without the console (the
+parent's in-process Kerberos jobs among them) ever switches enforcement on.
 
 ## `fga_gate.ts`: fine-grained authorization at issuance, and the slot that REFUSES when empty (#564, P3)
 
@@ -1339,8 +1340,9 @@ exports `registerRoutes(app)`, and `load()` requires it and then calls
 used to register the routes, so the route order did not move (Express's layer
 list, 603 layers with their handlers, is identical before and after). The
 JavaScript route modules — `krb5_kdc`, `krb5_service` and `spnego`
-(this repository's own, kept JavaScript because the parent's tests image
-copies them; `kerberos/CLAUDE.md`), `tls/tls_server` and `ldap/ldap_server` —
+(this repository's own, kept JavaScript while the parent's tests image was
+owed them, until #1280, and convertible since; `kerberos/CLAUDE.md`),
+`tls/tls_server` and `ldap/ldap_server` —
 still register at their require, which `load()` makes at its
 old place. So the file now holds two interleaved orders: the REQUIRE order,
 which decides load-time effects (slot fills, stores, cycles, and where a
@@ -1410,9 +1412,10 @@ mid-request.
 `spiffe/CLAUDE.md`), `jsonld` in `oid4vc/vc_jsonld.ts`, and
 `common/crypto_impl/bbs2023.js`, which requires `jsonld` at its top, in `vc_issuer`, `vc_did`,
 `vc_verifier` and `admin-ui/crypto_metadata`. **`helpers.js` defers
-`bbs2023.js` BY HAND** (`bbs2023Suite()`), because it is in the parent
+`bbs2023.js` BY HAND** (`bbs2023Suite()`), because it was in the parent
 project's Kerberos COPY closure and a require of `lazy_module` from it would
-add a file to that closure (`kerberos/CLAUDE.md`). Together about 8 MB of heap
+have added a file to that closure (an obligation until #1280; the hand-rolled
+deferral stands and may move to `lazy_module`). Together about 8 MB of heap
 and 10 MB of resident memory per process, and 250 fewer modules; the
 measurements are on #348.
 
@@ -1470,8 +1473,9 @@ the totals.
 **The remote PEP has its own copy of the process half** (`xacml-pep/pep.js`,
 `STS-XPEP-0033`/`0034`): its image compiles no TypeScript.
 
-**Not from `app.js`**, which is in the parent project's Kerberos COPY closure
-(`kerberos/CLAUDE.md`): `server.js` and `request_worker.ts` call the guard. (The
+**Not from `app.js`**, which was in the parent project's Kerberos COPY closure
+(an obligation until #1280; the arrangement stands): `server.js` and
+`request_worker.ts` call the guard. (The
 computation worker that also installed it went with its pool in #363.)
 
 **What it does not change**: every existing `catch`, its line and its code.
@@ -2625,8 +2629,9 @@ when the path does not open with the prefix — so the same middleware enters
 it, a request worker derives it by the same rule from the same `originalUrl`,
 and `unknownRealmPath()` catches up on it the same way. A realm may not be
 called by an EST label's name (`validateId()`, `STS-CORE-0107`; the names come
-from the data leaf `enrollment_profiles.js` — JavaScript because realms.js is
-in the parent's load-time closure (#300) — which realms.js may require and
+from the data leaf `enrollment_profiles.js` — JavaScript because realms.js
+was in the parent's load-time closure (#300; an obligation until #1280) —
+which realms.js may require and
 `cert_enrollment.ts` could not be), and a realm that already was is never
 read there: the label reading wins. `est/CLAUDE.md` argues the collision rule
 and the "named once" refusal. **A third way needs the argument made again**,
@@ -3255,8 +3260,8 @@ call to bunyan's own emitter unchanged. Why each property holds:
   `bunyanEmitter` (bunyan's own function), and a second load of `config.js`
   over the same bunyan (a test clearing the require cache) leaves it alone.
 * **Why `config.js`**: it is the first module every process loads that holds
-  bunyan, and it is already in the parent project's Kerberos COPY closure
-  (`kerberos/CLAUDE.md`), so no new require and no new COPY line.
+  bunyan, so no new require (and, while the parent project's Kerberos COPY
+  closure was owed, until #1280, no new COPY line).
 * **Given up**: a real dtrace consumer would not see probes for lines below
   the level. Linux has none.
 
@@ -3613,9 +3618,9 @@ with `Cannot find module` naming a file the operator never mentioned.
    argument for a slot has two halves:
    - that module delivers through `ssf/ssf.ts`, which requires this file at
      load, so a load-time require from here closes the cycle;
-   - a lazy require would put `oauth-oidc/` and `ssf/` into the parent
-     project's Kerberos COPY closure, which reaches this file
-     (`kerberos/CLAUDE.md`).
+   - a lazy require would have put `oauth-oidc/` and `ssf/` into the parent
+     project's Kerberos COPY closure, which reached this file (an obligation
+     until #1280; the slot stands).
 
    It is here, and not at the doors, because every door that revokes an OAuth
    token (`/oauth2/revoke`, Grant Management, a replay, a consent withdrawn,
@@ -11885,13 +11890,12 @@ Five decisions:
 
 - **A LEAF, AND JAVASCRIPT.**
   - `helpers.js`, `keystore.js`, `realms.js`-backed stores,
-    `revocation_status.js` and `krb5_principals.js` are in the parent
-    project's Kerberos COPY closure and are loaded there by plain node, so the
-    registry cannot be TypeScript.
+    `revocation_status.js` and `krb5_principals.js` were in the parent
+    project's Kerberos COPY closure and loaded there by plain node, which is
+    why the registry was written in JavaScript; that obligation ended with
+    #1280, and it may now be converted.
   - It requires only `config` (for its logger) and `error_codes`, so it can
     close no cycle.
-  - **It is OWED as one COPY line** in the parent's `tests/Dockerfile`
-    (`kerberos/CLAUDE.md`).
 - **A ROW IS FIVE MEMBERS AND NOTHING ELSE.**
   - `rowsOf()` copies `realm`, `key`, `validUntil`, `valid` and `basis` out of
     whatever `entries()` returns. A descriptor that handed back a decrypted key
@@ -13479,9 +13483,9 @@ information that has been granted"):
   Holding nothing of its own is the realm's (or the client's) whatever the
   mode says. Not the Kerberos PAC set: its merge is inside the vendored KDC.
 * **Where it lives.** A leaf requiring only `helpers.js`. `admin_stats.js`
-  requires it LAZILY, inside `effectiveClaimSet()`, because that module is in
-  the parent project's Kerberos COPY closure and the KDC never reaches the
-  line — so the closure did not grow. The seven attributes are ordinary
+  requires it LAZILY, inside `effectiveClaimSet()`, because the KDC never
+  reaches the line (which kept it out of the parent project's Kerberos COPY
+  closure, an obligation until #1280). The seven attributes are ordinary
   editable fields with closed choices (`ATTRIBUTE_CHOICES`,
   `CHOICES_CHECKED_HERE`, `STS-REG-0203`), drawn in the field grid's *Claims
   in tokens* and *Attributes in assertions* sections; no new action or
@@ -14039,8 +14043,9 @@ The header quotes section 2 and argues each row:
 * **It decides nothing.** `oauth-oidc/step_up.ts` decides whether a request
   for either is met (`oauth-oidc/CLAUDE.md` 3cp), and the issuance policy
   decides whether an application may be issued to.
-* A LEAF: bunyan only. `issuance_gate.js`, which is in the parent's Kerberos
-  COPY closure, requires it LAZILY and only on a browser issuance.
+* A LEAF: bunyan only. `issuance_gate.js` requires it LAZILY and only on a
+  browser issuance (which kept it out of the parent's Kerberos COPY closure,
+  an obligation until #1280).
 
 `tests/eap_acr_values.js` holds it, in process and over HTTP.
 

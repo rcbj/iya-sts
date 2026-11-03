@@ -145,9 +145,9 @@
 // A LIBRARY (rule 3): it registers no route. It requires `net`, bunyan,
 // `config`, `client_address` and `error_codes`, and `audit` lazily. It is
 // installed from each socket owner's `listen()` and from `server.js` — the
-// KDC's TCP listener from `server.js` rather than `krb5_kdc.js`, so that this
-// file does not join the parent project's Kerberos COPY set
-// (`kerberos/CLAUDE.md`).
+// KDC's TCP listener from `server.js` rather than `krb5_kdc.js`, which kept
+// this file out of the parent project's Kerberos COPY set (an obligation
+// until #1280; the arrangement stands).
 // ===========================================================================
 // ---------------------------------------------------------------------------
 // TYPESCRIPT, AS A CLASS (#50, 2026-09-16) — `common/realm_chooser.ts`'s

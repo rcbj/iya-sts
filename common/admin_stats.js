@@ -1118,11 +1118,12 @@ function makeRoomForRevocation() {
 //
 // A SLOT AND NOT A REQUIRE, argued both ways round (rule 3e): the observer
 // delivers through `ssf/ssf.ts`, which requires this file at its load, so a
-// load-time require from here closes that cycle; and a LAZY one would put
-// `oauth-oidc/` and `ssf/` in the parent project's Kerberos COPY closure,
-// which reaches this file (`kerberos/CLAUDE.md`). The observer is told only
-// of a jti NEWLY revoked, is called for its side effect, and can never fail a
-// revocation: what it throws is logged and dropped.
+// load-time require from here closes that cycle; and a LAZY one would have
+// put `oauth-oidc/` and `ssf/` in the parent project's Kerberos COPY closure,
+// which reached this file (an obligation until #1280; the slot stands). The
+// observer is told only of a jti NEWLY revoked, is called for its side
+// effect, and can never fail a revocation: what it throws is logged and
+// dropped.
 //
 // `how` is the door's own statement of the act, passed through untouched:
 // `{ initiatingEntity, superseded, replay }` — see the observer's file.
@@ -5141,9 +5142,9 @@ function effectiveClaimSet(id, context) {
   // set, `scope_claims.ts`'s four modes over the names, the application's
   // row winning wherever both hold one. Unset is `union`, which is what
   // this function did before the choice existed.
-  // REQUIRED HERE, LAZILY: this module is in the parent project's Kerberos
-  // COPY closure (`kerberos/CLAUDE.md`) and the KDC never reaches this line,
-  // so a load-time require would owe a COPY line for nothing.
+  // REQUIRED HERE, LAZILY: the KDC never reaches this line, so a process
+  // that loads this module only for Kerberos never loads it (which kept it
+  // out of the parent project's Kerberos COPY closure until #1280).
   const scopeClaims = require('./scope_claims');
   const mode = scopeClaims.realmModeOf(id, applicationForClaims(name)) ||
     'union';

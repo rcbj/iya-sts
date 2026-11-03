@@ -110,8 +110,8 @@ const errorCodes = require('./error_codes');
 // A LEAF (`config` and `error_codes` only), so no cycle.
 const mode = require('./mode');
 // THE ISSUED REGISTER'S DISPLACED RECORD (#185), shared with the cluster
-// merge. A LEAF (`config` and bunyan), already in the parent project's
-// Kerberos COPY closure through `keystore.js`, which requires it at load.
+// merge. A LEAF (`config` and bunyan), already loaded through `keystore.js`,
+// which requires it at load.
 const pkiMerge = require('./pki_merge');
 // The debugger's own PKI code, byte-identical. DO NOT EDIT THEM HERE — see
 // `common/crypto_impl/CLAUDE.md`.

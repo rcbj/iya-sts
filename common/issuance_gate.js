@@ -338,9 +338,9 @@ function check(request) {
   // requirement are about the same entry: kerberosEntryOf().
   const named = kerberosEntryOf(asked);
   const protocol = protocolFactsOf(named);
-  // `mode.js` is required LAZILY: it is a leaf, but this file is in the
-  // parent project's Kerberos COPY closure and a top-level require here would
-  // add a file to it (kerberos/CLAUDE.md).
+  // `mode.js` is required LAZILY: it is a leaf, and the lazy require kept it
+  // out of the parent project's Kerberos COPY closure, which reached this
+  // file (an obligation until #1280; the arrangement stands).
   const mode = protocol ? require('./mode') : null;
   const protocolMatters = !!mode && !mode.issuesThroughUndeclaredProtocols();
   // THE SIGN-IN MECHANISMS (#457) ride along on a BROWSER issuance to an
@@ -351,11 +351,11 @@ function check(request) {
   // AND THE SECOND FACTORS (#475), the same way and for the same reason:
   // the `mfa-mechanism` rule holds in both modes and is not about roles.
   const mfa = mfaFactsOf(asked);
-  // THE DEVICE-BOUND SESSION (#743, #740). Computed in THIS file:
-  // `authn/device_bound_sessions` must not be required from here. This
-  // file is in the Kerberos COPY closure (`kerberos/krb5_kdc.js` requires
-  // it), and a new require would owe the parent project a COPY line.
-  // `deviceBoundFactOf()` is the same reading as
+  // THE DEVICE-BOUND SESSION (#743, #740). Computed in THIS file rather than
+  // by requiring `authn/device_bound_sessions`, which kept that module out
+  // of the parent project's Kerberos COPY closure (`kerberos/krb5_kdc.js`
+  // requires this file; an obligation until #1280, and the arrangement
+  // stands). `deviceBoundFactOf()` is the same reading as
   // `DeviceBoundSessions.factFrom` and has to stay that way. The
   // requirement makes the policy asked only while the feature is on, an
   // application is named, and the fact is still open. `none` and `bound`
@@ -431,7 +431,8 @@ function check(request) {
 // The device-bound fact of the session an issuance rests on (#743, #740):
 // `bound`, `skipped`, `pending`, `timedout` or `none`. The same reading as
 // `DeviceBoundSessions.factFrom`. It lives here so this file does not
-// require that module (the Kerberos COPY closure). `timedout` is this read
+// require that module (which kept the Kerberos COPY closure small until
+// #1280; the arrangement stands). `timedout` is this read
 // when a pending offer is older than `authn.deviceBoundIssuanceWaitS`.
 // Nothing stores that word and no timer flips it. Strictly past the window;
 // at the boundary the fact is still `pending`.

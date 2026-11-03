@@ -762,8 +762,9 @@ class Credentials {
       helpers.log.debug("Leaving Credentials.keyProvider(). By MDS.");
       return String(att.model);
     }
-    // LAZILY, so this data module does not join the parent project's
-    // Kerberos COPY closure, which carries this file (`kerberos/CLAUDE.md`).
+    // LAZILY, which kept this data module out of the parent project's
+    // Kerberos COPY closure that carried this file (an obligation until
+    // #1280; the arrangement stands).
     const providers = require('../authn/passkey_providers');
     const named = providers.nameOf(k.aaguid);
     helpers.log.debug("Leaving Credentials.keyProvider(). " +

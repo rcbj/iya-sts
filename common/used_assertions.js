@@ -844,10 +844,11 @@ function claimInDatabase(row, cap, now) {
 // THE DATABASE SWEEP IS A SCHEDULER JOB (#49 P5):
 // `oauth2.used-assertion-purge`, a CLUSTER job every PURGE_INTERVAL_MS — one
 // table every process shares. It was piggy-backed on the next claim in every
-// process. Registered at the first claim against a database, lazily: this
-// file is in the parent project's Kerberos COPY closure and must not load the
-// scheduler there. An expired row is ignored by every read whenever the
-// sweep last ran.
+// process. Registered at the first claim against a database, lazily, so a
+// process that never claims against a database never loads the scheduler
+// (this file was in the parent project's Kerberos COPY closure, an
+// obligation until #1280). An expired row is ignored by every read whenever
+// the sweep last ran.
 /**
  * Registers the `oauth2.used-assertion-purge` cluster job that deletes
  * expired rows from a database store, once per process.

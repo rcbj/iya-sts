@@ -279,13 +279,12 @@ const config = require('./config');
 const realms = require('./realms');
 // This service's one cryptographic module (#453): the certificate parse, the
 // presented-chain key, the OCSP CertID hashes and the request nonce. A leaf
-// that requires nothing here, and already in the parent project's Kerberos
-// COPY closure through `helpers.js`.
+// that requires nothing here, and already loaded through `helpers.js`.
 const stsCrypto = require('./crypto');
 // The one helper for a verified outbound connection (#201), required LAZILY
-// where a list is fetched: this module is in the parent project's Kerberos
-// COPY closure (kerberos/CLAUDE.md), and a load-time require would add
-// `outbound_tls.js` to it.
+// where a list is fetched, which kept `outbound_tls.js` out of the parent
+// project's Kerberos COPY closure that reached this module (an obligation
+// until #1280; the arrangement stands).
 function outboundTls() {
   log.debug("Entering outboundTls().");
   log.debug("Leaving outboundTls().");

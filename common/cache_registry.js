@@ -74,13 +74,13 @@
 // signed document — still could not put it on the page.
 // `tests/cache_registry.js` holds that.
 //
-// **A LEAF (rule 3), AND JAVASCRIPT ON PURPOSE.** Several owners —
-// `helpers.js`, `keystore.js`, `revocation_status.js`, `krb5_principals.js` —
-// are in the parent project's Kerberos COPY closure and are loaded there by
-// plain node, so this file cannot be TypeScript, and it requires nothing of
-// this service but `config` (for the logger, as `client_address.js` does), so
-// it can close no cycle. Requiring it from those modules OWES the parent one
-// COPY line; `kerberos/CLAUDE.md` records it.
+// **A LEAF (rule 3), AND JAVASCRIPT.** Several owners — `helpers.js`,
+// `keystore.js`, `revocation_status.js`, `krb5_principals.js` — were in the
+// parent project's Kerberos COPY closure and loaded there by plain node,
+// which is why this file was written in JavaScript (an obligation until
+// #1280; nothing is owed now, and it may be converted). It requires nothing
+// of this service but `config` (for the logger, as `client_address.js`
+// does), so it can close no cycle.
 //
 // **THE FIGURES ARE THE ANSWERING PROCESS'S.** A request worker and a cluster
 // node each hold caches of their own; nothing here is coordinated, because a
