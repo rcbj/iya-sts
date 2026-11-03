@@ -985,16 +985,15 @@ async function test() {
   const entry = await get(realmApi + "/users?user=" +
                           encodeURIComponent(SIGNER));
   check("and the PUBLIC half is on that person's own directory entry as " +
-        "stsAssertion* — an attribute set that shares no name with the " +
-        "application's, which is what stops either pair signing for the " +
-        "other's holder", function () {
+        "stsAssertion* — a key pair record per key since #1290, an " +
+        "attribute set that shares no name with the application's, which " +
+        "is what stops either pair signing for the other's holder",
+        function () {
           const whole = JSON.stringify(entry.body).toLowerCase();
-          ["stsassertionjwks", "stsassertioncertificate",
-           "stsassertioncertificatechain", "stsassertionkid",
-           "stsassertionexpiresat"].forEach(function (name) {
-            assert.ok(whole.indexOf(name) >= 0,
-              name + " is not on " + SIGNER + "'s entry");
-          });
+          assert.ok(whole.indexOf("stsassertionkeypair") >= 0,
+            "stsAssertionKeyPair is not on " + SIGNER + "'s entry");
+          assert.ok(whole.indexOf(String(mine.kid).toLowerCase()) >= 0,
+            "the key pair's kid " + mine.kid + " is not drawn for " + SIGNER);
         });
 
   const selfAssertion = signJws(
@@ -1032,38 +1031,72 @@ async function test() {
             "failed; it said " + JSON.stringify(why).slice(0, 200));
         });
 
-  // The x5c half, with the entry CLEARED so that the registry cannot be what
-  // refuses it. This is the path that does not go through the registry at all,
-  // and it is where the rule would have been missed.
-  const takenOff = await ok(realmApi + "/pki/revoke",
-                            { identifier: SIGNER, target: "person" },
-                            "took the person's key pair off");
-  check("taking a person's key pair off clears the issuer declaration with " +
-        "it — everything in stsAssertion* was put there by the issue, so " +
-        "leaving the declaration would leave somebody declared as an issuer " +
-        "with no key to issue with — and it says, as the application arm " +
-        "does, that this is NOT revocation", function () {
-          assert.ok(/NOT REVOCATION/i.test(takenOff.why),
-            JSON.stringify(takenOff.why).slice(0, 200));
+  // SEVERAL KEY PAIRS, AND ONE REVOKED (#1290): a second issue ADDS a key
+  // pair, and revoking the first — by its kid, with a reason — puts its
+  // certificate on the CRL and stops it being accepted while the second
+  // goes on working. That replaced taking the key pair off.
+  const second = await ok(realmApi + "/pki/issue",
+                          { identifier: SIGNER, target: "person",
+                            label: "second" },
+                          "issued the same person a second key pair");
+  const revokedFirst = await ok(realmApi + "/pki/revoke",
+                                { identifier: SIGNER, target: "person",
+                                  handle: mine.kid,
+                                  reason: "cessationOfOperation" },
+                                "revoked the person's first key pair");
+  check("revoking one of a person's key pairs puts its certificate on its " +
+        "authority's list and leaves the other one valid", function () {
+          assert.strictEqual(revokedFirst.onList, true,
+            JSON.stringify(revokedFirst).slice(0, 300));
+          assert.strictEqual(revokedFirst.remaining, 1,
+            JSON.stringify(revokedFirst).slice(0, 300));
         });
-
-  const x5c = mine.jwks.keys[0].x5c;
-  const chainSelf = await tokenRequest({ grant_type: GRANT,
-    assertion: signJws({ alg: mine.jwsAlg, typ: "JWT", x5c: x5c },
+  const revokedUse = await tokenRequest({ grant_type: GRANT,
+    assertion: signJws({ alg: mine.jwsAlg, typ: "JWT", kid: mine.kid },
       { iss: SIGNER, sub: SIGNER, aud: TOKEN_ENDPOINT, iat: now(),
         exp: now() + 120, jti: jti() }, mine.privateKeyPem) });
-  check("with nothing on the entry, the CERTIFICATE this service issued is " +
-        "still evidence in its own right and the same person may present it " +
-        "instead — which is what makes holding a certificate authority worth " +
-        "anything", function () {
+  check("an assertion signed with the REVOKED key is refused", function () {
+    refused(revokedUse, "invalid_grant", "an assertion signed with a " +
+            "revoked key pair");
+  });
+  const revokedX5c = await tokenRequest({ grant_type: GRANT,
+    assertion: signJws({ alg: mine.jwsAlg, typ: "JWT",
+                         x5c: mine.jwks.keys[0].x5c },
+      { iss: SIGNER, sub: SIGNER, aud: TOKEN_ENDPOINT, iat: now(),
+        exp: now() + 120, jti: jti() }, mine.privateKeyPem) });
+  check("and so is the revoked CERTIFICATE presented in an x5c: the CRL " +
+        "entry is what this service reads too", function () {
+          refused(revokedX5c, "invalid_grant", "a revoked certificate in x5c");
+        });
+  const secondUse = await tokenRequest({ grant_type: GRANT,
+    assertion: signJws({ alg: second.jwsAlg, typ: "JWT", kid: second.kid },
+      { iss: SIGNER, sub: SIGNER, aud: TOKEN_ENDPOINT, iat: now(),
+        exp: now() + 120, jti: jti() }, second.privateKeyPem),
+    scope: "openid" });
+  check("while the person's OTHER key pair is still accepted", function () {
+    assert.strictEqual(secondUse.status, 200,
+      JSON.stringify(secondUse.body).slice(0, 400));
+  });
+
+  // The x5c half: the path that does not go through the registry at all,
+  // and where the rule would have been missed.
+  const x5c = second.jwks.keys[0].x5c;
+  const chainSelf = await tokenRequest({ grant_type: GRANT,
+    assertion: signJws({ alg: second.jwsAlg, typ: "JWT", x5c: x5c },
+      { iss: SIGNER, sub: SIGNER, aud: TOKEN_ENDPOINT, iat: now(),
+        exp: now() + 120, jti: jti() }, second.privateKeyPem) });
+  check("the CERTIFICATE this service issued is evidence in its own right " +
+        "and the same person may present it instead of a kid — which is " +
+        "what makes holding a certificate authority worth anything",
+        function () {
           assert.strictEqual(chainSelf.status, 200,
             JSON.stringify(chainSelf.body).slice(0, 400));
         });
 
   const chainOther = await tokenRequest({ grant_type: GRANT,
-    assertion: signJws({ alg: mine.jwsAlg, typ: "JWT", x5c: x5c },
+    assertion: signJws({ alg: second.jwsAlg, typ: "JWT", x5c: x5c },
       { iss: SIGNER, sub: SOMEBODY, aud: TOKEN_ENDPOINT, iat: now(),
-        exp: now() + 120, jti: jti() }, mine.privateKeyPem) });
+        exp: now() + 120, jti: jti() }, second.privateKeyPem) });
   check("**AND THE RULE HOLDS ON THE CERTIFICATE ALONE**, with nothing in " +
         "the registry to consult. Before a person could hold a key pair, " +
         "\"it chains here\" and \"it may assert about somebody\" were one " +

@@ -310,8 +310,11 @@ function removeWhatWasMade() {
     }
   });
   PEOPLE.forEach(function (name) {
+    // Revoked rather than taken off, which no longer exists (#1290).
     personAssertions.PURPOSE_IDS.forEach(function (purpose) {
-      personAssertions.clear(name, purpose);
+      personAssertions.activeFor(name, purpose).forEach(function (one) {
+        personAssertions.revoke(name, purpose, one.id);
+      });
     });
     const found = ldap.objectFor(name);
     if (found && found.entry) {

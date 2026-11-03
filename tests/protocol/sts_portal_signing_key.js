@@ -7,6 +7,9 @@
 // /portal/signing-key: A PERSON ISSUING THEMSELVES AN RFC 7523 SIGNING KEY,
 // AND THEN USING IT — and since 2026-09-13 an RFC 7522 one beside it, on a
 // set of its own that neither signs for the other nor comes off with it.
+// SINCE #1290 (2026-11-03) several of each: Generate adds, each key pair is
+// revoked on its own row, and at `pki.personSigningKeyMax` the Generate
+// control becomes a note.
 //
 // `/admin/pki` could issue a person a key pair from 2026-09-11 and an operator
 // had to do it. This page is the person's own door onto the same act, and the
@@ -253,12 +256,57 @@ function privateKeyOn(text) {
   return printed || (link ? pemOf(link.bytes.toString("utf8")) : "");
 }
 
+// ONE PROFILE'S CARD (#1290): from its heading to the next card's. Each
+// card lists every key pair the person holds, one row each, the handle in
+// the row's second cell.
+function cardOf(text, id) {
+  log.debug("Entering cardOf(). " + id);
+  const after = String(text || "").split('<h2 id="' + id + '">')[1] || "";
+  log.debug("Leaving cardOf().");
+  return after.split('<div class="card">')[0];
+}
+
+// Every handle a card lists, newest first (the order the page draws).
+function handlesOn(text, id) {
+  log.debug("Entering handlesOn(). " + id);
+  const out = [];
+  const pattern = /<\/td><td><code>([A-Za-z0-9_-]+)<\/code>/g;
+  const card = cardOf(text, id);
+  let found = pattern.exec(card);
+  while (found) {
+    out.push(found[1]);
+    found = pattern.exec(card);
+  }
+  log.debug("Leaving handlesOn(). " + out.length);
+  return out;
+}
+
+// The state a card's row for one handle says: `valid`, `revoked`, ….
+function stateOn(text, id, handle) {
+  log.debug("Entering stateOn().");
+  const rows = cardOf(text, id).split("<tr");
+  const row = rows.filter(function (one) {
+    return one.indexOf("<code>" + handle + "</code>") >= 0;
+  })[0] || "";
+  const found = /<span class="state-([a-z]+)">/.exec(row);
+  log.debug("Leaving stateOn().");
+  return found ? found[1] : "";
+}
+
+// The handle in the row a generation marked as the new one (#671, #1290).
+function freshHandleOn(text) {
+  log.debug("Entering freshHandleOn().");
+  const row = (String(text || "")
+    .match(/<tr class="fresh-row">[\s\S]*?<\/tr>/) || [""])[0];
+  const found = /<\/td><td><code>([A-Za-z0-9_-]+)<\/code>/.exec(row);
+  log.debug("Leaving freshHandleOn().");
+  return found ? found[1] : "";
+}
+
 function thumbprintOn(text) {
   log.debug("Entering thumbprintOn().");
-  const found =
-      String(text).match(/<th>Thumbprint<\/th><td><code>([^<]+)<\/code>/);
   log.debug("Leaving thumbprintOn().");
-  return found ? found[1] : "";
+  return handlesOn(text, "saml")[0] || "";
 }
 
 // An RFC 7522 grant: an assertion built and signed by `saml_xmldsig.js`,
@@ -275,12 +323,11 @@ async function samlGrant(iss, sub, privateKeyPem) {
   return r;
 }
 
+// The newest RFC 7523 key pair's kid on the page.
 function kidOn(text) {
   log.debug("Entering kidOn().");
-  const found =
-      String(text).match(/<th>Key<\/th><td><code>(person-[^<]+)<\/code>/);
   log.debug("Leaving kidOn().");
-  return found ? found[1] : "";
+  return handlesOn(text, "jwt")[0] || "";
 }
 
 // A refusal read as the OAuth ERROR CODE and never as the status alone:
@@ -462,8 +509,8 @@ async function test() {
   // is the certificate that key belongs to.
   const issuedChain = dataLink(issued.text, "-jwt-signing-chain.pem",
                                "application/x-pem-file");
-  check("the key and the certificate chain are download links in the " +
-        "card's Certificate row, and the chain's leaf holds the key's public " +
+  check("the key and the certificate chain are download links in the new " +
+        "key pair's own row, and the chain's leaf holds the key's public " +
         "half", function () {
           const row = (String(issued.text)
             .match(/<tr class="fresh-row">[\s\S]*?<\/tr>/) || [""])[0];
@@ -555,7 +602,7 @@ async function test() {
           const whole = String(overview.text) +
                         JSON.stringify(overview.json || {});
           ["stsAssertionPrivateKey", "stsassertionprivatekey",
-           "stsAssertionJwks", "stsassertionjwks"].forEach(function (name) {
+           "stsAssertionKeyPair", "stsassertionkeypair"].forEach(function (name) {
             assert.ok(whole.indexOf(name) < 0,
               "the Overview mentions " + name);
           });
@@ -637,49 +684,143 @@ async function test() {
           });
         });
 
-  const replacedKid = kidOn(generated.text);
-  check("generating again REPLACED the pair rather than adding one — a " +
-        "person holds one signing key, and two would mean a verifier trying " +
-        "both",
-        function () {
-          assert.ok(replacedKid && replacedKid !== kid,
-            "the key handle did not change: " + replacedKid);
+  // SEVERAL KEY PAIRS PER PROFILE (#1290): generating again ADDS one.
+  const addedKid = freshHandleOn(generated.text);
+  check("generating again ADDS a key pair rather than replacing the one " +
+        "held — the page lists both, the new one in the row carrying its " +
+        "downloads", function () {
+          assert.ok(addedKid && addedKid !== kid,
+            "the new row's kid is " + JSON.stringify(addedKid));
+          const listed = handlesOn(generated.text, "jwt");
+          assert.ok(listed.indexOf(kid) >= 0 && listed.indexOf(addedKid) >= 0,
+            "the card lists " + JSON.stringify(listed));
         });
   const oldKey = await tokenRequest({ grant_type: GRANT,
     assertion: signJws({ alg: "RS256", typ: "JWT", kid: kid },
       { iss: OWNER, sub: OWNER, aud: TOKEN_ENDPOINT, iat: now(),
-        exp: now() + 120, jti: jti() }, pem) });
-  check("and the key it replaced stops working that moment, which is what " +
-        "the page warns before the button is pressed", function () {
-          refused(oldKey, "invalid_grant", "an assertion signed with the " +
-                  "replaced key");
+        exp: now() + 120, jti: jti() }, pem), scope: "openid" });
+  check("and the first key pair STILL obtains a token: each is found by its " +
+        "kid", function () {
+          assert.strictEqual(oldKey.status, 200,
+            JSON.stringify(oldKey.body).slice(0, 300));
         });
 
   // -------------------------------------------------------------------------
-  // 7. TAKING IT OFF.
+  // 7. REVOKING ONE, ROW BY ROW (#1290) — which replaced taking it off.
   // -------------------------------------------------------------------------
-  log.info("=== 7. taking it off ===");
+  log.info("=== 7. revoking one ===");
   const newPem = privateKeyOn(generated.text);
-  const removed = await act(b, "/portal/signing-key", { action: "remove" });
-  check("the remove answers a MESSAGE and no view — there is nothing to hand " +
-        "back, which is why this half carries no page and the generate does",
+  const listedPage = await pageOf(b, "/portal/signing-key");
+  check("every valid row carries its own Revoke, with the two reasons a " +
+        "holder may give", function () {
+          const card = cardOf(listedPage.text, "jwt");
+          assert.strictEqual((card.match(/name="action" value="revoke"/g) ||
+                              []).length, 2, "the JWT card's revoke forms");
+          assert.ok(card.indexOf('name="handle" value="' + kid + '"') >= 0,
+            "no revoke form names " + kid);
+          assert.ok(/value="keyCompromise"/.test(card) &&
+                    /value="cessationOfOperation"/.test(card),
+            "the reasons are not offered");
+        });
+  const otherSide = await signIn("/portal/signing-key", OTHER);
+  const notTheirs = await act(otherSide, "/portal/signing-key",
+                              { action: "revoke", purpose: "jwt",
+                                handle: kid, reason: "keyCompromise" });
+  check("**ANOTHER PERSON NAMING THIS KID REVOKES NOTHING** — the handle is " +
+        "looked up among the signed-in person's own key pairs only",
         function () {
-          assert.ok(removed.status === 200 && removed.json &&
-                    removed.json.ok === true && !removed.json.view &&
-                    removed.json.message,
-            "it answered " + removed.status + " " +
-            String(removed.text).slice(0, 200));
+          assert.strictEqual(notTheirs.status, 400,
+            "it answered " + notTheirs.status + " " + notTheirs.said);
         });
-  const afterRemoval = await tokenRequest({ grant_type: GRANT,
-    assertion: signJws({ alg: "RS256", typ: "JWT", kid: replacedKid },
+  const revoked = await act(b, "/portal/signing-key",
+                            { action: "revoke", purpose: "jwt", handle: kid,
+                              reason: "keyCompromise" });
+  check("the revoke answers a MESSAGE and no view — nothing secret comes " +
+        "back", function () {
+          assert.ok(revoked.status === 200 && revoked.json &&
+                    revoked.json.ok === true && !revoked.json.view &&
+                    /RFC 7523/.test(revoked.said),
+            "it answered " + revoked.status + " " +
+            String(revoked.text).slice(0, 200));
+        });
+  const revokedUse = await tokenRequest({ grant_type: GRANT,
+    assertion: signJws({ alg: "RS256", typ: "JWT", kid: kid },
       { iss: OWNER, sub: OWNER, aud: TOKEN_ENDPOINT, iat: now(),
-        exp: now() + 120, jti: jti() }, newPem) });
-  check("and an assertion signed with the key that was taken off is refused " +
-        "from that moment — which is the half that IS true of it, since the " +
-        "certificate itself is on no revocation list", function () {
-          refused(afterRemoval, "invalid_grant",
-                  "an assertion signed with a key that was taken off");
+        exp: now() + 120, jti: jti() }, pem) });
+  const otherStill = await tokenRequest({ grant_type: GRANT,
+    assertion: signJws({ alg: "RS256", typ: "JWT", kid: addedKid },
+      { iss: OWNER, sub: OWNER, aud: TOKEN_ENDPOINT, iat: now(),
+        exp: now() + 120, jti: jti() }, newPem), scope: "openid" });
+  check("**the revoked key is refused from that moment and the other still " +
+        "obtains a token**", function () {
+          refused(revokedUse, "invalid_grant",
+                  "an assertion signed with a revoked key");
+          assert.strictEqual(otherStill.status, 200,
+            JSON.stringify(otherStill.body).slice(0, 300));
         });
+  const revokedPage = await pageOf(b, "/portal/signing-key");
+  check("the page draws the revoked row as revoked, with no Revoke on it",
+        function () {
+          assert.strictEqual(stateOn(revokedPage.text, "jwt", kid),
+                             "revoked");
+          assert.strictEqual(stateOn(revokedPage.text, "jwt", addedKid),
+                             "valid");
+          assert.ok(cardOf(revokedPage.text, "jwt").indexOf(
+            'name="handle" value="' + kid + '"') < 0,
+            "the revoked row still offers Revoke");
+        });
+  const ownerEntry = await apiGet("/users?user=" + encodeURIComponent(OWNER));
+  check("and an administrator reads the same: the key pair revoked with " +
+        "its reason, the other valid (GET /admin-api/users?user=)",
+        function () {
+          const pairs = ((ownerEntry.body || {}).credentials || {})
+            .keyPairs || [];
+          const jwt = pairs.filter(function (one) {
+            return one.purpose === "jwt";
+          })[0] || { keys: [] };
+          const byHandle = {};
+          jwt.keys.forEach(function (one) { byHandle[one.handle] = one; });
+          assert.ok(byHandle[kid] && byHandle[kid].state === "revoked" &&
+                    byHandle[kid].reason === "keyCompromise",
+            JSON.stringify(jwt).slice(0, 400));
+          assert.ok(byHandle[addedKid] &&
+                    byHandle[addedKid].state === "valid",
+            JSON.stringify(jwt).slice(0, 400));
+        });
+
+  // THE CAP (#1290): at `pki.personSigningKeyMax` valid key pairs the page
+  // replaces Generate with a note and the act is refused.
+  const capped = await apiPost("/config/set",
+                               { key: "pki.personSigningKeyMax", value: "1" });
+  check("the cap can be lowered to 1 for this check", function () {
+    assert.strictEqual(capped.status, 200,
+      JSON.stringify(capped.body).slice(0, 300));
+  });
+  try {
+    const atCap = await pageOf(b, "/portal/signing-key");
+    check("**AT THE CAP THE GENERATE CONTROL IS REPLACED BY A NOTE**",
+          function () {
+            const card = cardOf(atCap.text, "jwt");
+            assert.ok(card.indexOf('name="action" value="generate"') < 0,
+              "the JWT card still offers Generate at the cap");
+            assert.ok(/the most this service issues to one person/
+              .test(card), "the cap note is not on the card");
+            assert.ok(cardOf(atCap.text, "saml")
+              .indexOf('name="action" value="generate"') >= 0,
+              "the cap is per profile, and the SAML card lost Generate");
+          });
+    const overCap = await act(b, "/portal/signing-key",
+                              { action: "generate", purpose: "jwt" });
+    check("and a generate posted anyway is refused 400, issuing nothing",
+          function () {
+            assert.strictEqual(overCap.status, 400,
+              "it answered " + overCap.status);
+            assert.strictEqual(privateKeyOn(overCap.text), "",
+              "a key came back over the cap");
+          });
+  } finally {
+    await apiPost("/config/reset", { key: "pki.personSigningKeyMax" });
+  }
 
   // -------------------------------------------------------------------------
   // 8. RFC 7522: A SECOND KEY PAIR, ON A SET OF ITS OWN (2026-09-13).
@@ -712,7 +853,7 @@ async function test() {
           assert.ok(/^[A-Za-z0-9_-]{20,}$/.test(thumbprint),
             "thumbprint=" + JSON.stringify(thumbprint));
           assert.strictEqual(kidOn(samlIssued.text), jwtKid,
-            "the RFC 7523 key is not the one just issued: " +
+            "the newest RFC 7523 key is not the one just issued: " +
             kidOn(samlIssued.text));
         });
 
@@ -783,33 +924,38 @@ async function test() {
         });
 
   const samlRemoved = await act(b, "/portal/signing-key",
-                                { action: "remove", purpose: "saml" });
+                                { action: "revoke", purpose: "saml",
+                                  handle: thumbprint,
+                                  reason: "cessationOfOperation" });
   const samlGone = await samlGrant(OWNER, OWNER, samlPem);
   const jwtStill = await tokenRequest({ grant_type: GRANT,
     assertion: signJws({ alg: "RS256", typ: "JWT", kid: jwtKid },
       { iss: OWNER, sub: OWNER, aud: TOKEN_ENDPOINT, iat: now(),
         exp: now() + 120, jti: jti() }, jwtPem) });
-  check("**TAKING THE RFC 7522 KEY OFF LEAVES THE RFC 7523 ONE WORKING** — " +
+  check("**REVOKING THE RFC 7522 KEY LEAVES THE RFC 7523 ONES WORKING** — " +
         "the SAML key is refused from that moment and the JWT key still " +
         "obtains a token", function () {
           assert.strictEqual(samlRemoved.status, 200,
-            "the remove answered " + samlRemoved.status);
+            "the revoke answered " + samlRemoved.status);
           assert.ok(/RFC 7522/.test(samlRemoved.said),
             "the message does not name the profile: " + samlRemoved.said);
           refused(samlGone, "invalid_grant",
-                  "an assertion signed with the SAML key taken off");
+                  "an assertion signed with the revoked SAML key");
           assert.strictEqual(jwtStill.status, 200,
             JSON.stringify(jwtStill.body).slice(0, 300));
         });
   const nothingLeft = await act(b, "/portal/signing-key",
-                                { action: "remove", purpose: "saml" });
-  check("and a second SAML remove is refused 400 naming the profile, while " +
-        "the page still shows the RFC 7523 key", function () {
+                                { action: "revoke", purpose: "saml",
+                                  handle: jwtKid });
+  check("and a SAML revoke naming a JWT kid is refused 400 naming the " +
+        "profile — the two sets share nothing — while the page still shows " +
+        "the RFC 7523 key and the RFC 7522 one as revoked", function () {
           assert.strictEqual(nothingLeft.status, 400);
           assert.ok(/no RFC 7522 signing key/.test(nothingLeft.said),
             nothingLeft.said);
           assert.strictEqual(kidOn(nothingLeft.text), jwtKid);
-          assert.strictEqual(thumbprintOn(nothingLeft.text), "");
+          assert.strictEqual(stateOn(nothingLeft.text, "saml", thumbprint),
+                             "revoked");
         });
 
   // -------------------------------------------------------------------------
