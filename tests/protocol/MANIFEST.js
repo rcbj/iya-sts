@@ -576,7 +576,13 @@ const JOBS = [
   // token is confined, and in the `cluster` mode both nodes name one leader
   // and a step-down hands it over. `local: true`: this repository's own
   // /admin and /admin-api.
-  { file: 'sts_scheduler.js',            browser: false },
+  // ITS OWN WATCHDOG (2026-11-03). Sections 6 and 7 poll every node's full
+  // job list until they agree, and a realm job has a row per realm, so the
+  // job's time grows with the realms the jobs before it leave standing:
+  // 185 s, 220 s and 272 s in three cluster runs, then cut off at the
+  // default 300 s in section 7. Asking one realm's rows would make it
+  // constant; until then the bound says what it costs.
+  { file: 'sts_scheduler.js',            browser: false, timeoutMs: 600000 },
   // MONITORING → WORKER POOLS (#327, 2026-09-28): GET /admin-api/worker-pools
   // answers the request and surface pools with the seven figures, adding
   // up, drawn by the front process; no post-quantum pool since #363; the
