@@ -10736,35 +10736,35 @@ const CODES = [
     spec: 'invalid_request (RFC 8693 section 2.2.2), HTTP 400' },
   { code: 'STS-OAUTH-0988',
     summary: 'A Kerberos subject_token or actor_token was refused by the ' +
-      'acceptor (#658): not for this authorization server\'s SPN, a bad ' +
-      'key or Authenticator, the clock, a replay. Every mode.',
+      'acceptor (#658): not for this authorization server\'s SPN, a bad key ' +
+      'or Authenticator, the clock, a replay. Every mode.',
     spec: 'invalid_request (RFC 8693 section 2.2.2), HTTP 400' },
   { code: 'STS-OAUTH-0989',
-    summary: 'A Kerberos subject_token\'s S4U_DELEGATION_INFO does not end at ' +
-      'the exchanging client (#658). Every mode.',
+    summary: 'A Kerberos subject_token\'s S4U_DELEGATION_INFO does not end ' +
+      'at the exchanging client (#658). Every mode.',
     spec: 'invalid_request (RFC 8693 section 2.2.2), HTTP 400' },
   { code: 'STS-OAUTH-0990',
-    summary: 'A Kerberos subject_token was bought with a forwarded TGT and the ' +
-      'exchanging client is not trusted for unconstrained delegation ' +
+    summary: 'A Kerberos subject_token was bought with a forwarded TGT and ' +
+      'the exchanging client is not trusted for unconstrained delegation ' +
       '(#658). Every mode.',
     spec: 'invalid_request (RFC 8693 section 2.2.2), HTTP 400' },
   { code: 'STS-OAUTH-0991',
-    summary: 'A Kerberos subject_token was not obtained by Kerberos delegation ' +
-      'and is not the exchanging client\'s own (#658, rcbj\'s decision D2). ' +
-      'Every mode.',
+    summary: 'A Kerberos subject_token was not obtained by Kerberos ' +
+      'delegation and is not the exchanging client\'s own (#658, rcbj\'s ' +
+      'decision D2). Every mode.',
     spec: 'invalid_request (RFC 8693 section 2.2.2), HTTP 400' },
   { code: 'STS-OAUTH-0992',
-    summary: 'A Kerberos subject_token names a person with no directory entry ' +
-      'here, or a principal of another realm while a token other than a ' +
-      'Kerberos one was asked for (#658).',
+    summary: 'A Kerberos subject_token names a person with no directory ' +
+      'entry here, or a principal of another realm while a token other than ' +
+      'a Kerberos one was asked for (#658).',
     spec: 'invalid_request (RFC 8693 section 2.2.2), HTTP 400' },
   { code: 'STS-OAUTH-0993',
-    summary: 'A Kerberos actor_token\'s client is not the exchanging client\'s ' +
-      'own service principal (#658). Every mode.',
+    summary: 'A Kerberos actor_token\'s client is not the exchanging ' +
+      'client\'s own service principal (#658). Every mode.',
     spec: 'invalid_request (RFC 8693 section 2.2.2), HTTP 400' },
   { code: 'STS-OAUTH-0994',
-    summary: 'A token exchange asked for a Kerberos requested_token_type while ' +
-      'oauth2.tokenExchangeKerberosOutput is off (#658).',
+    summary: 'A token exchange asked for a Kerberos requested_token_type ' +
+      'while oauth2.tokenExchangeKerberosOutput is off (#658).',
     spec: 'invalid_request (RFC 8693 section 2.2.2), HTTP 400' },
   { code: 'STS-OAUTH-0995',
     summary: 'A token exchange asked for a Kerberos token for more or fewer ' +
@@ -11713,8 +11713,8 @@ const CODES = [
       'section 11' },
   { code: 'STS-WSTRUST-0054',
     summary: 'A Kerberos token was presented to /sts as the requester\'s ' +
-      'credential or inside OnBehalfOf / ActAs while ' +
-      'wstrust.acceptKerberos is off (#658).',
+      'credential or inside OnBehalfOf / ActAs while wstrust.acceptKerberos ' +
+      'is off (#658).',
     spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
       'section 11 as the credential, wst:InvalidRequest inside an element' },
   { code: 'STS-WSTRUST-0055',
@@ -11725,78 +11725,72 @@ const CODES = [
       'section 11 as the credential, wst:InvalidRequest inside an element' },
   { code: 'STS-WSTRUST-0056',
     summary: 'The requester\'s Kerberos token was refused by the acceptor ' +
-      '(#658): not for this service\'s SPN, a bad key or Authenticator, ' +
-      'the clock, a replay, a withheld enctype. Every mode.',
+      '(#658): not for this service\'s SPN, a bad key or Authenticator, the ' +
+      'clock, a replay, a withheld enctype. Every mode.',
     spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
   { code: 'STS-WSTRUST-0057',
-    summary: 'The requester\'s Kerberos token names a person whose account is ' +
-      'disabled (#658). Every mode.',
+    summary: 'The requester\'s Kerberos token names a person whose account ' +
+      'is disabled (#658). Every mode.',
     spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
   { code: 'STS-WSTRUST-0058',
-    summary: 'The Kerberos token inside OnBehalfOf / ActAs was refused by the ' +
-      'acceptor (#658). Every mode.',
-    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
-      'section 11' },
+    summary: 'The Kerberos token inside OnBehalfOf / ActAs was refused by ' +
+      'the acceptor (#658). Every mode.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
   { code: 'STS-WSTRUST-0059',
     summary: 'The Kerberos ticket inside OnBehalfOf / ActAs was not obtained ' +
       'by Kerberos delegation: no S4U_DELEGATION_INFO in its PAC and not ' +
       'FORWARDED (#658, rcbj\'s decision D2). Every mode.',
-    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
-      'section 11' },
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
   { code: 'STS-WSTRUST-0060',
-    summary: 'The delegated Kerberos ticket\'s S4U_DELEGATION_INFO does not end ' +
-      'at the requester, or the request presented no credential beside it ' +
-      '(#658). Every mode.',
-    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
-      'section 11' },
+    summary: 'The delegated Kerberos ticket\'s S4U_DELEGATION_INFO does not ' +
+      'end at the requester, or the request presented no credential beside ' +
+      'it (#658). Every mode.',
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
   { code: 'STS-WSTRUST-0061',
     summary: 'The delegated Kerberos ticket was bought with a forwarded TGT ' +
       'and the requester is not trusted for unconstrained delegation ' +
       '(krb5TrustedForDelegation) (#658). Every mode.',
-    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
-      'section 11' },
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0062',
     summary: 'wst:TokenType asked for a Kerberos token while ' +
       'wstrust.issueKerberos is off (#658).',
-    spec: 'SOAP Fault wst:BadRequest (HTTP 500), WS-Trust 1.4 section ' +
-      '11' },
+    spec: 'SOAP Fault wst:BadRequest (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0063',
     summary: 'wst:TokenType asked for a Kerberos token on a request that did ' +
       'not arrive over TLS, and its session key is the proof token (#658, ' +
       'rcbj\'s decision D5).',
-    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
-      'section 11' },
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
   { code: 'STS-WSTRUST-0064',
     summary: 'wst:TokenType asked for a Kerberos token and the AppliesTo is ' +
       'not a Kerberos service: no application for it has an SPN@REALM ' +
       'identifier or a krb5ServicePrincipalName (#658).',
-    spec: 'SOAP Fault wst:BadRequest (HTTP 500), WS-Trust 1.4 section ' +
-      '11' },
+    spec: 'SOAP Fault wst:BadRequest (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0065',
     summary: 'wst:Delegatable asked for a forwarded TGT inside a Kerberos ' +
-      'token and the target is not trusted for unconstrained delegation, ' +
-      'or the subject may not be delegated (#658).',
-    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
-      'section 11' },
+      'token and the target is not trusted for unconstrained delegation, or ' +
+      'the subject may not be delegated (#658).',
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0066',
     summary: 'The KDC could not issue the ticket inside a requested Kerberos ' +
       'token (#658); its own code is in the log line beside this one.',
-    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 ' +
-      'section 11' },
+    spec: 'SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11' },
   { code: 'STS-WSTRUST-0067',
-    summary: 'A Renew or Cancel named a Kerberos token, which WS-Trust neither ' +
-      'renews nor cancels: its ticket is renewed at the KDC and the ' +
+    summary: 'A Renew or Cancel named a Kerberos token, which WS-Trust ' +
+      'neither renews nor cancels: its ticket is renewed at the KDC and the ' +
       'AP-REQ was good once (#658).',
-    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 ' +
-      'section 11' },
+    spec: 'SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section ' +
+      '11' },
   { code: 'STS-WSTRUST-0068',
     summary: 'A Validate named a Kerberos token the acceptor did not accept, ' +
       'or that was not checked because wstrust.acceptKerberos is off ' +
       '(#658).',
-    spec: 'HTTP 200 RSTR with wst:Status invalid, WS-Trust 1.4 section ' +
-      '7' },
+    spec: 'HTTP 200 RSTR with wst:Status invalid, WS-Trust 1.4 section 7' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -14343,13 +14337,13 @@ const CODES = [
     spec: 'none (a log line; the principal is unknown to the KDC)' },
   { code: 'STS-KRB-0244',
     summary: 'The KDC was asked to mint a ticket for the security token ' +
-      'service (#658) for a service, or with a krbtgt key, this realm ' +
-      'does not hold.',
+      'service (#658) for a service, or with a krbtgt key, this realm does ' +
+      'not hold.',
     spec: 'none (the caller answers its own protocol\'s refusal)' },
   { code: 'STS-KRB-0245',
     summary: 'The KDC was asked to mint a ticket for the security token ' +
-      'service (#658) and the target service holds no key of an enctype ' +
-      'the request named and the realm\'s mode permits.',
+      'service (#658) and the target service holds no key of an enctype the ' +
+      'request named and the realm\'s mode permits.',
     spec: 'none (the caller answers its own protocol\'s refusal)' },
   { code: 'STS-KRB-0246',
     summary: 'The KDC was asked to mint a ticket for the security token ' +
@@ -14368,13 +14362,13 @@ const CODES = [
   { code: 'STS-KRB-0249',
     summary: 'A Kerberos token presented to WS-Trust or the token exchange ' +
       '(#658) is empty, or is not the form its declared type names: not a ' +
-      'GSS InitialContextToken carrying an AP-REQ for a GSS type, or not ' +
-      'an RFC 4120 AP-REQ for a bare one.',
+      'GSS InitialContextToken carrying an AP-REQ for a GSS type, or not an ' +
+      'RFC 4120 AP-REQ for a bare one.',
     spec: 'none (the caller answers its own protocol\'s refusal)' },
   { code: 'STS-KRB-0250',
-    summary: 'The Kerberos acceptor threw, or answered nothing, for a Kerberos ' +
-      'token presented to WS-Trust or the token exchange (#658); the ' +
-      'token is refused.',
+    summary: 'The Kerberos acceptor threw, or answered nothing, for a ' +
+      'Kerberos token presented to WS-Trust or the token exchange (#658); ' +
+      'the token is refused.',
     spec: 'none (the caller answers its own protocol\'s refusal)' },
   { code: 'STS-KRB-0251',
     summary: 'A Kerberos token was asked for a service in another Kerberos ' +
@@ -14383,8 +14377,8 @@ const CODES = [
   { code: 'STS-KRB-0252',
     summary: 'A Kerberos token was asked for a service in another Kerberos ' +
       'realm (#658) and a realm on the way is served by no trust realm of ' +
-      'this process; no trust record carries a KDC address to send to, ' +
-      'and none is dialled.',
+      'this process; no trust record carries a KDC address to send to, and ' +
+      'none is dialled.',
     spec: 'none (the caller answers its own protocol\'s refusal)' },
   { code: 'STS-KRB-0253',
     summary: 'A Kerberos token was asked for a service in another Kerberos ' +

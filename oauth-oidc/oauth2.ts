@@ -18469,12 +18469,12 @@ class OAuth2Server {
           // way it then goes through tokenSet()'s narrowing like every other
           // grant — the client's declared scopes (#110), the roles (#302), and
           // RFC 9068's audience plan, which takes the OpenID Connect scopes off
-          // a token for another resource server. What survives is the response's
-          // `scope` member, left out when nothing did, and an ID Token comes
-          // back only when `openid` survived (idTokenFollowsIssuedScope).
-          // A requested scope the policy narrowed (#549) is the list that
-          // survived — empty included, so a dropped permission never brings
-          // the subject's own scope back in its place.
+          // a token for another resource server. What survives is the
+          // response's `scope` member, left out when nothing did, and an ID
+          // Token comes back only when `openid` survived
+          // (idTokenFollowsIssuedScope). A requested scope the policy narrowed
+          // (#549) is the list that survived — empty included, so a dropped
+          // permission never brings the subject's own scope back in its place.
           scope: exchangeScope !== null ? exchangeScope
             : String(subject.scope || ''),
           idTokenFollowsIssuedScope: true,
@@ -18486,45 +18486,46 @@ class OAuth2Server {
                                                   userFor(subject.username)),
           // Section 2.2.1's `refresh_token` member — and this flag is the ONLY
           // thing this branch decides about it. It is minted by the same
-          // refreshToken(), through the same tokenSet(), as the token every other
-          // grant here hands back, which is what makes "treat it as any other
-          // refresh token" true by construction rather than by six things having
-          // been remembered: the same `typ: 'Refresh'`, the same jti in the same
-          // revocation set, the same `oauth2.refreshTokenTtlS`, the same RFC 9700
-          // family bookkeeping and rotation on redemption, and the same
-          // confirmations — an exchange made with a DPoP proof or over a client
-          // certificate mints a BOUND refresh token, which is the whole of RFC
-          // 9449 section 5 and RFC 8705 section 3 on the long-lived half of a
-          // grant.
+          // refreshToken(), through the same tokenSet(), as the token every
+          // other grant here hands back, which is what makes "treat it as any
+          // other refresh token" true by construction rather than by six things
+          // having been remembered: the same `typ: 'Refresh'`, the same jti in
+          // the same revocation set, the same `oauth2.refreshTokenTtlS`, the
+          // same RFC 9700 family bookkeeping and rotation on redemption, and
+          // the same confirmations — an exchange made with a DPoP proof or over
+          // a client certificate mints a BOUND refresh token, which is the
+          // whole of RFC 9449 section 5 and RFC 8705 section 3 on the long-
+          // lived half of a grant.
           withRefresh: wantsRefresh,
-          // RFC 8707, reached through RFC 8693 section 2.1, and only relevant now
-          // that there is a refresh token to carry it: `resources` is what the
-          // refresh grant compares a renewal against, so an exchange addressed to
-          // one audience must not be renewable into a token carrying this
-          // service's default. A grant cannot widen itself by being renewed, and
-          // an exchange is a grant like the rest. The AUDIENCES go on it rather
-          // than `requestedResources` alone, because `aud` on the token being
-          // minted is the union of both and the two must not come to describe
-          // different resource servers.
+          // RFC 8707, reached through RFC 8693 section 2.1, and only relevant
+          // now that there is a refresh token to carry it: `resources` is what
+          // the refresh grant compares a renewal against, so an exchange
+          // addressed to one audience must not be renewable into a token
+          // carrying this service's default. A grant cannot widen itself by
+          // being renewed, and an exchange is a grant like the rest. The
+          // AUDIENCES go on it rather than `requestedResources` alone, because
+          // `aud` on the token being minted is the union of both and the two
+          // must not come to describe different resource servers.
           resources: wantsRefresh ? issuedAudiences : undefined,
           grant: 'token exchange'
         });
-        // RFC 8693 section 2.2.1: `issued_token_type` describes THE TOKEN IN THE
-        // `access_token` MEMBER, and that member holds an access token here
+        // RFC 8693 section 2.2.1: `issued_token_type` describes THE TOKEN IN
+        // THE `access_token` MEMBER, and that member holds an access token here
         // whatever was asked for — so it says access token even when a refresh
         // token was requested and came back beside it.
         //
-        // The other reading of section 2.1 is that a client asking for a refresh
-        // token should be handed one IN `access_token` with `issued_token_type`
-        // naming it — the section does say that member is called `access_token`
-        // for historical reasons and need not carry one. That is deliberately not
-        // what happens here. A client would then hold a `typ: 'Refresh'` JWT
-        // under the name every other grant in this service uses for the
-        // credential a resource server is presented with, and this service's own
-        // protected endpoints would refuse it. The refresh token goes where every
-        // other grant puts one, which is what "the same as any other refresh
-        // token" means, and the client gets both halves of a grant out of one
-        // exchange rather than a credential it has to know not to present.
+        // The other reading of section 2.1 is that a client asking for a
+        // refresh token should be handed one IN `access_token` with
+        // `issued_token_type` naming it — the section does say that member is
+        // called `access_token` for historical reasons and need not carry one.
+        // That is deliberately not what happens here. A client would then hold
+        // a `typ: 'Refresh'` JWT under the name every other grant in this
+        // service uses for the credential a resource server is presented with,
+        // and this service's own protected endpoints would refuse it. The
+        // refresh token goes where every other grant puts one, which is what
+        // "the same as any other refresh token" means, and the client gets both
+        // halves of a grant out of one exchange rather than a credential it has
+        // to know not to present.
         exchanged.issued_token_type = ACCESS_TOKEN_TYPE;
       }
 
