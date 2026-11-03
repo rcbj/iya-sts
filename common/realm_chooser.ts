@@ -520,8 +520,9 @@ class RealmChooser {
       'border-radius:8px;padding:.7em 1em;margin:0 0 1em;text-align:left}' +
       // The language chooser is small and sits above the question; it is the
       // one other control that works before a realm is chosen.
-      '.chooser form.language-chooser{font-size:.85rem;color:var(--muted);' +
-      'margin:0 0 1em}' +
+      '.chooser details.language-row{display:inline-block;' +
+      'font-size:.85rem;color:var(--muted);margin:0 0 1em}' +
+      PageLocale.ROW_CSS +
       '.chooser form.language-chooser select,' +
       '.chooser form.language-chooser button{font-size:.85rem;width:auto;' +
       'padding:.2em .5em;border-width:1px;border-radius:6px}' +

@@ -25,6 +25,7 @@ import helpers = require('../common/helpers');
 import authn = require('../authn/authn');
 import oidcRp = require('../common/oidc_rp');
 import realmChooser = require('../common/realm_chooser');
+import PageLocale = require('../common/page_locale');
 import errorCodes = require('../common/error_codes');
 import listenerMap = require('../common/listener_map');
 import ShellDocument = require('../common/shell_document');
@@ -73,7 +74,8 @@ const REPORT_STYLE = [
   '  padding: .3rem .45rem; font-size: .85em;',
   '  background: #f7f8fc; border: 1px solid #c9cad6;',
   '  border-radius: 8px; }',
-  '.topbar select, .topbar button, .topbar .usermenu > summary {',
+  '.topbar select, .topbar button, .topbar .usermenu > summary,',
+  '.topbar .language-row > summary {',
   '  font: inherit; padding: 2px 8px; border: 1px solid #c9c9d4;',
   '  border-radius: 5px; background: #fff; color: #222;',
   '  line-height: 1.4; }',
@@ -84,6 +86,9 @@ const REPORT_STYLE = [
   '  text-transform: uppercase; letter-spacing: .06em; }',
   '.topbar .language-chooser { display: flex; align-items: center;',
   '  gap: .35rem; margin: 0; }',
+  // The language chooser is a collapsed row (#1289), its form dropped down
+  // under the summary; the summary is one of the bar's controls above.
+  PageLocale.ROW_CSS,
   '.topbar .usermenu { margin-left: 0; }',
   // The realm field and switch (#986), on the console's `.realmpick`
   // shape made inline: the label before the control, the select taking
