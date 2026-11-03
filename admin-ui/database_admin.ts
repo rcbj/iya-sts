@@ -250,8 +250,11 @@ class DatabaseAdmin {
       // a database that has been running, and MEANINGLESS on one that has
       // just started — so the page reports the count and says which of the
       // two situations the reader is in rather than implying the first.
+      // An index with NO count (MariaDB keeps none, #677) is not called
+      // unused for it.
       unusedIndexes: indexes.filter(function (one) {
-        return Number(one.idx_scan || 0) === 0 && !one.is_primary;
+        return one.idx_scan !== undefined && one.idx_scan !== null &&
+          Number(one.idx_scan) === 0 && !one.is_primary;
       }).map(function (one) {
         return one.table_name + '.' + one.index_name;
       }),

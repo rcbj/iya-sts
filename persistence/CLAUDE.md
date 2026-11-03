@@ -193,6 +193,22 @@ probes) — the next steps of phase 3, each proved the same way before it is
 switched on. Refused on MariaDB, each for its own reason: cells, the bulk
 import, cell conversion, the directory window, the risk installer.
 
+**Opening a MariaDB store and `/admin/database` on it (#677, phase 3b).**
+`open()` hands a MariaDB store to `open_mariadb.js`: what exists is asked of
+`information_schema` for the current database, a missing object is created
+from `schema_mariadb.js` (the application role may not, and is refused
+STS-STORE-0029 naming `mariadb/schema.sql`; MariaDB 11.8 refuses such a role
+even `CREATE … IF NOT EXISTS` on an object that exists, so existence is
+asked first), there is no transaction (MariaDB commits DDL on its own) and
+nothing older to bring forward, the change log's density is
+`auto_increment_increment = 1` with `innodb_autoinc_lock_mode` 0 or 1
+(STS-STORE-0091), and the version row is recorded. `metrics()` sends
+`metrics_mariadb.js`'s probes under `max_statement_time`, the same groups
+and, where MariaDB keeps the same quantity, PostgreSQL's column names, so the
+page derives the same numbers; an index with no scan count is not called
+unused. `tests/open_mariadb.js` and `tests/database_metrics.js` hold both,
+every probe run as the least-privilege role against MariaDB 11.8.
+
 **A TRANSACTION IS STILL `BEGIN`/`COMMIT` ON ONE HELD CONNECTION**
 (`transactionOnce()`, `queryWithoutJit()`, the metrics client,
 `bulk_import.js`, `cell_convert.js`), not `knex.transaction()`: that runs its

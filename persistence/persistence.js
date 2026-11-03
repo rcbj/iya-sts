@@ -5407,7 +5407,9 @@ module.exports = {
       // that nothing else in this service makes — `tests/postgres_schema.js`
       // compares the driver against `postgres/schema.sql`, and neither of
       // them compares either against a running server.
-      const declared = require('./persistence_postgres');
+      // MariaDB's declared schema is its own module's (#677).
+      const declared = activeMode === 'mariadb'
+        ? require('./schema_mariadb') : require('./persistence_postgres');
       report.schemaVersion = declared.SCHEMA_VERSION;
       report.declaredObjects = declared.SCHEMA_OBJECTS.map(function (one) {
         return one.name;
