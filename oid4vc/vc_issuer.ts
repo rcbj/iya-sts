@@ -731,7 +731,7 @@ class VcIssuer {
       display: [{
         name: String(config.value('oid4vci.issuerDisplayName') || ''),
         locale: 'en-US',
-        logo: { uri: base + '/images/logo.png', alt_text: 'IdP Tools' }
+        logo: { uri: base + '/images/logo.png', alt_text: 'Iya STS' }
       }]
     };
     meta.credential_configurations_supported[VCI_CONFIG_ID] = {
@@ -812,7 +812,7 @@ class VcIssuer {
       }],
       // NOT the same list as the two above, and the difference is the format's
       // rather than a choice: an ldp_vc credential is signed over canonicalized
-      // JSON-LD, so it can only carry terms the vendored context defines. The
+      // JSON-LD, so it can only carry terms the identity context defines. The
       // claims a selection asks for and this format cannot express are named on
       // /admin/vc rather than being quietly missing here.
       claims: vcClaims.advertisedClaims('ldp_vc')
@@ -1761,7 +1761,7 @@ class VcIssuer {
   // context this process actually loaded rather than against a list.
   //
   // vc_claims.ts names a JSON-LD term per configurable attribute, and those
-  // names were read off contexts/idptools_identity_v1.json by hand. Two files
+  // names were read off contexts/iya_identity_v1.json by hand. Two files
   // agreeing by hand is a drift waiting to happen, and the way this one would
   // announce itself is the worst available: jsonld canonicalizes with `safe:
   // true`, so an undefined term THROWS, inside a cryptosuite, at the moment a
@@ -1787,9 +1787,10 @@ class VcIssuer {
     } catch (e) {
       log.debug("Caught in VcIssuer.identityContextTerms(): " +
                 ((e && e.message) || e));
-      // Cannot happen while the context is vendored — bbs2023.js reads it at
-      // require time and this service does not start without it — but a caught
-      // failure here costs one claim and an uncaught one costs the credential.
+      // Cannot happen while the context ships with the service — bbs2023.js
+      // reads it at require time and this service does not start without it
+      // — but a caught failure here costs one claim and an uncaught one costs
+      // the credential.
       log.error(errorCodes.tag('STS-VC-0004') +
                 'the identity JSON-LD context could not be read; no ' +
                 'configured claim will be put in an ldp_vc credential this ' +
@@ -1810,7 +1811,7 @@ class VcIssuer {
         log.error(errorCodes.tag('STS-VC-0005') +
                   'vc_claims.js maps a configured attribute to the JSON-LD ' +
                   'term "' + term +
-                  '", which contexts/idptools_identity_v1.json does not ' +
+                  '", which contexts/iya_identity_v1.json does not ' +
                   'define; it is left out of this credential rather than ' +
                   'failing the signature.');
         delete members[term];
@@ -1902,8 +1903,8 @@ class VcIssuer {
       // the document canonicalising differently than it did at signing — the
       // statements or the header differ — or the key: same statements, same
       // header, and a signature that does not verify under this public key.
-      // Both halves are here rather than in the vendored module, which may
-      // not be edited in this repository.
+      // Both halves are here rather than in bbs2023.js, which was a vendored
+      // copy when this was written and is kept a plain cryptosuite (#663).
       const signedStatements = (issued.statements || []) as string[];
       const checkedStatements = (check.statements || []) as string[];
       const differing = signedStatements.filter(function (one, i) {

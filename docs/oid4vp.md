@@ -603,7 +603,7 @@ check are the same in both modes. See
 | `oid4vp.kbMaxAgeS` | `OID4VP_KB_MAX_AGE_S` | `600` | yes | How old a Key Binding JWT's `iat` may be. |
 | `oid4vp.claims` | `OID4VP_CLAIMS` | `given_name,family_name` | yes | The Verifier's starting request, and what its Reset returns to. |
 | `oid4vp.maxRequestedClaims` | `OID4VP_MAX_REQUESTED_CLAIMS` | `40` | yes | The most claims the Verifier request page lets a request name. |
-| `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:idptools:sd-jwt-vc:identity` | yes | The `vct` required of a presented SD-JWT VC. |
+| `oid4vp.expectedVct` | `OID4VP_EXPECTED_VCT` | `urn:iya:sts:sd-jwt-vc:identity` | yes | The `vct` required of a presented SD-JWT VC. |
 | `oid4vp.trustedIssuerCertificates` | `OID4VP_TRUSTED_ISSUER_CERTIFICATES` | *(empty)* | yes | PEM certificates of other issuers whose signatures are accepted. |
 | `oid4vp.presentationRequestTtlS` | `OID4VP_PRESENTATION_REQUEST_TTL_S` | `600` | yes | How long a presentation request waits for a wallet's response. |
 | `oid4vp.maxTransactions` | `OID4VP_MAX_TRANSACTIONS` | `5000` | yes | How many waiting requests a realm keeps; past it the oldest is dropped. |

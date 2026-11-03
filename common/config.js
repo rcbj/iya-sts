@@ -10881,7 +10881,7 @@ const SETTINGS = [
   { key: 'oid4vci.issuerDisplayName', group: 'OID4VCI',
     label: 'Issuer display name',
     env: 'OID4VCI_ISSUER_DISPLAY_NAME', type: 'string',
-    dflt: 'IdP Tools Credential Issuer', runtime: true,
+    dflt: 'Iya STS Credential Issuer', runtime: true,
     description: 'The `display.name` of the credential issuer metadata — ' +
                  'what a wallet shows as who is offering the credential. The ' +
                  'credential configurations\' own display names and colours ' +
@@ -11468,7 +11468,7 @@ const SETTINGS = [
   { key: 'oid4vp.expectedVct', group: 'OID4VP',
     label: 'Expected SD-JWT VC type (vct)',
     env: 'OID4VP_EXPECTED_VCT', type: 'string',
-    dflt: 'urn:idptools:sd-jwt-vc:identity', runtime: true,
+    dflt: 'urn:iya:sts:sd-jwt-vc:identity', runtime: true,
     description: 'The `vct` the Verifier requires of a presented SD-JWT VC. ' +
                  'The default is the type this issuer mints; set it to ' +
                  'accept a credential another issuer mints under its own ' +

@@ -608,10 +608,11 @@ class VcClaims {
   // THROWS, and the throw arrives at issuance time inside a cryptosuite rather
   // than on this page.
   //
-  // The vendored context (contexts/idptools_identity_v1.json) is signed over,
+  // The identity context (contexts/iya_identity_v1.json) is signed over,
   // so it cannot be edited to add a term without invalidating every credential
-  // issued against the old one — which is exactly why it is vendored rather
-  // than fetched. So each row names the term to use in that format or null, and
+  // issued against the old one — which is exactly why it ships with the
+  // service rather than being fetched (#663 renamed it once, and did pay
+  // that price). So each row names the term to use in that format or null, and
   // vc_issuer.ts filters the subject through the context it actually loaded. A
   // selected attribute with no term is simply absent from an ldp_vc credential;
   // the page says which those are, because "the same configuration produces
