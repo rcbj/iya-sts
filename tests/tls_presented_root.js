@@ -10,9 +10,10 @@
 //
 // A Windows user reported that across fresh installs the Issuing CA and the
 // Intermediate differed and "the Root was the same". It never was: every
-// install builds its own Root, and every Root is called `CN=sts Root CA,
-// O=sts`. The TLS listeners sent the leaf, the Issuing CA and the Intermediate
-// and left the Root out (RFC 8446 section 4.4.2 allows that), so a client
+// install builds its own Root, and every Root is called `CN=iya-sts Root CA,
+// O=iya-sts` (`CN=sts Root CA, O=sts` before #1294). The TLS listeners sent
+// the leaf, the Issuing CA and the Intermediate and left the Root out
+// (RFC 8446 section 4.4.2 allows that), so a client
 // never handed the current Root saw only a NAME and matched it to an older
 // Root of that name. Since #1064 every reported chain ends with the Root,
 // completed in one place, `common/pki.js` `chainThroughRoot()`.
@@ -186,11 +187,12 @@ function sectionB(t) {
   const foreignLeaf = stsCrypto.selfSignedRsaCertificate(
     { commonName: 'foreign-leaf' });
   const foreignTop = stsCrypto.selfSignedRsaCertificate(
-    { commonName: 'sts Root CA' });
+    { commonName: 'iya-sts Root CA' });
   t.equal(pki.chainThroughRoot(foreignLeaf.certPem,
                                [foreignTop.certPem]).length, 2,
-          'a chain under somebody else\'s Root — even one CALLED "sts Root ' +
-          'CA" — is answered as it came: the Root is matched by signature');
+          'a chain under somebody else\'s Root — even one CALLED "iya-sts ' +
+          'Root CA" — is answered as it came: the Root is matched by ' +
+          'signature');
   const b64 = listener.chainPem.map(stsCrypto.stripPem);
   const fromB64 = pki.chainThroughRoot(stsCrypto.stripPem(listener.certPem),
                                        b64);

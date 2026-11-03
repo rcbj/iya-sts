@@ -56,7 +56,7 @@
   "ksFormatTip": "PEM：私密金鑰與公開金鑰（如果選取了物件，還有證書鏈）放在一個檔案中。DER：兩個二進位檔案，傳送的是其中的私密金鑰檔案 — 本服務不會為了傳送兩個檔案而加入 zip 相依套件，公開部分用一條 openssl 命令就能從私密金鑰中取得。JWK：一個 JWK 集。PKCS#12：一個受密碼保護的 .p12，包含金鑰及其證書鏈。",
   "includeChainTip": "將所選物件的完整證書鏈放入檔案，這樣 PKCS#12 才能作為身分而不是單獨的金鑰匯入。",
   "dnCnTip": "commonName（2.5.4.3）— 此證書的名稱。設定檔會填入它，並在設定檔變更時取代自己的預設值，但絕不取代您輸入的名稱。對於 TLS 伺服器，客戶端實際檢查的名稱在 subjectAltName 中，不在這裡。",
-  "dnOTip": "organizationName（2.5.4.10）— 主體所屬的組織。它取自 pki.organisation，也就是上方階層結構所攜帶的值，因為在路徑驗證程式看來，同一領域中分別寫著 O=Example 與 O=sts 的兩個證書屬於兩個組織。",
+  "dnOTip": "organizationName（2.5.4.10）— 主體所屬的組織。它取自 pki.organisation，也就是上方階層結構所攜帶的值，因為在路徑驗證程式看來，同一領域中分別寫著 O=Example 與 O=iya-sts 的兩個證書屬於兩個組織。",
   "dnEmailTip": "emailAddress（1.2.840.113549.1.9.1）— DN 中的舊式 PKCS#9 屬性。S/MIME 客戶端讀取的是 subjectAltName 中的 rfc822Name，因此僅在這裡填寫的地址只是裝飾。",
   "dnSerialTip": "名為 serialNumber 的 DN 屬性（2.5.4.5）。與第一欄中證書的序號無關。",
   "dnOrderNote": "依顯示的順序寫入 &mdash; 名稱是有序的 RDNSequence，重新排序的 DN 是另一個名稱，無法鏈結到任何東西。對於 TLS 伺服器，請注意客戶端檢查的名稱在 <code>subjectAltName</code> 中而不在這裡：目前所有瀏覽器都完全忽略 Common Name。",

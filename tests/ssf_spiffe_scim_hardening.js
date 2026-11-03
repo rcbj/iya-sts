@@ -256,7 +256,7 @@ async function caSubjectAndKeyType(t) {
     });
     const text = new crypto.X509Certificate(downstream.certificatePem).subject;
     t.check(/Acme SPIFFE downstream CA/.test(text) &&
-            !/O=sts\b|CN=sts SPIFFE/.test(text),
+            !/O=(iya-)?sts\b|CN=(iya-)?sts SPIFFE/.test(text),
             'a downstream CA\'s subject comes from spiffe.caSubject, with ' +
             '{kind} and {trustDomain} filled in', text);
   } catch (e) {

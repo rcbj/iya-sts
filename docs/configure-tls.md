@@ -117,9 +117,9 @@ between cells and the SPIFFE gRPC listeners. A remote XACML PEP's
 The Root arrives so that you can see which one it is. **Receiving it does not
 make your client trust it**: a client trusts only the Roots in its own store
 (RFC 5280 section 6.1). Every install builds its own Root, and every Root is
-named `CN=sts Root CA, O=sts`. A certificate viewer that shows only the name
-can make two installs look as if they share one Root. Compare thumbprints
-instead:
+named `CN=iya-sts Root CA, O=iya-sts` (`CN=sts Root CA, O=sts` for one built
+before #1294). A certificate viewer that shows only the name can make two
+installs look as if they share one Root. Compare thumbprints instead:
 
 ```bash
 openssl s_client -connect "$HOST:8081" -showcerts </dev/null 2>/dev/null \

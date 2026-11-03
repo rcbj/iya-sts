@@ -1450,8 +1450,9 @@ administrators of nothing.
 
 ### New settings, each defaulting to the literal it replaced
 
-`spiffe.caSubject` (`CN=sts SPIFFE {kind} ({trustDomain}),O=sts`, the
-self-signed fallback CA and every downstream CA), `spiffe.retainedAuthorities`
+`spiffe.caSubject` (`CN=iya-sts SPIFFE {kind} ({trustDomain}),O=iya-sts`
+since #1294, `O=sts` before it; the self-signed fallback CA and every
+downstream CA), `spiffe.retainedAuthorities`
 (4, min 2 — `MAX_RETAINED_AUTHORITIES` is a getter over it so the console's
 report follows), `spiffe.agentSvidTtl` (0, meaning `spiffe.svidTtl`),
 `spiffe.joinTokenTtl` (600), `spiffe.maxJoinTokens` (256, per realm),

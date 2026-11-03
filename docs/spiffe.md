@@ -743,7 +743,7 @@ are reconciled, which happens whenever one of the realm's settings changes.
 | `spiffe.jwtSvidTtl` | `STS_SPIFFE_JWT_SVID_TTL` | `300` | yes | The default JWT-SVID lifetime. |
 | `spiffe.agentSvidTtl` | `STS_SPIFFE_AGENT_SVID_TTL` | `0` | yes | The lifetime of an agent's SVID from AttestAgent and RenewAgent; 0 means `spiffe.svidTtl`. |
 | `spiffe.svidSubject` | `STS_SPIFFE_SVID_SUBJECT` | `C=US,O=SPIRE` | yes | The X.501 subject of every X509-SVID, SPIRE's own by default; it cannot be empty. |
-| `spiffe.caSubject` | `STS_SPIFFE_CA_SUBJECT` | `CN=sts SPIFFE {kind} ({trustDomain}),O=sts` | yes | The subject of the self-signed fallback authority and of every downstream CA. |
+| `spiffe.caSubject` | `STS_SPIFFE_CA_SUBJECT` | `CN=iya-sts SPIFFE {kind} ({trustDomain}),O=iya-sts` | yes | The subject of the self-signed fallback authority and of every downstream CA. |
 | `spiffe.retainedAuthorities` | `STS_SPIFFE_RETAINED_AUTHORITIES` | `4` | yes | How many self-signed X.509 and JWT authorities a rotation keeps in the bundle (at least 2). |
 | `spiffe.clockSkew` | `STS_SPIFFE_CLOCK_SKEW` | `60` | yes | How far out a caller's clock may be when its X509-SVID's validity is checked. |
 
