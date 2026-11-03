@@ -5,16 +5,16 @@
 // ---------------------------------------------------------------------------
 // DER for Kerberos v5's ASN.1 (RFC 4120 section 5).
 //
-// This is a purpose-built coder rather than a schema library, and the choice was
-// made deliberately after phase 0. `asn1js` is already a client dependency and
-// can express this grammar, but Kerberos's shape — every structure wrapped in an
-// `[APPLICATION n]` tag, every field of every SEQUENCE carrying an explicit
-// context tag, and a handful of types (`GeneralString`, `KerberosTime`,
-// `KerberosFlags`) that are really constrained aliases — means the schema
-// declarations end up longer than the code below, and a mismatch between a
-// schema and the RFC is harder to see than a mismatch between a function and the
-// RFC. The decoder page also needs a generic TLV tree for bytes it cannot
-// identify, which a schema-driven parser does not give you.
+// This is a purpose-built coder rather than a schema library, and the choice
+// was made deliberately after phase 0. `asn1js` is already a client dependency
+// and can express this grammar, but Kerberos's shape — every structure wrapped
+// in an `[APPLICATION n]` tag, every field of every SEQUENCE carrying an
+// explicit context tag, and a handful of types (`GeneralString`,
+// `KerberosTime`, `KerberosFlags`) that are really constrained aliases — means
+// the schema declarations end up longer than the code below, and a mismatch
+// between a schema and the RFC is harder to see than a mismatch between a
+// function and the RFC. The decoder page also needs a generic TLV tree for
+// bytes it cannot identify, which a schema-driven parser does not give you.
 //
 // Everything is synchronous and byte-exact. No crypto here.
 //
@@ -37,12 +37,13 @@
 //    do.
 //
 // The reader is BOUNDED — a maximum input size and a maximum nesting depth —
-// because the decoder page parses bytes a stranger pasted in, and a length field
-// is an attacker-controlled allocation.
+// because the decoder page parses bytes a stranger pasted in, and a length
+// field is an attacker-controlled allocation.
 // ---------------------------------------------------------------------------
 
 var prim = require("./krb5_primitives.js");
 var bunyan = require("bunyan");
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "krb5_asn1",
   level: (function () {
@@ -50,10 +51,15 @@ var log = bunyan.createLogger({
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
       // No CONFIG_FILE resolvable here — a node caller rather than a bundle.
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in krb5_asn1 log level: " + logLevelProblem);
+}
 
 var toBytes = prim.toBytes;
 var concat = prim.concat;
@@ -76,6 +82,8 @@ var TAG = {
 
 // [n] context-specific, constructed — which is what every named field of every
 // Kerberos SEQUENCE is.
+// A hot path: called once per field of every message, so no Entering/Leaving
+// pair here — it would drown the log.
 function contextTag(n) {
   if (n < 0 || n > 30) {
     throw new Error("krb5: context tag " + n + " out of range for this coder");
@@ -84,6 +92,8 @@ function contextTag(n) {
 }
 
 // [APPLICATION n], constructed.
+// A hot path: called once per message and every nested application structure,
+// so no Entering/Leaving pair here — it would drown the log.
 function applicationTag(n) {
   if (n < 0 || n > 30) {
     throw new Error("krb5: application tag " + n + " out of range for this " +
@@ -118,6 +128,8 @@ function applicationTag(n) {
 // Writing.
 // ---------------------------------------------------------------------------
 
+// A hot path: called once per element of every message encoded, so no
+// Entering/Leaving pair here — it would drown the log.
 function encodeLength(n) {
   if (n < 0x80) {
     return new Uint8Array([n]);
@@ -132,12 +144,16 @@ function encodeLength(n) {
 }
 
 // One tag-length-value.
+// A hot path: called once per element of every message encoded, so no
+// Entering/Leaving pair here — it would drown the log.
 function tlv(tag, value) {
   var v = toBytes(value);
   return concat([new Uint8Array([tag]), encodeLength(v.length), v]);
 }
 
 // Two's complement, minimal length. See the header note: negative values occur.
+// A hot path: called once per INTEGER of every message encoded, so no
+// Entering/Leaving pair here — it would drown the log.
 function integerContent(value) {
   if (typeof value !== "number" || !isFinite(value) ||
       Math.floor(value) !== value) {
@@ -159,22 +175,34 @@ function integerContent(value) {
   while (value < -Math.pow(2, 8 * n - 1)) n++;
   var m = value + Math.pow(2, 8 * n);
   bytes = new Array(n);
-  for (var i = n - 1; i >= 0; i--) { bytes[i] = m & 0xff; m = Math.floor(m / 256); }
+  for (var i = n - 1; i >= 0; i--) {
+    bytes[i] = m & 0xff;
+    m = Math.floor(m / 256);
+  }
   return new Uint8Array(bytes);
 }
 
+// A hot path: called once per INTEGER field of every message, so no
+// Entering/Leaving pair here — it would drown the log.
 function encInteger(value) { return tlv(TAG.INTEGER, integerContent(value)); }
+
+// A hot path: called once per OCTET STRING field of every message, so no
+// Entering/Leaving pair here — it would drown the log.
 function encOctetString(bytes) { return tlv(TAG.OCTET_STRING, toBytes(bytes)); }
 
 // KerberosString ::= GeneralString. Realms and principal name components are
 // this type, and they are case-sensitive on the wire: a realm is conventionally
 // upper case and a KDC will not fold it for you.
+// A hot path: called once per KerberosString of every message, so no
+// Entering/Leaving pair here — it would drown the log.
 function encGeneralString(text) { return tlv(TAG.GENERAL_STRING,
     prim.utf8(text)); }
 
 // KerberosFlags ::= BIT STRING (SIZE (32..MAX)). Always 32 bits here, no unused
 // bits. The value is given as a list of set bit numbers, counting from the most
 // significant bit of the first octet.
+// A hot path: called once per KerberosFlags field of every message, so no
+// Entering/Leaving pair here — it would drown the log.
 function encFlags(bitNumbers) {
   var bytes = new Uint8Array(4);
   (bitNumbers || []).forEach(function (bit) {
@@ -186,6 +214,8 @@ function encFlags(bitNumbers) {
   return tlv(TAG.BIT_STRING, concat([new Uint8Array([0]), bytes]));
 }
 
+// A hot path: called once per KerberosFlags field of every message, so no
+// Entering/Leaving pair here — it would drown the log.
 function flagsFromBits(bitNumbers) {
   var bytes = new Uint8Array(4);
   (bitNumbers ||
@@ -193,6 +223,8 @@ function flagsFromBits(bitNumbers) {
   return bytes;
 }
 
+// A hot path: called once per KerberosFlags field of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function bitsFromFlags(bytes) {
   var b = toBytes(bytes), out = [];
   for (var i = 0; i < b.length * 8; i++) {
@@ -210,6 +242,8 @@ function formatKerberosTime(date) {
     log.debug("Leaving formatKerberosTime().");
     throw new Error("krb5: not a date: " + date);
   }
+  // A hot path: called once per field of every KerberosTime formatted, so no
+  // Entering/Leaving pair here — it would drown the log.
   function two(n) { return (n < 10 ? "0" : "") + n; }
   log.debug("Leaving formatKerberosTime().");
   return String(d.getUTCFullYear()) + two(d.getUTCMonth() + 1) +
@@ -218,6 +252,8 @@ function formatKerberosTime(date) {
              two(d.getUTCSeconds()) + "Z";
 }
 
+// A hot path: called once per KerberosTime of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function parseKerberosTime(text) {
   var s = String(text);
   var m = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})Z$/.exec(s);
@@ -228,15 +264,21 @@ function parseKerberosTime(text) {
   return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]));
 }
 
+// A hot path: called once per KerberosTime of every message, so no
+// Entering/Leaving pair here — it would drown the log.
 function encKerberosTime(date) {
   return tlv(TAG.GENERALIZED_TIME, prim.utf8(formatKerberosTime(date)));
 }
 
+// A hot path: called once per SEQUENCE of every message encoded, so no
+// Entering/Leaving pair here — it would drown the log.
 function encSequence(items) { return tlv(TAG.SEQUENCE, concat(items)); }
 
 // A SEQUENCE whose fields are context-tagged, skipping the ones that are
 // absent. Every OPTIONAL field in this grammar is expressed by passing
 // undefined or null, which is what keeps the message builders readable.
+// A hot path: called once per SEQUENCE of every message encoded, so no
+// Entering/Leaving pair here — it would drown the log.
 function encTaggedSequence(fields) {
   var parts = [];
   fields.forEach(function (f) {
@@ -251,9 +293,16 @@ function encTaggedSequence(fields) {
   return encSequence(parts);
 }
 
+// A hot path: called once per application structure of every message encoded,
+// so no Entering/Leaving pair here — it would drown the log.
 function encApplication(n, inner) { return tlv(applicationTag(n), inner); }
+
+// A hot path: called once per context-tagged field of every message encoded, so
+// no Entering/Leaving pair here — it would drown the log.
 function encContext(n, inner) { return tlv(contextTag(n), inner); }
 
+// A hot path: called once per SEQUENCE OF of every message encoded, so no
+// Entering/Leaving pair here — it would drown the log.
 function encSequenceOf(items) { return encSequence(items); }
 
 // ---------------------------------------------------------------------------
@@ -264,6 +313,8 @@ function encSequenceOf(items) { return encSequence(items); }
 // buffer's own length claim.
 // ---------------------------------------------------------------------------
 
+// A hot path: called once per element of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function readTlv(bytes, offset, depth) {
   var b = toBytes(bytes);
   var at = offset || 0;
@@ -324,6 +375,8 @@ function readTlv(bytes, offset, depth) {
 }
 
 // Every element of a constructed value, in order.
+// A hot path: called once per constructed element of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function readChildren(value, depth) {
   var b = toBytes(value);
   var out = [];
@@ -339,6 +392,8 @@ function readChildren(value, depth) {
 // A context-tagged SEQUENCE reduced to a map from tag number to the element
 // INSIDE that tag. Explicit tagging means each [n] wraps exactly one element,
 // and unwrapping it here is what keeps the message readers short.
+// A hot path: called once per SEQUENCE of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function readTaggedSequence(value, depth) {
   var map = {};
   readChildren(value, depth).forEach(function (child) {
@@ -357,6 +412,8 @@ function readTaggedSequence(value, depth) {
   return map;
 }
 
+// A hot path: called once per field of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function expectTag(t, tag, what) {
   if (t.tag !== tag) {
     throw new Error("krb5: expected " + what + " (tag 0x" + tag.toString(16) +
@@ -365,6 +422,8 @@ function expectTag(t, tag, what) {
   return t;
 }
 
+// A hot path: called once per INTEGER field of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function decInteger(t) {
   expectTag(t, TAG.INTEGER, "an INTEGER");
   var b = t.value;
@@ -381,11 +440,15 @@ function decInteger(t) {
   return negative ? v - Math.pow(2, 8 * b.length) : v;
 }
 
+// A hot path: called once per OCTET STRING field of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function decOctetString(t) {
   expectTag(t, TAG.OCTET_STRING, "an OCTET STRING");
   return t.value;
 }
 
+// A hot path: called once per KerberosString of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function decGeneralString(t) {
   // GeneralString is what RFC 4120 specifies, but IA5String turns up in the
   // wild from implementations that took the "IA5 subset" note as licence.
@@ -405,17 +468,23 @@ function decGeneralString(t) {
   return s !== null ? s : decLatin1(t.value);
 }
 
+// A hot path: called once per KerberosTime of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function decKerberosTime(t) {
   expectTag(t, TAG.GENERALIZED_TIME, "a KerberosTime");
   return parseKerberosTime(decLatin1(t.value));
 }
 
+// A hot path: called once per string field of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function decLatin1(bytes) {
   var s = "";
   for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
   return s;
 }
 
+// A hot path: called once per KerberosFlags field of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function decFlags(t) {
   expectTag(t, TAG.BIT_STRING, "a KerberosFlags BIT STRING");
   if (t.value.length < 1) {
@@ -425,6 +494,8 @@ function decFlags(t) {
   return t.value.subarray(1);
 }
 
+// A hot path: called once per SEQUENCE OF of every message read, so no
+// Entering/Leaving pair here — it would drown the log.
 function decSequenceOf(t) {
   expectTag(t, TAG.SEQUENCE, "a SEQUENCE");
   return readChildren(t.value);
@@ -468,13 +539,17 @@ function readApplication(bytes, expectedNumber) {
 // decides whether a payload is a Kerberos request at all, and how the decoder
 // page picks which reader to run.
 function peekApplicationNumber(bytes) {
+  log.debug("Entering peekApplicationNumber().");
   var b = toBytes(bytes);
   if (b.length < 2) {
+    log.debug("Leaving peekApplicationNumber().");
     return null;
   }
   if ((b[0] & 0xe0) !== 0x60) {
+    log.debug("Leaving peekApplicationNumber().");
     return null;
   }
+  log.debug("Leaving peekApplicationNumber().");
   return b[0] & 0x1f;
 }
 
@@ -529,6 +604,8 @@ function describeTag(tag) {
 // Is this value plausibly a nested structure rather than opaque bytes? Used
 // only to decide whether to recurse for display; a wrong guess costs a prettier
 // tree, not correctness.
+// A hot path: called once per element of every tree the decoder page draws, so
+// no Entering/Leaving pair here — it would drown the log.
 function looksConstructed(t) {
   if ((t.tag & 0x20) === 0) {
     return false;
@@ -542,6 +619,7 @@ function looksConstructed(t) {
         children[children.length - 1].end === t.value.length;
   } catch (e) {
     // Not parseable as a sequence of elements: treat as opaque.
+    log.debug("Caught in looksConstructed(): " + ((e && e.message) || e));
     return false;
   }
 }
@@ -601,10 +679,10 @@ function renderPrimitive(t) {
       return String(decInteger(t));
     }
     if (t.tag === TAG.GENERAL_STRING || t.tag === TAG.IA5_STRING) {
-      log.debug("Leaving renderPrimitive().");
       // The reading decGeneralString() gives the protocol, so the tree view
       // shows the name the KDC will act on.
       var text = prim.fromUtf8(t.value);
+      log.debug("Leaving renderPrimitive().");
       return text !== null ? text : decLatin1(t.value);
     }
     if (t.tag === TAG.GENERALIZED_TIME) {
@@ -619,6 +697,7 @@ function renderPrimitive(t) {
   } catch (e) {
     // Fall through to hex: a value that does not decode as its tag claims is
     // exactly what the reader is here to show.
+    log.debug("Caught in renderPrimitive(): " + ((e && e.message) || e));
   }
   var hex = prim.toHex(t.value);
   log.debug("Leaving renderPrimitive().");
