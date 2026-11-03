@@ -65,6 +65,7 @@ var prim = require("./krb5_primitives.js");
 var asn1 = require("./krb5_asn1.js");
 var gss = require("./krb5_gss.js");
 var bunyan = require("bunyan");
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "krb5_spnego",
   level: (function () {
@@ -72,10 +73,15 @@ var log = bunyan.createLogger({
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
       // No CONFIG_FILE resolvable here — a node caller rather than a bundle.
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in krb5_spnego log level: " + logLevelProblem);
+}
 
 var toBytes = prim.toBytes;
 var concat = prim.concat;
@@ -503,6 +509,8 @@ function decodeNegotiationToken(bytes) {
       // Unreadable is worth reporting as the hex it is: the point of naming
       // the mechanism is to identify a client, and a broken OID identifies one
       // just as well as a valid one.
+      log.debug("Caught in decodeNegotiationToken(): " +
+          ((e && e.message) || e));
       oidText = "unreadable (" + prim.toHex(value.subarray(0, 16)) + "…)";
     }
     log.debug("Leaving decodeNegotiationToken(). Other mechanism.");

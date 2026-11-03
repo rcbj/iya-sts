@@ -3,49 +3,51 @@
 // File: krb5_gss.js
 //
 // ---------------------------------------------------------------------------
-// The GSS-API layer: RFC 4121, and the framing a Windows service actually expects.
+// The GSS-API layer: RFC 4121, and the framing a Windows service actually
+// expects.
 //
 // A bare AP-REQ is not what a service is given. What arrives is an RFC 2743
-// InitialContextToken — a `0x60` wrapper, the Kerberos mechanism OID, a two-byte
-// token id, and then the AP-REQ — and inside that AP-REQ's Authenticator sits a
-// checksum of **type 0x8003**, which is not a checksum of anything. It is a
-// structure carrying channel bindings and the GSS flags.
+// InitialContextToken — a `0x60` wrapper, the Kerberos mechanism OID, a
+// two-byte token id, and then the AP-REQ — and inside that AP-REQ's
+// Authenticator sits a checksum of **type 0x8003**, which is not a checksum of
+// anything. It is a structure carrying channel bindings and the GSS flags.
 //
-// **That checksum is the single most commonly botched field in Kerberos**, and it
-// fails in the least helpful way available: a service answers
-// KRB_AP_ERR_INAPP_CKSUM, or simply refuses the context, and nothing anywhere says
-// "your flags word is in the wrong byte order". So this file writes it out
+// **That checksum is the single most commonly botched field in Kerberos**, and
+// it fails in the least helpful way available: a service answers
+// KRB_AP_ERR_INAPP_CKSUM, or simply refuses the context, and nothing anywhere
+// says "your flags word is in the wrong byte order". So this file writes it out
 // explicitly, and tests/krb5_gss_tokens.js pins every byte of it.
 //
 // Three things here are the ones that go wrong:
 //
-//  * **0x8003's fields are LITTLE-endian.** The length, the flags, the delegation
-//    option and length — all of them, in a protocol whose every other integer is
-//    big-endian. Getting this wrong produces a flags word of 0x02000000 where
-//    0x00000002 was meant, i.e. a request for delegation where mutual
-//    authentication was intended.
-//  * **The Bnd field is sixteen ZERO bytes when there are no channel bindings**,
-//    not absent and not omitted. A token without it is malformed; a token with a
-//    hash of nothing in it is a different token.
-//  * **Per-message tokens are keyed by who is speaking.** An initiator signs with
-//    key usage 25 and seals with 24; an acceptor uses 23 and 22. Using the wrong
-//    pair produces a token the far end cannot verify, and the error names the
-//    checksum rather than the direction.
+//  * **0x8003's fields are LITTLE-endian.** The length, the flags, the
+//    delegation option and length — all of them, in a protocol whose every
+//    other integer is big-endian. Getting this wrong produces a flags word of
+//    0x02000000 where 0x00000002 was meant, i.e. a request for delegation where
+//    mutual authentication was intended.
+//  * **The Bnd field is sixteen ZERO bytes when there are no channel
+//    bindings**, not absent and not omitted. A token without it is malformed; a
+//    token with a hash of nothing in it is a different token.
+//  * **Per-message tokens are keyed by who is speaking.** An initiator signs
+//    with key usage 25 and seals with 24; an acceptor uses 23 and 22. Using the
+//    wrong pair produces a token the far end cannot verify, and the error names
+//    the checksum rather than the direction.
 //
-// This layer is deliberately SEPARATE from the AP-REQ itself (krb5_messages.js) so
-// that SPNEGO — which is a negotiation wrapper around exactly this token — is a
-// wrapper rather than a rewrite. That wrapper now exists: it is krb5_spnego.js,
-// and it holds RFC 4178 and nothing else. **Nothing here knows about it**, and
-// that is the seam working: the dependency runs one way (krb5_spnego.js requires
-// this file for the mechanism OID and for GSS_GetMIC, and this file requires
-// nothing of it), so the AP exchange is unchanged whether or not a negotiation
-// happened around it.
+// This layer is deliberately SEPARATE from the AP-REQ itself (krb5_messages.js)
+// so that SPNEGO — which is a negotiation wrapper around exactly this token —
+// is a wrapper rather than a rewrite. That wrapper now exists: it is
+// krb5_spnego.js, and it holds RFC 4178 and nothing else. **Nothing here knows
+// about it**, and that is the seam working: the dependency runs one way
+// (krb5_spnego.js requires this file for the mechanism OID and for GSS_GetMIC,
+// and this file requires nothing of it), so the AP exchange is unchanged
+// whether or not a negotiation happened around it.
 // ---------------------------------------------------------------------------
 
 var prim = require("./krb5_primitives.js");
 var asn1 = require("./krb5_asn1.js");
 var kcrypto = require("./krb5_crypto.js");
 var bunyan = require("bunyan");
+var logLevelProblem = null;
 var log = bunyan.createLogger({
   name: "krb5_gss",
   level: (function () {
@@ -53,10 +55,15 @@ var log = bunyan.createLogger({
       return require(process.env.CONFIG_FILE).logLevel || "info";
     } catch (e) {
       // No CONFIG_FILE resolvable here — a node caller rather than a bundle.
+      // No logger exists yet; reported on the line after it does.
+      logLevelProblem = (e && e.message) || String(e);
       return "info";
     }
   })()
 });
+if (logLevelProblem) {
+  log.debug("Caught in krb5_gss log level: " + logLevelProblem);
+}
 
 var toBytes = prim.toBytes;
 var concat = prim.concat;
@@ -90,15 +97,26 @@ var GSS_FLAG = {
 
 var CHECKSUM_TYPE_GSS = 0x8003;
 
-function le16(n) { return new Uint8Array([n & 0xff, (n >>> 8) & 0xff]); }
+function le16(n) {
+  log.debug("Entering le16().");
+  log.debug("Leaving le16().");
+  return new Uint8Array([n & 0xff, (n >>> 8) & 0xff]);
+}
+
 function le32(n) {
+  log.debug("Entering le32().");
+  log.debug("Leaving le32().");
   return new Uint8Array([n & 0xff, (n >>> 8) & 0xff, (n >>> 16) & 0xff,
       (n >>> 24) & 0xff]);
 }
+
 function readLe32(bytes, at) {
+  log.debug("Entering readLe32().");
+  log.debug("Leaving readLe32().");
   return ((bytes[at]) | (bytes[at + 1] << 8) | (bytes[at +
       2] << 16) | (bytes[at + 3] << 24)) >>> 0;
 }
+
 function be64(n) {
   // Sequence numbers are 64-bit big-endian. JavaScript numbers cover the range
   // any real exchange uses; the top four bytes are written explicitly rather
@@ -112,11 +130,14 @@ function be64(n) {
     (lo >>> 24) & 255, (lo >>> 16) & 255, (lo >>> 8) & 255, lo & 255
   ]);
 }
+
 function readBe64(bytes, at) {
+  log.debug("Entering readBe64().");
   var hi = ((bytes[at] << 24) | (bytes[at + 1] << 16) | (bytes[at +
       2] << 8) | bytes[at + 3]) >>> 0;
   var lo = ((bytes[at + 4] << 24) | (bytes[at + 5] << 16) | (bytes[at +
       6] << 8) | bytes[at + 7]) >>> 0;
+  log.debug("Leaving readBe64().");
   return hi * 0x100000000 + lo;
 }
 
@@ -189,7 +210,9 @@ function parseGssChecksum(bytes) {
     hasChannelBindings: !b.subarray(4,
         20).every(function (v) { return v === 0; }),
     flags: flags,
-    flagNames: Object.keys(GSS_FLAG).filter(function (name) { return flags & GSS_FLAG[name]; }),
+    flagNames: Object.keys(GSS_FLAG).filter(function (name) {
+      return flags & GSS_FLAG[name];
+    }),
     delegation: null
   };
   var at = 24;
@@ -214,12 +237,15 @@ function parseGssChecksum(bytes) {
 // The InitialContextToken (RFC 2743 section 3.1).
 //
 // Note the shape: this is NOT a normal DER SEQUENCE. It is `[APPLICATION 0]`
-// wrapping a bare OID followed by mechanism-defined bytes — the inner token is not
-// an ASN.1 element at all, which is why a general-purpose parser makes a mess of it.
+// wrapping a bare OID followed by mechanism-defined bytes — the inner token is
+// not an ASN.1 element at all, which is why a general-purpose parser makes a
+// mess of it.
 // ---------------------------------------------------------------------------
 function encodeInitialContextToken(tokId, innerBytes) {
+  log.debug("Entering encodeInitialContextToken().");
   var inner = concat([new Uint8Array(tokId), toBytes(innerBytes)]);
   var body = concat([KRB5_MECH_OID_DER, inner]);
+  log.debug("Leaving encodeInitialContextToken().");
   return concat([new Uint8Array([0x60]), asn1.encodeLength(body.length), body]);
 }
 
@@ -228,6 +254,7 @@ function decodeInitialContextToken(bytes) {
       toBytes(bytes).length);
   var b = toBytes(bytes);
   if (!b.length || b[0] !== 0x60) {
+    log.debug("Leaving decodeInitialContextToken().");
     throw new Error("krb5: not a GSS InitialContextToken — it must begin " +
         "with 0x60 (" +
       "[APPLICATION 0]), this begins with 0x" +
@@ -240,6 +267,7 @@ function decodeInitialContextToken(bytes) {
   var outer = asn1.readTlv(b, 0);
   var value = outer.value;
   if (value.length < KRB5_MECH_OID_DER.length) {
+    log.debug("Leaving decodeInitialContextToken().");
     throw new Error("krb5: the GSS token is too short to carry a mechanism " +
         "OID");
   }
@@ -255,6 +283,7 @@ function decodeInitialContextToken(bytes) {
         0x02]);
     var isSpnego = value.length >= spnegoOid.length &&
       prim.equalConstantTime(value.subarray(0, spnegoOid.length), spnegoOid);
+    log.debug("Leaving decodeInitialContextToken().");
     throw new Error("krb5: this GSS token names " +
       (isSpnego ? "the SPNEGO mechanism (1.3.6.1.5.5.2), which is a " +
           "NEGOTIATION around this one rather than this one. Decode it with " +
@@ -264,6 +293,7 @@ function decodeInitialContextToken(bytes) {
   }
   var rest = value.subarray(KRB5_MECH_OID_DER.length);
   if (rest.length < 2) {
+    log.debug("Leaving decodeInitialContextToken().");
     throw new Error("krb5: the GSS token carries no token id");
   }
   var id = [rest[0], rest[1]];
@@ -283,10 +313,10 @@ function decodeInitialContextToken(bytes) {
 // ---------------------------------------------------------------------------
 // Per-message tokens (RFC 4121 section 4.2).
 //
-// The key usage depends on WHO IS SPEAKING, which is the part that catches people:
-// an initiator signs with 25 and seals with 24, an acceptor with 23 and 22. The
-// wrong pair produces a token the far end cannot verify and an error that names the
-// checksum rather than the direction.
+// The key usage depends on WHO IS SPEAKING, which is the part that catches
+// people: an initiator signs with 25 and seals with 24, an acceptor with 23 and
+// 22. The wrong pair produces a token the far end cannot verify and an error
+// that names the checksum rather than the direction.
 // ---------------------------------------------------------------------------
 function usageFor(role, purpose) {
   log.debug("Entering usageFor().");
@@ -313,6 +343,8 @@ function usageFor(role, purpose) {
 // the acceptor, bit 1 that the message is sealed, bit 2 that an acceptor subkey
 // was used.
 function messageFlags(role, sealed, acceptorSubkey) {
+  log.debug("Entering messageFlags().");
+  log.debug("Leaving messageFlags().");
   return (role === "acceptor" ? 0x01 : 0x00) | (sealed ? 0x02 :
       0x00) | (acceptorSubkey ? 0x04 : 0x00);
 }
@@ -342,10 +374,12 @@ async function verifyMic(options) {
   var opts = options || {};
   var token = toBytes(opts.token);
   if (token.length < 16) {
+    log.debug("Leaving verifyMic().");
     throw new Error("krb5: a MIC token is at least 16 bytes, got " +
         token.length);
   }
   if (token[0] !== TOK_ID.MIC[0] || token[1] !== TOK_ID.MIC[1]) {
+    log.debug("Leaving verifyMic().");
     throw new Error("krb5: this is not a MIC token (its id is 0x" +
       prim.toHex(token.subarray(0, 2)) + ", expected 0404)");
   }
@@ -402,16 +436,19 @@ async function unwrap(options) {
   var opts = options || {};
   var token = toBytes(opts.token);
   if (token.length < 16) {
+    log.debug("Leaving unwrap().");
     throw new Error("krb5: a Wrap token is at least 16 bytes, got " +
         token.length);
   }
   if (token[0] !== TOK_ID.WRAP[0] || token[1] !== TOK_ID.WRAP[1]) {
+    log.debug("Leaving unwrap().");
     throw new Error("krb5: this is not a Wrap token (its id is 0x" +
       prim.toHex(token.subarray(0, 2)) + ", expected 0504)");
   }
   var header = token.subarray(0, 16);
   var flags = header[2];
   if (!(flags & 0x02)) {
+    log.debug("Leaving unwrap().");
     throw new Error("krb5: this Wrap token is not sealed (its flags say " +
         "integrity only), so there " +
       "is nothing to decrypt");
@@ -424,6 +461,7 @@ async function unwrap(options) {
   var plaintext = await profile.decrypt(opts.key, usageFor(senderRole, "seal"),
       unrotated);
   if (plaintext.length < 16 + ec) {
+    log.debug("Leaving unwrap().");
     throw new Error("krb5: the unwrapped plaintext is too short to contain " +
         "its own header");
   }
@@ -435,6 +473,7 @@ async function unwrap(options) {
   var mismatch = trailing[0] !== header[0] || trailing[1] !== header[1] ||
       trailing[2] !== header[2];
   if (mismatch) {
+    log.debug("Leaving unwrap().");
     throw new Error("krb5: the Wrap token's clear header does not match the " +
         "encrypted copy inside " +
       "it, so the header was altered in transit");
