@@ -812,6 +812,12 @@ CREATE TABLE IF NOT EXISTS sts_cluster_secrets (
   created_by text   NOT NULL DEFAULT '',
   created_at bigint NOT NULL);
 
+-- A NAMED LOCK AS A ROW (#677, schema version 30): the portable cluster
+-- statements lock a row here FOR UPDATE where the native ones take
+-- pg_advisory_xact_lock. `persistence/cluster_portable.js` argues it.
+CREATE TABLE IF NOT EXISTS sts_cluster_locks (
+  name text PRIMARY KEY);
+
 -- A VALUE THAT ONLY GOES UP (#46 section 2): a WebAuthn signature counter and
 -- the last RFC 6238 step spent, advanced by one conditional upsert so a lower
 -- value never overwrites a higher one. `cluster/cluster_counters.js` argues it.
@@ -1175,7 +1181,7 @@ CREATE TABLE IF NOT EXISTS sts_schema (
 -- WHAT VERSION OF THE ABOVE THIS IS. The driver writes the same row on open()
 -- and `tests/postgres_schema.js` checks that this number is its SCHEMA_VERSION,
 -- so the two cannot disagree about which schema is on disk.
-INSERT INTO sts_schema (version) VALUES (29) ON CONFLICT (version) DO NOTHING;
+INSERT INTO sts_schema (version) VALUES (30) ON CONFLICT (version) DO NOTHING;
 
 -- ---------------------------------------------------------------------------
 -- THE APPLICATION ROLE: READ AND WRITE THE ROWS, AND NOTHING ELSE.

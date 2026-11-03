@@ -2860,8 +2860,8 @@
     "text": "讀取全域數據庫密碼的 AWS 區域——此單元的區域，即其 Secrets Manager 複本所在處。空白表示金鑰加密金鑰的區域。"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "此程序向變更記錄詢問其他程序已提交內容的頻率。這才是「契約」，LISTEN/NOTIFY 提示只是在其之上的優化，因此這是通知遺失時——監聽器中斷、數據庫重新啟動——最壞情況下的收斂延遲，而一般延遲只有幾毫秒。設為五秒，是因為提示通常會先到達，較短的間隔除了增加查詢之外毫無益處；下限為 250ms。它也是 persistence.coordinate 中所述重送快取時間窗口的大小。"
+    "en": "0620a679e69c0d43",
+    "text": "此程序向變更記錄詢問其他程序已提交內容的頻率。這才是「契約」，LISTEN/NOTIFY 提示只是在其之上的優化，因此這是通知遺失時——監聽器中斷、數據庫重新啟動——最壞情況下的收斂延遲，而一般延遲只有幾毫秒。設為五秒，是因為提示通常會先到達，較短的間隔除了增加查詢之外毫無益處；下限為 250ms。當儲存不發出提示（persistence.sqlDialect 為 portable）而此項未設定時，間隔為一秒。它也是 persistence.coordinate 中所述重送快取時間窗口的大小。"
   },
   "persistence.changeLogRetentionS|description": {
     "en": "543e89bfaeba9cc3",

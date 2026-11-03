@@ -31,7 +31,11 @@ tables
 (`sts_cluster_nodes`, `sts_cluster_leases`, `sts_cluster_claims`,
 `sts_cluster_secrets`, `sts_cluster_counters`, `sts_cluster_windows`) are in
 `postgres/schema.sql` at schema version 5, beside `sts_change_readers`
-(`persistence/CLAUDE.md`).
+(`persistence/CLAUDE.md`). **Since #677 every coordination statement also has a
+portable form** (`persistence/cluster_portable.js`, used on an engine that is
+not PostgreSQL or with `persistence.sqlDialect=portable`), and the join lock
+is then a row of `sts_cluster_locks`; `persistence/CLAUDE.md` says what it
+covers.
 
 ## rcbj's decisions (2026-09-14)
 

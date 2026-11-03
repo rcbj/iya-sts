@@ -1411,6 +1411,7 @@ var config = {
   // --- Persistence -----------------------------------------------------
   persistence: {
     mode: "memory",                                        // Persistence mode; restart to apply
+    sqlDialect: "native",                                  // Cluster SQL dialect; restart to apply
     metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
     dataDir: "./data",                                     // Data directory; restart to apply
     databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply
