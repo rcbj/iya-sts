@@ -1839,6 +1839,10 @@
     "en": "5992e8bdddc060a8",
     "text": "NON-SPEC (#129). Ang mga DID at JWK thumbprint na naka-enroll para sa isang tao, bawat isa kasama ang label nito, kung sino ang nag-enroll nito at kung paano (pinatunayan ng wallet ng tao, o ayon sa value), at ang isang did:web kasama ang mga naka-pin na key nito (#693), katabi ng kung naka-on ang oid4vp.signInSelfIssued. Nag-e-enroll ng isa ayon sa value ang POST /admin-api/users/enrol-self-issued-subject, kinukuha ang dokumento ng isang did:web para i-pin ang mga key nito; inaalis ng /admin-api/users/remove-self-issued-subject ang isa. Sinasalamin ang Self-issued IDs block sa /admin/users page ng tao."
   },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "NON-SPEC (#1291). Bawat did:web na inilalathala ng realm na ito para sa isang tao: ang random na id nito, ang DID, ang address ng dokumento nito, kung sino ang may hawak ng susi nito (wallet, realm o download), ang kalagayan nito, at bawat bersyon kasama ang mga susi nito at kung ano ang nag-awtorisa rito, kailanman ay hindi isang pribadong susi. Ide-deactivate ng POST /admin-api/users/deactivate-published-did ang isa; hindi kailanman gumagawa o nagbabago ng isa ang administrator. Sinasalamin ang bloke ng Mga inilathalang DID sa pahinang /admin/users ng tao."
+  },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
     "text": "NON-SPEC (#127). Ang mga identity verification na naitala para sa isang tao, NAKA-PAGE (`page`, `per`), pinakabago muna: ang id ng bawat isa, source (admin, wallet, certificate), kung sino ang nagtala nito, ang verification element at ang mga claim na sinaklaw nito kasama ang mga na-verify na value, katabi ng mga bokabularyong pinagbubuuan ng isang record. Nagtatala ng isa ang POST /admin-api/users/record-verification; inaalis ng /admin-api/users/remove-verification ang isa. Sinasalamin ang Identity verifications block sa /admin/users page ng tao."

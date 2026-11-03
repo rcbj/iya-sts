@@ -1839,6 +1839,10 @@
     "en": "5992e8bdddc060a8",
     "text": "非規格端點（#129）。為某人註冊的 DID 與 JWK 指紋，各附其標籤、註冊者與註冊方式（由當事人的錢包證明，或依值），did:web 並附其固定的金鑰（#693），並說明 oid4vp.signInSelfIssued 是否開啟。POST /admin-api/users/enrol-self-issued-subject 以值註冊一個，並取得 did:web 的文件以固定其金鑰；/admin-api/users/remove-self-issued-subject 會將其移除。對應此人 /admin/users 頁面上的自我簽發 ID 區塊。"
   },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "非規格端點（#1291）。本領域為某人發布的每個 did:web：其隨機 id、DID、其文件位址、金鑰由誰持有（wallet、realm 或 download）、其狀態，以及每個版本及其金鑰與授權來源，從不包含私密金鑰。POST /admin-api/users/deactivate-published-did 停用其中一個；管理員從不建立或變更。對應當事人 /admin/users 頁面上的「已發布的 DID」區塊。"
+  },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
     "text": "非規格端點（#127）。為某人記錄的身分驗證，「分頁」呈現（`page`、`per`），最新的在前：每筆的 id、來源（admin、wallet、certificate）、記錄者、驗證元素以及其涵蓋的宣告與已驗證的值，旁邊附上建立紀錄所用的詞彙。POST /admin-api/users/record-verification 記錄一筆；/admin-api/users/remove-verification 會將其移除。對應此人 /admin/users 頁面上的身分驗證區塊。"

@@ -1839,6 +1839,10 @@
     "en": "5992e8bdddc060a8",
     "text": "非规范（#129）。为某人注册的 DID 和 JWK 指纹，每项附带其标签、注册者和注册方式（由此人的钱包证明，或按值），did:web 还附带其固定的密钥（#693），旁边显示 oid4vp.signInSelfIssued 是否打开。POST /admin-api/users/enrol-self-issued-subject 按值注册一个，并获取 did:web 的文档以固定其密钥；/admin-api/users/remove-self-issued-subject 将其删除。对应此人 /admin/users 页面上的“自签发 ID”块。"
   },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "非规范（#1291）。本领域为某人发布的每个 did:web：其随机 id、DID、其文档地址、密钥由谁持有（wallet、realm 或 download）、其状态，以及每个版本及其密钥和授权来源，从不包含私钥。POST /admin-api/users/deactivate-published-did 停用其中一个；管理员从不创建或更改。对应此人 /admin/users 页面上的“已发布的 DID”区块。"
+  },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
     "text": "非规范（#127）。为某人记录的身份验证核实记录，分页显示（`page`、`per`），最新的在前：每条记录的 id、来源（admin、wallet、certificate）、记录者、verification 元素以及其覆盖的声明及其已核实的值，旁边列出生成记录所用的词汇表。POST /admin-api/users/record-verification 记录一条；/admin-api/users/remove-verification 将其删除。对应此人 /admin/users 页面上的“身份核实”块。"

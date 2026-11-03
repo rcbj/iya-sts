@@ -1839,6 +1839,10 @@
     "en": "5992e8bdddc060a8",
     "text": "NON-SPEC (#129). Les DID et empreintes JWK enrôlés pour une personne, chacun avec son libellé, qui l’a enrôlé et comment (prouvé par le portefeuille de la personne, ou par valeur), et un did:web avec ses clés épinglées (#693), à côté de l’indication de l’activation de oid4vp.signInSelfIssued. POST /admin-api/users/enrol-self-issued-subject en enrôle un par valeur, en récupérant le document d’un did:web pour épingler ses clés ; /admin-api/users/remove-self-issued-subject en retire un. Reflète le bloc Self-issued IDs de la page /admin/users de la personne."
   },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "NON-SPEC (#1291). Chaque did:web que ce domaine publie pour une personne : son id aléatoire, le DID, l’adresse de son document, qui détient sa clé (wallet, realm ou download), son état, et chaque version avec ses clés et ce qui l’a autorisée, jamais une clé privée. POST /admin-api/users/deactivate-published-did en désactive un ; un administrateur n’en crée ni n’en modifie jamais. Reflète le bloc DID publiés de la page /admin/users de la personne."
+  },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
     "text": "NON-SPEC (#127). Les vérifications d’identité enregistrées pour une personne, PAGINÉES (`page`, `per`), de la plus récente à la plus ancienne : l’identifiant de chacune, sa source (admin, wallet, certificate), qui l’a enregistrée, l’élément de vérification et les revendications qu’il couvrait avec leurs valeurs vérifiées, à côté des vocabulaires à partir desquels un enregistrement est constitué. POST /admin-api/users/record-verification en enregistre une ; /admin-api/users/remove-verification en retire une. Reflète le bloc Identity verifications de la page /admin/users de la personne."

@@ -1839,6 +1839,10 @@
     "en": "5992e8bdddc060a8",
     "text": "NO ESTÁNDAR (#129). Los DID y las huellas JWK inscritos para una persona, cada uno con su etiqueta, quién lo inscribió y cómo (demostrado por la billetera de la persona, o por valor), y un did:web con sus claves fijadas (#693), junto a si oid4vp.signInSelfIssued está activado. POST /admin-api/users/enrol-self-issued-subject inscribe uno por valor, obteniendo el documento de un did:web para fijar sus claves; /admin-api/users/remove-self-issued-subject retira uno. Refleja el bloque Self-issued IDs de la página /admin/users de la persona."
   },
+  "stsmetadata.endpoints./admin-api/users/published-dids.what": {
+    "en": "718ff93473865428",
+    "text": "NO ESTÁNDAR (#1291). Cada did:web que este dominio publica para una persona: su id aleatorio, el DID, la dirección de su documento, quién guarda su clave (wallet, realm o download), su estado y todas las versiones con sus claves y lo que autorizó cada una, nunca una clave privada. POST /admin-api/users/deactivate-published-did desactiva uno; un administrador nunca crea ni cambia ninguno. Refleja el bloque DID publicados de la página /admin/users de la persona."
+  },
   "stsmetadata.endpoints./admin-api/users/verifications.what": {
     "en": "8c8fcf10feaa196a",
     "text": "NO ESTÁNDAR (#127). Las verificaciones de identidad registradas para una persona, PAGINADAS (`page`, `per`), de la más reciente a la más antigua: el id de cada una, su origen (admin, wallet, certificate), quién la registró, el elemento de verificación y las notificaciones que cubría con sus valores verificados, junto a los vocabularios con los que se crea un registro. POST /admin-api/users/record-verification registra una; /admin-api/users/remove-verification retira una. Refleja el bloque Identity verifications de la página /admin/users de la persona."

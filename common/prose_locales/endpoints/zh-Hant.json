@@ -955,6 +955,10 @@
     "en": "ec5770a23a0c10c0",
     "text": "單一個人的自行簽發（SIOPv2）主體"
   },
+  "endpoints.route./admin-api/users/published-dids.name": {
+    "en": "435edfcc1ed82c28",
+    "text": "單一個人已發布的 DID"
+  },
   "endpoints.route./admin-api/users/verifications.name": {
     "en": "aa12d03c659af2a0",
     "text": "單一個人的身分驗證紀錄"

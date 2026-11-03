@@ -238,6 +238,7 @@
   "endpoints.route./admin-api/ownership/:action.name": "Close an object to its owners, or open it again",
   "endpoints.route./admin-api/devices/monitor.name": "The device register, counted",
   "endpoints.route./admin-api/users/self-issued-subjects.name": "One person's self-issued (SIOPv2) subjects",
+  "endpoints.route./admin-api/users/published-dids.name": "One person's published DIDs",
   "endpoints.route./admin-api/users/verifications.name": "One person's identity verifications",
   "endpoints.route./admin-api/users/new.name": "New user form",
   "endpoints.route./admin-api/applications/new.name": "New application form",

@@ -955,6 +955,10 @@
     "en": "ec5770a23a0c10c0",
     "text": "单个人的自签发（SIOPv2）主体"
   },
+  "endpoints.route./admin-api/users/published-dids.name": {
+    "en": "435edfcc1ed82c28",
+    "text": "单个人已发布的 DID"
+  },
   "endpoints.route./admin-api/users/verifications.name": {
     "en": "aa12d03c659af2a0",
     "text": "单个人的身份验证记录"
