@@ -297,17 +297,20 @@ Taken from `sts_portal_signing_key.js` (the portal) and
 
 **Portal:** the person signs in to `/portal/signing-key` and, under **TLS
 client certificate**:
-1. Optionally names it after the browser or device (the job uses `laptop`),
-   and picks the key algorithm.
-2. Types **A password for the downloaded file** and **The same password
-   again**. This protects the key inside the file; it is not their account
-   password.
-3. Clicks **Generate and download my TLS client certificate**. The page is
-   drawn again with the `.p12` and the two PEM files at the head of that same
-   card, scrolled into view, and the person downloads them there. **That is
-   the only time the files can be downloaded.**
-4. Imports the `.p12` into a browser and opens `/tls/sign-in` there, choosing
-   the certificate when the browser asks.
+1. Optionally names it after the device (the job uses `laptop`), and picks the
+   key algorithm. No file password is asked for.
+2. Clicks **Generate my TLS client certificate**. The page is drawn again with
+   the new certificate's row scrolled into view, and that row carries two
+   downloads: **the private key** (`<name>-<label>-tls-client-key.pem`,
+   unencrypted PKCS#8) and **the certificate chain**
+   (`<name>-<label>-tls-client-chain.pem`, the leaf and the two CAs above it).
+   **That is the only time the files can be downloaded.**
+3. Presents them from a client that takes a key and a certificate, such as
+   `curl --cert <chain> --key <key> https://<host>:8081/tls/sign-in`.
+
+The portal offers no PKCS#12, so a browser cannot import what it hands out. A
+certificate for a browser is issued by an administrator, whose issue answers a
+password-protected `.p12` (below).
 
 A person may hold at most `pki.personTlsClientCertificateMax` valid ones (5 by
 default). The person can revoke one with **Revoke** on the same page; after

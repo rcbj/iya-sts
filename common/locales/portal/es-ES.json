@@ -25,8 +25,6 @@
   "codes.allUsed": "<strong>Ya ha usado todos los códigos.</strong> No le queda nada a lo que recurrir hasta que genere un conjunto nuevo.",
   "codes.turnedOff": "Los códigos de recuperación están desactivados en la política de autenticación de este dominio, así que no se puede generar ningún conjunto nuevo. Un conjunto ya guardado sigue funcionando: un ajuste que quitara la única forma de volver a entrar en una cuenta cuyo móvil se ha perdido sería el peor interruptor de todos.",
   "tls.labelPlaceholder": "portátil del trabajo",
-  "tlsFresh.mac1": "Abra el <code>{file}</code> descargado. Acceso a Llaveros ofrece añadirlo al llavero <em>inicio de sesión</em>.",
-  "tlsFresh.useChoose": "en el navegador en el que lo ha instalado y elija este certificado cuando se le pida. La respuesta indica si le ha iniciado sesión y como quién; luego vuelva a",
   "risc.stopping": "Ha pedido <strong>dejar de compartir</strong> eventos de seguridad, y eso surte efecto {hours} hora(s) después de pedirlo. Hasta entonces se siguen compartiendo, y puede cancelarlo.",
   "risc.notShared": "Los eventos de seguridad sobre su cuenta <strong>no se comparten</strong>, salvo el aviso de que ha dejado de participar.",
   "resetDone.ok": "Este enlace de restablecimiento ya se ha usado y no volverá a funcionar.",

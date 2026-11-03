@@ -24560,8 +24560,9 @@ const CODES = [
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0040',
     summary: 'A TLS client certificate was asked for with a file password ' +
-      'that is too short, too long, or not the same twice.',
-    spec: 'HTTP 400 page' },
+      'that is too short, too long, or not the same twice. Retired ' +
+      '2026-11-03 (#671): the portal asks for no file password.',
+    spec: 'HTTP 400 page', retired: true },
   { code: 'STS-PORTAL-0041',
     summary: 'A self-service TLS client certificate could not be issued ' +
       '(no certificate authority, a refused key algorithm or label, or the ' +
@@ -24569,8 +24570,10 @@ const CODES = [
     spec: 'HTTP 400 page' },
   { code: 'STS-PORTAL-0042',
     summary: 'A TLS client certificate was issued and its PKCS#12 and PEM ' +
-      'files could not be built; the certificate was revoked at once.',
-    spec: 'HTTP 500 page' },
+      'files could not be built; the certificate was revoked at once. ' +
+      'Retired 2026-11-03 (#671): the portal answers the key and chain as ' +
+      'issued, and builds nothing that can fail.',
+    spec: 'HTTP 500 page', retired: true },
   { code: 'STS-PORTAL-0047',
     summary: 'A person\'s own ACME account binding key or SCEP challenge password was not made on /portal/certificates (the enrollment core refused it; its own code is on the monitor row).',
     spec: 'HTTP 4xx page' },

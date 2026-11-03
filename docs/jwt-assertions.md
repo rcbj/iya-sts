@@ -175,9 +175,10 @@ should assert under some other name.
 
 They do not need you. **`/portal/signing-key`** in the user
 portal is the same act, performed by the person the key is for: they sign in,
-press *Generate my RFC 7523 signing key*, and the private half is shown once on
-the page that comes back — with the claims, the `kid` and the algorithm printed
-beside it, and a `curl` line to spend it with. The same page issues the RFC 7522
+press *Generate my RFC 7523 signing key*, and the page that comes back offers
+the private key and the certificate chain once, as two downloads in the card's
+*Certificate* row — with the claims, the `kid` and the algorithm printed under
+the table, and a `curl` line to spend it with. The same page issues the RFC 7522
 (SAML) key pair on a card of its own; see
 [SAML assertions](saml-assertions.md#a-person-can-be-the-issuer-too).
 
