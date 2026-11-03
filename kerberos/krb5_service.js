@@ -59,7 +59,7 @@ const { log } = require('../common/helpers');
 const config = require('../common/config');
 // The mode, from a module this file's closure already holds: `helpers.js` is
 // required on the line above and requires `mode.js` itself, so it adds no
-// file to the parent project's copy set.
+// file to what this file loads.
 const mode = require('../common/mode');
 const msgs = require('./krb5_messages.js');
 const kcrypto = require('./krb5_crypto.js');
@@ -86,11 +86,11 @@ const errorCodes = require('../common/error_codes');
 // THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" an Authenticator is
 // spent through after the replay cache below accepts it — see accept(), step
 // 7. A LIBRARY that registers no route and requires persistence lazily, so it
-// moves no route and closes no cycle. **IT IS ONE FILE ADDED TO THE PARENT
-// PROJECT'S COPY SET**, `cluster/cluster_claims.js`: everything it requires
-// (config, realms, error_codes, cluster_capabilities, and persistence lazily)
-// is already in that closure through `common/app.js`. kerberos/CLAUDE.md
-// records what is owed.
+// moves no route and closes no cycle. Everything it requires (config,
+// realms, error_codes, cluster_capabilities, and persistence lazily) is
+// already loaded through `common/app.js`. (History: it added one file,
+// `cluster/cluster_claims.js`, to the parent project's COPY set; nothing is
+// owed since #1280.)
 const clusterClaims = require('../cluster/cluster_claims');
 const capabilities = require('../cluster/cluster_capabilities');
 

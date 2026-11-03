@@ -34,8 +34,8 @@
 // that are not policy: the PAC check on an evidence ticket (CVE-2020-17049,
 // and the forged-evidence case behind it) and PA-S4U-X509-USER's encoding.
 // `krb5_kdc.js` requires it LAZILY, so a process that never sees an S4U
-// request never loads it (and the parent project's COPY closure, which
-// `kerberos/CLAUDE.md` tracks, is owed it only when it bumps past #186).
+// request never loads it (and, until #1280, the parent project's COPY
+// closure was owed it only once that project bumped past #186).
 //
 // A LIBRARY with no route and no store.
 // ===========================================================================

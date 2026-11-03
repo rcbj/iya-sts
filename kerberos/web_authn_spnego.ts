@@ -34,8 +34,8 @@
 //
 // A `web_` MODULE: it requires nothing and logs nothing. It sits beside
 // `spnego_authn.ts` and is reached only from the sign-in surface's page table
-// (`authn/web_authn_pages.ts`); no file of the parent project's COPY closure
-// requires it.
+// (`authn/web_authn_pages.ts`); none of `krb5_kdc.js`, `krb5_service.js`
+// and `spnego.js` requires it.
 // ---------------------------------------------------------------------------
 
 type Json = any;

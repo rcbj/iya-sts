@@ -34,8 +34,8 @@
 //
 // A STATIC UTILITY CLASS (#50's rule for helpers): no state, no dependencies
 // but the codec and the logger. A LIBRARY (rule 3): it registers nothing and
-// is reachable from none of `krb5_kdc.js`, `krb5_service.js` and `spnego.js`,
-// so the parent project's COPY set does not grow (kerberos/CLAUDE.md).
+// is reachable from none of `krb5_kdc.js`, `krb5_service.js` and `spnego.js`
+// (which kept it out of the parent project's COPY set, until #1280).
 // ===========================================================================
 
 import helpers = require('../common/helpers');

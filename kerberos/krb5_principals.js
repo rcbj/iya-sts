@@ -79,7 +79,7 @@ const kcrypto = require('./krb5_crypto.js');
 const prim = require('./krb5_primitives.js');
 // `common/crypto.js`, for the SHA-256 an on-demand RID is derived from (see
 // autoRidFor()). `helpers.js` below already requires it at load, so this
-// adds no file to the parent project's COPY set (#453).
+// adds no file to what this module loads (#453).
 const stsCrypto = require('../common/crypto');
 const { log } = require('../common/helpers');
 const config = require('../common/config');
@@ -89,11 +89,10 @@ const config = require('../common/config');
 const mode = require('../common/mode');
 // PER TRUST REALM SINCE 2026-09-15 — the store below is a partition per realm,
 // and this is also what `contextOf()` enters to build one. A LEAF that
-// registers no route, so this cannot move a route or join a cycle, and it was
-// already in the parent project's copy set before that change.
+// registers no route, so this cannot move a route or join a cycle.
 const realms = require('../common/realms');
-// ERROR CODES. A LEAF requiring nothing, already in the parent project's copy
-// set through common/audit.js. Only tag() is used: every failure here happens
+// ERROR CODES. A LEAF requiring nothing, already loaded through
+// common/audit.js. Only tag() is used: every failure here happens
 // while the principal database is built at require time, before a request or
 // an audit ring exists to hold a row.
 const errorCodes = require('../common/error_codes');
@@ -478,12 +477,12 @@ const DEV_PARTNER_DOMAIN_SID = 'S-1-5-21-2035427030-2118130302-1178042555';
 
 // ---------------------------------------------------------------------------
 // THE TRUSTS (#430), reached LAZILY and inside a `try`. `krb5_trusts.ts` is
-// required by nothing at load here, so the parent project's in-process
-// Kerberos jobs, which copy this file's closure, load it only on the first
-// cross-realm name — and a copy without it has no trusts and says so, rather
-// than failing at load. Its own requires are `common/` leaves already in that
-// closure; it reaches this file back lazily, which is why this is not a
-// cycle at load.
+// required by nothing at load here, so a process loads it only on the first
+// cross-realm name — and a process without it (the parent project's
+// in-process Kerberos jobs copied this file's closure, which kept it out
+// until #1280) has no trusts and says so, rather than failing at load. Its
+// own requires are `common/` leaves already loaded; it reaches this file back
+// lazily, which is why this is not a cycle at load.
 // ---------------------------------------------------------------------------
 let trustsMissingLogged = false;
 
@@ -2519,9 +2518,10 @@ function signedOutPrincipals() {
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 // THE AUTHENTICATOR REPLAY CACHE, DESCRIBED FROM HERE (#74, rule 3ap). It
-// lives in `krb5_service.js`, which is the parent project's and is not edited
-// in this repository, so it is described from outside and NOT COUNTED. That
-// module requires this one, so it is required lazily, when the page is drawn.
+// lives in `krb5_service.js`, which was the parent project's and not edited
+// in this repository until #1280, so it is described from outside and NOT
+// COUNTED (the arrangement stands). That module requires this one, so it is
+// required lazily, when the page is drawn.
 // Its value is the millisecond an authenticator was seen; the window is twice
 // `krb5.clockSkew`.
 // ---------------------------------------------------------------------------
@@ -2552,8 +2552,8 @@ cacheRegistry.register({
   },
   // What the acceptor's own pruneReplayCache() drops — an Authenticator
   // seen more than twice the clock skew ago — in every realm (#49 P5). The
-  // acceptor is the parent project's and may not be edited here; its map is
-  // exported, and this is the same test it applies.
+  // acceptor was the parent project's and not edited here until #1280; its
+  // map is exported, and this is the same test it applies.
   eject: function (now) {
     const service = require('./krb5_service.js');
     return cacheRegistry.realmMapEjector(realms, service.replayCache,
@@ -2648,13 +2648,12 @@ function withKeyCache(principal) {
 // credential store, which is `common/credentials.ts`; this file is required by
 // `krb5_kdc.js` at 15. A require from here to either would register every
 // `/ldap` route ahead of the KDC's own (rule 1). And the source requires THIS
-// file, so a require back closes a cycle. The third reason is not about route
-// order at all and is the one worth keeping: **the parent project's in-process
-// Kerberos jobs load this file, `krb5_kdc.js` and `krb5_service.js` and copy
-// their require closure into an image** — a require from here to the source
-// would drag `common/credentials.ts`, `common/keystore.js` and the directory
-// into that copy set for a feature those jobs never use. With the slot, the
-// closure is exactly what it was.
+// file, so a require back closes a cycle. The third reason is history: **the
+// parent project's in-process Kerberos jobs load this file, `krb5_kdc.js` and
+// `krb5_service.js` and copied their require closure into an image** — a
+// require from here to the source would have dragged `common/credentials.ts`,
+// `common/keystore.js` and the directory into that copy set for a feature
+// those jobs never use (an obligation until #1280; the slot stands).
 //
 // ONE OBJECT, VALIDATED WHOLE, for `admin.js`'s `setLogoutReader()` reason: a
 // source that answered services and not people would give a product KDC a
@@ -4472,8 +4471,9 @@ module.exports = {
 // one SPN `krb5.servicePrincipal` names, so advertising the list there sent a
 // browser at `https://localhost` to ask for `HTTP/localhost`, which it was
 // refused with nothing on the page saying why. A getter rather than a
-// require of `common/mode` in `spnego.js` and `spnego_exchange.js`, which are
-// in the parent project's COPY closure: this module already asks the mode.
+// require of `common/mode` in `spnego.js` and `spnego_exchange.js`, which
+// were in the parent project's COPY closure until #1280: this module already
+// asks the mode.
 // Named through a variable, as the properties above are, so the type checker
 // reads it as the same kind of computed property rather than a second export.
 const ADVERTISED_HOSTS_KEY = 'ADVERTISED_SERVICE_HOSTS';

@@ -57,17 +57,19 @@
 // whether a cross-realm path is acceptable (`pathProblem()`), and how
 // `transited` is written and read (`encodeTransited()`, `decodeTransited()`).
 // The KDC (`krb5_kdc.js`) and the principal database (`krb5_principals.js`)
-// reach it LAZILY, so the parent project's in-process Kerberos jobs, which
-// copy the closure of those two files, load it only when a cross-realm name
-// is asked about — and owe a COPY line for it, compiled (kerberos/CLAUDE.md).
+// reach it LAZILY, so a process loads it only when a cross-realm name is
+// asked about. (History: the parent project's in-process Kerberos jobs copy
+// the closure of those two files, and this file was owed to them as a COPY
+// line, compiled; nothing is owed since #1280.)
 //
 // THE DIRECTORY SLOT (rule 3e). `setDirectory()` is filled by
 // `ldap/ldap_server.js` with three functions over `ou=kerberosTrusts`. A
 // require from here to the directory would drag every `/admin/ldap/*` page
 // ahead of the KDC's routes (the directory is a JavaScript route module at
 // 21, the KDC at 15), and the directory's own require of this file closes
-// the other way round; and the parent's closure would gain the whole
-// directory for a feature its jobs do not drive. **WITHOUT A DIRECTORY** —
+// the other way round; and the parent's closure would have gained the whole
+// directory for a feature its jobs do not drive (an obligation until #1280).
+// **WITHOUT A DIRECTORY** —
 // an in-process test that never loads it, or the parent's jobs — the records
 // live in a per-realm map of this process (`realms.map()`), seeded the same
 // way on first read, so the development trust with PARTNER.COM still exists
@@ -84,7 +86,7 @@ import cacheRegistry = require('../common/cache_registry');
 import InstanceSlot = require('../common/instance_slot');
 import kcrypto = require('./krb5_crypto');
 // The vendored PAC codec (#430 Phase 2), for SID filtering: it requires only
-// the rest of the codec, which is already in the parent project's closure.
+// the rest of the codec, which the KDC already loads.
 import kpac = require('./krb5_pac');
 
 // A stored record, a directory row, a view: JSON this file wrote.
@@ -114,8 +116,8 @@ interface Krb5TrustsDeps {
   keystore: () => Json;
   principals: () => Json;
   // LAZILY too: the audit log, which every filtered ticket writes a row to
-  // (rcbj, 2026-10-19). Already in the parent's COPY closure through
-  // krb5_kdc.js; lazy so a register built in a test never reaches it at load.
+  // (rcbj, 2026-10-19). Already loaded through krb5_kdc.js; lazy so a
+  // register built in a test never reaches it at load.
   audit: () => Json;
 }
 

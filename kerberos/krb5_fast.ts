@@ -86,12 +86,12 @@
 // WHERE IT SITS. A LIBRARY (rule 3): it registers nothing. It is built by
 // `krb5_person_keys.ts`, which hands it to `krb5_principals.js` as part of the
 // KEY SOURCE — the slot `krb5_kdc.js` already reads — so the KDC reaches it
-// through `principals.preauthProvider()` and gains no require. That is the
-// parent project's constraint (kerberos/CLAUDE.md): `krb5_kdc.js`,
-// `krb5_service.js` and `spnego.js` are its files, and nothing here, nor
-// `common/credentials.ts`, joins the COPY set their require closure is. A
-// process without the key source (the parent's in-process jobs) has no FAST
-// and behaves exactly as before.
+// through `principals.preauthProvider()` and gains no require. That was the
+// parent project's constraint until #1280: nothing here, nor
+// `common/credentials.ts`, joined the COPY set that the require closure of
+// `krb5_kdc.js`, `krb5_service.js` and `spnego.js` was; the arrangement
+// stands. A process without the key source (the parent's in-process jobs)
+// has no FAST and behaves exactly as before.
 // ===========================================================================
 
 import helpers = require('../common/helpers');
