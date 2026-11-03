@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5081** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5094** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 171
+* [Federation (`STS-FED`)](#sts-fed) — 184
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 243
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 157
@@ -2775,6 +2775,19 @@ Raised from: federation/.
 | `STS-FED-0192` | A federated sign-in was refused after its step-up on risk, so the session the step-up's local second factor had started was ended through the ordinary sign-out (audit row, CAEP, back-channel Logout Tokens) and its cookie cleared: no session outlives a refused sign-in (#729). | none — the refusal's own page; logged |
 | `STS-FED-0193` | The session a refused step-up had started could not be ended (#729). The refusal stands. | none — logged |
 | `STS-FED-0194` | A held federated answer — the linking step, the step-up on risk or the newcomer's profile form — returned without the signer that verified it, so the signer's revocation could not be asked again and the step was refused rather than finished unchecked. | HTTP 500 page |
+| `STS-FED-0195` | An OpenID Connect partner's ID Token carries no sub, which OpenID Connect Core 1.0 section 2 makes REQUIRED, so it names nobody (#930). | HTTP 401 page |
+| `STS-FED-0196` | An OpenID Connect partner's ID Token carries no iat or no exp as a number; OpenID Connect Core 1.0 section 2 makes both REQUIRED (#930). | HTTP 401 page |
+| `STS-FED-0197` | An OpenID Connect partner's ID Token names an azp that is not this service's client_id there, or several audiences and no azp (OpenID Connect Core 1.0 section 3.1.3.7 steps 4 and 5, #930). | HTTP 401 page |
+| `STS-FED-0198` | An OpenID Connect partner's ID Token carries no nonce though this sign-in sent one (OpenID Connect Core 1.0 section 3.1.3.7 step 11, #930). It was accepted with a warning from the token endpoint until #930. | HTTP 401 page |
+| `STS-FED-0199` | An ID Token the partner's authorization endpoint sent beside a code carries no c_hash, or one that is not the code's (OpenID Connect Core 1.0 section 3.3.2.11, #930). The code was not redeemed. | HTTP 401 page |
+| `STS-FED-0200` | An ID Token sent beside an access token carries no at_hash, or an ID Token carries one that is not the access token's (OpenID Connect Core 1.0 sections 3.2.2.10 and 3.3.2.11, #930). | HTTP 401 page |
+| `STS-FED-0201` | The ID Token the partner's authorization endpoint sent and the one its token endpoint returned for the code name a different issuer or subject (OpenID Connect Core 1.0 section 3.3.3.6, #930). | HTTP 401 page |
+| `STS-FED-0202` | An OpenID Connect partner's UserInfo endpoint answered for a sub other than the ID Token's (OpenID Connect Core 1.0 section 5.3.2), so the sign-in was refused (#930). | HTTP 401 page |
+| `STS-FED-0203` | A relationship that reads its partner's discovery document (fedDiscovery) could not fetch it, or it is not a JSON object, or it names no authorization_endpoint or jwks_uri (OpenID Connect Discovery 1.0 section 3, #930). | HTTP 502 page |
+| `STS-FED-0204` | A partner's discovery document names an issuer other than the relationship's fedPeer, so nothing in it was used (OpenID Connect Discovery 1.0 section 4.3, #930). | HTTP 502 page |
+| `STS-FED-0205` | A sign-in a partner started at /federation/initiate-login/{id} was refused because the relationship does not accept one (fedInitiateLogin off, #930). | HTTP 403 page |
+| `STS-FED-0206` | A sign-in started at /federation/initiate-login/{id} named no iss, or an iss other than the relationship's fedPeer (OpenID Connect Core 1.0 section 4, #930). | HTTP 400 page |
+| `STS-FED-0207` | An OpenID Connect relationship whose response type includes token was answered with no access_token (#930). | HTTP 400 page |
 
 ## STS-OIDFED
 

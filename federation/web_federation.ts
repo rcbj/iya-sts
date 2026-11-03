@@ -505,6 +505,10 @@ class FederationPage {
              'fedMayAssertAdministrators', 'fedAllowUnsolicited',
              'fedSignRequest', 'fedAcceptSignout', 'fedRequireSignedLogout']
               .concat(json.encrypts ? ['fedAllowUnencrypted'] : [])
+              // OpenID Connect's discovery and partner-started sign-in
+              // (#930), both off by default.
+              .concat(row.protocol === 'oidc'
+                ? ['fedDiscovery', 'fedInitiateLogin'] : [])
           : []).map(function (name) {
         const field = json.schema.filter(
             function (f) { return f.name === name; })[0];
