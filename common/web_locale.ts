@@ -438,14 +438,68 @@ class WebLocale {
         (one.tag === selected ? ' selected' : '') + '>' +
         WebLocale.esc(one.name) + '</option>';
     }).join('');
-    return '<form class="language-chooser" method="post" action="' +
+    const chosen = offered.filter(function (one) {
+      return one.tag === selected;
+    })[0];
+    return WebLocale.row(t.html('chooser.label'), chosen,
+      '<form class="language-chooser" method="post" action="' +
       WebLocale.esc(CHOOSER_ACTION) + '">' +
       '<input type="hidden" name="return" value="' + WebLocale.esc(here) +
       '"><label for="sts-language">' + t.html('chooser.label') +
       '</label> <select id="sts-language" name="lang">' + drawn +
       '</select> <button type="submit">' + t.html('chooser.change') +
-      '</button></form>';
+      '</button></form>');
   }
+
+  // THE CHOOSER IS A COLLAPSED ROW (#1289, rcbj, 2026-11-03): a `<details>`
+  // whose summary says the page's language, by its own name, and opens to
+  // the form. Every page with a chooser draws it this way — the portal's own
+  // copy (`portal/web_portal_shell.ts`) calls this too — so the row looks and
+  // behaves the same wherever a person meets it. A `<details>` needs no
+  // script, so a server-drawn page gets the same row as a static surface.
+  // The summary needs no new words: the catalog's *Language* and the
+  // language's endonym, which no catalog translates.
+  /**
+   * Wraps a chooser's form in the collapsed row.
+   *
+   * @param labelHtml - the translated *Language*, as HTML
+   * @param current - the offered locale the page is read in, or undefined
+   * @param formHtml - the chooser's form
+   * @returns the row's HTML
+   */
+  static row(labelHtml: string, current: OfferedLocale | undefined,
+             formHtml: string): string {
+    return '<details class="language-row"><summary><span class="lr-label">' +
+      labelHtml + '</span>' + (current
+        ? ' <span class="lr-current" lang="' + WebLocale.esc(current.tag) +
+          '">' + WebLocale.esc(current.name) + '</span>'
+        : '') + '</summary>' + formHtml + '</details>';
+  }
+
+  // The row's look, for every stylesheet that places a chooser: the summary
+  // as a quiet control with its own disclosure mark, and the form, when
+  // open, DROPPED DOWN under it rather than in the flow — a header laid out
+  // as a flex row (the portal's, the reports' top bar) would otherwise grow
+  // and shift every control beside it. Where a page floated the form right,
+  // it floats the ROW now (`details.language-row{float:right}` in that
+  // page's own sheet).
+  /**
+   * The collapsed row's CSS.
+   */
+  static readonly ROW_CSS =
+    'details.language-row{font-size:.85em;position:relative}' +
+    'details.language-row>summary{cursor:pointer;list-style:none;' +
+    'padding:2px 6px;border-radius:6px;white-space:nowrap}' +
+    'details.language-row>summary::-webkit-details-marker{display:none}' +
+    'details.language-row>summary::before{content:"\\25B8\\00A0"}' +
+    'details.language-row[open]>summary::before{content:"\\25BE\\00A0"}' +
+    'details.language-row .lr-label{opacity:.7}' +
+    'details.language-row .lr-current{font-weight:600}' +
+    'details.language-row form.language-chooser{float:none;display:flex;' +
+    'align-items:center;gap:6px;margin:0;position:absolute;right:0;' +
+    'top:100%;z-index:30;white-space:nowrap;background:#fff;color:#222;' +
+    'border:1px solid #c9cad6;border-radius:8px;padding:8px 10px;' +
+    'box-shadow:0 4px 14px rgba(0,0,0,.14)}';
 
   /**
    * Escapes text for HTML, as `Html.esc()` does.

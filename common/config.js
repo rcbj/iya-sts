@@ -7047,6 +7047,22 @@ const SETTINGS = [
                  'revoking an older certificate somebody may still be using. ' +
                  'Issuing one is also held to pki.personSelfService and to ' +
                  'the two self-service rate limits above.' },
+  // AND FOR A PERSON'S SIGNING KEY PAIRS (#1290, rcbj, 2026-11-03): the RFC
+  // 7523 and RFC 7522 key pairs on /portal/signing-key hold several per
+  // profile now, the TLS card's way, and this is that card's cap again —
+  // per profile, valid key pairs only (`common/person_assertions.js`).
+  { key: 'pki.personSigningKeyMax', group: 'PKI',
+    label: 'Signing key pairs one person may hold per profile',
+    env: 'STS_PKI_PERSON_SIGNING_KEY_MAX', type: 'int', dflt: 5,
+    min: 1, max: 100, runtime: true,
+    description: 'How many still-valid assertion signing key pairs one ' +
+                 'person may hold for EACH profile — RFC 7523 (JWT) and RFC ' +
+                 '7522 (SAML 2.0) are counted separately — whether issued ' +
+                 'on the user portal, issued by an administrator or ' +
+                 'uploaded. A revoked or expired key pair does not count. ' +
+                 'Past it the portal replaces its Generate button with a ' +
+                 'note and every door refuses (STS-PKI-0223) rather than ' +
+                 'revoking an older key pair somebody may still be using.' },
   // THE SAME CAP FOR AN APPLICATION (2026-09-13), which holds one to
   // authenticate at the token endpoint under RFC 8705 section 2.1 and to bind
   // its tokens under section 3. A setting of its own because the reason for
@@ -17484,7 +17500,7 @@ const SETTINGS = [
   // -------------------------------------------------------------------------
   { key: 'persistence.mode', group: 'Persistence', label: 'Persistence mode',
     env: 'STS_PERSISTENCE_MODE', type: 'enum',
-    enumValues: ['memory', 'ldif', 'postgres'], dflt: 'memory',
+    enumValues: ['memory', 'ldif', 'postgres', 'mariadb'], dflt: 'memory',
     runtime: false,
     restartReason: 'the store is opened and read before the listener binds',
     description: 'Where the embedded directory, the trust realm registry and ' +
@@ -17495,7 +17511,12 @@ const SETTINGS = [
                  'which is the local-development answer and needs no ' +
                  'database. postgres writes a set of tables ' +
                  '(postgres/schema.sql lists them) and is the shared ' +
-                 'store. WHAT THIS SERVICE MINTS — sessions, tokens, codes, ' +
+                 'store. mariadb is the same store on MariaDB ' +
+                 '(mariadb/schema.sql), a second engine the test suite ' +
+                 'runs against: persistence.databaseUrl is then a ' +
+                 'mariadb:// address, the mysql2 package must be installed, ' +
+                 'and what needs PostgreSQL itself (cells, the bulk ' +
+                 'import, the directory window) is refused. WHAT THIS SERVICE MINTS — sessions, tokens, codes, ' +
                  'artifacts, Kerberos principals, the replay caches, the ' +
                  'counters and the audit log — is persisted in PRODUCT mode ' +
                  'on postgres and in no other configuration; see ' +
@@ -17505,6 +17526,33 @@ const SETTINGS = [
                  'nothing. The ldif store holds none of it in either mode ' +
                  'and says so at startup, because it writes whole files per ' +
                  'flush.' },
+
+  // ---------------------------------------------------------------------
+  // WHICH SQL THE POSTGRES STORE SPEAKS FOR CLUSTER COORDINATION (#677).
+  // `native` is PostgreSQL's own statements; `portable` is the statements a
+  // second engine (MariaDB) runs, sent to PostgreSQL so the suite proves
+  // them on the reference engine. Restart-only: the driver chooses its
+  // statements when it is built.
+  // ---------------------------------------------------------------------
+  { key: 'persistence.sqlDialect', group: 'Persistence',
+    label: 'Cluster SQL dialect',
+    env: 'STS_PERSISTENCE_SQL_DIALECT', type: 'enum',
+    enumValues: ['native', 'portable'], dflt: 'native',
+    runtime: false,
+    restartReason: 'the store driver chooses its statements when it is built',
+    description: 'Which statements a postgres store sends to coordinate ' +
+                 'several processes: the claims, leases, counters, rate ' +
+                 'windows, budgets, write fences, the cluster join lock, ' +
+                 'the heartbeat and the change-log trim. native is ' +
+                 'PostgreSQL\'s own (conditional upserts, advisory locks, ' +
+                 'LISTEN/NOTIFY) and is what production runs. portable is ' +
+                 'the statements a second database engine runs (plain ' +
+                 'inserts that do nothing on a duplicate, row locks in ' +
+                 'sts_cluster_locks, and no change notification, so the ' +
+                 'change log is polled every second unless ' +
+                 'persistence.pollInterval is set); it exists so the test ' +
+                 'suite can prove that code on PostgreSQL. Both are correct; ' +
+                 'portable costs more statements per operation.' },
 
   // ---------------------------------------------------------------------
   // HOW LONG A METRICS PROBE MAY RUN (2026-09-11), for `/admin/database`.
@@ -18030,8 +18078,10 @@ const SETTINGS = [
                  'is lost — a dropped listener, a database restart — and the ' +
                  'typical lag is a few milliseconds. Five seconds because ' +
                  'the nudge normally arrives first and a shorter interval ' +
-                 'buys nothing but queries; 250ms is the floor. It is also ' +
-                 'the size of the replay-cache window described under ' +
+                 'buys nothing but queries; 250ms is the floor. Where the ' +
+                 'store sends no nudge (persistence.sqlDialect portable) ' +
+                 'and this is not set, the interval is one second. It is ' +
+                 'also the size of the replay-cache window described under ' +
                  'persistence.coordinate.' },
 
   // Added 2026-09-14 (#46 section 8): `sts_changes` was never trimmed.

@@ -111,6 +111,7 @@ stsModeEnv()
 STS_MODE=development
 STS_PERSISTENCE_MODE=memory
 STS_PERSISTENCE_COORDINATE=false
+STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0
 STS_WORKERS_SURFACE_COUNT=0
 STS_WORKERS_DISPATCH=
@@ -154,6 +155,37 @@ EOF
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
+STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
+STS_WORKERS_DISPATCH=*
+STS_WORKERS_READ_YOUR_WRITE=true
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=off
+STS_PROXY_PROTOCOL=off
+STS_TEST_FRESH_CONNECTIONS=0
+STS_TEST_CLUSTER_NODES=1
+STS_TEST_BULK_LAST=0
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
+EOF
+      ;;
+    mariadb)
+      # THE SINGLE-NODE PRODUCTION DEPLOYMENT ON MARIADB (#677) — ASKED FOR
+      # BY NAME ONLY: `--modes=mariadb`, like `cells`, and NOT in
+      # STS_ALL_MODES. Every value `single-node` names, with
+      # `persistence.mode=mariadb`: the store is the database `sts_store` on
+      # the stack's `mariadb` server, built by the layer's one-shot from
+      # mariadb/schema.sql (tests/docker-compose-run-tests-mariadb.yml).
+      # PostgreSQL stays this service's primary store (rcbj on #677); this
+      # mode is the suite run against the second engine, and a failure here
+      # and not in `single-node` is a finding about the MariaDB driver.
+      cat <<'EOF'
+STS_MODE=product
+STS_PERSISTENCE_MODE=mariadb
+STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
 STS_WORKERS_SURFACE_COUNT=1
 STS_WORKERS_DISPATCH=*
@@ -224,6 +256,39 @@ EOF
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
+STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
+STS_WORKERS_DISPATCH=*
+STS_WORKERS_READ_YOUR_WRITE=true
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=active-active
+STS_PROXY_PROTOCOL=v2
+STS_TEST_FRESH_CONNECTIONS=1
+STS_TEST_CLUSTER_NODES=2
+STS_TEST_BULK_LAST=1
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
+EOF
+      ;;
+    cluster-portable)
+      # THE `cluster` MODE ON THE PORTABLE STATEMENTS (#677) — ASKED FOR BY
+      # NAME ONLY: `--modes=cluster-portable`, like `cells`, and NOT in
+      # STS_ALL_MODES. The same two product nodes active-active on one
+      # postgres, every value `cluster` names, and one more:
+      # `persistence.sqlDialect=portable`, so both nodes coordinate through
+      # the statements MariaDB runs (persistence/cluster_portable.js) —
+      # inserts that do nothing on a duplicate, row locks in
+      # sts_cluster_locks, no LISTEN/NOTIFY and a one-second poll. A failure
+      # here and not in `cluster` is a finding about the portable
+      # statements, which is exactly what rcbj asked this mode to find before
+      # a second database exists.
+      cat <<'EOF'
+STS_MODE=product
+STS_PERSISTENCE_MODE=postgres
+STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=portable
 STS_WORKERS_REQUEST_COUNT=3
 STS_WORKERS_SURFACE_COUNT=1
 STS_WORKERS_DISPATCH=*
@@ -266,6 +331,7 @@ EOF
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
 STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0
 STS_WORKERS_SURFACE_COUNT=0
 STS_WORKERS_DISPATCH=
@@ -296,7 +362,9 @@ stsModeDescription()
   case "$1" in
     memory)   echo "one process, nothing persisted, nothing coordinated — the baseline" ;;
     single-node) echo "a single-node production deployment: product mode, postgres, 3 request workers + 1 surface worker, read-your-write" ;;
+    mariadb)  echo "the single-node production deployment with its store on MariaDB (#677): persistence.mode=mariadb, the database sts_store on the stack's mariadb server — by name only (--modes=mariadb)" ;;
     cluster)  echo "a multi-node production deployment: 2 such nodes active-active on one postgres, behind an L4 load balancer, a new connection per request" ;;
+    cluster-portable) echo "the cluster mode on the portable coordination statements a second database engine runs (#677): no LISTEN/NOTIFY, lock rows, a one-second poll — by name only (--modes=cluster-portable)" ;;
     cells)    echo "two cells of one service (#98): cella (us) and cellb (ca), product mode, each on its own postgres over a shared global-tier postgres, the inter-cell channel between them — by name only (--modes=cells)" ;;
     *)        echo "unknown" ;;
   esac
@@ -349,6 +417,7 @@ stsModeTimeout()
 {
   case "$1" in
     cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
+    cluster-portable) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
     single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-4800}" ;;
     *)       echo "${STS_BASE_MODE_TIMEOUT:-3000}" ;;
   esac
@@ -365,7 +434,20 @@ stsModeTimeout()
 stsModeIsCluster()
 {
   case "$1" in
-    cluster) return 0 ;;
+    cluster|cluster-portable) return 0 ;;
+    *)       return 1 ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# Whether a mode keeps its store on MARIADB (#677): which compose layer is
+# added (tests/docker-compose-run-tests-mariadb.yml) and which one-shot is
+# not attached. Asked as the two questions below it are.
+# ---------------------------------------------------------------------------
+stsModeIsMariadb()
+{
+  case "$1" in
+    mariadb) return 0 ;;
     *)       return 1 ;;
   esac
 }

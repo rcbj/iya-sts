@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "Cuántos certificados de cliente TLS aún válidos puede emitirse una persona en el portal de usuario — uno por navegador o dispositivo. Un certificado revocado o caducado no cuenta. Por encima, el portal rechaza (STS-PKI-0170) en lugar de revocar un certificado anterior que alguien puede seguir usando. La emisión también está sujeta a pki.personSelfService y a los dos límites de frecuencia de autoservicio de arriba."
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "Pares de claves de firma que una persona puede tener por perfil"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "Cuántos pares de claves de firma de aserciones todavía válidos puede tener una persona para CADA perfil —RFC 7523 (JWT) y RFC 7522 (SAML 2.0) se cuentan por separado—, ya se hayan emitido en el portal de usuario, los haya emitido un administrador o se hayan subido. Un par de claves revocado o caducado no cuenta. Al superarlo, el portal sustituye su botón Generar por una nota y todas las puertas lo rechazan (STS-PKI-0223) en lugar de revocar un par de claves anterior que alguien todavía puede estar usando."
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "Certificados de cliente TLS por aplicación"
@@ -9644,12 +9652,24 @@
     "text": "Modo de persistencia"
   },
   "persistence.mode|description": {
-    "en": "3b1c6fa9ec185404",
-    "text": "Dónde se escriben el directorio integrado, el registro de dominios de confianza y las anulaciones de appconfig en tiempo de ejecución. memory no escribe nada y es lo que este servicio siempre hizo — todo desaparece al reiniciar. ldif escribe un archivo RFC 2849 por dominio más dos archivos JSON en persistence.dataDir, que es la respuesta para desarrollo local y no necesita base de datos. postgres escribe un conjunto de tablas (postgres/schema.sql las lista) y es el almacén compartido. LO QUE ESTE SERVICIO ACUÑA —sesiones, tokens, códigos, artefactos, principales de Kerberos, las cachés de reproducción, los contadores y el registro de auditoría— se persiste en modo PRODUCTO sobre postgres y en ninguna otra configuración; consulte persistence.minted. El modo de desarrollo no persiste nada de ello, porque allí la clave de firma se regenera en cada arranque y un token que la sobreviviera no se verificaría contra nada. El almacén ldif no guarda nada de ello en ningún modo y lo indica al arrancar, porque escribe archivos completos en cada volcado."
+    "en": "9017af2918cf94be",
+    "text": "Dónde se escriben el directorio integrado, el registro de dominios de confianza y las anulaciones de appconfig en tiempo de ejecución. memory no escribe nada y es lo que este servicio siempre hizo — todo desaparece al reiniciar. ldif escribe un archivo RFC 2849 por dominio más dos archivos JSON en persistence.dataDir, que es la respuesta para desarrollo local y no necesita base de datos. postgres escribe un conjunto de tablas (postgres/schema.sql las lista) y es el almacén compartido. mariadb es el mismo almacén sobre MariaDB (mariadb/schema.sql), un segundo motor contra el que se ejecuta la batería de pruebas: persistence.databaseUrl es entonces una dirección mariadb://, el paquete mysql2 debe estar instalado y lo que necesita el propio PostgreSQL (las celdas, la importación masiva, la ventana del directorio) se rechaza. LO QUE ESTE SERVICIO ACUÑA —sesiones, tokens, códigos, artefactos, principales de Kerberos, las cachés de reproducción, los contadores y el registro de auditoría— se persiste en modo PRODUCTO sobre postgres y en ninguna otra configuración; consulte persistence.minted. El modo de desarrollo no persiste nada de ello, porque allí la clave de firma se regenera en cada arranque y un token que la sobreviviera no se verificaría contra nada. El almacén ldif no guarda nada de ello en ningún modo y lo indica al arrancar, porque escribe archivos completos en cada volcado."
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
     "text": "el almacén se abre y se lee antes de que se vincule la escucha"
+  },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "Dialecto SQL del clúster"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "Las sentencias que un almacén postgres envía para coordinar varios procesos: las reclamaciones, los arrendamientos, los contadores, las ventanas de limitación de tasa, los presupuestos, las barreras de escritura, el bloqueo de unión al clúster, el latido y el recorte del registro de cambios. native son las propias de PostgreSQL (upserts condicionales, bloqueos consultivos, LISTEN/NOTIFY) y es lo que ejecuta producción. portable son las sentencias que ejecuta un segundo motor de base de datos (inserciones simples que no hacen nada ante un duplicado, bloqueos de fila en sts_cluster_locks y ninguna notificación de cambios, por lo que el registro de cambios se consulta cada segundo salvo que persistence.pollInterval esté definido); existe para que la batería de pruebas pueda comprobar ese código en PostgreSQL. Ambos son correctos; portable cuesta más sentencias por operación."
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "el controlador del almacén elige sus sentencias al construirse"
   },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
@@ -9920,8 +9940,8 @@
     "text": "Intervalo de sondeo de cambios (ms)"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "Cada cuánto este proceso pregunta al registro de cambios qué han confirmado otros procesos. Esto es el CONTRATO y el aviso LISTEN/NOTIFY es solo una optimización sobre él, así que este es el retraso de convergencia en el peor caso cuando se pierde una notificación —una escucha caída, un reinicio de la base de datos—, y el retraso típico es de unos pocos milisegundos. Cinco segundos porque el aviso normalmente llega primero y un intervalo más corto no aporta nada más que consultas; 250ms es el mínimo. También es el tamaño de la ventana de la caché de reproducción descrita en persistence.coordinate."
+    "en": "0620a679e69c0d43",
+    "text": "Con qué frecuencia este proceso pregunta al registro de cambios qué han confirmado otros procesos. Este es el CONTRATO, y el aviso LISTEN/NOTIFY es solo una optimización sobre él, así que este es el retraso de convergencia en el peor caso cuando se pierde una notificación —un oyente caído, un reinicio de la base de datos— y el retraso habitual es de unos pocos milisegundos. Cinco segundos porque el aviso normalmente llega primero y un intervalo más corto no compra más que consultas; 250 ms es el mínimo. Cuando el almacén no envía aviso (persistence.sqlDialect portable) y esto no está definido, el intervalo es de un segundo. También es el tamaño de la ventana de la caché contra repeticiones descrita en persistence.coordinate."
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",

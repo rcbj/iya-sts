@@ -124,6 +124,15 @@ const errorCodes = require('../common/error_codes');
 // A LEAF with no requires: the three-way merge a directory upsert is written
 // through when another node has changed the row (#46 section 3).
 const directoryMerge = require('./directory_merge');
+// The engines this store's SQL is compiled for (#677). A LEAF; Knex is
+// required lazily inside its create().
+const sqlDialect = require('./sql_dialect');
+// The cluster's statements without PostgreSQL's features (#677). A LIBRARY,
+// built in create() only when they are used.
+const clusterPortable = require('./cluster_portable');
+// The smaller tables' statements and the change log's, the same way (#677).
+// A LIBRARY, built in create() only when they are used.
+const storePortable = require('./store_portable');
 // The directory's lookups as SQL (#349): one builder for this driver and the
 // bridge's thread. A leaf.
 const directoryQueries = require('./directory_queries');
@@ -286,7 +295,17 @@ const CHANGE_ROWS_PER_STATEMENT = 5000;
 // report's sealed pieces, so a report is never one value in any process's
 // heap. A row of `sts_report_artifacts` written before it still holds its
 // whole body and is still read.
-const SCHEMA_VERSION = 29;
+// 30 SINCE 2026-11-03 (#677): `sts_cluster_locks`, a row per named lock,
+// locked FOR UPDATE by the portable cluster statements in place of
+// `pg_advisory_xact_lock` (`persistence/cluster_portable.js`). Empty and
+// unread on a store that runs the native statements.
+// 31 SINCE 2026-11-03 (#1290): `sts_ldap_entries_asked_names` rebuilt with
+// `stsassertionkeypair` and `stssamlassertionkeypair` among the asked names
+// in place of `stsassertionjwks` and `stssamlassertioncertificate`: a
+// person's RFC 7523 and RFC 7522 key pairs are several records per profile
+// now, and `person_assertions.js` asks for their holders by the new names.
+// The same advisory step as 27 and 28, looking for the newest name.
+const SCHEMA_VERSION = 31;
 // How many times a directory flush re-reads the data-key rows and tries
 // again when a locked row is sealed under a key this process does not hold
 // yet, and the pause between tries (2026-10-27; saveDirectory()).
@@ -297,8 +316,10 @@ const SEALED_FLUSH_RETRY_PAUSE_MS = 200;
 // cluster block in SCHEMA_OBJECTS for why no process's own clock is used.
 // `clock_timestamp()` and not `now()`: `now()` is the START of the transaction,
 // and a lease checked late in a long transaction must be checked against when
-// the check ran.
-const DB_NOW = '(extract(epoch from clock_timestamp()) * 1000)::bigint';
+// the check ran. ONE copy since #677: the dialect module holds each
+// engine's statement clock, and this is PostgreSQL's, spliced into the
+// hand-written statements as it always was.
+const DB_NOW = sqlDialect.NOW.postgres;
 
 // ---------------------------------------------------------------------------
 // GIVING CLAIMS BACK, SEVERAL AT ONCE (#628, 2026-10-14): each row pinned to
@@ -1208,6 +1229,13 @@ const SCHEMA_OBJECTS = [
   '  material   text   NOT NULL,' +
   '  created_by text   NOT NULL DEFAULT \'\',' +
   '  created_at bigint NOT NULL)' },
+  // `sts_cluster_locks` — A NAMED LOCK AS A ROW (#677, schema version 30).
+  // The portable cluster statements lock a row here FOR UPDATE where the
+  // native ones take `pg_advisory_xact_lock`: a row lock ends with its
+  // transaction on every engine, and MariaDB's GET_LOCK() does not.
+  { name: 'sts_cluster_locks', statement:
+  'CREATE TABLE IF NOT EXISTS sts_cluster_locks (' +
+  '  name text PRIMARY KEY)' },
   // `sts_cluster_counters` — A VALUE THAT ONLY GOES UP (2026-09-14, #46
   // section 2): a WebAuthn signature counter, the last RFC 6238 time step a
   // person spent. One `INSERT … ON CONFLICT DO UPDATE … WHERE value < new`
@@ -1912,11 +1940,15 @@ const SCHEMA_UPGRADES = [
   // dropped and built again from SCHEMA_OBJECTS' statement. Advisory: on a
   // large store the build takes minutes and locks writes, which is the
   // owner's call (`postgres/schema.sql`), not a start-up's.
-  { name: 'sts_ldap_entries_asked_names_v28', table: 'sts_ldap_entries',
-    advisory: true, issue: '#1028',
+  // And again for #1290 (schema version 31), whose names replace two: a
+  // definition still spelling `stsassertionjwks` answers "nobody" for the
+  // new key pair records.
+  { name: 'sts_ldap_entries_asked_names_v31', table: 'sts_ldap_entries',
+    advisory: true, issue: '#1290',
     when: 'EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = ' +
           '\'sts_ldap_entries_asked_names\' AND (position(\'stsbackupcodes\' ' +
           'in indexdef) = 0 OR position(\'pwdaccountlockedtime\' in ' +
+          'indexdef) = 0 OR position(\'stsassertionkeypair\' in ' +
           'indexdef) = 0))',
     statements: ['DROP INDEX IF EXISTS sts_ldap_entries_asked_names',
       SCHEMA_OBJECTS.filter(function (object) {
@@ -3270,14 +3302,21 @@ const ORIGIN_RETAIN_MS = 24 * 60 * 60 * 1000;
  * string's `sslmode` does not decide it (none, `require`, `prefer`)
  * @param [ca] - PEM text of the certificates trusted for this connection in
  * place of node's default store, or '' for that store
+ * @param [engine] - 'postgres' (the default) or 'mariadb' (#677)
  * @returns `{ connectionString, ssl, refused, verifyChain, verifyHostname }`;
  * `refused` is '' or why the string is not dialled (it would be in the
  * clear, or cannot be told); `verifyChain` and `verifyHostname` say what is
  * checked of the server's certificate
  */
-function dialOptions(url, verifyTls, ca) {
+function dialOptions(url, verifyTls, ca, engine) {
   const raw = String(url || '');
-  if (/(^|[?&\s])sslmode\s*=\s*(disable|allow)\b/i.test(raw)) {
+  const mariadb = engine === 'mariadb';
+  // A MariaDB string spells "no TLS" as `ssl=false` or `ssl-mode=DISABLED`
+  // (#677); refused for the reason `sslmode=disable` is.
+  if (/(^|[?&\s])sslmode\s*=\s*(disable|allow)\b/i.test(raw) ||
+      (mariadb &&
+       /(^|[?&\s])(ssl\s*=\s*(false|0)|ssl-mode\s*=\s*disabled)\b/i
+         .test(raw))) {
     return { connectionString: '', ssl: undefined,
              refused: 'its sslmode asks for a connection in the clear, ' +
                       'which this service never opens; use ' +
@@ -3297,7 +3336,13 @@ function dialOptions(url, verifyTls, ca) {
                       'cannot be told; write it as a URL',
              verifyChain: false, verifyHostname: false };
   }
-  if (!/^postgres(ql)?:$/i.test(parsed.protocol)) {
+  if (mariadb && !/^(mariadb|mysql):$/i.test(parsed.protocol)) {
+    return { connectionString: '', ssl: undefined,
+             refused: 'persistence.mode is mariadb and it is not a ' +
+                      'mariadb:// URL (' + parsed.protocol + ')',
+             verifyChain: false, verifyHostname: false };
+  }
+  if (!mariadb && !/^postgres(ql)?:$/i.test(parsed.protocol)) {
     return { connectionString: '', ssl: undefined,
              refused: 'it is not a postgres:// URL (' + parsed.protocol +
                       '), so whether it would be dialled in the clear ' +
@@ -3309,6 +3354,8 @@ function dialOptions(url, verifyTls, ca) {
   const sslmode = String(parsed.searchParams.get('sslmode') || '')
     .toLowerCase();
   parsed.searchParams.delete('sslmode');
+  parsed.searchParams.delete('ssl');
+  parsed.searchParams.delete('ssl-mode');
   const verifyChain = sslmode === 'verify-ca' || sslmode === 'verify-full' ||
     !!verifyTls;
   const verifyHostname = sslmode === 'verify-ca' ? false : verifyChain;
@@ -3339,18 +3386,6 @@ function dialOptions(url, verifyTls, ca) {
   };
 }
 
-/**
- * Creates the postgres persistence driver.
- *
- * A connection pool, a transaction per flush, the change log that several
- * processes coordinate through, and the minted, key, cluster and risk tables.
- * Every connection is TLS; a string whose `sslmode` would dial in the clear
- * is refused (`dialOptions()`, #273).
- * @param options - `url`, the connection string; `log`, the logger;
- * `verifyTls`, whether the server certificate is verified; `tlsCa`, the PEM
- * trust anchors for it or ''; and `poolMax`, the pool size
- * @returns the driver object, with the methods the persistence contract names
- */
 // ---------------------------------------------------------------------------
 // THE CHANGE LOG'S SEQUENCE MUST BE DENSE (#677, rcbj 2026-11-03).
 //
@@ -3406,6 +3441,21 @@ function checkChangeLogDense(client, log) {
   });
 }
 
+/**
+ * Creates the database persistence driver: PostgreSQL, or (#677) MariaDB
+ * with `options.engine` 'mariadb'.
+ *
+ * A connection pool, a transaction per flush, the change log that several
+ * processes coordinate through, and the minted, key, cluster and risk tables.
+ * Every connection is TLS; a string whose `sslmode` would dial in the clear
+ * is refused (`dialOptions()`, #273).
+ * @param options - `url`, the connection string; `log`, the logger;
+ * `verifyTls`, whether the server certificate is verified; `tlsCa`, the PEM
+ * trust anchors for it or ''; `poolMax`, the pool size; `engine`,
+ * 'postgres' (the default) or 'mariadb'; `sqlDialect`, 'native' or
+ * 'portable'
+ * @returns the driver object, with the methods the persistence contract names
+ */
 function create(options) {
   const url = options.url;
   const log = options.log;
@@ -4183,6 +4233,19 @@ function create(options) {
   // `openPool()` below, inside create(), where it always was.
   const knexStore = require('./knex_store');
 
+  // THE DIALECT (#677): ordinary statements are built ONCE with the Knex
+  // query builder and compiled here for this engine; the engine's own
+  // pieces (the statement clock, a JSON cast) are its fragments. A compiled
+  // statement is text and values, sent on the same connections and inside
+  // the same held-connection transactions as every hand-written statement.
+  // `persistence/sql_dialect.js` argues it.
+  // THE ENGINE (#677): PostgreSQL, or MariaDB — one driver, the statements
+  // compiled for it (`sql_dialect.js`) and the coordination that needs
+  // PostgreSQL's features in its portable form (`cluster_portable.js`).
+  const engine = options.engine === 'mariadb' ? 'mariadb' : 'postgres';
+  const dialect = sqlDialect.forEngine(engine);
+  const kx = dialect.kx;
+
   // ---------------------------------------------------------------------
   // TLS, AND THE TWO HALVES OF IT THAT LIVE IN DIFFERENT PLACES.
   //
@@ -4205,7 +4268,7 @@ function create(options) {
   // `dialOptions()`, above create(), is the one reading of it (#98): this
   // driver's pools and an out-of-process tool dial the same way.
   const tlsCa = String(options.tlsCa || '');
-  const dial = dialOptions(url, options.verifyTls, tlsCa);
+  const dial = dialOptions(url, options.verifyTls, tlsCa, engine);
   if (dial.refused) {
     throw new Error(errorCodes.tag('STS-STORE-0078') +
                     'persistence: the database connection string is not ' +
@@ -4269,6 +4332,7 @@ function create(options) {
     log.debug("Entering clientOptions().");
     log.debug("Leaving clientOptions().");
     return {
+      engine: engine,
       connectionString: dialled,
       ssl: dial.ssl,
       connectionTimeoutMillis: 5000
@@ -4342,13 +4406,14 @@ function create(options) {
     if (!readUrl || readUrl === url) {
       return pool;
     }
-    const readDial = dialOptions(readUrl, verify, tlsCa);
+    const readDial = dialOptions(readUrl, verify, tlsCa, engine);
     if (readDial.refused) {
       throw new Error(errorCodes.tag('STS-STORE-0078') +
                       'persistence: the read database connection string is ' +
                       'not dialled: ' + readDial.refused + ' (#273).');
     }
     readOptions = {
+      engine: engine,
       connectionString: readDial.connectionString,
       ssl: readDial.ssl,
       connectionTimeoutMillis: 5000
@@ -4516,6 +4581,47 @@ function create(options) {
   let originClaim = null;
 
   // ---------------------------------------------------------------------
+  // THE PORTABLE CLUSTER STATEMENTS (#677), or null for PostgreSQL's own.
+  //
+  // On an engine that is not PostgreSQL they are the only ones there are.
+  // On PostgreSQL they replace the native statements when
+  // `persistence.sqlDialect` is `portable` — which is how the suite proves
+  // MariaDB's coordination on the reference engine (rcbj on #677): the same
+  // claims, leases, counters, windows, budgets, fences, join lock, heartbeat
+  // and change-log trim, written in statements both engines run.
+  // `persistence/cluster_portable.js` argues each contract.
+  // ---------------------------------------------------------------------
+  const portable = (dialect.engine !== 'postgres' ||
+                    options.sqlDialect === 'portable')
+    ? clusterPortable.forDriver({
+        dialect: dialect, pool: pool, tallyPool: tallyPool,
+        live: liveRunner, originScope: ORIGIN_SCOPE,
+        processId: function () {
+          return processId;
+        }
+      })
+    : null;
+
+  // THE SMALLER TABLES' PORTABLE STATEMENTS (#677), or null for
+  // PostgreSQL's own, under the same rule as `portable` above: the realm
+  // registry and settings, the keys, the change rows and the change log's
+  // own reads and purge, the node snapshots, the used assertions and the
+  // report artifacts. They run inside this driver's own transactions
+  // (`withTransaction()`, `transactionOnce()`) and record their change rows
+  // through `recordChanges()`. `persistence/store_portable.js` argues each.
+  const small = (dialect.engine !== 'postgres' ||
+                 options.sqlDialect === 'portable')
+    ? storePortable.forDriver({
+        dialect: dialect, pool: pool, readPool: readPool,
+        withTransaction: withTransaction, transactionOnce: transactionOnce,
+        recordChanges: recordChanges,
+        processId: function () {
+          return processId;
+        }
+      })
+    : null;
+
+  // ---------------------------------------------------------------------
   // THE FENCE (2026-09-14, #46), installed by `cluster/cluster.js`.
   //
   // A function answering `{ nodeId, leases: [{ name, token }] }` for the write
@@ -4559,6 +4665,11 @@ function create(options) {
   // ---------------------------------------------------------------------
   function takeOverFromGone(key, reservation, holder, nodeId, ttlMs) {
     log.debug("Entering takeOverFromGone().");
+    if (portable) {
+      log.debug("Leaving takeOverFromGone(). Portable.");
+      return portable.takeOverFromGone(key, reservation, holder, nodeId,
+                                       ttlMs);
+    }
     log.debug("Leaving takeOverFromGone().");
     return pool.query(
       'UPDATE sts_cluster_claims c SET reservation = $3, origin = $4, ' +
@@ -4593,10 +4704,14 @@ function create(options) {
     }
     const held = originClaim;
     log.debug("Leaving checkOriginFence().");
-    return client.query(
-      'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = \'\' ' +
-      'AND key = $2 AND reservation = $3 AND expires_at > ' + DB_NOW +
-      ' FOR SHARE', [ORIGIN_SCOPE, held.key, held.reservation]
+    return (portable
+      ? portable.originFence(client, held).then(function (holds) {
+        return { rowCount: holds ? 1 : 0 };
+      })
+      : client.query(
+        'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = ' +
+        '\'\' AND key = $2 AND reservation = $3 AND expires_at > ' + DB_NOW +
+        ' FOR SHARE', [ORIGIN_SCOPE, held.key, held.reservation])
     ).then(function (r) {
       if (r.rowCount) {
         return null;
@@ -4677,9 +4792,13 @@ function create(options) {
               " lease(s).");
     // THE MEMBERSHIP FIRST, unlocked: a node row is only ever renewed by its
     // own heartbeat, so there is no takeover of it to race.
-    return client.query(
-      'SELECT 1 FROM sts_cluster_nodes WHERE node_id = $1 AND ' +
-      'left_at = 0 AND expires_at > ' + DB_NOW, [wanted.nodeId]
+    return (portable
+      ? portable.nodeFence(client, wanted.nodeId).then(function (isLive) {
+        return { rowCount: isLive ? 1 : 0 };
+      })
+      : client.query(
+        'SELECT 1 FROM sts_cluster_nodes WHERE node_id = $1 AND ' +
+        'left_at = 0 AND expires_at > ' + DB_NOW, [wanted.nodeId])
     ).then(function (r) {
       if (!r.rowCount) {
         throw fenced('node', 'this node\'s membership row (' +
@@ -4692,19 +4811,23 @@ function create(options) {
       // THE LEASES UNDER A SHARE LOCK, held to COMMIT: a takeover is an UPDATE
       // of the lease row, so it waits for this transaction and cannot land
       // between the check and the write.
-      return client.query(
-        'SELECT l.name FROM sts_cluster_leases l ' +
-        'JOIN unnest($2::text[], $3::bigint[]) AS w(name, token) ' +
-        '  ON l.name = w.name AND l.token = w.token ' +
-        'WHERE l.holder = $1 AND l.expires_at > ' + DB_NOW + ' ' +
-        'FOR SHARE OF l',
-        [wanted.nodeId,
-         leases.map(function (one) { return String(one.name); }),
-         leases.map(function (one) { return String(one.token); })]
-      ).then(function (locked) {
-        const names = (locked.rows || []).map(function (row) {
-          return row.name;
-        });
+      return (portable
+        ? portable.leaseFence(client, wanted.nodeId, leases)
+        : client.query(
+          'SELECT l.name FROM sts_cluster_leases l ' +
+          'JOIN unnest($2::text[], $3::bigint[]) AS w(name, token) ' +
+          '  ON l.name = w.name AND l.token = w.token ' +
+          'WHERE l.holder = $1 AND l.expires_at > ' + DB_NOW + ' ' +
+          'FOR SHARE OF l',
+          [wanted.nodeId,
+           leases.map(function (one) { return String(one.name); }),
+           leases.map(function (one) { return String(one.token); })]
+        ).then(function (locked) {
+          return (locked.rows || []).map(function (row) {
+            return row.name;
+          });
+        })
+      ).then(function (names) {
         const lost = leases.filter(function (one) {
           return names.indexOf(one.name) < 0;
         });
@@ -4814,6 +4937,11 @@ function create(options) {
 
   function announce(kinds, rows) {
     log.debug("Entering announce().");
+    if (portable) {
+      log.debug("Leaving announce(). No nudge where the statements are " +
+                "portable (#677).");
+      return;
+    }
     if (notifyClosed || !kinds || !kinds.length) {
       log.debug("Leaving announce(). Nothing to announce.");
       return;
@@ -4965,6 +5093,11 @@ function create(options) {
         CHANGE_ROWS_PER_STATEMENT) {
       const chunk = rows.slice(start, start + CHANGE_ROWS_PER_STATEMENT);
       chain = chain.then(function () {
+        if (small) {
+          // The same rows as one builder INSERT (#677): `key` is a reserved
+          // word in MariaDB, and the builder quotes it.
+          return small.insertChanges(client, processId, chunk);
+        }
         const values = [];
         const params = [];
         chunk.forEach(function (row, i) {
@@ -5071,7 +5204,10 @@ function create(options) {
     log.debug("Entering retryableConflict().");
     const code = err && err.code;
     log.debug("Leaving retryableConflict().");
-    return !(err && err.fenced) && (code === '40P01' || code === '40001');
+    // The dialect's list (#677): PostgreSQL's deadlock and serialization
+    // failure, and InnoDB's deadlock and lock-wait timeout on MariaDB.
+    return !(err && err.fenced) &&
+      (code === '40P01' || code === '40001' || dialect.isRetryable(err));
   }
 
   // ---------------------------------------------------------------------------
@@ -5511,11 +5647,20 @@ function create(options) {
     });
   }
 
-  return {
+  const api = {
     name: 'postgres',
 
     open: function () {
       log.debug('Entering the postgres driver open().');
+      // A MARIADB STORE IS OPENED BY ITS OWN STEPS (#677): its catalog is
+      // `information_schema`, its DDL commits on its own, and it has nothing
+      // older to bring forward. `persistence/open_mariadb.js` argues each.
+      if (engine === 'mariadb') {
+        log.debug('Leaving the postgres driver open(). MariaDB.');
+        return require('./open_mariadb').open(pool, log).then(function () {
+          return null;
+        });
+      }
       const created = [];
       let late = [];
       log.debug("Leaving open().");
@@ -5902,9 +6047,16 @@ function create(options) {
       out.pool = pool.stats();
 
       log.debug("Leaving metrics().");
+      // MariaDB's probes and its statement bound (#677): `max_statement_time`
+      // is in seconds, and setting it back to 0 is its RESET.
+      const mariadb = engine === 'mariadb';
+      const probes = mariadb ? require('./metrics_mariadb').METRIC_PROBES
+        : METRIC_PROBES;
       return pool.connect().then(function (client) {
         const unguard = guardClient(client, 'the metrics page');
-        return client.query('SET statement_timeout = ' + timeoutMs)
+        return client.query(mariadb
+          ? 'SET SESSION max_statement_time = ' + (timeoutMs / 1000)
+          : 'SET statement_timeout = ' + timeoutMs)
           .catch(function (err) {
             // Swallowed with a reason: a server that refuses to set a
             // statement timeout is a server this page can still report on,
@@ -5919,7 +6071,7 @@ function create(options) {
               out.timeoutSet = true;
             }
             let chain = Promise.resolve();
-            METRIC_PROBES.forEach(function (probe) {
+            probes.forEach(function (probe) {
               chain = chain.then(function () {
                 const started = Date.now();
                 return client.query(probe.sql).then(function (result) {
@@ -5967,7 +6119,9 @@ function create(options) {
             // server and the connection string say, which is the only
             // definition of "as we found it" that stays right when somebody
             // changes either.
-            return client.query('RESET ALL').catch(function (err) {
+            return client.query(mariadb
+              ? 'SET SESSION max_statement_time = 0' : 'RESET ALL'
+            ).catch(function (err) {
               log.warn(errorCodes.tag('STS-STORE-0033') +
                        'persistence: a metrics connection could not be reset ' +
                        '(' + err.message + '); it is being discarded rather ' +
@@ -6078,6 +6232,10 @@ function create(options) {
 
     loadRealms: function () {
       log.debug('Entering the postgres driver loadRealms().');
+      if (small) {
+        log.debug("Leaving loadRealms(). Portable.");
+        return small.loadRealms();
+      }
       log.debug("Leaving loadRealms().");
       return readPool.query(
         'SELECT id, name, description, created_at, overrides, domain, ' +
@@ -6111,6 +6269,10 @@ function create(options) {
 
     loadOverrides: function () {
       log.debug('Entering the postgres driver loadOverrides().');
+      if (small) {
+        log.debug("Leaving loadOverrides(). Portable.");
+        return small.loadOverrides();
+      }
       log.debug("Leaving loadOverrides().");
       return readPool.query('SELECT key, value FROM sts_appconfig')
         .then(function (result) {
@@ -6470,8 +6632,9 @@ function create(options) {
         const releasing = change.releaseClaims || [];
         if (releasing.length) {
           chain = chain.then(function () {
-            return client.query(RELEASE_CLAIMS_SQL,
-                                releaseClaimsParams(releasing));
+            return portable ? portable.releaseClaims(client, releasing)
+              : client.query(RELEASE_CLAIMS_SQL,
+                             releaseClaimsParams(releasing));
           });
         }
 
@@ -6528,6 +6691,10 @@ function create(options) {
         });
       const removed = delta && Array.isArray(delta.removed) ? delta.removed
         : [];
+      if (small) {
+        log.debug("Leaving saveRealms(). Portable.");
+        return small.saveRealms(upserts, removed);
+      }
       log.debug("Leaving saveRealms().");
       return withTransaction(function (client) {
         let chain = Promise.resolve();
@@ -6596,6 +6763,10 @@ function create(options) {
       const set = delta && delta.set ? delta.set : (map || {});
       const cleared = delta && Array.isArray(delta.cleared) ? delta.cleared
         : [];
+      if (small) {
+        log.debug("Leaving saveOverrides(). Portable.");
+        return small.saveOverrides(set, cleared);
+      }
       log.debug("Leaving saveOverrides().");
       return withTransaction(function (client) {
         let chain = Promise.resolve();
@@ -6634,6 +6805,10 @@ function create(options) {
     // -----------------------------------------------------------------------
     loadKeys: function () {
       log.debug('Entering the postgres driver loadKeys().');
+      if (small) {
+        log.debug("Leaving loadKeys(). Portable.");
+        return small.loadKeys();
+      }
       log.debug("Leaving loadKeys().");
       return readPool.query('SELECT realm, material FROM sts_keys')
                  .then(function (r) {
@@ -6652,6 +6827,10 @@ function create(options) {
     // The write itself is unchanged.
     saveKeys: function (realmId, ciphertext) {
       log.debug('Entering the postgres driver saveKeys(). realm=' + realmId);
+      if (small) {
+        log.debug("Leaving saveKeys(). Portable.");
+        return small.saveKeys(realmId, ciphertext);
+      }
       log.debug("Leaving saveKeys().");
       return withTransaction(function (client) {
         return client.query(
@@ -6676,6 +6855,10 @@ function create(options) {
     // node reads the row gone.
     deleteKeys: function (realmId) {
       log.debug('Entering the postgres driver deleteKeys(). realm=' + realmId);
+      if (small) {
+        log.debug("Leaving deleteKeys(). Portable.");
+        return small.deleteKeys(realmId);
+      }
       log.debug("Leaving deleteKeys().");
       return withTransaction(function (client) {
         return client.query('DELETE FROM sts_keys WHERE realm = $1',
@@ -6911,6 +7094,10 @@ function create(options) {
 
     latestBlockingChangeSeq: function () {
       log.debug("Entering latestBlockingChangeSeq().");
+      if (small) {
+        log.debug("Leaving latestBlockingChangeSeq(). Portable.");
+        return small.latestBlockingChangeSeq();
+      }
       log.debug("Leaving latestBlockingChangeSeq().");
       // ---------------------------------------------------------------------
       // AND NOT THIS PROCESS'S OWN ROWS (2026-09-08). `changesSince()` above
@@ -7149,12 +7336,13 @@ function create(options) {
       const held = { key: originClaim.key,
                      reservation: originClaim.reservation, ttlMs: ttlMs };
       // On the LIVENESS connection (#351), both statements.
-      return liveQuery(
-        'UPDATE sts_cluster_claims SET expires_at = ' + DB_NOW + ' + $4 ' +
-        'WHERE scope = $1 AND realm = \'\' AND key = $2 AND reservation = $3 ' +
-        'AND expires_at > ' + DB_NOW,
-        [ORIGIN_SCOPE, held.key, held.reservation,
-         Math.max(1000, Number(ttlMs) || 30000)]
+      return dialect.run(liveRunner, 'renewOrigin',
+        kx('sts_cluster_claims')
+          .update({ expires_at:
+            dialect.now(Math.max(1000, Number(ttlMs) || 30000)) })
+          .where({ scope: ORIGIN_SCOPE, realm: '', key: held.key,
+                   reservation: held.reservation })
+          .where('expires_at', '>', dialect.now())
       ).then(function (r) {
         return r.rowCount > 0 ? true : reassertOrigin(liveRunner, held);
       });
@@ -7193,7 +7381,8 @@ function create(options) {
     latestChangeSeq: function () {
       log.debug('Entering the postgres driver latestChangeSeq().');
       log.debug("Leaving latestChangeSeq().");
-      return readPool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
+      return dialect.run(readPool, 'latestChangeSeq',
+        kx('sts_changes').max({ seq: 'seq' }))
         .then(function (r) {
           const seq = Number((r.rows[0] || {}).seq || 0);
           log.debug('Leaving the postgres driver latestChangeSeq(). ' + seq);
@@ -7240,10 +7429,10 @@ function create(options) {
       // the second. `applyRows()` skips this process's own rows itself — it
       // always did — so nothing is applied twice.
       // ---------------------------------------------------------------------
-      return readPool.query(
-        'SELECT seq, origin, kind, realm, key FROM sts_changes ' +
-        'WHERE seq > $1 ORDER BY seq ASC LIMIT $2',
-        [Number(afterSeq) || 0, Number(limit) || 500]
+      return dialect.run(readPool, 'changesSince',
+        kx('sts_changes').select('seq', 'origin', 'kind', 'realm', 'key')
+          .where('seq', '>', Number(afterSeq) || 0)
+          .orderBy('seq', 'asc').limit(Number(limit) || 500)
       ).then(function (r) {
         const rows = (r.rows || []).map(function (row) {
           return { seq: Number(row.seq), origin: row.origin, kind: row.kind,
@@ -7261,7 +7450,8 @@ function create(options) {
     changeCeiling: function () {
       log.debug("Entering changeCeiling().");
       log.debug("Leaving changeCeiling().");
-      return readPool.query('SELECT COALESCE(MAX(seq), 0) AS seq FROM sts_changes')
+      return dialect.run(readPool, 'changeCeiling',
+        kx('sts_changes').max({ seq: 'seq' }))
         .then(function (r) { return Number((r.rows[0] || {}).seq || 0); });
     },
 
@@ -7742,6 +7932,10 @@ function create(options) {
     // grows for ever.
     purgeChanges: function (beforeSeq) {
       log.debug("Entering purgeChanges().");
+      if (small) {
+        log.debug("Leaving purgeChanges(). Portable.");
+        return small.purgeChanges(beforeSeq);
+      }
       log.debug("Leaving purgeChanges().");
       return pool.query('DELETE FROM sts_changes WHERE seq < $1',
                         [Number(beforeSeq) || 0])
@@ -7764,9 +7958,9 @@ function create(options) {
         return Promise.resolve([]);
       }
       log.debug("Leaving changesAt().");
-      return readPool.query(
-        'SELECT seq, origin, kind, realm, key FROM sts_changes ' +
-        'WHERE seq = ANY($1::bigint[]) ORDER BY seq ASC', [list]
+      return dialect.run(readPool, 'changesAt',
+        kx('sts_changes').select('seq', 'origin', 'kind', 'realm', 'key')
+          .whereIn('seq', list).orderBy('seq', 'asc')
       ).then(function (r) {
         return (r.rows || []).map(function (row) {
           return { seq: Number(row.seq), origin: row.origin, kind: row.kind,
@@ -7794,7 +7988,9 @@ function create(options) {
     clusterClock: function () {
       log.debug("Entering clusterClock().");
       log.debug("Leaving clusterClock().");
-      return pool.query('SELECT ' + DB_NOW + ' AS now').then(function (r) {
+      return dialect.run(pool, 'clusterClock',
+        kx.select(kx.raw(dialect.nowText + ' AS now'))
+      ).then(function (r) {
         return Number((r.rows[0] || {}).now) || 0;
       });
     },
@@ -7809,16 +8005,21 @@ function create(options) {
       log.debug("Entering joinCluster(). node=" + node.nodeId);
       log.debug("Leaving joinCluster().");
       return withTransaction(function (client) {
-        return client.query('SELECT pg_advisory_xact_lock($1)', [JOIN_LOCK])
+        return (portable ? portable.serialize(client, 'cluster.join')
+          : client.query('SELECT pg_advisory_xact_lock($1)', [JOIN_LOCK]))
           .then(function () {
-            return client.query(
-              'DELETE FROM sts_cluster_nodes WHERE expires_at < ' + DB_NOW +
-              ' - $1', [DEAD_NODE_RETENTION_MS]);
+            return dialect.run(client, 'joinCluster.sweep',
+              kx('sts_cluster_nodes')
+                .where('expires_at', '<',
+                       dialect.now(DEAD_NODE_RETENTION_MS, '-'))
+                .del());
           }).then(function () {
-            return client.query(
-              'SELECT node_id, name, mode, version, fingerprint FROM ' +
-              'sts_cluster_nodes WHERE left_at = 0 AND expires_at > ' +
-              DB_NOW + ' AND node_id <> $1', [node.nodeId]);
+            return dialect.run(client, 'joinCluster.live',
+              kx('sts_cluster_nodes')
+                .select('node_id', 'name', 'mode', 'version', 'fingerprint')
+                .where({ left_at: 0 })
+                .where('expires_at', '>', dialect.now())
+                .whereNot({ node_id: node.nodeId }));
           }).then(function (r) {
             const live = r.rows || [];
             // THE MODE ONLY. A joining node has no fingerprint yet — it is
@@ -7834,14 +8035,15 @@ function create(options) {
               return { joined: false, differing: differing,
                        live: live.length };
             }
-            return client.query(
-              'INSERT INTO sts_cluster_nodes (node_id, name, mode, version, ' +
-              'fingerprint, started_at, heartbeat_at, expires_at, info) ' +
-              'VALUES ($1, $2, $3, $4, $5, ' + DB_NOW + ', ' + DB_NOW + ', ' +
-              DB_NOW + ' + $6, $7::jsonb)',
-              [node.nodeId, node.name || '', node.mode, node.version || '',
-               node.fingerprint || '', Number(node.ttlMs),
-               JSON.stringify(node.info || {})]
+            return dialect.run(client, 'joinCluster.insert',
+              kx('sts_cluster_nodes').insert({
+                node_id: node.nodeId, name: node.name || '',
+                mode: node.mode, version: node.version || '',
+                fingerprint: node.fingerprint || '',
+                started_at: dialect.now(), heartbeat_at: dialect.now(),
+                expires_at: dialect.now(Number(node.ttlMs)),
+                info: dialect.json(node.info || {})
+              })
             ).then(function () {
               return { joined: true, differing: [], live: live.length };
             });
@@ -7857,13 +8059,17 @@ function create(options) {
       log.debug("Entering agreeFingerprint(). node=" + nodeId);
       log.debug("Leaving agreeFingerprint().");
       return withTransaction(function (client) {
-        return client.query('SELECT pg_advisory_xact_lock($1)', [JOIN_LOCK])
+        return (portable ? portable.serialize(client, 'cluster.join')
+          : client.query('SELECT pg_advisory_xact_lock($1)', [JOIN_LOCK]))
           .then(function () {
-            return client.query(
-              'SELECT node_id, name, mode, version, fingerprint FROM ' +
-              'sts_cluster_nodes WHERE left_at = 0 AND expires_at > ' +
-              DB_NOW + ' AND node_id <> $1 AND fingerprint <> \'\' AND ' +
-              'fingerprint <> $2', [nodeId, String(fingerprint)]);
+            return dialect.run(client, 'agreeFingerprint.differing',
+              kx('sts_cluster_nodes')
+                .select('node_id', 'name', 'mode', 'version', 'fingerprint')
+                .where({ left_at: 0 })
+                .where('expires_at', '>', dialect.now())
+                .whereNot({ node_id: nodeId })
+                .whereNot({ fingerprint: '' })
+                .whereNot({ fingerprint: String(fingerprint) }));
           }).then(function (r) {
             const differing = (r.rows || []).map(function (row) {
               return { nodeId: row.node_id, name: row.name, mode: row.mode,
@@ -7872,9 +8078,10 @@ function create(options) {
             if (differing.length) {
               return { differing: differing };
             }
-            return client.query(
-              'UPDATE sts_cluster_nodes SET fingerprint = $2 WHERE ' +
-              'node_id = $1', [nodeId, String(fingerprint)]
+            return dialect.run(client, 'agreeFingerprint.set',
+              kx('sts_cluster_nodes')
+                .update({ fingerprint: String(fingerprint) })
+                .where({ node_id: nodeId })
             ).then(function () {
               return { differing: [] };
             });
@@ -7890,6 +8097,10 @@ function create(options) {
     // lost one.
     heartbeat: function (nodeId, ttlMs, info) {
       log.debug("Entering heartbeat(). node=" + nodeId);
+      if (portable) {
+        log.debug("Leaving heartbeat(). Portable.");
+        return portable.heartbeat(nodeId, ttlMs, info);
+      }
       log.debug("Leaving heartbeat().");
       // On the LIVENESS connection (#351).
       return liveQuery(
@@ -7921,6 +8132,10 @@ function create(options) {
     // not deleted, so a lease's token keeps counting up.
     leaveCluster: function (nodeId) {
       log.debug("Entering leaveCluster(). node=" + nodeId);
+      if (portable) {
+        log.debug("Leaving leaveCluster(). Portable.");
+        return portable.leaveCluster(nodeId);
+      }
       log.debug("Leaving leaveCluster().");
       return liveQuery(
         'WITH n AS (UPDATE sts_cluster_nodes SET left_at = ' + DB_NOW +
@@ -7938,6 +8153,10 @@ function create(options) {
     // token back, unchanged: re-asking is not a new tenure.
     acquireLease: function (name, nodeId, ttlMs) {
       log.debug("Entering acquireLease(). name=" + name);
+      if (portable) {
+        log.debug("Leaving acquireLease(). Portable.");
+        return portable.acquireLease(name, nodeId, ttlMs);
+      }
       log.debug("Leaving acquireLease().");
       return liveQuery(
         'INSERT INTO sts_cluster_leases (name, holder, token, acquired_at, ' +
@@ -7962,9 +8181,9 @@ function create(options) {
           return { held: true, token: Number(row.token),
                    expiresAt: Number(row.expires_at) };
         }
-        return liveQuery(
-          'SELECT holder, token, expires_at FROM sts_cluster_leases ' +
-          'WHERE name = $1', [name]
+        return dialect.run(liveRunner, 'acquireLease.holder',
+          kx('sts_cluster_leases').select('holder', 'token', 'expires_at')
+            .where({ name: name })
         ).then(function (found) {
           const other = (found.rows || [])[0] || null;
           return { held: false, holder: other ? other.holder : '',
@@ -7978,9 +8197,9 @@ function create(options) {
     releaseLease: function (name, nodeId, token) {
       log.debug("Entering releaseLease(). name=" + name);
       log.debug("Leaving releaseLease().");
-      return liveQuery(
-        'UPDATE sts_cluster_leases SET expires_at = 0 WHERE name = $1 AND ' +
-        'holder = $2 AND token = $3', [name, nodeId, Number(token)]
+      return dialect.run(liveRunner, 'releaseLease',
+        kx('sts_cluster_leases').update({ expires_at: 0 })
+          .where({ name: name, holder: nodeId, token: Number(token) })
       ).then(function (r) {
         return (r.rowCount || 0) > 0;
       });
@@ -7992,14 +8211,18 @@ function create(options) {
       log.debug("Entering clusterState().");
       log.debug("Leaving clusterState().");
       return Promise.all([
-        pool.query(
-          'SELECT node_id, name, mode, version, fingerprint, started_at, ' +
-          'heartbeat_at, expires_at, left_at, info FROM sts_cluster_nodes ' +
-          'ORDER BY started_at DESC LIMIT 200'),
-        pool.query(
-          'SELECT name, holder, token, acquired_at, expires_at FROM ' +
-          'sts_cluster_leases ORDER BY name'),
-        pool.query('SELECT ' + DB_NOW + ' AS now')
+        dialect.run(pool, 'clusterState.nodes',
+          kx('sts_cluster_nodes')
+            .select('node_id', 'name', 'mode', 'version', 'fingerprint',
+                    'started_at', 'heartbeat_at', 'expires_at', 'left_at',
+                    'info')
+            .orderBy('started_at', 'desc').limit(200)),
+        dialect.run(pool, 'clusterState.leases',
+          kx('sts_cluster_leases')
+            .select('name', 'holder', 'token', 'acquired_at', 'expires_at')
+            .orderBy('name')),
+        dialect.run(pool, 'clusterState.clock',
+          kx.select(kx.raw(dialect.nowText + ' AS now')))
       ]).then(function (answers) {
         return {
           now: Number((answers[2].rows[0] || {}).now) || 0,
@@ -8027,6 +8250,10 @@ function create(options) {
     // on its next heartbeat anyway; a stale write is shown with its age.
     putNodeSnapshot: function (name, nodeId, body) {
       log.debug("Entering putNodeSnapshot(). name=" + name);
+      if (small) {
+        log.debug("Leaving putNodeSnapshot(). Portable.");
+        return small.putNodeSnapshot(name, nodeId, body);
+      }
       log.debug("Leaving putNodeSnapshot().");
       return pool.query(
         'INSERT INTO sts_node_snapshots (name, node_id, taken_at, body) ' +
@@ -8053,6 +8280,10 @@ function create(options) {
         return Promise.reject(new Error('purgeNodeSnapshots needs the live ' +
           'names and an age'));
       }
+      if (small) {
+        log.debug("Leaving purgeNodeSnapshots(). Portable.");
+        return small.purgeNodeSnapshots(olderThanMs, keep);
+      }
       log.debug("Leaving purgeNodeSnapshots().");
       return pool.query(
         'DELETE FROM sts_node_snapshots WHERE taken_at < ' + DB_NOW +
@@ -8069,6 +8300,10 @@ function create(options) {
     // their ages against. Bounded twice: a row per name, and at most 64.
     nodeSnapshots: function () {
       log.debug("Entering nodeSnapshots().");
+      if (small) {
+        log.debug("Leaving nodeSnapshots(). Portable.");
+        return small.nodeSnapshots();
+      }
       log.debug("Leaving nodeSnapshots().");
       return Promise.all([
         pool.query('SELECT name, node_id, taken_at, body FROM ' +
@@ -8092,6 +8327,10 @@ function create(options) {
     // returned only to the caller that made it.
     claimOnce: function (scope, realmId, key, opts) {
       log.debug('Entering claimOnce(). scope=' + scope);
+      if (portable) {
+        log.debug("Leaving claimOnce(). Portable.");
+        return portable.claimOnce(scope, realmId, key, opts);
+      }
       const o = opts || {};
       const ttlMs = Math.max(1, Math.floor(Number(o.ttlMs) || 0));
       const reservation = String(o.reservation || '');
@@ -8115,10 +8354,11 @@ function create(options) {
           return { claimed: true, claimedAt: Number(row.claimed_at),
                    expiresAt: Number(row.expires_at) };
         }
-        return pool.query(
-          'SELECT origin, claimed_at, expires_at FROM sts_cluster_claims ' +
-          'WHERE scope = $1 AND realm = $2 AND key = $3',
-          [String(scope), String(realmId || ''), String(key)]
+        return dialect.run(pool, 'claimOnce.holder',
+          kx('sts_cluster_claims')
+            .select('origin', 'claimed_at', 'expires_at')
+            .where({ scope: String(scope), realm: String(realmId || ''),
+                     key: String(key) })
         ).then(function (found) {
           const row = (found.rows || [])[0] || null;
           return { claimed: false, existing: row ? {
@@ -8136,11 +8376,11 @@ function create(options) {
     releaseClaim: function (scope, realmId, key, reservation) {
       log.debug("Entering releaseClaim(). scope=" + scope);
       log.debug("Leaving releaseClaim().");
-      return pool.query(
-        'DELETE FROM sts_cluster_claims WHERE scope = $1 AND realm = $2 AND ' +
-        'key = $3 AND reservation = $4',
-        [String(scope), String(realmId || ''), String(key),
-         String(reservation)]
+      return dialect.run(pool, 'releaseClaim',
+        kx('sts_cluster_claims')
+          .where({ scope: String(scope), realm: String(realmId || ''),
+                   key: String(key), reservation: String(reservation) })
+          .del()
       ).then(function (r) {
         return (r.rowCount || 0) > 0;
       });
@@ -8151,12 +8391,13 @@ function create(options) {
     claimHeld: function (scope, realmId, key) {
       log.debug("Entering claimHeld(). scope=" + scope);
       log.debug("Leaving claimHeld().");
-      return pool.query(
-        'SELECT 1 FROM sts_cluster_claims WHERE scope = $1 AND realm = $2 ' +
-        'AND key = $3 AND expires_at > ' + DB_NOW,
-        [String(scope), String(realmId || ''), String(key)]
+      return dialect.run(pool, 'claimHeld',
+        kx('sts_cluster_claims').select(kx.raw('1 AS held'))
+          .where({ scope: String(scope), realm: String(realmId || ''),
+                   key: String(key) })
+          .where('expires_at', '>', dialect.now())
       ).then(function (r) {
-        return (r.rowCount || 0) > 0;
+        return dialect.rowsOf(r).length > 0;
       });
     },
 
@@ -8187,6 +8428,10 @@ function create(options) {
     // -----------------------------------------------------------------------
     claimMany: function (rows, realmId, opts) {
       log.debug('Entering claimMany(). rows=' + (rows || []).length);
+      if (portable) {
+        log.debug("Leaving claimMany(). Portable.");
+        return portable.claimMany(rows, realmId, opts);
+      }
       const o = opts || {};
       const ttlMs = Math.max(1, Math.floor(Number(o.ttlMs) || 0));
       const reservation = String(o.reservation || '');
@@ -8248,9 +8493,10 @@ function create(options) {
       }
       log.debug("Leaving releaseClaims().");
       // Committed without waiting for the WAL flush: see NO_FLUSH_WAIT.
-      return pool.query(RELEASE_CLAIMS_ALONE_SQL, releaseClaimsParams(list))
+      return (portable ? portable.releaseClaims(pool, list)
+        : pool.query(RELEASE_CLAIMS_ALONE_SQL, releaseClaimsParams(list)))
         .then(function (r) {
-          return r.rowCount || 0;
+          return dialect.affected(r);
         });
     },
 
@@ -8259,10 +8505,16 @@ function create(options) {
       log.debug("Leaving purgeClaims().");
       // A lapsed ORIGIN claim is kept for ORIGIN_RETAIN_MS: see the note
       // above ORIGIN_RETAIN_MS.
-      return pool.query('DELETE FROM sts_cluster_claims WHERE expires_at <= ' +
-                        DB_NOW + ' AND (scope <> $1 OR expires_at <= ' +
-                        DB_NOW + ' - $2)',
-                        [ORIGIN_SCOPE, ORIGIN_RETAIN_MS]).then(function (r) {
+      return dialect.run(pool, 'purgeClaims',
+        kx('sts_cluster_claims')
+          .where('expires_at', '<=', dialect.now())
+          .where(function () {
+            this.whereNot({ scope: ORIGIN_SCOPE })
+              .orWhere('expires_at', '<=',
+                       dialect.now(ORIGIN_RETAIN_MS, '-'));
+          })
+          .del()
+      ).then(function (r) {
         return r.rowCount || 0;
       });
     },
@@ -8276,6 +8528,10 @@ function create(options) {
     // decision. `cluster/cluster_counters.js` reads the two answers.
     advanceCounter: function (scope, realmId, key, value) {
       log.debug("Entering advanceCounter(). scope=" + scope);
+      if (portable) {
+        log.debug("Leaving advanceCounter(). Portable.");
+        return portable.advanceCounter(scope, realmId, key, value);
+      }
       const wanted = Math.max(0, Math.floor(Number(value) || 0));
       log.debug("Leaving advanceCounter().");
       return pool.query(
@@ -8289,10 +8545,10 @@ function create(options) {
         if (r.rowCount) {
           return { advanced: true, highest: Number(r.rows[0].value) };
         }
-        return pool.query(
-          'SELECT value FROM sts_cluster_counters WHERE scope = $1 AND ' +
-          'realm = $2 AND key = $3',
-          [String(scope), String(realmId || ''), String(key)]
+        return dialect.run(pool, 'advanceCounter.highest',
+          kx('sts_cluster_counters').select('value')
+            .where({ scope: String(scope), realm: String(realmId || ''),
+                     key: String(key) })
         ).then(function (found) {
           const row = (found.rows || [])[0] || null;
           return { advanced: false, highest: row ? Number(row.value) : 0 };
@@ -8312,6 +8568,10 @@ function create(options) {
     // `cluster/cluster_counters.js` reads the answer.
     countWindow: function (scope, realmId, key, windowMs) {
       log.debug("Entering countWindow(). scope=" + scope);
+      if (portable) {
+        log.debug("Leaving countWindow(). Portable.");
+        return portable.countWindow(scope, realmId, key, windowMs);
+      }
       const span = Math.max(1, Math.floor(Number(windowMs) || 0));
       log.debug("Leaving countWindow().");
       return tallyPool.query(
@@ -8338,11 +8598,14 @@ function create(options) {
     peekWindow: function (scope, realmId, key) {
       log.debug("Entering peekWindow(). scope=" + scope);
       log.debug("Leaving peekWindow().");
-      return pool.query(
-        'SELECT count, window_ends_at - ' + DB_NOW + ' AS remaining FROM ' +
-        'sts_cluster_windows WHERE scope = $1 AND realm = $2 AND key = $3 ' +
-        'AND window_ends_at > ' + DB_NOW,
-        [String(scope), String(realmId || ''), String(key)]
+      return dialect.run(pool, 'peekWindow',
+        kx('sts_cluster_windows')
+          .select('count',
+                  kx.raw('window_ends_at - ' + dialect.nowText +
+                         ' AS remaining'))
+          .where({ scope: String(scope), realm: String(realmId || ''),
+                   key: String(key) })
+          .where('window_ends_at', '>', dialect.now())
       ).then(function (r) {
         const row = (r.rows || [])[0] || null;
         return row ? { count: Number(row.count) || 0,
@@ -8355,9 +8618,11 @@ function create(options) {
     clearWindow: function (scope, realmId, key) {
       log.debug("Entering clearWindow(). scope=" + scope);
       log.debug("Leaving clearWindow().");
-      return tallyPool.query(
-        'DELETE FROM sts_cluster_windows WHERE scope = $1 AND realm = $2 AND ' +
-        'key = $3', [String(scope), String(realmId || ''), String(key)]
+      return dialect.run(tallyPool, 'clearWindow',
+        kx('sts_cluster_windows')
+          .where({ scope: String(scope), realm: String(realmId || ''),
+                   key: String(key) })
+          .del()
       ).then(function (r) {
         return (r.rowCount || 0) > 0;
       });
@@ -8373,6 +8638,12 @@ function create(options) {
     spendBudget: function (scope, realmId, key, period, amount, count,
                            limitAmount, limitCount, expiresAtMs) {
       log.debug("Entering spendBudget(). scope=" + scope);
+      if (portable) {
+        log.debug("Leaving spendBudget(). Portable.");
+        return portable.spendBudget(scope, realmId, key, period, amount,
+                                    count, limitAmount, limitCount,
+                                    expiresAtMs);
+      }
       const same = 'sts_cluster_budgets.period = EXCLUDED.period';
       const newAmount = '(CASE WHEN ' + same + ' THEN ' +
         'sts_cluster_budgets.amount + EXCLUDED.amount ELSE EXCLUDED.amount ' +
@@ -8411,14 +8682,18 @@ function create(options) {
     refundBudget: function (scope, realmId, key, period, amount, count) {
       log.debug("Entering refundBudget(). scope=" + scope);
       log.debug("Leaving refundBudget().");
-      return pool.query(
-        'UPDATE sts_cluster_budgets SET amount = amount - $5::bigint, ' +
-        'count = count - $6::bigint, updated_at = ' + DB_NOW + ' WHERE ' +
-        'scope = $1 AND realm = $2 AND key = $3 AND period = $4::bigint AND ' +
-        'amount >= $5::bigint AND count >= $6::bigint',
-        [String(scope), String(realmId || ''), String(key),
-         Math.floor(Number(period) || 0), String(amount),
-         Math.floor(Number(count) || 0)]
+      const spent = String(amount);
+      const times = Math.floor(Number(count) || 0);
+      return dialect.run(pool, 'refundBudget',
+        kx('sts_cluster_budgets')
+          .update({ amount: kx.raw('?? - ?', ['amount', spent]),
+                    count: kx.raw('?? - ?', ['count', times]),
+                    updated_at: dialect.now() })
+          .where({ scope: String(scope), realm: String(realmId || ''),
+                   key: String(key),
+                   period: Math.floor(Number(period) || 0) })
+          .where('amount', '>=', spent)
+          .where('count', '>=', times)
       ).then(function (r) {
         return (r.rowCount || 0) > 0;
       });
@@ -8428,9 +8703,11 @@ function create(options) {
     purgeBudgets: function (scope, realmId) {
       log.debug("Entering purgeBudgets(). scope=" + scope);
       log.debug("Leaving purgeBudgets().");
-      return pool.query(
-        'DELETE FROM sts_cluster_budgets WHERE scope = $1 AND realm = $2 AND ' +
-        'expires_at <= ' + DB_NOW, [String(scope), String(realmId || '')]
+      return dialect.run(pool, 'purgeBudgets',
+        kx('sts_cluster_budgets')
+          .where({ scope: String(scope), realm: String(realmId || '') })
+          .where('expires_at', '<=', dialect.now())
+          .del()
       ).then(function (r) {
         return r.rowCount || 0;
       });
@@ -8439,8 +8716,11 @@ function create(options) {
     purgeWindows: function () {
       log.debug("Entering purgeWindows().");
       log.debug("Leaving purgeWindows().");
-      return pool.query('DELETE FROM sts_cluster_windows WHERE ' +
-                        'window_ends_at <= ' + DB_NOW).then(function (r) {
+      return dialect.run(pool, 'purgeWindows',
+        kx('sts_cluster_windows')
+          .where('window_ends_at', '<=', dialect.now())
+          .del()
+      ).then(function (r) {
         return r.rowCount || 0;
       });
     },
@@ -8457,6 +8737,10 @@ function create(options) {
     // may already have trimmed changes it had not applied.
     reportChangeReader: function (applied, nodeId) {
       log.debug("Entering reportChangeReader().");
+      if (portable) {
+        log.debug("Leaving reportChangeReader(). Portable.");
+        return portable.reportChangeReader(applied, nodeId);
+      }
       log.debug("Leaving reportChangeReader().");
       return pool.query(
         'INSERT INTO sts_change_readers (origin, node_id, applied, ' +
@@ -8476,8 +8760,9 @@ function create(options) {
     leaveChangeReader: function () {
       log.debug("Entering leaveChangeReader().");
       log.debug("Leaving leaveChangeReader().");
-      return pool.query('DELETE FROM sts_change_readers WHERE origin = $1',
-                        [processId]).then(function (r) {
+      return dialect.run(pool, 'leaveChangeReader',
+        kx('sts_change_readers').where({ origin: processId }).del()
+      ).then(function (r) {
         return (r.rowCount || 0) > 0;
       });
     },
@@ -8495,15 +8780,19 @@ function create(options) {
       const readerTtlMs = Math.max(1, Math.floor(Number(o.readerTtlMs) || 0));
       const byMembership = o.nodeLiveness !== false;
       log.debug("Leaving liveChangeReaders().");
-      return pool.query(
-        'SELECT r.origin FROM sts_change_readers r WHERE r.reported_at >= ' +
-        DB_NOW + ' - $1::bigint' +
-        (byMembership
-          ? ' AND (r.node_id = \'\' OR EXISTS (SELECT 1 FROM ' +
-            'sts_cluster_nodes n WHERE n.node_id = r.node_id AND ' +
-            'n.left_at = 0 AND n.expires_at > ' + DB_NOW + '))'
-          : ''),
-        [readerTtlMs]
+      const readers = kx({ r: 'sts_change_readers' }).select('r.origin')
+        .where('r.reported_at', '>=', dialect.now(readerTtlMs, '-'));
+      if (byMembership) {
+        readers.where(function () {
+          this.where('r.node_id', '').orWhereExists(function () {
+            this.select(kx.raw('1')).from({ n: 'sts_cluster_nodes' })
+              .whereRaw('?? = ??', ['n.node_id', 'r.node_id'])
+              .where('n.left_at', 0)
+              .where('n.expires_at', '>', dialect.now());
+          });
+        });
+      }
+      return dialect.run(pool, 'liveChangeReaders', readers
       ).then(function (r) {
         return ((r && r.rows) || []).map(function (row) {
           return String(row.origin);
@@ -8524,6 +8813,10 @@ function create(options) {
     // is why `live` filters out `gone` by hand.
     purgeChangeLog: function (opts) {
       log.debug("Entering purgeChangeLog().");
+      if (portable) {
+        log.debug("Leaving purgeChangeLog(). Portable.");
+        return portable.purgeChangeLog(opts);
+      }
       const o = opts || {};
       const readerTtlMs = Math.max(1, Math.floor(Number(o.readerTtlMs) || 0));
       const retentionMs = Math.max(0, Math.floor(Number(o.retentionMs) || 0));
@@ -8717,6 +9010,12 @@ function create(options) {
     // its keepalive interval.
     replicaLagMs: function () {
       log.debug("Entering replicaLagMs().");
+      if (small && dialect.engine !== 'postgres') {
+        // PostgreSQL's replication probe is the answer on PostgreSQL in
+        // either dialect; MariaDB's is null (`store_portable.js`).
+        log.debug("Leaving replicaLagMs(). Portable.");
+        return small.replicaLagMs();
+      }
       if (readPool === pool) {
         log.debug("Leaving replicaLagMs(). No replica.");
         return Promise.resolve(null);
@@ -8739,6 +9038,10 @@ function create(options) {
 
     loadKey: function (realmId) {
       log.debug("Entering loadKey(). realm=" + realmId);
+      if (small) {
+        log.debug("Leaving loadKey(). Portable.");
+        return small.loadKey(realmId);
+      }
       log.debug("Leaving loadKey().");
       return readPool.query('SELECT material FROM sts_keys WHERE realm = $1',
                         [String(realmId)]).then(function (r) {
@@ -9868,6 +10171,10 @@ function create(options) {
 
     mergeKeys: function (realmId, ciphertext, merge) {
       log.debug("Entering mergeKeys(). realm=" + realmId);
+      if (small) {
+        log.debug("Leaving mergeKeys(). Portable.");
+        return small.mergeKeys(realmId, merge);
+      }
       const id = String(realmId);
       log.debug("Leaving mergeKeys().");
       return withTransaction(function (client) {
@@ -10215,14 +10522,16 @@ function create(options) {
     ensureSharedSecret: function (name, material) {
       log.debug("Entering ensureSharedSecret(). name=" + name);
       log.debug("Leaving ensureSharedSecret().");
-      return pool.query(
-        'INSERT INTO sts_cluster_secrets (name, material, created_by, ' +
-        'created_at) VALUES ($1, $2, $3, ' + DB_NOW + ') ON CONFLICT (name) ' +
-        'DO NOTHING', [String(name), String(material), processId]
+      return dialect.run(pool, 'ensureSharedSecret.offer',
+        kx('sts_cluster_secrets').insert({
+          name: String(name), material: String(material),
+          created_by: processId, created_at: dialect.now()
+        }).onConflict('name').ignore()
       ).then(function (inserted) {
-        return pool.query(
-          'SELECT material, created_by, created_at FROM sts_cluster_secrets ' +
-          'WHERE name = $1', [String(name)]
+        return dialect.run(pool, 'ensureSharedSecret.read',
+          kx('sts_cluster_secrets')
+            .select('material', 'created_by', 'created_at')
+            .where({ name: String(name) })
         ).then(function (r) {
           const row = (r.rows || [])[0] || null;
           return row ? { material: row.material, createdBy: row.created_by,
@@ -10258,6 +10567,10 @@ function create(options) {
     // and an accepted assertion costs one round trip.
     claimUsedAssertion: function (row, opts) {
       log.debug("Entering claimUsedAssertion().");
+      if (small) {
+        log.debug("Leaving claimUsedAssertion(). Portable.");
+        return small.claimUsedAssertion(row, opts);
+      }
       const now = Number(opts.now);
       const cap = Number(opts.cap);
       log.debug("Leaving claimUsedAssertion().");
@@ -10312,6 +10625,10 @@ function create(options) {
     // settle a row that is not its own.
     settleUsedAssertion: function (realm, key, reservation, spent, at) {
       log.debug("Entering settleUsedAssertion(). spent=" + spent);
+      if (small) {
+        log.debug("Leaving settleUsedAssertion(). Portable.");
+        return small.settleUsedAssertion(realm, key, reservation, spent, at);
+      }
       log.debug("Leaving settleUsedAssertion().");
       return (spent
         ? pool.query(
@@ -10333,6 +10650,10 @@ function create(options) {
     // above is what decides.
     findUsedAssertion: function (realm, key, nowMs) {
       log.debug("Entering findUsedAssertion(). realm=" + realm);
+      if (small) {
+        log.debug("Leaving findUsedAssertion(). Portable.");
+        return small.findUsedAssertion(realm, key, nowMs);
+      }
       log.debug("Leaving findUsedAssertion().");
       return pool.query(
         'SELECT format, used_as, issuer, identifier, client_id, subject, ' +
@@ -10352,6 +10673,10 @@ function create(options) {
     // a pattern.
     listUsedAssertions: function (realm, opts) {
       log.debug("Entering listUsedAssertions(). realm=" + realm);
+      if (small) {
+        log.debug("Leaving listUsedAssertions(). Portable.");
+        return small.listUsedAssertions(realm, opts);
+      }
       const o = opts || {};
       const now = Number(o.now);
       const where = 'WHERE realm = $1 AND expires_at >= $2 ' +
@@ -10387,6 +10712,10 @@ function create(options) {
     // replaces the artifact rather than leaving the first one.
     putReportArtifact: function (row) {
       log.debug("Entering putReportArtifact().");
+      if (small) {
+        log.debug("Leaving putReportArtifact(). Portable.");
+        return small.putReportArtifact(row);
+      }
       log.debug("Leaving putReportArtifact().");
       return pool.query(
         'INSERT INTO sts_report_artifacts (realm, job_id, bytes, sha256, ' +
@@ -10408,6 +10737,10 @@ function create(options) {
     // the job's, which says so.
     putReportArtifactPieces: function (row, pieces) {
       log.debug("Entering putReportArtifactPieces().");
+      if (small) {
+        log.debug("Leaving putReportArtifactPieces(). Portable.");
+        return small.putReportArtifactPieces(row, pieces);
+      }
       log.debug("Leaving putReportArtifactPieces().");
       return transactionOnce(async function (client) {
         await client.query(
@@ -10438,6 +10771,10 @@ function create(options) {
 
     getReportArtifactPiece: function (key) {
       log.debug("Entering getReportArtifactPiece().");
+      if (small) {
+        log.debug("Leaving getReportArtifactPiece(). Portable.");
+        return small.getReportArtifactPiece(key);
+      }
       log.debug("Leaving getReportArtifactPiece().");
       return pool.query(
         'SELECT bytes FROM sts_report_artifact_pieces WHERE realm = $1 ' +
@@ -10451,6 +10788,10 @@ function create(options) {
 
     getReportArtifact: function (key) {
       log.debug("Entering getReportArtifact().");
+      if (small) {
+        log.debug("Leaving getReportArtifact(). Portable.");
+        return small.getReportArtifact(key);
+      }
       log.debug("Leaving getReportArtifact().");
       return pool.query(
         'SELECT bytes, sha256, media_type, created_at FROM ' +
@@ -10472,6 +10813,10 @@ function create(options) {
 
     deleteReportArtifact: function (key) {
       log.debug("Entering deleteReportArtifact().");
+      if (small) {
+        log.debug("Leaving deleteReportArtifact(). Portable.");
+        return small.deleteReportArtifact(key);
+      }
       log.debug("Leaving deleteReportArtifact().");
       // The pieces and the row in one statement (#1045), so neither is
       // left without the other.
@@ -10485,6 +10830,10 @@ function create(options) {
 
     purgeUsedAssertions: function (nowMs) {
       log.debug("Entering purgeUsedAssertions().");
+      if (small) {
+        log.debug("Leaving purgeUsedAssertions(). Portable.");
+        return small.purgeUsedAssertions(nowMs);
+      }
       log.debug("Leaving purgeUsedAssertions().");
       return pool.query('DELETE FROM sts_used_assertions WHERE expires_at < $1',
                         [Number(nowMs)])
@@ -10495,6 +10844,10 @@ function create(options) {
 
     removeUsedAssertions: function (realm) {
       log.debug("Entering removeUsedAssertions(). realm=" + realm);
+      if (small) {
+        log.debug("Leaving removeUsedAssertions(). Portable.");
+        return small.removeUsedAssertions(realm);
+      }
       log.debug("Leaving removeUsedAssertions().");
       return pool.query('DELETE FROM sts_used_assertions WHERE realm = $1',
                         [realm])
@@ -10610,6 +10963,21 @@ function create(options) {
       });
     }
   };
+  // NO NUDGE WHERE THE PORTABLE STATEMENTS RUN (#677): MariaDB has no
+  // LISTEN/NOTIFY, and the portable mode proves its code on PostgreSQL, so
+  // the driver offers no `watchChanges()` there and the replication module
+  // polls (`intervalMs()`). `announce()` sends nothing either.
+  if (portable) {
+    delete api.watchChanges;
+  }
+  // NO BRIDGE THREAD ON MARIADB (#677): `common/sync_query_thread.ts` builds
+  // a `pg` connection inside its worker, so the windowed directory and the
+  // on-demand minted reader are PostgreSQL's, and without `bridgeConnection()`
+  // persistence.js holds those stores whole instead.
+  if (engine !== 'postgres') {
+    delete api.bridgeConnection;
+  }
+  return api;
 }
 
 // ---------------------------------------------------------------------------

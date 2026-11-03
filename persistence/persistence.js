@@ -267,9 +267,11 @@ config.registerLogger(log);
 // against; this one is what the code branches on, and the two are checked
 // against each other at start() rather than trusted.
 /**
- * The persistence modes this module knows: `memory`, `ldif` and `postgres`.
+ * The persistence modes this module knows: `memory`, `ldif`, `postgres` and,
+ * since #677, `mariadb` — the same database store on a second engine.
  */
-const MODES = ['memory', 'ldif', 'postgres'];
+const storeModes = require('./store_modes');
+const MODES = storeModes.MODES;
 
 // ---------------------------------------------------------------------------
 // THE DIRECTORY SLOT. See the header — it is a slot rather than a require
@@ -473,7 +475,7 @@ let restoredCounts = { realms: 0, entries: 0, overrides: 0 };
 
 /**
  * Returns the configured persistence mode (`persistence.mode`).
- * @returns 'memory', 'ldif' or 'postgres'
+ * @returns 'memory', 'ldif', 'postgres' or 'mariadb'
  */
 function mode() {
   log.debug("Entering mode().");
@@ -706,8 +708,8 @@ function retrySucceeded() {
 function answersAfterCommit() {
   log.debug("Entering answersAfterCommit().");
   log.debug("Leaving answersAfterCommit().");
-  return enabled() && activeMode === 'postgres' && !restoring && !stopped &&
-    !!driver;
+  return enabled() && storeModes.isDatabase(activeMode) && !restoring &&
+    !stopped && !!driver;
 }
 
 /**
@@ -1002,7 +1004,7 @@ function schedule() {
     return;
   }
   // 0 for a database, `writeDelay` for a file. The header argues both.
-  const delay = activeMode === 'postgres' ? 0 : writeDelay();
+  const delay = storeModes.isDatabase(activeMode) ? 0 : writeDelay();
   // ARMED OUTSIDE ANY REQUEST'S DIRECTORY BUDGET (#359): the change that
   // schedules a flush is often a console request's, and the flush is
   // background work that must not inherit that request's slot.
@@ -2335,7 +2337,7 @@ function start() {
       return Promise.reject(err);
     }
   }
-  return chosen === 'postgres'
+  return storeModes.isDatabase(chosen)
     ? resolveDatabaseUrl().then(function (url) {
       if (!cells.isMulti()) {
         return openStore(chosen, url, null);
@@ -2846,16 +2848,22 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // The database's own trust anchors, read once for both tiers; inside
     // this `try`, so an unusable file is the fatal refusal its message is
     // written for (STS-STORE-0079) rather than an exception from nowhere.
-    const tlsCa = chosen === 'postgres' ? databaseTlsCa() : '';
-    driver = chosen === 'postgres'
+    const tlsCa = storeModes.isDatabase(chosen) ? databaseTlsCa() : '';
+    driver = storeModes.isDatabase(chosen)
       // `verifyTls` is READ HERE AND PASSED IN, rather than read in the
       // driver: that module takes its url and its logger as options and
       // reaches for nothing, which is what lets a test construct one against
       // any database without this file's settings existing at all.
       ? require('./persistence_postgres').create({
+          // The engine is the MODE (#677): one driver, two engines.
+          engine: chosen,
           url: resolvedUrl, log: log, verifyTls: verifiesDatabaseTls(),
           tlsCa: tlsCa,
-          poolMax: require('./persistence_postgres').poolMax(workerCount())
+          poolMax: require('./persistence_postgres').poolMax(workerCount()),
+          // Which coordination statements it sends (#677): read here, for
+          // the reason `verifyTls` is.
+          sqlDialect: String(config.value('persistence.sqlDialect') ||
+                             'native')
         })
       : require('./persistence_ldif').create({ dir: dataDir(), log: log });
     // A CELL'S STORE IS TWO DATABASES (#98): the one just made is the cell's
@@ -2872,7 +2880,9 @@ function openStore(chosen, resolvedUrl, globalUrls) {
         entryTier: 'service',
         verifyTls: verifiesDatabaseTls(),
         tlsCa: tlsCa,
-        poolMax: require('./persistence_postgres').poolMax(workerCount())
+        poolMax: require('./persistence_postgres').poolMax(workerCount()),
+        sqlDialect: String(config.value('persistence.sqlDialect') ||
+                           'native')
       });
       driver = tiered.create({
         global: globalDriver, cell: driver, cellId: cells.id(),
@@ -3391,7 +3401,7 @@ function openStore(chosen, resolvedUrl, globalUrls) {
               // defaults layer. `sourceOf()` is what makes that a fact rather
               // than a guess about what the operator typed.
               // -------------------------------------------------------------
-              (chosen === 'postgres' &&
+              (storeModes.isDatabase(chosen) &&
                config.sourceOf('persistence.databaseUrl') === 'defaults'
                 ? ' NOTE that persistence.databaseUrl was not configured, so ' +
                   'this was the built-in local development default (' +
@@ -4633,8 +4643,9 @@ function status() {
     dataDir: activeMode === 'ldif' ? dataDir() : null,
     // NEVER the URL itself: it carries a password, and this answer is rendered
     // on a console page and returned by an ungated management API.
-    database: activeMode === 'postgres' ? describeDatabase() : null,
-    writeDelayMs: activeMode === 'postgres' ? 0 : writeDelay(),
+    database: storeModes.isDatabase(activeMode) ? describeDatabase() : null,
+    engine: storeModes.isDatabase(activeMode) ? activeMode : null,
+    writeDelayMs: storeModes.isDatabase(activeMode) ? 0 : writeDelay(),
     persistsDirectory: activeMode !== 'memory',
     persistsRealms: activeMode !== 'memory' && persistsRealms(),
     persistsAppconfig: activeMode !== 'memory' && persistsAppconfig(),
@@ -4750,7 +4761,8 @@ function describeDatabase() {
       log.debug("Caught in describeDatabase(): " + ((e && e.message) || e));
       caUsable = false;
     }
-    const dial = require('./persistence_postgres').dialOptions(raw, verify);
+    const dial = require('./persistence_postgres').dialOptions(raw, verify,
+      '', activeMode === 'mariadb' ? 'mariadb' : 'postgres');
     const encrypted = !dial.refused && caUsable;
     const fill = require('../common/server_prose').fill;
     let tls;
@@ -5075,7 +5087,7 @@ module.exports = {
   mode: mode,
   /**
    * Returns the mode `start()` actually ran in.
-   * @returns 'memory', 'ldif' or 'postgres'
+   * @returns 'memory', 'ldif', 'postgres' or 'mariadb'
    */
   activeMode: function () {
     log.debug("Entering activeMode().");
@@ -5341,7 +5353,7 @@ module.exports = {
   databaseMetrics: function (options) {
     log.debug('Entering databaseMetrics().');
     const configured = mode();
-    if (configured !== 'postgres') {
+    if (!storeModes.isDatabase(configured)) {
       log.debug('Leaving databaseMetrics(). Not a database mode.');
       return Promise.resolve({
         ok: false, available: false, mode: configured,
@@ -5395,7 +5407,9 @@ module.exports = {
       // that nothing else in this service makes — `tests/postgres_schema.js`
       // compares the driver against `postgres/schema.sql`, and neither of
       // them compares either against a running server.
-      const declared = require('./persistence_postgres');
+      // MariaDB's declared schema is its own module's (#677).
+      const declared = activeMode === 'mariadb'
+        ? require('./schema_mariadb') : require('./persistence_postgres');
       report.schemaVersion = declared.SCHEMA_VERSION;
       report.declaredObjects = declared.SCHEMA_OBJECTS.map(function (one) {
         return one.name;

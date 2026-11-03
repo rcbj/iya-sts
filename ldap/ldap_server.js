@@ -3712,8 +3712,9 @@ const OWN_NAMES = [
   // which holds no key — only ever sees whatever of the two it was handed.
   'stsBackupCodes',
 
-  // AND A SIXTH SINCE 2026-09-11: the RFC 7523 SIGNING KEY PAIR a person may
-  // hold. Six attributes and a declaration, and they are the PERSON's
+  // AND A SIXTH SINCE 2026-09-11: the RFC 7523 SIGNING KEY PAIRS a person may
+  // hold — SEVERAL since #1290 (2026-11-03), one value per key pair in two
+  // multi-valued attributes, and a declaration. They are the PERSON's
   // counterpart to `oauthAssertion*` on an application — no code path crosses
   // the two sets, which is the same rule `applications.js` states about its
   // own pair. `common/person_assertions.js` is the register and argues the
@@ -3722,24 +3723,23 @@ const OWN_NAMES = [
   //
   // **`stsAssertionPrivateKey` IS THE THIRD ATTRIBUTE IN THIS DIRECTORY THAT
   // CAN BE READ BACK AND USED**, after the authenticator's shared secret and
-  // the recovery codes, and it is sealed under the key-encryption key
-  // wherever that key outlives the process for exactly their reason. The
-  // other five are public by construction: a certificate, a chain, a JWKS, a
-  // kid and an expiry are all things a relying party is MEANT to be given.
-  'stsAssertionIssuer', 'stsAssertionJwks', 'stsAssertionCertificate',
-  'stsAssertionCertificateChain', 'stsAssertionPrivateKey',
-  'stsAssertionKid', 'stsAssertionExpiresAt', 'stsAssertionKeySource',
+  // the recovery codes, and each of its values is sealed under the
+  // key-encryption key wherever that key outlives the process for exactly
+  // their reason. `stsAssertionKeyPair` is public by construction: a
+  // certificate, a chain, a JWK, a kid and an expiry are all things a relying
+  // party is MEANT to be given. The seven single-valued attributes it
+  // replaced (`stsAssertionJwks`, `…Certificate`, `…CertificateChain`,
+  // `…Kid`, `…ExpiresAt`, `…KeySource`) are gone, with no reader left.
+  'stsAssertionIssuer', 'stsAssertionKeyPair', 'stsAssertionPrivateKey',
 
-  // AND THE PERSON'S RFC 7522 KEY PAIR, SINCE 2026-09-13 — a fourth set,
-  // sharing no name with the three above it for the reason they share none
-  // with each other. `stsSamlAssertionPrivateKey` is sealed like its JWT twin;
-  // the thumbprint is the handle an XML Signature's certificate is matched by.
-  // `…KeySource` on both records whether the pair was issued here or a
-  // certificate was uploaded in its place.
-  'stsSamlAssertionIssuer', 'stsSamlAssertionCertificate',
-  'stsSamlAssertionCertificateChain', 'stsSamlAssertionPrivateKey',
-  'stsSamlAssertionThumbprint', 'stsSamlAssertionExpiresAt',
-  'stsSamlAssertionKeySource',
+  // AND THE PERSON'S RFC 7522 KEY PAIRS, SINCE 2026-09-13 — a second set,
+  // sharing no name with the one above it for the reason the application's
+  // two share none. `stsSamlAssertionPrivateKey` is sealed like its JWT twin;
+  // each record's thumbprint is the handle an XML Signature's certificate is
+  // matched by, and its `source` records whether the pair was issued here or
+  // a certificate was uploaded in its place.
+  'stsSamlAssertionIssuer', 'stsSamlAssertionKeyPair',
+  'stsSamlAssertionPrivateKey',
 
   // AND A SEVENTH SINCE 2026-09-12: A PERSON'S KERBEROS LONG-TERM KEYS, derived
   // from their own password by `kerberos/krb5_person_keys.ts` so that a
@@ -15169,17 +15169,23 @@ if (typeof personAssertions.setDirectory === 'function') {
         return false;
       }
       const attribute = String(name).toLowerCase();
-      if (value === null || value === undefined || value === '') {
+      const values = (Array.isArray(value) ? value : [value])
+        .filter(function (one) {
+          return one !== null && one !== undefined && one !== '';
+        }).map(String);
+      if (!values.length) {
         delete stored.attributes[attribute];
       } else {
-        // ASSIGNED and not appended. Two JWKS values would be two public keys
-        // under one `kid` attribute, and a verifier that read the second would
-        // be checking a signature against a key nobody meant.
-        stored.attributes[attribute] = [String(value)];
+        // ASSIGNED and not appended: the register hands over the attribute's
+        // WHOLE set of values — one per key pair since #1290 — so that a
+        // write is the state the register decided rather than a value added
+        // to whatever another writer left, and a revoked key pair's private
+        // half is gone when the register says so.
+        stored.attributes[attribute] = values;
       }
       touchDirectory();
       log.debug('Leaving write(). ' +
-                (value ? 'Written to ' : 'Removed from ') +
+                (values.length ? 'Written to ' : 'Removed from ') +
                 stored.dn + '.');
       return true;
     },

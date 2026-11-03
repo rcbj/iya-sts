@@ -198,7 +198,17 @@ async function credentialsOf(username) {
   });
   log.debug("Leaving credentialsOf().");
   return { raw: JSON.stringify((r.body || {}).credentials || null),
-           jwt: byPurpose.jwt || {}, saml: byPurpose.saml || {} };
+           jwt: byPurpose.jwt || { keys: [] },
+           saml: byPurpose.saml || { keys: [] } };
+}
+
+// One key pair of a profile by its handle (#1290: several per profile).
+function keyOf(profile, handle) {
+  log.debug("Entering keyOf().");
+  log.debug("Leaving keyOf().");
+  return (profile.keys || []).filter(function (one) {
+    return one.handle === handle;
+  })[0] || {};
 }
 
 // An external certificate authority — a root and an intermediate — and an RSA
@@ -314,9 +324,10 @@ async function test() {
   check("GET /admin-api/users?user= reads it as ISSUED, with the private key " +
         "HELD and not carried", function () {
           assert.strictEqual(creds.saml.held, true, creds.raw.slice(0, 300));
-          assert.strictEqual(creds.saml.source, "issued");
-          assert.strictEqual(creds.saml.privateKeyHeld, true);
-          assert.strictEqual(creds.saml.handle, samlIssued.thumbprint);
+          const held = keyOf(creds.saml, samlIssued.thumbprint);
+          assert.strictEqual(held.source, "issued", creds.raw.slice(0, 300));
+          assert.strictEqual(held.privateKeyHeld, true);
+          assert.strictEqual(held.state, "valid");
           assert.strictEqual(creds.jwt.held, false);
           assert.ok(creds.raw.indexOf("PRIVATE KEY") < 0,
             "a private key is in the credentials member");
@@ -361,12 +372,13 @@ async function test() {
         });
   creds = await credentialsOf(PERSON);
   check("and the read model holds two key pairs, one per profile", function () {
-    assert.strictEqual(creds.jwt.source, "issued");
-    assert.strictEqual(creds.saml.source, "issued");
+    assert.strictEqual(keyOf(creds.jwt, jwtIssued.kid).source, "issued");
+    assert.strictEqual(keyOf(creds.saml, samlIssued.thumbprint).source,
+                       "issued");
   });
 
   // -------------------------------------------------------------------------
-  log.info("=== 3. an external certificate replaces the SAML key pair ===");
+  log.info("=== 3. an external certificate is ADDED beside it (#1290) ===");
   const ext = await externalHierarchy();
   const incomplete = await post(realmApi + "/pki/upload-certificate",
     { identifier: PERSON, target: "person", purpose: "saml",
@@ -379,9 +391,12 @@ async function test() {
                       .test((incomplete.body.errors || []).join(" ")));
         });
   creds = await credentialsOf(PERSON);
-  check("and the entry still holds the issued SAML key pair", function () {
-    assert.strictEqual(creds.saml.source, "issued");
-  });
+  check("and the entry still holds only the issued SAML key pair",
+        function () {
+          assert.strictEqual(creds.saml.keys.length, 1, creds.raw);
+          assert.strictEqual(keyOf(creds.saml, samlIssued.thumbprint).source,
+                             "issued");
+        });
   const uploaded = await ok(realmApi + "/pki/upload-certificate",
     { identifier: PERSON, target: "person", purpose: "saml",
       certificate: ext.leafPem, chain: ext.rootPem + ext.interPem },
@@ -394,16 +409,33 @@ async function test() {
              "CN=Usercreds External Root"]);
         });
   creds = await credentialsOf(PERSON);
-  check("THE ISSUED SAML PRIVATE KEY IS GONE and the chain is two long; the " +
-        "JWT key pair is untouched", function () {
-          assert.strictEqual(creds.saml.source, "uploaded-external-ca");
-          assert.strictEqual(creds.saml.privateKeyHeld, false);
-          assert.strictEqual((creds.saml.chain || []).length, 2);
-          assert.strictEqual(creds.jwt.source, "issued");
+  const external = keyOf(creds.saml, uploaded.thumbprint);
+  check("THE UPLOAD IS A SECOND SAML KEY PAIR, with no private key held and " +
+        "a chain two long; the issued one and the JWT key pair are untouched",
+        function () {
+          assert.strictEqual(creds.saml.keys.length, 2, creds.raw);
+          assert.strictEqual(external.source, "uploaded-external-ca");
+          assert.strictEqual(external.privateKeyHeld, false);
+          assert.strictEqual((external.chain || []).length, 2);
+          assert.strictEqual(keyOf(creds.saml, samlIssued.thumbprint).state,
+                             "valid");
+          assert.strictEqual(keyOf(creds.jwt, jwtIssued.kid).source,
+                             "issued");
         });
+  const oldStill = await samlGrant(PERSON, PERSON, samlIssued.privateKeyPem,
+                                   samlIssued.certificatePem);
+  check("an assertion signed with the issued key is STILL accepted — an " +
+        "upload adds, and no longer replaces", function () {
+          assert.strictEqual(oldStill.status, 200,
+            JSON.stringify(oldStill.body).slice(0, 300));
+        });
+  await ok(realmApi + "/pki/revoke",
+           { identifier: PERSON, target: "person", purpose: "saml",
+             handle: samlIssued.thumbprint, reason: "keyCompromise" },
+           "revoked the issued RFC 7522 key pair");
   const oldSaml = await samlGrant(PERSON, PERSON, samlIssued.privateKeyPem,
-                                  "");
-  check("AN ASSERTION SIGNED WITH THE REPLACED KEY IS REFUSED", function () {
+                                  samlIssued.certificatePem);
+  check("AN ASSERTION SIGNED WITH THE REVOKED KEY IS REFUSED", function () {
     assert.strictEqual(oldSaml.status, 400,
       JSON.stringify(oldSaml.body).slice(0, 300));
   });
@@ -442,10 +474,14 @@ async function test() {
           assert.strictEqual(ownUpload.source, "uploaded-realm-ca");
         });
   creds = await credentialsOf(PERSON);
-  check("and now this service holds no JWT private key for them", function () {
-    assert.strictEqual(creds.jwt.source, "uploaded-realm-ca");
-    assert.strictEqual(creds.jwt.privateKeyHeld, false);
-  });
+  check("the same certificate uploaded is the same key pair, now recorded " +
+        "as uploaded, and this service holds no private key for it",
+        function () {
+          const mine = keyOf(creds.jwt, ownUpload.kid);
+          assert.strictEqual(creds.jwt.keys.length, 1, creds.raw);
+          assert.strictEqual(mine.source, "uploaded-realm-ca");
+          assert.strictEqual(mine.privateKeyHeld, false);
+        });
   const stillSigns = await jwtGrant(PERSON, PERSON, ownUpload.kid,
                                     jwtIssued.privateKeyPem);
   check("THE PERSON STILL SIGNS WITH THE KEY THEY WERE GIVEN, verified " +
@@ -455,17 +491,18 @@ async function test() {
         });
 
   // -------------------------------------------------------------------------
-  log.info("=== 5. one profile taken off ===");
+  log.info("=== 5. one profile's last key pair revoked ===");
   await ok(realmApi + "/pki/revoke",
-           { identifier: PERSON, target: "person", purpose: "saml" },
-           "took the RFC 7522 key pair off the person");
+           { identifier: PERSON, target: "person", purpose: "saml",
+             handle: uploaded.thumbprint },
+           "revoked the person's last valid RFC 7522 key pair");
   creds = await credentialsOf(PERSON);
   const samlGone = await samlGrant(PERSON, PERSON, ext.leafPrivatePem,
                                    ext.leafPem);
   const jwtStays = await jwtGrant(PERSON, PERSON, ownUpload.kid,
                                   jwtIssued.privateKeyPem);
   check("THE SAML ASSERTION IS REFUSED AND THE JWT ONE STILL ACCEPTED — " +
-        "taking one profile off leaves the other", function () {
+        "revoking one profile's key pairs leaves the other", function () {
           assert.strictEqual(creds.saml.held, false);
           assert.strictEqual(samlGone.status, 400,
             JSON.stringify(samlGone.body).slice(0, 300));

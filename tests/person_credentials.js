@@ -163,16 +163,16 @@ async function runBody(t) {
     t.check(alice.hasSamlKeyPair && !alice.hasKeyPair,
             'THE SAML SET IS WRITTEN AND THE JWT SET IS NOT', JSON.stringify({
               saml: alice.hasSamlKeyPair, jwt: alice.hasKeyPair }));
-    t.equal(alice.stsSamlAssertionKeySource, 'issued',
-            'and its provenance is recorded');
-    t.equal(alice.stsSamlAssertionThumbprint, samlIssued.thumbprint,
+    const samlHeld = alice.keys.saml[0] || {};
+    t.equal(samlHeld.source, 'issued', 'and its provenance is recorded');
+    t.equal(samlHeld.id, samlIssued.thumbprint,
             'the handle on the entry is the certificate\'s thumbprint');
     t.check(personAssertions.SEALED_ATTRIBUTES
               .indexOf('stsSamlAssertionPrivateKey') >= 0,
             'the SAML private key is on the sealed list beside the JWT one');
     // HELD, so that section 3's "it is gone" is about a key that was there.
     // Without this a write that never wrote the private key passes the file.
-    t.check(/PRIVATE KEY/.test(alice.stsSamlAssertionPrivateKey),
+    t.check(/PRIVATE KEY/.test(samlHeld.privateKeyPem || ''),
             'and the issued private key IS on the entry, opened for this ' +
             'register');
     // THE MODEL WHILE A PRIVATE KEY IS HELD, which is the only state in which
@@ -180,7 +180,9 @@ async function runBody(t) {
     // key pair on the entry is an upload with no private key to leak.
     const heldState = adminViews.personCredentialsState(ALICE);
     t.check(heldState.purposes.some(function (p) {
-              return p.id === 'saml' && p.privateKeyHeld;
+              return p.id === 'saml' && p.keys.some(function (one) {
+                return one.privateKeyHeld;
+              });
             }) &&
             JSON.stringify(heldState.purposes).indexOf('PRIVATE KEY') < 0 &&
             JSON.stringify(heldState.json).indexOf('PRIVATE KEY') < 0,
@@ -275,8 +277,9 @@ async function runBody(t) {
     t.equal(codeOf(incomplete), 'STS-PKI-0147',
             'and an external chain without its root is incomplete for a ' +
             'person too');
-    t.equal(personAssertions.recordFor(ALICE).stsSamlAssertionKeySource,
-            'issued', 'neither refusal changed the entry');
+    t.equal(personAssertions.listFor(ALICE, 'saml').map(function (one) {
+      return one.source;
+    }).join(','), 'issued', 'neither refusal changed the entry');
 
     const nobody = await pkiAdmin.pkiAction({
       action: 'upload-certificate', target: 'person', purpose: 'saml',
@@ -290,50 +293,74 @@ async function runBody(t) {
       action: 'upload-certificate', target: 'person', purpose: 'saml',
       identifier: ALICE, certificate: leafPem, chain: rootPem + interPem });
     t.check(samlUpload.ok && samlUpload.source === 'uploaded-external-ca',
-            'A FULL EXTERNAL CHAIN REPLACES ALICE\'S RFC 7522 KEY PAIR',
+            'A FULL EXTERNAL CHAIN IS ADDED TO ALICE\'S RFC 7522 KEY PAIRS ' +
+            '(#1290: it replaced the one held until then)',
             sentence(samlUpload));
-    alice = personAssertions.recordFor(ALICE);
-    t.check(!alice.stsSamlAssertionPrivateKey,
-            'THE ISSUED PRIVATE KEY IS GONE FROM HER ENTRY — a key for a ' +
-            'certificate it does not match would be a key nobody should use');
-    t.equal(alice.stsSamlAssertionKeySource, 'uploaded-external-ca',
-            'and the provenance says where the certificate came from');
-    t.check((alice.stsSamlAssertionCertificateChain.match(/BEGIN CERT/g) ||
+    const samlRows = personAssertions.listFor(ALICE, 'saml');
+    const uploadedRow = samlRows.filter(function (one) {
+      return one.source === 'uploaded-external-ca';
+    })[0] || {};
+    t.equal(samlRows.length, 2,
+            'she holds both now: the issued key pair and the upload');
+    t.check(!uploadedRow.privateKeyHeld,
+            'NO PRIVATE KEY IS HELD FOR THE UPLOAD — she keeps her own');
+    t.check((String(uploadedRow.chainPem).match(/BEGIN CERT/g) ||
              []).length === 2,
             'the stored chain is the intermediate and the root');
     const oldKey = await samlGrant.verify({
       assertion: samlAssertion(ALICE, ALICE, samlKey, ''), audiences: [AUD] });
-    t.check(!oldKey.ok,
-            'the key pair issued before the upload no longer signs for her',
+    t.check(oldKey.ok,
+            'the key pair issued before the upload STILL signs for her',
             sentence(oldKey));
     const newKey = await samlGrant.verify({
       assertion: samlAssertion(ALICE, ALICE, leafPair.privatePem, leafPem),
       audiences: [AUD] });
     t.check(newKey.ok && newKey.issuerKind === 'person',
-            'AND THE KEY SHE HOLDS HERSELF DOES, verified through the chain ' +
-            'she uploaded', sentence(newKey));
+            'AND SO DOES THE KEY SHE HOLDS HERSELF, verified through the ' +
+            'chain she uploaded — any valid one is matched by thumbprint',
+            sentence(newKey));
+    const revokeIssued = await pkiAdmin.pkiAction({
+      action: 'revoke', target: 'person', purpose: 'saml', identifier: ALICE,
+      handle: samlIssued.thumbprint, reason: 'keyCompromise' });
+    t.check(revokeIssued.ok && revokeIssued.onList &&
+            revokeIssued.remaining === 1,
+            'REVOKING THE ISSUED ONE puts it on its authority\'s list and ' +
+            'leaves the upload', sentence(revokeIssued));
+    const oldRevoked = await samlGrant.verify({
+      assertion: samlAssertion(ALICE, ALICE, samlKey, ''), audiences: [AUD] });
+    t.check(!oldRevoked.ok, 'and the revoked key no longer signs for her',
+            sentence(oldRevoked));
+    const newStill = await samlGrant.verify({
+      assertion: samlAssertion(ALICE, ALICE, leafPair.privatePem, leafPem),
+      audiences: [AUD] });
+    t.check(newStill.ok, 'while the uploaded one still does',
+            sentence(newStill));
 
     const jwtUpload = await pkiAdmin.pkiAction({
       action: 'upload-certificate', target: 'person', purpose: 'jwt',
       identifier: BOB, certificate: leafPem, chain: interPem + rootPem });
     t.check(jwtUpload.ok && /^person-/.test(jwtUpload.kid || ''),
-            'the same certificate replaces Bob\'s RFC 7523 key pair, under a ' +
-            'PERSON kid', sentence(jwtUpload));
+            'the same certificate is added to Bob\'s RFC 7523 key pairs, ' +
+            'under a PERSON kid', sentence(jwtUpload));
     const bob = personAssertions.recordFor(BOB);
-    t.check(bob.hasKeyPair && !bob.stsAssertionPrivateKey &&
-            JSON.parse(bob.stsAssertionJwks).keys[0].kid ===
-              bob.stsAssertionKid,
-            'his entry holds the JWKS and the kid beside it and no private ' +
-            'key');
+    const bobUpload = bob.keys.jwt.filter(function (one) {
+      return one.id === jwtUpload.kid;
+    })[0] || {};
+    t.check(bob.hasKeyPair && !bobUpload.privateKeyPem &&
+            bob.jwks.keys.some(function (one) {
+              return one.kid === jwtUpload.kid;
+            }),
+            'his valid JWKS holds the uploaded key under its kid, and no ' +
+            'private key is held for it');
     const jwtSelf = await assertionGrant.verify({
-      assertion: jws({ alg: 'RS256', kid: bob.stsAssertionKid },
+      assertion: jws({ alg: 'RS256', kid: jwtUpload.kid },
                      jwtClaims(BOB, BOB), leafPair.privatePem),
       audiences: [AUD] });
     t.check(jwtSelf.ok && jwtSelf.issuerKind === 'person',
             'THE JWT GRANT VERIFIES HIS ASSERTION WITH THE UPLOADED KEY',
             sentence(jwtSelf));
     const jwtOther = await assertionGrant.verify({
-      assertion: jws({ alg: 'RS256', kid: bob.stsAssertionKid },
+      assertion: jws({ alg: 'RS256', kid: jwtUpload.kid },
                      jwtClaims(BOB, ALICE), leafPair.privatePem),
       audiences: [AUD] });
     t.equal(codeOf(jwtOther), 'STS-OAUTH-0049',
@@ -394,34 +421,45 @@ async function runBody(t) {
             sentence(selfSigned));
 
     // -----------------------------------------------------------------------
-    t.log.info('=== 5. one profile taken off, and the page\'s model ===');
+    t.log.info('=== 5. revoked one at a time, and the page\'s model ===');
     const state = adminViews.personCredentialsState(ALICE);
     const byId = {};
     state.purposes.forEach(function (p) { byId[p.id] = p; });
+    const samlKeys = byId.saml.keys || [];
+    const external = samlKeys.filter(function (one) {
+      return one.source === 'uploaded-external-ca';
+    })[0] || {};
     t.check(state.found && byId.jwt.held && byId.saml.held &&
-            byId.saml.source === 'uploaded-external-ca' &&
-            byId.saml.chain.length === 2 && !byId.saml.privateKeyHeld,
-            'the Credentials section reads both profiles, the source, the ' +
-            'chain and the absent private key', JSON.stringify({
-              jwt: byId.jwt.source, saml: byId.saml.source }));
+            samlKeys.length === 2 && external.chain.length === 2 &&
+            !external.privateKeyHeld && external.state === 'valid' &&
+            samlKeys.some(function (one) {
+              return one.state === 'revoked';
+            }),
+            'the Credentials section reads every key pair of both profiles, ' +
+            'each with its source, chain, state and absent private key',
+            JSON.stringify(samlKeys.map(function (one) {
+              return [one.source, one.state];
+            })));
     t.check(JSON.stringify(state.json).indexOf('PRIVATE KEY') < 0 &&
             JSON.stringify(state.purposes).indexOf('PRIVATE KEY') < 0,
             'NO PRIVATE KEY IS IN THE MODEL, EITHER PROFILE — a person\'s ' +
             'has no read door, so the page says whether one is held and ' +
             'nothing more');
-    // The way back to the person's page after a form went with the
-    // server-rendered console (#446): the static console stays on the page.
 
-    const takeSaml = await pkiAdmin.pkiAction({
-      action: 'revoke', target: 'person', purpose: 'saml', identifier: ALICE });
+    const revokeSaml = await pkiAdmin.pkiAction({
+      action: 'revoke', target: 'person', purpose: 'saml', identifier: ALICE,
+      handle: external.handle });
     alice = personAssertions.recordFor(ALICE);
-    t.check(takeSaml.ok && !alice.hasSamlKeyPair && alice.hasKeyPair,
-            'TAKING THE RFC 7522 KEY PAIR OFF LEAVES THE RFC 7523 ONE',
-            sentence(takeSaml));
+    t.check(revokeSaml.ok && !revokeSaml.onList && !alice.hasSamlKeyPair &&
+            alice.hasKeyPair,
+            'REVOKING THE LAST RFC 7522 KEY PAIR LEAVES THE RFC 7523 ONES — ' +
+            'and an external authority\'s certificate is marked revoked ' +
+            'here, on no list of ours', sentence(revokeSaml));
     const nothingLeft = await pkiAdmin.pkiAction({
-      action: 'revoke', target: 'person', purpose: 'saml', identifier: ALICE });
-    t.equal(codeOf(nothingLeft), 'STS-PKI-0111',
-            'and taking it off again says there is nothing to take off');
+      action: 'revoke', target: 'person', purpose: 'saml', identifier: ALICE,
+      handle: 'not-a-handle-of-hers' });
+    t.equal(codeOf(nothingLeft), 'STS-PKI-0224',
+            'and a handle she holds nothing under is refused by name');
     const badPurpose = await pkiAdmin.pkiAction({
       action: 'revoke', target: 'person', purpose: 'pkcs7',
       identifier: ALICE });
@@ -433,9 +471,13 @@ async function runBody(t) {
             'the two refusals this change reversed stay registered, RETIRED ' +
             '— a code is never reused');
   } finally {
+    // Every key pair still valid is revoked: there is no take-off any
+    // more (#1290), and a test leaves nothing that would sign.
     [ALICE, BOB].forEach(function (name) {
       personAssertions.PURPOSE_IDS.forEach(function (purpose) {
-        personAssertions.clear(name, purpose);
+        personAssertions.activeFor(name, purpose).forEach(function (one) {
+          personAssertions.revoke(name, purpose, one.id);
+        });
       });
     });
   }

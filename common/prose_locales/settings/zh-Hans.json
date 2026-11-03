@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "一个人可以在用户门户上为自己签发多少个仍然有效的 TLS 客户端证书——每个浏览器或设备一个。已吊销或已过期的证书不计入。超出后门户会拒绝（STS-PKI-0170），而不是吊销某人可能仍在使用的较旧证书。签发证书还受 pki.personSelfService 以及上面两项自助服务速率限制的约束。"
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "每人每个配置文件可持有的签名密钥对"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "一个人对每个配置文件（RFC 7523 JWT 与 RFC 7522 SAML 2.0 分别计算）最多可持有多少个仍然有效的断言签名密钥对——无论是在用户门户上签发、由管理员签发还是上传的。已吊销或已过期的密钥对不计入。超过上限时，门户会把“生成”按钮换成一条说明，每个入口都会拒绝（STS-PKI-0223），而不是吊销某人可能仍在使用的较旧密钥对。"
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "每个应用可持有的 TLS 客户端证书数"
@@ -9644,12 +9652,24 @@
     "text": "持久化模式"
   },
   "persistence.mode|description": {
-    "en": "3b1c6fa9ec185404",
-    "text": "内嵌目录、信任领域注册表和运行时 appconfig 覆盖写入的位置。memory 不写入任何内容，也是本服务一贯的做法——重启后一切都会消失。ldif 为每个领域写入一个 RFC 2849 文件，并在 persistence.dataDir 中写入两个 JSON 文件，这是本地开发的方案，不需要数据库。postgres 写入一组表（postgres/schema.sql 列出了它们），是共享存储。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 主体、重放缓存、计数器和审计日志——仅在产品模式下使用 postgres 时持久化，其他任何配置均不持久化；请参阅 persistence.minted。开发模式不持久化其中任何内容，因为那里的签名密钥在每次启动时都会重新生成，比密钥存活更久的令牌将无从验证。ldif 存储在任何模式下都不保存这些内容，并在启动时说明这一点，因为它每次刷新都写入完整文件。"
+    "en": "9017af2918cf94be",
+    "text": "内嵌目录、信任领域注册表和运行时 appconfig 覆盖写入的位置。memory 不写入任何内容，也是本服务一贯的做法——重启后一切都会消失。ldif 为每个领域写入一个 RFC 2849 文件，并在 persistence.dataDir 中写入两个 JSON 文件，这是本地开发的方案，不需要数据库。postgres 写入一组表（postgres/schema.sql 列出了它们），是共享存储。mariadb 是 MariaDB 上的同一存储（mariadb/schema.sql），是测试套件所针对的第二种引擎：此时 persistence.databaseUrl 是一个 mariadb:// 地址，必须安装 mysql2 包，而需要 PostgreSQL 本身的功能（单元、批量导入、目录窗口）会被拒绝。本服务铸造的内容——会话、令牌、代码、工件、Kerberos 主体、重放缓存、计数器和审计日志——仅在产品模式下使用 postgres 时持久化，其他任何配置均不持久化；请参阅 persistence.minted。开发模式不持久化其中任何内容，因为那里的签名密钥在每次启动时都会重新生成，比密钥存活更久的令牌将无从验证。ldif 存储在任何模式下都不保存这些内容，并在启动时说明这一点，因为它每次刷新都写入完整文件。"
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
     "text": "存储在监听器绑定之前打开并读取"
+  },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "集群 SQL 方言"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "postgres 存储用于协调多个进程而发送的语句：认领、租约、计数器、限速窗口、预算、写入栅栏、集群加入锁、心跳以及变更日志修剪。native 是 PostgreSQL 自身的语句（条件 upsert、咨询锁、LISTEN/NOTIFY），也是生产环境运行的方式。portable 是第二种数据库引擎运行的语句（遇到重复时不做任何事的普通插入、sts_cluster_locks 中的行锁，且没有变更通知，因此除非设置了 persistence.pollInterval，否则每秒轮询一次变更日志）；它的存在是为了让测试套件能够在 PostgreSQL 上验证这些代码。两者都是正确的；portable 每次操作需要更多语句。"
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "存储驱动在构建时选择其语句"
   },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
@@ -9920,8 +9940,8 @@
     "text": "变更轮询间隔（毫秒）"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "本进程多久向变更日志询问一次其他进程提交了什么。这是契约，LISTEN/NOTIFY 提醒只是在其之上的优化，因此这是通知丢失时——监听器断开、数据库重启——最坏情况下的收敛延迟，而典型延迟为几毫秒。设为五秒，是因为提醒通常会先到达，更短的间隔除了增加查询之外毫无收益；250ms 是下限。它也是 persistence.coordinate 下所述重放缓存窗口的大小。"
+    "en": "0620a679e69c0d43",
+    "text": "此进程多久向变更日志询问一次其他进程已提交的内容。这是契约，LISTEN/NOTIFY 提示只是对它的一种优化，因此当通知丢失时——监听器断开、数据库重启——这就是最坏情况下的收敛延迟，而典型延迟只有几毫秒。取五秒是因为提示通常先到达，更短的间隔除了更多查询之外一无所获；250 毫秒是下限。当存储不发送提示（persistence.sqlDialect 为 portable）且未设置此项时，间隔为一秒。它也是 persistence.coordinate 下所述重放缓存窗口的大小。"
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",

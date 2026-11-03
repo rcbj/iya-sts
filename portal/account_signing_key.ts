@@ -15,7 +15,10 @@
 // whole authority is *this is me*: `common/person_assertions.js` refuses an
 // assertion signed with it that names anybody else as `sub`, on the
 // registered key and on the certificate alike. Two profiles — RFC 7523's JWT
-// key pair and RFC 7522's SAML one — each with its own Generate and Take off.
+// key pairs and RFC 7522's SAML ones — each holding SEVERAL since #1290
+// (rcbj, 2026-11-03), up to `pki.personSigningKeyMax` valid ones, each with
+// its own label and revoked on its own row, as the TLS card's certificates
+// are. Generate ADDS one; there is no Take off any more.
 // And since 2026-09-13 a TLS CLIENT CERTIFICATE, the third card: a key and a
 // certificate that sign a TLS handshake at `GET /tls/sign-in`
 // (`common/tls_client_certificates.js`).
@@ -46,8 +49,10 @@
 //
 // **THE IDENTITY IS THE TOKEN'S AND THERE IS NO PARAMETER FOR IT.** The form
 // has no name field, and a TLS certificate's serial is looked up among THIS
-// person's certificates only in `tlsClient.revoke()` — one belonging to
-// somebody else matches nothing.
+// person's certificates only in `tlsClient.revoke()`, as a signing key's
+// handle is among this person's key pairs only in
+// `personAssertions.revoke()` — one belonging to somebody else matches
+// nothing.
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
@@ -80,27 +85,33 @@ const SIGNING_KEY_PROFILES = [
 // field — the deployment's answers — and above all NO NAME FIELD: a
 // `username` here would let anybody signed in issue THEMSELVES a key pair on
 // somebody else's entry, which is a takeover rather than a leak.
+// `remove` (take off) left with #1290: a signing key pair is REVOKED, one
+// at a time, by `revoke` with its `handle`.
 const SIGNING_KEY_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['generate', 'remove',
+  action: vt.opt(vt.oneOf(['generate', 'revoke',
                           // A TLS client certificate (2026-09-13).
                           'generate-tls-client', 'revoke-tls-client']))
-    .describe('`generate` or `remove` a signing key pair (for `purpose`); ' +
-              '`generate-tls-client` or `revoke-tls-client` a TLS client ' +
-              'certificate.'),
+    .describe('`generate` a signing key pair (for `purpose`) or `revoke` ' +
+              'one of yours (by `handle`); `generate-tls-client` or ' +
+              '`revoke-tls-client` a TLS client certificate.'),
   label: vz.string().max(80).optional()
-    .describe('For `generate-tls-client`: what you call the device.'),
+    .describe('For `generate`: what you call the key pair. For ' +
+              '`generate-tls-client`: what you call the device.'),
+  handle: vz.string().max(128).regex(/^[A-Za-z0-9_:-]*$/).optional()
+    .describe('For `revoke`: the key pair\'s `kid` (RFC 7523) or ' +
+              'certificate thumbprint (RFC 7522), one of yours.'),
   key_alg: vt.opt(vt.oneOf(tlsClient.KEY_ALGS))
     .describe('For `generate-tls-client`: the key algorithm.'),
   serial: vz.string().max(80).regex(/^[0-9A-Fa-f:]*$/).optional()
     .describe('For `revoke-tls-client`: the certificate\'s serial, one of ' +
               'yours.'),
   reason: vt.opt(vt.oneOf(tlsClient.REVOCATION_REASONS))
-    .describe('For `revoke-tls-client`: why.'),
+    .describe('For `revoke` and `revoke-tls-client`: why.'),
   // WHICH PROFILE (2026-09-13). Absent means `jwt`, which is what every form
   // and client posted before the second profile existed.
   purpose: vt.opt(vt.oneOf(['jwt', 'saml']))
-    .describe('For `generate` and `remove`: RFC 7523\'s `jwt` key pair (the ' +
-              'default) or RFC 7522\'s `saml` one.')
+    .describe('For `generate` and `revoke`: RFC 7523\'s `jwt` key pairs ' +
+              '(the default) or RFC 7522\'s `saml` ones.')
 });
 
 interface AccountSigningKeyDeps {
@@ -162,32 +173,42 @@ class AccountSigningKey {
     })[0] || null;
   }
 
-  // What a person holds for one profile, read off `recordFor()`'s record by
-  // the register's own attribute table — so this page and `/admin/users`
-  // cannot disagree about which attribute holds the handle. Null where
-  // nothing is held.
+  // What a person holds for one profile (#1290): every key pair with its
+  // state, newest first, as the TLS card lists certificates — read off
+  // `recordFor()`'s record, which is the register's own, so this page and
+  // `/admin/users` cannot disagree. No private key is in it.
   /**
    * What the person holds for one profile.
    *
-   * @param held - `personAssertions.recordFor()`'s record
+   * @param held - `personAssertions.recordFor()`'s record, or null
    * @param profile - the profile
-   * @returns the handle, expiry, certificate and issuers, or null
+   * @returns `{ keys, issuers, valid }`
    */
   heldProfile(held: Json, profile: Json): Json {
-    const { log, personAssertions } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering AccountSigningKey.heldProfile().");
-    const names = personAssertions.KEY_PAIR_ATTRIBUTES[profile.id];
-    if (!held || !names || !held[names.present]) {
-      log.debug("Leaving AccountSigningKey.heldProfile(). Nothing held.");
-      return null;
-    }
-    log.debug("Leaving AccountSigningKey.heldProfile().");
+    const keys: Json[] = ((held && held.keys && held.keys[profile.id]) || [])
+      .map(function (one: Json): Json {
+        return { handle: String(one.id || ''),
+                 label: String(one.label || ''),
+                 source: String(one.source || ''),
+                 serialHex: String(one.serialHex || ''),
+                 keyAlg: String(one.keyAlg || ''),
+                 notAfter: String(one.notAfter || ''),
+                 expiresAt: String(one.expiresAt || ''),
+                 state: String(one.state || ''),
+                 reason: String(one.reason || ''),
+                 revokedAt: String(one.revokedAt || ''),
+                 certificate: String(one.certificatePem || '') };
+      });
+    log.debug("Leaving AccountSigningKey.heldProfile(). " + keys.length);
     return {
-      handle: String(held[names.handle] || ''),
-      expiresAt: String(held[names.expiresAt] || ''),
-      certificate: String(held[names.certificate] || ''),
-      issuers: [].concat((profile.id === 'saml' ? held.samlEffectiveIssuers
-                                                : held.effectiveIssuers) || [])
+      keys: keys,
+      valid: keys.filter(function (one: Json): boolean {
+        return one.state === 'valid';
+      }).length,
+      issuers: [].concat((held && (profile.id === 'saml'
+        ? held.samlEffectiveIssuers : held.effectiveIssuers)) || [])
     };
   }
 
@@ -296,6 +317,7 @@ class AccountSigningKey {
     log.debug("Entering AccountSigningKey.view().");
     const username = caller.username;
     const held: Json = personAssertions.recordFor(username);
+    const max = Number(personAssertions.maxPerPerson() || 0);
     const out = {
       username: username,
       entry: !!held,
@@ -303,10 +325,15 @@ class AccountSigningKey {
       offered: config.value('pki.personSelfService') !== false,
       issuable: !!pki.hasChain(),
       tokenEndpoint: String(base || '') + '/oauth2/token',
+      // THE CAP (#1290), per profile, and the two reasons a holder may give.
+      maxPerPerson: max,
+      reasons: (personAssertions.REVOCATION_REASONS || []).slice(0),
       profiles: SIGNING_KEY_PROFILES.map(function (profile) {
+        const mine = self.heldProfile(held, profile);
         return { id: profile.id, rfc: profile.rfc,
                  grantType: profile.grantType,
-                 held: self.heldProfile(held, profile) };
+                 held: mine,
+                 atCap: max > 0 && mine.valid >= max };
       }),
       tls: this.tlsView(username, base),
       fresh: fresh || null
@@ -444,31 +471,35 @@ class AccountSigningKey {
                                   view: this.view(caller, base, fresh) });
     }
 
-    if (action === 'remove') {
-      // ONE PROFILE AT A TIME: taking the RFC 7522 key pair off leaves the
-      // RFC 7523 one working, and the reverse.
-      const removed: Json = personAssertions.clear(username, profile.id,
+    // A SIGNING KEY PAIR: revoke one of yours (#1290), which replaced
+    // "take off". A message, because nothing secret comes back. The handle
+    // is looked up among THIS person's key pairs only.
+    if (action === 'revoke') {
+      const revoked: Json = personAssertions.revoke(username, profile.id,
+        String(body.handle || ''), body.reason,
         { initiatingEntity: 'user', via: 'portal' });
-      if (!removed.ok) {
-        log.debug("Leaving AccountSigningKey.act(). Nothing to remove.");
-        return refuse(400, 'STS-PORTAL-0027', 'You hold no ' + profile.rfc +
-          ' signing key, so there was nothing to take off.');
+      if (!revoked.ok) {
+        log.debug("Leaving AccountSigningKey.act(). Not revoked.");
+        return refuse(400, codeOf(revoked, 'STS-PORTAL-0625'),
+          (revoked.errors || ['That key pair could not be revoked.'])[0]);
       }
       audit.record({
-        category: 'authentication', action: 'portal.signing-key.removed',
+        category: 'authentication', action: 'portal.signing-key.revoked',
         actor: username, outcome: 'success',
-        summary: username + ' took their own ' + profile.rfc + ' signing ' +
-                 'key off',
-        detail: { purpose: profile.id, attributes: removed.removed,
+        summary: username + ' revoked their own ' + profile.rfc + ' signing ' +
+                 'key pair ' + revoked.key.id + ' (' + revoked.reason + ')',
+        detail: { purpose: profile.id, handle: revoked.key.id,
+                  serialHex: revoked.key.serialHex, label: revoked.key.label,
+                  reason: revoked.reason, already: !!revoked.already,
+                  onList: !!revoked.onList,
                   address: websecurity.addressOf(req) }
       });
-      log.info('portal: ' + username + ' removed their ' + profile.rfc +
-               ' assertion signing key. Assertions signed with it are ' +
-               'refused from now on; the certificate itself is on no ' +
-               'revocation list.');
-      log.debug("Leaving AccountSigningKey.act(). Removed.");
+      log.info('portal: ' + username + ' revoked their ' + profile.rfc +
+               ' signing key pair ' + revoked.key.id + ' (' + revoked.reason +
+               '). Assertions signed with it are refused from now on.');
+      log.debug("Leaving AccountSigningKey.act(). Revoked.");
       return ctx.json(res, 200, { ok: true,
-        message: t.text('portal.done.keyOff', { rfc: profile.rfc }) });
+        message: t.text('portal.done.keyRevoked', { rfc: profile.rfc }) });
     }
 
     if (action === 'generate') {
@@ -477,6 +508,25 @@ class AccountSigningKey {
         return refuse(403, 'STS-PORTAL-0028', 'This service does not let ' +
           'people issue their own signing keys. An administrator can issue ' +
           'one to you.');
+      }
+      // THE CAP AND THE LABEL BEFORE A KEY PAIR IS GENERATED (#1290), and
+      // before the rate limit: an RSA key pair is CPU on the one thread, and
+      // generating one only for `write()` to refuse it would spend that and
+      // lose the key — and a refusal that generates nothing should not use
+      // up one of the person's generations either.
+      const label = String(body.label || '').trim();
+      const labelSaid = personAssertions.labelProblem(label);
+      if (labelSaid) {
+        log.debug("Leaving AccountSigningKey.act(). Label refused.");
+        return refuse(400, 'STS-PKI-0225', labelSaid);
+      }
+      if (personAssertions.atCap(username, profile.id)) {
+        log.debug("Leaving AccountSigningKey.act(). At the cap.");
+        return refuse(400, 'STS-PKI-0223', 'You already hold ' +
+          personAssertions.maxPerPerson() + ' ' + profile.rfc + ' signing ' +
+          'key pairs that are still valid, which is the most this service ' +
+          'issues to one person. Revoke one you no longer use and generate ' +
+          'again.');
       }
       // RATE LIMITED, two settings since 2026-09-12 whose defaults are the
       // five it was: per identity, and per address so that everybody behind
@@ -504,7 +554,8 @@ class AccountSigningKey {
       }
       const record = issued.issued;
       const written: Json = personAssertions.write(username, record,
-        { purpose: profile.id, initiatingEntity: 'user', via: 'portal' });
+        { purpose: profile.id, label: label, initiatingEntity: 'user',
+          via: 'portal' });
       if (!written.ok) {
         // THE KEY PAIR IS GONE AND THE PAGE SAYS SO. `common/pki.js` hands
         // one over ONCE and keeps no copy, so a failed write is not a state
@@ -522,7 +573,7 @@ class AccountSigningKey {
         actor: username, outcome: 'success',
         summary: username + ' issued themselves an ' + profile.rfc +
                  ' signing key pair',
-        detail: { purpose: profile.id, kid: record.kid,
+        detail: { purpose: profile.id, kid: record.kid, label: label,
                   thumbprint: record.certificateThumbprint,
                   notAfter: record.notAfter, keyAlg: record.keyAlg,
                   address: websecurity.addressOf(req) }
@@ -535,9 +586,12 @@ class AccountSigningKey {
                ', valid until ' + record.notAfter + '. The private half was ' +
                'offered to them once and is not readable again.');
       log.debug("Leaving AccountSigningKey.act(). Issued and showing.");
-      // The files are named for the person and the profile, as a TLS
-      // client certificate's are for the person and the device.
-      const stem = (String(username).replace(/[^A-Za-z0-9._-]+/g, '-')
+      // The files are named for the person, the profile and the label, as a
+      // TLS client certificate's are for the person and the device — two
+      // key pairs of one profile are two pairs of files a person can tell
+      // apart in a downloads folder.
+      const stem = (String(username + (label ? '-' + label : ''))
+        .replace(/[^A-Za-z0-9._-]+/g, '-')
         .replace(/^-+|-+$/g, '') || 'person') + '-' + profile.id + '-signing';
       const chain = [record.certificatePem].concat(record.chainPem || [])
         .map(function (one: Json): string {
@@ -545,6 +599,11 @@ class AccountSigningKey {
         }).join('');
       return ctx.json(res, 200, { ok: true, view: this.view(caller, base, {
         purpose: profile.id,
+        // WHICH ROW OF THE LIST IS THE NEW ONE (#1290): the page draws the
+        // two downloads in that key pair's own row.
+        handle: profile.id === 'saml' ? record.certificateThumbprint || ''
+                                      : record.kid || '',
+        label: label,
         files: {
           key: AccountSigningKey.pemFile(stem + '-key.pem',
                                          record.privateKeyPem),
@@ -579,8 +638,10 @@ class AccountSigningKey {
         access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/signing-key',
         summary: 'Your signing key pairs and TLS client certificates',
         description: '`profiles`: RFC 7523\'s JWT and RFC 7522\'s SAML key ' +
-          'pairs — for each, what you hold (its kid or thumbprint, the ' +
-          'issuers you may assert as, its expiry and certificate) or null. ' +
+          'pairs — for each, `held.keys` (every key pair you hold, newest ' +
+          'first: its `handle` — kid or thumbprint —, label, state, expiry ' +
+          'and certificate), the issuers you may assert as, and `atCap` ' +
+          '(you hold `maxPerPerson` valid ones, `pki.personSigningKeyMax`). ' +
           '`tls`: your TLS client certificates, where one signs you in, and ' +
           'what the form offers. `offered` (`pki.personSelfService`) and ' +
           '`issuable` (a certificate authority exists) say whether you may ' +
@@ -593,9 +654,11 @@ class AccountSigningKey {
       { method: 'POST', path: ctx.BASE + '/signing-key',
         operationId: 'changeSigningKeys', tag: 'Signing keys',
         access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/signing-key',
-        summary: 'Generates or takes off a signing key or TLS certificate',
-        description: '`generate` issues a key pair for `purpose` from this ' +
-          'realm\'s Issuing CA; `remove` takes one off. ' +
+        summary: 'Generates or revokes a signing key or TLS certificate',
+        description: '`generate` ADDS a key pair for `purpose` from this ' +
+          'realm\'s Issuing CA, named by `label` (refused at the cap); ' +
+          '`revoke` revokes one of yours by `handle`, with `reason`: its ' +
+          'certificate goes on the CRL and the key stops being accepted. ' +
           '`generate-tls-client` issues a TLS client certificate; ' +
           '`revoke-tls-client` revokes one of yours. Both generations answer ' +
           'the private key (unencrypted PKCS#8 PEM) and the certificate ' +

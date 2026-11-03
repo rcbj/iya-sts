@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "一個人可在使用者入口網站上自行簽發多少張仍有效的 TLS 用戶端憑證——每個瀏覽器或裝置一張。已撤銷或已過期的憑證不計入。超過此數時入口網站會拒絕（STS-PKI-0170），而不是撤銷某人可能仍在使用的舊憑證。簽發也受 pki.personSelfService 與上方兩項自助速率限制的約束。"
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "每人每個設定檔可持有的簽章金鑰組"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "一個人對每個設定檔（RFC 7523 JWT 與 RFC 7522 SAML 2.0 分別計算）最多可持有多少組仍然有效的斷言簽章金鑰組——無論是在使用者入口網站上簽發、由管理員簽發或是上傳的。已撤銷或已過期的金鑰組不計入。超過上限時，入口網站會將「產生」按鈕換成一則說明，每個入口都會拒絕（STS-PKI-0223），而不是撤銷某人可能仍在使用的較舊金鑰組。"
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "每個應用程式可持有的 TLS 用戶端憑證數"
@@ -9644,12 +9652,24 @@
     "text": "持久化模式"
   },
   "persistence.mode|description": {
-    "en": "3b1c6fa9ec185404",
-    "text": "嵌入式目錄、信任領域登錄庫與執行時期 appconfig 覆寫的寫入位置。memory 不寫入任何東西，這是此服務一向的做法——重新啟動後一切都會消失。ldif 會為每個領域寫入一個 RFC 2849 檔案，另在 persistence.dataDir 中寫入兩個 JSON 檔案，這是本機開發的解決方案，不需要資料庫。postgres 會寫入一組資料表（postgres/schema.sql 列出它們），是共用儲存區。此服務所產生的東西——工作階段、權杖、代碼、成品、Kerberos 主體、重送快取、計數器與稽核記錄——只在「產品」模式且使用 postgres 時才會持久保存，在其他任何組態下都不會；請參閱 persistence.minted。開發模式不持久保存其中任何一項，因為該模式下簽署金鑰在每次啟動時都會重新產生，而比它存活更久的權杖將無法對任何東西通過驗證。ldif 儲存區在兩種模式下都不保存其中任何一項，並在啟動時說明，因為它每次清寫都會寫入完整檔案。"
+    "en": "9017af2918cf94be",
+    "text": "嵌入式目錄、信任領域登錄庫與執行時期 appconfig 覆寫的寫入位置。memory 不寫入任何東西，這是此服務一向的做法——重新啟動後一切都會消失。ldif 會為每個領域寫入一個 RFC 2849 檔案，另在 persistence.dataDir 中寫入兩個 JSON 檔案，這是本機開發的解決方案，不需要資料庫。postgres 會寫入一組資料表（postgres/schema.sql 列出它們），是共用儲存區。mariadb 是 MariaDB 上的同一儲存（mariadb/schema.sql），是測試套件所針對的第二種引擎：此時 persistence.databaseUrl 是一個 mariadb:// 位址，必須安裝 mysql2 套件，而需要 PostgreSQL 本身的功能（儲存格、大量匯入、目錄視窗）會被拒絕。此服務所產生的東西——工作階段、權杖、代碼、成品、Kerberos 主體、重送快取、計數器與稽核記錄——只在「產品」模式且使用 postgres 時才會持久保存，在其他任何組態下都不會；請參閱 persistence.minted。開發模式不持久保存其中任何一項，因為該模式下簽署金鑰在每次啟動時都會重新產生，而比它存活更久的權杖將無法對任何東西通過驗證。ldif 儲存區在兩種模式下都不保存其中任何一項，並在啟動時說明，因為它每次清寫都會寫入完整檔案。"
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
     "text": "儲存區在監聽器繫結之前開啟並讀取"
+  },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "叢集 SQL 方言"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "postgres 儲存為了協調多個行程而送出的陳述式：認領、租約、計數器、限速視窗、預算、寫入柵欄、叢集加入鎖、心跳以及變更日誌修剪。native 是 PostgreSQL 自身的陳述式（條件 upsert、諮詢鎖、LISTEN/NOTIFY），也是正式環境執行的方式。portable 是第二種資料庫引擎執行的陳述式（遇到重複時不做任何事的一般插入、sts_cluster_locks 中的列鎖，且沒有變更通知，因此除非設定了 persistence.pollInterval，否則每秒輪詢一次變更日誌）；它的存在是為了讓測試套件能在 PostgreSQL 上驗證這些程式碼。兩者都是正確的；portable 每次操作需要更多陳述式。"
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "儲存驅動程式在建構時選擇其陳述式"
   },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
@@ -9920,8 +9940,8 @@
     "text": "變更輪詢間隔（毫秒）"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "此程序向變更記錄詢問其他程序已提交內容的頻率。這才是「契約」，LISTEN/NOTIFY 提示只是在其之上的最佳化，因此這是通知遺失時——監聽器中斷、資料庫重新啟動——最壞情況下的收斂延遲，而一般延遲只有幾毫秒。設為五秒，是因為提示通常會先到達，較短的間隔除了增加查詢之外毫無益處；下限為 250ms。它也是 persistence.coordinate 中所述重送快取時間窗口的大小。"
+    "en": "0620a679e69c0d43",
+    "text": "此行程多久向變更日誌詢問一次其他行程已提交的內容。這是契約，LISTEN/NOTIFY 提示只是對它的一種最佳化，因此當通知遺失時——監聽器中斷、資料庫重新啟動——這就是最壞情況下的收斂延遲，而一般延遲只有幾毫秒。取五秒是因為提示通常先到達，較短的間隔除了更多查詢之外毫無所得；250 毫秒是下限。當儲存不送出提示（persistence.sqlDialect 為 portable）且未設定此項時，間隔為一秒。它也是 persistence.coordinate 下所述重播快取視窗的大小。"
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",

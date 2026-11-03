@@ -326,9 +326,9 @@ const LOGOUT_CSS = 'body{font-family:system-ui,-apple-system,"Segoe UI",' +
   'details.note.fold>summary:hover{color:#111}' +
   // The language chooser (#539), small and to one side, as on the
   // sign-in screen: the page's first business is the sign-out.
-  'form.language-chooser{float:right;font-size:.8rem;margin:0 0 .5rem ' +
+  'details.language-row{float:right;font-size:.8rem;margin:0 0 .5rem ' +
   '1rem}form.language-chooser button{padding:.15rem .5rem}' +
-  'form.language-chooser label{margin-right:.3rem}' +
+  'form.language-chooser label{margin-right:.3rem}' + PageLocale.ROW_CSS +
   // THE TWO TABS (2026-10-12): `WebKit.tabbedPanels()`, the console's, with
   // its rules in this page's palette — the fragment decides, through
   // `:target` and `:has()`, with no script; a browser without `:has()`

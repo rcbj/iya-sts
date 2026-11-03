@@ -1695,6 +1695,8 @@ class PkiPage {
         ' <input name="identifier" required ' +
           'placeholder="' + esc(t.text('consolePki.personPlaceholder')) +
           '"></label> ' +
+        '<label>' + t.html('consolePki.keyLabel') +
+        ' <input name="label" maxlength="40"></label> ' +
         '<label>' + t.html('consolePki.declaredIssuer') +
         ' <input name="issuer" ' +
           'placeholder="' + esc(t.text('consolePki.theirUsername')) +
@@ -1717,14 +1719,22 @@ class PkiPage {
         '</form>'
       : '';
 
+    // A ROW PER KEY PAIR (#1290): a person holds several per profile, each
+    // with its state, and a valid one carries its own Revoke form — the
+    // person arm of `revoke`, which puts the certificate on its authority's
+    // CRL. A profile with a declaration and no key pair is one row saying so.
+    // An application's key pair is still taken off (its row, below).
     const takeOff = t.html('consolePki.takeOff');
+    const revokeLabel = t.html('consolePki.revokePersonKey');
+    const reasonOptions = (json.personRevocationReasons ||
+                           ['cessationOfOperation', 'keyCompromise'])
+      .map(function (one) {
+        return '<option value="' + esc(one) + '">' + esc(one) + '</option>';
+      }).join('');
     const personRows = !json.personsStorable
       ? kit.warn(t.html('consolePki.noDirectory'),
                  t.html('consolePki.noDirectoryTitle'))
       : (json.persons.length
-        // A ROW PER PROFILE A PERSON HOLDS OR DECLARES (2026-09-13), for the
-        // applications table's reason: every fact on the row — the handle, the
-        // expiry, the declared issuer and the Take-off button — is per profile.
         ? peopleSearch + (!paged.people.shown.length
           ? '<p><em>' + t.html('consolePki.nobodyMatches') + '</em></p>'
           : peopleNav.head +
@@ -1732,46 +1742,67 @@ class PkiPage {
           '</th><th>' + t.html('consolePki.profile') + '</th>' +
           '<th>' + t.html('consolePki.thKeyHandle') + '</th><th>' +
           t.html('consolePki.thSource') + '</th><th>' +
-          t.html('consolePki.thExpires') + '</th>' +
+          t.html('consolePki.thExpires') + '</th><th>' +
+          t.html('consolePki.thState') + '</th>' +
           '<th>' + t.html('consolePki.thAssertsAs') +
           '</th><th></th></tr></thead><tbody>' +
           paged.people.shown.reduce(function (rows, one) {
             [{ id: 'jwt', label: 'RFC 7523 (JWT)', handleLabel: 'kid',
-               fact: one, handle: one.kid },
+               fact: one.jwt || {} },
              { id: 'saml', label: 'RFC 7522 (SAML 2.0)',
-               handleLabel: t.html('consolePki.thumbprint'), fact: one.saml,
-               handle: one.saml.thumbprint }].forEach(function (p) {
-              if (!p.fact.hasKeyPair && !p.fact.declared) {
+               handleLabel: t.html('consolePki.thumbprint'),
+               fact: one.saml || {} }].forEach(function (p) {
+              const keys = p.fact.keys || [];
+              if (!keys.length && !p.fact.declared) {
                 return;
               }
-              rows.push('<tr>' +
-                '<td><a href="/admin/users?user=' +
-                  encodeURIComponent(one.username) + '#credentials">' +
-                  esc(one.username) + '</a></td>' +
-                '<td>' + esc(p.label) + '</td>' +
-                '<td><code>' + esc(p.handle || '—') + '</code>' +
-                  (p.handle ? ' <small>(' + p.handleLabel + ')</small>' : '') +
-                  PqcBadgeView.badge(p.fact.pqc, t) + '</td>' +
-                '<td>' + esc(p.fact.source || '—') + '</td>' +
-                '<td>' + esc(p.fact.expiresAt ? p.fact.expiresAt.slice(0, 8)
-                                              : '—') + '</td>' +
-                '<td>' + p.fact.issuers.map(function (iss) {
-                    return '<code>' + esc(iss) + '</code>';
-                  }).join('<br>') +
-                  (p.fact.declared ? '' : ' <small>' +
-                                          t.html('consolePki.ownName') +
-                                          '</small>') + '</td>' +
-                '<td>' + (p.fact.hasKeyPair
-                  ? '<form method="post" action="/admin/pki"><input ' +
-                    'type="hidden" name="action" value="revoke"><input ' +
-                    'type="hidden" name="target" value="person"><input ' +
-                    'type="hidden" name="purpose" value="' + p.id + '">' +
-                    '<input type="hidden" name="identifier" value="' +
-                      esc(one.username) + '">' + carryBack +
-                    '<button type="submit">' + takeOff + '</button>' +
-                    '</form>'
-                  : '') + '</td>' +
-                '</tr>');
+              const person = '<td><a href="/admin/users?user=' +
+                encodeURIComponent(one.username) + '#credentials">' +
+                esc(one.username) + '</a></td>';
+              const asserts = '<td>' + (p.fact.issuers || [])
+                .map(function (iss) {
+                  return '<code>' + esc(iss) + '</code>';
+                }).join('<br>') +
+                (p.fact.declared ? '' : ' <small>' +
+                                        t.html('consolePki.ownName') +
+                                        '</small>') + '</td>';
+              if (!keys.length) {
+                rows.push('<tr>' + person + '<td>' + esc(p.label) +
+                  '</td><td>—</td><td>—</td><td>—</td><td>—</td>' + asserts +
+                  '<td></td></tr>');
+                return;
+              }
+              keys.forEach(function (key) {
+                rows.push('<tr>' + person +
+                  '<td>' + esc(p.label) + '</td>' +
+                  '<td><code>' + esc(key.id || '—') + '</code>' +
+                    ' <small>(' + p.handleLabel + ')</small>' +
+                    (key.label ? '<br><small>' + esc(key.label) + '</small>'
+                               : '') +
+                    PqcBadgeView.badge(key.pqc, t) + '</td>' +
+                  '<td>' + esc(key.source || '—') + '</td>' +
+                  '<td>' + esc(key.expiresAt ? key.expiresAt.slice(0, 8)
+                                            : '—') + '</td>' +
+                  '<td>' + esc(key.state || '') +
+                    (key.reason ? ' <small>(' + esc(key.reason) + ')</small>'
+                                : '') + '</td>' +
+                  asserts +
+                  '<td>' + (key.state === 'valid'
+                    ? '<form method="post" action="/admin/pki"><input ' +
+                      'type="hidden" name="action" value="revoke"><input ' +
+                      'type="hidden" name="target" value="person"><input ' +
+                      'type="hidden" name="purpose" value="' + p.id + '">' +
+                      '<input type="hidden" name="identifier" value="' +
+                        esc(one.username) + '">' +
+                      '<input type="hidden" name="handle" value="' +
+                        esc(key.id) + '">' + carryBack +
+                      '<select name="reason">' + reasonOptions +
+                      '</select> ' +
+                      '<button type="submit">' + revokeLabel + '</button>' +
+                      '</form>'
+                    : '') + '</td>' +
+                  '</tr>');
+              });
             });
             return rows;
           }, []).join('') + '</tbody></table>' + peopleNav.foot)

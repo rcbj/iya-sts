@@ -105,7 +105,7 @@
   "pep.chain": "憑證及其後的憑證鏈（Issuing CA 與此領域的 Intermediate）&mdash; 即 <code>PEP_HTTPS_CERT</code> 所指定的檔案：",
   "pep.anchor": "該接聽程式的用戶端要安裝的信任錨 &mdash; 此服務的 Root CA，憑證鏈刻意不包含它：",
   "pep.back": "返回遠端 PEP",
-  "person.warn": "這是此服務唯一一次向您顯示此金鑰。它以 <code>{attribute}</code> 密封在 <code>{person}</code> 的項目上，此主控台或 <code>/admin-api</code> 中沒有任何地方會再次開啟它。請立即複製；再次簽發會取代它。",
+  "person.warn": "這是此服務唯一一次向您顯示此金鑰。它以 <code>{attribute}</code> 密封在 <code>{person}</code> 的項目上，此主控台或 <code>/admin-api</code> 中沒有任何地方會再次開啟它。請立即複製；再次簽發會新增一組金鑰組，這一組繼續有效。",
   "person.saml": "它簽署的判斷提示帶有 <code>{issuer}</code> 作為 <code>&lt;Issuer&gt;</code> 與 <code>&lt;Subject&gt;</code>、一個指定此服務權杖端點的 <code>&lt;AudienceRestriction&gt;</code>、一個 bearer <code>&lt;SubjectConfirmation&gt;</code>、一個 <code>NotOnOrAfter</code> 與一個 <code>ID</code>，以對 <code>&lt;Assertion&gt;</code> 的 XML Signature 簽署，並以 <code>grant_type=urn:ietf:params:oauth:grant-type:saml2-bearer</code> 搭配 <code>assertion=&lt;base64url&gt;</code> 出示。憑證的指紋為 <code>{thumbprint}</code>。",
   "person.jwt": "它簽署的判斷提示帶有值為 <code>{issuer}</code> 的 <code>iss</code> 與 <code>sub</code>、值為此服務權杖端點或簽發者的 <code>aud</code>、一個 <code>exp</code> 與一個 <code>jti</code>，並以 <code>grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer</code> 搭配 <code>assertion=&lt;the JWT&gt;</code> 出示。<code>kid</code> 為 <code>{kid}</code>，演算法為 <code>{alg}</code>。",
   "person.certificate": "憑證是公開的，也在項目上：",

@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "Nombre de certificats client TLS encore valides qu’une personne peut s’émettre elle-même sur le portail utilisateur — un par navigateur ou appareil. Un certificat révoqué ou expiré n’est pas compté. Au-delà, le portail refuse (STS-PKI-0170) plutôt que de révoquer un certificat plus ancien que quelqu’un utilise peut-être encore. L’émission est également soumise à pki.personSelfService et aux deux limites de débit en libre-service ci-dessus."
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "Paires de clés de signature qu’une personne peut détenir par profil"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "Combien de paires de clés de signature d’assertions encore valides une personne peut détenir pour CHAQUE profil — RFC 7523 (JWT) et RFC 7522 (SAML 2.0) sont comptés séparément —, qu’elles aient été émises sur le portail utilisateur, émises par un administrateur ou téléversées. Une paire de clés révoquée ou expirée ne compte pas. Au-delà, le portail remplace son bouton Générer par une note et chaque porte refuse (STS-PKI-0223) plutôt que de révoquer une paire de clés plus ancienne que quelqu’un utilise peut-être encore."
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "Certificats client TLS qu’une application peut détenir"
@@ -9644,12 +9652,24 @@
     "text": "Mode de persistance"
   },
   "persistence.mode|description": {
-    "en": "3b1c6fa9ec185404",
-    "text": "L’endroit où sont écrits l’annuaire intégré, le registre des domaines de confiance et les surcharges appconfig d’exécution. memory n’écrit rien et correspond à ce que ce service a toujours fait — tout disparaît au redémarrage. ldif écrit un fichier RFC 2849 par domaine plus deux fichiers JSON dans persistence.dataDir, ce qui est la réponse pour le développement local et ne nécessite aucune base de données. postgres écrit un ensemble de tables (postgres/schema.sql les liste) et constitue le stockage partagé. CE QUE CE SERVICE ÉMET — sessions, jetons, codes, artefacts, principaux Kerberos, caches anti-rejeu, compteurs et journal d’audit — est persisté en mode PRODUIT sur postgres et dans aucune autre configuration ; voir persistence.minted. Le mode développement n’en persiste rien, car la clé de signature y est régénérée à chaque démarrage et un jeton qui lui survivrait ne se vérifierait contre rien. Le stockage ldif n’en conserve rien dans aucun mode et le signale au démarrage, car il écrit des fichiers entiers à chaque vidage."
+    "en": "9017af2918cf94be",
+    "text": "L’endroit où sont écrits l’annuaire intégré, le registre des domaines de confiance et les surcharges appconfig d’exécution. memory n’écrit rien et correspond à ce que ce service a toujours fait — tout disparaît au redémarrage. ldif écrit un fichier RFC 2849 par domaine plus deux fichiers JSON dans persistence.dataDir, ce qui est la réponse pour le développement local et ne nécessite aucune base de données. postgres écrit un ensemble de tables (postgres/schema.sql les liste) et constitue le stockage partagé. mariadb est le même stockage sur MariaDB (mariadb/schema.sql), un second moteur contre lequel s’exécute la suite de tests : persistence.databaseUrl est alors une adresse mariadb://, le paquet mysql2 doit être installé, et ce qui exige PostgreSQL lui-même (les cellules, l’import en masse, la fenêtre d’annuaire) est refusé. CE QUE CE SERVICE ÉMET — sessions, jetons, codes, artefacts, principaux Kerberos, caches anti-rejeu, compteurs et journal d’audit — est persisté en mode PRODUIT sur postgres et dans aucune autre configuration ; voir persistence.minted. Le mode développement n’en persiste rien, car la clé de signature y est régénérée à chaque démarrage et un jeton qui lui survivrait ne se vérifierait contre rien. Le stockage ldif n’en conserve rien dans aucun mode et le signale au démarrage, car il écrit des fichiers entiers à chaque vidage."
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
     "text": "le stockage est ouvert et lu avant que l’écouteur ne se lie"
+  },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "Dialecte SQL du cluster"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "Les instructions qu’un magasin postgres envoie pour coordonner plusieurs processus : les réclamations, les baux, les compteurs, les fenêtres de limitation de débit, les budgets, les barrières d’écriture, le verrou d’adhésion au cluster, le battement de cœur et l’élagage du journal des modifications. native désigne celles propres à PostgreSQL (upserts conditionnels, verrous consultatifs, LISTEN/NOTIFY) et c’est ce que la production exécute. portable désigne les instructions qu’exécute un second moteur de base de données (des insertions simples qui ne font rien sur un doublon, des verrous de ligne dans sts_cluster_locks, et aucune notification de modification, si bien que le journal des modifications est interrogé chaque seconde sauf si persistence.pollInterval est défini) ; il existe pour que la suite de tests puisse éprouver ce code sur PostgreSQL. Les deux sont corrects ; portable coûte davantage d’instructions par opération."
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "le pilote du magasin choisit ses instructions lorsqu’il est construit"
   },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
@@ -9920,8 +9940,8 @@
     "text": "Intervalle d’interrogation des modifications (ms)"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "À quelle fréquence ce processus demande au journal des modifications ce que d’autres processus ont validé. C’est le CONTRAT, et le signal LISTEN/NOTIFY n’en est qu’une optimisation ; c’est donc le délai de convergence dans le pire des cas lorsqu’une notification est perdue — un écouteur abandonné, un redémarrage de la base — et le délai habituel est de quelques millisecondes. Cinq secondes, car le signal arrive normalement en premier et un intervalle plus court n’apporte que des requêtes ; 250 ms est le minimum. C’est aussi la taille de la fenêtre des caches anti-rejeu décrite sous persistence.coordinate."
+    "en": "0620a679e69c0d43",
+    "text": "La fréquence à laquelle ce processus demande au journal des modifications ce que d’autres processus ont validé. C’est le CONTRAT, et le signal LISTEN/NOTIFY n’en est qu’une optimisation : c’est donc le délai de convergence au pire lorsqu’une notification est perdue — un écouteur interrompu, un redémarrage de la base — et le délai habituel est de quelques millisecondes. Cinq secondes, parce que le signal arrive normalement en premier et qu’un intervalle plus court n’achète que des requêtes ; 250 ms est le plancher. Lorsque le magasin n’envoie aucun signal (persistence.sqlDialect portable) et que ce réglage n’est pas défini, l’intervalle est d’une seconde. C’est aussi la taille de la fenêtre du cache anti-rejeu décrite sous persistence.coordinate."
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",

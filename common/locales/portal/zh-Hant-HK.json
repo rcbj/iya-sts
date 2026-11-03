@@ -31,10 +31,9 @@
   "codes.onlyTime": "<strong>這是它們唯一一次顯示。</strong>您確認後，本服務會儲存每個復原碼的<em>雜湊</em>——與儲存您密碼相同的 雜湊——因此它能核對您輸入的復原碼，但永遠無法將其印出。請先將它們抄下、打印，或存入密碼管理工具。",
   "signingKey.samlHow": "<strong>如何使用它。</strong>建立一個 SAML 2.0 <code>&lt;Assertion&gt;</code>，其 <code>&lt;Issuer&gt;</code> 與 <code>&lt;Subject&gt;&lt;NameID&gt;</code> 都是 <code>{who}</code>，<code>&lt;Audience&gt;</code> 與 bearer <code>&lt;SubjectConfirmationData Recipient&gt;</code> 為 <code>{endpoint}</code>，並將 <code>NotOnOrAfter</code> 設為一兩分鐘之後。使用此金鑰以封裝式 XML 簽章簽署，將文件以 base64url 編碼，然後作為 RFC 7522 第 2.1 節的授權許可提交至權杖端點。本服務會將簽章與其為您保存的證書比對，指紋為 <code>{thumbprint}</code>。",
   "signingKey.certificate": "您的證書（公開——這是任何人都可以持有的那一半）",
-  "signingKey.certificateRow": "證書",
   "signingKey.downloadChain": "下載證書鏈",
-  "signingKey.notRevocation": "<strong>這不是撤銷。</strong>證書仍然有效，也仍然鏈結到本服務的根證書；改變的是本服務不再接受此金鑰簽署的內容，因為該金鑰已不再註冊於您名下。您的另一把簽章金鑰、密碼、密碼金鑰和驗證器應用程式都不受影響——這不是您的登入方式。",
   "tls.heading": "TLS 客戶端證書",
+  "tls.aboutTitle": "TLS 客戶端證書如何讓您登入",
   "tls.what": "TLS 客戶端證書能讓您<strong>無需輸入密碼</strong>即可登入：伺服器要求時，您的瀏覽器會出示它，而此身分提供者會將其識別為您。它由此領域的 TLS 客戶端核證機關簽發，指名您（<code>CN={name}</code> 與 <code>urn:sts:person:{name}</code>），並帶有 <code>clientAuth</code>。您只需下載一次它的私密金鑰與證書鏈，格式為兩個 PEM 檔案，供接受金鑰與證書的客戶端使用——<code>curl</code>、<code>openssl</code> 或您自己的程式碼。",
   "tls.whereWorksAfter": "。本服務會向每個連線要求客戶端證書，但不強制要求，因此當您選擇此證書時，瀏覽器就會傳送它；該頁面會為您在此領域啟動單一登入工作階段，之後您在此的其他應用程式就會直接讓您登入，不再詢問。如果您的瀏覽器尚未信任本服務的伺服器證書，會先要求您信任它。",
   "tls.noneHeld": "您沒有 TLS 客戶端證書。",
@@ -54,5 +53,6 @@
   "apps.notLookedWhat": "{total} 個項目中的 {skipped} 個。此頁面會為其列出的每個應用程式評估核發原則，並在 {limit} 個時停止（portal.applicationScanLimit），因為這項工作是在回應本服務所有通訊端的那唯一一個線程上進行。",
   "signedOut.why": "只登出入口網站並不會讓您真正登出：此入口網站是本服務的一般 OpenID Connect 客戶端（<code>sts-user-portal</code>），因此下一頁會再次執行登入流程，遇到單一登入工作階段，然後不需輸入任何內容就讓您重新進入。",
   "done.tlsRevoked": "該 TLS 客戶端證書已撤銷。從現在起，出示它的瀏覽器都會被拒絕。",
-  "accounts.menu": "切換用戶"
+  "accounts.menu": "切換用戶",
+  "signingKey.revokingIs": "<strong>撤銷就是真正的撤銷。</strong>證書會列入此領域的證書撤銷清單，其 OCSP 回應程式會回答 <code>revoked</code>，本服務從此拒絕任何以該金鑰簽署的內容。此動作無法復原；請改為產生新的金鑰。您的其他金鑰繼續有效。"
 }

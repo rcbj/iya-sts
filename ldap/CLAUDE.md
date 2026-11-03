@@ -3050,7 +3050,11 @@ Seven attributes and a slot of their own —
 module's require time like the nine before it. A person may hold an **RFC 7523
 signing key pair** now: `stsAssertionIssuer`, `stsAssertionJwks`,
 `stsAssertionCertificate`, `stsAssertionCertificateChain`, `stsAssertionKid`,
-`stsAssertionExpiresAt` and `stsAssertionPrivateKey`.
+`stsAssertionExpiresAt` and `stsAssertionPrivateKey`. **SINCE #1290
+(2026-11-03) THREE PER PROFILE**: `stsAssertionIssuer`, `stsAssertionKeyPair`
+(one JSON record per key pair) and `stsAssertionPrivateKey` (one sealed value
+per key pair issued here), and the same three for SAML — see the section on
+`stsSamlAssertion*` below and `common/CLAUDE.md` 3ab, continued.
 `common/person_assertions.js` (rule 3ab) owns what they MEAN — including the one
 refusal the feature exists for, that a person's key may assert about that person
 and about nobody else — and this module owns the store they live in, which is
@@ -3606,6 +3610,18 @@ neither returns it on a search, lets a filter see it, nor answers a compare agai
 it. Nothing else here changed: the slot's `read()` walks
 `personAssertions.ATTRIBUTES`, which grew, and `write()` is one attribute at a time
 already. `common/CLAUDE.md` 3ab carries the design.
+
+### SEVERAL KEY PAIRS, AND THE SLOT'S WRITE TAKES A LIST (#1290, 2026-11-03)
+
+A person holds several RFC 7523 and RFC 7522 key pairs now, one value each in
+`stsAssertionKeyPair` / `stsSamlAssertionKeyPair` and the private halves in
+`stsAssertionPrivateKey` / `stsSamlAssertionPrivateKey` (both withheld from
+an LDAP read, as before). `OWN_NAMES` carries the six names and no longer the
+fourteen single-valued ones. The slot's `write(username, name, value)` takes
+an ARRAY as well as one value and still ASSIGNS rather than appends: the
+register hands over the attribute's whole set, so a revoked key pair's private
+half is gone when the register says so. The asked-names index carries the two
+`…keypair` names (schema version 31, `persistence/CLAUDE.md`).
 
 ## `stsMfaRequired` AND THE PASSWORD RESET LINK (2026-09-13)
 

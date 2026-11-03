@@ -126,19 +126,25 @@ function standInPeople() {
   for (let n = 0; n < POPULATION; n++) {
     const name = 'pa-' + String(n).padStart(5, '0');
     const attrs = { cn: [name] };
+    // One record per key pair since #1290, the private half a sealed value
+    // of its own.
     if (n % 75 === 3) {
-      attrs.stsAssertionJwks = ['{"keys":[]}'];
-      attrs.stsAssertionCertificate = ['-----BEGIN CERTIFICATE-----\nA' + n +
-                                       '\n-----END CERTIFICATE-----\n'];
+      attrs.stsAssertionKeyPair = [JSON.stringify({ id: 'kid-' + n,
+        kid: 'kid-' + n, source: 'issued',
+        certificatePem: '-----BEGIN CERTIFICATE-----\nA' + n +
+                        '\n-----END CERTIFICATE-----\n',
+        notAfter: '2030-01-01T00:00:00.000Z', expiresAt: '20300101000000Z',
+        createdAt: '2026-01-01T00:00:00.000Z' })];
       attrs.stsAssertionPrivateKey = ['$aesgcm$sealed-' + n];
-      attrs.stsAssertionKid = ['kid-' + n];
-      attrs.stsAssertionExpiresAt = ['20300101000000Z'];
     }
     if (n % 140 === 5) {
-      attrs.stsSamlAssertionCertificate = ['-----BEGIN CERTIFICATE-----\nS' +
-                                           n + '\n-----END CERTIFICATE-----\n'];
+      attrs.stsSamlAssertionKeyPair = [JSON.stringify({ id: 'tp-' + n,
+        thumbprint: 'tp-' + n, source: 'issued',
+        certificatePem: '-----BEGIN CERTIFICATE-----\nS' + n +
+                        '\n-----END CERTIFICATE-----\n',
+        notAfter: '2030-01-01T00:00:00.000Z', expiresAt: '20300101000000Z',
+        createdAt: '2026-01-01T00:00:00.000Z' })];
       attrs.stsSamlAssertionPrivateKey = ['$aesgcm$sealed-saml-' + n];
-      attrs.stsSamlAssertionThumbprint = ['tp-' + n];
     }
     if (n % 500 === 7) {
       attrs.stsAssertionIssuer = ['https://issuer-' + n + '.example'];
@@ -198,38 +204,50 @@ function standInDirectory(people, counts, withHoldingAny) {
 }
 
 // THE OLD `holders()`, kept here as the reference the new one must agree
-// with: every name, `recordFor()` each (which opens the private keys).
+// with: every name, `recordFor()` each (which opens the private keys) — in
+// the shape `holders()` answers since #1290, a profile's key pairs as a list,
+// the private half itself left out of the comparison.
 function oldHolders(register) {
   log.debug("Entering oldHolders().");
   const out = [];
+  const keysOf = function (keys) {
+    return keys.map(function (one) {
+      const copy = Object.assign({}, one);
+      delete copy.privateKeyPem;
+      return copy;
+    });
+  };
   register.holdersNames().forEach(function (name) {
     const record = register.recordFor(name);
-    if (!record || (!record.hasKeyPair && !record.issuers.length &&
-                    !record.hasSamlKeyPair && !record.samlIssuers.length)) {
+    if (!record || (!record.keys.jwt.length && !record.issuers.length &&
+                    !record.keys.saml.length && !record.samlIssuers.length)) {
       return;
     }
     out.push({ username: record.username,
-               hasKeyPair: record.hasKeyPair,
-               declaredIssuers: record.issuers.slice(),
-               issuers: record.effectiveIssuers.slice(),
-               declared: record.issuers.length > 0,
-               kid: record.stsAssertionKid,
-               expiresAt: record.stsAssertionExpiresAt,
-               source: record.stsAssertionKeySource ||
-                       (record.hasKeyPair ? 'issued' : ''),
-               certificatePem: record.stsAssertionCertificate,
+               jwt: { hasKeyPair: record.hasKeyPair,
+                      keys: keysOf(record.keys.jwt),
+                      declaredIssuers: record.issuers.slice(),
+                      issuers: record.effectiveIssuers.slice(),
+                      declared: record.issuers.length > 0 },
                saml: { hasKeyPair: record.hasSamlKeyPair,
+                       keys: keysOf(record.keys.saml),
                        declaredIssuers: record.samlIssuers.slice(),
                        issuers: record.samlEffectiveIssuers.slice(),
-                       declared: record.samlIssuers.length > 0,
-                       thumbprint: record.stsSamlAssertionThumbprint,
-                       expiresAt: record.stsSamlAssertionExpiresAt,
-                       source: record.stsSamlAssertionKeySource ||
-                               (record.hasSamlKeyPair ? 'issued' : ''),
-                       certificatePem: record.stsSamlAssertionCertificate } });
+                       declared: record.samlIssuers.length > 0 } });
   });
   log.debug("Leaving oldHolders().");
   return out;
+}
+
+// The two answers compared without `privateKeyHeld`, which the reference
+// reads by opening each sealed value and the walk reads without opening any:
+// a stand-in value that will not open is "held" to one and not the other.
+function withoutHeld(rows) {
+  log.debug("Entering withoutHeld().");
+  log.debug("Leaving withoutHeld().");
+  return JSON.stringify(rows, function (key, value) {
+    return key === 'privateKeyHeld' ? undefined : value;
+  });
 }
 
 async function claimA(t) {
@@ -272,8 +290,7 @@ async function claimA(t) {
   t.check(counts.read === POPULATION && reference.calls > 0,
           'the old shape read every person and opened the sealed keys',
           counts.read + ' reads, ' + reference.calls + ' opens');
-  t.check(JSON.stringify(rows) ===
-          JSON.stringify(reference.result),
+  t.check(withoutHeld(rows) === withoutHeld(reference.result),
           'and the answer is the same rows, in the same order, member for ' +
           'member');
   t.check(JSON.stringify(rows).indexOf('$aesgcm$') < 0,
@@ -431,11 +448,16 @@ async function claimB(t) {
           },
           recordFor: personAssertions.recordFor
         }).map(function (one) {
-          return Object.assign({}, one, {
-            pqc: pqcSupport.of({ certificatePem: one.certificatePem }),
-            saml: Object.assign({}, one.saml, {
-              pqc: pqcSupport.of({ certificatePem: one.saml.certificatePem }) })
-          });
+          // Each key pair classified on its own certificate (#1290).
+          const classified = function (profile) {
+            return Object.assign({}, profile, {
+              keys: profile.keys.map(function (key) {
+                return Object.assign({}, key, {
+                  pqc: pqcSupport.of({ certificatePem: key.certificatePem }) });
+              }) });
+          };
+          return Object.assign({}, one, { jwt: classified(one.jwt),
+                                           saml: classified(one.saml) });
         });
         t.log.info('/admin/pki people, before (a read per person, an unseal ' +
                    'and a parse per holder): ' + elapsed(began));
@@ -471,14 +493,18 @@ async function claimB(t) {
     t.equal(opens, 0, 'and neither did the JSON');
     const peopleShown = Math.min(PER, json.persons.length);
     const appsShown = Math.min(PER, json.issued.length);
+    // A key pair a reading (#1290); each seeded holder holds one.
+    const keyCount = json.persons.reduce(function (n, one) {
+      return n + one.jwt.keys.length + one.saml.keys.length;
+    }, 0);
     t.check(pqcCalls <= 2 * peopleShown + appsShown,
             'the page asked for ' + pqcCalls + ' certificate reading(s), for ' +
             'the rows it drew (at most ' + (2 * peopleShown + appsShown) +
             ') and not for the ' + json.persons.length + ' holder(s)');
     t.check(json.persons.length > PER,
             'there are more holders than one page', json.persons.length);
-    t.equal(whole.calls, 2 * json.persons.length + json.issued.length,
-            'the JSON reads every row\'s, because it carries every row');
+    t.equal(whole.calls, keyCount + json.issued.length,
+            'the JSON reads every key pair\'s, because it carries every row');
     const before = missesOf('certificates.parsed-facts');
     inRealm(function () {
       return pkiAdmin.pkiView({ query: {} });
@@ -535,7 +561,9 @@ async function claimC(t) {
   const pemOf = {};
   inRealm(function () {
     personAssertions.holders().forEach(function (one) {
-      [one.certificatePem, one.saml.certificatePem].forEach(function (pem) {
+      one.jwt.keys.concat(one.saml.keys).map(function (key) {
+        return key.certificatePem;
+      }).forEach(function (pem) {
         if (pem) {
           const der = Buffer.from(pem.replace(/-----[^-]+-----/g, '')
             .replace(/\s+/g, ''), 'base64');

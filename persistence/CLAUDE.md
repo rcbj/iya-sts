@@ -130,6 +130,110 @@ that emits different SQL is a behaviour change, and `DB_NOW`'s
 `clock_timestamp()` is not something a builder would keep. A builder call
 added later is a new decision, not this one extended.
 
+**THAT DECISION WAS TAKEN, FOR ORDINARY STATEMENTS ONLY (#677, rcbj
+2026-11-03).** The store's SQL is now three tiers:
+
+* **A, the builder.** An ordinary statement (equality and `IN`, order,
+  limit, a plain insert, update, delete or first-writer-wins insert) is
+  written ONCE with the Knex builder and compiled per engine by
+  `sql_dialect.js`. Its compiler is a Knex with no connection, so a compiled
+  statement is text and values that go to the held connection as above. A
+  statement's engine pieces (the statement clock, a JSON cast) are the
+  dialect's fragments, and `clock_timestamp()` is kept because the fragment
+  IS `DB_NOW` (one copy, `sqlDialect.NOW.postgres`).
+* **B, dialect text.** A statement that needs one engine's feature keeps
+  hand-written text per engine; PostgreSQL's is the text it always was.
+* **C, dialect code.** Where the design differs (triggers, GIN, LISTEN),
+  `capabilities` says which, and the driver takes its fallback.
+
+**A compiled statement carries its name**, `/* sts:<name> */` at the end. A
+test's double answers it BY NAME, with the builder's parameter order (SET
+values first, then the WHERE's, in the order written), never by its text,
+whose quoting the compiler owns. A double matching a hand-written statement
+by text is fine until that statement moves. The cluster family's ordinary
+statements moved first (28 of them); the classification of all 293 is on
+#677. Still no ORM and no ORM-level cache.
+
+**THE PORTABLE COORDINATION STATEMENTS (#677, phase 2).** Every tier-B
+statement of the cluster family — the claims, `claimMany()`, the leases, the
+heartbeat, the counters, the rate windows, the budgets, the fences, the
+origin takeover, the change readers, the trim and the join lock — has its
+contract written a second time in `cluster_portable.js`, in builder
+statements both engines run. The driver uses them when the engine is not
+PostgreSQL, or when `persistence.sqlDialect` is `portable`; then it also
+offers no `watchChanges()` and sends no `NOTIFY`, and the replication module
+polls every second unless `persistence.pollInterval` is set. The join lock
+is a row of `sts_cluster_locks` (schema version 30) locked FOR UPDATE.
+**What portable mode does NOT yet cover**: the minted flush (one statement
+with the fence inside, `MINTED_FLUSH`), the directory flush, the counts and
+everything else outside the cluster family still send PostgreSQL's text —
+those are phase 3, the MariaDB driver. `tests/cluster_portable.js` holds the
+contracts, statically for MariaDB and against a real PostgreSQL when
+`STS_TEST_POSTGRES_URL` is set; `./run-tests.sh --modes=cluster-portable`
+runs the two-node mode on them (`tests/CLAUDE.md`).
+
+**`persistence.mode=mariadb` (#677, phase 3).** The same driver with
+`engine: 'mariadb'`: `knex_store.js` dials MariaDB through Knex's `mysql2`
+client (an optional package, `STS_CLOUD_SDKS`) and answers in `pg`'s shape
+(`runOn()`), with a session set up to read like PostgreSQL's
+(`MARIADB_SESSION`: NO PAD binary collation, UTC, READ COMMITTED, strict mode
+with `PIPES_AS_CONCAT`, `FOUND_ROWS`; NOT `NO_BACKSLASH_ESCAPES`, which
+corrupted every bound string holding a quote because `mysql2` escapes on
+the client). The schema is `mariadb/schema.sql` and its copy
+`schema_mariadb.js` (`mariadb/CLAUDE.md`, `tests/mariadb_schema.js`).
+`store_modes.js` is the one "is this a database" question. The engine has
+no LISTEN/NOTIFY and no bridge thread: the change log is polled, and the
+windowed directory and on-demand minted stores are held whole. **What runs
+on MariaDB today**: the connection layer, the schema, and the coordination
+statements (`cluster_portable.js`, proved against MariaDB 11.8 by
+`tests/cluster_portable.js` section C). **What does not yet**: every other
+family's PostgreSQL text (the directory, minted state, sessions, risk, the
+metrics probes and open()'s catalog probes) — the next steps of phase 3,
+each proved the same way before it is switched on. Refused on MariaDB, each
+for its own reason: cells, the bulk import, cell conversion, the directory
+window, the risk installer.
+
+**The smaller tables run on MariaDB (#677, phase 3b): `store_portable.js`**,
+built where `cluster_portable.js` is and on the same rule — the realm
+registry and settings, the keys (`mergeKeys()` included), the change rows
+(`recordChanges()` keeps its counting and nudge and sends each chunk through
+`insertChanges()`, on the caller's connection, so the directory and minted
+flushes' transactions write them too), `latestBlockingChangeSeq()`,
+`purgeChanges()`, the node snapshots, the used assertions and the report
+artifacts. Every statement also runs on PostgreSQL's schema, so
+`sqlDialect=portable` uses them there; PostgreSQL's native text is
+unchanged. How each keeps its contract is in the file's header: a jsonb
+merge is the row locked FOR UPDATE and merged in JavaScript; `RETURNING` and
+a data-modifying CTE are statements in one transaction; an assertion is
+still accepted once because the primary key decides (`INSERT IGNORE`), and a
+keyed value too long for its column is refused (STS-STORE-0100) because
+`INSERT IGNORE` would truncate it; MariaDB deadlocks are run again.
+`replicaLagMs()` answers null on MariaDB (the account may not read replica
+status). `seq` is dense on MariaDB as on PostgreSQL only while
+`innodb_autoinc_lock_mode` is 1 and the increment 1 — the open-time check of
+that is `checkChangeLogDense()`'s, still PostgreSQL's. `committedMark()` and
+`committedSince()` send nothing and needed nothing. `tests/store_portable.js`:
+A static, B the library on PostgreSQL, C on MariaDB 11.8 with the races
+(twenty-five claims of one assertion, ten merges into one key row, ten
+override deltas on one realm, ten change-row transactions), D through the
+driver with `engine: 'mariadb'`.
+
+**Opening a MariaDB store and `/admin/database` on it (#677, phase 3b).**
+`open()` hands a MariaDB store to `open_mariadb.js`: what exists is asked of
+`information_schema` for the current database, a missing object is created
+from `schema_mariadb.js` (the application role may not, and is refused
+STS-STORE-0029 naming `mariadb/schema.sql`; MariaDB 11.8 refuses such a role
+even `CREATE … IF NOT EXISTS` on an object that exists, so existence is
+asked first), there is no transaction (MariaDB commits DDL on its own) and
+nothing older to bring forward, the change log's density is
+`auto_increment_increment = 1` with `innodb_autoinc_lock_mode` 0 or 1
+(STS-STORE-0091), and the version row is recorded. `metrics()` sends
+`metrics_mariadb.js`'s probes under `max_statement_time`, the same groups
+and, where MariaDB keeps the same quantity, PostgreSQL's column names, so the
+page derives the same numbers; an index with no scan count is not called
+unused. `tests/open_mariadb.js` and `tests/database_metrics.js` hold both,
+every probe run as the least-privilege role against MariaDB 11.8.
+
 **A TRANSACTION IS STILL `BEGIN`/`COMMIT` ON ONE HELD CONNECTION**
 (`transactionOnce()`, `queryWithoutJit()`, the metrics client,
 `bulk_import.js`, `cell_convert.js`), not `knex.transaction()`: that runs its
@@ -2867,7 +2971,12 @@ writes to:
   slow one; a new caller adds its name to the list, which changes the index
   expression and so is a schema version. `tests/directory_asked_names.js`
   reads the names out of the call sites and fails on one the list lacks, or a
-  listed name nobody asks.
+  listed name nobody asks. **Schema version 31 (#1290, 2026-11-03)** swapped
+  `stsassertionjwks` and `stssamlassertioncertificate` for
+  `stsassertionkeypair` and `stssamlassertionkeypair` — a person's signing key
+  pairs became one record each — and the advisory step
+  `sts_ldap_entries_asked_names_v31` rebuilds an index whose definition lacks
+  the new name.
 * **`userpassword` is not in the list**: nearly every person holds one. The
   two questions asked about it are the counters' — `countHolding()` already,
   and `anyWithAttribute()` (`anybodyHoldsACredential()`) now reads the

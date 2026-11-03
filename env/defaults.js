@@ -577,6 +577,7 @@ var config = {
     personSelfServicePerIdentity: 5,            // Self-issued key pairs one person may ask for per window
     personSelfServicePerAddress: 5,             // Self-issued key pairs one address may ask for per window
     personTlsClientCertificateMax: 5,           // TLS client certificates one person may hold
+    personSigningKeyMax: 5,                     // Signing key pairs one person may hold per profile
     applicationTlsClientCertificateMax: 5,      // TLS client certificates one application may hold
     messageSigningCertificateMax: 5,            // Message-signing certificates one holder may hold
     pinnedSigners: false,                       // Sign with a pinned key pair
@@ -1411,6 +1412,7 @@ var config = {
   // --- Persistence -----------------------------------------------------
   persistence: {
     mode: "memory",                                        // Persistence mode; restart to apply
+    sqlDialect: "native",                                  // Cluster SQL dialect; restart to apply
     metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
     dataDir: "./data",                                     // Data directory; restart to apply
     databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply

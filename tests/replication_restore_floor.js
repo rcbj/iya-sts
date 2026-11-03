@@ -52,14 +52,15 @@ function makeLog() {
         one['o' + i] = 'present';
       }
       out = rowsOf([one]);
-    } else if (/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
-                 .test(text)) {
+    } else if ((/SELECT COALESCE\(MAX\(seq\), 0\) AS seq FROM sts_changes/
+                 .test(text) ||
+               /sts:(latestChangeSeq|changeCeiling) /.test(text))) {
       db.maxes.push(db.log.length);
       if (db.openedAt === undefined) {
         db.openedAt = db.log.length;
       }
       out = rowsOf([{ seq: db.log.length }]);
-    } else if (/FROM sts_changes WHERE seq > /.test(text)) {
+    } else if (/sts:changesSince /.test(text)) {
       const after = Number(bound[0]);
       const limit = Number(bound[1]) || 500;
       out = rowsOf(db.log.filter(function (row) {

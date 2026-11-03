@@ -77,6 +77,8 @@ const pki = require('../common/pki');
 const personAssertions = require('../common/person_assertions');
 const assertionGrant = require('../oauth-oidc/assertion_grant');
 const applications = require('../common/applications');
+// The cap, overridden for one section (#1290).
+const config = require('../common/config');
 // The directory, for the entries these people live in. Requiring it here is
 // what fills `person_assertions.setDirectory()` — the whole feature is
 // unreachable without it, and a test that quietly ran against an unfilled slot
@@ -199,13 +201,12 @@ async function run(t) {
   const written = personAssertions.write(ALICE, record, {});
   t.check(written.ok, 'the key pair is written onto the person\'s own entry',
           (written.errors || []).join(' '));
-  t.equal(written.written.length, 7,
-          'seven attributes — the private key, the certificate, the JWKS, ' +
-          'the chain, the kid, the expiry and (since 2026-09-13) where the ' +
-          'key pair came from. All or none: ' +
-          'common/pki.js hands a key pair over once and keeps no copy, so a ' +
-          'half-written entry is a key pair that is gone with a certificate ' +
-          'claiming otherwise');
+  t.equal(written.written.join(','),
+          'stsAssertionPrivateKey,stsAssertionKeyPair',
+          'two attributes, the private half FIRST — one value each per key ' +
+          'pair since #1290. All or none: common/pki.js hands a key pair ' +
+          'over once and keeps no copy, so a half-written entry is a key ' +
+          'pair that is gone with a certificate claiming otherwise');
 
   const held = personAssertions.recordFor(ALICE);
   t.check(held && held.hasKeyPair, 'and it reads back');
@@ -215,7 +216,8 @@ async function run(t) {
           'twice is a configuration step with no decision in it — which is ' +
           'the rule issuerEntry() already follows for an application\'s ' +
           'client_id');
-  t.check(/BEGIN (RSA )?PRIVATE KEY/.test(held.stsAssertionPrivateKey),
+  t.check(/BEGIN (RSA )?PRIVATE KEY/.test(
+            (held.keys.jwt[0] || {}).privateKeyPem || ''),
           'the private half comes back through this module OPENED, whatever ' +
           'the store holds — the seal protects the store rather than the ' +
           'caller that owns the register');
@@ -262,7 +264,7 @@ async function run(t) {
           'and "one party vouched for another" is the opposite of what ' +
           'happened');
   t.equal(self.person, ALICE, 'naming them');
-  t.equal(self.keySource, 'stsAssertionJwks',
+  t.equal(self.keySource, 'stsAssertionKeyPair',
           'verified against the key on their own entry and not against an ' +
           'application\'s — the two attribute sets share no name and no code ' +
           'path crosses them');
@@ -321,6 +323,71 @@ async function run(t) {
   t.equal(byBroker.issuerKind, 'application', 'and is reported as one');
 
   // -------------------------------------------------------------------------
+  // B2. SEVERAL KEY PAIRS, ANY VALID ONE ACCEPTED, AND THE CAP (#1290).
+  // -------------------------------------------------------------------------
+  const another = await pki.issueSigningKeyPair(undefined, {
+    identifier: ALICE, purpose: 'jwt', subjectKind: 'person' });
+  const added = personAssertions.write(ALICE, another.issued,
+                                       { label: 'ci job' });
+  t.check(added.ok, 'B2. a second key pair is ADDED, named',
+          (added.errors || []).join(' '));
+  const both = personAssertions.listFor(ALICE, 'jwt');
+  t.equal(both.length, 2,
+          'and the person holds both: Generate adds and no longer replaces');
+  t.equal((both.filter(function (one) {
+    return one.id === another.issued.kid;
+  })[0] || {}).label, 'ci job', 'the new one carrying its label');
+  const viaFirst = await assertionGrant.verify({
+    assertion: sign(claimsFor(ALICE, ALICE)), audiences: AUD });
+  const viaSecond = await assertionGrant.verify({
+    assertion: signJws({ alg: another.issued.jwsAlg, typ: 'JWT',
+                         kid: another.issued.kid },
+                       claimsFor(ALICE, ALICE), another.issued.privateKeyPem),
+    audiences: AUD });
+  t.check(viaFirst.ok && viaSecond.ok,
+          'and an assertion signed with EITHER is accepted, each found by ' +
+          'its kid', (viaFirst.description || '') + ' / ' +
+          (viaSecond.description || ''));
+  config.setOverride('pki.personSigningKeyMax', '2');
+  t.check(personAssertions.atCap(ALICE, 'jwt'),
+          'at pki.personSigningKeyMax valid key pairs the person is at the ' +
+          'cap');
+  const third = await pki.issueSigningKeyPair(undefined, {
+    identifier: ALICE, purpose: 'jwt', subjectKind: 'person' });
+  const refused = personAssertions.write(ALICE, third.issued, {});
+  t.equal(refused.errorCode, 'STS-PKI-0223',
+          'and a third is refused rather than an older one revoked to make ' +
+          'room', (refused.errors || []).join(' '));
+  const badLabel = personAssertions.write(ALICE, third.issued,
+                                          { label: '<script>' });
+  t.equal(badLabel.errorCode, 'STS-PKI-0225',
+          'a label that is not a short name is refused');
+  const notMine = personAssertions.revoke(BOB, 'jwt', another.issued.kid,
+                                          'keyCompromise');
+  t.equal(notMine.errorCode, 'STS-PKI-0224',
+          'a revocation is looked up among THAT person\'s key pairs only: ' +
+          'alice\'s kid named against bob matches nothing');
+  const dropped = personAssertions.revoke(ALICE, 'jwt', another.issued.kid,
+                                          'keyCompromise');
+  t.check(dropped.ok && dropped.remaining === 1,
+          'revoking one leaves the other valid',
+          JSON.stringify(dropped).slice(0, 160));
+  t.check(!personAssertions.atCap(ALICE, 'jwt'),
+          'and makes room under the cap: only valid key pairs count');
+  const afterRevoke = await assertionGrant.verify({
+    assertion: signJws({ alg: another.issued.jwsAlg, typ: 'JWT',
+                         kid: another.issued.kid },
+                       claimsFor(ALICE, ALICE), another.issued.privateKeyPem),
+    audiences: AUD });
+  t.check(!afterRevoke.ok, 'the revoked key is refused',
+          afterRevoke.description);
+  const stillFirst = await assertionGrant.verify({
+    assertion: sign(claimsFor(ALICE, ALICE)), audiences: AUD });
+  t.check(stillFirst.ok, 'while the other still works',
+          stillFirst.description);
+  config.clearOverride('pki.personSigningKeyMax');
+
+  // -------------------------------------------------------------------------
   // C. A PERSON WITH NO KEY PAIR IS NOT AN ISSUER.
   // -------------------------------------------------------------------------
   const bobRecord = personAssertions.recordFor(BOB);
@@ -337,19 +404,47 @@ async function run(t) {
   // -------------------------------------------------------------------------
   // D. THE OTHER WAY IN: A CERTIFICATE THIS SERVICE ISSUED, PRESENTED ALONE.
   //
-  // Asserted with the entry CLEARED, so that the registry cannot be what
-  // refuses it. What is left is the `x5c` path — the one that does not go
-  // through the registry at all.
+  // Asserted with NO VALID KEY PAIR on the entry, so that the registry
+  // cannot be what accepts or refuses it: the registered one is REVOKED
+  // (#1290 — that replaced taking it off), and the certificate presented is
+  // a second one issued to the same person and never registered. What is
+  // left is the `x5c` path — the one that does not go through the registry
+  // at all.
   // -------------------------------------------------------------------------
-  const cleared = personAssertions.clear(ALICE);
-  t.check(cleared.ok, 'D. the key pair is taken off the entry',
-          cleared.removed);
+  const revoked = personAssertions.revoke(ALICE, 'jwt', record.kid,
+                                          'cessationOfOperation');
+  t.check(revoked.ok && revoked.onList,
+          'D. the registered key pair is revoked, on its authority\'s list',
+          JSON.stringify(revoked).slice(0, 160));
   t.check(!personAssertions.issuerFor(ALICE),
           'so nobody issues under that name any more');
+  const revokedUse = await assertionGrant.verify({
+    assertion: sign(claimsFor(ALICE, ALICE)), audiences: AUD });
+  t.check(!revokedUse.ok,
+          'and an assertion signed with the revoked key by `kid` is refused',
+          revokedUse.description);
+  const revokedX5c = await assertionGrant.verify({
+    assertion: sign(claimsFor(ALICE, ALICE),
+                    { x5c: record.jwks.keys[0].x5c, kid: undefined }),
+    audiences: AUD });
+  t.check(!revokedX5c.ok,
+          'and so is one presenting the revoked certificate in its `x5c`: ' +
+          'the CRL entry is what every relying party reads, this service ' +
+          'included', revokedX5c.description);
+  const unregistered = await pki.issueSigningKeyPair(undefined, {
+    identifier: ALICE, purpose: 'jwt', subjectKind: 'person' });
+  const second = unregistered.issued;
+  const signSecond = function (claims, header) {
+    log.debug("Entering signSecond().");
+    log.debug("Leaving signSecond().");
+    return signJws(Object.assign({ alg: second.jwsAlg, typ: 'JWT' },
+                                 header || {}),
+                   claims, second.privateKeyPem);
+  };
 
-  const x5c = record.jwks.keys[0].x5c;
+  const x5c = second.jwks.keys[0].x5c;
   const chainSelf = await assertionGrant.verify({
-    assertion: sign(claimsFor(ALICE, ALICE), { x5c: x5c, kid: undefined }),
+    assertion: signSecond(claimsFor(ALICE, ALICE), { x5c: x5c }),
     audiences: AUD });
   t.check(chainSelf.ok,
           'a certificate this service ISSUED is still evidence in its own ' +
@@ -362,7 +457,7 @@ async function run(t) {
           'is nothing on the entry left to say it');
 
   const chainOther = await assertionGrant.verify({
-    assertion: sign(claimsFor(ALICE, BOB), { x5c: x5c, kid: undefined }),
+    assertion: signSecond(claimsFor(ALICE, BOB), { x5c: x5c }),
     audiences: AUD });
   t.check(!chainOther.ok,
           '**AND THE RULE HOLDS ON THE CERTIFICATE ALONE.** This is the hole ' +
@@ -379,7 +474,7 @@ async function run(t) {
   ldap.deleteUser ? ldap.deleteUser(ALICE) : null;
   const deletedRecord = personAssertions.recordFor(ALICE);
   const chainDeleted = await assertionGrant.verify({
-    assertion: sign(claimsFor(ALICE, BOB), { x5c: x5c, kid: undefined }),
+    assertion: signSecond(claimsFor(ALICE, BOB), { x5c: x5c }),
     audiences: AUD });
   t.check(!chainDeleted.ok,
           'and it holds when the person has been deleted from the directory ' +

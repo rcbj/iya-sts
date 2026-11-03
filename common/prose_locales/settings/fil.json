@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "Ilang valid pang TLS client certificate ang puwedeng iisyu ng isang tao para sa sarili nila sa user portal — isa bawat browser o device. Hindi binibilang ang revoked o expired na certificate. Lampas dito, tumatanggi ang portal (STS-PKI-0170) sa halip na i-revoke ang mas lumang certificate na baka ginagamit pa ng isang tao. Sakop din ng pki.personSelfService at ng dalawang self-service rate limit sa itaas ang pag-isyu ng isa."
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "Mga signing key pair na puwedeng hawakan ng isang tao bawat profile"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "Ilang valid pa na assertion signing key pair ang puwedeng hawakan ng isang tao para sa BAWAT profile — hiwalay na binibilang ang RFC 7523 (JWT) at RFC 7522 (SAML 2.0) — na-issue man sa user portal, na-issue ng isang administrator o na-upload. Hindi binibilang ang key pair na na-revoke o nag-expire. Kapag nalampasan ito, papalitan ng portal ng isang tala ang Generate button nito at tatanggi ang bawat pinto (STS-PKI-0223) sa halip na i-revoke ang mas lumang key pair na baka ginagamit pa ng isang tao."
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "Mga TLS client certificate na puwedeng hawakan ng isang application"
@@ -9644,12 +9652,24 @@
     "text": "Persistence mode"
   },
   "persistence.mode|description": {
-    "en": "3b1c6fa9ec185404",
-    "text": "Kung saan isinusulat ang embedded directory, ang trust realm registry at ang mga runtime appconfig override. Walang isinusulat ang memory at ito ang palaging ginagawa ng serbisyong ito — nawawala ang lahat sa restart. Nagsusulat ang ldif ng isang RFC 2849 file kada realm at dalawang JSON file sa persistence.dataDir, na siyang sagot para sa local development at hindi nangangailangan ng database. Nagsusulat ang postgres ng isang set ng table (inililista ng postgres/schema.sql ang mga ito) at ito ang shared store. ANG MINI-MINT NG SERBISYONG ITO — mga session, token, code, artifact, Kerberos principal, mga replay cache, mga counter at ang audit log — ay nape-persist sa PRODUCT mode sa postgres at sa walang ibang configuration; tingnan ang persistence.minted. Walang pine-persist ang development mode sa mga ito, dahil nire-regenerate doon ang signing key sa bawat start at ang token na mas tumagal dito ay walang mapagve-verify-an. Walang hawak sa mga ito ang ldif store sa alinmang mode at sinasabi nito iyon sa startup, dahil buong file ang isinusulat nito kada flush."
+    "en": "9017af2918cf94be",
+    "text": "Kung saan isinusulat ang embedded directory, ang trust realm registry at ang mga runtime appconfig override. Walang isinusulat ang memory at ito ang palaging ginagawa ng serbisyong ito — nawawala ang lahat sa restart. Nagsusulat ang ldif ng isang RFC 2849 file kada realm at dalawang JSON file sa persistence.dataDir, na siyang sagot para sa local development at hindi nangangailangan ng database. Nagsusulat ang postgres ng isang set ng table (inililista ng postgres/schema.sql ang mga ito) at ito ang shared store. Ang mariadb ay ang parehong store sa MariaDB (mariadb/schema.sql), isang pangalawang engine na pinatatakbuhan ng test suite: ang persistence.databaseUrl ay isang mariadb:// na address, dapat naka-install ang package na mysql2, at tinatanggihan ang anumang nangangailangan ng mismong PostgreSQL (mga cell, ang bulk import, ang directory window). ANG MINI-MINT NG SERBISYONG ITO — mga session, token, code, artifact, Kerberos principal, mga replay cache, mga counter at ang audit log — ay nape-persist sa PRODUCT mode sa postgres at sa walang ibang configuration; tingnan ang persistence.minted. Walang pine-persist ang development mode sa mga ito, dahil nire-regenerate doon ang signing key sa bawat start at ang token na mas tumagal dito ay walang mapagve-verify-an. Walang hawak sa mga ito ang ldif store sa alinmang mode at sinasabi nito iyon sa startup, dahil buong file ang isinusulat nito kada flush."
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
     "text": "binubuksan at binabasa ang store bago mag-bind ang listener"
+  },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "SQL dialect ng cluster"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "Kung aling mga statement ang ipinapadala ng isang postgres store para i-coordinate ang ilang proseso: ang mga claim, lease, counter, rate window, budget, write fence, ang join lock ng cluster, ang heartbeat at ang pag-trim ng change log. Ang native ay ang sariling mga statement ng PostgreSQL (conditional upsert, advisory lock, LISTEN/NOTIFY) at ito ang pinapatakbo ng production. Ang portable ay ang mga statement na pinapatakbo ng pangalawang database engine (mga simpleng insert na walang ginagawa kapag duplicate, mga row lock sa sts_cluster_locks, at walang abiso ng pagbabago, kaya tinatanong ang change log bawat segundo maliban kung nakatakda ang persistence.pollInterval); umiiral ito para mapatunayan ng test suite ang code na iyon sa PostgreSQL. Parehong tama; mas maraming statement bawat operasyon ang gastos ng portable."
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "pinipili ng store driver ang mga statement nito kapag binubuo ito"
   },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
@@ -9920,8 +9940,8 @@
     "text": "Change poll interval (ms)"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "Gaano kadalas tinatanong ng process na ito ang change log kung ano ang kinommit ng ibang process. Ito ang KONTRATA at ang LISTEN/NOTIFY nudge ay optimisasyon lang dito, kaya ito ang pinakamasamang convergence lag kapag nawala ang isang notification — isang nalaglag na listener, isang restart ng database — at ilang millisecond ang karaniwang lag. Limang segundo dahil karaniwang nauunang dumating ang nudge at walang nabibili ang mas maikling interval kundi mga query; 250ms ang pinakamababa. Ito rin ang laki ng replay-cache window na inilalarawan sa ilalim ng persistence.coordinate."
+    "en": "0620a679e69c0d43",
+    "text": "Kung gaano kadalas tinatanong ng prosesong ito ang change log kung ano ang na-commit ng ibang mga proseso. Ito ang KONTRATA at ang LISTEN/NOTIFY na pagsundot ay optimisasyon lamang dito, kaya ito ang pinakamasamang pagkaantala ng convergence kapag nawala ang isang abiso — naputol na listener, pag-restart ng database — at ang karaniwang pagkaantala ay ilang millisecond. Limang segundo dahil karaniwang nauuna ang pagsundot at walang nabibili ang mas maikling interval kundi mga query; 250ms ang pinakamababa. Kapag walang ipinapadalang pagsundot ang store (persistence.sqlDialect portable) at hindi ito nakatakda, isang segundo ang interval. Ito rin ang laki ng replay-cache window na inilarawan sa ilalim ng persistence.coordinate."
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",

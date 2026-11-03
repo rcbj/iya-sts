@@ -3259,6 +3259,14 @@
     "en": "7fd3b5724d944994",
     "text": "Hur många fortfarande giltiga TLS-klientcertifikat en person får utfärda till sig själv i användarportalen — ett per webbläsare eller enhet. Ett återkallat eller utgånget certifikat räknas inte. Därutöver avvisar portalen (STS-PKI-0170) i stället för att återkalla ett äldre certifikat som någon kanske fortfarande använder. Utfärdandet omfattas också av pki.personSelfService och av de två hastighetsgränserna för självbetjäning ovan."
   },
+  "pki.personSigningKeyMax|label": {
+    "en": "c0e7cbdfb8a79e59",
+    "text": "Signeringsnyckelpar som en person får ha per profil"
+  },
+  "pki.personSigningKeyMax|description": {
+    "en": "1d80e5c622370c1b",
+    "text": "Hur många fortfarande giltiga nyckelpar för signering av intyganden en person får ha för VARJE profil — RFC 7523 (JWT) och RFC 7522 (SAML 2.0) räknas var för sig — oavsett om de utfärdats på användarportalen, av en administratör eller laddats upp. Ett återkallat eller utgånget nyckelpar räknas inte. Därutöver ersätter portalen sin Skapa-knapp med en notis och varje dörr nekar (STS-PKI-0223) i stället för att återkalla ett äldre nyckelpar som någon kanske fortfarande använder."
+  },
   "pki.applicationTlsClientCertificateMax|label": {
     "en": "e59c9133f8c60a2e",
     "text": "TLS-klientcertifikat som en applikation får ha"
@@ -9644,12 +9652,24 @@
     "text": "Persistensläge"
   },
   "persistence.mode|description": {
-    "en": "3b1c6fa9ec185404",
-    "text": "Var den inbäddade katalogen, registret över förtroendesfärer och appconfig-åsidosättningarna vid körning skrivs ner. memory skriver ingenting och är vad den här tjänsten alltid har gjort — allt är borta vid omstart. ldif skriver en RFC 2849-fil per sfär plus två JSON-filer i persistence.dataDir, vilket är svaret för lokal utveckling och inte kräver någon databas. postgres skriver en uppsättning tabeller (postgres/schema.sql listar dem) och är det delade lagret. DET SOM DEN HÄR TJÄNSTEN SKAPAR — sessioner, token, koder, artefakter, Kerberos-principaler, replay-cacharna, räknarna och granskningsloggen — sparas beständigt i PRODUKTIONSLÄGE på postgres och i ingen annan konfiguration; se persistence.minted. Utvecklingsläge sparar inget av det, eftersom signeringsnyckeln genereras på nytt vid varje start där och en token som överlevde den inte skulle verifieras mot någonting. ldif-lagret håller inget av det i något av lägena och säger det vid start, eftersom det skriver hela filer vid varje tömning."
+    "en": "9017af2918cf94be",
+    "text": "Var den inbäddade katalogen, registret över förtroendesfärer och appconfig-åsidosättningarna vid körning skrivs ner. memory skriver ingenting och är vad den här tjänsten alltid har gjort — allt är borta vid omstart. ldif skriver en RFC 2849-fil per sfär plus två JSON-filer i persistence.dataDir, vilket är svaret för lokal utveckling och inte kräver någon databas. postgres skriver en uppsättning tabeller (postgres/schema.sql listar dem) och är det delade lagret. mariadb är samma lager på MariaDB (mariadb/schema.sql), en andra motor som testsviten körs mot: persistence.databaseUrl är då en mariadb://-adress, paketet mysql2 måste vara installerat, och det som kräver PostgreSQL självt (cellerna, massimporten, katalogfönstret) avvisas. DET SOM DEN HÄR TJÄNSTEN SKAPAR — sessioner, token, koder, artefakter, Kerberos-principaler, replay-cacharna, räknarna och granskningsloggen — sparas beständigt i PRODUKTIONSLÄGE på postgres och i ingen annan konfiguration; se persistence.minted. Utvecklingsläge sparar inget av det, eftersom signeringsnyckeln genereras på nytt vid varje start där och en token som överlevde den inte skulle verifieras mot någonting. ldif-lagret håller inget av det i något av lägena och säger det vid start, eftersom det skriver hela filer vid varje tömning."
   },
   "persistence.mode|restartReason": {
     "en": "22887c233a0a0adf",
     "text": "lagret öppnas och läses innan lyssnaren binder"
+  },
+  "persistence.sqlDialect|label": {
+    "en": "5516b4b61b3a3b26",
+    "text": "Klustrets SQL-dialekt"
+  },
+  "persistence.sqlDialect|description": {
+    "en": "44ae69401199d392",
+    "text": "Vilka satser ett postgres-lager skickar för att samordna flera processer: anspråken, lånen, räknarna, hastighetsfönstren, budgetarna, skrivspärrarna, klustrets anslutningslås, hjärtslaget och beskärningen av ändringsloggen. native är PostgreSQL:s egna (villkorliga upserts, rådgivande lås, LISTEN/NOTIFY) och är det som produktion kör. portable är de satser en andra databasmotor kör (enkla infogningar som inte gör något vid en dubblett, radlås i sts_cluster_locks och ingen ändringsavisering, så ändringsloggen avfrågas varje sekund om inte persistence.pollInterval är satt); den finns för att testsviten ska kunna pröva den koden mot PostgreSQL. Båda är korrekta; portable kostar fler satser per operation."
+  },
+  "persistence.sqlDialect|restartReason": {
+    "en": "044df2e5eb8145ba",
+    "text": "lagrets drivrutin väljer sina satser när den byggs"
   },
   "persistence.metricsTimeoutMs|label": {
     "en": "7cfd3f3265f2652f",
@@ -9920,8 +9940,8 @@
     "text": "Pollningsintervall för ändringar (ms)"
   },
   "persistence.pollInterval|description": {
-    "en": "0cfee4f11a15ea30",
-    "text": "Hur ofta den här processen frågar ändringsloggen vad andra processer har checkat in. Det här är KONTRAKTET och LISTEN/NOTIFY-knuffen är bara en optimering ovanpå det, så detta är den värsta konvergensfördröjningen när en avisering går förlorad — en tappad lyssnare, en databasomstart — och den typiska fördröjningen är några millisekunder. Fem sekunder eftersom knuffen normalt kommer först och ett kortare intervall inte köper något annat än frågor; 250 ms är golvet. Det är också storleken på replay-cachefönstret som beskrivs under persistence.coordinate."
+    "en": "0620a679e69c0d43",
+    "text": "Hur ofta den här processen frågar ändringsloggen vad andra processer har checkat in. Det här är KONTRAKTET och LISTEN/NOTIFY-knuffen är bara en optimering ovanpå det, så det här är den värsta konvergensfördröjningen när en avisering går förlorad — en tappad lyssnare, en omstart av databasen — och den typiska fördröjningen är några millisekunder. Fem sekunder eftersom knuffen normalt kommer först och ett kortare intervall bara köper frågor; 250 ms är golvet. Där lagret inte skickar någon knuff (persistence.sqlDialect portable) och detta inte är satt är intervallet en sekund. Det är också storleken på fönstret för återuppspelningscachen som beskrivs under persistence.coordinate."
   },
   "persistence.changeLogRetentionS|label": {
     "en": "110e12ce2099a8a8",

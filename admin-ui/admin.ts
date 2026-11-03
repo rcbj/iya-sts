@@ -3507,9 +3507,11 @@ class AdminConsole {
       store = persistence.status();
       effective = String(store.mode || store.configuredMode || 'memory');
       const db = store.database;
-      facts.database = effective === 'postgres'
-        ? (db ? 'postgres (' + db.host + ':' + db.port + '/' + db.database + ')'
-              : 'postgres')
+      // Either database engine (#677), named as its mode.
+      facts.database = (effective === 'postgres' || effective === 'mariadb')
+        ? (db ? effective + ' (' + db.host + ':' + db.port + '/' +
+                db.database + ')'
+              : effective)
         : effective === 'ldif'
           ? 'ldif (' + (store.dataDir || 'no data directory') + ')'
           : effective === 'memory' ? 'memory (nothing written down)'
@@ -3542,7 +3544,8 @@ class AdminConsole {
     }
     try {
       const password = secrets.describeDatabasePassword();
-      facts.databasePassword = effective !== 'postgres'
+      facts.databasePassword = (effective !== 'postgres' &&
+                                effective !== 'mariadb')
         ? 'not used (no database)'
         : password.configured
           ? password.label + (password.where && password.where.from

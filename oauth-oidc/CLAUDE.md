@@ -4148,6 +4148,17 @@ certificate SANs are identifiers already inside issued tokens and certificates;
 renaming them is a migration, not a setting.
 
 
+## 3x / 3z, CONTINUED: SEVERAL KEY PAIRS PER PERSON (#1290, 2026-11-03)
+
+A person may hold several key pairs per profile. `assertion_grant.js`'s
+`keysForParty()` reads a person's `jwks` — the record's VALID key pairs only,
+each found by `kid`, `keySource` `stsAssertionKeyPair` — and
+`saml_assertion_grant.js`'s `issuerEntry()` hands `certificatesForParty()` the
+valid certificates as `personSamlCertificates`, each with its own chain, matched
+by thumbprint. A revoked or expired key pair is in neither, so an assertion
+signed with it finds no registered key; its certificate in an `x5c` is refused
+by the CRL. `common/CLAUDE.md` 3ab, continued, has the register.
+
 ## 3z, CONTINUED: A PERSON AS AN RFC 7522 ISSUER (2026-09-13)
 
 `saml_assertion_grant.js` answered only for applications: `issuerEntry()` read

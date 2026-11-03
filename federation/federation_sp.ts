@@ -417,7 +417,10 @@ const STYLE = 'body{font-family:system-ui,Segoe ' +
   'th{background:#fafafa}.bad{color:#a00;font-weight:600}.ok{color:#060}' +
   '.note{color:#555;font-size:.9rem}button{font:inherit;padding:.5rem ' +
   '1rem;border:1px solid #333;background:#111;color:#fff;border-radius:4px;' +
-  'cursor:pointer}ul{padding-left:1.2rem}';
+  'cursor:pointer}ul{padding-left:1.2rem}' +
+  // The language chooser, a collapsed row (#1289).
+  'details.language-row{float:right;margin:0 0 .5rem 1rem}' +
+  PageLocale.ROW_CSS;
 
 // ---------------------------------------------------------------------------
 // THE ASSERTION CONSUMER SERVICE'S ONE SCRIPT (#930), served at
