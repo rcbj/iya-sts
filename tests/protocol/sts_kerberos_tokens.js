@@ -68,6 +68,11 @@ var stsUrl = process.env.WSTRUST_STS_URL || "https://localhost:8081/sts";
 var base = String(process.env.OID4VCI_ISSUER_URL ||
                   stsUrl.replace(/\/sts\/?$/, "")).replace(/\/+$/, "");
 const api = base + "/admin-api";
+// THE WS-TRUST ENDPOINT IS `base + "/sts"` (2026-11-03), as
+// sts_wstrust_signed_requests.js reaches it: the runner hands every job
+// WSTRUST_STS_URL as the service's base URL, with no /sts, so posting to
+// stsUrl itself answered `Cannot POST /` on this job's first run.
+const wsTrustUrl = base + "/sts";
 const msgs = wire.msgs;
 const kcrypto = wire.kcrypto;
 const SUFFIX = crypto.randomBytes(3).toString("hex");
@@ -229,7 +234,7 @@ function rst(security, inner, tokenType) {
 
 async function postRst(xml) {
   log.debug("Entering postRst().");
-  const r = await fetch(stsUrl, { method: "POST",
+  const r = await fetch(wsTrustUrl, { method: "POST",
     headers: { "Content-Type": "application/soap+xml; charset=utf-8" },
     body: xml });
   const text = await r.text();
@@ -285,7 +290,12 @@ async function setUp() {
   // end's S4U2Proxy may name. Created when absent; an existing one is used.
   const sts = await call("POST", "/applications/create", {
     identifier: stsId, protocols: ["krb5"] });
-  log.info("the service SPN's entry: HTTP " + sts.status);
+  // A 400 here is an entry that already exists, which is used; the reason
+  // is logged so that any other refusal says what it was.
+  log.info("the service SPN's entry: HTTP " + sts.status +
+           (sts.status === 200 ? "" : " — " +
+            String((sts.body && sts.body.errors) || sts.text || "")
+              .slice(0, 200)));
   const set = async function (application, attribute, mode, value) {
     log.debug("Entering set().");
     await ok("/applications/" + mode, { application: application,
