@@ -11322,8 +11322,11 @@ class AdminActions {
     // THE LIST IS BUILT, NOT WRITTEN: the Shared Signals acts are the
     // transmitter module's own table (#373), and the parity check reads this
     // sentence's count against what it names.
+    // `check-partner` and `register-partner` (#930) are answered above
+    // and were missing here, which hid them from the parity check.
     const known = ['create', 'set', 'add-value', 'remove-value', 'enable',
-      'disable', 'rotate-key', 'delete']
+      'disable', 'rotate-key', 'check-partner', 'register-partner',
+      'delete']
         .concat(loadSignals().ACTIONS || []);
     return this.refused('STS-ADMIN-0500', { ok: false,
              errors: ['Unknown action "' + action + '". The ' +
