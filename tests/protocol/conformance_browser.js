@@ -66,7 +66,7 @@
 const fs = require("fs");
 const nodeCrypto = require("crypto");
 const bunyan = require("bunyan");
-const { Builder, By } = require("selenium-webdriver");
+const { Builder, By, logging } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 
@@ -119,6 +119,12 @@ async function browser(serviceBase) {
     return shared;
   }
   const options = new chrome.Options();
+  // THE PAGES' CONSOLE, KEPT (#1293): a suite page whose own script never
+  // moves on (Session Management's session_verify, whose RP iframe logs
+  // every step) is otherwise a bare timeout. Read only by consoleOf().
+  const prefs = new logging.Preferences();
+  prefs.setLevel(logging.Type.BROWSER, logging.Level.ALL);
+  options.setLoggingPrefs(prefs);
   options.addArguments("--headless=new", "--no-sandbox",
                        "--disable-dev-shm-usage", "--window-size=1100,900");
   browserFlags.addBrowserAccessFlags(options, serviceBase);
@@ -363,6 +369,24 @@ async function currentUrl(driver) {
 }
 
 // Waits for the address to change from `from`, or for `ms`.
+// The browser console since the last read, every frame's, logged at info:
+// for a suite page that never moved on.
+async function consoleOf(driver, where) {
+  log.debug("Entering consoleOf().");
+  try {
+    const entries = await driver.manage().logs().get(logging.Type.BROWSER);
+    log.info("The browser console on " + where + " (" + entries.length +
+             " entries):");
+    entries.forEach(function (e) {
+      log.info("  console " + e.level.name + ": " + e.message);
+    });
+  } catch (e) {
+    log.debug("Caught in consoleOf(): " + ((e && e.message) || e));
+    // A driver that keeps no log: nothing to add to the timeout.
+  }
+  log.debug("Leaving consoleOf().");
+}
+
 async function moved(driver, from, ms) {
   log.debug("Entering moved().");
   const end = Date.now() + ms;
@@ -502,6 +526,9 @@ async function follow(o, driver, id, action, suiteBase) {
       if (await moved(driver, here, 20000)) {
         continue;
       }
+      // Stalled on the suite's own page: what its script said is the only
+      // record of why (#1293).
+      await consoleOf(driver, here);
       break;
     }
     if (/\/authn\/login$/.test(path)) {
