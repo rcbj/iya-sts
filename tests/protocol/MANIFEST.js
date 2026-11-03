@@ -1344,6 +1344,16 @@ const JOBS = [
   { file: 'sts_ssf_oidf_conformance.js', browser: false,
     conformance: true, timeoutMs: 3600000,
     lane: 'conformance-b' },
+  // Shared Signals, the other direction (#932): the receiver and CAEP
+  // interop receiver plans, push and poll — the suite the transmitter, the
+  // job the administrator pressing the relationship's stream buttons — and
+  // the CAEP session-revoked's effect on the person's sessions asserted. No
+  // classical twin: the suite verifies nothing this realm signs. In
+  // `conformance-b`, whose jobs together stay well under the OpenID Connect
+  // lane, the conformance half's longest pole, so the bound does not move.
+  { file: 'sts_ssf_receiver_conformance.js', browser: false,
+    conformance: true, timeoutMs: 3600000,
+    lane: 'conformance-b' },
   // OpenID Federation 1.1 (#187): the deployed-entity plan for a Leaf realm
   // and for the Trust Anchor, and the plan in which the suite plays a whole
   // federation and a realm is the OpenID Provider that joined it. This job
