@@ -1863,10 +1863,11 @@ function createReplication(label) {
   }
 
   // `cluster/cluster.js`, for which node this process is and one leader for the
-  // trim. REQUIRED LAZILY: it closes no cycle either way, but this file is in
-  // the parent project's in-process Kerberos closure (through `admin_stats.js`)
-  // and a top-level require would add `cluster.js` to the COPY set that project
-  // owes (kerberos/CLAUDE.md). Only a process that coordinates reaches it.
+  // trim. REQUIRED LAZILY: it closes no cycle either way, but it kept
+  // `cluster.js` out of the parent project's in-process Kerberos COPY set,
+  // which reached this file through `admin_stats.js` (an obligation until
+  // #1280; the arrangement stands). Only a process that coordinates reaches
+  // it.
   function clusterModule() {
     log.debug("Entering clusterModule().");
     log.debug("Leaving clusterModule().");
