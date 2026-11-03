@@ -247,7 +247,17 @@ async function ensureRealm() {
   const settings = [["oauth2.openRegistration", true],
                     ["oauth2.codeReplayIdempotent", false],
                     ["oauth2.requestUriFragmentCheck", false],
-                    oidf.CLASSICAL_SETTING];
+                    oidf.CLASSICAL_SETTING,
+                    // A RUN IS HUNDREDS OF SIGN-INS BY ONE NEW PERSON FROM ONE
+                    // ADDRESS, which the risk model rightly finds unusual: its
+                    // user term put them at 3.0-3.6 against MEDIUM's default
+                    // 3.00 (risk.mediumScorePercent), and a MEDIUM sign-in in
+                    // product is asked for a second factor this person does
+                    // not have (STS-RISK-0017/0018), so oidcc-scope-profile
+                    // hung on 2026-11-03. Raised for THIS realm only, below
+                    // HIGH (1000), so risk is still scored and enforced; the
+                    // setting's own description says to tune it per realm.
+                    ["risk.mediumScorePercent", 800]];
   if (!opts.development) {
     settings.push(["global.mode", "product"]);
   }
