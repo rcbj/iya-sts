@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "De response_type-värden som den här klienten får be om — RFC 7591 avsnitt 2:s response_types, från en registrering eller skrivna av en administratör, varje värde en svarstyp (\"code\", \"code id_token\"). Auktoriseringsslutpunkten avvisar varje annan (unauthorized_client), i varje läge; en tom lista begränsar ingenting. Vad klienten faktiskt har bett om är oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "De svarstyper som utfärdar en åtkomsttoken från auktoriseringsslutpunkten — token, code token, id_token token, code id_token token — som denna klient får använda där RFC 9700-läget gäller (produktläge gör det alltid). Respekteras bara medan sfären undantar RFC 9700 avsnitt 2.1.2 (oauth2.allowImplicitTokenResponses, aldrig under OAuth 2.1 eller FAPI); då nekas en typ som inte listas här (unauthorized_client). TOM som standard, och tom betyder ingen. Skrivs av en administratör eller applikationens ägare medan sfären tillåter dessa typer, eller av en dynamisk registrering inom oauth2.dynamicRegistrationTokenResponseTypes. RFC 9700 avsnitt 2.1.2 säger att klienter INTE BÖR använda dem."
+  },
   "applications.schema.attributes.oauthGrantTypeObserved.what": {
     "en": "377bd68db76fa783",
     "text": "En beviljandetyp som den här klienten setts använda vid tokenslutpunkten. En registrering, inte en behörighet: oauthGrantType är vad den får använda."

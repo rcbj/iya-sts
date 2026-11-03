@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "此用戶端可要求的 response_type 值——RFC 7591 section 2 的 response_types，來自註冊或由管理員寫入，每個值一種回應類型（\"code\"、\"code id_token\"）。授權端點在每種模式下都會拒絕其他任何值（unauthorized_client）；空清單不限制任何東西。用戶端實際要求過的是 oauthResponseTypeObserved。"
   },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "在 RFC 9700 模式生效時（產品模式始終生效）此用戶端可以使用的、從授權端點簽發存取權杖的回應類型——token、code token、id_token token、code id_token token。僅當領域豁免 RFC 9700 第 2.1.2 節時生效（oauth2.allowImplicitTokenResponses，在 OAuth 2.1 或 FAPI 下從不生效）；此時未在此列出的類型會被拒絕（unauthorized_client）。預設為空，空表示無。在領域允許這些類型時由管理員或應用程式的擁有者寫入，或由 oauth2.dynamicRegistrationTokenResponseTypes 範圍內的動態註冊寫入。RFC 9700 第 2.1.2 節規定用戶端不應（SHOULD NOT）使用它們。"
+  },
   "applications.schema.attributes.oauthGrantTypeObserved.what": {
     "en": "377bd68db76fa783",
     "text": "看到此用戶端在權杖端點使用過的授權類型。這是記錄而不是權限：oauthGrantType 才是它可以使用的。"

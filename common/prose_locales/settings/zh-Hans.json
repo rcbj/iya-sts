@@ -1960,8 +1960,16 @@
     "text": "在 RFC 9700 下允许令牌响应类型"
   },
   "oauth2.allowImplicitTokenResponses|description": {
-    "en": "4e3ee63eb21efc37",
-    "text": "在 RFC 9700 模式生效之处（product 模式下始终生效）豁免 RFC 9700 第 2.1.2 节（no-implicit，一项 SHOULD NOT）。开启后，从授权端点签发访问令牌的响应类型（token、id_token token、code token、code id_token token）在授权端点和动态注册处均被接受，两份发现文档也会公布它们以及隐式授权。RFC 9700 的其他所有要求以及 product 模式的其余部分仍然有效，GET /oauth2/rfc9700 和 /admin/mode 会将该要求报告为已豁免。它为 OpenID Connect Implicit、Hybrid 和 Dynamic OP 配置文件而设。在 OAuth 2.1 模式或任一 FAPI 配置文件开启时无效：OAuth 2.1 彻底移除了隐式授权，而 FAPI 配置文件是本设置不会放宽的更严格配置文件。默认关闭；按领域设置。"
+    "en": "7ae0908c5a3cc1b9",
+    "text": "在 RFC 9700 模式生效之处（product 模式下始终生效）豁免 RFC 9700 第 2.1.2 节（no-implicit，一项 SHOULD NOT）。开启后，从授权端点签发访问令牌的响应类型（token、id_token token、code token、code id_token token）在授权端点和动态注册处均被接受，两份发现文档也会公布它们以及隐式授权。RFC 9700 的其他所有要求以及 product 模式的其余部分仍然有效，GET /oauth2/rfc9700 和 /admin/mode 会将该要求报告为已豁免。它为 OpenID Connect Implicit、Hybrid 和 Dynamic OP 配置文件而设。在 OAuth 2.1 模式或任一 FAPI 配置文件开启时无效：OAuth 2.1 彻底移除了隐式授权，而 FAPI 配置文件是本设置不会放宽的更严格配置文件。按应用程序（#1296）：它使这些响应类型成为可能，而应用程序只有在其 oauthAllowedTokenResponseTypes 列出某个类型时才能使用该类型（否则为 unauthorized_client）；该属性由管理员或应用程序的所有者设置，或由自行注册的客户端在 oauth2.dynamicRegistrationTokenResponseTypes 范围内设置。默认关闭；按领域设置。"
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|label": {
+    "en": "4475090bccf20d35",
+    "text": "自行注册的客户端可启用的令牌响应类型"
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|description": {
+    "en": "acccf2f947729707",
+    "text": "在 oauth2.allowImplicitTokenResponses 豁免 RFC 9700 第 2.1.2 节的情况下，在 POST /oauth2/register 自行注册的客户端可以为自己启用哪些从授权端点签发访问令牌的响应类型（token、code token、id_token token、code id_token token）。请求所列类型的注册会将其记录为该客户端的 oauthAllowedTokenResponseTypes；请求未列类型的注册会被拒绝（invalid_client_metadata），RFC 7592 更新也受同一列表约束。默认为空：只有管理员或应用程序的所有者才能启用这些类型。对于面向隐式和混合流程开放自行注册的领域（例如 OpenID Connect Dynamic OP 配置文件），请列出它们。豁免关闭时，或在 OAuth 2.1 模式或 FAPI 配置文件下无效。"
   },
   "oauth2.oauth21|label": {
     "en": "49dcc27abcaff0ba",

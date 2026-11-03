@@ -27,5 +27,7 @@
   "anythingBut": "kahit ano maliban sa ",
   "ignoredMark": " — binabalewala",
   "notYetHeading": "Ang hindi pa rin sinusuri ng product mode",
-  "waivedBy": "INALIS SA REALM NA ITO NG ISANG ADMINISTRATOR: <code>{requirement}</code> ({section}, isang {level}), dahil naka-on ang <code>{setting}</code>. Nananatiling ipinapatupad ang lahat ng iba pang kinakailangan ng BCP."
+  "waivedBy": "INALIS SA REALM NA ITO NG ISANG ADMINISTRATOR: <code>{requirement}</code> ({section}, isang {level}), dahil naka-on ang <code>{setting}</code>. Nananatiling ipinapatupad ang lahat ng iba pang kinakailangan ng BCP.",
+  "waivedPerApplication": "BAWAT APPLICATION: ginagamit lang ng isang application ang mga response type na ito kapag nakalista sa <code>{attribute}</code> nito ang hinihingi nito, itinakda ng isang administrator o ng may-ari ng application. Ang isang client na nagrerehistro ng sarili ay makakapag-enable lang ng pinangalanan ng <code>{setting}</code>: {value}.",
+  "waivedPerApplicationNone": "BAWAT APPLICATION: ginagamit lang ng isang application ang mga response type na ito kapag nakalista sa <code>{attribute}</code> nito ang hinihingi nito, itinakda ng isang administrator o ng may-ari ng application. Ang isang client na nagrerehistro ng sarili ay walang maaaring i-enable, dahil walang laman ang <code>{setting}</code>."
 }

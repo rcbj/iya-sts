@@ -3817,7 +3817,12 @@ class AdminApi {
                      '(and, on `oauth-security-bcp`, `waived` — each RFC ' +
                      '9700 requirement an administrator waived in this ' +
                      'realm, with its `requirement`, `section`, `level` ' +
-                     'and the `setting` that waives it, #1295); ' +
+                     'and the `setting` that waives it, #1295; and, since ' +
+                     '#1296, `perApplication`, the `attribute` that ' +
+                     'enables a waived type on one application and ' +
+                     '`dynamicRegistration` — the `setting` naming which a ' +
+                     'self-registering client may enable, and its ' +
+                     '`value`); ' +
                      '`developmentOnlySettings` — every setting whose row ' +
                      'is marked development-only, with `key`, `group`, the ' +
                      '`predicate` in common/mode.js that must answer yes, ' +
@@ -28460,7 +28465,9 @@ interface OwnerOperation {
 const OWNER_APPLICATION_FIELDS = ['appName', 'appHomePageUrl', 'appCorsOrigin',
   'oauthRedirectUri', 'oauthPostLogoutRedirectUri',
   'oauthFrontchannelLogoutUri', 'oauthBackchannelLogoutUri',
-  'samlAssertionConsumerService', 'samlSingleLogoutService'];
+  'samlAssertionConsumerService', 'samlSingleLogoutService',
+  // #1296: the token response types the owner may enable.
+  'oauthAllowedTokenResponseTypes'];
 const OWNER_OPERATIONS: OwnerOperation[] = [
   { method: 'GET', kind: 'role', path: '/roles',
     target: function target(query) {

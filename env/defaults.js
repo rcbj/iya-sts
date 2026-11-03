@@ -354,6 +354,7 @@ var config = {
     issuer: "",                                    // Issuer identifier
     rfc9700: false,                                // RFC 9700 mode; restart to apply
     allowImplicitTokenResponses: false,            // Allow token response types under RFC 9700
+    dynamicRegistrationTokenResponseTypes: "",     // Token response types a self-registering client may enable
     oauth21: false,                                // OAuth 2.1 mode; restart to apply
     fapi: "off",                                   // FAPI profile; restart to apply
     fapiRequireMtls: false,                        // FAPI Advanced: require mutual TLS
