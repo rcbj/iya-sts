@@ -5356,6 +5356,15 @@ const NOT_DRIVEN_HERE = {
   // grace period and not after it, and the retirement job removes it.
   "POST /federation/rotate-key": "sts_federation_encryption.js drives it, " +
     "and checks the grace period and the retirement",
+  // A PARTNER'S DISCOVERY AND DYNAMIC REGISTRATION (#930). Both DIAL the
+  // partner — its discovery document and JWKS, its registration endpoint —
+  // so a walk with no partner could drive only their refusals.
+  // `sts_oidcc_rp_conformance.js` drives both against the conformance
+  // suite's OpenID Provider, where what they fetch and register is judged.
+  "POST /federation/check-partner": "sts_oidcc_rp_conformance.js drives it " +
+    "against the suite's provider; it dials the partner",
+  "POST /federation/register-partner": "sts_oidcc_rp_conformance.js drives " +
+    "it against the suite's provider; it registers at the partner",
   // THE KRBTGT KEY (#169). Driven by `sts_kerberos_krbtgt_rotation.js`, in a
   // throwaway realm with a KDC of its own: a rotation is checked by a TGT
   // from before it still buying a service ticket, which a walk asking for a
