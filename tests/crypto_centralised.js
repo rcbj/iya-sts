@@ -83,16 +83,9 @@ const KERBEROS_COPIES = ['kerberos/krb5_primitives.js',
 
 // Files still allowed while a decision about them is open, each with the
 // reason. It may only shrink (claim 3).
-const PENDING = {
-  // The parent project's tests/webauthn_cross_impl.js stages this ONE file
-  // on its own, without common/crypto.js beside it, and checks it against
-  // the wallet's independent decoder. In the service every digest and
-  // signature check goes through crypto.js; `standaloneNodeCrypto()`, a
-  // lazy require, is reached only in that standalone copy. Whether to keep
-  // the standalone path or change the parent's test is rcbj's decision
-  // (#453, as #431 decides the vendored copies).
-  'authn/webauthn.js': 'the parent project\'s standalone copy'
-};
+// Empty since #1280: `authn/webauthn.js` was the last entry, kept for the
+// parent project's standalone copy of it until rcbj ended that (#453).
+const PENDING = {};
 
 // Tools that run OUTSIDE the service's module graph and cannot load
 // `common/crypto.js`, each with the reason. No module the service runs may
