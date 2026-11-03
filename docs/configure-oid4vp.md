@@ -437,8 +437,8 @@ issuance is offered here too. For the embedded debugger's web wallet the path
 is `/vc-presentation-1.html`. In product mode a verification start may name
 another `wallet` only if it is in `oid4vp.allowedWalletUrls`.
 
-The eudi-dev hand run in `tests/eudi-wallet-poc/README.md` (a hand run, not a
-test job; see [Configuring OpenID4VCI](configure-oid4vci.md#a-worked-example-the-eudi-dev-wallet-a-hand-run))
+The eudi-dev hand run in `tests/eudi-wallet-poc/README.md` (a hand run; the
+suite runs the same flow as `tests/protocol/sts_eudi_wallet_portal.js`; see [Configuring OpenID4VCI](configure-oid4vci.md#a-worked-example-the-eudi-dev-wallet-a-hand-run))
 signs in this way: it chooses **Sign in with a wallet** on the screen,
 follows **Open your web wallet** to the wallet on port 8085, and approves the
 wallet's consent dialog.

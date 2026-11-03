@@ -43,7 +43,11 @@ const log = bunyan.createLogger({ name: 'MANIFEST',
 // draw, and nothing but the second notices it drawing a menu against the wrong
 // row's path. The third, `sts_portal_device_webauthn.js` (#258), is the
 // portal's: the one scripted step on `/portal/devices`, run by Chrome against
-// a virtual authenticator, which no HTTP job can make.
+// a virtual authenticator, which no HTTP job can make. And
+// `sts_eudi_wallet_portal.js` (#668) hands the portal's offers and sign-in
+// requests to a real wallet's web UI in the same Chrome — the eudi-dev
+// wallet, a child of the job — which no wallet written here can stand in
+// for.
 //
 // ---------------------------------------------------------------------------
 // `docker: true` MEANS THE JOB NEEDS A REMOTE PEP CONTAINER, AND IT IS A
@@ -1223,6 +1227,18 @@ const JOBS = [
   // portal and the API it is read back through are this repository's. AFTER
   // sts_devices.js, which holds the register this one writes to.
   { file: 'sts_portal_device_webauthn.js', browser: true },
+  // THE USER PORTAL WITH A REAL WALLET (#668): the eudi-dev wallet (built
+  // into the tests image from rcbj/eudi-dev, tests/Dockerfile's eudi-wallet
+  // stage) run as this job's child beside Chrome, its consent dialog pressed
+  // like the portal's buttons. In a throwaway realm whose web wallet it is:
+  // an IdentityCredential offered on /portal/wallet and stored as a batch,
+  // each copy's status-list index on its portal row and VALID; a wallet
+  // sign-in disclosing `sub` alone; Remove on one copy and Remove all; every
+  // index INVALID in the published list, decoded here, and the removed
+  // credential refused (STS-VC-0072); a self-issued key enrolled, signing
+  // in, removed, and refused (STS-VC-0091). `local: true`: this
+  // repository's portal, issuer, Verifier and status list.
+  { file: 'sts_eudi_wallet_portal.js',   browser: true },
   // A TPM KEY ATTESTATION'S FRESHNESS OVER EST (#257, 2026-10-06):
   // /nonce (draft-ietf-lamps-attestation-freshness section 5.1), a device
   // enrolment over a fresh TPM2_Certify statement built here, the same

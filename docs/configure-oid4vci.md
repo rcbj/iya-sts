@@ -536,8 +536,10 @@ is also offered for presentations unless you set that one too.
 
 `tests/eudi-wallet-poc/README.md` records the scripts used on 2026-10-17 to
 drive the user portal with the eudi-dev wallet (`rcbj/eudi-dev`) as its web
-wallet. **They are a hand run, not a test job**: no suite runs them. The
-outline:
+wallet. **They are a hand run against the 8081 stack.** The same flow runs
+in the test suite as `tests/protocol/sts_eudi_wallet_portal.js` (#668), which
+starts its own eudi-dev wallet beside the browser in a realm of its own. The
+outline of the hand run:
 
 1. Build and start the wallet on port 8085:
    `go build -o eudi . && ./eudi wallet serve --port 8085`. The 8081 stack's
