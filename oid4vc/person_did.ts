@@ -246,7 +246,9 @@ class PersonDid {
           helpers.log.debug("Leaving seal(). No durable key; kept as is.");
           return { value: text, sealed: false };
         }
-        const out = keystore.seal(text, 'person-private-key');
+        // The CELL's data encryption keys, as `person_assertions.js` seals
+        // a person's private key: the entry it is written on is the cell's.
+        const out = keystore.seal(text, 'person-private-key', 'cell');
         helpers.log.debug("Leaving seal(). " + (out ? 'Sealed.' : 'Failed.'));
         return out ? { value: String(out), sealed: true } : null;
       },

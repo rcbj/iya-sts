@@ -399,13 +399,19 @@ async function test() {
     { cookie: browser.header() });
 
   log.info("=== 1. the base a DID is minted on ===");
+  // A stack that pins its public base already (STS_PUBLIC_BASE_URL) mints
+  // on it in either mode; otherwise product refuses until the realm pins
+  // one.
+  const pinnedAlready = String(await serviceFacts.setting(api,
+    "global.publicBaseUrl") || "").trim() !== "";
+  const refuses = product && !pinnedAlready;
   await setting("did.personCustody", "realm");
   const unpinned = await portal.act("/portal/self-issued/dids",
                                     { action: "publish" });
-  check(product
+  check(refuses
     ? "product mode refuses a DID on an unpinned base"
-    : "development mints a DID on the request's own base", function () {
-    if (product) {
+    : "a DID is minted on the base this realm has", function () {
+    if (refuses) {
       assert.strictEqual(unpinned.status, 400,
                          String(unpinned.text).slice(0, 300));
     } else {
@@ -413,14 +419,16 @@ async function test() {
                 String(unpinned.text).slice(0, 300));
     }
   });
-  if (!product) {
-    // Development's realm DID is deactivated, so the cap and the steps
-    // below start from none.
-    const made = (await published())[0];
+  if (!refuses) {
+    // That DID is deactivated, so the cap and the steps below start from
+    // none active.
+    const first = (await published())[0];
     await portal.act("/portal/self-issued/dids",
-                     { action: "deactivate", rid: made.rid });
+                     { action: "deactivate", rid: first.rid });
   }
-  await setting("global.publicBaseUrl", root);
+  if (!pinnedAlready) {
+    await setting("global.publicBaseUrl", root);
+  }
   await setting("did.personCustody", "wallet");
 
   log.info("=== 2. wallet custody ===");
