@@ -361,7 +361,7 @@
   "signingKey.samlHow": "<strong>如何使用它。</strong>构建一个 SAML 2.0 <code>&lt;Assertion&gt;</code>，其 <code>&lt;Issuer&gt;</code> 和 <code>&lt;Subject&gt;&lt;NameID&gt;</code> 均为 <code>{who}</code>，<code>&lt;Audience&gt;</code> 和持有者 <code>&lt;SubjectConfirmationData Recipient&gt;</code> 均为 <code>{endpoint}</code>，<code>NotOnOrAfter</code> 设为一两分钟之后。使用此密钥以封装式 XML 签名对其签名，对文档进行 base64url 编码，然后将其作为 RFC 7522 第 2.1 节授权许可提交给令牌端点。本服务会将签名与其为您持有的证书进行匹配，证书指纹为 <code>{thumbprint}</code>。",
   "signingKey.samlOnlyYou": "<strong><code>&lt;Subject&gt;</code> 只能是您本人。</strong>用此密钥签名但指明其他人的断言会被拒绝——密钥说明的是您是谁，而不是代表他人发言的许可。",
   "signingKey.jwtHow": "<strong>如何使用它。</strong>用它签署一个 JSON Web Token，并将其作为 RFC 7523 第 2.1 节授权许可提交给令牌端点。声明包括：<code>iss</code> 和 <code>sub</code> 均为 <code>{who}</code>，<code>aud</code> 为 <code>{endpoint}</code>，<code>exp</code> 设为一两分钟之后，以及一个不重复使用的 <code>jti</code>。头部包含 <code>alg</code> <code>{alg}</code> 和 <code>kid</code> <code>{kid}</code>。",
-  "signingKey.jwtOnlyYou": "<strong>`sub` 只能是您本人。</strong>用此密钥签名但指明其他人的断言会被拒绝——密钥说明的是您是谁，而不是代表他人发言的许可。",
+  "signingKey.jwtOnlyYou": "<strong><code>sub</code> 只能是您本人。</strong>用此密钥签名但指明其他人的断言会被拒绝——密钥说明的是您是谁，而不是代表他人发言的许可。",
   "signingKey.jwtTitle": "JWT 持有者许可",
   "signingKey.samlTitle": "SAML 2.0 持有者许可",
   "signingKey.thumbprint": "指纹",
