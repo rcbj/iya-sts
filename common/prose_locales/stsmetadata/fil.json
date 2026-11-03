@@ -257,7 +257,7 @@
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
-    "text": "bahagya: tinatanggap ang lahat ng anim na ValueType ng AP-REQ sa /sts (bilang credential ng humihiling, at sa loob ng OnBehalfOf o ActAs kapag nakuha ang ticket sa pamamagitan ng S4U2Proxy o gamit ang ipinasang TGT) at bilang mga uri ng token ng RFC 8693, para lamang sa sariling SPN ng serbisyong ito, na sinusuri ng acceptor sa parehong mode; ang lagdang gamit ang session key ng token ay isang credential; at kapag naka-on ang wstrust.issueKerberos (naka-off bilang default) sinasagot ang wst:TokenType na humihingi nito ng ticket na inilabas ng KDC ng realm na ito, na ang subkey ang proof token. Hindi pa nagagawa: isang key na hinango mula sa session key (isang DerivedKeyToken) at encryption gamit ito; isang target realm na ang KDC ay hindi isang trust realm ng serbisyong ito."
+    "text": "partial: tinatanggap ang lahat ng anim na ValueType ng AP-REQ sa /sts (bilang credential ng humihiling, at sa loob ng OnBehalfOf o ActAs kapag nakuha ang ticket sa pamamagitan ng S4U2Proxy o gamit ang ipinasang TGT) at bilang mga uri ng token ng RFC 8693, para lamang sa sariling SPN ng serbisyong ito, na sinusuri ng acceptor sa parehong mode; ang lagdang gamit ang session key ng token ay isang credential; at kapag naka-on ang wstrust.issueKerberos (naka-off bilang default) sinasagot ang wst:TokenType na humihingi nito ng ticket na inilabas ng KDC ng realm na ito, na ang subkey ang proof token. Hindi pa nagagawa: isang key na hinango mula sa session key (isang DerivedKeyToken) at encryption gamit ito; isang target realm na ang KDC ay hindi isang trust realm ng serbisyong ito."
   },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",

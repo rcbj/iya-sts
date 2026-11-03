@@ -257,7 +257,7 @@
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
-    "text": "部分：六種 AP-REQ ValueType 都在 /sts 上接受（作為請求者的憑證；當票證透過 S4U2Proxy 或轉送的 TGT 取得時，也可放在 OnBehalfOf 或 ActAs 中），也作為 RFC 8693 權杖類型接受，僅限本服務自身的 SPN，接受器在兩種模式下都會檢查；用權杖工作階段金鑰做的簽章是一種憑證；開啟 wstrust.issueKerberos（預設關閉）時，請求 Kerberos 權杖的 wst:TokenType 會得到本領域 KDC 簽發的票證，子金鑰作為證明權杖。未實作：從工作階段金鑰衍生的金鑰（DerivedKeyToken）以及用它進行的加密；其 KDC 不是本服務信任領域的目標領域。"
+    "text": "partial: 六種 AP-REQ ValueType 都在 /sts 上接受（作為請求者的憑證；當票證透過 S4U2Proxy 或轉送的 TGT 取得時，也可放在 OnBehalfOf 或 ActAs 中），也作為 RFC 8693 權杖類型接受，僅限本服務自身的 SPN，接受器在兩種模式下都會檢查；用權杖工作階段金鑰做的簽章是一種憑證；開啟 wstrust.issueKerberos（預設關閉）時，請求 Kerberos 權杖的 wst:TokenType 會得到本領域 KDC 簽發的票證，子金鑰作為證明權杖。未實作：從工作階段金鑰衍生的金鑰（DerivedKeyToken）以及用它進行的加密；其 KDC 不是本服務信任領域的目標領域。"
   },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",

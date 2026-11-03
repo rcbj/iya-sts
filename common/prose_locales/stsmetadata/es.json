@@ -257,7 +257,7 @@
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
-    "text": "parcial: los seis ValueType de AP-REQ se aceptan en /sts (como credencial del solicitante y dentro de OnBehalfOf o ActAs cuando el ticket se obtuvo por S4U2Proxy o con un TGT reenviado) y como tipos de token de RFC 8693, solo para el SPN propio de este servicio, comprobados por el aceptador en ambos modos; una firma con la clave de sesión del token es una credencial; y con wstrust.issueKerberos (desactivado por defecto) un wst:TokenType que pide uno se responde con un ticket que emitió el KDC de este reino, con la subclave como token de prueba. No implementado: una clave derivada de la clave de sesión (un DerivedKeyToken) y un cifrado con ella; un reino de destino cuyo KDC no es un reino de confianza de este servicio."
+    "text": "partial: los seis ValueType de AP-REQ se aceptan en /sts (como credencial del solicitante y dentro de OnBehalfOf o ActAs cuando el ticket se obtuvo por S4U2Proxy o con un TGT reenviado) y como tipos de token de RFC 8693, solo para el SPN propio de este servicio, comprobados por el aceptador en ambos modos; una firma con la clave de sesión del token es una credencial; y con wstrust.issueKerberos (desactivado por defecto) un wst:TokenType que pide uno se responde con un ticket que emitió el KDC de este reino, con la subclave como token de prueba. No implementado: una clave derivada de la clave de sesión (un DerivedKeyToken) y un cifrado con ella; un reino de destino cuyo KDC no es un reino de confianza de este servicio."
   },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",

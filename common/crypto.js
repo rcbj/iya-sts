@@ -706,7 +706,7 @@ function sha1Allowed() {
  * @returns `{ problem, code, weak, sha1 }`, `problem` empty when they are
  *   verified here and policy allows them
  */
-function xmlAlgorithmVerdict(signatureMethod, digestMethods) {
+function xmlAlgorithmVerdict(signatureMethod, digestMethods, opts) {
   log.debug("Entering xmlAlgorithmVerdict(). " + signatureMethod);
   const sig = XML_SIGNATURE_METHODS[String(signatureMethod || '')];
   const out = { problem: '', code: '', weak: false, sha1: false,
@@ -718,6 +718,18 @@ function xmlAlgorithmVerdict(signatureMethod, digestMethods) {
       ' is not one this service verifies' + (why ? ': ' + why : '');
     out.code = 'STS-KEYS-0061';
     log.debug("Leaving xmlAlgorithmVerdict(). Unknown SignatureMethod.");
+    return out;
+  }
+  // AN HMAC NEEDS A SHARED KEY (#658), and the only one this service holds
+  // for a signature is a Kerberos token's session key, in a WS-Security
+  // signature whose KeyInfo names that token. Every other caller — a
+  // certificate's signature, the Redirect binding's SigAlg — answers an HMAC
+  // as a method it cannot check, as it did before the HMAC rows existed.
+  if (sig.family === 'hmac' && !(opts && opts.sharedKey)) {
+    out.problem = 'the SignatureMethod "' + signatureMethod + '" is an HMAC, ' +
+      'which needs a shared key; a certificate cannot check one';
+    out.code = 'STS-KEYS-0061';
+    log.debug("Leaving xmlAlgorithmVerdict(). An HMAC with no shared key.");
     return out;
   }
   out.weak = sig.weak;
@@ -1699,7 +1711,12 @@ function readWsSecuritySignature(xml) {
                   }).join(', ') || 'nothing') + ') is not the element this ' +
                   'service acts on, which is the signature-wrapping shape');
   }
-  const algorithms = xmlAlgorithmVerdict(signatureMethod, digestMethods);
+  // #658: an HMAC is checkable only when the KeyInfo names a Kerberos token,
+  // whose session key is the shared key. The reference is read here for that
+  // one fact; its refusal is still made below, in the order it always was.
+  const named = keyReferenceOf(sigEl, security);
+  const algorithms = xmlAlgorithmVerdict(signatureMethod, digestMethods,
+    { sharedKey: named.kind === 'kerberos' || named.kind === 'kerberos-id' });
   if (algorithms.problem) {
     log.debug("Leaving readWsSecuritySignature(). An algorithm.");
     return refuse(algorithms.code || 'STS-KEYS-0061', algorithms.problem,

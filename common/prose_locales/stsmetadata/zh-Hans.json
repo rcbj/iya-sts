@@ -257,7 +257,7 @@
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
-    "text": "部分：六种 AP-REQ ValueType 都在 /sts 上接受（作为请求者的凭据；当票据通过 S4U2Proxy 或转发的 TGT 获得时，也可放在 OnBehalfOf 或 ActAs 中），也作为 RFC 8693 令牌类型接受，仅限本服务自身的 SPN，接受器在两种模式下都会检查；用令牌会话密钥做的签名是一种凭据；开启 wstrust.issueKerberos（默认关闭）时，请求 Kerberos 令牌的 wst:TokenType 会得到本领域 KDC 签发的票据，子密钥作为证明令牌。未实现：从会话密钥派生的密钥（DerivedKeyToken）以及用它进行的加密；其 KDC 不是本服务信任领域的目标领域。"
+    "text": "partial: 六种 AP-REQ ValueType 都在 /sts 上接受（作为请求者的凭据；当票据通过 S4U2Proxy 或转发的 TGT 获得时，也可放在 OnBehalfOf 或 ActAs 中），也作为 RFC 8693 令牌类型接受，仅限本服务自身的 SPN，接受器在两种模式下都会检查；用令牌会话密钥做的签名是一种凭据；开启 wstrust.issueKerberos（默认关闭）时，请求 Kerberos 令牌的 wst:TokenType 会得到本领域 KDC 签发的票据，子密钥作为证明令牌。未实现：从会话密钥派生的密钥（DerivedKeyToken）以及用它进行的加密；其 KDC 不是本服务信任领域的目标领域。"
   },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",

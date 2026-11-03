@@ -11791,6 +11791,12 @@ const CODES = [
       'or that was not checked because wstrust.acceptKerberos is off ' +
       '(#658).',
     spec: 'HTTP 200 RSTR with wst:Status invalid, WS-Trust 1.4 section 7' },
+  { code: 'STS-WSTRUST-0069',
+    summary: 'A WS-Security signature\'s KeyInfo names a Kerberos token ' +
+      'that the security header does not carry, by Reference or by its ' +
+      '#Kerberosv5APREQSHA1 key identifier (#658).',
+    spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
+      'section 11' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +

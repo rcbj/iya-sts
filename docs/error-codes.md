@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5151** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5152** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -66,7 +66,7 @@ is an ordinary outcome.
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 421
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 745
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 68
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 195
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
@@ -2582,6 +2582,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0066` | The KDC could not issue the ticket inside a requested Kerberos token (#658); its own code is in the log line beside this one. | SOAP Fault wst:RequestFailed (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0067` | A Renew or Cancel named a Kerberos token, which WS-Trust neither renews nor cancels: its ticket is renewed at the KDC and the AP-REQ was good once (#658). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0068` | A Validate named a Kerberos token the acceptor did not accept, or that was not checked because wstrust.acceptKerberos is off (#658). | HTTP 200 RSTR with wst:Status invalid, WS-Trust 1.4 section 7 |
+| `STS-WSTRUST-0069` | A WS-Security signature's KeyInfo names a Kerberos token that the security header does not carry, by Reference or by its #Kerberosv5APREQSHA1 key identifier (#658). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
 
 ## STS-WSFED
 

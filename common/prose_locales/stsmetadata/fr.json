@@ -257,7 +257,7 @@
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
-    "text": "partiel : les six ValueType d’AP-REQ sont acceptés à /sts (comme justificatif du demandeur, et dans OnBehalfOf ou ActAs quand le ticket a été obtenu par S4U2Proxy ou avec un TGT transmis) et comme types de jeton RFC 8693, pour le SPN propre de ce service uniquement, vérifiés par l’accepteur dans les deux modes ; une signature avec la clé de session du jeton est un justificatif ; et avec wstrust.issueKerberos (désactivé par défaut) un wst:TokenType qui en demande un reçoit un ticket émis par le KDC de ce domaine, la sous-clé servant de jeton de preuve. Non implémenté : une clé dérivée de la clé de session (un DerivedKeyToken) et un chiffrement avec elle ; un domaine cible dont le KDC n’est pas un domaine de confiance de ce service."
+    "text": "partial: les six ValueType d’AP-REQ sont acceptés à /sts (comme justificatif du demandeur, et dans OnBehalfOf ou ActAs quand le ticket a été obtenu par S4U2Proxy ou avec un TGT transmis) et comme types de jeton RFC 8693, pour le SPN propre de ce service uniquement, vérifiés par l’accepteur dans les deux modes ; une signature avec la clé de session du jeton est un justificatif ; et avec wstrust.issueKerberos (désactivé par défaut) un wst:TokenType qui en demande un reçoit un ticket émis par le KDC de ce domaine, la sous-clé servant de jeton de preuve. Non implémenté : une clé dérivée de la clé de session (un DerivedKeyToken) et un chiffrement avec elle ; un domaine cible dont le KDC n’est pas un domaine de confiance de ce service."
   },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",

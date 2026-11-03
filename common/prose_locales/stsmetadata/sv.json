@@ -257,7 +257,7 @@
   },
   "stsmetadata.specs.wss-kerberos.coverage": {
     "en": "a6d4bfc032b7d23e",
-    "text": "delvis: alla sex ValueType för AP-REQ godtas på /sts (som den begärandes autentiseringsuppgift, och inuti OnBehalfOf eller ActAs när biljetten erhölls genom S4U2Proxy eller med en vidarebefordrad TGT) och som tokentyper enligt RFC 8693, endast för den här tjänstens egen SPN, kontrollerade av mottagaren i båda lägena; en signatur med tokenens sessionsnyckel är en autentiseringsuppgift; och med wstrust.issueKerberos (av som standard) besvaras en wst:TokenType som begär en med en biljett som den här sfärens KDC utfärdade, med undernyckeln som bevistoken. Inte gjort: en nyckel härledd från sessionsnyckeln (en DerivedKeyToken) och kryptering med den; en målsfär vars KDC inte är en betrodd sfär i den här tjänsten."
+    "text": "partial: alla sex ValueType för AP-REQ godtas på /sts (som den begärandes autentiseringsuppgift, och inuti OnBehalfOf eller ActAs när biljetten erhölls genom S4U2Proxy eller med en vidarebefordrad TGT) och som tokentyper enligt RFC 8693, endast för den här tjänstens egen SPN, kontrollerade av mottagaren i båda lägena; en signatur med tokenens sessionsnyckel är en autentiseringsuppgift; och med wstrust.issueKerberos (av som standard) besvaras en wst:TokenType som begär en med en biljett som den här sfärens KDC utfärdade, med undernyckeln som bevistoken. Inte gjort: en nyckel härledd från sessionsnyckeln (en DerivedKeyToken) och kryptering med den; en målsfär vars KDC inte är en betrodd sfär i den här tjänsten."
   },
   "stsmetadata.specs.wss-username.coverage": {
     "en": "397e6a07a7980365",
