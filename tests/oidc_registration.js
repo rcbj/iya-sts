@@ -100,6 +100,10 @@ function library(t) {
      'the authorization_code grant with no redirect_uris'],
     [Object.assign({ id_token_signed_response_alg: 'XX512' }, WEB),
      'STS-REG-0185', 'an ID Token algorithm this service does not sign with'],
+    // #1293: an UNSIGNED ID Token is not on the list either, unlike UserInfo
+    // below — what OIDF's oidcc-idtoken-unsigned would ask for.
+    [Object.assign({ id_token_signed_response_alg: 'none' }, WEB),
+     'STS-REG-0185', 'an unsigned ID Token (OIDF oidcc-idtoken-unsigned)'],
     [Object.assign({ userinfo_signed_response_alg: 'none' }, WEB), '',
      'UserInfo unsigned, which section 2 allows'],
     [Object.assign({ jwks: { keys: [] },
@@ -322,6 +326,41 @@ function childMain() {
            '2a. refused ' + one[1] + ': ' + one[2],
            r.status + ' ' + r.text.slice(0, 200));
     }
+    // AN UNSIGNED ID TOKEN (#1293). The OpenID Foundation's
+    // oidcc-idtoken-unsigned is SKIPPED against this service, because
+    // discovery lists no `none` for the ID Token; what that skip stands for
+    // is held here — the list never carries it, in either mode, and a client
+    // that registers it anyway is refused rather than issued unsigned tokens.
+    r = await request(port, 'POST', '/oauth2/register',
+      { json: { redirect_uris: ['https://rp.or.example/cb'],
+                id_token_signed_response_alg: 'none' } });
+    note(r.status === 400 && r.json &&
+           r.json.error === 'invalid_client_metadata' &&
+           /id_token_signed_response_alg/.test(
+             String(r.json.error_description)),
+         '2a. refused invalid_client_metadata: id_token_signed_response_alg ' +
+         'none (stands in for OIDF oidcc-idtoken-unsigned)',
+         r.status + ' ' + r.text.slice(0, 300));
+    const idTokenAlgs = async function () {
+      const d = await request(port, 'GET',
+                              '/.well-known/openid-configuration');
+      return (d.json || {}).id_token_signing_alg_values_supported;
+    };
+    const devAlgs = await idTokenAlgs();
+    config.setOverride('global.mode', 'product');
+    let productAlgs = null;
+    try {
+      productAlgs = await idTokenAlgs();
+    } finally {
+      config.clearOverride('global.mode');
+    }
+    note([devAlgs, productAlgs].every(function (algs) {
+      return Array.isArray(algs) && algs.length > 0 &&
+             algs.indexOf('none') < 0;
+    }),
+         '2a. id_token_signing_alg_values_supported never lists none, in ' +
+         'development or product (stands in for OIDF oidcc-idtoken-unsigned)',
+         JSON.stringify({ development: devAlgs, product: productAlgs }));
     r = await request(port, 'POST', '/oauth2/register',
       { json: { application_type: 'native',
                 redirect_uris: ['http://127.0.0.1:9/cb'] } });
