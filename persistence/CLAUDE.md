@@ -186,10 +186,10 @@ no LISTEN/NOTIFY and no bridge thread: the change log is polled, and the
 windowed directory and on-demand minted stores are held whole. **What runs
 on MariaDB today**: the connection layer, the schema, and the coordination
 statements (`cluster_portable.js`, proved against MariaDB 11.8 by
-`tests/cluster_portable.js` section C). **What does not yet**: every other
-family's PostgreSQL text (the directory, minted state, sessions, keys,
-realms, settings, risk, reports, the metrics probes and open()'s catalog
-probes) — the next steps of phase 3, each proved the same way before it is
+`tests/cluster_portable.js` section C) and the embedded directory (below).
+**What does not yet**: every other family's PostgreSQL text (minted state,
+sessions, keys, realms, settings, risk, reports, the metrics probes and
+open()'s catalog probes) — the next steps of phase 3, each proved the same way before it is
 switched on. Refused on MariaDB, each for its own reason: cells, the bulk
 import, cell conversion, the directory window, the risk installer.
 
@@ -208,6 +208,37 @@ and, where MariaDB keeps the same quantity, PostgreSQL's column names, so the
 page derives the same numbers; an index with no scan count is not called
 unused. `tests/open_mariadb.js` and `tests/database_metrics.js` hold both,
 every probe run as the least-privilege role against MariaDB 11.8.
+
+**The embedded directory on MariaDB (#677, phase 3b).** `directory_portable.js`
+(built only when the engine is not PostgreSQL — it writes
+`sts_ldap_entry_keys`, which PostgreSQL's schema has not got, so
+`sqlDialect=portable` does not build it) is the restore (a primary-key page
+at a time), `readEntry()`, the flush and the lost-row merge, a removed
+realm, the counts, `directoryDekCounts()`, `countSealed()`,
+`countAllSealed()` and `resealSealed()`; `directory_queries_mariadb.js` asks
+every `directory_queries.js` question by the same name and arguments, a
+value through the key table (kinds `name` `mail` `uuid` `class` `value`,
+`attr` for the asked names, `dek`), the parents by a recursive `MIN()` loose
+scan and each parent's page as one `UNION ALL` branch where PostgreSQL has
+LATERAL. **The driver keeps what PostgreSQL's triggers keep**: each flush's
+deltas are computed from the row its lock read and the row it wrote, and
+folded last, in key order, into one random shard of `sts_ldap_counts` /
+`sts_ldap_dek_counts` — a missing row made first by an autocommit `INSERT
+IGNORE` on the TALLY pool (the flush's own pool would starve under
+concurrent flushes), then `n = n + CASE …` under the transaction. A row
+another node commits between the lock and the insert (READ COMMITTED takes
+no gap lock) fails a plain INSERT, which is retried a row at a time: blind
+replaces, merged goes to the lost rows. Never `INSERT IGNORE` for an entry:
+it turns a strict-mode refusal into a truncated row. A DN key over 352 or a
+realm over 64 refuses the flush, STS-STORE-0140; a lookup form over 344 is
+stored and asked as `#` + SHA-256. `dek_keys` is never NULL here, so
+`indexSealed()` has nothing to do. An empty store starts at zero counts and
+every MariaDB writer of the table is this library; a table loaded any other
+way is not supported (no backfill). InnoDB's deadlock and lock-wait timeout
+are retried like PostgreSQL's (`retryableConflict()`). The driver's flush
+also needs `recordChanges()` in MariaDB's text, which is the small-tables
+family's. `tests/directory_portable.js` (A static, C against MariaDB 11.8, D
+the driver's doors) holds it.
 
 **A TRANSACTION IS STILL `BEGIN`/`COMMIT` ON ONE HELD CONNECTION**
 (`transactionOnce()`, `queryWithoutJit()`, the metrics client,

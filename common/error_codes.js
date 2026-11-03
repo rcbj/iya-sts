@@ -1880,6 +1880,12 @@ const CODES = [
       'not dense (an increment above one or a cache above one), so every ' +
       'reader would wait for numbers no transaction will commit.',
     spec: '' },
+  { code: 'STS-STORE-0140',
+    summary: 'A directory flush was refused on MariaDB before it wrote: an ' +
+      'entry\'s DN key is longer than the 352 characters `dn_key` holds ' +
+      '(or its realm than 64), which InnoDB\'s key limit fixes; nothing ' +
+      'of the flush was written.',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
