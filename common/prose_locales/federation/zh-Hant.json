@@ -279,6 +279,10 @@
     "en": "885dc55158b43f26",
     "text": "code（預設）、id_token，或 OpenID Connect 其他四種之一：id_token token（隱含）、code id_token、code token 與 code id_token token（混合）。`id_token` 搭配 form_post 是「不需要」後端通道的形式，因此不需要權杖端點、客戶端秘密，也沒有外送請求——這是在完全沒有對外連線的部署中與 OIDC 夥伴聯盟的唯一方式。來自授權端點的 ID Token 必須攜帶 nonce，且凡隨附代碼或存取權杖之處都必須攜帶 c_hash 與 at_hash。"
   },
+  "fed.schema.attributes.fedIdTokenSignedResponseAlg.what": {
+    "en": "3d9af9fdc895c49c",
+    "text": "僅限 OPENID CONNECT。夥伴簽署此關係的 ID Token 與 Logout Token 所用的唯一演算法——即在夥伴處註冊為 id_token_signed_response_alg 的演算法（OpenID Connect Core 1.0 第 3.1.3.7 節第 7 步，Back-Channel Logout 1.0 第 2.6 節）。以其他演算法簽署的權杖會被拒絕，即使夥伴的金鑰能驗證它。空白即預設值：federation.jwtAlgorithms 允許的、驗證金鑰所屬家族的任何演算法。請設定它：空白時，會接受由夥伴另一把金鑰以另一種演算法簽署的權杖。"
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "僅限 OPENID CONNECT。TRUE 會在每次登入開始時（OpenID Connect Discovery 1.0 第 4 節）從夥伴的探索文件 {fedPeer}/.well-known/openid-configuration 讀取其端點與 jwks_uri，該文件的 issuer 必須與 fedPeer 完全相同；此時不讀取 fedSsoUrl、fedTokenUrl、fedUserinfoUrl 與 fedJwksUri。此位址由管理員設定的 fedPeer 推導而來，絕不來自請求。FALSE 為預設值：端點以人工設定。"

@@ -279,6 +279,10 @@
     "en": "885dc55158b43f26",
     "text": "code (el valor predeterminado), id_token, o uno de los otros cuatro de OpenID Connect: id_token token (implícito), code id_token, code token y code id_token token (híbridos). `id_token` con form_post es la forma que NO necesita canal de retorno y, por tanto, ningún punto de conexión de token, ningún secreto de cliente ni ninguna solicitud saliente, que es la única manera de federarse con un socio OIDC desde un despliegue sin ninguna salida de red. Un ID Token del punto de conexión de autorización debe llevar el nonce, y c_hash y at_hash siempre que lo acompañaba un código o un token de acceso."
   },
+  "fed.schema.attributes.fedIdTokenSignedResponseAlg.what": {
+    "en": "3d9af9fdc895c49c",
+    "text": "SOLO OPENID CONNECT. EL ÚNICO ALGORITMO con el que el socio firma los ID Tokens y Logout Tokens de esta relación: lo que se registró en el socio como id_token_signed_response_alg (OpenID Connect Core 1.0 sección 3.1.3.7 paso 7, Back-Channel Logout 1.0 sección 2.6). Un token firmado con cualquier otro se rechaza, aunque la clave del socio lo verifique. Vacío, el valor predeterminado: cualquier algoritmo de la familia de la clave que verifica que federation.jwtAlgorithms permita. Establézcalo: vacío acepta un token firmado por otra de las claves del socio con otro algoritmo."
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "SOLO OPENID CONNECT. TRUE lee los puntos de conexión del socio y su jwks_uri de su documento de descubrimiento, {fedPeer}/.well-known/openid-configuration, al comienzo de cada inicio de sesión (OpenID Connect Discovery 1.0 sección 4), cuyo issuer debe ser exactamente fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl y fedJwksUri no se leen entonces. La dirección se deriva de fedPeer, que configuró un administrador, y nunca de una solicitud. FALSE, el valor predeterminado: los puntos de conexión se configuran a mano."

@@ -2429,6 +2429,23 @@ needed, built here:
   sign-ins. It goes through `loginEndpoint()`, so every check of an ordinary
   start is met. The relationship's view names it (`endpoints.initiateLogin`).
 
+* **THE REGISTERED ALGORITHM** (`fedIdTokenSignedResponseAlg`, the first
+  full run, 2026-11-03): an ID Token or a Logout Token signed under any
+  algorithm but the one the relationship registered is refused
+  (`STS-FED-0208`), even when one of the partner's own keys verifies it —
+  Core 3.1.3.7 step 7, and Back-Channel Logout 2.6's "in the same way that an
+  ID Token signature is validated". The back-channel logout's wrong-alg
+  module found it: a Logout Token signed ES256 by the partner's EC key was
+  accepted beside RS256 ID Tokens. `verifyForeignJwt()` takes the
+  expectation as `expectAlg`, so the plain OAuth 2.0 JWT access token is not
+  held to it. Empty keeps the key-family rule alone, and the schema row warns
+  against leaving it so.
+* **AN ADMINISTRATOR'S `check-partner`** (console and `/admin-api`, rule 7):
+  the discovery document where it is read and the key set, fetched and
+  reported, nothing written. Two discovery modules end the moment those are
+  read, so the plans' person does not sign in for them — a sign-in would
+  reach a FINISHED module, which the suite records as a failure.
+
 **WHAT IS NOT BUILT, AND IS ARGUED IN THE JOB'S LEDGER INSTEAD** (the ticket
 allows either, and each of these is a decision recorded here, not a gap
 noticed):

@@ -1158,6 +1158,20 @@ const SCHEMA = {
             'Token from the authorization endpoint must carry the nonce, ' +
             'and c_hash and at_hash wherever a code or an access token came ' +
             'with it.' },
+    { name: 'fedIdTokenSignedResponseAlg', kind: 'single',
+      role: 'service-provider', from: 'this register',
+      enum: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256',
+             'ES384', 'ES512'],
+      what: 'OPENID CONNECT ONLY. THE ONE ALGORITHM the partner signs this ' +
+            'relationship\'s ID Tokens and Logout Tokens with — what was ' +
+            'registered at the partner as id_token_signed_response_alg ' +
+            '(OpenID Connect Core 1.0 section 3.1.3.7 step 7, Back-Channel ' +
+            'Logout 1.0 section 2.6). A token signed with any other is ' +
+            'refused, even one the partner\'s key verifies. Empty, the ' +
+            'default: any algorithm of the verifying key\'s family that ' +
+            'federation.jwtAlgorithms allows. Set it: an empty one accepts ' +
+            'a token signed by another of the partner\'s keys under ' +
+            'another algorithm.' },
     { name: 'fedDiscovery', kind: 'single', role: 'service-provider',
       from: 'this register',
       what: 'OPENID CONNECT ONLY. TRUE reads the partner\'s endpoints and ' +
@@ -1690,6 +1704,7 @@ const EDITABLE = {
   fedClientSigningKey: 'set',
   fedScope: 'set',
   fedResponseType: 'set',
+  fedIdTokenSignedResponseAlg: 'set',
   fedDiscovery: 'set',
   fedInitiateLogin: 'set',
   fedBinding: 'set',

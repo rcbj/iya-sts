@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5103** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5105** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 53
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 184
+* [Federation (`STS-FED`)](#sts-fed) — 186
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 243
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 157
@@ -2788,6 +2788,8 @@ Raised from: federation/.
 | `STS-FED-0205` | A sign-in a partner started at /federation/initiate-login/{id} was refused because the relationship does not accept one (fedInitiateLogin off, #930). | HTTP 403 page |
 | `STS-FED-0206` | A sign-in started at /federation/initiate-login/{id} named no iss, or an iss other than the relationship's fedPeer (OpenID Connect Core 1.0 section 4, #930). | HTTP 400 page |
 | `STS-FED-0207` | An OpenID Connect relationship whose response type includes token was answered with no access_token (#930). | HTTP 400 page |
+| `STS-FED-0208` | An OpenID Connect partner's ID Token or Logout Token was signed with an algorithm other than the relationship's fedIdTokenSignedResponseAlg (OpenID Connect Core 1.0 section 3.1.3.7 step 7, Back-Channel Logout 1.0 section 2.6, #930). | HTTP 401 page; HTTP 400 at the back-channel logout endpoint |
+| `STS-FED-0209` | A check of a partner's configuration (`check-partner`) was asked of a relationship that is not a service-provider-side OpenID Connect one, or the partner's key set could not be read (#930). | HTTP 400 (API) or a 303 with error= |
 
 ## STS-OIDFED
 

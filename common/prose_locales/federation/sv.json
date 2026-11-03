@@ -279,6 +279,10 @@
     "en": "885dc55158b43f26",
     "text": "code (standardvärdet), id_token, eller en av OpenID Connects fyra andra: id_token token (implicit), code id_token, code token och code id_token token (hybrid). `id_token` med form_post är formen som INTE behöver någon bakkanal och därför ingen tokenslutpunkt, ingen klienthemlighet och ingen utgående begäran — vilket är det enda sättet att federera med en OIDC-partner från en driftsättning helt utan utgående trafik. En ID-token från auktoriseringsslutpunkten måste bära nonce, och c_hash och at_hash där en kod eller en åtkomsttoken kom med den."
   },
+  "fed.schema.attributes.fedIdTokenSignedResponseAlg.what": {
+    "en": "3d9af9fdc895c49c",
+    "text": "ENDAST OPENID CONNECT. DEN ENDA ALGORITM som partnern signerar den här relationens ID-token och utloggningstoken med — det som registrerades hos partnern som id_token_signed_response_alg (OpenID Connect Core 1.0 avsnitt 3.1.3.7 steg 7, Back-Channel Logout 1.0 avsnitt 2.6). En token signerad med någon annan avvisas, även en som partnerns nyckel verifierar. Tomt, standardvärdet: vilken algoritm som helst i den verifierande nyckelns familj som federation.jwtAlgorithms tillåter. Ange den: tomt godtar en token signerad med en annan av partnerns nycklar under en annan algoritm."
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "ENDAST OPENID CONNECT. TRUE läser partnerns slutpunkter och dess jwks_uri från dess upptäcktsdokument, {fedPeer}/.well-known/openid-configuration, i början av varje inloggning (OpenID Connect Discovery 1.0 avsnitt 4), vars issuer måste vara exakt fedPeer; fedSsoUrl, fedTokenUrl, fedUserinfoUrl och fedJwksUri läses då inte. Adressen härleds från fedPeer, som en administratör har konfigurerat, och aldrig från en begäran. FALSE, standardvärdet: slutpunkterna konfigureras för hand."

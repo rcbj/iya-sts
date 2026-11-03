@@ -4933,6 +4933,74 @@ class FederationSp {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // AN ADMINISTRATOR'S CHECK OF AN OPENID CONNECT PARTNER (#930): what the
+  // relationship would dial at the start of a sign-in, dialled now and
+  // reported — the discovery document where fedDiscovery is on (its issuer
+  // held to fedPeer, as a sign-in holds it), and the partner's key set, with
+  // how many keys it holds that this service can read. Nothing is written
+  // and nobody is signed in. It is the console's and /admin-api's
+  // `check-partner` act, so an operator can see a misconfigured partner
+  // before a person meets it; the relying-party plans' discovery modules use
+  // it too, since they end the moment the document is read.
+  // ---------------------------------------------------------------------------
+  /**
+   * Fetches an OpenID Connect partner's discovery document (where the
+   * relationship reads one) and its key set, and reports them.
+   *
+   * @param record - the federation relationship
+   * @returns a promise of `{ ok, issuer, endpoints, keys, readable, why,
+   *   errorCode }`
+   */
+  checkPartner(record): Promise<any> {
+    const { federation, fedHttp, stsCrypto, log } = this.deps;
+    log.debug("Entering FederationSp.checkPartner(). id=" + record.fedId);
+    if (!record || record.fedRole !== 'service-provider' ||
+        record.fedProtocol !== 'oidc') {
+      log.debug("Leaving FederationSp.checkPartner(). Not an OIDC partner.");
+      return Promise.resolve({ ok: false, errorCode: 'STS-FED-0209',
+        why: 'only a service-provider-side OpenID Connect relationship ' +
+             'has a partner configuration to check' });
+    }
+    const discovered: Promise<any> = federation.discovers(record)
+      ? this.discovered(record)
+      : Promise.resolve({ ok: true, endpoints: null });
+    log.debug("Leaving FederationSp.checkPartner().");
+    return discovered.then((got) => {
+      if (!got.ok) {
+        return { ok: false, errorCode: got.errorCode, why: got.why };
+      }
+      const effective = Object.assign({}, record, got.endpoints || {});
+      return this.keysFor(effective).then((keySet) => {
+        let readable = 0;
+        (keySet.keys || []).forEach(function (jwk) {
+          try {
+            stsCrypto.publicKeyFromJwk(jwk);
+            readable += 1;
+          } catch (e) {
+            log.debug("Caught in FederationSp.checkPartner(): " +
+                      ((e && e.message) || e));
+            // A key this service cannot read is counted out, not fatal:
+            // RFC 7517 section 5 has a reader skip what it does not know.
+          }
+        });
+        return {
+          ok: !!keySet.ok, errorCode: keySet.ok ? '' : keySet.errorCode,
+          why: keySet.ok ? '' : keySet.why,
+          issuer: String(record.fedPeer || ''),
+          endpoints: {
+            authorization_endpoint: effective.fedSsoUrl || '',
+            token_endpoint: effective.fedTokenUrl || '',
+            userinfo_endpoint: effective.fedUserinfoUrl || '',
+            jwks_uri: effective.fedJwksUri || ''
+          },
+          discovered: !!got.endpoints,
+          keys: (keySet.keys || []).length, readable: readable
+        };
+      });
+    });
+  }
+
   private paramsOf(req) {
     const { log, parseBody } = this.deps;
     log.debug("Entering FederationSp.paramsOf(). method=" + req.method);
@@ -5939,6 +6007,22 @@ class FederationSp {
                     'presented as a signed one. It is refused by name rather ' +
                     'than by failing to find a key' };
     }
+    // THE REGISTERED ALGORITHM (#930), where the caller names one: an ID
+    // Token or a Logout Token signed under any other is refused, even by a
+    // key of the partner's own that verifies it. The family rule below only
+    // keeps an algorithm to its key's kind; this keeps it to the one the
+    // relationship registered (Core 3.1.3.7 step 7, Back-Channel Logout
+    // 2.6).
+    const opts = Object.assign({}, options || {});
+    const expected = String(opts.expectAlg || '').trim();
+    delete opts.expectAlg;
+    if (expected && String(header.alg) !== expected) {
+      log.debug("Leaving FederationSp.verifyForeignJwt(). Another algorithm.");
+      return { ok: false, errorCode: 'STS-FED-0208',
+               why: 'its header says alg=' + String(header.alg) + ', and ' +
+                    'this relationship registered ' + expected + ' ' +
+                    '(fedIdTokenSignedResponseAlg)' };
+    }
     const kid = header.kid || '';
     const candidates = keys.filter((key) => {
       if (kid && key.kid) return key.kid === kid;
@@ -5976,7 +6060,7 @@ class FederationSp {
           // setting naming HS256 must not be able to put the family rule back.
           algorithms: this.familyAlgorithms(candidates[i].kty),
           clockTolerance: config.value('oauth2.clockSkewS')
-        }, options || {}));
+        }, opts));
         log.debug("Leaving FederationSp.verifyForeignJwt(). Verified.");
         return { ok: true, payload: payload, kid: candidates[i].kid || '',
                  jwk: candidates[i] };
@@ -6438,7 +6522,8 @@ class FederationSp {
         // verifyForeignJwt() is never reached without it. A consumer
         // provider's profile may name other spellings of the same issuer
         // beside it (#565: Google's bare host).
-        issuer: consumerProviders.issuersFor(record, idToken)
+        issuer: consumerProviders.issuersFor(record, idToken),
+        expectAlg: String(record.fedIdTokenSignedResponseAlg || '')
       });
       if (!verified.ok) {
         return refused(401, verified.errorCode || 'STS-FED-0036',
@@ -7495,6 +7580,10 @@ export = {
    * Forwards to `FederationSp.verifyForeignJwt()`.
    */
   verifyForeignJwt: slot.forward('verifyForeignJwt'),
+  /**
+   * Forwards to `FederationSp.checkPartner()` (#930).
+   */
+  checkPartner: slot.forward('checkPartner'),
   SLO_PATH: SLO_PATH,
   // For tests/revocation_status.js: the check a configured signing certificate
   // or partner key gets once it has verified a response.

@@ -12719,6 +12719,17 @@ const CODES = [
     summary: 'An OpenID Connect relationship whose response type includes ' +
       'token was answered with no access_token (#930).',
     spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0208',
+    summary: 'An OpenID Connect partner\'s ID Token or Logout Token was ' +
+      'signed with an algorithm other than the relationship\'s ' +
+      'fedIdTokenSignedResponseAlg (OpenID Connect Core 1.0 section 3.1.3.7 ' +
+      'step 7, Back-Channel Logout 1.0 section 2.6, #930).',
+    spec: 'HTTP 401 page; HTTP 400 at the back-channel logout endpoint' },
+  { code: 'STS-FED-0209',
+    summary: 'A check of a partner\'s configuration (`check-partner`) was ' +
+      'asked of a relationship that is not a service-provider-side OpenID ' +
+      'Connect one, or the partner\'s key set could not be read (#930).',
+    spec: 'HTTP 400 (API) or a 303 with error='},
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

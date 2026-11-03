@@ -791,6 +791,16 @@ class FederationPage {
         '<th>' + t.html('consoleFederation.thWhatItIs') + '</th></tr>' +
         switches +
         '</table>' +
+        // AN OPENID CONNECT PARTNER'S CONFIGURATION, CHECKED (#930): its
+        // discovery document (where read) and key set, dialled and reported.
+        (row.role === 'service-provider' && row.protocol === 'oidc'
+          ? '<form method="post" action="/admin/federation" class="inline">' +
+            carryBack +
+            '<input type="hidden" name="action" value="check-partner">' +
+            '<input type="hidden" name="id" value="' + kit.esc(row.id) +
+            '"> <button type="submit">' +
+            t.html('consoleFederation.actCheckPartner') + '</button></form>'
+          : '') +
         '<h2>' + t.html('consoleFederation.headingLists') + '</h2>' +
         multiSections +
         linkedSection +

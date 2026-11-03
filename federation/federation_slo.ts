@@ -1777,7 +1777,10 @@ class FederationSlo {
       }
       const verified = fedSp.verifyForeignJwt(token, record, keySet.keys, {
         audience: String(record.fedClientId || '') || undefined,
-        issuer: String(record.fedPeer || '') || undefined
+        issuer: String(record.fedPeer || '') || undefined,
+        // Section 2.6: validated as an ID Token is, so under the algorithm
+        // the relationship registered for its ID Tokens (#930).
+        expectAlg: String(record.fedIdTokenSignedResponseAlg || '')
       });
       if (!verified.ok) {
         errorCodes.mark(res, 'STS-FED-0128');

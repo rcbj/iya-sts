@@ -2353,6 +2353,14 @@ CONNECT RELYING PARTY PLANS*.
   page, followed as far as it goes. Whatever a module lists — the
   third-party-initiated login's `initiate_login_uri`, the OP-initiated
   front-channel page — is visited as in the provider plans.
+* **What the first full run taught (2026-11-03).** The two discovery
+  modules that finish once the configuration is read (`CHECK_ONLY`) are not
+  signed in for: the job asks the relationship's `check-partner` instead,
+  since a sign-in reaches a FINISHED module and the suite records "Illegal
+  test state change". The key-rotation module gets its second sign-in
+  (`TWO_SIGN_INS`). The static client and the relationship register
+  `RS256` as `id_token_signed_response_alg`, which is what made the wrong-alg
+  Logout Token a refusal (`STS-FED-0208`).
 * **Argued, not passed** (`EXPECTED` and `EXPECTED_PLANS` in the driver): the
   refresh-token plan, the logout plan's session-management module and the
   whole dynamic plan, each a decision `federation/CLAUDE.md` records. A

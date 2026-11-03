@@ -174,6 +174,10 @@ What it does, in every mode:
   of every sign-in. The document's `issuer` must be `fedPeer` exactly
   (`STS-FED-0203`, `0204`). Off by default. `fedEndSessionUrl` is still
   written by hand.
+* **`fedIdTokenSignedResponseAlg`** holds ID Tokens and Logout Tokens to the
+  algorithm registered at the partner (`STS-FED-0208`). **Check the partner**
+  on the relationship's page (`check-partner` on `/admin-api`) fetches its
+  discovery document and key set and reports them, writing nothing.
 * **`fedInitiateLogin`** answers `/federation/initiate-login/{id}`, the
   `initiate_login_uri` to register at the partner (`STS-FED-0205`, `0206`).
   Off by default, because any page could otherwise start a sign-in in a
@@ -755,6 +759,7 @@ These are attributes of the relationship entry, set on `/admin/federation` or
 | `fedClientId`, `fedClientSecret` | SP | this service's client credentials at the partner |
 | `fedScope`, `fedResponseType` | SP | the scope asked for (`openid profile email` by default for OIDC); `code` (default), `id_token`, `id_token token`, `code id_token`, `code token` or `code id_token token` |
 | `fedResponseMode` | SP | empty, `query`, `form_post` or (OIDC) `fragment` — **`fragment` is a warning**: see [OpenID Connect as the relying party](#openid-connect-as-the-relying-party) |
+| `fedIdTokenSignedResponseAlg` | SP (OIDC) | the one algorithm the partner signs ID Tokens and Logout Tokens with (what was registered as `id_token_signed_response_alg`); a token under another is refused even when a partner key verifies it. **Empty is a warning**: any algorithm of the key's family is accepted |
 | `fedDiscovery`, `fedInitiateLogin` | SP (OIDC) | read the endpoints from the partner's discovery document; answer a sign-in the partner starts. Both `FALSE` by default |
 | `fedBinding`, `fedSignRequest` | SP | the outbound SAML binding; whether the `AuthnRequest` is signed |
 | `fedSloUrl`, `fedSloBinding` | SP | the partner's SAML `SingleLogoutService`, and the binding (`HTTP-Redirect`, the default, or `HTTP-POST`) this service's `LogoutRequest` and `LogoutResponse` go on |

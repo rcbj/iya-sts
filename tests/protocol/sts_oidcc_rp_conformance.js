@@ -165,6 +165,13 @@ const EXPECTED = {
 // Every module of the dynamic plan.
 const EXPECTED_PLANS = { dynamic: NO_DYNAMIC };
 
+// The modules that finish when the partner's configuration is read, which
+// the person does not sign in for (see operatorFor()).
+const CHECK_ONLY = ["oidcc-client-test-discovery-openid-config",
+                    "oidcc-client-test-discovery-jwks-uri-keys"];
+// The module that wants two sign-ins, the second after a key rotation.
+const TWO_SIGN_INS = ["oidcc-client-test-signing-key-rotation"];
+
 // How long a module EXPECTED to wait out its time is given.
 const ARGUED_SECONDS = 30;
 
@@ -259,7 +266,11 @@ async function prepare(plan) {
     fedTokenAuth: "client_secret_basic",
     fedScope: "openid profile email",
     fedResponseType: "code",
-    fedResponseMode: plan.responseMode || ""
+    fedResponseMode: plan.responseMode || "",
+    // What the static client registers as id_token_signed_response_alg
+    // below, so a Logout Token or an ID Token under any other algorithm is
+    // refused (the back-channel logout's wrong-alg module).
+    fedIdTokenSignedResponseAlg: "RS256"
   };
   if (plan.discovery) {
     fields.fedDiscovery = "TRUE";
@@ -295,7 +306,8 @@ async function prepare(plan) {
   assert.ok(endpoints.assertionConsumerService, "the relationship " + id +
             " reports no assertion consumer service");
   const client = { client_id: clientId, client_secret: secret,
-                   redirect_uri: endpoints.assertionConsumerService };
+                   redirect_uri: endpoints.assertionConsumerService,
+                   id_token_signed_response_alg: "RS256" };
   if (plan.logout) {
     client.post_logout_redirect_uri = endpoints.postLogoutRedirect;
     client.backchannel_logout_uri = endpoints.backchannelLogout;
@@ -333,15 +345,34 @@ function operatorFor(plan, prepared, person) {
       return;
     }
     const name = String(info.testName || "");
+    // THE MODULES THAT END THE MOMENT THE DISCOVERY DOCUMENT (AND THE KEY
+    // SET) IS READ: a sign-in would go on to the authorization endpoint of
+    // a module already FINISHED, which the suite records as "Illegal test
+    // state change: FINISHED -> RUNNING" (the first full run, 2026-11-03).
+    // The administrator's check reads exactly those two and nothing else.
+    if (CHECK_ONLY.indexOf(name) >= 0) {
+      if (!started[id]) {
+        started[id] = 1;
+        await oidf.ok(prepared.realm.api + "/federation/check-partner",
+                      { id: prepared.id }, "checked the partner");
+      }
+      log.debug("Leaving the relying party's person. Checked.");
+      return;
+    }
     // The third-party-initiated module lists the address it sends the
     // person to; so may the OP-initiated front-channel logout module, once
     // the person is signed in. Whatever a module lists is visited.
     if (!started[id] && !/3rd-party-init-login/.test(name)) {
-      started[id] = true;
+      started[id] = 1;
       await person.start(id, info, prepared.login);
       if (signsOut(name)) {
         await person.signOut(id, info, prepared.realm.base);
       }
+    } else if (started[id] === 1 && TWO_SIGN_INS.indexOf(name) >= 0) {
+      // The key rotation module asks for a SECOND sign-in once the first
+      // is done, and rotates its keys before signing that one's ID Token.
+      started[id] = 2;
+      await person.start(id, info, prepared.login);
     }
     await person.visit(id, info);
     log.debug("Leaving the relying party's person.");

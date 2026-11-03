@@ -279,6 +279,10 @@
     "en": "885dc55158b43f26",
     "text": "code (la valeur par défaut), id_token, ou l’un des quatre autres d’OpenID Connect : id_token token (implicite), code id_token, code token et code id_token token (hybrides). `id_token` avec form_post est la forme qui n’a besoin d’AUCUN canal arrière, donc d’aucun point de terminaison de jeton, d’aucun secret client ni d’aucune requête sortante — la seule façon de se fédérer avec un partenaire OIDC depuis un déploiement sans aucune sortie réseau. Un ID Token venu du point de terminaison d’autorisation doit porter le nonce, ainsi que c_hash et at_hash partout où un code ou un jeton d’accès l’accompagnait."
   },
+  "fed.schema.attributes.fedIdTokenSignedResponseAlg.what": {
+    "en": "3d9af9fdc895c49c",
+    "text": "OPENID CONNECT SEULEMENT. L’UNIQUE ALGORITHME avec lequel le partenaire signe les ID Tokens et les Logout Tokens de cette relation — ce qui a été enregistré chez le partenaire comme id_token_signed_response_alg (OpenID Connect Core 1.0 section 3.1.3.7 étape 7, Back-Channel Logout 1.0 section 2.6). Un jeton signé avec un autre est refusé, même si la clé du partenaire le vérifie. Vide, la valeur par défaut : tout algorithme de la famille de la clé qui vérifie et que federation.jwtAlgorithms autorise. Définissez-le : vide, il accepte un jeton signé par une autre clé du partenaire sous un autre algorithme."
+  },
   "fed.schema.attributes.fedDiscovery.what": {
     "en": "bec8778c7adc894f",
     "text": "OPENID CONNECT SEULEMENT. TRUE lit les points de terminaison du partenaire et son jwks_uri dans son document de découverte, {fedPeer}/.well-known/openid-configuration, au début de chaque connexion (OpenID Connect Discovery 1.0 section 4), dont l’issuer doit être exactement fedPeer ; fedSsoUrl, fedTokenUrl, fedUserinfoUrl et fedJwksUri ne sont alors pas lus. L’adresse est dérivée de fedPeer, qu’un administrateur a configuré, et jamais d’une requête. FALSE, la valeur par défaut : les points de terminaison sont configurés à la main."

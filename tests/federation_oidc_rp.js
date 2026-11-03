@@ -11,9 +11,10 @@
 // admits for a loopback partner) whose answers each case chooses:
 //   1. the code flow: a good ID Token signs in and UserInfo is asked; an ID
 //      Token with no sub (STS-FED-0195), no iat (0196), a foreign azp
-//      (0197), no nonce (0198) or another nonce (0039) is refused before
-//      UserInfo is asked; UserInfo answering for another sub is refused
-//      (0202);
+//      (0197), no nonce (0198), another nonce (0039) or an algorithm other
+//      than the registered one (0208) is refused before UserInfo is asked;
+//      UserInfo answering for another sub is refused (0202); the
+//      administrator's check-partner reads the key set;
 //   2. the hybrid `code id_token` type: PKCE beside it, the front ID
 //      Token's c_hash checked BEFORE the code is redeemed (0199: the token
 //      endpoint is never called), and the two ID Tokens held to one
@@ -262,6 +263,33 @@ function childMain() {
     note(got.r.status === 401 && got.coded === 1,
          '1h. UserInfo answering for another sub is refused (STS-FED-0202)',
          got.r.status + ' ' + got.coded);
+
+    federation.update(CODE, { field: 'fedIdTokenSignedResponseAlg',
+                              value: 'ES256' });
+    got = await codeCase('registered alg', function (s) {
+      return claims(s);
+    }, null, 'STS-FED-0208');
+    note(got.r.status === 401 && got.coded === 1 &&
+         got.asked.indexOf('/op/userinfo') < 0,
+         '1i. an ID Token under another algorithm than ' +
+         'fedIdTokenSignedResponseAlg is refused (STS-FED-0208)',
+         got.r.status + ' ' + got.coded);
+    federation.update(CODE, { field: 'fedIdTokenSignedResponseAlg',
+                              value: 'RS256' });
+    got = await codeCase('registered alg', function (s) {
+      return claims(s);
+    });
+    note(got.r.status < 400, '1j. and accepted under the registered one',
+         got.r.status);
+    const actions = require(ROOT_DIR + '/admin-core/admin_actions');
+    op.scenario = {};
+    const checked = await actions.federationAction(
+      { action: 'check-partner', id: CODE });
+    note(checked.ok && checked.keys === 1 && checked.readable === 1 &&
+         checked.discovered === false &&
+         checked.endpoints.jwks_uri === opBase + 'jwks',
+         '1k. check-partner reads the partner\'s key set and reports it',
+         JSON.stringify(checked));
 
     // --- 2. hybrid -----------------------------------------------------------
     const HYBRID = make('frp-hyb-' + stamp,
