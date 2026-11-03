@@ -3886,7 +3886,7 @@ const SCHEMAS = {
       },
       formats: {
         type: 'array',
-        description: 'The three credential formats and what each implies.',
+        description: 'The four credential formats and what each implies.',
         items: openObject('One format.', {})
       },
       ldpOmitted: { description: 'Claims ldp_vc cannot carry.' },

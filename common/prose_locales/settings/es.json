@@ -5819,6 +5819,30 @@
     "en": "8cc9cdf9a93a0260",
     "text": "El `vct` que el verificador exige a una SD-JWT VC presentada. El valor predeterminado es el tipo que acuña este emisor; defínalo para aceptar una credencial que otro emisor acuña con su propio tipo."
   },
+  "oid4vp.mdocTrustAnchors|label": {
+    "en": "f20c6a38b3c5c0ed",
+    "text": "Autoridades emisoras de mdoc de confianza (certificados IACA, PEM)"
+  },
+  "oid4vp.mdocTrustAnchors|description": {
+    "en": "bc0c2fd840ac9688",
+    "text": "Certificados PEM, concatenados: los certificados de la CA de la autoridad emisora (ISO/IEC 18013-5, anexo B) a los que debe encadenarse el certificado del firmante del documento de un mdoc presentado. La cadena se construye y se comprueba como dice RFC 5280, se consulta la revocación del firmante del documento (pki.revocationCheck), y se rechaza un mdoc cuyo firmante no se encadene a ninguno de ellos. Vacío — el valor predeterminado — no confía en ningún emisor de mdoc, de modo que una presentación mso_mdoc se rechaza hasta que se nombre uno."
+  },
+  "oid4vp.expectedDoctype|label": {
+    "en": "49833f72d06c775d",
+    "text": "Tipo de documento mdoc esperado (docType)"
+  },
+  "oid4vp.expectedDoctype|description": {
+    "en": "d718e92b610b1ae9",
+    "text": "El `docType` que pide una solicitud mso_mdoc (`meta.doctype_value`) y que el verificador exige al documento presentado y a su Mobile Security Object. El valor predeterminado es el permiso de conducir móvil de ISO/IEC 18013-5."
+  },
+  "oid4vp.mdocNamespace|label": {
+    "en": "8e0371b0c93613a5",
+    "text": "Espacio de nombres mdoc del que se leen las notificaciones solicitadas"
+  },
+  "oid4vp.mdocNamespace|description": {
+    "en": "119af9b2a1680a4c",
+    "text": "El espacio de nombres que nombran las rutas de notificación de una solicitud mso_mdoc (`[namespace, element]`, OpenID4VP 1.0, apéndice B.2.3). Cada notificación solicitada se pide como el elemento de datos del mismo nombre, salvo birthdate (birth_date) y address (resident_address), que ISO/IEC 18013-5 nombra de otro modo. El valor predeterminado es el del permiso de conducir móvil."
+  },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
     "text": "Claims que puede pedir una solicitud"

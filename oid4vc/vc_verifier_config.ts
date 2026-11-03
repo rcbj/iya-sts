@@ -95,6 +95,17 @@ const { VCI_VCT, VCI_JWT_TYPES, VCI_CONFIG_ID, VCI_DID_CONFIG_ID,
         VCI_JWT_CONFIG_ID,
         VCI_LDP_CONFIG_ID, VCI_LDP_DID_CONFIG_ID } = vcConfigs;
 
+// THE mdoc DEFAULTS (#935): ISO/IEC 18013-5's mobile driving licence, which
+// `oid4vp.expectedDoctype` and `oid4vp.mdocNamespace` default to as well.
+const MDOC_DOCTYPE = 'org.iso.18013.5.1.mDL';
+const MDOC_NAMESPACE = 'org.iso.18013.5.1';
+// The claims ISO/IEC 18013-5 (Table 5) names differently from OpenID
+// Connect; every other claim is asked for as the element of its own name.
+const MDOC_ELEMENTS: Record<string, string> = {
+  birthdate: 'birth_date',
+  address: 'resident_address'
+};
+
 // One requestable claim — see THE CATALOGUE below.
 interface RequestableRow {
   claim: string;
@@ -257,6 +268,53 @@ class VcVerifierConfig {
     log.debug("Entering VcVerifierConfig.expectedVct().");
     log.debug("Leaving VcVerifierConfig.expectedVct().");
     return String(config.value('oid4vp.expectedVct') || VCI_VCT);
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE mdoc THIS VERIFIER ASKS FOR (#935): `oid4vp.expectedDoctype` and the
+  // namespace its claims are read from, `oid4vp.mdocNamespace`. Read where
+  // `expectedVct()` is, by the format row's getter, so the DCQL query's
+  // `doctype_value` and the check of the answer cannot come apart.
+  // ---------------------------------------------------------------------------
+  /**
+   * Returns the mdoc document type this Verifier asks for and requires
+   * (`oid4vp.expectedDoctype`).
+   *
+   * @returns the `docType`
+   */
+  expectedDoctype() {
+    const { log, config } = this.deps;
+    log.debug("Entering VcVerifierConfig.expectedDoctype().");
+    log.debug("Leaving VcVerifierConfig.expectedDoctype().");
+    return String(config.value('oid4vp.expectedDoctype') || MDOC_DOCTYPE);
+  }
+
+  /**
+   * Returns the mdoc namespace a request's claims are asked for in
+   * (`oid4vp.mdocNamespace`).
+   *
+   * @returns the namespace
+   */
+  mdocNamespace() {
+    const { log, config } = this.deps;
+    log.debug("Entering VcVerifierConfig.mdocNamespace().");
+    log.debug("Leaving VcVerifierConfig.mdocNamespace().");
+    return String(config.value('oid4vp.mdocNamespace') || MDOC_NAMESPACE);
+  }
+
+  /**
+   * Returns the mdoc data element a claim is asked for as: the claim's own
+   * name, except where ISO/IEC 18013-5 spells it differently.
+   *
+   * @param claimName - the claim name
+   * @returns the element identifier
+   */
+  mdocElementFor(claimName: unknown) {
+    const { log } = this.deps;
+    log.debug("Entering VcVerifierConfig.mdocElementFor().");
+    const name = String(claimName || '');
+    log.debug("Leaving VcVerifierConfig.mdocElementFor().");
+    return MDOC_ELEMENTS[name] || name;
   }
 
   /**
@@ -583,7 +641,7 @@ class VcVerifierConfig {
       log.debug("Leaving VcVerifierConfig.setDefaultFormat(). No such format.");
       return { ok: false,
                errors: ['There is no credential format called "' + id + '". ' +
-                                   'The three ' +
+                                   'The four ' +
                                    'are: ' + FORMAT_IDS.join(', ') + '.'] };
     }
     state.format = format.id;
@@ -615,7 +673,7 @@ class VcVerifierConfig {
   }
 
   // ---------------------------------------------------------------------------
-  // The DCQL claims array, which is where the three formats stop agreeing.
+  // The DCQL claims array, which is where the four formats stop agreeing.
   //
   // dc+sd-jwt ["given_name"] claims are top-level jwt_vc_json
   // ["credentialSubject","given_name"] claims are in the subject ldp_vc
@@ -624,6 +682,9 @@ class VcVerifierConfig {
   //                                                     context defines, which
   //                                                     is not the OIDC claim
   //                                                     name
+  // mso_mdoc ["org.iso.18013.5.1","birth_date"] ...a data element of a
+  //                                              namespace (#935), under
+  //                                              ISO/IEC 18013-5's name
   //
   // That third line is the one that used to be wrong. Both W3C formats were
   // given the OIDC claim name, which coincides for `given_name` and
@@ -646,6 +707,12 @@ class VcVerifierConfig {
     if (format.claimsAt === 'top') {
       log.debug("Leaving VcVerifierConfig.pathsFor().");
       return [[claimName]];
+    }
+    // An mdoc's claim is a data element in a namespace (OpenID4VP 1.0
+    // Appendix B.2.3): `[namespace, element]`, always two (#935).
+    if (format.claimsAt === 'mdoc') {
+      log.debug("Leaving VcVerifierConfig.pathsFor(). An mdoc element.");
+      return [[this.mdocNamespace(), this.mdocElementFor(claimName)]];
     }
     if (format.claimsAt !== 'ldp') {
       log.debug("Leaving VcVerifierConfig.pathsFor().");
@@ -692,7 +759,10 @@ class VcVerifierConfig {
       // how it is named.
       meta: format.claimsAt === 'top'
         ? { vct_values: [format.identifier] }
-        : { type_values: [format.identifier] }
+        : format.claimsAt === 'mdoc'
+          // Appendix B.2.3: one docType, a string, not a list (#935).
+          ? { doctype_value: format.identifier }
+          : { type_values: [format.identifier] }
     };
     // A BARE bbs-2023 DERIVED PROOF BINDS NO HOLDER (#38's follow-ups), and
     // the bar door still accepts one, so its ldp_vc query says so rather than
@@ -882,7 +952,7 @@ REQUESTABLE.forEach(function (row) {
 // expectedVct() above. The two W3C type lists are still this issuer's.
 // ---------------------------------------------------------------------------
 /**
- * The three credential formats a request may be for, each with where its claims
+ * The four credential formats a request may be for, each with where its claims
  * sit and how the credential is identified.
  */
 const FORMATS: FormatRow[] = [
@@ -901,8 +971,9 @@ const FORMATS: FormatRow[] = [
     selectiveDisclosure: 'per claim, by withholding Disclosures',
     holderBinding: 'Key Binding JWT signed by the credential\'s cnf key',
     configs: [VCI_CONFIG_ID, VCI_DID_CONFIG_ID],
-    what: 'The default, and the only one of the three whose selective ' +
-          'disclosure is per claim: the holder sends the issuer-signed JWT ' +
+    what: 'The default, and one of the two whose selective disclosure ' +
+          'is per claim (an mdoc\'s is per element): the holder sends the ' +
+          'issuer-signed JWT ' +
           'plus one Disclosure per claim it chooses to reveal, and a Key ' +
           'Binding JWT over exactly those bytes.' },
   { id: 'jwt_vc_json', label: 'JWT VC (W3C, JOSE-secured)',
@@ -931,11 +1002,37 @@ const FORMATS: FormatRow[] = [
     what: 'Signed over canonicalized JSON-LD, so a claim can only be asked ' +
           'for by a term the vendored context defines — several claims below ' +
           'have none and are dropped from an ldp_vc query rather than asked ' +
-          'for under a name that would fail canonicalization.' }
+          'for under a name that would fail canonicalization.' },
+  // #935: ISO/IEC 18013-5's mdoc, which this realm verifies and does not
+  // issue — so no configuration of the issuer's names it, and every mdoc
+  // accepted chains to `oid4vp.mdocTrustAnchors`.
+  { id: 'mso_mdoc', label: 'ISO mdoc (ISO/IEC 18013-5)',
+    claimsAt: 'mdoc',
+    identifiedBy: 'meta.doctype_value',
+    get identifier() {
+      helpers.log.debug("Entering identifier().");
+      helpers.log.debug("Leaving identifier().");
+      return slot.get().expectedDoctype();
+    },
+    get identifierText() {
+      helpers.log.debug("Entering identifierText().");
+      helpers.log.debug("Leaving identifierText().");
+      return slot.get().expectedDoctype();
+    },
+    selectiveDisclosure: 'per data element, each salted and digested in ' +
+                         'the issuer-signed Mobile Security Object',
+    holderBinding: 'a device signature by the MSO\'s device key over the ' +
+                   'session transcript, which binds this request\'s ' +
+                   'client_id, nonce, response URI and encryption key',
+    configs: [],
+    what: 'Another issuer\'s document — this realm issues none — whose ' +
+          'document signer must chain to oid4vp.mdocTrustAnchors. Each ' +
+          'requested claim is a data element of oid4vp.mdocNamespace, and ' +
+          'the wallet discloses only those.' }
 ];
 
 /**
- * The three credential format ids.
+ * The four credential format ids.
  */
 const FORMAT_IDS = FORMATS.map(function (format) { return format.id; });
 
@@ -1010,6 +1107,9 @@ export = {
     return slot.get().maxRequested();
   },
   expectedVct: slot.forward('expectedVct'),
+  expectedDoctype: slot.forward('expectedDoctype'),
+  mdocNamespace: slot.forward('mdocNamespace'),
+  mdocElementFor: slot.forward('mdocElementFor'),
   defaultRequested: slot.forward('defaultRequested'),
   rowFor: slot.forward('rowFor'),
   carriedNow: slot.forward('carriedNow'),

@@ -44,8 +44,9 @@ Identifiers, its chain and its trust anchor.
 
 **What the Verifier supports.** A request is a DCQL query (`dcql_query`, with
 `credential_sets`); DIF Presentation Exchange (`presentation_definition`) is
-not supported. It asks for `dc+sd-jwt`, `jwt_vc_json` or `ldp_vc`, and not
-`mso_mdoc`. The response modes are `direct_post`, `direct_post.jwt`
+not supported. It asks for `dc+sd-jwt`, `jwt_vc_json`, `ldp_vc` or an ISO
+mdoc (`mso_mdoc`, which it verifies and this service does not issue; see
+[Accept an ISO mdoc](#accept-an-iso-mdoc)). The response modes are `direct_post`, `direct_post.jwt`
 (encrypted) and, for SIOPv2, `form_post`; over the Digital Credentials API
 they are `dc_api.jwt` and `dc_api`.
 
@@ -260,6 +261,66 @@ api config/set '{"key":"oid4vp.requireStatusReference","value":"own-only"}'
 refused in product mode (`STS-CORE-0103`). A foreign issuer's status list is
 fetched, verified against the certificate that verified the credential, and
 kept no longer than `oid4vp.statusListMaxCacheS` (3600 s).
+
+## Accept an ISO mdoc
+
+The Verifier verifies an ISO/IEC 18013-5 mdoc, such as a mobile driving
+licence, presented through OpenID4VP (Appendix B.2). This service issues no
+mdoc, so every mdoc it accepts comes from an issuer you trust. Taken from
+`tests/vc_mdoc.js` and `sts_oid4vp_conformance.js`.
+
+1. Trust the issuer's Issuing Authority CA (IACA) certificate. The
+   document signer certificate inside each mdoc must chain to one of these
+   certificates. With the setting empty, which is the default, every mdoc is
+   refused:
+   ```bash
+   api config/set '{"key":"oid4vp.mdocTrustAnchors",
+     "value":"-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----"}'
+   ```
+2. Say which document and namespace to ask for, if not the mobile driving
+   licence (`oid4vp.expectedDoctype`, default `org.iso.18013.5.1.mDL`, and
+   `oid4vp.mdocNamespace`, default `org.iso.18013.5.1`). Each requested claim
+   is asked for as the data element with the same name. `birthdate` is asked
+   for as `birth_date`, and `address` as `resident_address`.
+3. Start a verification for the format:
+   ```bash
+   api verifications/start '{"format":"mso_mdoc","client_id_prefix":"x509_hash",
+     "response_mode":"direct_post.jwt"}'
+   ```
+
+The Verifier checks the document signer's chain and revocation, the issuer's
+signature, the Mobile Security Object's document type and validity, each
+disclosed element's digest, and the device signature over the session
+transcript. The session transcript binds the request's Client Identifier,
+nonce, Response URI and, for `direct_post.jwt`, the encryption key. An mdoc
+that authenticates its device by MAC (`deviceMac`) is refused. Without a
+status reference, an mdoc is refused under `oid4vp.requireStatusReference` =
+`all`. You can exempt the issuer by the thumbprint of its IACA certificate in
+`oid4vp.statusOptionalIssuers`. The refusals are `STS-VC-0156` to
+`STS-VC-0160`.
+
+An mdoc is not accepted for a wallet sign-in or through the Digital
+Credentials API.
+
+## A Verifier for OpenID4VC HAIP
+
+OpenID4VC HAIP 1.0 constrains a Verifier's request. To meet it, use these
+choices on a start or in the realm's settings:
+
+* The `x509_hash` Client Identifier Prefix with a signed request by
+  reference: `"client_id_prefix":"x509_hash"`.
+* An encrypted response: `"response_mode":"direct_post.jwt"`. The request
+  offers both `A128GCM` and `A256GCM`, and a P-256 `ECDH-ES` key while
+  `oid4vp.responseEncryptionKeyAlgs` names `ECDH-ES`, which it does by
+  default. Each request has keys of its own.
+* A `redirect_uri` on the start (section 5.1 requires the Response Endpoint
+  to answer one).
+* `oid4vp.walletInvocation` = `haip-vp`, so a wallet app is handed
+  `haip-vp://`.
+* `dc+sd-jwt` or `mso_mdoc`.
+
+The OpenID Foundation's HAIP verifier plan runs with exactly these choices;
+see [Conformance](conformance.md).
 
 ## Sign in with a wallet
 

@@ -984,6 +984,74 @@ refusal above including a DID removed after the token and during a deferral,
 and the sign-in in every format. **What has no test**: an HTTP job
 (`tests/protocol/`, `local: true`), and a real wallet sending a `kid` proof.
 
+## AN ISO mdoc AT THE VERIFIER, AND THE HAIP VERIFIER PLAN (#935, 2026-11-02)
+
+**`mso_mdoc` is the Verifier's fourth format** (OpenID4VP 1.0 Appendix B.2,
+ISO/IEC 18013-5:2021 section 9.3.1), because OpenID4VC HAIP 1.0 names it
+beside the SD-JWT VC and the conformance suite's HAIP verifier plan
+(`oid4vp-1final-verifier-haip-test-plan`) has an `iso_mdl` variant. rcbj's
+standing rule (spec compliance including the optional parts) made building it
+the answer rather than recording it as a gap. **This realm issues no mdoc**:
+the format is a row of `vc_verifier_config.ts`'s `FORMATS` with `configs: []`,
+the start's format list is the issuer's formats plus the Verifier's
+(`START_FORMATS`), and the issuer is untouched.
+
+* **`vc_mdoc.ts` is the whole check**, a library the composition root builds
+  after the codec. Its header lists the steps; the ones a reader would get
+  wrong: the document signer is CHAINED (`pki.verifyPathToAnchors()`) to
+  `oid4vp.mdocTrustAnchors`, not used as a key — ISO's trust model is the
+  IACA, and the document signer rotates (the suite mints a new one at run
+  time) — which is why it is a setting of its own rather than more rows of
+  `oid4vp.trustedIssuerCertificates`, whose certificates ARE the keys. Empty
+  trusts nobody.
+* **Digests and the device signature are over the bytes RECEIVED.** The
+  codec's decoder keeps every tag's encoding on `Tagged.raw`, and its encoder
+  writes it back unchanged; re-encoding an IssuerSignedItemBytes or the
+  DeviceNameSpacesBytes in shortest form would refuse an issuer whose CBOR is
+  valid and not canonical.
+* **The session transcript is built from the TRANSACTION** — `clientId`,
+  `nonce`, the Response URI frozen on `record.mdoc`, and for
+  `direct_post.jwt` the RFC 7638 thumbprint of the key the JWE's `kid` named
+  (`openEncryptedResponse()` now answers the kid, the response endpoint passes
+  it as `ctx.kid`). That is B.2.6.1's binding, and it is what stops a
+  presentation made for another Verifier or another request.
+* **COSE ECDSA is r||s**, so `common/crypto.js`'s `verifyCoseSignature()`
+  grew `ecdsaEncoding: 'ieee-p1363'`; WebAuthn's DER stays its default.
+  ML-DSA (-48..-50) is offered and accepted only while
+  `keys.postQuantumSigning` is on (`vc_mdoc.coseAlgs()`), as the JOSE lists
+  are by `helpers.offeredJwsAlgs()`.
+* **Refused**: `deviceMac` (`STS-VC-0159`; its key is agreed with a reader's
+  ephemeral key that no OpenID4VP request carries), a device-signed element
+  the MSO's `keyAuthorizations` do not name, more than one Document. Codes
+  `STS-VC-0156`..`0160`, logged where each is found; the Response URI answers
+  `STS-VC-0041` as for any refused presentation.
+* **Status**: an MSO's `status.status_list` is a COSE reference
+  (`codec.referenceOfCose()`), resolved by `vc_status.ts`'s `foreignCwt()`;
+  the CWT's key is the leaf of ITS `x5chain` once that chains to the same
+  anchors (`vc_mdoc.statusListKey()`, passed as `cwtKeyFor`, which is why
+  `fetchList()` awaits its parser now). No reference is decided by
+  `oid4vp.requireStatusReference` as for any foreign credential; the issuer
+  is exempted by its ANCHOR's thumbprint in `oid4vp.statusOptionalIssuers`,
+  the document signer's being useless for a key that rotates.
+* **Not for a sign-in or the Digital Credentials API**: a foreign mdoc names
+  no entry of this realm to sign in, and the DC API's transcript is a
+  different handover (B.2.6.2). A SIOPv2 `vp_token id_token` answer that
+  carries an mdoc over `direct_post.jwt` is refused (`answerSelfIssued()`
+  passes no `kid`); nothing asks for that combination.
+* **An accepted mdoc records nobody** on `/admin/users`: it carries no
+  subject (`verified.sub` is empty), which the funnel already treats as
+  nothing to record.
+
+**The HAIP verifier plan** runs in `tests/protocol/sts_oid4vp_conformance.js`
+(`vp-haip`, `vp-haip-mdoc`, and their classical twins): the plan fixes
+`haip`, `x509_hash` and `request_uri_signed` and offers only
+`direct_post.jwt`. The realm sets `oid4vp.walletInvocation` `haip-vp`, the
+mdoc realm trusts the suite's IACA root (`/mdoc-iaca-root.pem`, fetched at
+run time), and each start names a `redirect_uri`, because HAIP section 5.1
+requires the Response Endpoint to answer one (#594 made that the starter's
+choice). `tests/vc_mdoc.js` is the in-process half, with an issuer and wallet
+of its own.
+
 ## THE x509 CLIENT IDENTIFIER PREFIXES: `x509_san_dns` AND `x509_hash` (#230, 2026-09-26)
 
 Found by #187: the OIDF `oid4vp-1final-verifier-test-plan` has signed

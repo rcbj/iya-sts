@@ -879,6 +879,9 @@ var config = {
     allowedWalletUrls: "",                           // Other wallet URLs a request link may name (product)
     trustedIssuerCertificates: "",                   // Other trusted credential issuers (PEM)
     expectedVct: "urn:iya:sts:sd-jwt-vc:identity",   // Expected SD-JWT VC type (vct)
+    mdocTrustAnchors: "",                            // Trusted mdoc issuing authorities (IACA certificates, PEM)
+    expectedDoctype: "org.iso.18013.5.1.mDL",        // Expected mdoc document type (docType)
+    mdocNamespace: "org.iso.18013.5.1",              // mdoc namespace the requested claims are read from
     maxRequestedClaims: 40,                          // Claims one request may ask for
     signIn: true,                                    // Sign in with a wallet
     signInClientIdPrefix: "x509_hash",               // Wallet sign-in: Client Identifier prefix

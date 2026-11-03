@@ -132,6 +132,15 @@ Object.keys(COSE_ALGS).forEach(function (name) {
  */
 class Tagged {
   /**
+   * The bytes the item was decoded from, head and content, where it was
+   * DECODED rather than built (#935). An mdoc's digests and its device
+   * signature are over the encoded bytes as the issuer and the wallet
+   * wrote them (ISO/IEC 18013-5 section 9.1.2.4), so the encoder writes
+   * these back unchanged rather than re-encoding the value.
+   */
+  raw?: Buffer;
+
+  /**
    * Builds a tagged item.
    *
    * @param tag - the tag number
@@ -584,6 +593,9 @@ class VcStatusCodec {
           walk(k, depth + 1);
           walk(v, depth + 1);
         });
+      } else if (item instanceof Tagged && item.raw) {
+        // As it was received (#935): see `Tagged.raw`.
+        parts.push(Buffer.from(item.raw));
       } else if (item instanceof Tagged) {
         parts.push(self.cborHead(6, item.tag));
         walk(item.value, depth + 1);
@@ -667,6 +679,7 @@ class VcStatusCodec {
       if (depth > CBOR_MAX_DEPTH) {
         throw new Error('CBOR: nested deeper than ' + CBOR_MAX_DEPTH + '.');
       }
+      const start = pos;
       const h = head();
       switch (h.major) {
         case 0: {
@@ -711,7 +724,9 @@ class VcStatusCodec {
           return map;
         }
         case 6: {
-          return new Tagged(h.arg, item(depth + 1));
+          const tagged = new Tagged(h.arg, item(depth + 1));
+          tagged.raw = Buffer.from(buf.subarray(start, pos));
+          return tagged;
         }
         default: {
           if (h.info === 20) {

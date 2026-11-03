@@ -572,8 +572,8 @@
     "text": "partial：但范围广泛：颁发者元数据、nonce、持有证明、批量签发、延迟签发、凭证要约（附录 H.1/H.2/H.3）、带 tx_code 的预授权码授权、credential_identifiers、请求和响应加密（第 10 节），以及通知端点（第 11 节）。jwt 证明标头中以及作为 attestation 证明类型的密钥证明（附录 D），针对已配置的证书进行验证；每个凭证都有状态列表；凭证可用后量子算法签名。没有钱包证明（附录 E）。"
   },
   "stsmetadata.specs.oid4vp.coverage": {
-    "en": "6a7b2a600e91aab4",
-    "text": "partial：按值传递以及作为按引用传递的已签名请求对象的授权请求，response_mode=direct_post，DCQL 查询（包括 credential_sets），以及对返回的全部三种格式内容的完整验证——密钥绑定 JWT、带 nonce、aud 和 iat 的 VP JWT、带 Data Integrity 证明的 VerifiablePresentation（B.1.3.2.5）——以及每个凭证的状态，每个出示的凭证都必须指明其状态（oid4vp.requireStatusReference，默认全部；ldp_vc 查询会请求 credentialStatus，不提供它的凭证会被拒绝）。自 2026-09-17 起，展示可以在 /authn/wallet 上让某人登录——通过 Digital Credentials API（附录 A：openid4vp-v1-signed、expected_origins、dc_api.jwt 或 dc_api、origin: 受众）、通过带第 8.2 节 response_code 的同设备方式，以及仅在 oid4vp.signInCrossDevice 开启时通过普通二维码——但只限本领域签发的、绑定持有者的凭证，三种格式中任意一种均可，并且只能以该凭证所签发给的目录条目身份登录；其他任何展示都会验证但不会让任何人登录。没有 presentation_definition（DIF PE）——仅限 DCQL；没有未签名或多重签名的 DC API 请求；没有 mso_mdoc；没有钱包证明；没有 transaction_data。自 #129 起，已签名的请求按 oid4vp.clientIdPrefix 所选的前缀指明其客户端标识符（第 5.9 节）：pre-registered、decentralized_identifier（本领域的 did:web，kid 为 DID URL）、verifier_attestation（`jwt` 标头中的验证方证明 JWT，已配置或自证明），或 openid_federation（本领域的实体配置），以及自 #230 起的 x509_san_dns 和 x509_hash（第 5.9.3 节：x5c 中来自本领域 JOSE 签发 CA 的验证方自身证书、作为响应 URI 主机的 dNSName，或叶证书的 SHA-256），按领域或按请求选择；未签名的请求使用 redirect_uri。不提供 origin 前缀（它是 Digital Credentials API 自己的前缀，由浏览器设置）。"
+    "en": "7b2694beee176000",
+    "text": "partial：按值传递以及作为按引用传递的已签名请求对象的授权请求，response_mode=direct_post，DCQL 查询（包括 credential_sets），以及对返回的全部四种格式内容的完整验证——密钥绑定 JWT、带 nonce、aud 和 iat 的 VP JWT、带 Data Integrity 证明的 VerifiablePresentation（B.1.3.2.5），以及自 #935 起的 ISO mdoc（B.2：文档签名者链接到 oid4vp.mdocTrustAnchors、MSO、每个元素的摘要、设备对 B.2.6.1 会话记录的签名；拒绝 deviceMac）——以及每个凭证的状态，每个出示的凭证都必须指明其状态（oid4vp.requireStatusReference，默认全部；ldp_vc 查询会请求 credentialStatus，不提供它的凭证会被拒绝）。自 2026-09-17 起，展示可以在 /authn/wallet 上让某人登录——通过 Digital Credentials API（附录 A：openid4vp-v1-signed、expected_origins、dc_api.jwt 或 dc_api、origin: 受众）、通过带第 8.2 节 response_code 的同设备方式，以及仅在 oid4vp.signInCrossDevice 开启时通过普通二维码——但只限本领域签发的、绑定持有者的凭证，三种格式中任意一种均可，并且只能以该凭证所签发给的目录条目身份登录；其他任何展示都会验证但不会让任何人登录。没有 presentation_definition（DIF PE）——仅限 DCQL；没有未签名或多重签名的 DC API 请求；不通过 DC API 或为登录接受 mdoc；没有钱包证明；没有 transaction_data。自 #129 起，已签名的请求按 oid4vp.clientIdPrefix 所选的前缀指明其客户端标识符（第 5.9 节）：pre-registered、decentralized_identifier（本领域的 did:web，kid 为 DID URL）、verifier_attestation（`jwt` 标头中的验证方证明 JWT，已配置或自证明），或 openid_federation（本领域的实体配置），以及自 #230 起的 x509_san_dns 和 x509_hash（第 5.9.3 节：x5c 中来自本领域 JOSE 签发 CA 的验证方自身证书、作为响应 URI 主机的 dNSName，或叶证书的 SHA-256），按领域或按请求选择；未签名的请求使用 redirect_uri。不提供 origin 前缀（它是 Digital Credentials API 自己的前缀，由浏览器设置）。"
   },
   "stsmetadata.specs.siopv2.coverage": {
     "en": "7b5596036282fc19",
@@ -632,8 +632,8 @@
     "text": "partial: 签发者（issue）、持有者（prove、derive）、验证者（凭证和出示）和状态服务，基于本服务自己的密码套件、状态列表和 VC API 专用密钥；在领域开启之前处于关闭状态（vcApi.enabled），在所有模式下都需要带有 vc-api:issue 或 vc-api:verify 的 OAuth 2.0 访问令牌，按客户端限速，不理解的选项会被拒绝。尚未构建：zcap 授权、工作流和交换、挑战、凭证和出示的存储（/credentials/{id} 的 GET 和 DELETE）、VCALM 的 operation:path 范围，以及按领域配置的签发者实例（实例是固定的，每种加固机制和曲线各一个）。"
   },
   "stsmetadata.specs.token-status-list.coverage": {
-    "en": "0e654cb76a7429ce",
-    "text": "partial：每个领域一个列表，每个凭证两位（VALID、INVALID、SUSPENDED），根据 Accept 以 JWT 和 CWT 形式作为 Status List Token 提供，带有 ttl 和 exp，一个聚合端点，以及每个 SD-JWT VC 和 jwt_vc_json 凭证中的 status 声明；验证方会解析受信任的外部颁发者的列表，并在无法给出任何陈述时拒绝。此外，每个领域还有第二个用于访问令牌的列表（#432）：每个令牌一位，每个 OAuth RFC 9068 访问令牌以及每个 GNAP jwt-signed 和 jwt-encrypted 令牌都携带其 status 声明，并在授权服务器元数据中以 status_list_aggregation_endpoint（第 9.1 节）公布。不支持历史解析（501），不跟随重定向，不支持 mdoc（不签发任何 mdoc）。"
+    "en": "b7932392e5841ca6",
+    "text": "partial：每个领域一个列表，每个凭证两位（VALID、INVALID、SUSPENDED），根据 Accept 以 JWT 和 CWT 形式作为 Status List Token 提供，带有 ttl 和 exp，一个聚合端点，以及每个 SD-JWT VC 和 jwt_vc_json 凭证中的 status 声明；验证方会解析受信任的外部颁发者的列表，并在无法给出任何陈述时拒绝。此外，每个领域还有第二个用于访问令牌的列表（#432）：每个令牌一位，每个 OAuth RFC 9068 访问令牌以及每个 GNAP jwt-signed 和 jwt-encrypted 令牌都携带其 status 声明，并在授权服务器元数据中以 status_list_aggregation_endpoint（第 9.1 节）公布。不支持历史解析（501），不跟随重定向。不签发任何 mdoc；验证方会解析出示的 mdoc 的 Mobile Security Object 所指明的 CWT 列表，该列表由其 x5chain 中链接到 oid4vp.mdocTrustAnchors 的证书签名（#935）。"
   },
   "stsmetadata.specs.etsi-ts-119-602.coverage": {
     "en": "d648e3ad690b8900",

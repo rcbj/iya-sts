@@ -368,8 +368,8 @@
     "text": "full：針對 P-256（第 3.5.8 節規定衍生證明使用的曲線）：含強制指標的基礎證明、由任意選擇性指標產生的衍生證明，以及它們的驗證（#196）——由規格本身的基礎證明所衍生的證明與其測試向量逐位元組相同，而由 Digital Bazaar 程式庫衍生的證明可在此驗證，反之亦然。"
   },
   "stsmetadata.specs.token-status-list.coverage": {
-    "en": "0e654cb76a7429ce",
-    "text": "partial：每個領域一份清單，每個憑證兩個位元（VALID、INVALID、SUSPENDED），依 Accept 以 JWT 與 CWT 形式的 Status List Token 提供，含 ttl 與 exp、一個彙總端點，以及每個 SD-JWT VC 與 jwt_vc_json 憑證中的 status 宣告；Verifier 會解析受信任外部簽發者的清單，無法做出陳述時即拒絕。另外每個領域還有第二份針對存取權杖的清單（#432）：每個權杖一個位元，每個 OAuth RFC 9068 存取權杖以及每個 GNAP jwt-signed 與 jwt-encrypted 權杖都攜帶其 status 宣告，並在授權伺服器元數據中以 status_list_aggregation_endpoint（第 9.1 節）公告。不支援歷史解析（501）、不追隨重新導向、不支援 mdoc（未簽發任何 mdoc）。"
+    "en": "b7932392e5841ca6",
+    "text": "partial：每個領域一份清單，每個憑證兩個位元（VALID、INVALID、SUSPENDED），依 Accept 以 JWT 與 CWT 形式的 Status List Token 提供，含 ttl 與 exp、一個彙總端點，以及每個 SD-JWT VC 與 jwt_vc_json 憑證中的 status 宣告；Verifier 會解析受信任外部簽發者的清單，無法做出陳述時即拒絕。另外每個領域還有第二份針對存取權杖的清單（#432）：每個權杖一個位元，每個 OAuth RFC 9068 存取權杖以及每個 GNAP jwt-signed 與 jwt-encrypted 權杖都攜帶其 status 宣告，並在授權伺服器元數據中以 status_list_aggregation_endpoint（第 9.1 節）公告。不支援歷史解析（501）、不追隨重新導向。未簽發任何 mdoc；Verifier 會解析出示之 mdoc 的 Mobile Security Object 所指名的 CWT 清單，該清單由其 x5chain 中鏈結至 oid4vp.mdocTrustAnchors 的憑證簽署（#935）。"
   },
   "stsmetadata.specs.rdf-c14n.coverage": {
     "en": "8d11604b164ce238",

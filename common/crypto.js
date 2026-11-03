@@ -10783,7 +10783,9 @@ function nodePublicKeyOf(key) {
  * @param data - the bytes signed
  * @param signature - the signature
  * @param opts - `allowInsecure`: accept an algorithm marked insecure (RS1);
- *   refused otherwise
+ *   refused otherwise. `ecdsaEncoding`: `der` (the default, WebAuthn's) or
+ *   `ieee-p1363`, the fixed-width r||s RFC 9053 section 2.1 gives a
+ *   COSE_Sign1 its ECDSA signature in (an mdoc's, #935)
  * @returns true when it verifies
  */
 function verifyCoseSignature(coseAlg, key, data, signature, opts) {
@@ -10850,8 +10852,12 @@ function verifyCoseSignature(coseAlg, key, data, signature, opts) {
     }
     let ok = false;
     if (spec.family === 'ecdsa' && type === 'ec') {
+      // WebAuthn section 6.5.5 sends DER; a COSE_Sign1 proper sends r||s
+      // (RFC 9053 section 2.1), and its caller says so (#935).
+      const encoding = opts && opts.ecdsaEncoding === 'ieee-p1363'
+        ? 'ieee-p1363' : 'der';
       ok = nodeCrypto.verify(spec.hash, message,
-                             { key: publicKey, dsaEncoding: 'der' }, sig);
+                             { key: publicKey, dsaEncoding: encoding }, sig);
     } else if (spec.family === 'eddsa' &&
                (type === 'ed25519' || type === 'ed448')) {
       ok = nodeCrypto.verify(null, message, publicKey, sig);

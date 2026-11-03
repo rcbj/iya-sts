@@ -796,13 +796,16 @@ profile asks for.
 | Sign credentials with ES256 | `oid4vci.credentialSigningAlgorithm=ES256` (RS256 is the default) |
 | Accept Wallet Attestation (`attest_jwt_client_auth`) at the token endpoint | `oauth2.clientAttestationTrustAnchors`, and under a FAPI 2.0 profile `oauth2.fapiAllowClientAttestation` — see [Attestation-based client authentication](oauth-oidc.md#attestation-based-client-authentication-wallet-attestation) |
 | Accept or require key attestations | `oid4vci.keyAttestationTrustedCertificates`, `oid4vci.keyAttestationRequired` |
-| Make an administrator's verification HAIP-shaped | `client_id_prefix: "x509_hash"` and `response_mode: "direct_post.jwt"` on the start (its default prefix is `pre-registered`, `oid4vp.clientIdPrefix`) |
+| Make an administrator's verification HAIP-shaped | `client_id_prefix: "x509_hash"`, `response_mode: "direct_post.jwt"` and a `redirect_uri` on the start (its default prefix is `pre-registered`, `oid4vp.clientIdPrefix`) |
+| Verify an ISO mdoc | `oid4vp.mdocTrustAnchors` (the issuer's IACA certificates), and `format: "mso_mdoc"` on the start — see [Accept an ISO mdoc](configure-oid4vp.md#accept-an-iso-mdoc) |
 
 The OpenID Foundation's HAIP issuer test plan runs against a realm with
 `oauth2.fapi=2-security`, Wallet Attestation trusted and allowed under FAPI
-2.0, and `x5c` (see [Conformance suites](conformance.md)).
+2.0, and `x5c`. Its HAIP verifier plan runs with an SD-JWT VC and with an
+ISO mdoc, `x509_hash`, `direct_post.jwt`, `haip-vp` and a `redirect_uri`
+(see [Conformance suites](conformance.md)).
 
-**Not covered:** `mso_mdoc` is neither issued nor verified, and the Digital
+**Not covered:** `mso_mdoc` is verified and not issued, and the Digital
 Credentials API's unsigned and multi-signed request forms and
 `transaction_data` are not implemented.
 
@@ -928,7 +931,8 @@ and the wallet sees the specification's error (`invalid_proof`,
 
 ## Limits and what is not supported
 
-* **`mso_mdoc`** is neither issued nor verified.
+* **`mso_mdoc`** is verified (from a trusted issuer) and not issued, and
+  an mdoc does not sign anybody in.
 * **DIF Presentation Exchange** is not supported; requests are DCQL.
 * **The five credential configurations are fixed.** Only their claims, signing
   algorithm and binding are configurable.

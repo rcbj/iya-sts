@@ -1370,7 +1370,10 @@ const JOBS = [
     lane: 'conformance-b' },
   // OpenID4VP 1.0 (#187): the verifier plan, by direct_post and
   // direct_post.jwt; the job plays the End-User the Verifier sends to the
-  // wallet, and makes the suite's issuer key at run time.
+  // wallet, and makes the suite's issuer key at run time. Since #935 also
+  // the HAIP verifier plan, for SD-JWT VC and ISO mdoc: four more plans with
+  // the twins, about a third more than the twelve that took seven and a
+  // half minutes (2026-11-02), well inside the two hours here.
   { file: 'sts_oid4vp_conformance.js',   browser: false,
     conformance: true, timeoutMs: 7200000,
     lane: 'conformance-b' },

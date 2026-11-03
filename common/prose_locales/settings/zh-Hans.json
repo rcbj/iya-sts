@@ -5819,6 +5819,30 @@
     "en": "8cc9cdf9a93a0260",
     "text": "验证方对出示的 SD-JWT VC 所要求的 `vct`。默认是此颁发者签发的类型；设置它可以接受另一颁发者以其自身类型签发的凭证。"
   },
+  "oid4vp.mdocTrustAnchors|label": {
+    "en": "f20c6a38b3c5c0ed",
+    "text": "受信任的 mdoc 签发机构（IACA 证书，PEM）"
+  },
+  "oid4vp.mdocTrustAnchors|description": {
+    "en": "bc0c2fd840ac9688",
+    "text": "PEM 证书，串联在一起：出示的 mdoc 的文档签名者证书必须链接到的签发机构 CA 证书（ISO/IEC 18013-5 附录 B）。证书链按 RFC 5280 的规定构建和检查，会查询文档签名者的吊销状态（pki.revocationCheck），签名者未链接到其中任何一个证书的 mdoc 会被拒绝。为空（默认值）时不信任任何 mdoc 签发者，因此在指定一个之前，mso_mdoc 出示会被拒绝。"
+  },
+  "oid4vp.expectedDoctype|label": {
+    "en": "49833f72d06c775d",
+    "text": "预期的 mdoc 文档类型（docType）"
+  },
+  "oid4vp.expectedDoctype|description": {
+    "en": "d718e92b610b1ae9",
+    "text": "mso_mdoc 请求所请求的 `docType`（`meta.doctype_value`），也是验证方要求出示的文档及其 Mobile Security Object 所具有的类型。默认值是 ISO/IEC 18013-5 的移动驾照。"
+  },
+  "oid4vp.mdocNamespace|label": {
+    "en": "8e0371b0c93613a5",
+    "text": "读取所请求声明的 mdoc 命名空间"
+  },
+  "oid4vp.mdocNamespace|description": {
+    "en": "119af9b2a1680a4c",
+    "text": "mso_mdoc 请求的声明路径所指明的命名空间（`[namespace, element]`，OpenID4VP 1.0 附录 B.2.3）。每个请求的声明都以同名的数据元素请求，但 birthdate（birth_date）和 address（resident_address）除外，ISO/IEC 18013-5 对它们的命名不同。默认值是移动驾照的命名空间。"
+  },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
     "text": "单个请求可请求的声明数"

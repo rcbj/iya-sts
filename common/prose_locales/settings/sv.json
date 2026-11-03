@@ -5819,6 +5819,30 @@
     "en": "8cc9cdf9a93a0260",
     "text": "Den `vct` som Verifiern kräver av ett presenterat SD-JWT VC. Standardvärdet är typen som den här utfärdaren skapar; ställ in den för att acceptera ett intyg som en annan utfärdare skapar under sin egen typ."
   },
+  "oid4vp.mdocTrustAnchors|label": {
+    "en": "f20c6a38b3c5c0ed",
+    "text": "Betrodda utfärdande mdoc-myndigheter (IACA-certifikat, PEM)"
+  },
+  "oid4vp.mdocTrustAnchors|description": {
+    "en": "bc0c2fd840ac9688",
+    "text": "PEM-certifikat, sammanfogade: de CA-certifikat för utfärdande myndighet (ISO/IEC 18013-5 bilaga B) som ett uppvisat mdoc:s dokumentsignerarcertifikat måste kedja till. Kedjan byggs och kontrolleras enligt RFC 5280, dokumentsignerarens återkallelse kontrolleras (pki.revocationCheck), och ett mdoc vars signerare inte kedjar till något av dem nekas. Tomt — standardvärdet — litar inte på någon mdoc-utfärdare, så en mso_mdoc-presentation nekas tills en anges."
+  },
+  "oid4vp.expectedDoctype|label": {
+    "en": "49833f72d06c775d",
+    "text": "Förväntad mdoc-dokumenttyp (docType)"
+  },
+  "oid4vp.expectedDoctype|description": {
+    "en": "d718e92b610b1ae9",
+    "text": "Den `docType` som en mso_mdoc-förfrågan ber om (`meta.doctype_value`) och som verifieraren kräver av det uppvisade dokumentet och dess Mobile Security Object. Standardvärdet är det mobila körkortet i ISO/IEC 18013-5."
+  },
+  "oid4vp.mdocNamespace|label": {
+    "en": "8e0371b0c93613a5",
+    "text": "mdoc-namnrymd som de begärda anspråken läses från"
+  },
+  "oid4vp.mdocNamespace|description": {
+    "en": "119af9b2a1680a4c",
+    "text": "Den namnrymd som en mso_mdoc-förfrågans anspråkssökvägar namnger (`[namespace, element]`, OpenID4VP 1.0 bilaga B.2.3). Varje begärt anspråk begärs som dataelementet med samma namn, utom birthdate (birth_date) och address (resident_address), som ISO/IEC 18013-5 namnger annorlunda. Standardvärdet är det mobila körkortets."
+  },
   "oid4vp.maxRequestedClaims|label": {
     "en": "efe099be2d3fb468",
     "text": "Anspråk som en begäran får be om"

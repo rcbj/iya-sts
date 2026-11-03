@@ -17216,6 +17216,37 @@ const CODES = [
       'verifier_attestation or openid_federation prefixes (#657).',
     spec: 'HTTP 500 JSON `errors` at POST /admin-api/verifications/start; ' +
       'the sign-in\'s error page' },
+  { code: 'STS-VC-0156',
+    summary: 'An mso_mdoc presentation (#935, OpenID4VP 1.0 Appendix B.2) ' +
+      'could not be read: not a base64url DeviceResponse holding one ' +
+      'Document with status 0, or its issuerAuth or Mobile Security Object ' +
+      'is not the COSE_Sign1 and #6.24-encoded map ISO/IEC 18013-5 ' +
+      'defines. The presentation is refused.',
+    spec: 'invalid_request (HTTP 400) at the Response URI; logged' },
+  { code: 'STS-VC-0157',
+    summary: 'An mso_mdoc\'s document signer certificate (its issuerAuth ' +
+      'x5chain) did not chain to a certificate in oid4vp.mdocTrustAnchors, ' +
+      'or that setting names none (#935). The presentation is refused.',
+    spec: 'invalid_request (HTTP 400) at the Response URI; logged' },
+  { code: 'STS-VC-0158',
+    summary: 'An element an mso_mdoc disclosed does not hash to the digest ' +
+      'its Mobile Security Object signed under that namespace and digestID ' +
+      '(#935): an element the issuer never signed. The presentation is ' +
+      'refused.',
+    spec: 'invalid_request (HTTP 400) at the Response URI; logged' },
+  { code: 'STS-VC-0159',
+    summary: 'An mso_mdoc authenticated its device by MAC (deviceMac), ' +
+      'whose key is agreed with a reader\'s ephemeral key that an OpenID4VP ' +
+      'request does not carry, rather than by a deviceSignature (#935). ' +
+      'The presentation is refused.',
+    spec: 'invalid_request (HTTP 400) at the Response URI; logged' },
+  { code: 'STS-VC-0160',
+    summary: 'An mso_mdoc\'s device signature did not verify under its ' +
+      'Mobile Security Object\'s device key over this request\'s session ' +
+      'transcript (OpenID4VP 1.0 Appendix B.2.6.1: the Client Identifier, ' +
+      'nonce, Response URI and encryption key), or used an algorithm not ' +
+      'offered (#935): a presentation made for another request. Refused.',
+    spec: 'invalid_request (HTTP 400) at the Response URI; logged' },
   { code: 'STS-SSF-0001',
     summary: 'A Shared Signals endpoint was called while the family is ' +
       'turned off (ssf.enabled).',
