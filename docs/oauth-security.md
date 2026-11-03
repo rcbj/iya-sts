@@ -909,6 +909,48 @@ rest of product mode stay in force — and `GET /oauth2/rfc9700` reports the row
 a FAPI profile**: OAuth 2.1 removes the implicit grant outright, and a FAPI
 profile is a stricter profile the setting does not loosen.
 
+**The waiver makes the flows possible; each application still has to have
+them enabled (#1296).** An application uses one of the four only when its
+`oauthAllowedTokenResponseTypes` lists that exact response type — empty by
+default, and empty means none. Anything else is refused
+`unauthorized_client` (RFC 6749 sections 4.1.2.1 and 4.2.2.1, `STS-OAUTH-0998`)
+where the realm waives the section, and `unsupported_response_type`
+(`STS-OAUTH-0126`) where it does not. The same holds for a pushed
+authorization request and a request object. Three doors write the list:
+
+* **an administrator**, on the application's page in the console (the
+  OAuth 2.0 / OpenID Connect sub-tab, where the enabled types are shown with
+  section 2.1.2's warning beside them) or with
+  `POST /admin-api/applications/add` (`attribute`
+  `oauthAllowedTokenResponseTypes`) or `/update-fields`;
+* **the application's owner**, through the same `/admin-api` operations with
+  an `owner:write` token, or on the user portal's page for an application they
+  own — the access-control template's default `ownerApplicationAttributes`
+  lists the attribute;
+* **a client registering itself** at `POST /oauth2/register`, for the types
+  `oauth2.dynamicRegistrationTokenResponseTypes` names (empty by default): a
+  registration asking for a listed type has it recorded on the attribute, and
+  one asking for any other is refused `invalid_client_metadata`
+  (`STS-OAUTH-0999`). An RFC 7592 update is held to the same list.
+
+A console or `/admin-api` write that adds a value while the realm does not
+allow these types is refused, naming the attribute and the setting
+(`STS-REG-0364`) — a permission the realm would refuse is not recorded. A
+remove is always allowed. Discovery still advertises what the REALM allows,
+because the metadata describes the server rather than one client. A realm
+meant for open self-registration of these flows (the OpenID Connect Dynamic
+OP profile) lists them in the setting:
+
+```bash
+curl -s -X POST https://sts.example/realm/certification/admin-api/config/set \
+  -H 'content-type: application/json' \
+  -d '{"key":"oauth2.dynamicRegistrationTokenResponseTypes",
+       "value":"token,id_token token,code token,code id_token token"}'
+```
+
+Outside RFC 9700 mode (development mode with the mode off) section 2.1.2 is
+not enforced and the attribute narrows nothing.
+
 It is set like any setting — on the realm's `/admin/oauth2` page, or through
 the management API with an administrator's `/admin-api` token, inside the realm
 (see [Changing one at runtime](configuration.md#changing-one-at-runtime)):
@@ -973,7 +1015,8 @@ documents, and **`POST /oauth2/register` refuses to register a client for it**
 registers rather than at its first token request. The same registration check
 refuses `grant_types: ["implicit"]` unless `id_token` or `code id_token` is
 what it is for, any `response_types` naming `token` (both unless an
-administrator waived section 2.1.2, above), and an
+administrator waived section 2.1.2, above — and then a type outside
+`oauth2.dynamicRegistrationTokenResponseTypes`), and an
 `http://` redirect URI off the loopback. Returning metadata silently different
 from what was asked, which RFC 7591 permits, would make a client compare the
 two documents field by field to notice.

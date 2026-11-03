@@ -27,5 +27,7 @@
   "anythingBut": "allt utom ",
   "ignoredMark": " — ignoreras",
   "notYetHeading": "Vad läget product fortfarande inte kontrollerar",
-  "waivedBy": "UNDANTAGEN I DEN HÄR SFÄREN AV EN ADMINISTRATÖR: <code>{requirement}</code> ({section}, ett {level}), eftersom <code>{setting}</code> är på. Alla andra krav i BCP:n gäller fortfarande."
+  "waivedBy": "UNDANTAGEN I DEN HÄR SFÄREN AV EN ADMINISTRATÖR: <code>{requirement}</code> ({section}, ett {level}), eftersom <code>{setting}</code> är på. Alla andra krav i BCP:n gäller fortfarande.",
+  "waivedPerApplication": "PER APPLIKATION: en applikation använder dessa svarstyper bara när dess <code>{attribute}</code> listar den den begär, satt av en administratör eller applikationens ägare. En klient som registrerar sig själv kan bara aktivera det som <code>{setting}</code> anger: {value}.",
+  "waivedPerApplicationNone": "PER APPLIKATION: en applikation använder dessa svarstyper bara när dess <code>{attribute}</code> listar den den begär, satt av en administratör eller applikationens ägare. En klient som registrerar sig själv kan inte aktivera någon av dem, eftersom <code>{setting}</code> är tom."
 }

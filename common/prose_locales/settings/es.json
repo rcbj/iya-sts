@@ -1960,8 +1960,16 @@
     "text": "Permitir tipos de respuesta con token bajo RFC 9700"
   },
   "oauth2.allowImplicitTokenResponses|description": {
-    "en": "4e3ee63eb21efc37",
-    "text": "Eximir la sección 2.1.2 de RFC 9700 (no-implicit, un SHOULD NOT) donde el modo RFC 9700 está en vigor, como lo está siempre en modo product. Activado, los tipos de respuesta que emiten un token de acceso desde el punto final de autorización (token, id_token token, code token, code id_token token) se aceptan en el punto final de autorización y en el registro dinámico, y ambos documentos de descubrimiento los anuncian junto con la concesión implícita. Todos los demás requisitos de RFC 9700, y el resto del modo product, siguen en vigor, y GET /oauth2/rfc9700 y /admin/mode informan del requisito como eximido. Existe para los perfiles OpenID Connect Implicit, Hybrid y Dynamic OP. SIN EFECTO mientras el modo OAuth 2.1 o un perfil FAPI esté activo: OAuth 2.1 elimina por completo la concesión implícita, y un perfil FAPI es un perfil más estricto que este ajuste no relaja. DESACTIVADO por defecto; se ajusta por dominio."
+    "en": "7ae0908c5a3cc1b9",
+    "text": "Eximir la sección 2.1.2 de RFC 9700 (no-implicit, un SHOULD NOT) donde el modo RFC 9700 está en vigor, como lo está siempre en modo product. Activado, los tipos de respuesta que emiten un token de acceso desde el punto final de autorización (token, id_token token, code token, code id_token token) se aceptan en el punto final de autorización y en el registro dinámico, y ambos documentos de descubrimiento los anuncian junto con la concesión implícita. Todos los demás requisitos de RFC 9700, y el resto del modo product, siguen en vigor, y GET /oauth2/rfc9700 y /admin/mode informan del requisito como eximido. Existe para los perfiles OpenID Connect Implicit, Hybrid y Dynamic OP. SIN EFECTO mientras el modo OAuth 2.1 o un perfil FAPI esté activo: OAuth 2.1 elimina por completo la concesión implícita, y un perfil FAPI es un perfil más estricto que este ajuste no relaja. POR APLICACIÓN (#1296): hace posibles estos tipos de respuesta, y una aplicación usa uno solo cuando su oauthAllowedTokenResponseTypes lo incluye (unauthorized_client en caso contrario), establecido por un administrador o por el propietario de la aplicación, o por un cliente que se registra a sí mismo dentro de oauth2.dynamicRegistrationTokenResponseTypes. DESACTIVADO por defecto; se ajusta por dominio."
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|label": {
+    "en": "4475090bccf20d35",
+    "text": "Tipos de respuesta con token que un cliente autorregistrado puede habilitar"
+  },
+  "oauth2.dynamicRegistrationTokenResponseTypes|description": {
+    "en": "acccf2f947729707",
+    "text": "Cuáles de los tipos de respuesta que emiten un token de acceso desde el punto de autorización (token, code token, id_token token, code id_token token) puede habilitar para sí mismo un cliente que se registra en POST /oauth2/register donde oauth2.allowImplicitTokenResponses exime la sección 2.1.2 de RFC 9700. Un registro que pide un tipo listado lo tiene registrado como su oauthAllowedTokenResponseTypes; uno que pide un tipo no listado se rechaza (invalid_client_metadata), y una actualización RFC 7592 se ajusta a la misma lista. VACÍO por defecto: solo un administrador o el propietario de una aplicación habilita estos tipos. Inclúyalos para un dominio pensado para el autorregistro abierto de los flujos implícito e híbrido, como el perfil OpenID Connect Dynamic OP. Sin efecto mientras la exención está desactivada, o bajo el modo OAuth 2.1 o un perfil FAPI."
   },
   "oauth2.oauth21|label": {
     "en": "49dcc27abcaff0ba",

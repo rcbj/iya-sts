@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5180** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5183** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 421
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 745
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 747
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 181
+* [Registries (`STS-REG`)](#sts-reg) — 182
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 * [Reporting (`STS-REPORT`)](#sts-report) — 54
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 14
@@ -2393,6 +2393,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0995` | A token exchange asked for a Kerberos token for more or fewer than one target, or for a target that is not a Kerberos service (#658). | invalid_target (RFC 8693 section 2.2.2), HTTP 400 |
 | `STS-OAUTH-0996` | A token exchange asked for a Kerberos token on a request that did not arrive over TLS, and its session key is in the response (#658, rcbj's decision D5). | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
 | `STS-OAUTH-0997` | The KDC could not issue the Kerberos ticket a token exchange asked for (#658); its own code is in the log line beside this one. | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
+| `STS-OAUTH-0998` | In RFC 9700 mode, with section 2.1.2 waived in the realm (oauth2.allowImplicitTokenResponses), an authorization request asked for a token response type the client's oauthAllowedTokenResponseTypes does not list (#1296). | unauthorized_client (RFC 6749 sections 4.1.2.1 and 4.2.2.1, redirected error) |
+| `STS-OAUTH-0999` | In RFC 9700 mode, with section 2.1.2 waived in the realm, a dynamic client registration or its RFC 7592 update asked for a token response type that oauth2.dynamicRegistrationTokenResponseTypes does not list (#1296). | invalid_client_metadata (HTTP 400) |
 
 ## STS-SAML
 
@@ -5816,6 +5818,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0361` | A value was added to oauthScope by hand: it records the scopes a client ASKED FOR, written as requests arrive, and what it may be issued is oauthAllowedScope. A remove is allowed (#708). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0362` | An application's krb5S4uSelfRealm was given a Kerberos realm none of this realm's trusts accepts tickets from (#430). | none (a refused administrative change) |
 | `STS-REG-0363` | oauthConfidential was given a value the token endpoint authentication method does not make, or was asked to be edited on its own. The registry writes the flag from the method: none, or no method on an application created by hand, is FALSE, and any other method is TRUE. A supplied value that disagrees is refused, and the attribute is not edited on its own (#466). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0364` | oauthAllowedTokenResponseTypes was given a token response type while the realm does not allow them: RFC 9700 mode is in force and oauth2.allowImplicitTokenResponses is off, or OAuth 2.1 mode or a FAPI profile is on (#1296). A remove is never refused. | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

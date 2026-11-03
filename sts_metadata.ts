@@ -1726,9 +1726,13 @@ const SPECS: Spec[] = [
               'client registered here as confidential must present the ' +
               'client_secret this service issued it (section 2.5, the one ' +
               'credential checked anywhere in this service). That mode also ' +
-              'refuses the password and implicit grants outright and rotates ' +
-              'refresh tokens. Section 3.3: a scope is tied to the client ' +
-              '(#110) — this service\'s own protected scopes (admin:*, the ' +
+              'refuses the password grant outright, refuses the implicit ' +
+              'grant\'s access token — every response type issuing one from ' +
+              'the authorization endpoint — unless an administrator waives ' +
+              'RFC 9700 section 2.1.2 for the realm, and then honours it ' +
+              'only for an application that has the type enabled (#1295, ' +
+              '#1296), and rotates refresh tokens. Section 3.3: a scope is ' +
+              'tied to the client (#110) — this service\'s own protected scopes (admin:*, the ' +
               'SCIM and Shared Signals scopes, the debugger permission) are ' +
               'issued only to a client whose oauthAllowedScope declares ' +
               'them, in every mode, and in product mode every scope is held ' +

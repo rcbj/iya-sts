@@ -4344,13 +4344,17 @@ const TEMPLATES: TemplateRow[] = [
         dflt: 'appName, description, appHomePageUrl, appCorsOrigin, ' +
               'oauthRedirectUri, oauthPostLogoutRedirectUri, ' +
               'oauthFrontchannelLogoutUri, oauthBackchannelLogoutUri, ' +
-              'samlAssertionConsumerService, samlSingleLogoutService',
+              'samlAssertionConsumerService, samlSingleLogoutService, ' +
+              'oauthAllowedTokenResponseTypes',
         type: 'list',
         help: 'Comma- or newline-separated attribute names. set, add, remove ' +
               'and update-fields are permitted only when EVERY attribute ' +
               'they write is listed. Leave out what turns an application ' +
               'into a bigger credential: its scopes, roles, grant types, ' +
-              'keys and delegation.' },
+              'keys and delegation. oauthAllowedTokenResponseTypes is in ' +
+              'the default by rcbj\'s decision on #1296: an owner may ' +
+              'enable a token response type their realm allows, and the ' +
+              'registry refuses one it does not.' },
       // THE REPORT RULE (#1030): a report administrator on any row, and a
       // shared group's member on the listed actions. An owner needs none of
       // it — the first rule permits them — and an application is never a
@@ -4609,11 +4613,15 @@ const TEMPLATES: TemplateRow[] = [
           'regenerate-secret, rotate-secret, add-secret, remove-secret, ' +
           'owner-share, owner-unshare, owner-approve, owner-refuse')
       };
+      // #1296: the token response types an application may use are an
+      // owner's to enable (rcbj's decision), within what the realm allows —
+      // applications.js refuses a value the realm does not (STS-REG-0364).
       const ownerAttributes = listedOr('ownerApplicationAttributes',
         'appName, description, appHomePageUrl, appCorsOrigin, ' +
         'oauthRedirectUri, oauthPostLogoutRedirectUri, ' +
         'oauthFrontchannelLogoutUri, oauthBackchannelLogoutUri, ' +
-        'samlAssertionConsumerService, samlSingleLogoutService');
+        'samlAssertionConsumerService, samlSingleLogoutService, ' +
+        'oauthAllowedTokenResponseTypes');
       // One arm per kind with an action list: the object is of that kind
       // AND the action is on its list.
       const actionArms = Object.keys(ownerActions).filter(function (kind) {

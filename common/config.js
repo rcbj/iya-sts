@@ -4746,7 +4746,58 @@ const SETTINGS = [
                  'and Dynamic OP profiles. NO EFFECT while OAuth 2.1 mode or ' +
                  'a FAPI profile is on: OAuth 2.1 removes the implicit grant ' +
                  'outright, and a FAPI profile is a stricter profile this ' +
-                 'setting does not loosen. OFF by default; set it per realm.' },
+                 'setting does not loosen. PER APPLICATION (#1296): it makes ' +
+                 'these response types possible, and an application uses ' +
+                 'one only when its oauthAllowedTokenResponseTypes lists it ' +
+                 '(unauthorized_client otherwise), set by an administrator ' +
+                 'or the application\'s owner, or by a client registering ' +
+                 'itself within ' +
+                 'oauth2.dynamicRegistrationTokenResponseTypes. OFF by ' +
+                 'default; set it per realm.' },
+
+  // ---------------------------------------------------------------------
+  // WHICH TOKEN RESPONSE TYPES A CLIENT REGISTERING ITSELF MAY ENABLE
+  // (#1296, rcbj's decision 3, 2026-11-03).
+  //
+  // The row above makes the four POSSIBLE in a realm; an application uses
+  // one only when its `oauthAllowedTokenResponseTypes` lists it. An
+  // administrator or the application's owner writes that list, and a client
+  // registering itself at POST /oauth2/register writes it too — the types it
+  // registers ARE it enabling them — so this row says which it may. EMPTY by
+  // default, so a production realm that waives section 2.1.2 for one
+  // administered application does not open the flows to every client that
+  // registers itself; a realm meant for open self-registration of them (the
+  // OpenID Foundation's Dynamic OP plan) lists them here. A type outside it
+  // is refused `invalid_client_metadata` (STS-OAUTH-0999), and RFC 7592's
+  // update is held to it the same way. It is read only where the row above
+  // is in force, so it has no effect on its own.
+  //
+  // `csvValues` mirrors applications.js's TOKEN_RESPONSE_TYPES, each value
+  // with its words in the metadata's order (`tests/closed_setting_values.js`
+  // holds them equal). `runtime: true`: read per registration through the
+  // realm layer.
+  { key: 'oauth2.dynamicRegistrationTokenResponseTypes',
+    group: 'OAuth 2.0 / OIDC',
+    label: 'Token response types a self-registering client may enable',
+    env: 'STS_OAUTH2_DYNAMIC_REGISTRATION_TOKEN_RESPONSE_TYPES', type: 'csv',
+    dflt: '', runtime: true,
+    csvValues: ['token', 'code token', 'id_token token',
+                'code id_token token'],
+    description: 'Which of the response types that issue an access token ' +
+                 'from the authorization endpoint (token, code token, ' +
+                 'id_token token, code id_token token) a client registering ' +
+                 'itself at POST /oauth2/register may enable for itself ' +
+                 'where oauth2.allowImplicitTokenResponses waives RFC 9700 ' +
+                 'section 2.1.2. A registration asking for a listed type ' +
+                 'has it recorded as its oauthAllowedTokenResponseTypes; one ' +
+                 'asking for a type not listed is refused ' +
+                 '(invalid_client_metadata), and an RFC 7592 update is held ' +
+                 'to the same list. EMPTY by default: only an administrator ' +
+                 'or an application\'s owner enables these types. List them ' +
+                 'for a realm meant for open self-registration of the ' +
+                 'implicit and hybrid flows, such as the OpenID Connect ' +
+                 'Dynamic OP profile. No effect while the waiver is off, or ' +
+                 'under OAuth 2.1 mode or a FAPI profile.' },
 
   // ---------------------------------------------------------------------
   // OAUTH 2.1 MODE (2026-09-13), AND IT IMPLIES THE ROW ABOVE.

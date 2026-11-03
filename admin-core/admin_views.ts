@@ -9907,6 +9907,28 @@ class AdminViews {
       declaredScopes = declaredScopes
         .concat(listOf('oauthDelegatedPermission'), delegated);
     }
+    // THE TOKEN RESPONSE TYPES ENABLED ON THIS APPLICATION (#1296), and
+    // whether the realm honours them: `enforced` is RFC 9700 mode, `waived`
+    // section 2.1.2 waived by an administrator. The console draws the list
+    // with section 2.1.2's warning beside it. `oauth2_bcp.js` is asked
+    // LAZILY: it is built with oauth2 (9), after this file is required.
+    let bcpState = { enforced: false, waived: false };
+    try {
+      const bcp = require('../oauth-oidc/oauth2_bcp');
+      bcpState = { enforced: !!bcp.enabled(), waived: !!bcp.implicitWaived() };
+    } catch (e) {
+      log.debug("Caught in AdminViews.applicationObservedState(): " +
+                ((e && e.message) || e));
+      // A view tested on its own, with no OAuth stack: the list is still
+      // drawn, and the sentence beside it says the mode is off.
+      bcpState = { enforced: false, waived: false };
+    }
+    const tokenResponseTypes = {
+      enabled: listOf('oauthAllowedTokenResponseTypes')
+        .map(applications.canonicalResponseType),
+      enforced: bcpState.enforced,
+      waived: bcpState.waived
+    };
     const signed = String(fields.samlAuthnRequestSigned || '');
     const out = {
       oauthGrantTypeObserved: marked('oauthGrantTypeObserved',
@@ -9924,7 +9946,8 @@ class AdminViews {
                         this.verificationOf(
                           fields.samlAuthnRequestVerification))
         : null,
-      samlObservedSigningCertificate: certificate
+      samlObservedSigningCertificate: certificate,
+      oauthAllowedTokenResponseTypes: tokenResponseTypes
     };
     log.debug("Leaving AdminViews.applicationObservedState().");
     return out;

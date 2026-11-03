@@ -82,7 +82,10 @@ const CSV_ROWS = ['gnap.tokenFormats', 'gnap.interactionStartModes',
                   'krb5.enctypes', 'ssf.deliveryMethods',
                   'caep.autoEmitTypes', 'risc.autoEmitTypes',
                   // #693: the configurations bound to the person's DID.
-                  'oid4vci.didHolderBinding'];
+                  'oid4vci.didHolderBinding',
+                  // #1296: the token response types a self-registering
+                  // client may enable.
+                  'oauth2.dynamicRegistrationTokenResponseTypes'];
 
 // A value no set here holds. Upper and lower case and a digit, so that no
 // case-folding reader could mistake it for one of its own.
@@ -166,6 +169,9 @@ function childMain() {
     });
     probe('risc.subjectFormat', function () {
       return rq('ssf/ssf_subjects').PERSON_FORMATS.slice();
+    });
+    probe('oauth2.dynamicRegistrationTokenResponseTypes', function () {
+      return rq('common/applications').TOKEN_RESPONSE_TYPES.slice();
     });
     probe('gnap.tokenFormats', function () {
       return rq('gnap/gnap_tokens').FORMATS.slice();

@@ -10869,6 +10869,19 @@ const CODES = [
     summary: 'The KDC could not issue the Kerberos ticket a token exchange ' +
       'asked for (#658); its own code is in the log line beside this one.',
     spec: 'invalid_request (RFC 8693 section 2.2.2), HTTP 400' },
+  { code: 'STS-OAUTH-0998',
+    summary: 'In RFC 9700 mode, with section 2.1.2 waived in the realm ' +
+      '(oauth2.allowImplicitTokenResponses), an authorization request asked ' +
+      'for a token response type the client\'s ' +
+      'oauthAllowedTokenResponseTypes does not list (#1296).',
+    spec: 'unauthorized_client (RFC 6749 sections 4.1.2.1 and 4.2.2.1, ' +
+      'redirected error)' },
+  { code: 'STS-OAUTH-0999',
+    summary: 'In RFC 9700 mode, with section 2.1.2 waived in the realm, a ' +
+      'dynamic client registration or its RFC 7592 update asked for a token ' +
+      'response type that oauth2.dynamicRegistrationTokenResponseTypes does ' +
+      'not list (#1296).',
+    spec: 'invalid_client_metadata (HTTP 400)' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -26114,6 +26127,12 @@ const CODES = [
       'method on an application created by hand, is FALSE, and any other ' +
       'method is TRUE. A supplied value that disagrees is refused, and the ' +
       'attribute is not edited on its own (#466).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0364',
+    summary: 'oauthAllowedTokenResponseTypes was given a token response ' +
+      'type while the realm does not allow them: RFC 9700 mode is in force ' +
+      'and oauth2.allowImplicitTokenResponses is off, or OAuth 2.1 mode or ' +
+      'a FAPI profile is on (#1296). A remove is never refused.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +

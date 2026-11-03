@@ -559,6 +559,10 @@
     "en": "6be9c178253c7d2c",
     "text": "Les valeurs de response_type que ce client peut demander — les response_types de RFC 7591 section 2, issus d’un enregistrement ou écrits par un administrateur, chaque valeur étant un type de réponse (\"code\", \"code id_token\"). Le point de terminaison d’autorisation refuse tout autre type (unauthorized_client), dans tous les modes ; une liste vide ne restreint rien. Ce que le client a effectivement demandé figure dans oauthResponseTypeObserved."
   },
+  "applications.schema.attributes.oauthAllowedTokenResponseTypes.what": {
+    "en": "6cd0b6407f668091",
+    "text": "Les types de réponse qui émettent un jeton d’accès depuis le point de terminaison d’autorisation — token, code token, id_token token, code id_token token — que ce client peut utiliser là où le mode RFC 9700 est en vigueur (le mode product l’est toujours). Honorés uniquement tant que le domaine lève la section 2.1.2 de la RFC 9700 (oauth2.allowImplicitTokenResponses, jamais sous OAuth 2.1 ou FAPI) ; un type non listé ici est alors refusé (unauthorized_client). VIDE par défaut, et vide signifie aucun. Écrit par un administrateur ou par le propriétaire de l’application tant que le domaine autorise ces types, ou par un enregistrement dynamique dans les limites de oauth2.dynamicRegistrationTokenResponseTypes. La section 2.1.2 de la RFC 9700 dit que les clients NE DEVRAIENT PAS les utiliser."
+  },
   "applications.schema.attributes.oauthGrantTypeObserved.what": {
     "en": "377bd68db76fa783",
     "text": "Un type d’octroi que ce client a été vu utiliser au point de terminaison de jeton. Un enregistrement, pas une permission : oauthGrantType est ce qu’il peut utiliser."

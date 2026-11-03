@@ -2534,6 +2534,10 @@ an owner only by this rule.
 leave out what turns owning into Admin: `create`, delete and rename,
 `add-permission` on a role, `set-service-account`, `reveal-secret`, and an
 application's scopes, roles, grant types, keys and delegation.
+The one flow an owner MAY enable is `oauthAllowedTokenResponseTypes` (#1296,
+rcbj's decision): the token response types the application may use, which
+the realm must allow first — the registry refuses a value it does not
+(`STS-REG-0364`), so owning an application never widens the realm.
 
 **THE PIP ANSWERS THREE MORE DESIGNATORS** (`xacml_pip.ts`'s `ownerFact()`),
 out of `common/ownership.ts`: `object-owner` and `object-protected` — the ONE

@@ -71,8 +71,32 @@ class ModePage {
           requirement: String(one.requirement || ''),
           section: String(one.section || ''),
           level: String(one.level || ''),
-          setting: String(one.setting || '') }) + '</p>') + '</td></tr>';
+          setting: String(one.setting || '') }) + '</p>' +
+          ModePage.perApplication(one, t)) + '</td></tr>';
     }).join('');
+  }
+
+  /**
+   * Draws what a per-application waiver adds (#1296): that an application
+   * uses the waived response types only when its own attribute lists them,
+   * and which of them a client registering itself may enable, by the setting
+   * that says so. Nothing for a waiver that is not per application.
+   *
+   * @param one - one entry of a row's `waived`
+   * @param t - the page's translator (#539)
+   * @returns the paragraph as HTML
+   */
+  static perApplication(one: Json, t: Json): string {
+    if (!one || !one.perApplication) {
+      return '';
+    }
+    const dynamic = one.dynamicRegistration || {};
+    const value: string[] = Array.isArray(dynamic.value) ? dynamic.value : [];
+    const args = { attribute: String(one.attribute || ''),
+                   setting: String(dynamic.setting || ''),
+                   value: value.join(', ') };
+    return '<p>' + t.html(value.length ? 'consoleMode.waivedPerApplication'
+      : 'consoleMode.waivedPerApplicationNone', args) + '</p>';
   }
 
   /**

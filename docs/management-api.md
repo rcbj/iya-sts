@@ -359,7 +359,7 @@ widen them with an override on `/admin/xacml`.
 | Role | `describe-role`, `add-member`, `remove-member`, `add-owner`, `remove-owner` |
 | Group | `add-member`, `add-owner`, `remove-owner` |
 | Service account | `add-service-account-owner`, `remove-service-account-owner`, `set-service-account-destination`, `rotate-password` |
-| Application | `set`, `add`, `remove` and `update-fields` (on `appName`, `description`, `appHomePageUrl`, `appCorsOrigin`, `oauthRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthFrontchannelLogoutUri`, `oauthBackchannelLogoutUri`, `samlAssertionConsumerService`, `samlSingleLogoutService`), `add-owner`, `remove-owner`, `regenerate-secret`, `rotate-secret`, `add-secret`, `remove-secret` |
+| Application | `set`, `add`, `remove` and `update-fields` (on `appName`, `description`, `appHomePageUrl`, `appCorsOrigin`, `oauthRedirectUri`, `oauthPostLogoutRedirectUri`, `oauthFrontchannelLogoutUri`, `oauthBackchannelLogoutUri`, `samlAssertionConsumerService`, `samlSingleLogoutService`, `oauthAllowedTokenResponseTypes`), `add-owner`, `remove-owner`, `regenerate-secret`, `rotate-secret`, `add-secret`, `remove-secret` |
 
 **Closed to its owners.** Some objects are closed to their owners, whoever
 they are:
