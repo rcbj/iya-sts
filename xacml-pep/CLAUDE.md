@@ -379,6 +379,26 @@ bias decides — which for the default deny-biased PEP means refusing everything
 "No policy" and "a policy that permits nothing" are indistinguishable from
 outside and want opposite fixes, which is why they are two different reports.
 
+### Several instances are NOT a cluster, and must not become one (#676)
+
+**rcbj's decision on #676 (2026-11-03): no clustering concept.** The ticket
+asked for one; reviewing it found nothing to coordinate. Everything an
+instance holds is pulled (the policy set, the AuthZEN catalogue and callers),
+its own (the counters, which a heartbeat SETS), read from disk (the listener
+pair) or fetched per decision and not kept (the PIP). The PDP is already the
+single source of policy, so a peer could only hand an instance a copy that
+might be OLDER, and being behind is already the handled state above. Peer
+coordination would add a failure mode and buy no correctness. **A change that
+makes one instance depend on another, or hold something only another has, is
+reversing that decision** and needs the argument made with rcbj first.
+
+What scaling DOES involve is the credential choice, and it is the PDP's
+register that makes it a choice: one certificate is one row, and a heartbeat
+replaces the row's notify URL and counters, so instances sharing a
+certificate show as one row that flips between them and are nudged one at a
+time. `docs/remote-pep.md`, *Running more than one*, is where that is told to
+an operator; it is not repeated here.
+
 ---
 
 ## Configuration
