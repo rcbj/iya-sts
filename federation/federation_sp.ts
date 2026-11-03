@@ -6008,9 +6008,7 @@ class FederationSp {
   // configured URL is a different thing from a registered one.
   // ---------------------------------------------------------------------------
   private consumeOauthResponse(req, res, record, params) {
-    const {
-      config, fedHttp, errorCodes, log, xmlEscape, baseUrlOf
-    } = this.deps;
+    const { config, errorCodes, log, xmlEscape, baseUrlOf } = this.deps;
     log.debug("Entering FederationSp.consumeOauthResponse(). protocol=" +
               record.fedProtocol);
     if (params.error) {
