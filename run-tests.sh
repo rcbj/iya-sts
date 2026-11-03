@@ -182,6 +182,10 @@ CLUSTER_COMPOSE_FILE="tests/docker-compose-run-tests-cluster.yml"
 # only in that mode, which runs only when named (`--modes=cells`); its header
 # argues the stack and tests/tools/modes.sh the mode.
 CELLS_COMPOSE_FILE="tests/docker-compose-run-tests-cells.yml"
+# THE `mariadb` MODE'S LAYER (#677): the store on the stack's MariaDB server,
+# its schema built by a one-shot from mariadb/schema.sql. Only in that mode,
+# which runs only when named (`--modes=mariadb`); its header argues it.
+MARIADB_COMPOSE_FILE="tests/docker-compose-run-tests-mariadb.yml"
 COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
 # Overridable so that two runs on one machine — a CI agent with two workspaces —
 # do not share a project: compose scopes containers, networks and images by it,
@@ -1851,6 +1855,11 @@ do
   # runner is handed cell A as the service, as `sts` in every mode, and
   # both cells by name through the layer. Cell B's address is pinned like
   # `cluster`'s node B, because `sts2` extends `sts`, whose address is.
+  # ---- THE `mariadb` MODE: THE STORE ON MARIADB (#677) -----------------
+  if stsModeIsMariadb "${MODE}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${MARIADB_COMPOSE_FILE}")
+  fi
   if stsModeIsCells "${MODE}";
   then
     COMPOSE_FILE_ARGS+=(-f "${CELLS_COMPOSE_FILE}")
@@ -1939,6 +1948,11 @@ do
   if stsModeIsCells "${MODE}";
   then
     UP_NO_ATTACH+=(--no-attach sts-cell-kek)
+  fi
+  # The `mariadb` mode's schema one-shot exits 0 by design too (#677).
+  if stsModeIsMariadb "${MODE}";
+  then
+    UP_NO_ATTACH+=(--no-attach mariadb-store-schema)
   fi
   # The profiles this mode brings up, joined once below: compose reads ONE
   # COMPOSE_PROFILES, and the conformance suite and the SAML peers can both

@@ -71,7 +71,8 @@ function modesFromTheShell() {
     // `cells` since 2026-09-28 (#98): a fourth block, asked for by name
     // (`--modes=cells`) and not in STS_ALL_MODES.
     // `cluster-portable` since 2026-11-03 (#677): a fifth, by name only.
-    const arm = /^\s{4}(memory|single-node|cluster|cluster-portable|cells)\)\s*$/
+    // `mariadb` since 2026-11-03 (#677): a sixth, by name only.
+    const arm = /^\s{4}(memory|single-node|mariadb|cluster|cluster-portable|cells)\)\s*$/
       .exec(line);
     if (arm) {
       current = arm[1];
@@ -98,8 +99,8 @@ function run(t) {
   // Three since 2026-09-21 (memory, single-node, cluster); four before, and
   // four again since 2026-09-28 (#98's `cells`, which a bare run does not
   // run but which names every variable all the same).
-  t.check(modes.length === 5,
-          'modes.sh defines five modes, each as a block of NAME=value lines',
+  t.check(modes.length === 6,
+          'modes.sh defines six modes, each as a block of NAME=value lines',
           modes.join(', '));
 
   // ---------------------------------------------------------------------

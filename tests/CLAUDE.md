@@ -4094,6 +4094,22 @@ over every bundle and a comma-separated pin list, which is
 `--ignore-certificate-errors-spki-list`'s own syntax; in every other mode it is
 the one fetch it always was.
 
+### `mariadb`: the single-node deployment with its store on MariaDB (#677)
+
+`./run-tests.sh --modes=mariadb` runs `single-node`'s values with
+`STS_PERSISTENCE_MODE=mariadb`, layering
+`tests/docker-compose-run-tests-mariadb.yml`: a one-shot,
+`mariadb-store-schema`, makes the database `sts_store` on the stack's
+`mariadb` server (beside the attribute source's `sts`) and runs
+`mariadb/schema.sql` into it as the owner; the service dials it as `sts_app`
+over verified TLS, trusting the certificate `mariadb-tls` minted, with the
+password from the secret store. It runs only when named, like `cells`.
+**A failure here and not in `single-node` is a finding about the MariaDB
+driver** (`persistence/CLAUDE.md`, *`persistence.mode=mariadb`*). Jobs that
+dial PostgreSQL themselves (`sts_persistence_postgres.js` and its kin) are
+PostgreSQL's and are expected to say so in this mode; they owe a skip by
+mode, which the first run will list.
+
 ### `cluster-portable`: the same mode on the portable statements (#677)
 
 `./run-tests.sh --modes=cluster-portable` runs this mode with one value more,

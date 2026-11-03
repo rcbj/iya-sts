@@ -48,9 +48,13 @@
 -- ---------------------------------------------------------------------------
 
 -- THE SERVICE'S OWN SESSION (`persistence/knex_store.js`, MARIADB_SESSION),
--- so the DDL is checked as strictly as the rows will be, and so the quoting
--- below means the same thing whatever the server's default mode is.
-SET NAMES utf8mb4 COLLATE utf8mb4_bin;
+-- so the DDL is checked as strictly as the rows will be — PLUS
+-- `NO_BACKSLASH_ESCAPES`, which the service's session leaves out (`mysql2`
+-- escapes bound values with a backslash on the client) and this script needs:
+-- the password below is quoted by doubling quotes, which is only the whole of
+-- quoting when a backslash is an ordinary character. This script is run by
+-- the `mariadb` client, which binds nothing.
+SET NAMES utf8mb4 COLLATE utf8mb4_nopad_bin;
 SET SESSION time_zone = '+00:00';
 SET SESSION sql_mode = 'STRICT_ALL_TABLES,NO_ZERO_DATE,NO_ENGINE_SUBSTITUTION,PIPES_AS_CONCAT,NO_BACKSLASH_ESCAPES,ERROR_FOR_DIVISION_BY_ZERO';
 
