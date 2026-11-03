@@ -121,7 +121,7 @@ async function run(t) {
     return driver.clearWindow('rw', 'default', 'k');
   });
   t.check(optionsOf(statements, /INSERT INTO sts_cluster_windows/) === ASYNC &&
-          optionsOf(statements, /DELETE FROM sts_cluster_windows/) === ASYNC,
+          optionsOf(statements, /sts:clearWindow /) === ASYNC,
           'T1. the shared rate-limit window count and clear commit ' +
           'asynchronously', JSON.stringify(statements.map(function (one) {
             return one.options + ' ' + one.sql.slice(0, 40);
