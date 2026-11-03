@@ -24,9 +24,10 @@
 // What IS shared, and must be, is the canonical form. bbs-2023 signs
 // canonical N-Quad statements, so both sides run the same `jsonld`
 // canonicalization over the same contexts. A one-byte difference there fails
-// every signature while looking exactly like a crypto bug — which is why the
-// debugger's wallet needs this issuer's identity context too before it can
-// derive a proof from a credential issued here (#663).
+// every signature while looking exactly like a crypto bug — so a wallet
+// needs this issuer's identity context before it can derive a proof from a
+// credential issued here. Nothing here is vendored to or from the parent
+// any more (rcbj, #663).
 //
 // The library is ESM-only and this service is CommonJS, so it is loaded with
 // a dynamic import() the first time it is needed and then kept.
