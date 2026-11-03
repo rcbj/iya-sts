@@ -1587,6 +1587,30 @@
     "en": "51cd295b713684de",
     "text": "May signing key form na tinanggihan dahil sa CSRF token nito"
   },
+  "audit.actions.portal.signing-key.revoked.label": {
+    "en": "55c1155d5daa1c68",
+    "text": "Binawi ng isang tao ang isa sa kanyang mga pares ng susi sa paglagda"
+  },
+  "audit.actions.did.person.published.label": {
+    "en": "36165dbbaae0269a",
+    "text": "Naglathala ang isang tao ng sarili niyang did:web"
+  },
+  "audit.actions.did.person.version.label": {
+    "en": "0817a3adcc1f1b73",
+    "text": "Nagkaroon ng bagong bersyon ang nailathalang DID document ng isang tao"
+  },
+  "audit.actions.did.person.authorized.label": {
+    "en": "ea87815291cf0868",
+    "text": "Pinahintulutan ng isang tao ang isang susi sa kanyang nailathalang DID"
+  },
+  "audit.actions.did.person.deactivated.label": {
+    "en": "9ec36f274ed073e6",
+    "text": "Dini-activate ng isang tao ang kanyang nailathalang DID"
+  },
+  "audit.actions.admin.did.deactivated.label": {
+    "en": "c5c4cc37c96da0e8",
+    "text": "Dini-activate ng isang administrator ang nailathalang DID ng isang tao"
+  },
   "audit.actions.portal.siop.enrol.label": {
     "en": "9c4ac2b8893fae20",
     "text": "Nag-enroll ang isang tao ng self-issued subject sa pamamagitan ng pagpapatunay nito gamit ang wallet"

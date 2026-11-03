@@ -1520,6 +1520,20 @@ const ACTIONS = [
     label: 'A person took their signing key pair off' },
   { action: 'portal.signing-key.csrf', category: 'authentication',
     label: 'A signing key form was refused for its CSRF token' },
+  // #1290: a person's key pair is removed by REVOKING it, row by row.
+  { action: 'portal.signing-key.revoked', category: 'authentication',
+    label: 'A person revoked one of their signing key pairs' },
+  // #1291: a person's own did:web, published from the user portal.
+  { action: 'did.person.published', category: 'authentication',
+    label: 'A person published a did:web of their own' },
+  { action: 'did.person.version', category: 'authentication',
+    label: 'A person\'s published DID document gained a new version' },
+  { action: 'did.person.authorized', category: 'authentication',
+    label: 'A person authorized a key on their published DID' },
+  { action: 'did.person.deactivated', category: 'authentication',
+    label: 'A person deactivated their published DID' },
+  { action: 'admin.did.deactivated', category: 'authentication',
+    label: 'An administrator deactivated a person\'s published DID' },
   { action: 'portal.siop.enrol', category: 'authentication',
     label: 'A person enrolled a self-issued subject by proving it with a ' +
            'wallet' },

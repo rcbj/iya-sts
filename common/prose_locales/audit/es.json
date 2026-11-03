@@ -1587,6 +1587,30 @@
     "en": "51cd295b713684de",
     "text": "Se rechazó un formulario de clave de firma por su token CSRF"
   },
+  "audit.actions.portal.signing-key.revoked.label": {
+    "en": "55c1155d5daa1c68",
+    "text": "Una persona revocó uno de sus pares de claves de firma"
+  },
+  "audit.actions.did.person.published.label": {
+    "en": "36165dbbaae0269a",
+    "text": "Una persona publicó su propio did:web"
+  },
+  "audit.actions.did.person.version.label": {
+    "en": "0817a3adcc1f1b73",
+    "text": "El documento DID publicado de una persona recibió una nueva versión"
+  },
+  "audit.actions.did.person.authorized.label": {
+    "en": "ea87815291cf0868",
+    "text": "Una persona autorizó una clave en su DID publicado"
+  },
+  "audit.actions.did.person.deactivated.label": {
+    "en": "9ec36f274ed073e6",
+    "text": "Una persona desactivó su DID publicado"
+  },
+  "audit.actions.admin.did.deactivated.label": {
+    "en": "c5c4cc37c96da0e8",
+    "text": "Un administrador desactivó el DID publicado de una persona"
+  },
   "audit.actions.portal.siop.enrol.label": {
     "en": "9c4ac2b8893fae20",
     "text": "Una persona inscribió un sujeto autoemitido demostrándolo con una billetera"
