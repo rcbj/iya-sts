@@ -23,7 +23,7 @@ library is under the MIT License.
 | Python | [PyPI](https://pypi.org/) |
 | Java | [Maven Central](https://central.sonatype.com/namespace/com.iyasec), group `com.iyasec` |
 | Rust | [crates.io](https://crates.io/), with API documentation on [docs.rs](https://docs.rs/) |
-| Go | No tagged release yet; `go get` resolves the latest commit through the Go module proxy |
+| Go | Git tags `v<version>`, served by the [Go module proxy](https://pkg.go.dev/), with API documentation on pkg.go.dev |
 | C# | [NuGet](https://www.nuget.org/profiles/IyaSec) |
 | C and C++ | Not published to a package manager; build it from the repository |
 | Swift | [GitHub Releases](https://github.com/rcbj/swift-oidc-caep-native-app/releases), through Swift Package Manager |
@@ -211,9 +211,9 @@ Add one with `cargo add <crate>`.
 ### Go
 
 The module path is `github.com/rcbj/` plus the repository name. The
-repositories require Go 1.27. There is no tagged release yet, so
-`go get github.com/rcbj/<repository>@latest` resolves the latest commit on
-`main` through the Go module proxy.
+repositories require Go 1.27. Each release is a `v<version>` git tag, so
+`go get github.com/rcbj/<repository>@latest` resolves the latest release
+through the Go module proxy, and `@v<version>` pins one.
 
 | Module | Protocol | Repository | Documentation |
 |---|---|---|---|
