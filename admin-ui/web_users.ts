@@ -3122,24 +3122,27 @@ class UsersPage {
       return '<option value="' + kit.esc(one.id) + '">' + kit.esc(one.label) +
              '</option>';
     }).join('');
-    const T = function (k, v?) {
-      return t.html('consoleUsers.userCredentialsSection.' + k, v);
-    };
     const reasons = (state.revocationReasons ||
                      ['cessationOfOperation', 'keyCompromise'])
       .map(function (one) {
         return '<option value="' + kit.esc(one) + '">' +
-               (one === 'keyCompromise' ? T('reasonCompromise')
-                                        : T('reasonCessation')) +
+               (one === 'keyCompromise'
+                 ? t.html(
+                   'consoleUsers.userCredentialsSection.reasonCompromise')
+                 : t.html(
+                   'consoleUsers.userCredentialsSection.reasonCessation')) +
                '</option>';
       }).join('');
     const stateWord = function (one) {
-      const word = { valid: 'stateValid', expired: 'stateExpired',
-                     revoked: 'stateRevoked',
-                     superseded: 'stateSuperseded' }[one.state];
+      const words = {
+        valid: t.html('consoleUsers.userCredentialsSection.stateValid'),
+        expired: t.html('consoleUsers.userCredentialsSection.stateExpired'),
+        revoked: t.html('consoleUsers.userCredentialsSection.stateRevoked'),
+        superseded:
+          t.html('consoleUsers.userCredentialsSection.stateSuperseded') };
       return '<span class="state-' + (one.state === 'valid' ? 'valid'
                                                             : 'none') + '">' +
-             (word ? T(word) : kit.esc(one.state)) + '</span>' +
+             (words[one.state] || kit.esc(one.state)) + '</span>' +
              (one.reason ? ' <span class="sub">(' + kit.esc(one.reason) +
                            (one.revokedAt ? ', ' +
                              kit.esc(one.revokedAt.slice(0, 10)) : '') +
@@ -3163,7 +3166,9 @@ class UsersPage {
           '">' + reasons + '</select> ' +
           '<button type="submit" class="danger"' +
           kit.tip(t.text('consoleUsers.userCredentialsSection.revokeTip')) +
-          '>' + T('revoke') + '</button></form>';
+          '>' +
+            t.html('consoleUsers.userCredentialsSection.revoke') +
+            '</button></form>';
       };
       const rows = p.keys.map(function (one) {
         const chain = one.chain.length
@@ -3171,7 +3176,9 @@ class UsersPage {
               return '<li>' + ApplicationsPage.certificateCells(link, t) +
                      '</li>';
             }).join('') + '</ol>'
-          : '<span class="state-none">' + T('noneStored') + '</span>';
+          : '<span class="state-none">' +
+            t.html('consoleUsers.userCredentialsSection.noneStored') +
+            '</span>';
         return '<tr><td>' + (one.label ? kit.esc(one.label) : '&mdash;') +
           '</td><td><code>' + kit.esc(one.handle || '—') + '</code>' +
           '<div class="sub">' + kit.esc(p.handleLabel) + '</div></td><td>' +
@@ -3180,49 +3187,71 @@ class UsersPage {
           stateWord(one) + '</td><td>' +
           kit.esc(one.notAfter ? one.notAfter.slice(0, 10) : '—') +
           '</td><td>' + (one.privateKeyHeld
-            ? '<span class="state-valid">' + T('heldHere') + '</span>' +
-              (state.sealsAtRest ? T('sealedAtRest') : '')
-            : '<span class="state-none">' + T('notHeld') + '</span>') +
+            ? '<span class="state-valid">' +
+              t.html('consoleUsers.userCredentialsSection.heldHere') +
+              '</span>' +
+              (state.sealsAtRest ?
+                t.html('consoleUsers.userCredentialsSection.sealedAtRest') : '')
+            : '<span class="state-none">' +
+              t.html('consoleUsers.userCredentialsSection.notHeld') +
+              '</span>') +
           '</td><td>' + ApplicationsPage.certificateCells(one.certificate, t) +
-          '<details><summary>' + T('chain') + '</summary>' + chain +
+          '<details><summary>' +
+            t.html('consoleUsers.userCredentialsSection.chain') +
+            '</summary>' + chain +
           '</details></td>' +
           (gate.write ? '<td>' + (one.state === 'valid' ? revokeForm(one)
                                                        : '') + '</td>' : '') +
           '</tr>';
       }).join('');
       const table = p.keys.length
-        ? '<table><thead><tr><th>' + T('thLabel') + '</th><th>' +
-          T('handle') + '</th><th>' +
+        ? '<table><thead><tr><th>' +
+          t.html('consoleUsers.userCredentialsSection.thLabel') + '</th><th>' +
+          t.html('consoleUsers.userCredentialsSection.handle') + '</th><th>' +
           t.html('consoleUsers.mfaSection.thSource') + '</th><th>' +
-          T('thState') + '</th><th>' + T('thExpires') + '</th><th>' +
-          T('privateKey') + '</th><th>' + T('certificate') + '</th>' +
+          t.html('consoleUsers.userCredentialsSection.thState') + '</th><th>' +
+            t.html('consoleUsers.userCredentialsSection.thExpires') +
+            '</th><th>' +
+          t.html('consoleUsers.userCredentialsSection.privateKey') +
+            '</th><th>' +
+            t.html('consoleUsers.userCredentialsSection.certificate') +
+            '</th>' +
           (gate.write ? '<th></th>' : '') + '</tr></thead><tbody>' + rows +
           '</tbody></table>' +
           '<p class="sub"><code>' + kit.esc(names.keys) + '</code>, <code>' +
           kit.esc(names.privateKey) + '</code></p>'
-        : kit.note(T('noneHeld'));
-      const assertsAs = '<p>' + T('assertsAs') + ' <span class="sub">(<code>' +
+        : kit.note(t.html('consoleUsers.userCredentialsSection.noneHeld'));
+      const assertsAs = '<p>' +
+        t.html('consoleUsers.userCredentialsSection.assertsAs') +
+        ' <span class="sub">(<code>' +
         kit.esc(names.issuer) + '</code>)</span>: ' +
         p.effectiveIssuers.map(function (iss) {
           return '<code>' + kit.esc(iss) + '</code>';
         }).join(', ') + (p.issuers.length ? ''
-          : ' <span class="sub">' + T('ownName') + '</span>') + '</p>' +
+          : ' <span class="sub">' +
+            t.html('consoleUsers.userCredentialsSection.ownName') +
+            '</span>') + '</p>' +
         // The issuers are markup (each in its <code>), so the sentence is
         // two messages around them.
         (!p.held && p.issuers.length
-          ? kit.note(T('declaredBefore') + p.issuers.map(function (iss) {
+          ? kit.note(
+            t.html('consoleUsers.userCredentialsSection.declaredBefore') +
+            p.issuers.map(function (iss) {
               return '<code>' + kit.esc(iss) + '</code>';
-            }).join(', ') + T('declaredAfter'))
+            }).join(', ') +
+              t.html('consoleUsers.userCredentialsSection.declaredAfter'))
           : '');
       const managed = table + assertsAs;
 
       if (!gate.write) {
         return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
-               managed + kit.note(T('needsWrite'));
+               managed + kit.note(
+                 t.html('consoleUsers.userCredentialsSection.needsWrite'));
       }
       const labelField = function (suffix) {
         return '<label for="' + anchor + '-' + suffix + '-label">' +
-          T('labelField') + '</label>' +
+          t.html('consoleUsers.userCredentialsSection.labelField') +
+            '</label>' +
           '<input id="' + anchor + '-' + suffix + '-label" name="label" ' +
           'maxlength="40" placeholder="' +
           kit.esc(t.text('consoleUsers.userCredentialsSection.labelHint')) +
@@ -3234,23 +3263,32 @@ class UsersPage {
           hidden('target', 'person') + hidden('from', '/admin/users') +
           hidden('back', back) + hidden('identifier', username) +
           hidden('purpose', p.id) + labelField('issue') +
-          '<label for="' + anchor + '-alg">' + T('keyAlgorithm') +
+          '<label for="' + anchor + '-alg">' +
+            t.html('consoleUsers.userCredentialsSection.keyAlgorithm') +
           '</label>' +
           '<select id="' + anchor + '-alg" name="leafKeyAlg">' +
-          '<option value="">' + T('caDefault', { alg: state.ca.keyAlg }) +
+          '<option value="">' +
+            t.html('consoleUsers.userCredentialsSection.caDefault',
+                   { alg: state.ca.keyAlg }) +
           '</option>' + algOptions + '</select>' +
-          '<label for="' + anchor + '-days">' + T('days') + '</label>' +
+          '<label for="' + anchor + '-days">' +
+            t.html('consoleUsers.userCredentialsSection.days') + '</label>' +
           '<input type="number" id="' + anchor + '-days" name="days" min="1" ' +
           'value="' + kit.esc(String(state.ca.leafLifetimeDays)) + '">' +
-          '<label for="' + anchor + '-issuer">' + T('declaredIssuer') +
+          '<label for="' + anchor + '-issuer">' +
+            t.html('consoleUsers.userCredentialsSection.declaredIssuer') +
           '</label>' +
           '<input id="' + anchor + '-issuer" name="issuer" placeholder="' +
           kit.esc(t.text('consoleUsers.userCredentialsSection.issuerHint')) +
           '">' +
-          '<button type="submit">' + T('issue') + '</button>' +
+          '<button type="submit">' +
+            t.html('consoleUsers.userCredentialsSection.issue') + '</button>' +
           '</div></form>'
-        : kit.note(T('noCaBefore') + '<a href="/admin/pki">' +
-                   T('buildOne') + '</a>' + T('noCaAfter'));
+        : kit.note(
+          t.html('consoleUsers.userCredentialsSection.noCaBefore') +
+          '<a href="/admin/pki">' +
+          t.html('consoleUsers.userCredentialsSection.buildOne') + '</a>' +
+          t.html('consoleUsers.userCredentialsSection.noCaAfter'));
 
       const uploadForm = '<form method="post" action="/admin/pki">' +
         hidden('action', 'upload-certificate') + hidden('target', 'person') +
@@ -3259,7 +3297,7 @@ class UsersPage {
         '<div class="formrow">' + labelField('upload') + '</div>' +
         '<div class="formrow"><label for="' + anchor + '-cert"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.certTip')) + '>' +
-        T('certPem') +
+        t.html('consoleUsers.userCredentialsSection.certPem') +
         '</label><textarea id="' + anchor + '-cert" name="certificate" ' +
         'rows="6" required' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.certAreaTip')) +
@@ -3267,20 +3305,28 @@ class UsersPage {
         'CERTIFICATE-----"></textarea></div><div class="formrow"><label ' +
         'for="' + anchor + '-chain"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.chainTip')) +
-        '>' + T('chainPem') + '</label><textarea id="' + anchor +
+        '>' +
+          t.html('consoleUsers.userCredentialsSection.chainPem') +
+          '</label><textarea id="' + anchor +
         '-chain" name="chain" rows="6"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.chainAreaTip')) +
         ' placeholder="-----BEGIN ' +
         'CERTIFICATE-----"></textarea></div><div class="formrow"><button ' +
         'type="submit"' +
         kit.tip(t.text('consoleUsers.userCredentialsSection.uploadTip')) +
-        '>' + T('upload') + '</button></div></form>';
+        '>' +
+          t.html('consoleUsers.userCredentialsSection.upload') +
+          '</button></div></form>';
 
       return '<h3 id="' + anchor + '">' + kit.esc(p.label) + '</h3>' +
-             managed + '<h4>' + T('addHeading') + '</h4>' +
+             managed + '<h4>' +
+               t.html('consoleUsers.userCredentialsSection.addHeading') +
+               '</h4>' +
              (p.atCap
-               ? kit.note(T('atCap', { max: String(state.maxPerPerson) }))
-               : kit.note(T('addNote',
+               ? kit.note(
+                 t.html('consoleUsers.userCredentialsSection.atCap',
+                        { max: String(state.maxPerPerson) }))
+               : kit.note(t.html('consoleUsers.userCredentialsSection.addNote',
                             { max: String(state.maxPerPerson) })) +
                  issueForm + uploadForm);
     }).join('');

@@ -228,15 +228,19 @@ async function runBody(t) {
   const expectedBack = 'name="back" value="?per=' + perPage +
                        '&amp;issuedPage=' + appPage +
                        '&amp;personsPage=' + personPage + '"';
-  [['Applications', appsMarkup], ['People', peopleMarkup]]
+  // An application's row is taken off; a person's key pair is REVOKED on
+  // its own row (#1290), and that row's button carries the same `back`.
+  [['Applications', appsMarkup, /Take this key pair off/g],
+   ['People', peopleMarkup, />Revoke<\/button>/g]]
     .forEach(function (pair) {
-      const buttons = (pair[1].match(/Take this key pair off/g) || []).length;
+      const buttons = (pair[1].match(pair[2]) || []).length;
       const backs = pair[1].match(/name="back" value="[^"]*"/g) || [];
       t.check(buttons > 0 && backs.length === buttons &&
               backs.every(function (one) {
                 return one === expectedBack;
               }),
-              'every Take-off button in the ' + pair[0] + ' table carries ' +
+              'every Take-off or Revoke button in the ' + pair[0] +
+              ' table carries ' +
               'both tables\' state as `back`',
               buttons + ' button(s): ' + backs.slice(0, 2).join(' '));
     });
