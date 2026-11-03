@@ -110,6 +110,25 @@ function tableKey(form) {
 }
 
 /**
+ * Several lists of statement values as one.
+ *
+ * @param {...Array<string | number>} parts - the lists, in order
+ * @returns {Array<string | number>} their values, in order
+ */
+function joined(...parts) {
+  log.debug("Entering joined().");
+  /** @type {Array<string | number>} */
+  const out = [];
+  parts.forEach(function (part) {
+    part.forEach(function (one) {
+      out.push(one);
+    });
+  });
+  log.debug("Leaving joined().");
+  return out;
+}
+
+/**
  * `n` placeholders, comma-separated.
  *
  * @param n - how many
@@ -142,7 +161,7 @@ function under(column, baseKey, self) {
   log.debug("Leaving under().");
   return self
     ? { text: '(' + column + ' = ? OR ' + strict + ')',
-        values: [base].concat(values) }
+        values: joined([base], values) }
     : { text: strict, values: values };
 }
 
@@ -245,6 +264,7 @@ function realmsOf(ask) {
  */
 function parentsOf(ask, realm, baseKey) {
   log.debug("Entering parentsOf().");
+  /** @type {Array<string | number>} */
   const values = [String(realm), String(realm)];
   let keep = '';
   if (baseKey !== null && baseKey !== undefined) {
@@ -281,6 +301,7 @@ function parentsOf(ask, realm, baseKey) {
  */
 function childBranch(columns, realm, parent, after, limit) {
   log.debug("Entering childBranch().");
+  /** @type {Array<string | number>} */
   const values = [String(realm), String(parent), String(after)];
   let text = '(SELECT ' + columns + ' FROM sts_ldap_entries AS e FORCE ' +
              'INDEX (sts_ldap_entries_parent) WHERE e.realm = ? AND ' +
@@ -367,7 +388,7 @@ function subtreePage(ask, name, columns, realm, baseKey, afterKey, limit,
     log.debug("Leaving subtreePage(). The realm.");
     return ask(name, 'SELECT ' + columns + ' FROM sts_ldap_entries AS e ' +
       'WHERE e.realm = ? AND ' + at.text + ' AND e.dn_key > ? ORDER BY ' +
-      'e.dn_key LIMIT ?', [String(realm)].concat(at.values, [after, n]));
+      'e.dn_key LIMIT ?', joined([String(realm)], at.values, [after, n]));
   }
   log.debug("Leaving subtreePage().");
   return subtreeRows(ask, name, columns, realm, baseKey, after, n, !!self);
@@ -424,7 +445,7 @@ function holderKeys(realm, baseKey, name) {
   log.debug("Leaving holderKeys().");
   return { text: 'FROM sts_ldap_entry_keys AS k WHERE k.realm = ? AND ' +
                  'k.kind = \'attr\' AND k.k = ? AND ' + at.text,
-           values: [String(realm), tableKey(name)].concat(at.values) };
+           values: joined([String(realm), tableKey(name)], at.values) };
 }
 
 // ===========================================================================
@@ -471,7 +492,7 @@ function namedRows(ask, name, realm, parentKey, names, limit) {
   const keys = list.map(function (one) {
     return keyOf(one, 'name', true);
   });
-  const values = [String(realm), String(parentKey)].concat(rdns,
+  const values = joined([String(realm), String(parentKey)], rdns,
     [String(realm)], keys, [String(realm), String(parentKey)]);
   let text = 'SELECT ' + COLUMNS + ' FROM (SELECT dn_key FROM ' +
     'sts_ldap_entries FORCE INDEX (sts_ldap_entries_rdn) WHERE realm = ? ' +
@@ -592,7 +613,7 @@ function countHolding(ask, realm, baseKey, attribute) {
   return ask('countHolding', 'SELECT CAST(COUNT(*) AS SIGNED) AS n, ' +
     'CAST(COALESCE(SUM(' + holds.text + '), 0) AS SIGNED) AS holding FROM ' +
     'sts_ldap_entries AS e WHERE e.realm = ? AND ' + at.text,
-    holds.values.concat([String(realm)], at.values));
+    joined(holds.values, [String(realm)], at.values));
 }
 
 function hasChild(ask, realm, key) {
@@ -629,11 +650,11 @@ function holderRows(ask, name, o) {
     log.debug("Leaving holderRows(). By the key rows.");
     return ask(name, 'SELECT ' + COLUMNS + ' FROM (' + inner + ') AS u ' +
       'JOIN sts_ldap_entries AS e ON e.realm = ? AND e.dn_key = u.dn_key ' +
-      'ORDER BY e.dn_key', values.concat(tailValues, [String(o.realm)]));
+      'ORDER BY e.dn_key', joined(values, tailValues, [String(o.realm)]));
   }
   const at = under('e.dn_key', o.baseKey, false);
   const holds = holdsScan(attr);
-  const values = [String(o.realm)].concat(at.values, holds.values);
+  const values = joined([String(o.realm)], at.values, holds.values);
   let text = 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries AS e WHERE ' +
              'e.realm = ? AND ' + at.text + ' AND ' + holds.text;
   if (o.after !== undefined) {
@@ -642,7 +663,7 @@ function holderRows(ask, name, o) {
   }
   log.debug("Leaving holderRows(). By a scan.");
   return ask(name, text + ' ORDER BY e.dn_key' + tail,
-             values.concat(tailValues));
+             joined(values, tailValues));
 }
 
 function withAttribute(ask, realm, baseKey, attribute, afterKey, limit) {
@@ -688,7 +709,7 @@ function holderCount(ask, name, realm, baseKey, attribute, most) {
     const holds = holdsScan(attr);
     inner = 'SELECT 1 AS one FROM sts_ldap_entries AS e WHERE e.realm = ? ' +
             'AND ' + at.text + ' AND ' + holds.text;
-    values = [String(realm)].concat(at.values, holds.values);
+    values = joined([String(realm)], at.values, holds.values);
   }
   if (most !== null) {
     inner += ' LIMIT ?';
@@ -823,7 +844,7 @@ function realmPage(ask, realm, afterKey, limit, options) {
   return ask('realmPage', 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries AS ' +
     'e WHERE e.realm = ? AND e.dn_key > ?' + origin.text + ' ORDER BY ' +
     'e.dn_key LIMIT ? OFFSET ?',
-    [String(realm), String(afterKey || '')].concat(origin.values,
+    joined([String(realm), String(afterKey || '')], origin.values,
       [directoryQueries.pageSize(limit),
        Math.max(0, Math.floor(Number(o.offset) || 0))]));
 }
@@ -926,6 +947,7 @@ function rdnPage(ask, realm, parentKey, afterRdn, limit, options) {
     log.debug("Leaving rdnPage(). Past the walk.");
     return Promise.resolve([]);
   }
+  /** @type {Array<string | number>} */
   const values = [String(realm), String(parentKey),
                   String(afterRdn || '').toLowerCase()];
   let filter = '';
@@ -939,7 +961,7 @@ function rdnPage(ask, realm, parentKey, afterRdn, limit, options) {
   return ask('rdnPage', 'SELECT ' + COLUMNS + ', e.rdn_value FROM ' +
     'sts_ldap_entries AS e FORCE INDEX (sts_ldap_entries_rdn) WHERE e.realm ' +
     '= ? AND e.parent_key = ? AND e.rdn_value > ?' + filter + ' ORDER BY ' +
-    'e.rdn_value LIMIT ? OFFSET ?', values.concat([w.take, w.skip]));
+    'e.rdn_value LIMIT ? OFFSET ?', joined(values, [w.take, w.skip]));
 }
 
 function rdnCount(ask, realm, parentKey, needle) {

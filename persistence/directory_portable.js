@@ -1210,7 +1210,8 @@ function create(deps) {
           return send(pool, 'countAllSealed', 'SELECT ' + keyList + ', ' +
             columnOf(one) + ' AS v FROM ' + one.table + ' WHERE ' +
             where.join(' AND ') + ' ORDER BY ' + keyList + ' LIMIT ?',
-            ['%$aes%$2$%'].concat(cursor.values, [PAGE]));
+            /** @type {Array<string | number>} */ (['%$aes%$2$%'])
+              .concat(cursor.values, [PAGE]));
         });
         const rows = dialect.rowsOf(r);
         rows.forEach(function (row) {
