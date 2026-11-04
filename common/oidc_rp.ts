@@ -2128,6 +2128,13 @@ class OidcRelyingParty {
     }
     const alg = String((header && header.alg) || '');
     const spec = stsCrypto.JWS_ALGS[alg];
+    // An empty or "none" alg is said to be unsigned rather than quoted
+    // as "" (2026-11-04, the wording of verifyIdTokenHint()'s fix).
+    if (!alg || alg.toLowerCase() === 'none') {
+      return refuse('it is unsigned (alg ' + (alg || 'missing') + '), and ' +
+                    'a response from this service is signed with one of ' +
+                    'its own published keys');
+    }
     if (!spec || spec.family === 'hmac') {
       return refuse('it is signed "' + alg + '", and a response from this ' +
                     'service is signed with one of its own published keys');
@@ -2150,8 +2157,11 @@ class OidcRelyingParty {
       return one && one.kid === header.kid;
     })[0];
     if (!jwk) {
-      return refuse('it names key "' + String(header.kid || '') + '", which ' +
-                    'this realm\'s JWKS does not hold');
+      return refuse(header.kid
+        ? 'it names key "' + String(header.kid) + '", which this realm\'s ' +
+          'JWKS does not hold'
+        : 'it names no key (no kid), so this surface cannot tell which of ' +
+          'this realm\'s keys to verify it with');
     }
     let verified: any = null;
     try {
@@ -2162,12 +2172,14 @@ class OidcRelyingParty {
     } catch (e) {
       log.debug("Caught in OidcRelyingParty.openJarmResponse(): " +
                 ((e && e.message) || e));
-      return refuse('its signature: ' + ((e && e.message) || e));
+      return refuse('the signature check failed: ' +
+                    String((e && e.message) || e).replace(/\.+$/, ''));
     }
     const claims = (verified && verified.claims) || peeked || {};
     const issuer = this.assertionAudience(host);
     if (String(claims.iss || '') !== issuer) {
-      return refuse('its iss is "' + String(claims.iss || '') + '", and ' +
+      return refuse((claims.iss ? 'its iss is "' + String(claims.iss) + '"'
+                                : 'it carries no iss') + ', and ' +
                     'this surface expects "' + issuer + '"');
     }
     const audiences = Array.isArray(claims.aud) ? claims.aud.map(String)

@@ -4041,10 +4041,15 @@ function coreRefreshRefusal(claims, body, presentedClient) {
                description: 'RFC 6749 section 6: a refresh must not request ' +
                             'a scope the original grant did not carry ' +
                             '(and RFC 9700 section 2.3 restricts a token\'s ' +
-                            'privileges to the minimum). This grant carries ' +
-                            '"' + (claims.scope || '') + '" ' +
-                            'and the request asks additionally ' +
-                            'for: ' + extra.join(', ') + '.' };
+                            'privileges to the minimum). ' +
+                            // A grant with no scope is said to carry none,
+                            // rather than quoted as "".
+                            (claims.scope
+                              ? 'This grant carries "' + claims.scope +
+                                '" and the request asks additionally for: '
+                              : 'This grant carries no scope, and the ' +
+                                'request asks for: ') +
+                            extra.join(', ') + '.' };
     }
   }
   log.debug("Leaving coreRefreshRefusal(). Nothing refused.");

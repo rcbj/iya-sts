@@ -11064,9 +11064,18 @@ class OAuth2Server {
         types.some(function (t) { return known.indexOf(t) < 0; })) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). " +
                 "Unsupported response_type.");
+      // A REQUEST NAMING NO RESPONSE TYPE IS SAID TO NAME NONE (2026-11-04).
+      // The OpenID Foundation's oidcc-response-type-missing photographs this
+      // refusal, and it read `response_type "" is not supported`: true of
+      // the comparison, and no sentence a reader could follow. The error
+      // and the code are unchanged; only the description says which case
+      // this is.
+      const namedType = String(q.response_type || '').trim();
       return redirectable('STS-OAUTH-0162', 'unsupported_response_type',
-                          'response_type "' + (q.response_type || '') + '" ' +
-                          'is not supported.');
+        namedType
+          ? 'response_type "' + namedType + '" is not supported.'
+          : 'this request names no response_type, and every authorization ' +
+            'request must name one (RFC 6749 section 3.1.1).');
     }
     // WHAT THIS AUTHORIZATION SERVER SAYS IT DOES. `response_types_supported`
     // in the document a client read is the list this endpoint answers — the
@@ -11092,7 +11101,7 @@ class OAuth2Server {
           'The "' + self.profileOf(req) + '" authorization server advertises ' +
           'response_types_supported ' + JSON.stringify(advertisedTypes) + ' ' +
           'and this request asks for ' +
-          '"' + (q.response_type || '') + '". What its metadata says is what ' +
+          '"' + types.join(' ') + '". What its metadata says is what ' +
           'it does — the document is this authorization server rather ' +
           'than a description of one.');
       }
@@ -11668,9 +11677,10 @@ class OAuth2Server {
     const audiences = [].concat(claims.aud || []).map(String);
     if (String(claims.iss || '') !== issuer) {
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Another issuer.");
-      return { ok: false, why: 'the id_token_hint was issued by "' +
-               (claims.iss || '') + '", and this authorization server is "' +
-               issuer + '".' };
+      return { ok: false, why: (claims.iss
+        ? 'the id_token_hint was issued by "' + claims.iss + '"'
+        : 'the id_token_hint names no issuer (no iss)') +
+               ', and this authorization server is "' + issuer + '".' };
     }
     if (audiences.indexOf(String(clientId)) < 0) {
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Another client.");

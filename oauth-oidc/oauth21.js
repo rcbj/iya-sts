@@ -429,7 +429,8 @@ function registeredClientRefusal(client, clientId) {
   return refusal('STS-OAUTH-0271', 'invalid_request',
     'registered-client-required',
     'section 2.3.1: "Authorization servers MUST require clients to register ' +
-    'their complete redirect URI." Client "' + (clientId || '') + '" has ' +
+    'their complete redirect URI." ' +
+    (clientId ? 'Client "' + clientId + '"' : 'This client') + ' has ' +
     ((client && client.known) ? 'an entry here with no redirect URI on it'
                               : 'no entry here at all') + '. ' +
     'Register it at POST /oauth2/register with its redirect_uris, or give ' +

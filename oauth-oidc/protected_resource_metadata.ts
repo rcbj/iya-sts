@@ -857,7 +857,9 @@ class ProtectedResourceMetadata {
         request.on('error', function (e) {
           log.debug("Caught in ProtectedResourceMetadata.fetchDocument(): " +
                     ((e && e.message) || e));
-          done(self.refusal('STS-REG-0086', 'The request failed: ' + e.message +
+          // The cause's own full stop is dropped before ours is added.
+          done(self.refusal('STS-REG-0086', 'The request failed: ' +
+                       String((e && e.message) || e).replace(/\.+$/, '') +
                        '.'));
         });
       });

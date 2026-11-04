@@ -28,6 +28,9 @@
 //      request object from a relying party registered automatically.
 //   5. ECDH-ES's Concat KDF with the header's apu and apv (RFC 7518 section
 //      4.6.2), which the JWE decryption left out.
+//   6. OpenID4VCI Credential Response encryption to an EC key.
+//   7. A request naming no response_type is told it names none, rather
+//      than that response_type "" is not supported (2026-11-04).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -128,6 +131,21 @@ function checkRefreshBinding(t) {
   t.equal(unnamed && unnamed.ok, true,
           '1g. a refresh naming no client stays RFC 9700 mode\'s refusal ' +
           '(STS-OAUTH-0140): outside it there is nobody to compare');
+
+  // 1h (2026-11-04): a grant that carried no scope is said to carry none,
+  // never quoted as "".
+  const scopeless = inRealm({}, function () {
+    return bcp.checkRefreshRequest({
+      claims: { jti: 'occf-6', client_id: 'client-one' },
+      clientId: 'client-one', body: { scope: 'openid' } });
+  });
+  t.check(scopeless && scopeless.errorCode === 'STS-OAUTH-0142' &&
+          /This grant carries no scope, and the request asks for: openid\.$/
+            .test(String(scopeless.description)) &&
+          !/""/.test(String(scopeless.description)),
+          '1h. a refresh widening a grant that carried no scope says the ' +
+          'grant carries none, quoting no empty scope',
+          scopeless && scopeless.description);
   log.debug("Leaving checkRefreshBinding().");
 }
 
@@ -336,6 +354,64 @@ function checkCredentialResponseEcdh(t) {
   log.debug("Leaving checkCredentialResponseEcdh().");
 }
 
+// ---------------------------------------------------------------------------
+// 7. A REQUEST NAMING NO RESPONSE TYPE (2026-11-04). The suite's
+//    oidcc-response-type-missing photographs the refusal, which read
+//    `response_type "" is not supported`; it now says the request names
+//    none. The error and the code are unchanged.
+// ---------------------------------------------------------------------------
+function authorizationRequest(query) {
+  log.debug("Entering authorizationRequest().");
+  const headers = { host: 'sts.occf.example' };
+  log.debug("Leaving authorizationRequest().");
+  return { method: 'GET', path: '/oauth2/authorize',
+           url: '/oauth2/authorize', originalUrl: '/oauth2/authorize',
+           query: query, headers: headers, cookies: {}, body: '',
+           protocol: 'https', secure: true, ip: '127.0.0.1',
+           socket: { remoteAddress: '127.0.0.1' },
+           get: function (k) {
+             return headers[String(k).toLowerCase()];
+           } };
+}
+
+function checkMissingResponseType(t) {
+  log.debug("Entering checkMissingResponseType().");
+  t.log.info('=== 7. a request naming no response_type says so ===');
+  const oauth2 = require('../oauth-oidc/oauth2');
+  const server = new oauth2.OAuth2Server(oauth2.OAuth2Server.defaultDeps());
+  const vet = function (responseType) {
+    log.debug("Entering vet().");
+    const query = { client_id: 'occf-client-' + process.pid,
+                    redirect_uri: 'https://occf-client.example/cb',
+                    scope: 'openid', state: 's', nonce: 'n',
+                    code_challenge: 'x'.repeat(43),
+                    code_challenge_method: 'S256' };
+    if (responseType !== undefined) {
+      query.response_type = responseType;
+    }
+    const out = server.vetAuthorizationRequest(authorizationRequest(query));
+    log.debug("Leaving vet().");
+    return { code: out.code || '', error: out.error || '',
+             description: String(out.description || '') };
+  };
+  const missing = vet(undefined);
+  const empty = vet('');
+  const unknown = vet('banana');
+  t.check([missing, empty].every(function (r) {
+    return r.code === 'STS-OAUTH-0162' &&
+      r.error === 'unsupported_response_type' &&
+      r.description === 'this request names no response_type, and every ' +
+        'authorization request must name one (RFC 6749 section 3.1.1).';
+  }), '7a. a request with no response_type, or an empty one, is told it ' +
+      'names none (oidcc-response-type-missing), quoting no ""',
+      JSON.stringify([missing, empty]));
+  t.check(unknown.code === 'STS-OAUTH-0162' &&
+          unknown.description === 'response_type "banana" is not supported.',
+          '7b. one naming a response type this server does not know still ' +
+          'quotes it', JSON.stringify(unknown));
+  log.debug("Leaving checkMissingResponseType().");
+}
+
 function removeRealms() {
   log.debug("Entering removeRealms().");
   if (made && realms.get(REALM)) {
@@ -354,6 +430,7 @@ function run(t) {
     checkFederationRequestObject(t);
     checkEcdhPartyInfo(t);
     checkCredentialResponseEcdh(t);
+    checkMissingResponseType(t);
   } finally {
     removeRealms();
   }
