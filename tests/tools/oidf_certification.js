@@ -489,7 +489,9 @@ async function main() {
       "oidcc-max-age-1": "photograph",
       "oidcc-registration-logo-uri": "photograph-only",
       "oidcc-registration-policy-uri": "photograph-only",
-      "oidcc-registration-tos-uri": "photograph-only"
+      "oidcc-registration-tos-uri": "photograph-only",
+      "oidcc-rp-initiated-logout-no-params": "confirm-then-photograph",
+      "oidcc-rp-initiated-logout-only-state": "confirm-then-photograph"
     }
   });
   log.info(plans.length + " plan(s) against " + realm.base + " as " +

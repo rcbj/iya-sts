@@ -798,10 +798,20 @@ async function follow(o, driver, id, action, suiteBase) {
       const yes = await driver.findElements(
         By.xpath("//button[@value='yes']"));
       if (yes.length) {
-        await photograph(o, driver, id, "the end-session page");
+        // "confirm-then-photograph": the module asks for the page AFTER the
+        // person is signed out (the suite's "upload a screenshot of the
+        // successful logout page"), so the confirmation is pressed first and
+        // the page it leads to is the evidence — where it moves on, the page
+        // it settles on is photographed by the branches below.
+        if (action !== "confirm-then-photograph") {
+          await photograph(o, driver, id, "the end-session page");
+        }
         await yes[0].click();
         if (await moved(driver, here, 20000)) {
           continue;
+        }
+        if (action === "confirm-then-photograph") {
+          await photograph(o, driver, id, "the signed-out page");
         }
         break;
       }
