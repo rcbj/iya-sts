@@ -791,6 +791,78 @@
     "en": "e0455f389b3cfb47",
     "text": "允許一個瀏覽器同時持有多人的單一登入工作階段，並在其間選擇。開啟時，另一個人登入會在瀏覽器的帳號集（`sts_accounts` Cookie）中加入一個工作階段，而不是結束原有的工作階段；當有多個帳號已登入、而請求未說明針對哪個帳號時——此流程中未選擇帳號，也沒有指明帳號的 login_hint、id_token_hint 或 SAML Subject——請求會被送到 /authn/accounts 的帳號選擇器，prompt=select_account 也會顯示它。每個工作階段保留各自的有效期限、閒置逾時、升級驗證狀態與登出。預設開啟。關閉時，瀏覽器只有一個工作階段，另一個人登入會結束它。無論開啟或關閉，都在下一個請求時生效，且不會結束任何工作階段：開啟後，瀏覽器既有的工作階段成為其帳號集的第一個帳號；關閉後，瀏覽器的預設工作階段單獨繼續，其他工作階段照常到期。"
   },
+  "branding.layout|label": {
+    "en": "2bce09e5da84a651",
+    "text": "登入版面配置"
+  },
+  "branding.layout|description": {
+    "en": "0f84529af8e63ce7",
+    "text": "本領域中登入畫面、其後續步驟、同意畫面以及其他公開頁面的版面配置方式。centered：卡片位於頁面中央，標誌和顯示名稱在其上方（預設值，即本服務一貫的外觀）。split：在卡片旁邊顯示一個強調色面板，承載標誌和顯示名稱，在窄螢幕上位於卡片上方。banner：頁面頂端一條強調色橫幅承載它們，卡片位於其下方。每種版面配置都完全保留表單、其欄位及其順序。"
+  },
+  "branding.accentColor|label": {
+    "en": "12376f4cbd6c30b9",
+    "text": "強調色"
+  },
+  "branding.accentColor|description": {
+    "en": "6a7806cbc4a60f44",
+    "text": "本領域公開頁面上按鈕、連結和焦點環的顏色，也是 split 面板和橫幅的顏色。寫作 #rgb 或 #rrggbb。按鈕上的文字為黑色或白色，取在其上較易閱讀者，因此不另行設定。若某顏色使連結相對於卡片顏色的對比度低於 WCAG 2.2 AA（4.5:1），則會被拒絕（STS-AUTHN-0544）。"
+  },
+  "branding.pageColor|label": {
+    "en": "d8f29ba7b8da917a",
+    "text": "頁面背景色"
+  },
+  "branding.pageColor|description": {
+    "en": "e36337b16ae8eb93",
+    "text": "本領域公開頁面上卡片後方的背景。寫作 #rgb 或 #rrggbb。"
+  },
+  "branding.cardColor|label": {
+    "en": "32fcd1507a366673",
+    "text": "卡片顏色"
+  },
+  "branding.cardColor|description": {
+    "en": "91c08312a7b2f249",
+    "text": "繪製登入表單的卡片背景。寫作 #rgb 或 #rrggbb。文字顏色和強調色相對於它都必須維持 WCAG 2.2 AA 對比度（4.5:1），否則變更會被拒絕（STS-AUTHN-0544）。"
+  },
+  "branding.textColor|label": {
+    "en": "25e9c8090de7f831",
+    "text": "文字顏色"
+  },
+  "branding.textColor|description": {
+    "en": "86f81fcb12b03b41",
+    "text": "卡片上文字的顏色。寫作 #rgb 或 #rrggbb。較淡的文字（附註、提示）由它與卡片顏色混合而成，絕不低於 WCAG 2.2 AA 對比度。相對於卡片低於 4.5:1 的顏色會被拒絕（STS-AUTHN-0544）。"
+  },
+  "branding.displayName|label": {
+    "en": "2b7f6a84de917e38",
+    "text": "顯示名稱"
+  },
+  "branding.displayName|description": {
+    "en": "c7734d5c0723dde4",
+    "text": "在本領域公開頁面上顯示於標誌旁、並出現在瀏覽器分頁標題中的名稱（\"Sign in — <name>\"），作為純文字，絕不作為標記，且不翻譯。留空時不顯示名稱，標題仍是頁面一貫的標題。最多 80 個字元。"
+  },
+  "branding.logoAlt|label": {
+    "en": "bb2a5f1e3e7d2fca",
+    "text": "標誌替代文字"
+  },
+  "branding.logoAlt|description": {
+    "en": "4252cb4ab4a31ec4",
+    "text": "螢幕閱讀器在本領域標誌位置朗讀的內容，通常是組織名稱。領域擁有標誌時為必填：沒有它無法上傳標誌，且在保留標誌期間不能將其清空（STS-AUTHN-0548）。最多 160 個字元。"
+  },
+  "branding.logoLinkUrl|label": {
+    "en": "78ddaed87c9eb98d",
+    "text": "標誌連結"
+  },
+  "branding.logoLinkUrl|description": {
+    "en": "3cd6daaebb2a7ea6",
+    "text": "點選標誌時前往的位置，必須是絕對 https URL（否則為 STS-AUTHN-0551）。留空時標誌不是連結，這是預設值：沒有可向外跳轉之處的登入頁面較安全。"
+  },
+  "branding.logoMaxBytes|label": {
+    "en": "26a97375a1800d8b",
+    "text": "最大標誌（位元組）"
+  },
+  "branding.logoMaxBytes|description": {
+    "en": "37f4c903152cd219",
+    "text": "一次上傳可攜帶的最大標誌，適用於所有領域。更大的會被拒絕（STS-AUTHN-0546）。標誌儲存在儲存區並複製到每個處理程序，因此維持較小：預設 256 KiB，最多 2 MiB。"
+  },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
     "text": "一個瀏覽器最多記住的帳號數"

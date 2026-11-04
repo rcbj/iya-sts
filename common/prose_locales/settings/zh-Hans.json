@@ -791,6 +791,78 @@
     "en": "e0455f389b3cfb47",
     "text": "允许一个浏览器同时持有多人的单点登录会话，并在其间选择。开启时，另一个人登录会向浏览器的账号集（`sts_accounts` Cookie）中添加一个会话，而不是结束原有会话；当有多个账号已登录、而请求未说明针对哪个账号时——此流程中未选择账号，也没有指明账号的 login_hint、id_token_hint 或 SAML Subject——请求会被发送到 /authn/accounts 的账号选择器，prompt=select_account 也会显示它。每个会话保留各自的有效期、空闲超时、升级认证状态和退出登录。默认开启。关闭时，浏览器只有一个会话，另一个人登录会结束它。无论开启还是关闭，都在下一个请求时生效，且不会结束任何会话：开启后，浏览器已有的会话成为其账号集的第一个账号；关闭后，浏览器的默认会话单独继续，其他会话照常到期。"
   },
+  "branding.layout|label": {
+    "en": "2bce09e5da84a651",
+    "text": "登录布局"
+  },
+  "branding.layout|description": {
+    "en": "0f84529af8e63ce7",
+    "text": "本领域中登录界面、其后续步骤、同意界面以及其他公共页面的布局方式。centered：卡片位于页面中央，徽标和显示名称在其上方（默认值，即本服务一贯的外观）。split：在卡片旁边显示一个强调色面板，承载徽标和显示名称，在窄屏上位于卡片上方。banner：页面顶部一条强调色横幅承载它们，卡片位于其下方。每种布局都完全保留表单、其字段及其顺序。"
+  },
+  "branding.accentColor|label": {
+    "en": "12376f4cbd6c30b9",
+    "text": "强调色"
+  },
+  "branding.accentColor|description": {
+    "en": "6a7806cbc4a60f44",
+    "text": "本领域公共页面上按钮、链接和焦点环的颜色，也是 split 面板和横幅的颜色。写作 #rgb 或 #rrggbb。按钮上的文字为黑色或白色，取在其上更易阅读者，因此不单独设置。若某颜色使链接相对于卡片颜色的对比度低于 WCAG 2.2 AA（4.5:1），则被拒绝（STS-AUTHN-0544）。"
+  },
+  "branding.pageColor|label": {
+    "en": "d8f29ba7b8da917a",
+    "text": "页面背景色"
+  },
+  "branding.pageColor|description": {
+    "en": "e36337b16ae8eb93",
+    "text": "本领域公共页面上卡片后面的背景。写作 #rgb 或 #rrggbb。"
+  },
+  "branding.cardColor|label": {
+    "en": "32fcd1507a366673",
+    "text": "卡片颜色"
+  },
+  "branding.cardColor|description": {
+    "en": "91c08312a7b2f249",
+    "text": "绘制登录表单的卡片背景。写作 #rgb 或 #rrggbb。文字颜色和强调色相对于它都必须保持 WCAG 2.2 AA 对比度（4.5:1），否则更改被拒绝（STS-AUTHN-0544）。"
+  },
+  "branding.textColor|label": {
+    "en": "25e9c8090de7f831",
+    "text": "文字颜色"
+  },
+  "branding.textColor|description": {
+    "en": "86f81fcb12b03b41",
+    "text": "卡片上文字的颜色。写作 #rgb 或 #rrggbb。较弱的文字（注释、提示）由它与卡片颜色混合而成，绝不低于 WCAG 2.2 AA 对比度。相对于卡片低于 4.5:1 的颜色会被拒绝（STS-AUTHN-0544）。"
+  },
+  "branding.displayName|label": {
+    "en": "2b7f6a84de917e38",
+    "text": "显示名称"
+  },
+  "branding.displayName|description": {
+    "en": "c7734d5c0723dde4",
+    "text": "在本领域公共页面上显示于徽标旁边、并出现在浏览器标签页标题中的名称（\"Sign in — <name>\"），作为纯文本，绝不作为标记，且不翻译。为空时不显示名称，标题仍是页面一贯的标题。最多 80 个字符。"
+  },
+  "branding.logoAlt|label": {
+    "en": "bb2a5f1e3e7d2fca",
+    "text": "徽标替代文本"
+  },
+  "branding.logoAlt|description": {
+    "en": "4252cb4ab4a31ec4",
+    "text": "屏幕阅读器在本领域徽标位置朗读的内容，通常是组织名称。领域拥有徽标时为必填：没有它无法上传徽标，且在保留徽标期间不能将其清空（STS-AUTHN-0548）。最多 160 个字符。"
+  },
+  "branding.logoLinkUrl|label": {
+    "en": "78ddaed87c9eb98d",
+    "text": "徽标链接"
+  },
+  "branding.logoLinkUrl|description": {
+    "en": "3cd6daaebb2a7ea6",
+    "text": "点击徽标时前往的位置，必须是绝对 https URL（否则为 STS-AUTHN-0551）。为空时徽标不是链接，这是默认值：没有可向外跳转之处的登录页面更安全。"
+  },
+  "branding.logoMaxBytes|label": {
+    "en": "26a97375a1800d8b",
+    "text": "最大徽标（字节）"
+  },
+  "branding.logoMaxBytes|description": {
+    "en": "37f4c903152cd219",
+    "text": "一次上传可携带的最大徽标，适用于所有领域。更大的会被拒绝（STS-AUTHN-0546）。徽标保存在存储中并复制到每个进程，因此保持较小：默认 256 KiB，最多 2 MiB。"
+  },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
     "text": "一个浏览器最多记住的账号数"

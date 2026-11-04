@@ -791,6 +791,78 @@
     "en": "e0455f389b3cfb47",
     "text": "Permite que un navegador mantenga sesiones de inicio de sesión único de varias personas a la vez y elegir entre ellas. Activado, el inicio de sesión de otra persona AÑADE una sesión al conjunto de cuentas del navegador (la cookie `sts_accounts`) en lugar de cerrar la que tenía; una solicitud que no dice para qué cuenta es — ninguna cuenta elegida en este flujo, ningún login_hint, id_token_hint ni Subject de SAML que nombre una — mientras hay más de una con la sesión iniciada se envía al selector de cuentas en /authn/accounts, y prompt=select_account lo muestra. Cada sesión conserva su propia duración, su tiempo de inactividad, su estado de autenticación reforzada y su cierre de sesión. Activado es el valor predeterminado. Desactivado, el navegador tiene una sola sesión y el inicio de sesión de otra persona la cierra. Surte efecto en la siguiente solicitud en ambos sentidos y no cierra nada: al activarlo, la sesión existente de un navegador pasa a ser la primera cuenta de su conjunto; al desactivarlo, la sesión predeterminada del navegador continúa sola y las demás caducan como de costumbre."
   },
+  "branding.layout|label": {
+    "en": "2bce09e5da84a651",
+    "text": "Diseño del inicio de sesión"
+  },
+  "branding.layout|description": {
+    "en": "0f84529af8e63ce7",
+    "text": "Cómo se disponen en este dominio la pantalla de inicio de sesión, sus pasos, la pantalla de consentimiento y las demás páginas públicas. centered: la tarjeta en el centro de la página, con el logotipo y el nombre visible encima (el valor predeterminado, el aspecto que el servicio siempre tuvo). split: un panel en el color de acento con el logotipo y el nombre visible junto a la tarjeta, encima de ella en una pantalla estrecha. banner: una franja en el color de acento en la parte superior que los lleva, con la tarjeta debajo. Todos los diseños conservan el formulario, sus campos y su orden exactamente como están."
+  },
+  "branding.accentColor|label": {
+    "en": "12376f4cbd6c30b9",
+    "text": "Color de acento"
+  },
+  "branding.accentColor|description": {
+    "en": "6a7806cbc4a60f44",
+    "text": "El color de los botones, los enlaces y los anillos de foco en las páginas públicas de este dominio, y del panel split y la franja. Se escribe #rgb o #rrggbb. El texto de un botón es negro o blanco, el que mejor se lea sobre él, por lo que no se configura por separado. Se rechaza un color cuyos enlaces quedarían por debajo del contraste WCAG 2.2 AA (4.5:1) frente al color de la tarjeta (STS-AUTHN-0544)."
+  },
+  "branding.pageColor|label": {
+    "en": "d8f29ba7b8da917a",
+    "text": "Color de fondo de la página"
+  },
+  "branding.pageColor|description": {
+    "en": "e36337b16ae8eb93",
+    "text": "El fondo detrás de la tarjeta en las páginas públicas de este dominio. Se escribe #rgb o #rrggbb."
+  },
+  "branding.cardColor|label": {
+    "en": "32fcd1507a366673",
+    "text": "Color de la tarjeta"
+  },
+  "branding.cardColor|description": {
+    "en": "91c08312a7b2f249",
+    "text": "El fondo de la tarjeta sobre la que se dibuja el formulario de inicio de sesión. Se escribe #rgb o #rrggbb. Los colores del texto y de acento deben mantener cada uno un contraste WCAG 2.2 AA (4.5:1) frente a él, o el cambio se rechaza (STS-AUTHN-0544)."
+  },
+  "branding.textColor|label": {
+    "en": "25e9c8090de7f831",
+    "text": "Color del texto"
+  },
+  "branding.textColor|description": {
+    "en": "86f81fcb12b03b41",
+    "text": "El color del texto sobre la tarjeta. Se escribe #rgb o #rrggbb. El texto más discreto (notas, sugerencias) se mezcla a partir de él y del color de la tarjeta, nunca por debajo del contraste WCAG 2.2 AA. Se rechaza un color por debajo de 4.5:1 frente a la tarjeta (STS-AUTHN-0544)."
+  },
+  "branding.displayName|label": {
+    "en": "2b7f6a84de917e38",
+    "text": "Nombre visible"
+  },
+  "branding.displayName|description": {
+    "en": "c7734d5c0723dde4",
+    "text": "Un nombre que se muestra junto al logotipo en las páginas públicas de este dominio y en el título de la pestaña del navegador (\"Sign in — <name>\"), como texto sin formato, nunca marcado, y sin traducir. Vacío, no se muestra ningún nombre y el título es el que la página siempre tuvo. Como máximo 80 caracteres."
+  },
+  "branding.logoAlt|label": {
+    "en": "bb2a5f1e3e7d2fca",
+    "text": "Texto alternativo del logotipo"
+  },
+  "branding.logoAlt|description": {
+    "en": "4252cb4ab4a31ec4",
+    "text": "Lo que un lector de pantalla lee en lugar del logotipo de este dominio, normalmente el nombre de la organización. Obligatorio mientras el dominio tenga un logotipo: no se puede subir un logotipo sin él, y no se puede vaciar mientras se conserve un logotipo (STS-AUTHN-0548). Como máximo 160 caracteres."
+  },
+  "branding.logoLinkUrl|label": {
+    "en": "78ddaed87c9eb98d",
+    "text": "Enlace del logotipo"
+  },
+  "branding.logoLinkUrl|description": {
+    "en": "3cd6daaebb2a7ea6",
+    "text": "Adónde lleva el logotipo cuando se sigue, una URL https absoluta (STS-AUTHN-0551 en caso contrario). Vacío, el logotipo no es un enlace, que es el valor predeterminado: una página de inicio de sesión sin nada que seguir hacia fuera es la más segura."
+  },
+  "branding.logoMaxBytes|label": {
+    "en": "26a97375a1800d8b",
+    "text": "Logotipo más grande (bytes)"
+  },
+  "branding.logoMaxBytes|description": {
+    "en": "37f4c903152cd219",
+    "text": "El logotipo más grande que puede llevar una subida, para todos los dominios. Uno mayor se rechaza (STS-AUTHN-0546). El logotipo se guarda en el almacén y se replica en todos los procesos, por lo que se mantiene pequeño: 256 KiB de forma predeterminada, 2 MiB como máximo."
+  },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
     "text": "Máximo de cuentas que recuerda un navegador"

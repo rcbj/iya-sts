@@ -315,6 +315,10 @@
     "en": "e647419ca1d6ef3f",
     "text": "领域的邮件模板被保存或重置"
   },
+  "audit.actions.branding.logo.label": {
+    "en": "66180a1e9a6ade1e",
+    "text": "某个领域的登录徽标已上传或删除"
+  },
   "audit.actions.mail.verified.label": {
     "en": "3b2f440c71a1db39",
     "text": "某人验证了其条目上的地址"
