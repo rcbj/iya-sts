@@ -191,6 +191,14 @@
     "en": "6fffa44535aa160d",
     "text": "立即轮换本领域的 krbtgt 密钥。使用 invalidate 时不保留旧版本：此前签发的每个 TGT 都会被拒绝，并由一个 Shared Signals 事件说明这一点。"
   },
+  "sched.jobs.ldap.connection-mirror-maintenance.title": {
+    "en": "053ed0f531573935",
+    "text": "LDAP 连接镜像维护"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.describe": {
+    "en": "76f7213ce5e8a506",
+    "text": "删除已不再是成员的节点的镜像 LDAP 连接，以及已过有效期的注销指令。"
+  },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
     "text": "邮件发件箱投递"

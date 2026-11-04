@@ -191,6 +191,14 @@
     "en": "6fffa44535aa160d",
     "text": "Nire-rotate ngayon ang krbtgt key ng realm. Kapag may invalidate, walang itinatagong naunang bersyon: tinatanggihan ang bawat TGT na na-issue bago nito at may Shared Signals event na nagsasabi nito."
   },
+  "sched.jobs.ldap.connection-mirror-maintenance.title": {
+    "en": "053ed0f531573935",
+    "text": "Pagpapanatili ng salamin ng mga koneksiyong LDAP"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.describe": {
+    "en": "76f7213ce5e8a506",
+    "text": "Binubura ang mga nakasalaming koneksiyong LDAP ng mga node na hindi na kasapi, at ang mga tagubilin sa pag-sign out na lampas na sa kanilang bisa."
+  },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
     "text": "Paghahatid ng mail outbox"

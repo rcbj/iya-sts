@@ -191,6 +191,14 @@
     "en": "6fffa44535aa160d",
     "text": "Roterar sfärens krbtgt-nyckel nu. Med invalidate behålls ingen tidigare version: varje TGT som utfärdats före den avvisas och en Shared Signals-händelse meddelar det."
   },
+  "sched.jobs.ldap.connection-mirror-maintenance.title": {
+    "en": "053ed0f531573935",
+    "text": "Underhåll av LDAP-anslutningsspegeln"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.describe": {
+    "en": "76f7213ce5e8a506",
+    "text": "Tar bort speglade LDAP-anslutningar från noder som inte längre är medlemmar, och utloggningsinstruktioner vars livslängd har gått ut."
+  },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
     "text": "Leverans från e-postutkorgen"

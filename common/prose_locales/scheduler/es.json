@@ -191,6 +191,14 @@
     "en": "6fffa44535aa160d",
     "text": "Rota ahora la clave krbtgt del dominio. Con invalidate, no conserva ninguna versión anterior: se rechaza cada TGT emitido antes y un evento de Shared Signals lo comunica."
   },
+  "sched.jobs.ldap.connection-mirror-maintenance.title": {
+    "en": "053ed0f531573935",
+    "text": "Mantenimiento del espejo de conexiones LDAP"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.describe": {
+    "en": "76f7213ce5e8a506",
+    "text": "Elimina las conexiones LDAP reflejadas de los nodos que ya no son miembros y las instrucciones de cierre de sesión que han superado su vigencia."
+  },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
     "text": "Entrega de la bandeja de salida de correo"

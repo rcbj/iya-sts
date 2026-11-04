@@ -47,6 +47,8 @@
   "sched.jobs.krb5.krbtgt-rotate.describe": "Replaces each realm's krbtgt key — the key every TGT is sealed under — with a new random one at the next kvno once it is krb5.krbtgtRotationIntervalDays old, keeping the one it replaces for the longest a TGT under it can live, and never while the version the last rotation kept is still in its window. Gives a product realm with none its first key. Each run's result names the kvno, the last rotation and when the next is due.",
   "sched.jobs.krb5.krbtgt-rotate-now.title": "krbtgt key rotation, by hand",
   "sched.jobs.krb5.krbtgt-rotate-now.describe": "Rotates the realm's krbtgt key now. With invalidate, keeps no previous version: every TGT issued before it is refused and a Shared Signals event says so.",
+  "sched.jobs.ldap.connection-mirror-maintenance.title": "LDAP connection mirror maintenance",
+  "sched.jobs.ldap.connection-mirror-maintenance.describe": "Deletes the mirrored LDAP connections of nodes that are no longer members, and sign-out instructions past their lifetime.",
   "sched.jobs.mail.deliver.title": "Mail outbox delivery",
   "sched.jobs.mail.deliver.describe": "Sends every queued message that is due — a retry whose backoff has passed, a lease that lapsed, a row restored after a restart — dead-letters any still pending past mail.retentionS, and removes finished rows past it.",
   "sched.jobs.oauth2.backchannel-logout-sweep.title": "Back-channel logout sweep",

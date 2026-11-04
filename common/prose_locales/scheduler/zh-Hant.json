@@ -191,6 +191,14 @@
     "en": "6fffa44535aa160d",
     "text": "立即輪替此領域的 krbtgt 金鑰。若使用 invalidate，則不保留先前版本：在此之前核發的每個 TGT 都會被拒絕，並由一個 Shared Signals 事件通告。"
   },
+  "sched.jobs.ldap.connection-mirror-maintenance.title": {
+    "en": "053ed0f531573935",
+    "text": "LDAP 連線鏡像維護"
+  },
+  "sched.jobs.ldap.connection-mirror-maintenance.describe": {
+    "en": "76f7213ce5e8a506",
+    "text": "刪除已不再是成員的節點的鏡像 LDAP 連線，以及已超過有效期限的登出指令。"
+  },
   "sched.jobs.mail.deliver.title": {
     "en": "2bb1b3533e3e44d6",
     "text": "郵件寄件匣遞送"
