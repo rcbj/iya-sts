@@ -11588,6 +11588,18 @@ class OAuth2Server {
       return { ok: false, why: 'the id_token_hint is not a JWT.' };
     }
     const alg = String((header && header.alg) || '');
+    // AN UNSIGNED HINT IS SAID TO BE ONE (2026-11-04). The OpenID
+    // Foundation's oidcc-rp-initiated-logout-modified-id-token-hint sends
+    // the hint re-headed as `alg: none`, and the refusal read "names key ""
+    // for none": true of the lookup below, which no reader of the error page
+    // could follow. Every ID Token this service issues is signed, so an
+    // unsigned one is refused for being unsigned.
+    if (!alg || alg.toLowerCase() === 'none') {
+      log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Unsigned.");
+      return { ok: false, why: 'the id_token_hint is unsigned (alg ' +
+               (alg || 'missing') + '), and every ID Token this service ' +
+               'issues is signed, so it is not one this service issued.' };
+    }
     let verified: Json = null;
     try {
       if (/^(RS|PS)(256|384|512)$/.test(alg)) {
@@ -11630,9 +11642,12 @@ class OAuth2Server {
         })[0];
         if (!entry) {
           log.debug("Leaving OAuth2Server.verifyIdTokenHint(). No such key.");
-          return { ok: false, why: 'the id_token_hint names key "' +
-                   (header.kid || '') + '" for ' + alg + ', and this service ' +
-                   'holds no such key.' };
+          return { ok: false, why: header.kid
+            ? 'the id_token_hint names key "' + header.kid + '" for ' + alg +
+              ', and this service holds no such key.'
+            : 'the id_token_hint is signed with ' + alg + ' and names no ' +
+              'key (no kid), so this service cannot tell which of its keys ' +
+              'to verify it with.' };
         }
         verified = await stsCrypto.verifyCompactJwsAsync(hint,
           entry.publicJwk, { algorithms: [alg] });
@@ -11642,8 +11657,11 @@ class OAuth2Server {
                 ((e && e.message) || e));
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). It did not " +
                 "verify.");
+      // The cause's own full stop is dropped, so the page does not end in
+      // two of them.
       return { ok: false, why: 'the id_token_hint did not verify as an ID ' +
-               'Token this service issued: ' + ((e && e.message) || e) + '.' };
+               'Token this service issued: ' +
+               String((e && e.message) || e).replace(/\.+$/, '') + '.' };
     }
     const claims = (verified && verified.claims) || verified || {};
     const issuer = self.issuerOf(self.asBaseOf(req));
