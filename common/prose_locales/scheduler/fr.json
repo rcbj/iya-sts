@@ -356,8 +356,16 @@
     "text": "Balayage des pierres tombales expirées"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "d5b8faad6c0c24c4",
-    "text": "Supprime du magasin partagé les pierres tombales des lignes créées terminées plus anciennes que persistence.mintedRetention."
+    "en": "b33891eaa8d4681d",
+    "text": "Supprime du magasin de ce cluster les pierres tombales des lignes créées terminées plus anciennes que persistence.mintedRetention (dans un service déployé en cellules, la base de données propre à cette cellule, par lots de 5000 et au plus 20 lots par exécution)."
+  },
+  "sched.jobs.persistence.tombstone-purge-global.title": {
+    "en": "15e3f193cfee5337",
+    "text": "Balayage des pierres tombales expirées, niveau global"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.describe": {
+    "en": "98370fb755b4ba95",
+    "text": "Dans un service déployé en cellules, supprime de la base de données du niveau global les pierres tombales des lignes créées terminées plus anciennes que persistence.mintedRetention, par les mêmes lots ; son exécution est réclamée dans le niveau global, de sorte qu’une seule cellule exécute chaque créneau. Désactivé dans un service à une seule base de données, où l’autre balayage le couvre."
   },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",

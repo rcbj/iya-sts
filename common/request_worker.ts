@@ -1448,8 +1448,8 @@ class RequestWorker {
   // realm, trigger, params, clockOffsetMs, deadlineMs, grantUntilMs }`
   // (and `{ schedulerRenew }` while it runs, #1305); `cluster/scheduler.ts`'s
   // `runDelegated()` runs the job and this answers `{ schedulerRunDone,
-  // runId, ok, result | error, code }` (or `unknownJob`, which sends the job
-  // back to the front's thread).
+  // runId, ok, result | error, code, why }` (or `unknownJob`, which sends the
+  // job back to the front's thread).
   //
   // **THE COMMIT IS ANNOUNCED BEFORE THE ANSWER.** What the job wrote is
   // journalled like a request's write, but no request finished here to make

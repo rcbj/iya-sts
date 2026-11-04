@@ -8132,7 +8132,8 @@ function removeSocketDir() {
 //
 //   front -> worker   { schedulerRun, runId, jobId, realm, trigger, params,
 //                       clockOffsetMs, deadlineMs, grantUntilMs }
-//   worker -> front   { schedulerRunDone, runId, ok, result | error, code }
+//   worker -> front   { schedulerRunDone, runId, ok, result | error, code,
+//                       why }
 //                     or { schedulerRunDone, runId, unknownJob }
 //   front -> worker   { schedulerFence, runId }   (time limit, lost lease,
 //                                                   removed realm, a row
@@ -8295,7 +8296,9 @@ function receiveSchedulerRunDone(entry, message) {
                  unknownRealm: !!message.unknownRealm,
                  result: message.result === undefined ? null
                    : message.result,
-                 error: message.error || '', code: message.code || '' });
+                 error: message.error || '', code: message.code || '',
+                 // A success's own why (#1313), beside its summary.
+                 why: typeof message.why === 'string' ? message.why : '' });
   log.debug("Leaving receiveSchedulerRunDone().");
 }
 

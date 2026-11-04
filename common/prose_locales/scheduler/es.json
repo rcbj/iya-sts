@@ -356,8 +356,16 @@
     "text": "Barrido de lápidas caducadas"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "d5b8faad6c0c24c4",
-    "text": "Elimina del almacén compartido las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention."
+    "en": "b33891eaa8d4681d",
+    "text": "Elimina del almacén de este clúster las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention (en un servicio desplegado en celdas, la base de datos propia de esta celda, en lotes de 5000 y como máximo 20 lotes por ejecución)."
+  },
+  "sched.jobs.persistence.tombstone-purge-global.title": {
+    "en": "15e3f193cfee5337",
+    "text": "Barrido de lápidas caducadas, nivel global"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.describe": {
+    "en": "98370fb755b4ba95",
+    "text": "En un servicio desplegado en celdas, elimina de la base de datos del nivel global las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention, en los mismos lotes; su ejecución se reclama en el nivel global, de modo que una sola celda ejecuta cada intervalo. Desactivado en un servicio con una sola base de datos, donde el otro barrido lo cubre."
   },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",

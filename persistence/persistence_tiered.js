@@ -887,17 +887,30 @@ function create(options) {
   // SETTLED SEPARATELY: one database failing does not hide what the other
   // deleted, which rides on the rejection as `removed`, with `tier` naming
   // the database (or databases) that failed.
+  //
+  // `purgeTombstones()` TAKES THE SAME SHAPE (#1313): it was the last purge
+  // still sent to both databases through Promise.all, so a down global
+  // database lost the cell's count with it and every cell's tombstone job
+  // swept the one shared global table. `options.tier` names one database
+  // and `options.limit` bounds the one statement, exactly as here, and with
+  // no tier both are asked and settled apart through settleTiers().
   function purgeTier(which, kind, options) {
     log.debug("Entering purgeTier(). " + which + " " + kind);
     const target = which === 'global' ? globalDriver : cellDriver;
     log.debug("Leaving purgeTier().");
     return Promise.resolve().then(function () {
+      if (kind === 'tombstones') {
+        return target.purgeTombstones(options.beforeMs, options.limit
+          ? { limit: options.limit } : undefined);
+      }
       return target.purgeExpiredMinted(kind, options);
     });
   }
 
   function settleTiers(asked) {
     log.debug("Entering settleTiers(). " + asked.length);
+    const what = asked.length && asked[0].kind === 'tombstones'
+      ? 'tombstone purge' : 'expiry purge';
     log.debug("Leaving settleTiers().");
     return Promise.allSettled(asked.map(function (one) {
       return purgeTier(one.tier, one.kind, one.options);
@@ -917,7 +930,7 @@ function create(options) {
         return removed;
       }
       const err = /** @type {any} */ (new Error('the ' +
-        failed.join(' and ') + ' tier\'s expiry purge failed: ' +
+        failed.join(' and ') + ' tier\'s ' + what + ' failed: ' +
         String((first && first.message) || first).replace(/\.+$/, '')));
       err.removed = removed;
       err.tier = failed.join(',');
@@ -965,24 +978,50 @@ function create(options) {
     if (kind === 'orphan') {
       log.debug("Leaving tiered purgeExpiredMinted(). Orphans, against " +
                 "the global realms.");
+      // AN UNREADABLE REGISTRY IS MARKED (#1313), not just rejected: no
+      // tier is asked — deleting on a guess is what this guards — and
+      // `registryUnreadable` lets the cell's job tell "the orphan check
+      // could not be made" from "this cell's own delete failed", which
+      // fails its run.
       return globalDriver.loadRealms().then(function (rows) {
         return ask((rows || []).map(function (row) {
           return String(row.id);
         }));
+      }, function (e) {
+        log.debug("Caught in tiered purgeExpiredMinted(): " +
+                  ((e && e.message) || e));
+        const err = /** @type {any} */ (new Error('the global realm ' +
+          'registry could not be read: ' +
+          String((e && e.message) || e).replace(/\.+$/, '')));
+        err.registryUnreadable = true;
+        err.removed = 0;
+        err.tier = 'global';
+        throw err;
       });
     }
     log.debug("Leaving tiered purgeExpiredMinted().");
     return ask(null);
   };
 
-  driver.purgeTombstones = function (beforeMs) {
+  // ONE TIER WHEN ONE IS NAMED (#1313), the expiry purge's rule above:
+  // `options.tier` is 'cell' or 'global' and is consumed here, and
+  // `options.limit` (a positive integer, or none) is that database's bound.
+  // The tombstone jobs always name a tier in a tiered store
+  // (`persistence_minted.js`). Without one both databases are asked, each
+  // with the whole limit, and settled apart: a failure rejects carrying
+  // the other's count as `removed` and the failed tier as `tier`.
+  driver.purgeTombstones = function (beforeMs, options) {
     log.debug("Entering tiered purgeTombstones().");
+    const o = options || {};
+    const only = o.tier === 'global' || o.tier === 'cell' ? o.tier : '';
+    const which = only ? [only] : ['global', 'cell'];
+    const limit = Math.floor(Number(o.limit) || 0) > 0
+      ? Math.floor(Number(o.limit)) : 0;
     log.debug("Leaving tiered purgeTombstones().");
-    return Promise.all([globalDriver.purgeTombstones(beforeMs),
-                        cellDriver.purgeTombstones(beforeMs)])
-      .then(function (both) {
-        return (Number(both[0]) || 0) + (Number(both[1]) || 0);
-      });
+    return settleTiers(which.map(function (tier) {
+      return { tier: tier, kind: 'tombstones',
+               options: { beforeMs: beforeMs, limit: limit } };
+    }));
   };
 
   // WHAT IS SEALED UNDER A DATA ENCRYPTION KEY (#391 P2), in BOTH tiers:
