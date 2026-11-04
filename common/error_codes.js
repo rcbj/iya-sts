@@ -15412,6 +15412,27 @@ const CODES = [
       '(audited STS-FED-0164); the sign-in stands. Logged once when the ' +
       'store stops answering, and again when it answers.',
     spec: 'none (the audit row of the ignored group carries STS-FED-0164)' },
+  // #700 (2026-11-04): a custom attribute's definition changed in place.
+  { code: 'STS-LDAP-0206',
+    summary: 'update-person-attribute named a custom attribute this realm ' +
+      'does not define, so there was nothing to change (#700).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0207',
+    summary: 'update-person-attribute was refused for a field: a label ' +
+      'empty, longer than 128 characters or holding a control character, a ' +
+      'description longer than 1024 or holding one, or a portal flag that ' +
+      'is neither true nor false (#700).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0208',
+    summary: 'update-person-attribute would have changed a custom ' +
+      'attribute\'s syntax or whether it holds several values. Both are ' +
+      'fixed once it is defined, because the values people hold were ' +
+      'checked against them (#700).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0209',
+    summary: 'The directory would not store a changed custom attribute ' +
+      'definition (#700).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -25205,6 +25226,29 @@ const CODES = [
       '/account-api/signing-key was refused without a more specific code ' +
       '(#1290).',
     spec: 'HTTP 400 JSON' },
+  // #700 (2026-11-04): a person's own custom attribute, on the portal.
+  { code: 'STS-PORTAL-0626',
+    summary: 'POST /account-api/attributes named an attribute that is not ' +
+      'one of this realm\'s custom attributes (#700).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0627',
+    summary: 'POST /account-api/attributes named a custom attribute whose ' +
+      'definition does not show it on the user portal ' +
+      '(stsAttributePortalVisible is not TRUE) (#700).',
+    spec: 'HTTP 403 JSON' },
+  { code: 'STS-PORTAL-0628',
+    summary: 'POST /account-api/attributes named a custom attribute the ' +
+      'person sees on the portal but may not change there ' +
+      '(stsAttributePortalEditable is not TRUE) (#700).',
+    spec: 'HTTP 403 JSON' },
+  { code: 'STS-PORTAL-0629',
+    summary: 'A person\'s change to their own custom attribute on ' +
+      '/account-api/attributes was not made: they have no directory entry, ' +
+      'a value was refused for the attribute\'s syntax or cardinality, or ' +
+      'the directory did not store it. Where the person editor refused ' +
+      'with a code of its own (a required value taken away, STS-LDAP-0164), ' +
+      'that code is recorded instead (#700).',
+    spec: 'HTTP 400 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },
@@ -26257,6 +26301,14 @@ const CODES = [
       'an RFC 7592 update, a create and an attribute write.',
     spec: 'HTTP 400 {error: invalid_client_metadata} at registration; a ' +
       'console or management API refusal otherwise' },
+  // #700 (2026-11-04): a realm's custom attributes as claim catalogue rows.
+  { code: 'STS-REG-0366',
+    summary: 'A realm\'s custom attribute is named as a claim of the ' +
+      'directory attribute catalogue is (a custom birthdate, say), so it is ' +
+      'not offered to the claim sets: the catalogue\'s claim would be ' +
+      'overwritten. An attribute claim can carry it under another name ' +
+      '(#700).',
+    spec: 'log line; the attribute is absent from every claim set' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

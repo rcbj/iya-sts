@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5199** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5208** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 195
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 254
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 159
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 163
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -93,11 +93,11 @@ is an ordinary outcome.
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 258
 * [Management API (`STS-API`)](#sts-api) — 88
-* [User portal (`STS-PORTAL`)](#sts-portal) — 110
+* [User portal (`STS-PORTAL`)](#sts-portal) — 114
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 183
+* [Registries (`STS-REG`)](#sts-reg) — 184
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 * [Reporting (`STS-REPORT`)](#sts-report) — 54
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 14
@@ -3361,6 +3361,10 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0203` | In product mode, an LDAP add, modify, delete or rename that only a Security Administrator may make — an entry under a Directory → Policies container, the Security Administrator's group, a policy reference attribute, a memberOf naming that group, or the entry of a person who holds the role — was asked by a bound DN that does not hold it. Admin Write does not reach these. | LDAP insufficientAccessRights (50) |
 | `STS-LDAP-0204` | An entry was refused before it was created or renamed: its DN is longer than the store can hold as a key (MariaDB, 352 characters of normalised DN), and the flush would refuse it after it was in memory. | — |
 | `STS-LDAP-0205` | In a windowed directory, the store could not answer whether a group name from a federation partner's assertion is named by a granting attribute (a role's member group, an owner, a delegation or subject group). The name is treated as granting and not applied (audited STS-FED-0164); the sign-in stands. Logged once when the store stops answering, and again when it answers. | none (the audit row of the ignored group carries STS-FED-0164) |
+| `STS-LDAP-0206` | update-person-attribute named a custom attribute this realm does not define, so there was nothing to change (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0207` | update-person-attribute was refused for a field: a label empty, longer than 128 characters or holding a control character, a description longer than 1024 or holding one, or a portal flag that is neither true nor false (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0208` | update-person-attribute would have changed a custom attribute's syntax or whether it holds several values. Both are fixed once it is defined, because the values people hold were checked against them (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0209` | The directory would not store a changed custom attribute definition (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
 
 ## STS-ATTR
 
@@ -5577,6 +5581,10 @@ Raised from: portal/.
 | `STS-PORTAL-0623` | A pseudonym change on /account-api could not be attempted: the directory module was not loaded. A directory refusal records its own STS-LDAP code instead (#644). | HTTP 503 JSON |
 | `STS-PORTAL-0624` | A /portal/verify-pseudonym link is unknown, expired, mismatched or already spent (#644). | HTTP 400 JSON |
 | `STS-PORTAL-0625` | A person's revocation of their own signing key pair on /account-api/signing-key was refused without a more specific code (#1290). | HTTP 400 JSON |
+| `STS-PORTAL-0626` | POST /account-api/attributes named an attribute that is not one of this realm's custom attributes (#700). | HTTP 400 JSON |
+| `STS-PORTAL-0627` | POST /account-api/attributes named a custom attribute whose definition does not show it on the user portal (stsAttributePortalVisible is not TRUE) (#700). | HTTP 403 JSON |
+| `STS-PORTAL-0628` | POST /account-api/attributes named a custom attribute the person sees on the portal but may not change there (stsAttributePortalEditable is not TRUE) (#700). | HTTP 403 JSON |
+| `STS-PORTAL-0629` | A person's change to their own custom attribute on /account-api/attributes was not made: they have no directory entry, a value was refused for the attribute's syntax or cardinality, or the directory did not store it. Where the person editor refused with a code of its own (a required value taken away, STS-LDAP-0164), that code is recorded instead (#700). | HTTP 400 JSON |
 
 ## STS-ACCOUNT
 
@@ -5835,6 +5843,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0363` | oauthConfidential was given a value the token endpoint authentication method does not make, or was asked to be edited on its own. The registry writes the flag from the method: none, or no method on an application created by hand, is FALSE, and any other method is TRUE. A supplied value that disagrees is refused, and the attribute is not edited on its own (#466). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0364` | oauthAllowedTokenResponseTypes was given a token response type while the realm does not allow them: RFC 9700 mode is in force and oauth2.allowImplicitTokenResponses is off, or OAuth 2.1 mode or a FAPI profile is on (#1296). A remove is never refused. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0365` | A logo_uri, policy_uri or tos_uri (oauthLogoUri, oauthPolicyUri, oauthTosUri) is not an absolute https URL with a host and no credentials: the sign-in and consent screens draw it (OpenID Connect Registration section 2, #1300). At registration, an RFC 7592 update, a create and an attribute write. | HTTP 400 {error: invalid_client_metadata} at registration; a console or management API refusal otherwise |
+| `STS-REG-0366` | A realm's custom attribute is named as a claim of the directory attribute catalogue is (a custom birthdate, say), so it is not offered to the claim sets: the catalogue's claim would be overwritten. An attribute claim can carry it under another name (#700). | log line; the attribute is absent from every claim set |
 
 ## STS-DBG
 

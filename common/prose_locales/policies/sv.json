@@ -1691,22 +1691,6 @@
     "en": "df463dd3d0380799",
     "text": "Tjänstens klass för en attributpolicy: de attribut som varje person i en sfär måste ha. Namngiven efter PROFILEN (`cn=default`, eller en namngiven profil som är sfärens egen)."
   },
-  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
-  },
-  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
-    "en": "7631cfea872f9233",
-    "text": "På en person eller en grupp: attributpolicyn den namnger, `default` eller en namngiven profil i sfären. Ett värde."
-  },
-  "attributes.SELECTORS.precedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
-  },
-  "attributes.sentences.named": {
-    "en": "a18571bfeeea1845",
-    "text": "den gäller en person som namnger den, eller som ingår i en grupp som namnger den, när ingen annan policy de namnger har lägre precedens än {{precedence}}"
-  },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
     "text": "Tjänstens klass för ett anpassat attribut i en sfär, i ou=attributeDefinitions, namngiven efter attributet (`cn=<name>`)."
@@ -1730,6 +1714,26 @@
   "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
     "en": "b6a0dfd5be9d81fd",
     "text": "TRUE om ett anpassat attribut har ett värde, FALSE om det har flera."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "TRUE när en person ser sina egna värden för ett anpassat attribut på användarportalens översikt. FALSE, eller saknas, som standard."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "TRUE när en person får ändra sina egna värden för ett anpassat attribut i användarportalen. Innebär stsAttributePortalVisible. FALSE, eller saknas, som standard."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "På en person eller en grupp: attributpolicyn den namnger, `default` eller en namngiven profil i sfären. Ett värde."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Vilken namngiven attributpolicy som gäller när personen och personens grupper namnger flera: den lägsta, från 1 till 1000."
   },
   "attributes.SYNTAXES.string.what": {
     "en": "6f2c36f9a836b2f4",
@@ -1783,9 +1787,17 @@
     "en": "3867ffa1e351efa2",
     "text": "Det anpassade attributet {{name}} är definierat i den här sfären på {{dn}}. Det kan nu ges till en person och krävas av den här policyn."
   },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "Det anpassade attributet {{name}} är ändrat. Dess syntax och om det har flera värden är som förut."
+  },
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "Det anpassade attributet {{name}} är inte längre definierat i den här sfären."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "den gäller en person som namnger den, eller som ingår i en grupp som namnger den, när ingen annan policy de namnger har lägre precedens än {{precedence}}"
   },
   "kinds.postLogin.label": {
     "en": "22a1a1f2caf79722",

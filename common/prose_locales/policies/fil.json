@@ -1691,22 +1691,6 @@
     "en": "df463dd3d0380799",
     "text": "Ang class ng serbisyong ito para sa attribute policy: ang mga attribute na dapat hawak ng bawat tao sa isang realm. Pinangangalanan ng PROFILE (`cn=default`, o isang named profile na sa realm mismo)."
   },
-  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Kung aling named attribute policy ang gagamitin kapag ang tao at ang kanyang mga group ay nagpangalan ng ilan: ang pinakamababa, mula 1 hanggang 1000."
-  },
-  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
-    "en": "7631cfea872f9233",
-    "text": "Sa isang tao o isang group: ang attribute policy na pinapangalanan nito, `default` o isang named profile ng realm. Isang value."
-  },
-  "attributes.SELECTORS.precedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Kung aling named attribute policy ang gagamitin kapag ang tao at ang kanyang mga group ay nagpangalan ng ilan: ang pinakamababa, mula 1 hanggang 1000."
-  },
-  "attributes.sentences.named": {
-    "en": "a18571bfeeea1845",
-    "text": "ito ay para sa taong nagpapangalan nito, o nasa group na nagpapangalan nito, kapag walang ibang policy na pinapangalanan nila ang may mas mababang precedence kaysa {{precedence}}"
-  },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
     "text": "Ang class ng serbisyong ito para sa custom attribute ng isang realm, sa ou=attributeDefinitions, pinangangalanan ng attribute (`cn=<name>`)."
@@ -1730,6 +1714,26 @@
   "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
     "en": "b6a0dfd5be9d81fd",
     "text": "TRUE kung iisa ang value ng custom attribute, FALSE kung marami."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "TRUE kapag nakikita ng tao ang sarili niyang mga value ng isang custom attribute sa Overview ng user portal. FALSE, o wala, bilang default."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "TRUE kapag maaaring baguhin ng tao ang sarili niyang mga value ng isang custom attribute sa user portal. Kasama rito ang stsAttributePortalVisible. FALSE, o wala, bilang default."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Kung aling named attribute policy ang gagamitin kapag ang tao at ang kanyang mga group ay nagpangalan ng ilan: ang pinakamababa, mula 1 hanggang 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "Sa isang tao o isang group: ang attribute policy na pinapangalanan nito, `default` o isang named profile ng realm. Isang value."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Kung aling named attribute policy ang gagamitin kapag ang tao at ang kanyang mga group ay nagpangalan ng ilan: ang pinakamababa, mula 1 hanggang 1000."
   },
   "attributes.SYNTAXES.string.what": {
     "en": "6f2c36f9a836b2f4",
@@ -1783,9 +1787,17 @@
     "en": "3867ffa1e351efa2",
     "text": "Tinukoy ang custom attribute na {{name}} sa realm na ito sa {{dn}}. Puwede na itong ibigay sa isang tao at gawing kailangan ng policy na ito."
   },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "Binago na ang custom attribute na {{name}}. Hindi nagbago ang syntax nito at kung ilang value ang hawak nito."
+  },
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "Hindi na tinutukoy ang custom attribute na {{name}} sa realm na ito."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "ito ay para sa taong nagpapangalan nito, o nasa group na nagpapangalan nito, kapag walang ibang policy na pinapangalanan nila ang may mas mababang precedence kaysa {{precedence}}"
   },
   "kinds.postLogin.label": {
     "en": "22a1a1f2caf79722",

@@ -1691,22 +1691,6 @@
     "en": "df463dd3d0380799",
     "text": "La clase de este servicio para una política de atributos: los atributos que toda persona de un dominio debe tener. Nombrada por el PERFIL (`cn=default`, o un perfil con nombre propio del dominio)."
   },
-  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Qué política de atributos con nombre se aplica cuando la persona y sus grupos nombran varias: la más baja, de 1 a 1000."
-  },
-  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
-    "en": "7631cfea872f9233",
-    "text": "En una persona o un grupo: la política de atributos que nombra, `default` o un perfil con nombre del dominio. Un valor."
-  },
-  "attributes.SELECTORS.precedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Qué política de atributos con nombre se aplica cuando la persona y sus grupos nombran varias: la más baja, de 1 a 1000."
-  },
-  "attributes.sentences.named": {
-    "en": "a18571bfeeea1845",
-    "text": "se aplica a una persona que la nombra, o que está en un grupo que la nombra, cuando ninguna otra política que nombre tiene una precedencia menor que {{precedence}}"
-  },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
     "text": "La clase de este servicio para un atributo personalizado de un dominio, en ou=attributeDefinitions, nombrada por el atributo (`cn=<name>`)."
@@ -1730,6 +1714,26 @@
   "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
     "en": "b6a0dfd5be9d81fd",
     "text": "TRUE si un atributo personalizado tiene un solo valor, FALSE si tiene varios."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "TRUE cuando una persona ve sus propios valores de un atributo personalizado en la vista general del portal de usuario. FALSE, o ausente, de forma predeterminada."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "TRUE cuando una persona puede cambiar sus propios valores de un atributo personalizado en el portal de usuario. Implica stsAttributePortalVisible. FALSE, o ausente, de forma predeterminada."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Qué política de atributos con nombre se aplica cuando la persona y sus grupos nombran varias: la más baja, de 1 a 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "En una persona o un grupo: la política de atributos que nombra, `default` o un perfil con nombre del dominio. Un valor."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Qué política de atributos con nombre se aplica cuando la persona y sus grupos nombran varias: la más baja, de 1 a 1000."
   },
   "attributes.SYNTAXES.string.what": {
     "en": "6f2c36f9a836b2f4",
@@ -1783,9 +1787,17 @@
     "en": "3867ffa1e351efa2",
     "text": "El atributo personalizado {{name}} está definido en este dominio en {{dn}}. Ahora puede darse a una persona y exigirse en esta política."
   },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "El atributo personalizado {{name}} se ha cambiado. Su sintaxis y si admite varios valores siguen como estaban."
+  },
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "El atributo personalizado {{name}} ya no está definido en este dominio."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "se aplica a una persona que la nombra, o que está en un grupo que la nombra, cuando ninguna otra política que nombre tiene una precedencia menor que {{precedence}}"
   },
   "kinds.postLogin.label": {
     "en": "22a1a1f2caf79722",

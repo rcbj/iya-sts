@@ -44,6 +44,7 @@
   "noneOnEntry": "wala sa entry: walang claim",
   "wouldBeGenerated": "gagawin",
   "entrysOwn": "sariling value ng entry",
+  "customDefinedBy": "custom na attribute ng realm na ito ({syntax})",
   "carries": "May dalang {n} directory attribute: ",
   "carriesNone": "Walang dalang directory attribute. Mag-tsek ng ilan at pindutin ang I-update.",
   "colIn": "Kasama",

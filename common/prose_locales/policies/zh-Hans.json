@@ -1691,22 +1691,6 @@
     "en": "df463dd3d0380799",
     "text": "本服务用于属性策略的类：一个领域中每个人都必须持有的属性。以配置文件命名（`cn=default`，或该领域自己的命名配置文件）。"
   },
-  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "当此人及其群组指定了多个命名属性策略时，哪一个适用：最低者，取值 1 到 1000。"
-  },
-  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
-    "en": "7631cfea872f9233",
-    "text": "在人员或群组上：其所指定的属性策略，`default` 或该领域的一个命名配置文件。一个值。"
-  },
-  "attributes.SELECTORS.precedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "当此人及其群组指定了多个命名属性策略时，哪一个适用：最低者，取值 1 到 1000。"
-  },
-  "attributes.sentences.named": {
-    "en": "a18571bfeeea1845",
-    "text": "它适用于指定它的人，或属于指定它的群组的人，且他们所指定的其他策略都没有比 {{precedence}} 更低的优先级"
-  },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
     "text": "本服务用于领域自定义属性的类，位于 ou=attributeDefinitions，以属性命名（`cn=<name>`）。"
@@ -1730,6 +1714,26 @@
   "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
     "en": "b6a0dfd5be9d81fd",
     "text": "自定义属性只有一个值时为 TRUE，有多个值时为 FALSE。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "为 TRUE 时，本人可在用户门户的概览中看到自己在某个自定义属性上的值。默认为 FALSE 或不存在。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "为 TRUE 时，本人可在用户门户上更改自己在某个自定义属性上的值。隐含 stsAttributePortalVisible。默认为 FALSE 或不存在。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "当此人及其群组指定了多个命名属性策略时，哪一个适用：最低者，取值 1 到 1000。"
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "在人员或群组上：其所指定的属性策略，`default` 或该领域的一个命名配置文件。一个值。"
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "当此人及其群组指定了多个命名属性策略时，哪一个适用：最低者，取值 1 到 1000。"
   },
   "attributes.SYNTAXES.string.what": {
     "en": "6f2c36f9a836b2f4",
@@ -1783,9 +1787,17 @@
     "en": "3867ffa1e351efa2",
     "text": "自定义属性 {{name}} 已在此领域的 {{dn}} 定义。现在可以将其赋予人员，并由此策略设为必填。"
   },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "自定义属性 {{name}} 已更改。其语法以及是否包含多个值保持不变。"
+  },
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "自定义属性 {{name}} 已不再在此领域中定义。"
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "它适用于指定它的人，或属于指定它的群组的人，且他们所指定的其他策略都没有比 {{precedence}} 更低的优先级"
   },
   "kinds.postLogin.label": {
     "en": "22a1a1f2caf79722",

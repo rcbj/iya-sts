@@ -16,6 +16,10 @@
 // what its page showed and nothing it did not — the reasoning about what
 // each page shows is kept below beside the code that builds it.
 //
+// Since #700 the Overview also carries the realm's custom attributes whose
+// definition shows them on the portal, and `POST /account-api/attributes`
+// changes the caller's own values of one that definition lets them edit.
+//
 // **THE PERSON IS THE TOKEN'S SUBJECT** (`account-api/account_api.ts`) and no
 // operation here takes a name: the entry read is the caller's, the
 // applications asked about are the caller's, and the Shared Signals inbox —
@@ -101,6 +105,19 @@ const LANGUAGE_FORM = vz.object({
               'follow the browser.')
 });
 
+// A PERSON'S OWN VALUES OF ONE CUSTOM ATTRIBUTE (#700): the attribute and
+// the values it is to hold afterwards — every one, so an empty list (or no
+// `values`) clears it. A form's boxes are each a `values`; an empty box is
+// no value. At most 100, each the person editor's longest value.
+const ATTRIBUTE_FORM = vz.object({
+  attribute: vz.string().max(64)
+    .describe('The custom attribute\'s name, one this realm\'s definition ' +
+              'lets you edit on the portal.'),
+  values: vt.opt(vt.repeatable(vz.string().max(1024)).max(100))
+    .describe('Every value the attribute is to hold afterwards; none ' +
+              'clears it. A single-valued attribute takes one.')
+});
+
 // THE ACCOUNT HOLDER'S RISC PARTICIPATION (#146): one of section 2.8's three
 // moves a person may make. opt-out-effective is not among them — only the
 // scheduler job makes that move, after risc.optOutDelayHours.
@@ -126,6 +143,8 @@ interface AccountOverviewDeps {
   personEntry(username: string): Json;
   // The editor that writes `preferredLanguage`, reached when it is written.
   personEditor(): Json;
+  // The realm's custom attribute register (#700), reached when asked.
+  attributePolicy(): Json;
 }
 
 /**
@@ -167,6 +186,13 @@ class AccountOverview {
         helpers.log.debug("Entering personEditor().");
         helpers.log.debug("Leaving personEditor().");
         return require('../ldap/person_editor');
+      },
+      // LAZILY too (#700): the register is the directory's, and requiring
+      // it here would run its load-time declarations at 8a.
+      attributePolicy: function attributePolicy(): Json {
+        helpers.log.debug("Entering attributePolicy().");
+        helpers.log.debug("Leaving attributePolicy().");
+        return require('../common/attribute_policy');
       }
     };
   }
@@ -253,10 +279,220 @@ class AccountOverview {
                        remaining: Number(backup.remaining || 0),
                        total: Number(backup.total || 0) }
       },
-      language: this.languageOf(entry)
+      language: this.languageOf(entry),
+      // #700: the realm's custom attributes this person may see, only
+      // where they have an entry to hold them.
+      customAttributes: entry ? this.customAttributesOf(entry) : []
     };
     log.debug("Leaving AccountOverview.overview().");
     return view;
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REALM'S CUSTOM ATTRIBUTES ON THE OVERVIEW (#700). Only a definition
+  // whose `portalVisible` is TRUE is shown, which is OFF by default: what an
+  // administrator defined for the directory is not thereby the person's to
+  // read. Like the inetOrgPerson table, drawn from a LIST (the register) and
+  // never by iterating the entry. `editable` is the definition's
+  // `portalEditable`, which implies visible.
+  // ---------------------------------------------------------------------------
+  /**
+   * The custom attributes the person sees, with their own values.
+   *
+   * @param entry - the person's entry
+   * @returns `[{ name, label, description, syntax, multi, values, editable }]`
+   */
+  customAttributesOf(entry: Json): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering AccountOverview.customAttributesOf().");
+    let definitions: Json[] = [];
+    try {
+      definitions = this.deps.attributePolicy().definitions() || [];
+    } catch (e) {
+      // No register to read shows nothing extra; the page still draws.
+      log.debug("Caught in AccountOverview.customAttributesOf(): " +
+                ((e && e.message) || e));
+      definitions = [];
+    }
+    const out = definitions.filter(function (one: Json): boolean {
+      return !!one.portalVisible;
+    }).map((one: Json): Json => {
+      return { name: String(one.name), label: String(one.label || one.name),
+               description: String(one.description || ''),
+               syntax: String(one.syntax || 'string'), multi: !!one.multi,
+               values: this.valuesOn(entry, one.name),
+               editable: !!one.portalEditable };
+    });
+    log.debug("Leaving AccountOverview.customAttributesOf(). " + out.length);
+    return out;
+  }
+
+  // One attribute's values on an entry, whichever case the store keys it by.
+  private valuesOn(entry: Json, name: string): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AccountOverview.valuesOn(). " + name);
+    const attributes = (entry && entry.attributes) || {};
+    const wanted = String(name || '').toLowerCase();
+    const key = Object.keys(attributes).filter(function (one) {
+      return one.toLowerCase() === wanted;
+    })[0];
+    const out = key ? [].concat(attributes[key]).map(String)
+      .filter(function (one: string): boolean {
+        return one !== '';
+      }) : [];
+    log.debug("Leaving AccountOverview.valuesOn(). " + out.length);
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST: THE PERSON'S OWN VALUES OF ONE CUSTOM ATTRIBUTE (#700). Refused
+  // unless the realm defines it (STS-PORTAL-0626), its definition shows it
+  // on the portal (0627) and lets the person edit it (0628). The values are
+  // checked against the definition by the person editor, and written through
+  // it one edit at a time, as `setLanguage()` writes — so the editor's audit
+  // row, its syntax check and the attribute policy's `editRefusal` all hold.
+  //
+  // **ADDS BEFORE REMOVES**, for a multi-valued attribute: a required value
+  // may not be taken away (`editRefusal`), and replacing one value with
+  // another by removing first would leave an empty moment the policy
+  // refuses. Emptying it outright is asked of the policy BEFORE anything is
+  // written, so a refusal changes nothing (STS-LDAP-0164, the editor's own
+  // code for that refusal). A single-valued attribute is one `set`.
+  // ---------------------------------------------------------------------------
+  /**
+   * Replaces the caller's own values of one custom attribute.
+   *
+   * @param ctx - the account API's helpers
+   * @param res - the response
+   * @param caller - the signed-in person
+   * @param body - the checked body: `attribute`, `values`
+   * @returns nothing
+   */
+  setCustomAttribute(ctx: AccountContext, res: Json, caller: AccountCaller,
+                     body: Json): unknown {
+    const { log } = this.deps;
+    log.debug("Entering AccountOverview.setCustomAttribute().");
+    const username = caller.username;
+    const asked = String(body.attribute || '').trim();
+    let policy: Json = null;
+    let definition: Json = null;
+    try {
+      policy = this.deps.attributePolicy();
+      definition = policy.definition(asked);
+    } catch (e) {
+      // No register: no custom attribute here, which is the refusal below.
+      log.debug("Caught in AccountOverview.setCustomAttribute(): " +
+                ((e && e.message) || e));
+      definition = null;
+    }
+    if (!definition) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Undefined.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0626',
+        'This realm has no custom attribute called "' + asked.slice(0, 64) +
+        '", so nothing was changed.');
+    }
+    if (!definition.portalVisible) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Hidden.");
+      return ctx.refuse(res, 403, 'STS-PORTAL-0627',
+        definition.name + ' is not shown on this portal, so it is not ' +
+        'changed here. Ask an administrator.');
+    }
+    if (!definition.portalEditable) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Read-only.");
+      return ctx.refuse(res, 403, 'STS-PORTAL-0628',
+        definition.name + ' is shown here but is not yours to change. Ask ' +
+        'an administrator.');
+    }
+    const entry = this.deps.personEntry(username);
+    if (!entry) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). No entry.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0629',
+        'You have no directory entry here to hold ' + definition.name + '.');
+    }
+    const sent = [].concat(body.values === undefined || body.values === null
+      ? [] : body.values).map(function (one: Json): string {
+      return String(one).trim();
+    }).filter(Boolean);
+    const editor = this.deps.personEditor();
+    const checked = editor.checkCreateValues(definition.name, sent);
+    if (!checked || checked.error) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Values.");
+      return ctx.refuse(res, 400, 'STS-PORTAL-0629',
+        'Your ' + definition.label + ' was not changed: ' +
+        (checked ? checked.error : definition.name + ' is not an attribute ' +
+                   'the directory\'s editor changes.'));
+    }
+    const wanted: string[] = checked.values;
+    const held = this.valuesOn(entry, definition.name);
+    // A HOT PATH, run once per value compared: no Entering/Leaving pair,
+    // which would drown the log in a line per value.
+    const within = function (list: string[], one: string): boolean {
+      return list.some(function (other: string): boolean {
+        return other.toLowerCase() === one.toLowerCase();
+      });
+    };
+    const adds = wanted.filter(function (one: string): boolean {
+      return !within(held, one);
+    });
+    const removes = held.filter(function (one: string): boolean {
+      return !within(wanted, one);
+    });
+    const t = ctx.translatorFor(username);
+    const done = function (): unknown {
+      log.debug("Entering done().");
+      log.debug("Leaving done().");
+      return ctx.json(res, 200, { ok: true, go: ctx.PORTAL,
+                                  message: t.text('portal.done.attribute',
+                                    { label: definition.label }) });
+    };
+    if (!adds.length && !removes.length) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Unchanged.");
+      return done();
+    }
+    // EMPTYING IT IS ASKED FIRST, so a refusal leaves every value in place.
+    const lower = definition.name.toLowerCase();
+    const leaves = Object.assign({}, entry.attributes || {},
+                                 { [lower]: wanted });
+    const refusal = wanted.length ? null
+      : policy.editRefusal({ [lower]: held }, { [lower]: wanted },
+                           { uid: username, attributes: leaves });
+    if (refusal) {
+      log.debug("Leaving AccountOverview.setCustomAttribute(). Required.");
+      return ctx.refuse(res, 400, 'STS-LDAP-0164',
+        'Your ' + definition.label + ' was not changed: ' + refusal.message);
+    }
+    const edits: Json[] = definition.multi
+      ? adds.map(function (one: string): Json {
+        return { attribute: definition.name, mode: 'add', value: one };
+      }).concat(removes.map(function (one: string): Json {
+        return { attribute: definition.name, mode: 'remove', value: one };
+      }))
+      : [{ attribute: definition.name, mode: 'set',
+           value: wanted.length ? wanted[0] : '' }];
+    for (const edit of edits) {
+      let written: Json = null;
+      try {
+        written = editor.update(username, edit,
+                                { actor: username, via: 'the user portal' });
+      } catch (e) {
+        log.debug("Caught in AccountOverview.setCustomAttribute(): " +
+                  ((e && e.message) || e));
+        written = null;
+      }
+      if (!written || !written.ok) {
+        const why = (written && (written.errors || []).join(' ')) ||
+          'The directory could not be asked.';
+        log.debug("Leaving AccountOverview.setCustomAttribute(). Not " +
+                  "written.");
+        return ctx.refuse(res, 400, ctx.errorCodes.codeOf(written) ||
+                          'STS-PORTAL-0629',
+                          'Your ' + definition.label + ' was not ' +
+                          'changed: ' + why);
+      }
+    }
+    log.debug("Leaving AccountOverview.setCustomAttribute(). " +
+              adds.length + " added, " + removes.length + " removed.");
+    return done();
   }
 
   // THE LANGUAGE ON THE PERSON'S OWN ACCOUNT (#539): `preferredLanguage`
@@ -705,8 +941,11 @@ class AccountOverview {
           'and when it ends; every standard inetOrgPerson attribute your ' +
           'entry holds, from a fixed list (`directory`, null with no ' +
           'directory or no entry — then `session` carries what the sign-in ' +
-          'said); a summary of your credentials (`mechanisms`); and the ' +
-          'language your entry holds with those offered (`language`).',
+          'said); a summary of your credentials (`mechanisms`); the ' +
+          'language your entry holds with those offered (`language`); and ' +
+          'the realm\'s custom attributes whose definition shows them on ' +
+          'the portal, with your values and whether you may change them ' +
+          '(`customAttributes`, empty with no entry).',
         query: PORTAL_QUERY,
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
@@ -725,6 +964,24 @@ class AccountOverview {
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.setLanguage(ctx, res, caller, input.body);
+        } },
+      { method: 'POST', path: ctx.BASE + '/attributes',
+        operationId: 'setCustomAttribute', tag: 'Overview',
+        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/attributes',
+        summary: 'Replaces your own values of one custom attribute',
+        description: 'Writes `values` as every value the realm\'s custom ' +
+          'attribute `attribute` holds on your own entry, checked against ' +
+          'its syntax; no values clears it. Only an attribute whose ' +
+          'definition shows it on the portal and lets you edit it ' +
+          '(`customAttributes[].editable` on the Overview). A value the ' +
+          'realm\'s attribute policy requires may not be emptied in ' +
+          'product mode.',
+        body: ATTRIBUTE_FORM,
+        statuses: { 403: 'The attribute is not shown to you, or not yours ' +
+                         'to change.' },
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.setCustomAttribute(ctx, res, caller, input.body);
         } },
       { method: 'GET', path: ctx.BASE + '/applications',
         operationId: 'getApplications', tag: 'Applications',

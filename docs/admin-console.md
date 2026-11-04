@@ -780,7 +780,12 @@ required. They belong to the realm (`ou=attributeDefinitions`) and are not
 inherited. `POST /admin-api/policies/define-person-attribute` and
 `remove-person-attribute` do the same over the API; a custom attribute cannot be
 removed while anybody holds a value of it or any of the realm's policies
-requires it.
+requires it. The **User portal** column says whether the person sees the
+attribute on the portal, and whether they may change it there; both are off
+by default, and the define form has a box for each. **Change** on a row edits
+the label, the description and those two boxes
+(`update-person-attribute`); letting the person change it also shows it. The
+syntax and whether it holds several values are fixed once it is defined.
 `/admin/users/new` and a person's Attributes tab outline every required field
 in red and mark it *required*.
 
@@ -1772,6 +1777,18 @@ to the two token sets and UserInfo (whose `sub` a client must check against the
 ID Token's), not to the SAML sets, where an attribute called `exp` collides with
 nothing; the additive rule still protects SAML, because a WS-Federation relying
 party keys off the claim URIs this service writes.
+
+**The realm's custom attributes can be ticked too** (#700). The ticked
+catalogue on each of these pages, and on **Kerberos → PAC claims**, lists the
+realm's custom attributes after the standard ones. Each is claimed under its
+own name and typed by its syntax in a token: an `integer` is a number, a
+`boolean` is `true` or `false`, and a `date` is `YYYY-MM-DD`. A multi-valued
+one is an array, or one `<AttributeValue>` per value in an assertion. The
+value always comes from the person's entry and is never invented. A client
+can ask for one by name in an OpenID Connect claims request. A custom
+attribute named like a standard claim (a custom `birthdate`) is not offered
+(`STS-REG-0366`); a directory-attribute claim can carry it under another
+name.
 
 **A claim can carry any directory attribute** (#94). *Add a
 directory-attribute claim* on each of these pages (`add-attribute-claim` on

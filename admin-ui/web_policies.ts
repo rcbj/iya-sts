@@ -368,6 +368,13 @@ class PoliciesPage {
   // may be given, each with a Required box (the save form); the realm's
   // custom attributes, each with Remove; and a form that defines one.
   //
+  // #700: each custom attribute says whether the user portal shows it to
+  // the person and lets them edit it, and folds a form (`<details>`, no
+  // script) that changes its label, description and those two flags
+  // through `update-person-attribute`. Its two boxes are sent as `false`
+  // when unticked (`ConsoleRuntime.uncheckedBoxes()`), so the form states
+  // the whole of both flags.
+  //
   // **THE SAVE FORM CARRIES A HIDDEN, EMPTY `requiredAttributes` FIRST**, so
   // a form with every box unticked still sends the member — an empty list,
   // which is a choice — where a form that sent nothing would be refused as a
@@ -480,12 +487,59 @@ class PoliciesPage {
       return '<option value="' + kit.esc(one.id) + '" title="' +
         kit.esc(one.what) + '">' + kit.esc(one.id) + '</option>';
     }).join('');
+    // THE TWO PORTAL BOXES (#700), for the define form and each row's
+    // change form: ticked where the definition says so.
+    const portalBoxes = function (prefix, visible, editable) {
+      return '<tr><td>' + t.html('consolePolicies.attributes.portal') +
+        '</td><td><input type="checkbox" id="' + kit.esc(prefix) +
+        'visible" name="portalVisible" value="true"' +
+        (visible ? ' checked' : '') + '> <label for="' + kit.esc(prefix) +
+        'visible">' + t.html('consolePolicies.attributes.portalVisible') +
+        '</label><br><input type="checkbox" id="' + kit.esc(prefix) +
+        'editable" name="portalEditable" value="true"' +
+        (editable ? ' checked' : '') + '> <label for="' + kit.esc(prefix) +
+        'editable">' + t.html('consolePolicies.attributes.portalEditable') +
+        '</label><div class="sub">' +
+        t.html('consolePolicies.attributes.portalNote') + '</div></td></tr>';
+    };
+    const portalState = function (one) {
+      return one.portalEditable
+        ? t.html('consolePolicies.attributes.portalStateEditable')
+        : one.portalVisible
+          ? t.html('consolePolicies.attributes.portalStateVisible')
+          : '<span class="state-none">' +
+            t.html('consolePolicies.attributes.portalStateHidden') + '</span>';
+    };
+    const changeForm = function (one) {
+      const prefix = 'ap-edit-' + one.name + '-';
+      return '<details><summary>' +
+        t.html('consolePolicies.attributes.change') + '</summary>' +
+        '<form method="post" action="/admin/policies">' +
+        '<input type="hidden" name="action" value="' +
+        kit.esc(ap.actions.update) + '"><input type="hidden" name="name" ' +
+        'value="' + kit.esc(one.name) + '"><table>' +
+        '<tr><td><label for="' + kit.esc(prefix) + 'label">' +
+        t.html('consolePolicies.attributes.label') + '</label></td><td>' +
+        '<input type="text" id="' + kit.esc(prefix) + 'label" name="label" ' +
+        'required maxlength="128" size="40" value="' + kit.esc(one.label) +
+        '"></td></tr><tr><td><label for="' + kit.esc(prefix) +
+        'description">' + t.html('consolePolicies.attributes.description') +
+        '</label></td><td><input type="text" id="' + kit.esc(prefix) +
+        'description" name="description" maxlength="1024" size="60" ' +
+        'value="' + kit.esc(one.description) + '"></td></tr>' +
+        portalBoxes(prefix, one.portalVisible, one.portalEditable) +
+        '</table><p class="sub">' +
+        t.html('consolePolicies.attributes.changeFixed') + '</p><p><button>' +
+        t.html('consolePolicies.attributes.saveChange') +
+        '</button></p></form></details>';
+    };
     const custom = ap.custom.length
       ? '<table><tr><th>' + t.html('consolePolicies.field.attribute') +
         '</th><th>' + t.html('consolePolicies.attributes.label') + '</th><th>' +
         t.html('consolePolicies.attributes.syntax') + '</th><th>' +
         t.html('consolePolicies.attributes.values') + '</th><th>' +
         t.html('consolePolicies.attributes.description') + '</th><th>' +
+        t.html('consolePolicies.attributes.portal') + '</th><th>' +
         '</th></tr>' +
         ap.custom.map(function (one) {
           return '<tr><td><code>' + kit.esc(one.name) + '</code></td><td>' +
@@ -493,7 +547,8 @@ class PoliciesPage {
             '</code></td><td>' + (one.multi
               ? t.html('consolePolicies.attributes.several')
               : t.html('consolePolicies.attributes.one')) + '</td><td>' +
-            kit.esc(one.description) + '</td><td>' +
+            kit.esc(one.description) + '</td><td>' + portalState(one) +
+            '</td><td>' + changeForm(one) +
             '<form method="post" action="/admin/policies" class="inline">' +
             '<input type="hidden" name="action" value="' +
             kit.esc(ap.actions.remove) + '"><input type="hidden" ' +
@@ -531,7 +586,8 @@ class PoliciesPage {
       '<tr><td><label for="ap-new-description">' +
       t.html('consolePolicies.attributes.description') + '</label></td><td>' +
       '<input type="text" id="ap-new-description" name="description" ' +
-      'maxlength="1024" size="60"></td></tr></table>' +
+      'maxlength="1024" size="60"></td></tr>' +
+      portalBoxes('ap-new-', false, false) + '</table>' +
       '<p><button>' + t.html('consolePolicies.attributes.define') +
       '</button></p></form>';
     // THE NAMED PROFILES (#1241): each with its precedence, what names it

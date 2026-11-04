@@ -319,7 +319,8 @@ function kinds(t) {
             'clear-passkey-client,clear-passkey-clients,' +
             'save-locale-policy,reset-locale-policy,' +
             'save-attributes-policy,reset-attributes-policy,' +
-            'define-person-attribute,remove-person-attribute,' +
+            'define-person-attribute,update-person-attribute,' +
+            'remove-person-attribute,' +
             'save-postLogin-policy,reset-postLogin-policy',
             'F2. the actions are every kind\'s, the password policy\'s by ' +
             'the names they always had', view.actions.join(','));

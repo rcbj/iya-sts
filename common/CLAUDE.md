@@ -4100,6 +4100,20 @@ with `Cannot find module` naming a file the operator never mentioned.
    (`APP_SELECTION_ATTRIBUTES` has no row; `applicationClaimSelections()`
    leaves it out).
 
+   **A REALM'S CUSTOM ATTRIBUTES ARE CATALOGUE ROWS TOO (#700)**, made per
+   realm by `customRows()` from `attribute_policy.ts`'s register (3co) and
+   walked after the catalogue's own wherever `CATALOGUE` was walked —
+   `rowsInRealm()`, which `ssf/caep.ts` reads too. The catalogue is the
+   process's and fixed at load, the register the realm's and changed while
+   the service runs, which is why they are joined at the read and never
+   merged into `CATALOGUE`. A custom row is claimed under its own name, its
+   value is the directory's only (`from` null, so nothing is invented in
+   either mode), and its syntax types it in a JWT (integer a number, boolean
+   true/false, date YYYY-MM-DD); in an assertion it is text, a multi-valued
+   one as `values`. A name that is also a catalogue claim name is left out
+   (STS-REG-0366). A stored selection naming a removed attribute keeps the
+   name and selects nothing.
+
    **Nothing is selected on a fresh start, in any of the sets.** Unlike
    `/admin/vc`'s ten defaults — which reproduce what that issuer already carried
    — this page changes what every client of this service receives, so it does
@@ -14167,6 +14181,19 @@ suite SWEPT rather than the policy weakened for it.
   `catalogue()` never offers an `sts` name: the person editor's universe
   holds the declared policy references, which are not facts a profile could
   require.
+* **On the user portal by the definition's two flags (#700)**,
+  `stsAttributePortalVisible` and `stsAttributePortalEditable`, both FALSE by
+  default; `definitions()` answers them as `portalVisible` and
+  `portalEditable`. **Editable implies visible, NORMALISED, not refused**:
+  `define()` and `redefine()` store an editable one visible and a hidden one
+  not editable, and the read ORs them, so an entry an LDAP client wrote with
+  only the second flag is answered alike. **`update-person-attribute`**
+  (`redefine()`, the kind's third act) changes the label, the description
+  and the flags in place; the syntax and the cardinality are FIXED
+  (STS-LDAP-0208) because held values were checked against them, and sent
+  as they are they are accepted. 0206 (not defined), 0207 (a field), 0209
+  (not stored). The portal's side — the Overview's `customAttributes` and
+  `POST /account-api/attributes` — is `portal/CLAUDE.md`'s.
 * **The count of people who lack one is a walk**, so it is asked only on
   request (`GET /admin-api/policies?missing=count`), and not at all where the
   directory is in the store; the view always gives the LDAP filter that finds
@@ -14181,8 +14208,7 @@ suite SWEPT rather than the policy weakened for it.
   `default` profile in product mode, and the custom attributes are the
   `CustomAttributes` extension, read and written (`scim/CLAUDE.md`, *THE
   REALM'S SCHEMAS*).
-* **Left for follow-up tickets**, as the design comment says: custom
-  attributes as token, UserInfo and SAML claims and on the portal; and
+* **Left for follow-up tickets**, as the design comment says:
   a sign-in step that collects a missing value instead of refusing a
   federated newcomer.
 
