@@ -246,7 +246,7 @@ function postAnchor(url, pem) {
   const base = String(url || '').replace(/\/+$/, '');
   const token = process.env.STS_ADMIN_API_TOKEN || '';
   log.debug("Leaving postAnchor().");
-  return send(base + '/admin-api/tls/trust/add', 'application/json',
+  return sender(base + '/admin-api/tls/trust/add', 'application/json',
     JSON.stringify({ certificates: pem }),
     token ? { Authorization: 'Bearer ' + token } : {}, true)
     .then(function (answer) {
@@ -306,12 +306,74 @@ function send(where, type, body, extraHeaders, verify) {
 }
 
 // ---------------------------------------------------------------------------
+// THE ONE CALL EVERY ADD AND REMOVE GOES THROUGH, REPLACEABLE FOR A TEST
+// (#1307). `tests/trust_anchor_cleanup.js` drives `forgetAnchors()`,
+// `settleAnchors()` and `trustRecorded()` against a fake with send()'s
+// signature and answer shape, so the cleanup's decisions are asserted without
+// a service. `useSender(null)` puts send() back; a test restores what
+// `useSender()` handed it, never null by assumption.
+// ---------------------------------------------------------------------------
+let sender = send;
+
+function useSender(fn) {
+  log.debug("Entering useSender().");
+  const previous = sender;
+  sender = typeof fn === 'function' ? fn : send;
+  log.debug("Leaving useSender().");
+  return previous;
+}
+
+// The sentence `tls/tls_server.js`'s removeAnchor() refuses a fingerprint it
+// does not hold with (STS-TLS-0016; codes are never sent, and the APIs' errors
+// stay English), carried in the 400's `errors`.
+const NOT_HELD = /holds no anchor with the SHA-256 fingerprint/;
+
+// ---------------------------------------------------------------------------
+// RECORD AN ANCHOR BEFORE IT IS POSTED (#1307, from #695's review of #682).
+//
+// Every job recorded its anchor only after the add answered 2xx. send()
+// gives up after 15s, and an add the service APPLIED but answered late was
+// then never recorded, so the job's own cleanup left it in the truststore
+// (32 anchors, service-wide) and only `deploy/aws/reset-environment.js`
+// caught it. Recording first costs nothing, because a remove of an anchor
+// the service never took answers "not held", which removeAnchor() counts as
+// done.
+//
+// `recordAnchor(added, pem)` is the record alone, for a job that posts
+// through a door of its own; `trustRecorded(url, pem, added)` is the record
+// and then `trustAnchor()`'s post, and answers what that answers. Only an
+// anchor THE JOB MINTED is recorded: removing one it re-posts (the remote
+// PEP's, `XACML_PEP_CA_PEM`) would take it from somebody else.
+// ---------------------------------------------------------------------------
+function recordAnchor(added, pem) {
+  log.debug("Entering recordAnchor().");
+  if (!Array.isArray(added)) {
+    log.debug("Leaving recordAnchor(). No list.");
+    throw new Error('recordAnchor() needs the job\'s list of added anchors');
+  }
+  if (pem && added.indexOf(pem) < 0) {
+    added.push(pem);
+  }
+  log.debug("Leaving recordAnchor().");
+  return added;
+}
+
+function trustRecorded(url, pem, added) {
+  log.debug("Entering trustRecorded().");
+  recordAnchor(added, pem);
+  log.debug("Leaving trustRecorded().");
+  return postAnchor(url, pem);
+}
+
+// ---------------------------------------------------------------------------
 // REMOVE AN ANCHOR THIS PROCESS ADDED (#335).
 //
 // The client truststore is service-wide and holds 32. A job that posts a
 // suite CA removes it when the job finishes, pass or fail. The command-line
 // `main()` does not: the remote PEP needs that anchor for the rest of the
 // run, and `deploy/aws/reset-environment.js` spares it by fingerprint.
+// A fingerprint the service answers it does not hold is a remove that is
+// done (#1307), answered `{ ok: true, absent: true }`.
 // ---------------------------------------------------------------------------
 function removeAnchor(url, pem) {
   log.debug("Entering removeAnchor().");
@@ -331,10 +393,19 @@ function removeAnchor(url, pem) {
                              why: 'the anchor is not a certificate' });
   }
   log.debug("Leaving removeAnchor().");
-  return send(base + '/admin-api/tls/trust/remove', 'application/json',
+  return sender(base + '/admin-api/tls/trust/remove', 'application/json',
     JSON.stringify({ fingerprint: fingerprint }),
     token ? { Authorization: 'Bearer ' + token } : {}, true)
     .then(function (answer) {
+      if (!answer.ok && answer.status === 400 &&
+          NOT_HELD.test(String(answer.body || ''))) {
+        // NOT HELD IS DONE (#1307). A job records an anchor BEFORE it posts
+        // it, so the list it hands forgetAnchors() can name one whose add
+        // never reached the service, or was refused. The service answering
+        // that it holds no such anchor is the state the remove was for.
+        return { ok: true, status: answer.status, body: answer.body,
+                 absent: true };
+      }
       if (!answer.ok) {
         answer.why = 'POST /admin-api/tls/trust/remove answered ' +
           (answer.status || answer.why) + ' ' +
@@ -644,7 +715,8 @@ async function main() {
 }
 
 // Guarded so that a test can require this file for `mint()`, `trustAnchor()`,
-// `removeAnchor()`, `forgetAnchors()` and `settleAnchors()` without it parsing
+// `trustRecorded()`, `removeAnchor()`, `forgetAnchors()` and `settleAnchors()`
+// (and `useSender()`, #1307) without it parsing
 // arguments and writing files — the same guard `xacml-pep/pep.js` and
 // `common/request_worker.ts` carry, for the same reason.
 // ---------------------------------------------------------------------------
@@ -766,5 +838,7 @@ if (require.main === module) {
 module.exports = { mint: mint, trustAnchor: postAnchor,
                    removeAnchor: removeAnchor, forgetAnchors: forgetAnchors,
                    settleAnchors: settleAnchors,
+                   recordAnchor: recordAnchor, trustRecorded: trustRecorded,
+                   useSender: useSender,
                    storeOnEntry: storeOnEntry, forgetStored: forgetStored,
                    DEFAULT_SUBJECT: DEFAULT_SUBJECT };
