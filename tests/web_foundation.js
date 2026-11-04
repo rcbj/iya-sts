@@ -319,11 +319,13 @@ function childMain() {
       { headers: { cookie: 'sts_lang=FR-ca' } }, 'no-such-application');
     note(JSON.stringify(attrs) === JSON.stringify([
            ['data-sts-version', String(version.load().version)],
-           ['data-sts-lang', 'fr-CA'], ['data-sts-locale-default', 'en']]) &&
+           ['data-sts-lang', 'fr-CA'], ['data-sts-locale-default', 'en'],
+           ['data-sts-build', String(version.buildId())]]) &&
          PageLocale.shellAttributes({ headers: { cookie:
            'sts_lang="><script>' } }, '')[1][1] === '',
-         'B4. a shell carries the build, the chooser\'s choice canonical ' +
-         '(never as the request sent it), and the policy\'s default',
+         'B4. a shell carries the version, the chooser\'s choice canonical ' +
+         '(never as the request sent it), the policy\'s default, and the ' +
+         'build its catalogs are keyed by (#1298)',
          JSON.stringify(attrs));
 
     // --- C. the shared files, over HTTP ------------------------------------
@@ -344,10 +346,15 @@ function childMain() {
                encoding: res.headers.get('content-encoding') || '',
                type: res.headers.get('content-type') || '' };
     };
-    const v = encodeURIComponent(String(version.load().version));
+    // KEYED BY THE BUILD, NOT THE VERSION (#1298): every build of a release
+    // reports the same version, so `?v=<version>` is revalidated like any
+    // other address and only this build's identifier is kept for good.
+    const v = encodeURIComponent(String(version.buildId()));
     const idx = await get('/web/locales/catalogs.json');
     const idxV = await get('/web/locales/catalogs.json?v=' + v);
     const idxOld = await get('/web/locales/catalogs.json?v=0.0.1');
+    const idxRelease = await get('/web/locales/catalogs.json?v=' +
+      encodeURIComponent(String(version.load().version)));
     let idxJson = null;
     try {
       idxJson = JSON.parse(idx.text);
@@ -358,10 +365,13 @@ function childMain() {
          idxJson.catalogs.length === i18n.catalogs().length &&
          idxJson.offered.length === i18n.offered().length &&
          idx.cache === 'no-cache' && idxOld.cache === 'no-cache' &&
+         idxRelease.cache === 'no-cache' &&
          idxV.cache === 'public, max-age=31536000, immutable',
          'C1. the index is the catalogs and the chooser\'s locales, ' +
-         'cached for good only under this build\'s version',
-         JSON.stringify([idx.status, idx.cache, idxV.cache, idxOld.cache]));
+         'cached for good only under this build\'s identifier — not under ' +
+         'the release, which every build of it shares',
+         JSON.stringify([idx.status, idx.cache, idxV.cache, idxOld.cache,
+                         idxRelease.cache]));
     const en = await get('/web/locales/authn/en.json?v=' + v,
                          { 'accept-encoding': 'gzip' });
     const overlay = await get('/web/locales/consoleKit/fr-CA.json');
@@ -530,7 +540,8 @@ function childMain() {
     const sv = i18n.translator(['sv']);
     const one = await drive('/demo?ui_locales=fr',
                             { 'data-sts-version': String(version.load()
-                                                         .version) });
+                                                         .version),
+                              'data-sts-build': String(version.buildId()) });
     const body1 = one.env.document.body.innerHTML;
     note(body1.indexOf('<p>' + fr.html('chooser.change') +
                        ' &lt;b&gt;x&lt;/b&gt;</p>') >= 0 &&

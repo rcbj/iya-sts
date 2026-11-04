@@ -216,10 +216,10 @@ async fn serve_https(pep: Arc<Pep>, https: Arc<HttpsListener>) {
 #[tracing::instrument(level = "debug", skip_all)]
 async fn start(options: Options, info: version::VersionInfo) {
     tracing::info!(
-        "xacml-pep: version {} (build {}{}, {}). M.N is the service's own \
-         release; the build number is this image's.",
+        "xacml-pep: version {} (built {}{}, {}). The version is the \
+         service's own release; the build is this image's.",
         info.version,
-        info.build,
+        info.built_at,
         if info.commit.is_empty() {
             String::new()
         } else {
@@ -229,7 +229,7 @@ async fn start(options: Options, info: version::VersionInfo) {
             "stamped at image build time"
         } else {
             "COMPUTED AT STARTUP — this is not a built image, so the build \
-             number is when this process started"
+             time is when this process started"
         }
     );
     tracing::info!(

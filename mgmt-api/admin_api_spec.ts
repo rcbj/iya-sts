@@ -1296,14 +1296,10 @@ const SCHEMAS = {
       name: { type: 'string' },
       version: {
         type: 'string',
-        description: 'M.N.O — the release from the repo-root VERSION file ' +
-                     'and the build number this artifact was stamped with.'
-      },
-      build: {
-        type: 'string',
-        description: 'The O of M.N.O on its own: the UTC build instant as ' +
-                     'YYYYMMDDHHMMSS, or whatever BUILD_NUMBER was set to at ' +
-                     'build time.'
+        description: 'M.N.O — the release, exactly as the repo-root ' +
+                     'VERSION file declares it. A plain semantic version: ' +
+                     'no build number or date is appended; the build is ' +
+                     'identified by `commit` and `builtAt`.'
       },
       commit: {
         type: 'string',
@@ -1314,7 +1310,7 @@ const SCHEMAS = {
       },
       builtAt: {
         type: 'string', format: 'date-time',
-        description: 'When the build number was fixed. Read it with ' +
+        description: 'When this build was made. Read it with ' +
                      '`stamped`: this is when the ARTIFACT was built, or ' +
                      'when this PROCESS started if there is no artifact.'
       },
@@ -1322,11 +1318,10 @@ const SCHEMAS = {
         type: 'boolean',
         description: 'True when this version came off a record written at ' +
                      'image build time, which is what a container reports. ' +
-                     'False means the process computed its own number at ' +
+                     'False means the process computed its own record at ' +
                      'startup because nothing was ever built — a checkout ' +
-                     'being run — so the build number is the moment it ' +
-                     'started and comparing it against another instance says ' +
-                     'nothing.'
+                     'being run — so `builtAt` is the moment it started and ' +
+                     'comparing it against another instance says nothing.'
       },
       openapi: { type: 'string', description: 'Where the document is.' },
       docs: { type: 'string', description: 'Where the explorer is.' },

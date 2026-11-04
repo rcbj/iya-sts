@@ -384,7 +384,12 @@ class PageLocale {
     const out: Array<[string, string]> = [
       ['data-sts-version', String(version.load().version || '')],
       ['data-sts-lang', i18n.canonical(PageLocale.cookieOf(req, COOKIE))],
-      ['data-sts-locale-default', i18n.canonical(lastResort) || 'en']
+      ['data-sts-locale-default', i18n.canonical(lastResort) || 'en'],
+      // WHICH BUILD, for the catalogs' addresses (#1298): the version is the
+      // release and two builds of one release may carry different words, so
+      // `?v=` is keyed by the build — `version.buildId()`, the commit and the
+      // build instant — and not by the version (`common/public_assets.ts`).
+      ['data-sts-build', String(version.buildId() || '')]
     ];
     log.debug("Leaving PageLocale.shellAttributes().");
     return out;

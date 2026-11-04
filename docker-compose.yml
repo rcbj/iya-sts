@@ -150,7 +150,6 @@ services:
     build:
       context: .
       args:
-        BUILD_NUMBER: "${BUILD_NUMBER:-}"
         GIT_COMMIT: "${GIT_COMMIT:-}"
         DEBUGGER_IMAGE: "${DEBUGGER_IMAGE:-debugger-none}"
     ports:
@@ -223,7 +222,6 @@ services:
       context: .
       dockerfile: xacml-pep/Dockerfile
       args:
-        BUILD_NUMBER: "${BUILD_NUMBER:-}"
         GIT_COMMIT: "${GIT_COMMIT:-}"
     ports:
       - "${XACML_PEP_HOST_PORT:-9090}:9090"

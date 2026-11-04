@@ -99,13 +99,15 @@ jobs:
       # image in its own cache and `docker run rcbj/sts` would pull from Docker
       # Hub instead — a stale published image passing for the one just built.
       #
-      # THE IMAGE NUMBERS ITSELF (M.N.O). The Dockerfile's
-      # `node common/version.js --stamp` fixes the build number while the
-      # image is built — the UTC build instant, the number every console page
-      # shows at its foot — so no BUILD_NUMBER is passed (it was the workflow's
-      # run number until 2026-10-02), and the publish step below reads the
-      # version back out of the image. The XACML PEP image is stamped by its
-      # own build, a moment later, so its number is its own.
+      # THE IMAGE RECORDS ITS OWN BUILD. The version is the repo-root
+      # VERSION file's M.N.O, exactly (#1298); the Dockerfile's
+      # `node common/version.js --stamp` records the commit and the build
+      # instant beside it while the image is built, and the publish step
+      # below reads the version back out of the image. No BUILD_NUMBER is
+      # passed (it was the workflow's run number until 2026-10-02, and is
+      # read by nothing since #1298). The XACML PEP image is stamped by its
+      # own build, a moment later, so its build instant is its own; its
+      # version is the same release.
       # GIT_COMMIT has to be passed because `.dockerignore` excludes
       # `.git`, so the build context carries no history for `git rev-parse` to
       # read.
@@ -252,17 +254,18 @@ jobs:
       # THE IMAGE REPORTS THE BUILD IT WAS STAMPED WITH, which is the only
       # place that claim can be checked at all: the stamp is written during the
       # image build, and every other test in this repository runs against a
-      # service started from a checkout, where there IS no stamp and the number
-      # is computed at startup. So `stamped: true` and the build number reaching
-      # the version are exactly what no other test can see.
+      # service started from a checkout, where there IS no stamp and the record
+      # is computed at startup. So `stamped: true` and the stamped build
+      # instant reaching `/admin-api` are exactly what no other test can see.
+      # And the version is VERSION's, exactly, with nothing appended (#1298).
       #
       # It also catches the specific way this goes quietly wrong: a `--stamp`
       # that failed, or a `version.json` that ended up in the wrong directory,
-      # leaves a container computing its version at startup and reporting a
-      # perfectly plausible number that changes on every restart.
+      # leaves a container computing its record at startup and reporting a
+      # perfectly plausible build instant that changes on every restart.
       #
       # `/admin-api` rather than the front page: it answers JSON and carries
-      # `build` and `stamped` as fields rather than as something to be parsed
+      # `builtAt` and `stamped` as fields rather than as something to be parsed
       # out of HTML. It is gated since 2026-09-09, so the request carries the
       # token minted above.
       - name: Check the image reports the build it was stamped with
@@ -271,10 +274,18 @@ jobs:
             https://localhost:8081/admin-api)
           echo "${body}" | head -8
           stamped="$(docker run --rm --entrypoint cat rcbj/sts:ci \
-                     version.json | jq -r .build)"
-          echo "${body}" | grep -q "\"build\": \"${stamped}\"" || {
-            echo "The service did not report the build number its image" >&2
+                     version.json | jq -r .builtAt)"
+          echo "${body}" | jq -e --arg at "${stamped}" \
+            '.builtAt == $at' > /dev/null || {
+            echo "The service did not report the build instant its image" >&2
             echo "was stamped with (${stamped})." >&2
+            exit 1
+          }
+          release="$(tr -d '[:space:]' < VERSION)"
+          echo "${body}" | jq -e --arg v "${release}" \
+            '.version == $v' > /dev/null || {
+            echo "The service's version is not VERSION's ${release}" >&2
+            echo "exactly; nothing may be appended to it (#1298)." >&2
             exit 1
           }
           echo "${body}" | grep -q '"stamped": true' || {
@@ -311,7 +322,9 @@ jobs:
       # its stamp.
       #
       # Tagged M.N.O, the version the image itself reports (read out of its
-      # version.json, so the tag and the stamp cannot disagree), and a
+      # version.json, so the tag and the stamp cannot disagree) — since #1298
+      # the release from VERSION, 1.0.0, so a rebuild of one release
+      # republishes its tag rather than minting a dated one — and a
       # floating `latest`. From main ONLY (rcbj, 2026-10-02): develop
       # published a `develop` tag for a day, and too much went out that was
       # not ready. A develop build, and a run started by hand from any branch

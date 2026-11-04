@@ -37,15 +37,15 @@ RUN apt-get update \
 WORKDIR /usr/src/pep
 COPY --from=build /usr/src/rust/target/release/xacml-pep /usr/local/bin/xacml-pep
 
-# THE VERSION, M.N.O, STAMPED AT BUILD TIME by the binary itself
-# (`sts-core::version`, a port of common/version.js): M.N from the one
-# VERSION file the service reads too, the build number the UTC build instant
-# unless BUILD_NUMBER says otherwise. `version.json` is in the working
-# directory, where the binary looks for it and where CI reads it.
+# THE VERSION, M.N.O, AND WHICH BUILD THIS IS, STAMPED AT BUILD TIME by the
+# binary itself (`sts-core::version`, a port of common/version.js): the
+# version is the one VERSION file the service reads too, exactly (#1298), and
+# the commit and the build instant are recorded beside it. `version.json` is
+# in the working directory, where the binary looks for it and where CI reads
+# it.
 COPY VERSION ./VERSION
-ARG BUILD_NUMBER=
 ARG GIT_COMMIT=
-RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
+RUN GIT_COMMIT="${GIT_COMMIT}" \
     xacml-pep --stamp . && cat version.json
 
 LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \

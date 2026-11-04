@@ -6,7 +6,7 @@
   "shell.memory.after": " och är avstängt som standard.",
   "shell.json": "Varje sida här svarar också på <code>?format=json</code>, och varje formulär tar också emot en JSON-kropp, så ett test kan styra den här konsolen utan webbläsare.",
   "shell.version": "iya-sts version <code>{version}</code>",
-  "shell.notStamped": " (inte ett stämplat bygge — den här processen körs från en utcheckning, och byggnumret är när den startade)",
+  "shell.notStamped": " (inte ett stämplat bygge — den här processen körs från en utcheckning, och dess byggtid är när den startade)",
   "shell.open.text": "<strong>Den här konsolen är inte skyddad.</strong> Spärren är AV, så ingenting här kontrollerar några inloggningsuppgifter — och det gör inget annat i tjänsten heller: användarnamnet som skrivs på inloggningsskärmen är identiteten i varje token som utfärdas. Den som kan nå den här porten kan återkalla varje token och ändra vad nästa innehåller. Det går bra på en bärbar dator eller i ett compose-nätverk men inte på en publik adress. Ange vem som får komma in på ",
   "shell.adminRoles": "Administratörsroller",
   "shell.open.after": ", som ritar upp varje inställning bakom den här sidan.",
