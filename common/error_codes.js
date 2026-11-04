@@ -1689,7 +1689,8 @@ const CODES = [
     spec: 'none — logged' },
   { code: 'STS-STORE-0055',
     summary: 'Expired tombstones of ended minted rows could not be swept from ' +
-      'the store.',
+      'the store (in a service deployed as cells, this cell\'s own ' +
+      'database: the global tier\'s sweep is STS-STORE-0165, #1313).',
     spec: 'none — logged' },
   { code: 'STS-STORE-0056',
     summary: 'A minted row another node had changed could not be merged with ' +
@@ -1941,6 +1942,29 @@ const CODES = [
       'tier\'s expired, orphaned or stale minted rows (#695); the cell ' +
       'tier\'s purge is a job of its own and is not affected, a start skips ' +
       'the rows anyway, and the next run tries again.',
+    spec: 'none — logged, and the job run is recorded as failed' },
+  { code: 'STS-STORE-0163',
+    summary: 'The one-time session index backfill found stored sign-on ' +
+      'sessions and could read NOT ONE of them (#1312): the key-encryption ' +
+      'or data key this process holds is almost certainly not the store\'s. ' +
+      'The completion mark is not written and the start fails, so the next ' +
+      'start with the right key walks again; a backfill that reads some and ' +
+      'skips others still finishes (STS-STORE-0161).',
+    spec: '' },
+  { code: 'STS-STORE-0164',
+    summary: 'In a service deployed as cells, the minted expiry purge ' +
+      'could not read the global realm registry, so it skips its orphan ' +
+      'check and deletes no row as an orphan (#1313); its expired and ' +
+      'stale rows are still purged and the run is recorded as succeeded, ' +
+      'saying why. Logged once when the skipping starts, and a line says ' +
+      'when the check is made again.',
+    spec: 'none — logged once per outage; the run succeeds with a why' },
+  { code: 'STS-STORE-0165',
+    summary: 'The persistence.tombstone-purge-global job, run by the one ' +
+      'cell holding the global run claim, could not sweep the global ' +
+      'tier\'s expired tombstones of ended minted rows (#1313); the cell ' +
+      'tier\'s sweep is a job of its own (STS-STORE-0055) and is not ' +
+      'affected, and the next run tries again.',
     spec: 'none — logged, and the job run is recorded as failed' },
   { code: 'STS-STORE-0166',
     summary: 'A run of the persistence.granting-key-backfill job, which ' +

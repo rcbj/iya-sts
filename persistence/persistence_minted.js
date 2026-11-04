@@ -3310,6 +3310,12 @@ function settleDecided(result) {
 const TOMBSTONE_SWEEP_MS = 10 * 60 * 1000;
 // The sweep's scheduler job (#49 P5): see ensureTombstoneJob().
 const TOMBSTONE_JOB = 'persistence.tombstone-purge';
+// The global tier's half (#1313): see the paragraph below.
+const TOMBSTONE_GLOBAL_JOB = 'persistence.tombstone-purge-global';
+// Per tier, the expiry purge's bounds (EXPIRY_PURGE_BATCH and _MAX_BATCHES,
+// below): a sweep is a few short statements, never one delete of a backlog.
+const TOMBSTONE_BATCH = 5000;
+const TOMBSTONE_MAX_BATCHES = 20;
 let tombstoneJobRegistered = false;
 
 // THE SWEEP IS A SCHEDULER JOB (#49 P5): `persistence.tombstone-purge`, a
@@ -3321,6 +3327,130 @@ let tombstoneJobRegistered = false;
 // `common/admin_stats.js`'s ensureTokenPurgeJob() reason: a cluster job known
 // only to the processes that had flushed is not a job every node can run, nor
 // one both of the console's doors list.
+//
+// ONE TIER AT A TIME, AND ONE CELL FOR THE GLOBAL TIER (#1313, 2026-11-04),
+// the expiry purge's shape (#695, below). In a store deployed as cells the
+// sweep was one call the tiered driver sent to both databases through
+// Promise.all: an unreachable global database rejected it and lost the
+// cell's count with it, and — a cell being a cluster — every cell's leader
+// swept the one shared global `sts_minted`. Now:
+//
+//   * `persistence.tombstone-purge` sweeps THIS CELL'S database, naming
+//     the tier, in batches of TOMBSTONE_BATCH and at most
+//     TOMBSTONE_MAX_BATCHES per run, its stop test (a short batch) and its
+//     count that database's alone; its failure is STS-STORE-0055 as ever;
+//   * `persistence.tombstone-purge-global` sweeps the GLOBAL database the
+//     same way, is in `tiers.js`'s GLOBAL_JOBS — so its run is claimed
+//     under `scheduler.run.global` and one cell, whichever wins the slot,
+//     runs it — and is off unless the store is tiered; its failure is
+//     STS-STORE-0165, and neither job's failure touches the other's.
+//
+// WHY TWO JOBS OF THEIR OWN AND NOT FOLDED INTO THE EXPIRY PURGE'S: the two
+// purges keep different schedules (ten minutes against five), a tombstone's
+// age is judged by `persistence.mintedRetention` alone where the expiry
+// purge has three kinds and an orphan grace, and the tombstone sweep's
+// failure has had its own code since #46; folding would change the
+// cadence of a sweep nobody asked to change and mix two failures under
+// one code. The pair mirrors the expiry pair one for one instead.
+//
+// A SINGLE-DATABASE STORE IS UNTOUCHED: no tier and no limit is named, so
+// the driver runs the one unbounded statement it always ran, once a run,
+// and the global job is off ("this store has no global tier").
+// Bounding that statement too is a one-line change, not made here because
+// nothing asked for it.
+
+// One tier's sweep, batch after batch until a batch comes back short or
+// the bound is reached. Resolves to `{ removed, more, error }`, as
+// purgeKind() does, with what the batches before a failure deleted still
+// counted.
+function sweepTombstoneTier(tier, beforeMs) {
+  log.debug("Entering sweepTombstoneTier(). " + tier);
+  let removed = 0;
+  let batches = 0;
+  function nextSweep() {
+    log.debug("Entering nextSweep().");
+    if (batches >= TOMBSTONE_MAX_BATCHES) {
+      log.debug("Leaving nextSweep(). The bound was reached.");
+      return Promise.resolve({ removed: removed, more: true, error: null });
+    }
+    batches++;
+    log.debug("Leaving nextSweep().");
+    return Promise.resolve().then(function () {
+      return driver.purgeTombstones(beforeMs, { tier: tier,
+                                                limit: TOMBSTONE_BATCH });
+    }).then(function (count) {
+      const n = Number(count) || 0;
+      removed += n;
+      if (n < TOMBSTONE_BATCH) {
+        return { removed: removed, more: false, error: null };
+      }
+      return nextSweep();
+    }, function (e) {
+      log.debug("Caught in sweepTombstoneTier(): " + ((e && e.message) || e));
+      return { removed: removed, more: true, error: e };
+    });
+  }
+  log.debug("Leaving sweepTombstoneTier().");
+  return nextSweep();
+}
+
+/**
+ * Sweeps the tombstones older than the retention from one tier.
+ * @param nowMs - the instant, in epoch milliseconds
+ * @param tier - 'cell' or 'global' in a store deployed as cells, where it
+ *   defaults to 'cell'; ignored by a single store, which is asked as it
+ *   always was: one statement, no tier, no limit
+ * @returns a promise of `{ removed, more, tier }`, rejected with the
+ *   error (carrying `removed`) when the sweep failed
+ */
+function purgeTombstonesOf(nowMs, tier) {
+  log.debug("Entering purgeTombstonesOf().");
+  const beforeMs = nowMs - retentionMs();
+  if (!(driver && driver.tiered)) {
+    log.debug("Leaving purgeTombstonesOf(). One database.");
+    return Promise.resolve().then(function () {
+      return driver.purgeTombstones(beforeMs);
+    }).then(function (removed) {
+      return { removed: Number(removed) || 0, more: false, tier: '' };
+    });
+  }
+  const which = tier === 'global' ? 'global' : 'cell';
+  log.debug("Leaving purgeTombstonesOf().");
+  return sweepTombstoneTier(which, beforeMs).then(function (r) {
+    if (r.error) {
+      const err = /** @type {any} */ (r.error instanceof Error ? r.error
+        : new Error(String(r.error)));
+      err.removed = r.removed;
+      throw err;
+    }
+    return { removed: r.removed, more: r.more, tier: which };
+  });
+}
+
+// The run of either tombstone job: its tier swept, a count logged, and a
+// failure logged once under the tier's code and thrown.
+function runTombstonePurge(tier, code) {
+  log.debug("Entering runTombstonePurge(). " + (tier || 'single'));
+  const where = tier === 'global' ? 'the global tier\'s store'
+    : tier === 'cell' ? 'this cell\'s store' : 'the store';
+  log.debug("Leaving runTombstonePurge().");
+  return purgeTombstonesOf(Date.now(), tier).then(function (result) {
+    if (result.removed) {
+      log.info('persistence: ' + result.removed + ' expired tombstone(s) ' +
+               'of ended minted rows swept from ' + where +
+               (result.more ? '; more remain for the next run' : '') + '.');
+    }
+    return { removed: result.removed, more: result.more };
+  }, function (e) {
+    const removed = Number(e && e.removed) || 0;
+    log.warn(errorCodes.tag(code) + 'persistence: sweeping expired ' +
+             'tombstones from ' + where + ' failed: ' +
+             String((e && e.message) || e).replace(/\.+$/, '') +
+             (removed ? ' (after sweeping ' + removed + ')' : '') + '.');
+    throw e;
+  });
+}
+
 function ensureTombstoneJob(schedulerInstance) {
   log.debug("Entering ensureTombstoneJob().");
   if (tombstoneJobRegistered) {
@@ -3334,43 +3464,70 @@ function ensureTombstoneJob(schedulerInstance) {
     return;
   }
   tombstoneJobRegistered = true;
-  if (scheduler.job(TOMBSTONE_JOB)) {
-    log.debug("Leaving ensureTombstoneJob(). Registered elsewhere.");
-    return;
-  }
-  scheduler.register({
-    id: TOMBSTONE_JOB,
-    title: 'Expired tombstones sweep',
-    describe: 'Deletes the tombstones of ended minted rows older than ' +
-              'persistence.mintedRetention from the shared store.',
-    owner: 'persistence/persistence_minted.js',
-    everyMs: function () {
-      return TOMBSTONE_SWEEP_MS;
-    },
-    off: function () {
-      if (!driver || typeof driver.purgeTombstones !== 'function') {
-        return 'this store keeps no tombstones';
-      }
-      return retentionMs() ? '' : 'the minted-row retention is 0';
-    },
-    run: function () {
-      const now = Date.now();
-      return Promise.resolve().then(function () {
-        return driver.purgeTombstones(now - retentionMs());
-      }).then(function (removed) {
-        if (removed) {
-          log.info('persistence: ' + removed + ' expired tombstone(s) of ' +
-                   'ended minted rows swept.');
-        }
-        return { removed: Number(removed) || 0 };
-      }, function (e) {
-        log.warn(errorCodes.tag('STS-STORE-0055') + 'persistence: sweeping ' +
-                 'expired tombstones failed: ' +
-                 String((e && e.message) || e).replace(/\.+$/, '') + '.');
-        throw e;
-      });
+  const keepsNone = function () {
+    log.debug("Entering keepsNone(), the tombstones.");
+    if (!driver || typeof driver.purgeTombstones !== 'function') {
+      log.debug("Leaving keepsNone(). No tombstones.");
+      return 'this store keeps no tombstones';
     }
-  });
+    log.debug("Leaving keepsNone().");
+    return retentionMs() ? '' : 'the minted-row retention is 0';
+  };
+  if (!scheduler.job(TOMBSTONE_JOB)) {
+    scheduler.register({
+      id: TOMBSTONE_JOB,
+      title: 'Expired tombstones sweep',
+      describe: 'Deletes the tombstones of ended minted rows older than ' +
+                'persistence.mintedRetention from this cluster\'s store ' +
+                '(in a service deployed as cells, this cell\'s own ' +
+                'database, in batches of ' + TOMBSTONE_BATCH + ' and at ' +
+                'most ' + TOMBSTONE_MAX_BATCHES + ' batches per run).',
+      owner: 'persistence/persistence_minted.js',
+      everyMs: function () {
+        return TOMBSTONE_SWEEP_MS;
+      },
+      off: keepsNone,
+      run: function () {
+        return Promise.resolve().then(function () {
+          return runTombstonePurge(driver && driver.tiered ? 'cell'
+            : undefined, 'STS-STORE-0055');
+        });
+      }
+    });
+  } else {
+    log.debug("ensureTombstoneJob(): " + TOMBSTONE_JOB +
+              " is registered elsewhere.");
+  }
+  if (!scheduler.job(TOMBSTONE_GLOBAL_JOB)) {
+    scheduler.register({
+      id: TOMBSTONE_GLOBAL_JOB,
+      title: 'Expired tombstones sweep, global tier',
+      describe: 'In a service deployed as cells, deletes from the global ' +
+                'tier\'s database the tombstones of ended minted rows ' +
+                'older than persistence.mintedRetention, in the same ' +
+                'batches; its run is claimed in the global tier, so one ' +
+                'cell runs each slot. Off in a service with one database, ' +
+                'where the other sweep covers it.',
+      owner: 'persistence/persistence_minted.js',
+      everyMs: function () {
+        return TOMBSTONE_SWEEP_MS;
+      },
+      off: function () {
+        if (!driver || !driver.tiered) {
+          return 'this store has no global tier';
+        }
+        return keepsNone();
+      },
+      run: function () {
+        return Promise.resolve().then(function () {
+          return runTombstonePurge('global', 'STS-STORE-0165');
+        });
+      }
+    });
+  } else {
+    log.debug("ensureTombstoneJob(): " + TOMBSTONE_GLOBAL_JOB +
+              " is registered elsewhere.");
+  }
   log.debug("Leaving ensureTombstoneJob().");
 }
 
@@ -3505,14 +3662,16 @@ function purgeKind(kind, options, tier) {
  * @param tier - 'cell' or 'global' in a store deployed as cells, where it
  *   defaults to 'cell'; ignored by a single store
  * @returns a promise of `{ expired, orphaned, stale, more, tier,
- *   failures }`, `failures` a list of `{ kind, message }`
+ *   failures, skipped }`, `failures` and `skipped` lists of
+ *   `{ kind, message }` — `skipped` the orphan check, when the global
+ *   realm registry could not be read (#1313)
  */
 function purgeExpired(nowMs, tier) {
   log.debug("Entering purgeExpired().");
   const tiered = !!(driver && driver.tiered);
   const which = tiered ? (tier === 'global' ? 'global' : 'cell') : undefined;
   const out = { expired: 0, orphaned: 0, stale: 0, more: false,
-                tier: which || '', failures: [] };
+                tier: which || '', failures: [], skipped: [] };
   if (!driver || typeof driver.purgeExpiredMinted !== 'function') {
     log.debug("Leaving purgeExpired(). This store cannot.");
     return Promise.resolve(out);
@@ -3524,6 +3683,16 @@ function purgeExpired(nowMs, tier) {
     return function (r) {
       out[field] = r.removed;
       out.more = out.more || r.more;
+      // THE ORPHAN CHECK SKIPPED, NOT FAILED (#1313): the tiered driver
+      // marks a global realm registry it could not read, and then asked
+      // no tier, so nothing was deleted on a guess and nothing of this
+      // tier's failed — the check could not be made. A failure of the
+      // delete itself is not marked and is still a failure.
+      if (r.error && r.error.registryUnreadable) {
+        out.skipped.push({ kind: kind,
+                           message: String(r.error.message || r.error) });
+        return;
+      }
       if (r.error) {
         out.failures.push({ kind: kind,
                             message: String((r.error && r.error.message) ||
@@ -3553,16 +3722,69 @@ function purgeExpired(nowMs, tier) {
     });
 }
 
+// ---------------------------------------------------------------------------
+// AN UNREADABLE GLOBAL REGISTRY SKIPS THE ORPHAN CHECK (#1313, rcbj's
+// decision, 2026-11-04). The orphan kind is judged against the GLOBAL realm
+// registry, even in the cell's job, so with the global database down the
+// cell's run used to be recorded FAILED (STS-STORE-0065) every five minutes
+// though its own expired and stale rows had been deleted. Now a run whose
+// only trouble is that registry SUCCEEDS, with a `why` naming the skip and
+// `orphanCheck: 'skipped'` and the outage's skipped-run count in its
+// result; a failure of this tier's own deleting still fails it.
+//
+// LOGGED ONCE PER OUTAGE (the no-per-event-failure-logs rule): the first
+// skipped run logs STS-STORE-0164, the runs after it say nothing more, and
+// the first run whose orphan check is made again logs that it recovered,
+// with how many runs were skipped. Per tier, because each tier is its own
+// job; in one process, which is enough — the run is a cluster job, and a
+// new leader saying it once more is a state change of its own.
+// ---------------------------------------------------------------------------
+const orphanSkipping = { cell: 0, global: 0, single: 0 };
+
+// Notes the run's orphan check, skipped or made, and logs the change of
+// state. Returns how many runs in a row (this one included) skipped it.
+function noteOrphanCheck(tier, where, skipped) {
+  log.debug("Entering noteOrphanCheck(). " + (tier || 'single'));
+  const slot = tier || 'single';
+  if (skipped) {
+    orphanSkipping[slot] += 1;
+    if (orphanSkipping[slot] === 1) {
+      log.warn(errorCodes.tag('STS-STORE-0164') + 'persistence: the ' +
+               'expiry purge of ' + where + ' is skipping its orphan ' +
+               'check: ' + skipped.replace(/\.+$/, '') + '. Its expired ' +
+               'and stale rows are still purged, and no row is deleted ' +
+               'as an orphan until the registry can be read; this is ' +
+               'said once, and again when it recovers.');
+    }
+    log.debug("Leaving noteOrphanCheck(). Skipping.");
+    return orphanSkipping[slot];
+  }
+  if (orphanSkipping[slot]) {
+    log.info('persistence: the expiry purge of ' + where + ' makes its ' +
+             'orphan check again: the global realm registry can be read, ' +
+             'after ' + orphanSkipping[slot] + ' run(s) that skipped it.');
+    orphanSkipping[slot] = 0;
+  }
+  log.debug("Leaving noteOrphanCheck().");
+  return 0;
+}
+
 // The run of either job: the purge of its tier, its counts logged, and its
 // failures logged ONCE under the tier's code and thrown, so the scheduler
 // records the run as failed — with the counts in the message, since a
-// failed run keeps no summary.
+// failed run keeps no summary. A skipped orphan check is not a failure
+// (above).
 function runExpiryPurge(tier, code) {
   log.debug("Entering runExpiryPurge(). " + (tier || 'single'));
   const where = tier === 'global' ? 'the global tier\'s store'
     : tier === 'cell' ? 'this cell\'s store' : 'the store';
   log.debug("Leaving runExpiryPurge().");
   return purgeExpired(Date.now(), tier).then(function (result) {
+    const skip = result.skipped.filter(function (one) {
+      return one.kind === 'orphan';
+    })[0];
+    const skippedRuns = noteOrphanCheck(tier, where,
+                                        skip ? skip.message : '');
     const total = result.expired + result.orphaned + result.stale;
     const counts = result.expired + ' expired, ' + result.orphaned +
                    ' of realms no longer defined, ' + result.stale +
@@ -3581,9 +3803,18 @@ function runExpiryPurge(tier, code) {
                'it still purged ' + counts + '. A start skips them anyway; ' +
                'the next run tries again.');
       throw new Error('the minted expiry purge of ' + where + ' failed (' +
-                      why + ') after purging ' + counts);
+                      why + ') after purging ' + counts +
+                      (skip ? '; its orphan check was skipped' : ''));
     }
-    return result;
+    if (skip) {
+      return Object.assign({}, result, {
+        orphanCheck: 'skipped', orphanSkippedRuns: skippedRuns,
+        why: 'The orphan check was skipped: ' +
+             skip.message.replace(/\.+$/, '') + '. The expired and ' +
+             'stale purges ran (' + counts + ').'
+      });
+    }
+    return Object.assign({}, result, { orphanCheck: 'made' });
   });
 }
 
@@ -4197,6 +4428,9 @@ function reset() {
   unheldAfterRefresh.clear();
   unheldWarned.clear();
   unheldWaits.clear();
+  orphanSkipping.cell = 0;
+  orphanSkipping.global = 0;
+  orphanSkipping.single = 0;
   generation = 0;
   observedGeneration = 0;
   observational.clear();
@@ -4259,6 +4493,16 @@ const SESSION_SKIP_LINES = 10;
 // a restore leaves an unreadable row out, and the session window answers a
 // failed read rather than a session, so the person is not signed in and
 // signs in again — and the line at the end says how many.
+//
+// UNLESS NOT ONE BODY COULD BE READ (#1312, rcbj's decision). Stored sessions
+// every one of which this process cannot open are not lost sessions: they
+// are almost certainly a key-encryption or data key that is not this
+// store's, an operator's error that marking the walk done would make
+// permanent — the next start with the right key would find the mark and
+// never index them. So when the walk ends with bodies skipped and none
+// read, it throws under STS-STORE-0163 before the last page's transaction,
+// the mark stays unwritten, and the start fails saying so. An empty store
+// (nothing to read) still finishes.
 function backfillSessionIndex() {
   log.debug("Entering backfillSessionIndex().");
   const active = /** @type {any} */ (driver);
@@ -4293,8 +4537,10 @@ function backfillSessionIndex() {
     log.debug("Leaving mark().");
     throw err;
   }
-  // How many bodies the walk skipped (#695), across every page.
+  // How many bodies the walk skipped (#695), and read (#1312), across
+  // every page.
   let skipped = 0;
+  let read = 0;
   // One body of a page, opened and indexed, or null where it is skipped.
   function indexedOrSkipped(one) {
     log.debug("Entering indexedOrSkipped().");
@@ -4346,10 +4592,22 @@ function backfillSessionIndex() {
         for (let i = 0; i < rows.length; i++) {
           const indexed = indexedOrSkipped(rows[i]);
           if (indexed) {
+            read += 1;
             ready.push(indexed);
           }
         }
         const last = rows.length < SESSION_INDEX_BATCH;
+        // Not one body read, and some skipped: refused before the last
+        // page's transaction, which is the one that writes the mark (#1312).
+        if (last && skipped > 0 && read === 0) {
+          const none = new Error(errorCodes.tag('STS-STORE-0163') +
+            'persistence: the session index backfill found ' + skipped +
+            ' stored session(s) and could read none of them, so the key ' +
+            'this process holds is probably not the store\'s. The backfill ' +
+            'is NOT marked done; start again with the store\'s key.');
+          /** @type {any} */ (none).errorCode = 'STS-STORE-0163';
+          return Promise.reject(none);
+        }
         const writing = (ready.length || last)
           ? active.writeSessionIndexes(ready, last) : Promise.resolve();
         return Promise.resolve(writing).then(function () {
@@ -4427,6 +4685,7 @@ module.exports = {
   ensureTombstoneJob: ensureTombstoneJob,
   ensureExpiryPurgeJob: ensureExpiryPurgeJob,
   purgeExpired: purgeExpired,
+  purgeTombstonesOf: purgeTombstonesOf,
   restoreFilter: restoreFilter,
   setDriver: setDriver,
   lendsNoBridge: lendsNoBridge,

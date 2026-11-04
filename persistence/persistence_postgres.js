@@ -11322,12 +11322,24 @@ function create(options) {
     // back; `persistence_minted.js` asks with `persistence.mintedRetention`,
     // which is also the most a restored row can be. One statement on the pool
     // and idempotent, so any node may run it.
-    purgeTombstones: function (beforeMs) {
+    //
+    // `options.limit` BOUNDS THE ONE STATEMENT (#1313), chosen and deleted
+    // by ctid as purgeExpiredMinted() does; the tombstone jobs of a store
+    // deployed as cells batch with it, one tier at a time. Without it the
+    // statement is the one it always was, which is what a single-database
+    // store still runs.
+    purgeTombstones: function (beforeMs, options) {
       log.debug('Entering the postgres driver purgeTombstones().');
+      const limit = Math.floor(Number(options && options.limit) || 0);
       log.debug("Leaving purgeTombstones().");
       return (mintedStatements
-        ? mintedStatements.purgeTombstones(beforeMs)
-        : pool.query(
+        ? mintedStatements.purgeTombstones(beforeMs, limit > 0 ? limit : 0)
+        : limit > 0 ? pool.query(
+        'DELETE FROM sts_minted WHERE ctid = ANY(ARRAY(SELECT ctid FROM ' +
+        'sts_minted WHERE body = $1 AND written_at < ' +
+        'to_timestamp($2 / 1000.0) LIMIT ' + limit + '))',
+        [TOMBSTONE, Number(beforeMs)]
+      ) : pool.query(
         'DELETE FROM sts_minted WHERE body = $1 AND ' +
         'written_at < to_timestamp($2 / 1000.0)',
         [TOMBSTONE, Number(beforeMs)]
