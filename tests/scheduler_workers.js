@@ -34,7 +34,17 @@
 //      load drops, and never held for nice 0, an on-demand job, a manual
 //      Run now or an inline run;
 //   I. a worker that does not know the run's realm yet sends that one run
-//      back to the front, and the next is handed over again.
+//      back to the front, and the next is handed over again;
+//   J. the body's ownership on the worker is a GRANT the leader renews
+//      (#1305): renewed, a body owns its run past one grant; with no
+//      renewal arriving it stops owning it by itself (STS-SCHED-0021); with
+//      no fence arriving it stops at its own time limit; and a row another
+//      attempt took over is fenced at the leader's next look, its outcome
+//      not written (STS-SCHED-0003);
+//   K. a job switched off while it runs (#1305): the body's stillOwner()
+//      answers false, on a worker and inline, the run is recorded as it
+//      ends with a `why` that says so, and the job's own off() is not one
+//      of the switches.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -68,7 +78,12 @@ function stubPool(workerNode) {
     loads: [{ id: 7, inFlight: 0, lagMs: null }],
     pending: new Map(),
     fenced: [],
+    renewed: 0,
     asked: 0,
+    // A message the "channel" loses (#1305): a renewal or a fence the
+    // worker never receives.
+    dropRenewals: false,
+    dropFences: false,
     workers: function () {
       return pool.loads.map(function (one) {
         return Object.assign({}, one);
@@ -86,9 +101,17 @@ function stubPool(workerNode) {
         });
       });
     },
+    renew: function (runId, untilMs, off) {
+      pool.renewed += 1;
+      if (!pool.dropRenewals) {
+        workerNode.scheduler.renewDelegated(runId, untilMs, off);
+      }
+    },
     fence: function (runId) {
       pool.fenced.push(runId);
-      workerNode.scheduler.fenceDelegated(runId);
+      if (!pool.dropFences) {
+        workerNode.scheduler.fenceDelegated(runId);
+      }
       const resolve = pool.pending.get(runId);
       if (resolve) {
         pool.pending.delete(runId);
@@ -489,6 +512,211 @@ async function run(t) {
             'the next slot is handed to the worker again',
             JSON.stringify({ onFront: onFront, onWorker: onWorker }));
   }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== J. the body\'s ownership is a grant the leader renews ===');
+  {
+    // J1: renewed, a body owns its run long past one grant (20 s).
+    const s = setup();
+    let seen = null;
+    let finish = null;
+    s.front.scheduler.register(job({ timeoutS: 300 }));
+    s.worker.scheduler.register(job({ timeoutS: 300, run: function (ctx) {
+      seen = ctx;
+      return new Promise(function (resolve) {
+        finish = resolve;
+      });
+    } }));
+    s.front.scheduler.start('front');
+    await s.w.advance(1000);
+    t.check(!!seen && seen.stillOwner() === true,
+            'J1: a body handed to the worker owns its run');
+    await s.w.advance(90 * 1000);
+    t.check(!!seen && seen.stillOwner() === true && s.pool.renewed >= 15,
+            'J1: renewed by the leader every few seconds, it still owns it ' +
+            'after ninety seconds, more than four grants',
+            JSON.stringify({ renewed: s.pool.renewed }));
+    t.equal(logsMatching(s.w, /STS-SCHED-0021/).length, 0,
+            'J1: and no grant ran out');
+    finish('done');
+    await s.w.advance(6000);
+    const rows = rowsOf(s.w, 'test.delegated');
+    t.check(rows.length === 1 && rows[0].state === 'succeeded' &&
+            !rows[0].why,
+            'J1: its outcome is written as before', JSON.stringify(rows));
+  }
+  {
+    // J2: no renewal arrives (the front's thread stuck, the message lost):
+    // the body stops owning the run by itself, once the grant runs out.
+    const s = setup();
+    let seen = null;
+    s.front.scheduler.register(job({ timeoutS: 300 }));
+    s.worker.scheduler.register(job({ timeoutS: 300, run: function (ctx) {
+      seen = ctx;
+      return new Promise(function () {});
+    } }));
+    s.pool.dropRenewals = true;
+    s.front.scheduler.start('front');
+    await s.w.advance(1000);
+    t.check(!!seen && seen.stillOwner() === true,
+            'J2: the first grant is the body\'s own');
+    await s.w.advance(15 * 1000);
+    t.check(seen.stillOwner() === true,
+            'J2: still inside it after sixteen seconds');
+    await s.w.advance(10 * 1000);
+    t.check(seen.stillOwner() === false,
+            'J2: with no renewal received it no longer owns the run once ' +
+            'its grant has run out, though no fence came',
+            JSON.stringify(s.pool.fenced));
+    t.equal(logsMatching(s.w, /STS-SCHED-0021/).length, 1,
+            'J2: said once, under STS-SCHED-0021');
+    seen.stillOwner();
+    t.equal(logsMatching(s.w, /STS-SCHED-0021/).length, 1,
+            'J2: and not again at the next question');
+    s.pool.dropRenewals = false;
+    await s.w.advance(10 * 1000);
+    t.check(seen.stillOwner() === false,
+            'J2: a renewal that arrives later does not hand the run back');
+  }
+  {
+    // J3: no fence arrives at the time limit: the body stops at it anyway.
+    const s = setup();
+    let seen = null;
+    s.front.scheduler.register(job({ timeoutS: 30 }));
+    s.worker.scheduler.register(job({ timeoutS: 30, run: function (ctx) {
+      seen = ctx;
+      return new Promise(function () {});
+    } }));
+    s.pool.dropFences = true;
+    s.front.scheduler.start('front');
+    await s.w.advance(29 * 1000);
+    t.check(!!seen && seen.stillOwner() === true,
+            'J3: a body owns its run inside its time limit');
+    await s.w.advance(2000);
+    t.check(seen.stillOwner() === false,
+            'J3: and not past it, though the fence never arrived',
+            JSON.stringify(s.pool.fenced));
+    t.equal(logsMatching(s.w, /STS-SCHED-0021/).length, 0,
+            'J3: which is the time limit, not a lapsed grant');
+  }
+  {
+    // J4: another attempt took the row over, seen through the store with
+    // no fence sent for it: the leader fences the body at its next look.
+    const s = setup();
+    let seen = null;
+    s.front.scheduler.register(job({ timeoutS: 300 }));
+    s.worker.scheduler.register(job({ timeoutS: 300, run: function (ctx) {
+      seen = ctx;
+      return new Promise(function () {});
+    } }));
+    s.front.scheduler.start('front');
+    await s.w.advance(1000);
+    const before = rowsOf(s.w, 'test.delegated')[0];
+    t.check(!!seen && seen.stillOwner() === true && !!before &&
+            before.state === 'running',
+            'J4: the body owns its run, and the row says running');
+    s.w.store.realmMap('default').set(before.runId, Object.assign({},
+      before, { fenceAt: Number(before.fenceAt) + 60000,
+                attempt: Number(before.attempt) + 1, node: 'node-other' }));
+    t.check(seen.stillOwner() === true,
+            'J4: the worker does not read the row itself');
+    await s.w.advance(6000);
+    t.check(seen.stillOwner() === false &&
+            s.pool.fenced.indexOf(before.runId) >= 0,
+            'J4: at the leader\'s next look it is fenced, and no longer ' +
+            'owns the run', JSON.stringify(s.pool.fenced));
+    const after = rowsOf(s.w, 'test.delegated')[0];
+    t.check(after.node === 'node-other' && after.state === 'running' &&
+            logsMatching(s.w, /STS-SCHED-0003/).length === 1,
+            'J4: the other attempt\'s row is left as it is, and the ' +
+            'outcome not written (STS-SCHED-0003)', JSON.stringify(after));
+  }
+
+  // -------------------------------------------------------------------------
+  t.log.info('=== K. a job switched off while it runs ===');
+  {
+    // K1: on a worker, by scheduler.disabledJobs.
+    const s = setup();
+    let seen = null;
+    let finish = null;
+    s.front.scheduler.register(job({ timeoutS: 300 }));
+    s.worker.scheduler.register(job({ timeoutS: 300, run: function (ctx) {
+      seen = ctx;
+      return new Promise(function (resolve) {
+        finish = resolve;
+      });
+    } }));
+    s.front.scheduler.start('front');
+    await s.w.advance(1000);
+    t.check(!!seen && seen.stillOwner() === true,
+            'K1: the body owns its run while the job is on');
+    s.w.settings['scheduler.disabledJobs'] = 'test.delegated';
+    await s.w.advance(6000);
+    t.check(seen.stillOwner() === false,
+            'K1: switched off, the body on the worker no longer owns it');
+    t.equal(s.pool.fenced.length, 0,
+            'K1: without a fence: the leader keeps waiting for its answer');
+    t.equal(logsMatching(s.w, /STS-SCHED-0021/).length, 0,
+            'K1: and it is not a lapsed grant');
+    finish('stopped early');
+    await s.w.advance(1000);
+    const rows = rowsOf(s.w, 'test.delegated');
+    t.check(rows.length === 1 && rows[0].state === 'succeeded' &&
+            !rows[0].errorCode && /switched off while it ran/.test(
+              rows[0].why) && /scheduler\.disabledJobs/.test(rows[0].why),
+            'K1: the run is recorded as it ended, not as a failure, with a ' +
+            'why naming the switch', JSON.stringify(rows));
+  }
+  {
+    // K2: inline, by the scheduler switched off.
+    const s = setup();
+    s.pool.loads = [];
+    let seen = null;
+    let finish = null;
+    s.front.scheduler.register(job({ timeoutS: 300, run: function (ctx) {
+      seen = ctx;
+      return new Promise(function (resolve) {
+        finish = resolve;
+      });
+    } }));
+    s.front.scheduler.start('front');
+    await s.w.advance(1000);
+    t.check(!!seen && seen.stillOwner() === true,
+            'K2: an inline body owns its run while the job is on');
+    s.w.settings['scheduler.enabled'] = false;
+    await s.w.advance(6000);
+    t.check(seen.stillOwner() === false,
+            'K2: switched off, the inline body no longer owns it either');
+    finish('stopped early');
+    await s.w.advance(1000);
+    const rows = rowsOf(s.w, 'test.delegated');
+    t.check(rows.length === 1 && rows[0].state === 'succeeded' &&
+            rows[0].ranIn === 'front' &&
+            /switched off while it ran/.test(rows[0].why),
+            'K2: recorded as it ended, saying so', JSON.stringify(rows));
+  }
+  {
+    // K3: the job's own off() is "nothing to do", which a body's own work
+    // makes true; it is asked at the tick, not of a run in flight.
+    const s = setup();
+    let seen = null;
+    let idle = false;
+    const own = function () {
+      return idle ? 'nothing left to do' : '';
+    };
+    s.front.scheduler.register(job({ timeoutS: 300, off: own }));
+    s.worker.scheduler.register(job({ timeoutS: 300, off: own,
+                                      run: function (ctx) {
+      seen = ctx;
+      idle = true;
+      return new Promise(function () {});
+    } }));
+    s.front.scheduler.start('front');
+    await s.w.advance(30 * 1000);
+    t.check(!!seen && seen.stillOwner() === true,
+            'K3: a job whose own off() turned true while it ran still ' +
+            'owns its run');
+  }
   log.debug('Leaving run().');
 }
 
@@ -496,6 +724,7 @@ module.exports = {
   name: 'scheduler_workers',
   describe: 'a cluster job\'s body run on a request worker (#408): the ' +
             'outcome, the fence, a worker ending, no worker, onFront ' +
-            'exemptions, an unregistered job, and a run held for load',
+            'exemptions, an unregistered job, a run held for load, the ' +
+            'body\'s renewed grant and a switch-off while it runs (#1305)',
   run: run
 };
