@@ -1098,6 +1098,31 @@ function create(options) {
         });
     });
   };
+  // Whether its walk is done (#1316): true only when BOTH databases' marks
+  // are written, so the job is off in a cell only once the global tier and
+  // the cell's own database are keyed. A tier that cannot be walked answers yes, as
+  // `indexGrantingKeys()` above counts it complete.
+  driver.grantingKeysComplete = function () {
+    log.debug("Entering tiered grantingKeysComplete().");
+    const markOf = function (one) {
+      log.debug("Entering markOf().");
+      if (typeof one.grantingKeysComplete === 'function') {
+        log.debug("Leaving markOf(). Asked.");
+        return Promise.resolve(one.grantingKeysComplete());
+      }
+      log.debug("Leaving markOf(). Not walked.");
+      return Promise.resolve(typeof one.indexGrantingKeys !== 'function');
+    };
+    log.debug("Leaving tiered grantingKeysComplete().");
+    return markOf(globalDriver).then(function (first) {
+      if (first !== true) {
+        return false;
+      }
+      return markOf(cellDriver).then(function (second) {
+        return second === true;
+      });
+    });
+  };
   driver.resealSealed = function (dekIds, reseal, options) {
     log.debug("Entering tiered resealSealed().");
     log.debug("Leaving tiered resealSealed().");

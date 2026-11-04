@@ -10801,6 +10801,18 @@ function create(options) {
         Object.assign({ what: 'this database' }, options || {}));
     },
 
+    // Whether that walk's done mark is written in this database (#1316):
+    // one indexed read of `sts_minted_index`, which the job's `off()` primes
+    // from in every process, so the finished job is off in all of them.
+    grantingKeysComplete: function () {
+      log.debug("Entering grantingKeysComplete().");
+      const ops = directoryStore ? directoryStore.grantingOps : grantingOps;
+      log.debug("Leaving grantingKeysComplete().");
+      return ops.readState().then(function (state) {
+        return !!(state && state.done);
+      });
+    },
+
     resealSealed: function (dekIds, reseal, options) {
       log.debug("Entering resealSealed().");
       const ids = (dekIds || []).map(String);
