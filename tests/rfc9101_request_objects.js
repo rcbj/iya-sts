@@ -769,6 +769,73 @@ function childMain() {
     } finally {
       config.clearOverride('global.mode');
     }
+    // AN UNSIGNED OBJECT BY REFERENCE, IN PRODUCT (#1293). The OpenID
+    // Foundation's oidcc-request-uri-unsigned-supported-correctly-or-rejected-
+    // as-unsupported is SKIPPED against a product realm, because its
+    // discovery lists no `none`; this is what that skip stands for. 3bb shows
+    // product never dials plain http, so the object is served over HTTPS
+    // under a CA this child makes now (`tests/protocol/outbound_test_ca.js`,
+    // named by federation.outboundCaFile, which is how product reaches a
+    // privately certified host) — otherwise the refusal would be the
+    // scheme's and say nothing about the signature. A SIGNED object from the
+    // same listener is accepted first, so the unsigned one's refusal can
+    // only be its own.
+    const https = require('https');
+    const testCa = require(ROOT + '/tests/protocol/outbound_test_ca');
+    const roCa = await testCa.makeCa();
+    const roLeaf = await testCa.listenerCertificate(roCa, '127.0.0.1');
+    const roCaFile = require('path').join(require('os').tmpdir(),
+      'r91-ro-ca-' + process.pid + '.crt');
+    require('fs').writeFileSync(roCaFile, roCa.certPem);
+    const secureServed = {};
+    const secureHits = {};
+    const secureRo = https.createServer({ key: roLeaf.key,
+                                          cert: roLeaf.cert },
+                                        function (req, res) {
+      secureHits[req.url] = (secureHits[req.url] || 0) + 1;
+      if (secureServed[req.url] === undefined) {
+        res.writeHead(404);
+        return res.end();
+      }
+      res.writeHead(200,
+                    { 'content-type': 'application/oauth-authz-req+jwt' });
+      return res.end(secureServed[req.url]);
+    });
+    await new Promise(function (done) {
+      secureRo.listen(0, '127.0.0.1', done);
+    });
+    const SRO = 'https://127.0.0.1:' + secureRo.address().port;
+    secureServed['/ro/signed'] = good('r91');
+    secureServed['/ro/unsigned'] = sign('none', claimsFor('r91'), null);
+    ['/ro/signed', '/ro/unsigned'].forEach(function (p) {
+      applications.updateApplication('r91', { attribute: 'oauthRequestUri',
+        mode: 'add', value: SRO + p });
+    });
+    config.setOverride('federation.outboundCaFile', roCaFile);
+    config.setOverride('global.mode', 'product');
+    try {
+      r = await byRef(SRO + '/ro/signed');
+      note(toSignIn(r) && secureHits['/ro/signed'] === 1,
+           '3bb-ii. product: a SIGNED request object by reference over ' +
+           'https is fetched and accepted (the control for 3bb-iii)',
+           r.status + ' hits=' + secureHits['/ro/signed'] + ' ' +
+           r.text.slice(0, 200));
+      r = await byRef(SRO + '/ro/unsigned');
+      note(refusedWith(r, 'invalid_request_object', /product mode/) &&
+           /unsigned/.test(r.json.error_description || '') &&
+           secureHits['/ro/unsigned'] === 1,
+           '3bb-iii. product: an UNSIGNED request object by reference is ' +
+           'fetched and refused invalid_request_object (stands in for ' +
+           'OIDF oidcc-request-uri-unsigned-supported-correctly-or-' +
+           'rejected-as-unsupported)',
+           r.status + ' hits=' + secureHits['/ro/unsigned'] + ' ' +
+           r.text.slice(0, 240));
+    } finally {
+      config.clearOverride('global.mode');
+      config.clearOverride('federation.outboundCaFile');
+      secureRo.close();
+      require('fs').unlinkSync(roCaFile);
+    }
     r = await authorize({ client_id: 'r91', request: good('r91'),
                           request_uri: RO + '/ro/good' });
     note(refusedWith(r, 'invalid_request', /both/),
@@ -988,6 +1055,27 @@ function childMain() {
            'advertising none');
     } finally {
       config.clearOverride('oauth2.requireSignedRequestObject');
+    }
+    // THE PRODUCT DOCUMENT (#1293): no `none`, with no setting asked. This
+    // is the half of the OpenID Foundation's skips that is the service's own
+    // statement — oidcc-unsigned-request-object-supported-correctly-or-
+    // rejected-as-unsupported and its request_uri twin are skipped BECAUSE a
+    // product realm's discovery lists no `none`, so the list is what has to
+    // stay true; 3ab and 3bb-iii are what it promises.
+    config.setOverride('global.mode', 'product');
+    try {
+      meta = (await request(port, 'GET',
+                            '/.well-known/openid-configuration')).json || {};
+      const productAlgs = meta.request_object_signing_alg_values_supported;
+      note(Array.isArray(productAlgs) && productAlgs.indexOf('none') < 0 &&
+           productAlgs.indexOf('ES256') >= 0,
+           '3ca-ii. product: the OpenID Provider Configuration\'s ' +
+           'request_object_signing_alg_values_supported lists ES256 and ' +
+           'never none (stands in for OIDF oidcc-unsigned-request-object-' +
+           'supported-correctly-or-rejected-as-unsupported)',
+           JSON.stringify(productAlgs));
+    } finally {
+      config.clearOverride('global.mode');
     }
     const narrowedMeta = (await request(port, 'GET',
       '/.well-known/oauth-authorization-server/r91np')).json;
