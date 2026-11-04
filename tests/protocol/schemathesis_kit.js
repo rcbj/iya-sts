@@ -149,17 +149,20 @@ const SURFACES = [
 // sentence, not a reference to these.
 // ---------------------------------------------------------------------------
 const EXCLUSIONS = [
-  { surface: "admin-api", match: "deleteRealm",
+  { surface: "admin-api", match: "removeRealm",
     reason: "a realm delete can remove the fuzz run's own realm (or the " +
       "default realm), ending the run before it finishes" },
-  { surface: "admin-api", match: "buildRoot",
+  { surface: "admin-api", match: "buildPkiRoot",
     reason: "rebuilds the Root CA and reissues the listener leaf, " +
-      "invalidating the adapter's pinned trust anchor mid-run (the reason " +
+      "invalidating the run's pinned trust anchor mid-run (the reason " +
       "sts_admin_api_operations is exclusive)" },
-  { surface: "admin-api", match: "rotateSigningKey",
-    reason: "rotates the signing key the adapter's own access tokens are " +
+  { surface: "admin-api", match: "rotateSigningKeys",
+    reason: "rotates the signing key the run's own access tokens are " +
       "verified against, so every later request fails to authenticate" },
-  { surface: "admin-api", match: "revokeAll",
+  { surface: "admin-api", match: "rotateSigningKeysEmergency",
+    reason: "an immediate signing-key rotation, invalidating the run's own " +
+      "tokens at once" },
+  { surface: "admin-api", match: "revokeAllTokens",
     reason: "revokes every token, the run's own admin:read/write token " +
       "among them, so the adapter cannot drive the next operation" }
 ];
