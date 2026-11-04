@@ -184,8 +184,51 @@ async function browser(serviceBase) {
     .setChromeOptions(options).build();
   log.info("Opened the person's browser (headless Chrome) for the " +
            "conformance suite's sign-in steps.");
+  await keepWarm(shared, serviceBase);
   log.debug("Leaving browser().");
   return shared;
+}
+
+// A WARM CONNECTION TO THE SERVICE (#1293, 2026-11-04): Session Management's
+// second_session_verify loads our OP iframe and the suite's RP iframe side by
+// side and posts its ONE message 500 ms after its own frame loads (#1297).
+// From a distant browser, an OP iframe that needs a fresh TCP and TLS
+// connection to the service spent 502 ms connecting before its request went
+// out (the NetLog of the 11-04 run), and the message was gone before it
+// listened; the same page over a reused connection answered in 294 ms. A
+// background tab asks the service for its discovery document every
+// CONFORMANCE_BROWSER_KEEP_WARM_MS, so a connection is always in the pool —
+// the network a nearby browser would have, and nothing the service does
+// differently. Off unless that variable is set (the certification tool sets
+// it for a Session-only run, beside the partitioning switches).
+async function keepWarm(driver, serviceBase) {
+  log.debug("Entering keepWarm().");
+  const every = Number(process.env.CONFORMANCE_BROWSER_KEEP_WARM_MS || 0);
+  if (!(every > 0) || !serviceBase) {
+    log.debug("Leaving keepWarm(). Off.");
+    return;
+  }
+  try {
+    const main = await driver.getWindowHandle();
+    await driver.switchTo().newWindow("tab");
+    await driver.get(String(serviceBase).replace(/\/+$/, "") +
+                     "/.well-known/openid-configuration");
+    // An <img> (the document's policy has img-src 'self'), not fetch()
+    // (connect-src is 'none' there): the request is all that is wanted.
+    await driver.executeScript(
+      "var n = 0; setInterval(function () {" +
+      "  var i = new Image(); i.src = location.pathname + '?warm=' + (n++);" +
+      "}, arguments[0]);", every);
+    await driver.switchTo().window(main);
+    log.info("Keeping a connection to " + serviceBase + " warm every " +
+             every + " ms from a background tab.");
+  } catch (e) {
+    log.debug("Caught in keepWarm(): " + ((e && e.message) || e));
+    // Without it the run is what it was before, and goes on.
+    log.info("Could not open the keep-warm tab: " +
+             ((e && e.message) || e));
+  }
+  log.debug("Leaving keepWarm().");
 }
 
 // Closes the one Chrome, at the end of a job.

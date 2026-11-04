@@ -433,6 +433,11 @@ async function main() {
   if (sessionOnly && !process.env.CONFORMANCE_BROWSER_DISABLE_FEATURES) {
     process.env.CONFORMANCE_BROWSER_DISABLE_FEATURES =
       SESSION_BROWSER_FEATURES;
+    // And a warm connection to the service (conformance_browser.js's
+    // keepWarm()): the OP iframe's load must beat the suite's 500 ms.
+    if (!process.env.CONFORMANCE_BROWSER_KEEP_WARM_MS) {
+      process.env.CONFORMANCE_BROWSER_KEEP_WARM_MS = "3000";
+    }
   } else if (!sessionOnly && plans.some(function (plan) {
     return plan.group === "session";
   })) {
