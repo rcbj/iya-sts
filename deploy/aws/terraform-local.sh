@@ -14,12 +14,13 @@
 # Usage:
 #   deploy/aws/terraform-local.sh [env] [action]
 #     env    = an environment name, 2-12 [a-z0-9]      (default: dev)
-#     action = init | validate | plan | apply | destroy | output | suite
+#     action = init | validate | plan | apply | destroy | output
 #              | ecr-password                           (default: plan)
+#     (`suite` was removed with the in-VPC runner on 2026-09-21; the suite
+#     is deploy/aws/run-suite.sh, and asking for it here says so — #1314.)
 #
 #   deploy/aws/terraform-local.sh dev plan
 #   deploy/aws/terraform-local.sh dev apply          # IMAGE_TAG=<tag> required
-#   deploy/aws/terraform-local.sh dev suite          # report in tests/report/aws-dev
 #   TF_STACK=foundation deploy/aws/terraform-local.sh dev apply # administrator
 #   TF_STACK=spiffe-realm REALM=acme SERVER_PORT=9181 \
 #     deploy/aws/terraform-local.sh testidp apply  # a realm's Server API.
@@ -224,17 +225,15 @@ for v in TF_CLI_ARGS TF_CLI_ARGS_plan TF_CLI_ARGS_apply TF_CLI_ARGS_destroy; do
   [ -z "${!v:-}" ] || TF_VARS+=(-e "${v}=${!v}")
 done
 
-REPORT_ARGS=()
+# THE IMAGE HAS NO `suite` ACTION SINCE 2026-09-21 (the in-VPC runner and
+# run-suite-in-aws.sh were deleted that day), so asking for it here is
+# refused in a sentence rather than handed to the image to fail (#1314).
 if [ "${TF_ACTION}" = "suite" ];
 then
-  REPORT_DIR="${REPO_ROOT}/tests/report/aws-${TF_ENV}"
-  mkdir -p "${REPORT_DIR}"
-  # The container runs as uid 10001, which is not you.
-  chmod 0777 "${REPORT_DIR}"
-  REPORT_ARGS=(-v "$(hostPath "${REPORT_DIR}"):/workspace/report")
-  for v in STS_SUITE_EXCLUDE STS_SUITE_ONLY STS_SUITE_KEEP_REALMS STS_SUITE_JOB_TIMEOUT_MS; do
-    [ -z "${!v:-}" ] || REPORT_ARGS+=(-e "${v}=${!v}")
-  done
+  echo "terraform-local.sh: there is no 'suite' action any more; run" \
+       "deploy/aws/run-suite.sh ${TF_ENV} (STS_SUITE_IN_AWS=1 to run every" \
+       "job inside AWS)." >&2
+  exit 2
 fi
 
 echo "==> Building ${IMAGE_NAME}" >&2
@@ -268,7 +267,6 @@ trap relay INT TERM
   -e TF_IMPORT_ADDRESS="${TF_IMPORT_ADDRESS:-}" \
   -e TF_IMPORT_ID="${TF_IMPORT_ID:-}" \
   "${TF_VARS[@]}" \
-  "${REPORT_ARGS[@]}" \
   "${IMAGE_NAME}" &
 RUN_PID=$!
 rc=0
