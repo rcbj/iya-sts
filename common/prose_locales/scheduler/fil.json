@@ -364,8 +364,8 @@
     "text": "Pagwalis ng mga expired na tombstone"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "b33891eaa8d4681d",
-    "text": "Binubura mula sa store ng cluster na ito ang mga tombstone ng mga natapos na minted row na mas matanda kaysa sa persistence.mintedRetention (sa isang serbisyong naka-deploy bilang mga cell, ang sariling database ng cell na ito, sa mga batch na 5000 at hindi hihigit sa 20 batch bawat run)."
+    "en": "56aed2e95604a1b4",
+    "text": "Binubura mula sa store ng cluster na ito ang mga tombstone ng mga natapos na minted row na mas matanda kaysa sa persistence.mintedRetention, sa mga batch na 5000 at hindi hihigit sa 20 batch bawat run (sa isang serbisyong naka-deploy bilang mga cell, ang sariling database ng cell na ito)."
   },
   "sched.jobs.persistence.tombstone-purge-global.title": {
     "en": "15e3f193cfee5337",

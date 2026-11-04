@@ -3770,9 +3770,11 @@ an orphan grace) and a failure code of their own since #46 — folding would
 change a cadence nobody asked to change and put two failures under one
 code. The postgres and portable statements take the limit as the expiry
 purge's do (ctid; MariaDB's `DELETE … LIMIT`). **A single database is
-asked as it always was**: the instant only, so the driver runs its one
-unbounded statement; bounding that too would be a one-line change, not made
-because nothing asked for it. `tests/minted_persistence.js` (6d) and
+bounded the same way since #1315 (rcbj's decision)**: no tier is named, the
+limit is, so it too is swept in batches of 5000, at most 20 a run, and a
+backlog larger than that waits for the next run rather than one statement
+holding its locks. The STS-STORE-0165/0055 line quotes the database's own
+error once (the tiered driver's refusal carries it as `cause`). `tests/minted_persistence.js` (6d) and
 `tests/cell_tiers.js` hold it.
 
 **TWO CHANGE LOGS, TWO FOLLOWERS.** `persistence_replication.js` is a factory

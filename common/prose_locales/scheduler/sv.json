@@ -364,8 +364,8 @@
     "text": "Rensning av utgångna gravstenar"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "b33891eaa8d4681d",
-    "text": "Tar bort gravstenarna för avslutade skapade rader som är äldre än persistence.mintedRetention från detta klusters lager (i en tjänst som driftsätts som celler, cellens egen databas, i omgångar om 5000 och högst 20 omgångar per körning)."
+    "en": "56aed2e95604a1b4",
+    "text": "Tar bort gravstenarna för avslutade skapade rader som är äldre än persistence.mintedRetention från detta klusters lager, i omgångar om 5000 och högst 20 omgångar per körning (i en tjänst som driftsätts som celler, cellens egen databas)."
   },
   "sched.jobs.persistence.tombstone-purge-global.title": {
     "en": "15e3f193cfee5337",

@@ -364,8 +364,8 @@
     "text": "Barrido de lápidas caducadas"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "b33891eaa8d4681d",
-    "text": "Elimina del almacén de este clúster las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention (en un servicio desplegado en celdas, la base de datos propia de esta celda, en lotes de 5000 y como máximo 20 lotes por ejecución)."
+    "en": "56aed2e95604a1b4",
+    "text": "Elimina del almacén de este clúster las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention, en lotes de 5000 y como máximo 20 lotes por ejecución (en un servicio desplegado en celdas, la base de datos propia de esta celda)."
   },
   "sched.jobs.persistence.tombstone-purge-global.title": {
     "en": "15e3f193cfee5337",
