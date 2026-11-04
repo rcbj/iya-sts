@@ -14177,9 +14177,12 @@ suite SWEPT rather than the policy weakened for it.
   references is ranked once and each profile's list read once. With no named
   profile the directory is handed `default`'s list as before, and where no
   group names one no group is read.
-* **Left for follow-up tickets**, as the design comment says: SCIM `/Schemas`
-  publishing `required` and the custom attributes as a per-realm extension;
-  custom attributes as token, UserInfo and SAML claims and on the portal; and
+* **SCIM publishes both (#699)**: `/Schemas` marks `required` from the
+  `default` profile in product mode, and the custom attributes are the
+  `CustomAttributes` extension, read and written (`scim/CLAUDE.md`, *THE
+  REALM'S SCHEMAS*).
+* **Left for follow-up tickets**, as the design comment says: custom
+  attributes as token, UserInfo and SAML claims and on the portal; and
   a sign-in step that collects a missing value instead of refusing a
   federated newcomer.
 
