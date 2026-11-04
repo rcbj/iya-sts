@@ -115,18 +115,25 @@ variable "cells" {
     # one-digit region number guarantees.
     # AN AWS CELL ONLY: a GCP cell (#97) is named for its own cloud's region
     # (us-west1 is gusw1), and deploy/multicloud checks it.
+    #
+    # `||` DOES NOT SHORT-CIRCUIT IN TERRAFORM (#1309): every operand is
+    # evaluated, so the AWS branch's `split(...)[2]` ran for a GCP cell too,
+    # and `us-west1` has no third part — the plan errored instead of
+    # validating. The id comparison is inside `try(..., false)`, so a region
+    # it cannot take apart is simply not a match, and the regex beside it
+    # already says why for an AWS cell.
     condition = alltrue([
       for id, c in var.cells :
       can(cidrnetmask(c.vpc_cidr)) && (c.cloud != "aws" || (
         can(regex("^[a-z]{2}-(north|south|east|west|central|northeast|northwest|southeast|southwest)-[1-9]$", c.region)) &&
-        id == join("", [
+        try(id == join("", [
           split("-", c.region)[0],
           lookup({
             north     = "n", south = "s", east = "e", west = "w", central = "c",
             northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw",
           }, split("-", c.region)[1], "?"),
           split("-", c.region)[2],
-      ])))
+      ]), false)))
     ])
     error_message = "each AWS cell's id must be its region shortened by rule (us-west-2 is usw2, eu-central-1 euc1, ap-southeast-5 apse5), in a commercial region of the form area-direction-digit, and vpc_cidr a CIDR."
   }

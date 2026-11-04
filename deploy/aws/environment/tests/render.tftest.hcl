@@ -355,6 +355,21 @@ run "kek_migrating_needs_the_kms_key" {
   }
   expect_failures = [var.kek_migrating_from_secret]
 }
+# #1309: the id comparison moved into try(), so the rule must still refuse an
+# AWS cell whose id is not its region's (usw9 in us-west-2), and still take
+# a GCP cell's region it cannot take apart (the multi-cloud run below).
+run "aws_cell_id_must_name_its_region" {
+  command = plan
+  variables {
+    environment = "globalidp"
+    cell        = "usw2"
+    cells = merge(jsondecode(file("envs/globalidp.cells.tfvars.json")).cells, {
+      usw9 = merge(jsondecode(file("envs/globalidp.cells.tfvars.json")).cells["usw2"],
+      { vpc_cidr = "10.250.0.0/16" })
+    })
+  }
+  expect_failures = [var.cells]
+}
 run "kek_kms_refused_in_a_multi_cloud_environment" {
   command = plan
   variables {

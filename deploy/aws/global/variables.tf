@@ -46,17 +46,20 @@ variable "cells" {
     # (`cell_of_region`, #367 — keep the copies in step): the area, the
     # direction's initials and the number, us-west-2 = usw2, ap-southeast-5 =
     # apse5. It was a table of the four regions this stack had providers for.
+    # The id comparison is in `try(..., false)` because `||` evaluates both
+    # sides: a GCP cell's `us-west1` has no third part (#1309,
+    # environment/cells.tf says it at length).
     condition = alltrue([
       for id, c in var.cells : c.cloud != "aws" || (
         can(regex("^[a-z]{2}-(north|south|east|west|central|northeast|northwest|southeast|southwest)-[1-9]$", c.region)) &&
-        id == join("", [
+        try(id == join("", [
           split("-", c.region)[0],
           lookup({
             north     = "n", south = "s", east = "e", west = "w", central = "c",
             northeast = "ne", northwest = "nw", southeast = "se", southwest = "sw",
           }, split("-", c.region)[1], "?"),
           split("-", c.region)[2],
-      ]))
+      ]), false))
     ])
     error_message = "each AWS cell's id must be its region shortened by rule (us-west-2 is usw2, eu-central-1 euc1, ap-southeast-5 apse5), in a commercial region of the form area-direction-digit."
   }
