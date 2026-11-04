@@ -572,6 +572,56 @@ written through `/config/set-many` is held to its own list: an `enum`
 setting's `enumValues`, and for a comma-separated setting, every entry against
 its `csvValues`. `GET /admin-api/config` publishes both.
 
+### Sign-in appearance
+
+Four operations set a realm's sign-in colours, layout and logo. They mirror
+Server configuration → Sign-in appearance. Each acts on the realm in the
+address, so `/realm/acme/admin-api/branding` is acme's appearance. What each
+setting does is on [Sign-in appearance](sign-in-appearance.md).
+
+| Operation | Scope | What it does |
+|---|---|---|
+| `GET /admin-api/branding` | `admin:read` | The layout, the four colours, the derived tones, the contrast of the text, the links and the button text against WCAG 2.2 AA (4.5:1), the display name, the logo's alternative text and link, the stored logo without its bytes, and `previewUrl`, the realm's preview address |
+| `POST /admin-api/branding/save` | `admin:write` | Writes the `branding.*` settings in the body. They are judged together, and nothing is written when any is refused |
+| `POST /admin-api/branding/logo` | `admin:write` | The body is the image. The optional `alt` query parameter sets its alternative text |
+| `POST /admin-api/branding/remove-logo` | `admin:write` | Removes the logo. The alternative text stays |
+
+A save takes these eight members: `branding.layout`, `branding.accentColor`,
+`branding.pageColor`, `branding.cardColor`, `branding.textColor`,
+`branding.displayName`, `branding.logoAlt` and `branding.logoLinkUrl`.
+`branding.logoMaxBytes` applies to the whole service. Set it with
+`POST /admin-api/config/set` in the default realm.
+
+```bash
+curl -X POST "$BASE/realm/acme/admin-api/branding/save" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"branding.layout":"split","branding.accentColor":"#0b5394",
+       "branding.displayName":"Example Corp"}'
+
+curl -X POST "$BASE/realm/acme/admin-api/branding/logo?alt=Example%20Corp" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: image/png' \
+  --data-binary @logo.png
+```
+
+The logo must be a PNG, a JPEG or a WebP. Its bytes decide the type, not the
+`Content-Type` header. Each side must be 16 to 2048 pixels, and the file at
+most `branding.logoMaxBytes` bytes. These refusals come back:
+
+| Status | Code | Why |
+|---|---|---|
+| `400` | `STS-AUTHN-0544` | Text or links below 4.5:1 against the card |
+| `400` | `STS-AUTHN-0551` | `branding.logoLinkUrl` is not an absolute `https` URL |
+| `400` | `STS-AUTHN-0548` | A logo without alternative text |
+| `400` | `STS-AUTHN-0547` | A side outside 16 to 2048 pixels |
+| `413` | `STS-AUTHN-0546` | Larger than `branding.logoMaxBytes` |
+| `415` | `STS-AUTHN-0545` | Not a PNG, a JPEG or a WebP |
+
+The codes are recorded in the audit log and the service log, not sent in
+the reply. The upload and the removal are audited with the image's digest.
+The image itself is not in the audit row. The design asked for `PUT` and
+`DELETE` on `/branding/logo`. They are `POST`s because every operation of
+this API is a `GET` or a `POST`, and the console sends its forms that way.
+
 ### The explorer
 
 `/admin/api-explorer` (Server configuration → API explorer) is a console page,
@@ -843,6 +893,7 @@ them on the console or with `POST /admin-api/config/set`.
 | `/admin/error-codes` | The `STS-API-*` codes behind each refusal, also at `GET /admin-api/error-codes` |
 | `/admin/audit` | The audit log, also at `GET /admin-api/audit` |
 | `/admin/audit-export` | Audit export destinations and this process's delivery figures. `GET /admin-api/audit-export` is Admin Read (`admin:read`). `POST /admin-api/audit-export/{add,update,remove,enable,disable,test}` is Admin Write (`admin:write`). A token and a secret header are absent from every answer. Examples for each destination are on [Audit export destinations](audit-export.md) |
+| `/admin/sign-in-appearance` | The realm's sign-in colours, layout and logo. `GET /admin-api/branding` is Admin Read (`admin:read`). `POST /admin-api/branding/{save,logo,remove-logo}` is Admin Write (`admin:write`). See [Sign-in appearance](#sign-in-appearance) |
 
 At startup the service logs how many operations the API has and whether a
 token is currently required.

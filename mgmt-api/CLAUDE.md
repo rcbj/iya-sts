@@ -2826,3 +2826,48 @@ DID DEACTIVATES it rather than leaving a document published for a subject
 that is gone. The operations walk drives the act's example
 (`sts_admin_api_operations.js`): the example names a DID nobody holds, which
 is refused about the referent (`STS-VC-0172`).
+
+## Sign-in appearance (#717, 2026-11-04)
+
+`mgmt-api/branding_api.ts` spreads three rows onto the management API, tag
+Configuration, mirroring Server configuration → Sign-in appearance, each
+calling `common/branding.ts` in the AMBIENT realm:
+
+* `GET /admin-api/branding` (`getBranding`): `Branding.describe()`, plus
+  `realm`, `previewUrl` and `logo.src` under the realm's own prefix (the
+  core's addresses are unprefixed, which in a realm would name the default
+  realm's), and the page's `settings`.
+* `POST /admin-api/branding/logo` (`uploadBrandingLogo`): THE BODY IS THE
+  IMAGE, `handlerOwnsBody`, `requestBodyTypes` image/png, image/jpeg,
+  image/webp and application/octet-stream, `alt` a query parameter. ABOVE
+  `/branding/:action`, as `/risk/upload` is above `/risk/:action`. The body
+  parsers have already read it, bounded at 5 MB: octet-stream is the raw
+  parser's Buffer, an `image/*` type the text parser's string with the
+  BYTES kept in `req.rawBody` — the string is not the image. The
+  `branding.logoMaxBytes` cap (2 MiB at most) is then the core's.
+* `POST /admin-api/branding/:action`, `save` (`saveBranding`, the eight
+  realm-carried `branding.*` keys, `additionalProperties: false`, no colour
+  `pattern` so the core's `color` type is the one judge and its code is the
+  one recorded) and `remove-logo` (`removeBrandingLogo`). `action` and the
+  gate's `actor` are taken out of the body before `saveSettings()`, which
+  refuses any key that is not an appearance setting.
+
+**POST, NOT PUT AND DELETE.** #717's design named `PUT` and `DELETE` on
+`/branding/logo`. The route table registers GET and POST only, and so do the
+document builder, both walking jobs and the static console's form
+resolution (`web_forms.ts`); a third verb for one resource would have been
+the only one. The logo is an action of `/branding`, and the unknown-action
+sentence names all three (`save, logo, remove-logo`), risk's `upload`
+precedent, so `tests/protocol/admin_api.js` and
+`sts_admin_api_operations.js` see `logo`.
+
+`GET` is `admin:read`, every POST `admin:write`; nothing here is a security
+change and nothing is refused to a realm administrator in their own realm.
+A save is recorded as `/config/set` records one — no audit row of its own;
+the upload and the removal are audited by the core with the caller's name
+(`res.locals.apiCaller`). An unknown action and an unexpected failure are
+marked `STS-API-0038` (the configuration action code); the save and the
+logo carry the core's codes (`STS-AUTHN-0544`–`0548`, `0551`,
+`STS-CORE-0004`, `STS-CORE-0006`). The walk drives `logo` with a real PNG in
+its throwaway realm (`theSignInLogoRoundTrips()`), since a bytes body has no
+JSON example to replay. `tests/branding_api.js` holds the rows in process.
