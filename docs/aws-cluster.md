@@ -125,7 +125,10 @@ environment can be reused: each suite run first removes what the previous
 runs left — every realm but the default one, and in the default realm the
 bulk-load people and groups, the applications the suite registered and the
 runtime overrides (`deploy/aws/reset-environment.js`; `--dry-run` lists them;
-`STS_SUITE_KEEP_REALMS=1` keeps everything).
+`STS_SUITE_KEEP_REALMS=1` keeps everything). It also removes every runtime
+client-certificate trust anchor named `iya-sts test Root CA`, which includes
+a root an operator minted with `tests/tools/pep-credential.js`
+([The remote PEP](remote-pep.md#minting-the-certificate)).
 
 **From GitHub Actions**: the *AWS cluster test* workflow
 (`.github/workflows/aws-cluster.yml`), started by hand, with the actions

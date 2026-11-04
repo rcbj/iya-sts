@@ -152,6 +152,13 @@ api users/add-certificate "$(jq -n --rawfile pem /tmp/pep-certs/pep-leaf.crt \
   '{user:"remote-pep-1", certificate:$pem}')"
 ```
 
+**The root's subject is always `CN=iya-sts test Root CA,O=iya-sts tests`**,
+the name the test suite's own roots carry. On a reused AWS test environment
+the suite's reset (`deploy/aws/reset-environment.js`) removes every runtime
+trust anchor with that common name before a run, so a PEP whose root was
+minted there with this tool loses its trust at the next suite run. Re-run the
+tool afterwards, or keep the PEP off an environment the suite resets.
+
 Until it is stored, the PEP's certificate verifies and is still refused
 (`STS-XACML-0179`). A deployment upgraded from a version that matched the
 PEP by its common name stores it **before** the upgrade, or the PEP is cut off
