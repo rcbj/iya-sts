@@ -14206,9 +14206,7 @@ suite SWEPT rather than the policy weakened for it.
   group names one no group is read.
 * **Left for follow-up tickets**, as the design comment says: SCIM `/Schemas`
   publishing `required` and the custom attributes as a per-realm extension;
-  custom attributes as token, UserInfo and SAML claims (the portal half
-  is done, #700, above); and
-  a sign-in step that collects a missing value instead of refusing a
+  and a sign-in step that collects a missing value instead of refusing a
   federated newcomer.
 
 `tests/attribute_policy.js` holds it in process, and
