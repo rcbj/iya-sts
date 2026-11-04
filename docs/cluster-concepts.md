@@ -151,7 +151,7 @@ everything after it.
 
 On its own, the log means another node sees a change *soon*: within
 milliseconds with a notification, and within the poll interval without one.
-Section 6 explains how a request is made to see it *at once*.
+Section 8 explains how a request is made to see it *at once*.
 
 ## 5. Membership and heartbeats
 
