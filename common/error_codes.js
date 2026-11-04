@@ -16613,6 +16613,12 @@ const CODES = [
     summary: 'The workload agent could not obtain an SVID or a bundle ' +
       'from the SPIRE Server API (#324).',
     spec: '' },
+  { code: 'STS-SPIFFE-0152',
+    summary: 'The workload agent attested and bound its Unix socket but ' +
+      'could not write the file named by --ready-file, so it stopped ' +
+      'rather than serve a socket its workload waits on and cannot find ' +
+      '(#695).',
+    spec: '' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion, tls.ciphers, ' +
