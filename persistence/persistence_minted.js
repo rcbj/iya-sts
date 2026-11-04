@@ -3392,9 +3392,10 @@ function ensureTombstoneJob(schedulerInstance) {
 // runs — and a start skips those rows in the meantime, so a backlog costs
 // disk and never start-up time.
 //
-// The run's summary records what a run deleted. The log line is debug while
-// the purge is a scheduler job. The failure is once per run with
-// STS-STORE-0065 (the no-per-event-failure-logs rule).
+// The run's summary records what a run deleted. The failure is once per
+// run (the no-per-event-failure-logs rule), with STS-STORE-0065 for this
+// cell's store or the only one and STS-STORE-0161 for the global tier's
+// (#695, below: in a service deployed as cells each tier is its own job).
 // ---------------------------------------------------------------------------
 const EXPIRY_PURGE_JOB = 'persistence.minted-expiry-purge';
 const EXPIRY_PURGE_MS = 5 * 60 * 1000;
@@ -3405,29 +3406,91 @@ const EXPIRY_PURGE_MAX_BATCHES = 20;
 const ORPHAN_GRACE_MS = 60 * 60 * 1000;
 let expiryPurgeJobRegistered = false;
 
-// One kind, batch after batch until a batch comes back short or the bound is
-// reached. Resolves to `{ removed, more }`: `more` when the bound stopped it.
-function purgeKind(kind, options) {
-  log.debug("Entering purgeKind(). " + kind);
+// ---------------------------------------------------------------------------
+// ONE TIER AT A TIME, AND ONE CELL FOR THE GLOBAL TIER (#695, 2026-11-04).
+//
+// In a service deployed as cells the store is two databases
+// (`persistence_tiered.js`), and the purge used to be ONE call that the
+// tiered driver sent to both, through Promise.all, with the same `limit`,
+// summing the two counts. Three things were wrong with that:
+//
+//   * one batch could delete up to TWICE the limit, and purgeKind()'s stop
+//     test ("a batch came back short") was asked of the sum, so a tier with
+//     a backlog could stop early or keep going on the other's account;
+//   * when the global database could not be reached the whole call
+//     rejected, and the cell tier's deleting — already done — went
+//     unreported with it, and the kinds after it in the run were never
+//     tried;
+//   * the job is a CLUSTER job and a cell IS a cluster, so every cell's
+//     leader purged the one shared global tier, N cells racing on the same
+//     rows of the busiest global table.
+//
+// SO EACH TIER IS PURGED BY ITS OWN JOB, with its own batches, its own stop
+// test and its own failure:
+//
+//   * `persistence.minted-expiry-purge` purges THIS CELL'S database — and,
+//     in a single-database deployment, the one database, exactly as before
+//     (no `tier` is named and the driver is the postgres one);
+//   * `persistence.minted-expiry-purge-global` purges the GLOBAL database,
+//     and is off unless the store is tiered.
+//
+// WHICH CELL PURGES THE GLOBAL TIER: THE ONE THAT WINS THE GLOBAL RUN CLAIM.
+// The cells design has no "owner" of the global tier — every cell reads it
+// from its replica and writes to the one global writer, and no cell is more
+// the global tier's than another (`common/cells.ts` names none). What it
+// does have is the mechanism for exactly this: a job listed in
+// `tiers.js`'s GLOBAL_JOBS claims its run under `scheduler.run.global`,
+// which the tiered driver keeps in the GLOBAL database, and the run id is a
+// digest of the job, the realm and the slot (`Scheduler.runIdFor()`), the
+// same in every cell — so exactly one cell runs each slot, and when that
+// cell is gone the next slot's claim is won by another. A fixed owner would
+// need a setting naming it and would stop purging when that cell went; the
+// lease follows the cells that are alive. The global job is in GLOBAL_JOBS
+// for that reason.
+//
+// AND EACH KIND IS SETTLED ON ITS OWN. A failure of one kind (the orphan
+// purge needs the global realm registry, even in the cell's job) no longer
+// skips the kinds after it or loses what the kinds before it deleted: the
+// run tries all three, reports every count, and fails — once, with the
+// tier's code — if any kind failed.
+// ---------------------------------------------------------------------------
+const EXPIRY_PURGE_GLOBAL_JOB = 'persistence.minted-expiry-purge-global';
+
+// One kind in one tier, batch after batch until a batch comes back short or
+// the bound is reached. `tier` is 'cell' or 'global' for a tiered store and
+// undefined for a single one, and is handed to the driver, which then asks
+// that database only — so the limit and the short-batch test are that
+// tier's alone. Resolves to `{ removed, more, error }`: `more` when the
+// bound stopped it, `error` when a batch failed, with what the batches
+// before it deleted still counted.
+function purgeKind(kind, options, tier) {
+  log.debug("Entering purgeKind(). " + kind + " " + (tier || 'single'));
   let removed = 0;
   let batches = 0;
   function next() {
     log.debug("Entering next().");
     if (batches >= EXPIRY_PURGE_MAX_BATCHES) {
       log.debug("Leaving next(). The bound was reached.");
-      return Promise.resolve({ removed: removed, more: true });
+      return Promise.resolve({ removed: removed, more: true, error: null });
     }
     batches++;
+    const asked = Object.assign({ limit: EXPIRY_PURGE_BATCH }, options);
+    if (tier) {
+      asked.tier = tier;
+    }
     log.debug("Leaving next().");
-    return driver.purgeExpiredMinted(kind, Object.assign({
-      limit: EXPIRY_PURGE_BATCH
-    }, options)).then(function (count) {
+    return driver.purgeExpiredMinted(kind, asked).then(function (count) {
       const n = Number(count) || 0;
       removed += n;
       if (n < EXPIRY_PURGE_BATCH) {
-        return { removed: removed, more: false };
+        return { removed: removed, more: false, error: null };
       }
       return next();
+    }, function (e) {
+      // Settled here rather than rejected: the run goes on to the next kind
+      // and reports this one's failure with what it did delete.
+      log.debug("Caught in purgeKind(): " + ((e && e.message) || e));
+      return { removed: removed, more: true, error: e };
     });
   }
   log.debug("Leaving purgeKind().");
@@ -3437,41 +3500,97 @@ function purgeKind(kind, options) {
 /**
  * Deletes, in bounded batches, the minted rows no restore will read again:
  * expired, of an undefined realm, or a short-lived store's stale row.
+ * Each kind is settled on its own: one failing does not stop the others.
  * @param nowMs - the instant, in epoch milliseconds
- * @returns a promise of `{ expired, orphaned, stale, more }`
+ * @param tier - 'cell' or 'global' in a store deployed as cells, where it
+ *   defaults to 'cell'; ignored by a single store
+ * @returns a promise of `{ expired, orphaned, stale, more, tier,
+ *   failures }`, `failures` a list of `{ kind, message }`
  */
-function purgeExpired(nowMs) {
+function purgeExpired(nowMs, tier) {
   log.debug("Entering purgeExpired().");
+  const tiered = !!(driver && driver.tiered);
+  const which = tiered ? (tier === 'global' ? 'global' : 'cell') : undefined;
+  const out = { expired: 0, orphaned: 0, stale: 0, more: false,
+                tier: which || '', failures: [] };
   if (!driver || typeof driver.purgeExpiredMinted !== 'function') {
     log.debug("Leaving purgeExpired(). This store cannot.");
-    return Promise.resolve({ expired: 0, orphaned: 0, stale: 0,
-                             more: false });
+    return Promise.resolve(out);
   }
   const retention = retentionMs();
-  const out = { expired: 0, orphaned: 0, stale: 0, more: false };
+  function settle(kind, field) {
+    log.debug("Entering settle(). " + kind);
+    log.debug("Leaving settle().");
+    return function (r) {
+      out[field] = r.removed;
+      out.more = out.more || r.more;
+      if (r.error) {
+        out.failures.push({ kind: kind,
+                            message: String((r.error && r.error.message) ||
+                                            r.error) });
+      }
+    };
+  }
   log.debug("Leaving purgeExpired().");
-  return purgeKind('expired', { nowMs: nowMs }).then(function (r) {
-    out.expired = r.removed;
-    out.more = out.more || r.more;
-    return purgeKind('orphan', { defaultRealm: realms.DEFAULT_ID,
-                                 orphanBeforeMs: nowMs - ORPHAN_GRACE_MS });
-  }).then(function (r) {
-    out.orphaned = r.removed;
-    out.more = out.more || r.more;
-    if (!retention) {
-      return { removed: 0, more: false };
+  return purgeKind('expired', { nowMs: nowMs }, which)
+    .then(settle('expired', 'expired'))
+    .then(function () {
+      return purgeKind('orphan', { defaultRealm: realms.DEFAULT_ID,
+                                   orphanBeforeMs: nowMs - ORPHAN_GRACE_MS },
+                       which);
+    })
+    .then(settle('orphan', 'orphaned'))
+    .then(function () {
+      if (!retention) {
+        return { removed: 0, more: false, error: null };
+      }
+      return purgeKind('stale', { handles: shortLivedHandles(),
+                                  staleBeforeMs: nowMs - retention }, which);
+    })
+    .then(settle('stale', 'stale'))
+    .then(function () {
+      return out;
+    });
+}
+
+// The run of either job: the purge of its tier, its counts logged, and its
+// failures logged ONCE under the tier's code and thrown, so the scheduler
+// records the run as failed — with the counts in the message, since a
+// failed run keeps no summary.
+function runExpiryPurge(tier, code) {
+  log.debug("Entering runExpiryPurge(). " + (tier || 'single'));
+  const where = tier === 'global' ? 'the global tier\'s store'
+    : tier === 'cell' ? 'this cell\'s store' : 'the store';
+  log.debug("Leaving runExpiryPurge().");
+  return purgeExpired(Date.now(), tier).then(function (result) {
+    const total = result.expired + result.orphaned + result.stale;
+    const counts = result.expired + ' expired, ' + result.orphaned +
+                   ' of realms no longer defined, ' + result.stale +
+                   ' short-lived and older than persistence.mintedRetention';
+    if (total) {
+      log.info('persistence: ' + total + ' minted row(s) purged from ' +
+               where + ' — ' + counts +
+               (result.more ? '; more remain for the next run' : '') + '.');
     }
-    return purgeKind('stale', { handles: shortLivedHandles(),
-                                staleBeforeMs: nowMs - retention });
-  }).then(function (r) {
-    out.stale = r.removed;
-    out.more = out.more || r.more;
-    return out;
+    if (result.failures.length) {
+      const why = result.failures.map(function (f) {
+        return f.kind + ': ' + f.message.replace(/\.+$/, '');
+      }).join('; ');
+      log.warn(errorCodes.tag(code) + 'persistence: purging expired ' +
+               'minted rows from ' + where + ' failed (' + why + '); ' +
+               'it still purged ' + counts + '. A start skips them anyway; ' +
+               'the next run tries again.');
+      throw new Error('the minted expiry purge of ' + where + ' failed (' +
+                      why + ') after purging ' + counts);
+    }
+    return result;
   });
 }
 
 // Registered at start-up in every process, by `common/protocol_stack.ts`,
-// for ensureTombstoneJob()'s reason.
+// for ensureTombstoneJob()'s reason. Both jobs are registered everywhere,
+// the global one off where the store is not tiered, so the list of jobs
+// does not depend on when the store was opened.
 function ensureExpiryPurgeJob(schedulerInstance) {
   log.debug("Entering ensureExpiryPurgeJob().");
   if (expiryPurgeJobRegistered) {
@@ -3484,54 +3603,74 @@ function ensureExpiryPurgeJob(schedulerInstance) {
     return;
   }
   expiryPurgeJobRegistered = true;
-  if (scheduler.job(EXPIRY_PURGE_JOB)) {
-    log.debug("Leaving ensureExpiryPurgeJob(). Registered elsewhere.");
-    return;
-  }
-  scheduler.register({
-    id: EXPIRY_PURGE_JOB,
-    kind: 'cluster',
-    title: 'Expired minted rows purge',
-    describe: 'Deletes from the shared store, in batches of ' +
-              EXPIRY_PURGE_BATCH + ' and at most ' +
-              EXPIRY_PURGE_MAX_BATCHES + ' batches of each kind per run, ' +
-              'the minted rows no start will read again: past their own ' +
-              'expiry, of a realm that is no longer defined (written over ' +
-              'an hour ago), and a short-lived store\'s rows with no expiry ' +
-              'older than persistence.mintedRetention.',
-    owner: 'persistence/persistence_minted.js',
-    everyMs: function () {
-      return EXPIRY_PURGE_MS;
-    },
-    off: function () {
-      if (!driver || typeof driver.purgeExpiredMinted !== 'function') {
-        return 'this store keeps no minted rows';
-      }
-      return enabled() ? '' : 'minted state is not persisted here';
-    },
-    run: function () {
-      return Promise.resolve().then(function () {
-        return purgeExpired(Date.now());
-      }).then(function (result) {
-        const total = result.expired + result.orphaned + result.stale;
-        if (total) {
-          log.info('persistence: ' + total + ' minted row(s) purged from ' +
-                   'the store — ' + result.expired + ' expired, ' +
-                   result.orphaned + ' of realms no longer defined, ' +
-                   result.stale + ' short-lived and older than ' +
-                   'persistence.mintedRetention' +
-                   (result.more ? '; more remain for the next run' : '') +
-                   '.');
-        }
-        return result;
-      }, function (e) {
-        log.warn(errorCodes.tag('STS-STORE-0065') + 'persistence: purging ' +
-                 'expired minted rows failed: ' + ((e && e.message) || e) +
-                 '. A start skips them anyway; the next run tries again.');
-        throw e;
-      });
+  const keepsNone = function () {
+    log.debug("Entering keepsNone().");
+    if (!driver || typeof driver.purgeExpiredMinted !== 'function') {
+      log.debug("Leaving keepsNone(). No minted rows.");
+      return 'this store keeps no minted rows';
     }
-  });
+    log.debug("Leaving keepsNone().");
+    return enabled() ? '' : 'minted state is not persisted here';
+  };
+  if (!scheduler.job(EXPIRY_PURGE_JOB)) {
+    scheduler.register({
+      id: EXPIRY_PURGE_JOB,
+      kind: 'cluster',
+      title: 'Expired minted rows purge',
+      describe: 'Deletes from this cluster\'s store (in a service deployed ' +
+                'as cells, this cell\'s own database), in batches of ' +
+                EXPIRY_PURGE_BATCH + ' and at most ' +
+                EXPIRY_PURGE_MAX_BATCHES + ' batches of each kind per ' +
+                'run, the minted rows no start will read again: past their ' +
+                'own expiry, of a realm that is no longer defined (written ' +
+                'over an hour ago), and a short-lived store\'s rows with no ' +
+                'expiry older than persistence.mintedRetention.',
+      owner: 'persistence/persistence_minted.js',
+      everyMs: function () {
+        return EXPIRY_PURGE_MS;
+      },
+      off: keepsNone,
+      run: function () {
+        return Promise.resolve().then(function () {
+          return runExpiryPurge(driver && driver.tiered ? 'cell' : undefined,
+                                'STS-STORE-0065');
+        });
+      }
+    });
+  } else {
+    log.debug("ensureExpiryPurgeJob(): " + EXPIRY_PURGE_JOB +
+              " is registered elsewhere.");
+  }
+  if (!scheduler.job(EXPIRY_PURGE_GLOBAL_JOB)) {
+    scheduler.register({
+      id: EXPIRY_PURGE_GLOBAL_JOB,
+      kind: 'cluster',
+      title: 'Expired minted rows purge, global tier',
+      describe: 'In a service deployed as cells, deletes from the global ' +
+                'tier\'s database the same three kinds of minted row, in ' +
+                'the same batches; its run is claimed in the global tier, ' +
+                'so one cell runs each slot. Off in a service with one ' +
+                'database, where the other purge covers it.',
+      owner: 'persistence/persistence_minted.js',
+      everyMs: function () {
+        return EXPIRY_PURGE_MS;
+      },
+      off: function () {
+        if (!driver || !driver.tiered) {
+          return 'this store has no global tier';
+        }
+        return keepsNone();
+      },
+      run: function () {
+        return Promise.resolve().then(function () {
+          return runExpiryPurge('global', 'STS-STORE-0161');
+        });
+      }
+    });
+  } else {
+    log.debug("ensureExpiryPurgeJob(): " + EXPIRY_PURGE_GLOBAL_JOB +
+              " is registered elsewhere.");
+  }
   log.debug("Leaving ensureExpiryPurgeJob().");
 }
 

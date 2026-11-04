@@ -340,8 +340,16 @@
     "text": "过期铸造行清除"
   },
   "sched.jobs.persistence.minted-expiry-purge.describe": {
-    "en": "51010ce2ada820cd",
-    "text": "从共享存储中删除任何启动都不会再读取的铸造行，每批 5000 行，每次运行每种类型最多 20 批：已超过自身过期时间的行、已不再定义的领域的行（写入超过一小时）、以及短期存储中没有过期时间且早于 persistence.mintedRetention 的行。"
+    "en": "51b75ecbc03ac6ba",
+    "text": "从此集群的存储（在以单元方式部署的服务中，为此单元自己的数据库）中删除任何启动都不会再读取的铸造行，每批 5000 行，每次运行每种类型最多 20 批：已超过自身过期时间的行、已不再定义的领域的行（写入超过一小时）、以及短期存储中没有过期时间且早于 persistence.mintedRetention 的行。"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "过期铸造行清除（全局层）"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "在以单元方式部署的服务中，以相同的批次从全局层的数据库中删除同样三类铸造行；其运行在全局层中认领，因此每个时段只有一个单元运行。在只有一个数据库的服务中关闭，由另一项清除涵盖。"
   },
   "sched.jobs.persistence.tombstone-purge.title": {
     "en": "1eba3997d260e28f",

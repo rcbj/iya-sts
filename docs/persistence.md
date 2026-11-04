@@ -74,7 +74,11 @@ passed, and leaves out a short-lived row with no expiry once it is older than
 takes to read, not as long as everything that was ever written. The
 `persistence.minted-expiry-purge` job then deletes those rows from the database
 in batches every five minutes, together with any row left behind by a realm
-that has been removed. You can see it on Monitoring → Scheduler.
+that has been removed. You can see it on Monitoring → Scheduler. In a
+service deployed as cells, that job cleans each cell's own database, and
+`persistence.minted-expiry-purge-global` cleans the global database, run by
+one cell at a time; one database being unreachable does not stop the other
+being cleaned.
 
 **A restarted node carries on where it left off.** Each node writes its own
 share of the audit log and the statistics. When a container restarts under the

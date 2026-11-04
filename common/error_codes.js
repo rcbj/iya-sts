@@ -1918,6 +1918,13 @@ const CODES = [
       'an integer); the batch is refused whole rather than stored with a ' +
       'substitute.',
     spec: '' },
+  { code: 'STS-STORE-0161',
+    summary: 'The persistence.minted-expiry-purge-global job, run by the one ' +
+      'cell holding the global run claim, could not delete the global ' +
+      'tier\'s expired, orphaned or stale minted rows (#695); the cell ' +
+      'tier\'s purge is a job of its own and is not affected, a start skips ' +
+      'the rows anyway, and the next run tries again.',
+    spec: 'none — logged, and the job run is recorded as failed' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

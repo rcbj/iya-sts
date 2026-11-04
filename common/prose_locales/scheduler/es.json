@@ -340,8 +340,16 @@
     "text": "Purga de filas acuñadas caducadas"
   },
   "sched.jobs.persistence.minted-expiry-purge.describe": {
-    "en": "51010ce2ada820cd",
-    "text": "Elimina del almacén compartido, en lotes de 5000 y como máximo 20 lotes de cada tipo por ejecución, las filas acuñadas que ningún inicio volverá a leer: las que superaron su propia caducidad, las de un dominio que ya no está definido (escritas hace más de una hora), y las filas sin caducidad de un almacén de corta duración con más antigüedad que persistence.mintedRetention."
+    "en": "51b75ecbc03ac6ba",
+    "text": "Elimina del almacén de este clúster (en un servicio desplegado en celdas, la base de datos propia de esta celda), en lotes de 5000 y como máximo 20 lotes de cada tipo por ejecución, las filas acuñadas que ningún inicio volverá a leer: las que superaron su propia caducidad, las de un dominio que ya no está definido (escritas hace más de una hora), y las filas sin caducidad de un almacén de corta duración con más antigüedad que persistence.mintedRetention."
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "Purga de filas acuñadas caducadas, nivel global"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "En un servicio desplegado en celdas, elimina de la base de datos del nivel global los mismos tres tipos de fila acuñada, en los mismos lotes; su ejecución se reclama en el nivel global, de modo que una sola celda ejecuta cada intervalo. Desactivada en un servicio con una sola base de datos, donde la otra purga la cubre."
   },
   "sched.jobs.persistence.tombstone-purge.title": {
     "en": "1eba3997d260e28f",

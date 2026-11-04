@@ -875,52 +875,104 @@ function create(options) {
   // snapshot the conversion left. Judged against it, every cell row of a
   // realm made since then was an orphan, and a session or token of that
   // realm was deleted an hour after it was written. The global list is read
-  // first and handed to both tiers; when it cannot be read nothing is
+  // first and handed to the tier(s) asked; when it cannot be read nothing is
   // purged, because deleting on a guess is the failure this guards.
+  //
+  // `options.tier` NAMES ONE DATABASE (#695), and the expiry purge jobs
+  // always name one (`persistence_minted.js`): 'cell' for this cell's job,
+  // 'global' for the one cell that wins the global run claim. Then the
+  // `limit` and the count are that database's alone. Without it both are
+  // asked — each with the WHOLE limit, so the sum may be up to twice it,
+  // which is why a caller that batches must name a tier — and they are
+  // SETTLED SEPARATELY: one database failing does not hide what the other
+  // deleted, which rides on the rejection as `removed`, with `tier` naming
+  // the database (or databases) that failed.
+  function purgeTier(which, kind, options) {
+    log.debug("Entering purgeTier(). " + which + " " + kind);
+    const target = which === 'global' ? globalDriver : cellDriver;
+    log.debug("Leaving purgeTier().");
+    return Promise.resolve().then(function () {
+      return target.purgeExpiredMinted(kind, options);
+    });
+  }
+
+  function settleTiers(asked) {
+    log.debug("Entering settleTiers(). " + asked.length);
+    log.debug("Leaving settleTiers().");
+    return Promise.allSettled(asked.map(function (one) {
+      return purgeTier(one.tier, one.kind, one.options);
+    })).then(function (results) {
+      let removed = 0;
+      const failed = [];
+      let first = null;
+      results.forEach(function (r, i) {
+        if (r.status === 'fulfilled') {
+          removed += Number(r.value) || 0;
+          return;
+        }
+        failed.push(asked[i].tier);
+        first = first || r.reason;
+      });
+      if (!failed.length) {
+        return removed;
+      }
+      const err = /** @type {any} */ (new Error('the ' +
+        failed.join(' and ') + ' tier\'s expiry purge failed: ' +
+        String((first && first.message) || first).replace(/\.+$/, '')));
+      err.removed = removed;
+      err.tier = failed.join(',');
+      throw err;
+    });
+  }
+
   driver.purgeExpiredMinted = function (kind, options) {
     log.debug("Entering tiered purgeExpiredMinted().");
-    const o = options || {};
-    let forGlobal = o;
-    let forCell = o;
-    if (kind === 'orphan') {
-      log.debug("Leaving tiered purgeExpiredMinted(). Orphans, against " +
-                "the global realms.");
-      return globalDriver.loadRealms().then(function (rows) {
-        const realms = (rows || []).map(function (row) {
-          return String(row.id);
-        });
-        const withRealms = Object.assign({}, o, { realms: realms });
-        return Promise.all([
-          globalDriver.purgeExpiredMinted(kind, withRealms),
-          cellDriver.purgeExpiredMinted(kind, withRealms)
-        ]);
-      }).then(function (both) {
-        return (Number(both[0]) || 0) + (Number(both[1]) || 0);
-      });
-    }
+    const o = Object.assign({}, options || {});
+    const only = o.tier === 'global' || o.tier === 'cell' ? o.tier : '';
+    delete o.tier;
+    const which = only ? [only] : ['global', 'cell'];
+    let forTier = function (tier) {
+      log.debug("Entering forTier(). " + tier);
+      log.debug("Leaving forTier().");
+      return o;
+    };
     if (kind === 'stale') {
       const listed = Array.isArray(o.handles) ? o.handles : [];
       const split = byHandleTier(listed.map(function (handle) {
         return { handle: handle };
       }));
-      forGlobal = Object.assign({}, o, {
-        handles: split.global.map(function (one) {
-          return one.handle;
-        })
-      });
-      forCell = Object.assign({}, o, {
-        handles: split.cell.map(function (one) {
-          return one.handle;
-        })
+      forTier = function (tier) {
+        log.debug("Entering forTier(), stale. " + tier);
+        log.debug("Leaving forTier().");
+        return Object.assign({}, o, {
+          handles: split[tier].map(function (one) {
+            return one.handle;
+          })
+        });
+      };
+    }
+    const ask = function (realmsSeen) {
+      log.debug("Entering ask().");
+      log.debug("Leaving ask().");
+      return settleTiers(which.map(function (tier) {
+        const opts = forTier(tier);
+        return { tier: tier, kind: kind,
+                 options: realmsSeen
+                   ? Object.assign({}, opts, { realms: realmsSeen })
+                   : opts };
+      }));
+    };
+    if (kind === 'orphan') {
+      log.debug("Leaving tiered purgeExpiredMinted(). Orphans, against " +
+                "the global realms.");
+      return globalDriver.loadRealms().then(function (rows) {
+        return ask((rows || []).map(function (row) {
+          return String(row.id);
+        }));
       });
     }
     log.debug("Leaving tiered purgeExpiredMinted().");
-    return Promise.all([
-      globalDriver.purgeExpiredMinted(kind, forGlobal),
-      cellDriver.purgeExpiredMinted(kind, forCell)
-    ]).then(function (both) {
-      return (Number(both[0]) || 0) + (Number(both[1]) || 0);
-    });
+    return ask(null);
   };
 
   driver.purgeTombstones = function (beforeMs) {

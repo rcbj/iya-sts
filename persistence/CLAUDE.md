@@ -3606,6 +3606,41 @@ written. The tiered driver reads the global realms first and hands the list
 to both tiers (the postgres driver's `realms` option); when the registry
 cannot be read, neither tier purges an orphan.
 
+**EACH TIER IS PURGED BY A JOB OF ITS OWN, AND THE GLOBAL ONE BY ONE CELL
+(#695, 2026-11-04).** #360's purge sent one call to both databases through
+`Promise.all` with one `limit` and summed the counts: a batch could delete
+twice the limit, `purgeKind()`'s short-batch stop test was asked of the sum,
+an unreachable global database rejected the whole call and lost the cell's
+count with it (and the kinds after it in the run were never tried), and —
+the job being a `cluster` job and a cell being a cluster — every cell's
+leader purged the one shared global `sts_minted`. Now:
+
+* the purge names a tier (`options.tier`, consumed by the tiered driver), so
+  a batch's limit, its count and its stop test are ONE database's;
+* `persistence.minted-expiry-purge` purges this cell's database, and
+  `persistence.minted-expiry-purge-global` the global one — the latter in
+  `tiers.js`'s `GLOBAL_JOBS`, so its run is claimed under
+  `scheduler.run.global` in the global database. **Which cell purges the
+  global tier is whichever wins that claim for the slot** (the run id is the
+  same digest in every cell): the cells design names no owner of the global
+  tier, and a lease follows the cells that are alive where a configured
+  owner would stop purging when its cell went. The argument is at the
+  constants in `persistence_minted.js`;
+* each KIND is settled on its own: a run tries all three, reports every
+  count, and fails once with its tier's code — STS-STORE-0065 for the cell's
+  (or the only) store, STS-STORE-0161 for the global tier's. The cell's
+  orphan kind still needs the global registry, so with the global database
+  down it is the one kind that fails there; the cell's expired and stale
+  rows are deleted and counted;
+* asked with no tier, the tiered driver still asks both, each with the whole
+  limit, settled separately: a failure rejects carrying the other's count as
+  `removed` and the failed tier as `tier`. Nothing batching calls it so.
+
+A single-database store is untouched: no tier is named, the global job is
+off ("this store has no global tier"), and the one job purges the one
+database as it did. `tests/cell_tiers.js` and `tests/minted_persistence.js`
+(6c) hold it.
+
 **TWO CHANGE LOGS, TWO FOLLOWERS.** `persistence_replication.js` is a factory
 since #98: the module's own exports are the instance for the process's main
 log (the cell's, or the only one), and `persistence.js`'s `coordinate()`

@@ -489,10 +489,11 @@ const CELL_PREFIXES = ['enrollment_monitor.', 'test.'];
 // per cluster, and a cell IS a cluster — so a job whose work is the global
 // tier's (rotating a realm's signing keys, the krbtgt key, a SPIFFE authority,
 // the OpenID Federation key; expiring a client secret; purging the global
-// used-assertion history) would run once PER CELL if its run were claimed in
-// the cell's database. Their runs are claimed in the global tier instead,
-// under `GLOBAL_RUN_SCOPE`, so exactly one cell runs each slot. Every other
-// job's work is what its own cell holds, and it runs in every cell.
+// used-assertion history or the global tier's expired minted rows) would
+// run once PER CELL if its run were claimed in the cell's database. Their
+// runs are claimed in the global tier instead, under `GLOBAL_RUN_SCOPE`, so
+// exactly one cell runs each slot. Every other job's work is what its own
+// cell holds, and it runs in every cell.
 // ---------------------------------------------------------------------------
 const GLOBAL_JOBS = [
   'signing.rotate', 'signing.retire', 'signing.rotate-now',
@@ -501,7 +502,11 @@ const GLOBAL_JOBS = [
   'oidfed.registrations-expire', 'federation.encryption-key-retire',
   'spiffe.authority-rotation', 'spiffe.sigstore-tuf-refresh',
   'oauth2.client-secret-expiry', 'oauth2.used-assertion-purge',
-  'saml2.sp-metadata-refresh', 'ssf.stream-maintenance', 'ssf.foreign-poll'
+  'saml2.sp-metadata-refresh', 'ssf.stream-maintenance', 'ssf.foreign-poll',
+  // The global tier's half of the minted expiry purge (#695): before it was
+  // a job of its own every cell's leader purged the one global sts_minted.
+  // The cell's half, persistence.minted-expiry-purge, runs in every cell.
+  'persistence.minted-expiry-purge-global'
 ];
 // The claim scope a global job's run is claimed under.
 const GLOBAL_RUN_SCOPE = 'scheduler.run.global';

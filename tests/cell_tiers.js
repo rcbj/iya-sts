@@ -285,6 +285,61 @@ async function globalJobs(t) {
   t.equal(scopes(c), 'scheduler.run',
           'an ordinary run is claimed in the cell\'s database');
   t.equal(await d.purgeClaims(), 4, 'expired claims are purged in both');
+
+  // THE GLOBAL TIER'S EXPIRY PURGE IS ONE CELL'S (#695). Its cell half is
+  // an ordinary job, run in every cell; its global half is a global job,
+  // so its run is claimed in the ONE global database every cell shares,
+  // under a run id that is the same in every cell for the same slot — the
+  // cell that wins the claim purges the global tier, and the other does
+  // not even ask it.
+  t.check(tiers.isGlobalJob('persistence.minted-expiry-purge-global') &&
+          !tiers.isGlobalJob('persistence.minted-expiry-purge'),
+          'the global tier\'s expiry purge is a global job and the cell\'s ' +
+          'is not');
+  const shared = stubDriver('global');
+  const held = new Set();
+  shared.claimOnce = function (scope, realm, key) {
+    log.debug("Entering claimOnce(), the shared global claims.");
+    shared.calls.push({ op: 'claimOnce', scope: scope });
+    const k = scope + '|' + realm + '|' + key;
+    const ok = !held.has(k);
+    held.add(k);
+    log.debug("Leaving claimOnce(). " + ok);
+    return Promise.resolve({ ok: ok });
+  };
+  const cellA = stubDriver('cell-a');
+  const cellB = stubDriver('cell-b');
+  const inA = tiered.create({ global: shared, cell: cellA, cellId: 'a' });
+  const inB = tiered.create({ global: shared, cell: cellB, cellId: 'b' });
+  const runGlobalPurge = function (store) {
+    log.debug("Entering runGlobalPurge().");
+    log.debug("Leaving runGlobalPurge().");
+    return store.claimOnce(tiers.GLOBAL_RUN_SCOPE, '', 's-slot-1', {})
+      .then(function (answer) {
+        if (!answer.ok) {
+          return { ran: false };
+        }
+        return store.purgeExpiredMinted('expired', { nowMs: 9, limit: 7,
+                                                     tier: 'global' })
+          .then(function (n) {
+            return { ran: true, removed: n };
+          });
+      });
+  };
+  const ranA = await runGlobalPurge(inA);
+  const ranB = await runGlobalPurge(inB);
+  const globalPurges = shared.calls.filter(function (x) {
+    return x.op === 'purgeExpiredMinted';
+  });
+  t.check(ranA.ran === true && ranA.removed === 1 && ranB.ran === false &&
+          globalPurges.length === 1 && globalPurges[0].options.limit === 7 &&
+          !('tier' in globalPurges[0].options),
+          'THE CELL THAT WINS THE GLOBAL RUN CLAIM PURGES THE GLOBAL TIER, ' +
+          'once, with its own limit; the other cell does not purge it',
+          JSON.stringify([ranA, ranB, globalPurges.length]));
+  t.check(!cellA.calls.concat(cellB.calls).some(function (x) {
+    return x.op === 'purgeExpiredMinted';
+  }), 'and neither cell\'s own database is asked by the global purge');
   log.debug("Leaving globalJobs().");
 }
 
@@ -508,6 +563,52 @@ async function tieredDriver(t) {
           'and the cell its own, an unclassified handle included');
   t.check(given.join(',') === 'dpop.seenJtis,authn.sessions,nobody.decided',
           'the caller\'s handle list is left as it was given');
+
+  // ONE TIER WHEN ONE IS NAMED, AND THE TWO SETTLED APART (#695). The
+  // purge jobs name a tier, so a batch's limit and count are one
+  // database's; asked of both, one failing no longer hides the other's.
+  const purgesBefore = { g: ofKind(g, 'expired').length,
+                         c: ofKind(c, 'expired').length };
+  const cellOnly = await d.purgeExpiredMinted('expired', { nowMs: 6,
+                                                           limit: 4,
+                                                           tier: 'cell' });
+  t.check(cellOnly === 1 && ofKind(g, 'expired').length === purgesBefore.g &&
+          ofKind(c, 'expired').length === purgesBefore.c + 1 &&
+          ofKind(c, 'expired')[purgesBefore.c].options.limit === 4 &&
+          !('tier' in ofKind(c, 'expired')[purgesBefore.c].options),
+          'a purge naming the cell tier asks only the cell, with the whole ' +
+          'limit, and the tier name stops at the tiered driver');
+  const globalOnly = await d.purgeExpiredMinted('expired', { nowMs: 6,
+                                                             limit: 4,
+                                                             tier: 'global' });
+  t.check(globalOnly === 1 &&
+          ofKind(g, 'expired').length === purgesBefore.g + 1 &&
+          ofKind(c, 'expired').length === purgesBefore.c + 1,
+          'and one naming the global tier asks only the global database');
+  const globalPurge = g.purgeExpiredMinted;
+  g.purgeExpiredMinted = function () {
+    log.debug("Entering purgeExpiredMinted(), the global one, unreachable.");
+    log.debug("Leaving purgeExpiredMinted().");
+    return Promise.reject(new Error('the global database is unreachable'));
+  };
+  let bothRefused = null;
+  await d.purgeExpiredMinted('expired', { nowMs: 6, limit: 4 })
+    .catch(function (e) {
+      log.debug("Caught in the purge of both: " + ((e && e.message) || e));
+      bothRefused = e;
+    });
+  t.check(!!bothRefused && bothRefused.removed === 1 &&
+          bothRefused.tier === 'global' &&
+          ofKind(c, 'expired').length === purgesBefore.c + 2,
+          'asked of both with the global database unreachable, the cell is ' +
+          'still purged and its count rides on the refusal, which names ' +
+          'the tier that failed',
+          bothRefused ? bothRefused.message + ' ' + bothRefused.removed : '');
+  t.equal(await d.purgeExpiredMinted('expired', { nowMs: 6, limit: 4,
+                                                  tier: 'cell' }), 1,
+          'and the cell tier\'s own purge does not notice the global one ' +
+          'is down');
+  g.purgeExpiredMinted = globalPurge;
   t.equal(d.changeRowsWritten(), 4, 'the change rows written are both ' +
           'databases\' together');
   ['STS-CELL-0001', 'STS-CELL-0002', 'STS-CELL-0003', 'STS-CELL-0004',
