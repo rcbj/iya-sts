@@ -787,6 +787,11 @@ ldif or multi-cell service is unchanged.
     realm's groups (never its people, never a membership), a page of at
     most 100 from a clamped offset, the excluded DNs left out before the
     paging; `groupsNamed()` resolves cns or DNs, a name asked twice once.
+  - **`federatedGroupAuthorityAsync()` (#1306)** asks the store whether an
+    entry names a group a partner's token named, by the derived
+    `grantinggroup` value key: two `byAttribute` questions, asynchronous,
+    `LIMIT 1`, after the walk of the resident entries — `federation/CLAUDE.md`
+    argues it.
   - `personCount()` is the store's count (above); `allPersons()` pages
     `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it.
   - **THE REQUESTS ARE ASYNCHRONOUS WHERE THEY READ MANY ROWS (#616,

@@ -1549,6 +1549,17 @@ postgres driver writes and reads every entry through it.
   a kilobyte. No attribute of that name exists on any entry; it is an index
   key only, and the same no-schema-version reasoning holds. Why a presented
   certificate is looked up by it is `ldap/CLAUDE.md`, *`userCertificate`*.
+* **AND A SECOND SINCE #1306 (2026-11-04): `grantinggroup`**, every value of
+  the six attributes that confer something on a group's members
+  (`GRANTING_ATTRIBUTES`: `roleMemberGroup`, `owner`, `appOwner`,
+  `stsServiceAccountOwner`, `appDelegationSubjectGroup`, `fedSubjectGroup`),
+  trimmed and lower-cased, and a DN-shaped value in its normalised form as
+  well (`grantingKeysOf()`). Federated provisioning asks it before it creates
+  or joins a group a partner named, so a name an entry this process does not
+  hold makes grant is still refused — `federation/CLAUDE.md`, *A partner's
+  token never buys a group that grants something*. Index key only, same
+  no-schema-version reasoning; a row written before is keyed when next
+  written.
 * **A QUERY IS KEYED AND OPENED ON THE THREAD THAT HOLDS THE KEYS.** The
   windowed directory's bridge thread builds a statement and shapes its rows
   with no keystore, so `persistence.js` wraps the bridge: `keyArgs()` before
