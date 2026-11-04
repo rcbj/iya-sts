@@ -16,7 +16,8 @@
 //      its lookup needs, compares a name, a mail address and a UUID
 //      lower-cased as a JSON array for `@>`, never lets a `%` in a DN become
 //      a wildcard, bounds a page at 1,000, and refuses a query it does not
-//      know. `answerOf()` shapes rows as `readEntry()` always did.
+//      know. `answerOf()` shapes rows as `readEntry()` always did. A
+//      needle's `rdnCount` is capped (#1308): A23–A26.
 //   B. THE DRIVER'S DOOR: `directoryQuery()` runs exactly the builder's
 //      statement on the READ pool and answers in the directory's shape; an
 //      unknown query is a rejection, not a statement.
@@ -233,6 +234,40 @@ function builders(t) {
           JSON.stringify(withRdn));
   t.equal(queries.answerOf('rdnCount', [{ n: '7' }]), 7,
           'A22. rdnCount answers a number');
+  // A NEEDLE'S COUNT IS CAPPED (#1308): the matches are counted inside a
+  // LIMIT of the cap and one more, so the store answers at most cap + 1.
+  const capped = queries.rdnCount('default', users, 'Li');
+  t.check(/^SELECT count\(\*\)::bigint AS n FROM \(SELECT 1 AS one FROM /
+      .test(capped.text) &&
+          /position\(\$3 in rdn_value\) > 0 LIMIT \$4\) AS matched$/
+            .test(capped.text) &&
+          capped.values[2] === 'li' &&
+          capped.values[3] === queries.RDN_COUNT_CAP + 1 &&
+          queries.RDN_COUNT_CAP === 100000,
+          'A23. rdnCount counts inside a LIMIT of the cap and one more, ' +
+          '100,001 when no cap is asked', JSON.stringify(capped));
+  const every = queries.rdnCount('default', users, '', 50);
+  t.check(!/position\(/.test(every.text) && /LIMIT \$3\)/.test(every.text) &&
+          every.values.length === 3 && every.values[2] === 51,
+          'A24. an empty needle adds no predicate and is capped the same ' +
+          'way', JSON.stringify(every));
+  t.check(queries.rdnCount('default', users, 'a', 2).values[3] === 3 &&
+          queries.rdnCount('default', users, 'a', 500000).values[3] ===
+            100001 &&
+          queries.rdnCount('default', users, 'a', 0).values[3] === 100001 &&
+          queries.rdnCount('default', users, 'a', 'x').values[3] === 100001,
+          'A25. a caller\'s cap is honoured below the walk\'s, never above ' +
+          'it, and nonsense is the walk\'s');
+  // Under, at and over a cap of 2: what the LIMIT lets the store answer,
+  // and what that answer means to the caller (more than the cap past it).
+  const most = queries.rdnCount('default', users, 'a', 2).values[3];
+  const said = [1, 2, 3, 9].map(function (matches) {
+    const n = queries.answerOf('rdnCount',
+                               [{ n: String(Math.min(matches, most)) }]);
+    return n > 2 ? 'more than 2' : String(n);
+  });
+  t.equal(said.join(','), '1,2,more than 2,more than 2',
+          'A26. under the cap, at it, and over it (one more, and many more)');
   log.debug("Leaving builders().");
 }
 

@@ -104,6 +104,12 @@ of them:
 
 A role no test can grant is a role no test can exercise.
 
+**On `/admin/rbac` you find the person by typing part of a username.** Where
+the directory is kept in the database, a search's count stops at 100,000:
+past that the page says *more than 100,000 matches* and pages only through
+the first 100,000, so type more of the name to narrow it.
+`GET /admin-api/rbac` says the same with `candidateSearch.countCapped`.
+
 **Each trust realm has administrators of its own, confined to it.** The
 console asks the roster of the realm a person signed in through; the default
 realm's roster is the service roster over every realm. A realm's own
