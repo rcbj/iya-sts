@@ -598,6 +598,22 @@ class ScimRealmSchema {
     log.debug("Entering ScimRealmSchema.publishSchemas().");
     const copy = JSON.parse(JSON.stringify(answer));
     const places = this.requiredPlaces();
+    // A REALM THAT DEFINES NO CUSTOM ATTRIBUTE LISTS NO EXTENSION FOR THEM
+    // (2026-11-05). scimmy registers the extension once for the process, so
+    // it is in every realm's list; an empty one was read by scim2-tester as
+    // an extension to PATCH, and what it added came back as nothing
+    // (sts_scim_conformance). `/Schemas/{urn}` still answers it, as an
+    // extension nothing uses.
+    if (Array.isArray(copy && copy.Resources) &&
+        this.definitions().length === 0) {
+      copy.Resources = copy.Resources.filter(function (doc: any) {
+        return !(doc && doc.id === CUSTOM_SCHEMA);
+      });
+      copy.totalResults = copy.Resources.length;
+      if (copy.itemsPerPage !== undefined) {
+        copy.itemsPerPage = copy.Resources.length;
+      }
+    }
     const docs = Array.isArray(copy && copy.Resources) ? copy.Resources
       : [copy];
     docs.forEach((doc: any) => {
@@ -619,6 +635,23 @@ class ScimRealmSchema {
     const { log } = this.deps;
     log.debug("Entering ScimRealmSchema.publishResourceTypes().");
     const copy = JSON.parse(JSON.stringify(answer));
+    // No custom attribute defined: the User type names no extension for
+    // them (see publishSchemas()).
+    if (this.definitions().length === 0) {
+      const types = Array.isArray(copy && copy.Resources) ? copy.Resources
+        : [copy];
+      types.forEach(function (doc: any) {
+        if (doc && Array.isArray(doc.schemaExtensions)) {
+          doc.schemaExtensions = doc.schemaExtensions.filter(
+            function (one: any) {
+              return !(one && one.schema === CUSTOM_SCHEMA);
+            });
+        }
+      });
+      log.debug("Leaving ScimRealmSchema.publishResourceTypes(). " +
+                "No custom attribute defined.");
+      return copy;
+    }
     if (!this.requiredPlaces().custom) {
       log.debug("Leaving ScimRealmSchema.publishResourceTypes(). " +
                 "Nothing custom required.");
