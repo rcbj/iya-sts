@@ -8,6 +8,12 @@
 // ===========================================================================
 // THE VERSION, M.N.O — AND THE THREE THINGS ABOUT IT THAT WOULD FAIL SILENTLY.
 //
+// **SINCE #1298 (rcbj, 2026-11-04) M.N.O IS A PLAIN SEMANTIC VERSION**, read
+// whole from VERSION (1.0.0), with no build number and no date in it. Which
+// BUILD a record describes is its `commit` and `builtAt`, beside the version,
+// and this file holds both halves: the version is VERSION's exactly, and the
+// build is still recorded and still survives a restart.
+//
 // `common/version.js` is a small module and the temptation is to leave it
 // untested. What makes it worth a file is that every one of its failure modes
 // is QUIET: a version that is wrong still renders, still serves, still answers
@@ -102,55 +108,113 @@ function withTempDir(fn) {
 
 function run(t) {
   log.debug("Entering run().");
-  t.log.info('=== the VERSION file is the single source of M.N ===');
+  t.log.info('=== the VERSION file is the single source of M.N.O ===');
 
   // -----------------------------------------------------------------------
-  // 1. M.N COMES OFF THE FILE AT THE REPO ROOT, and the file has the shape the
-  //    module's regular expression requires. A VERSION file with a stray
-  //    third component, a `v` prefix or a trailing comment is ignored with a
-  //    message on stderr and the version silently becomes 0.0 — which is the
-  //    module's deliberate never-fail-a-build behaviour and is exactly why the
-  //    FILE has to be checked rather than only the parser.
+  // 1. M.N.O COMES OFF THE FILE AT THE REPO ROOT, WHOLE, and the file has the
+  //    shape the module's regular expression requires. A VERSION file with a
+  //    `v` prefix, a trailing comment, a pre-release suffix or the old
+  //    two-component `0.1` is ignored with a message on stderr and the
+  //    version silently becomes 0.0.0 — which is the module's deliberate
+  //    never-fail-a-build behaviour and is exactly why the FILE has to be
+  //    checked rather than only the parser.
   // -----------------------------------------------------------------------
   const raw = fs.readFileSync(path.join(ROOT, version.VERSION_FILE), 'utf8');
-  t.check(/^\d+\.\d+\s*$/.test(raw),
-          'the repo-root VERSION file is M.N and nothing else',
+  t.check(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)\s*$/.test(raw),
+          'the repo-root VERSION file is M.N.O and nothing else',
           'read ' + JSON.stringify(raw));
+  t.equal(raw.trim(), '1.0.0',
+          'and it says 1.0.0, the release rcbj named on #1298 — change this ' +
+          'line with the file when the release is bumped');
 
   const record = version.resolve();
-  t.equal(record.major + '.' + record.minor, raw.trim(),
-          'resolve() reports the major.minor that file carries');
-  t.check(record.version === record.major + '.' + record.minor + '.' +
-          record.build,
-          'the version is major.minor.build joined by dots',
-          record.version);
-  t.check(/^\d{14}$/.test(record.build) || !!process.env.BUILD_NUMBER,
-          'the default build number is a 14-digit UTC instant',
-          record.build);
+  t.equal(record.version, raw.trim(),
+          'resolve() reports exactly the version that file carries — nothing ' +
+          'is appended to it');
+  t.equal([record.major, record.minor, record.patch].join('.'), raw.trim(),
+          'and breaks it out as major, minor and patch');
+  t.check(!('build' in record),
+          'the record carries no `build` number: the build is `commit` and ' +
+          '`builtAt`, beside the version (#1298)',
+          JSON.stringify(record));
+  t.check(!/\d{8}/.test(record.version),
+          'no component of the version is a date', record.version);
+  t.check(!isNaN(Date.parse(record.builtAt)),
+          'the build instant is recorded beside the version',
+          record.builtAt);
   t.equal(record.stamped, false,
           'a computed record says it was NOT stamped, which is the ' +
           'difference between an artifact and a checkout being run');
 
   // -----------------------------------------------------------------------
-  // 2. BUILD_NUMBER OVERRIDES THE INSTANT. This is what a CI system sets, and
-  //    a service that ignored it would report a number nobody could match back
-  //    to a build.
+  // 1b. A MALFORMED VERSION FILE IS 0.0.0, NEVER A FAILURE. Shown against a
+  //     copy of the module in a directory of its own, because the module
+  //     finds its VERSION beside itself or one level up and reads it at
+  //     resolve() — the same arrangement the remote PEP's image relies on.
   // -----------------------------------------------------------------------
-  t.log.info('=== BUILD_NUMBER ===');
+  t.log.info('=== a malformed VERSION falls back ===');
+  withTempDir(function (top) {
+    // One level down, so the parent the module probes first is this test's
+    // own empty directory; and VERSION written BEFORE the require, because
+    // the module settles on its root when it is loaded.
+    const dir = path.join(top, 'pep');
+    fs.mkdirSync(dir);
+    fs.writeFileSync(path.join(dir, version.VERSION_FILE), '2.7.1\n');
+    const copy = path.join(dir, 'version.js');
+    fs.copyFileSync(path.join(ROOT, 'common', 'version.js'), copy);
+    const loaded = require(copy);
+    const results = [];
+    ['0.1', 'v1.0.0', '1.0.0-rc.1', '01.0.0', '1.0.0.0', '1.0'].forEach(
+      function (bad) {
+        fs.writeFileSync(path.join(dir, version.VERSION_FILE), bad + '\n');
+        const quiet = console.error;
+        console.error = function () {
+          // The module's STS-CORE-0039/0040 lines, expected here and kept off
+          // the run's output; restored on the next line whatever happens.
+        };
+        try {
+          results.push(bad + ' -> ' + loaded.resolve().version);
+        } finally {
+          console.error = quiet;
+        }
+      });
+    t.check(results.every(function (r) { return / -> 0\.0\.0$/.test(r); }),
+            'a VERSION that is not exactly M.N.O is reported as 0.0.0 and ' +
+            'nothing throws — a version may never stop the service starting',
+            results.join('; '));
+    fs.writeFileSync(path.join(dir, version.VERSION_FILE), '2.7.1\n');
+    t.equal(loaded.resolve().version, '2.7.1',
+            'and a well-formed one beside the module is read whole');
+    delete require.cache[require.resolve(copy)];
+  });
+
+  // -----------------------------------------------------------------------
+  // 2. BUILD_NUMBER IS NOT A VERSION INPUT ANY MORE, AND GIT_COMMIT IS STILL
+  //    THE COMMIT. A CI system that still sets BUILD_NUMBER must not see it
+  //    reach the version — that was the scheme #1298 retired.
+  // -----------------------------------------------------------------------
+  t.log.info('=== BUILD_NUMBER and GIT_COMMIT ===');
   const savedBuild = process.env.BUILD_NUMBER;
   const savedCommit = process.env.GIT_COMMIT;
   try {
     process.env.BUILD_NUMBER = '4242';
     process.env.GIT_COMMIT = 'deadbeefcafe0000000000';
     const forced = version.resolve();
-    t.equal(forced.build, '4242',
-            'BUILD_NUMBER replaces the UTC build instant');
-    t.equal(forced.version, raw.trim() + '.4242',
-            'and it is the O of M.N.O');
+    t.equal(forced.version, raw.trim(),
+            'BUILD_NUMBER is ignored: the version is still VERSION\'s exactly');
     t.equal(forced.commit, 'deadbeefcafe',
             'GIT_COMMIT is taken as the commit and trimmed to twelve ' +
             'characters — the container build context carries no .git, so ' +
             'this is the only way an image can know one');
+    t.check(version.buildInfo(forced).indexOf('deadbeefcafe') >= 0 &&
+            version.buildInfo(forced).indexOf(forced.builtAt) >= 0 &&
+            version.buildInfo(forced).indexOf('4242') < 0,
+            'buildInfo() names the commit and the build instant, and no ' +
+            'build number', version.buildInfo(forced));
+    t.equal(version.buildId(forced),
+            forced.builtAt.replace(/[^0-9]/g, '') + '-deadbeefcafe',
+            'buildId() is the build instant and the commit, for keying a ' +
+            'cache by build rather than by release');
   } finally {
     if (savedBuild === undefined) {
       delete process.env.BUILD_NUMBER;
@@ -194,8 +258,13 @@ function run(t) {
             'load() reports the version that was stamped rather than a fresh ' +
             'one');
     t.equal(second.version, first.version,
-            'and it reports the same one again — restarting a container does ' +
-            'not invent a new build number');
+            'and it reports the same one again');
+    t.check(first.builtAt === stamped.builtAt &&
+            second.builtAt === stamped.builtAt &&
+            first.commit === stamped.commit,
+            'and the same BUILD — the stamped instant and commit, so ' +
+            'restarting a container does not invent a new build',
+            first.builtAt + ' ' + first.commit);
     t.equal(first.stamped, true,
             'a loaded record says it came off a stamp');
 
@@ -204,6 +273,10 @@ function run(t) {
     // record was read from rather than about what the writer knew to say.
     const older = JSON.parse(
       fs.readFileSync(path.join(dir, version.STAMP_FILE), 'utf8'));
+    t.check(!('build' in older) && older.version === raw.trim() &&
+            !!older.builtAt,
+            'the stamp on disk is the release and the build beside it, with ' +
+            'no build number', JSON.stringify(older));
     delete older.stamped;
     fs.writeFileSync(path.join(dir, version.STAMP_FILE),
                      JSON.stringify(older, null, 2) + '\n');
@@ -242,7 +315,7 @@ function run(t) {
   t.check(version.load() === version.load(),
           'load() with no directory returns the SAME record every time — six ' +
           'modules read it at require time and two of them a second apart ' +
-          'must not report two build numbers',
+          'must not report two builds',
           version.load().version);
   t.equal(version.userAgent('x'),
           version.PRODUCT + '/' + version.load().version + ' (x)',
@@ -250,7 +323,8 @@ function run(t) {
           'than from a fresh one');
 
   // -----------------------------------------------------------------------
-  // 4. EVERY package.json IN THIS TREE CARRIES THE SAME M.N.
+  // 4. EVERY package.json IN THIS TREE CARRIES THE SAME M.N.O (#1298; it
+  //    was M.N.0 while the version's third component was a build number).
   //
   //    A bump that edited VERSION and nothing else leaves them stale, and
   //    nothing at runtime would notice: no surface reports a manifest version
@@ -262,6 +336,8 @@ function run(t) {
   t.check(manifests.length >= 1,
           'checkManifests() found the manifests it names',
           manifests.map(function (m) { return m.path; }).join(', '));
+  t.equal(version.manifestVersion(), raw.trim(),
+          'the version a manifest must carry is VERSION\'s, exactly');
   manifests.forEach(function (m) {
     t.check(m.ok, m.path + ' carries ' + version.manifestVersion(),
             'it says ' + m.actual + ' — run: node common/version.js ' +
@@ -322,7 +398,7 @@ function run(t) {
 
 module.exports = {
   name: 'version',
-  describe: 'M.N.O: the VERSION file, the build stamp, and one source for ' +
-            'every surface that draws it',
+  describe: 'M.N.O: the VERSION file read whole, the build recorded beside ' +
+            'it, and one source for every surface that draws it',
   run: run
 };

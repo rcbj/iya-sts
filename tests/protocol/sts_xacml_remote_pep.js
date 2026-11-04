@@ -1425,27 +1425,30 @@ async function itRegistersAndPulls() {
   const seenByThePdp = await pepRow();
   const pdpIndex = await get(base + "/admin-api");
 
-  check("the PEP reports a real build number, and the PDP's row carries it",
-        function () {
-    const MNO = /^\d+\.\d+\.[A-Za-z0-9._-]+$/;
-    assert.ok(MNO.test(String(seen.version)),
+  check("the PEP reports the release and its build, and the PDP's row " +
+        "carries it", function () {
+    // A PLAIN M.N.O (#1298): the release, with no build number or date
+    // appended — the build is the `build` object beside it.
+    const MNO = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+    assert.ok(MNO.test(String(seen.version)) &&
+              !/\d{8}/.test(String(seen.version)),
       "the PEP reports version " + JSON.stringify(seen.version) + ", which " +
-      "is not M.N.O. A version that is a LABEL rather than a number is what " +
-      "this container shipped until 2026-09-06: it cannot change, so the " +
-      "console column that shows it cannot be trusted." + pepLog());
+      "is not a plain M.N.O. A version that is a LABEL rather than a number " +
+      "is what this container shipped until 2026-09-06, and one carrying a " +
+      "build number is what it shipped until #1298." + pepLog());
     assert.ok(seen.build && typeof seen.build === "object",
-      "and it should break the provenance out beside it — build number, " +
-      "commit, and whether it was stamped — so a client comparing this PEP " +
-      "against the PDP reads fields rather than parsing a string. It says " +
+      "and it should break the build out beside it — commit, build instant, " +
+      "and whether it was stamped — so a client comparing this PEP against " +
+      "the PDP reads fields rather than parsing a string. It says " +
       JSON.stringify(seen.build) + pepLog());
-    assert.strictEqual(seen.version,
-      seen.version.split(".").slice(0, 2).join(".") + "." + seen.build.number,
-      "`version` should be M.N joined to `build.number`; they are " +
-      seen.version + " and " + seen.build.number);
+    assert.ok(!("number" in seen.build) && !!seen.build.at &&
+              !isNaN(Date.parse(seen.build.at)),
+      "`build` should carry the instant (`at`) and no `number` (#1298); it " +
+      "says " + JSON.stringify(seen.build));
     assert.strictEqual(seen.build.stamped, true,
       "THIS CONTAINER MUST BE A BUILT ARTIFACT. `stamped: false` means it " +
-      "computed its build number when the process started — so it renumbers " +
-      "itself on every restart and comparing it with the PDP's build says " +
+      "computed its build record when the process started — so its build " +
+      "instant moves on every restart and comparing it with the PDP's says " +
       "nothing at all. Under either launcher this image was just built by " +
       "compose, so a false here means the Dockerfile's --stamp step did not " +
       "reach the image." + pepLog());
@@ -1462,26 +1465,24 @@ async function itRegistersAndPulls() {
       "a directory entry, and every one of those steps can drop it in a way " +
       "that renders as an empty column rather than as an error.");
 
-    // AND M.N MATCHES THE PDP'S OWN. The two images are built from ONE tree
-    // and one VERSION file, so the release must agree even though the build
-    // numbers need not — they are two artifacts and compose stamps each with
-    // its own instant unless one BUILD_NUMBER was passed to both. This is the
-    // assertion that catches a PEP left behind across a release, which is the
-    // whole reason that column is on the console.
+    // AND THE VERSION IS THE PDP'S OWN. The two images are built from ONE
+    // tree and one VERSION file, so the release must be the same string —
+    // since #1298 the WHOLE version, which carries no build number. The
+    // builds need not agree: they are two artifacts, each stamped with the
+    // instant it was built. This is the assertion that catches a PEP left
+    // behind across a release, which is the whole reason that column is on
+    // the console.
     assert.strictEqual(pdpIndex.status, 200,
       "GET /admin-api answered " + pdpIndex.status);
-    const pdpMN = String(pdpIndex.body.version).split(".").slice(0, 2)
-                    .join(".");
-    const pepMN = seen.version.split(".").slice(0, 2).join(".");
-    assert.strictEqual(pepMN, pdpMN,
-      "the PEP is release " + pepMN + " and the PDP is " + pdpMN + ". Both " +
-      "images are built from this one tree and read the same repo-root " +
-      "VERSION file, so a difference here is not a stale container — it is a " +
-      "build that took its VERSION from somewhere else. (The BUILD NUMBERS " +
-      "may legitimately differ: " + seen.build.number + " against " +
-      pdpIndex.body.build + ".)");
+    assert.strictEqual(seen.version, String(pdpIndex.body.version),
+      "the PEP is release " + seen.version + " and the PDP is " +
+      pdpIndex.body.version + ". Both images are built from this one tree " +
+      "and read the same repo-root VERSION file, so a difference here is not " +
+      "a stale container — it is a build that took its VERSION from " +
+      "somewhere else. (The BUILDS may legitimately differ: " +
+      seen.build.at + " against " + pdpIndex.body.builtAt + ".)");
     log.info("[version] the PEP is " + seen.version + " and the PDP is " +
-             pdpIndex.body.version + " — same release " + pdpMN + ".");
+             pdpIndex.body.version + " — the same release.");
   });
 
   check("the PDP will NOT nudge this PEP yet, and said so in the " +

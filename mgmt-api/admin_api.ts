@@ -3074,19 +3074,18 @@ class AdminApi {
           self.sendJson(res, 200, {
             name: 'IYA STS management API',
             version: VERSION,
-            // THE PROVENANCE OF THAT NUMBER, BROKEN OUT rather than left as a
-            // string to be parsed. A test asserting "this stack is running the
-            // build it just made" wants the build number on its own, and a
-            // report saying which commit an instance is on wants the commit —
-            // splitting them here is the difference between a client reading a
-            // field and a client writing a regular expression over `version`.
+            // WHICH BUILD THIS IS, BESIDE THE VERSION AND NOT IN IT (#1298).
+            // `version` is the release, VERSION's M.N.O exactly; a test
+            // asserting "this stack is running the build it just made" wants
+            // the build instant on its own, and a report saying which commit
+            // an instance is on wants the commit — so each is a field rather
+            // than something a client writes a regular expression for.
             //
             // `stamped` is the one that is easy to leave out and worth most:
-            // false means this process computed its own number at startup
-            // because nothing stamped an artifact, so the build number is the
-            // moment it STARTED and comparing it with another instance's says
+            // false means this process computed its own record at startup
+            // because nothing stamped an artifact, so `builtAt` is the moment
+            // it STARTED and comparing it with another instance's says
             // nothing.
-            build: APP_VERSION.build,
             commit: APP_VERSION.commit || undefined,
             builtAt: APP_VERSION.builtAt,
             stamped: APP_VERSION.stamped === true,
@@ -28415,11 +28414,11 @@ import senderConstraints = require('../oauth-oidc/sender_constraints');
 // THE VERSION, M.N.O. A LEAF (rule 3): registers nothing and requires nothing
 // from this repository, so it cannot move a route or join a cycle.
 //
-// **IT USED TO BE `require('../package.json').version`**, which is M.N.0 — the
-// manifest's placeholder patch, not the build number. So the index and the
-// OpenAPI document's `info.version` both named a release and no build, and two
-// containers built a month apart reported the same string. See
-// common/version.js.
+// **IT USED TO BE `require('../package.json').version`**, which was M.N.0 — the
+// manifest's placeholder patch while the version carried a build number. The
+// version is the release since #1298 and package.json carries the same one,
+// but the module stays the one source, and the build is identified beside it
+// by `commit` and `builtAt`. See common/version.js.
 import version = require('../common/version');
 const APP_VERSION = version.load();
 const VERSION = APP_VERSION.version;

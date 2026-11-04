@@ -135,10 +135,11 @@ x-mirror-contexts: &mirror-contexts
 
 # Every service that BUILDS the sts tag passes these. The last build of the
 # tag wins, so one of them omitting STS_CLOUD_SDKS would ship an image the
-# attribute-source job cannot load mysql2 from (#356). BUILD_NUMBER and
-# GIT_COMMIT are optional and empty by default; the `sts` service argues them.
+# attribute-source job cannot load mysql2 from (#356). GIT_COMMIT is
+# optional and empty by default; the `sts` service argues it. (BUILD_NUMBER
+# was passed too until #1298, when the version stopped carrying a build
+# number: nothing reads it.)
 x-sts-image-args: &sts-image-args
-  BUILD_NUMBER: "${BUILD_NUMBER:-}"
   GIT_COMMIT: "${GIT_COMMIT:-}"
   STS_CLOUD_SDKS: "mysql2"
 
@@ -565,13 +566,12 @@ services:
       context: .
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
-      # THE BUILD'S IDENTITY, both optional and both empty by default — the
-      # same two arguments docker-compose.yml passes, and that file carries the
-      # argument for them. They are here so that a CI run of this stack can
-      # stamp its image with the run number and the commit, which is the
-      # environment where "which build produced this report" is asked most and
-      # answerable least. Leave them and the build number is the UTC build
-      # instant, which is still unique per build.
+      # THE BUILD'S IDENTITY, optional and empty by default — the argument
+      # docker-compose.yml passes. It is here so that a CI run of this stack
+      # can stamp its image with the commit, which is the environment where
+      # "which build produced this report" is asked most and answerable
+      # least. The version is VERSION's release whatever is passed (#1298);
+      # the build instant is recorded beside it either way.
       #
       # AND STS_CLOUD_SDKS, in the anchor every build of this tag uses
       # (x-sts-image-args, #356). mysql2 is what the attribute-source job's
@@ -910,12 +910,11 @@ services:
       # Every FROM from the ghcr.io mirror (x-mirror-contexts, above).
       additional_contexts: *mirror-contexts
       dockerfile: xacml-pep/Dockerfile
-      # THE BUILD'S IDENTITY, exactly as the sts service above takes it. Pass
-      # the SAME BUILD_NUMBER to both to say the PDP and this PEP are one
-      # release; leave them and each image gets the instant it was built, which
-      # is two different numbers for two artifacts and is the honest default.
+      # THE BUILD'S IDENTITY, exactly as the sts service above takes it. Both
+      # images report the one VERSION file's release (#1298); each records
+      # the instant it was built beside it, which is two different builds for
+      # two artifacts and is the honest default.
       args:
-        BUILD_NUMBER: "${BUILD_NUMBER:-}"
         GIT_COMMIT: "${GIT_COMMIT:-}"
     depends_on:
       sts:

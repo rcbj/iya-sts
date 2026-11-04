@@ -369,40 +369,41 @@ RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
 # `debugger.uiDirectory` and `debugger.apiDirectory` default to.
 COPY --from=debugger /debugger/ ./debugger/embedded/
 # ---------------------------------------------------------------------------
-# FIX THIS IMAGE'S BUILD NUMBER (M.N.O) AND SHIP IT IN version.json.
+# RECORD WHICH BUILD THIS IMAGE IS, BESIDE ITS VERSION, IN version.json.
 #
-# The version is M.N from the repo-root VERSION file plus a build number, and
-# the build number is decided HERE — at image build time — rather than at
-# startup. That is the whole reason this line exists: a service that computed
-# its build number when the process started would report a different one every
-# time the container restarted, which makes "which build is this" unanswerable
-# in exactly the situation where it is asked. See common/version.js.
+# The version is the repo-root VERSION file's M.N.O, exactly — a plain
+# semantic version with nothing appended (#1298; until then its third
+# component was a build number decided here). What this line fixes is the
+# BUILD: the commit and the instant, recorded beside the version and not in
+# it, at image build time rather than at startup. That is the whole reason
+# this line exists: a service that recorded its build when the process
+# started would report a different one every time the container restarted,
+# which makes "which build is this" unanswerable in exactly the situation
+# where it is asked. See common/version.js.
 #
 # It runs AFTER `COPY . ./` because it needs the VERSION file and the module,
 # and after the `rm` above because neither is among what that removes.
 # It is the LAST layer that touches the source, so a rebuild of an unchanged
-# tree still produces a new build number — which is correct: that is a
-# different artifact.
+# tree still records a new build instant — which is correct: that is a
+# different artifact, of the same release.
 #
 # GIT_COMMIT is a build argument because .dockerignore excludes .git, so there
 # is no history in the build context for `git rev-parse` to read. Pass it and
-# the version's provenance names a commit; leave it and the commit is simply
-# absent, which is a missing tooltip and nothing else. BUILD_NUMBER overrides
-# the UTC build instant — a CI run number, say — and it is then the caller's
-# job to keep it unique and increasing.
+# the build names a commit; leave it and the commit is simply absent, which is
+# a missing tooltip and nothing else. (BUILD_NUMBER was a second argument
+# until #1298; nothing reads it now.)
 #
 # `cat` afterwards so the record is in the build log: when somebody asks which
 # build an image is, the answer is in the log of the build that made it as well
 # as in the image.
-ARG BUILD_NUMBER=
 ARG GIT_COMMIT=
-RUN BUILD_NUMBER="${BUILD_NUMBER}" GIT_COMMIT="${GIT_COMMIT}" \
+RUN GIT_COMMIT="${GIT_COMMIT}" \
     node common/version.js --stamp . && cat version.json
 # OCI metadata, read by ghcr.io and Docker Hub (2026-10-02). `source` is what
 # LINKS the published package (ghcr.io/rcbj/iya-sts, pushed by
 # .github/workflows/build-container.yml) to this repository, so it lists under
 # the repository's Packages; `revision` is the commit the image was built
-# from, beside the build number version.json carries. The parent project's
+# from, beside the build instant version.json carries. The parent project's
 # api and client images carry the same five. A LABEL is metadata, not a layer.
 # The io.artifacthub.* labels are what artifacthub.io reads when it indexes
 # the published image; readme-url is the one it refuses the package without.

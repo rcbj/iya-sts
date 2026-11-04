@@ -354,11 +354,11 @@ class PageLocale {
   /**
    * The language attributes a static surface's shell carries on its
    * `<html>` (#570), for its runtime to choose the page's language in the
-   * browser: the build the catalogs are versioned by, the chooser's choice
-   * (the cookie is HttpOnly, so the browser cannot read it), and the locale
-   * policy's default for the surface's application and, where known, its
-   * person. Each value is canonical or the build number, so nothing a
-   * request sent is drawn back as it arrived.
+   * browser: the version, the chooser's choice (the cookie is HttpOnly, so
+   * the browser cannot read it), the locale policy's default for the
+   * surface's application and, where known, its person, and the build the
+   * catalogs are keyed by. Each value is canonical or this build's own, so
+   * nothing a request sent is drawn back as it arrived.
    *
    * @param req - the request for the shell
    * @param application - the surface's application, for the policy
@@ -384,7 +384,12 @@ class PageLocale {
     const out: Array<[string, string]> = [
       ['data-sts-version', String(version.load().version || '')],
       ['data-sts-lang', i18n.canonical(PageLocale.cookieOf(req, COOKIE))],
-      ['data-sts-locale-default', i18n.canonical(lastResort) || 'en']
+      ['data-sts-locale-default', i18n.canonical(lastResort) || 'en'],
+      // WHICH BUILD, for the catalogs' addresses (#1298): the version is the
+      // release and two builds of one release may carry different words, so
+      // `?v=` is keyed by the build — `version.buildId()`, the commit and the
+      // build instant — and not by the version (`common/public_assets.ts`).
+      ['data-sts-build', String(version.buildId() || '')]
     ];
     log.debug("Leaving PageLocale.shellAttributes().");
     return out;

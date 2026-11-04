@@ -336,11 +336,13 @@ async function theIndexAgreesWithTheDocument(doc) {
 // ---------------------------------------------------------------------------
 // EVERY SURFACE REPORTS THE SAME BUILD.
 //
-// The version is M.N.O — a release from the repo-root VERSION file plus a build
-// number fixed when the image was built (see CLAUDE.md, *Versioning*). Several
+// The version is M.N.O — the release, exactly as the repo-root VERSION file
+// declares it, with nothing appended (#1298; until then O was a build number
+// fixed when the image was built — see CLAUDE.md, *Versioning*). Several
 // surfaces draw it, and `tests/version.js` asserts in process that each of them
 // reads the same MODULE. What only a running service can be asked is whether
-// they then report the same STRING, which is the check here.
+// they then report the same STRING, and the same BUILD beside it, which is the
+// check here.
 //
 // **It is worth an over-HTTP check because the failure it guards is the state
 // this feature replaced.** Two of those surfaces used to read
@@ -357,18 +359,23 @@ async function everySurfaceReportsTheSameBuild(index, consoleClient) {
   log.debug("Entering everySurfaceReportsTheSameBuild().");
   log.info("=== The version ===");
 
-  assert.ok(/^\d+\.\d+\.[A-Za-z0-9._-]+$/.test(index.version),
-    "the index's version should be M.N.O — a release and a build number. It " +
-    "is " + JSON.stringify(index.version) + ". A version ending in `.0` is " +
-    "the shape package.json carries, which is a release with a placeholder " +
-    "where the build number goes.");
-  assert.strictEqual(index.version,
-    index.version.split(".").slice(0, 2).join(".") + "." + index.build,
-    "the index's `version` should be its `major.minor` and its `build` " +
-    "joined, so a client can use either without parsing the other.");
+  // THE RELEASE AND NOTHING ELSE (#1298). Three plain numbers: a service
+  // that appended a date, a build number or a suffix fails here. That they
+  // are exactly the repo-root VERSION file's is `tests/version.js`'s claim,
+  // in process — this job may run against a deployment from a tree that is
+  // not the one the image was built from, so it does not read the file.
+  assert.ok(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(index.version),
+    "the index's version should be a plain M.N.O semantic version (#1298), " +
+    "with no build number or date appended. It is " +
+    JSON.stringify(index.version) + ".");
+  assert.ok(!/\d{8}/.test(index.version),
+    "and no component of it is a date: " + JSON.stringify(index.version));
+  assert.ok(!("build" in index),
+    "the index should carry no `build` member: the build number it held " +
+    "until #1298 is gone, and the build is `commit` and `builtAt`.");
   assert.strictEqual(typeof index.stamped, "boolean",
     "the index should say whether this version came off a build stamp or was " +
-    "computed at startup. Without it a build number is unreadable: two " +
+    "computed at startup. Without it a build time is unreadable: two " +
     "instances reporting different ones mean nothing if neither was built.");
   assert.ok(index.builtAt && !isNaN(Date.parse(index.builtAt)),
     "`builtAt` should be a timestamp. It is " + JSON.stringify(index.builtAt));
@@ -389,8 +396,13 @@ async function everySurfaceReportsTheSameBuild(index, consoleClient) {
     "They say " + JSON.stringify(metadata.version) + " and " +
     JSON.stringify(index.version) + ", which means one of them is reading a " +
     "different source — the exact defect this check exists for.");
-  assert.strictEqual(metadata.build.number, index.build,
-    "and the same build number.");
+  assert.strictEqual(metadata.build.at, index.builtAt,
+    "and the same build instant — the build is identified beside the " +
+    "version now, so this is where two sources would disagree.");
+  assert.strictEqual(metadata.build.commit, index.commit,
+    "and the same commit.");
+  assert.ok(!("number" in metadata.build),
+    "and the metadata page's `build` carries no number (#1298).");
   assert.strictEqual(metadata.build.stamped, index.stamped,
     "and agree about whether it was stamped.");
 
@@ -413,7 +425,7 @@ async function everySurfaceReportsTheSameBuild(index, consoleClient) {
     "the front page's view should carry the version this API reports, " +
     "which is what the page draws (#579).");
 
-  log.info("[version] OK — " + index.version + " (build " + index.build +
+  log.info("[version] OK — " + index.version + " (built " + index.builtAt +
            ", " + (index.stamped ? "stamped at build time" :
                    "computed at startup: this is a checkout, not an artifact") +
            ") on the API, the metadata page and the front page.");

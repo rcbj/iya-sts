@@ -8,40 +8,38 @@
 // File: common/version.js
 //
 // ===========================================================================
-// THE APPLICATION VERSION, M.N.O — THE SAME SCHEME THE PARENT PROJECT USES.
+// THE APPLICATION VERSION, M.N.O — A PLAIN SEMANTIC VERSION (#1298).
 //
-// This is a port of `id-proto-debugger/client/version.js` rather than an
-// invention, and that is the point: this service is a submodule of that
-// project, its container is built beside that project's two, and a reader who
-// has learnt to read one version string should not have to learn a second.
-// What changed in the port is written down below, under "What is different
-// here"; everything else is deliberately the same code doing the same thing.
+//   M.N.O  major.minor.patch, declared WHOLE in the repo-root VERSION file
+//          (1.0.0 since 2026-11-04, rcbj's decision on #1298). Bump it there —
+//          it is the single source of truth, and the version every surface
+//          reports is exactly what it says. Nothing is appended to it.
 //
-//   M.N  major.minor, declared in the repo-root VERSION file (currently 0.1).
-//        Bump it there — it is the single source of truth.
-//   O    the build number: a value that identifies THIS build and no other.
-//        By default it is the UTC build instant as YYYYMMDDHHMMSS, which is
-//        unique per build, monotonically increasing, and self-describing (the
-//        version alone tells you when the artifact was produced). Set
-//        BUILD_NUMBER to override it — e.g. with a CI run number — in which
-//        case keeping it unique and increasing is the caller's responsibility.
+// **UNTIL #1298 THE THIRD COMPONENT WAS A BUILD NUMBER** — VERSION held M.N
+// and O was the UTC build instant as YYYYMMDDHHMMSS (or BUILD_NUMBER), the
+// parent project's scheme. rcbj retired it on 2026-11-04: the version is the
+// RELEASE, the one an OpenID Foundation certification names (#1293), and a
+// release is not renamed by rebuilding it. BUILD_NUMBER is no longer read.
 //
-// **THE NUMBER IS FIXED WHEN AN ARTIFACT IS BUILT, NOT WHEN IT RUNS.** The
-// image build stamps it into a `version.json` that ships with the artifact, so
-// every page of a given deployment reports the same build and RESTARTING A
-// CONTAINER DOES NOT INVENT A NEW ONE. That last is the whole reason the stamp
-// exists rather than the version being computed at startup: a service that
-// renumbered itself on every restart would report a build number that means
-// nothing, and "which build is this" is the one question a version answers.
+// **WHAT IDENTIFIES ONE BUILD IS STILL RECORDED, BESIDE THE VERSION AND NOT IN
+// IT**: the commit (GIT_COMMIT, or `git rev-parse`) and the build instant
+// (`builtAt`), each a field of its own. Both are FIXED WHEN AN ARTIFACT IS
+// BUILT, NOT WHEN IT RUNS: the image build stamps them into a `version.json`
+// that ships with the artifact, so every page of a deployment reports the
+// same build and RESTARTING A CONTAINER DOES NOT INVENT A NEW ONE. "Which
+// build is this" is answered by those two fields, and `buildId()` joins them
+// into the one opaque string a cache can be keyed by — the static surfaces'
+// catalogs are, because two builds of one release must not share an
+// immutable address.
 //
 //   Dockerfile   runs `node common/version.js --stamp .` during the image
 //                build, after the source is copied; server.js reads that file
 //                through load() at startup.
 //
 // A bare `node server.js` from a checkout has no stamp and computes one, so a
-// development run still reports something usable — it just reports the instant
-// the PROCESS started rather than the instant an artifact was built, and
-// nothing was built.
+// development run still reports something usable — its `builtAt` is the
+// instant the PROCESS started rather than the instant an artifact was built,
+// and `stamped: false` says so.
 //
 // ---------------------------------------------------------------------------
 // WHAT IS DIFFERENT HERE, AND WHY
@@ -74,26 +72,29 @@
 //    place the convention cannot apply — a log line inside log.debug() is
 //    infinite recursion.
 //
-// 4. **THE MANIFEST LIST IS TWO PATHS, NOT FOUR PROJECT NAMES.** The parent
+// 4. **THE MANIFEST LIST IS ONE PATH, NOT FOUR PROJECT NAMES.** The parent
 //    holds four sibling projects under one root and keeps their package.json
-//    versions in step. This repository is one package plus `xacml-pep/`, which
-//    is a SECOND CONTAINER built from this same tree — so it ships with this
-//    service and carries this service's M.N, for the same reason the parent's
-//    `tests/` does.
+//    versions in step. This repository is one package; `xacml-pep/` is a
+//    SECOND CONTAINER built from this same tree and reads the same VERSION
+//    (see MANIFESTS below).
+//
+// 5. **THE VERSION IS NOT M.N PLUS A BUILD NUMBER (#1298).** The parent's
+//    scheme still is; this service's is a plain semantic version, read whole
+//    from VERSION, with the build identified beside it.
 //
 // **AND ONE THING THAT IS DELIBERATELY NOT RECONCILED**, because it cannot be
 // from inside this repository: the parent's `client/version.js` carries `sts`
 // in its own MANIFESTS list and its `--sync-manifests` rewrites
 // `sts/package.json` to the PARENT's M.N.0. That checkout is this repository,
 // so after a parent sync its `package.json` says the parent's version and this
-// one's says `0.1.0`. The two numbers answer different questions — "which
-// release of the debugger is this submodule pinned into" against "which release
-// of IYA STS is this" — and this file has no business editing the parent
-// to settle it. `--check-manifests` here checks THIS tree only, and the sibling
+// one's says this service's. The two numbers answer different questions —
+// "which release of the debugger is this submodule pinned into" against "which
+// release of IYA STS is this" — and this file has no business editing the
+// parent to settle it. `--check-manifests` here checks THIS tree only, and the sibling
 // checkout at `../id-proto-debugger/sts` is read-only forever.
 //
 // Run directly to print or stamp:
-//   node common/version.js                 -> 0.1.20260906143205
+//   node common/version.js                 -> 1.0.0
 //   node common/version.js --json          -> the full record
 //   node common/version.js --stamp <dir>   -> writes <dir>/version.json, prints it
 //   node common/version.js --check-manifests  -> non-zero if a package.json is stale
@@ -126,7 +127,7 @@ var log = {
 };
 
 /**
- * The name of the file at the package root that declares M.N.
+ * The name of the file at the package root that declares M.N.O.
  */
 const VERSION_FILE = 'VERSION';
 
@@ -156,7 +157,7 @@ const STAMP_FILE = 'version.json';
 // which the same module is correct in both layouts.
 //
 // The fallback when neither carries one is `__dirname/..`, so a tree with no
-// VERSION file behaves exactly as before and readMajorMinor() reports the 0.0
+// VERSION file behaves exactly as before and readRelease() reports the 0.0.0
 // it is written to report.
 function findRoot() {
   log.debug("Entering findRoot().");
@@ -176,53 +177,50 @@ function findRoot() {
 }
 const ROOT = findRoot();
 
+// A SEMANTIC VERSION, M.N.O and nothing else: three non-negative integers,
+// none with a leading zero (Semantic Versioning 2.0.0, section 2). A
+// pre-release or build-metadata suffix is NOT accepted, because nothing here
+// needs one and every reader of the version — the User-Agent, the catalogs'
+// addresses, the PEP's comparison with the PDP — would have to be taught what
+// it means.
+const RELEASE = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+
 // The VERSION file, in the root findRoot() settled on.
-function readMajorMinor() {
-  log.debug("Entering readMajorMinor().");
+function readRelease() {
+  log.debug("Entering readRelease().");
   const file = path.join(ROOT, VERSION_FILE);
   try {
     const raw = fs.readFileSync(file, 'utf8').trim();
-    const m = raw.match(/^(\d+)\.(\d+)$/);
+    const m = raw.match(RELEASE);
     if (m) {
-      log.debug("Leaving readMajorMinor().");
-      return { major: m[1], minor: m[2] };
+      log.debug("Leaving readRelease().");
+      return { major: m[1], minor: m[2], patch: m[3] };
     }
-    // A file that is there and is not M.N. Said out loud rather than silently
-    // becoming 0.0 — a `v0.1`, a trailing comment or a third component is the
-    // likeliest way somebody breaks this, and the number would otherwise just
-    // be wrong everywhere with nothing to say why.
+    // A file that is there and is not M.N.O. Said out loud rather than
+    // silently becoming 0.0.0 — a `v1.0.0`, a trailing comment, the old
+    // two-component `0.1` or a `-rc1` suffix is the likeliest way somebody
+    // breaks this, and the number would otherwise just be wrong everywhere
+    // with nothing to say why.
     if (raw) {
       console.error('[STS-CORE-0039] [version] ignoring malformed ' + file +
           ': ' +
           '"' + raw +
-                    '" (want M.N)');
+                    '" (want M.N.O)');
     }
   } catch (e) {
-    // No VERSION file in either candidate root. Falls through to 0.0 below.
-    log.debug("Caught in readMajorMinor(): " + ((e && e.message) || e));
+    // No VERSION file in either candidate root. Falls through to 0.0.0 below.
+    log.debug("Caught in readRelease(): " + ((e && e.message) || e));
   }
-  // NEVER FAIL A BUILD — OR A START — OVER THIS. An unknown major.minor is
+  // NEVER FAIL A BUILD — OR A START — OVER THIS. An unknown release is
   // still reportable, and a service that would not answer a Token Request
-  // because it could not read a two-byte text file would be the worst trade in
+  // because it could not read a six-byte text file would be the worst trade in
   // the repository. Contrast the signing key, which IS fatal to lose: a wrong
   // version misinforms a reader, a wrong key invalidates every token this
   // service ever issued.
   console.error('[STS-CORE-0040] [version] no readable ' + VERSION_FILE +
-                '; falling back to 0.0');
-  log.debug("Leaving readMajorMinor().");
-  return { major: '0', minor: '0' };
-}
-
-function utcStamp(d) {
-  log.debug("Entering utcStamp().");
-  const p = (n, w) => {
-    log.debug("Entering p().");
-    log.debug("Leaving p().");
-    return String(n).padStart(w || 2, '0');
-  };
-  log.debug("Leaving utcStamp().");
-  return '' + d.getUTCFullYear() + p(d.getUTCMonth() + 1) + p(d.getUTCDate()) +
-    p(d.getUTCHours()) + p(d.getUTCMinutes()) + p(d.getUTCSeconds());
+                '; falling back to 0.0.0');
+  log.debug("Leaving readRelease().");
+  return { major: '0', minor: '0', patch: '0' };
 }
 
 // Best-effort commit id, for the tooltip under every version string. Absent
@@ -249,28 +247,24 @@ function gitCommit() {
   }
 }
 
-// Compute a fresh version record for a build happening now.
 /**
  * Computes a fresh version record for a build happening now.
  *
- * The build number is BUILD_NUMBER when set, and otherwise the UTC instant
- * as YYYYMMDDHHMMSS. The record is marked `stamped: false`.
- * @returns `{ version, major, minor, build, commit, builtAt, stamped }`
+ * The version is VERSION's M.N.O exactly; the commit and the instant are
+ * what identify this build, beside it. The record is marked `stamped: false`.
+ * @returns `{ version, major, minor, patch, commit, builtAt, stamped }`
  */
 function resolve() {
   log.debug("Entering resolve().");
-  const { major, minor } = readMajorMinor();
+  const { major, minor, patch } = readRelease();
   const now = new Date();
-  const build = (process.env.BUILD_NUMBER &&
-      String(process.env.BUILD_NUMBER).trim())
-    || utcStamp(now);
   const commit = gitCommit();
   log.debug("Leaving resolve().");
   return {
-    version: major + '.' + minor + '.' + build,
+    version: major + '.' + minor + '.' + patch,
     major: major,
     minor: minor,
-    build: build,
+    patch: patch,
     commit: commit,
     builtAt: now.toISOString().replace(/\.\d{3}Z$/, 'Z'),
     // Whether this record came off a stamp or was computed just now. The two
@@ -282,21 +276,42 @@ function resolve() {
   };
 }
 
-// Human-readable provenance, for the tooltip beside the version.
 /**
  * Describes a version record's provenance in one line, for the tooltip
  * beside a drawn version.
  *
  * @param v - a version record from load() or resolve()
- * @returns the build number, when it was built or started, the commit, and
- *   whether the record is a stamped build
+ * @returns when it was built or started, the commit, and whether the record
+ *   is a stamped build — never a second version number
  */
 function buildInfo(v) {
   log.debug("Entering buildInfo().");
   log.debug("Leaving buildInfo().");
-  return 'Build ' + v.build + ' — ' + (v.stamped ? 'built ' : 'started ') +
-    v.builtAt + (v.commit ? ' — commit ' + v.commit : '') +
+  return (v.stamped ? 'Built ' : 'Started ') + v.builtAt +
+    (v.commit ? ' — commit ' + v.commit : '') +
     (v.stamped ? '' : ' — not a stamped build (running from a checkout)');
+}
+
+// ONE OPAQUE STRING FOR ONE BUILD, for what has to be KEYED by the build
+// rather than by the release: the static surfaces' catalogs are served
+// `immutable` under `?v=<this>` (`common/public_assets.ts`), and two builds of
+// 1.0.0 carrying different words must not share an address a browser keeps
+// for a year. It is the commit and the build instant, which are already the
+// record's own fields; it is never drawn as a version and nobody should parse
+// it.
+/**
+ * Joins a record's build instant and commit into one opaque identifier of
+ * that build, for keying a cache by build rather than by release.
+ *
+ * @param v - optional; a version record, this process's when omitted
+ * @returns the identifier, e.g. `20261104120000-0123456789ab`
+ */
+function buildId(v) {
+  log.debug("Entering buildId().");
+  const r = v || load();
+  const at = String(r.builtAt || '').replace(/[^0-9]/g, '');
+  log.debug("Leaving buildId().");
+  return (at || '0') + (r.commit ? '-' + r.commit : '');
 }
 
 // Write the record next to the artifact so it ships with it.
@@ -442,19 +457,20 @@ function userAgent(component) {
 }
 
 // --- package.json manifests -------------------------------------------------
-// Every package in this tree carries the same M.N in its package.json version,
-// with the semver patch component pinned to 0 (the real build number lives in
-// VERSION / version.json, and package.json must hold a valid semver). These
-// helpers keep them in step with VERSION — a bump that updated only VERSION
+// Every package in this tree carries VERSION's M.N.O as its package.json
+// version, exactly (#1298; until then it was M.N.0, the patch a placeholder
+// for a build number package.json had nowhere to put). These helpers keep
+// them in step with VERSION — a bump that updated only VERSION
 // would otherwise leave them silently stale, which is exactly the drift this
 // repository's endpoint and crypto reports exist to prevent one layer up.
 //
 // `xacml-pep/package.json` WAS here until #444 (2026-10-05): that container
 // is a Rust binary now, built from the workspace in `rust/`, and it stamps its
 // own `version.json` with `sts-core::version` — a port of this file, reading
-// the same `VERSION` — so it still reports this service's release and no
-// second number. Its crates carry `0.1.0`-style versions in their
-// `Cargo.toml`, which nothing reads at runtime.
+// the same `VERSION` — so it reports this service's release and no second
+// number. Its crates carry their own `version` in `Cargo.toml`, which nothing
+// reads at runtime and nothing here keeps in step: a crate's version is
+// Cargo's, the container's is VERSION's.
 /**
  * The package.json files, relative to the package root, whose version must
  * follow VERSION.
@@ -462,15 +478,15 @@ function userAgent(component) {
 const MANIFESTS = ['package.json'];
 
 /**
- * Returns the version every package.json should carry: M.N with a patch of 0.
+ * Returns the version every package.json should carry: VERSION's M.N.O.
  *
  * @returns the semver string
  */
 function manifestVersion() {
   log.debug("Entering manifestVersion().");
-  const { major, minor } = readMajorMinor();
+  const { major, minor, patch } = readRelease();
   log.debug("Leaving manifestVersion().");
-  return major + '.' + minor + '.0';
+  return major + '.' + minor + '.' + patch;
 }
 
 // [{ path, actual, expected, ok }] for each manifest present in the tree. In
@@ -541,14 +557,16 @@ function syncManifests() {
 }
 
 /**
- * The application version, M.N.O, the same scheme the parent project uses.
+ * The application version, M.N.O, a plain semantic version read whole from
+ * the VERSION file.
  *
- * M.N comes from the VERSION file; the build number is fixed when an artifact
- * is built and stamped into version.json. Every surface that draws a version
- * reads it here. Run directly it stamps, checks or syncs the manifests.
+ * What identifies one build — the commit and the build instant — is fixed
+ * when an artifact is built and stamped into version.json beside it. Every
+ * surface that draws a version reads it here. Run directly it stamps, checks or syncs the manifests.
  * @namespace
  */
-module.exports = { resolve, stamp, load, buildInfo, userAgent, checkManifests,
+module.exports = { resolve, stamp, load, buildInfo, buildId, userAgent,
+    checkManifests,
     syncManifests, manifestVersion, PRODUCT, STAMP_FILE, VERSION_FILE,
     MANIFESTS };
 

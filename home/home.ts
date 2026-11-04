@@ -145,12 +145,12 @@ import mode = require('../common/mode');
 // from this repository.
 //
 // **IT USED TO BE `require('../package.json').version` AND THAT WAS A DIFFERENT
-// NUMBER.** The manifest holds M.N.0 — a valid semver with the patch pinned to
-// zero, because npm insists on three parts and the third one there is a
-// placeholder. The build number is the third part of the REAL version and the
-// manifest has nowhere to put it, so this page reported `0.9.0` for every build
-// ever made and told a reader nothing about which one they were looking at.
-// `load()` reads the record the image build stamped. See common/version.js.
+// NUMBER.** The manifest held M.N.0 while the real version's third part was a
+// build number, so this page reported `0.9.0` for every build ever made. Since
+// #1298 the version is the release (VERSION's M.N.O, which package.json now
+// carries too), and which BUILD it is — the build instant and the commit —
+// rides in the tooltip from `buildInfo()`. `load()` reads the record the image
+// build stamped. See common/version.js.
 import version = require('../common/version');
 
 // The registry of failure codes, a LEAF — see common/error_codes.js.

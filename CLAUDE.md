@@ -1076,16 +1076,20 @@ served `Cache-Control: no-store`.** If you add one, it needs that header too —
 `tests/protocol/sts_metadata_anonymous.js` asks it of every metadata document
 and fails until the row is there.
 
-## Versioning: M.N.O, fixed when an artifact is BUILT
+## Versioning: M.N.O is the release; the build is recorded beside it
 
-`VERSION` at the repo root holds M.N; the build number is the UTC build instant,
-stamped into `version.json` by the `Dockerfile` so a restarted container reports
-the same build. **There is one source**, `common/version.js` (a port of the
-parent project's `client/version.js`), and every surface that draws a version
-reads it — `tests/version.js` asserts the source each reads, not the string it
-renders. **A version may never be the thing that stops this service starting.**
-`common/CLAUDE.md` argues it; `xacml-pep/CLAUDE.md` carries the remote PEP's
-copy.
+**`VERSION` at the repo root holds the whole version, a plain semantic
+version — `1.0.0` since 2026-11-04 (rcbj, #1298)** — and every surface reports
+exactly that, with no build number and no date appended; `package.json`
+carries the same string. Which BUILD an artifact is — the commit and the build
+instant — is stamped into `version.json` by the `Dockerfile` as fields of
+their own, so a restarted container reports the same build. Bump a release by
+editing `VERSION` and running `node common/version.js --sync-manifests`.
+**There is one source**, `common/version.js`, and every surface that draws a
+version reads it — `tests/version.js` asserts the source each reads, not the
+string it renders. **A version may never be the thing that stops this service
+starting.** `common/CLAUDE.md` argues it; `xacml-pep/CLAUDE.md` carries the
+remote PEP's copy.
 
 ## Tests
 

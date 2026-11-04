@@ -513,18 +513,23 @@ after it.
 
 ## The version this container reports
 
-**It is `M.N.O` from the one `VERSION` file the service reads**, stamped into
-`version.json` at image build time by the binary itself (`xacml-pep --stamp
-.`, `sts-core::version`, a port of `common/version.js`). It rides on the
+**It is `M.N.O` from the one `VERSION` file the service reads, exactly** — a
+plain semantic version since #1298 (`1.0.0`), with no build number — stamped
+into `version.json` at image build time by the binary itself (`xacml-pep
+--stamp .`, `sts-core::version`, a port of `common/version.js`), with the
+commit and the build instant beside it. It rides on the
 registration and every heartbeat, the PDP stores it as `xacmlPepVersion`, and
 `/admin/xacml/peps` draws it — which is why it may never be a hand-written
 label (it was `'mock-sts xacml-pep, phase five'` until 2026-09-06). **A
 version may never stop this container starting**: an unreadable `VERSION` is
-0.0 (`STS-CORE-0040`), a corrupt stamp a computed record.
+0.0.0 (`STS-CORE-0040`), a corrupt stamp a computed record, and a stamp
+written before #1298 (with a `build` number and no `patch`) still loads.
 
-**M.N must agree with the PDP and the build numbers need not**: two images,
-built separately, each stamped with the instant it was built unless one
-`BUILD_NUMBER` is passed to both. `GET /`'s `build.what` says so.
+**The version must equal the PDP's and the builds need not**: two images,
+built separately, each stamped with the instant it was built. `GET /`'s
+`build` carries `commit`, `at` and `stamped` (its `number` went with #1298),
+and `build.what` says so. `BUILD_NUMBER` is read by nothing; the crates'
+`Cargo.toml` versions are Cargo's and nothing reads them at runtime.
 
 ## THE AUTHZEN EDGE PDP (#1179)
 
