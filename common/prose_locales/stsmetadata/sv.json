@@ -1952,8 +1952,8 @@
     "text": "GET /admin/spiffe/agents som JSON, filtrerad och sidindelad, med ?agent= för en av dem. Ett REGISTER snarare än konfiguration — allt på dessa poster skrevs av den här tjänsten när en agent attesterade, och inget av det verifierades."
   },
   "stsmetadata.endpoints./admin-api/spiffe/agents/:action.what": {
-    "en": "27852c51f25bf2ea",
-    "text": "ban, unban och delete. Bannlysningen UPPRÄTTHÅLLS vid AttestAgent, vilket är det som hindrar den från att vara en lögn; delete är att glömma snarare än att återkalla, eftersom agenten dyker upp igen i samma stund som den attesterar på nytt."
+    "en": "7312163578d55aee",
+    "text": "ban, unban, delete och join-token. Bannlysningen UPPRÄTTHÅLLS vid AttestAgent, vilket är det som hindrar den från att vara en lögn; delete är att glömma snarare än att återkalla, eftersom agenten dyker upp igen i samma stund som den attesterar på nytt. join-token skapar en join-token för en sidecar-agent (#324), som lämnas ut en enda gång, med aliaset `agentId`."
   },
   "stsmetadata.endpoints./admin-api/spiffe/brokers.what": {
     "en": "01e56a072ac7b944",

@@ -1952,8 +1952,8 @@
     "text": "以 JSON 提供的 GET /admin/spiffe/agents，經篩選與分頁，?agent= 取得其中一個。這是「紀錄」而非設定——這些項目上的一切都是代理程式進行證明時由本服務寫入的，而且其中沒有任何內容經過驗證。"
   },
   "stsmetadata.endpoints./admin-api/spiffe/agents/:action.what": {
-    "en": "27852c51f25bf2ea",
-    "text": "ban、unban 與 delete。封鎖會在 AttestAgent 時「強制執行」，這讓它不至於成為謊言；delete 是遺忘而非撤銷，因為代理程式一旦再次證明就會重新出現。"
+    "en": "7312163578d55aee",
+    "text": "ban、unban、delete 與 join-token。封鎖會在 AttestAgent 時「強制執行」，這讓它不至於成為謊言；delete 是遺忘而非撤銷，因為代理程式一旦再次證明就會重新出現。join-token 為邊車代理程式簽發一個加入權杖（#324），只回傳一次，其別名為 `agentId`。"
   },
   "stsmetadata.endpoints./admin-api/spiffe/brokers.what": {
     "en": "01e56a072ac7b944",

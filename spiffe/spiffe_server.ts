@@ -1345,6 +1345,12 @@ class SpiffeServer {
       let bound = wrappers.get(listener);
       if (!bound) {
         bound = realms.bind(realm, listener);
+        // `once` registers its own wrapper through `on` — this one — and
+        // EventEmitter finds a once listener by that wrapper's `listener`
+        // property, which the bound copy has to keep for `off` to match.
+        if (listener.listener) {
+          bound.listener = listener.listener;
+        }
         wrappers.set(listener, bound);
       }
       return bound;

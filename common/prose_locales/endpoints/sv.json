@@ -1048,8 +1048,8 @@
     "text": "De attesterade agenterna"
   },
   "endpoints.route./admin-api/spiffe/agents/:action.name": {
-    "en": "109f2fc8119d9c06",
-    "text": "Spärra, häv spärr för eller glöm en agent"
+    "en": "db7439843e5d6273",
+    "text": "Spärra, häv spärr för eller glöm en agent, eller skapa en join-token"
   },
   "endpoints.route./admin-api/spiffe/brokers.name": {
     "en": "3afd6d3f274707ff",
