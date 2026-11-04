@@ -239,6 +239,32 @@ function childMain() {
     note(r.status === 400 && await alive(),
          'c2. a hint that does not verify is refused, the session survives',
          r.status);
+    // c2b/c2c (2026-11-04): the OpenID Foundation's
+    // oidcc-rp-initiated-logout-modified-id-token-hint re-heads the hint as
+    // alg none, and the refusal page must say THAT, not quote an empty key.
+    const parts = idToken.split('.');
+    const reheaded = function (header) {
+      return Buffer.from(JSON.stringify(header)).toString('base64url') +
+        '.' + parts[1] + '.';
+    };
+    r = await logout({ id_token_hint: reheaded({ alg: 'none' }) });
+    note(r.status === 400 && await alive() &&
+         /is unsigned \(alg none\)/.test(r.text) && !/key ""/.test(r.text),
+         'c2b. an alg-none hint is refused as unsigned, naming no empty key',
+         r.status + ' ' + (String(r.text).match(/<p>[^<]*/) || [''])[0]
+           .slice(3, 220));
+    const head = JSON.parse(Buffer.from(parts[0], 'base64url').toString());
+    delete head.kid;
+    r = await logout({ id_token_hint: reheaded(head) + parts[2] });
+    // An RS or PS hint is checked by signature against the realm's own RSA
+    // key, never looked up by kid, so here it is refused as not verifying;
+    // a kid-looked-up algorithm says it names no key. Either way no refusal
+    // quotes an empty key name.
+    note(r.status === 400 && await alive() && !/key ""/.test(r.text) &&
+         !/\.\.(\s|<|$)/.test(r.text),
+         'c2c. a signed hint with no kid is refused, quoting no empty key',
+         r.status + ' ' + (String(r.text).match(/<p>[^<]*/) || [''])[0]
+           .slice(3, 220));
     r = await logout({ id_token_hint: idToken, client_id: 'rl-bare' });
     note(r.status === 400 && await alive(),
          'c3. a client_id the hint was not issued to is refused', r.status);
