@@ -75,7 +75,7 @@
 // one no process holding these keys can answer about — the question's
 // answer drops it (`openAnswer()`, STS-STORE-0072) — so a mark withheld for
 // it would buy a walk of every row on every run for nothing. It is keyed
-// when it is next written. STS-STORE-0164 names the first few and the count.
+// when it is next written. STS-STORE-0167 names the first few and the count.
 //
 // A LIBRARY: the walk, over a driver's statements (`walk()`), and the job,
 // registered by `install()` from `common/protocol_stack.ts` beside the other
@@ -270,7 +270,7 @@ async function walk(ops, options) {
       if (opened[i] === null) {
         out.skipped += 1;
         if (out.skipped <= SKIP_LINES) {
-          log.warn(errorCodes.tag('STS-STORE-0164') + 'persistence: the ' +
+          log.warn(errorCodes.tag('STS-STORE-0167') + 'persistence: the ' +
                    'grantinggroup key backfill (#1311) skipped the ' +
                    'directory entry "' + row.dn_key + '" in realm "' +
                    row.realm + '" of ' + what + ': it does not open here. ' +
@@ -301,7 +301,7 @@ async function walk(ops, options) {
     });
   }
   if (out.skipped) {
-    log.warn(errorCodes.tag('STS-STORE-0164') + 'persistence: the ' +
+    log.warn(errorCodes.tag('STS-STORE-0167') + 'persistence: the ' +
              'grantinggroup key backfill (#1311) skipped ' + out.skipped +
              ' directory entr' + (out.skipped === 1 ? 'y' : 'ies') + ' of ' +
              what + ' this run that do not open here.');
@@ -416,7 +416,7 @@ async function runOnce(ctx) {
     });
   } catch (e) {
     log.debug("Caught in runOnce(): " + ((e && e.message) || e));
-    log.warn(errorCodes.tag('STS-STORE-0163') + 'persistence: the ' +
+    log.warn(errorCodes.tag('STS-STORE-0166') + 'persistence: the ' +
              'grantinggroup key backfill (#1311) stopped: ' +
              ((e && e.message) || e) + '. What it finished is kept, and ' +
              'the next run resumes after the last page it wrote.');

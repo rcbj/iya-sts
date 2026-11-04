@@ -1671,11 +1671,11 @@ postgres driver writes and reads every entry through it.
   time, never keys (compare-and-set, and every cursor names a finished
   prefix).
 * **A BLOB THAT WILL NOT OPEN IS SKIPPED** after the data-key rows are read
-  again once a run (`STS-STORE-0164`, the first ten by key, then a count),
+  again once a run (`STS-STORE-0167`, the first ten by key, then a count),
   and the walk still writes its mark — #695's argument: no process holding
   these keys can answer about that entry anyway (`openAnswer()` drops it),
   and it is keyed when next written. A store error stops the run
-  (`STS-STORE-0163`) and the next resumes.
+  (`STS-STORE-0166`) and the next resumes.
 
 `tests/granting_index_backfill.js` holds both engines against doubles that
 keep the table.
