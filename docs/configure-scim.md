@@ -158,6 +158,7 @@ Things the person may and may not carry:
 * A member this service does not store, such as `nickName` or `photos`, is not in `/Schemas`, and a PATCH to it is `400 invalidPath`.
 * `userName` is unique. A taken name is `409 uniqueness`, and the name `invalid` is `400 invalidValue`.
 * A resource that uses the enterprise extension lists its URN, `urn:ietf:params:scim:schemas:extension:enterprise:2.0:User`, in `schemas`.
+* The realm's custom attributes go in `urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes`. `/Schemas` lists them, and they are described in [The realm's custom attributes](scim.md#the-realms-custom-attributes).
 
 **In development mode** a created person is filled in with an invented
 persona unless `scim.inventOnCreate` is off. The two conformance jobs turn it
@@ -326,6 +327,17 @@ api policies/save-attributes-policy '{"profile":"default","requiredAttributes":[
 ```
 
 Development mode stores and shows the policy but does not enforce it.
+
+**What the realm requires is published.** In product mode,
+`GET /scim/v2/Schemas/urn:ietf:params:scim:schemas:core:2.0:User` marks
+`required: true` on each member the `default` policy requires. A required
+custom attribute is marked in the `CustomAttributes` extension, which
+`/ResourceTypes/User` then lists as required:
+```bash
+curl -sk "$BASE/scim/v2/Schemas/urn:ietf:params:scim:schemas:core:2.0:User" |
+  jq '[.attributes[] | select(.required) | .name]'
+# -> ["userName","name","emails"] with the default policy
+```
 
 A person can be held to a **named** attribute policy instead. SCIM maps no
 attribute to `stsAttributePolicy`, so the policy for a SCIM create comes

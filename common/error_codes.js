@@ -15992,6 +15992,13 @@ const CODES = [
       'asked by a caller that does not hold SECURITY_ADMIN (a person on the ' +
       'roster, or an application that is a member of the role).',
     spec: 'HTTP 403' },
+  // #699 (2026-11-04): the realm's custom attributes as a SCIM extension.
+  { code: 'STS-SCIM-0087',
+    summary: 'A SCIM User write carried a value of one of the realm\'s ' +
+      'custom attributes (the CustomAttributes extension) that its syntax ' +
+      'refuses, several values for a single-valued one, or an integer past ' +
+      'what a JSON number carries exactly; nothing was written (#699).',
+    spec: 'SCIM invalidValue (HTTP 400)' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +

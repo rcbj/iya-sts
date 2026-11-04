@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5198** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5199** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -75,7 +75,7 @@ is an ordinary outcome.
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 81
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 82
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 152
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
@@ -3543,6 +3543,7 @@ Raised from: scim/.
 | `STS-SCIM-0084` | A verified TLS client certificate from an outside certificate authority was not taken as a SCIM credential: it is not stored in userCertificate on any entry of the realm (#1061). The request is decided as if no certificate had been presented. | audit row; HTTP 401 when no other scheme authenticates |
 | `STS-SCIM-0085` | A verified TLS client certificate from an outside certificate authority was not taken as a SCIM credential: it is stored in userCertificate on more than one entry of the realm (#1061). | audit row; HTTP 401 when no other scheme authenticates |
 | `STS-SCIM-0086` | A SCIM write that only a Security Administrator may make — the Security Administrator's group created, changed or deleted, or the User of a person who holds the role changed or deleted — was asked by a caller that does not hold SECURITY_ADMIN (a person on the roster, or an application that is a member of the role). | HTTP 403 |
+| `STS-SCIM-0087` | A SCIM User write carried a value of one of the realm's custom attributes (the CustomAttributes extension) that its syntax refuses, several values for a single-valued one, or an integer past what a JSON number carries exactly; nothing was written (#699). | SCIM invalidValue (HTTP 400) |
 
 ## STS-SPIFFE
 
