@@ -433,12 +433,16 @@ function certificateRequest(pki, path, cookie) {
 async function signInWithCertificate(commonName) {
   log.debug("Entering signInWithCertificate(). " + commonName);
   const pki = await makeCertificate(commonName);
+  // Recorded before it is posted (#1307): an add applied but answered late
+  // is still removed when the job finishes.
+  credentials.recordAnchor(addedAnchors, pki.caPem);
   const added = await api("POST", "/admin-api/tls/trust/add",
                           { certificates: pki.caPem });
   assert.strictEqual(added.status, 200,
     "adding this job's CA through POST /admin-api/tls/trust/add answered " +
     added.status + " " + added.text.slice(0, 200));
-  addedAnchors.push(pki.caPem);
+  // Its add answered 2xx, so a later "not held" is a node behind (#1307).
+  credentials.confirmAnchor(pki.caPem);
   // STORED ON THE ENTRY IT SIGNS IN AS (#1061, rcbj 2026-10-27). The leaf is
   // an outside authority's, and such a certificate names nobody by its CN any
   // more: it is the one entry of the realm storing it in `userCertificate`.

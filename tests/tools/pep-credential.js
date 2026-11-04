@@ -246,7 +246,7 @@ function postAnchor(url, pem) {
   const base = String(url || '').replace(/\/+$/, '');
   const token = process.env.STS_ADMIN_API_TOKEN || '';
   log.debug("Leaving postAnchor().");
-  return send(base + '/admin-api/tls/trust/add', 'application/json',
+  return sender(base + '/admin-api/tls/trust/add', 'application/json',
     JSON.stringify({ certificates: pem }),
     token ? { Authorization: 'Bearer ' + token } : {}, true)
     .then(function (answer) {
@@ -306,12 +306,138 @@ function send(where, type, body, extraHeaders, verify) {
 }
 
 // ---------------------------------------------------------------------------
+// THE ONE CALL EVERY ADD AND REMOVE GOES THROUGH, REPLACEABLE FOR A TEST
+// (#1307). `tests/trust_anchor_cleanup.js` drives `forgetAnchors()`,
+// `settleAnchors()` and `trustRecorded()` against a fake with send()'s
+// signature and answer shape, so the cleanup's decisions are asserted without
+// a service. `useSender(null)` puts send() back; a test restores what
+// `useSender()` handed it, never null by assumption.
+// ---------------------------------------------------------------------------
+let sender = send;
+
+function useSender(fn) {
+  log.debug("Entering useSender().");
+  const previous = sender;
+  sender = typeof fn === 'function' ? fn : send;
+  log.debug("Leaving useSender().");
+  return previous;
+}
+
+// THE ANCHORS WHOSE ADD THE SERVICE CONFIRMED, by SHA-256 fingerprint.
+// "Not held" is a finished remove only for an anchor NOT in here: its add
+// timed out or was refused, so the service may never have taken it. For one
+// in here the add answered 2xx, and "not held" is a node of a cluster that
+// has not yet applied the row — the remove retries (REMOVE_TRIES, one
+// operation's retry delay, not periodic work) and then fails as it always
+// did, because a pass there would leave the row in ou=trustAnchors.
+const confirmed = new Set();
+const REMOVE_TRIES = 5;
+let retryDelayMs = 1000;
+
+// For a test: the delay between the tries of one remove. Answers the
+// previous value; a non-number or a negative one restores 1000.
+function useRetryDelay(ms) {
+  log.debug("Entering useRetryDelay().");
+  const previous = retryDelayMs;
+  retryDelayMs = typeof ms === 'number' && ms >= 0 ? ms : 1000;
+  log.debug("Leaving useRetryDelay().");
+  return previous;
+}
+
+function fingerprintOf(pem) {
+  log.debug("Entering fingerprintOf().");
+  try {
+    const print = new crypto.X509Certificate(pem).fingerprint256;
+    log.debug("Leaving fingerprintOf().");
+    return print;
+  } catch (error) {
+    // Not a certificate: the caller decides what that means, with ''.
+    log.debug("Caught in fingerprintOf(): " +
+              ((error && error.message) || error));
+    log.debug("Leaving fingerprintOf(). Not a certificate.");
+    return '';
+  }
+}
+
+// A job posting through its own door calls this after its post answered
+// 2xx; trustRecorded() calls it itself. Answers whether it was a certificate.
+function confirmAnchor(pem) {
+  log.debug("Entering confirmAnchor().");
+  const print = fingerprintOf(pem);
+  if (print) {
+    confirmed.add(print);
+  }
+  log.debug("Leaving confirmAnchor().");
+  return !!print;
+}
+
+function isConfirmed(pem) {
+  log.debug("Entering isConfirmed().");
+  const print = fingerprintOf(pem);
+  log.debug("Leaving isConfirmed().");
+  return !!print && confirmed.has(print);
+}
+
+// The sentence `tls/tls_server.js`'s removeAnchor() refuses a fingerprint it
+// does not hold with (STS-TLS-0016; codes are never sent, and the APIs' errors
+// stay English), carried in the 400's `errors`.
+const NOT_HELD = /holds no anchor with the SHA-256 fingerprint/;
+
+// ---------------------------------------------------------------------------
+// RECORD AN ANCHOR BEFORE IT IS POSTED (#1307, from #695's review of #682).
+//
+// Every job recorded its anchor only after the add answered 2xx. send()
+// gives up after 15s, and an add the service APPLIED but answered late was
+// then never recorded, so the job's own cleanup left it in the truststore
+// (32 anchors, service-wide) and only `deploy/aws/reset-environment.js`
+// caught it. Recording first costs nothing, because a remove of an anchor
+// the service never took answers "not held", which removeAnchor() counts as
+// done for an anchor whose add was never confirmed (see `confirmed`).
+//
+// `recordAnchor(added, pem)` is the record alone, for a job that posts
+// through a door of its own, which calls `confirmAnchor(pem)` once its post
+// answered 2xx; `trustRecorded(url, pem, added)` is the record, then
+// `trustAnchor()`'s post, then the confirmation on a 2xx, and answers what
+// the post answered. Only an
+// anchor THE JOB MINTED is recorded: removing one it re-posts (the remote
+// PEP's, `XACML_PEP_CA_PEM`) would take it from somebody else.
+// ---------------------------------------------------------------------------
+function recordAnchor(added, pem) {
+  log.debug("Entering recordAnchor().");
+  if (!Array.isArray(added)) {
+    log.debug("Leaving recordAnchor(). No list.");
+    throw new Error('recordAnchor() needs the job\'s list of added anchors');
+  }
+  if (pem && added.indexOf(pem) < 0) {
+    added.push(pem);
+  }
+  log.debug("Leaving recordAnchor().");
+  return added;
+}
+
+function trustRecorded(url, pem, added) {
+  log.debug("Entering trustRecorded().");
+  recordAnchor(added, pem);
+  log.debug("Leaving trustRecorded().");
+  return postAnchor(url, pem).then(function (answer) {
+    if (answer.ok) {
+      confirmAnchor(pem);
+    }
+    return answer;
+  });
+}
+
+// ---------------------------------------------------------------------------
 // REMOVE AN ANCHOR THIS PROCESS ADDED (#335).
 //
 // The client truststore is service-wide and holds 32. A job that posts a
 // suite CA removes it when the job finishes, pass or fail. The command-line
 // `main()` does not: the remote PEP needs that anchor for the rest of the
 // run, and `deploy/aws/reset-environment.js` spares it by fingerprint.
+// A fingerprint the service answers it does not hold is a remove that is
+// done (#1307), answered `{ ok: true, absent: true }` — for an anchor whose
+// add was never confirmed. A confirmed one is asked again, REMOVE_TRIES in
+// all, and then fails, saying so.
 // ---------------------------------------------------------------------------
 function removeAnchor(url, pem) {
   log.debug("Entering removeAnchor().");
@@ -330,19 +456,52 @@ function removeAnchor(url, pem) {
     return Promise.resolve({ ok: false,
                              why: 'the anchor is not a certificate' });
   }
-  log.debug("Leaving removeAnchor().");
-  return send(base + '/admin-api/tls/trust/remove', 'application/json',
-    JSON.stringify({ fingerprint: fingerprint }),
-    token ? { Authorization: 'Bearer ' + token } : {}, true)
-    .then(function (answer) {
+  const wasConfirmed = confirmed.has(fingerprint);
+  const once = function () {
+    log.debug("Entering once().");
+    log.debug("Leaving once().");
+    return sender(base + '/admin-api/tls/trust/remove', 'application/json',
+      JSON.stringify({ fingerprint: fingerprint }),
+      token ? { Authorization: 'Bearer ' + token } : {}, true);
+  };
+  const attempt = function (tries) {
+    log.debug("Entering attempt(). try " + tries);
+    log.debug("Leaving attempt().");
+    return once().then(function (answer) {
+      const notHeld = !answer.ok && answer.status === 400 &&
+                      NOT_HELD.test(String(answer.body || ''));
+      if (notHeld && !wasConfirmed) {
+        // NOT HELD IS DONE (#1307), for an add never confirmed: it timed
+        // out or was refused, so the service may never have taken it, and
+        // holding no such anchor is the state the remove was for.
+        return { ok: true, status: answer.status, body: answer.body,
+                 absent: true };
+      }
+      if (notHeld && tries < REMOVE_TRIES) {
+        // CONFIRMED AND NOT HELD: a node that has not applied the add yet.
+        // Asked again after a pause, a bounded number of times.
+        return new Promise(function (resolve) {
+          setTimeout(resolve, retryDelayMs);
+        }).then(function () {
+          return attempt(tries + 1);
+        });
+      }
+      if (answer.ok) {
+        confirmed.delete(fingerprint);
+      }
       if (!answer.ok) {
         answer.why = 'POST /admin-api/tls/trust/remove answered ' +
           (answer.status || answer.why) + ' ' +
           String(answer.body || '').slice(0, 200) +
-          (token ? '' : ' (no STS_ADMIN_API_TOKEN was set)');
+          (token ? '' : ' (no STS_ADMIN_API_TOKEN was set)') +
+          (notHeld ? ' — its add was CONFIRMED and it is still not held ' +
+                     'after ' + tries + ' tries' : '');
       }
       return answer;
     });
+  };
+  log.debug("Leaving removeAnchor().");
+  return attempt(1);
 }
 
 function forgetAnchors(url, pems) {
@@ -644,7 +803,8 @@ async function main() {
 }
 
 // Guarded so that a test can require this file for `mint()`, `trustAnchor()`,
-// `removeAnchor()`, `forgetAnchors()` and `settleAnchors()` without it parsing
+// `trustRecorded()`, `removeAnchor()`, `forgetAnchors()` and `settleAnchors()`
+// (and `useSender()`, `useRetryDelay()`, #1307) without it parsing
 // arguments and writing files — the same guard `xacml-pep/pep.js` and
 // `common/request_worker.ts` carry, for the same reason.
 // ---------------------------------------------------------------------------
@@ -766,5 +926,8 @@ if (require.main === module) {
 module.exports = { mint: mint, trustAnchor: postAnchor,
                    removeAnchor: removeAnchor, forgetAnchors: forgetAnchors,
                    settleAnchors: settleAnchors,
+                   recordAnchor: recordAnchor, trustRecorded: trustRecorded,
+                   confirmAnchor: confirmAnchor, isConfirmed: isConfirmed,
+                   useSender: useSender, useRetryDelay: useRetryDelay,
                    storeOnEntry: storeOnEntry, forgetStored: forgetStored,
                    DEFAULT_SUBJECT: DEFAULT_SUBJECT };

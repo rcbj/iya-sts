@@ -392,12 +392,16 @@ async function resumption() {
   assert.strictEqual(stored.status, 200,
     "POST /admin-api/users/add-certificate answered " + stored.status + " " +
     stored.text.slice(0, 200));
+  // Recorded before it is posted (#1307): an add applied but answered late
+  // is still removed when the job finishes.
+  credentials.recordAnchor(addedAnchors, pki.anchorPem);
   const added = await post("/admin-api/tls/trust/add",
                            { certificates: pki.anchorPem });
   assert.strictEqual(added.status, 200,
     "adding the test Root through POST /admin-api/tls/trust/add answered " +
     added.status + " " + added.text.slice(0, 200));
-  addedAnchors.push(pki.anchorPem);
+  // Its add answered 2xx, so a later "not held" is a node behind (#1307).
+  credentials.confirmAnchor(pki.anchorPem);
 
   const ask = [
     { path: "/admin-api/cluster",
