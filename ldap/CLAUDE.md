@@ -4150,7 +4150,10 @@ this directory's:
   of the names. One missing a required attribute is logged under
   STS-FED-0158 and nobody is created, so `authn.startSession()` refuses the
   sign-in as it refuses an unprovisioned person. No other automatic create
-  happens in product mode.
+  happens in product mode. **It is the backstop since #701**: the federation
+  door asks the same question first and sends the newcomer to a form for the
+  missing values (`federation/CLAUDE.md`), so this refusal is reached only for
+  a name nobody can be asked for, or a form whose values still fall short.
 * **The LDAP add (65, STS-LDAP-0162)** asks after the password policy, with
   the RDN's value counted as the entry's own (RFC 4512 2.3.1); nothing is
   derived — an LDAP client writes what it sends. **The LDAP modify (65,
