@@ -453,6 +453,20 @@ name the one origin (`ShellDocument`'s `images`). The argument, and why it is
 not `img-src https:`, is in `oauth-oidc/CLAUDE.md` (*What the screens show
 about a client*).
 
+## THE REALM'S OWN LOOK: COLOURS, LAYOUT, LOGO (#717, 2026-11-04)
+
+The sign-in screen and its steps take the realm's sign-in appearance with
+NO change here: the shell links `/web/card.css`, so `ShellDocument` adds
+the realm's `/web/theme.css` and its brand facts on `<html>`, and the
+runtime draws the brand header before the card (`common/CLAUDE.md`, *A
+realm's sign-in appearance*). **The views gained nothing** — the facts
+travel on the shell, not on `screenView()` — and **the form is untouched in
+every layout**: `username`, `password`, `kc-login`, `kc-cancel` and the
+other ids, and their order, are exactly where they were. The realm's logo is
+the service's brand, ABOVE the card; the relying party's (#1300, above) stays
+inside it, under the realm's. A realm that set nothing is drawn byte for
+byte as before.
+
 ## WHY A SECOND SIGN-IN (#1302, 2026-11-04)
 
 **A pending sign-in carries `reauthentication`** — `prompt_login`,

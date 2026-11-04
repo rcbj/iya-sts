@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5208** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5216** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 421
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 429
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 747
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
@@ -1651,6 +1651,14 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0541` | A named authentication policy was not saved: its precedence is not a whole number from 1 to 1000 (#1237). | none (a console or management API refusal, HTTP 400) |
 | `STS-AUTHN-0542` | An application (appPostLoginPolicy) or a group (stsPostLoginPolicy) names a post-login activity policy that this realm does not hold — written past the console, or the policy was deleted by hand — so that reference selects nothing (the default post-login policy, where nothing else names one) until the policy exists or the reference changes (#1239). | none (logged; the sign-in goes on under the profile the other references select) |
 | `STS-AUTHN-0543` | A named post-login activity policy was not deleted: an application (appPostLoginPolicy) or a group (stsPostLoginPolicy) of this realm still names it (#1239). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0544` | A sign-in appearance colour was not saved: with it, the realm's text or its links would fall below WCAG 2.2 AA contrast (4.5:1) against the card (branding.textColor, branding.accentColor against branding.cardColor) (#717). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0545` | A sign-in logo was not saved: its bytes are not a PNG, a JPEG or a WebP image, whatever type the upload declared. Only those three are accepted, and the bytes decide (#717). | none (a management API refusal, HTTP 415) |
+| `STS-AUTHN-0546` | A sign-in logo was not saved: it is larger than branding.logoMaxBytes, or empty (#717). | none (a management API refusal, HTTP 413, or 400 for an empty body) |
+| `STS-AUTHN-0547` | A sign-in logo was not saved: its width and height could not be read from the image, or one of them is outside 16 to 2048 pixels (#717). | none (a management API refusal, HTTP 400) |
+| `STS-AUTHN-0548` | A sign-in logo was not saved, or its alternative text was not cleared: a realm's logo must carry alternative text (branding.logoAlt), which a screen reader reads in its place (#717). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0549` | A realm's sign-in logo was asked for (GET /web/branding/logo) and the realm has none (#717). | none (HTTP 404) |
+| `STS-AUTHN-0550` | A sign-in appearance preview was refused: a colour or layout it was asked to show is not one the settings would accept (#717). | none (HTTP 400) |
+| `STS-AUTHN-0551` | A sign-in logo's link (branding.logoLinkUrl) was not saved: it is not an absolute https URL (#717). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-OAUTH
 
