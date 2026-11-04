@@ -212,7 +212,7 @@ const EXPECTED = {
   // `https://sts:8081` and could list only by taking an origin from the
   // request. Shown 2026-09-26 by driving HtmlUnit itself: the same page
   // framed from the suite's origin is refused, and with the OP's origin
-  // added it loads, runs check_session.js and answers. The module never
+  // added it loads, runs the iframe's script and answers. The module never
   // gets its `session_result`; the iframe's answers are checked in
   // tests/session_management.js and tests/vendored/sts_session_management.js.
   "session/oidcc-session-management-rp-initiated-logout": "HtmlUnit " +

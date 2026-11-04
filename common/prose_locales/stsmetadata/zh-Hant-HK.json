@@ -1151,10 +1151,6 @@
     "en": "67b6934792210c8e",
     "text": "Session Management section 3.2（#121），僅在領域中 oauth2.sessionManagement 開啟時提供，否則回傳指名該設定的 404。信賴方將其置於框架中並張貼 \"client_id session_state\"；其腳本將之與它能讀取的 OP 瀏覽器狀態比較，回答 changed、unchanged 或 error。這是此處唯一可以被置於框架中的頁面，且僅限領域已註冊之重新導向 URI 的來源。"
   },
-  "stsmetadata.endpoints./oauth2/check_session.js.what": {
-    "en": "d0428e57643dabd6",
-    "text": "OP iframe 唯一的腳本，從此來源提供，因為此處每個頁面都在 script-src 'none' 或 'self' 下執行。以 changed、unchanged 或 error 回應 postMessage，僅張貼給提問的來源。"
-  },
   "stsmetadata.endpoints./oauth2/logout.what": {
     "en": "bfeb68315a7d7f5f",
     "text": "OIDC 探索文件中 end_session_endpoint 所指向之處，支援 GET 與 POST（#124）。請求在任何東西結束「之前」驗證；id_token_hint 會被驗證為本伺服器簽發的 ID Token（過期的仍然算數）並指名客戶端；除非該提示正是此工作階段的，否則會請該人確認；post_logout_redirect_uri 只有在客戶端精確註冊時才會跟隨——開發模式對沒有註冊任何 URI 的客戶端仍會跟隨，產品模式則不會——並將 state 一併傳回。拒絕以頁面呈現，而非 JSON。"

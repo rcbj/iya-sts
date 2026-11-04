@@ -775,6 +775,16 @@ than merely unlikely. Two kinds of page carry a script, and each takes the SAME
 shape of exception — `script-src 'self'` naming this service's own files, never
 `'unsafe-inline'`, the policy set ONLY through `app.contentSecurityPolicy()`.
 
+**THE ONE NAMED EXCEPTION IS THE OP IFRAME (#1297, rcbj's decision,
+2026-11-04)**: its script is INLINE, admitted by `script-src 'sha256-…'` of
+its exact text instead of `'self'`, through `app.framedContentSecurityPolicy()`
+(which passes only `'self'` and hash sources in `script-src`, never
+`'unsafe-inline'`). The OpenID conformance suite posts its single
+`postMessage` 500 ms after its own iframe loads, and a page plus a second
+request for the script lost that race; a hash admits only that one text,
+narrower than `'self'`. No other page may carry an inline script, and "the same
+as the OP iframe" is not an argument — `oauth-oidc/CLAUDE.md` 3ax.
+
 **A STATIC SURFACE** (#446, #568; the rule since #570) is an application drawn
 in the browser from its API: everything it shows comes from an API answer and
 everything it changes goes through an API call. **#569 converts every
@@ -830,7 +840,7 @@ surface is converted; the protocol documents never do.
 | `response_mode=form_post` | `/oauth2/autopost.js` | `oauth-oidc/CLAUDE.md` |
 | the SAML 2.0 HTTP POST binding | `/saml2/autopost.js` | `saml/CLAUDE.md` |
 | the SAML 1.1 Browser/POST profile | `/saml11/autopost.js` | `saml/CLAUDE.md` |
-| `/oauth2/check_session` (#121, off by default) | `/oauth2/check_session.js` — no submit button | `oauth-oidc/CLAUDE.md` |
+| `/oauth2/check_session` (#121, off by default) | INLINE, under `script-src 'sha256-…'` of its exact text (#1297, the one named exception above: the suite's single 500 ms `postMessage`) — no submit button | `oauth-oidc/CLAUDE.md` (3ax) |
 | a federation relationship's fragment-encoded response at `/federation/acs/{id}` (#930, only where `fedResponseMode` is `fragment`) | `/federation/fragment.js` — no submit button: no markup can read a URL fragment | `federation/CLAUDE.md` |
 
 **The embedded debugger's pages are NOT on this list, because they are not on

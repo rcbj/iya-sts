@@ -3083,10 +3083,6 @@
     "en": "67b6934792210c8e",
     "text": "Session Management section 3.2（#121），在本领域开启 oauth2.sessionManagement 时提供，否则返回指明该设置的 404。依赖方将其嵌入框架并提交 \"client_id session_state\"；其脚本将其与它能读取的 OP 浏览器状态进行比较，并应答 changed、unchanged 或 error。这是此处唯一可以被嵌入框架的页面，而且只能由本领域已注册重定向 URI 的源嵌入。"
   },
-  "stsmetadata.endpoints./oauth2/check_session.js.what": {
-    "en": "d0428e57643dabd6",
-    "text": "OP iframe 唯一的脚本，从本源提供，因为此处每个页面都在 script-src 'none' 或 'self' 下运行。以 changed、unchanged 或 error 应答 postMessage，只发送给提问的源。"
-  },
   "stsmetadata.endpoints./oauth2/logout.what": {
     "en": "bfeb68315a7d7f5f",
     "text": "OIDC 发现文档中 end_session_endpoint 所指向的地方，支持 GET 和 POST（#124）。请求在任何东西结束之前先被验证；id_token_hint 会被验证为本服务器颁发的 ID Token（已过期的也算），并指明客户端；除非该提示正是针对本会话的，否则会请此人确认；只有当客户端精确注册了 post_logout_redirect_uri 时才会跟随它——开发模式对未注册任何 URI 的客户端仍会跟随，产品模式则不会——state 会随之返回。拒绝以页面形式呈现，而不是 JSON。"

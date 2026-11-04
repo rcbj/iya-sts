@@ -1891,10 +1891,6 @@
     "en": "267337fd3ad0ab7f",
     "text": "OP iframe（check_session_iframe）"
   },
-  "endpoints.route./oauth2/check_session.js.name": {
-    "en": "d9f2d9b37bfe6db9",
-    "text": "OP iframe 脚本"
-  },
   "endpoints.route./oauth2/logout.name": {
     "en": "9901e3b8fd763f16",
     "text": "会话结束（end_session_endpoint）"
