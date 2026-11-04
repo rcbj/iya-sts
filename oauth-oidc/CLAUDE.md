@@ -2664,7 +2664,7 @@ nothing registered, a private-use address never (`0290`), OAuth 2.1 mode never
 AUTHORIZATION list — is no longer read. A refused return is NOT a refusal of
 the sign-out: the person is signed out and the page says where they were not
 sent. **An address the client did not register (`0123`) is a WARNING BOX as
-prominent as the green "signed out" one since #1302**, after it, in the
+prominent as the green "signed out" one since #1302**, ABOVE it, in the
 page's language (`oauthPages.signedOut.notRegistered`): that the request's
 `post_logout_redirect_uri` is not one this client registered and so was not
 followed, then the address asked for, the registered ones

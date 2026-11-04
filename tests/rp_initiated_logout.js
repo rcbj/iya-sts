@@ -389,13 +389,13 @@ function childMain() {
     };
     const okAt = String(r.text).indexOf('<div class="ok">');
     note(warningOf(r.text) === warningFor('https://evil.example/x') &&
-           okAt >= 0 && String(r.text).indexOf(warningOf(r.text)) > okAt &&
+           okAt >= 0 && String(r.text).indexOf(warningOf(r.text)) < okAt &&
            !/You were not returned/.test(r.text) &&
            /\.warn\{background:#fff8e1;border-left:4px solid #b26a00;/
              .test(r.text) &&
            /<h1>Signed out<\/h1>/.test(r.text),
          'd1b. and the page says so in a warning box as prominent as the ' +
-         '"signed out" banner, after it: not one this client registered, ' +
+         '"signed out" banner, above it: not one this client registered, ' +
          'not followed, both addresses, the section', warningOf(r.text) ||
          r.text.slice(-700));
     // d1c (#1302): the suite's other case, the registered address with a

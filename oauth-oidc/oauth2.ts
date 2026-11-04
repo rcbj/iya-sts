@@ -12931,6 +12931,8 @@ class OAuth2Server {
       String((session && session.user && session.user.username) || ''));
     // The unregistered address's warning box (#1302, above), in that
     // language: what was wrong first, then the two addresses and the section.
+    // Drawn ABOVE the green banner: the refusal is the news, the session
+    // ending is what happened anyway.
     if (unregistered) {
       refusedNote = '<div class="warn" role="alert" ' +
         'id="logout-not-registered">' +
@@ -13142,12 +13144,12 @@ class OAuth2Server {
       // and English (#539).
       const inner = chooser + '<h1>' +
         t.html('oauthPages.signedOut.heading') + '</h1><p class="sub">' +
-        t.html('oauthPages.signedOut.frontSub') + '</p><div ' +
-        'class="ok">' + (session
+        t.html('oauthPages.signedOut.frontSub') + '</p>' + refusedNote +
+        '<div class="ok">' + (session
           ? t.html('oauthPages.signedOut.frontEnded',
                    { username: session.user.username })
           : t.html('oauthPages.signedOut.frontNone')) +
-        '</div>' + refusedNote +
+        '</div>' +
         frontchannel.render(notifications) +
         backchannel.render(backchannelRows) +
         (checked
@@ -13188,10 +13190,10 @@ class OAuth2Server {
     }
     log.debug("Leaving OAuth2Server.logoutFinish().");
     return self.logoutAnswer(res, 200, t.text('oauthPages.signedOut.title'),
-      '<div class="ok">' + (session
+      refusedNote + '<div class="ok">' + (session
         ? t.html('oauthPages.signedOut.ended',
                  { username: session.user.username })
-        : t.html('oauthPages.signedOut.none')) + '</div>' + refusedNote +
+        : t.html('oauthPages.signedOut.none')) + '</div>' +
       backchannel.render(backchannel.deliveriesFor(
         session ? [session.id] : [], backchannelMark)), t, chooser);
   }
