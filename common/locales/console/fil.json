@@ -203,5 +203,6 @@
   "shell.menu.another": "Mag-sign in gamit ang ibang account",
   "shell.menu.another.title": "Mag-sign in bilang ibang tao sa tab na ito. Mananatiling naka-sign in ang mga account na naka-sign in na sa browser na ito, at pananatilihin ng ibang mga tab ang kanila.",
   "nav.broadcast": "Mag-broadcast ng Anunsyo",
+  "nav.sign-in-appearance": "Itsura ng pag-sign in",
   "nav.post-login-activities": "Mga aktibidad pagkatapos mag-sign in"
 }

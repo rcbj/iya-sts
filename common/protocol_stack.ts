@@ -1608,6 +1608,11 @@ class ProtocolStack {
     // The register is built at 18j-vii and reached from the handlers lazily.
     this.build('mgmt-api/audit_export_api',
                require('../mgmt-api/audit_export_api'), 'AuditExportApi');
+    // #717: the sign-in appearance operations, spread by `mgmt-api/admin_api`.
+    // `common/branding` is built with the shell's libraries and reached from
+    // the handlers lazily.
+    this.build('mgmt-api/branding_api',
+               require('../mgmt-api/branding_api'), 'BrandingApi');
     // #552: the outbound SCIM clients' operations; the client itself is built
     // at 22, beside the SCIM server, and reached from here lazily.
     this.build('mgmt-api/scim_clients_api',

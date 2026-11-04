@@ -2551,6 +2551,16 @@ const SECTIONS = [
                'service\'s own Shared Signals event on the three ' +
                'applications\' receiver streams; a service administrator ' +
                'may send it to every realm.' },
+      // SIGN-IN APPEARANCE (#717), beside the announcement: what the people
+      // signing in to this realm see. Drawn by `web_sign_in_appearance.ts`
+      // from `GET /admin-api/branding`; the console itself keeps its look.
+      { path: '/admin/sign-in-appearance', label: 'Sign-in appearance',
+        blurb: 'How this realm\'s sign-in pages, its front door and its ' +
+               'user portal look: four colours checked against WCAG 2.2 AA ' +
+               'contrast, one of three layouts, a display name and an ' +
+               'uploaded logo (PNG, JPEG or WebP). A preview opens in a ' +
+               'new tab before anything is saved. The admin console keeps ' +
+               'its own look.' },
       { path: '/admin/rbac', label: 'Admin roles',
         blurb: 'Who holds the two roles that grant this console — Admin ' +
                'Read and Admin Write — granted and revoked here. They are ' +
@@ -9111,6 +9121,7 @@ const SETTING_HOMES = [
   { group: 'Group claim', pages: ['/admin/groups'] },
   { group: 'Audit log', pages: ['/admin/audit'] },
   { group: 'Audit export', pages: ['/admin/audit-export'] },
+  { group: 'Sign-in appearance', pages: ['/admin/sign-in-appearance'] },
   // On Protocols → Delegation since 2026-10-01, with the register's controls:
   // Monitoring → Delegation changes nothing.
   { group: 'Delegation', pages: ['/admin/delegation-settings'] },

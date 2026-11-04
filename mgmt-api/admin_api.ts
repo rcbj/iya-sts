@@ -643,6 +643,8 @@ interface AdminApiDeps {
   loadPostLoginActivitiesApi(): typeof import('./post_login_activities_api');
   // Monitoring → Audit export's operations (#641).
   loadAuditExportApi(): typeof import('./audit_export_api');
+  // Server configuration → Sign-in appearance's operations (#717).
+  loadBrandingApi(): typeof import('./branding_api');
   // The outbound SCIM clients' operations (#552).
   loadScimClientsApi(): typeof import('./scim_clients_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
@@ -772,6 +774,9 @@ class AdminApi {
       },
       loadAuditExportApi: function () {
         return require('./audit_export_api');
+      },
+      loadBrandingApi: function () {
+        return require('./branding_api');
       },
       loadScimClientsApi: function () {
         return require('./scim_clients_api');
@@ -3015,7 +3020,7 @@ class AdminApi {
             loadAttributeSourcesApi, loadSecretDestinationsApi, loadAuthzenApi,
             loadUmaApi,
             loadPasskeyReportApi, loadPostLoginActivitiesApi,
-            loadAuditExportApi,
+            loadAuditExportApi, loadBrandingApi,
             loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
             federation } = this.deps;
@@ -26117,6 +26122,10 @@ class AdminApi {
       // MONITORING → AUDIT EXPORT (#641): the destinations and their six
       // acts (`mgmt-api/audit_export_api.ts`).
       ...loadAuditExportApi().ROUTES,
+      // SERVER CONFIGURATION → SIGN-IN APPEARANCE (#717): the realm's
+      // colours, layout and logo, and their three acts
+      // (`mgmt-api/branding_api.ts`).
+      ...loadBrandingApi().ROUTES,
       // THE OUTBOUND SCIM CLIENTS (#552): Protocols → SCIM → Clients' twin,
       // the clients and their ten acts (`mgmt-api/scim_clients_api.ts`).
       ...loadScimClientsApi().ROUTES,

@@ -127,6 +127,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/logout': 'signing-out.html',
   '/admin/mail': 'mail.html',
   '/admin/broadcast': 'shared-signals.html#broadcast-announcements',
+  '/admin/sign-in-appearance': 'sign-in-appearance.html',
   '/admin/mail/outbox': 'mail.html#where-to-look',
   '/admin/metrics': 'admin-console.html#metrics--adminmetrics',
   '/admin/mode': 'what-is-not-checked.html',

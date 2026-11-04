@@ -140,5 +140,6 @@
   "title.vc-verifier-config": "Requête du vérificateur",
   "title.worker-pools": "Pools de workers",
   "title.broadcast": "Diffuser une annonce",
+  "title.sign-in-appearance": "Apparence de la connexion",
   "title.post-login-activities": "Activités après connexion"
 }
