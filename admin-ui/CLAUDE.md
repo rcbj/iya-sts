@@ -6459,6 +6459,12 @@ generic field rows.
   (`define-person-attribute`, `remove-person-attribute`), which the runtime
   maps to `POST /admin-api/policies/{action}` as it does a save — rule 7 by
   construction, through `policyKinds.forAction()`'s third verb, `act`.
+* **EACH CUSTOM ATTRIBUTE'S USER PORTAL FLAGS (#700)**: a *User portal*
+  column (not shown / shown / shown, editable), two boxes on the define form,
+  and per row a `<details>` *Change* form (label, description, the two boxes)
+  posting `update-person-attribute`. Its boxes are sent `false` when unticked
+  (`uncheckedBoxes()`, the schema types them boolean), so the form states
+  both flags whole; the syntax and cardinality are not on it, being fixed.
 * **THE COUNT OF PEOPLE WHO LACK ONE IS A LINK**, `?missing=count#attributes`,
   because it is a walk of the realm's people; the LDAP filter that finds them
   is drawn always. Where the directory is in the store the count says it was

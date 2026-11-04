@@ -1801,7 +1801,9 @@ is `requiredAttributes`, `oneOf` a list or a comma-separated string (the
 OWN, `define-person-attribute` and `remove-person-attribute`, described by the
 kind (`PolicyKind.extraActions`: summary, description and request body) and
 answered through `policiesAction()`'s `act` verb — the same resource, the same
-console form target, so rule 7 needed no new operation. `GET
+console form target, so rule 7 needed no new operation. **#700 added a third,
+`update-person-attribute`** (a definition's label, description and portal
+flags; syntax and cardinality fixed), described and answered the same way. `GET
 /admin-api/policies` grew `missing=count`, a walk of the realm's people asked
 only on request. **Since #1241 both policies routes may answer late**: `GET`
 is `adminViews.policiesViewAsync()` (the people naming each named attribute
