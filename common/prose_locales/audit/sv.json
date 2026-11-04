@@ -315,6 +315,10 @@
     "en": "e647419ca1d6ef3f",
     "text": "En sfärs meddelandemall sparades eller återställdes"
   },
+  "audit.actions.branding.logo.label": {
+    "en": "66180a1e9a6ade1e",
+    "text": "En sfärs inloggningslogotyp laddades upp eller togs bort"
+  },
   "audit.actions.mail.verified.label": {
     "en": "3b2f440c71a1db39",
     "text": "En person verifierade adressen på sin post"

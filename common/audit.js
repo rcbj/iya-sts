@@ -528,6 +528,9 @@ const ACTIONS = [
     label: 'A dead letter was queued again by an administrator' },
   { action: 'mail.template', category: 'mail',
     label: 'A realm\'s message template was saved or reset' },
+  // A REALM'S SIGN-IN LOGO (#717), uploaded or removed.
+  { action: 'branding.logo', category: 'admin',
+    label: 'A realm\'s sign-in logo was uploaded or removed' },
   { action: 'mail.verified', category: 'mail',
     label: 'A person verified the address on their entry' },
   { action: 'mail.preferences', category: 'mail',

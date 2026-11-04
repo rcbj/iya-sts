@@ -791,6 +791,78 @@
     "en": "e0455f389b3cfb47",
     "text": "Hayaang maghawak ang isang browser ng mga sign-on session para sa ilang tao nang sabay, at pumili sa pagitan nila. Kapag naka-on, ang pag-sign in ng ibang tao ay NAGDARAGDAG ng session sa account set ng browser (ang cookie na `sts_accounts`) sa halip na tapusin ang dati nitong session; ang isang request na hindi nagsasabi kung para saang account ito — walang account na pinili sa flow na ito, walang login_hint, id_token_hint o SAML Subject na nagpapangalan ng isa — habang higit sa isa ang naka-sign in ay ipinapadala sa account picker sa /authn/accounts, at ipinapakita ito ng prompt=select_account. Pinapanatili ng bawat session ang sarili nitong lifetime, idle timeout, step-up state at sign-out. Naka-on ito bilang default. Kapag naka-off, iisa ang session ng browser at tinatapos ito ng pag-sign in ng ibang tao. Nagkakabisa sa susunod na request sa alinmang direksyon, at walang tinatapos: kapag in-on, ang kasalukuyang session ng browser ang nagiging unang account ng set nito; kapag in-off, mag-isang nagpapatuloy ang default na session ng browser at nag-e-expire ang iba gaya ng dati."
   },
+  "branding.layout|label": {
+    "en": "2bce09e5da84a651",
+    "text": "Layout ng pag-sign in"
+  },
+  "branding.layout|description": {
+    "en": "0f84529af8e63ce7",
+    "text": "Kung paano inaayos sa realm na ito ang screen ng pag-sign in, ang mga hakbang nito, ang screen ng pahintulot at ang iba pang pampublikong pahina. centered: ang card sa gitna ng pahina, kasama ang logo at ang display name sa itaas nito (ang default, ang itsurang laging taglay ng serbisyo). split: isang panel sa accent na kulay na may logo at display name sa tabi ng card, sa itaas nito sa makitid na screen. banner: isang banda sa accent na kulay sa itaas na may dala ng mga ito, at ang card sa ibaba. Pinananatili ng bawat layout ang form, ang mga field nito at ang kanilang pagkakasunod nang eksakto."
+  },
+  "branding.accentColor|label": {
+    "en": "12376f4cbd6c30b9",
+    "text": "Accent na kulay"
+  },
+  "branding.accentColor|description": {
+    "en": "6a7806cbc4a60f44",
+    "text": "Ang kulay ng mga button, link at focus ring sa mga pampublikong pahina ng realm na ito, at ng split na panel at ng banner. Isinusulat bilang #rgb o #rrggbb. Itim o puti ang teksto sa button, alinman ang mas mababasa rito, kaya hindi ito itinatakda nang hiwalay. Tinatanggihan ang kulay na magpapababa sa mga link sa ilalim ng WCAG 2.2 AA na contrast (4.5:1) laban sa kulay ng card (STS-AUTHN-0544)."
+  },
+  "branding.pageColor|label": {
+    "en": "d8f29ba7b8da917a",
+    "text": "Kulay ng background ng pahina"
+  },
+  "branding.pageColor|description": {
+    "en": "e36337b16ae8eb93",
+    "text": "Ang background sa likod ng card sa mga pampublikong pahina ng realm na ito. Isinusulat bilang #rgb o #rrggbb."
+  },
+  "branding.cardColor|label": {
+    "en": "32fcd1507a366673",
+    "text": "Kulay ng card"
+  },
+  "branding.cardColor|description": {
+    "en": "91c08312a7b2f249",
+    "text": "Ang background ng card kung saan iginuguhit ang form ng pag-sign in. Isinusulat bilang #rgb o #rrggbb. Ang kulay ng teksto at ang accent na kulay ay dapat bawat isa'y manatili sa WCAG 2.2 AA na contrast (4.5:1) laban dito, o tatanggihan ang pagbabago (STS-AUTHN-0544)."
+  },
+  "branding.textColor|label": {
+    "en": "25e9c8090de7f831",
+    "text": "Kulay ng teksto"
+  },
+  "branding.textColor|description": {
+    "en": "86f81fcb12b03b41",
+    "text": "Ang kulay ng teksto sa card. Isinusulat bilang #rgb o #rrggbb. Ang mas tahimik na teksto (mga tala, pahiwatig) ay hinahalo mula rito at sa kulay ng card, hindi kailanman bababa sa WCAG 2.2 AA na contrast. Tinatanggihan ang kulay na mas mababa sa 4.5:1 laban sa card (STS-AUTHN-0544)."
+  },
+  "branding.displayName|label": {
+    "en": "2b7f6a84de917e38",
+    "text": "Display name"
+  },
+  "branding.displayName|description": {
+    "en": "c7734d5c0723dde4",
+    "text": "Isang pangalang ipinapakita sa tabi ng logo sa mga pampublikong pahina ng realm na ito at sa pamagat ng tab ng browser (\"Sign in — <name>\"), bilang payak na teksto, hindi kailanman markup, at hindi isinasalin. Kapag walang laman, walang ipinapakitang pangalan at ang pamagat ay ang laging taglay ng pahina. Hanggang 80 character."
+  },
+  "branding.logoAlt|label": {
+    "en": "bb2a5f1e3e7d2fca",
+    "text": "Alternatibong teksto ng logo"
+  },
+  "branding.logoAlt|description": {
+    "en": "4252cb4ab4a31ec4",
+    "text": "Ang binabasa ng screen reader sa halip ng logo ng realm na ito, karaniwang ang pangalan ng organisasyon. Kinakailangan habang may logo ang realm: hindi maa-upload ang logo nang wala ito, at hindi ito maaaring alisan ng laman habang may hawak na logo (STS-AUTHN-0548). Hanggang 160 character."
+  },
+  "branding.logoLinkUrl|label": {
+    "en": "78ddaed87c9eb98d",
+    "text": "Link ng logo"
+  },
+  "branding.logoLinkUrl|description": {
+    "en": "3cd6daaebb2a7ea6",
+    "text": "Kung saan humahantong ang logo kapag sinundan, isang absolute na https URL (STS-AUTHN-0551 kung hindi). Kapag walang laman, hindi link ang logo, na siyang default: mas ligtas ang pahina ng pag-sign in na walang masusundan palabas."
+  },
+  "branding.logoMaxBytes|label": {
+    "en": "26a97375a1800d8b",
+    "text": "Pinakamalaking logo (bytes)"
+  },
+  "branding.logoMaxBytes|description": {
+    "en": "37f4c903152cd219",
+    "text": "Ang pinakamalaking logo na maaaring dalhin ng isang upload, para sa bawat realm. Tinatanggihan ang mas malaki (STS-AUTHN-0546). Iniimbak ang logo sa store at nire-replicate sa bawat proseso, kaya pinananatili itong maliit: 256 KiB bilang default, 2 MiB ang pinakamarami."
+  },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
     "text": "Pinakamaraming account na natatandaan ng isang browser"

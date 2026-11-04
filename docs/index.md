@@ -107,6 +107,7 @@ protocol's section of the sidebar:
 [Sessions](sessions.md) ·
 [Identity-provider-initiated sign-in](idp-initiated-sso.md) ·
 [Several accounts in one browser](multiple-accounts.md) ·
+[Sign-in appearance](sign-in-appearance.md) ·
 [Signing out](signing-out.md) ·
 [Risk scoring](risk-scoring.md) ·
 [Devices](devices.md) ·

@@ -1709,6 +1709,52 @@ refused when that setting is on. A filesystem path is absolute, and when
 `auditExport.fileRoots` is set it lies under one of those directories. The
 settings take effect on the next run.
 
+## Server configuration pages worth explaining
+
+### Sign-in appearance — `/admin/sign-in-appearance`
+
+Server configuration → Sign-in appearance sets how this realm's sign-in
+pages look: the sign-in screen and every step after it, consent, GNAP's
+interaction pages, the federation pages, `/logout`, the front door `/` and
+the user portal. The admin console keeps its own look. Every value belongs
+to the realm the console is in, so `/realm/acme/admin/sign-in-appearance`
+changes acme's sign-in pages and no other realm's. A realm administrator
+may change their own realm's appearance. What each setting does is on
+[Sign-in appearance](sign-in-appearance.md).
+
+The page has four tabs:
+
+* **Colours.** The accent (buttons, links and focus rings), the page, the
+  card and the text, each a colour picker with its hex value beside it. One
+  Save sends all four, and they are judged together. Text or links below
+  WCAG 2.2 AA contrast (4.5:1) against the card are refused, and then
+  nothing is saved. Below the form, the contrast of the text, the links and
+  the button text is shown with its ratio, and the derived tones are shown:
+  the button text (black or white, whichever reads better on the accent),
+  the quieter text, the borders and the rules. Nobody sets those.
+* **Layout and logo.** The layout (*centered*, *split* or *banner*), the
+  display name, the logo's alternative text and the logo's link, saved
+  together. Under them is the stored logo with its type, size in pixels and
+  bytes, digest, and who uploaded it and when. You can upload a PNG, a JPEG
+  or a WebP, up to `branding.logoMaxBytes`. The file's bytes decide its
+  type, not its name. The upload replaces the realm's logo. A logo needs
+  alternative text, which you can type beside the file. *Remove logo*
+  removes it, and the sign-in pages then show none.
+* **Preview.** The four colours and a layout, filled in with the saved
+  values. *Open the preview in a new tab* shows a sample of this realm's
+  sign-in card with the values in the form, before anything is saved.
+  Nothing on the preview signs anybody in. It shows the saved logo and
+  display name.
+* **Settings.** The *Sign-in appearance* settings group, as on every page
+  that owns a group. It also holds `branding.logoMaxBytes`, which applies to
+  the whole service and can be changed only in the default realm, and the
+  Reset that drops a realm's own value.
+
+The same controls are `GET /admin-api/branding` (Admin Read, `admin:read`)
+and `POST /admin-api/branding/save`, `/branding/logo` and
+`/branding/remove-logo` (Admin Write, `admin:write`). See
+[Management API](management-api.md#sign-in-appearance).
+
 ## Protocols pages worth explaining
 
 ### Token lifetimes — `/admin/token-lifetimes`

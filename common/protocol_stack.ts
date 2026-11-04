@@ -258,6 +258,13 @@ class ProtocolStack {
     this.build('common/public_assets', require('./public_assets'),
                'PublicAssets');
     this.register(app, require('./public_assets'), 'common/public_assets');
+    // A REALM'S SIGN-IN APPEARANCE (#717): `/web/theme.css`,
+    // `/web/branding/logo` and `/web/branding/preview`, beside the card
+    // they style.
+    // A library of `config`, `realms`, `crypto` and `shell_document`; its
+    // paths collide with nothing, and requiring it adds the write rules that
+    // hold its colours to WCAG 2.2 AA before any setting is restored.
+    this.register(app, require('./branding'), 'common/branding');
 
     // The authentication service: the sign-in screen every protocol here sends
     // a person to, and the session store it fills. FIRST of the modules that
@@ -1601,6 +1608,11 @@ class ProtocolStack {
     // The register is built at 18j-vii and reached from the handlers lazily.
     this.build('mgmt-api/audit_export_api',
                require('../mgmt-api/audit_export_api'), 'AuditExportApi');
+    // #717: the sign-in appearance operations, spread by `mgmt-api/admin_api`.
+    // `common/branding` is built with the shell's libraries and reached from
+    // the handlers lazily.
+    this.build('mgmt-api/branding_api',
+               require('../mgmt-api/branding_api'), 'BrandingApi');
     // #552: the outbound SCIM clients' operations; the client itself is built
     // at 22, beside the SCIM server, and reached from here lazily.
     this.build('mgmt-api/scim_clients_api',

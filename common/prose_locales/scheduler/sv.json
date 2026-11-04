@@ -503,6 +503,14 @@
     "en": "758dfacad5326b05",
     "text": "I varje process: håller färska de uppladdningar av datamängder som den här processen importerar, och tar bort från risk.uploadDirectory en uppladdning som ingen levande process har rört i risk.importStallMinutes — det som en process som stannade mitt i en import lämnade efter sig."
   },
+  "sched.jobs.saml2.sp-metadata-refresh.title": {
+    "en": "9f8571bb756121c9",
+    "text": "Uppdatering av metadata för SAML-tjänsteleverantörer"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.describe": {
+    "en": "33dfb3951da97b51",
+    "text": "Hämtar på nytt metadata för varje tjänsteleverantör vars cacheDuration har passerats, från dess samlSpMetadataUrl eller MDQ-svararen; ett dokument vars validUntil har passerats avvisas."
+  },
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",
     "text": "Schemaläggarens körhistorik"

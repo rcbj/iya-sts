@@ -56,7 +56,10 @@ const PORTAL_ICONS = {
     '<path d="M11 18h2"/></svg>'
 };
 
-const STYLE =
+// The stylesheet as written, in the portal's own palette; `PortalKit.STYLE`
+// is what is served, every colour a realm may set read through a custom
+// property (`themed()`, #717).
+const STYLE_AS_WRITTEN =
   'body{font-family:system-ui,-apple-system,"Segoe ' +
   'UI",Arial,sans-serif;background:#f4f4f7;margin:0;padding:2rem ' +
   '1rem;color:#222;line-height:1.5}.wrap{max-width:720px;margin:0 ' +
@@ -113,8 +116,13 @@ const STYLE =
   '10px;border:1px solid #c9c9d2;border-radius:6px;font-size:1em;' +
   'box-sizing:border-box}button{margin-top:14px;padding:9px 16px;border:0;' +
   'border-radius:6px;background:#2c5cc5;color:#fff;font-size:.95em;' +
-  'cursor:pointer}button.danger{background:#b00020}' +
-  'button.secondary{background:#5a5a68}table{border-collapse:collapse;' +
+  // The two buttons NOT in the accent keep white text whatever the realm's
+  // accent asks of the others (#717): written `#ffffff` so `themed()`,
+  // which turns every `color:#fff` into the text on the accent, leaves
+  // them alone. They render as they always did.
+  'cursor:pointer}button.danger{background:#b00020;color:#ffffff}' +
+  'button.secondary{background:#5a5a68;color:#ffffff}' +
+  'table{border-collapse:collapse;' +
   'width:100%;font-size:.9em}th,td{text-align:left;padding:7px ' +
   '10px;border-bottom:1px solid #e6e6ec}th{color:#555;font-weight:600;' +
   'width:34%}.err{background:#fdecef;border:1px solid ' +
@@ -311,7 +319,8 @@ const STYLE =
   'font:inherit;background:#fff;max-width:100%}' +
   'a.dl{display:inline-block;background:#2c5cc5;color:#fff;' +
   'text-decoration:none;border-radius:6px;padding:9px 14px;' +
-  'margin:6px 8px 0 0;font-size:.9em}a.dl.secondary{background:#5a5a68}' +
+  'margin:6px 8px 0 0;font-size:.9em}a.dl.secondary{background:#5a5a68;' +
+  'color:#ffffff}' +
   // WHAT A GENERATE JUST ANSWERED, ONCE (#671): the certificate's row with
   // its two downloads, tinted and outlined, and what to do with them in a
   // block under the table, set apart from the card around it — the one thing
@@ -543,9 +552,99 @@ class PortalKit {
    */
   static readonly NAV = NAV;
   /**
-   * The stylesheet, one string, served as `/portal/portal.css`.
+   * A REALM'S SIGN-IN APPEARANCE IN THE PORTAL (#717, rcbj's D4): the
+   * brand header the runtime draws above the page (`WebSurface.brandHeader()`
+   * from the shell's `<html>` facts, `web_portal_runtime.ts`'s `put()`), and
+   * what the realm's colours do to the tints `themed()` cannot name. Every
+   * rule but the header's is under `html[data-sts-layout]`, which a shell
+   * carries only for a realm whose appearance differs from the service's, so
+   * nowhere else does any of it apply; the `:where()` keeps each at the
+   * specificity of the rule it overrides, so a more specific rule of the
+   * portal's (`.attr code`) still wins.
+   *
+   *   * THE LAYOUTS: centered is the header above the page, in the middle.
+   *     banner AND split are a band in the accent colour across the top: the
+   *     portal already has a column of its own beside its cards, and a
+   *     panel beside that would leave a phone's width for three columns, so
+   *     the split panel is drawn as the band here (`portal/CLAUDE.md`).
+   *   * THE TINTS — a hover, a tag, a just-generated row, a code's ground —
+   *     were pale blues and greys written for a white card. For a realm
+   *     they are mixed from its accent or text and its card
+   *     (`color-mix()`), so a dark card keeps them dark; a browser without
+   *     `color-mix()` keeps the literal, which is the old look.
    */
-  static readonly STYLE = STYLE;
+  static readonly BRAND_CSS =
+    '.sts-brand{display:flex;align-items:center;justify-content:center;' +
+    'gap:12px;max-width:1040px;margin:0 auto 18px;' +
+    'color:var(--sts-text,#222)}img.sts-brand-logo{display:block;' +
+    'max-width:240px;max-height:56px}a.sts-brand-link{display:block;' +
+    'line-height:0}.sts-brand-name{font-weight:600;font-size:1.15em;' +
+    'overflow-wrap:anywhere}' +
+    'html[data-sts-layout=banner] .sts-brand,' +
+    'html[data-sts-layout=split] .sts-brand{justify-content:flex-start;' +
+    'max-width:none;margin:-2rem -1rem 24px;padding:12px 24px;' +
+    'background:var(--sts-accent,#2c5cc5);' +
+    'color:var(--sts-on-accent,#fff)}' +
+    ':where(html[data-sts-layout]) code{background:color-mix(in srgb,' +
+    'var(--sts-text,#222) 7%,var(--sts-card,#fff))}' +
+    ':where(html[data-sts-layout]) :is(pre.pem,pre.diddoc,' +
+    'pre.signal-payload,.offer-uri){background:color-mix(in srgb,' +
+    'var(--sts-text,#222) 4%,var(--sts-card,#fff));' +
+    'color:var(--sts-text,#222)}' +
+    ':where(html[data-sts-layout]) nav a:hover,' +
+    ':where(html[data-sts-layout]) .usermenupanel button.linklike:hover{' +
+    'background:color-mix(in srgb,var(--sts-accent,#2c5cc5) 12%,' +
+    'var(--sts-card,#fff))}' +
+    ':where(html[data-sts-layout]) .tag,:where(html[data-sts-layout]) ' +
+    '.must{background:color-mix(in srgb,var(--sts-accent,#2c5cc5) 12%,' +
+    'var(--sts-card,#fff));border-color:color-mix(in srgb,' +
+    'var(--sts-accent,#2c5cc5) 30%,var(--sts-card,#fff));' +
+    'color:var(--sts-text,#222)}' +
+    ':where(html[data-sts-layout]) .fresh,' +
+    ':where(html[data-sts-layout]) tr.fresh-row>td,' +
+    ':where(html[data-sts-layout]) tr.fresh-row>th,' +
+    ':where(html[data-sts-layout]) .txcode{background:color-mix(in srgb,' +
+    'var(--sts-accent,#2c5cc5) 8%,var(--sts-card,#fff))}';
+
+  /**
+   * The portal's stylesheet with every colour a realm may set read through
+   * the custom property `/web/theme.css` sets (#717, `common/branding.ts`),
+   * each falling back to the literal it replaces — so with no theme linked
+   * (every realm that set nothing) the portal is drawn exactly as before.
+   * `web_card_css.ts`'s `themed()` is the card's; this is the portal's,
+   * because its palette is its own (the portal's blue, `#2c5cc5`, is its
+   * accent's fallback). The semantic colours — an error's red, a success's
+   * green — and the mid greys stay literal: they mean the same on any card.
+   * The order matters: the accent first, then the text on it.
+   *
+   * @param css - the stylesheet as written
+   * @returns the same rules, each themable colour a custom property
+   */
+  static themed(css: string): string {
+    return css
+      .replace(/#2c5cc5/g, 'var(--sts-accent,#2c5cc5)')
+      .replace(/#12107c/g, 'var(--sts-accent,#12107c)')
+      // White text is only ever on the accent here; the two buttons that
+      // are not in the accent write theirs `#ffffff`, which this skips.
+      .replace(/color:#fff(?=[;}])/g, 'color:var(--sts-on-accent,#fff)')
+      .replace('sans-serif;background:#f4f4f7;',
+               'sans-serif;background:var(--sts-page,#f4f4f7);')
+      .replace(/background:#fff(?=[;}])/g, 'background:var(--sts-card,#fff)')
+      .replace(/color:#(222|333)(?=[;}])/g, 'color:var(--sts-text,#$1)')
+      .replace(/color:#666(?=[;}])/g, 'color:var(--sts-muted,#666)')
+      .replace(/color:#555(?=[;}])/g, 'color:var(--sts-dim,#555)')
+      .replace(/color:#777(?=[;}])/g, 'color:var(--sts-faint,#777)')
+      .replace(/solid #(d5d5dd|c9c9d2|c7c7d1|c9cad6)(?=[;}])/g,
+               'solid var(--sts-border,#$1)')
+      .replace(/solid #(e6e6ec|eee)(?=[;}])/g, 'solid var(--sts-rule,#$1)');
+  }
+
+  /**
+   * The stylesheet, one string, served as `/portal/portal.css`: the rules
+   * as written, themed, and the realm's brand rules last (#717).
+   */
+  static readonly STYLE = PortalKit.themed(STYLE_AS_WRITTEN) +
+    PortalKit.BRAND_CSS;
   /**
    * The icons a page draws, by name.
    */

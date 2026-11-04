@@ -1211,6 +1211,18 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登录屏幕卡片和语言选择器的规则，合为一个样式表，供静态公共界面的外壳链接（common/web_card_css.ts）。在每个监听器上提供；带有本构建 ?v= 的地址会被永久缓存。"
   },
+  "stsmetadata.endpoints./web/theme.css.what": {
+    "en": "3f3b19caa8978c23",
+    "text": "NON-SPEC (#717)。域的登录颜色，作为 /web/card.css 读取的 CSS 自定义属性（common/branding.ts）：四种 branding.* 颜色以及由它们派生的色调，仅由经过验证的值构建。仅当域的外观与服务的外观不同时，外壳才在卡片之后链接它；带有其摘要作为 ?v= 的地址被永久缓存。"
+  },
+  "stsmetadata.endpoints./web/branding/logo.what": {
+    "en": "83a680ab27412042",
+    "text": "NON-SPEC (#717)。通过 /admin-api/branding/logo 为此域上传的 PNG、JPEG 或 WebP 徽标，从此源提供，使登录页面的 img-src 'self' 接受它，且没有第三方得知谁在登录；nosniff、沙盒化、其摘要的 ETag。域没有徽标时为 404。"
+  },
+  "stsmetadata.endpoints./web/branding/preview.what": {
+    "en": "a2af93aaf34bbbe3",
+    "text": "NON-SPEC (#717)。用待定颜色和布局绘制的此域登录卡片示例（查询中的 accent、page、card、text、layout，每一项都按设置的方式检查），供控制台在保存前于新标签页中打开。其中任何内容都不会让任何人登录。"
+  },
   "stsmetadata.endpoints./web/locales/catalogs.json.what": {
     "en": "213f3eea35021e22",
     "text": "NON-SPEC（#570）。存在哪些目录（标签、自称、状态、覆盖层所扩展的基础目录）以及语言选择器提供哪些区域设置——即 common/locales/catalogs.json，供静态界面的运行时在浏览器中按 #539 的顺序协商页面语言。公开，在每个监听器上提供，在本构建的 ?v= 下被永久缓存。"
@@ -2086,6 +2098,18 @@
   "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
     "en": "c3015da7d4779805",
     "text": "非规范（#641）。add、update、remove、enable、disable 和 test：控制台的六个操作，每个都会被审计。令牌只接收、从不返回。测试事件不是审计行。"
+  },
+  "stsmetadata.endpoints./admin-api/branding.what": {
+    "en": "fca0d849cb68e8d7",
+    "text": "NON-SPEC (#717)。服务器配置 → 登录外观在所请求的域中绘制的内容：布局、四种颜色及由它们派生的色调、它们相对于 WCAG 2.2 AA 的对比度、显示名称、不含字节的已存储徽标，以及该页面的设置。"
+  },
+  "stsmetadata.endpoints./admin-api/branding/logo.what": {
+    "en": "b28154e101349408",
+    "text": "NON-SPEC (#717)。请求体就是图像：PNG、JPEG 或 WebP，由其字节决定，最多 branding.logoMaxBytes。它替换域的徽标，并连同其摘要一起审计。"
+  },
+  "stsmetadata.endpoints./admin-api/branding/:action.what": {
+    "en": "6c8c19ee983ea097",
+    "text": "NON-SPEC (#717)。save 一起写入域的 branding 设置，拒绝相对于卡片低于 4.5:1 的文本或链接；remove-logo 移除徽标并予以审计。"
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",

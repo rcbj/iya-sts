@@ -292,6 +292,9 @@ const GLOBAL_MINTED = {
   // `audit.export.cursors`, which is cell-tier with the ring it walks.
   'audit.export.destinations': 'where a realm\'s audit events are ' +
     'delivered',
+  // A realm's sign-in logo (#717): configuration every cell's sign-in
+  // pages draw, as the mail templates are.
+  'branding.assets': 'a realm\'s sign-in logo',
   'mail.templates': 'a realm\'s wording of its messages',
   'oauth2.commandIssuer': 'the issuer a realm\'s provider commands use',
   'oauth2.commandMetadata': 'what each client says it supports',

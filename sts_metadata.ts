@@ -4849,6 +4849,28 @@ const ENDPOINTS: EndpointEntry[] = [
           'shell links (common/web_card_css.ts). Answered on every ' +
           'listener; an address carrying this build\'s ?v= is cached for ' +
           'good.' },
+  { path: '/web/theme.css', group: 'Service',
+    name: 'A realm\'s sign-in appearance stylesheet', specs: [],
+    what: 'NON-SPEC (#717). The realm\'s sign-in colours as the CSS custom ' +
+          'properties /web/card.css reads (common/branding.ts): the four ' +
+          'branding.* colours and the tones derived from them, built only ' +
+          'from validated values. A shell links it after the card only ' +
+          'where the realm\'s appearance differs from the service\'s; an ' +
+          'address carrying its digest as ?v= is cached for good.' },
+  { path: '/web/branding/logo', group: 'Service',
+    name: 'A realm\'s sign-in logo', specs: [],
+    what: 'NON-SPEC (#717). The PNG, JPEG or WebP logo uploaded for this ' +
+          'realm through /admin-api/branding/logo, served from this origin ' +
+          'so the sign-in pages\' img-src \'self\' admits it and no third ' +
+          'party learns who is signing in; nosniff, sandboxed, an ETag of ' +
+          'its digest. 404 where the realm has none.' },
+  { path: '/web/branding/preview', group: 'Service',
+    name: 'A sign-in appearance preview', specs: [],
+    what: 'NON-SPEC (#717). A sample of this realm\'s sign-in card drawn ' +
+          'with pending colours and a layout (accent, page, card, text, ' +
+          'layout in the query, each checked as the settings would be), ' +
+          'for the console to open in a new tab before saving. Nothing on ' +
+          'it signs anybody in.' },
   { path: '/web/locales/catalogs.json', group: 'Service',
     name: 'The locale catalog index', specs: ['bcp47'],
     what: 'NON-SPEC (#570). Which catalogs exist (tag, endonym, status, the ' +
@@ -6843,6 +6865,23 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#641). add, update, remove, enable, disable and ' +
           'test: the console\'s six acts, each audited. A token is taken ' +
           'and never returned. The test event is not an audit row.' },
+  { path: '/admin-api/branding', group: 'Management API',
+    name: 'Sign-in appearance', specs: ['openapi'],
+    what: 'NON-SPEC (#717). What Server configuration → Sign-in ' +
+          'appearance draws, in the realm asked: the layout, the four ' +
+          'colours and the tones derived from them, their contrast against ' +
+          'WCAG 2.2 AA, the display name, the stored logo without its ' +
+          'bytes, and the page\'s settings.' },
+  { path: '/admin-api/branding/logo', group: 'Management API',
+    name: 'Upload the sign-in logo', specs: ['openapi'],
+    what: 'NON-SPEC (#717). The body is the image: a PNG, a JPEG or a ' +
+          'WebP, which its bytes decide, at most branding.logoMaxBytes. ' +
+          'It replaces the realm\'s logo and is audited with its digest.' },
+  { path: '/admin-api/branding/:action', group: 'Management API',
+    name: 'Change the sign-in appearance', specs: ['openapi'],
+    what: 'NON-SPEC (#717). save writes the realm\'s branding settings ' +
+          'together, refusing text or links below 4.5:1 against the card; ' +
+          'remove-logo removes the logo and is audited.' },
   { path: '/admin-api/audit', group: 'Management API', name: 'Audit log',
     specs: ['rfc4511'],
     what: 'NON-SPEC. What happened here, in order, as JSON: every ' +

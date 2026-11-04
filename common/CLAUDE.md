@@ -1393,6 +1393,77 @@ different sets of circumstances.
 this tree in process, and a caller that cannot be made asynchronous is better
 off blocking than wrong.
 
+## A REALM'S SIGN-IN APPEARANCE: `branding.ts` (#717, 2026-11-04)
+
+rcbj's ticket asked for colour, layout and a company logo on the sign-in
+screen, per realm, and decided six questions on it (D1–D6, on the ticket).
+`branding.ts` is all of it but the console page and the API operations
+(`admin-ui/`, `mgmt-api/`), which call it.
+
+* **NINE SETTINGS, A NEW TYPE.** `branding.layout` (`centered`, `split`,
+  `banner`), four colours (`accentColor`, `pageColor`, `cardColor`,
+  `textColor`), `displayName`, `logoAlt`, `logoLinkUrl` and the per-process
+  `logoMaxBytes`, group *Sign-in appearance*, every one realm-settable.
+  The colours are `config.js`'s `color` type (`#rgb` read as `#rrggbb`,
+  anything else refused), and `string` gained an optional `maxLength`. Every
+  default is the look the service always had.
+* **COLOURS ARRIVE IN ONE WAY: `/web/theme.css`.** The sign-in shells are
+  sent with `style-src 'self'`, so no inline style could carry a colour.
+  The route answers the ambient realm's custom properties — the four set and
+  six derived (the text on a button, black or white by contrast; the muted,
+  faint and dim text mixed toward the card no further than AA allows; the
+  borders and rules) — built only from values the `color` type has held to
+  six hex digits. `web_card_css.ts`'s `themed()` turns every colour of the
+  card into `var(--sts-…, <the old literal>)`, so with no theme linked the
+  card is the bytes it rendered before. A realm whose text and card are the
+  defaults keeps the old literals for the derived tones exactly, and
+  **the stylesheet carries only the properties that differ** from a realm
+  that set nothing (`DEFAULT_PROPERTIES`), so each page keeps its OWN
+  fallback for the rest — the portal its blue accent, a table head its own
+  grey. The pale boxes (a scope's, a right's, a table head, a verdict's
+  band) and the red and green status words are properties too (`tint`,
+  `tint-2`, `bad`, `good`), because their text follows the realm's and a
+  dark card with light text met a near-white box (#717's review).
+* **A SHELL CARRIES THE FACTS, THE RUNTIME DRAWS THE HEADER.**
+  `ShellDocument.document()` asks `shellParts()` for any shell that links
+  `/web/card.css` (or says `branded: true`): the theme's address (`?v=` its
+  digest, cached for good under it) after the card's, and `data-sts-layout`
+  and the brand facts on `<html>`. A realm that set nothing gets neither,
+  so its shell is byte for byte what it was (`tests/branding.js` A2).
+  `WebSurface.put()` draws the header (`brandHeader()`, escaped, an https
+  link only) on every page, because it replaces the body each time — a
+  header the server drew would be gone at the first page — and ends the
+  title with the realm's name. The layouts are CSS under
+  `[data-sts-layout]` (`BRAND_CSS`); the form is never touched, so every
+  element id the tests and the Selenium walks drive is where it was.
+  **`shell_document.ts` requires this file lazily**, because this file
+  draws its preview with that one's escaping: a require at load would close
+  a cycle.
+* **CONTRAST IS A WRITE RULE (D3).** `writeRule()` is added with
+  `config.addWriteRule()`, so every door — the console, `/admin-api`, a
+  restored value — refuses text or an accent below 4.5:1 against the card
+  (STS-AUTHN-0544), a `logoAlt` emptied while a logo is held (0548), and a
+  `logoLinkUrl` that is not absolute https (0551). `saveSettings()` judges
+  several at once inside `withWriteBatch()`, so a dark card with light text,
+  legal only together, is saved together.
+* **THE LOGO IS UPLOADED AND SERVED FROM THIS ORIGIN (D1, D2).** PNG, JPEG
+  or WebP, decided by the bytes (`sniff()`, which also reads the sides: 16 to
+  2048 pixels), at most `branding.logoMaxBytes`, with alternative text. It
+  is kept in `realms.map({ persist: 'branding.assets' })` — per realm at the
+  declaration, replicated by the change log, a global store in cells
+  (`persistence/tiers.js`), not sealed because a logo is public — and served
+  at `/web/branding/logo` with the type its bytes are, `nosniff`, a
+  sandboxing CSP and an ETag. **Under `/web` on purpose**: the sign-in pages,
+  the front door and the portal draw it, and they may be on different
+  listeners; everything under `/web` answers on every one
+  (`hosted_applications.js`). No third-party origin ever joins `img-src`.
+* **THE PREVIEW (D5)** is `/web/branding/preview`, a server-drawn sample of
+  the card with pending colours and a layout in the query — checked as the
+  settings would be (0550) — and no script and no live form. The console
+  opens it in a new tab; nothing about framing changed.
+* **DARK MODE IS #1324**: a second palette under `prefers-color-scheme`,
+  which the custom properties make a small change.
+
 ## `protocol_stack.ts`: THE REQUIRE ORDER MOVED OUT OF `server.js` (2026-09-07), AND BECAME THE COMPOSITION ROOT (2026-09-16)
 
 **This moved here from the root `CLAUDE.md` when that file was broken up.**

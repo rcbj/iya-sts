@@ -1211,6 +1211,18 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Les règles de la carte de l’écran de connexion et du sélecteur de langue, en une seule feuille de style que lie le shell d’une surface publique statique (common/web_card_css.ts). Servie sur chaque écouteur ; une adresse portant le ?v= de ce build est mise en cache définitivement."
   },
+  "stsmetadata.endpoints./web/theme.css.what": {
+    "en": "3f3b19caa8978c23",
+    "text": "NON-SPEC (#717). Les couleurs de connexion du domaine sous forme des propriétés personnalisées CSS que lit /web/card.css (common/branding.ts) : les quatre couleurs branding.* et les tons qui en dérivent, construits uniquement à partir de valeurs validées. Un shell la lie après la carte seulement là où l’apparence du domaine diffère de celle du service ; une adresse portant son condensé en ?v= est mise en cache définitivement."
+  },
+  "stsmetadata.endpoints./web/branding/logo.what": {
+    "en": "83a680ab27412042",
+    "text": "NON-SPEC (#717). Le logo PNG, JPEG ou WebP téléversé pour ce domaine via /admin-api/branding/logo, servi depuis cette origine afin que l’img-src 'self' des pages de connexion l’admette et qu’aucun tiers n’apprenne qui se connecte ; nosniff, en bac à sable, un ETag de son condensé. 404 là où le domaine n’en a pas."
+  },
+  "stsmetadata.endpoints./web/branding/preview.what": {
+    "en": "a2af93aaf34bbbe3",
+    "text": "NON-SPEC (#717). Un exemple de la carte de connexion de ce domaine dessiné avec des couleurs en attente et une mise en page (accent, page, card, text, layout dans la requête, chacun vérifié comme le feraient les paramètres), que la console ouvre dans un nouvel onglet avant l’enregistrement. Rien n’y connecte qui que ce soit."
+  },
   "stsmetadata.endpoints./web/locales/catalogs.json.what": {
     "en": "213f3eea35021e22",
     "text": "NON-SPEC (#570). Les catalogues qui existent (balise, endonyme, statut, la base qu’étend une surcouche) et les paramètres régionaux que propose le sélecteur de langue — common/locales/catalogs.json, pour que le runtime d’une surface statique négocie la langue de la page dans le navigateur, dans l’ordre de #539. Public, sur chaque écouteur, mis en cache définitivement sous le ?v= de ce build."
@@ -2086,6 +2098,18 @@
   "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
     "en": "c3015da7d4779805",
     "text": "NON-SPEC (#641). add, update, remove, enable, disable et test : les six actes de la console, chacun audité. Un jeton est reçu et jamais renvoyé. L’événement de test n’est pas une ligne d’audit."
+  },
+  "stsmetadata.endpoints./admin-api/branding.what": {
+    "en": "fca0d849cb68e8d7",
+    "text": "NON-SPEC (#717). Ce que dessine Configuration du serveur → Apparence de la connexion, dans le domaine demandé : la mise en page, les quatre couleurs et les tons qui en dérivent, leur contraste par rapport à WCAG 2.2 AA, le nom affiché, le logo stocké sans ses octets, et les paramètres de la page."
+  },
+  "stsmetadata.endpoints./admin-api/branding/logo.what": {
+    "en": "b28154e101349408",
+    "text": "NON-SPEC (#717). Le corps est l’image : un PNG, un JPEG ou un WebP, déterminé par ses octets, d’au plus branding.logoMaxBytes. Il remplace le logo du domaine et est audité avec son condensé."
+  },
+  "stsmetadata.endpoints./admin-api/branding/:action.what": {
+    "en": "6c8c19ee983ea097",
+    "text": "NON-SPEC (#717). save écrit ensemble les paramètres branding du domaine, en refusant un texte ou des liens sous 4,5:1 par rapport à la carte ; remove-logo retire le logo et est audité."
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",

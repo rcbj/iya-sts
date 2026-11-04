@@ -7462,6 +7462,46 @@ const CODES = [
       'application (appPostLoginPolicy) or a group (stsPostLoginPolicy) of ' +
       'this realm still names it (#1239).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  // A REALM'S SIGN-IN APPEARANCE (#717): its colours, layout and logo,
+  // `common/branding.ts`.
+  { code: 'STS-AUTHN-0544',
+    summary: 'A sign-in appearance colour was not saved: with it, the ' +
+      'realm\'s text or its links would fall below WCAG 2.2 AA contrast ' +
+      '(4.5:1) against the card (branding.textColor, branding.accentColor ' +
+      'against branding.cardColor) (#717).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0545',
+    summary: 'A sign-in logo was not saved: its bytes are not a PNG, a ' +
+      'JPEG or a WebP image, whatever type the upload declared. Only those ' +
+      'three are accepted, and the bytes decide (#717).',
+    spec: 'none (a management API refusal, HTTP 415)' },
+  { code: 'STS-AUTHN-0546',
+    summary: 'A sign-in logo was not saved: it is larger than ' +
+      'branding.logoMaxBytes, or empty (#717).',
+    spec: 'none (a management API refusal, HTTP 413, or 400 for an empty ' +
+      'body)' },
+  { code: 'STS-AUTHN-0547',
+    summary: 'A sign-in logo was not saved: its width and height could not ' +
+      'be read from the image, or one of them is outside 16 to 2048 ' +
+      'pixels (#717).',
+    spec: 'none (a management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0548',
+    summary: 'A sign-in logo was not saved, or its alternative text was ' +
+      'not cleared: a realm\'s logo must carry alternative text ' +
+      '(branding.logoAlt), which a screen reader reads in its place (#717).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0549',
+    summary: 'A realm\'s sign-in logo was asked for (GET /web/branding/logo) ' +
+      'and the realm has none (#717).',
+    spec: 'none (HTTP 404)' },
+  { code: 'STS-AUTHN-0550',
+    summary: 'A sign-in appearance preview was refused: a colour or layout ' +
+      'it was asked to show is not one the settings would accept (#717).',
+    spec: 'none (HTTP 400)' },
+  { code: 'STS-AUTHN-0551',
+    summary: 'A sign-in logo\'s link (branding.logoLinkUrl) was not saved: ' +
+      'it is not an absolute https URL (#717).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',

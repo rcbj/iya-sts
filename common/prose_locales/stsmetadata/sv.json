@@ -1211,6 +1211,18 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Inloggningsskärmens kort och språkväljarens regler, som en enda formatmall som en statisk offentlig ytas skal länkar (common/web_card_css.ts). Besvaras på varje lyssnare; en adress med denna builds ?v= cachas för gott."
   },
+  "stsmetadata.endpoints./web/theme.css.what": {
+    "en": "3f3b19caa8978c23",
+    "text": "NON-SPEC (#717). Domänens inloggningsfärger som de anpassade CSS-egenskaper /web/card.css läser (common/branding.ts): de fyra branding.*-färgerna och tonerna som härleds ur dem, byggda endast av validerade värden. Ett skal länkar den efter kortet bara där domänens utseende skiljer sig från tjänstens; en adress med dess sammandrag som ?v= cachelagras för gott."
+  },
+  "stsmetadata.endpoints./web/branding/logo.what": {
+    "en": "83a680ab27412042",
+    "text": "NON-SPEC (#717). PNG-, JPEG- eller WebP-logotypen som laddats upp för den här domänen via /admin-api/branding/logo, serverad från detta ursprung så att inloggningssidornas img-src 'self' tillåter den och ingen tredje part får veta vem som loggar in; nosniff, sandlådad, en ETag av dess sammandrag. 404 där domänen inte har någon."
+  },
+  "stsmetadata.endpoints./web/branding/preview.what": {
+    "en": "a2af93aaf34bbbe3",
+    "text": "NON-SPEC (#717). Ett exempel på den här domänens inloggningskort ritat med väntande färger och en layout (accent, page, card, text, layout i frågan, var och en kontrollerad som inställningarna skulle göra), för konsolen att öppna i en ny flik innan något sparas. Ingenting på den loggar in någon."
+  },
   "stsmetadata.endpoints./web/locales/catalogs.json.what": {
     "en": "213f3eea35021e22",
     "text": "NON-SPEC (#570). Vilka kataloger som finns (tagg, endonym, status, basen som ett överlägg utökar) och vilka språkvarianter språkväljaren erbjuder — common/locales/catalogs.json, så att en statisk ytas körmiljö kan förhandla sidans språk i webbläsaren i #539:s ordning. Offentlig, på varje lyssnare, cachad för gott under denna builds ?v=."
@@ -2086,6 +2098,18 @@
   "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
     "en": "c3015da7d4779805",
     "text": "ICKE-SPEC (#641). add, update, remove, enable, disable och test: konsolens sex handlingar, var och en granskad. En token tas emot och returneras aldrig. Testhändelsen är ingen granskningsrad."
+  },
+  "stsmetadata.endpoints./admin-api/branding.what": {
+    "en": "fca0d849cb68e8d7",
+    "text": "NON-SPEC (#717). Det Serverkonfiguration → Inloggningens utseende ritar, i den efterfrågade domänen: layouten, de fyra färgerna och tonerna som härleds ur dem, deras kontrast mot WCAG 2.2 AA, visningsnamnet, den lagrade logotypen utan dess byte, och sidans inställningar."
+  },
+  "stsmetadata.endpoints./admin-api/branding/logo.what": {
+    "en": "b28154e101349408",
+    "text": "NON-SPEC (#717). Kroppen är bilden: en PNG, en JPEG eller en WebP, avgjort av dess byte, högst branding.logoMaxBytes. Den ersätter domänens logotyp och granskas med sitt sammandrag."
+  },
+  "stsmetadata.endpoints./admin-api/branding/:action.what": {
+    "en": "6c8c19ee983ea097",
+    "text": "NON-SPEC (#717). save skriver domänens branding-inställningar tillsammans och avvisar text eller länkar under 4,5:1 mot kortet; remove-logo tar bort logotypen och granskas."
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",

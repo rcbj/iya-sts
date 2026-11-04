@@ -205,6 +205,19 @@ var config = {
     unauthenticatedSessions: false   // Offer "Continue without signing in"
   },
 
+  // --- Sign-in appearance ----------------------------------------------
+  branding: {
+    layout: "centered",     // Sign-in layout
+    accentColor: "#12107c", // Accent colour
+    pageColor: "#f4f4f7",   // Page background colour
+    cardColor: "#ffffff",   // Card colour
+    textColor: "#222222",   // Text colour
+    displayName: "",        // Display name
+    logoAlt: "",            // Logo alternative text
+    logoLinkUrl: "",        // Logo link
+    logoMaxBytes: 262144    // Largest logo (bytes)
+  },
+
   // --- Web security ----------------------------------------------------
   oidcRp: {
     maxFlows: 200,           // Console and portal sign-ins in flight, per realm

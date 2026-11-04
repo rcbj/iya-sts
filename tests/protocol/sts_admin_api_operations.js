@@ -5722,6 +5722,109 @@ async function theKeyListMarksPostQuantumKeys() {
   log.debug("Leaving theKeyListMarksPostQuantumKeys().");
 }
 
+// ---------------------------------------------------------------------------
+// THE SIGN-IN LOGO (#717). `POST /branding/logo` takes the IMAGE as its body,
+// so it carries no JSON example for the replay above. It is driven here, in
+// the throwaway realm: a real 16x16 PNG is stored with its alternative text,
+// read back through `GET /branding` and from the realm's own
+// `/web/branding/logo`, a file that is no image is refused 415, and the logo
+// is removed and read back once more.
+// ---------------------------------------------------------------------------
+// A PNG's chunk checksum: CRC-32 over the type and the data (ISO 3309).
+function crc32(bytes) {
+  log.debug("Entering crc32().");
+  let c = 0xffffffff;
+  for (let i = 0; i < bytes.length; i++) {
+    c ^= bytes[i];
+    for (let k = 0; k < 8; k++) {
+      c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+    }
+  }
+  log.debug("Leaving crc32().");
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+// A whole, decodable PNG of one colour: what a browser would draw.
+function onePng(side) {
+  log.debug("Entering onePng().");
+  const zlib = require("zlib");
+  const chunk = function (type, data) {
+    const head = Buffer.alloc(4);
+    head.writeUInt32BE(data.length, 0);
+    const body = Buffer.concat([Buffer.from(type, "latin1"), data]);
+    const sum = Buffer.alloc(4);
+    sum.writeUInt32BE(crc32(body), 0);
+    return Buffer.concat([head, body, sum]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(side, 0);
+  ihdr.writeUInt32BE(side, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 2;
+  const rows = [];
+  for (let y = 0; y < side; y++) {
+    const row = Buffer.alloc(1 + side * 3);
+    for (let x = 0; x < side; x++) {
+      row[1 + x * 3] = 0x0b;
+      row[2 + x * 3] = 0x53;
+      row[3 + x * 3] = 0x94;
+    }
+    rows.push(row);
+  }
+  const out = Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", zlib.deflateSync(Buffer.concat(rows))),
+    chunk("IEND", Buffer.alloc(0))]);
+  log.debug("Leaving onePng().");
+  return out;
+}
+
+async function theSignInLogoRoundTrips() {
+  log.debug("Entering theSignInLogoRoundTrips().");
+  log.info("=== The sign-in logo: upload, read back, refuse, remove ===");
+  const image = onePng(16);
+  const upload = async function (bytes, type, alt) {
+    const r = await common.httpJson(api + "/branding/logo" +
+      (alt ? "?alt=" + encodeURIComponent(alt) : ""), {
+        method: "POST", headers: { "Content-Type": type }, body: bytes });
+    record("POST", "/branding/logo", false,
+           r.status === 200 && !!r.body && r.body.ok !== false);
+    return r;
+  };
+  const stored = await upload(image, "image/png", "Admin API operations");
+  assert.ok(stored.status === 200 && stored.body && stored.body.logo &&
+            stored.body.logo.type === "image/png",
+    "POST /branding/logo should store a 16x16 PNG; it answered " +
+    stored.status + " " + String(stored.raw).slice(0, 300));
+  const read = await get("/branding");
+  assert.ok(read.status === 200 && read.body.logo &&
+            read.body.logo.sha256 === stored.body.logo.sha256 &&
+            read.body.logoAlt === "Admin API operations",
+    "GET /branding should show the logo just stored and its text: " +
+    String(read.raw).slice(0, 300));
+  const served = await fetch(base + read.body.logo.src);
+  const bytes = Buffer.from(await served.arrayBuffer());
+  assert.ok(served.status === 200 &&
+            served.headers.get("content-type") === "image/png" &&
+            bytes.equals(image),
+    "the realm's /web/branding/logo should serve the bytes stored; it " +
+    "answered " + served.status + " " + served.headers.get("content-type"));
+  const refusedFile = await upload(Buffer.from("<svg></svg>"),
+                                   "image/png", "");
+  assert.strictEqual(refusedFile.status, 415,
+    "a file whose bytes are no PNG, JPEG or WebP should be refused 415, " +
+    "whatever it declares; it answered " + refusedFile.status);
+  await ok("/branding/remove-logo", {}, "removed the logo");
+  const gone = await get("/branding");
+  assert.ok(gone.status === 200 && gone.body.logo === null,
+    "GET /branding should show no logo after the removal: " +
+    String(gone.raw).slice(0, 300));
+  log.info("[branding] OK — a PNG stored, read back from the API and the " +
+           "realm's own address, a non-image refused 415, and removed.");
+  log.debug("Leaving theSignInLogoRoundTrips().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Driving every operation of the management API at " + rootApi);
@@ -5757,6 +5860,7 @@ async function test() {
     await theTruststoreRoundTrips();
     await theCertificateDetailsAnswer();
     await theKeyListMarksPostQuantumKeys();
+    await theSignInLogoRoundTrips();
     await theKerberosPrincipalsRoundTrip();
     const candidate = await theConfigurationDoorsRoundTrip(doc);
     await theConfigurationChangeReachesTheStore(candidate);

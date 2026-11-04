@@ -818,7 +818,7 @@ const CONFIG_SETTING = openObject(
                    description: 'What it does and why the default is the ' +
                                 'default.' },
     type: { type: 'string',
-            enum: ['string', 'int', 'port', 'bool', 'csv', 'enum'],
+            enum: ['string', 'int', 'port', 'bool', 'csv', 'enum', 'color'],
             description: 'How a value posted for it is coerced and checked.' },
     enumValues: { type: 'array', items: { type: 'string' },
                   description: 'Present on `enum` settings only.' },

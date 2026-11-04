@@ -8633,3 +8633,51 @@ PUBLISHED did:web*). The block is drawn only where the realm publishes DIDs
 or the person holds one. The self-issued table reads the two provenances
 #1291 added (`realm`, `issued`) and offers *Make preferred* on them, as the
 portal does.
+
+## Sign-in appearance (#717, 2026-11-04)
+
+Server configuration → Sign-in appearance, `/admin/sign-in-appearance`,
+beside Broadcast Announcement: what the people signing in to THIS realm
+see. Filed under Server configuration by the question it answers (how this
+realm's sign-in pages look), not under Protocols, because it belongs to no
+protocol. `admin-ui/web_sign_in_appearance.ts` draws it from
+`GET /admin-api/branding` alone; the core is `common/branding.ts`
+(`common/CLAUDE.md`), the operations `mgmt-api/branding_api.ts`
+(`mgmt-api/CLAUDE.md`). The console itself does NOT take the realm's look
+(rcbj's D4 on #717): this page changes the sign-in pages, the front door and
+the portal, never the page it is drawn on.
+
+Four tabs (`PROTOCOL_TABS`: `colours`, `layout`, `preview`, `settings`):
+
+* **Colours.** One form, `action=save`, the four colours as
+  `<input type="color">` named for their settings (`branding.accentColor`
+  …), so the runtime's `shapeFields()` maps them onto the save schema with
+  no renaming. The four are judged together by the core (a text and card
+  colour legal only as a pair). The contrast table and the derived tones
+  are drawn from the view. A SWATCH IS A DISABLED COLOUR INPUT: the console
+  is sent with no inline style, so a tone cannot be painted with `style=""`.
+* **Layout and logo.** The layout radios, display name, alternative text and
+  link (a second `action=save` form); the stored logo, drawn with `width`
+  and `height` ATTRIBUTES at most 64 high (a style would be refused); the
+  upload, a `multipart/form-data` form with `action=logo`, which
+  `web_runtime.ts`'s `multipartBody()` sends as the operation takes it — the
+  FILE as the body (`application/octet-stream`, the only one of the
+  operation's types it picks), `alt` as a query parameter; and *Remove
+  logo*, `action=remove-logo`, drawn only while a logo is held.
+* **Preview (D5).** A `method="get"` form whose action is the view's
+  `previewUrl` (the realm's `/web/branding/preview`, prefixed by the API) and
+  `target="_blank"`. It is NOT a console path, so `onSubmit()` returns
+  without `preventDefault()` and the browser opens the preview in a new tab
+  with the form's values: pending values, seen before anything is saved.
+  The runtime is untouched by this; a second kind of form it intercepts
+  would have been a change to every page.
+* **Settings.** `SettingsForms.forms()` for the `Sign-in appearance` group
+  (`SETTING_HOMES`), as `tests/console_web_bundle.js` F requires of every
+  page the table names. It is a second door onto the same rows, and the only
+  one onto `branding.logoMaxBytes` (`perProcess`, which a save refuses) and
+  onto a realm override's Reset.
+
+Every write control is drawn `disabled` for a reader without Admin Write;
+the preview stays usable. The catalog is `consoleSignInAppearance` (seven
+languages); the documentation link is `sign-in-appearance.html`
+(`common/web_doc_links.ts`). `tests/branding_api.js` G holds the page.

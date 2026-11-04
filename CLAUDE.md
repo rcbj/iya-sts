@@ -493,6 +493,7 @@ preference; this table says what the constraint is and the named file says why.
 | 6 | `common/group_claims` | Same reason, for `setGroupResolver()`. | `common/CLAUDE.md` |
 | 6a | `home/home` | No constraint; first among the route modules, and so the first `register()`. | `home/CLAUDE.md` |
 | 6a-web | `common/public_assets` | No constraint (#570): libraries only, and `/web/*` collides with nothing. | `common/CLAUDE.md` (3cl) |
+| 6a-brand | `common/branding` | Beside 6a-web (#717): a library whose routes are all under `/web`. Its require adds the write rules that hold a realm's colours to WCAG 2.2 AA, so it is above every setting restored. | `common/CLAUDE.md` (*A realm's sign-in appearance*) |
 | 8 | `authn/authn` | Before `oauth2`: it owns the session that module reads. | `authn/CLAUDE.md` |
 | 8-api | `authn/authn_api` | Just after `authn` (#571), whose views and acts it reaches through that module's exports; `/authn-api/*` collides with nothing. | `authn/CLAUDE.md` |
 | 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |

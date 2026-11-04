@@ -34,6 +34,7 @@ import AcmePage = require('../acme/web_acme');
 import ApplicationsPage = require('./web_applications');
 import AuditPage = require('./web_audit');
 import AuditExportPage = require('./web_audit_export');
+import SignInAppearancePage = require('./web_sign_in_appearance');
 import ServiceAccountsPage = require('./web_service_accounts');
 import AuthorizationServersPage = require('./web_authorization_servers');
 import AttributeSourcesPage =
@@ -380,6 +381,7 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/persistence': ['settings'],
   '/admin/cells': ['cells', 'residents', 'rehome', 'settings'],
   '/admin/mail': ['test', 'verify', 'messages', 'settings'],
+  '/admin/sign-in-appearance': ['colours', 'layout', 'preview', 'settings'],
   '/admin/rbac': ['holders', 'grant', 'settings'],
   '/admin/debugger': ['settings'],
   '/admin/sts-metadata': ['protocols', 'servers', 'endpoints',
@@ -770,6 +772,9 @@ const PAGES: WebPage[] = [
     render: ModePage.render },
   { path: '/admin/broadcast', title: 'Broadcast Announcement',
     operation: '/admin-api/broadcast', render: BroadcastPage.render },
+  // SERVER CONFIGURATION → SIGN-IN APPEARANCE (#717): born static.
+  { path: '/admin/sign-in-appearance', title: 'Sign-in appearance',
+    operation: '/admin-api/branding', render: SignInAppearancePage.render },
   { path: '/admin/node-health', title: 'Node health',
     operation: '/admin-api/node-health', render: NodeHealthPage.render },
   { path: '/admin/oauth2/monitor', title: 'OAuth 2.0 / OIDC activity',

@@ -1211,6 +1211,18 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Ang mga patakaran ng card ng sign-in screen at ng language chooser, bilang iisang stylesheet na nili-link ng shell ng isang static na pampublikong surface (common/web_card_css.ts). Sinasagot sa bawat listener; ang address na may ?v= ng build na ito ay naka-cache nang permanente."
   },
+  "stsmetadata.endpoints./web/theme.css.what": {
+    "en": "3f3b19caa8978c23",
+    "text": "NON-SPEC (#717). Ang mga kulay ng pag-sign in ng realm bilang mga CSS custom property na binabasa ng /web/card.css (common/branding.ts): ang apat na kulay na branding.* at ang mga tonong hinango mula sa mga ito, binuo lamang mula sa mga napatunayang value. Iniuugnay ito ng shell pagkatapos ng card kung saan lamang naiiba ang itsura ng realm sa itsura ng serbisyo; ang address na may digest nito bilang ?v= ay naka-cache nang permanente."
+  },
+  "stsmetadata.endpoints./web/branding/logo.what": {
+    "en": "83a680ab27412042",
+    "text": "NON-SPEC (#717). Ang PNG, JPEG o WebP na logo na in-upload para sa realm na ito sa pamamagitan ng /admin-api/branding/logo, inihahatid mula sa origin na ito upang tanggapin ito ng img-src 'self' ng mga pahina ng pag-sign in at walang ikatlong partido ang makaalam kung sino ang nagsa-sign in; nosniff, naka-sandbox, isang ETag ng digest nito. 404 kung walang logo ang realm."
+  },
+  "stsmetadata.endpoints./web/branding/preview.what": {
+    "en": "a2af93aaf34bbbe3",
+    "text": "NON-SPEC (#717). Isang halimbawa ng sign-in card ng realm na ito na iginuhit gamit ang mga nakabinbing kulay at isang layout (accent, page, card, text, layout sa query, bawat isa sinusuri gaya ng gagawin ng mga setting), para buksan ng console sa bagong tab bago mag-save. Walang sinumang nasa-sign in dito."
+  },
   "stsmetadata.endpoints./web/locales/catalogs.json.what": {
     "en": "213f3eea35021e22",
     "text": "NON-SPEC (#570). Kung aling mga catalog ang umiiral (tag, endonym, status, ang base na pinalalawak ng isang overlay) at kung aling mga locale ang inaalok ng language chooser — common/locales/catalogs.json, para sa runtime ng isang static na surface upang pagkasunduan ang wika ng page sa browser ayon sa pagkakasunod-sunod ng #539. Pampubliko, sa bawat listener, naka-cache nang permanente sa ilalim ng ?v= ng build na ito."
@@ -2086,6 +2098,18 @@
   "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
     "en": "c3015da7d4779805",
     "text": "NON-SPEC (#641). add, update, remove, enable, disable at test: ang anim na kilos ng console, bawat isa ay naka-audit. Tinatanggap ang token at hindi kailanman ibinabalik. Hindi audit row ang test event."
+  },
+  "stsmetadata.endpoints./admin-api/branding.what": {
+    "en": "fca0d849cb68e8d7",
+    "text": "NON-SPEC (#717). Ang iginuguhit ng Server configuration → Itsura ng pag-sign in, sa realm na hiniling: ang layout, ang apat na kulay at ang mga tonong hinango mula sa mga ito, ang contrast nila laban sa WCAG 2.2 AA, ang pangalang ipinapakita, ang naka-imbak na logo nang wala ang mga byte nito, at ang mga setting ng pahina."
+  },
+  "stsmetadata.endpoints./admin-api/branding/logo.what": {
+    "en": "b28154e101349408",
+    "text": "NON-SPEC (#717). Ang body ay ang larawan: isang PNG, JPEG o WebP, ayon sa mga byte nito, hindi hihigit sa branding.logoMaxBytes. Pinapalitan nito ang logo ng realm at ina-audit kasama ang digest nito."
+  },
+  "stsmetadata.endpoints./admin-api/branding/:action.what": {
+    "en": "6c8c19ee983ea097",
+    "text": "NON-SPEC (#717). Sabay na isinusulat ng save ang mga branding setting ng realm, tinatanggihan ang teksto o mga link na mas mababa sa 4.5:1 laban sa card; inaalis ng remove-logo ang logo at ina-audit ito."
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",

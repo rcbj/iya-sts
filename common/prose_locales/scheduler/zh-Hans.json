@@ -503,6 +503,14 @@
     "en": "758dfacad5326b05",
     "text": "在每个进程中：使本进程正在导入的数据集上传保持新鲜，并从 risk.uploadDirectory 中删除 risk.importStallMinutes 内没有任何活动进程触及的上传——即中途停止导入的进程留下的内容。"
   },
+  "sched.jobs.saml2.sp-metadata-refresh.title": {
+    "en": "9f8571bb756121c9",
+    "text": "SAML 服务提供方元数据刷新"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.describe": {
+    "en": "33dfb3951da97b51",
+    "text": "重新获取每个已超过其 cacheDuration 的服务提供方元数据，来源为其 samlSpMetadataUrl 或 MDQ 响应方；已超过其 validUntil 的文档会被拒绝。"
+  },
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",
     "text": "调度器运行历史"
