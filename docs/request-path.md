@@ -68,6 +68,10 @@ session. `workers.readYourWrite` decides what a request waits for:
 
 `true` means `session` and `false` means `off`.
 
+This setting is about the workers inside one node. Between the nodes of a
+cluster, a request catches up with other nodes' writes in its own way:
+[How the cluster works](cluster-concepts.md#8-a-write-is-answered-only-after-it-is-committed-and-visible).
+
 In `session` mode the token endpoint's code exchange has no session cookie,
 because it comes from the client's server rather than the browser. It waits
 for its CODE instead. When the authorization endpoint redirects the browser
@@ -147,5 +151,7 @@ request, and appear in the process that does the writing:
 * [Configuration](configuration.md): every `workers.*` setting with its
   environment variable and default.
 * [Persistence](persistence.md): what is written to the database, and when.
+* [How the cluster works](cluster-concepts.md): the same questions between
+  nodes.
 * Monitoring → Worker Pools (`/admin/worker-pools`): each worker's requests in
   flight and served, live.

@@ -95,7 +95,8 @@ worker simply becomes none on a store that can't coordinate.
 
 **Several nodes work the same way.** A cluster is several containers against
 one PostgreSQL store. [A cluster in AWS](aws-cluster.md) shows three of them
-behind a load balancer.
+behind a load balancer, and [How the cluster works](cluster-concepts.md)
+explains how they agree.
 
 **The caches** (45 and counting) are what the service remembers instead of
 working out or fetching again, plus the replay stores that make one-time values
