@@ -173,5 +173,15 @@
   "attributes.defineHeading": "定义自定义属性",
   "attributes.labelPlaceholder": "工牌号码",
   "attributes.define": "定义属性",
+  "attributes.portal": "用户门户",
+  "attributes.portalVisible": "在门户上向本人显示",
+  "attributes.portalEditable": "允许本人在门户上更改",
+  "attributes.portalNote": "默认均为关闭。允许更改时也会显示。",
+  "attributes.portalStateHidden": "不显示",
+  "attributes.portalStateVisible": "显示",
+  "attributes.portalStateEditable": "显示，可编辑",
+  "attributes.change": "更改",
+  "attributes.changeFixed": "语法以及是否包含多个值不能更改。",
+  "attributes.saveChange": "保存更改",
   "securityOnly": "只有安全管理员可以在此保存、重置或执行策略，或为应用程序、组或人员指定策略。您可以查看所有策略；更改将被拒绝。"
 }

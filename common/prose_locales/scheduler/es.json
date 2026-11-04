@@ -335,21 +335,45 @@
     "en": "049675db215c0863",
     "text": "Cuenta las llaves de acceso del dominio para Supervisión → Llaves de acceso (#942): por algoritmo y carril, las personas que tienen solo poscuánticas, solo clásicas o ambas, y qué modelos de autenticador tienen qué algoritmos. Lee solo las personas que tienen una llave de acceso, una página a la vez; los cambios hechos después se suman a medida que se escriben."
   },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "Relleno del índice de grupos que otorgan"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "Da a cada entrada del directorio escrita antes de #1306 las claves de índice grantinggroup de sus atributos que otorgan, una página del almacén cada vez, para que la pregunta al almacén del aprovisionamiento federado encuentre un grupo que esa entrada nombre; marca el almacén como completo una sola vez y queda desactivado desde entonces (#1311)."
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "Purga de filas acuñadas caducadas"
   },
   "sched.jobs.persistence.minted-expiry-purge.describe": {
-    "en": "51010ce2ada820cd",
-    "text": "Elimina del almacén compartido, en lotes de 5000 y como máximo 20 lotes de cada tipo por ejecución, las filas acuñadas que ningún inicio volverá a leer: las que superaron su propia caducidad, las de un dominio que ya no está definido (escritas hace más de una hora), y las filas sin caducidad de un almacén de corta duración con más antigüedad que persistence.mintedRetention."
+    "en": "51b75ecbc03ac6ba",
+    "text": "Elimina del almacén de este clúster (en un servicio desplegado en celdas, la base de datos propia de esta celda), en lotes de 5000 y como máximo 20 lotes de cada tipo por ejecución, las filas acuñadas que ningún inicio volverá a leer: las que superaron su propia caducidad, las de un dominio que ya no está definido (escritas hace más de una hora), y las filas sin caducidad de un almacén de corta duración con más antigüedad que persistence.mintedRetention."
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "Purga de filas acuñadas caducadas, nivel global"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "En un servicio desplegado en celdas, elimina de la base de datos del nivel global los mismos tres tipos de fila acuñada, en los mismos lotes; su ejecución se reclama en el nivel global, de modo que una sola celda ejecuta cada intervalo. Desactivada en un servicio con una sola base de datos, donde la otra purga la cubre."
   },
   "sched.jobs.persistence.tombstone-purge.title": {
     "en": "1eba3997d260e28f",
     "text": "Barrido de lápidas caducadas"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "d5b8faad6c0c24c4",
-    "text": "Elimina del almacén compartido las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention."
+    "en": "56aed2e95604a1b4",
+    "text": "Elimina del almacén de este clúster las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention, en lotes de 5000 y como máximo 20 lotes por ejecución (en un servicio desplegado en celdas, la base de datos propia de esta celda)."
+  },
+  "sched.jobs.persistence.tombstone-purge-global.title": {
+    "en": "15e3f193cfee5337",
+    "text": "Barrido de lápidas caducadas, nivel global"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.describe": {
+    "en": "98370fb755b4ba95",
+    "text": "En un servicio desplegado en celdas, elimina de la base de datos del nivel global las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention, en los mismos lotes; su ejecución se reclama en el nivel global, de modo que una sola celda ejecuta cada intervalo. Desactivado en un servicio con una sola base de datos, donde el otro barrido lo cubre."
   },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",
@@ -478,6 +502,14 @@
   "sched.jobs.risk.upload-cleanup.describe": {
     "en": "758dfacad5326b05",
     "text": "En cada proceso: mantiene actualizadas las cargas de conjuntos de datos que este proceso está importando, y elimina de risk.uploadDirectory una carga que ningún proceso activo haya tocado durante risk.importStallMinutes — lo que dejó atrás un proceso que se detuvo a mitad de una importación."
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.title": {
+    "en": "9f8571bb756121c9",
+    "text": "Actualizador de metadatos de proveedores de servicios SAML"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.describe": {
+    "en": "33dfb3951da97b51",
+    "text": "Vuelve a obtener los metadatos de cada proveedor de servicios que han superado su cacheDuration, desde su samlSpMetadataUrl o el respondedor MDQ; se rechaza un documento que ha superado su validUntil."
   },
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",

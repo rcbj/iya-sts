@@ -78,6 +78,7 @@
   "audit.actions.mail.reset-requested.label": "A person asked for a self-service password reset link; the row says whether one was sent, and the form never does",
   "audit.actions.mail.retry.label": "A dead letter was queued again by an administrator",
   "audit.actions.mail.template.label": "A realm's message template was saved or reset",
+  "audit.actions.branding.logo.label": "A realm's sign-in logo was uploaded or removed",
   "audit.actions.mail.verified.label": "A person verified the address on their entry",
   "audit.actions.mail.preferences.label": "A person changed which optional messages they receive",
   "audit.actions.scheduler.run.label": "A scheduled job ran, was queued by hand, or was taken over",

@@ -18,5 +18,7 @@
   "deny": "拒绝",
   "meta.allow": "“允许”会在您位于 <code>ou=users</code> 下的条目中为每个范围写入一个 <code>{attribute}</code> 值，此后不会再就这些范围询问您。“拒绝”会向应用返回 <code>access_denied</code>，且不记录任何内容。",
   "meta.nothingIssued": "目前尚未签发任何内容。此页面由 <code>oauth2.consentRequired</code> 控制，默认开启；在 /admin/consent 可以查看并撤回在此作出的每一个答复。",
-  "meta.consentingFor": "同意的对象：<code>{protocol}</code>"
+  "meta.consentingFor": "同意的对象：<code>{protocol}</code>",
+  "client.policy": "隐私政策",
+  "client.tos": "服务条款"
 }

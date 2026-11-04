@@ -433,6 +433,58 @@ the sign-in screen by its script still tell the two apart.
 query value; and both operations answer only the browser whose session is
 the person asked — the shell's check, made again at each.
 
+## WHO IS ASKING: THE CLIENT'S NAME, LOGO AND DOCUMENTS (#1300, 2026-11-04)
+
+**Every view that knows the OAuth client carries `clientDisplay`** —
+`screenView()`, `mfaView()`, the emailed factor's `view()` and the consent
+screen's `consentView()`, each from `Authn.clientDisplay()` over
+`applications.clientDisplayOf()` — and **the surface's FRAME draws it**
+(`web_authn_pages.ts`'s `frame()`, `web_client_display.ts`), first in the
+card, so a page added later that puts `clientDisplay` in its view shows it
+with nothing else to write. The labels are `client.policy` and `client.tos`
+in BOTH the `authn` and the `consent` catalogs, because the consent screen
+loads only its own. Null — and nothing drawn — for a sign-in with no
+application, one that is not an OAuth client, and a client with none of
+`logo_uri`, `policy_uri` and `tos_uri`.
+
+**The logo's origin is in that page's `img-src` and nowhere else**:
+`signInShell()` is asked for one pending sign-in's application, so it can
+name the one origin (`ShellDocument`'s `images`). The argument, and why it is
+not `img-src https:`, is in `oauth-oidc/CLAUDE.md` (*What the screens show
+about a client*).
+
+## THE REALM'S OWN LOOK: COLOURS, LAYOUT, LOGO (#717, 2026-11-04)
+
+The sign-in screen and its steps take the realm's sign-in appearance with
+NO change here: the shell links `/web/card.css`, so `ShellDocument` adds
+the realm's `/web/theme.css` and its brand facts on `<html>`, and the
+runtime draws the brand header before the card (`common/CLAUDE.md`, *A
+realm's sign-in appearance*). **The views gained nothing** — the facts
+travel on the shell, not on `screenView()` — and **the form is untouched in
+every layout**: `username`, `password`, `kc-login`, `kc-cancel` and the
+other ids, and their order, are exactly where they were. The realm's logo is
+the service's brand, ABOVE the card; the relying party's (#1300, above) stays
+inside it, under the realm's. A realm that set nothing is drawn byte for
+byte as before.
+
+## WHY A SECOND SIGN-IN (#1302, 2026-11-04)
+
+**A pending sign-in carries `reauthentication`** — `prompt_login`,
+`max_age` or '' — which the authorization endpoint passes to
+`beginAuthentication()` when it sends a person who ALREADY HAS a session to
+sign in again because of `prompt=login` or a session older than `max_age`
+(`oauth-oidc/CLAUDE.md`). The record keeps only those two values, the
+`screenView()` carries it, and `web_authn_login.ts`'s `reauthentication()`
+draws one `.warn` line under the heading: `authn.login.reauthPromptLogin`,
+"The application asked you to sign in again (prompt=login).", or
+`authn.login.reauthMaxAge`, "The application asked you to sign in again
+because your last sign-in is older than it allows (max_age)." A first
+sign-in, and every other reason a sign-in is asked for, draw nothing — the
+screen is otherwise the same, and nothing about who is sent here changed. It
+exists because the OpenID Foundation's reviewer is asked to SEE the person
+asked to sign in a second time, and an identical screen did not show it.
+`tests/rp_initiated_logout.js` f.
+
 ## WHAT AN AUTHENTICATED IDENTITY IS HERE (2026-09-14)
 
 **It is this module's session: an internal, protocol-independent record, and
@@ -3472,7 +3524,16 @@ LogoutRequest (`sts_saml_encryption`, the suite's `cluster` mode). Each now
 calls **`noteSessionChanged(session)`** right after its edit: it re-sets the
 row by id, **merges** with `mergeSessionRows()` when replication has replaced
 the stored object meanwhile, and **refuses to write a session that is no longer
-there**, so it cannot resurrect one ended in between. `notePresented()` spends
+there**, so it cannot resurrect one ended in between. **With the session
+window on, a read that FAILED is neither (#695, from #350; rcbj's
+decision)**: until #695 it re-set the caller's whole session, which the
+store's tombstone kept from reviving a stored session but which put an
+ended one back in the realm map until eviction. Now it merges only
+`backsConsole`, and only onto a row this process already holds in the realm
+map; with none held it sets nothing (said at debug). The cost: a parent held
+nowhere, read while the store fails, does not record `backsConsole`, a flag
+no decision reads. `tests/session_window.js`, `noteChangedCase()`.
+`notePresented()` spends
 `firstPresentationIsTheSignIn` through it too. An in-place edit of a session
 anywhere else owes the same call; `tests/cluster_node_state_sharing.js` holds
 the four call sites to it.

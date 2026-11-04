@@ -8,6 +8,7 @@ into the LDAP directory, entry for entry, with **no store of its own**.
 | `scim.ts` | The seventeen routes, and the scimmy resources behind them. |
 | `scim_auth.ts` | Who is asking. The first authentication this service ENFORCED, and one of several now (the root `CLAUDE.md` lists them). |
 | `scim_map.ts` | Which LDAP attribute each SCIM member is, in both directions. |
+| `scim_realm_schema.ts` | **The realm's half of the schemas (#699)**: its custom attributes as the `CustomAttributes` extension, and its attribute policy's `required` on what `/Schemas` and `/ResourceTypes` answer. *THE REALM'S SCHEMAS*, below. |
 | `scim_client.ts` | **The other direction (#552)**: the OUTBOUND SCIM client — this realm's people and groups pushed to remote service providers. *The outbound SCIM client*, below. |
 | `scim_client_rules.ts` | Its closed vocabularies, its address rule, its retry list and its reading of an Error body: a leaf, so `common/applications.js` and the API can offer the sets without loading the client. |
 | `web_scim_clients.ts` | Protocols → SCIM → Clients and one client's page, drawn in the browser from `/admin-api/scim/clients` (a `web_` module). |
@@ -857,8 +858,12 @@ received sees the same people twice. Found on testidp: four `bulk-` names,
 `forTheWire()` empties that page on the way out and sets `itemsPerPage` to 0,
 the number returned. The requested `startIndex` stays, and `totalResults`
 stays the size of the match. An empty match is the same rule (nothing is at
-index 1). A startIndex on the last result is that one row. Users, Groups,
-`.search` and the root search all leave through that function.
+index 1). A startIndex on the last result is that one row. **Every other
+page's `itemsPerPage` is the number of resources it returned too** (rcbj on
+#695, 2026-11-04, RFC 7644 section 3.4.2): scimmy echoes the `count` asked
+for, so a short page inside the match said 10 while it carried two, and that
+echo had been pinned. Users, Groups, `.search` and the root search all leave
+through that function.
 `tests/scim_conformance_fixes.js` section B holds it. The reset script's
 count stop stays: it is what ended the loop while the page repeated.
 
@@ -1280,10 +1285,8 @@ In product mode a provisioned person is held to the realm's attribute policy
   (400, STS-LDAP-0162). That is the policy working, not a defect: the realm
   either lowers its policy or provisions the person first.
 
-**NOT YET:** `/Schemas` does not publish `required` from the realm's policy,
-and a realm's custom attributes are not a SCIM extension — SCIMMY's schema
-definitions are the process's, not a realm's. A follow-up ticket of #396
-records both. `sts_scim_conformance.js`'s realm saves a policy requiring only
+**`/Schemas` publishes it, and the custom attributes are an extension
+(#699)** — *THE REALM'S SCHEMAS*, below. `sts_scim_conformance.js`'s realm saves a policy requiring only
 `uid`, `cn` and `sn` (RFC 7643 requires only `userName`). Both harnesses
 create people with nothing but a `userName`, which product mode refuses for
 `sn`, so in product mode the job gives each such User a name — in
@@ -1291,3 +1294,53 @@ scim2-tester's driver, and through a loopback proxy for the compiled
 scim2/test-suite (`tests/CLAUDE.md`, *The SCIM conformance harnesses*); the
 one case left, scim2-tester's PATCH removing `name` whole, is refused
 (STS-LDAP-0164) and is an exception in the job's table.
+
+## THE REALM'S SCHEMAS (#699, 2026-11-04)
+
+A follow-up of #396: `/Schemas` said nothing was required but `userName`
+while a product realm refused a create without what its attribute policy
+requires, and a realm's custom attributes (`ou=attributeDefinitions`) could
+not be read or written over SCIM. **The design question was that scimmy's
+schema definitions are the process's.** `scim_realm_schema.ts` answers it
+in two halves, and its header argues both:
+
+* **THE CUSTOM ATTRIBUTES ARE ONE PROCESS-WIDE EXTENSION WHOSE MEMBERS ARE
+  THE AMBIENT REALM'S**:
+  `urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes`,
+  declared on User beside the other two, with `attributes` redefined as a
+  getter over the realm's register. It works because scimmy reads an
+  extension's `attributes` every time it coerces, filters, resolves a PATCH
+  path or describes, and keeps no copy (`SchemaDefinition.extend()` proxies
+  the extension with a getter onto the extension's own); and because the
+  realm is an `AsyncLocalStorage` every request runs inside. **A scimmy
+  upgrade that copies an extension's attributes at `extend()` time breaks
+  this silently** — every realm would see the register as it stood at
+  start-up — and `tests/scim_realm_schema.js` S5, S8 and S9 are what fail.
+  `integer` and `boolean` keep their SCIM types; a date is a string
+  `YYYY-MM-DD` out and either form in (stored `YYYYMMDD`); the rest are
+  strings. An integer past 2^53 − 1 is not sent and is refused in.
+* **THE REGISTER IS READ ONCE PER REQUEST**: `handle()` runs every request
+  inside `realmSchema.inRequest()`, and the scimmy `Attribute`s are kept per
+  realm and rebuilt only when the definitions differ. A route that does not
+  pass `handle()` still works, reading the register at each access.
+* **VALUES ARE CHECKED BY THE PERSON EDITOR'S CHECK** (`checkCreateValues()`,
+  the one the console's create and a person's Attributes tab use), before
+  anything is written: 400 `invalidValue`, `STS-SCIM-0087`. **Not sent on a
+  PUT is "unchanged"** (`active`'s and `federationLinks`' rule; a PUT that
+  names the extension, even empty, replaces every value); a PATCH is the
+  whole resource egress drew, patched. Inside a BulkRequest an update is read
+  by the PUT rule, the verb being the resource's, not the request's.
+* **`required` IS ON THE DOCUMENT, NEVER ON A scimmy DEFINITION**
+  (`publishSchemas()`, `publishResourceTypes()`): scimmy enforces `required`
+  on the way out too, so a person created before the policy said so would
+  fail `GET /Users` for the realm (the `userName` episode above), and the
+  core definitions are the process's. Only where the policy is enforced
+  (product mode), from the `default` profile — the one a SCIM create is held
+  to (#1241's WHOSE PROFILE, above). The policy's LDAP names go to SCIM paths
+  through `scim_map.ts`'s rows: a sub-attribute's parent is marked too, a
+  member whose type matters (`phoneNumbers`) says the type in its
+  description, `uid` is `userName` already and `cn` is not marked because it
+  is derived. A required attribute no row carries is named in the User
+  schema's description, since a create here cannot satisfy it. The User
+  resource type marks the extension `required` where a custom attribute is.
+

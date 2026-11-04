@@ -151,6 +151,8 @@ services:
       context: .
       args:
         GIT_COMMIT: "${GIT_COMMIT:-}"
+        STS_RELEASE: "${STS_RELEASE:-false}"
+        BUILD_NUMBER: "${BUILD_NUMBER:-}"
         DEBUGGER_IMAGE: "${DEBUGGER_IMAGE:-debugger-none}"
     ports:
       - "${STS_HOST_PORT:-8081}:8081"
@@ -223,6 +225,8 @@ services:
       dockerfile: xacml-pep/Dockerfile
       args:
         GIT_COMMIT: "${GIT_COMMIT:-}"
+        STS_RELEASE: "${STS_RELEASE:-false}"
+        BUILD_NUMBER: "${BUILD_NUMBER:-}"
     ports:
       - "${XACML_PEP_HOST_PORT:-9090}:9090"
       - "${XACML_PEP_HTTPS_HOST_PORT:-9444}:9443"

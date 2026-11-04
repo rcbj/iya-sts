@@ -799,7 +799,7 @@ login name, which is in the clear.
 | `sts_ldap_entries_realm` | `realm` | B-tree | every entry of one realm (an export, a realm's removal) |
 | `sts_ldap_entries_parent` | `realm`, `parent_key`, `dn_key` | B-tree | the children of a container, in key order, a page at a time |
 | `sts_ldap_entries_rdn` | `realm`, `parent_key`, `rdn_value` | B-tree | an entry by its name under a container: a login name under `ou=users` |
-| `sts_ldap_entries_uid_trgm` | `rdn_value` | GIN, trigram (`pg_trgm`); partial: only entries directly under an `ou=users` container | login names that **contain** some text (`/portal/delegate`'s search) |
+| `sts_ldap_entries_uid_trgm` | `rdn_value` | GIN, trigram (`pg_trgm`); partial: only entries directly under an `ou=users` container | login names that **contain** some text (`/portal/delegate`'s search, and the console's role chooser counting and paging people by part of a name) |
 | `sts_ldap_entries_created` | `realm`, `parent_key`, `created_at` | B-tree; partial: only entries directly under `ou=users` | the people created in a date range (a report filter) |
 | `sts_ldap_entries_modified` | `realm`, `parent_key`, `modified_at` | B-tree; partial: only entries directly under `ou=users` | the people changed in a date range (a report filter) |
 | `sts_ldap_entries_names` | `name_keys` (keyed digests) | GIN (`jsonb_path_ops`), `fastupdate = off` | an entry by login name, from anywhere in the tree |

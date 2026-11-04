@@ -565,9 +565,10 @@ function announce() {
   // same day the sockets went; it binds nothing, and still restores the stored
   // trust anchors and re-applies the context to the registered listeners.
   tlsServer.listen();
-  // A scheduler job and not a socket (#49 P5), registered here where its
-  // timer used to start: the job saml2.sp-metadata-refresh, once for the
-  // cluster, on the leader (see sp_metadata.ts).
+  // A scheduler job and not a socket (#49 P5): saml2.sp-metadata-refresh,
+  // once for the cluster, on the leader. The module's wire step registers it
+  // in every process since #704 (see sp_metadata.ts), so this call finds it
+  // registered and is kept for a process that loaded the module alone.
   spMetadata.startRefresher();
   log.info('tls: this port asks every connection for a client certificate ' +
            'and requires none, so presenting one is the client\'s decision. ' +
@@ -1139,6 +1140,8 @@ function customListener(label, certificate, certificateOf, listenerId) {
   tlsServer.registerHttpListener(server, 'custom', listenerId);
   server.prependListener('request',
     require('./common/http2_framing').markFramedBody);
+  // A CONNECT is answered 501 here, as on the main port (#1304).
+  require('./common/connect_refusal').install(server, label);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1241,6 +1244,11 @@ if (useHttps) {
   // above the realm middleware — common/http2_framing.ts.
   mainServer.prependListener('request',
     require('./common/http2_framing').markFramedBody);
+  // A CONNECT IS ANSWERED 501 (#1304): this is an origin server, not a proxy
+  // (RFC 9110 sections 9.1 and 9.3.6), and node never hands one to the
+  // application — common/connect_refusal.ts.
+  require('./common/connect_refusal').install(mainServer,
+    'the main port (' + PORT + ')');
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
@@ -1306,6 +1314,9 @@ if (useHttps) {
   // thing with the server object hidden — and the PROXY protocol has to be
   // installed on that object before it listens.
   const plainServer = http.createServer(app);
+  // A CONNECT is answered 501 here too (#1304).
+  require('./common/connect_refusal').install(plainServer,
+    'the main port (' + PORT + ')');
   proxyProtocol.install(plainServer, { label: 'the main port (' + PORT + ')',
                                        channel: 'http' });
   plainServer.listen(PORT, HOST, announce);

@@ -74,7 +74,17 @@ passed, and leaves out a short-lived row with no expiry once it is older than
 takes to read, not as long as everything that was ever written. The
 `persistence.minted-expiry-purge` job then deletes those rows from the database
 in batches every five minutes, together with any row left behind by a realm
-that has been removed. You can see it on Monitoring → Scheduler.
+that has been removed. You can see it on Monitoring → Scheduler. In a
+service deployed as cells, that job cleans each cell's own database, and
+`persistence.minted-expiry-purge-global` cleans the global database, run by
+one cell at a time; one database being unreachable does not stop the other
+being cleaned. While the global database is unreachable a cell's run cannot
+tell which realms still exist, so it deletes no row as left behind by a
+removed realm, says so once in the log (`STS-STORE-0164`), and still
+records the run as succeeded, with the reason on Monitoring → Scheduler.
+The tombstones of ended rows are swept the same way, by
+`persistence.tombstone-purge` in each cell and
+`persistence.tombstone-purge-global` for the global database.
 
 **A restarted node carries on where it left off.** Each node writes its own
 share of the audit log and the statistics. When a container restarts under the
@@ -475,25 +485,13 @@ already makes about its own pull.
 Turn it off with `persistence.coordinate`; `persistence.pollInterval` (5s) is the
 worst-case convergence lag when a notification is lost.
 
-#### What it does *not* share
+Several containers against one store go further than this: membership,
+leases, a barrier before each request, and claims for every value used once.
+[How the cluster works](cluster-concepts.md) explains them, and what each
+node still holds alone.
 
-* **Sockets.** The KDC, both LDAP listeners, the two TLS ports and SPIFFE's four
-  are bound per process, and always will be. Coordination is about state.
-* **The replay caches and DPoP `jti` sets converge rather than synchronise.**
-  Between a write in one process and its arrival in another there is a window the
-  size of the poll interval in which a proof one process refused is accepted by
-  another. Sticky sessions at the load balancer close it; nothing here does.
-  **The RFC 7523 / RFC 7522 used-assertion history does not have that window**:
-  on postgres, recording a use is one atomic `INSERT … ON CONFLICT` in the table
-  `sts_used_assertions`, so two processes can never both accept one assertion.
-  A database built by an older `postgres/schema.sql` has no such table — run
-  that file again as the owner; it adds the table and changes nothing else.
-* **A realm's signing keys are not adopted mid-life.** A key changed in another
-  process is logged and ignored here: taking it would strand everything this
-  process has already signed. Rotation across processes is a rolling restart.
-
-`/admin/persistence` reports all of it, and `status.replication` carries it in
-the JSON.
+`/admin/persistence` reports the change log's state, and `status.replication`
+carries it in the JSON.
 
 ### Request workers can hold the directory as a window
 

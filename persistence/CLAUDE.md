@@ -1408,7 +1408,9 @@ declares two things at `realms.map()` (`common/realms.js`):
 
 Tombstones expire with `persistence.mintedRetention` (0 keeps them with
 everything else): `purgeTombstones()`, at most every ten minutes from a
-successful minted flush, any node (`STS-STORE-0055` when it fails).
+successful minted flush, any node (`STS-STORE-0055` when it fails). In a
+service deployed as cells each tier has its own sweep since #1313 — see
+*Each tier is purged by a job of its own*, below.
 
 `tests/cluster_lww_stores.js` holds all three against a `pg` double both
 "nodes'" drivers share, and `persistence.js` itself over it; five mutants
@@ -1549,6 +1551,20 @@ postgres driver writes and reads every entry through it.
   a kilobyte. No attribute of that name exists on any entry; it is an index
   key only, and the same no-schema-version reasoning holds. Why a presented
   certificate is looked up by it is `ldap/CLAUDE.md`, *`userCertificate`*.
+* **AND A SECOND SINCE #1306 (2026-11-04): `grantinggroup`**, every value of
+  the six attributes that confer something on a group's members
+  (`GRANTING_ATTRIBUTES`: `roleMemberGroup`, `owner`, `appOwner`,
+  `stsServiceAccountOwner`, `appDelegationSubjectGroup`, `fedSubjectGroup`),
+  trimmed and lower-cased, and a DN-shaped value in its normalised form as
+  well (`grantingKeysOf()`). Federated provisioning asks it before it creates
+  or joins a group a partner named, so a name an entry this process does not
+  hold makes grant is still refused — `federation/CLAUDE.md`, *A partner's
+  token never buys a group that grants something*. Index key only, same
+  no-schema-version reasoning. **A row written before it is keyed by a
+  one-time backfill since #1311** (*The `grantinggroup` keys of rows
+  written before #1306*, below) — the one exception to the
+  no-migration rule, by rcbj's decision, because a missed key here lets a
+  partner's token buy a group that grants something.
 * **A QUERY IS KEYED AND OPENED ON THE THREAD THAT HOLDS THE KEYS.** The
   windowed directory's bridge thread builds a statement and shapes its rows
   with no keystore, so `persistence.js` wraps the bridge: `keyArgs()` before
@@ -1612,6 +1628,80 @@ postgres driver writes and reads every entry through it.
 * `cell_convert.js` opens the source entries to plan them (a group's members
   split between tiers) and seals what it writes for the tier it writes to.
 * A file (ldif) store is not sealed.
+
+### The `grantinggroup` keys of rows written before #1306 (#1311)
+
+`granting_index_backfill.js` argues it; this is what a maintainer looks for.
+
+* **A CLUSTER SCHEDULER JOB, `persistence.granting-key-backfill`, NOT A STEP
+  OF THE START.** The session index's backfill (#350) is a start step because
+  a window cannot answer a session walk without it, and a throw there is
+  fatal; this index is not needed to start, and a walk of every directory
+  row at 50M is hours. #820's minted backfill was a start step first and ran
+  8081's front out of heap; #623's data-key catch-up runs in jobs under a
+  budget. So: every two minutes until done, at most 45 s of work a run, the
+  scheduler's claim is the exclusion between nodes, the body runs in a
+  request worker where there is one (#408). Registered from
+  `common/protocol_stack.ts` (23b-iii-b) in every process.
+* **EVERY ROW, IN PRIMARY-KEY ORDER, 500 A PAGE.** No index selects "holds a
+  granting attribute": `attr_names` is indexed only for ASKED_ATTRIBUTES (an
+  expression index, a schema version to change), and `value_keys` holds
+  digests. So a page is the next 500 rows after the cursor by `(realm,
+  dn_key)`, and the statement hands back the blob and the held `value_keys`
+  only for a row whose clear `attr_names` names one of the six
+  (`?|` here, `JSON_OVERLAPS` on MariaDB); the rest cost a key and a name
+  list. Constant per page, asynchronous, a yield between pages; never a
+  request's path.
+* **ONLY THE INDEX IS WRITTEN, COMPARE-AND-SET.** A candidate is opened and
+  given to `indexOf()`; where its `valueKeys` differ from the row's,
+  PostgreSQL sets `value_keys` while `attrs` is still the blob read
+  (`indexSealed()`'s rule), and MariaDB locks the candidates in key order,
+  compares the blob, and replaces `value_keys` and the entry's `value` key
+  rows in one transaction. No body is rewritten and no change row logged:
+  no process holds `value_keys`.
+* **THE CURSOR AND THE DONE MARK ARE `sts_minted_index` ROWS** under the
+  handle `ldap.grantinggroup`, which no minted store declares, realm '', keys
+  with a `$` (`$cursor$` holding `realm\ndn_key`, `$index-complete$`): the
+  table both engines and both tiers have, holding #820's marks already, so
+  no schema version. **One mark per database, not per realm** — the walk is
+  one keyset over the table, and a realm made after this build is written
+  with its keys. The cursor is written after each page has committed, so a
+  restart, a lost claim or the budget resumes after the last finished page;
+  a run that finds the mark is that one read. In a service deployed as
+  cells the tiered driver walks the global tier and then the cell's
+  database, each to its own mark; two cells' leaders on the global tier cost
+  time, never keys (compare-and-set, and every cursor names a finished
+  prefix).
+* **A BLOB THAT WILL NOT OPEN IS SKIPPED** after the data-key rows are read
+  again once a run (`STS-STORE-0167`, the first ten by key, then a count),
+  and the walk still writes its mark — #695's argument: no process holding
+  these keys can answer about that entry anyway (`openAnswer()` drops it),
+  and it is keyed when next written. A store error stops the run
+  (`STS-STORE-0166`) and the next resumes.
+
+* **THE FINISHED JOB IS OFF IN EVERY PROCESS (#1316, rcbj's decision on
+  #1311).** Until then only the process that ran the body knew — usually a
+  request worker — so the front scheduled it every two minutes for good and
+  `/admin/scheduler` showed it on until a restart. Its `off()` now answers
+  from the MARK: the driver's `grantingKeysComplete()` (the same indexed
+  read as the walk's `readState()`; in cells the tiered driver's, true only
+  when the global tier's AND the cell's marks are written), remembered once
+  true, since the mark is never removed. `off()` is synchronous, so the
+  read is PRIMED and not awaited: at `install()` (where the store is open by
+  then; at the stack's start it is not, and that read is skipped) and from
+  `off()` itself, at most once an interval (two minutes) while the mark is
+  unseen — the scheduler asks `off()` at its ticks, so a process learns at
+  the latest one interval after the walk finished, and there is no timer
+  of its own. Until the read answers the job is on, as before #1316; a
+  read that fails leaves it on and asks again an interval later (no code:
+  the job's own run reports a store that is down, `STS-STORE-0166`). The
+  reason is English, "finished: every directory entry has its
+  grantinggroup keys": a job's own `off()` reason is not in the scheduler's
+  prose catalog (`cluster/scheduler.ts`'s SENTENCES header).
+
+`tests/granting_index_backfill.js` holds both engines against doubles that
+keep the table, and (K) the job off in a second process loaded afresh over
+the same store, and in cells only once both tiers are marked.
 
 ## A MINTED ROW'S NAME IS A DIGEST, AND THE NAME IS SEALED (#222, 2026-10-01)
 
@@ -3306,7 +3396,21 @@ batches of 500 until a completion row commits with the last page. A
 non-empty table is not that mark: another node may already have written a
 live row, and a throw leaves the mark unwritten so the next start walks
 again. A throw is fatal, and a page that has committed is not reported as
-nothing changed. The last page's transaction deletes index rows whose
+nothing changed. **A body that will not open is not a throw (#695, rcbj's
+decision)**: one that will not open, will not parse or yields no index
+columns is logged under `STS-STORE-0161` (the first ten by key, then the
+count), skipped and left in `sts_minted`, and the walk finishes and writes
+its mark. Until #695 one corrupt row stopped every start. Done with skips is
+done: a re-run with the same keys reads the same bytes, so an unwritten mark
+would only re-walk every session on every start. Those sessions are lost —
+a restore leaves an unreadable row out and the window answers a failed
+read, never a session — and the person signs in again; the last line says
+how many. **Except when not one body could be read (#1312, rcbj's
+decision)**: stored sessions that are ALL unreadable are a key that is not
+the store's, not lost sessions, so the walk throws under `STS-STORE-0163`
+before the last page's transaction, the mark stays unwritten, and the start
+fails saying so; the next start with the right key walks again. An empty
+store still finishes. A store or driver failure is still a throw. The last page's transaction deletes index rows whose
 session body is missing or a tombstone, and does not delete the completion
 row: a resume's new head would hide an older build's delete, and a body
 `purgeTombstones` already removed is not in the change log. That head is
@@ -3323,6 +3427,20 @@ argument is in `authn/CLAUDE.md`.
 an extension behind it, which the driver creates first where it may. How a
 large store builds it without holding writes is in `postgres/CLAUDE.md`, and
 the search itself is in `ldap/CLAUDE.md`.
+
+**Since #1310 (2026-11-04) it also serves the role chooser's needle**, the
+capped `rdnCount` and `rdnPage` of `directory_queries.js`, which were
+`position()` and read every child of the parent. No schema version: the
+index was already the right one, and a composite `btree_gin` index of
+`(realm, parent_key, rdn_value gin_trgm_ops)` measured worse (179 buffers
+to 56 for a selective needle; its realm and parent entries are posting trees
+of every row). What changed is the statements: LIKE with the needle
+escaped, the index's condition repeated, and a `MATERIALIZED` CTE so a
+LIMIT does not price the rdn index's ordered read as cheap. A needle with
+no run of three ASCII letters or digits keeps `position()` — pg_trgm has no
+trigram for it. **On MariaDB a needle is still a bounded scan** of the
+parent: no substring index exists there (`mariadb/CLAUDE.md`).
+`ldap/CLAUDE.md` has the measurements and the page's rule.
 
 **`sts_sessions_surface` is the seventh index (#754, schema version 22).**
 `session.surface` — a hosted surface's relying-party sessions, which
@@ -3605,6 +3723,80 @@ orphan: its sessions and tokens were deleted an hour after they were
 written. The tiered driver reads the global realms first and hands the list
 to both tiers (the postgres driver's `realms` option); when the registry
 cannot be read, neither tier purges an orphan.
+
+**EACH TIER IS PURGED BY A JOB OF ITS OWN, AND THE GLOBAL ONE BY ONE CELL
+(#695, 2026-11-04).** #360's purge sent one call to both databases through
+`Promise.all` with one `limit` and summed the counts: a batch could delete
+twice the limit, `purgeKind()`'s short-batch stop test was asked of the sum,
+an unreachable global database rejected the whole call and lost the cell's
+count with it (and the kinds after it in the run were never tried), and —
+the job being a `cluster` job and a cell being a cluster — every cell's
+leader purged the one shared global `sts_minted`. Now:
+
+* the purge names a tier (`options.tier`, consumed by the tiered driver), so
+  a batch's limit, its count and its stop test are ONE database's;
+* `persistence.minted-expiry-purge` purges this cell's database, and
+  `persistence.minted-expiry-purge-global` the global one — the latter in
+  `tiers.js`'s `GLOBAL_JOBS`, so its run is claimed under
+  `scheduler.run.global` in the global database. **Which cell purges the
+  global tier is whichever wins that claim for the slot** (the run id is the
+  same digest in every cell): the cells design names no owner of the global
+  tier, and a lease follows the cells that are alive where a configured
+  owner would stop purging when its cell went. The argument is at the
+  constants in `persistence_minted.js`;
+* each KIND is settled on its own: a run tries all three, reports every
+  count, and fails once with its tier's code — STS-STORE-0065 for the cell's
+  (or the only) store, STS-STORE-0162 for the global tier's. The cell's
+  orphan kind still needs the global registry, so with the global database
+  down it is the one kind that fails there; the cell's expired and stale
+  rows are deleted and counted;
+* asked with no tier, the tiered driver still asks both, each with the whole
+  limit, settled separately: a failure rejects carrying the other's count as
+  `removed` and the failed tier as `tier`. Nothing batching calls it so.
+
+A single-database store is untouched: no tier is named, the global job is
+off ("this store has no global tier"), and the one job purges the one
+database as it did. `tests/cell_tiers.js` and `tests/minted_persistence.js`
+(6c) hold it.
+
+**AN UNREADABLE GLOBAL REGISTRY SKIPS THE ORPHAN CHECK; IT DOES NOT FAIL THE
+RUN (#1313, rcbj, 2026-11-04).** Until then the cell's run was recorded
+failed (STS-STORE-0065) every five minutes of a global outage although its
+expired and stale rows had been deleted. The tiered driver now marks the
+refusal (`registryUnreadable`, no tier asked — still no deleting on a
+guess), `purgeExpired()` lists it under `skipped` rather than `failures`,
+and the job's run SUCCEEDS with `orphanCheck: 'skipped'`, the outage's
+skipped-run count (`orphanSkippedRuns`) and a `why` the scheduler writes on
+the run row (`cluster/CLAUDE.md`, *A success may say why it did less*).
+STS-STORE-0164 is logged once when the skipping starts and one info line
+when the check is made again, with how many runs skipped it — per tier, in
+the process that ran them (the no-per-event-failure-logs rule). A failure
+of the tier's own deleting still fails the run, its message naming the
+skip as well.
+
+**THE TOMBSTONE SWEEP IS PER TIER TOO (#1313).** `purgeTombstones()` was
+the last purge the tiered driver sent to both databases through
+`Promise.all`: a down global database lost the cell's count, and every
+cell's leader swept the shared global `sts_minted`. It takes
+`{ tier, limit }` now, with `purgeExpiredMinted()`'s rule — one database
+when a tier is named, the limit that database's, the two settled apart when
+none is (`removed`, `tier` on the refusal). `persistence.tombstone-purge`
+sweeps this cell's database in batches of 5000, at most 20 per run, with
+its own short-batch stop test (STS-STORE-0055); the new
+`persistence.tombstone-purge-global` is in `GLOBAL_JOBS` and sweeps the
+global one the same way (STS-STORE-0165). They are a pair of their own
+beside the expiry pair, not folded into it: another schedule (ten minutes
+against five), another rule (the retention alone, against three kinds and
+an orphan grace) and a failure code of their own since #46 — folding would
+change a cadence nobody asked to change and put two failures under one
+code. The postgres and portable statements take the limit as the expiry
+purge's do (ctid; MariaDB's `DELETE … LIMIT`). **A single database is
+bounded the same way since #1315 (rcbj's decision)**: no tier is named, the
+limit is, so it too is swept in batches of 5000, at most 20 a run, and a
+backlog larger than that waits for the next run rather than one statement
+holding its locks. The STS-STORE-0165/0055 line quotes the database's own
+error once (the tiered driver's refusal carries it as `cause`). `tests/minted_persistence.js` (6d) and
+`tests/cell_tiers.js` hold it.
 
 **TWO CHANGE LOGS, TWO FOLLOWERS.** `persistence_replication.js` is a factory
 since #98: the module's own exports are the instance for the process's main

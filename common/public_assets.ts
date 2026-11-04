@@ -46,9 +46,11 @@
 // `public, max-age=31536000, immutable`; any other is `no-cache`, revalidated
 // by its ETag. A new build is a new identifier, so a browser never holds a
 // stale catalog past a deploy. **IT WAS THE VERSION UNTIL #1298**, when the
-// version stopped carrying a build number: every build of 1.0.0 is 1.0.0, and
-// keyed by that, a rebuild's corrected words would sit behind a year-long
-// `immutable` the browser had already been told to trust.
+// version stopped carrying a build number for a day: every build of 1.0.0 was
+// 1.0.0, and keyed by that, a rebuild's corrected words would sit behind a
+// year-long `immutable` the browser had already been told to trust. It stays
+// the build since #1317 brought the number back, because a release build
+// NAMES its number, and two builds of `1.0.0.0` must not share an address.
 // Compressed where the request accepts it (`ShellDocument.sendCompressed()`):
 // static text with no secret beside it, which BREACH needs.
 //

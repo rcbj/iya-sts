@@ -173,6 +173,33 @@ run "orphan_pin_refused" {
   }
   expect_failures = [var.jurisdictions]
 }
+# #695: a worker start timeout the 600 s grace cannot hold is refused at
+# plan; 300000 (the environments' own) plus the margin fits.
+run "start_timeout_inside_grace" {
+  command = plan
+  variables {
+    environment       = "dev"
+    public_hostname   = ""
+    cells             = {}
+    jurisdictions     = {}
+    primary_cell      = ""
+    extra_environment = { STS_WORKERS_START_TIMEOUT_MS = "300000" }
+  }
+}
+
+run "start_timeout_past_grace_refused" {
+  command = plan
+  variables {
+    environment       = "dev"
+    public_hostname   = ""
+    cells             = {}
+    jurisdictions     = {}
+    primary_cell      = ""
+    extra_environment = { STS_WORKERS_START_TIMEOUT_MS = "900000" }
+  }
+  expect_failures = [aws_ecs_service.first]
+}
+
 run "single_cell_dev_unchanged" {
   command = plan
   variables {
@@ -327,6 +354,21 @@ run "kek_migrating_needs_the_kms_key" {
     kek_migrating_from_secret = true
   }
   expect_failures = [var.kek_migrating_from_secret]
+}
+# #1309: the id comparison moved into try(), so the rule must still refuse an
+# AWS cell whose id is not its region's (usw9 in us-west-2), and still take
+# a GCP cell's region it cannot take apart (the multi-cloud run below).
+run "aws_cell_id_must_name_its_region" {
+  command = plan
+  variables {
+    environment = "globalidp"
+    cell        = "usw2"
+    cells = merge(jsondecode(file("envs/globalidp.cells.tfvars.json")).cells, {
+      usw9 = merge(jsondecode(file("envs/globalidp.cells.tfvars.json")).cells["usw2"],
+      { vpc_cidr = "10.250.0.0/16" })
+    })
+  }
+  expect_failures = [var.cells]
 }
 run "kek_kms_refused_in_a_multi_cloud_environment" {
   command = plan

@@ -3265,7 +3265,8 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     return keystore.start();
   }).then(function () {
     // Bodies can be opened now. A throw is fatal, and a page that already
-    // committed is not a finished index (#350).
+    // committed is not a finished index (#350). Since #695 a body that
+    // will not open is skipped (STS-STORE-0161), not thrown.
     return minted.backfillSessionIndex();
   }).then(function () {
     return persistsAppconfig() ? driver.loadOverrides() : null;

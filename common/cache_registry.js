@@ -487,6 +487,25 @@ function report(now) {
 // counters — about sixty bytes a store and nothing that grows with the store.
 // Titles, descriptions and rows stay here; the page takes those from its own
 // registry, which lists the same stores on every node of one build.
+//
+// **IT COUNTS, IT DOES NOT LIST (#704).** It was `report()` cut down: every
+// row of every store built as an object — a SHA-256 for every key that is a
+// credential (`digestKey()`) — only for the rows to be counted and dropped,
+// every 30 s in every front process (`cluster.cache-report`). A store whose
+// ejector the two helpers below built is now TALLIED instead (`tallyOf()`):
+// its size and its fullest realm are the Maps' own `size`, kept by the Map
+// and read, never recomputed; its valid count is one walk with the owner's
+// own expiry test and no allocation. A store that declares `tally(now)`
+// answers for itself; any other is still listed, as before. The valid count
+// of a tallied store is therefore "not yet past the owner's ejection test",
+// where a listed store's is its rows' `valid` — the same thing for every
+// store the helpers serve, since the ejector is the reader's own test.
+//
+// `snapshotAsync()` is what the job calls: the same answer, with a turn of
+// the event loop between stores and every TALLY_SLICE entries inside one,
+// so a request on the process that reports waits for one slice, never for
+// every store at once. `snapshot()` stays synchronous for the join, which
+// takes the first one before the first heartbeat, when the stores are empty.
 /**
  * Returns the compact form of `report()` another cluster node reads: per store
  * the name, sizes, bound and counters, never a row.
@@ -497,12 +516,237 @@ function report(now) {
 function snapshot(now) {
   log.debug("Entering snapshot().");
   const at = typeof now === 'number' ? now : Date.now();
-  const out = report(at).map(function (c) {
-    return [c.name, c.size, c.largestRealm, c.valid, c.maxEntries,
-            c.hits, c.misses, c.evictions, c.refusals];
+  const out = names().map(function (n) {
+    return snapshotRowOf(descriptors.get(n), tallyOf(descriptors.get(n), at),
+                         at);
   });
   log.debug("Leaving snapshot().");
   return { at: at, pid: WorkerChannel.processTag(), caches: out };
+}
+
+/**
+ * `snapshot()`, yielding to the event loop between stores and every
+ * TALLY_SLICE entries within one (#704); what `cluster.cache-report` runs.
+ *
+ * @param now - the time in milliseconds; now when omitted
+ * @returns a promise of what `snapshot()` answers
+ */
+async function snapshotAsync(now) {
+  log.debug("Entering snapshotAsync().");
+  const at = typeof now === 'number' ? now : Date.now();
+  const out = [];
+  for (const n of names()) {
+    const d = descriptors.get(n);
+    if (!d) {
+      continue;
+    }
+    const counted = await tallyOfAsync(d, at);
+    out.push(snapshotRowOf(d, counted, at));
+    await nextTurn();
+  }
+  log.debug("Leaving snapshotAsync(). " + out.length + " store(s).");
+  return { at: at, pid: WorkerChannel.processTag(), caches: out };
+}
+
+// One store's snapshot array, from a tally when there is one and from its
+// listed rows otherwise.
+function snapshotRowOf(d, counted, at) {
+  log.debug("Entering snapshotRowOf().");
+  const c = countsFor(d.name);
+  let size;
+  let largest;
+  let valid;
+  if (counted) {
+    size = counted.size;
+    largest = d.scope === 'realm' ? counted.largestRealm : counted.size;
+    valid = counted.valid;
+  } else {
+    const held = rowsOf(d, at);
+    size = held.rows.length;
+    largest = d.scope === 'realm' ? largestRealmOf(held.rows) : size;
+    valid = held.rows.filter(function (r) {
+      return r.valid;
+    }).length;
+  }
+  const uncounted = d.counted === false;
+  log.debug("Leaving snapshotRowOf().");
+  return [d.name, size, largest, valid, numberOrNull(d.maxEntries),
+          uncounted ? null : c.hits, uncounted ? null : c.misses,
+          c.evictions, c.refusals];
+}
+
+// ---------------------------------------------------------------------------
+// TALLIES (#704): what a store holds, COUNTED rather than listed. A store's
+// own `tally(now)` when it declares one — `{ size, largestRealm, valid }` —
+// and otherwise the plan its ejector carries when `mapEjector()` or
+// `realmMapEjector()` built it: the Maps it walks and the owner's expiry
+// test. Null when neither, and the caller lists the rows instead.
+// ---------------------------------------------------------------------------
+/** Entries walked between two turns of the event loop (#704). */
+const TALLY_SLICE = 500;
+
+function nextTurn() {
+  log.debug("Entering nextTurn().");
+  log.debug("Leaving nextTurn().");
+  return new Promise(function (resolve) {
+    setImmediate(resolve);
+  });
+}
+
+// A declared tally, checked; null when it is absent or answers nonsense.
+function declaredTallyOf(d, at) {
+  log.debug("Entering declaredTallyOf().");
+  if (typeof d.tally !== 'function') {
+    log.debug("Leaving declaredTallyOf(). None declared.");
+    return null;
+  }
+  let t = null;
+  try {
+    t = d.tally(at);
+  } catch (e) {
+    log.debug("Caught in declaredTallyOf(): " + ((e && e.message) || e));
+    t = null;
+  }
+  const ok = t && [t.size, t.largestRealm, t.valid].every(function (v) {
+    return typeof v === 'number' && isFinite(v) && v >= 0;
+  });
+  log.debug("Leaving declaredTallyOf(). " + (ok ? 'Counted.' : 'Unusable.'));
+  return ok ? { size: t.size, largestRealm: t.largestRealm, valid: t.valid }
+            : null;
+}
+
+// The plan a helper-built ejector carries, or null.
+function planOf(d) {
+  log.debug("Entering planOf().");
+  const plan = typeof d.eject === 'function' ? d.eject.plan : null;
+  log.debug("Leaving planOf().");
+  return plan && typeof plan.parts === 'function' &&
+    typeof plan.expired === 'function' ? plan : null;
+}
+
+// Sizes from the Maps' own `size`: the store's total and its fullest
+// partition.
+function sizesOf(parts) {
+  log.debug("Entering sizesOf().");
+  let size = 0;
+  let largest = 0;
+  parts.forEach(function (p) {
+    size += p.map.size;
+    largest = Math.max(largest, p.map.size);
+  });
+  log.debug("Leaving sizesOf().");
+  return { size: size, largestRealm: largest };
+}
+
+/**
+ * Counts a store without listing it, synchronously: its declared tally, or
+ * its helper-built ejector's plan; null when it has neither.
+ *
+ * @param d - the descriptor
+ * @param at - the time in milliseconds
+ * @returns `{ size, largestRealm, valid }`, or null
+ */
+function tallyOf(d, at) {
+  log.debug("Entering tallyOf().");
+  const declared = declaredTallyOf(d, at);
+  const plan = declared ? null : planOf(d);
+  if (declared || !plan) {
+    log.debug("Leaving tallyOf().");
+    return declared;
+  }
+  let expired = 0;
+  let parts = [];
+  try {
+    parts = plan.parts();
+    parts.forEach(function (p) {
+      plan.within(p, function () {
+        p.map.forEach(function (value, key) {
+          if (plan.expired(value, key, at)) {
+            expired += 1;
+          }
+        });
+      });
+    });
+  } catch (e) {
+    log.debug("Caught in tallyOf(): " + ((e && e.message) || e));
+    log.debug("Leaving tallyOf(). The plan threw; listed instead.");
+    return null;
+  }
+  const sizes = sizesOf(parts);
+  log.debug("Leaving tallyOf().");
+  return { size: sizes.size, largestRealm: sizes.largestRealm,
+           valid: Math.max(0, sizes.size - expired) };
+}
+
+/**
+ * `tallyOf()`, yielding every TALLY_SLICE entries.
+ *
+ * @param d - the descriptor
+ * @param at - the time in milliseconds
+ * @returns a promise of `{ size, largestRealm, valid }`, or of null
+ */
+async function tallyOfAsync(d, at) {
+  log.debug("Entering tallyOfAsync().");
+  const declared = declaredTallyOf(d, at);
+  const plan = declared ? null : planOf(d);
+  if (declared || !plan) {
+    log.debug("Leaving tallyOfAsync().");
+    return declared;
+  }
+  let expired = 0;
+  let parts = [];
+  try {
+    parts = plan.parts();
+    for (const p of parts) {
+      await slicedWalk(plan, p, function (value, key) {
+        if (plan.expired(value, key, at)) {
+          expired += 1;
+        }
+      });
+    }
+  } catch (e) {
+    log.debug("Caught in tallyOfAsync(): " + ((e && e.message) || e));
+    log.debug("Leaving tallyOfAsync(). The plan threw; listed instead.");
+    return null;
+  }
+  const sizes = sizesOf(parts);
+  log.debug("Leaving tallyOfAsync().");
+  return { size: sizes.size, largestRealm: sizes.largestRealm,
+           valid: Math.max(0, sizes.size - expired) };
+}
+
+// Walks one part of a plan TALLY_SLICE entries at a time, each slice inside
+// the part's realm, a turn of the event loop between slices. A Map's
+// iterator survives the writes other code makes during those turns: an entry
+// deleted before it is reached is not visited, one added is visited at the
+// end, and deleting the entry just visited — what the ejector does — is
+// safe. `visit` answering true deletes that entry through the part's own Map,
+// so a persisted store journals the deletion.
+async function slicedWalk(plan, part, visit) {
+  log.debug("Entering slicedWalk().");
+  const it = part.map.entries();
+  let deleted = 0;
+  let done = false;
+  while (!done) {
+    plan.within(part, function () {
+      for (let i = 0; i < TALLY_SLICE; i++) {
+        const step = it.next();
+        if (step.done) {
+          done = true;
+          return;
+        }
+        if (visit(step.value[1], step.value[0]) === true) {
+          part.map.delete(step.value[0]);
+          deleted += 1;
+        }
+      }
+    });
+    if (!done) {
+      await nextTurn();
+    }
+  }
+  log.debug("Leaving slicedWalk(). " + deleted + " deleted.");
+  return deleted;
 }
 
 // The reverse of `snapshot()`'s rows, for the page.
@@ -731,6 +975,62 @@ function ejectExpired(now) {
   return { ejected: total, byCache: byCache, failed: failed };
 }
 
+// **AND IN SLICES (#704).** `ejectExpired()` walked every store in one turn
+// of the event loop, every minute in every process — a request on that
+// process waited for the whole walk. `ejectExpiredAsync()`, which the job
+// runs, gives the loop a turn between stores and, for a store whose ejector
+// `mapEjector()` or `realmMapEjector()` built, every TALLY_SLICE entries
+// inside it, deleting as it goes (`slicedWalk()`). An ejector written by hand
+// is still called whole, one store per turn. `ejectExpired()` stays, for a
+// caller that wants the answer now.
+/**
+ * `ejectExpired()`, yielding to the event loop between stores and every
+ * TALLY_SLICE entries within a helper-built ejector's store; run by the
+ * `caches.eject-expired` scheduler job.
+ *
+ * @param now - the time in milliseconds; now when omitted
+ * @returns a promise of what `ejectExpired()` answers
+ */
+async function ejectExpiredAsync(now) {
+  log.debug("Entering ejectExpiredAsync().");
+  const at = Number(now) || Date.now();
+  const byCache = {};
+  const failed = [];
+  let total = 0;
+  for (const name of Array.from(descriptors.keys())) {
+    const d = descriptors.get(name);
+    if (!d || typeof d.eject !== 'function') {
+      continue;
+    }
+    const plan = planOf(d);
+    let n = 0;
+    try {
+      if (plan) {
+        for (const part of plan.parts()) {
+          n += await slicedWalk(plan, part, function (value, key) {
+            return plan.expired(value, key, at) === true;
+          });
+        }
+      } else {
+        n = Number(d.eject(at)) || 0;
+      }
+    } catch (e) {
+      log.debug("Caught in ejectExpiredAsync(): " + ((e && e.message) || e));
+      failed.push(name + ': ' + ((e && e.message) || e));
+      await nextTurn();
+      continue;
+    }
+    if (n > 0) {
+      byCache[name] = n;
+      total += n;
+      countsFor(name).evictions += n;
+    }
+    await nextTurn();
+  }
+  log.debug("Leaving ejectExpiredAsync(). " + total + " ejected.");
+  return { ejected: total, byCache: byCache, failed: failed };
+}
+
 // The names of the stores that eject, for the page and the test.
 /**
  * Lists the stores that carry an ejector, sorted.
@@ -763,7 +1063,8 @@ function ejecting() {
 function mapEjector(map, expired) {
   log.debug("Entering mapEjector().");
   log.debug("Leaving mapEjector().");
-  return function (now) {
+  const eject = function (now) {
+    log.debug("Entering eject().");
     const gone = [];
     map.forEach(function (value, key) {
       if (expired(value, key, now)) {
@@ -773,8 +1074,25 @@ function mapEjector(map, expired) {
     gone.forEach(function (key) {
       map.delete(key);
     });
+    log.debug("Leaving eject(). " + gone.length + ".");
     return gone.length;
   };
+  // THE PLAN (#704): the Map and the test, so the registry can count the
+  // store and eject from it in slices (`tallyOf()`, `slicedWalk()`).
+  eject.plan = {
+    parts: function () {
+      log.debug("Entering parts().");
+      log.debug("Leaving parts().");
+      return [{ realm: null, map: map }];
+    },
+    expired: expired,
+    within: function (part, fn) {
+      log.debug("Entering within().");
+      log.debug("Leaving within().");
+      return fn();
+    }
+  };
+  return eject;
 }
 
 // The same for a `realms.map()` store: every realm's partition, each deleted
@@ -793,7 +1111,8 @@ function mapEjector(map, expired) {
 function realmMapEjector(realmsModule, store, expired) {
   log.debug("Entering realmMapEjector().");
   log.debug("Leaving realmMapEjector().");
-  return function (now) {
+  const eject = function (now) {
+    log.debug("Entering eject().");
     let total = 0;
     realmsModule.list().forEach(function (r) {
       const map = store.realmMap(r.id);
@@ -803,8 +1122,32 @@ function realmMapEjector(realmsModule, store, expired) {
         });
       }
     });
+    log.debug("Leaving eject(). " + total + ".");
     return total;
   };
+  // THE PLAN (#704), as `mapEjector()`'s: a part per realm, each walked
+  // inside its realm and deleted from through the store's own view.
+  eject.plan = {
+    parts: function () {
+      log.debug("Entering parts().");
+      const out = [];
+      realmsModule.list().forEach(function (r) {
+        const map = store.realmMap(r.id);
+        if (map) {
+          out.push({ realm: r, map: map });
+        }
+      });
+      log.debug("Leaving parts(). " + out.length + ".");
+      return out;
+    },
+    expired: expired,
+    within: function (part, fn) {
+      log.debug("Entering within().");
+      log.debug("Leaving within().");
+      return realmsModule.run(part.realm, fn);
+    }
+  };
+  return eject;
 }
 
 // ---------------------------------------------------------------------------
@@ -982,6 +1325,10 @@ module.exports = {
   realmMapRows: realmMapRows,
   realmRows: realmRows,
   ejectExpired: ejectExpired,
+  ejectExpiredAsync: ejectExpiredAsync,
+  snapshotAsync: snapshotAsync,
+  tallyOf: tallyOf,
+  TALLY_SLICE: TALLY_SLICE,
   ejecting: ejecting,
   mapEjector: mapEjector,
   realmMapEjector: realmMapEjector,

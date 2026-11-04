@@ -637,6 +637,16 @@ const CODES = [
       'naming different hosts, which makes it malformed (RFC 9113 section ' +
       '8.3.1); it was refused before any endpoint saw it.',
     spec: 'HTTP 400 text/plain' },
+  // CONNECT (#1304): RFC 9110 sections 9.1 and 9.3.6,
+  // common/connect_refusal.ts.
+  { code: 'STS-HTTP-0025',
+    summary: 'A CONNECT request reached one of this service\'s HTTP ' +
+      'listeners. This service is an origin server, not a proxy, and ' +
+      'implements no CONNECT, so it was answered 501 before any endpoint ' +
+      'saw it. The first is logged, and the rest are counted into one ' +
+      'line a minute at most.',
+    spec: 'HTTP 501 text/plain (HTTP/2, or HTTP/1.1 with the connection ' +
+      'closed)' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +
@@ -1190,6 +1200,14 @@ const CODES = [
       'wait, so this process made them itself; the cluster may hold two ' +
       'sets until one is replaced.',
     spec: 'none — logged; group signatures go on' },
+  // A RELEASE BUILD NAMES ITS BUILD NUMBER (#1317).
+  { code: 'STS-CORE-0164',
+    summary: 'The build stamp (common/version.js --stamp, or xacml-pep ' +
+      '--stamp) was refused: STS_RELEASE=true marks a release build, which ' +
+      'must name its BUILD_NUMBER as a non-negative integer with no leading ' +
+      'zero, and it did not — or STS_RELEASE was neither true nor false. ' +
+      'Nothing is written and the image build fails.',
+    spec: 'none — the image build exits non-zero' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -1679,7 +1697,8 @@ const CODES = [
     spec: 'none — logged' },
   { code: 'STS-STORE-0055',
     summary: 'Expired tombstones of ended minted rows could not be swept from ' +
-      'the store.',
+      'the store (in a service deployed as cells, this cell\'s own ' +
+      'database: the global tier\'s sweep is STS-STORE-0165, #1313).',
     spec: 'none — logged' },
   { code: 'STS-STORE-0056',
     summary: 'A minted row another node had changed could not be merged with ' +
@@ -1917,6 +1936,58 @@ const CODES = [
       'its column holds (an address that is not one, a number that is not ' +
       'an integer); the batch is refused whole rather than stored with a ' +
       'substitute.',
+    spec: '' },
+  { code: 'STS-STORE-0161',
+    summary: 'The one-time session index backfill skipped a stored sign-on ' +
+      'session whose sealed body will not open, will not parse or yields ' +
+      'no index columns; the walk finishes and writes its completion mark, ' +
+      'that session is lost and its person signs in again. The last line ' +
+      'gives the count.',
+    spec: '' },
+  { code: 'STS-STORE-0162',
+    summary: 'The persistence.minted-expiry-purge-global job, run by the one ' +
+      'cell holding the global run claim, could not delete the global ' +
+      'tier\'s expired, orphaned or stale minted rows (#695); the cell ' +
+      'tier\'s purge is a job of its own and is not affected, a start skips ' +
+      'the rows anyway, and the next run tries again.',
+    spec: 'none — logged, and the job run is recorded as failed' },
+  { code: 'STS-STORE-0163',
+    summary: 'The one-time session index backfill found stored sign-on ' +
+      'sessions and could read NOT ONE of them (#1312): the key-encryption ' +
+      'or data key this process holds is almost certainly not the store\'s. ' +
+      'The completion mark is not written and the start fails, so the next ' +
+      'start with the right key walks again; a backfill that reads some and ' +
+      'skips others still finishes (STS-STORE-0161).',
+    spec: '' },
+  { code: 'STS-STORE-0164',
+    summary: 'In a service deployed as cells, the minted expiry purge ' +
+      'could not read the global realm registry, so it skips its orphan ' +
+      'check and deletes no row as an orphan (#1313); its expired and ' +
+      'stale rows are still purged and the run is recorded as succeeded, ' +
+      'saying why. Logged once when the skipping starts, and a line says ' +
+      'when the check is made again.',
+    spec: 'none — logged once per outage; the run succeeds with a why' },
+  { code: 'STS-STORE-0165',
+    summary: 'The persistence.tombstone-purge-global job, run by the one ' +
+      'cell holding the global run claim, could not sweep the global ' +
+      'tier\'s expired tombstones of ended minted rows (#1313); the cell ' +
+      'tier\'s sweep is a job of its own (STS-STORE-0055) and is not ' +
+      'affected, and the next run tries again.',
+    spec: 'none — logged, and the job run is recorded as failed' },
+  { code: 'STS-STORE-0166',
+    summary: 'A run of the persistence.granting-key-backfill job, which ' +
+      'gives the directory entries written before #1306 their ' +
+      'grantinggroup index keys, stopped on a store error (#1311); the ' +
+      'pages it finished are kept, and the next run resumes after the last ' +
+      'one.',
+    spec: 'none — logged; federated provisioning\'s store question still ' +
+      'misses the entries not yet reached' },
+  { code: 'STS-STORE-0167',
+    summary: 'The grantinggroup key backfill (#1311) skipped a directory ' +
+      'entry whose sealed attributes do not open in this process, even ' +
+      'after the data-key rows were read again; the walk finishes and ' +
+      'writes its mark, and the entry is keyed when it is next written. ' +
+      'The first few are named, then a count per run.',
     spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
@@ -2588,6 +2659,13 @@ const CODES = [
       'was handed to (#408), so it ran on the front process\'s thread, and ' +
       'every later run of it in this process does too; register it at its ' +
       'owner\'s load, or give it an onFront reason.',
+    spec: '' },
+  { code: 'STS-SCHED-0021',
+    summary: 'A cluster run\'s body on a request worker stopped owning its ' +
+      'run because the leader had not renewed its grant in time (#1305): ' +
+      'the leader\'s thread did not run, or its renewals did not arrive. ' +
+      'The body stops at its next step; the leader, or the attempt that ' +
+      'takes the run over, decides the run.',
     spec: '' },
   // ===== KEYS ==============================================================
   { code: 'STS-KEYS-0001',
@@ -4480,6 +4558,18 @@ const CODES = [
       'underscores and brackets) (#1290).',
     spec: 'the caller\'s refusal: /account-api/signing-key HTTP 400, a ' +
       'console refusal banner, /admin-api HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-PKI-0226',
+    summary: 'A realm\'s signing keys were made before its certificate ' +
+      'authority branch, and the branch could not be built or adopted when ' +
+      'they were to be certified, so they stay uncertified and a token ' +
+      'whose use case asks for x5c or x5u carries none.',
+    spec: 'none — the keys still sign; the header is left off' },
+  { code: 'STS-PKI-0227',
+    summary: 'A token whose use case asks for x5c or x5u was signed with a ' +
+      'key this realm has not certified, after the issuer read the store ' +
+      'and asked for the certificate, so it carries no x5c or x5u (an ' +
+      'OpenID4VCI credential a wallet cannot verify offline).',
+    spec: 'none — the token is issued without the header' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -7372,6 +7462,46 @@ const CODES = [
       'application (appPostLoginPolicy) or a group (stsPostLoginPolicy) of ' +
       'this realm still names it (#1239).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  // A REALM'S SIGN-IN APPEARANCE (#717): its colours, layout and logo,
+  // `common/branding.ts`.
+  { code: 'STS-AUTHN-0544',
+    summary: 'A sign-in appearance colour was not saved: with it, the ' +
+      'realm\'s text or its links would fall below WCAG 2.2 AA contrast ' +
+      '(4.5:1) against the card (branding.textColor, branding.accentColor ' +
+      'against branding.cardColor) (#717).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0545',
+    summary: 'A sign-in logo was not saved: its bytes are not a PNG, a ' +
+      'JPEG or a WebP image, whatever type the upload declared. Only those ' +
+      'three are accepted, and the bytes decide (#717).',
+    spec: 'none (a management API refusal, HTTP 415)' },
+  { code: 'STS-AUTHN-0546',
+    summary: 'A sign-in logo was not saved: it is larger than ' +
+      'branding.logoMaxBytes, or empty (#717).',
+    spec: 'none (a management API refusal, HTTP 413, or 400 for an empty ' +
+      'body)' },
+  { code: 'STS-AUTHN-0547',
+    summary: 'A sign-in logo was not saved: its width and height could not ' +
+      'be read from the image, or one of them is outside 16 to 2048 ' +
+      'pixels (#717).',
+    spec: 'none (a management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0548',
+    summary: 'A sign-in logo was not saved, or its alternative text was ' +
+      'not cleared: a realm\'s logo must carry alternative text ' +
+      '(branding.logoAlt), which a screen reader reads in its place (#717).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0549',
+    summary: 'A realm\'s sign-in logo was asked for (GET /web/branding/logo) ' +
+      'and the realm has none (#717).',
+    spec: 'none (HTTP 404)' },
+  { code: 'STS-AUTHN-0550',
+    summary: 'A sign-in appearance preview was refused: a colour or layout ' +
+      'it was asked to show is not one the settings would accept (#717).',
+    spec: 'none (HTTP 400)' },
+  { code: 'STS-AUTHN-0551',
+    summary: 'A sign-in logo\'s link (branding.logoLinkUrl) was not saved: ' +
+      'it is not an absolute https URL (#717).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -8038,9 +8168,10 @@ const CODES = [
       'refused it); answered here rather than redirected.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-OAUTH-0160',
-    summary: 'The authorization request has no redirect_uri, so the error ' +
-      'cannot be redirected. (What is usable is the schema\'s question since ' +
-      '2026-09-13; a value it refuses is STS-OAUTH-0159.)',
+    summary: 'The authorization request has no redirect_uri (or an empty ' +
+      'one), so the error cannot be redirected. (What is usable is the ' +
+      'schema\'s question since 2026-09-13; a value it refuses is ' +
+      'STS-OAUTH-0159.)',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-OAUTH-0161',
     summary: 'The authorization request named no client_id.',
@@ -12723,9 +12854,12 @@ const CODES = [
   { code: 'STS-FED-0158',
     summary: 'A federated first sign-in created nobody: in a product-mode ' +
       'realm the partner supplied no value of an attribute the realm\'s ' +
-      'attribute policy requires of every person (#396), so the sign-in ' +
-      'is refused as one for a person nobody provisioned. Map the attribute ' +
-      'from the partner, or provision the person first.',
+      'attribute policy requires of every person (#396), and the person ' +
+      'could not be asked for it at /federation/profile/{handle} (#701: no ' +
+      'person can be given a value of that attribute, or the values they ' +
+      'gave still left the policy unmet), so the sign-in is refused as one ' +
+      'for a person nobody provisioned. Map the attribute from the ' +
+      'partner, or provision the person first.',
     spec: 'HTTP 403 page (the session refusal is audited STS-AUTHN-0180)' },
   { code: 'STS-FED-0161',
     summary: 'A group name in a partner\'s assertion was not applied: it ' +
@@ -12853,11 +12987,12 @@ const CODES = [
   // STEP-UP'S SESSION ENDED WITH ITS REFUSAL (rcbj's decisions 2 and 3 on
   // #729).
   { code: 'STS-FED-0188',
-    summary: 'A consumer provider signed in a newcomer without a value this ' +
-      'realm\'s attribute policy requires of every person (product mode), ' +
-      'so the person was sent to /federation/profile/{handle} to give ' +
-      'exactly the missing values before the account is created (#729). ' +
-      'Nothing was created yet.',
+    summary: 'A federation partner signed in a newcomer without a value ' +
+      'this realm\'s attribute policy requires of every person (product ' +
+      'mode), so the person was sent to /federation/profile/{handle} to ' +
+      'give exactly the missing values before the account is created ' +
+      '(#729 for consumer providers, #701 for every relationship). Nothing ' +
+      'was created yet.',
     spec: 'HTTP 303 to the form; the code is not in the body' },
   { code: 'STS-FED-0189',
     summary: 'A /federation/profile/{handle} submission did not carry the ' +
@@ -15148,8 +15283,10 @@ const CODES = [
     spec: 'HTTP 503 with Retry-After; an LDAP operation answers ' +
       'unavailable (52)' },
   { code: 'STS-LDAP-0176',
-    summary: 'GET /admin-api/ldap/devices or /admin-api/rbac failed to draw ' +
-      'its page with something other than a store it could not read ' +
+    summary: 'GET /admin-api/ldap/devices, /admin-api/rbac, /admin-api/users, ' +
+      '/admin-api/ldap/directory, /admin-api/mfa or /admin-api/status (#695) ' +
+      'failed to draw its page with something other than a store it could ' +
+      'not read ' +
       '(#359: STS-LDAP-0130, 0131, 0139 and 0175 are the 503s) and with no ' +
       'code of its own: a fault in this service, answered as one and ' +
       'logged with the stack, never a "try again shortly".',
@@ -15310,6 +15447,36 @@ const CODES = [
       'characters of normalised DN), and the flush would refuse it after ' +
       'it was in memory.',
     spec: '' },
+  // #1306 (2026-11-04): the federated group question, asked of the store.
+  { code: 'STS-LDAP-0205',
+    summary: 'In a windowed directory, the store could not answer whether a ' +
+      'group name from a federation partner\'s assertion is named by a ' +
+      'granting attribute (a role\'s member group, an owner, a delegation ' +
+      'or subject group). The name is treated as granting and not applied ' +
+      '(audited STS-FED-0164); the sign-in stands. Logged once when the ' +
+      'store stops answering, and again when it answers.',
+    spec: 'none (the audit row of the ignored group carries STS-FED-0164)' },
+  // #700 (2026-11-04): a custom attribute's definition changed in place.
+  { code: 'STS-LDAP-0206',
+    summary: 'update-person-attribute named a custom attribute this realm ' +
+      'does not define, so there was nothing to change (#700).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0207',
+    summary: 'update-person-attribute was refused for a field: a label ' +
+      'empty, longer than 128 characters or holding a control character, a ' +
+      'description longer than 1024 or holding one, or a portal flag that ' +
+      'is neither true nor false (#700).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0208',
+    summary: 'update-person-attribute would have changed a custom ' +
+      'attribute\'s syntax or whether it holds several values. Both are ' +
+      'fixed once it is defined, because the values people hold were ' +
+      'checked against them (#700).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0209',
+    summary: 'The directory would not store a changed custom attribute ' +
+      'definition (#700).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +
@@ -15890,6 +16057,13 @@ const CODES = [
       'asked by a caller that does not hold SECURITY_ADMIN (a person on the ' +
       'roster, or an application that is a member of the role).',
     spec: 'HTTP 403' },
+  // #699 (2026-11-04): the realm's custom attributes as a SCIM extension.
+  { code: 'STS-SCIM-0087',
+    summary: 'A SCIM User write carried a value of one of the realm\'s ' +
+      'custom attributes (the CustomAttributes extension) that its syntax ' +
+      'refuses, several values for a single-valued one, or an integer past ' +
+      'what a JSON number carries exactly; nothing was written (#699).',
+    spec: 'SCIM invalidValue (HTTP 400)' },
   // ===== SPIFFE ============================================================
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
@@ -16596,6 +16770,12 @@ const CODES = [
   { code: 'STS-SPIFFE-0151',
     summary: 'The workload agent could not obtain an SVID or a bundle ' +
       'from the SPIRE Server API (#324).',
+    spec: '' },
+  { code: 'STS-SPIFFE-0152',
+    summary: 'The workload agent attested and bound its Unix socket but ' +
+      'could not write the file named by --ready-file, so it stopped ' +
+      'rather than serve a socket its workload waits on and cannot find ' +
+      '(#695).',
     spec: '' },
   // ===== TLS ===============================================================
   { code: 'STS-TLS-0001',
@@ -25090,6 +25270,29 @@ const CODES = [
       '/account-api/signing-key was refused without a more specific code ' +
       '(#1290).',
     spec: 'HTTP 400 JSON' },
+  // #700 (2026-11-04): a person's own custom attribute, on the portal.
+  { code: 'STS-PORTAL-0626',
+    summary: 'POST /account-api/attributes named an attribute that is not ' +
+      'one of this realm\'s custom attributes (#700).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0627',
+    summary: 'POST /account-api/attributes named a custom attribute whose ' +
+      'definition does not show it on the user portal ' +
+      '(stsAttributePortalVisible is not TRUE) (#700).',
+    spec: 'HTTP 403 JSON' },
+  { code: 'STS-PORTAL-0628',
+    summary: 'POST /account-api/attributes named a custom attribute the ' +
+      'person sees on the portal but may not change there ' +
+      '(stsAttributePortalEditable is not TRUE) (#700).',
+    spec: 'HTTP 403 JSON' },
+  { code: 'STS-PORTAL-0629',
+    summary: 'A person\'s change to their own custom attribute on ' +
+      '/account-api/attributes was not made: they have no directory entry, ' +
+      'a value was refused for the attribute\'s syntax or cardinality, or ' +
+      'the directory did not store it. Where the person editor refused ' +
+      'with a code of its own (a required value taken away, STS-LDAP-0164), ' +
+      'that code is recorded instead (#700).',
+    spec: 'HTTP 400 JSON' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },
@@ -26134,6 +26337,22 @@ const CODES = [
       'and oauth2.allowImplicitTokenResponses is off, or OAuth 2.1 mode or ' +
       'a FAPI profile is on (#1296). A remove is never refused.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0365',
+    summary: 'A logo_uri, policy_uri or tos_uri (oauthLogoUri, ' +
+      'oauthPolicyUri, oauthTosUri) is not an absolute https URL with a ' +
+      'host and no credentials: the sign-in and consent screens draw it ' +
+      '(OpenID Connect Registration section 2, #1300). At registration, ' +
+      'an RFC 7592 update, a create and an attribute write.',
+    spec: 'HTTP 400 {error: invalid_client_metadata} at registration; a ' +
+      'console or management API refusal otherwise' },
+  // #700 (2026-11-04): a realm's custom attributes as claim catalogue rows.
+  { code: 'STS-REG-0366',
+    summary: 'A realm\'s custom attribute is named as a claim of the ' +
+      'directory attribute catalogue is (a custom birthdate, say), so it is ' +
+      'not offered to the claim sets: the catalogue\'s claim would be ' +
+      'overwritten. An attribute claim can carry it under another name ' +
+      '(#700).',
+    spec: 'log line; the attribute is absent from every claim set' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

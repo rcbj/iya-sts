@@ -40,6 +40,13 @@
 // the client goes. It is not setInterval and it does not repeat except by
 // the stream still being open.
 //
+// A READY FILE, WHEN ASKED (`--ready-file`, #695). Once the socket serves,
+// the agent writes its SPIFFE ID to that path (renamed into place) and
+// removes it at SIGTERM. A workload in another container of the task waits
+// for it: it says the socket is worth calling, and it carries the ID an
+// entry is parented on. Not writing it is STS-SPIFFE-0152, and the agent
+// stops rather than serve a socket nothing will find.
+//
 // THE JOIN TOKEN IS NEVER AN ARGUMENT AND NEVER A LOG LINE. `ps` shows
 // argv. A flag named --join-token is refused without the value being
 // repeated. The token is read from STS_SPIFFE_JOIN_TOKEN or from a file.
@@ -2686,7 +2693,8 @@ class WorkloadAgent {
    * repeated. The token comes from the environment or from a file.
    *
    * @param argv - the arguments after the program name
-   * @returns `{ ok, message }` or `{ ok, opts }`
+   * @returns `{ ok, message }` or `{ ok, opts, readyFile }`, where
+   *   `readyFile` is `--ready-file` or empty
    */
   static readArgs(argv: string[]): any {
     log.debug("Entering WorkloadAgent.readArgs().");
@@ -2702,7 +2710,8 @@ class WorkloadAgent {
     const map: any = {};
     const known = ['server', 'socket', 'trust-domain', 'bundle-url',
                    'trust-bundle-file', 'require-security-header',
-                   'attest-workloads', 'join-token-file', 'native'];
+                   'attest-workloads', 'join-token-file', 'native',
+                   'ready-file'];
     for (let i = 0; i < argv.length; i++) {
       const arg = String(argv[i] || '');
       if (arg.indexOf('--') !== 0) {
@@ -2782,7 +2791,59 @@ class WorkloadAgent {
         map['require-security-header']),
       attestWorkloads: WorkloadAgent.flag(map['attest-workloads']),
       nativePath: map.native || ''
-    } };
+    }, readyFile: map['ready-file'] || '' };
+  }
+
+  /**
+   * Writes the ready file: the agent's SPIFFE ID and a newline, once the
+   * socket serves. Written beside itself and renamed, so a reader never
+   * sees half an ID. A sidecar's workload waits for this file rather than
+   * for the socket, because the socket exists a moment before the agent is
+   * worth calling and the ID is what an entry is parented on.
+   *
+   * @param file - the path given as --ready-file
+   * @param agentId - the agent's SPIFFE ID
+   * @returns whether the file was written
+   */
+  static writeReadyFile(file: string, agentId: string): boolean {
+    log.debug("Entering WorkloadAgent.writeReadyFile().");
+    const temporary = file + '.' + process.pid + '.tmp';
+    try {
+      fs.writeFileSync(temporary, String(agentId) + '\n', { mode: 0o644 });
+      fs.renameSync(temporary, file);
+    } catch (e) {
+      // The directory is missing or not writable. The caller records
+      // STS-SPIFFE-0152 and stops; the half-written file is removed.
+      log.debug("Caught in WorkloadAgent.writeReadyFile(): " +
+                ((e && e.message) || e));
+      WorkloadAgent.removeReadyFile(temporary);
+      log.debug("Leaving WorkloadAgent.writeReadyFile(). Failed.");
+      return false;
+    }
+    log.debug("Leaving WorkloadAgent.writeReadyFile().");
+    return true;
+  }
+
+  /**
+   * Removes the ready file, so an agent that has stopped does not still
+   * claim to serve.
+   *
+   * @param file - the path given as --ready-file, or empty
+   */
+  static removeReadyFile(file: string): void {
+    log.debug("Entering WorkloadAgent.removeReadyFile().");
+    if (!file) {
+      log.debug("Leaving WorkloadAgent.removeReadyFile(). None.");
+      return;
+    }
+    try {
+      fs.unlinkSync(file);
+    } catch (e) {
+      // A file that is not there is the state wanted.
+      log.debug("Caught in WorkloadAgent.removeReadyFile(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving WorkloadAgent.removeReadyFile().");
   }
 
   /**
@@ -2817,8 +2878,10 @@ class WorkloadAgent {
       process.exit(1);
     }
     const agent = new WorkloadAgent(read.opts);
+    const readyFile = String(read.readyFile || '');
     const shutdown = function () {
       log.debug("Entering shutdown().");
+      WorkloadAgent.removeReadyFile(readyFile);
       agent.stop();
       log.debug("Leaving shutdown().");
       process.exit(0);
@@ -2826,6 +2889,16 @@ class WorkloadAgent {
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
     agent.start().then(function () {
+      if (readyFile &&
+          !WorkloadAgent.writeReadyFile(readyFile, agent.agentSpiffeId)) {
+        // A socket nobody can find is not served: the workload waits for
+        // this file. The agent stops rather than run unseen.
+        log.error(errorCodes.tag('STS-SPIFFE-0152') + 'The workload agent ' +
+                  'could not write its ready file ' + readyFile + '.');
+        agent.stop();
+        log.debug("Leaving WorkloadAgent.main(). No ready file.");
+        process.exit(1);
+      }
       log.debug("Leaving WorkloadAgent.main().");
     }, function (err) {
       // start() failed before the socket was serving. The code is

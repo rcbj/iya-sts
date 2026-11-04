@@ -620,15 +620,21 @@ function registerEjectJob(): void {
     everyMs: function (): number {
       return 60000;
     },
+    // IN SLICES (#704): a turn of the event loop between stores and every
+    // `TALLY_SLICE` entries inside one, so a request on this process waits
+    // for one slice of the walk rather than all of it.
     run: function (ctx: any): any {
-      const done = registry.ejectExpired(ctx.nowMs());
-      if (done.failed.length) {
-        helpers.log.warn(errorCodes.tag('STS-CORE-0102') + 'caches: ' +
-                         done.failed.length + ' store(s) could not eject ' +
-                         'their expired entries: ' + done.failed.join('; '));
-      }
-      return { ejected: done.ejected, stores: Object.keys(done.byCache)
-        .length, failed: done.failed.length };
+      return registry.ejectExpiredAsync(ctx.nowMs()).then(
+        function (done: any): any {
+          if (done.failed.length) {
+            helpers.log.warn(errorCodes.tag('STS-CORE-0102') + 'caches: ' +
+                             done.failed.length + ' store(s) could not ' +
+                             'eject their expired entries: ' +
+                             done.failed.join('; '));
+          }
+          return { ejected: done.ejected, stores: Object.keys(done.byCache)
+            .length, failed: done.failed.length };
+        });
     }
   });
   helpers.log.debug("Leaving registerEjectJob().");

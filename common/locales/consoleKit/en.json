@@ -24,6 +24,7 @@
   "seconds.hours": "{n, plural, one {{shown} hour} other {{shown} hours}}",
   "seconds.days": "{n, plural, one {{shown} day} other {{shown} days}}",
   "chooser.showing": "Showing {from}&ndash;{to} of {n} {searched, select, yes {{n, plural, one {match} other {matches}}} other {in the list}}. ",
+  "chooser.showingMore": "Showing {from}&ndash;{to} of more than {n} matches. ",
   "chooser.count": "{n} {searched, select, yes {{n, plural, one {match} other {matches}}} other {in the list}}. ",
   "chooser.previous": "&larr; previous {n}",
   "chooser.previous.title": "The twenty before these",

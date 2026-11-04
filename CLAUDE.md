@@ -493,6 +493,7 @@ preference; this table says what the constraint is and the named file says why.
 | 6 | `common/group_claims` | Same reason, for `setGroupResolver()`. | `common/CLAUDE.md` |
 | 6a | `home/home` | No constraint; first among the route modules, and so the first `register()`. | `home/CLAUDE.md` |
 | 6a-web | `common/public_assets` | No constraint (#570): libraries only, and `/web/*` collides with nothing. | `common/CLAUDE.md` (3cl) |
+| 6a-brand | `common/branding` | Beside 6a-web (#717): a library whose routes are all under `/web`. Its require adds the write rules that hold a realm's colours to WCAG 2.2 AA, so it is above every setting restored. | `common/CLAUDE.md` (*A realm's sign-in appearance*) |
 | 8 | `authn/authn` | Before `oauth2`: it owns the session that module reads. | `authn/CLAUDE.md` |
 | 8-api | `authn/authn_api` | Just after `authn` (#571), whose views and acts it reaches through that module's exports; `/authn-api/*` collides with nothing. | `authn/CLAUDE.md` |
 | 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |
@@ -560,6 +561,7 @@ preference; this table says what the constraint is and the named file says why.
 | 23b-vii | `common/cell_sessions` | After `ssf/ssf` and the grant signals, for a reader (#98); `app.js` loads it for its middleware at #2. | `common/cell_sessions.ts` |
 | 23b-ii-b | `common/service_account_rotation` | Beside the two rotations above (#221 P4), for a reader: a library, scheduler jobs, no route, everything reached lazily. | `common/CLAUDE.md` (3cd) |
 | 23b-iii | `kerberos/krb5_krbtgt_rotation` | After `ldap/ldap_server` (21), whose directory slot the krbtgt key is written through (#169). A library: scheduler jobs, no route. | `kerberos/CLAUDE.md` |
+| 23b-iii-b | `persistence/granting_index_backfill` | After `ldap/ldap_server` (21), whose entries it keys, for a reader (#1311): a library, one scheduler job, no route; the store, the scheduler and the keystore reached lazily. | `persistence/CLAUDE.md` |
 | 23c | `xacml/xacml` | After `admin-ui/admin`, whose slots this family fills; one require, two `register()` calls — `xacml_admin`, then `xacml`. **This REQUIRE arms every issuance site** (a load-time effect): before it, `issuance_gate.js` answers "allowed". `xacml/fga_policies` is built here too, filling `applications.setFgaLifecycle()` (#564), and then `xacml/fga_pep`, filling `common/fga_gate.ts`'s decider: before it an enforcing application's every detail is refused (#564 P3). | `xacml/CLAUDE.md` |
 | 23c-ii | `authzen/authzen_access_request`, then `authzen/authzen` | The library first (#1180), whose install registers its scheduler job; then the surface after `xacml/xacml` (23c), whose surface's `decide()`, `enforce()` and `callerIdentity()` it calls lazily; requires no route module. `/access/v1/*` collides with nothing. | `authzen/CLAUDE.md` |
 | 23d | `gnap/gnap` | After `admin-ui/admin` and `ssf/ssf`; one require for the family, and three `register()` calls — `gnap`, `gnap_interact`, `gnap_admin`. | `gnap/CLAUDE.md` |
@@ -1076,15 +1078,19 @@ served `Cache-Control: no-store`.** If you add one, it needs that header too —
 `tests/protocol/sts_metadata_anonymous.js` asks it of every metadata document
 and fails until the row is there.
 
-## Versioning: M.N.O is the release; the build is recorded beside it
+## Versioning: M.N.O.<build>, fixed when an artifact is BUILT
 
-**`VERSION` at the repo root holds the whole version, a plain semantic
-version — `1.0.0` since 2026-11-04 (rcbj, #1298)** — and every surface reports
-exactly that, with no build number and no date appended; `package.json`
-carries the same string. Which BUILD an artifact is — the commit and the build
-instant — is stamped into `version.json` by the `Dockerfile` as fields of
-their own, so a restarted container reports the same build. Bump a release by
-editing `VERSION` and running `node common/version.js --sync-manifests`.
+**`VERSION` at the repo root holds the release, `M.N.O` — `1.0.0` since
+2026-11-04 (rcbj, #1298)** — and `package.json` carries the same string. Every
+surface reports `M.N.O.<build>` (#1317): **the build number is the UTC build
+instant, `YYYYMMDDHHMMSS`, unless the build is flagged as a RELEASE**
+(`STS_RELEASE=true`), when it is the `BUILD_NUMBER` the build names —
+`docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 .` is
+`1.0.0.0`. A release flag with no valid number fails the image build
+(`STS-CORE-0164`); without the flag `BUILD_NUMBER` is ignored. The number, the
+commit and the build instant are stamped into `version.json` by the
+`Dockerfile`, so a restarted container reports the same build. Bump a release
+by editing `VERSION` and running `node common/version.js --sync-manifests`.
 **There is one source**, `common/version.js`, and every surface that draws a
 version reads it — `tests/version.js` asserts the source each reads, not the
 string it renders. **A version may never be the thing that stops this service

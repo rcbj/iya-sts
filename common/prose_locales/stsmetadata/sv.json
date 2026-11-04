@@ -564,8 +564,8 @@
     "text": "partial: leverantörskonfigurationsdokumentet med varje OBLIGATORISK medlem i avsnitt 3, byggt genom att utöka RFC 8414-dokumentet så att de två inte kan vara oense om de tjugo medlemmar de delar. Betjänas på den välkända sökvägen, i avsnitt 4:s form med utfärdare med sökväg, och i RFC 8414:s form med infogad sökväg. Sedan #118 publicerar det subject_types_supported public och pairwise, alla fyra prompt-värden, display_values_supported, claims_locales_supported, scopes address och phone och varje anspråk de namnger. WebFinger (avsnitt 2, #119) löser upp en acct:-, e-post- eller värdresurs via den sfär vars DNS-domän det är och en https-URL via dess sökväg /realm/<id>, och slår aldrig upp personen; de infogade och tillagda upptäcktsformerna läser båda [realm/<id>][/<server>] och ger 404 för allt annat, så att varje dokument namnger en utfärdare som något utfärdar från. check_session_iframe saknas (#121)."
   },
   "stsmetadata.specs.oidc-registration.coverage": {
-    "en": "52a4926873bf6dbe",
-    "text": "partial: /oauth2/register och hantering enligt RFC 7592 accepterar och respekterar den OpenID Connect-klientmetadata som den här tjänsten implementerar — subject_type och sector_identifier_uri (hämtad och krävd att lista varje redirect_uri; avsnitt 5), token_endpoint_auth_signing_alg, id_token_signed_response_alg, id_token_encrypted_response_alg/enc, userinfo_signed_response_alg och dess krypteringsmedlemmar, förfrågningsobjektets medlemmar, och medlemmarna för front- och back-channel logout; och (#120) application_type (web, native) med sina regler för omdirigerings-URI, grant_types och response_types tillämpade, default_max_age och default_acr_values tillämpade på en förfrågan som inte namnger någon av dem, require_auth_time (auth_time bärs närhelst den är känd), jwks_uri hämtad, och initiate_login_uri startad från användarportalen med iss och login_hint (Core avsnitt 4). Inte täckt: policy_uri och tos_uri lagras och returneras men ritas inte på samtyckesskärmen."
+    "en": "f938f6e1a6211dd2",
+    "text": "partial: /oauth2/register och hantering enligt RFC 7592 accepterar och respekterar den OpenID Connect-klientmetadata som den här tjänsten implementerar — subject_type och sector_identifier_uri (hämtad och krävd att lista varje redirect_uri; avsnitt 5), token_endpoint_auth_signing_alg, id_token_signed_response_alg, id_token_encrypted_response_alg/enc, userinfo_signed_response_alg och dess krypteringsmedlemmar, förfrågningsobjektets medlemmar, och medlemmarna för front- och back-channel logout; och (#120) application_type (web, native) med sina regler för omdirigerings-URI, grant_types och response_types tillämpade, default_max_age och default_acr_values tillämpade på en förfrågan som inte namnger någon av dem, require_auth_time (auth_time bärs närhelst den är känd), jwks_uri hämtad, och initiate_login_uri startad från användarportalen med iss och login_hint (Core avsnitt 4); och (#1300) logo_uri, policy_uri och tos_uri som sparas och visas på inloggnings- och samtyckesskärmarna, där logotypen läses in av personens webbläsare och aldrig hämtas av den här tjänsten. Inte täckt: en språkmärkt logo_uri, policy_uri eller tos_uri (avsnitt 2.1) sparas som den skickades och ritas inte."
   },
   "stsmetadata.specs.oidc-logout.coverage": {
     "en": "762ca8fb1eb8c94b",
@@ -1210,6 +1210,18 @@
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Inloggningsskärmens kort och språkväljarens regler, som en enda formatmall som en statisk offentlig ytas skal länkar (common/web_card_css.ts). Besvaras på varje lyssnare; en adress med denna builds ?v= cachas för gott."
+  },
+  "stsmetadata.endpoints./web/theme.css.what": {
+    "en": "3f3b19caa8978c23",
+    "text": "NON-SPEC (#717). Domänens inloggningsfärger som de anpassade CSS-egenskaper /web/card.css läser (common/branding.ts): de fyra branding.*-färgerna och tonerna som härleds ur dem, byggda endast av validerade värden. Ett skal länkar den efter kortet bara där domänens utseende skiljer sig från tjänstens; en adress med dess sammandrag som ?v= cachelagras för gott."
+  },
+  "stsmetadata.endpoints./web/branding/logo.what": {
+    "en": "83a680ab27412042",
+    "text": "NON-SPEC (#717). PNG-, JPEG- eller WebP-logotypen som laddats upp för den här domänen via /admin-api/branding/logo, serverad från detta ursprung så att inloggningssidornas img-src 'self' tillåter den och ingen tredje part får veta vem som loggar in; nosniff, sandlådad, en ETag av dess sammandrag. 404 där domänen inte har någon."
+  },
+  "stsmetadata.endpoints./web/branding/preview.what": {
+    "en": "a2af93aaf34bbbe3",
+    "text": "NON-SPEC (#717). Ett exempel på den här domänens inloggningskort ritat med väntande färger och en layout (accent, page, card, text, layout i frågan, var och en kontrollerad som inställningarna skulle göra), för konsolen att öppna i en ny flik innan något sparas. Ingenting på den loggar in någon."
   },
   "stsmetadata.endpoints./web/locales/catalogs.json.what": {
     "en": "213f3eea35021e22",
@@ -1952,8 +1964,8 @@
     "text": "GET /admin/spiffe/agents som JSON, filtrerad och sidindelad, med ?agent= för en av dem. Ett REGISTER snarare än konfiguration — allt på dessa poster skrevs av den här tjänsten när en agent attesterade, och inget av det verifierades."
   },
   "stsmetadata.endpoints./admin-api/spiffe/agents/:action.what": {
-    "en": "27852c51f25bf2ea",
-    "text": "ban, unban och delete. Bannlysningen UPPRÄTTHÅLLS vid AttestAgent, vilket är det som hindrar den från att vara en lögn; delete är att glömma snarare än att återkalla, eftersom agenten dyker upp igen i samma stund som den attesterar på nytt."
+    "en": "7312163578d55aee",
+    "text": "ban, unban, delete och join-token. Bannlysningen UPPRÄTTHÅLLS vid AttestAgent, vilket är det som hindrar den från att vara en lögn; delete är att glömma snarare än att återkalla, eftersom agenten dyker upp igen i samma stund som den attesterar på nytt. join-token skapar en join-token för en sidecar-agent (#324), som lämnas ut en enda gång, med aliaset `agentId`."
   },
   "stsmetadata.endpoints./admin-api/spiffe/brokers.what": {
     "en": "01e56a072ac7b944",
@@ -2086,6 +2098,18 @@
   "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
     "en": "c3015da7d4779805",
     "text": "ICKE-SPEC (#641). add, update, remove, enable, disable och test: konsolens sex handlingar, var och en granskad. En token tas emot och returneras aldrig. Testhändelsen är ingen granskningsrad."
+  },
+  "stsmetadata.endpoints./admin-api/branding.what": {
+    "en": "fca0d849cb68e8d7",
+    "text": "NON-SPEC (#717). Det Serverkonfiguration → Inloggningens utseende ritar, i den efterfrågade domänen: layouten, de fyra färgerna och tonerna som härleds ur dem, deras kontrast mot WCAG 2.2 AA, visningsnamnet, den lagrade logotypen utan dess byte, och sidans inställningar."
+  },
+  "stsmetadata.endpoints./admin-api/branding/logo.what": {
+    "en": "b28154e101349408",
+    "text": "NON-SPEC (#717). Kroppen är bilden: en PNG, en JPEG eller en WebP, avgjort av dess byte, högst branding.logoMaxBytes. Den ersätter domänens logotyp och granskas med sitt sammandrag."
+  },
+  "stsmetadata.endpoints./admin-api/branding/:action.what": {
+    "en": "6c8c19ee983ea097",
+    "text": "NON-SPEC (#717). save skriver domänens branding-inställningar tillsammans och avvisar text eller länkar under 4,5:1 mot kortet; remove-logo tar bort logotypen och granskas."
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",

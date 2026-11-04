@@ -246,12 +246,14 @@ async function mintTheCredential() {
   log.debug("Entering mintTheCredential().");
   xacmlUser = await credentials.mint({
     subject: "CN=xacml-user-1,OU=xacml-users,O=iya-sts tests" });
-  const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
+  // Recorded before it is posted (#1307): an add applied but answered late
+  // is still removed when the job finishes.
+  const posted = await credentials.trustRecorded(base, xacmlUser.anchorPem,
+                                                 addedAnchors);
   assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
     "Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
     "certificate verifies against nothing and every read below is a 403.");
-  addedAnchors.push(xacmlUser.anchorPem);
   log.info("Minted an XACML_USER credential for " + xacmlUser.subject + ".");
   log.debug("Leaving mintTheCredential().");
 }

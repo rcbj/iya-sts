@@ -653,7 +653,7 @@ PolicyKinds.register({
 // fields must be for a realm", and on the ticket "a list of all attributes,
 // custom attributes, ability to add a new attribute, and require each
 // individual attribute as needed" — the custom attribute register is this
-// kind's two acts of its own.
+// kind's acts of its own: define and remove, and since #700 update.
 PolicyKinds.register({
   id: 'attributes',
   label: 'Attribute policy',
@@ -705,11 +705,78 @@ PolicyKinds.register({
                                       '(`true`, or `multiple` from a form). ' +
                                       'Default false.' },
           description: { type: 'string', maxLength: 1024,
-                         description: 'What it is for. Optional.' }
+                         description: 'What it is for. Optional.' },
+          portalVisible: { type: 'boolean',
+                           description: 'Whether a person sees their own ' +
+                                        'values on the user portal\'s ' +
+                                        'Overview (#700). Default false.' },
+          portalEditable: { type: 'boolean',
+                            description: 'Whether a person may change ' +
+                                         'their own values there ' +
+                                         '(`POST /account-api/attributes`). ' +
+                                         'Implies `portalVisible`, which is ' +
+                                         'stored true with it. Default ' +
+                                         'false.' }
         },
         required: ['name', 'label'],
         examples: [{ name: 'employeeBadge', label: 'Badge number',
                      syntax: 'string', multiValued: false }],
+        additionalProperties: false
+      } },
+    // #700: an existing definition changed in place — its label, its
+    // description and whether the portal shows it and lets the person
+    // edit it. The syntax and the cardinality stay as they are.
+    { action: 'update-person-attribute',
+      operationId: 'updatePersonAttribute',
+      summary: 'Change a custom attribute of this realm',
+      description: 'Rewrites `cn=<name>,ou=attributeDefinitions` with the ' +
+                   'label, description and portal flags sent; what is not ' +
+                   'sent is kept. `portalVisible` shows a person their own ' +
+                   'values on the user portal\'s Overview, and ' +
+                   '`portalEditable` lets them change those values there ' +
+                   '(`POST /account-api/attributes`); both are false by ' +
+                   'default. **Editable implies visible**: making it ' +
+                   'editable stores it visible, and hiding it alone stores ' +
+                   'it not editable. Refused for a name the realm does not ' +
+                   'define (STS-LDAP-0206) and for a field that is not ' +
+                   'valid (STS-LDAP-0207). **The syntax and the ' +
+                   'cardinality are fixed**: a `syntax` or `multiValued` ' +
+                   'other than the definition\'s own is refused ' +
+                   '(STS-LDAP-0208), because the values people hold were ' +
+                   'checked against them.',
+      auditAction: 'admin.attribute-policy.update',
+      requestBody: {
+        type: 'object',
+        properties: {
+          name: { type: 'string', description: 'The attribute\'s name.' },
+          label: { type: 'string', maxLength: 128,
+                   description: 'What the pages draw beside the name. ' +
+                                'Kept when not sent.' },
+          description: { type: 'string', maxLength: 1024,
+                         description: 'What it is for; empty removes it. ' +
+                                      'Kept when not sent.' },
+          portalVisible: { type: 'boolean',
+                           description: 'Whether a person sees their own ' +
+                                        'values on the user portal. Kept ' +
+                                        'when not sent; false also turns ' +
+                                        '`portalEditable` off unless that ' +
+                                        'is sent true.' },
+          portalEditable: { type: 'boolean',
+                            description: 'Whether a person may change their ' +
+                                         'own values on the user portal. ' +
+                                         'Kept when not sent; true turns ' +
+                                         '`portalVisible` on.' },
+          syntax: { type: 'string',
+                    description: 'Accepted only as the definition\'s own ' +
+                                 'syntax; any other is refused.' },
+          multiValued: { oneOf: [{ type: 'boolean' }, { type: 'string' }],
+                         description: 'Accepted only as the definition\'s ' +
+                                      'own cardinality; any other is ' +
+                                      'refused.' }
+        },
+        required: ['name'],
+        examples: [{ name: 'employeeBadge', label: 'Badge number',
+                     portalVisible: true, portalEditable: false }],
         additionalProperties: false
       } },
     { action: 'remove-person-attribute',

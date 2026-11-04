@@ -3019,9 +3019,12 @@ const SPECS: Spec[] = [
               'request that names neither, require_auth_time (auth_time is ' +
               'carried whenever known), jwks_uri fetched, and ' +
               'initiate_login_uri launched from the user portal with iss ' +
-              'and login_hint (Core section 4). Not covered: policy_uri and ' +
-              'tos_uri are stored and returned but not drawn on the consent ' +
-              'screen.' },
+              'and login_hint (Core section 4); and (#1300) logo_uri, ' +
+              'policy_uri and tos_uri kept and shown on the sign-in and ' +
+              'consent screens, the logo loaded by the person\'s browser and ' +
+              'never fetched by this service. Not covered: a language-tagged ' +
+              'logo_uri, policy_uri or tos_uri (section 2.1) is kept as sent ' +
+              'and not drawn.' },
   { id: 'oidc-logout', name: 'OpenID Connect RP-Initiated Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-rpinitiated-1_0.html',
@@ -4846,6 +4849,28 @@ const ENDPOINTS: EndpointEntry[] = [
           'shell links (common/web_card_css.ts). Answered on every ' +
           'listener; an address carrying this build\'s ?v= is cached for ' +
           'good.' },
+  { path: '/web/theme.css', group: 'Service',
+    name: 'A realm\'s sign-in appearance stylesheet', specs: [],
+    what: 'NON-SPEC (#717). The realm\'s sign-in colours as the CSS custom ' +
+          'properties /web/card.css reads (common/branding.ts): the four ' +
+          'branding.* colours and the tones derived from them, built only ' +
+          'from validated values. A shell links it after the card only ' +
+          'where the realm\'s appearance differs from the service\'s; an ' +
+          'address carrying its digest as ?v= is cached for good.' },
+  { path: '/web/branding/logo', group: 'Service',
+    name: 'A realm\'s sign-in logo', specs: [],
+    what: 'NON-SPEC (#717). The PNG, JPEG or WebP logo uploaded for this ' +
+          'realm through /admin-api/branding/logo, served from this origin ' +
+          'so the sign-in pages\' img-src \'self\' admits it and no third ' +
+          'party learns who is signing in; nosniff, sandboxed, an ETag of ' +
+          'its digest. 404 where the realm has none.' },
+  { path: '/web/branding/preview', group: 'Service',
+    name: 'A sign-in appearance preview', specs: [],
+    what: 'NON-SPEC (#717). A sample of this realm\'s sign-in card drawn ' +
+          'with pending colours and a layout (accent, page, card, text, ' +
+          'layout in the query, each checked as the settings would be), ' +
+          'for the console to open in a new tab before saving. Nothing on ' +
+          'it signs anybody in.' },
   { path: '/web/locales/catalogs.json', group: 'Service',
     name: 'The locale catalog index', specs: ['bcp47'],
     what: 'NON-SPEC (#570). Which catalogs exist (tag, endonym, status, the ' +
@@ -6438,12 +6463,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'everything on these entries was written by this service when an ' +
           'agent attested, and none of it was verified.' },
   { path: '/admin-api/spiffe/agents/:action', group: 'Management API',
-    name: 'Ban, unban or forget an agent',
+    name: 'Ban, unban or forget an agent, or mint a join token',
     specs: ['openapi', 'spire-server-api'],
-    what: 'ban, unban and delete. The ban is ENFORCED at AttestAgent, which ' +
-          'is what keeps it from being a lie; delete is forgetting rather ' +
-          'than revoking, since the agent reappears the moment it attests ' +
-          'again.' },
+    what: 'ban, unban, delete and join-token. The ban is ENFORCED at ' +
+          'AttestAgent, which is what keeps it from being a lie; delete is ' +
+          'forgetting rather than revoking, since the agent reappears the ' +
+          'moment it attests again. join-token mints a join token for a ' +
+          'sidecar agent (#324), answered once, its alias `agentId`.' },
   { path: '/admin-api/spiffe/brokers', group: 'Management API',
     name: 'The SPIFFE Broker API\'s brokers',
     specs: ['openapi', 'spiffe-broker-api'],
@@ -6839,6 +6865,23 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC (#641). add, update, remove, enable, disable and ' +
           'test: the console\'s six acts, each audited. A token is taken ' +
           'and never returned. The test event is not an audit row.' },
+  { path: '/admin-api/branding', group: 'Management API',
+    name: 'Sign-in appearance', specs: ['openapi'],
+    what: 'NON-SPEC (#717). What Server configuration → Sign-in ' +
+          'appearance draws, in the realm asked: the layout, the four ' +
+          'colours and the tones derived from them, their contrast against ' +
+          'WCAG 2.2 AA, the display name, the stored logo without its ' +
+          'bytes, and the page\'s settings.' },
+  { path: '/admin-api/branding/logo', group: 'Management API',
+    name: 'Upload the sign-in logo', specs: ['openapi'],
+    what: 'NON-SPEC (#717). The body is the image: a PNG, a JPEG or a ' +
+          'WebP, which its bytes decide, at most branding.logoMaxBytes. ' +
+          'It replaces the realm\'s logo and is audited with its digest.' },
+  { path: '/admin-api/branding/:action', group: 'Management API',
+    name: 'Change the sign-in appearance', specs: ['openapi'],
+    what: 'NON-SPEC (#717). save writes the realm\'s branding settings ' +
+          'together, refusing text or links below 4.5:1 against the card; ' +
+          'remove-logo removes the logo and is audited.' },
   { path: '/admin-api/audit', group: 'Management API', name: 'Audit log',
     specs: ['rfc4511'],
     what: 'NON-SPEC. What happened here, in order, as JSON: every ' +
@@ -11065,10 +11108,12 @@ class StsMetadata {
       // together, which is the point: an endpoint list with no build on
       // it is a claim about a service and not about a release of one.
       version: APP_VERSION.version,
-      // `version` is the release, VERSION's M.N.O exactly (#1298); `build`
-      // says which build of it — the commit and the instant, never a number
-      // appended to the version.
+      // `version` is M.N.O.<build> (#1317); `build` breaks it out — the
+      // build number, whether it is a release build, the commit and the
+      // instant.
       build: {
+        number: APP_VERSION.build || undefined,
+        release: APP_VERSION.release === true,
         commit: APP_VERSION.commit || undefined,
         at: APP_VERSION.builtAt,
         // See the management API index for what this distinction is worth.

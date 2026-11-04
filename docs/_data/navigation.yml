@@ -67,6 +67,7 @@
     - { title: Sessions, url: /sessions.html }
     - { title: Identity-provider-initiated sign-in, url: /idp-initiated-sso.html }
     - { title: Several accounts in one browser, url: /multiple-accounts.html }
+    - { title: Sign-in appearance, url: /sign-in-appearance.html }
     - { title: Signing out, url: /signing-out.html }
     - { title: Risk scoring, url: /risk-scoring.html }
     - { title: Devices, url: /devices.html }
@@ -171,6 +172,7 @@
     - { title: PostgreSQL schema, url: /postgres-schema.html }
     - { title: Encryption at rest, url: /encryption-at-rest.html }
     - { title: Caches, url: /caches.html }
+    - { title: How the cluster works, url: /cluster-concepts.html }
     - { title: A cluster in AWS, url: /aws-cluster.html }
     - { title: Several regions (cells), url: /cells.html }
     - { title: How cells work, url: /cells-concepts.html }

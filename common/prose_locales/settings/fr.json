@@ -791,6 +791,78 @@
     "en": "e0455f389b3cfb47",
     "text": "Permet à un navigateur de détenir des sessions d’authentification unique pour plusieurs personnes à la fois, et de choisir entre elles. Activé, la connexion d’une autre personne AJOUTE une session à l’ensemble de comptes du navigateur (le témoin `sts_accounts`) au lieu de mettre fin à celle qu’il avait ; une requête qui ne dit pas à quel compte elle est destinée — aucun compte choisi dans ce flux, aucun login_hint, id_token_hint ni Subject SAML n’en nommant un — alors que plusieurs comptes sont connectés est envoyée au sélecteur de comptes à /authn/accounts, et prompt=select_account l’affiche. Chaque session conserve sa propre durée de vie, son délai d’inactivité, son état d’authentification renforcée et sa déconnexion. Activé par défaut. Désactivé, le navigateur a une seule session et la connexion d’une autre personne y met fin. Prend effet à la requête suivante dans les deux sens et ne met fin à rien : activé, la session existante d’un navigateur devient le premier compte de son ensemble ; désactivé, la session par défaut du navigateur continue seule et les autres expirent comme d’habitude."
   },
+  "branding.layout|label": {
+    "en": "2bce09e5da84a651",
+    "text": "Mise en page de la connexion"
+  },
+  "branding.layout|description": {
+    "en": "0f84529af8e63ce7",
+    "text": "La disposition de l’écran de connexion, de ses étapes, de l’écran de consentement et des autres pages publiques dans ce domaine. centered : la carte au milieu de la page, avec le logo et le nom affiché au-dessus (la valeur par défaut, l’aspect que le service a toujours eu). split : un panneau dans la couleur d’accent portant le logo et le nom affiché à côté de la carte, au-dessus d’elle sur un écran étroit. banner : un bandeau dans la couleur d’accent en haut de la page qui les porte, avec la carte en dessous. Chaque mise en page garde le formulaire, ses champs et leur ordre exactement tels qu’ils sont."
+  },
+  "branding.accentColor|label": {
+    "en": "12376f4cbd6c30b9",
+    "text": "Couleur d’accent"
+  },
+  "branding.accentColor|description": {
+    "en": "6a7806cbc4a60f44",
+    "text": "La couleur des boutons, des liens et des anneaux de focus sur les pages publiques de ce domaine, ainsi que du panneau split et du bandeau. S’écrit #rgb ou #rrggbb. Le texte d’un bouton est noir ou blanc, selon ce qui se lit le mieux dessus ; il ne se règle donc pas séparément. Une couleur dont les liens tomberaient sous le contraste WCAG 2.2 AA (4.5:1) par rapport à la couleur de la carte est refusée (STS-AUTHN-0544)."
+  },
+  "branding.pageColor|label": {
+    "en": "d8f29ba7b8da917a",
+    "text": "Couleur de fond de la page"
+  },
+  "branding.pageColor|description": {
+    "en": "e36337b16ae8eb93",
+    "text": "Le fond derrière la carte sur les pages publiques de ce domaine. S’écrit #rgb ou #rrggbb."
+  },
+  "branding.cardColor|label": {
+    "en": "32fcd1507a366673",
+    "text": "Couleur de la carte"
+  },
+  "branding.cardColor|description": {
+    "en": "91c08312a7b2f249",
+    "text": "Le fond de la carte sur laquelle le formulaire de connexion est dessiné. S’écrit #rgb ou #rrggbb. Les couleurs du texte et d’accent doivent chacune garder un contraste WCAG 2.2 AA (4.5:1) par rapport à elle, sinon la modification est refusée (STS-AUTHN-0544)."
+  },
+  "branding.textColor|label": {
+    "en": "25e9c8090de7f831",
+    "text": "Couleur du texte"
+  },
+  "branding.textColor|description": {
+    "en": "86f81fcb12b03b41",
+    "text": "La couleur du texte sur la carte. S’écrit #rgb ou #rrggbb. Le texte plus discret (notes, indications) est mélangé à partir d’elle et de la couleur de la carte, jamais sous le contraste WCAG 2.2 AA. Une couleur sous 4.5:1 par rapport à la carte est refusée (STS-AUTHN-0544)."
+  },
+  "branding.displayName|label": {
+    "en": "2b7f6a84de917e38",
+    "text": "Nom affiché"
+  },
+  "branding.displayName|description": {
+    "en": "c7734d5c0723dde4",
+    "text": "Un nom affiché à côté du logo sur les pages publiques de ce domaine et dans le titre de l’onglet du navigateur (\"Sign in — <name>\"), en texte brut, jamais en balisage, et non traduit. Vide, aucun nom n’est affiché et le titre est celui que la page a toujours eu. 80 caractères au plus."
+  },
+  "branding.logoAlt|label": {
+    "en": "bb2a5f1e3e7d2fca",
+    "text": "Texte de remplacement du logo"
+  },
+  "branding.logoAlt|description": {
+    "en": "4252cb4ab4a31ec4",
+    "text": "Ce qu’un lecteur d’écran lit à la place du logo de ce domaine, généralement le nom de l’organisation. Obligatoire tant que le domaine a un logo : un logo ne peut pas être téléversé sans lui, et il ne peut pas être vidé tant qu’un logo est conservé (STS-AUTHN-0548). 160 caractères au plus."
+  },
+  "branding.logoLinkUrl|label": {
+    "en": "78ddaed87c9eb98d",
+    "text": "Lien du logo"
+  },
+  "branding.logoLinkUrl|description": {
+    "en": "3cd6daaebb2a7ea6",
+    "text": "Où mène le logo quand on le suit, une URL https absolue (STS-AUTHN-0551 sinon). Vide, le logo n’est pas un lien, ce qui est la valeur par défaut : une page de connexion sans rien à suivre vers l’extérieur est la plus sûre."
+  },
+  "branding.logoMaxBytes|label": {
+    "en": "26a97375a1800d8b",
+    "text": "Logo le plus grand (octets)"
+  },
+  "branding.logoMaxBytes|description": {
+    "en": "37f4c903152cd219",
+    "text": "Le plus grand logo qu’un téléversement peut porter, pour chaque domaine. Un logo plus grand est refusé (STS-AUTHN-0546). Le logo est conservé dans le stockage et répliqué vers chaque processus ; il reste donc petit : 256 Kio par défaut, 2 Mio au plus."
+  },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
     "text": "Nombre maximal de comptes mémorisés par un navigateur"

@@ -785,9 +785,11 @@ function refreshTokenJwkOf(privateKey, kind) {
  *
  * @param madeRsa - an RSA key pair already made, to use in place of generating
  * one
+ * @param madeEc - an EC key pair already made on the configured curve, the
+ * same
  * @returns `{ rsa, ec, secret, secretKid }`
  */
-function makeRefreshTokenEncryptionKeys(madeRsa) {
+function makeRefreshTokenEncryptionKeys(madeRsa, madeEc) {
   log.debug("Entering makeRefreshTokenEncryptionKeys().");
   const bits = rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits');
   const curveName = String(config.value('oauth2.refreshTokenEncryptionCurve') ||
@@ -796,7 +798,8 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
                 REFRESH_TOKEN_CURVES['P-256'];
   const rsa = madeRsa ||
               stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
-  const ec = stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
+  const ec = madeEc ||
+             stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
   const secret = stsCrypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
   const out = {
     rsa: { privateKey: rsa.privateKey,
@@ -814,6 +817,39 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
             " bits, " +
             curveName + ", kid=" + out.rsa.publicJwk.kid);
   return out;
+}
+
+// THE SAME, WITH BOTH PAIRS MADE IN NODE'S THREAD POOL (#704), for a
+// rotation: `signing.rotate` made them with `generateKeyPairSync()`, an RSA
+// key of `oauth2.refreshTokenEncryptionKeyBits` on the event loop of the
+// process running the job. The sizes are read in the realm before anything
+// is awaited, and the set is assembled by the one maker above.
+/**
+ * Makes a realm's refresh-token encryption keys with the RSA and EC pairs
+ * generated off the event loop.
+ *
+ * @param realmId - the realm whose settings size the keys
+ * @returns a promise of what `makeRefreshTokenEncryptionKeys()` answers
+ */
+async function makeRefreshTokenEncryptionKeysAsync(realmId) {
+  log.debug("Entering makeRefreshTokenEncryptionKeysAsync().");
+  const realm = realms.get(String(realmId || '')) ||
+                realms.get(realms.DEFAULT_ID);
+  const sizes = realms.run(realm, function () {
+    const curveName = String(
+      config.value('oauth2.refreshTokenEncryptionCurve') || 'P-256');
+    return { bits: rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits'),
+             curve: REFRESH_TOKEN_CURVES[curveName] ||
+                    REFRESH_TOKEN_CURVES['P-256'] };
+  });
+  const pairs = await Promise.all([
+    generateRsaPairAsync(sizes.bits),
+    stsCrypto.generateKeyPairAsync('ec', { namedCurve: sizes.curve })
+  ]);
+  log.debug("Leaving makeRefreshTokenEncryptionKeysAsync().");
+  return realms.run(realm, function () {
+    return makeRefreshTokenEncryptionKeys(pairs[0], pairs[1]);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1354,18 +1390,40 @@ function certifyLater(realmId, keys) {
       // did before the hierarchy existed.
       return;
     }
-    Promise.resolve(pki.certifyKeySet(realmId, keys)).then(function (done) {
-      if (done && !done.ok && (done.errors || []).length) {
-        log.debug('The "' + realmId + '" realm\'s keys were not certified: ' +
-                  done.errors.join(' '));
+    // **NOT `certifyKeySet()` DIRECTLY (2026-11-04).** A realm created at
+    // runtime makes its keys on first use, and in a cluster that is often
+    // before ITS BRANCH exists — another process builds it, a second or two
+    // later — and `certifyKeySet()` answers "no branch" and nothing asked
+    // again, so the realm's classical keys were never certified and every
+    // `x5c` it promised was left off. `pki.certifyKeySetWhenBranched()` asks
+    // for the branch first; its header argues the case.
+    // Is `keys` still the set this realm signs with? A sibling's set may have
+    // won meanwhile (`keystore.onAdopt()` drops ours), and its maker
+    // certifies that one. `keySetIfMade()` restores and never generates.
+    const current = function () {
+      let now = null;
+      try {
+        now = keySetIfMade(realmId);
+      } catch (e) {
+        log.debug("Caught in a callback in certifyLater(): " +
+                  ((e && e.message) || e));
+        now = null;
       }
-    }).catch(function (e) {
-      log.error(errorCodes.tag('STS-CORE-0024') +
-                'The "' + realmId + '" realm\'s signing keys could not be ' +
-                'certified under its Issuing CAs: ' + e.message + '. They ' +
-                'still SIGN — what they lack is a certificate chaining to ' +
-                'this service\'s Root.');
-    });
+      return !now || now === keys || now.kid === keys.kid;
+    };
+    Promise.resolve(pki.certifyKeySetWhenBranched(realmId, keys, current))
+      .then(function (done) {
+        if (done && !done.ok && (done.errors || []).length) {
+          log.debug('The "' + realmId + '" realm\'s keys were not ' +
+                    'certified: ' + done.errors.join(' '));
+        }
+      }).catch(function (e) {
+        log.error(errorCodes.tag('STS-CORE-0024') +
+                  'The "' + realmId + '" realm\'s signing keys could not be ' +
+                  'certified under its Issuing CAs: ' + e.message + '. They ' +
+                  'still SIGN — what they lack is a certificate chaining to ' +
+                  'this service\'s Root.');
+      });
   });
   log.debug("Leaving certifyLater().");
 }
@@ -6128,15 +6186,21 @@ function retireExpiredGenerations(realmId, nowMs) {
  * @param realmId - the realm
  * @param graceMs - how long the retired set still opens tokens
  * @param why - the reason, for the log
+ * @param madeKeys - a set already made off the event loop, to install in
+ *   place of making one here
  * @returns what storing the new generation answered
  */
-function rotateRefreshTokenKeys(realmId, graceMs, why) {
+function rotateRefreshTokenKeys(realmId, graceMs, why, madeKeys) {
   log.debug("Entering rotateRefreshTokenKeys(). realm=" + realmId);
   const id = String(realmId || '');
   const keys = stsKeysFor.of(id);
   const old = refreshTokenKeysFor(keys);
   const realm = realms.get(id) || realms.get(realms.DEFAULT_ID);
-  const made = realms.run(realm, makeRefreshTokenEncryptionKeys);
+  // `madeKeys`, when given, is the set `makeRefreshTokenEncryptionKeysAsync()`
+  // made off the event loop (#704); a caller that has none gets one made here.
+  const made = madeKeys || realms.run(realm, function () {
+    return makeRefreshTokenEncryptionKeys();
+  });
   const now = Date.now();
   const copy = plainCopyOf(keys, { refreshTokenEncKeys: made });
   copy.generations.retiredRefresh = copy.generations.retiredRefresh.concat([
@@ -7546,10 +7610,25 @@ function certificateSlotOf(entry) {
 function certificateHeaderFor(useCaseId, alg, kid) {
   log.debug("Entering certificateHeaderFor(). use=" + useCaseId +
             ", alg=" + alg);
-  const spec = stsCrypto.JWS_ALGS[alg];
-  if (!useCaseId || !spec || spec.family === 'hmac' || !kid) {
+  const signer = useCaseId ? certificateSignerFor(alg, kid) : null;
+  if (!signer) {
     log.debug("Leaving certificateHeaderFor(). Nothing to name.");
     return {};
+  }
+  log.debug("Leaving certificateHeaderFor().");
+  return certificateHeader.headerFor(useCaseId, signer);
+}
+
+// WHICH OF THE AMBIENT REALM'S KEYS `kid` IS, as `jose_certificate_header.js`
+// wants it described — or null for an HMAC, an unknown algorithm or a key this
+// realm does not hold. `certificateHeaderFor()` and its asynchronous twin
+// below share it, so they cannot disagree about whose certificate is whose.
+function certificateSignerFor(alg, kid) {
+  log.debug("Entering certificateSignerFor(). alg=" + alg);
+  const spec = stsCrypto.JWS_ALGS[alg];
+  if (!spec || spec.family === 'hmac' || !kid) {
+    log.debug("Leaving certificateSignerFor(). Nothing to name.");
+    return null;
   }
   const keys = stsKeysFor();
   let signer = null;
@@ -7609,10 +7688,119 @@ function certificateHeaderFor(useCaseId, alg, kid) {
     }
   }
   if (!signer) {
-    log.debug("Leaving certificateHeaderFor(). Not a key of this realm.");
-    return {};
+    log.debug("Leaving certificateSignerFor(). Not a key of this realm.");
+    return null;
   }
-  log.debug("Leaving certificateHeaderFor().");
+  log.debug("Leaving certificateSignerFor().");
+  return signer;
+}
+
+// ---------------------------------------------------------------------------
+// THE SAME, FOR A SIGNER THAT CAN WAIT — AND THAT DOES NOT TAKE "NOT CERTIFIED
+// YET" FOR AN ANSWER (2026-11-04).
+//
+// `certificateHeaderFor()` answers `{}` for a key with no certificate, which
+// is right where nothing is certified on purpose (`pki.autoBuild` off) and
+// wrong where the certificate is simply not HERE yet. In a cluster a realm's
+// key may be certified by another process or node a moment before this one
+// signs, and the row reaches this process through the store; or — the defect
+// `pki.certifyKeySetWhenBranched()` closes — nobody certified it at all. So
+// where the use case asks for a header and the key has no certificate in this
+// process, this (1) reads the realm's row from the store, then (2) asks for
+// the key set to be certified (the branch first), each bounded by
+// `CERTIFICATE_WAIT_MS` so a request is never held for a whole cluster build,
+// and answers what is held then. Still nothing is logged under STS-PKI-0227,
+// once per key, and the token is signed without the header — a signer that
+// refused to issue over a header would be the tail wagging the dog, and a
+// realm with `pki.autoBuild` off has nothing to wait for.
+//
+// The OpenID4VCI credential signers call it (`vci-credential`): SD-JWT VC
+// section 3.5 finds an issuer's key by `x5c`, and a wallet that verifies a
+// stored credential offline has no other way (`sts_eudi_wallet_portal`).
+// ---------------------------------------------------------------------------
+const CERTIFICATE_WAIT_MS = 5000;
+const warnedUncertified = new Set();
+
+function withinCertificateWait(promise) {
+  log.debug("Entering withinCertificateWait().");
+  let timer = null;
+  const late = new Promise(function (resolve) {
+    // A per-request bound, not periodic work (root CLAUDE.md, *Anything
+    // periodic is a scheduler job*): cleared as soon as the work settles.
+    timer = setTimeout(function () {
+      resolve(null);
+    }, CERTIFICATE_WAIT_MS);
+  });
+  log.debug("Leaving withinCertificateWait().");
+  return Promise.race([Promise.resolve(promise).catch(function (e) {
+    log.debug("Caught in withinCertificateWait(): " + ((e && e.message) || e));
+    return null;
+  }), late]).then(function (answer) {
+    clearTimeout(timer);
+    return answer;
+  });
+}
+
+/**
+ * Builds the `x5c` or `x5u` header members for one signature, as
+ * `certificateHeaderFor()` does, but reads the store and asks for the key
+ * set to be certified first where the use case wants a header and the key
+ * has no certificate here yet.
+ *
+ * Never rejects; a key still uncertified is logged (STS-PKI-0227) and the
+ * answer carries no header.
+ *
+ * @param useCaseId - a row of `jose_certificate_header.js`'s use cases
+ * @param alg - the JWS algorithm
+ * @param kid - the signing key's `kid`
+ * @returns a promise of the header members to merge
+ */
+async function certificateHeaderForAsync(useCaseId, alg, kid) {
+  log.debug("Entering certificateHeaderForAsync(). use=" + useCaseId);
+  const signer = useCaseId ? certificateSignerFor(alg, kid) : null;
+  if (!signer || !certificateHeader.awaitsCertificate(useCaseId, signer)) {
+    log.debug("Leaving certificateHeaderForAsync(). Nothing to wait for.");
+    return signer ? certificateHeader.headerFor(useCaseId, signer) : {};
+  }
+  let pki = null;
+  try {
+    pki = require('./pki');
+  } catch (e) {
+    log.debug("Caught in certificateHeaderForAsync(): " +
+              ((e && e.message) || e));
+    pki = null;
+  }
+  if (!pki || typeof pki.buildsRealmBranches !== 'function' ||
+      !pki.buildsRealmBranches()) {
+    // Nothing in this process certifies a runtime realm's keys — no
+    // certificate authority, `pki.autoBuild` off, or an in-process caller
+    // that never started one — so there is nothing to wait for.
+    log.debug("Leaving certificateHeaderForAsync(). No builder here.");
+    return certificateHeader.headerFor(useCaseId, signer);
+  }
+  // (1) Another process or node may have certified it already.
+  await withinCertificateWait(keystore.refreshPki(signer.realm));
+  if (certificateHeader.awaitsCertificate(useCaseId, signer)) {
+    // (2) Nobody has: certify the set this process signs with.
+    await withinCertificateWait(
+      pki.certifyKeySetWhenBranched(signer.realm, stsKeysFor()));
+  }
+  if (certificateHeader.awaitsCertificate(useCaseId, signer)) {
+    const once = String(signer.realm) + ' ' + signer.kid;
+    if (!warnedUncertified.has(once)) {
+      if (warnedUncertified.size >= 512) {
+        warnedUncertified.clear();
+      }
+      warnedUncertified.add(once);
+      log.warn(errorCodes.tag('STS-PKI-0227') + 'A "' + useCaseId + '" ' +
+               'token in the "' + (signer.realm || 'default') + '" realm is ' +
+               'signed with ' + signer.slot + ' key ' + signer.kid + ', which ' +
+               'has no certificate here even after reading the store and ' +
+               'asking for one, so it carries no x5c or x5u although ' +
+               certificateHeader.useCase(useCaseId).setting + ' asks for one.');
+    }
+  }
+  log.debug("Leaving certificateHeaderForAsync().");
   return certificateHeader.headerFor(useCaseId, signer);
 }
 
@@ -8870,6 +9058,7 @@ module.exports = {
   signJwtAs: signJwtAs,
   signJwtAsAsync: signJwtAsAsync,
   certificateHeaderFor: certificateHeaderFor,
+  certificateHeaderForAsync: certificateHeaderForAsync,
   publishedKidFor: publishedKidFor,
   kidNamesKey: kidNamesKey,
   warmPqKeys: warmPqKeys,
@@ -8985,6 +9174,7 @@ module.exports = {
   browserDeviceSigner: browserDeviceSigner,
   browserDeviceVerifiers: browserDeviceVerifiers,
   makeRefreshTokenEncryptionKeys: makeRefreshTokenEncryptionKeys,
+  makeRefreshTokenEncryptionKeysAsync: makeRefreshTokenEncryptionKeysAsync,
   requestEncryptionJwkOf: requestEncryptionJwkOf,
   VCI_REQUEST_ENC_ALG: VCI_REQUEST_ENC_ALG,
   // The count as a word, for the refusal sentences that name what they

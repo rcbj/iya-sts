@@ -1393,6 +1393,18 @@ function serialFromHex(hex) {
   for (var i = 0; i < bytes.length; i++) {
     bytes[i] = parseInt(clean.substr(i * 2, 2), 16);
   }
+  // DER WANTS THE SHORTEST FORM (X.690 8.3.2), so leading zero bytes a
+  // caller's serial carries are dropped while the next byte keeps the value
+  // positive (2026-11-05). A random eight-byte serial beginning 00 3f… was
+  // written as 02 08 00 3f…, and OpenSSL refused the certificate with
+  // "illegal padding" — tests/federation_oidc_rp.js, about once in five
+  // hundred runs.
+  var first = 0;
+  while (first < bytes.length - 1 && bytes[first] === 0 &&
+         bytes[first + 1] < 0x80) {
+    first++;
+  }
+  bytes = bytes.subarray(first);
   // A leading byte of 0x80 or more would be read as a negative integer.
   var value = bytes[0] >= 0x80
     ? new Uint8Array([0].concat(Array.prototype.slice.call(bytes)))

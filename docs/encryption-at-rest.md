@@ -291,7 +291,10 @@ also rotate them now — every key, one realm's, or one kind of data's — from
    and nothing new is sealed under it.
 3. Every hour `keys.data-key-reencrypt` re-seals what is still under a
    superseded key. Run it now with the console's **Re-encrypt now** or
-   `POST /admin-api/encryption/reencrypt-data-keys`.
+   `POST /admin-api/encryption/reencrypt-data-keys`. Every process of the
+   service, its request workers included, takes the re-sealed signing keys
+   from the store within seconds, so destroying the old key later strands
+   no process's copy of them.
 4. A superseded key is **destroyed** once nothing in the store is sealed
    under it **and** it has been superseded for `keys.dataKeyRetireAfterDays`
    (7). Destruction cannot be undone.

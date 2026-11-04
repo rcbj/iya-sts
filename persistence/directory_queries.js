@@ -319,11 +319,19 @@ function rdnRange(columns, realm, parent, after, limit, filter) {
  * inject a wildcard). An empty needle adds no predicate: `position('' in
  * x)` is 1 in PostgreSQL and would match every row for the wrong reason.
  *
+ * **A NEEDLE THE TRIGRAM INDEX SERVES, WITH FEW MATCHES, IS READ BY ITS
+ * MATCHES INSTEAD** (#1310): when `options.matched` and `options.total`
+ * (the caller's capped count and the container's size) say that reading
+ * every match costs less than the walk would (`matchesCheaper()`), the
+ * page is `needleMatches()`'s statement — the matches through
+ * `sts_ldap_entries_uid_trgm`, sorted. Otherwise the walk.
+ *
  * @param realm - the realm id
  * @param parentKey - the parent's normalised DN
  * @param afterRdn - the cursor, or ''
  * @param limit - the page size (at most 1,000)
- * @param options - `offset` and `needle`
+ * @param options - `offset`, `needle`, and `matched`, `total` and
+ *   `countCapped` when the caller has counted
  * @returns the statement
  */
 function rdnPage(realm, parentKey, afterRdn, limit, options) {
@@ -338,6 +346,11 @@ function rdnPage(realm, parentKey, afterRdn, limit, options) {
   /** @type {Array<string | number>} */
   const values = [String(realm), String(parentKey),
                   String(afterRdn || '').toLowerCase()];
+  if (needleIndexed(parentKey, needle) && matchesCheaper(o, walk)) {
+    values.push('%' + likeEscaped(needle) + '%', walk - skip, skip);
+    log.debug("Leaving rdnPage(). By its matches.");
+    return { text: needleMatches(), values: values };
+  }
   let filter = '';
   if (needle) {
     values.push(needle);
@@ -354,32 +367,84 @@ function rdnPage(realm, parentKey, afterRdn, limit, options) {
            values: values };
 }
 
+// ---------------------------------------------------------------------------
+// A NEEDLE SEARCH'S COUNT IS CAPPED (#1308, rcbj's decision 2026-11-04).
+//
+// `position($3 in rdn_value) > 0` is a substring, and no index serves one:
+// the count read every direct child of the parent, so under a parent of
+// millions each search's count was a scan of millions. The count now stops
+// at `cap + 1` matches — a LIMIT inside the count, as
+// `countWithAttributeUpTo()` has — and an answer of `cap + 1` means MORE
+// THAN `cap`, which the caller says in those words. No schema change.
+//
+// **THE CAP IS THE WALK'S CAP, 100,000** (`rdnPage()`'s `walk`): no page
+// past it can be asked, so a count past it bought a number nobody could
+// page to, and a count up to it costs what the deepest page already costs.
+// A caller may ask a smaller cap (a test does); never a larger one. The
+// cap bounds the MATCHES counted, not the rows read: a needle that matches
+// few children read every child to find that out — until #1310, below,
+// which keeps the cap and asks such a needle of the trigram index.
+// ---------------------------------------------------------------------------
+const RDN_COUNT_CAP = 100000;
+
 /**
- * How many direct children of a parent have an RDN containing `needle`.
+ * The cap a count is asked with: a whole number from 1 to `RDN_COUNT_CAP`,
+ * and `RDN_COUNT_CAP` when none (or nonsense) is given.
  *
- * An empty needle is every direct child. This is a count of the table,
- * not the counter: the counter cannot see a substring. A caller that
- * wants the container's size asks `count` instead, and this is asked
- * asynchronously — a heavier plan must not hold the event loop.
+ * @param cap - the caller's cap, or undefined
+ * @returns the cap
+ */
+function rdnCountCap(cap) {
+  log.debug("Entering rdnCountCap().");
+  const n = Math.floor(Number(cap));
+  log.debug("Leaving rdnCountCap().");
+  return isFinite(n) && n >= 1 ? Math.min(n, RDN_COUNT_CAP) : RDN_COUNT_CAP;
+}
+
+/**
+ * How many direct children of a parent have an RDN containing `needle`,
+ * COUNTED NO FURTHER THAN `cap + 1` (#1308): an answer over `cap` means
+ * more than `cap`, and is never the number of matches.
+ *
+ * An empty needle is every direct child, capped the same way. This is a
+ * count of the table, not the counter: the counter cannot see a
+ * substring. A caller that wants the container's size asks `count`
+ * instead, and this is asked asynchronously — a heavier plan must not
+ * hold the event loop.
  *
  * @param realm - the realm id
  * @param parentKey - the parent's normalised DN
  * @param needle - the substring, or ''
+ * @param cap - the most it reports exactly (`rdnCountCap()`)
  * @returns the statement
  */
-function rdnCount(realm, parentKey, needle) {
+function rdnCount(realm, parentKey, needle, cap) {
   log.debug("Entering rdnCount().");
   const wanted = String(needle || '').toLowerCase();
-  log.debug("Leaving rdnCount().");
-  if (!wanted) {
-    return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
-                   'WHERE realm = $1 AND parent_key = $2',
-             values: [String(realm), String(parentKey)] };
+  /** @type {Array<string | number>} */
+  const values = [String(realm), String(parentKey)];
+  if (needleIndexed(parentKey, wanted)) {
+    values.push('%' + likeEscaped(wanted) + '%', rdnCountCap(cap) + 1);
+    log.debug("Leaving rdnCount(). Through the trigram index.");
+    return { text: 'WITH m AS MATERIALIZED (SELECT 1 AS one FROM ' +
+                   'sts_ldap_entries WHERE realm = $1 AND parent_key = $2 ' +
+                   'AND ' + USERS_PARENT + ' AND rdn_value LIKE $3 ESCAPE ' +
+                   '\'\\\') SELECT count(*)::bigint AS n FROM (SELECT one ' +
+                   'FROM m LIMIT $4) AS matched',
+             values: values };
   }
-  return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
-                 'WHERE realm = $1 AND parent_key = $2 AND position($3 ' +
-                 'in rdn_value) > 0',
-           values: [String(realm), String(parentKey), wanted] };
+  let filter = '';
+  if (wanted) {
+    values.push(wanted);
+    filter = ' AND position($' + values.length + ' in rdn_value) > 0';
+  }
+  values.push(rdnCountCap(cap) + 1);
+  log.debug("Leaving rdnCount().");
+  return { text: 'WITH m AS MATERIALIZED (SELECT 1 AS one FROM ' +
+                 'sts_ldap_entries WHERE realm = $1 AND parent_key = $2' +
+                 filter + ') SELECT count(*)::bigint AS n FROM (SELECT one ' +
+                 'FROM m LIMIT $' + values.length + ') AS matched',
+           values: values };
 }
 
 // ---------------------------------------------------------------------------
@@ -435,6 +500,120 @@ function uidContains(realm, parentKey, needle, limit) {
                  ' AND rdn_value LIKE $3 ESCAPE \'\\\' LIMIT $4',
            values: [String(realm), String(parentKey),
                     '%' + likeEscaped(wanted) + '%', pageSize(limit)] };
+}
+
+// ---------------------------------------------------------------------------
+// A SELECTIVE NEEDLE IS AN INDEX PROBE, NOT A READ OF EVERY CHILD (#1310,
+// rcbj's follow-up to #1308, 2026-11-04).
+//
+// `sts_ldap_entries_uid_trgm` (schema version 23, `uidContains`'s, above)
+// is already the index the role chooser's needle needs: a `pg_trgm` GIN
+// over `rdn_value`, partial on `USERS_PARENT`, and every needle search is
+// of a realm's `ou=users` (`ldap_server.js`'s `candidatePageAsync()`). So
+// NO NEW INDEX AND NO SCHEMA VERSION: the count and the page are rewritten
+// so that index can serve them — `rdn_value LIKE $n ESCAPE '\'` with the
+// needle's `%`, `_` and `\` escaped (`likeEscaped()`), and the index's
+// own condition repeated, because the planner uses a partial index only
+// where the query implies its WHERE. `rdn_value` is generated from the
+// lower-cased key and the needle is lower-cased, so LIKE matches exactly
+// what `position()` did: no ILIKE is needed. Measured on postgres:18
+// beside a composite `btree_gin` index of `(realm, parent_key, rdn_value
+// gin_trgm_ops)`: the composite was chosen as readily and read MORE (179
+// buffers to this index's 56, a four-character needle, 200,000 people a
+// realm in two realms), since its realm and parent entries are posting
+// trees of every row; this index's cost is the needle's matches in every
+// realm's `ou=users`, which the heap recheck then drops to this parent's.
+//
+// **WHICH NEEDLES** (`needleIndexed()`): a parent under `ou=users` (the
+// index's condition) and three ASCII letters or digits in a row. pg_trgm
+// extracts no trigram from a shorter run, and a pattern without one is a
+// scan of the whole index, which the planner rightly refuses; an ASCII run
+// is the conservative test, since what counts as a letter beyond ASCII is
+// the database's locale. Any other needle keeps #359's walk and #1308's
+// statement, `position()` — a read of the parent's children, in the rdn
+// index's order, until the cap's matches or the page are found or the
+// children end. SO A ONE- OR TWO-CHARACTER NEEDLE IS STILL A SCAN of the
+// parent, bounded by the cap only when it is broad; such a needle is
+// broad in practice, and a narrow one is a third character away.
+//
+// **THE PLANNER IS FENCED** (`MATERIALIZED`): with the `LIMIT` beside
+// the predicates, a LIMIT makes the rdn index's ordered read look cheap —
+// it is priced to stop early — and was chosen for a page whose needle
+// matched 0.2% of 2M children: 467,564 buffers, 1.2 s, where the trigram
+// index reads 5,234 in 13 ms. Inside the CTE there is no LIMIT, so the
+// planner prices reading every match against reading every child and picks
+// the index that is cheaper for the needle it has (the rdn index for a
+// broad one); the LIMIT outside still stops the read, because a CTE is
+// read lazily.
+//
+// **THE COUNT ALWAYS GOES THIS WAY; THE PAGE ONLY WHEN ITS MATCHES ARE
+// FEW** (`matchesCheaper()`): the page must be SORTED, so through the
+// trigram index it reads every match, where the walk reads children in
+// order until the page fills — for a broad needle a few thousand rows. The
+// caller has the numbers (it counts before it pages): reading the matches
+// costs `matched`; the walk costs about `walk × total / matched`. The
+// page is read by its matches when `matched² ≤ walk × total` and the count
+// was not capped, so either way a page reads no more than `matched` rows,
+// which is at most the cap.
+// ---------------------------------------------------------------------------
+const INDEXED_NEEDLE = /[a-z0-9]{3}/;
+
+/**
+ * Whether a needle under a parent is one `sts_ldap_entries_uid_trgm` can
+ * serve (#1310): the parent is a realm's `ou=users` and the needle holds
+ * three ASCII letters or digits in a row.
+ *
+ * @param parentKey - the parent's normalised DN
+ * @param needle - the needle, lower-cased
+ * @returns true when the trigram statements are asked
+ */
+function needleIndexed(parentKey, needle) {
+  log.debug("Entering needleIndexed().");
+  const ok = String(parentKey || '').indexOf('ou=users,') === 0 &&
+    INDEXED_NEEDLE.test(String(needle || ''));
+  log.debug("Leaving needleIndexed(). " + ok);
+  return ok;
+}
+
+/**
+ * Whether reading a needle's every match costs less than walking the
+ * parent to fill the page (#1310): the caller counted (`matched` and
+ * `total` numbers), the count was not capped, and
+ * `matched² ≤ walk × total`.
+ *
+ * @param options - `rdnPage()`'s options
+ * @param walk - how far the walk would go: offset and page, capped
+ * @returns true when the page is read by its matches
+ */
+function matchesCheaper(options, walk) {
+  log.debug("Entering matchesCheaper().");
+  const matched = Number(options.matched);
+  const total = Number(options.total);
+  const ok = options.countCapped !== true &&
+    options.matched !== undefined && options.matched !== null &&
+    options.total !== undefined && options.total !== null &&
+    isFinite(matched) && isFinite(total) && matched >= 0 &&
+    matched <= RDN_COUNT_CAP && matched * matched <= walk * total;
+  log.debug("Leaving matchesCheaper(). " + ok);
+  return ok;
+}
+
+/**
+ * `rdnPage()`'s statement for a page read by its matches (#1310): $1 the
+ * realm, $2 the parent, $3 the cursor, $4 the LIKE pattern, $5 the rows
+ * after the offset, $6 the offset. Ordered by `rdn_value` and then
+ * `dn_key`, so two children sharing an RDN value are both on the page.
+ *
+ * @returns the SQL
+ */
+function needleMatches() {
+  log.debug("Entering needleMatches().");
+  log.debug("Leaving needleMatches().");
+  return 'WITH m AS MATERIALIZED (SELECT ' + COLUMNS + ', rdn_value FROM ' +
+         'sts_ldap_entries WHERE realm = $1 AND parent_key = $2 AND ' +
+         USERS_PARENT + ' AND rdn_value > $3 AND rdn_value LIKE $4 ESCAPE ' +
+         '\'\\\') SELECT ' + COLUMNS + ', rdn_value FROM m ORDER BY ' +
+         'rdn_value, dn_key LIMIT $5 OFFSET $6';
 }
 
 /**
@@ -1586,12 +1765,16 @@ module.exports = {
   ASKED_NAMES_HELD: ASKED_NAMES_HELD,
   GROUP_CLASSES_HELD: GROUP_CLASSES_HELD,
   MAX_PAGE: MAX_PAGE,
+  RDN_COUNT_CAP: RDN_COUNT_CAP,
   QUERIES: QUERIES,
   parentOf: parentOf,
   // For `directory_queries_mariadb.js`, the same questions spelt for MariaDB
   // (#677): one copy of how a value is keyed and a page is bounded.
   keyed: keyed,
   pageSize: pageSize,
+  rdnCountCap: rdnCountCap,
+  needleIndexed: needleIndexed,
+  matchesCheaper: matchesCheaper,
   suffixLength: suffixLength,
   build: build,
   answerOf: answerOf,

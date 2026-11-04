@@ -729,14 +729,25 @@ development. What the mode changes:
 | `fedRequireSignedLogout` off | an **unsigned** SAML logout message from the partner is accepted — a warning: anybody who can name a partner session can then end it | refused on the relationship (`STS-FED-0132`), and an unsigned logout message is refused whatever it says |
 | A plaintext SAML 2.0 or WS-Federation assertion, or a signed-only `id_token` by form_post | accepted | **refused** (`STS-FED-0140`) unless the relationship sets `fedAllowUnencrypted` — a warning: the person's identifier and attributes then cross their browser in clear. An ID Token redeemed at the partner's token endpoint crosses no browser and is not asked about |
 
-**A newcomer the realm's [attribute policy](admin-console.md#policies--adminpolicies)
-would refuse is not created in product mode** (#396): where `fedAutocreateUsers`
-lets a first sign-in create the person, the partner's mapped attributes must
-supply what every person must hold — by default a given name, a surname and an
-address. The refusal page carries `STS-FED-0158`, and the session refusal is
-audited `STS-AUTHN-0180`. Map them on the relationship (`fedAttributeMap`, for
-example `given_name=givenName`, `family_name=sn`, `email=mail`), or provision
-the person first.
+**A newcomer is asked for what the partner did not send, in product mode**
+(#396, #701): where `fedAutocreateUsers` lets a first sign-in create the
+person, the entry must hold what the realm's
+[attribute policy](admin-console.md#policies--adminpolicies) requires of every
+person — by default a given name, a surname and an address. When the partner's
+mapped attributes leave one of them empty, the person is shown a short form
+at `/federation/profile/{handle}` asking for exactly the missing values, and
+the account is created from the partner's values and theirs. This holds for
+every relationship, enterprise partners as well as consumer providers. A value
+the partner did send is never replaced by a typed one, and an address typed
+there is recorded as unverified. The form is good for one sign-in, in the
+browser it started in, and for five tries.
+
+The sign-in is refused, `STS-FED-0158` on the page and `STS-AUTHN-0180` on the
+session refusal, only when a required attribute is not one a person can be
+given a value of, or the values given still leave the policy unmet. To spare
+people the form, map the attributes on the relationship (`fedAttributeMap`,
+for example `given_name=givenName`, `family_name=sn`, `email=mail`), or
+provision the person first.
 
 See [What is not checked](what-is-not-checked.md), *Federation inverts all of
 this*.

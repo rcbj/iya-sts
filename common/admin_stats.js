@@ -796,70 +796,113 @@ function recordJwt(payload, signed, context) {
 const TOKEN_PURGE_JOB = 'oauth2.expired-token-purge';
 let tokenPurgeRegistered = false;
 
+// **IN SLICES, AND LINEAR (#704).** The dead jtis were an array searched with
+// `indexOf()` for every dated revocation — quadratic in the revocations of a
+// realm — and both walks ran in one turn of the event loop. They are a Set
+// now, and each walk gives the loop a turn every PURGE_SLICE entries; the
+// deletes happen after the walks, so a walk never sees the Map it is
+// emptying. Everything a slice decides is decided inside its realm, read
+// again in each slice (`realms.run()`), because a turn of the loop ends the
+// ambient realm.
+/** Entries of the token register walked between two turns of the loop. */
+const PURGE_SLICE = 500;
+
+// Walks a Map PURGE_SLICE entries at a time, each slice inside `realm`, a
+// turn of the event loop between slices.
+async function walkInSlices(realm, map, visit) {
+  log.debug("Entering walkInSlices().");
+  const it = map.entries();
+  let done = false;
+  while (!done) {
+    realms.run(realm, function () {
+      for (let i = 0; i < PURGE_SLICE; i++) {
+        const step = it.next();
+        if (step.done) {
+          done = true;
+          return;
+        }
+        visit(step.value[1], step.value[0]);
+      }
+    });
+    if (!done) {
+      await new Promise(function (resolve) {
+        setImmediate(resolve);
+      });
+    }
+  }
+  log.debug("Leaving walkInSlices().");
+}
+
 /**
  * Deletes, in every realm, token records past their expiry and retention, and
  * revoked jtis whose tokens have expired; the `oauth2.expired-token-purge`
  * scheduler job.
  *
  * @param nowMs - the time in milliseconds; now when omitted
- * @returns how many records and revocations were deleted
+ * @returns a promise of how many records and revocations were deleted
  */
-function purgeExpiredTokens(nowMs) {
+async function purgeExpiredTokens(nowMs) {
   log.debug("Entering purgeExpiredTokens().");
   const now = Number(nowMs) || Date.now();
   const out = { records: 0, revocations: 0 };
-  realms.list().forEach(function (r) {
-    realms.run(r, function () {
-      const skewMs = Number(config.value('oauth2.clockSkewS')) * 1000;
-      const keepMs = Number(config.value('oauth2.expiredTokenRetentionS')) *
-                     1000;
-      const map = tokens.realmMap(r.id);
-      const revoked = revokedJtis.realmMap(r.id);
-      // ON DEMAND (#820 part 2) the revocations are the store's: each row
-      // carries its expiry, and the minted expiry purge deletes it. A walk
-      // here would see only what is held, and a `has()` per record would be
-      // a read of the store for every revoked one.
-      const revokedHere = !revokedJtis.onDemandLive();
-      const deadJtis = [];
-      const gone = [];
-      // On demand (#820 part 3) the register's expired records are the
-      // store's expiry purge's: each carries its `expiresAt`. A walk here
-      // would see only what is held.
-      const recordsHere = !tokens.onDemandLive();
-      map.forEach(function (record, key) {
-        if (!recordsHere || !record || !record.exp) {
+  for (const r of realms.list()) {
+    const setting = realms.run(r, function () {
+      return {
+        skewMs: Number(config.value('oauth2.clockSkewS')) * 1000,
+        keepMs: Number(config.value('oauth2.expiredTokenRetentionS')) * 1000
+      };
+    });
+    const skewMs = setting.skewMs;
+    const keepMs = setting.keepMs;
+    const map = tokens.realmMap(r.id);
+    const revoked = revokedJtis.realmMap(r.id);
+    // ON DEMAND (#820 part 2) the revocations are the store's: each row
+    // carries its expiry, and the minted expiry purge deletes it. A walk
+    // here would see only what is held, and a `has()` per record would be
+    // a read of the store for every revoked one.
+    const revokedHere = !revokedJtis.onDemandLive();
+    const deadJtis = new Set();
+    const gone = [];
+    // On demand (#820 part 3) the register's expired records are the
+    // store's expiry purge's: each carries its `expiresAt`. A walk here
+    // would see only what is held.
+    const recordsHere = !tokens.onDemandLive();
+    if (recordsHere) {
+      await walkInSlices(r, map, function (record, key) {
+        if (!record || !record.exp) {
           return;
         }
         const deadAt = record.exp * 1000 + skewMs;
         if (revokedHere && deadAt <= now && record.jti &&
             revoked.has(record.jti)) {
-          deadJtis.push(record.jti);
+          deadJtis.add(record.jti);
         }
         if (deadAt + keepMs <= now) {
           gone.push(key);
         }
       });
-      // AND THE REVOCATIONS THAT DATE THEMSELVES (#345), whether or not the
-      // register still holds their record.
-      if (revokedHere) {
-        revoked.forEach(function (value, jti) {
-          const exp = revokedExpOf(value);
-          if (exp && exp * 1000 + skewMs <= now &&
-              deadJtis.indexOf(jti) < 0) {
-            deadJtis.push(jti);
-          }
-        });
-      }
+    }
+    // AND THE REVOCATIONS THAT DATE THEMSELVES (#345), whether or not the
+    // register still holds their record.
+    if (revokedHere) {
+      await walkInSlices(r, revoked, function (value, jti) {
+        const exp = revokedExpOf(value);
+        if (exp && exp * 1000 + skewMs <= now) {
+          deadJtis.add(jti);
+        }
+      });
+    }
+    realms.run(r, function () {
       deadJtis.forEach(function (jti) {
         revoked.delete(jti);
       });
       gone.forEach(function (key) {
         map.delete(key);
       });
-      out.records += gone.length;
-      out.revocations += deadJtis.length;
     });
-  });
+    out.records += gone.length;
+    out.revocations += deadJtis.size;
+  }
   log.debug("Leaving purgeExpiredTokens(). " + JSON.stringify(out));
   return out;
 }

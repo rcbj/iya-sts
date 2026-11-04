@@ -1898,7 +1898,7 @@ prototype and `Http2ServerRequest` keeps its state behind its own), so
 request gets express's own. **Not `http2-express`**, which #703 used first:
 it replaced `lazyrouter` on the shared `express.application`, so every
 express app in the process, and named itself in `X-Powered-By`;
-`common/CLAUDE.md` (`http2_express.ts`) has the adapter. Six things follow:
+`common/CLAUDE.md` (`http2_express.ts`) has the adapter. Nine things follow:
 
 * **A socket is a connection, not a request.** On an HTTP/2 request
   `req.socket` is node's proxy to the session's socket, shared with every
@@ -1936,6 +1936,19 @@ express app in the process, and named itself in `X-Powered-By`;
   entity is refused 400, `STS-HTTP-0024` — there, in `request_pool.proxy()`
   and in the debugger's API proxy, each asking `hostProblem()` itself
   because the process behind it believes the `host` it is sent.
+
+* **CONNECT is answered 501 on every HTTP listener (#1304)**, by
+  `common/connect_refusal.ts` on the server's `connect` event: node never
+  hands a CONNECT to the application (its target is an authority, not a
+  path), and on its own answered a 405 with no `Allow` over HTTP/2 and
+  dropped the connection over HTTP/1.1. `STS-HTTP-0025`; `common/CLAUDE.md`
+  has the module.
+* **A custom listener's `tls.http2` takes `true`, `false`, `on` or `off`**
+  (the strings or the JSON booleans), and decides that listener's offer
+  whatever `http.http2` says; `httpPolicyFor()` reads all four.
+* **The stream cap is on the Listeners page**, beside *HTTP/2 offered*, in
+  each TLS listener's tab (#1304): `http2MaxConcurrentStreams` from the view's
+  `http`, which is `httpPolicyFor()` itself.
 
 `tests/main_port_http2.js` holds all of it.
 

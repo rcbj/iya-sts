@@ -564,8 +564,8 @@
     "text": "partial：提供方配置文档，包含第 3 节的每个必需成员，它是通过扩展 RFC 8414 文档构建的，因此两者在共有的二十个成员上不会不一致。在 well-known 路径上、第 4 节的带路径颁发者形式上以及 RFC 8414 的插入路径形式上提供。自 #118 起，它公布 subject_types_supported 的 public 和 pairwise、全部四种 prompt 值、display_values_supported、claims_locales_supported、address 和 phone 范围以及它们所指明的每个声明。WebFinger（第 2 节，#119）按 DNS 域所属的领域解析 acct:、电子邮件或主机资源，按其 /realm/<id> 路径解析 https URL，从不查找具体的人；插入和附加两种发现形式都读取 [realm/<id>][/<server>]，其他任何内容都返回 404，因此每份文档所指明的颁发者都确实会签发内容。没有 check_session_iframe（#121）。"
   },
   "stsmetadata.specs.oidc-registration.coverage": {
-    "en": "52a4926873bf6dbe",
-    "text": "partial：/oauth2/register 和 RFC 7592 管理接受并认可本服务所实现的 OpenID Connect 客户端元数据——subject_type 和 sector_identifier_uri（会被获取，并要求其列出每个 redirect_uri；第 5 节）、token_endpoint_auth_signing_alg、id_token_signed_response_alg、id_token_encrypted_response_alg/enc、userinfo_signed_response_alg 及其加密成员、请求对象成员，以及前通道和后通道注销成员；以及（#120）带其重定向 URI 规则的 application_type（web、native）、得到执行的 grant_types 和 response_types、应用于两者都未指明的请求的 default_max_age 和 default_acr_values、require_auth_time（只要已知就携带 auth_time）、会被获取的 jwks_uri，以及从用户门户以 iss 和 login_hint 启动的 initiate_login_uri（Core 第 4 节）。未覆盖：policy_uri 和 tos_uri 会被存储和返回，但不会在同意界面上绘制。"
+    "en": "f938f6e1a6211dd2",
+    "text": "partial：/oauth2/register 和 RFC 7592 管理接受并认可本服务所实现的 OpenID Connect 客户端元数据——subject_type 和 sector_identifier_uri（会被获取，并要求其列出每个 redirect_uri；第 5 节）、token_endpoint_auth_signing_alg、id_token_signed_response_alg、id_token_encrypted_response_alg/enc、userinfo_signed_response_alg 及其加密成员、请求对象成员，以及前通道和后通道注销成员；以及（#120）带其重定向 URI 规则的 application_type（web、native）、得到执行的 grant_types 和 response_types、应用于两者都未指明的请求的 default_max_age 和 default_acr_values、require_auth_time（只要已知就携带 auth_time）、会被获取的 jwks_uri，以及从用户门户以 iss 和 login_hint 启动的 initiate_login_uri（Core 第 4 节）；以及（#1300）会被保存并显示在登录和同意界面上的 logo_uri、policy_uri 和 tos_uri，徽标由用户的浏览器加载，本服务从不获取。未覆盖：带语言标签的 logo_uri、policy_uri 或 tos_uri（第 2.1 节）按原样保存，不会绘制。"
   },
   "stsmetadata.specs.oidc-logout.coverage": {
     "en": "762ca8fb1eb8c94b",
@@ -1210,6 +1210,18 @@
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登录屏幕卡片和语言选择器的规则，合为一个样式表，供静态公共界面的外壳链接（common/web_card_css.ts）。在每个监听器上提供；带有本构建 ?v= 的地址会被永久缓存。"
+  },
+  "stsmetadata.endpoints./web/theme.css.what": {
+    "en": "3f3b19caa8978c23",
+    "text": "NON-SPEC (#717)。域的登录颜色，作为 /web/card.css 读取的 CSS 自定义属性（common/branding.ts）：四种 branding.* 颜色以及由它们派生的色调，仅由经过验证的值构建。仅当域的外观与服务的外观不同时，外壳才在卡片之后链接它；带有其摘要作为 ?v= 的地址被永久缓存。"
+  },
+  "stsmetadata.endpoints./web/branding/logo.what": {
+    "en": "83a680ab27412042",
+    "text": "NON-SPEC (#717)。通过 /admin-api/branding/logo 为此域上传的 PNG、JPEG 或 WebP 徽标，从此源提供，使登录页面的 img-src 'self' 接受它，且没有第三方得知谁在登录；nosniff、沙盒化、其摘要的 ETag。域没有徽标时为 404。"
+  },
+  "stsmetadata.endpoints./web/branding/preview.what": {
+    "en": "a2af93aaf34bbbe3",
+    "text": "NON-SPEC (#717)。用待定颜色和布局绘制的此域登录卡片示例（查询中的 accent、page、card、text、layout，每一项都按设置的方式检查），供控制台在保存前于新标签页中打开。其中任何内容都不会让任何人登录。"
   },
   "stsmetadata.endpoints./web/locales/catalogs.json.what": {
     "en": "213f3eea35021e22",
@@ -1952,8 +1964,8 @@
     "text": "以 JSON 形式提供的 GET /admin/spiffe/agents，经过滤和分页，?agent= 获取其中一个。这是记录而不是配置——这些条目上的一切都是本服务在代理进行证明时写入的，其中没有任何内容经过验证。"
   },
   "stsmetadata.endpoints./admin-api/spiffe/agents/:action.what": {
-    "en": "27852c51f25bf2ea",
-    "text": "ban、unban 和 delete。封禁在 AttestAgent 处强制执行，这使它不至于成为谎言；delete 是遗忘而不是吊销，因为代理一旦再次证明就会重新出现。"
+    "en": "7312163578d55aee",
+    "text": "ban、unban、delete 和 join-token。封禁在 AttestAgent 处强制执行，这使它不至于成为谎言；delete 是遗忘而不是吊销，因为代理一旦再次证明就会重新出现。join-token 为边车代理签发一个加入令牌（#324），只返回一次，其别名为 `agentId`。"
   },
   "stsmetadata.endpoints./admin-api/spiffe/brokers.what": {
     "en": "01e56a072ac7b944",
@@ -2086,6 +2098,18 @@
   "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
     "en": "c3015da7d4779805",
     "text": "非规范（#641）。add、update、remove、enable、disable 和 test：控制台的六个操作，每个都会被审计。令牌只接收、从不返回。测试事件不是审计行。"
+  },
+  "stsmetadata.endpoints./admin-api/branding.what": {
+    "en": "fca0d849cb68e8d7",
+    "text": "NON-SPEC (#717)。服务器配置 → 登录外观在所请求的域中绘制的内容：布局、四种颜色及由它们派生的色调、它们相对于 WCAG 2.2 AA 的对比度、显示名称、不含字节的已存储徽标，以及该页面的设置。"
+  },
+  "stsmetadata.endpoints./admin-api/branding/logo.what": {
+    "en": "b28154e101349408",
+    "text": "NON-SPEC (#717)。请求体就是图像：PNG、JPEG 或 WebP，由其字节决定，最多 branding.logoMaxBytes。它替换域的徽标，并连同其摘要一起审计。"
+  },
+  "stsmetadata.endpoints./admin-api/branding/:action.what": {
+    "en": "6c8c19ee983ea097",
+    "text": "NON-SPEC (#717)。save 一起写入域的 branding 设置，拒绝相对于卡片低于 4.5:1 的文本或链接；remove-logo 移除徽标并予以审计。"
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",

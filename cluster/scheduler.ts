@@ -173,6 +173,15 @@ const JOB_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
 // never less than this, and never less than three ticks.
 const OVERDUE_FLOOR_MS = 60 * 1000;
 
+// A BODY'S GRANT (#1305): how often the leader looks at a run in flight —
+// a switch-off, and for a body on a request worker whether it still owns
+// the run, renewing its grant if so — and how long one grant lasts there.
+// Four renewals missed is a front thread that has not run a timer for
+// twenty seconds, where the leader cannot stand behind anything it handed
+// out; the body stops at its next step instead. `watchRun()` argues it.
+const RUN_CHECK_MS = 5 * 1000;
+const DELEGATED_GRANT_MS = 20 * 1000;
+
 // ---------------------------------------------------------------------------
 // THE SENTENCES THE REPORT MAKES (#543 phase 2c), as templates, so that
 // `common/server_prose.ts` can match one in an answer to `GET
@@ -309,6 +318,10 @@ interface RunRunner {
   // Tells the worker running `runId` that it no longer owns the run, and
   // stops waiting for its answer.
   fence(runId: string): void;
+  // Renews the grant of the body running `runId` until `untilMs` on this
+  // process's clock, carrying the reason its job was switched off ('' while
+  // it is on) (#1305). Keeps waiting for its answer.
+  renew(runId: string, untilMs: number, off: string): void;
 }
 
 interface RunContext {
@@ -631,8 +644,9 @@ class Scheduler {
   // scheduled run was first held for load. The runId names the slot, so a
   // new slot is a new entry; an entry no tick saw again is dropped.
   // `deferredMs`: runId -> how long it was held, written on its running row.
-  // `delegated`: in a WORKER, runId -> `{ realm, fenced }` for each body it
-  // is running for the leader, which `stillOwner()` reads.
+  // `delegated`: in a WORKER, runId -> `{ realm, fenced, off, deadline,
+  // grantUntil, lapsed }` for each body it is running for the leader, which
+  // `stillOwner()` reads (#1305: `delegatedOwns()`).
   // -------------------------------------------------------------------------
   private readonly notInWorkers = new Set<string>();
   private readonly heldSince = new Map<string, Json>();
@@ -2116,17 +2130,22 @@ class Scheduler {
       ranIn: target ? 'worker' : 'front', deferredMs: heldMs
     });
     this.writeRow(realmId, running);
+    // `switchedOff` (#1305): the reason the job was switched off while this
+    // ran, or '' — `watchRun()` sets it, and both halves read it.
     const flight: Json = { fence: fence, realm: realmId, timedOut: false,
-                           asking: false, runner: target ? runner : null };
+                           asking: false, runner: target ? runner : null,
+                           switchedOff: '', ended: false, watch: null };
     this.inFlight.set(row.runId, flight);
     const startedLocal = this.deps.now();
+    // The instant, on this process's clock, the time limit falls at: a body
+    // on a worker stops owning the run there by itself (#1305).
+    flight.deadline = startedLocal + timeoutMs;
     const ctx: RunContext = {
       realm: realmId, runId: row.runId, trigger: running.trigger,
       params: running.params || null,
       stillOwner: function (): boolean {
-        const live = self.storeOf(realmId).get(row.runId);
-        return self.leading && !flight.timedOut && !flight.realmGone &&
-               !!live && Number(live.fenceAt) === fence;
+        return self.flightOwns(row.runId, realmId, flight) &&
+               !flight.switchedOff;
       },
       nowMs: function (): number {
         return self.nowMs();
@@ -2162,13 +2181,19 @@ class Scheduler {
       return self.runInWorker(runner as RunRunner, target, job, running,
                               flight, inline);
     }).then(function (result: Json): Json {
-      return { ok: true, result: result };
+      // A body on a worker sent its `why` beside its summary (#1313).
+      return { ok: true, result: result,
+               why: flight.delegatedWhy || Scheduler.whyOf(result) };
     }, function (e: Json): Json {
       return { ok: false, error: e };
     });
+    this.watchRun(job, row.runId, realmId, flight);
     log.debug("Leaving Scheduler.runClaimed(). Running.");
     return Promise.race([work, timedOut]).then(function (outcome: Json) {
       clearTimer(timeoutHandle);
+      flight.ended = true;
+      clearTimer(flight.watch);
+      flight.watch = null;
       self.inFlight.delete(row.runId);
       // A place is free: start what the last tick left waiting, now rather
       // than at the next tick. Only after a run that RAN, so a store that
@@ -2217,6 +2242,20 @@ class Scheduler {
       } else {
         final.state = 'succeeded';
         final.result = Scheduler.summaryOf(outcome.result);
+        // A SUCCESS THAT DID LESS THAN A WHOLE RUN SAYS SO (#1313): a body
+        // may answer a `why` beside its counts — the minted expiry purge
+        // skipping its orphan check while the global registry is down —
+        // and the row carries it, as a switch-off's does, with no code.
+        final.why = String(outcome.why || '');
+      }
+      // SWITCHED OFF WHILE IT RAN (#1305): not a failure — the body was
+      // told it no longer owned the run and stopped where it could — but
+      // the row says why it may have done less than a whole run.
+      if (flight.switchedOff && (!final.why || final.state === 'succeeded')) {
+        final.why = 'It was switched off while it ran (' +
+                    String(flight.switchedOff).replace(/\.+$/, '') +
+                    '), and its body was told it no longer owned the run.' +
+                    (final.why ? ' ' + final.why : '');
       }
       final.errorCode = errorCode;
       self.writeRow(realmId, final);
@@ -2339,7 +2378,14 @@ class Scheduler {
       // The database clock's offset from this process's: a worker is a
       // thread of this process and reads the same local clock, so the offset
       // is all it needs for `ctx.nowMs()` to answer what it would here.
-      clockOffsetMs: this.clockOffset
+      clockOffsetMs: this.clockOffset,
+      // WHAT THE BODY MAY CLAIM BY ITSELF (#1305), as instants on this
+      // process's clock, which the worker thread shares: the time limit, past
+      // which nothing the leader could send would make it the owner, and the
+      // first grant, which `watchRun()` renews while the leader stands
+      // behind it.
+      deadlineMs: Number(flight.deadline) || 0,
+      grantUntilMs: this.deps.now() + DELEGATED_GRANT_MS
     };
     log.debug("Leaving Scheduler.runInWorker().");
     return runner.run(target, request).then(function (answer: Json): Json {
@@ -2376,6 +2422,9 @@ class Scheduler {
         return inline();
       }
       if (a.ok) {
+        // The summary crossed the channel as text, so the body's `why`
+        // crossed beside it (#1313, runDelegated()).
+        flight.delegatedWhy = String(a.why || '');
         return a.result;
       }
       const e: Json = new Error(String(a.error || 'it failed'));
@@ -2404,6 +2453,124 @@ class Scheduler {
       }
     });
     log.debug("Leaving Scheduler.fenceDelegatedRuns().");
+  }
+
+  // Whether this process still owns a run it is attempting: it leads, the
+  // run has not timed out, its realm is defined, and the row still carries
+  // this attempt's fence. A HOT PATH, so no Entering/Leaving pair: a job
+  // asks `stillOwner()` before each step, thousands of times in one run of
+  // a paged sweep, and the pair would drown the log.
+  private flightOwns(runId: string, realmId: string, flight: Json): boolean {
+    const live = this.storeOf(realmId).get(runId);
+    return this.leading && !flight.timedOut && !flight.realmGone &&
+           !!live && Number(live.fenceAt) === Number(flight.fence);
+  }
+
+  // -------------------------------------------------------------------------
+  // A RUN IN FLIGHT, LOOKED AT EVERY RUN_CHECK_MS (#1305).
+  //
+  // Two things the leader decided only at the tick, and which a body that
+  // runs for minutes outlives:
+  //
+  //   * ON/OFF. A run is started only while its job is on, and nothing asked
+  //     again. Now the leader asks `serviceOffReason()` — the scheduler
+  //     switched off, the job named in `scheduler.disabledJobs`, its
+  //     interval set to 0: an operator's three switches — and once one
+  //     answers, the run's `stillOwner()` answers false wherever its body
+  //     runs, so the body stops at its next step it cannot take back. NOT
+  //     the job's own `off()`: that is usually "nothing to do" (no Claims
+  //     Provider registered, no post-login activity running), which a body's
+  //     own work makes true halfway through; a job whose own switch must
+  //     stop a run reads it itself. The run is still recorded as it ends —
+  //     a switch-off is no failure — with a `why` saying it was switched off.
+  //   * OWNERSHIP, ON A WORKER. A body on a request worker learnt it had lost
+  //     the run only from a `{ schedulerFence }` — sent at the time limit, on
+  //     a lost lease, on a removed realm — and a fence that never came (this
+  //     thread stuck, the message lost, a takeover seen through the change
+  //     log, which sent none) left it owning a run another node had claimed.
+  //     So the body's ownership is now a GRANT the leader renews: here, at
+  //     each check, the leader asks what its own `stillOwner()` asks, and
+  //     renews the grant for DELEGATED_GRANT_MS if it still owns the run —
+  //     or fences it if not, which is the takeover case's fence. A worker
+  //     whose grant runs out stops owning the run by itself
+  //     (`delegatedOwns()`, STS-SCHED-0021), and its time limit is its own
+  //     too. Nothing the worker decides needs a message to arrive: a lost
+  //     one can only make it stop sooner.
+  //
+  // A TIMER OF ONE RUN, NOT A PERIODIC ONE (root CLAUDE.md, *Anything
+  // periodic is a scheduler job*): it is armed when the run starts and
+  // cleared when it ends, like the run's time limit — a timeout inside one
+  // operation. It is re-armed by `checkRun()`'s caller below, so it is a
+  // chain only for one run's life.
+  // -------------------------------------------------------------------------
+  private watchRun(job: JobSpec, runId: string, realmId: string,
+                   flight: Json): void {
+    const { log, setTimer } = this.deps;
+    const self = this;
+    log.debug("Entering Scheduler.watchRun(). " + runId);
+    if (flight.ended) {
+      log.debug("Leaving Scheduler.watchRun(). It has ended.");
+      return;
+    }
+    flight.watch = setTimer(function (): void {
+      flight.watch = null;
+      if (flight.ended) {
+        return;
+      }
+      if (self.checkRun(job, runId, realmId, flight)) {
+        self.watchRun(job, runId, realmId, flight);
+      }
+    }, RUN_CHECK_MS);
+    log.debug("Leaving Scheduler.watchRun().");
+  }
+
+  // One look at a run in flight. Returns whether to look again.
+  private checkRun(job: JobSpec, runId: string, realmId: string,
+                   flight: Json): boolean {
+    const { log, now } = this.deps;
+    log.debug("Entering Scheduler.checkRun(). " + runId);
+    if (!flight.switchedOff) {
+      const off = this.serviceOffReason(job);
+      if (off) {
+        flight.switchedOff = off;
+        // NOT A FAILURE, so no code: an operator's switch doing its job.
+        log.info('scheduler: ' + job.id + ' was switched off (' +
+                 off.replace(/\.+$/, '') + ') while run ' + runId +
+                 ' ran; it no longer owns the run, and stops at its next ' +
+                 'step.');
+      }
+    }
+    const runner = flight.runner as RunRunner | null;
+    if (!runner) {
+      // INLINE, or sent back by the worker: `stillOwner()` reads the flight
+      // here, so there is nothing to send — only the switch-off to see.
+      log.debug("Leaving Scheduler.checkRun(). Inline.");
+      return true;
+    }
+    if (!this.flightOwns(runId, realmId, flight)) {
+      // Most of these were fenced already (the time limit, a lost lease, a
+      // removed realm) and the fence is idempotent. The one that was not is
+      // the row another attempt has taken over, seen through the change
+      // log: the outcome is not written either way (STS-SCHED-0003).
+      try {
+        runner.fence(runId);
+      } catch (e) {
+        log.debug("Caught in Scheduler.checkRun(): " +
+                  ((e && e.message) || e));
+      }
+      log.debug("Leaving Scheduler.checkRun(). No longer owned: fenced.");
+      return false;
+    }
+    try {
+      runner.renew(runId, now() + DELEGATED_GRANT_MS,
+                   String(flight.switchedOff || ''));
+    } catch (e) {
+      // The pool's own failure to reach a worker is its to report, and a
+      // grant not renewed runs out by itself there.
+      log.debug("Caught in Scheduler.checkRun(): " + ((e && e.message) || e));
+    }
+    log.debug("Leaving Scheduler.checkRun(). Renewed.");
+    return true;
   }
 
   // -------------------------------------------------------------------------
@@ -2525,14 +2692,19 @@ class Scheduler {
   // -------------------------------------------------------------------------
   // THE WORKER'S HALF (#408): a body the leader handed this process. The run
   // row, the claim and the time limit are the leader's; this only runs the
-  // job and answers. `stillOwner()` reads a flag the leader clears — on its
-  // time limit, on losing its lease, on the realm's removal — and the realm's
-  // removal here clears it too (`forgetRealm()`).
+  // job and answers. `stillOwner()` answers true only while ALL of these hold
+  // (#1305, `delegatedOwns()`): no fence came — the leader sends one on its
+  // time limit, on losing its lease, on the realm's removal, on seeing
+  // another attempt take the row over, and the realm's removal here sets it
+  // too (`forgetRealm()`); the job was not switched off, as the leader's
+  // last renewal said; the time limit has not passed; and the leader's last
+  // grant has not run out. The last two need no message to arrive.
   // -------------------------------------------------------------------------
   /**
    * Runs a cluster job's body for the leader, in this process.
    *
-   * @param request - `{ jobId, realm, runId, trigger, params, clockOffsetMs }`
+   * @param request - `{ jobId, realm, runId, trigger, params, clockOffsetMs,
+   *   deadlineMs, grantUntilMs }`; the two instants on this process's clock
    * @returns a promise of `{ ok: true, result }`, `{ ok: false, error, code }`
    *   `{ unknownJob: true }` or `{ unknownRealm: true }`; never rejects
    */
@@ -2556,14 +2728,20 @@ class Scheduler {
       log.debug("Leaving Scheduler.runDelegated(). No such realm here.");
       return Promise.resolve({ unknownRealm: true });
     }
-    const one: Json = { realm: realm.id || String(r.realm), fenced: false };
+    // A REQUEST WITHOUT ITS INSTANTS OWNS NOTHING: 0 is in the past, so a
+    // leader that sent none is answered with a body that stops at its first
+    // step, never with one that owns the run for ever.
+    const one: Json = { realm: realm.id || String(r.realm), fenced: false,
+                        off: '', deadline: Number(r.deadlineMs) || 0,
+                        grantUntil: Number(r.grantUntilMs) || 0,
+                        lapsed: false, jobId: job.id };
     this.delegated.set(runId, one);
     const offset = Number(r.clockOffsetMs) || 0;
     const ctx: RunContext = {
       realm: String(r.realm), runId: runId,
       trigger: String(r.trigger || 'schedule'), params: r.params || null,
       stillOwner: function (): boolean {
-        return !one.fenced;
+        return self.delegatedOwns(runId, one);
       },
       nowMs: function (): number {
         return now() + offset;
@@ -2582,7 +2760,8 @@ class Scheduler {
       // The leader keeps a summary of at most 500 characters; the same
       // reduction made here means what crosses the channel is text, which a
       // structured clone always carries.
-      return { ok: true, result: Scheduler.summaryOf(result) };
+      return { ok: true, result: Scheduler.summaryOf(result),
+               why: Scheduler.whyOf(result) };
     }, function (e: Json): Json {
       return { ok: false, error: String((e && e.message) || e) };
     }).then(function (answer: Json): Json {
@@ -2608,6 +2787,60 @@ class Scheduler {
     return !!one;
   }
 
+  /**
+   * Renews the grant of a body this process runs for the leader (#1305), and
+   * carries whether its job has been switched off.
+   *
+   * @param runId - the run
+   * @param untilMs - the grant's end, on this process's clock
+   * @param off - why the job was switched off, or '' while it is on
+   * @returns true when this process was running it
+   */
+  renewDelegated(runId: string, untilMs: number, off?: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Scheduler.renewDelegated(). " + runId);
+    const one = this.delegated.get(String(runId || ''));
+    if (one) {
+      // Never shortened: two renewals that cross keep the later end.
+      one.grantUntil = Math.max(Number(one.grantUntil) || 0,
+                                Number(untilMs) || 0);
+      if (off && !one.off) {
+        one.off = String(off);
+      }
+    }
+    log.debug("Leaving Scheduler.renewDelegated(). " + !!one);
+    return !!one;
+  }
+
+  // Whether a body this process runs for the leader still owns its run
+  // (#1305). Once it does not, it never does again: a fence, a switch-off,
+  // the time limit and a lapsed grant are each final, so a renewal that
+  // arrives late cannot hand back a run the body has already stopped
+  // owning. A HOT PATH, as `flightOwns()` is: no Entering/Leaving pair.
+  private delegatedOwns(runId: string, one: Json): boolean {
+    if (one.fenced || one.off) {
+      return false;
+    }
+    const at = this.deps.now();
+    if (at >= Number(one.deadline)) {
+      // The time limit: the leader records it (STS-SCHED-0002).
+      one.fenced = true;
+      return false;
+    }
+    if (at >= Number(one.grantUntil)) {
+      one.fenced = true;
+      one.lapsed = true;
+      const { log, errorCodes } = this.deps;
+      log.warn(errorCodes.tag('STS-SCHED-0021') + 'scheduler: ' +
+        'run ' + runId + ' of ' + one.jobId + ' no longer owns its run in ' +
+        'this request worker: the leader has not renewed its grant for ' +
+        Scheduler.span(DELEGATED_GRANT_MS) + '. Its body stops at its next ' +
+        'step; the leader, or the next attempt, decides the run.');
+      return false;
+    }
+    return true;
+  }
+
   // A job's answer, kept small: the row is replicated and drawn on a page.
   /**
    * Reduces a job's result to text of at most 500 characters for its run row.
@@ -2615,6 +2848,24 @@ class Scheduler {
    * @param result - what the job's run() returned
    * @returns the text, or null for no result
    */
+  /**
+   * The `why` a body that succeeded answered beside its result (#1313), or
+   * '' — a string member `why` of an object result, at most 500 characters.
+   * @param result - what the body resolved to
+   * @returns the text, or ''
+   */
+  static whyOf(result: Json): string {
+    helpers.log.debug("Entering Scheduler.whyOf().");
+    if (!result || typeof result !== 'object' ||
+        typeof result.why !== 'string' || !result.why) {
+      helpers.log.debug("Leaving Scheduler.whyOf(). None.");
+      return '';
+    }
+    const text = result.why;
+    helpers.log.debug("Leaving Scheduler.whyOf().");
+    return text.length > 500 ? text.slice(0, 497) + '...' : text;
+  }
+
   static summaryOf(result: Json): Json {
     helpers.log.debug("Entering Scheduler.summaryOf().");
     if (result === undefined || result === null) {
@@ -2731,7 +2982,8 @@ class Scheduler {
           });
         });
       });
-      outcome = { state: 'succeeded', errorCode: '', why: '',
+      outcome = { state: 'succeeded', errorCode: '',
+                  why: Scheduler.whyOf(result),
                   result: Scheduler.summaryOf(result) };
     } catch (e) {
       log.warn(errorCodes.tag('STS-SCHED-0015') + 'scheduler: the ' +
@@ -3754,5 +4006,7 @@ export = {
     Scheduler['runDelegated'],
   fenceDelegated: scheduler.fenceDelegated.bind(scheduler) as
     Scheduler['fenceDelegated'],
+  renewDelegated: scheduler.renewDelegated.bind(scheduler) as
+    Scheduler['renewDelegated'],
   jobIds: scheduler.jobIds.bind(scheduler) as Scheduler['jobIds']
 };

@@ -139,6 +139,9 @@ const mintedPortable = require('./minted_portable');
 // The embedded directory's store on MariaDB (#677, phase 3b). A LIBRARY, built
 // in create() only when the engine is not PostgreSQL.
 const directoryPortable = require('./directory_portable');
+// The one-time `grantinggroup` key backfill's walk (#1311): a library this
+// driver hands its statements to (`indexGrantingKeys()`). A leaf here.
+const grantingBackfill = require('./granting_index_backfill');
 // The risk engine's statements on MariaDB (#677). A LIBRARY, built in
 // create() only on an engine that is not PostgreSQL.
 const riskPortable = require('./risk_portable');
@@ -4091,6 +4094,108 @@ function create(options) {
     log.debug("Leaving indexSealedEntries(). " + indexed + ".");
     return { indexed: indexed, remaining: remaining };
   }
+
+  // ---------------------------------------------------------------------------
+  // THE `grantinggroup` KEYS OF ENTRIES WRITTEN BEFORE #1306, ONCE (#1311):
+  // `granting_index_backfill.js` is the walk and its argument; these are
+  // PostgreSQL's statements for it (MariaDB's are `directory_portable.js`'s).
+  // A page is the next rows by the primary key, the sealed attributes and
+  // the held `value_keys` handed back only for a row whose clear
+  // `attr_names` names a granting attribute; a write is compare-and-set on
+  // the blob read, `value_keys` only, and logs no change.
+  // ---------------------------------------------------------------------------
+  const grantingOps = {
+    readState: function () {
+      log.debug("Entering grantingOps.readState().");
+      log.debug("Leaving grantingOps.readState().");
+      return maintenanceQuery('the grantinggroup key backfill',
+        'SELECT index_key, key FROM sts_minted_index WHERE handle = $1 AND ' +
+        'realm = \'\' AND index_key = ANY($2::text[])',
+        [grantingBackfill.HANDLE,
+         [grantingBackfill.MARK_KEY, grantingBackfill.CURSOR_KEY]]
+      ).then(function (r) {
+        const rows = (r && r.rows) || [];
+        const mark = rows.some(function (row) {
+          return row.index_key === grantingBackfill.MARK_KEY;
+        });
+        const at = rows.filter(function (row) {
+          return row.index_key === grantingBackfill.CURSOR_KEY;
+        })[0];
+        return { done: mark,
+                 cursor: at ? grantingBackfill.cursorOf(at.key) : null };
+      });
+    },
+    readPage: function (cursor, limit) {
+      log.debug("Entering grantingOps.readPage().");
+      log.debug("Leaving grantingOps.readPage().");
+      return maintenanceQuery('the grantinggroup key backfill',
+        'SELECT realm, dn_key, CASE WHEN attr_names ?| $3::text[] THEN ' +
+        'attrs END AS attrs, CASE WHEN attr_names ?| $3::text[] THEN ' +
+        'value_keys END AS value_keys FROM sts_ldap_entries WHERE ' +
+        '(realm, dn_key) > ($1, $2) ORDER BY realm, dn_key LIMIT $4',
+        [cursor ? cursor.realm : '', cursor ? cursor.dnKey : '',
+         require('./directory_codec').GRANTING_ATTRIBUTES.slice(), limit]
+      ).then(function (r) {
+        return (r && r.rows) || [];
+      });
+    },
+    writeKeys: function (items) {
+      log.debug("Entering grantingOps.writeKeys(). " + items.length);
+      log.debug("Leaving grantingOps.writeKeys().");
+      return maintenanceQuery('the grantinggroup key backfill',
+        'UPDATE sts_ldap_entries AS e SET value_keys = u.v::jsonb FROM ' +
+        'unnest($1::text[], $2::text[], $3::text[], $4::text[]) AS ' +
+        'u(r, d, a, v) WHERE e.realm = u.r AND e.dn_key = u.d AND ' +
+        'e.attrs = u.a::jsonb',
+        [items.map(function (one) { return one.realm; }),
+         items.map(function (one) { return one.dnKey; }),
+         items.map(function (one) { return JSON.stringify(one.attrs); }),
+         items.map(function (one) { return JSON.stringify(one.valueKeys); })]
+      ).then(function (u) {
+        return Number(u && u.rowCount) || 0;
+      });
+    },
+    saveCursor: function (realmId, dnKey) {
+      log.debug("Entering grantingOps.saveCursor().");
+      log.debug("Leaving grantingOps.saveCursor().");
+      return maintenanceTransaction('the grantinggroup key backfill',
+                                    function (client) {
+        return client.query(
+          'DELETE FROM sts_minted_index WHERE handle = $1 AND realm = \'\' ' +
+          'AND index_key = $2',
+          [grantingBackfill.HANDLE, grantingBackfill.CURSOR_KEY]
+        ).then(function () {
+          return client.query(
+            'INSERT INTO sts_minted_index (handle, realm, index_key, key) ' +
+            'VALUES ($1, \'\', $2, $3) ON CONFLICT DO NOTHING',
+            [grantingBackfill.HANDLE, grantingBackfill.CURSOR_KEY,
+             grantingBackfill.cursorValue(realmId, dnKey)]);
+        });
+      });
+    },
+    saveDone: function () {
+      log.debug("Entering grantingOps.saveDone().");
+      log.debug("Leaving grantingOps.saveDone().");
+      return maintenanceTransaction('the grantinggroup key backfill',
+                                    function (client) {
+        return client.query(
+          'INSERT INTO sts_minted_index (handle, realm, index_key, key) ' +
+          'VALUES ($1, \'\', $2, $2) ON CONFLICT DO NOTHING',
+          [grantingBackfill.HANDLE, grantingBackfill.MARK_KEY]
+        ).then(function () {
+          return client.query(
+            'DELETE FROM sts_minted_index WHERE handle = $1 AND realm = ' +
+            '\'\' AND index_key = $2',
+            [grantingBackfill.HANDLE, grantingBackfill.CURSOR_KEY]);
+        });
+      });
+    },
+    open: function (row) {
+      log.debug("Entering grantingOps.open().");
+      log.debug("Leaving grantingOps.open().");
+      return entryCodec.openAttributes(row.dn_key, row.attrs);
+    }
+  };
 
   // ---------------------------------------------------------------------------
   // WHAT THE DIRECTORY HOLDS UNDER EACH DATA KEY, READ (#623): the counters
@@ -10684,6 +10789,30 @@ function create(options) {
       return indexSealedEntries(options && options.budgetMs);
     },
 
+    // THE `grantinggroup` KEYS OF ENTRIES WRITTEN BEFORE #1306 (#1311): one
+    // run of the walk over this database, `{ complete, already, stopped,
+    // examined, candidates, written, skipped }`. MariaDB's statements are
+    // the directory library's.
+    indexGrantingKeys: function (options) {
+      log.debug("Entering indexGrantingKeys().");
+      log.debug("Leaving indexGrantingKeys().");
+      return grantingBackfill.walk(directoryStore
+        ? directoryStore.grantingOps : grantingOps,
+        Object.assign({ what: 'this database' }, options || {}));
+    },
+
+    // Whether that walk's done mark is written in this database (#1316):
+    // one indexed read of `sts_minted_index`, which the job's `off()` primes
+    // from in every process, so the finished job is off in all of them.
+    grantingKeysComplete: function () {
+      log.debug("Entering grantingKeysComplete().");
+      const ops = directoryStore ? directoryStore.grantingOps : grantingOps;
+      log.debug("Leaving grantingKeysComplete().");
+      return ops.readState().then(function (state) {
+        return !!(state && state.done);
+      });
+    },
+
     resealSealed: function (dekIds, reseal, options) {
       log.debug("Entering resealSealed().");
       const ids = (dekIds || []).map(String);
@@ -11205,12 +11334,24 @@ function create(options) {
     // back; `persistence_minted.js` asks with `persistence.mintedRetention`,
     // which is also the most a restored row can be. One statement on the pool
     // and idempotent, so any node may run it.
-    purgeTombstones: function (beforeMs) {
+    //
+    // `options.limit` BOUNDS THE ONE STATEMENT (#1313), chosen and deleted
+    // by ctid as purgeExpiredMinted() does; the tombstone jobs of a store
+    // deployed as cells batch with it, one tier at a time. Without it the
+    // statement is the one it always was, which is what a single-database
+    // store still runs.
+    purgeTombstones: function (beforeMs, options) {
       log.debug('Entering the postgres driver purgeTombstones().');
+      const limit = Math.floor(Number(options && options.limit) || 0);
       log.debug("Leaving purgeTombstones().");
       return (mintedStatements
-        ? mintedStatements.purgeTombstones(beforeMs)
-        : pool.query(
+        ? mintedStatements.purgeTombstones(beforeMs, limit > 0 ? limit : 0)
+        : limit > 0 ? pool.query(
+        'DELETE FROM sts_minted WHERE ctid = ANY(ARRAY(SELECT ctid FROM ' +
+        'sts_minted WHERE body = $1 AND written_at < ' +
+        'to_timestamp($2 / 1000.0) LIMIT ' + limit + '))',
+        [TOMBSTONE, Number(beforeMs)]
+      ) : pool.query(
         'DELETE FROM sts_minted WHERE body = $1 AND ' +
         'written_at < to_timestamp($2 / 1000.0)',
         [TOMBSTONE, Number(beforeMs)]

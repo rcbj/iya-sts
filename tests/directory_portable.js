@@ -330,7 +330,7 @@ const SAMPLE_ARGS = {
   keysUnder: ['default', BASE, '', 10],
   residentOnly: [[{ realm: 'default', baseKey: USERS }]],
   rdnPage: ['default', USERS, '', 10, { needle: 'li', offset: 1 }],
-  rdnCount: ['default', USERS, 'li'],
+  rdnCount: ['default', USERS, 'li', 5],
   containerPage: ['default', DEVICES, 1, 10],
   uidContains: ['default', USERS, 'a%b', 10]
 };
@@ -488,6 +488,29 @@ async function staticChecks(t) {
           JSON.stringify(directoryPortable.basesOf('')) === '[""]',
           'A10. the bases of a parent are PostgreSQL\'s ' +
           'sts_ldap_count_bases()');
+  // A NEEDLE'S COUNT IS CAPPED (#1308), as PostgreSQL's: inside a derived
+  // table's LIMIT of the cap and one more, the cap clamped by the one copy.
+  const countSent = runner.sent.filter(function (one) {
+    return /\/\* sts:directory\.q\.rdnCount \*\/$/.test(one.text);
+  });
+  const countOne = countSent[0] || { text: '', values: [] };
+  t.check(countSent.length === 1 &&
+          /^SELECT CAST\(COUNT\(\*\) AS SIGNED\) AS n FROM \(SELECT 1 AS one FROM sts_ldap_entries WHERE realm = \? AND parent_key = \? AND LOCATE\(\?, rdn_value\) > 0 LIMIT \?\) AS matched/
+            .test(countOne.text) &&
+          countOne.values[2] === 'li' && countOne.values[3] === 6,
+          'A10b. rdnCount counts inside a LIMIT of the cap and one more',
+          JSON.stringify(countOne));
+  runner.sent.length = 0;
+  await store.lib.query('rdnCount', ['default', USERS, '', 500000]);
+  await store.lib.query('rdnCount', ['default', USERS, 'li']);
+  const capsSent = runner.sent.map(function (one) {
+    return one.values[one.values.length - 1];
+  });
+  t.check(JSON.stringify(capsSent) === '[100001,100001]' &&
+          !/LOCATE/.test((runner.sent[0] || {}).text || '') &&
+          (runner.sent[0] || { values: [] }).values.length === 3,
+          'A10c. a cap over the walk\'s, or none, is the walk\'s 100,000; ' +
+          'an empty needle adds no LOCATE', JSON.stringify(runner.sent));
 
   runner.sent.length = 0;
   let refusal = '';
@@ -757,9 +780,15 @@ async function lookups(t, store) {
                                               { needle: 'a' }])) ===
             'uid=a%b,' + USERS + ',uid=alice,' + USERS &&
           await ask(store, 'rdnCount', [r, USERS, 'b']) === 2 &&
+          // Capped (#1308): under the cap, at it, and over it (cap + 1).
+          await ask(store, 'rdnCount', [r, USERS, 'b', 3]) === 2 &&
+          await ask(store, 'rdnCount', [r, USERS, 'b', 2]) === 2 &&
+          await ask(store, 'rdnCount', [r, USERS, 'b', 1]) === 2 &&
+          await ask(store, 'rdnCount', [r, USERS, '', 1]) === 2 &&
           keysOf(await ask(store, 'containerPage', [r, USERS, 1, 2])) ===
             'uid=alice,' + USERS + ',uid=bob,' + USERS,
-          'C19. rdnPage with a needle, rdnCount, containerPage');
+          'C19. rdnPage with a needle, rdnCount (capped: under, at and ' +
+          'over the cap), containerPage');
   t.check(keysOf(await ask(store, 'uidContains', [r, USERS, '%', 10])) ===
             'uid=a%b,' + USERS &&
           (await ask(store, 'byKeys', [r, [USERS, 'uid=bob,' + USERS]]))

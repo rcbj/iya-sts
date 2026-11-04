@@ -60,6 +60,12 @@ groups to any number of remote SCIM service providers. See
   keep them. `emails.type` is `work` only, `phoneNumbers.type` `work` or
   `mobile`, `addresses.type` `work`; another type is refused `400
   invalidValue`.
+* **The schemas are the realm's** (#699). In product mode `/Schemas` marks
+  `required` on every member the realm's [attribute policy](policies.md#the-attribute-policy)
+  requires, as described in [Development and product mode](#development-and-product-mode).
+  The realm's custom attributes are the extension
+  `urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes`, which
+  is described below.
 * **References**: a Group member, a group a user is in, and a user's manager
   each carry a `$ref`, the absolute URL of that resource. A member has no
   `display`.
@@ -325,6 +331,47 @@ CPU per request in product mode, so a bulk provisioning client should use a
 without one is `400 invalidValue`, and so is a replace or a patch that would
 take one away. A HOBA registration creates an account with nothing but a name,
 so a realm that keeps the default policy refuses it.
+
+**`/Schemas` says what the policy requires** (#699). In product mode the
+User schema marks `required: true` on each member the realm's `default`
+policy requires: `name` and `name.familyName` always, and by default
+`name.givenName` and `emails`. Where the policy requires `telephoneNumber`
+or `mobile`, `phoneNumbers` is marked, and its description names the type.
+`displayName` is not marked, because `cn` is made from the names when it is
+absent. An attribute that no SCIM member carries is named in the User
+schema's `description`, because a create over SCIM cannot meet that
+requirement. A required custom attribute is marked in the
+`CustomAttributes` extension, and the User resource type at
+`/ResourceTypes` lists that extension as `required`. A person whose group
+selects a stricter named policy is still held to it, so the document shows
+the minimum. Development mode marks nothing, because nothing is enforced.
+
+### The realm's custom attributes
+
+Custom attributes are defined on **Directory → Policies → Attribute
+policy**. A realm's custom attributes are its User extension
+`urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes`. Each
+realm publishes its own members at `/Schemas`. A realm that defines none
+publishes the extension with no members.
+
+| Syntax | SCIM type | On the wire |
+|---|---|---|
+| `integer` | `integer` | a JSON number, at most 2<sup>53</sup> − 1 either way |
+| `boolean` | `boolean` | `true` or `false` |
+| `date` | `string` | `YYYY-MM-DD` out; `YYYY-MM-DD` or `YYYYMMDD` in |
+| `string`, `email`, `uri`, `dn` | `string` | as stored |
+
+A multi-valued attribute is a multi-valued member. A value is checked the
+way the console checks it, and a value its syntax refuses is
+`400 invalidValue` (`STS-SCIM-0087`). Writes behave as follows:
+
+* A create writes the values it carries.
+* A **PUT that leaves the extension out leaves the values alone**, so a
+  provisioning client that knows nothing of them cannot erase them. A PUT
+  that includes the extension replaces every custom value.
+* A PATCH can target one member, for example
+  `urn:ietf:params:scim:schemas:extension:iya-sts:2.0:CustomAttributes:costCentreCode`.
+* A filter can name a custom member the same way.
 
 **In development mode the credential is a turnstile, not a lock.** Any password
 but `invalid` passes Basic, any username passes Digest with the shared

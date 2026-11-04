@@ -107,6 +107,7 @@ protocol's section of the sidebar:
 [Sessions](sessions.md) ·
 [Identity-provider-initiated sign-in](idp-initiated-sso.md) ·
 [Several accounts in one browser](multiple-accounts.md) ·
+[Sign-in appearance](sign-in-appearance.md) ·
 [Signing out](signing-out.md) ·
 [Risk scoring](risk-scoring.md) ·
 [Devices](devices.md) ·
@@ -142,6 +143,7 @@ macOS apps.
 [PostgreSQL schema](postgres-schema.md) ·
 [Encryption at rest](encryption-at-rest.md) ·
 [Caches](caches.md) ·
+[How the cluster works](cluster-concepts.md) ·
 [A cluster in AWS](aws-cluster.md) ·
 [Several regions (cells)](cells.md) ·
 [How cells work](cells-concepts.md)

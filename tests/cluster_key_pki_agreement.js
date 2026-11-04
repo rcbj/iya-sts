@@ -19,7 +19,10 @@
 //   * a revocation, or an issued serial, recorded on one node is not thrown
 //     out of the store by another node's save of an older copy, a released
 //     hold stays released, a CA tier is first writer wins;
-//   * a CRL number only goes up across nodes whose clocks disagree.
+//   * a CRL number only goes up across nodes whose clocks disagree;
+//   * and, with the cluster off (#704), a key-set row another process
+//     re-sealed under a new data key reaches this one before the old key
+//     is destroyed.
 //
 // ---------------------------------------------------------------------------
 // HOW TWO "NODES" LIVE IN ONE PROCESS. A node's state is module state —
@@ -250,6 +253,78 @@ async function offSection(t, kek) {
     process.env.STS_CLUSTER_MODE = 'active-active';
   }
   log.debug("Leaving offSection().");
+}
+
+// 0b. A RE-SEALED KEY-SET ROW REACHES THE OTHER PROCESS WITH THE CLUSTER OFF
+// (#704). `keys.data-key-reencrypt` re-seals the rows the RUNNING process
+// holds (`resealOwnRows()`) and writes them; until #704 a process where the
+// store does not arbitrate never read a key row, so its copy stayed under the
+// superseded data key and, once the pass destroyed that key, it could no
+// longer open its signing keys. Here A is the process that runs the pass and
+// B any other (a request worker, or the front when a worker ran it), and the
+// last step is what B's purge of its plaintext would meet in service.
+async function resealSection(t) {
+  log.debug("Entering resealSection().");
+  t.log.info('=== 0b. cluster.mode=off: a re-sealed key row reaches every ' +
+             'process (#704) ===');
+  process.env.STS_CLUSTER_MODE = 'off';
+  const savedLead = process.env.STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS;
+  process.env.STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS = '0';
+  try {
+    const store = sharedStore(1);
+    const a = await startNode(store, { adopted: [], published: [] });
+    const set = keySet('resealed');
+    a.remember('reseal', set);
+    await a.settleAll();
+    const b = await startNode(store, { adopted: [], published: [] });
+    t.check(!b.arbitrates() &&
+            b.storedFor('reseal').certB64 === set.certB64,
+            'B started after A and holds the same set, sealed as the row is');
+    const before = store.rows.get('reseal');
+    const oldDek = crypto.dekIdOf(before);
+    const turned = a.rotateDeks({ reason: 'test' });
+    t.check(turned.ok && turned.rotated.length >= 1,
+            'A rotates its data keys', JSON.stringify(turned));
+    await a.settleDeks();
+    t.check(a.resealOwnRows() >= 1, 'A re-seals the key-set row it holds');
+    await a.settleAll();
+    const after = store.rows.get('reseal');
+    t.check(after !== before && crypto.dekIdOf(after) !== oldDek,
+            'and the row in the store now names the new data key');
+    const applied = await b.applyStoredChange('reseal');
+    t.check(applied && applied.resealed === true && !applied.adopted,
+            'B, applying the change row, takes the re-sealed row: the same ' +
+            'set, so nothing is adopted between sets',
+            JSON.stringify(applied));
+    t.equal(a.destroyDeks([oldDek]), 1,
+            'the superseded key is destroyed, as the pass does at a count ' +
+            'of zero');
+    await a.settleAll();
+    await b.refreshDekRows();
+    b.purgeFor('reseal');
+    const opened = b.storedFor('reseal');
+    t.check(!!opened && opened.certB64 === set.certB64,
+            'AND B STILL OPENS ITS SIGNING KEYS once its plaintext is purged ' +
+            '— before #704 its copy was under the destroyed key, and every ' +
+            'signature in that process threw until it restarted');
+    // A DIFFERENT set is still not adopted with the cluster off: that is the
+    // pool's key channel's to decide (offSection, above).
+    a.remember('reseal', keySet('another'));
+    await a.settleAll();
+    const other = await b.applyStoredChange('reseal');
+    t.check(!other.adopted && !other.resealed &&
+            b.storedFor('reseal').certB64 === set.certB64,
+            'a row holding ANOTHER set is not taken where the store does ' +
+            'not arbitrate', JSON.stringify(other));
+  } finally {
+    process.env.STS_CLUSTER_MODE = 'active-active';
+    if (savedLead === undefined) {
+      delete process.env.STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS;
+    } else {
+      process.env.STS_KEYS_DATA_KEY_ACTIVATION_LEAD_SECONDS = savedLead;
+    }
+  }
+  log.debug("Leaving resealSection().");
 }
 
 async function keysSection(t, kek) {
@@ -1203,6 +1278,7 @@ async function run(t) {
   process.env.STS_PERSISTENCE_MODE = 'postgres';
   try {
     await offSection(t, kek);
+    await resealSection(t);
     await keysSection(t, kek);
     await lineageSection(t, kek);
     await mergeSection(t, kek);

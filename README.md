@@ -195,17 +195,22 @@ AWS cluster.
 
 ## Versioning
 
-The version is **M.N.O**, a plain semantic version read whole from the
-`VERSION` file (currently `1.0.0`). Which build an image is — the commit and
-the instant it was built — is stamped into it beside the version, never
-appended to it.
+The version is **M.N.O.build**: the release read whole from the `VERSION`
+file (currently `1.0.0`), then a build number stamped into the image when it
+is built — the UTC build instant (`1.0.0.20261104151200`) by default, or, for
+a release build, the number the build names (`1.0.0.0`).
 
 ```bash
-node common/version.js                    # 1.0.0
+node common/version.js                    # 1.0.0.20261104151200
 node common/version.js --sync-manifests   # after editing VERSION
 GIT_COMMIT=$(git rev-parse HEAD) \
   docker compose --profile xacml build    # both images, naming the commit
+docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 .
+                                          # a release build: 1.0.0.0
 ```
+
+A release flag without a valid `BUILD_NUMBER` fails the build; without the
+flag `BUILD_NUMBER` is ignored.
 
 ## Running the tests
 

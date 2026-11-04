@@ -643,6 +643,8 @@ interface AdminApiDeps {
   loadPostLoginActivitiesApi(): typeof import('./post_login_activities_api');
   // Monitoring → Audit export's operations (#641).
   loadAuditExportApi(): typeof import('./audit_export_api');
+  // Server configuration → Sign-in appearance's operations (#717).
+  loadBrandingApi(): typeof import('./branding_api');
   // The outbound SCIM clients' operations (#552).
   loadScimClientsApi(): typeof import('./scim_clients_api');
   loadProviderCommandsApi(): typeof import('../oauth-oidc/provider_commands_api');
@@ -772,6 +774,9 @@ class AdminApi {
       },
       loadAuditExportApi: function () {
         return require('./audit_export_api');
+      },
+      loadBrandingApi: function () {
+        return require('./branding_api');
       },
       loadScimClientsApi: function () {
         return require('./scim_clients_api');
@@ -3015,7 +3020,7 @@ class AdminApi {
             loadAttributeSourcesApi, loadSecretDestinationsApi, loadAuthzenApi,
             loadUmaApi,
             loadPasskeyReportApi, loadPostLoginActivitiesApi,
-            loadAuditExportApi,
+            loadAuditExportApi, loadBrandingApi,
             loadScimClientsApi,
             loadProviderCommandsApi, loadSsfTransmittersApi,
             federation } = this.deps;
@@ -3074,18 +3079,25 @@ class AdminApi {
           self.sendJson(res, 200, {
             name: 'IYA STS management API',
             version: VERSION,
-            // WHICH BUILD THIS IS, BESIDE THE VERSION AND NOT IN IT (#1298).
-            // `version` is the release, VERSION's M.N.O exactly; a test
-            // asserting "this stack is running the build it just made" wants
-            // the build instant on its own, and a report saying which commit
-            // an instance is on wants the commit — so each is a field rather
-            // than something a client writes a regular expression for.
+            // WHICH BUILD THIS IS, BROKEN OUT (#1298, #1317). `version` is
+            // M.N.O.<build>; `build` is the build number on its own (the UTC
+            // build instant, or a release build's own) and `release` whether
+            // the build was flagged as a release — version.json's own names
+            // for both, so a check can compare the two member by member.
+            // A test asserting "this stack is running the build it just made"
+            // wants the number and the instant on their own, and a report
+            // saying which commit an instance is on wants the commit — so each
+            // is a field rather than something a client writes a regular
+            // expression for. `build` is absent on a stamp a #1298 build
+            // wrote, whose version is the bare release.
             //
             // `stamped` is the one that is easy to leave out and worth most:
             // false means this process computed its own record at startup
             // because nothing stamped an artifact, so `builtAt` is the moment
             // it STARTED and comparing it with another instance's says
             // nothing.
+            build: APP_VERSION.build || undefined,
+            release: APP_VERSION.release === true,
             commit: APP_VERSION.commit || undefined,
             builtAt: APP_VERSION.builtAt,
             stamped: APP_VERSION.stamped === true,
@@ -3907,13 +3919,15 @@ class AdminApi {
                  'and which hosted application is on which',
         description: 'For the realm the call is in: `realm`; `listeners`, ' +
                      'the built-in ones (each `id`, `name`, `setting`, ' +
-                     '`port`, `tls`, `what` and `policy`); `custom`, the ' +
+                     '`port`, `tls`, `what`, `policy` and `http`); ' +
+                     '`custom`, the ' +
                      'custom listeners this realm sees — the service\'s ' +
                      '(`listeners.custom`) and its own (`listeners.realm`), ' +
                      'every realm\'s in the default realm — each with ' +
                      '`id`, `owner`, `port`, `publicBaseUrl`, `hostnames`, ' +
                      '`clientAuth`, `certificateSource`, its `state` on this ' +
-                     'node, `certificate` and `policy`; `applications`, each ' +
+                     'node, `certificate`, `policy` and `http`; ' +
+                     '`applications`, each ' +
                      'hosted application with the `listeners` it is on, the ' +
                      '`advertised` one its URLs are built on and what ' +
                      '`decidedBy` (realm, service or default); ' +
@@ -3924,7 +3938,13 @@ class AdminApi {
                      '`minVersion`, `tls12`, `tls13Suites` (each `name` and ' +
                      '`postQuantum`, in order), `tls12Ciphers`, `pqcOnly`, ' +
                      '`groups` and `clientAuth` (`none`, `optional`, ' +
-                     '`required`, or the protocol\'s rule).',
+                     '`required`, or the protocol\'s rule). An `http` is ' +
+                     'the HTTP listener\'s pooling in force, or null: ' +
+                     '`keepAliveTimeoutS`, `headersTimeoutS`, ' +
+                     '`maxRequestsPerSocket`, `maxConnections`, `http2` ' +
+                     '(whether h2 is offered) and ' +
+                     '`http2MaxConcurrentStreams` (the streams one HTTP/2 ' +
+                     'connection may have open at once).',
         mirrors: 'GET /admin/listeners',
         responseDescription: 'The listeners view.',
         responseSchema: { type: 'object',
@@ -6652,15 +6672,10 @@ class AdminApi {
           }, function (e) {
             log.debug("Caught in the management API status endpoint: " +
                       ((e && e.message) || e));
-            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
-                                     'STS-LDAP-0139') +
-                      'admin-api: the console\'s totals could not be read ' +
-                      'from the store: ' + ((e && e.message) || e));
-            res.setHeader('Retry-After', '5');
-            errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-LDAP-0139');
-            self.sendJson(res, 503, { error: 'temporarily_unavailable',
-              error_description: 'The directory could not be read; try ' +
-                'again shortly.' });
+            // 503 for a store it could not read, 500 for anything else
+            // (#695: every failure was a "try again shortly").
+            self.answerDirectoryFailure(res, e, 'the console\'s totals',
+                                        'STS-LDAP-0176');
           });
         } },
 
@@ -6985,17 +7000,10 @@ class AdminApi {
               // The directory read failed after the handler had already
               // started: answer 503 here, and do not rethrow, so a
               // drill-down's fresh() does not also call next().
-              log.error(errorCodes.tag(errorCodes.codeOf(e) ||
-                                       'STS-LDAP-0139') +
-                        'admin-api: the users list ' +
-                        'could not be read from the store: ' +
-                        ((e && e.message) || e));
-              res.setHeader('Retry-After', '5');
-              errorCodes.mark(res, errorCodes.codeOf(e) ||
-                                   'STS-LDAP-0139');
-              self.sendJson(res, 503, { error: 'temporarily_unavailable',
-                error_description: 'The directory could not be read; try ' +
-                  'again shortly.' });
+              // 503 for a store it could not read, 500 for anything else
+              // (#695: every failure was a "try again shortly").
+              self.answerDirectoryFailure(res, e, 'the users list',
+                                          'STS-LDAP-0176');
               log.debug("Leaving run(). The directory could not be read.");
             });
           };
@@ -10518,17 +10526,10 @@ class AdminApi {
             }, function (e) {
               log.debug("Caught in the management API directory entries " +
                         "endpoint: " + ((e && e.message) || e));
-              log.error(errorCodes.tag(errorCodes.codeOf(e) ||
-                                       'STS-LDAP-0139') +
-                        'admin-api: the directory ' +
-                        'page could not be read from the store: ' +
-                        ((e && e.message) || e));
-              res.setHeader('Retry-After', '5');
-              errorCodes.mark(res, errorCodes.codeOf(e) ||
-                                   'STS-LDAP-0139');
-              self.sendJson(res, 503, { error: 'temporarily_unavailable',
-                error_description: 'The directory could not be read; try ' +
-                  'again shortly.' });
+              // 503 for a store it could not read, 500 for anything else
+              // (#695: every failure was a "try again shortly").
+              self.answerDirectoryFailure(res, e, 'the directory page',
+                                          'STS-LDAP-0176');
               log.debug("Leaving the management API directory entries " +
                         "endpoint. Unavailable.");
             });
@@ -10952,7 +10953,14 @@ class AdminApi {
                          'and a person who has signed in with no entry is ' +
                          'not listed (a typed name can still be granted). ' +
                          '`candidateSearch` says how many candidates there ' +
-                         'are in all and how many matched, and `complete` ' +
+                         'are in all and how many matched. A windowed ' +
+                         'search\'s count stops at `countCap` (100,000, ' +
+                         'the furthest the pager reaches; #1308): where ' +
+                         'more match, `matched` is `countCap` and ' +
+                         '`countCapped` is true — MORE THAN `matched` ' +
+                         'match, and `candidatesPaging` stops there. Held ' +
+                         'in memory, the count is exact and `countCapped` ' +
+                         'is false. `complete` says ' +
                          'whether this page holds every one it counted: ' +
                          'where it is false, `incomplete` says how many ' +
                          'names a DN cannot hold were left out ' +
@@ -11193,17 +11201,10 @@ class AdminApi {
           }, function (e) {
             log.debug("Caught in the management API multi-factor " +
                       "endpoint: " + ((e && e.message) || e));
-            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
-                                     'STS-LDAP-0139') +
-                      'admin-api: the roster could ' +
-                      'not be read from the store: ' +
-                      ((e && e.message) || e));
-            res.setHeader('Retry-After', '5');
-            errorCodes.mark(res, errorCodes.codeOf(e) ||
-                                 'STS-LDAP-0139');
-            self.sendJson(res, 503, { error: 'temporarily_unavailable',
-              error_description: 'The directory could not be read; try ' +
-                'again shortly.' });
+            // 503 for a store it could not read, 500 for anything else
+            // (#695: every failure was a "try again shortly").
+            self.answerDirectoryFailure(res, e, 'the multi-factor roster',
+                                        'STS-LDAP-0176');
           });
         } },
 
@@ -25971,8 +25972,10 @@ class AdminApi {
           log.debug("Entering the management API SPIFFE agents action " +
                     "endpoint.");
           const body = parseBody(req);
+          // The token's subject for the audit row, as rbacAction's caller
+          // passes it (#695).
           const result = adminActions.spiffeAgentsAction(self.withAction(req,
-              body));
+              body), { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0064');
           }
@@ -26119,6 +26122,10 @@ class AdminApi {
       // MONITORING → AUDIT EXPORT (#641): the destinations and their six
       // acts (`mgmt-api/audit_export_api.ts`).
       ...loadAuditExportApi().ROUTES,
+      // SERVER CONFIGURATION → SIGN-IN APPEARANCE (#717): the realm's
+      // colours, layout and logo, and their three acts
+      // (`mgmt-api/branding_api.ts`).
+      ...loadBrandingApi().ROUTES,
       // THE OUTBOUND SCIM CLIENTS (#552): Protocols → SCIM → Clients' twin,
       // the clients and their ten acts (`mgmt-api/scim_clients_api.ts`).
       ...loadScimClientsApi().ROUTES,
@@ -28415,10 +28422,11 @@ import senderConstraints = require('../oauth-oidc/sender_constraints');
 // from this repository, so it cannot move a route or join a cycle.
 //
 // **IT USED TO BE `require('../package.json').version`**, which was M.N.0 — the
-// manifest's placeholder patch while the version carried a build number. The
-// version is the release since #1298 and package.json carries the same one,
-// but the module stays the one source, and the build is identified beside it
-// by `commit` and `builtAt`. See common/version.js.
+// manifest's placeholder patch while the version carried a build number.
+// package.json carries the release, M.N.O, since #1298; the version this
+// module answers is that release followed by the build number (#1317), which
+// package.json has nowhere to put, so the module stays the one source. See
+// common/version.js.
 import version = require('../common/version');
 const APP_VERSION = version.load();
 const VERSION = APP_VERSION.version;

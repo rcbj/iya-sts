@@ -209,6 +209,74 @@ class OverviewPages {
       '</p></div>';
   }
 
+  // THE REALM'S CUSTOM ATTRIBUTES (#700): each one whose definition shows
+  // it on the portal, with the person's own values. One that the definition
+  // also lets them edit carries a real form posting to
+  // `/portal/attributes`: one box per value it holds and, for a
+  // multi-valued attribute, one empty box to add a value — a cleared box
+  // removes its value, and the operation replaces the whole set. No card at
+  // all where nothing is shown.
+  /**
+   * The custom attributes card.
+   *
+   * @param rows - the Overview's `customAttributes`
+   * @param t - the translator
+   * @returns the HTML, '' when there is nothing to show
+   */
+  static customCard(rows: Json[], t: Json): string {
+    const shown: Json[] = Array.isArray(rows) ? rows : [];
+    if (!shown.length) {
+      return '';
+    }
+    const inputType = function (syntax: string): string {
+      return syntax === 'email' ? 'email' : (syntax === 'uri' ? 'url'
+                                                              : 'text');
+    };
+    const box = function (one: Json, i: number, value: string): string {
+      const id = 'portal-attr-' + one.name + '-' + i;
+      return '<div><input type="' + inputType(String(one.syntax)) +
+        '" id="' + esc(id) + '" aria-label="' + esc(one.label) + '"' +
+        ' name="values" maxlength="1024" value="' + esc(value) +
+        '"' + (value === '' && i > 0
+          ? ' placeholder="' + esc(t.text('portal.custom.addValue')) + '"'
+          : '') + '></div>';
+    };
+    const body = shown.map(function (one: Json): string {
+      const values: string[] = (one.values || []).map(String);
+      const shownValues = values.length
+        ? (values.length > 1
+          ? '<ul class="vals">' + values.map(function (v: string): string {
+            return '<li>' + esc(v) + '</li>';
+          }).join('') + '</ul>'
+          : esc(values[0]))
+        : '<span class="unset">' + t.html('portal.custom.none') +
+          '</span>';
+      const boxes = one.multi
+        ? values.concat(['']).map(function (v: string, i: number): string {
+          return box(one, i, v);
+        }).join('')
+        : box(one, 0, values.length ? values[0] : '');
+      const form = one.editable
+        ? '<form method="post" action="' + BASE + '/attributes">' +
+          '<input type="hidden" name="attribute" value="' + esc(one.name) +
+          '">' + boxes + (one.multi
+            ? '<p class="note">' + t.html('portal.custom.multiNote') + '</p>'
+            : '') + '<button type="submit">' + t.html('portal.custom.save') +
+          '</button></form>'
+        : '<div class="sub">' + t.html('portal.custom.readOnly') + '</div>';
+      return '<tr><th title="' + esc(one.name) + '">' + esc(one.label) +
+        '</th><td>' + (one.editable ? '' : shownValues) + form +
+        (one.description
+          ? '<div class="attr">' + esc(one.description) + '</div>' : '') +
+        '<div class="attr"><code>' + esc(one.name) + '</code> &middot; ' +
+        esc(one.syntax) + '</div></td></tr>';
+    }).join('');
+    return '<div class="card" id="custom-attributes"><h2>' +
+      t.html('portal.custom.heading') + '</h2><p class="sub">' +
+      t.html('portal.custom.lead') + '</p><table>' + body +
+      '</table></div>';
+  }
+
   /**
    * The Overview's body.
    *
@@ -303,6 +371,8 @@ class OverviewPages {
       t.html('portal.overview.seeThem') + '</a></td></tr><tr><th>' +
       t.html('portal.overview.secondFactor') + '</th><td>' + secondFactor +
       '</td></tr></table></div>' +
+
+      OverviewPages.customCard(view.customAttributes, t) +
 
       OverviewPages.languageCard(view.language, t) +
 

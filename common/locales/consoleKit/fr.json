@@ -24,6 +24,7 @@
   "seconds.hours": "{n, plural, one {{shown} heure} other {{shown} heures}}",
   "seconds.days": "{n, plural, one {{shown} jour} other {{shown} jours}}",
   "chooser.showing": "Affichage de {from}&ndash;{to} sur {n} {searched, select, yes {{n, plural, one {résultat} other {résultats}}} other {dans la liste}}. ",
+  "chooser.showingMore": "Affichage de {from}&ndash;{to} sur plus de {n} résultats. ",
   "chooser.count": "{n} {searched, select, yes {{n, plural, one {résultat} other {résultats}}} other {dans la liste}}. ",
   "chooser.previous": "&larr; {n} précédents",
   "chooser.previous.title": "Les vingt précédents",

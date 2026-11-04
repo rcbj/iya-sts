@@ -178,7 +178,7 @@ function scanSigners() {
       }
       const ids = [];
       const idPattern =
-        /certificateHeader(?:For)?\s*:?\s*\(?\s*'([a-z0-9-]+)'/g;
+        /certificateHeader(?:For(?:Async)?)?\s*:?\s*\(?\s*'([a-z0-9-]+)'/g;
       let one;
       while ((one = idPattern.exec(statement)) !== null) {
         ids.push(one[1]);

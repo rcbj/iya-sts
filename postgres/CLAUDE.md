@@ -192,8 +192,10 @@ seconds of index writes inside the script's transaction.
 **VERSION 23 (2026-10-20) ADDS `pg_trgm` AND A TRIGRAM INDEX, AND A LARGE
 STORE SHOULD BUILD IT CONCURRENTLY FIRST.** `sts_ldap_entries_uid_trgm` is a
 GIN over `rdn_value` with `gin_trgm_ops`, partial on the children of each
-realm's `ou=users`. It is what `/portal/delegate`'s search asks
-(`ldap/CLAUDE.md`). `pg_trgm` ships in the official image's contrib and is a
+realm's `ou=users`. It is what `/portal/delegate`'s search asks, and since
+#1310 the role chooser's needle count and page too (`ldap/CLAUDE.md`) —
+with no new schema version and nothing to run: an image with #1310 against
+a version-23-or-later store finds the index there. `pg_trgm` ships in the official image's contrib and is a
 TRUSTED extension (PostgreSQL 13+), so the database owner may create it with
 no superuser. Measured on `postgres:18`: a non-superuser owner created it,
 and it landed in the `sts` schema.

@@ -104,6 +104,16 @@ of them:
 
 A role no test can grant is a role no test can exercise.
 
+**On `/admin/rbac` you find the person by typing part of a username.** Where
+the directory is kept in the database, a search's count stops at 100,000:
+past that the page says *more than 100,000 matches* and pages only through
+the first 100,000, so type more of the name to narrow it.
+`GET /admin-api/rbac` says the same with `candidateSearch.countCapped`.
+On PostgreSQL a search of three letters or digits or more is answered from
+the login-name index, so a rare name is found at once however many people
+the realm holds; one or two characters, or any search on MariaDB, reads
+through the realm's people instead.
+
 **Each trust realm has administrators of its own, confined to it.** The
 console asks the roster of the realm a person signed in through; the default
 realm's roster is the service roster over every realm. A realm's own
@@ -770,7 +780,12 @@ required. They belong to the realm (`ou=attributeDefinitions`) and are not
 inherited. `POST /admin-api/policies/define-person-attribute` and
 `remove-person-attribute` do the same over the API; a custom attribute cannot be
 removed while anybody holds a value of it or any of the realm's policies
-requires it.
+requires it. The **User portal** column says whether the person sees the
+attribute on the portal, and whether they may change it there; both are off
+by default, and the define form has a box for each. **Change** on a row edits
+the label, the description and those two boxes
+(`update-person-attribute`); letting the person change it also shows it. The
+syntax and whether it holds several values are fixed once it is defined.
 `/admin/users/new` and a person's Attributes tab outline every required field
 in red and mark it *required*.
 
@@ -1694,6 +1709,52 @@ refused when that setting is on. A filesystem path is absolute, and when
 `auditExport.fileRoots` is set it lies under one of those directories. The
 settings take effect on the next run.
 
+## Server configuration pages worth explaining
+
+### Sign-in appearance — `/admin/sign-in-appearance`
+
+Server configuration → Sign-in appearance sets how this realm's sign-in
+pages look: the sign-in screen and every step after it, consent, GNAP's
+interaction pages, the federation pages, `/logout`, the front door `/` and
+the user portal. The admin console keeps its own look. Every value belongs
+to the realm the console is in, so `/realm/acme/admin/sign-in-appearance`
+changes acme's sign-in pages and no other realm's. A realm administrator
+may change their own realm's appearance. What each setting does is on
+[Sign-in appearance](sign-in-appearance.md).
+
+The page has four tabs:
+
+* **Colours.** The accent (buttons, links and focus rings), the page, the
+  card and the text, each a colour picker with its hex value beside it. One
+  Save sends all four, and they are judged together. Text or links below
+  WCAG 2.2 AA contrast (4.5:1) against the card are refused, and then
+  nothing is saved. Below the form, the contrast of the text, the links and
+  the button text is shown with its ratio, and the derived tones are shown:
+  the button text (black or white, whichever reads better on the accent),
+  the quieter text, the borders and the rules. Nobody sets those.
+* **Layout and logo.** The layout (*centered*, *split* or *banner*), the
+  display name, the logo's alternative text and the logo's link, saved
+  together. Under them is the stored logo with its type, size in pixels and
+  bytes, digest, and who uploaded it and when. You can upload a PNG, a JPEG
+  or a WebP, up to `branding.logoMaxBytes`. The file's bytes decide its
+  type, not its name. The upload replaces the realm's logo. A logo needs
+  alternative text, which you can type beside the file. *Remove logo*
+  removes it, and the sign-in pages then show none.
+* **Preview.** The four colours and a layout, filled in with the saved
+  values. *Open the preview in a new tab* shows a sample of this realm's
+  sign-in card with the values in the form, before anything is saved.
+  Nothing on the preview signs anybody in. It shows the saved logo and
+  display name.
+* **Settings.** The *Sign-in appearance* settings group, as on every page
+  that owns a group. It also holds `branding.logoMaxBytes`, which applies to
+  the whole service and can be changed only in the default realm, and the
+  Reset that drops a realm's own value.
+
+The same controls are `GET /admin-api/branding` (Admin Read, `admin:read`)
+and `POST /admin-api/branding/save`, `/branding/logo` and
+`/branding/remove-logo` (Admin Write, `admin:write`). See
+[Management API](management-api.md#sign-in-appearance).
+
 ## Protocols pages worth explaining
 
 ### Token lifetimes — `/admin/token-lifetimes`
@@ -1762,6 +1823,18 @@ to the two token sets and UserInfo (whose `sub` a client must check against the
 ID Token's), not to the SAML sets, where an attribute called `exp` collides with
 nothing; the additive rule still protects SAML, because a WS-Federation relying
 party keys off the claim URIs this service writes.
+
+**The realm's custom attributes can be ticked too** (#700). The ticked
+catalogue on each of these pages, and on **Kerberos → PAC claims**, lists the
+realm's custom attributes after the standard ones. Each is claimed under its
+own name and typed by its syntax in a token: an `integer` is a number, a
+`boolean` is `true` or `false`, and a `date` is `YYYY-MM-DD`. A multi-valued
+one is an array, or one `<AttributeValue>` per value in an assertion. The
+value always comes from the person's entry and is never invented. A client
+can ask for one by name in an OpenID Connect claims request. A custom
+attribute named like a standard claim (a custom `birthdate`) is not offered
+(`STS-REG-0366`); a directory-attribute claim can carry it under another
+name.
 
 **A claim can carry any directory attribute** (#94). *Add a
 directory-attribute claim* on each of these pages (`add-attribute-claim` on

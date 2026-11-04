@@ -2,6 +2,8 @@
   "login.title": "Sign in — authentication service",
   "login.heading": "Sign in",
   "login.at": "Authentication service at <code>{base}</code>",
+  "login.reauthPromptLogin": "The application asked you to sign in again (prompt=login).",
+  "login.reauthMaxAge": "The application asked you to sign in again because your last sign-in is older than it allows (max_age).",
   "login.linkAccount": "<strong>Link your account.</strong> A federation partner signed you in as <code>{name}</code>, and that account is not linked to it yet. Sign in here as {name} to link them; Cancel links nothing.",
   "login.username": "Username",
   "login.password": "Password",
@@ -197,5 +199,7 @@
   "postLogin.subAttestation": "{name}, your post-quantum passkey was not attested with post-quantum algorithms. Register one that is.",
   "postLogin.failed": "Your device did not create the passkey ({error}).",
   "postLogin.failedHelp": "If your device or browser cannot make an ML-DSA passkey, register it on a separate security key that supports ML-DSA, or ask an administrator: where your passkey policy lets an administrator enrol a passkey for you, they can register one, and they can upgrade your passkey from the console.",
-  "postLogin.failedSkip": "You can also skip this for now."
+  "postLogin.failedSkip": "You can also skip this for now.",
+  "client.policy": "Privacy policy",
+  "client.tos": "Terms of service"
 }

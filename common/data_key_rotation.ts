@@ -887,15 +887,19 @@ class DataKeyRotation {
                 'been superseded for keys.dataKeyRetireAfterDays.',
       owner: 'common/data_key_rotation.ts',
       kind: 'cluster', scope: 'service',
-      // ON THE FRONT (#408): `keystore.resealOwnRows()` re-seals the key and
-      // PKI rows THIS process holds sealed in memory, and the count that
-      // follows decides a superseded key may be destroyed. Run in a request
-      // worker, the front's own sealed copies would stay under the key the
-      // pass then destroys, and the front could no longer open its signing
-      // keys once their plaintext was purged.
-      onFront: 'it re-seals the key and certificate-authority rows the ' +
-               'front process holds sealed in its own memory before a ' +
-               'superseded key is destroyed',
+      // ON ANY PROCESS SINCE #704; IT WAS PINNED TO THE FRONT BY #408.
+      // `keystore.resealOwnRows()` re-seals the key and certificate-authority
+      // rows the RUNNING process holds sealed in memory and writes them, and
+      // the pin was there so the front's own copies would not stay under the
+      // key the pass later destroys. That reasoning was half the story: with
+      // `cluster.mode=off` the processes that did NOT run the pass — every
+      // request worker — kept their copies under the old key and lost their
+      // signing keys at the destruction. Since #704 every process takes the
+      // re-sealed row from the change log (`keystore.applyStoredChange()`,
+      // `adoptResealedKeyRow()`; a certificate-authority row was already
+      // adopted wherever it merges), days before any destruction
+      // (`keys.dataKeyRetireAfterDays`), so whichever process runs the pass
+      // the others follow it, and the body may run on a request worker.
       everyMs: function (): number {
         return self.reencryptIntervalMs();
       },

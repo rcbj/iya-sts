@@ -119,3 +119,7 @@ kerberos/spnego-pages.bundle.js
 kerberos/spnego-pages-spa.js
 kerberos/spnego-pages-spa.js.br
 kerberos/spnego-pages-spa.js.gz
+
+# Python bytecode (#1303: a stale sts_adapter .pyc had been tracked since #212).
+__pycache__/
+*.pyc

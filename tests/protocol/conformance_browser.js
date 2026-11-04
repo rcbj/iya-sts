@@ -78,6 +78,8 @@ const log = bunyan.createLogger({ name: "conformance_browser",
 const SETTLE_MS = Number(process.env.CONFORMANCE_BROWSER_SETTLE_MS) || 4000;
 
 let shared = null;
+// How many Chromes this process has opened with a network log (one file each).
+let netlogCount = 0;
 let queue = Promise.resolve();
 
 function waitMs(ms) {
@@ -160,12 +162,73 @@ async function browser(serviceBase) {
     }
     log.info("Chrome features disabled on request: " + extra);
   }
+  // CHROME'S OWN NETWORK LOG (#1293, rcbj 2026-11-04). Several modules on
+  // the hosted suite stalled with test-idp never seeing the request; the
+  // NetLog is written by Chrome itself, not through WebDriver, so it
+  // survives a hung WebDriver call, and it records every request, the socket
+  // and connection it rode, the TLS handshake and whether and when it ended.
+  // CONFORMANCE_BROWSER_NETLOG names a directory; each Chrome this job opens
+  // writes its own file there (a replaced browser starts a new one).
+  const netlogDir = String(process.env.CONFORMANCE_BROWSER_NETLOG || "")
+    .trim();
+  if (netlogDir) {
+    fs.mkdirSync(netlogDir, { recursive: true });
+    netlogCount += 1;
+    const file = require("path").join(netlogDir, "netlog-" + process.pid +
+      "-" + netlogCount + "-" + Date.now() + ".json");
+    options.addArguments("--log-net-log=" + file,
+                         "--net-log-capture-mode=Default");
+    log.info("Chrome's network log: " + file);
+  }
   shared = await new Builder().forBrowser("chrome")
     .setChromeOptions(options).build();
   log.info("Opened the person's browser (headless Chrome) for the " +
            "conformance suite's sign-in steps.");
+  await keepWarm(shared, serviceBase);
   log.debug("Leaving browser().");
   return shared;
+}
+
+// A WARM CONNECTION TO THE SERVICE (#1293, 2026-11-04): Session Management's
+// second_session_verify loads our OP iframe and the suite's RP iframe side by
+// side and posts its ONE message 500 ms after its own frame loads (#1297).
+// From a distant browser, an OP iframe that needs a fresh TCP and TLS
+// connection to the service spent 502 ms connecting before its request went
+// out (the NetLog of the 11-04 run), and the message was gone before it
+// listened; the same page over a reused connection answered in 294 ms. A
+// background tab asks the service for its discovery document every
+// CONFORMANCE_BROWSER_KEEP_WARM_MS, so a connection is always in the pool —
+// the network a nearby browser would have, and nothing the service does
+// differently. Off unless that variable is set (the certification tool sets
+// it for a Session-only run, beside the partitioning switches).
+async function keepWarm(driver, serviceBase) {
+  log.debug("Entering keepWarm().");
+  const every = Number(process.env.CONFORMANCE_BROWSER_KEEP_WARM_MS || 0);
+  if (!(every > 0) || !serviceBase) {
+    log.debug("Leaving keepWarm(). Off.");
+    return;
+  }
+  try {
+    const main = await driver.getWindowHandle();
+    await driver.switchTo().newWindow("tab");
+    await driver.get(String(serviceBase).replace(/\/+$/, "") +
+                     "/.well-known/openid-configuration");
+    // An <img> (the document's policy has img-src 'self'), not fetch()
+    // (connect-src is 'none' there): the request is all that is wanted.
+    await driver.executeScript(
+      "var n = 0; setInterval(function () {" +
+      "  var i = new Image(); i.src = location.pathname + '?warm=' + (n++);" +
+      "}, arguments[0]);", every);
+    await driver.switchTo().window(main);
+    log.info("Keeping a connection to " + serviceBase + " warm every " +
+             every + " ms from a background tab.");
+  } catch (e) {
+    log.debug("Caught in keepWarm(): " + ((e && e.message) || e));
+    // Without it the run is what it was before, and goes on.
+    log.info("Could not open the keep-warm tab: " +
+             ((e && e.message) || e));
+  }
+  log.debug("Leaving keepWarm().");
 }
 
 // Closes the one Chrome, at the end of a job.
@@ -477,6 +540,41 @@ async function present(driver, cssId, ms) {
 
 // The page as the module's evidence, uploaded to its first unfilled
 // placeholder — what a human tester's "upload an image" does.
+// THE PAGE'S PICTURES BEFORE ITS PHOTOGRAPH (#1293, 2026-11-04): the
+// dynamic registration's logo module photographed the sign-in screen before
+// the client's logo — fetched by the browser from the suite's own host, ~1 s
+// away — had arrived, so the evidence showed the name and no logo. Every
+// <img> on the page is waited for (loaded or failed) up to IMAGES_MS; one
+// that failed is logged, since the screenshot would show it missing.
+const IMAGES_MS = Number(process.env.CONFORMANCE_BROWSER_IMAGES_MS || 8000);
+async function imagesSettled(driver, id) {
+  log.debug("Entering imagesSettled().");
+  try {
+    const state = await driver.executeAsyncScript(
+      "var done = arguments[arguments.length - 1];" +
+      "var until = Date.now() + arguments[0];" +
+      "(function poll() {" +
+      "  var imgs = Array.prototype.slice.call(document.images || []);" +
+      "  var pending = imgs.filter(function (i) { return !i.complete; });" +
+      "  if (!pending.length || Date.now() > until) {" +
+      "    done({ total: imgs.length, pending: pending.length," +
+      "           broken: imgs.filter(function (i) {" +
+      "             return i.complete && !i.naturalWidth; })" +
+      "             .map(function (i) { return i.src; }) });" +
+      "  } else { setTimeout(poll, 100); }" +
+      "})();", IMAGES_MS);
+    if (state && (state.pending || (state.broken || []).length)) {
+      log.info("  images on the page for " + id + ": " + state.total +
+               ", still loading " + state.pending + ", broken " +
+               JSON.stringify(state.broken || []));
+    }
+  } catch (e) {
+    log.debug("Caught in imagesSettled(): " + ((e && e.message) || e));
+    // The script timed out or the page went: photograph what is there.
+  }
+  log.debug("Leaving imagesSettled().");
+}
+
 async function photograph(o, driver, id, why) {
   log.debug("Entering photograph(). " + why);
   const images = await o.suite("GET", "api/log/" + id + "/images");
@@ -488,6 +586,7 @@ async function photograph(o, driver, id, why) {
     log.debug("Leaving photograph(). No placeholder.");
     return false;
   }
+  await imagesSettled(driver, id);
   const png = await driver.takeScreenshot();
   // THE PAGE'S WORDS BESIDE ITS PICTURE (#1293, 2026-11-04): a reviewer
   // reads the screenshot, so its sentence is part of the certification; the
@@ -513,10 +612,47 @@ async function photograph(o, driver, id, why) {
 
 // Opens an address the module asked for: GET by navigating, POST as the
 // suite's page posts it — a form of the address's query.
+// A NAVIGATION THAT NEVER ARRIVES IS TRIED AGAIN (#1293, 2026-11-04). On
+// the hosted suite a GET of test-idp's authorization endpoint once never
+// reached the service (its per-minute request summary shows none), most
+// likely a connection that had died between this machine and the load
+// balancer, and WebDriver waits five minutes for a page load. The page load
+// is held to PAGE_LOAD_MS; past it the browser stops, waits a moment and
+// asks once more, on a fresh connection. A page the service is slow to draw
+// still has 45 seconds, which is far more than any it serves.
+const PAGE_LOAD_MS = Number(process.env.CONFORMANCE_BROWSER_PAGE_LOAD_MS) ||
+                     45000;
+
+async function getOnce(driver, url) {
+  log.debug("Entering getOnce().");
+  await driver.manage().setTimeouts({ pageLoad: PAGE_LOAD_MS });
+  try {
+    await driver.get(url);
+  } catch (e) {
+    if (!/timeout/i.test(String((e && e.name) || "") + " " +
+                         String((e && e.message) || ""))) {
+      log.debug("Leaving getOnce(). Not a timeout.");
+      throw e;
+    }
+    log.warn("  a page load passed " + PAGE_LOAD_MS + " ms; stopping it " +
+             "and asking once more: " + String(url).slice(0, 120));
+    try {
+      await driver.executeScript("window.stop();");
+    } catch (stopError) {
+      log.debug("Caught in getOnce(): " +
+                ((stopError && stopError.message) || stopError));
+      // Nothing to stop: the retry below is the point.
+    }
+    await waitMs(1000);
+    await driver.get(url);
+  }
+  log.debug("Leaving getOnce().");
+}
+
 async function open(driver, one) {
   log.debug("Entering open(). " + one.method);
   if (String(one.method).toUpperCase() !== "POST") {
-    await driver.get(one.url);
+    await getOnce(driver, one.url);
     log.debug("Leaving open(). GET.");
     return;
   }
@@ -741,10 +877,20 @@ async function follow(o, driver, id, action, suiteBase) {
       const yes = await driver.findElements(
         By.xpath("//button[@value='yes']"));
       if (yes.length) {
-        await photograph(o, driver, id, "the end-session page");
+        // "confirm-then-photograph": the module asks for the page AFTER the
+        // person is signed out (the suite's "upload a screenshot of the
+        // successful logout page"), so the confirmation is pressed first and
+        // the page it leads to is the evidence — where it moves on, the page
+        // it settles on is photographed by the branches below.
+        if (action !== "confirm-then-photograph") {
+          await photograph(o, driver, id, "the end-session page");
+        }
         await yes[0].click();
         if (await moved(driver, here, 20000)) {
           continue;
+        }
+        if (action === "confirm-then-photograph") {
+          await photograph(o, driver, id, "the signed-out page");
         }
         break;
       }

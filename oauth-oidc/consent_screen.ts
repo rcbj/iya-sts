@@ -530,6 +530,10 @@ class ConsentScreen {
       base: baseUrlOf(req),
       client: { id: String(record.clientId || ''),
                 name: String(record.clientName || '') },
+      // WHO IS ASKING (#1300): the client's logo, privacy policy and terms
+      // where it registered any of them, drawn above the card's body by
+      // the sign-in surface's frame as on the sign-in pages; null otherwise.
+      clientDisplay: this.deps.authn.clientDisplay(record.clientId),
       scopes: record.scopes.map(function (one: Json): Json {
         const p = one.permission;
         return { scope: String(one.scope),
@@ -882,9 +886,14 @@ class ConsentScreen {
         'answer it.</div>',
       loading: '<p class="sub">Loading&hellip;</p>'
     });
+    // THE CLIENT'S LOGO (#1300): the browser loads it from the client's own
+    // address, so this page's `img-src` names exactly that origin — the
+    // shell is per pending consent, and so per client.
+    const shown = this.deps.authn.clientDisplay(record.clientId);
     ShellDocument.serve(app, req, res, html, {
       connect: ShellDocument.originsOf([authnAt]),
-      csp: { 'style-src': "'self'" } });
+      csp: { 'style-src': "'self'" },
+      images: shown && shown.logoOrigin ? [shown.logoOrigin] : [] });
     log.debug("Leaving ConsentScreen.shell().");
   }
 

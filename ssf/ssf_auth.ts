@@ -464,13 +464,18 @@ class SsfAuth {
    * offered and a request is given (its `as_uri` needs the request's base).
    *
    * @param req - the request, when there is one
+   * @param need - on a 403, the permission the operation needs: the Bearer
+   *   challenge's `scope` then names the scopes that grant it (RFC 6750
+   *   section 3.1), not every published scope (#695)
    * @returns the challenge strings
    */
-  challenges(req?: AuthRequest | null): string[] {
+  challenges(req?: AuthRequest | null, need?: string): string[] {
     const { helpers: { log, baseUrlOf }, ssfScopes } = this.deps;
     log.debug("Entering SsfAuth.challenges().");
+    const named = need && need !== 'none'
+      ? this.acceptedFor(need) : ssfScopes.published();
     const list = ['Bearer realm="' + this.realm() + '", scope="' +
-      ssfScopes.published().join(' ') + '"'];
+      named.join(' ') + '"'];
     if (this.basicOffered()) {
       list.push('Basic realm="' + this.realm() + '", charset="UTF-8"');
     }
@@ -575,10 +580,12 @@ class SsfAuth {
         ' and this operation needs one of "' + accepted.join('", "') +
         '". Write includes read. A read scope reads a stream, its status ' +
         'and its poll queue, and a write scope ' +
-        'changes what this transmitter delivers and to whom. Ask for the ' +
+        'changes what this transmitter delivers and to whom, including ' +
+        'acknowledging polled events (ack, setErrs). Ask for the ' +
         'one you need, as a client whose oauthAllowedScope declares that ' +
         'permission.',
-        { 'WWW-Authenticate': this.challenges() }, 'access_denied');
+        { 'WWW-Authenticate': this.challenges(null, need) },
+        'access_denied');
     }
     const withdrawn = this.undeclaredRefusal(String(claims.client_id || ''),
                                              need, scopes);
@@ -635,7 +642,7 @@ class SsfAuth {
       'includes read; a write stays honoured while a write scope stays ' +
       'declared. Removing the declaration from the application cuts off ' +
       'tokens already issued.',
-      { 'WWW-Authenticate': this.challenges() }, 'access_denied');
+      { 'WWW-Authenticate': this.challenges(null, need) }, 'access_denied');
   }
 
   // The names an operation accepts: every published name that grants the
@@ -844,7 +851,8 @@ class SsfAuth {
         '". Write includes read. Ask for one as ' +
         'a reference string, or as an object of type "ssf" with the "' +
         need + '" action.',
-        { 'WWW-Authenticate': this.challenges(req) }, 'access_denied');
+        { 'WWW-Authenticate': this.challenges(req, need) },
+        'access_denied');
     }
     const held = this.gnapHeldScopes(record.access);
     const instanceId = String(record.instanceId || '');
@@ -1184,7 +1192,8 @@ class SsfAuth {
           'the application would be issued: the scope declared on the ' +
           'application, and the application a member of SSF_READ or ' +
           'SSF_MANAGE.',
-          { 'WWW-Authenticate': this.challenges(req) }, 'access_denied');
+          { 'WWW-Authenticate': this.challenges(req, need) },
+          'access_denied');
       }
     }
     log.debug("Leaving SsfAuth.attemptClientCertificate(). Accepted " +

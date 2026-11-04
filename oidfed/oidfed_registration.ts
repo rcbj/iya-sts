@@ -61,6 +61,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import loopSlices = require('../common/loop_slices');
 import config = require('../common/config');
 import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
@@ -86,6 +87,8 @@ const FEDERATION_ONLY = Object.freeze(['client_registration_types',
  * The scheduler job that removes registrations that have ended.
  */
 const EXPIRE_JOB = 'oidfed.registrations-expire';
+// Ended registrations removed between two turns of the loop (#704).
+const REMOVE_SLICE = 25;
 
 interface RegistrationDeps {
   log: typeof helpers.log;
@@ -827,21 +830,27 @@ class OidfedRegistration {
    * Removes each federated registration that has ended (12.3); housekeeping,
    * since an ended one is already answered as unknown.
    *
-   * @returns `{ removed }`
+   * Each removal is a directory write, so the ended ones are removed a few
+   * at a time, a turn of the event loop between (#704,
+   * `common/loop_slices.js`).
+   *
+   * @returns a promise of `{ removed }`
    */
-  expireRegistrations(): Json {
+  async expireRegistrations(): Promise<Json> {
     const { log, applications } = this.deps;
     log.debug("Entering OidfedRegistration.expireRegistrations().");
     let removed = 0;
-    applications().federatedRegistrations().forEach(function (r: Json) {
-      if (r.expired) {
-        const gone = applications().deleteApplication(r.identifier,
-                                                      { actor: 'oidfed' });
-        if (gone && gone.ok) {
-          removed += 1;
-        }
+    const ended = applications().federatedRegistrations().filter(
+      function (r: Json): boolean {
+        return !!r.expired;
+      });
+    await loopSlices.eachInSlices(ended, function (r: Json): void {
+      const gone = applications().deleteApplication(r.identifier,
+                                                    { actor: 'oidfed' });
+      if (gone && gone.ok) {
+        removed += 1;
       }
-    });
+    }, REMOVE_SLICE);
     log.debug("Leaving OidfedRegistration.expireRegistrations(). " +
               removed);
     return { removed: removed };
@@ -872,7 +881,7 @@ class OidfedRegistration {
         return 3600000;
       },
       manual: true,
-      run: function (): Json {
+      run: function (): Promise<Json> {
         return self.expireRegistrations();
       }
     });

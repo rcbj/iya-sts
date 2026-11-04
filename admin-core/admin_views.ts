@@ -2766,7 +2766,10 @@ class AdminViews {
       }).join('') + ')',
       missingAsked: asked,
       missing: asked ? attributePolicy.peopleMissing() : null,
+      // #700: `update` changes a definition's label, description and
+      // portal flags in place.
       actions: { define: 'define-person-attribute',
+                 update: 'update-person-attribute',
                  remove: 'remove-person-attribute' }
     };
     log.debug("Leaving AdminViews.attributePolicyExtras().");
@@ -9265,7 +9268,7 @@ class AdminViews {
       paneFrom = 0;
     }
     const candidatePane = {
-      from: paneFrom, matched: candidateMatched.length,
+      from: paneFrom, matched: candidateMatched.length, countCapped: false,
       shown: candidateMatched.slice(paneFrom, paneFrom + CHOOSER_HITS)
     };
     // Who of the grants on this page has authenticated here, for the
@@ -9337,11 +9340,15 @@ class AdminViews {
           candidates: candidateShown,
           candidatesPaging: self.pagingJson(candidatePaging),
           // Held in memory, the list is every candidate: whole (#359's
-          // windowed answer carries the same two keys).
+          // windowed answer carries the same keys).
+          // `countCapped` is never true here (#1308): the list is in
+          // memory, so counting it costs nothing and is exact. The windowed
+          // answer's cap is still named, so a caller reads one shape.
           candidateSearch: {
             q: personWanted || null, total: candidates.length,
-            matched: candidateMatched.length, complete: true,
-            incomplete: null
+            matched: candidateMatched.length, countCapped: false,
+            countCap: ldapMod.CANDIDATE_COUNT_CAP,
+            complete: true, incomplete: null
           },
           picked: personAsked
             ? { asked: personAsked, candidate: picked }
@@ -9476,6 +9483,8 @@ class AdminViews {
     const census = await ldap.candidatePageAsync(0, 0, personWanted);
     const matched = Number(census.matched) || 0;
     const total = Number(census.total) || 0;
+    // MORE THAN `matched` (#1308): a needle's count stops at the cap.
+    const countCapped = census.countCapped === true;
     const candidateOptions = { name: 'candidates', defaultPer: CHOOSER_HITS,
                                noun: 'people' };
     let candidatePaging = this.pagingOf(req.query, matched,
@@ -9497,13 +9506,13 @@ class AdminViews {
     const known = built.knownKeys;
     const asked = await ldap.candidatePageAsync(
       candidatePaging.offset, candidatePaging.perPage, personWanted,
-      { total: total, matched: matched });
+      { total: total, matched: matched, countCapped: countCapped });
     const pageRows = this.markSeen(asked.rows, known);
     const same = candidatePaging.offset === paneFrom &&
       candidatePaging.perPage === CHOOSER_HITS;
     const paneAsked = same ? asked
       : await ldap.candidatePageAsync(paneFrom, CHOOSER_HITS, personWanted,
-          { total: total, matched: matched });
+          { total: total, matched: matched, countCapped: countCapped });
     const paneRows = same ? pageRows : this.markSeen(paneAsked.rows, known);
     // NOT A WHOLE PAGE, SAID (the review of #692): `matched` counts rows,
     // and a name a DN cannot hold, a shared RDN value and the walk's cap
@@ -9541,7 +9550,8 @@ class AdminViews {
     filterParams.personfrom = this.queryOne(req.query, 'personfrom');
     filterParams.person = personAsked;
     const candidatePane = {
-      from: paneFrom, matched: matched, shown: paneRows
+      from: paneFrom, matched: matched, countCapped: countCapped,
+      shown: paneRows
     };
     const knownHere: Record<string, boolean> = {};
     built.shown.forEach(function (row) {
@@ -9596,6 +9606,7 @@ class AdminViews {
         candidatesPaging: self.pagingJson(candidatePaging),
         candidateSearch: {
           q: personWanted || null, total: total, matched: matched,
+          countCapped: countCapped, countCap: ldap.CANDIDATE_COUNT_CAP,
           complete: incomplete === null, incomplete: incomplete
         },
         picked: personAsked

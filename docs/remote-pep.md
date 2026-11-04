@@ -131,7 +131,8 @@ an anchor it holds, which is the commonest thing to get wrong in mutual TLS.
 node tests/tools/pep-credential.js \
   --url=https://localhost:8081 \
   --out=/tmp/pep-certs \
-  --subject="CN=remote-pep-1,OU=remote-peps,O=iya-sts"
+  --subject="CN=remote-pep-1,OU=remote-peps,O=iya-sts" \
+  --root-subject="CN=remote-pep-1 Root CA,O=iya-sts"
 ```
 
 **The flags take `=`**; a space between the flag and its value is reported as an
@@ -151,6 +152,14 @@ openssl x509 -in /tmp/pep-certs/pep.crt -out /tmp/pep-certs/pep-leaf.crt
 api users/add-certificate "$(jq -n --rawfile pem /tmp/pep-certs/pep-leaf.crt \
   '{user:"remote-pep-1", certificate:$pem}')"
 ```
+
+**Give the root a subject of your own** with `--root-subject`, for example
+`--root-subject="CN=Example PEP Root CA,O=Example"`. Without it the root is
+`CN=iya-sts test Root CA,O=iya-sts tests`, the name the test suite's own roots
+carry, and on a reused AWS test environment the suite's reset
+(`deploy/aws/reset-environment.js`) removes every runtime trust anchor with
+that common name before a run: a PEP whose root kept the default loses its
+trust at the next suite run.
 
 Until it is stored, the PEP's certificate verifies and is still refused
 (`STS-XACML-0179`). A deployment upgraded from a version that matched the

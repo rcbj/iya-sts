@@ -6459,6 +6459,12 @@ generic field rows.
   (`define-person-attribute`, `remove-person-attribute`), which the runtime
   maps to `POST /admin-api/policies/{action}` as it does a save — rule 7 by
   construction, through `policyKinds.forAction()`'s third verb, `act`.
+* **EACH CUSTOM ATTRIBUTE'S USER PORTAL FLAGS (#700)**: a *User portal*
+  column (not shown / shown / shown, editable), two boxes on the define form,
+  and per row a `<details>` *Change* form (label, description, the two boxes)
+  posting `update-person-attribute`. Its boxes are sent `false` when unticked
+  (`uncheckedBoxes()`, the schema types them boolean), so the form states
+  both flags whole; the syntax and cardinality are not on it, being fixed.
 * **THE COUNT OF PEOPLE WHO LACK ONE IS A LINK**, `?missing=count#attributes`,
   because it is a walk of the realm's people; the LDAP filter that finds them
   is drawn always. Where the directory is in the store the count says it was
@@ -6797,7 +6803,9 @@ Three things are decisions:
   the shared `per`, answered in `candidatesPaging` — twenty by default, the
   pane's size, so without `per` the reply and the pane show the same people;
   `personfrom` is honoured as the page it falls on. `candidateSearch` (total,
-  matched) and `picked` sit beside it. It was the whole list, which on a large
+  matched) and `picked` sit beside it; a windowed search's count stops at
+  `countCap` and says so with `countCapped`, which the pane draws as "of
+  more than N matches" (#1308, `ldap/CLAUDE.md`). It was the whole list, which on a large
   directory was thousands of rows on every read of the roster. `CHOOSER_HITS`
   moved to `admin-core/admin_views.ts` so the pane and the reply share one
   number. **`roles` lost `members` and `claimed` in the same change**: every
@@ -7998,7 +8006,7 @@ module always was, and imports the kit by its relative path.
 | `../ssf/web_ssf_transmitters.ts` | The body of `/admin/ssf/transmitters`. |
 | `../oauth-oidc/web_oauth2_monitor.ts` | The body of `/admin/oauth2/monitor` — **the first page that takes the render context**: its paging links carry the query forward and its Withdraw carries the list parameters back. It owns `PAGE_PATH`, `STATES` and `BACK_PARAMS`, which `oauth2_monitor_console.ts` and `oauth2_monitor_admin.ts` read from it. |
 | `web_caches.ts` | The body of `/admin/caches`, the list and one store's entries. Its view gained a `title` and `scope` on each other node's row, which the page looked up in this process's registry while drawing. |
-| `web_listeners.ts` | The body of `/admin/listeners`, a tab per group of settings drawn by `SettingsForms.forms()` from the view's `settings`, which `listenersView()` carries since #446. |
+| `web_listeners.ts` | The body of `/admin/listeners`, a tab per group of settings drawn by `SettingsForms.forms()` from the view's `settings`, which `listenersView()` carries since #446. Each listener's tab opens with what is in force there, its TLS policy and its HTTP pooling (the view's `http`, `tls_server.js`'s `httpPolicyFor()`), and a TLS listener's shows *HTTP/2 offered* and, since #1304, the stream cap beside it (`http2MaxConcurrentStreams`, `consoleListeners.rowHttp2Streams`); `tests/main_port_http2.js` 15. |
 | `web_scheduler.ts` | The body of `/admin/scheduler`, the list and one run, its Run now buttons drawn only when `ctx.write` says so. It draws both lists' paging from the view's `jobsPaging` and `runsPaging` — the page had read two paging objects hidden from JSON — and its view carries `settings` unless the reader is a realm's own administrator. `firstOf()` and `STATE_WORDS` are its; `span()` is the kit's, which `Scheduler.span()` calls. |
 | `web_mail.ts`, `web_mail_outbox.ts` | The bodies of `/admin/mail` (the channel, or one template) and `/admin/mail/outbox` (the list, or one message), each a renderer of its own because each is a page of its own. The outbox's paging is drawn from `rowsPaging`; the page had read a paging object JSON never carried. |
 | `web_geolocation.ts` | The body of `/admin/geolocation`. **The map is laid out by the server and arrives in the view** as `drawing` (the SVG and its legend) with `noDataColour`, as `/admin-api/delegation/map` answers its picture: the outlines and the projection are `geo_map.ts`'s and stay on the server. `hrefOf()`, `countText()` (told the minimum count by the view), `WINDOW_LABELS` and `DEFAULT_WINDOW` are the renderer's, read back by `geolocation_admin.ts`. |
@@ -8625,3 +8633,51 @@ PUBLISHED did:web*). The block is drawn only where the realm publishes DIDs
 or the person holds one. The self-issued table reads the two provenances
 #1291 added (`realm`, `issued`) and offers *Make preferred* on them, as the
 portal does.
+
+## Sign-in appearance (#717, 2026-11-04)
+
+Server configuration → Sign-in appearance, `/admin/sign-in-appearance`,
+beside Broadcast Announcement: what the people signing in to THIS realm
+see. Filed under Server configuration by the question it answers (how this
+realm's sign-in pages look), not under Protocols, because it belongs to no
+protocol. `admin-ui/web_sign_in_appearance.ts` draws it from
+`GET /admin-api/branding` alone; the core is `common/branding.ts`
+(`common/CLAUDE.md`), the operations `mgmt-api/branding_api.ts`
+(`mgmt-api/CLAUDE.md`). The console itself does NOT take the realm's look
+(rcbj's D4 on #717): this page changes the sign-in pages, the front door and
+the portal, never the page it is drawn on.
+
+Four tabs (`PROTOCOL_TABS`: `colours`, `layout`, `preview`, `settings`):
+
+* **Colours.** One form, `action=save`, the four colours as
+  `<input type="color">` named for their settings (`branding.accentColor`
+  …), so the runtime's `shapeFields()` maps them onto the save schema with
+  no renaming. The four are judged together by the core (a text and card
+  colour legal only as a pair). The contrast table and the derived tones
+  are drawn from the view. A SWATCH IS A DISABLED COLOUR INPUT: the console
+  is sent with no inline style, so a tone cannot be painted with `style=""`.
+* **Layout and logo.** The layout radios, display name, alternative text and
+  link (a second `action=save` form); the stored logo, drawn with `width`
+  and `height` ATTRIBUTES at most 64 high (a style would be refused); the
+  upload, a `multipart/form-data` form with `action=logo`, which
+  `web_runtime.ts`'s `multipartBody()` sends as the operation takes it — the
+  FILE as the body (`application/octet-stream`, the only one of the
+  operation's types it picks), `alt` as a query parameter; and *Remove
+  logo*, `action=remove-logo`, drawn only while a logo is held.
+* **Preview (D5).** A `method="get"` form whose action is the view's
+  `previewUrl` (the realm's `/web/branding/preview`, prefixed by the API) and
+  `target="_blank"`. It is NOT a console path, so `onSubmit()` returns
+  without `preventDefault()` and the browser opens the preview in a new tab
+  with the form's values: pending values, seen before anything is saved.
+  The runtime is untouched by this; a second kind of form it intercepts
+  would have been a change to every page.
+* **Settings.** `SettingsForms.forms()` for the `Sign-in appearance` group
+  (`SETTING_HOMES`), as `tests/console_web_bundle.js` F requires of every
+  page the table names. It is a second door onto the same rows, and the only
+  one onto `branding.logoMaxBytes` (`perProcess`, which a save refuses) and
+  onto a realm override's Reset.
+
+Every write control is drawn `disabled` for a reader without Admin Write;
+the preview stays usable. The catalog is `consoleSignInAppearance` (seven
+languages); the documentation link is `sign-in-appearance.html`
+(`common/web_doc_links.ts`). `tests/branding_api.js` G holds the page.

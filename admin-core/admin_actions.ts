@@ -10963,13 +10963,18 @@ class AdminActions {
    * Bans, unbans or deletes an attested agent, or mints a join token.
    *
    * @param body - the parsed form or JSON body, whose `action` names the act
+   * @param context - `{ via, actor }`: who asked, for the audit row (#695:
+   *   all four acts were recorded with an empty actor, and a join token
+   *   with the gRPC door's protocol and channel)
    * @returns `{ ok, errors, … }`; an unknown action is refused with the
    *   sentence naming every action
    */
-  spiffeAgentsAction(body) {
+  spiffeAgentsAction(body, context?) {
     const { log, spiffeRegistry } = this.deps;
     log.debug("Entering AdminActions.spiffeAgentsAction(). action=" +
               (body.action || '(none)'));
+    const ctx = context || {};
+    const actor = String(ctx.actor || '');
     const action = String(body.action || '');
     const id = String(body.agent || '').trim();
     if (SPIFFE_AGENT_ID_ACTIONS.indexOf(action) >= 0 && !id) {
@@ -10980,7 +10985,8 @@ class AdminActions {
                                         'is under /spire/agent/.'] });
     }
     if (action === 'ban' || action === 'unban') {
-      const result = spiffeRegistry.setAgentBanned(id, action === 'ban', '');
+      const result = spiffeRegistry.setAgentBanned(id, action === 'ban',
+                                                  actor);
       log.debug("Leaving AdminActions.spiffeAgentsAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");
       if (!result.ok) {
@@ -10996,7 +11002,7 @@ class AdminActions {
                  : 'That agent may attest again.' };
     }
     if (action === 'delete') {
-      const result = spiffeRegistry.deleteAgent(id, '');
+      const result = spiffeRegistry.deleteAgent(id, actor);
       log.debug("Leaving AdminActions.spiffeAgentsAction(). delete " +
                 (result.ok ? 'ok' : 'refused') + ".");
       if (!result.ok) {
@@ -11032,7 +11038,10 @@ class AdminActions {
       const spiffeApi = require('../spiffe/spiffe_api');
       const minted = spiffeApi.issueJoinToken({
         ttl: ttl,
-        agentId: String(body.agentId || '').trim()
+        agentId: String(body.agentId || '').trim(),
+        actor: actor,
+        protocol: 'SPIFFE',
+        channel: ctx.via === 'api' ? 'api' : 'console'
       });
       if (!minted.ok) {
         log.debug("Leaving AdminActions.spiffeAgentsAction(). Join token " +

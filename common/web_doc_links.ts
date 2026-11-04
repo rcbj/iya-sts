@@ -48,7 +48,7 @@ type Json = any;
 // the local markdown actually has.
 const CONSOLE: Record<string, string> = {
   '/admin': 'admin-console.html#how-the-console-is-laid-out',
-  '/admin/cluster': 'configuration.html#cluster',
+  '/admin/cluster': 'cluster-concepts.html',
   '/admin/acme': 'acme.html',
   '/admin/acme/monitor': 'acme.html',
   '/admin/est': 'est.html',
@@ -127,6 +127,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/logout': 'signing-out.html',
   '/admin/mail': 'mail.html',
   '/admin/broadcast': 'shared-signals.html#broadcast-announcements',
+  '/admin/sign-in-appearance': 'sign-in-appearance.html',
   '/admin/mail/outbox': 'mail.html#where-to-look',
   '/admin/metrics': 'admin-console.html#metrics--adminmetrics',
   '/admin/mode': 'what-is-not-checked.html',

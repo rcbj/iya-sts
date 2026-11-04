@@ -564,8 +564,8 @@
     "text": "partial：提供者組態文件，具備第 3 節的每個「必要」成員，透過擴充 RFC 8414 文件建構，讓兩者在共用的二十個成員上不會不一致。在 well-known 路徑、第 4 節的簽發者帶路徑形式，以及 RFC 8414 的插入路徑形式上提供。自 #118 起發布 public 與 pairwise 的 subject_types_supported、全部四種 prompt 值、display_values_supported、claims_locales_supported、address 與 phone 範圍及其所指名的每個宣告。WebFinger（第 2 節，#119）依 DNS 網域所屬的領域解析 acct:、電子郵件或主機資源，依 /realm/<id> 路徑解析 https URL，從不查找該人；插入與附加形式的探索都讀取 [realm/<id>][/<server>]，其他任何形式回應 404，因此每份文件所指名的簽發者都確實有東西從那裡簽發。check_session_iframe 不存在（#121）。"
   },
   "stsmetadata.specs.oidc-registration.coverage": {
-    "en": "52a4926873bf6dbe",
-    "text": "partial：/oauth2/register 與 RFC 7592 管理會接受並遵循本服務所實作的 OpenID Connect 用戶端中繼資料——subject_type 與 sector_identifier_uri（會擷取並要求列出每個 redirect_uri；第 5 節）、token_endpoint_auth_signing_alg、id_token_signed_response_alg、id_token_encrypted_response_alg/enc、userinfo_signed_response_alg 及其加密成員、請求物件成員，以及前端與後端通道登出成員；以及（#120）application_type（web、native）及其重新導向 URI 規則，強制執行 grant_types 與 response_types，對兩者都未指名的請求套用 default_max_age 與 default_acr_values，require_auth_time（只要已知就會攜帶 auth_time），擷取 jwks_uri，並從使用者入口網站以 iss 與 login_hint 啟動 initiate_login_uri（Core 第 4 節）。未涵蓋：policy_uri 與 tos_uri 會被儲存並傳回，但不會繪製在同意畫面上。"
+    "en": "f938f6e1a6211dd2",
+    "text": "partial：/oauth2/register 與 RFC 7592 管理會接受並遵循本服務所實作的 OpenID Connect 用戶端中繼資料——subject_type 與 sector_identifier_uri（會擷取並要求列出每個 redirect_uri；第 5 節）、token_endpoint_auth_signing_alg、id_token_signed_response_alg、id_token_encrypted_response_alg/enc、userinfo_signed_response_alg 及其加密成員、請求物件成員，以及前端與後端通道登出成員；以及（#120）application_type（web、native）及其重新導向 URI 規則，強制執行 grant_types 與 response_types，對兩者都未指名的請求套用 default_max_age 與 default_acr_values，require_auth_time（只要已知就會攜帶 auth_time），擷取 jwks_uri，並從使用者入口網站以 iss 與 login_hint 啟動 initiate_login_uri（Core 第 4 節）；以及（#1300）會被保存並顯示在登入與同意畫面上的 logo_uri、policy_uri 與 tos_uri，標誌由使用者的瀏覽器載入，本服務從不擷取。未涵蓋：帶語言標籤的 logo_uri、policy_uri 或 tos_uri（第 2.1 節）會依原樣保存，不會繪製。"
   },
   "stsmetadata.specs.oidc-logout.coverage": {
     "en": "762ca8fb1eb8c94b",
@@ -1211,6 +1211,18 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登入畫面卡片與語言選擇器的規則，合為一個樣式表，供靜態公開介面的外殼連結（common/web_card_css.ts）。在每個接聽程式上提供；帶有此組建 ?v= 的位址會被永久快取。"
   },
+  "stsmetadata.endpoints./web/theme.css.what": {
+    "en": "3f3b19caa8978c23",
+    "text": "NON-SPEC (#717)。領域的登入顏色，作為 /web/card.css 讀取的 CSS 自訂屬性（common/branding.ts）：四種 branding.* 顏色以及由它們衍生的色調，僅由經過驗證的值建構。僅當領域的外觀與服務的外觀不同時，外殼才在卡片之後連結它；帶有其摘要作為 ?v= 的位址會被永久快取。"
+  },
+  "stsmetadata.endpoints./web/branding/logo.what": {
+    "en": "83a680ab27412042",
+    "text": "NON-SPEC (#717)。透過 /admin-api/branding/logo 為此領域上傳的 PNG、JPEG 或 WebP 標誌，從此來源提供，使登入頁面的 img-src 'self' 接受它，且沒有第三方得知誰在登入；nosniff、沙箱化、其摘要的 ETag。領域沒有標誌時為 404。"
+  },
+  "stsmetadata.endpoints./web/branding/preview.what": {
+    "en": "a2af93aaf34bbbe3",
+    "text": "NON-SPEC (#717)。以待定顏色和版面配置繪製的此領域登入卡片範例（查詢中的 accent、page、card、text、layout，每一項都依設定的方式檢查），供主控台在儲存前於新分頁中開啟。其中任何內容都不會讓任何人登入。"
+  },
   "stsmetadata.endpoints./web/locales/catalogs.json.what": {
     "en": "213f3eea35021e22",
     "text": "NON-SPEC（#570）。存在哪些目錄（標籤、自稱、狀態、覆蓋層所擴充的基礎目錄）以及語言選擇器提供哪些地區設定——即 common/locales/catalogs.json，供靜態介面的執行階段在瀏覽器中依 #539 的順序協商頁面語言。公開，在每個接聽程式上提供，在此組建的 ?v= 下被永久快取。"
@@ -1657,7 +1669,7 @@
   },
   "stsmetadata.endpoints./admin-api/worker-pools.what": {
     "en": "39bf096a70b38c7b",
-    "text": "非規格端點（#327）。/admin/worker-pools 所繪製的一切，以 JSON 提供：此節點的請求與託管介面集區，各自為一組工作執行緒，含狀態、目前、忙碌、空閒、最大與初始工作程序數、當機次數、啟動失敗與停止次數，以及回應時間。自 #363 起已無後量子集區。在叢集中則依名稱列出每個節點及總計，?node= 取得單一節點（#332）。對應 GET /admin/worker-pools。"
+    "text": "非規格端點（#327）。/admin/worker-pools 所繪製的一切，以 JSON 提供：此節點的請求與託管介面集區，各自為一組工作執行緒，含狀態、目前、忙碌、空閒、最大與初始工作執行緒數、當機次數、啟動失敗與停止次數，以及回應時間。自 #363 起已無後量子集區。在叢集中則依名稱列出每個節點及總計，?node= 取得單一節點（#332）。對應 GET /admin/worker-pools。"
   },
   "stsmetadata.endpoints./admin-api/node-health.what": {
     "en": "8ad5e9e21c752f8d",
@@ -1952,8 +1964,8 @@
     "text": "以 JSON 提供的 GET /admin/spiffe/agents，經篩選與分頁，?agent= 取得其中一個。這是「紀錄」而非設定——這些項目上的一切都是代理程式進行證明時由本服務寫入的，而且其中沒有任何內容經過驗證。"
   },
   "stsmetadata.endpoints./admin-api/spiffe/agents/:action.what": {
-    "en": "27852c51f25bf2ea",
-    "text": "ban、unban 與 delete。封鎖會在 AttestAgent 時「強制執行」，這讓它不至於成為謊言；delete 是遺忘而非撤銷，因為代理程式一旦再次證明就會重新出現。"
+    "en": "7312163578d55aee",
+    "text": "ban、unban、delete 與 join-token。封鎖會在 AttestAgent 時「強制執行」，這讓它不至於成為謊言；delete 是遺忘而非撤銷，因為代理程式一旦再次證明就會重新出現。join-token 為邊車代理程式簽發一個加入權杖（#324），只回傳一次，其別名為 `agentId`。"
   },
   "stsmetadata.endpoints./admin-api/spiffe/brokers.what": {
     "en": "01e56a072ac7b944",
@@ -2086,6 +2098,18 @@
   "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
     "en": "c3015da7d4779805",
     "text": "非規格端點（#641）。add、update、remove、enable、disable 與 test：主控台的六個動作，每個都會被稽核。權杖只接收、絕不傳回。測試事件不是稽核資料列。"
+  },
+  "stsmetadata.endpoints./admin-api/branding.what": {
+    "en": "fca0d849cb68e8d7",
+    "text": "NON-SPEC (#717)。伺服器設定 → 登入外觀在所要求的領域中繪製的內容：版面配置、四種顏色及由它們衍生的色調、它們相對於 WCAG 2.2 AA 的對比度、顯示名稱、不含位元組的已儲存標誌，以及該頁面的設定。"
+  },
+  "stsmetadata.endpoints./admin-api/branding/logo.what": {
+    "en": "b28154e101349408",
+    "text": "NON-SPEC (#717)。請求本文就是影像：PNG、JPEG 或 WebP，由其位元組決定，最多 branding.logoMaxBytes。它取代領域的標誌，並連同其摘要一起稽核。"
+  },
+  "stsmetadata.endpoints./admin-api/branding/:action.what": {
+    "en": "6c8c19ee983ea097",
+    "text": "NON-SPEC (#717)。save 一起寫入領域的 branding 設定，拒絕相對於卡片低於 4.5:1 的文字或連結；remove-logo 移除標誌並予以稽核。"
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",

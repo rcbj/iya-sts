@@ -1087,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "DÄR EN INLOGGNING TILL DEN HÄR KLIENTEN STARTAS AV EN TREDJE PART: initiate_login_uri i OpenID Connect Core avsnitt 4, dit /launch/{app} och användarportalen skickar en person med iss, login_hint och target_link_uri. Endast https, utan fragment."
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "KLIENTENS LOGOTYP: logo_uri från OpenID Connect Registration avsnitt 2, ritad på inloggnings- och samtyckesskärmarna bredvid klientens namn. Personens webbläsare läser in den från den här adressen; den här tjänsten hämtar den aldrig. En absolut https-URL."
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "KLIENTENS INTEGRITETSPOLICY: policy_uri från OpenID Connect Registration avsnitt 2, länkad från inloggnings- och samtyckesskärmarna. En absolut https-URL."
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "KLIENTENS ANVÄNDARVILLKOR: tos_uri från OpenID Connect Registration avsnitt 2, länkad från inloggnings- och samtyckesskärmarna. En absolut https-URL."
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "OM ETT TOKENUTBYTE ENLIGT RFC 8693 SOM UTFÖRS AV DEN HÄR KLIENTEN FÅR EN `refresh_token` BREDVID DEN UTBYTTA ÅTKOMSTTOKEN, vilket åsidosätter oauth2.tokenExchangeRefreshToken för enbart den. Ett av tre ord: `never`, `when-requested` (det tjänstevida standardvärdet — klienten ber om en med RFC 8693 avsnitt 2.1:s `requested_token_type` och får en bara om den gjorde det) eller `always`.\n\nDET LÄSES PÅ KLIENTEN SOM UTFÖR UTBYTET och inte på målgruppen, eftersom uppdateringstoken lämnas till klienten: det är den partens inloggningsuppgift att förvara, återkalla och till slut lösa in. Det subjekt som utbytet GÄLLER har ingen post alls i det här registret i det intressanta fallet, eftersom hela poängen med ett utbyte är en subject_token från någon annanstans.\n\n**DET GÄLLER FAMILJERNA OAUTH 2.0 OCH OPENID CONNECT OCH INGEN ANNAN, och till skillnad från varje annat attribut här UPPRÄTTHÅLLS det.** En post som inte är deklarerad för någon av dem avvisas av båda konsolens dörrar och av hanterings-API:t, som anger vilken familj som ska markeras först — eftersom ett värde här är en policy för tokenslutpunkten, och en post som ingen tokenbegäran någonsin kan ange skulle bära den som om den vore i kraft. Blocket ovanför den här raden argumenterar för det. `ldapmodify` når det här attributet som alla andra och kontrolleras inte.\n\nETT VÄRDE SOM INTE ÄR ETT AV DE TRE ORDEN ÄR INTE ETT FEL VID SKRIVNING OCH ÄR INTE TYST: settingFor() varnar med angivande av posten, attributet och vad det innehåller, och den tjänstevida inställningen avgör — samma tretillståndsärlighet som varje annan åsidosättning på den här posten får."

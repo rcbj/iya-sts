@@ -36,7 +36,7 @@ more than one family needs it, not because it felt general.
 | `pki.js` | **A CERTIFICATE AUTHORITY, since 2026-09-10 — ONE ROOT FOR THE SERVICE AND AN INTERMEDIATE PER TRUST REALM since 2026-09-11 (3w)** — Root, Intermediate, an Issuing CA per use case, and the leaves it issues (signing key pairs, TLS certificates, enrolled certificates, and since #168 a federation relationship's ENCRYPTION key pair — `issueEncryptionKeyPair()`, the signing door with keyEncipherment or keyAgreement and never digitalSignature, reached through a marker only this module can make). **And since 2026-09-11 the SPIFFE authority every X509-SVID is minted under**, which is the one Issuing CA here with room beneath it and the one door that issues WITHOUT recording (`issueUnder()`). **And since 2026-09-21 (#40) SOMEBODY ELSE'S certificates**: `verifyPathToAnchors()` — a path to a caller's trust anchors, Go's `x509.Certificate.Verify()` as SPIRE's node attestors use it, failing closed on an unhandled critical extension; since #201 a BACKTRACKING builder over the one set of RFC 5280 rules (`pathRuleProblem()`, name constraints EVALUATED — see *3w, CONTINUED: ONE SET OF PATH RULES*) — and OpenSSH certificates (`parseSshPublicKey()`, `parseSshAuthorizedKey()`, `checkSshHostCertificate()`), moved here from `spiffe/` the day they were written at rcbj's direction; their signatures are `crypto.js`'s section 8. **And since 2026-09-23 (#105) a WebAuthn attestation certificate's facts** — `attestationCertificateFacts()` (version, subject, basicConstraints, EKU, the SAN's directoryName types, the extensions' raw values, the key) and `attestationKeyIdentifier()`, the key identifier FIDO MDS lists a fido-u2f model under; a certificate with an EMPTY subject (a TPM AIK) is named by its SAN in `verifyPathToAnchors()`'s sentences, which read `x509.subject` unguarded until then. The AWS and Azure certificates SPIRE embeds for its cloud attestors are here too, GENERATED into `pki_cloud_anchors.json` (`awsIidCertificate()`, `azureImdsRoots()`). A LEAF (rule 3w): it holds no store, registers no route, and requires `config`, `crypto`, `keystore`, `realms`, `error_codes`, `cluster/cluster_capabilities`, `pkijs` and four vendored modules. |
 | `cert_enrollment.ts` | **WHO MAY BE ISSUED A CERTIFICATE FOR WHOM, AND WHAT GOES IN IT (2026-09-13)** — the core ACME (`acme/`), EST (`est/`) and SCEP (`scep/`) issue through, so none of the three decides any of it: the identity rule (yourself, or any person or application in the realm for a holder of Admin Write), the nine issued `/admin/pki` profiles and the five refused by design, the PKCS#10 proof of possession for every key family, names built from the DIRECTORY ENTRY with an unowned name refusing the request, every certificate kept on the entry it names (and a private key only when this service made it), and the two entry-bound credentials — an ACME EAB key and a SCEP challenge. A LIBRARY (rule 3ag) whose store is the entry, through a slot `ldap/ldap_server.js` fills. |
 | `enrollment_monitor.ts` | **WHAT THE THREE ENROLLMENT PROTOCOLS HAVE DONE (2026-09-13)** — one vocabulary of counters for `/admin/{acme,est,scep}/monitor`, per realm, merged across processes in `gnap_monitor.js`'s shape, and unable to throw into the request it counts. |
-| `jose_certificate_header.js` | **WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES (2026-09-13)** — twelve use cases, one setting each in its protocol's group (`none`/`x5c`/`x5u`/`both`, `x5u` by default, per realm), the chain of the certified key that signed (leaf to service Root), and the `x5u` resource behind `GET /pki/chain/{scope}/{sha256}.pem`. A LIBRARY over `config`, `realms` and `error_codes`; `pki` and `helpers` lazily. See *3af* below. |
+| `jose_certificate_header.js` | **WHICH `x5c` OR `x5u` A SIGNED TOKEN CARRIES (2026-09-13)** — twelve use cases, one setting each in its protocol's group (`none`/`x5c`/`x5u`/`both`, `x5u` by default, per realm), the chain of the certified key that signed (leaf to service Root), and the `x5u` resource behind `GET /pki/chain/{scope}/{sha256}.pem`. A LIBRARY over `config`, `realms` and `error_codes`; `pki` and `helpers` lazily. See *3af* below. **`awaitsCertificate()` (2026-11-04)** says a signature wants a header its key has no certificate for HERE; `helpers.certificateHeaderForAsync()` then reads the store and asks for one (`pki.certifyKeySetWhenBranched()`, which also lets `certifyLater()` certify keys made before their realm's branch — the cluster case where a credential went out without the `x5c` its setting asks for) and logs `STS-PKI-0227` if it still has none. |
 | `jose_kid.js` | **WHICH `kid` A SIGNED TOKEN CARRIES (2026-09-13)** — `keys.kidFormat`, per realm: `internal` (the default, `sts-…`) or `jwk-thumbprint-uri`, the signing key's RFC 9278 JWK Thumbprint URI. A TRANSLATION at the edges — the header a signer writes, the JWKS, a lookup of one of this service's own tokens — while the key set, the keystore, the certificate register and `certificateHeaderFor()` go on naming a key by its internal kid. A LIBRARY over `config`, `crypto` and `error_codes`. See *3af, continued* below. |
 | `tls_client_certificates.js` | **A PERSON'S — AND SINCE 2026-09-13 AN APPLICATION'S — TLS CLIENT CERTIFICATE, AND THE GATE THAT MAKES TRUSTING THE SERVICE ROOT SAFE (2026-09-13).** Issues a `clientAuth` leaf from the realm's `tls-client` Issuing CA through `pki.certify()` (so OCSP, the CRL and `/admin/pki`'s revocation pane know it), packages it as a password-protected PKCS#12 and PEM files through the vendored exporter, and revokes one only among the holder's own. **And `identityOf()`**, which every door that turns a verified client certificate into an identity asks — see *3ag* below. A LIBRARY: it registers nothing. |
 | `certificate_subject.js` | **RFC 8705 SECTION 2.1.2's FIVE CERTIFICATE SUBJECT PARAMETERS, READ AND COMPARED (2026-09-13)** — an RFC 4514 DN compared as a name (types, OIDs, escapes, caseIgnoreMatch, a multi-valued RDN in any order), the four subjectAltName kinds off node's `X509Certificate` (a host name without case, an IP by value, an email's domain without case, a URI exactly), and the grammar a registration may hold. `applications.js` asks it what may be written and `oauth-oidc/client_auth.js` whether a certificate matches. A LEAF over `helpers.js`. |
@@ -48,6 +48,7 @@ more than one family needs it, not because it felt general.
 | `lingering_close.js` | **AN ANSWER SENT BEFORE AN UPLOAD HAS ALL ARRIVED, CLOSED WITHOUT A RESET (2026-09-26).** `arm(req, res)` in place of `res.set('Connection', 'close')`: after the answer is flushed the socket half-closes and discards what the client is still sending (until it closes, 5 s idle or 30 s), instead of node's immediate destroy — which, with unread data in the buffer, sends a TCP RESET that throws away the answer the peer had not read. The risk upload routes and `request_pool.js`'s early-answer path use it, and **since 2026-09-27 `request_worker.ts` arms it for every dispatched request**: the front asks each for `Connection: close` (#77), so any early answer — a refusal, a 404, a sign-out with no session — closed a socket the front was still writing, and the answer was lost to `write EPIPE` and a 502 (`STS-WORKER-0030`; 17 in 2000 races measured, none armed). A LEAF over `config`. |
 | `http2_express.ts` | **EXPRESS 4 ON AN HTTP/2 REQUEST, FOR THE TWO APPS THIS SERVICE BUILDS AND NO OTHER (#407, 2026-10-19).** `adapt(app)` gives one app an own `lazyrouter` — express 4's: the router, the query parser, then an `init` that is express's six lines with the request's and response's prototypes chosen by protocol (express's methods over `Http2ServerRequest`/`Http2ServerResponse` for HTTP/2; express's own for HTTP/1.1). `common/app.js` adapts the shared app and `debugger/debugger_server.ts` its own; **nothing on the express module changes**, which is why it replaced the `http2-express` package #703 first used: that replaced `express.application.lazyrouter` for every app in the process. The same `init` writes `host` from `:authority` and refuses 400, `STS-HTTP-0024`, a request whose two name different hosts (RFC 9113 section 8.3.1; default port and case are not a difference); `hostProblem()` is asked again by `request_pool.proxy()` and the debugger's API proxy. A static utility class over node, express and the error-code table, so the pool may require it. |
 | `http2_framing.ts` | **AN HTTP/2 BODY WITH NO `content-length` IS STILL A BODY (#407).** `markFramedBody()`, on each TLS HTTP listener's `request` event ahead of the app, adds `transfer-encoding: chunked` to an HTTP/2 request whose HEADERS did not end the stream and that sent no length, so body-parser's `hasBody()` reads it. **The header is SYNTHETIC and exists only on this service's side**: HTTP/2 forbids `transfer-encoding` (RFC 9113 section 8.2.2) and no client sent it — it is what the request pool forwards to a worker as the chunked body node's client sends there anyway, so it is real on that HTTP/1.1 hop and nowhere else. **It also appears in anything that captures `req.headers`** (the call log, the debugger's capture, a test echo) as though the client had sent it; read it there as "framed by HTTP/2", never as a client's request header. |
+| `connect_refusal.ts` | **CONNECT IS ANSWERED 501 ON EVERY HTTP LISTENER (#1304, 2026-11-04).** This service is an origin server, never a proxy, so it implements no CONNECT (RFC 9110 sections 9.1 and 9.3.6), and node never hands one to the application — its target is an authority, not a path. With no `connect` listener node answered on its own, wrongly over both protocols: a bare 405 with no `Allow` over HTTP/2 (RFC 9110 section 15.5.6 says a 405 MUST carry one), and over HTTP/1.1 nothing at all — the connection was destroyed. `install(server, label)` answers 501 over either, `no-store`, with `frame-ancestors 'none'`, marked `STS-HTTP-0025`; `server.js` installs it on the main port (TLS and plain) and every custom listener, `debugger_server.ts` on its own. **Logged sparingly** — the first, then a count at most once a minute, with no timer — because a CONNECT is what a scanner sends. `tests/main_port_http2.js` 13. |
 | `security_operations.ts` | **WHICH WRITES ARE THE SECURITY ADMINISTRATOR'S (#645, 2026-11-02).** One answer for the management API's gate, the LDAP socket and SCIM: a Directory → Policies save, reset or act (read off `admin-core/policy_kinds.ts`, so a new kind is covered), a policy REFERENCE that changes (each kind's `REFERENCES` and `PolicySelection`'s declarations; a grid posting it unchanged is not a change, `''` and `default` are one value), a grant of the role by any door (the roster, `SECURITY_ADMIN`, `cn=security-admin`, `admin.securityGroup`), and an act on a holder's account. XACML, FGA, AuthZEN, delegation policy and the `xacml.*` switches stay Admin Write's (rcbj's decision). It reads nothing itself: the caller hands it `SecurityHooks` (`admin_rbac.ts`'s `holdsSecurity()`, `personValues()`, `groupValues()`, `applications.get()`). A static utility class, `policy_kinds` required lazily. `tests/security_admin.js`. |
 | `secret_destinations.ts` | **WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06) — rule 3ce.** The register of secret push destinations, which is the realm's application entries declared for `secret-destination` and not a store of its own; `list()`, `get()`, `push()`, `testPush()`, `isDestination()`, the console's and the API's `act()`. The write path itself is `secrets.js`'s `pushSecret()`. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
@@ -1392,6 +1393,77 @@ different sets of circumstances.
 this tree in process, and a caller that cannot be made asynchronous is better
 off blocking than wrong.
 
+## A REALM'S SIGN-IN APPEARANCE: `branding.ts` (#717, 2026-11-04)
+
+rcbj's ticket asked for colour, layout and a company logo on the sign-in
+screen, per realm, and decided six questions on it (D1–D6, on the ticket).
+`branding.ts` is all of it but the console page and the API operations
+(`admin-ui/`, `mgmt-api/`), which call it.
+
+* **NINE SETTINGS, A NEW TYPE.** `branding.layout` (`centered`, `split`,
+  `banner`), four colours (`accentColor`, `pageColor`, `cardColor`,
+  `textColor`), `displayName`, `logoAlt`, `logoLinkUrl` and the per-process
+  `logoMaxBytes`, group *Sign-in appearance*, every one realm-settable.
+  The colours are `config.js`'s `color` type (`#rgb` read as `#rrggbb`,
+  anything else refused), and `string` gained an optional `maxLength`. Every
+  default is the look the service always had.
+* **COLOURS ARRIVE IN ONE WAY: `/web/theme.css`.** The sign-in shells are
+  sent with `style-src 'self'`, so no inline style could carry a colour.
+  The route answers the ambient realm's custom properties — the four set and
+  six derived (the text on a button, black or white by contrast; the muted,
+  faint and dim text mixed toward the card no further than AA allows; the
+  borders and rules) — built only from values the `color` type has held to
+  six hex digits. `web_card_css.ts`'s `themed()` turns every colour of the
+  card into `var(--sts-…, <the old literal>)`, so with no theme linked the
+  card is the bytes it rendered before. A realm whose text and card are the
+  defaults keeps the old literals for the derived tones exactly, and
+  **the stylesheet carries only the properties that differ** from a realm
+  that set nothing (`DEFAULT_PROPERTIES`), so each page keeps its OWN
+  fallback for the rest — the portal its blue accent, a table head its own
+  grey. The pale boxes (a scope's, a right's, a table head, a verdict's
+  band) and the red and green status words are properties too (`tint`,
+  `tint-2`, `bad`, `good`), because their text follows the realm's and a
+  dark card with light text met a near-white box (#717's review).
+* **A SHELL CARRIES THE FACTS, THE RUNTIME DRAWS THE HEADER.**
+  `ShellDocument.document()` asks `shellParts()` for any shell that links
+  `/web/card.css` (or says `branded: true`): the theme's address (`?v=` its
+  digest, cached for good under it) after the card's, and `data-sts-layout`
+  and the brand facts on `<html>`. A realm that set nothing gets neither,
+  so its shell is byte for byte what it was (`tests/branding.js` A2).
+  `WebSurface.put()` draws the header (`brandHeader()`, escaped, an https
+  link only) on every page, because it replaces the body each time — a
+  header the server drew would be gone at the first page — and ends the
+  title with the realm's name. The layouts are CSS under
+  `[data-sts-layout]` (`BRAND_CSS`); the form is never touched, so every
+  element id the tests and the Selenium walks drive is where it was.
+  **`shell_document.ts` requires this file lazily**, because this file
+  draws its preview with that one's escaping: a require at load would close
+  a cycle.
+* **CONTRAST IS A WRITE RULE (D3).** `writeRule()` is added with
+  `config.addWriteRule()`, so every door — the console, `/admin-api`, a
+  restored value — refuses text or an accent below 4.5:1 against the card
+  (STS-AUTHN-0544), a `logoAlt` emptied while a logo is held (0548), and a
+  `logoLinkUrl` that is not absolute https (0551). `saveSettings()` judges
+  several at once inside `withWriteBatch()`, so a dark card with light text,
+  legal only together, is saved together.
+* **THE LOGO IS UPLOADED AND SERVED FROM THIS ORIGIN (D1, D2).** PNG, JPEG
+  or WebP, decided by the bytes (`sniff()`, which also reads the sides: 16 to
+  2048 pixels), at most `branding.logoMaxBytes`, with alternative text. It
+  is kept in `realms.map({ persist: 'branding.assets' })` — per realm at the
+  declaration, replicated by the change log, a global store in cells
+  (`persistence/tiers.js`), not sealed because a logo is public — and served
+  at `/web/branding/logo` with the type its bytes are, `nosniff`, a
+  sandboxing CSP and an ETag. **Under `/web` on purpose**: the sign-in pages,
+  the front door and the portal draw it, and they may be on different
+  listeners; everything under `/web` answers on every one
+  (`hosted_applications.js`). No third-party origin ever joins `img-src`.
+* **THE PREVIEW (D5)** is `/web/branding/preview`, a server-drawn sample of
+  the card with pending colours and a layout in the query — checked as the
+  settings would be (0550) — and no script and no live form. The console
+  opens it in a new tab; nothing about framing changed.
+* **DARK MODE IS #1324**: a second palette under `prefers-color-scheme`,
+  which the custom properties make a small change.
+
 ## `protocol_stack.ts`: THE REQUIRE ORDER MOVED OUT OF `server.js` (2026-09-07), AND BECAME THE COMPOSITION ROOT (2026-09-16)
 
 **This moved here from the root `CLAUDE.md` when that file was broken up.**
@@ -2191,7 +2263,12 @@ process with no barrier at all** (`ANSWERED_AT_ONCE`): it is documented as
 liveness only and reads no state, so neither the ticket wait (2,000 ms), the
 worker's barrier (5,000 ms), a `workers.maxSockets` queue nor a blocked worker
 may hold it past a probe's timeout; it says nothing about the workers, by
-design (the cluster barrier, which is not the pool's, still runs). **And a
+design (the cluster barrier, which is not the pool's, still runs). **`OPTIONS
+*` is answered the same way since #1304** (`answeredAtOnce()`): the asterisk
+form names no resource, only the server (RFC 9110 section 9.3.7), its answer
+is the preflight's 204 and reads no state, and no dispatch prefix can name it
+— `*` in `workers.dispatch` means every PATH, and `*` is not one. It was
+dispatched like any path until then. **And a
 worker's response whose `end()` ran before its peer left is announced at once**
 (`CommitAnnouncer.watchResponse()`): `holdUntilCommitted()` calls the real
 `end()` only after the commit, so `writableEnded` means everything the answer
@@ -4093,6 +4170,20 @@ with `Cannot find module` naming a file the operator never mentioned.
    a set existed still accepts it. No application selection for it
    (`APP_SELECTION_ATTRIBUTES` has no row; `applicationClaimSelections()`
    leaves it out).
+
+   **A REALM'S CUSTOM ATTRIBUTES ARE CATALOGUE ROWS TOO (#700)**, made per
+   realm by `customRows()` from `attribute_policy.ts`'s register (3co) and
+   walked after the catalogue's own wherever `CATALOGUE` was walked —
+   `rowsInRealm()`, which `ssf/caep.ts` reads too. The catalogue is the
+   process's and fixed at load, the register the realm's and changed while
+   the service runs, which is why they are joined at the read and never
+   merged into `CATALOGUE`. A custom row is claimed under its own name, its
+   value is the directory's only (`from` null, so nothing is invented in
+   either mode), and its syntax types it in a JWT (integer a number, boolean
+   true/false, date YYYY-MM-DD); in an assertion it is text, a multi-valued
+   one as `values`. A name that is also a catalogue claim name is left out
+   (STS-REG-0366). A stored selection naming a removed attribute keeps the
+   name and selects nothing.
 
    **Nothing is selected on a fresh start, in any of the sets.** Unlike
    `/admin/vc`'s ten defaults — which reproduce what that issuer already carried
@@ -7258,6 +7349,19 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   naming the old DEK would be written back by its next flush — after the DEK
   may be gone. A minted row is held in the clear and re-sealed at its next
   flush; a cluster secret is held opened.
+* **EVERY OTHER PROCESS TAKES A RE-SEALED KEY-SET ROW (#704)**, cluster or
+  not. `resealOwnRows()` writes the running process's copies; until #704
+  `applyStoredChange()` read a key row only where the store ARBITRATES, so
+  with `cluster.mode=off` a request worker (or the front, had a worker run
+  the pass) kept its copy sealed under the superseded DEK, and at the
+  destruction lost its signing keys until it restarted — the count saw only
+  the store. Where the store does not arbitrate it now reads the row and
+  `adoptResealedKeyRow()` takes the new ciphertext ONLY when it seals the set
+  already held: a re-seal decides nothing between two sets, so the reason the
+  early return exists does not reach it, and a different set or a removal is
+  still left to the pool's key channel. A certificate-authority row was
+  already adopted wherever it merges. This is what lets
+  `keys.data-key-reencrypt` run on any process (`cluster/CLAUDE.md`).
 * **A DEK IS DESTROYED ONLY ON A COUNT OF ZERO**, and only once superseded for
   `keys.dataKeyRetireAfterDays` (7, at least 1). A store that cannot count
   (`ldif`, `memory`) never says zero, so nothing is destroyed there. The
@@ -10372,18 +10476,18 @@ debugger, the one surface still a relying party here, verifies it on every
 request at its gate. The refresh token is redeemed and the ID Token re-read,
 so neither can be a digest.
 
-## `version.js`: M.N.O, and why the build is not recorded at startup (2026-09-06; #1298)
+## `version.js`: M.N.O.<build>, and why the build is not recorded at startup (2026-09-06; #1298; #1317)
 
 **It is a PORT of the parent project's `client/version.js`, not an invention**
-(though since #1298 its version is a plain semantic version and the parent's
-is not — the scheme below),
+(though since #1298 its release is a whole M.N.O and the parent's is M.N —
+the scheme below),
 and the whole reason to say so first is that this repository is a submodule of
 that one: its container is built beside that project's two, and a reader who
 has learnt to read one version string should not have to learn a second. What
 changed in the port is written down in this file's own header — five things,
 each with its reason — and is not repeated here. The scheme, the surfaces it
 reaches and the one number this repository cannot reconcile with the parent are
-under *The scheme: M.N.O is the release, and the BUILD is recorded beside it*
+under *The scheme: M.N.O is the release, and the build number follows it*
 at the end of this section, moved from the root `CLAUDE.md`'s *Versioning*.
 
 What belongs here is the four properties that make it a `common/` module rather
@@ -10438,38 +10542,71 @@ to the container root rather than beside the shim.
 **`userAgent()` LIVES HERE FOR THE REASON THE MODULE DOES.** This service makes
 four outbound requests and three of them reach somebody else's server —
 federation's, SSF's RFC 8935 push, and XACML's change nudge. Each says
-`sts/<M.N.O> (<component>)` in RFC 9110 product form, built from one copy
+`sts/<M.N.O.build> (<component>)` in RFC 9110 product form, built from one copy
 of the product token, because three hand-written strings in three modules is
 three places for a rename to reach two of. It is not a claim about HTTP living
 in a version module: it is the one string in this service that is *made of* the
 version.
 
-### The scheme: M.N.O is the release, and the BUILD is recorded beside it
+### The scheme: M.N.O is the release, and the build number follows it
 
 **This moved here from the root `CLAUDE.md`'s *Versioning* when that file was
 broken up.** Its `xacml-pep/` half is in `xacml-pep/CLAUDE.md`.
 
-**Since 2026-11-04 (rcbj, #1298) the version is a plain semantic version, read
-WHOLE from the repo-root `VERSION` file — `1.0.0` — and nothing is appended to
-it.** Until then it was the parent project's scheme (`id-proto-debugger/
-client/version.js`): `VERSION` held M.N and O was the UTC build instant as
-`YYYYMMDDHHMMSS`, or `BUILD_NUMBER`. rcbj retired it because the version is
-the RELEASE — the one an OpenID Foundation certification names (#1293) — and a
-release is not renamed by rebuilding it. `BUILD_NUMBER` is read by nothing.
+**The release is read WHOLE from the repo-root `VERSION` file — `1.0.0`
+(rcbj, #1298) — and the version every surface draws is that release followed
+by a BUILD NUMBER (#1317).** rcbj, 2026-11-04: *"there continues to be the
+usual build number based on date + time by default, unless it is flagged as a
+release version, which the build number will be specified."*
+
+* **By default** the build number is the UTC build instant, `YYYYMMDDHHMMSS`
+  — `1.0.0.20261104151200`.
+* **A RELEASE build** is flagged with `STS_RELEASE=true` and names its number
+  in `BUILD_NUMBER`, a non-negative integer with no leading zero (`0` itself
+  allowed): `1.0.0.0`. The flag is `true`, `false` or empty; anything else is
+  refused rather than guessed at.
+* **A release flag without a valid number is REFUSED** at `--stamp`
+  (`STS-CORE-0164`, naming both variables, non-zero exit), so the image does
+  not build: a "release" carrying a date is the artifact nobody can name.
+* **Without the flag `BUILD_NUMBER` is IGNORED**, and the stamp says so on
+  stdout. Until #1298 it overrode the date on its own; a CI system exports a
+  variable of that name for its own purposes, and a stray one must not pass an
+  ordinary build off as a release.
+* **Only `--stamp` reads the two variables.** A record computed from a
+  checkout uses the instant the process started and is never a release.
+
+For one day (#1298) the version was the bare release with no build number at
+all; a stamp a build of that day wrote (no `build`, no `release`) is still
+read and reports the bare `M.N.O` it was written with. Before #1298 it was the
+parent project's scheme (`id-proto-debugger/client/version.js`): `VERSION`
+held M.N and the third component was the build instant or `BUILD_NUMBER`.
 
 ```
-1.0.0          version   VERSION's M.N.O, exactly; major, minor and patch
-               commit    the first twelve characters of GIT_COMMIT (or git)
-               builtAt   the instant the image was built (or the process started)
-               stamped   whether the record came off version.json
+1.0.0.20261104151200  version   M.N.O.<build>
+                      major, minor, patch   VERSION's M.N.O
+                      build     YYYYMMDDHHMMSS, or a release's BUILD_NUMBER
+                      release   true only for a build flagged STS_RELEASE=true
+                      commit    the first twelve characters of GIT_COMMIT (or git)
+                      builtAt   the instant the image was built (or the process started)
+                      stamped   whether the record came off version.json
 ```
 
-The file must be exactly three non-negative integers with no leading zero; a
+**How to build a release**: `docker build --build-arg STS_RELEASE=true
+--build-arg BUILD_NUMBER=0 .` (and the same two arguments to
+`-f xacml-pep/Dockerfile`, so the PEP is the same release build);
+`STS_RELEASE=true BUILD_NUMBER=0 docker compose build` passes both through
+`docker-compose.yml`; and `.github/workflows/build-container.yml`'s manual
+run takes `release` and `build_number`, publishing `:<M.N.O.build>`,
+`:<M.N.O>` and `:latest` from main where an ordinary build publishes the full
+version and `:latest` only.
+
+The `VERSION` file must be exactly three non-negative integers with no leading zero; a
 `v1.0.0`, a `-rc.1`, the old two-component `0.1` or a fourth component is
 `STS-CORE-0039` and the version is `0.0.0` — never a failure (below). **No
 pre-release suffix is accepted**, because nothing needs one and every reader
 of the version (the User-Agent, the PEP's comparison with the PDP, the
-published image tag) would have to be taught what it means.
+published image tag) would have to be taught what it means. The build number
+is the fourth component and is never in `VERSION`.
 
 **WHICH BUILD IS DECIDED AT IMAGE BUILD TIME AND NOT AT STARTUP, AND THAT IS
 STILL THE WHOLE DESIGN.** `Dockerfile` runs `node common/version.js --stamp .`
@@ -10480,24 +10617,26 @@ different one every time its container restarted — which makes *which build is
 this* unanswerable in exactly the situation where it gets asked, because
 restarting is what somebody does when they suspect the build. **A record that
 was computed rather than stamped says so**, and every surface that draws the
-version repeats it: `stamped: false` means a checkout is being run and
-`builtAt` is when it started.
+version repeats it: `stamped: false` means a checkout is being run and its
+build number and `builtAt` are when it started.
 
-**`buildId()` is the one place the build is joined into a string** — the build
-instant's digits and the commit, opaque, never drawn as a version. It exists
-because the static surfaces' catalogs are served `immutable` under
-`?v=<build>` (`common/public_assets.ts`, the shell's `data-sts-build`): they
-were keyed by the version until #1298, and every build of 1.0.0 is 1.0.0, so a
-rebuild's corrected words would have sat behind an address the browser had
-been told to keep for a year.
+**`buildId()` is the one opaque key of a build** — the build instant's digits
+and the commit, never drawn as a version. It exists because the static
+surfaces' catalogs are served `immutable` under `?v=<build>`
+(`common/public_assets.ts`, the shell's `data-sts-build`): they were keyed by
+the version until #1298, when every build of 1.0.0 was 1.0.0, and it stays the
+key since #1317 because two release builds that name the same `BUILD_NUMBER`
+are two different builds of `1.0.0.0`, and a rebuild's corrected words must
+not sit behind an address the browser was told to keep for a year.
 
 **SEVEN SURFACES DRAW IT AND THERE IS ONE SOURCE.** The startup banner, the front
 page's version line, the foot of every admin console page, the foot of every
-user portal page, `GET /admin-api` (with `commit`, `builtAt` and `stamped`
-broken out beside it, so a client reads fields rather than writing a regular
-expression; its `build` number went with #1298), `/admin/sts-metadata` — the
+user portal page, `GET /admin-api` (with `build`, `release`, `commit`, `builtAt` and
+`stamped` broken out beside it — version.json's own names — so a client reads
+fields rather than writing a regular expression), `/admin/sts-metadata` — the
 one page whose subject is what this service IS, where it is in the lead
-paragraph and in the JSON (`build.commit`, `build.at`, `build.stamped`) — and
+paragraph and in the JSON (`build.number`, `build.release`, `build.commit`,
+`build.at`, `build.stamped`) — and
 **the remote PEP's own `GET /`, together with the row it registers on the PDP's
 `/admin/xacml/peps`**, which is the seventh and the subject of
 `xacml-pep/CLAUDE.md`. **Two
@@ -10508,15 +10647,16 @@ ever made. `tests/version.js` asserts the SOURCE
 each of them reads and not the string it renders, because two surfaces reading
 two different sources agree perfectly right up until they stop.
 
-**THE THREE OUTBOUND REQUESTS SAY WHICH RELEASE IS CALLING**, in RFC 9110 product
-form — `sts/1.0.0 (federation)`, `(ssf-transmitter)`,
+**THE THREE OUTBOUND REQUESTS SAY WHICH BUILD IS CALLING**, in RFC 9110 product
+form — `sts/1.0.0.20261104151200 (federation)`, `(ssf-transmitter)`,
 `(xacml-pdp-notify)` — built by `version.userAgent()` so there is one copy of
 the product token. Each of those reaches somebody else's server, and their
 access log is where an integration with a mock they did not install gets
 diagnosed.
 
 **`package.json` carries VERSION's M.N.O exactly** since #1298 (it was `M.N.0`,
-semver's three parts with the build number not one of them). `node
+semver's three parts with the build number not one of them), and never the
+build number (#1317). `node
 common/version.js --check-manifests` reports drift and `--sync-manifests` fixes
 it. The Rust crates' `Cargo.toml` versions are Cargo's and are not kept in
 step: nothing reads them at runtime, and the PEP reports `VERSION`.
@@ -12113,8 +12253,22 @@ cluster, each process has its own caches, and nothing here is coordinated,
 because a cache is exactly what a store is not. **What crosses to another node
 is a SNAPSHOT** (`snapshot()`, 2026-09-18): each front process puts its stores'
 sizes and counters — never a row — on its cluster membership row, refreshed
-every thirty seconds on a timer of its own, and `/admin/caches` draws every
+every thirty seconds by `cluster.cache-report`, and `/admin/caches` draws every
 snapshot that is not its own process's. `cluster/CLAUDE.md` has the channel.
+
+**A SNAPSHOT COUNTS, IT DOES NOT LIST (#704).** It was `report()` cut down,
+which built a row object for every entry of every store — a SHA-256 for each
+key `digestKey()` shows — only to count them, every thirty seconds on the
+front process. `tallyOf()` counts instead: a store's own `tally(now)` when it
+declares one (`{ size, largestRealm, valid }`), otherwise the PLAN its
+ejector carries when `mapEjector()` or `realmMapEjector()` built it (the Maps
+and the owner's expiry test) — sizes are the Maps' own `size`, kept by the
+Map and read, and `valid` is the size less what the expiry test marks, in one
+walk that allocates nothing. Any other store is still listed. So a tallied
+store's `valid` is "not past the owner's ejection test", which for every
+store the helpers serve is the reader's own test. `snapshotAsync()`, what the
+job runs, yields between stores and every `TALLY_SLICE` (500) entries. The
+local page (`report()`, `detail()`) still lists rows: it shows them.
 
 ### Ejecting expired entries (#49 P5, 2026-09-22)
 
@@ -12132,6 +12286,14 @@ latter asks it inside each realm (`realms.run()`), because a lifetime is
 usually a realm's setting. Where a store has a companion (an OpenID4VP
 transaction's request, a SCIM digest nonce's counts, a HOBA triple's
 challenge), the ejector removes both, as the reader does.
+
+**IN SLICES (#704).** The job runs `ejectExpiredAsync()`: a turn of the
+event loop between stores, and for a store whose ejector the two helpers
+built, every `TALLY_SLICE` entries inside it, deleting through the store's
+own Map as it goes (`slicedWalk()`; a Map's iterator survives the writes
+other code makes between slices). An ejector written by hand is still called
+whole, one store a turn. `ejectExpired()` stays for a caller that wants the
+answer at once.
 
 Twenty-four stores eject; `tests/cache_eject.js` holds the list. **Two that
 expire deliberately do not**: `oauth2.backchannelDeliveries`, whose sweep job
@@ -14125,6 +14287,19 @@ suite SWEPT rather than the policy weakened for it.
   `catalogue()` never offers an `sts` name: the person editor's universe
   holds the declared policy references, which are not facts a profile could
   require.
+* **On the user portal by the definition's two flags (#700)**,
+  `stsAttributePortalVisible` and `stsAttributePortalEditable`, both FALSE by
+  default; `definitions()` answers them as `portalVisible` and
+  `portalEditable`. **Editable implies visible, NORMALISED, not refused**:
+  `define()` and `redefine()` store an editable one visible and a hidden one
+  not editable, and the read ORs them, so an entry an LDAP client wrote with
+  only the second flag is answered alike. **`update-person-attribute`**
+  (`redefine()`, the kind's third act) changes the label, the description
+  and the flags in place; the syntax and the cardinality are FIXED
+  (STS-LDAP-0208) because held values were checked against them, and sent
+  as they are they are accepted. 0206 (not defined), 0207 (a field), 0209
+  (not stored). The portal's side — the Overview's `customAttributes` and
+  `POST /account-api/attributes` — is `portal/CLAUDE.md`'s.
 * **The count of people who lack one is a walk**, so it is asked only on
   request (`GET /admin-api/policies?missing=count`), and not at all where the
   directory is in the store; the view always gives the LDAP filter that finds
@@ -14135,11 +14310,16 @@ suite SWEPT rather than the policy weakened for it.
   references is ranked once and each profile's list read once. With no named
   profile the directory is handed `default`'s list as before, and where no
   group names one no group is read.
-* **Left for follow-up tickets**, as the design comment says: SCIM `/Schemas`
-  publishing `required` and the custom attributes as a per-realm extension;
-  custom attributes as token, UserInfo and SAML claims and on the portal; and
-  a sign-in step that collects a missing value instead of refusing a
-  federated newcomer.
+* **SCIM publishes both (#699)**: `/Schemas` marks `required` from the
+  `default` profile in product mode, and the custom attributes are the
+  `CustomAttributes` extension, read and written (`scim/CLAUDE.md`, *THE
+  REALM'S SCHEMAS*).
+* **A federated newcomer is ASKED rather than refused (#701)**: the
+  federation door holds the entry it would write to `createRefusal()` before
+  the session and sends the person to `/federation/profile/{handle}` for the
+  missing values (`federation/CLAUDE.md`, *A NEWCOMER THE ATTRIBUTE POLICY
+  WOULD REFUSE*); `autoCreateUser()`'s STS-FED-0158 is the backstop. The
+  policy is not relaxed: the person supplies what it requires.
 
 `tests/attribute_policy.js` holds it in process, and
 `tests/attribute_policy_named.js` the named profiles (#1241).

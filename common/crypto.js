@@ -7592,6 +7592,27 @@ function rsaPairFromPem(pem) {
            publicKey: forge.pki.setRsaPublicKey(privateKey.n, privateKey.e) };
 }
 
+// SIGNED BY NODE, NOT BY FORGE (#704). forge's `cert.sign()` computes the
+// RSA signature in JavaScript big-number arithmetic — tens of milliseconds
+// for a 2048-bit key and several times that for a larger one, all of it on
+// the event loop — and `signing.rotate` makes a certificate this way for
+// every RSA signing unit it rotates. This is forge's own `sign()` step for
+// step (the same algorithm OID on both members, the same TBSCertificate)
+// with only the signature itself made by OpenSSL, so the certificate is the
+// one forge would have made, byte for byte under a deterministic padding.
+function signCertificateNatively(cert, privateKeyPem) {
+  log.debug("Entering signCertificateNatively().");
+  cert.md = forge.md.sha256.create();
+  cert.signatureOid = cert.siginfo.algorithmOid =
+    forge.pki.oids.sha256WithRSAEncryption;
+  cert.tbsCertificate = forge.pki.getTBSCertificate(cert);
+  const tbs = Buffer.from(forge.asn1.toDer(cert.tbsCertificate).getBytes(),
+                          'binary');
+  cert.signature = nodeCrypto.sign('sha256', tbs, privateKeyPem)
+                             .toString('binary');
+  log.debug("Leaving signCertificateNatively().");
+}
+
 /**
  * Makes a self-signed RSA certificate, and its key pair.
  *
@@ -7638,11 +7659,12 @@ function selfSignedRsaCertificate(opts) {
   if (options.extensions && options.extensions.length) {
     cert.setExtensions(options.extensions);
   }
-  cert.sign(pair.privateKey, forge.md.sha256.create());
+  const privateKeyPem = forge.pki.privateKeyToPem(pair.privateKey);
+  signCertificateNatively(cert, privateKeyPem);
   const certPem = forge.pki.certificateToPem(cert);
   log.debug('Leaving selfSignedRsaCertificate().');
   return {
-    privateKeyPem: forge.pki.privateKeyToPem(pair.privateKey),
+    privateKeyPem: privateKeyPem,
     publicKeyPem: forge.pki.publicKeyToPem(pair.publicKey),
     certPem: certPem,
     certB64: stripPem(certPem),

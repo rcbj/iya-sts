@@ -182,7 +182,10 @@ async function test() {
         "page says so", function () {
     assert.strictEqual(r.status, 200, r.raw.slice(0, 200));
     assert.strictEqual(r.location, "");
-    assert.ok(/not returned/.test(r.raw), r.raw.slice(0, 300));
+    // #1302 reworded the box: "…is not one this client registered, so it
+    // was not followed."
+    assert.ok(/not one this client registered, so it was not followed/
+                .test(r.raw), r.raw.slice(0, 300));
   });
 
   log.info("=== c. a client that registered none ===");

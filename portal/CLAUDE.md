@@ -52,6 +52,53 @@ same link in `drawView()` before `PortalShell.bare()`. A problem page and
 "not a page" do not: `bare()` stays path-agnostic.
 
 
+### A realm's sign-in appearance (#717, 2026-11-04)
+
+rcbj's D4 on #717 puts the portal among the surfaces that take a realm's
+appearance (`common/branding.ts`; `common/CLAUDE.md` has the design). The
+portal does not link the card's stylesheet, so it takes it in three places
+of its own:
+
+* **The shell says `branded: true`** (`Portal.shellDocument()`), so
+  `ShellDocument` links the realm's `/web/theme.css` after `/portal/portal.css`
+  and puts the brand facts on `<html>` — and, for a realm that set nothing,
+  neither: the shell is the bytes it was (`tests/web_foundation.js` A).
+* **The stylesheet reads the custom properties** (`PortalKit.themed()` over
+  the rules as written, `STYLE_AS_WRITTEN`): every colour a realm may set
+  becomes `var(--sts-…, <the literal it replaced>)`, so with no theme linked
+  the portal draws what it did. Its accent's fallback is the PORTAL'S blue
+  (`#2c5cc5`), not the card's indigo, because that is what it always drew.
+  **A realm's `theme.css` carries only the properties it changed**
+  (`common/branding.ts`, `DEFAULT_PROPERTIES`), so a realm that only
+  uploaded a logo, or changed only its page colour, keeps the portal's own
+  blue; a realm that set an accent draws it here as on the sign-in screen. The semantic colours (an error's red, a
+  success's green) and the mid greys stay literal. The two buttons that are
+  NOT in the accent (`button.danger`, `.secondary`) write their white
+  `#ffffff`, which `themed()` skips, so a light accent's black button text
+  never lands on dark red. The tints (a hover, a tag, a just-generated row,
+  a code's ground) were written for a white card; under a realm's theme
+  they are mixed from its colours (`BRAND_CSS`, `color-mix()`, at
+  `:where()` specificity), and a browser without `color-mix()` keeps the
+  literal.
+* **The runtime draws the header**: `PortalRuntime.put()` — the one place
+  every page, framed or bare, is put in the document — draws
+  `WebSurface.brandHeader()` from `WebSurface.brandOf(<html>)` above the
+  page and ends the title with the realm's display name instead of
+  `IYA STS`. One copy of the header's markup and escaping: the portal
+  imports the public runtime for its two static methods rather than drawing
+  its own.
+
+**THE LAYOUT: `centered` is the header above the page; `banner` AND `split`
+are both a band in the accent colour across the top.** The portal is not a
+card: it is a column of navigation beside a column of cards, and the split
+panel beside that would be a third column, which leaves a phone nothing. So
+the portal draws the split layout as the band. The form-preserving promise
+holds trivially: nothing in a page changes, only what is above it.
+
+`tests/branding_surfaces.js` holds all of it: the shell with and without an
+appearance, the stylesheet's properties and the two white buttons, and the
+runtime's header and title.
+
 ## THE FIRST PAGE IN THIS SERVICE THAT BELONGS TO THE PERSON LOOKING AT IT (2026-09-06)
 
 Every browser-facing surface here until now was for somebody else. The sign-in
@@ -123,6 +170,38 @@ Drawing a page is reading. That distinction is the reason the portal has an
 action of its own at all — see `common/access_gate.ts`'s `ACTION` — and a
 deployment that later lets a helpdesk role READ an account without changing it
 needs the two to have been kept apart from the beginning.
+
+## THE REALM'S CUSTOM ATTRIBUTES ON THE OVERVIEW (#700, 2026-11-04)
+
+rcbj's ticket: the portal's account page shows a realm's custom attributes,
+"with a per-attribute flag for whether the person sees each one and whether
+they may edit it themselves (off by default)". The flags are the definition's
+(`common/CLAUDE.md` 3co: `portalVisible`, `portalEditable`, editable implying
+visible).
+
+* **`GET /account-api/overview`'s `customAttributes`**:
+  `[{ name, label, description, syntax, multi, values, editable }]`, one per
+  definition with `portalVisible`, empty where the person has no entry. Drawn
+  from the REGISTER and never by iterating the entry, the inetOrgPerson
+  table's rule. `web_overview.ts`'s *More about you* card, not drawn when the
+  list is empty.
+* **`POST /account-api/attributes`** (mirrors `POST /portal/attributes`),
+  `{ attribute, values }`: the values the attribute is to hold AFTERWARDS,
+  so none clears it. The person is the token's subject; no username is
+  taken. Refused for an undefined attribute (STS-PORTAL-0626), a hidden one
+  (0627, 403) and a read-only one (0628, 403); values checked by the person
+  editor's `checkCreateValues()` (0629 for a value or a count it refuses).
+* **Written through the person editor**, `setLanguage()`'s way, one edit at
+  a time with `via: 'the user portal'`, so its audit row, syntax check and
+  the attribute policy's `editRefusal()` hold. **Adds before removes** for a
+  multi-valued attribute, so replacing a required value is never an empty
+  moment; emptying one outright is asked of `editRefusal()` before anything
+  is written (STS-LDAP-0164, nothing changed). A single-valued one is one
+  `set`. A refusal part-way records the editor's own code.
+* **The form**: one box per held value, plus one empty box for a
+  multi-valued attribute; a cleared box is no value. `tests/account_api.js`
+  2c/2d hold that the form has its operation and sends only its fields;
+  `tests/portal_custom_attributes.js` holds the rest.
 
 ## `/portal/applications`: THE ISSUANCE POLICY, ASKED ON SOMEBODY'S BEHALF (2026-09-06)
 

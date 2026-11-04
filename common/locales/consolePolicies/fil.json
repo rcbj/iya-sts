@@ -173,5 +173,15 @@
   "attributes.defineHeading": "Tukuyin ang isang custom attribute",
   "attributes.labelPlaceholder": "Numero ng badge",
   "attributes.define": "Tukuyin ang attribute",
+  "attributes.portal": "Portal ng user",
+  "attributes.portalVisible": "Ipakita ito sa tao sa portal",
+  "attributes.portalEditable": "Hayaang baguhin ito ng tao sa portal",
+  "attributes.portalNote": "Parehong naka-off bilang default. Kapag pinayagang baguhin, ipinapakita rin ito.",
+  "attributes.portalStateHidden": "hindi ipinapakita",
+  "attributes.portalStateVisible": "ipinapakita",
+  "attributes.portalStateEditable": "ipinapakita, nababago",
+  "attributes.change": "Baguhin",
+  "attributes.changeFixed": "Hindi mababago ang syntax at kung ilang value ang hawak nito.",
+  "attributes.saveChange": "I-save ang pagbabago",
   "securityOnly": "Isang Security Administrator lamang ang maaaring mag-save, mag-reset o kumilos sa isang patakaran dito, o magtakda ng isa sa isang application, grupo o tao. Mababasa mo ang bawat patakaran; tinatanggihan ang isang pagbabago."
 }

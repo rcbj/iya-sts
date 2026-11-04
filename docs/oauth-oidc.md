@@ -1318,7 +1318,9 @@ token and every ID Token issued **from now on**. There are two sets because the
 two tokens go to different readers (a resource server and a client). Each set
 takes:
 * typed claims;
-* LDAP attribute types ticked from those found under `ou=users`;
+* LDAP attribute types ticked from those found under `ou=users`, and the
+  realm's own [custom attributes](policies.md#the-attribute-policy), each
+  claimed under its own name;
 * **directory-attribute claims**, a claim name of your choosing carrying any
   attribute of the person's entry (#94, see
   [the admin console](admin-console.md));

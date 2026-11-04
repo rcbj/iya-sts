@@ -1916,21 +1916,55 @@ A register that cannot be read answers "it grants". `STS-FED-0164`, audited
 `tests/federation_group_authority.js` holds it, and `tests/federation_provisioning.js` 8
 holds the console's `admin-write` refused through a real sign-in.
 
+**AND IN A WINDOWED DIRECTORY THE STORE IS ASKED (#1306, 2026-11-04).** The check
+walked only what the process held, and in a windowed process (`ldap/CLAUDE.md`, the
+default on postgres) that is not the directory: a service account's
+`stsServiceAccountOwner` under `ou=users` was seen only while the window held that
+person, and any entry another process wrote — a role naming a member group, a group
+naming an owner — only once the change log reached this one. Since #1306 the codec
+keys every value of the six attributes as the derived `grantinggroup` key in
+`value_keys` (`persistence/directory_codec.js`: trimmed, lower-cased, a DN also in its
+normalised form, the one reading both halves use), and `federatedGroupAuthorityAsync()`
+asks the store two `byAttribute` questions, the name and the DN, `LIMIT 1` each,
+through the bridge's `queryAsync()`: constant in the directory's size and off the
+event loop. Any row answers "it grants", whatever this process holds of that entry; a
+store that cannot answer does too (`STS-LDAP-0205`, logged when it stops and when it
+answers again). The walk of what this process holds still runs first, for its own
+writes not yet flushed. Outside a window nothing is asked. So `applyFederatedGroups()`
+is a promise, and `startFederatedSession()` waits for it before the browser goes on.
+~~A row written before #1306 carries no `grantinggroup` key until it is next written
+(rcbj's no-migration rule, as on #636 and #1061).~~ **Since #1311 such a row is keyed
+by a one-time backfill**, rcbj's decision on #1306's open point: the cluster job
+`persistence.granting-key-backfill` walks each database's directory a page at a time
+and writes the keys the codec derives, then a done mark (`persistence/CLAUDE.md`, *The
+`grantinggroup` keys of rows written before #1306*). Until its mark is written a row it
+has not reached is still missed. `tests/federation_group_authority.js` section W, and
+`tests/granting_index_backfill.js` for the backfill.
+
 **AND IN PRODUCT, A NEWCOMER THE ATTRIBUTE POLICY REFUSES IS `STS-FED-0158` ON THE PAGE
-(#396 with #358).** `ldap_server.js`'s `autoCreateUser()` writes `refusedWith` and the
+(#396 with #358)** — once the newcomer's form (#701) could not supply what is
+missing; see *A NEWCOMER THE ATTRIBUTE POLICY WOULD REFUSE*. `ldap_server.js`'s `autoCreateUser()` writes `refusedWith` and the
 missing attributes on the sign-in's own `federation` object, and `startFederatedSession()`
-answers that before the generic `STS-FED-0090` *the directory declined*. A directory
-reached in another process cannot write there; that sign-in gets the generic answer.
-`tests/federation_subject_policy.js` 1m-0.
+answers that before the generic `STS-FED-0090` *the directory declined*.
+`tests/federation_subject_policy.js` 1m-0. **This said, until #1306, that a directory
+reached in another process could not write there and that sign-in got 0090; no such
+directory exists, so the sentence went.** `autoCreateUser()` is
+`admin_stats.recordAuthentication()`'s synchronous observer, installed by
+`ldap_server.js` in every process that loads the stack — the front and each request
+worker; the surface pool serves no federation path — and `startSession()` hands it the
+`federation` object by reference (`statsExtra` is a shallow copy), so the refusal is
+always written where the page reads it. 0158 is the right code whenever the attribute
+policy refused; 0090 stays the case where nothing says why. A future observer that
+copies the payload, or a directory reached over a channel, owes this a way back.
 
 **Known limits of #358's provisioning, recorded rather than fixed:**
 
 * `provisionedCount` counts people linked by confirm-at-first-sign-in too, not only people the relationship created, so `fedProvisionCap` fills sooner than its name says.
 * The cap check is not atomic across nodes or cells: two first sign-ins at once can each see room and both create.
-* `groupByFederatedName()` walks every group on each sign-in that names a group not at its DN; so does `federatedGroupAuthority()`'s walk over resident entries.
+* `groupByFederatedName()` walks every group on each sign-in that names a group not at its DN; so does `federatedGroupAuthority()`'s walk over what the process holds (resident entries only, in a window; it runs before the store is asked, for this process's unflushed writes).
 * Groups are only ever added: a name the partner stops sending leaves the membership in place.
 * The idle sweep ignores passkeys: a person whose other path is a passkey alone is still disabled.
-* `federatedGroupAuthority()` reads resident entries only, so in a windowed directory a person-side owner value (`stsServiceAccountOwner`) that is not resident is not seen.
+* ~~`federatedGroupAuthority()` reads resident entries only, so in a windowed directory a person-side owner value (`stsServiceAccountOwner`) that is not resident is not seen.~~ Fixed by #1306: the store is asked (above); a row written before #1306 is keyed by #1311's one-time backfill.
 
 `tests/federation_provisioning.js` drives a real OIDC federated sign-in between two realms
 of one process — the default realm's OpenID Provider and a service-provider realm of its
@@ -2095,8 +2129,14 @@ mapped ones, a `cn` made of the names — to the realm's attribute policy
 (`common/CLAUDE.md` 3co, `ldap/CLAUDE.md`). One missing a required attribute
 creates nobody (STS-FED-0158, logged), and `authn.startSession()` refuses the
 sign-in as it refuses an unprovisioned person. rcbj's choice on #396 was this
-refusal over exempting the door; a sign-in step that asks the person for what
-the partner did not send is a follow-up ticket.
+refusal over exempting the door. **Since #701 (2026-11-04) the person is ASKED
+first, for every relationship**: `startFederatedSession()` sends any newcomer
+the policy would refuse to `/federation/profile/{handle}`, the step #729 built
+for consumer providers (*CONSUMER AND SOCIAL PROVIDERS*, below, has the
+mechanics), so STS-FED-0158 is left for a required name nobody can be given a
+value of, and for a form's return whose values still leave the policy unmet —
+a return is never asked again, because a fresh form would reset the five-try
+cap.
 
 ## CONSUMER AND SOCIAL PROVIDERS (#565, 2026-10-19)
 
@@ -2199,8 +2239,13 @@ The ones a reader of this directory needs:
   `profileSupplied` back through `completeSignIn()`, so the subject decision,
   the creation question and the policy are asked again, and only onto an
   entry this sign-in CREATES (`withProfileValues()`). A typed address is
-  unverified. An enterprise partner keeps the refusal: its mapping is where
-  a missing attribute is supplied.
+  unverified. **#729 kept the refusal for an enterprise partner, on the
+  argument that its mapping is where a missing attribute is supplied; #701
+  reversed that (rcbj's choice, 2026-11-04)**, and every relationship's
+  newcomer is asked. The mapping still wins wherever it says anything:
+  `withProfileValues()` never replaces a value the partner sent, and the
+  form asks only what is missing. `profileContext()` no longer asks the
+  category either.
 * **NO SESSION OUTLIVES A REFUSED SIGN-IN** (rcbj's decision 3 on #729). The
   step-up's second factor starts a local session before the browser returns
   to `/federation/stepup/{handle}`; `holdStepUpSession()` holds it on the

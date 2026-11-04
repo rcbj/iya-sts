@@ -44,6 +44,7 @@
   "noneOnEntry": "none on the entry: no claim",
   "wouldBeGenerated": "would be generated",
   "entrysOwn": "the entry's own",
+  "customDefinedBy": "custom attribute of this realm ({syntax})",
   "carries": "Carries {n} directory attribute(s): ",
   "carriesNone": "Carries no directory attribute. Tick some and press Update.",
   "colIn": "In",

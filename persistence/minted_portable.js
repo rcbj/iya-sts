@@ -841,16 +841,33 @@ function create(deps) {
   // ===================================================================
 
   /**
-   * `purgeTombstones()`: tombstones written before `beforeMs`.
+   * `purgeTombstones()`: tombstones written before `beforeMs`, at most
+   * `limit` of them when it is positive (#1313), in purgeExpiredMinted()'s
+   * two shapes; with no limit, the one unbounded delete it always was.
    *
+   * @param beforeMs - the instant, in epoch milliseconds
+   * @param limit - the batch's bound, or 0 for none
    * @returns the answer
    */
-  function purgeTombstones(beforeMs) {
+  function purgeTombstones(beforeMs, limit) {
     log.debug("Entering purgeTombstones().");
+    const which = function (q) {
+      return q.where({ body: TOMBSTONE })
+        .where('written_at', '<', instant(beforeMs));
+    };
+    if (!(limit > 0)) {
+      log.debug("Leaving purgeTombstones(). Unbounded.");
+      return run(pool, 'purgeTombstones', which(kx('sts_minted')).del());
+    }
     log.debug("Leaving purgeTombstones().");
+    if (mariadb) {
+      return run(pool, 'purgeTombstones',
+        which(kx('sts_minted')).del().limit(limit));
+    }
     return run(pool, 'purgeTombstones',
-      kx('sts_minted').where({ body: TOMBSTONE })
-        .where('written_at', '<', instant(beforeMs)).del());
+      kx('sts_minted').whereIn(['handle', 'realm', 'key'],
+        which(kx('sts_minted').select('handle', 'realm', 'key'))
+          .limit(limit)).del());
   }
 
   /**

@@ -6,13 +6,16 @@
 // File: version.js
 //
 // ===========================================================================
-// THE VERSION, M.N.O — AND THE THREE THINGS ABOUT IT THAT WOULD FAIL SILENTLY.
+// THE VERSION, M.N.O.<build> — AND THE THINGS ABOUT IT THAT WOULD FAIL
+// SILENTLY.
 //
-// **SINCE #1298 (rcbj, 2026-11-04) M.N.O IS A PLAIN SEMANTIC VERSION**, read
-// whole from VERSION (1.0.0), with no build number and no date in it. Which
-// BUILD a record describes is its `commit` and `builtAt`, beside the version,
-// and this file holds both halves: the version is VERSION's exactly, and the
-// build is still recorded and still survives a restart.
+// **THE RELEASE IS M.N.O, read whole from VERSION (1.0.0, #1298), AND THE
+// BUILD NUMBER FOLLOWS IT (#1317)**: the UTC build instant as YYYYMMDDHHMMSS
+// by default, or — for a build flagged `STS_RELEASE=true` — the BUILD_NUMBER
+// it names, so the 1.0.0 release built with BUILD_NUMBER=0 is `1.0.0.0`. A
+// release flag without a valid number is refused at the stamp, and without
+// the flag BUILD_NUMBER is ignored. This file holds all of it, and that the
+// stamp — number, commit and instant — survives a restart.
 //
 // `common/version.js` is a small module and the temptation is to leave it
 // untested. What makes it worth a file is that every one of its failure modes
@@ -128,20 +131,19 @@ function run(t) {
           'line with the file when the release is bumped');
 
   const record = version.resolve();
-  t.equal(record.version, raw.trim(),
-          'resolve() reports exactly the version that file carries — nothing ' +
-          'is appended to it');
   t.equal([record.major, record.minor, record.patch].join('.'), raw.trim(),
-          'and breaks it out as major, minor and patch');
-  t.check(!('build' in record),
-          'the record carries no `build` number: the build is `commit` and ' +
-          '`builtAt`, beside the version (#1298)',
-          JSON.stringify(record));
-  t.check(!/\d{8}/.test(record.version),
-          'no component of the version is a date', record.version);
-  t.check(!isNaN(Date.parse(record.builtAt)),
-          'the build instant is recorded beside the version',
-          record.builtAt);
+          'resolve() breaks the release out as major, minor and patch, ' +
+          'exactly as that file carries it');
+  t.check(/^\d{14}$/.test(String(record.build)),
+          'the build number of a record computed now is the UTC instant as ' +
+          'YYYYMMDDHHMMSS (#1317)', record.build);
+  t.equal(record.version, raw.trim() + '.' + record.build,
+          'and the version is the release followed by that build number');
+  t.equal(record.build, record.builtAt.replace(/[^0-9]/g, ''),
+          'the build number is the build instant, the same second as ' +
+          '`builtAt`');
+  t.equal(record.release, false,
+          'a record computed from a checkout is never a release');
   t.equal(record.stamped, false,
           'a computed record says it was NOT stamped, which is the ' +
           'difference between an artifact and a checkout being run');
@@ -178,43 +180,152 @@ function run(t) {
           console.error = quiet;
         }
       });
-    t.check(results.every(function (r) { return / -> 0\.0\.0$/.test(r); }),
+    t.check(results.every(function (r) {
+      return / -> 0\.0\.0\.\d{14}$/.test(r);
+    }),
             'a VERSION that is not exactly M.N.O is reported as 0.0.0 and ' +
             'nothing throws — a version may never stop the service starting',
             results.join('; '));
     fs.writeFileSync(path.join(dir, version.VERSION_FILE), '2.7.1\n');
-    t.equal(loaded.resolve().version, '2.7.1',
-            'and a well-formed one beside the module is read whole');
+    t.check(/^2\.7\.1\.\d{14}$/.test(loaded.resolve().version),
+            'and a well-formed one beside the module is read whole',
+            loaded.resolve().version);
     delete require.cache[require.resolve(copy)];
   });
 
   // -----------------------------------------------------------------------
-  // 2. BUILD_NUMBER IS NOT A VERSION INPUT ANY MORE, AND GIT_COMMIT IS STILL
-  //    THE COMMIT. A CI system that still sets BUILD_NUMBER must not see it
-  //    reach the version — that was the scheme #1298 retired.
+  // 2. THE BUILD NUMBER'S RULE (#1317), AND GIT_COMMIT IS STILL THE COMMIT.
+  //
+  //    The date and time by default; a RELEASE build names its own; a release
+  //    flag with no valid number is REFUSED; and without the flag BUILD_NUMBER
+  //    is IGNORED, so a CI system's variable of that name cannot pass an
+  //    ordinary build off as a release. Each is asked of stamp() with an
+  //    environment of its own, because stamp() is the one reader of the flag.
   // -----------------------------------------------------------------------
-  t.log.info('=== BUILD_NUMBER and GIT_COMMIT ===');
+  t.log.info('=== the build number: date and time, or a release\'s own ===');
+  withTempDir(function (dir) {
+    const ordinary = version.stamp(dir, {});
+    t.check(/^\d{14}$/.test(ordinary.build) && ordinary.release === false &&
+            ordinary.version === raw.trim() + '.' + ordinary.build,
+            'a stamp with no flag is a date-and-time build: ' +
+            'M.N.O.YYYYMMDDHHMMSS, not a release', ordinary.version);
+
+    const stray = version.stamp(dir, { BUILD_NUMBER: '4242' });
+    t.check(/^\d{14}$/.test(stray.build) && stray.release === false &&
+            stray.version.indexOf('4242') < 0,
+            'BUILD_NUMBER WITHOUT the release flag is ignored: the build ' +
+            'number is still the instant', stray.version);
+    const notRelease = version.stamp(dir, { STS_RELEASE: 'false',
+                                            BUILD_NUMBER: '7' });
+    t.check(notRelease.release === false && notRelease.build !== '7',
+            'and so with STS_RELEASE=false', notRelease.version);
+
+    const release = version.stamp(dir, { STS_RELEASE: 'true',
+                                         BUILD_NUMBER: '0' });
+    t.equal(release.version, raw.trim() + '.0',
+            'a release build with BUILD_NUMBER=0 is ' + raw.trim() + '.0');
+    t.check(release.build === '0' && release.release === true &&
+            release.stamped === true,
+            'and records build "0" and release true',
+            JSON.stringify(release));
+    const onDisk = JSON.parse(
+      fs.readFileSync(path.join(dir, version.STAMP_FILE), 'utf8'));
+    t.check(['version', 'major', 'minor', 'patch', 'build', 'release',
+             'commit', 'builtAt', 'stamped'].every(function (k) {
+               return k in onDisk;
+             }) && onDisk.version === raw.trim() + '.0' &&
+            onDisk.release === true,
+            'version.json holds version, major, minor, patch, build, ' +
+            'release, commit, builtAt and stamped', JSON.stringify(onDisk));
+    t.equal(version.stamp(dir, { STS_RELEASE: 'TRUE', BUILD_NUMBER: ' 12 ' })
+              .version, raw.trim() + '.12',
+            'the flag is read without case and the number trimmed');
+
+    // Every refusal: the flag with no number, an empty one, a leading zero,
+    // a negative, not a number, and a flag that is neither true nor false.
+    // Each throws STS-CORE-0164 naming both variables and writes nothing.
+    fs.rmSync(path.join(dir, version.STAMP_FILE));
+    const refusals = [
+      { STS_RELEASE: 'true' },
+      { STS_RELEASE: 'true', BUILD_NUMBER: '' },
+      { STS_RELEASE: 'true', BUILD_NUMBER: '01' },
+      { STS_RELEASE: 'true', BUILD_NUMBER: '-1' },
+      { STS_RELEASE: 'true', BUILD_NUMBER: '1.0' },
+      { STS_RELEASE: 'true', BUILD_NUMBER: 'abc' },
+      { STS_RELEASE: 'yes', BUILD_NUMBER: '0' }
+    ].map(function (env) {
+      try {
+        version.stamp(dir, env);
+        return JSON.stringify(env) + ' -> stamped';
+      } catch (e) {
+        log.debug("Caught in run(): " + ((e && e.message) || e));
+        const named = e.errorCode === 'STS-CORE-0164' &&
+          /STS_RELEASE/.test(e.message) &&
+          (/BUILD_NUMBER/.test(e.message));
+        return JSON.stringify(env) + (named ? ' -> refused' : ' -> ' +
+                                      e.message);
+      }
+    });
+    t.check(refusals.every(function (r) { return / -> refused$/.test(r); }),
+            'a release flag without a valid BUILD_NUMBER — or a flag that is ' +
+            'neither true nor false — is REFUSED with STS-CORE-0164, naming ' +
+            'both variables', refusals.join('; '));
+    t.check(!fs.existsSync(path.join(dir, version.STAMP_FILE)),
+            'and a refused stamp writes nothing');
+  });
+
+  // The command line the Dockerfiles run, in a child: a refusal is a
+  // NON-ZERO EXIT, which is what fails the image build at its RUN.
+  withTempDir(function (dir) {
+    const cp = require('child_process');
+    const cli = path.join(ROOT, 'common', 'version.js');
+    const env = Object.assign({}, process.env, { STS_RELEASE: 'true' });
+    delete env.BUILD_NUMBER;
+    const refused = cp.spawnSync(process.execPath, [cli, '--stamp', dir],
+                                 { env: env, encoding: 'utf8' });
+    t.check(refused.status !== 0 && /STS-CORE-0164/.test(refused.stderr) &&
+            /BUILD_NUMBER/.test(refused.stderr),
+            '`--stamp` with STS_RELEASE=true and no BUILD_NUMBER exits ' +
+            'non-zero naming the variables',
+            'status ' + refused.status + ': ' + refused.stderr.trim());
+    env.BUILD_NUMBER = '0';
+    const released = cp.spawnSync(process.execPath, [cli, '--stamp', dir],
+                                  { env: env, encoding: 'utf8' });
+    t.check(released.status === 0 &&
+            released.stdout.trim() === raw.trim() + '.0',
+            'and with BUILD_NUMBER=0 it exits 0 printing ' + raw.trim() + '.0',
+            'status ' + released.status + ': ' + released.stdout.trim());
+  });
+
+  t.log.info('=== GIT_COMMIT, buildInfo() and buildId() ===');
   const savedBuild = process.env.BUILD_NUMBER;
   const savedCommit = process.env.GIT_COMMIT;
   try {
     process.env.BUILD_NUMBER = '4242';
     process.env.GIT_COMMIT = 'deadbeefcafe0000000000';
     const forced = version.resolve();
-    t.equal(forced.version, raw.trim(),
-            'BUILD_NUMBER is ignored: the version is still VERSION\'s exactly');
+    t.check(forced.build !== '4242' && forced.release === false,
+            'resolve() reads no BUILD_NUMBER: a checkout is never a release',
+            forced.version);
     t.equal(forced.commit, 'deadbeefcafe',
             'GIT_COMMIT is taken as the commit and trimmed to twelve ' +
             'characters — the container build context carries no .git, so ' +
             'this is the only way an image can know one');
     t.check(version.buildInfo(forced).indexOf('deadbeefcafe') >= 0 &&
             version.buildInfo(forced).indexOf(forced.builtAt) >= 0 &&
-            version.buildInfo(forced).indexOf('4242') < 0,
-            'buildInfo() names the commit and the build instant, and no ' +
-            'build number', version.buildInfo(forced));
+            version.buildInfo(forced).indexOf('Build ' + forced.build) === 0,
+            'buildInfo() names the build number, the build instant and the ' +
+            'commit', version.buildInfo(forced));
+    const asRelease = Object.assign({}, forced,
+                                    { build: '0', release: true });
+    t.check(version.buildInfo(asRelease).indexOf('Release build 0') === 0,
+            'and says when the build is a release',
+            version.buildInfo(asRelease));
     t.equal(version.buildId(forced),
             forced.builtAt.replace(/[^0-9]/g, '') + '-deadbeefcafe',
             'buildId() is the build instant and the commit, for keying a ' +
-            'cache by build rather than by release');
+            'cache by build — two release builds both numbered 0 still ' +
+            'differ there');
   } finally {
     if (savedBuild === undefined) {
       delete process.env.BUILD_NUMBER;
@@ -245,7 +356,8 @@ function run(t) {
             'with no stamp in the directory, load() computes a record and ' +
             'says so');
 
-    const stamped = version.stamp(dir);
+    const stamped = version.stamp(dir, { STS_RELEASE: 'true',
+                                         BUILD_NUMBER: '3' });
     t.check(fs.existsSync(path.join(dir, version.STAMP_FILE)),
             'stamp() writes ' + version.STAMP_FILE + ' into the directory',
             dir);
@@ -261,10 +373,12 @@ function run(t) {
             'and it reports the same one again');
     t.check(first.builtAt === stamped.builtAt &&
             second.builtAt === stamped.builtAt &&
-            first.commit === stamped.commit,
-            'and the same BUILD — the stamped instant and commit, so ' +
-            'restarting a container does not invent a new build',
-            first.builtAt + ' ' + first.commit);
+            first.commit === stamped.commit &&
+            first.build === '3' && second.build === '3' &&
+            first.release === true,
+            'and the same BUILD — the stamped number, release flag, instant ' +
+            'and commit, so restarting a container does not invent a new ' +
+            'build', first.version + ' ' + first.builtAt + ' ' + first.commit);
     t.equal(first.stamped, true,
             'a loaded record says it came off a stamp');
 
@@ -273,15 +387,31 @@ function run(t) {
     // record was read from rather than about what the writer knew to say.
     const older = JSON.parse(
       fs.readFileSync(path.join(dir, version.STAMP_FILE), 'utf8'));
-    t.check(!('build' in older) && older.version === raw.trim() &&
+    t.check(older.build === '3' && older.version === raw.trim() + '.3' &&
             !!older.builtAt,
-            'the stamp on disk is the release and the build beside it, with ' +
-            'no build number', JSON.stringify(older));
+            'the stamp on disk is the full version with its build number',
+            JSON.stringify(older));
     delete older.stamped;
     fs.writeFileSync(path.join(dir, version.STAMP_FILE),
                      JSON.stringify(older, null, 2) + '\n');
     t.equal(version.load(dir).stamped, true,
             'a stamp written without the `stamped` member is still a stamp');
+
+    // A STAMP A #1298 BUILD WROTE: the bare release, no `build`, no
+    // `release`. It is still read, reporting the version it was written
+    // with, and is not a release.
+    fs.writeFileSync(path.join(dir, version.STAMP_FILE), JSON.stringify({
+      version: raw.trim(), major: record.major, minor: record.minor,
+      patch: record.patch, commit: 'abc', builtAt: '2026-11-03T00:00:00Z',
+      stamped: true }, null, 2) + '\n');
+    const v1298 = version.load(dir);
+    t.check(v1298.version === raw.trim() && !v1298.build &&
+            v1298.release === false && v1298.stamped === true,
+            'a stamp from a #1298 build (no `build`) is still read, ' +
+            'reporting the plain M.N.O', JSON.stringify(v1298));
+    t.check(version.buildInfo(v1298).indexOf('Built ') === 0,
+            'and buildInfo() says it as it was, with no build number',
+            version.buildInfo(v1298));
 
     // A CORRUPT stamp must not stop the service. This module is read at
     // require time by five modules including the console's shell, so a throw
@@ -324,7 +454,8 @@ function run(t) {
 
   // -----------------------------------------------------------------------
   // 4. EVERY package.json IN THIS TREE CARRIES THE SAME M.N.O (#1298; it
-  //    was M.N.0 while the version's third component was a build number).
+  //    was M.N.0 while the version's third component was a build number) —
+  //    the release, never the build number (#1317).
   //
   //    A bump that edited VERSION and nothing else leaves them stale, and
   //    nothing at runtime would notice: no surface reports a manifest version
@@ -398,7 +529,8 @@ function run(t) {
 
 module.exports = {
   name: 'version',
-  describe: 'M.N.O: the VERSION file read whole, the build recorded beside ' +
-            'it, and one source for every surface that draws it',
+  describe: 'M.N.O.<build>: the VERSION file read whole, the date-and-time ' +
+            'or release build number, the stamp surviving a restart, and ' +
+            'one source for every surface that draws it',
   run: run
 };

@@ -105,6 +105,12 @@ interface ShellSpec {
   // Markup drawn instead of the notice, with no script, where the surface
   // cannot work here; null or undefined where it can.
   refusal?: string | null;
+  // WHETHER THE REALM'S SIGN-IN APPEARANCE APPLIES (#717,
+  // `common/branding.ts`): its stylesheet after the others, its layout and
+  // brand facts on `<html>`. Left out, it applies to a shell that links the
+  // card (`/web/card.css`) and to no other; true or false says so outright
+  // (the portal, which has a stylesheet of its own).
+  branded?: boolean;
   // How an attribute value or the title is escaped; `&#39;` for an
   // apostrophe where left out (the console passes its `&apos;` one).
   esc?: (value: unknown) => string;
@@ -119,6 +125,13 @@ interface ServeOptions {
   // Directives beyond `script-src`, `connect-src` and `style-src`, or
   // replacing them; `frame-ancestors` and `base-uri` cannot be.
   csp?: Record<string, string>;
+  // THE ORIGINS OF IMAGES THE PAGE LOADS FROM ELSEWHERE (#1300), for
+  // `img-src` beside the base policy's `'self' data:`: a client's logo on
+  // the sign-in and consent screens, which the browser loads and this
+  // service never fetches. Only an https origin is named — anything else
+  // given (a path, a wildcard, a scheme alone, http) is dropped, so this
+  // door cannot widen `img-src` past the exact origins asked for.
+  images?: string[];
   // Compress the document where the request accepts it.
   compress?: boolean;
   // The realm's path prefix, for the rewrite a compressed body needs.
@@ -135,6 +148,12 @@ interface BuiltFile {
   // Whether the build wrote it, or `raw` is the placeholder.
   built: boolean;
 }
+
+/**
+ * The card's stylesheet (`common/public_assets.ts`), whose shells take the
+ * realm's sign-in appearance (#717).
+ */
+const CARD_PATH = '/web/card.css';
 
 /**
  * The default viewport.
@@ -183,6 +202,44 @@ class ShellDocument {
   }
 
   /**
+   * The ambient realm's sign-in appearance as a shell carries it (#717): its
+   * stylesheet and its `<html>` attributes, or nothing for a shell it does
+   * not apply to and for a realm that has set nothing.
+   *
+   * @param spec - the shell being drawn
+   * @returns `{ attributes, stylesheet }`
+   */
+  static brandParts(spec: ShellSpec): { attributes: Array<[string, string]>,
+                                        stylesheet: string } {
+    log.debug("Entering ShellDocument.brandParts().");
+    const none = { attributes: [] as Array<[string, string]>,
+                   stylesheet: '' };
+    const applies = spec.branded === undefined
+      ? (spec.stylesheets || []).some(function (href: string): boolean {
+        return String(href).split('?')[0] === CARD_PATH;
+      })
+      : spec.branded === true;
+    if (!applies) {
+      log.debug("Leaving ShellDocument.brandParts(). Not a branded shell.");
+      return none;
+    }
+    let out = none;
+    try {
+      // LAZILY: `branding.ts` draws its preview with this file's escaping
+      // and sending, so a require here at load would close a cycle.
+      out = require('./branding').shellParts();
+    } catch (e) {
+      // An appearance that cannot be read draws the shell as it always was.
+      log.debug("Caught in ShellDocument.brandParts(): " +
+                ((e && (e as Error).message) || e));
+      out = none;
+    }
+    log.debug("Leaving ShellDocument.brandParts(). " +
+              (out.stylesheet ? 'Branded.' : 'As always.'));
+    return out;
+  }
+
+  /**
    * Draws a shell document.
    *
    * @param spec - what it is drawn from
@@ -192,9 +249,20 @@ class ShellDocument {
     log.debug("Entering ShellDocument.document(). " + spec.title);
     const esc = spec.esc || ShellDocument.esc;
     const refused = spec.refusal !== null && spec.refusal !== undefined;
+    const brand = ShellDocument.brandParts(spec);
+    const stylesheets = spec.stylesheets.slice();
+    if (brand.stylesheet) {
+      // After the card's, which it overrides; at the end where a shell
+      // links no card.
+      const at = stylesheets.findIndex(function (href: string): boolean {
+        return href.split('?')[0] === CARD_PATH;
+      });
+      stylesheets.splice(at >= 0 ? at + 1 : stylesheets.length, 0,
+                         brand.stylesheet);
+    }
     const attributes = (spec.attributes || []).concat(
       [['data-sts-accounts', ShellDocument.accountsOn() ? 'on' : ''] as
-        [string, string]]
+        [string, string]], brand.attributes
     ).filter(function (one) {
       return one && one[1];
     }).map(function (one) {
@@ -204,7 +272,7 @@ class ShellDocument {
       '"' + (spec.dir ? ' dir="' + esc(spec.dir) + '"' : '') + attributes +
       '><head><meta charset="utf-8"><meta name="viewport" content="' +
       esc(spec.viewport || VIEWPORT) + '"><title>' + esc(spec.title) +
-      '</title>' + spec.stylesheets.map(function (href) {
+      '</title>' + stylesheets.map(function (href) {
         return '<link rel="stylesheet" href="' + esc(href) + '">';
       }).join('') +
       (refused ? '' : '<script src="' + esc(spec.script) +
@@ -237,6 +305,36 @@ class ShellDocument {
   }
 
   /**
+   * The `img-src` a shell names other origins in (#1300): the base policy's
+   * `'self' data:` and each https origin given exactly, or nothing to add
+   * where none is usable.
+   *
+   * @param origins - the origins asked for
+   * @returns `{ 'img-src': … }`, or an empty object
+   */
+  static imageSources(origins?: string[]): Record<string, string> {
+    log.debug("Entering ShellDocument.imageSources().");
+    const named = (origins || []).filter(function (one: string): boolean {
+      let url: URL | null = null;
+      try {
+        url = new URL(String(one));
+      } catch (e) {
+        log.debug("Caught in ShellDocument.imageSources(): " +
+                  ((e && (e as Error).message) || e));
+        // Not a URL: named nowhere.
+        url = null;
+      }
+      return !!url && url.protocol === 'https:' && url.origin === one;
+    }).filter(function (one: string, at: number, all: string[]): boolean {
+      return all.indexOf(one) === at;
+    });
+    log.debug("Leaving ShellDocument.imageSources(). " + named.length);
+    // The base policy's own `img-src` (`common/app.js`), then the origins.
+    return named.length ? { 'img-src': ["'self'", 'data:'].concat(named)
+                                         .join(' ') } : {};
+  }
+
+  /**
    * The Content-Security-Policy a shell is sent with, through
    * `app.contentSecurityPolicy()`.
    *
@@ -251,7 +349,7 @@ class ShellDocument {
       'script-src': "'self'",
       'connect-src': ["'self'"].concat(asked.connect || []).join(' '),
       'style-src': "'self' 'unsafe-inline'"
-    }, asked.csp || {});
+    }, ShellDocument.imageSources(asked.images), asked.csp || {});
     const out = app.contentSecurityPolicy(directives);
     log.debug("Leaving ShellDocument.policy().");
     return out;

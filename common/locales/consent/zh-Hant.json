@@ -18,5 +18,7 @@
   "deny": "拒絕",
   "meta.allow": "「允許」會在您位於 <code>ou=users</code> 下的項目中為每個範圍寫入一個 <code>{attribute}</code> 值，之後不會再就這些範圍詢問您。「拒絕」會向應用程式傳回 <code>access_denied</code>，且不記錄任何內容。",
   "meta.nothingIssued": "目前尚未核發任何內容。此畫面由 <code>oauth2.consentRequired</code> 控制，預設開啟；在 /admin/consent 可以檢視並撤回在此作出的每一個答覆。",
-  "meta.consentingFor": "同意的對象：<code>{protocol}</code>"
+  "meta.consentingFor": "同意的對象：<code>{protocol}</code>",
+  "client.policy": "隱私權政策",
+  "client.tos": "服務條款"
 }

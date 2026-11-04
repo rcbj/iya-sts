@@ -170,6 +170,45 @@ RUN curl -fsSL --retry 5 --retry-all-errors -o /tmp/eudi-dev.tgz \
  && echo "${EUDI_DEV_COMMIT}" > /out/COMMIT \
  && /out/eudi wallet --help >/dev/null
 
+# THE NATIVE OID4VC WALLET (#694): rcbj/oid4vc-wallet, a Linux desktop wallet
+# whose command line (`accept`, `present --approve|--refuse`, `self-issued`,
+# its #10) redeems an offer and answers OpenID4VP and SIOPv2 requests with no
+# window, no session bus and no desktop key ring. tests/protocol/
+# sts_oid4vc_wallet.js runs it as a child, with a throwaway HOME and its
+# storage key in a file (OID4VC_WALLET_KEY_FILE). Built at a pinned commit of
+# its `main`, the archive by sha256, as #668's stage above builds eudi-dev; a
+# bump is the commit and its archive's sha256 and nothing else.
+#   * libudev-dev and libpcsclite-dev are for the security-key code (FIDO2
+#     over USB HID, PIV over PC/SC), linked whether or not a key is ever
+#     used; the runner needs only libudev1 and libpcsclite1. D-Bus is
+#     vendored by the crate, and the window's X11 and GL are opened at run
+#     time, only by `--ui`, which no job passes.
+#   * rust-toolchain.toml says `stable`, which rustup would go and download
+#     over the 1.97 this image carries: it is removed, so the build is the
+#     image's toolchain and nothing is fetched but the locked crates.
+#   * GIT_COMMIT and BUILD_NUMBER are what build.rs stamps into `--version`
+#     (an archive has no .git to read them from).
+FROM rust:1.97-bookworm AS oid4vc-wallet
+ENV OID4VC_WALLET_COMMIT=616d059cb0a6bb19b9a5e9cd64ccc9354286664d
+ENV OID4VC_WALLET_SHA256=f34c36434f1510534a40c09242a345a57e4635b516d69a8a18b6f2c3fbb7bab8
+RUN apt-get update \
+ && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+      libudev-dev libpcsclite-dev pkg-config \
+ && rm -rf /var/lib/apt/lists/* \
+ && curl -fsSL --retry 5 --retry-all-errors -o /tmp/oid4vc-wallet.tgz \
+        https://github.com/rcbj/oid4vc-wallet/archive/${OID4VC_WALLET_COMMIT}.tar.gz \
+ && echo "${OID4VC_WALLET_SHA256}  /tmp/oid4vc-wallet.tgz" | sha256sum -c - \
+ && mkdir -p /usr/src && tar xzf /tmp/oid4vc-wallet.tgz -C /usr/src \
+ && cd /usr/src/oid4vc-wallet-${OID4VC_WALLET_COMMIT} \
+ && rm -f rust-toolchain.toml \
+ && GIT_COMMIT=${OID4VC_WALLET_COMMIT} BUILD_NUMBER=${OID4VC_WALLET_COMMIT} \
+      cargo build --release --locked --bin oid4vc-wallet \
+ && mkdir -p /out/licenses \
+ && cp target/release/oid4vc-wallet /out/ \
+ && cp LICENSE /out/licenses/oid4vc-wallet.LICENSE \
+ && echo "${OID4VC_WALLET_COMMIT}" > /out/COMMIT \
+ && /out/oid4vc-wallet --version
+
 FROM ubuntu:latest AS enroll-c
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
@@ -447,6 +486,14 @@ COPY --from=enroll-c /out/ /opt/enroll-clients/
 # The eudi-dev wallet (#668), from its stage at the top of this file.
 COPY --from=eudi-wallet /out/ /opt/eudi-wallet/
 ENV STS_EUDI_WALLET_BIN=/opt/eudi-wallet/eudi
+# The native OID4VC wallet (#694), from its stage at the top of this file,
+# and the two shared libraries it links beyond libc (its security-key code).
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
+        libudev1 libpcsclite1 \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=oid4vc-wallet /out/ /opt/oid4vc-wallet/
+ENV STS_OID4VC_WALLET_BIN=/opt/oid4vc-wallet/oid4vc-wallet
 COPY tests/tools/certbot-requirements.txt /opt/enroll-clients/certbot-requirements.txt
 RUN python3 -m venv /opt/certbot \
  && /opt/certbot/bin/pip install --no-cache-dir --require-hashes --no-deps \

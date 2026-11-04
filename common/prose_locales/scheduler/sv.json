@@ -335,21 +335,45 @@
     "en": "049675db215c0863",
     "text": "Räknar sfärens nycklar för Övervakning → Nycklar (#942): per algoritm och spår, de personer som har endast postkvant, endast klassiska eller båda, och vilka autentiserarmodeller som har vilka algoritmer. Läser bara de personer som har en nyckel, en sida åt gången; ändringar som görs efteråt läggs till när de skrivs."
   },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "Efterfyllnad av indexet för beviljande grupper"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "Ger varje katalogpost som skrevs före #1306 grantinggroup-indexnycklarna för dess beviljande attribut, en sida av lagret i taget, så att den federerade provisioneringens fråga till lagret hittar en grupp som en sådan post namnger; markerar lagret som komplett en gång och är avstängt därefter (#1311)."
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "Rensning av utgångna skapade rader"
   },
   "sched.jobs.persistence.minted-expiry-purge.describe": {
-    "en": "51010ce2ada820cd",
-    "text": "Tar bort från det delade lagret, i omgångar om 5000 och högst 20 omgångar av varje slag per körning, de skapade rader som ingen start kommer att läsa igen: de som passerat sin egen utgång, de som tillhör en sfär som inte längre är definierad (skrivna för mer än en timme sedan), och ett kortlivat lagers rader utan utgång som är äldre än persistence.mintedRetention."
+    "en": "51b75ecbc03ac6ba",
+    "text": "Tar bort från detta klusters lager (i en tjänst som driftsätts som celler, denna cells egen databas), i omgångar om 5000 och högst 20 omgångar av varje slag per körning, de skapade rader som ingen start kommer att läsa igen: de som passerat sin egen utgång, de som tillhör en sfär som inte längre är definierad (skrivna för mer än en timme sedan), och ett kortlivat lagers rader utan utgång som är äldre än persistence.mintedRetention."
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "Rensning av utgångna skapade rader, global nivå"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "I en tjänst som driftsätts som celler tar den bort samma tre slag av skapade rader från den globala nivåns databas, i samma omgångar; dess körning tas i anspråk i den globala nivån, så att en enda cell kör varje tidsfack. Avstängd i en tjänst med en enda databas, där den andra rensningen täcker den."
   },
   "sched.jobs.persistence.tombstone-purge.title": {
     "en": "1eba3997d260e28f",
     "text": "Rensning av utgångna gravstenar"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "d5b8faad6c0c24c4",
-    "text": "Tar bort gravstenarna för avslutade skapade rader som är äldre än persistence.mintedRetention från det delade lagret."
+    "en": "56aed2e95604a1b4",
+    "text": "Tar bort gravstenarna för avslutade skapade rader som är äldre än persistence.mintedRetention från detta klusters lager, i omgångar om 5000 och högst 20 omgångar per körning (i en tjänst som driftsätts som celler, cellens egen databas)."
+  },
+  "sched.jobs.persistence.tombstone-purge-global.title": {
+    "en": "15e3f193cfee5337",
+    "text": "Rensning av utgångna gravstenar, global nivå"
+  },
+  "sched.jobs.persistence.tombstone-purge-global.describe": {
+    "en": "98370fb755b4ba95",
+    "text": "I en tjänst som driftsätts som celler tar den bort gravstenarna för avslutade skapade rader som är äldre än persistence.mintedRetention från den globala nivåns databas, i samma omgångar; dess körning tas i anspråk i den globala nivån, så att en enda cell kör varje tidsfack. Avstängd i en tjänst med en enda databas, där den andra rensningen täcker den."
   },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",
@@ -478,6 +502,14 @@
   "sched.jobs.risk.upload-cleanup.describe": {
     "en": "758dfacad5326b05",
     "text": "I varje process: håller färska de uppladdningar av datamängder som den här processen importerar, och tar bort från risk.uploadDirectory en uppladdning som ingen levande process har rört i risk.importStallMinutes — det som en process som stannade mitt i en import lämnade efter sig."
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.title": {
+    "en": "9f8571bb756121c9",
+    "text": "Uppdatering av metadata för SAML-tjänsteleverantörer"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.describe": {
+    "en": "33dfb3951da97b51",
+    "text": "Hämtar på nytt metadata för varje tjänsteleverantör vars cacheDuration har passerats, från dess samlSpMetadataUrl eller MDQ-svararen; ett dokument vars validUntil har passerats avvisas."
   },
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",

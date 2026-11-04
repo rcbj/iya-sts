@@ -439,6 +439,18 @@
     "en": "96ed2387e40a779a",
     "text": "公共界面的卡片样式表"
   },
+  "endpoints.route./web/theme.css.name": {
+    "en": "955c14dc632bdf90",
+    "text": "域登录外观的样式表"
+  },
+  "endpoints.route./web/branding/logo.name": {
+    "en": "2ce72d622f586a26",
+    "text": "域的登录徽标"
+  },
+  "endpoints.route./web/branding/preview.name": {
+    "en": "54aca7174dc0a2b0",
+    "text": "登录外观的预览"
+  },
   "endpoints.route./web/locales/catalogs.json.name": {
     "en": "54bbd31e0a5afc5b",
     "text": "语言目录索引"
@@ -1048,8 +1060,8 @@
     "text": "已证明的代理"
   },
   "endpoints.route./admin-api/spiffe/agents/:action.name": {
-    "en": "109f2fc8119d9c06",
-    "text": "封禁、解封或遗忘代理"
+    "en": "db7439843e5d6273",
+    "text": "封禁、解封或遗忘代理，或签发加入令牌"
   },
   "endpoints.route./admin-api/spiffe/brokers.name": {
     "en": "3afd6d3f274707ff",
@@ -1162,6 +1174,18 @@
   "endpoints.route./admin-api/audit-export/:action.name": {
     "en": "b9a19e739aa5ebd6",
     "text": "更改审计导出目标"
+  },
+  "endpoints.route./admin-api/branding.name": {
+    "en": "4f6e7c69e356bf65",
+    "text": "登录外观"
+  },
+  "endpoints.route./admin-api/branding/logo.name": {
+    "en": "febcf32d571a0fbf",
+    "text": "上传登录徽标"
+  },
+  "endpoints.route./admin-api/branding/:action.name": {
+    "en": "d7fa23e10dac9b1d",
+    "text": "更改登录外观"
   },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",

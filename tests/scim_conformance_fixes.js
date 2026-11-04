@@ -314,7 +314,8 @@ function childMain() {
       // B. A startIndex PAST totalResults IS AN EMPTY PAGE (#354).
       // scimmy's ListResponse returns the first rows again once startIndex
       // is past the list; forTheWire() empties that page. An in-range page
-      // is unchanged, including itemsPerPage staying the count asked for.
+      // keeps its rows, and its itemsPerPage is how many it returned rather
+      // than the count asked for (rcbj on #695).
       config.setOverride('scim.inventOnCreate', 'false');
       const SEARCH = 'urn:ietf:params:scim:api:messages:2.0:SearchRequest';
       const pageUsers = ['sc-page-a', 'sc-page-b', 'sc-page-c', 'sc-page-d'];
@@ -374,14 +375,14 @@ function childMain() {
       r = await scim('GET', '/Users?filter=' + pageFilter +
                      '&count=10&startIndex=3');
       note(r.status === 200 && r.json.totalResults === 4 &&
-           r.json.startIndex === 3 && r.json.itemsPerPage === 10 &&
+           r.json.startIndex === 3 && r.json.itemsPerPage === 2 &&
            namesOf(r).join(',') === order.slice(2).join(','),
-           'B5. a short in-range page keeps the count that was asked',
+           'B5. a short in-range page says how many it returned (#695)',
            pageShape(r));
       r = await scim('GET', '/Users?filter=' + pageFilter +
                      '&count=10&startIndex=4');
       note(r.status === 200 && r.json.totalResults === 4 &&
-           r.json.startIndex === 4 && r.json.itemsPerPage === 10 &&
+           r.json.startIndex === 4 && r.json.itemsPerPage === 1 &&
            namesOf(r).length === 1 && namesOf(r)[0] === order[3],
            'B6. startIndex equal to totalResults is the last name',
            pageShape(r));
@@ -430,6 +431,19 @@ function childMain() {
            namesOf(r).length === 0 && r.json.itemsPerPage === 0,
            'B12. count 0 is an empty page and the match is still counted',
            pageShape(r));
+      // RFC 7644 section 3.4.2.4: "A value less than 1 SHALL be interpreted
+      // as 1" (#695: no case sent one).
+      const lowStarts = ['0', '-1'];
+      for (let k = 0; k < lowStarts.length; k++) {
+        r = await scim('GET', '/Users?filter=' + pageFilter +
+                       '&count=2&startIndex=' + lowStarts[k]);
+        note(r.status === 200 && r.json.totalResults === 4 &&
+             r.json.startIndex === 1 &&
+             namesOf(r).join(',') === order.slice(0, 2).join(','),
+             'B' + (13 + k) + '. startIndex ' + lowStarts[k] +
+             ' is read as 1: the first two names',
+             pageShape(r) + ' vs ' + order.slice(0, 2).join(','));
+      }
     });
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify({ findings: findings }));

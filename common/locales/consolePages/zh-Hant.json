@@ -140,5 +140,6 @@
   "title.vc-verifier-config": "驗證者請求",
   "title.worker-pools": "工作者集區",
   "title.broadcast": "廣播公告",
+  "title.sign-in-appearance": "登入外觀",
   "title.post-login-activities": "登入後活動"
 }

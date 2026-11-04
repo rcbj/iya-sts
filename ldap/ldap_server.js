@@ -8264,8 +8264,12 @@ function autoCreateUser(detail) {
   // it — the plan's attributes and the partner's, a `cn` made of the names —
   // is asked before anything is written, and one missing a required
   // attribute creates nobody. `authn.startSession()` then refuses the
-  // sign-in as it refuses a person nobody provisioned. The partner's mapping
-  // (`federation/CLAUDE.md`) is where a missing attribute is supplied, or
+  // sign-in as it refuses a person nobody provisioned. THE BACKSTOP SINCE
+  // #701: the federation door asks the policy the same question first and
+  // sends the newcomer to a form for what is missing
+  // (`federation/CLAUDE.md`), so this is reached only for a name nobody can
+  // be asked for, or a form whose values still fall short. The partner's
+  // mapping is where a missing attribute is supplied without the form, or
   // the person is provisioned ahead of time.
   if (info.federation) {
     const prospective = Object.assign({}, plan.attributes);
@@ -8286,9 +8290,10 @@ function autoCreateUser(detail) {
       // SAID ON THE SIGN-IN'S OWN RECORD (#358 with #396): the federation
       // object is the one `federation_sp.ts` handed `authn.startSession()`,
       // so its refusal page can name this code and the missing attributes
-      // rather than a generic "the directory declined" (STS-FED-0090). A
-      // directory reached in another process cannot write here, and that
-      // sign-in falls back to the generic answer.
+      // rather than a generic "the directory declined" (STS-FED-0090). This
+      // function is the funnel's synchronous observer in the process that
+      // serves the sign-in, handed that object by reference, so the code
+      // always gets back (#1306; `federation/CLAUDE.md`).
       info.federation.refusedWith = 'STS-FED-0158';
       info.federation.refusedMissing = incomplete.missing.slice(0);
       log.debug('Leaving autoCreateUser(). The attribute policy refused the ' +
@@ -13716,16 +13721,10 @@ function attributeSourcePeoplePage(after, limit) {
     rows = page.rows;
     more = page.more;
   } else {
-    const all = entriesUnder(usersDn()).map(function (stored) {
-      return { key: normalizeDn(stored.dn), entry: stored };
-    }).filter(function (one) {
-      return one.key !== base && one.key.endsWith(suffix) &&
-             (!after || one.key > after);
-    }).sort(function (a, b) {
-      return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
-    });
-    more = all.length > most;
-    rows = all.slice(0, most);
+    const all = sortedPeopleOf(entriesUnder(usersDn()), base, suffix);
+    const from = firstAfter(all, String(after || ''));
+    more = all.length - from > most;
+    rows = all.slice(from, from + most);
   }
   const names = [];
   rows.forEach(function (one) {
@@ -13742,21 +13741,93 @@ function attributeSourcePeoplePage(after, limit) {
   return { names: names, cursor: cursor, more: more };
 }
 
+// ONE SORT PER LISTING, NOT ONE PER PAGE (#704). The in-memory page above
+// mapped, filtered and sorted every entry under `ou=users` to answer two
+// hundred, on every run of `attribute-sources.refresh` while a cycle is open
+// — a cycle over N people sorted N people N/200 times. `entriesUnder()`
+// answers the SAME array until a write under the container (its kept
+// listing), so the sorted keys are kept beside it, keyed by that array: a
+// write makes a new listing and so a new sort, and a cycle over an
+// unchanged directory sorts once. A page is then a binary search for the
+// cursor and a slice. Held weakly, so a listing nobody keeps any more takes
+// its sort with it.
+/** @type {WeakMap<object, Array<{key: string, entry: any}>>} */
+const sortedPeople = new WeakMap();
+
+function sortedPeopleOf(listing, base, suffix) {
+  log.debug('Entering sortedPeopleOf().');
+  const held = sortedPeople.get(listing);
+  if (held) {
+    log.debug('Leaving sortedPeopleOf(). Kept.');
+    return held;
+  }
+  const all = listing.map(function (stored) {
+    return { key: normalizeDn(stored.dn), entry: stored };
+  }).filter(function (one) {
+    return one.key !== base && one.key.endsWith(suffix);
+  }).sort(function (a, b) {
+    return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+  });
+  sortedPeople.set(listing, all);
+  log.debug('Leaving sortedPeopleOf(). Sorted ' + all.length + '.');
+  return all;
+}
+
+// The index of the first row whose key sorts after `after` ('' is before
+// every key).
+function firstAfter(all, after) {
+  log.debug('Entering firstAfter().');
+  let lo = 0;
+  let hi = all.length;
+  if (!after) {
+    log.debug('Leaving firstAfter(). From the start.');
+    return 0;
+  }
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (all[mid].key > after) {
+      hi = mid;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  log.debug('Leaving firstAfter(). ' + lo + '.');
+  return lo;
+}
+
 // The people of the ambient realm, by username, sorted — for the scheduled
 // refresh, which pages through them after a cursor (#94). Kept for a caller
 // of the older interface; the refresh asks `attributeSourcePeoplePage()`.
+// Its sorted names are kept per listing too (#704), for the reason above.
+/** @type {WeakMap<object, string[]>} */
+const sortedUsernames = new WeakMap();
+
 function attributeSourcePeople(after, limit) {
   log.debug('Entering attributeSourcePeople(). after=' + (after || ''));
-  const names = entriesUnder(usersDn()).filter(function (stored) {
-    return isPersonEntry(stored);
-  }).map(function (stored) {
-    return canonicalUsernameOfDn(stored.dn);
-  }).filter(Boolean).sort();
-  const start = after ? names.filter(function (name) {
-    return name > after;
-  }) : names;
+  const listing = entriesUnder(usersDn());
+  let names = sortedUsernames.get(listing);
+  if (!names) {
+    names = listing.filter(function (stored) {
+      return isPersonEntry(stored);
+    }).map(function (stored) {
+      return canonicalUsernameOfDn(stored.dn);
+    }).filter(Boolean).sort();
+    sortedUsernames.set(listing, names);
+  }
+  let from = 0;
+  if (after) {
+    let hi = names.length;
+    while (from < hi) {
+      const mid = (from + hi) >>> 1;
+      if (names[mid] > after) {
+        hi = mid;
+      } else {
+        from = mid + 1;
+      }
+    }
+  }
   log.debug('Leaving attributeSourcePeople().');
-  return start.slice(0, Math.max(1, Number(limit) || 100));
+  return names.slice(from, from + Math.max(1, Number(limit) || 100));
 }
 
 // THE ONE WRITE OF A SOURCE'S VALUES ONTO A PERSON (#94). `changes` is
@@ -22769,6 +22840,8 @@ const DIRECTORY_SEARCH_PAGE = 500;
 // How far `persistence/directory_queries.js`'s `rdnPage` and
 // `containerPage` walk: their offset and their walk are capped here, so a
 // deep page cannot become a walk of the container. Kept equal to theirs.
+// It is also the cap a needle search's COUNT stops at (#1308,
+// `rdnCount`'s `RDN_COUNT_CAP`): a match past it could never be paged to.
 const WINDOWED_PAGE_CAP = 100000;
 
 /**
@@ -25032,20 +25105,28 @@ function stampFederationRelationship(dn, fedId) {
 //   * a group an XACML policy of this realm names as an attribute value,
 //     since the access gate hands a person's groups to the PDP by cn and DN.
 //
-// The walk is over resident entries, `groupsOwnedBy()`'s reach. A register
-// that cannot be read answers "it grants": not knowing is not permission.
+// What this process holds is walked: the resident entries, `groupsOwnedBy()`'s
+// reach, which outside a window is the whole directory and inside one sees
+// this process's own writes before they are flushed. A WINDOWED process also
+// asks the store (`federatedGroupAuthorityAsync()`, #1306). A register that
+// cannot be read answers "it grants": not knowing is not permission.
 // Returns the reason, or '' when the name grants nothing.
-const GRANTING_ATTRIBUTES = ['rolemembergroup', 'owner', 'appowner',
-  'stsserviceaccountowner', 'appdelegationsubjectgroup', 'fedsubjectgroup'];
+const GRANTING_ATTRIBUTES = require('../persistence/directory_codec')
+  .GRANTING_ATTRIBUTES;
 
 function federatedGroupAuthority(name, dn) {
   log.debug('Entering federatedGroupAuthority().');
+  const codec = require('../persistence/directory_codec');
   const cn = String(name == null ? '' : name).trim().toLowerCase();
   const dnKey = dn ? normalizeDn(String(dn)) : '';
+  // The codec's reading of a value, so the walk here and the store's
+  // `grantinggroup` key are one rule: a value names the group by its cn,
+  // or, written as a DN, by the group's DN.
   const matches = function (value) {
-    const text = String(value == null ? '' : value).trim();
-    return text.toLowerCase() === cn ||
-           (!!dnKey && DN_SHAPED.test(text) && normalizeDn(text) === dnKey);
+    const keys = codec.grantingKeysOf(value);
+    return keys.indexOf(cn) >= 0 ||
+           (!!dnKey && DN_SHAPED.test(String(value == null ? '' : value)
+             .trim()) && keys.indexOf(dnKey) >= 0);
   };
   try {
     const settings = require('../common/ownership').GRANTING_GROUP_SETTINGS;
@@ -25061,15 +25142,7 @@ function federatedGroupAuthority(name, dn) {
       if (found) {
         return;
       }
-      GRANTING_ATTRIBUTES.some(function (attribute) {
-        const values = (stored.attributes && stored.attributes[attribute]) ||
-                       [];
-        if (values.some(matches)) {
-          found = attribute + ' of ' + stored.dn;
-          return true;
-        }
-        return false;
-      });
+      found = grantingAttributeNaming(stored, matches);
     });
     if (found) {
       log.debug('Leaving federatedGroupAuthority(). An entry.');
@@ -25096,12 +25169,121 @@ function federatedGroupAuthority(name, dn) {
   return '';
 }
 
+// The first granting attribute of an entry with a value `matches` accepts,
+// as the reason `federatedGroupAuthority()` gives, or ''. Called once per
+// resident entry of the walk above: no Entering/Leaving pair, the hot-path
+// exception the code style allows, stated as it requires.
+function grantingAttributeNaming(stored, matches) {
+  let found = '';
+  GRANTING_ATTRIBUTES.some(function (attribute) {
+    const values = (stored && stored.attributes &&
+                    stored.attributes[attribute]) || [];
+    if (values.some(matches)) {
+      found = attribute + ' of ' + stored.dn;
+      return true;
+    }
+    return false;
+  });
+  return found;
+}
+
+// WHETHER THE STORE KNOWS OF AN ENTRY THAT MAKES THE NAME GRANT (#1306).
+//
+// `federatedGroupAuthority()` walks what this process holds, and in a
+// windowed process that is not the directory: an entry under `ou=users` or
+// `ou=devices` is held only while the window has it — a service account's
+// `stsServiceAccountOwner` naming its owner group, a group placed under
+// `ou=users` with an `owner` — and any entry another process wrote reaches
+// this one only when the change log is next pulled, so a role created on
+// another node a moment ago named a member group this sign-in could create.
+// The store holds every committed row, and the codec keys each value of the
+// six attributes as `grantinggroup` (`directory_codec.js`), so the question
+// is two indexed lookups — the name, and the DN the group would have or has
+// — on the GIN index over `value_keys`, `LIMIT 1` each, asked through the
+// bridge's asynchronous `queryAsync()`: constant in the size of the
+// directory, and the event loop runs while the store answers. Any row is an
+// answer of "it grants", whatever this process holds of that entry — a
+// value removed here and not yet flushed is still the store's until it is,
+// and the cost of being early is a group not joined on one sign-in. A
+// question that fails answers "it grants" too, `STS-LDAP-0205`, logged when
+// the store stops answering and again when it answers.
+//
+// Outside a window nothing is asked: the process holds the whole directory,
+// and the walk is the answer it always was.
+let grantingQuestionFailing = false;
+
+async function federatedGroupAuthorityAsync(name, dn) {
+  log.debug('Entering federatedGroupAuthorityAsync().');
+  const held = federatedGroupAuthority(name, dn);
+  if (held || !directoryWindow) {
+    log.debug('Leaving federatedGroupAuthorityAsync(). ' +
+              (held ? 'Held here.' : 'No window.'));
+    return held;
+  }
+  const codec = require('../persistence/directory_codec');
+  const realmId = realms.currentId();
+  const asked = codec.grantingKeysOf(name).slice(0, 1);
+  if (dn) {
+    const dnKey = normalizeDn(String(dn));
+    if (dnKey && asked.indexOf(dnKey) < 0) {
+      asked.push(dnKey);
+    }
+  }
+  try {
+    const answers = await Promise.all(asked.map(function (key) {
+      return directoryWindow.askAsync('byAttribute',
+        [realmId, 'grantinggroup', key, 1]);
+    }));
+    if (grantingQuestionFailing) {
+      grantingQuestionFailing = false;
+      log.info('ldap: the store answers the federated group question ' +
+               'again.');
+    }
+    let found = '';
+    answers.forEach(function (rows) {
+      [].concat(rows || []).forEach(function (row) {
+        if (found || !row) {
+          return;
+        }
+        const entry = row.entry || {};
+        const dnOf = String(entry.dn || row.key || '');
+        found = grantingAttributeNaming(entry, function (value) {
+          const keys = codec.grantingKeysOf(value);
+          return asked.some(function (key) {
+            return keys.indexOf(key) >= 0;
+          });
+        }) || ('a granting attribute of ' + dnOf);
+      });
+    });
+    log.debug('Leaving federatedGroupAuthorityAsync(). ' +
+              (found ? 'The store names it.' : 'Grants nothing.'));
+    return found;
+  } catch (e) {
+    log.debug('Caught in federatedGroupAuthorityAsync(): ' +
+              ((e && e.message) || e));
+    if (!grantingQuestionFailing) {
+      grantingQuestionFailing = true;
+      log.warn(errorCodes.tag('STS-LDAP-0205') + 'ldap: the store could ' +
+               'not say whether a group name from a partner\'s assertion ' +
+               'is named by a granting attribute (' +
+               ((e && e.message) || e) + '); such names are not applied ' +
+               'until it can. Logged once until it answers again.');
+    }
+    log.debug('Leaving federatedGroupAuthorityAsync(). Unreadable.');
+    return 'its registers could not be read';
+  }
+}
+
 // Group names from one partner's assertion, for one person (#358). A name
 // that is not a DN value, that names a group this relationship did not
 // create, or that names a group which grants something by being held
-// (`federatedGroupAuthority()`, reason `grants`), is ignored. The caller audits the ignores and the sign-in
-// continues. `memberOf` is never written: addGroupMember does not.
-function applyFederatedGroups(fedId, username, names) {
+// (`federatedGroupAuthorityAsync()`, reason `grants`), is ignored. The
+// caller audits the ignores and the sign-in continues. `memberOf` is never
+// written: addGroupMember does not. A promise since #1306, because in a
+// windowed process the authority question is asked of the store; the names
+// are taken one at a time, in the order the partner sent them, so a group
+// created for the first is seen by the second's questions.
+async function applyFederatedGroups(fedId, username, names) {
   log.debug('Entering applyFederatedGroups(). ' + fedId);
   const id = String(fedId || '');
   const who = String(username || '').trim();
@@ -25115,28 +25297,33 @@ function applyFederatedGroups(fedId, username, names) {
   const seen = {};
   const opts = { actor: 'federation:' + id, channel: 'internal',
                  origin: 'federation', protocol: 'Federation' };
-  [].concat(names || []).forEach(function (raw) {
+  for (const raw of [].concat(names || [])) {
     const name = String(raw == null ? '' : raw).trim();
     const fold = name.toLowerCase();
     if (!name || seen[fold]) {
-      return;
+      continue;
     }
     seen[fold] = true;
     if (DN_SHAPED.test(name) || !nameUsableInDn(name)) {
       ignored.push({ name: name, reason: 'unusable' });
-      return;
+      continue;
     }
-    const existing = groupByFederatedName(name);
-    const authority = federatedGroupAuthority(name,
-      existing ? existing.dn : groupDnFor(name));
+    const before = groupByFederatedName(name);
+    const authority = await federatedGroupAuthorityAsync(name,
+      before ? before.dn : groupDnFor(name));
     if (authority) {
       ignored.push({ name: name, reason: 'grants', detail: authority });
-      return;
+      continue;
     }
+    // Looked at again AFTER the question, at the DN a create would use: the
+    // store's answer took a turn of the event loop, and a group another
+    // sign-in in this process made meanwhile is the existing group, not a
+    // name to create twice.
+    const existing = before || getEntry(groupDnFor(name));
     if (existing) {
       if (!markedForRelationship(existing, id)) {
         ignored.push({ name: name, reason: 'exists' });
-        return;
+        continue;
       }
       const added = addGroupMember(existing.dn || name, who, opts);
       if (added && added.ok) {
@@ -25144,17 +25331,17 @@ function applyFederatedGroups(fedId, username, names) {
       } else {
         ignored.push({ name: name, reason: 'add' });
       }
-      return;
+      continue;
     }
     const made = createGroup(name, Object.assign({ members: [],
       note: 'created for federation relationship ' + id }, opts));
     if (!made || !made.ok) {
       ignored.push({ name: name, reason: 'create' });
-      return;
+      continue;
     }
     if (!stampFederationRelationship(made.dn, id)) {
       ignored.push({ name: name, reason: 'stamp' });
-      return;
+      continue;
     }
     created.push(name);
     const added = addGroupMember(made.dn, who, opts);
@@ -25163,7 +25350,7 @@ function applyFederatedGroups(fedId, username, names) {
     } else {
       ignored.push({ name: name, reason: 'add' });
     }
-  });
+  }
   log.debug('Leaving applyFederatedGroups(). ' + joined.length +
             ' joined, ' + ignored.length + ' ignored.');
   return { joined: joined, ignored: ignored, created: created };
@@ -26207,19 +26394,28 @@ function storeAsked(promise) {
  * (`WINDOWED_PAGE_CAP`; `capped`). `complete` is false when any of them
  * touched this page, and the console says which.
  *
+ * **A NEEDLE'S COUNT IS CAPPED** (#1308): `rdnCount` counts at most
+ * `WINDOWED_PAGE_CAP + 1` matches, so a count over the cap is not a number
+ * of matches. `matched` is then the cap and `countCapped` is true — MORE
+ * THAN `matched` match — and `capped` is true with it, since the pager
+ * stops there too. A count the caller passes back keeps its
+ * `countCapped`. An empty needle is the container's counter, exact.
+ *
  * @param offset - rows to skip
  * @param limit - how many
  * @param needle - a substring, or ''
- * @param options - a count already known (`total`, `matched`)
- * @returns a promise of `{ rows, total, matched, complete, incomplete }`
+ * @param options - a count already known (`total`, `matched`,
+ *   `countCapped`)
+ * @returns a promise of `{ rows, total, matched, countCapped, complete,
+ *   incomplete }`
  */
 async function candidatePageAsync(offset, limit, needle, options) {
   log.debug('Entering candidatePageAsync().');
   const opts = options || {};
   if (!directoryWindow) {
     log.debug('Leaving candidatePageAsync(). Not windowed.');
-    return { rows: [], total: 0, matched: 0, complete: true,
-             incomplete: null };
+    return { rows: [], total: 0, matched: 0, countCapped: false,
+             complete: true, incomplete: null };
   }
   const realmId = realms.currentId();
   const parent = normalizeDn(usersDn());
@@ -26227,19 +26423,27 @@ async function candidatePageAsync(offset, limit, needle, options) {
   const count = Math.max(0, Math.floor(Number(limit) || 0));
   let total = opts.total;
   let matched = opts.matched;
+  let countCapped = false;
   if (total === undefined || total === null ||
       matched === undefined || matched === null) {
     total = Number(await storeAsked(directoryWindow.askAsync('count',
       [realmId, parent]))) || 0;
-    matched = wanted
-      ? (Number(await storeAsked(directoryWindow.askAsync('rdnCount',
-          [realmId, parent, wanted]))) || 0)
-      : total;
+    if (wanted) {
+      // At most the cap and one more (#1308): the one more is how the
+      // store says there are more than the cap.
+      const counted = Number(await storeAsked(directoryWindow.askAsync(
+        'rdnCount', [realmId, parent, wanted, WINDOWED_PAGE_CAP]))) || 0;
+      countCapped = counted > WINDOWED_PAGE_CAP;
+      matched = countCapped ? WINDOWED_PAGE_CAP : counted;
+    } else {
+      matched = total;
+    }
   } else {
     total = Number(total) || 0;
     matched = Number(matched) || 0;
+    countCapped = opts.countCapped === true;
   }
-  const capped = matched > WINDOWED_PAGE_CAP;
+  const capped = countCapped || matched > WINDOWED_PAGE_CAP;
   const from = Math.max(0, Math.floor(Number(offset) || 0));
   const incompleteness = function (unusable, short) {
     const whole = unusable === 0 && short === 0 && !capped;
@@ -26252,7 +26456,8 @@ async function candidatePageAsync(offset, limit, needle, options) {
     const counted = incompleteness(0, 0);
     log.debug('Leaving candidatePageAsync(). Counted.');
     return { rows: [], total: total, matched: matched,
-             complete: counted.complete, incomplete: counted.incomplete };
+             countCapped: countCapped, complete: counted.complete,
+             incomplete: counted.incomplete };
   }
   if (from >= WINDOWED_PAGE_CAP) {
     // PAST THE CAP the store would answer the cap's page instead, which
@@ -26260,10 +26465,15 @@ async function candidatePageAsync(offset, limit, needle, options) {
     const past = incompleteness(0, 0);
     log.debug('Leaving candidatePageAsync(). Past the cap.');
     return { rows: [], total: total, matched: matched,
-             complete: past.complete, incomplete: past.incomplete };
+             countCapped: countCapped, complete: past.complete,
+             incomplete: past.incomplete };
   }
+  // The count goes with the needle (#1310): with few matches the store
+  // reads the page through the trigram index instead of walking the
+  // container (`directory_queries.js`'s `matchesCheaper()`).
   const page = await storeAsked(directoryWindow.rdnPageAsync(realmId,
-    parent, '', count, { offset: from, needle: wanted }));
+    parent, '', count, { offset: from, needle: wanted, matched: matched,
+                         total: total, countCapped: countCapped }));
   const rows = [];
   let unusable = 0;
   ((page && page.rows) || []).forEach(function (row) {
@@ -26284,7 +26494,8 @@ async function candidatePageAsync(offset, limit, needle, options) {
   const answer = incompleteness(unusable, short);
   log.debug('Leaving candidatePageAsync(). ' + rows.length + ' row(s).');
   return { rows: rows, total: total, matched: matched,
-           complete: answer.complete, incomplete: answer.incomplete };
+           countCapped: countCapped, complete: answer.complete,
+           incomplete: answer.incomplete };
 }
 
 /**
@@ -30181,6 +30392,8 @@ module.exports = {
   DELEGATE_CANDIDATE_CAP: DELEGATE_CANDIDATE_CAP,
   DELEGATE_CANDIDATE_MIN: DELEGATE_CANDIDATE_MIN,
   candidatePageAsync: candidatePageAsync,
+  // How far the role chooser pages and counts (#359, #1308).
+  CANDIDATE_COUNT_CAP: WINDOWED_PAGE_CAP,
   candidateByNameAsync: candidateByNameAsync,
   // /admin/ldap/directory's view, for the in-process test that counts what
   // it copies (#352).

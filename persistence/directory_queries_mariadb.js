@@ -964,18 +964,28 @@ function rdnPage(ask, realm, parentKey, afterRdn, limit, options) {
     'e.rdn_value LIMIT ? OFFSET ?', joined(values, [w.take, w.skip]));
 }
 
-function rdnCount(ask, realm, parentKey, needle) {
+// CAPPED AT `cap + 1` (#1308), as `directory_queries.rdnCount()` is and
+// for its reason: LOCATE has no index. PostgreSQL's needle is a trigram
+// probe since #1310; MariaDB has no substring index (FULLTEXT is by word,
+// the n-gram parser is MySQL's), so here a needle stays a bounded scan of
+// the parent — `mariadb/CLAUDE.md`. A LIMIT in a derived table
+// is MariaDB's too (the restriction is on IN subqueries), and the same
+// cap is computed by the one copy, `rdnCountCap()`.
+function rdnCount(ask, realm, parentKey, needle, cap) {
   log.debug("Entering rdnCount().");
   const wanted = String(needle || '').toLowerCase();
+  /** @type {Array<string | number>} */
   const values = [String(realm), String(parentKey)];
   let filter = '';
   if (wanted) {
     filter = ' AND LOCATE(?, rdn_value) > 0';
     values.push(wanted);
   }
+  values.push(directoryQueries.rdnCountCap(cap) + 1);
   log.debug("Leaving rdnCount().");
   return ask('rdnCount', 'SELECT CAST(COUNT(*) AS SIGNED) AS n FROM ' +
-    'sts_ldap_entries WHERE realm = ? AND parent_key = ?' + filter, values);
+    '(SELECT 1 AS one FROM sts_ldap_entries WHERE realm = ? AND ' +
+    'parent_key = ?' + filter + ' LIMIT ?) AS matched', values);
 }
 
 function containerPage(ask, realm, parentKey, offset, limit) {

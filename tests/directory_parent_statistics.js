@@ -37,11 +37,12 @@
 //      big one, after a cursor), a subtree page, `keysUnder`, `namesUnder`,
 //      `hasChild` of a group and of a person, `byName`, `withNames` and
 //      `byAttribute` under a parent, an `rdnPage` (plain, after a cursor,
-//      and with a needle) and a `containerPage` (the first page and an
-//      offset) —
+//      and with a needle), a `containerPage` (the first page and an
+//      offset) and a needle's capped `rdnCount` (#1308) —
 //      no sequential scan, no primary key or realm index on the table; the
 //      restore's and the pages' rows through the parent index, and an
-//      `rdnPage` through `sts_ldap_entries_rdn`.
+//      `rdnPage` through `sts_ldap_entries_rdn`. A two-character needle's
+//      count may scan the table, which here is the parent (#1310).
 //   D. THE UPGRADE: the driver's step run as written; `n_distinct` is
 //      100,000, the probe no longer owes it, and every statement of C — and
 //      #638's old restore, which the override alone puts right — reads the
@@ -49,6 +50,13 @@
 //   E. A RESIDENT CONTAINER LARGER THAN A PAGE, written after the ANALYZE
 //      (as an import leaves it): the restore answers #638's old statement's
 //      rows, in its order, and its buffers follow the rows it answers.
+//   F. A SELECTIVE NEEDLE IS AN INDEX PROBE (#1310): in A, which needles
+//      and pages take the trigram statements; in C and D, a selective
+//      needle's count, and its page when the count says its matches are
+//      few, read `sts_ldap_entries_uid_trgm`, and a page with many matches
+//      still walks the rdn index; in F, run, the count and the page answer
+//      what #1308's `position()` statements answer, in a small fraction of
+//      their buffers.
 // ===========================================================================
 
 const postgres = require('../persistence/persistence_postgres');
@@ -142,12 +150,15 @@ function nodesOf(plan, out) {
   return list;
 }
 
-// The scans of `sts_ldap_entries` in a plan, `Node Type:Index Name`.
+// The scans of `sts_ldap_entries` in a plan, `Node Type:Index Name`: the
+// table's nodes and the index nodes under them (a bitmap index scan names
+// no relation, only its index, #1310).
 function scansOf(plan) {
   log.debug("Entering scansOf().");
   log.debug("Leaving scansOf().");
   return nodesOf(plan).filter(function (node) {
-    return node['Relation Name'] === 'sts_ldap_entries';
+    return node['Relation Name'] === 'sts_ldap_entries' ||
+      /^sts_ldap_entries/.test(String(node['Index Name'] || ''));
   }).map(function (node) {
     return node['Node Type'] + ':' + (node['Index Name'] || '');
   });
@@ -191,6 +202,47 @@ function theStep(t) {
           step.when);
   t.check(postgres.SCHEMA_VERSION >= 20,
           'A5. schema version 20 or later (20 set n_distinct)');
+  // #1310, which needles the trigram statements are asked for.
+  t.check(queries.needleIndexed(USERS, 'u29') &&
+          queries.needleIndexed(USERS, 'a.b12c') &&
+          !queries.needleIndexed(USERS, 'u5') &&
+          !queries.needleIndexed(USERS, 'a.b.c') &&
+          !queries.needleIndexed(USERS, '\u00e9\u00e8\u00e0') &&
+          !queries.needleIndexed(GROUPS, 'u29'),
+          'A6. the trigram statements are asked under ou=users for a ' +
+          'needle with three ASCII letters or digits in a row, and for no ' +
+          'other (#1310)');
+  const count = queries.rdnCount('default', USERS, 'U29%_\\');
+  t.check(/^WITH m AS MATERIALIZED \(SELECT 1 AS one FROM sts_ldap_entries/
+            .test(count.text) &&
+          count.text.indexOf(queries.USERS_PARENT + ' AND rdn_value LIKE ' +
+                             '$3 ESCAPE \'\\\')') > 0 &&
+          /FROM m LIMIT \$4\) AS matched$/.test(count.text) &&
+          count.values[2] === '%u29\\%\\_\\\\%' &&
+          count.values[3] === queries.RDN_COUNT_CAP + 1,
+          'A7. such a count is fenced, repeats the index\'s condition, ' +
+          'escapes the needle\'s wildcards and keeps #1308\'s cap',
+          JSON.stringify(count));
+  const few = queries.rdnPage('default', USERS, '', 100,
+                              { needle: 'u29', offset: 20, matched: 40,
+                                total: 1000 });
+  t.check(/ORDER BY rdn_value, dn_key LIMIT \$5 OFFSET \$6$/
+            .test(few.text) && /LIKE \$4 ESCAPE/.test(few.text) &&
+          few.values[4] === 100 && few.values[5] === 20,
+          'A8. a page whose matches are few is read by them, sorted, the ' +
+          'offset kept', JSON.stringify(few));
+  const walked = function (o) {
+    return /WITH RECURSIVE walk/.test(queries.rdnPage('default', USERS, '',
+      100, Object.assign({ needle: 'u29', offset: 0 }, o)).text);
+  };
+  t.check(walked({}) && walked({ matched: 1000, total: 1000 }) &&
+          walked({ matched: 40, total: 1000, countCapped: true }) &&
+          walked({ matched: queries.RDN_COUNT_CAP + 1, total: 1e12 }) &&
+          !walked({ matched: 0, total: 0 }) &&
+          !walked({ matched: 316, total: 1000 }) &&
+          walked({ matched: 317, total: 1000 }),
+          'A9. and a page without a count, with many matches or with a ' +
+          'capped count is walked: matched squared against walk times total');
   log.debug("Leaving theStep().");
 }
 
@@ -227,14 +279,38 @@ function statementsToPlan() {
     ['byAttribute under ou=devices',
      queries.byAttribute('default', 'stsdeviceid', 'x', 10, DEVICES), false],
     // #359. The rdn index has no dn_key, so these must not be asked to
-    // read the parent index. `rdnCount` is a count, not a walk, and is
-    // not planned here.
+    // read the parent index. `rdnCount` is a count, not a walk: since
+    // #1308 it is capped by a LIMIT, which lets a planner prefer a scan
+    // that finds the first rows soonest, so it is held to the rule every
+    // statement here is — no sequential scan, no primary key — and to no
+    // particular index.
+    // A needle of two characters has no trigram, so its count reads the
+    // parent's children (#1310): here they are all but forty rows of the
+    // table, and a sequential scan IS that read — the realm's other
+    // indexes and the primary key are still refused.
+    ['rdnCount containing a needle, capped',
+     queries.rdnCount('default', USERS, 'u5'), 'children'],
     ['rdnPage of the big container',
      queries.rdnPage('default', USERS, '', 1000), 'rdn'],
     ['rdnPage after a cursor',
      queries.rdnPage('default', USERS, 'u500', 1000), 'rdn'],
     ['rdnPage containing a needle',
      queries.rdnPage('default', USERS, '', 100, { needle: 'u5' }), 'rdn'],
+    // #1310: a needle of three digits or more is asked of the trigram
+    // index. `u29999` is eleven people of PEOPLE; `u10` about one in
+    // twenty-seven, too many for its page to be read by its matches.
+    ['rdnCount, a selective needle',
+     queries.rdnCount('default', USERS, 'u29999'), 'trgm'],
+    ['rdnPage, a selective needle read by its matches',
+     queries.rdnPage('default', USERS, '', 100,
+                     { needle: 'u29999', matched: 11, total: PEOPLE }),
+     'trgm'],
+    ['rdnCount, a broad needle of three characters',
+     queries.rdnCount('default', USERS, 'u10'), false],
+    ['rdnPage, a broad needle, walked',
+     queries.rdnPage('default', USERS, '', 100,
+                     { needle: 'u10', matched: Math.floor(PEOPLE / 27),
+                       total: PEOPLE }), 'rdn'],
     ['containerPage, the first page',
      queries.containerPage('default', DEVICES, 0, 1000), true],
     ['containerPage, an offset',
@@ -250,9 +326,14 @@ async function planAll(t, db, label) {
     const e = await db.query('EXPLAIN (FORMAT JSON) ' + one[1].text,
                              one[1].values);
     const scans = scansOf(e.rows[0]['QUERY PLAN'][0].Plan);
-    t.check(scans.length > 0 && wholeRealmScans(scans).length === 0,
-            label + '. ' + one[0] + ': no sequential scan, no primary key ' +
-            'or realm index on the table', scans.join(', '));
+    const refused = wholeRealmScans(scans).filter(function (scan) {
+      return one[2] !== 'children' || !/^Seq Scan/.test(scan);
+    });
+    t.check(scans.length > 0 && refused.length === 0,
+            label + '. ' + one[0] + (one[2] === 'children'
+              ? ': no primary key or realm index on the table'
+              : ': no sequential scan, no primary key or realm index on ' +
+                'the table'), scans.join(', '));
     if (one[2] === true) {
       t.check(scans.indexOf('Index Scan:sts_ldap_entries_parent') >= 0,
               label + '. ' + one[0] + ': the rows through the parent index',
@@ -260,6 +341,13 @@ async function planAll(t, db, label) {
     } else if (one[2] === 'rdn') {
       t.check(scans.indexOf('Index Scan:sts_ldap_entries_rdn') >= 0,
               label + '. ' + one[0] + ': the rows through the rdn index',
+              scans.join(', '));
+    } else if (one[2] === 'trgm') {
+      t.check(scans.indexOf('Bitmap Index Scan:sts_ldap_entries_uid_trgm') >=
+              0 && scans.indexOf('Index Scan:sts_ldap_entries_rdn') < 0 &&
+              scans.indexOf('Index Only Scan:sts_ldap_entries_rdn') < 0,
+              label + '. ' + one[0] + ': the matches through the trigram ' +
+              'index, not a read of the children (#1310)',
               scans.join(', '));
     }
   }
@@ -305,7 +393,14 @@ async function realDatabase(t) {
   await db.connect();
   try {
     await db.query('CREATE SCHEMA ' + schema);
-    await db.query('SET search_path TO ' + schema);
+    // `sts_ldap_entries_uid_trgm`'s operator class is `pg_trgm`'s: made
+    // where the database's default path puts it, unless it is there
+    // already, and that schema kept on this test's path.
+    await db.query('CREATE EXTENSION IF NOT EXISTS pg_trgm');
+    const trgm = (await db.query('SELECT n.nspname AS s FROM pg_extension ' +
+      'x JOIN pg_namespace n ON n.oid = x.extnamespace WHERE x.extname = ' +
+      '\'pg_trgm\'')).rows[0].s;
+    await db.query('SET search_path TO ' + schema + ', "' + trgm + '"');
     // The table and EVERY index on it, so each is a plan the planner may
     // choose.
     for (const object of postgres.SCHEMA_OBJECTS) {
@@ -412,6 +507,9 @@ async function realDatabase(t) {
             'E2. and touched ' + buffers + ' buffers for ' + got.rows.length +
             ' rows beside ' + PEOPLE + ' people: a descent a row, not the ' +
             'realm', String(buffers));
+
+    t.log.info('=== F. a selective needle, run (#1310) ===');
+    await selectiveNeedle(t, db);
   } finally {
     await db.query('DROP SCHEMA ' + schema + ' CASCADE').catch(
       function (e) {
@@ -420,6 +518,60 @@ async function realDatabase(t) {
     await db.end();
   }
   log.debug("Leaving realDatabase().");
+}
+
+// The buffers a statement touched, and its rows.
+async function ranWith(db, statement) {
+  log.debug("Entering ranWith().");
+  const e = await db.query('EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ' +
+                           statement.text, statement.values);
+  const plan = e.rows[0]['QUERY PLAN'][0].Plan;
+  const rows = await db.query(statement.text, statement.values);
+  log.debug("Leaving ranWith().");
+  return { buffers: Number(plan['Shared Hit Blocks'] || 0) +
+                    Number(plan['Shared Read Blocks'] || 0),
+           rows: rows.rows };
+}
+
+// F: the selective needle's count and page, run, against #1308's
+// statements for the same needle — the count kept here as text, and the
+// page the walk the builder still sends when no count is given.
+async function selectiveNeedle(t, db) {
+  log.debug("Entering selectiveNeedle().");
+  const needle = 'u29999';
+  const oldCount = { text: 'SELECT count(*)::bigint AS n FROM (SELECT 1 ' +
+    'AS one FROM sts_ldap_entries WHERE realm = $1 AND parent_key = $2 AND ' +
+    'position($3 in rdn_value) > 0 LIMIT $4) AS matched',
+    values: ['default', USERS, needle, queries.RDN_COUNT_CAP + 1] };
+  const count = await ranWith(db, queries.rdnCount('default', USERS,
+                                                   needle));
+  const old = await ranWith(db, oldCount);
+  const n = Number(count.rows[0].n);
+  t.check(n === Number(old.rows[0].n) && n > 5,
+          'F1. the count answers what #1308\'s statement answers (' + n +
+          ')', n + ' vs ' + old.rows[0].n);
+  t.check(count.buffers * 20 < old.buffers,
+          'F2. in ' + count.buffers + ' buffers to its ' + old.buffers +
+          ': the matches, not the ' + PEOPLE + ' children',
+          count.buffers + ' vs ' + old.buffers);
+  const page = await ranWith(db, queries.rdnPage('default', USERS, '', 5,
+    { needle: needle, offset: 3, matched: n, total: PEOPLE }));
+  const walkedPage = await ranWith(db, queries.rdnPage('default', USERS, '',
+    5, { needle: needle, offset: 3 }));
+  const rdns = function (rows) {
+    return rows.map(function (row) {
+      return row.rdn_value;
+    }).join(',');
+  };
+  t.check(page.rows.length === 5 &&
+          rdns(page.rows) === rdns(walkedPage.rows),
+          'F3. the page read by its matches is the walk\'s page, in its ' +
+          'order, the offset kept', rdns(page.rows) + ' vs ' +
+          rdns(walkedPage.rows));
+  t.check(page.buffers * 20 < walkedPage.buffers,
+          'F4. in ' + page.buffers + ' buffers to the walk\'s ' +
+          walkedPage.buffers, page.buffers + ' vs ' + walkedPage.buffers);
+  log.debug("Leaving selectiveNeedle().");
 }
 
 async function run(t) {
@@ -433,7 +585,8 @@ module.exports = {
   name: 'directory_parent_statistics',
   describe: 'the directory\'s statements planned when ANALYZE saw one ' +
             'parent (#639): every read by parent_key through the parent ' +
-            'index with and without schema version 20\'s n_distinct ' +
-            '(with a database)',
+            'index with and without schema version 20\'s n_distinct, and a ' +
+            'selective needle through the trigram index (#1310) (with a ' +
+            'database)',
   run: run
 };

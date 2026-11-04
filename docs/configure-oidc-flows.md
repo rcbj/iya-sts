@@ -541,8 +541,17 @@ If the client has registered return URIs, the request must match one exactly,
 in every mode. If it has registered none, development mode follows the
 return anyway, and product and OAuth 2.1 mode never do. A request that names
 no client is never redirected. If there is no `id_token_hint` whose `sid`
-matches the current session, the person sees a confirmation page first. A
-return that is refused still signs the person out.
+matches the current session, the person sees a confirmation page first. The
+page says why it asks: the request carried no `id_token_hint` (and, when the
+return address will not be followed, that the person will not be sent on to
+it), the hint was for another session, the `logout_hint` names somebody
+else, or the request arrived without the browser's sign-in cookie. A return
+that is refused still signs the person out. When the client registered
+return addresses and the request names another one (a query added to a
+registered one counts as another), the signed-out page shows a warning box
+next to the "signed out" one. It says the `post_logout_redirect_uri` is not
+one this client registered, so it was not followed, and names the address
+asked for and the registered ones.
 
 ## Front-Channel Logout
 
@@ -669,6 +678,13 @@ on that ladder (see [below](#phishing-resistant-sign-in-phr-and-phrh)).
 `acr_values_supported` in discovery lists them all. If the person cannot meet
 the requirement, the answer is `unmet_authentication_requirements` in every
 mode.
+
+A person who is already signed in and is sent to sign in again sees one line
+on the sign-in screen saying why. For `prompt=login` it reads "The
+application asked you to sign in again (prompt=login)." For a session older
+than `max_age` it reads "The application asked you to sign in again because
+your last sign-in is older than it allows (max_age)." A first sign-in shows
+no such line.
 
 Taken from `sts_step_up.js`.
 
@@ -838,6 +854,52 @@ POST /oauth2/register
  "grant_types":["authorization_code","refresh_token"],
  "response_types":["code"],"token_endpoint_auth_method":"client_secret_basic"}
 → 201 client_id, client_secret, registration_access_token, registration_client_uri
+```
+
+### What the sign-in and consent screens show about the client
+
+OpenID Connect Registration section 2 asks the server to show the person a
+client's logo, privacy policy and terms of service while they approve it. A
+registration's `logo_uri`, `policy_uri` and `tos_uri` are kept as the
+client's `oauthLogoUri`, `oauthPolicyUri` and `oauthTosUri`, returned in the
+registration response, and replaced by an RFC 7592 update (an update that
+leaves one out removes it). Each must be an absolute `https` URL with a host
+and no user name or password; anything else is refused with
+`invalid_client_metadata` (`STS-REG-0365`).
+
+For a client that has any of them, the sign-in screen, the steps after it
+(the second factors, the emailed code or link) and the consent screen show,
+at the top of the card:
+
+* the client's name (`client_name`);
+* its logo, with the name as the image's alternative text;
+* **Privacy policy** and **Terms of service** links, which open in a new tab.
+
+**Your browser loads the logo straight from the client's address; this
+service never fetches it.** The page's `Content-Security-Policy` adds exactly
+that one origin (scheme, host and port) to `img-src` for that page alone.
+A client without them shows none of this.
+
+```
+POST /oauth2/register
+{"client_name":"Endpoint Test Client","redirect_uris":["https://rp.example.com/callback"],
+ "logo_uri":"https://rp.example.com/logo.png",
+ "policy_uri":"https://rp.example.com/privacy",
+ "tos_uri":"https://rp.example.com/terms"}
+→ 201 … "logo_uri":"https://rp.example.com/logo.png", …
+
+GET /authn/login?authn=<id>
+→ 200, Content-Security-Policy: … img-src 'self' data: https://rp.example.com; …
+```
+
+**Console:** for a client you created yourself, set `oauthLogoUri`,
+`oauthPolicyUri` and `oauthTosUri` on its **Configuration** tab,
+**OAuth 2.0 / OpenID Connect** sub-tab, **Advanced view (every field)**, and
+click **Save OAuth 2.0 / OpenID Connect**. **API:**
+
+```bash
+api applications/set '{"application":"launch-rp",
+  "attribute":"oauthLogoUri","value":"https://rp.launch.example/logo.png"}'
 ```
 
 A registered client appears in the Applications list like any other, marked

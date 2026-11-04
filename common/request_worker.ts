@@ -1390,6 +1390,10 @@ class RequestWorker {
       }
       if (message && message.schedulerFence) {
         this.fenceSchedulerJob(message);
+        return;
+      }
+      if (message && message.schedulerRenew) {
+        this.renewSchedulerJob(message);
       }
     });
 
@@ -1441,10 +1445,11 @@ class RequestWorker {
   //
   // The leader — a front process — keeps the lease, the claim, the fence and
   // the time limit, and hands this worker `{ schedulerRun, runId, jobId,
-  // realm, trigger, params, clockOffsetMs }`; `cluster/scheduler.ts`'s
+  // realm, trigger, params, clockOffsetMs, deadlineMs, grantUntilMs }`
+  // (and `{ schedulerRenew }` while it runs, #1305); `cluster/scheduler.ts`'s
   // `runDelegated()` runs the job and this answers `{ schedulerRunDone,
-  // runId, ok, result | error, code }` (or `unknownJob`, which sends the job
-  // back to the front's thread).
+  // runId, ok, result | error, code, why }` (or `unknownJob`, which sends the
+  // job back to the front's thread).
   //
   // **THE COMMIT IS ANNOUNCED BEFORE THE ANSWER.** What the job wrote is
   // journalled like a request's write, but no request finished here to make
@@ -1521,7 +1526,8 @@ class RequestWorker {
 
   /**
    * Tells the job running `message.runId` here that it no longer owns its
-   * run: the leader timed it out, lost its lease or saw its realm removed.
+   * run: the leader timed it out, lost its lease, saw its realm removed or
+   * saw another attempt take the row over.
    *
    * @param message - `{ schedulerFence, runId }`
    */
@@ -1531,6 +1537,22 @@ class RequestWorker {
     require('../cluster/scheduler').fenceDelegated(String(message.runId ||
                                                           ''));
     log.debug("Leaving RequestWorker.fenceSchedulerJob().");
+  }
+
+  /**
+   * Renews the grant of the job running `message.runId` here (#1305): the
+   * leader still owns the run. Carries why its job was switched off, if it
+   * was, after which the job no longer owns the run either.
+   *
+   * @param message - `{ schedulerRenew, runId, untilMs, off }`
+   */
+  renewSchedulerJob(message: any): void {
+    const { log } = this.deps;
+    log.debug("Entering RequestWorker.renewSchedulerJob().");
+    require('../cluster/scheduler').renewDelegated(
+      String(message.runId || ''), Number(message.untilMs) || 0,
+      String(message.off || ''));
+    log.debug("Leaving RequestWorker.renewSchedulerJob().");
   }
 
   // A FULL GARBAGE COLLECTION OF THIS THREAD'S ISOLATE (#611), for

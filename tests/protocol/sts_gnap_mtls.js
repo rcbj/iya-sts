@@ -419,9 +419,13 @@ async function test() {
   const foreign = await foreignChain(dns);
   // Through the GATED door, the only one a product service opens, with the
   // management API token the job's preload attaches to every /admin-api call.
+  // Recorded before it is posted (#1307): an add applied but answered late
+  // is still removed when the job finishes.
+  credentials.recordAnchor(addedAnchors, foreign.caPem);
   await ok(h.api + "/tls/trust/add", { certificates: foreign.caPem },
            "installed the foreign authority as a client trust anchor");
-  addedAnchors.push(foreign.caPem);
+  // Its add answered 2xx, so a later "not held" is a node behind (#1307).
+  credentials.confirmAnchor(foreign.caPem);
   const foreignTls = { cert: foreign.pem + foreign.caPem,
                        key: foreign.keyPem };
   await register("pki-foreign", { oauthTlsClientAuthSanDns: dns });

@@ -170,6 +170,12 @@ variable "applications_max" {
   default     = 10000
 }
 
+variable "realms_max_count" {
+  description = "STS_REALMS_MAX_COUNT on every node (#368): deploy/aws/environment/variables.tf argues the value."
+  type        = number
+  default     = 100000
+}
+
 variable "extra_environment" {
   description = "More container environment for every node, laid over what this stack sets."
   type        = map(string)

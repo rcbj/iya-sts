@@ -791,6 +791,78 @@
     "en": "e0455f389b3cfb47",
     "text": "Låt en webbläsare hålla inloggningssessioner för flera personer samtidigt och välja mellan dem. På: när en annan person loggar in LÄGGS en session TILL i webbläsarens kontouppsättning (cookien `sts_accounts`) i stället för att den gamla avslutas; en begäran som inte säger vilket konto den gäller — inget konto valt i detta flöde, ingen login_hint, id_token_hint eller SAML Subject som namnger ett — medan fler än ett är inloggat skickas till kontoväljaren på /authn/accounts, och prompt=select_account visar den. Varje session behåller sin egen livslängd, inaktivitetsgräns, step-up-status och utloggning. På är standardvärdet. Av: webbläsaren har en session och en annan persons inloggning avslutar den. Träder i kraft vid nästa begäran åt båda hållen och avslutar ingenting: påslagen blir webbläsarens befintliga session det första kontot i dess uppsättning; avslagen fortsätter webbläsarens standardsession ensam och de andra löper ut som vanligt."
   },
+  "branding.layout|label": {
+    "en": "2bce09e5da84a651",
+    "text": "Inloggningens layout"
+  },
+  "branding.layout|description": {
+    "en": "0f84529af8e63ce7",
+    "text": "Hur inloggningsskärmen, dess steg, samtyckesskärmen och de andra offentliga sidorna är utformade i den här sfären. centered: kortet mitt på sidan, med logotypen och visningsnamnet ovanför (standardvärdet, det utseende tjänsten alltid har haft). split: en panel i accentfärgen med logotypen och visningsnamnet bredvid kortet, ovanför det på en smal skärm. banner: ett band i accentfärgen överst som bär dem, med kortet nedanför. Varje layout behåller formuläret, dess fält och deras ordning exakt som de är."
+  },
+  "branding.accentColor|label": {
+    "en": "12376f4cbd6c30b9",
+    "text": "Accentfärg"
+  },
+  "branding.accentColor|description": {
+    "en": "6a7806cbc4a60f44",
+    "text": "Färgen på knappar, länkar och fokusringar på den här sfärens offentliga sidor, och på split-panelen och bandet. Skrivs #rgb eller #rrggbb. Texten på en knapp är svart eller vit, beroende på vilken som läses bäst på den, så den ställs inte in separat. En färg vars länkar skulle hamna under kontrasten WCAG 2.2 AA (4.5:1) mot kortets färg avvisas (STS-AUTHN-0544)."
+  },
+  "branding.pageColor|label": {
+    "en": "d8f29ba7b8da917a",
+    "text": "Sidans bakgrundsfärg"
+  },
+  "branding.pageColor|description": {
+    "en": "e36337b16ae8eb93",
+    "text": "Bakgrunden bakom kortet på den här sfärens offentliga sidor. Skrivs #rgb eller #rrggbb."
+  },
+  "branding.cardColor|label": {
+    "en": "32fcd1507a366673",
+    "text": "Kortets färg"
+  },
+  "branding.cardColor|description": {
+    "en": "91c08312a7b2f249",
+    "text": "Bakgrunden på kortet som inloggningsformuläret ritas på. Skrivs #rgb eller #rrggbb. Textfärgen och accentfärgen måste var för sig behålla kontrasten WCAG 2.2 AA (4.5:1) mot den, annars avvisas ändringen (STS-AUTHN-0544)."
+  },
+  "branding.textColor|label": {
+    "en": "25e9c8090de7f831",
+    "text": "Textfärg"
+  },
+  "branding.textColor|description": {
+    "en": "86f81fcb12b03b41",
+    "text": "Färgen på texten på kortet. Skrivs #rgb eller #rrggbb. Den diskretare texten (anteckningar, tips) blandas fram ur den och kortets färg, aldrig under kontrasten WCAG 2.2 AA. En färg under 4.5:1 mot kortet avvisas (STS-AUTHN-0544)."
+  },
+  "branding.displayName|label": {
+    "en": "2b7f6a84de917e38",
+    "text": "Visningsnamn"
+  },
+  "branding.displayName|description": {
+    "en": "c7734d5c0723dde4",
+    "text": "Ett namn som visas bredvid logotypen på den här sfärens offentliga sidor och i webbläsarflikens titel (\"Sign in — <name>\"), som ren text, aldrig märkning, och inte översatt. Tomt visas inget namn och titeln är den sidan alltid har haft. Högst 80 tecken."
+  },
+  "branding.logoAlt|label": {
+    "en": "bb2a5f1e3e7d2fca",
+    "text": "Logotypens alternativtext"
+  },
+  "branding.logoAlt|description": {
+    "en": "4252cb4ab4a31ec4",
+    "text": "Det en skärmläsare läser i stället för den här sfärens logotyp, oftast organisationens namn. Krävs medan sfären har en logotyp: en logotyp kan inte laddas upp utan den, och den kan inte tömmas medan en logotyp finns kvar (STS-AUTHN-0548). Högst 160 tecken."
+  },
+  "branding.logoLinkUrl|label": {
+    "en": "78ddaed87c9eb98d",
+    "text": "Logotypens länk"
+  },
+  "branding.logoLinkUrl|description": {
+    "en": "3cd6daaebb2a7ea6",
+    "text": "Vart logotypen leder när den följs, en absolut https-URL (annars STS-AUTHN-0551). Tom är logotypen ingen länk, vilket är standardvärdet: en inloggningssida utan något att följa ut från är den säkrare."
+  },
+  "branding.logoMaxBytes|label": {
+    "en": "26a97375a1800d8b",
+    "text": "Största logotyp (byte)"
+  },
+  "branding.logoMaxBytes|description": {
+    "en": "37f4c903152cd219",
+    "text": "Den största logotyp en uppladdning får bära, för varje sfär. En större avvisas (STS-AUTHN-0546). Logotypen förvaras i lagret och replikeras till varje process, så den hålls liten: 256 KiB som standard, högst 2 MiB."
+  },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
     "text": "Flest konton som en webbläsare kommer ihåg"

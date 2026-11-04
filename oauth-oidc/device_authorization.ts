@@ -53,6 +53,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import realms = require('../common/realms');
+import loopSlices = require('../common/loop_slices');
 import clusterClaims = require('../cluster/cluster_claims');
 
 type Json = any;
@@ -364,31 +365,35 @@ class DeviceAuthorization {
    * Expires what nobody answered and drops what finished an hour ago. The
    * scheduler job's body.
    *
-   * @returns `{ summary }` for the scheduler
+   * In slices, a turn of the event loop between them (#704,
+   * `common/loop_slices.js`); the deletes follow the walk, as before.
+   *
+   * @returns a promise of `{ summary }` for the scheduler
    */
-  sweep(): Json {
+  async sweep(): Promise<Json> {
     const { log, now } = this.deps;
     log.debug("Entering DeviceAuthorization.sweep().");
     const gone: string[] = [];
     let expired = 0;
     const self = this;
-    codes.forEach(function (row: Json, key: string): void {
-      if (key.indexOf('d|') !== 0 || !row) {
-        return;
-      }
-      if (row.state === 'pending' && row.expiresAt <= now()) {
-        row.state = 'expired';
-        row.finishedAt = now();
-        self.save(row);
-        gone.push('u|' + row.userCodeKey);
-        expired++;
-      } else if (row.state !== 'pending' &&
-                 Number(row.finishedAt || row.redeemedAt || row.expiresAt) <
-                   now() - RETENTION_MS) {
-        gone.push(key);
-        gone.push('u|' + row.userCodeKey);
-      }
-    });
+    await loopSlices.walkInSlices(codes.realmMap(),
+      function (row: Json, key: string): void {
+        if (key.indexOf('d|') !== 0 || !row) {
+          return;
+        }
+        if (row.state === 'pending' && row.expiresAt <= now()) {
+          row.state = 'expired';
+          row.finishedAt = now();
+          self.save(row);
+          gone.push('u|' + row.userCodeKey);
+          expired++;
+        } else if (row.state !== 'pending' &&
+                   Number(row.finishedAt || row.redeemedAt ||
+                          row.expiresAt) < now() - RETENTION_MS) {
+          gone.push(key);
+          gone.push('u|' + row.userCodeKey);
+        }
+      });
     gone.forEach(function (key: string): void {
       codes.delete(key);
     });
@@ -419,7 +424,7 @@ class DeviceAuthorization {
         return 300000;
       },
       manual: true,
-      run: function (): Json {
+      run: function (): Promise<Json> {
         return self.sweep();
       }
     });

@@ -265,6 +265,11 @@ import mode = require('../common/mode');
 // What every person in the realm must hold (#396): a create is held to it
 // before the entry exists, and an update may not take one of them away.
 import attributePolicy = require('../common/attribute_policy');
+// THE REALM'S HALF OF THE SCHEMAS (#699): its custom attributes as an
+// extension whose members are the ambient realm's, and the policy's
+// required attributes on the documents /Schemas and /ResourceTypes answer.
+// A library that registers nothing; its header argues the design.
+import ScimRealmSchema = require('./scim_realm_schema');
 // WHICH CELL ANSWERS (#98): asked by handle() before the caller is
 // authenticated, and by the User ingress before a person is written. A
 // library that registers nothing; `scim_cells.ts` argues every operation.
@@ -331,6 +336,8 @@ interface ScimDeps {
   };
   // The console, for its reader slot only.
   adminConsole: { setScimReader?: Fn };
+  // The realm's custom attributes and required attributes (#699).
+  realmSchema: ScimRealmSchema;
 }
 
 // An express request as this module reads it, with the two members the gate
@@ -698,7 +705,8 @@ class Scim {
       fedLinks: fedLinks,
       parseBody: helpers.parseBody,
       errorCodes: errorCodes,
-      adminConsole: adminConsole
+      adminConsole: adminConsole,
+      realmSchema: new ScimRealmSchema(ScimRealmSchema.defaultDeps(SCIMMY))
     };
   }
 
@@ -1103,6 +1111,13 @@ class Scim {
   // than the count that was asked. A startIndex on the last result is
   // that one row, and ListResponse already sliced it. Users, Groups and
   // every .search leave through forTheWire(), so this is the one place.
+  //
+  // AND EVERY PAGE'S itemsPerPage IS WHAT IT RETURNED (rcbj on #695,
+  // 2026-11-04). scimmy echoes the `count` that was asked, so a short page
+  // inside the match — four names, count 10, startIndex 3 — said 10 while
+  // it carried two. RFC 7644 section 3.4.2 defines it as "the number of
+  // resources returned in a list response page"; it was pinned as the echo
+  // until then.
   // ---------------------------------------------------------------------------
   private emptyPagePastTheEnd(plain: any): void {
     const { log } = this.deps;
@@ -1115,6 +1130,9 @@ class Scim {
       plain.itemsPerPage = 0;
       log.debug("Leaving Scim.emptyPagePastTheEnd(). Past " + total + ".");
       return;
+    }
+    if (Array.isArray(plain.Resources) && plain.itemsPerPage !== undefined) {
+      plain.itemsPerPage = plain.Resources.length;
     }
     log.debug("Leaving Scim.emptyPagePastTheEnd().");
   }
@@ -1190,7 +1208,11 @@ class Scim {
     const { coded } = this;
     log.debug("Entering Scim.handle().");
     log.debug("Leaving Scim.handle().");
-    return (req, res) => {
+    // THE REALM'S REGISTER OF CUSTOM ATTRIBUTES IS READ ONCE PER REQUEST
+    // (#699): everything the request does, its continuations included, runs
+    // inside `inRequest()`. See `scim_realm_schema.ts`.
+    const realmSchema = this.deps.realmSchema;
+    const inner: ScimHandler = (req, res) => {
       log.debug("Entering the SCIM " + info.operation + " handler for " +
                 info.resourceType + ".");
       // WHEN THIS REQUEST STARTED, stamped here because this is the one place
@@ -1319,6 +1341,11 @@ class Scim {
           return res.headersSent ? undefined : authenticateAndRun();
         });
       log.debug("Leaving the SCIM handler (the answer is on its way).");
+    };
+    return (req, res) => {
+      return realmSchema.inRequest(function () {
+        return inner(req, res);
+      });
     };
   }
 
@@ -1942,6 +1969,42 @@ class Scim {
     return values;
   }
 
+  // The realm's custom values a User write asks for (#699), checked, or null
+  // where the write leaves them as they are. A value the person editor's
+  // check refuses is 400 invalidValue (`STS-SCIM-0087`), before anything is
+  // written. The verb is the RESOURCE's: a create has no id, and an update
+  // is a PATCH only when the request is one — a PUT or PATCH inside a
+  // BulkRequest arrives on a POST, and is read by the PUT rule, which
+  // leaves the values alone unless the resource carries them.
+  private customValuesFrom(data: any, resource: any, req: any): any {
+    const { log, SCIMMY, realmSchema, parseBody } = this.deps;
+    const { coded } = this;
+    log.debug("Entering Scim.customValuesFrom().");
+    const method = String((req && req.method) || '').toUpperCase();
+    const verb = !(resource && resource.id) ? 'POST'
+      : method === 'PATCH' ? 'PATCH' : 'PUT';
+    let raw: any = null;
+    if (verb === 'PUT' && method === 'PUT') {
+      try {
+        raw = parseBody(req);
+      } catch (e) {
+        log.debug("Caught in Scim.customValuesFrom(): " +
+                  ((e && e.message) || e));
+        // An unreadable body names nothing: the resource scimmy coerced is
+        // what is read.
+        raw = null;
+      }
+    }
+    const answer = realmSchema.fromScim(data, verb, raw);
+    if (answer && 'error' in answer) {
+      throw coded('STS-SCIM-0087', new SCIMMY.Types.Error(400,
+        'invalidValue', answer.error));
+    }
+    log.debug("Leaving Scim.customValuesFrom(). " +
+              (answer ? 'Said.' : 'Not said.'));
+    return answer;
+  }
+
   private userResourceFor(entry: any, req: ScimRequest): any {
     const { log, directory, scimMap } = this.deps;
     log.debug("Entering Scim.userResourceFor().");
@@ -1984,6 +2047,18 @@ class Scim {
       resource[scimMap.IYA_STS_USER_SCHEMA] = Object.assign(
         resource[scimMap.IYA_STS_USER_SCHEMA] || {},
         { federationLinks: links });
+    }
+    // THE REALM'S CUSTOM ATTRIBUTES (#699), only where the person holds one,
+    // and in the NAMESPACED form `scim_map.ts`'s egressPath() writes for the
+    // enterprise members: the filter matcher below finds an extension member
+    // only there (an object-form member matched nobody), and scimmy's
+    // coercion folds it into the object form on the wire. Never both forms:
+    // the coercion would concatenate a multi-valued member's two copies.
+    const custom = this.deps.realmSchema.toScim(attributes);
+    if (custom) {
+      Object.keys(custom).forEach(function (name) {
+        resource[ScimRealmSchema.CUSTOM_SCHEMA + ':' + name] = custom[name];
+      });
     }
     // The manager as a SCIM id, where the directory holds the DN (2026-09-14).
     //
@@ -2195,7 +2270,8 @@ class Scim {
    * make the directory their store. Called once, when the instance is wired.
    */
   declareResources(): void {
-    const { log, directory, scimMap, errorCodes, SCIMMY } = this.deps;
+    const { log, directory, scimMap, errorCodes, SCIMMY,
+            realmSchema } = this.deps;
     const { coded } = this;
     log.debug("Entering Scim.declareResources().");
     this.narrowSchemas();
@@ -2219,6 +2295,11 @@ class Scim {
       // extension's reason: an attribute scimmy's definition does not know is
       // dropped by its coercion. One member, `federationLinks`.
       .extend(this.iyaStsUserExtension())
+      // AND THE REALM'S CUSTOM ATTRIBUTES (#699): one extension for the
+      // process whose members are the ambient realm's. Not required as
+      // declared; /ResourceTypes says it is where the realm requires one of
+      // them (`scim_realm_schema.ts`).
+      .extend(this.deps.realmSchema.extension())
       .egress((resource, ctx) => {
         log.debug("Entering the SCIM User egress handler. id=" +
                   (resource.id || '(a list)'));
@@ -2312,6 +2393,12 @@ class Scim {
         // where the resource does not say `federationLinks`, which leaves the
         // entry's links as they are.
         const linkValues = this.federationLinksFrom(data, existing, req);
+        // THE REALM'S CUSTOM ATTRIBUTES (#699), checked here for the same
+        // reason: a refused value leaves nobody behind. null where the
+        // resource leaves them as they are (`scim_realm_schema.ts` says when).
+        // The verb is the resource's, not the request's: inside a
+        // BulkRequest every operation arrives on a POST.
+        const customValues = this.customValuesFrom(data, resource, req);
 
         // ---------------------------------------------------------------------
         // A CREATE GOES THROUGH `createUser()`, WHICH IS THE DIRECTORY'S OWN
@@ -2382,6 +2469,9 @@ class Scim {
           if (!preview.errors.length) {
             const prospective = Object.assign({ uid: [userName] },
                                               preview.attributes);
+            if (customValues) {
+              realmSchema.applyTo(prospective, customValues);
+            }
             attributePolicy.deriveCommonName(prospective);
             // WHOSE PROFILE (#1241): the newcomer's — the uid's groups
             // (any already listing the DN they will have) and their own
@@ -2463,6 +2553,9 @@ class Scim {
           throw coded('STS-SCIM-0010',
             new SCIMMY.Types.Error(400, 'invalidValue',
                                    converted.errors.join(' ')));
+        }
+        if (customValues) {
+          realmSchema.applyTo(converted.attributes, customValues);
         }
         // A `cn` FROM THE NAMES where the resource gives no displayName
         // (#396), as every other door does; and on an update, no required
@@ -3343,9 +3436,11 @@ class Scim {
       async (req, res) => {
         const list = await new SCIMMY.Resources.ResourceType(
             this.queryParams(req)).read();
+        // The custom-attribute extension REQUIRED where the realm requires
+        // one of its attributes (#699).
         this.sendScim(req, res,
                       { operation: 'discovery', resourceType: 'ResourceType' },
-                      200, list);
+                      200, this.deps.realmSchema.publishResourceTypes(list));
       }));
 
     app.get(BASE + '/ResourceTypes/:id', this.handle(
@@ -3355,7 +3450,7 @@ class Scim {
             String(req.params.id)).read();
         this.sendScim(req, res,
                       { operation: 'discovery', resourceType: 'ResourceType' },
-                      200, one);
+                      200, this.deps.realmSchema.publishResourceTypes(one));
       }));
 
     app.get(BASE + '/Schemas', this.handle(
@@ -3363,9 +3458,12 @@ class Scim {
       async (req, res) => {
         const list =
           await new SCIMMY.Resources.Schema(this.queryParams(req)).read();
+        // `required` FROM THE REALM'S ATTRIBUTE POLICY (#699, RFC 7643
+        // section 7), on a copy of what scimmy drew: its definitions are the
+        // process's, and it would enforce a `required` on the way out too.
         this.sendScim(req, res,
                       { operation: 'discovery', resourceType: 'Schema' }, 200,
-                      list);
+                      this.deps.realmSchema.publishSchemas(list));
       }));
 
     app.get(BASE + '/Schemas/:id', this.handle(
@@ -3375,7 +3473,7 @@ class Scim {
           await new SCIMMY.Resources.Schema(String(req.params.id)).read();
         this.sendScim(req, res,
                       { operation: 'discovery', resourceType: 'Schema' }, 200,
-                      one);
+                      this.deps.realmSchema.publishSchemas(one));
       }));
 
     app.get(BASE + '/Me', this.handle(

@@ -315,6 +315,10 @@
     "en": "e647419ca1d6ef3f",
     "text": "May message template ng isang realm na na-save o na-reset"
   },
+  "audit.actions.branding.logo.label": {
+    "en": "66180a1e9a6ade1e",
+    "text": "Na-upload o inalis ang sign-in na logo ng isang realm"
+  },
   "audit.actions.mail.verified.label": {
     "en": "3b2f440c71a1db39",
     "text": "May taong nag-verify ng address sa kanyang entry"

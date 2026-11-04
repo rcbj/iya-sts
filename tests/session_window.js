@@ -30,7 +30,6 @@ const minted = require('../persistence/persistence_minted');
 const tiers = require('../persistence/tiers');
 const authn = require('../authn/authn');
 const sessionWindow = require('../authn/session_window');
-const scheduler = require('../cluster/scheduler');
 
 const log = require('bunyan').createLogger({ name: 'session_window',
   level: process.env.LOG_LEVEL || 'info' });
@@ -268,20 +267,14 @@ function cacheEntries(n) {
 // The window is restart-only, so a test sets the process environment
 // rather than a runtime override. Cache size and the read timeout stay
 // overridable; they are still the process value.
+// The sweep's SYNCHRONOUS form, which these sections need: each runs
+// inside setting overrides cleared as its callback returns. The job runs
+// the sliced form since #704 (`sweepExpiredSessionsInSlices()`), which makes
+// the same decisions through the same `expireSession()`; `scheduler_jobs`
+// and `job_slices` drive that one through the job.
 function runSweep() {
   log.debug("Entering runSweep().");
-  const job = scheduler.job('authn.session-expiry');
-  const result = job.run({
-    realm: REALM, runId: 'window-shed', trigger: 'manual',
-    params: null,
-    stillOwner: function () {
-      return true;
-    },
-    nowMs: function () {
-      return Date.now();
-    },
-    log: log
-  });
+  const result = { ended: authn.sweepExpiredSessions() };
   log.debug("Leaving runSweep().");
   return result;
 }
@@ -657,6 +650,91 @@ function parentCase(t) {
   t.equal(audits('session.end', child.id).length, 0,
           'the child has no session.end row');
   log.debug("Leaving parentCase().");
+}
+
+// A FAILED READ IN noteSessionChanged() REVIVES NOTHING (#695, from #350).
+// Until #695 a read error re-set the caller's whole session into the realm
+// map, so an ended session came back here until it was evicted. Now only
+// `backsConsole` is merged, and only onto a row this process holds.
+function noteChangedCase(t) {
+  log.debug("Entering noteChangedCase().");
+  t.log.info('on: a failed read in noteSessionChanged revives nothing');
+  freshWindow();
+  // An ENDED session: held once, then deleted, as a sign-out does. The
+  // caller still has its object, edited in place. The window remembers the
+  // delete as an absence for a minute; past that (a fresh window here) its
+  // read asks the store, and the store is failing.
+  const ended = sessionBody('noted-ended', { backsConsole: false });
+  authn.sessions.set(ended.id, ended);
+  authn.sessions.delete(ended.id);
+  freshWindow();
+  queryFn = function (name) {
+    if (name === 'session.read') {
+      throw new Error('note unread');
+    }
+    return emptyAnswer(name);
+  };
+  ended.backsConsole = true;
+  ended.saml2ServiceProviders = ['https://sp.session-window.test'];
+  const read = sessionWindow.get(REALM, ended.id);
+  t.check(!read.ok && read.error === true,
+          'the premise: the window\'s read of it fails');
+  t.equal(authn.noteSessionChanged(ended), false,
+          'noteSessionChanged of an ended session reports nothing set');
+  t.equal(authn.sessions.get(ended.id), undefined,
+          'and the ended session is not back in the realm map');
+  t.equal(sessionWindow.slotState(REALM, ended.id).cached, false,
+          'nor in the window');
+  // An ABSENT one, never held here at all.
+  const absent = sessionBody('noted-absent', { backsConsole: true });
+  t.equal(authn.noteSessionChanged(absent), false,
+          'a session held nowhere is not created');
+  t.equal(authn.sessions.get(absent.id), undefined,
+          'and nothing is in the realm map for it');
+
+  // A HELD row. The real window reads the realm map before the store, so a
+  // failed read never coexists with a held row today; a stubbed read
+  // reaches the merge that guards a window which ever reads otherwise.
+  const held = sessionBody('noted-held', { backsConsole: false });
+  authn.sessions.set(held.id, held);
+  const realGet = sessionWindow.get;
+  const ownGet = Object.prototype.hasOwnProperty.call(sessionWindow, 'get');
+  sessionWindow.get = function () {
+    return { ok: false, error: true };
+  };
+  try {
+    const plain = sessionBody('noted-held', { backsConsole: false,
+                                              via: 'the caller' });
+    t.equal(authn.noteSessionChanged(plain), false,
+            'with no backsConsole to merge nothing is set');
+    t.equal(authn.sessions.get(held.id).via, 'Test',
+            'and the held row is unchanged');
+    const copy = sessionBody('noted-held', {
+      backsConsole: true,
+      via: 'the caller',
+      saml2ServiceProviders: ['https://sp.session-window.test']
+    });
+    t.equal(authn.noteSessionChanged(copy), true,
+            'backsConsole is merged onto the held row');
+    const now = authn.sessions.get(held.id);
+    t.check(now === held, 'the held object stays; the caller\'s copy is ' +
+            'not set in its place');
+    t.equal(now.backsConsole, true, 'and it backs the console');
+    t.equal(now.via, 'Test', 'nothing else of the caller\'s copy is merged');
+    t.equal(now.saml2ServiceProviders, undefined,
+            'not even a relying-party list');
+  } finally {
+    if (ownGet) {
+      sessionWindow.get = realGet;
+    } else {
+      delete sessionWindow.get;
+    }
+    authn.sessions.delete(held.id);
+  }
+  t.check(typeof sessionWindow.get === 'function',
+          'the window\'s own read is back');
+  freshWindow();
+  log.debug("Leaving noteChangedCase().");
 }
 
 async function dropErrorCase(t) {
@@ -1227,6 +1305,7 @@ async function onHalf(t) {
   await warmCase(t);
   middlewareCase(t);
   parentCase(t);
+  noteChangedCase(t);
   await dropErrorCase(t);
   cascadeCase(t);
   await tombstoneCase(t);

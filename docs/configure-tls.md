@@ -520,7 +520,9 @@ api config/set '{"key":"http.http2","value":false}'          # every listener
 api config/set '{"key":"listenerMain.http2","value":"on"}'   # but the main port keeps it
 ```
 
-A custom listener takes `"tls": {"http2": "off"}` in its definition. To check
+A custom listener takes `"tls": {"http2": "off"}` in its definition
+(`"on"`, `"true"` and `"false"`, or the JSON `true` and `false`, work as
+well; `tests/main_port_http2.js` section 11). To check
 what a connection negotiated:
 
 ```bash
@@ -528,7 +530,15 @@ curl -s --cacert sts-chain.pem --http2 -o /dev/null -w '%{http_version}\n' "$BAS
 ```
 
 `2` is HTTP/2; `1.1` is HTTP/1.1. One HTTP/2 connection may have at most
-`http.http2MaxConcurrentStreams` (100) requests open at once.
+`http.http2MaxConcurrentStreams` (100) requests open at once. Each TLS
+listener's tab on **Server configuration → Listeners** shows that cap beside
+**HTTP/2 offered**, and `GET /admin-api/listeners` answers it as each
+listener's `http.http2MaxConcurrentStreams` (`tests/main_port_http2.js` section
+15).
+
+A `CONNECT` request is answered `501 Not Implemented` over either protocol:
+this service is not a proxy (section 13). `OPTIONS *` is answered `204` by
+the process that holds the listener, never by a request worker (section 14).
 
 ## Move the console and the API to a listener of their own
 

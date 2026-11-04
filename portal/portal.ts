@@ -279,6 +279,11 @@ class Portal {
                    ['data-sts-authn', there.authn || '']],
       viewport: 'width=device-width,initial-scale=1',
       stylesheets: [BASE + '/portal.css'],
+      // THE REALM'S SIGN-IN APPEARANCE (#717, rcbj's D4): the portal's
+      // stylesheet is its own rather than the card's, so it says so —
+      // the realm's `/web/theme.css` after it and the brand facts on
+      // `<html>`, and nothing at all for a realm that set nothing.
+      branded: true,
       script: BASE + '/portal.js',
       open: '<div class="wrap"><div class="card"><h1>Your account</h1>',
       close: '</div></div>',

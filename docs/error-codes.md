@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5183** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5216** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -49,21 +49,21 @@ is an ordinary outcome.
 
 ## Contents
 
-* [HTTP front door (`STS-HTTP`)](#sts-http) — 19
+* [HTTP front door (`STS-HTTP`)](#sts-http) — 20
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 95
+* [Service core (`STS-CORE`)](#sts-core) — 96
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 98
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 105
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
-* [Scheduler (`STS-SCHED`)](#sts-sched) — 20
+* [Scheduler (`STS-SCHED`)](#sts-sched) — 21
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 154
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 212
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 214
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 421
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 429
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 747
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
@@ -71,12 +71,12 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 195
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 254
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 158
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 163
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 81
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 82
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 152
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
@@ -93,11 +93,11 @@ is an ordinary outcome.
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 258
 * [Management API (`STS-API`)](#sts-api) — 88
-* [User portal (`STS-PORTAL`)](#sts-portal) — 110
+* [User portal (`STS-PORTAL`)](#sts-portal) — 114
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 182
+* [Registries (`STS-REG`)](#sts-reg) — 184
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 * [Reporting (`STS-REPORT`)](#sts-report) — 54
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 14
@@ -129,6 +129,7 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 | `STS-HTTP-0022` | A cross-origin request named a client whose appCorsOrigin does not list the request's origin, so its answer carried no Access-Control-Allow-Origin. | none — the endpoint answers; the browser withholds the answer from the page |
 | `STS-HTTP-0023` | A value of global.corsOrigins is not an origin, and was ignored rather than widened. | — |
 | `STS-HTTP-0024` | An HTTP/2 request carried both :authority and a Host header naming different hosts, which makes it malformed (RFC 9113 section 8.3.1); it was refused before any endpoint saw it. | HTTP 400 text/plain |
+| `STS-HTTP-0025` | A CONNECT request reached one of this service's HTTP listeners. This service is an origin server, not a proxy, and implements no CONNECT, so it was answered 501 before any endpoint saw it. The first is logged, and the rest are counted into one line a minute at most. | HTTP 501 text/plain (HTTP/2, or HTTP/1.1 with the connection closed) |
 
 ## STS-PROXY
 
@@ -251,6 +252,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0161` | A trust realm was not created because this cluster already holds realms.maxCount of them, the default realm included (#368). A realm read back from the store or another process is not refused for this, so a restart of a registry that is already over the cap still comes up. Lowering the cap does not remove realms. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0162` | realms.maxCount was set or cleared while a trust realm other than the default was ambient (#368). The limit is process-wide and only a service administrator in the default realm may change it. The other realms.* settings stay settable process-wide from inside a realm. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0163` | Another process claimed a trust realm's signer-group keys (keys.signerModel hybrid-groups) and they did not arrive within the wait, so this process made them itself; the cluster may hold two sets until one is replaced. | none — logged; group signatures go on |
+| `STS-CORE-0164` | The build stamp (common/version.js --stamp, or xacml-pep --stamp) was refused: STS_RELEASE=true marks a release build, which must name its BUILD_NUMBER as a non-negative integer with no leading zero, and it did not — or STS_RELEASE was neither true nor false. Nothing is written and the image build fails. | none — the image build exits non-zero |
 
 ## STS-WORKER
 
@@ -374,7 +376,7 @@ Raised from: persistence/.
 | `STS-STORE-0052` | A directory entry this process added was already in the store as a DIFFERENT entry another node created first; the stored entry was kept and this process's copy replaced by it. | none — logged |
 | `STS-STORE-0053` | A change to a directory entry was not written because another node deleted the entry after this process last saw it; the entry was removed here too. | none — logged |
 | `STS-STORE-0054` | A minted row (a session, a code, a token) was not written back because another node had already ended it and the store holds its tombstone; this process's copy was dropped. | none — logged |
-| `STS-STORE-0055` | Expired tombstones of ended minted rows could not be swept from the store. | none — logged |
+| `STS-STORE-0055` | Expired tombstones of ended minted rows could not be swept from the store (in a service deployed as cells, this cell's own database: the global tier's sweep is STS-STORE-0165, #1313). | none — logged |
 | `STS-STORE-0056` | A minted row another node had changed could not be merged with this process's copy (it would not open or the merge threw), so this process's copy was written as it was. | none — logged |
 | `STS-STORE-0057` | A process found its place among the change log's readers removed since it last reported: it had been declared gone, so changes it had not applied may have been trimmed. It should be restarted. | — |
 | `STS-STORE-0058` | A process could not report its position in the change log; the log is not trimmed past where it last said it was, and the report is retried after the next pull. | — |
@@ -418,6 +420,13 @@ Raised from: persistence/.
 | `STS-STORE-0140` | A directory flush was refused on MariaDB before it wrote: an entry's DN key is longer than the 352 characters `dn_key` holds (or its realm than 64), which InnoDB's key limit fixes; nothing of the flush was written. | — |
 | `STS-STORE-0141` | A directory write on MariaDB found one of the count rows it folds into gone between making it and adding to it (its realm was removed meanwhile); the write was rolled back rather than counted into nothing. | — |
 | `STS-STORE-0160` | A risk row was refused on MariaDB because a value is not what its column holds (an address that is not one, a number that is not an integer); the batch is refused whole rather than stored with a substitute. | — |
+| `STS-STORE-0161` | The one-time session index backfill skipped a stored sign-on session whose sealed body will not open, will not parse or yields no index columns; the walk finishes and writes its completion mark, that session is lost and its person signs in again. The last line gives the count. | — |
+| `STS-STORE-0162` | The persistence.minted-expiry-purge-global job, run by the one cell holding the global run claim, could not delete the global tier's expired, orphaned or stale minted rows (#695); the cell tier's purge is a job of its own and is not affected, a start skips the rows anyway, and the next run tries again. | none — logged, and the job run is recorded as failed |
+| `STS-STORE-0163` | The one-time session index backfill found stored sign-on sessions and could read NOT ONE of them (#1312): the key-encryption or data key this process holds is almost certainly not the store's. The completion mark is not written and the start fails, so the next start with the right key walks again; a backfill that reads some and skips others still finishes (STS-STORE-0161). | — |
+| `STS-STORE-0164` | In a service deployed as cells, the minted expiry purge could not read the global realm registry, so it skips its orphan check and deletes no row as an orphan (#1313); its expired and stale rows are still purged and the run is recorded as succeeded, saying why. Logged once when the skipping starts, and a line says when the check is made again. | none — logged once per outage; the run succeeds with a why |
+| `STS-STORE-0165` | The persistence.tombstone-purge-global job, run by the one cell holding the global run claim, could not sweep the global tier's expired tombstones of ended minted rows (#1313); the cell tier's sweep is a job of its own (STS-STORE-0055) and is not affected, and the next run tries again. | none — logged, and the job run is recorded as failed |
+| `STS-STORE-0166` | A run of the persistence.granting-key-backfill job, which gives the directory entries written before #1306 their grantinggroup index keys, stopped on a store error (#1311); the pages it finished are kept, and the next run resumes after the last one. | none — logged; federated provisioning's store question still misses the entries not yet reached |
+| `STS-STORE-0167` | The grantinggroup key backfill (#1311) skipped a directory entry whose sealed attributes do not open in this process, even after the data-key rows were read again; the walk finishes and writes its mark, and the entry is keyed when it is next written. The first few are named, then a count per run. | — |
 
 ## STS-CLUSTER
 
@@ -585,6 +594,7 @@ Raised from: cluster/scheduler.ts, admin-ui/scheduler_admin.ts.
 | `STS-SCHED-0018` | A run of a realm job was not started, or its outcome not written, because its trust realm was removed; nothing is run for a removed realm, and nothing is written back into it. | — |
 | `STS-SCHED-0019` | A cluster run handed to a request worker (#408) failed because that worker ended, or could not be reached, before it answered; the run is recorded failed, its claim lapses, and the next slot runs again. | — |
 | `STS-SCHED-0020` | A cluster job is not registered in the request worker its run was handed to (#408), so it ran on the front process's thread, and every later run of it in this process does too; register it at its owner's load, or give it an onFront reason. | — |
+| `STS-SCHED-0021` | A cluster run's body on a request worker stopped owning its run because the leader had not renewed its grant in time (#1305): the leader's thread did not run, or its renewals did not arrive. The body stops at its next step; the leader, or the attempt that takes the run over, decides the run. | — |
 
 ## STS-KEYS
 
@@ -969,6 +979,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0223` | A person already holds pki.personSigningKeyMax valid RFC 7523 (or RFC 7522) signing key pairs, so another was not issued or uploaded (#1290). | the caller's refusal: /account-api/signing-key HTTP 400, a console refusal banner, /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0224` | A signing key pair revocation named a kid, thumbprint or serial the person holds no key pair of that profile under (#1290). | the caller's refusal: /account-api/signing-key HTTP 400, a console refusal banner, /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0225` | A signing key pair was asked for with a label that is not a short name (at most 40 letters, digits, spaces, dots, dashes, underscores and brackets) (#1290). | the caller's refusal: /account-api/signing-key HTTP 400, a console refusal banner, /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0226` | A realm's signing keys were made before its certificate authority branch, and the branch could not be built or adopted when they were to be certified, so they stay uncertified and a token whose use case asks for x5c or x5u carries none. | none — the keys still sign; the header is left off |
+| `STS-PKI-0227` | A token whose use case asks for x5c or x5u was signed with a key this realm has not certified, after the issuer read the store and asked for the certificate, so it carries no x5c or x5u (an OpenID4VCI credential a wallet cannot verify offline). | none — the token is issued without the header |
 
 ## STS-ENROLL
 
@@ -1639,6 +1651,14 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0541` | A named authentication policy was not saved: its precedence is not a whole number from 1 to 1000 (#1237). | none (a console or management API refusal, HTTP 400) |
 | `STS-AUTHN-0542` | An application (appPostLoginPolicy) or a group (stsPostLoginPolicy) names a post-login activity policy that this realm does not hold — written past the console, or the policy was deleted by hand — so that reference selects nothing (the default post-login policy, where nothing else names one) until the policy exists or the reference changes (#1239). | none (logged; the sign-in goes on under the profile the other references select) |
 | `STS-AUTHN-0543` | A named post-login activity policy was not deleted: an application (appPostLoginPolicy) or a group (stsPostLoginPolicy) of this realm still names it (#1239). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0544` | A sign-in appearance colour was not saved: with it, the realm's text or its links would fall below WCAG 2.2 AA contrast (4.5:1) against the card (branding.textColor, branding.accentColor against branding.cardColor) (#717). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0545` | A sign-in logo was not saved: its bytes are not a PNG, a JPEG or a WebP image, whatever type the upload declared. Only those three are accepted, and the bytes decide (#717). | none (a management API refusal, HTTP 415) |
+| `STS-AUTHN-0546` | A sign-in logo was not saved: it is larger than branding.logoMaxBytes, or empty (#717). | none (a management API refusal, HTTP 413, or 400 for an empty body) |
+| `STS-AUTHN-0547` | A sign-in logo was not saved: its width and height could not be read from the image, or one of them is outside 16 to 2048 pixels (#717). | none (a management API refusal, HTTP 400) |
+| `STS-AUTHN-0548` | A sign-in logo was not saved, or its alternative text was not cleared: a realm's logo must carry alternative text (branding.logoAlt), which a screen reader reads in its place (#717). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0549` | A realm's sign-in logo was asked for (GET /web/branding/logo) and the realm has none (#717). | none (HTTP 404) |
+| `STS-AUTHN-0550` | A sign-in appearance preview was refused: a colour or layout it was asked to show is not one the settings would accept (#717). | none (HTTP 400) |
+| `STS-AUTHN-0551` | A sign-in logo's link (branding.logoLinkUrl) was not saved: it is not an absolute https URL (#717). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-OAUTH
 
@@ -1807,7 +1827,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0157` | The OpenID Connect Core 5.5 claims request on an authorization request is malformed. | invalid_request (redirected error) |
 | `STS-OAUTH-0158` | RFC 9700 mode refused a request for a reason the policy did not name (fallback; the policy normally names one of STS-OAUTH-0119 to -0147). | the error the RFC 9700 check named (HTTP 400 or redirected) |
 | `STS-OAUTH-0159` | The authorization request is malformed (the input validator refused it); answered here rather than redirected. | invalid_request (HTTP 400) |
-| `STS-OAUTH-0160` | The authorization request has no redirect_uri, so the error cannot be redirected. (What is usable is the schema's question since 2026-09-13; a value it refuses is STS-OAUTH-0159.) | invalid_request (HTTP 400) |
+| `STS-OAUTH-0160` | The authorization request has no redirect_uri (or an empty one), so the error cannot be redirected. (What is usable is the schema's question since 2026-09-13; a value it refuses is STS-OAUTH-0159.) | invalid_request (HTTP 400) |
 | `STS-OAUTH-0161` | The authorization request named no client_id. | invalid_request (redirected error, or HTTP 400 page before sign-in) |
 | `STS-OAUTH-0162` | The authorization request asked for a response_type this service does not implement. | unsupported_response_type (redirected error, or HTTP 400 page) |
 | `STS-OAUTH-0163` | The authorization request asked for a response_type this authorization server profile does not advertise. | unsupported_response_type (redirected error, or HTTP 400 page) |
@@ -2788,7 +2808,7 @@ Raised from: federation/.
 | `STS-FED-0155` | A federated sign-in was started through an ssf relationship, which only sends Shared Signals and signs nobody in (#374). | HTTP 400 page |
 | `STS-FED-0156` | A federated sign-in was refused because the partner's own Shared Signals (a verified account-disabled) blocked its sign-ins of this person; its account-enabled, or an administrator, lifts it (#373). | HTTP 403 page |
 | `STS-FED-0157` | A federation relationship's client secret (fedClientSecret) could not be sealed under a durable key-encryption key, so it was not written. | HTTP 400 (console and API) |
-| `STS-FED-0158` | A federated first sign-in created nobody: in a product-mode realm the partner supplied no value of an attribute the realm's attribute policy requires of every person (#396), so the sign-in is refused as one for a person nobody provisioned. Map the attribute from the partner, or provision the person first. | HTTP 403 page (the session refusal is audited STS-AUTHN-0180) |
+| `STS-FED-0158` | A federated first sign-in created nobody: in a product-mode realm the partner supplied no value of an attribute the realm's attribute policy requires of every person (#396), and the person could not be asked for it at /federation/profile/{handle} (#701: no person can be given a value of that attribute, or the values they gave still left the policy unmet), so the sign-in is refused as one for a person nobody provisioned. Map the attribute from the partner, or provision the person first. | HTTP 403 page (the session refusal is audited STS-AUTHN-0180) |
 | `STS-FED-0161` | A group name in a partner's assertion was not applied: it names a group this relationship did not create, it cannot be a directory name, or the directory declined. The sign-in stands (#358). | none (logged; the sign-in proceeds) |
 | `STS-FED-0162` | The scheduler job federation.provision-idle could not disable a person whose only sign-in path is one relationship and whose federationLastSeen is past fedProvisionIdleMinutes. The next run tries again (#358). | none — logged |
 | `STS-FED-0163` | fedProvisionCap or fedProvisionIdleMinutes was set to something that is not empty and not a non-negative integer (#358). | HTTP 400 (console and API) |
@@ -2811,7 +2831,7 @@ Raised from: federation/.
 | `STS-FED-0185` | Sign in with Apple's client secret could not be signed for a token request (#565): fedTeamId, fedKeyId, fedClientId or fedClientSigningKey is missing, the key will not open, or it is not a P-256 key. | HTTP 500 (the federation surface) |
 | `STS-FED-0186` | A provider's server-to-server notification was refused (#565): it did not verify against the relationship's keys, named another issuer or audience, carried no event or no jti, or had already been accepted once. | HTTP 400 |
 | `STS-FED-0187` | A provider's server-to-server notification arrived for a relationship that takes none: unknown, not usable, or not a provider whose profile receives notifications (#565). | HTTP 404 |
-| `STS-FED-0188` | A consumer provider signed in a newcomer without a value this realm's attribute policy requires of every person (product mode), so the person was sent to /federation/profile/{handle} to give exactly the missing values before the account is created (#729). Nothing was created yet. | HTTP 303 to the form; the code is not in the body |
+| `STS-FED-0188` | A federation partner signed in a newcomer without a value this realm's attribute policy requires of every person (product mode), so the person was sent to /federation/profile/{handle} to give exactly the missing values before the account is created (#729 for consumer providers, #701 for every relationship). Nothing was created yet. | HTTP 303 to the form; the code is not in the body |
 | `STS-FED-0189` | A /federation/profile/{handle} submission did not carry the token the step was given, so nothing was created and the step was spent (#729). | HTTP 403 page |
 | `STS-FED-0190` | A /federation/profile/{handle} submission left a required value empty or gave one its attribute does not accept (too long, a control character, not an address, or refused by the attribute's own rules), so the form was drawn again under a new handle (#729). | HTTP 400 page, the form again |
 | `STS-FED-0191` | A /federation/profile/{handle} form was sent five times without the values this service needs, so the step was ended and nothing was created (#729). | HTTP 400 page |
@@ -3319,7 +3339,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0173` | A custom attribute was not removed: the realm's own attribute policy requires it (#396). | HTTP 400 (console and API) |
 | `STS-LDAP-0174` | A custom attribute was not removed: the realm defines none by that name (#396). | HTTP 400 (console and API) |
 | `STS-LDAP-0175` | A console or management-API request (#359) had already spent ldap.workerDirectoryBudgetMs waiting on synchronous directory reads, so the next question was refused and not asked. One slow question still fails as STS-LDAP-0130 when it exceeds its own timeout first. A request outside /admin and /admin-api has no such budget. | HTTP 503 with Retry-After; an LDAP operation answers unavailable (52) |
-| `STS-LDAP-0176` | GET /admin-api/ldap/devices or /admin-api/rbac failed to draw its page with something other than a store it could not read (#359: STS-LDAP-0130, 0131, 0139 and 0175 are the 503s) and with no code of its own: a fault in this service, answered as one and logged with the stack, never a "try again shortly". | HTTP 500 (server_error) |
+| `STS-LDAP-0176` | GET /admin-api/ldap/devices, /admin-api/rbac, /admin-api/users, /admin-api/ldap/directory, /admin-api/mfa or /admin-api/status (#695) failed to draw its page with something other than a store it could not read (#359: STS-LDAP-0130, 0131, 0139 and 0175 are the 503s) and with no code of its own: a fault in this service, answered as one and logged with the stack, never a "try again shortly". | HTTP 500 (server_error) |
 | `STS-LDAP-0177` | A group's mail address was refused: the value given to the console or the management API is not an email address. | a console/API refusal |
 | `STS-LDAP-0178` | A SASL bind named a mechanism other than EXTERNAL; this directory accepts SASL EXTERNAL only (#1047). | LDAP result code 7, authMethodNotSupported (RFC 4511 section 4.2.2) |
 | `STS-LDAP-0179` | A SASL EXTERNAL bind arrived on an LDAPS connection that carries no client certificate that verified against the client truststore — at the defaults LDAPS asks for none (ldap.ldapsDisableOptionalClientCertificate) (#1047). | LDAP result code 48, inappropriateAuthentication (RFC 4513 section 5.2.1.2) |
@@ -3348,6 +3368,11 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0202` | An email-shaped pseudonym is already some other person's mail address, or a mail address is already some other person's uid or live pseudonym (#644). Two people may still share a mail attribute with each other. | HTTP 400 JSON (the sentence; the code is recorded) |
 | `STS-LDAP-0203` | In product mode, an LDAP add, modify, delete or rename that only a Security Administrator may make — an entry under a Directory → Policies container, the Security Administrator's group, a policy reference attribute, a memberOf naming that group, or the entry of a person who holds the role — was asked by a bound DN that does not hold it. Admin Write does not reach these. | LDAP insufficientAccessRights (50) |
 | `STS-LDAP-0204` | An entry was refused before it was created or renamed: its DN is longer than the store can hold as a key (MariaDB, 352 characters of normalised DN), and the flush would refuse it after it was in memory. | — |
+| `STS-LDAP-0205` | In a windowed directory, the store could not answer whether a group name from a federation partner's assertion is named by a granting attribute (a role's member group, an owner, a delegation or subject group). The name is treated as granting and not applied (audited STS-FED-0164); the sign-in stands. Logged once when the store stops answering, and again when it answers. | none (the audit row of the ignored group carries STS-FED-0164) |
+| `STS-LDAP-0206` | update-person-attribute named a custom attribute this realm does not define, so there was nothing to change (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0207` | update-person-attribute was refused for a field: a label empty, longer than 128 characters or holding a control character, a description longer than 1024 or holding one, or a portal flag that is neither true nor false (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0208` | update-person-attribute would have changed a custom attribute's syntax or whether it holds several values. Both are fixed once it is defined, because the values people hold were checked against them (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0209` | The directory would not store a changed custom attribute definition (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
 
 ## STS-ATTR
 
@@ -3530,6 +3555,7 @@ Raised from: scim/.
 | `STS-SCIM-0084` | A verified TLS client certificate from an outside certificate authority was not taken as a SCIM credential: it is not stored in userCertificate on any entry of the realm (#1061). The request is decided as if no certificate had been presented. | audit row; HTTP 401 when no other scheme authenticates |
 | `STS-SCIM-0085` | A verified TLS client certificate from an outside certificate authority was not taken as a SCIM credential: it is stored in userCertificate on more than one entry of the realm (#1061). | audit row; HTTP 401 when no other scheme authenticates |
 | `STS-SCIM-0086` | A SCIM write that only a Security Administrator may make — the Security Administrator's group created, changed or deleted, or the User of a person who holds the role changed or deleted — was asked by a caller that does not hold SECURITY_ADMIN (a person on the roster, or an application that is a member of the role). | HTTP 403 |
+| `STS-SCIM-0087` | A SCIM User write carried a value of one of the realm's custom attributes (the CustomAttributes extension) that its syntax refuses, several values for a single-valued one, or an integer past what a JSON number carries exactly; nothing was written (#699). | SCIM invalidValue (HTTP 400) |
 
 ## STS-SPIFFE
 
@@ -3690,6 +3716,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0149` | A Workload API caller on the workload agent's Unix socket no longer matches the process that connected: it has exited, its pid was reused, or it has executed a different program (#324). | — |
 | `STS-SPIFFE-0150` | The workload agent refused a Workload API caller that is entitled to nothing it asked for: no registration entry matches it (#324). | — |
 | `STS-SPIFFE-0151` | The workload agent could not obtain an SVID or a bundle from the SPIRE Server API (#324). | — |
+| `STS-SPIFFE-0152` | The workload agent attested and bound its Unix socket but could not write the file named by --ready-file, so it stopped rather than serve a socket its workload waits on and cannot find (#695). | — |
 
 ## STS-TLS
 
@@ -5562,6 +5589,10 @@ Raised from: portal/.
 | `STS-PORTAL-0623` | A pseudonym change on /account-api could not be attempted: the directory module was not loaded. A directory refusal records its own STS-LDAP code instead (#644). | HTTP 503 JSON |
 | `STS-PORTAL-0624` | A /portal/verify-pseudonym link is unknown, expired, mismatched or already spent (#644). | HTTP 400 JSON |
 | `STS-PORTAL-0625` | A person's revocation of their own signing key pair on /account-api/signing-key was refused without a more specific code (#1290). | HTTP 400 JSON |
+| `STS-PORTAL-0626` | POST /account-api/attributes named an attribute that is not one of this realm's custom attributes (#700). | HTTP 400 JSON |
+| `STS-PORTAL-0627` | POST /account-api/attributes named a custom attribute whose definition does not show it on the user portal (stsAttributePortalVisible is not TRUE) (#700). | HTTP 403 JSON |
+| `STS-PORTAL-0628` | POST /account-api/attributes named a custom attribute the person sees on the portal but may not change there (stsAttributePortalEditable is not TRUE) (#700). | HTTP 403 JSON |
+| `STS-PORTAL-0629` | A person's change to their own custom attribute on /account-api/attributes was not made: they have no directory entry, a value was refused for the attribute's syntax or cardinality, or the directory did not store it. Where the person editor refused with a code of its own (a required value taken away, STS-LDAP-0164), that code is recorded instead (#700). | HTTP 400 JSON |
 
 ## STS-ACCOUNT
 
@@ -5819,6 +5850,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0362` | An application's krb5S4uSelfRealm was given a Kerberos realm none of this realm's trusts accepts tickets from (#430). | none (a refused administrative change) |
 | `STS-REG-0363` | oauthConfidential was given a value the token endpoint authentication method does not make, or was asked to be edited on its own. The registry writes the flag from the method: none, or no method on an application created by hand, is FALSE, and any other method is TRUE. A supplied value that disagrees is refused, and the attribute is not edited on its own (#466). | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0364` | oauthAllowedTokenResponseTypes was given a token response type while the realm does not allow them: RFC 9700 mode is in force and oauth2.allowImplicitTokenResponses is off, or OAuth 2.1 mode or a FAPI profile is on (#1296). A remove is never refused. | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0365` | A logo_uri, policy_uri or tos_uri (oauthLogoUri, oauthPolicyUri, oauthTosUri) is not an absolute https URL with a host and no credentials: the sign-in and consent screens draw it (OpenID Connect Registration section 2, #1300). At registration, an RFC 7592 update, a create and an attribute write. | HTTP 400 {error: invalid_client_metadata} at registration; a console or management API refusal otherwise |
+| `STS-REG-0366` | A realm's custom attribute is named as a claim of the directory attribute catalogue is (a custom birthdate, say), so it is not offered to the claim sets: the catalogue's claim would be overwritten. An attribute claim can carry it under another name (#700). | log line; the attribute is absent from every claim set |
 
 ## STS-DBG
 

@@ -984,6 +984,9 @@ let sessionObserver = null;
 // The scheduler job's id, and its interval's setting.
 const SESSION_EXPIRY_JOB = 'authn.session-expiry';
 const SESSION_SWEEP_SETTING = 'authn.sessionSweepS';
+// Sessions walked, read through the window, or ended between two turns of
+// the event loop in the sliced sweep (#704; sweepExpiredSessionsInSlices()).
+const SESSION_SWEEP_SLICE = 500;
 // The account sets' clean-up job (#561).
 const ACCOUNT_SET_EXPIRY_JOB = 'authn.account-set-expiry';
 
@@ -1498,13 +1501,47 @@ class Authn {
       log.debug("Leaving Authn.noteSessionChanged(). No session.");
       return false;
     }
-    // A read error is not "the session is gone": the change is written so a
-    // parent that only the index holds still records backsConsole.
+    // A READ THAT FAILED IS NOT "THE SESSION IS GONE", AND NOT "IT IS LIVE"
+    // EITHER (#695, from #350; rcbj's decision). Until #695 a failed read
+    // re-set the caller's whole session, so that a parent the window had
+    // loaded from the index still recorded `backsConsole`. The store's
+    // tombstone kept that write from reviving a STORED session another
+    // request had ended meanwhile, but the realm map took the row back, and
+    // this process answered the ended session as live until it was evicted.
+    //
+    // Now only `backsConsole` is merged, and only onto a row this process
+    // already holds, in the realm map. An ended session is deleted from that
+    // map, so a row found there is one nobody has ended here; a row found
+    // nowhere is left alone, and nothing is created. With today's window
+    // the held case does not arise — `get()` answers from its cache and then
+    // from the realm map before it asks the store, so a failed read means
+    // neither holds the row — and the merge is there so that a window which
+    // ever reads in another order still cannot revive anything (the test
+    // reaches it with a stubbed read). The cost is stated rather than
+    // hidden: a parent held nowhere, read while the store is failing, does
+    // not record that it backs the console. The flag is a record — ORed by
+    // `mergeSessionRows()` and filed in the index, read by no decision —
+    // and losing it is cheaper than a session that came back. The caller's
+    // other in-place edits are not written on a failed read at all: nothing
+    // is known about the row they would belong to.
     if (this.windowOn()) {
       const read = sessionWindow.get(realms.currentId(), session.id);
       if (!read.ok && read.error) {
-        sessions.set(session.id, session);
-        log.debug("Leaving Authn.noteSessionChanged(). Re-set.");
+        const local = sessions.get(session.id);
+        if (!local) {
+          log.debug("Leaving Authn.noteSessionChanged(). The read failed " +
+                    "and no row is held here; nothing was set.");
+          return false;
+        }
+        if (session.backsConsole !== true) {
+          log.debug("Leaving Authn.noteSessionChanged(). The read failed; " +
+                    "no backsConsole to merge onto the held row.");
+          return false;
+        }
+        local.backsConsole = true;
+        sessions.set(session.id, local);
+        log.debug("Leaving Authn.noteSessionChanged(). The read failed; " +
+                  "backsConsole merged onto the held row.");
         return true;
       }
       if (!read.ok) {
@@ -5039,6 +5076,123 @@ class Authn {
                'nobody is ever told about.');
     }
     log.debug("Leaving Authn.sweepExpiredSessions(). " +
+              (gone + shed) + " ended.");
+    return gone + shed;
+  }
+
+  /**
+   * `sweepExpiredSessions()`, a slice at a time (#704): the body of the
+   * session-expiry scheduler job. The same decisions, made by the same
+   * `sessionEnded()` and ended through the same `expireSession()`, with a
+   * turn of the event loop between realms, every SESSION_SWEEP_SLICE
+   * sessions of a realm's walk, and every SESSION_SWEEP_SLICE ends — so the
+   * process that runs it answers requests while it does. The synchronous
+   * form stays, for a caller that wants the count now.
+   *
+   * @returns a promise of how many sessions were ended
+   */
+  async sweepExpiredSessionsInSlices() {
+    const { realms, log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.sweepExpiredSessionsInSlices().");
+    const nowMs = Date.now();
+    let gone = 0;
+    const turn = function (): Promise<void> {
+      log.debug("Entering turn().");
+      log.debug("Leaving turn().");
+      return new Promise(function (resolve: () => void): void {
+        setImmediate(resolve);
+      });
+    };
+    // A session the sweep ends, and why; '' when it is live. Hot path: asked
+    // of every session of every realm, so no Entering/Leaving pair — it
+    // would add two log lines per session held.
+    const whyEnded = function (session: any): string {
+      if (session.expires && session.expires <= nowMs) {
+        return 'expired';
+      }
+      return self.sessionEnded(session, nowMs) || '';
+    };
+    for (const realm of realms.list()) {
+      const store = sessions.realmMap(realm.id);
+      if (self.windowOn()) {
+        const keys = realms.run(realm, function (): any {
+          const idle = self.sessionIdleTimeoutMs();
+          const cutoff = idle > 0 ? nowMs - idle : 0;
+          return sessionWindow.indexKeys('session.expired',
+                                         [realm.id, nowMs, cutoff]);
+        });
+        for (let i = 0; keys && i < keys.length;
+             i += SESSION_SWEEP_SLICE) {
+          realms.run(realm, function (): void {
+            keys.slice(i, i + SESSION_SWEEP_SLICE).forEach(
+              function (digest: string): void {
+                const loaded = sessionWindow.loadByDigest(realm.id, digest);
+                if (!loaded.ok) {
+                  return;
+                }
+                const why = whyEnded(loaded.session);
+                if (!why) {
+                  return;
+                }
+                self.expireSession(store, loaded.session.id, loaded.session,
+                                   'the session sweep', why);
+                gone++;
+              });
+          });
+          await turn();
+        }
+        await turn();
+        continue;
+      }
+      if (!store || !store.size) {
+        continue;
+      }
+      // Collected first and ended afterwards, for the synchronous form's
+      // reason; the walk is in slices, and a Map's iterator survives what
+      // other code writes between them.
+      const expired: any[] = [];
+      const it = store.entries();
+      let done = false;
+      while (!done) {
+        for (let i = 0; i < SESSION_SWEEP_SLICE; i++) {
+          const step = it.next();
+          if (step.done) {
+            done = true;
+            break;
+          }
+          const session = step.value[1];
+          const why = session ? whyEnded(session) : '';
+          if (why) {
+            expired.push([step.value[0], session, why]);
+          }
+        }
+        if (!done) {
+          await turn();
+        }
+      }
+      for (let i = 0; i < expired.length; i += SESSION_SWEEP_SLICE) {
+        realms.run(realm, function (): void {
+          expired.slice(i, i + SESSION_SWEEP_SLICE).forEach(
+            function (one: any[]): void {
+              self.expireSession(store, one[0], one[1], 'the session sweep',
+                                 one[2]);
+              gone++;
+            });
+        });
+        await turn();
+      }
+      await turn();
+    }
+    const shed = this.shedSubjectSurplus();
+    if (gone) {
+      log.info('authn: the session sweep ended ' + gone + ' expired ' +
+               'session(s). Each one is an audit row and a CAEP ' +
+               'session-revoked, which is the whole reason the sweep exists: ' +
+               'an expiry noticed only when somebody comes back is an expiry ' +
+               'nobody is ever told about.');
+    }
+    log.debug("Leaving Authn.sweepExpiredSessionsInSlices(). " +
               (gone + shed) + " ended.");
     return gone + shed;
   }
@@ -11109,6 +11263,13 @@ class Authn {
       // languages the relying party asked this screen to be drawn in, ahead
       // of the person's own and the browser's (`common/page_locale.ts`).
       uiLocales: String(opts.uiLocales || '').slice(0, 256),
+      // WHY A PERSON WITH A SESSION IS ASKED AGAIN (#1302): `prompt_login`
+      // or `max_age`, from the authorization endpoint, and '' otherwise —
+      // anything else a caller passes is dropped, because the screen draws
+      // a catalog sentence per value and has none for it.
+      reauthentication: ['prompt_login', 'max_age'].indexOf(
+        String(opts.reauthentication || '')) >= 0
+        ? String(opts.reauthentication) : '',
       federation: home,
       expires: Date.now() + this.pendingTtlMs()
     };
@@ -12614,7 +12775,10 @@ class Authn {
     const view: any = { page: page, id: String(mfaId),
                         username: String(step.username),
                         passwordless: !!step.passwordless,
-                        links: this.stepLinks(page, step) };
+                        links: this.stepLinks(page, step),
+                        // WHO IS ASKING (#1300), as on the screen.
+                        clientDisplay: this.clientDisplay(step.authn &&
+                                                   step.authn.application) };
     if (page === 'totp') {
       // What the AUTHENTICATOR was told, off the person's own enrolment, so
       // the field asks for the right number of digits.
@@ -13689,6 +13853,13 @@ class Authn {
       // no Sign In, the passkey button the way in.
       usernameless: usernameless,
       email: emailFirst,
+      // WHO IS ASKING (#1300): the client's name, logo, privacy policy and
+      // terms, where it registered any of them; null otherwise.
+      clientDisplay: this.clientDisplay(record.application),
+      // WHY THIS IS A SECOND SIGN-IN (#1302): `prompt_login`, `max_age`, or
+      // '' — a first sign-in, or any other reason. The browser draws the
+      // one-line notice for it; the screen is otherwise the same.
+      reauthentication: String(record.reauthentication || ''),
       // THE CERTIFICATE ON THIS CONNECTION (#1051): "Continue as <name>
       // with your certificate", where `certificateOption()` says so.
       certificate: screenOffered && !usernameless
@@ -14077,6 +14248,12 @@ class Authn {
   signInShell(req, res, application: string, person?: string): void {
     const { log, app } = this.deps;
     log.debug("Entering Authn.signInShell().");
+    // THE CLIENT'S LOGO (#1300) is loaded by the browser from the client's
+    // own address, so this page's `img-src` names exactly that origin —
+    // the shell is drawn per request, for one pending sign-in's
+    // application, which is why the policy can say so here rather than
+    // allowing every https image on every sign-in page.
+    const shown = this.clientDisplay(application);
     const html = ShellDocument.document({
       title: 'Sign in — IYA STS',
       attributes: ([['data-sts-prefix', realms.currentPrefix()]] as
@@ -14094,8 +14271,43 @@ class Authn {
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     ShellDocument.serve(app, req, res, html,
-                        { csp: { 'style-src': "'self'" } });
+                        { csp: { 'style-src': "'self'" },
+                          images: shown && shown.logoOrigin
+                            ? [shown.logoOrigin] : [] });
     log.debug("Leaving Authn.signInShell().");
+  }
+
+  // ===========================================================================
+  // WHO IS ASKING (#1300): what the sign-in pages and the consent screen show
+  // about the OAuth client a sign-in is for — OpenID Connect Registration
+  // section 2's `logo_uri`, `policy_uri` and `tos_uri`, read by
+  // `applications.clientDisplayOf()`, which holds each to https again. Null
+  // for a sign-in with no application, one that is not an OAuth client (a
+  // SAML service provider's entity ID answers to no client_id) and a client
+  // that registered none of the three, and the pages then draw nothing.
+  // ===========================================================================
+  /**
+   * What the sign-in pages show about the client a sign-in is for.
+   *
+   * @param application - the pending sign-in's application, or ''
+   * @returns `{ name, logo, logoOrigin, policy, tos }`, or null
+   */
+  clientDisplay(application: unknown): any {
+    const { log, applications } = this.deps;
+    log.debug("Entering Authn.clientDisplay().");
+    let shown: any = null;
+    try {
+      shown = application ? applications.clientDisplayOf(String(application))
+                          : null;
+    } catch (e) {
+      log.debug("Caught in Authn.clientDisplay(): " +
+                ((e && e.message) || e));
+      // No directory in this process: a sign-in page without the client's
+      // picture, never a sign-in refused over it.
+      shown = null;
+    }
+    log.debug("Leaving Authn.clientDisplay().");
+    return shown;
   }
 
   /**
@@ -19616,8 +19828,13 @@ scheduler.register({
   owner: 'authn/authn.ts',
   everySetting: SESSION_SWEEP_SETTING,
   everySettingUnit: 's',
+  // IN SLICES (#704): the job runs on a request worker since #408, and a
+  // walk of every session of every realm in one turn held that worker.
   run: function (): any {
-    return { ended: slot.get().sweepExpiredSessions() };
+    return slot.get().sweepExpiredSessionsInSlices().then(
+      function (ended: number): any {
+        return { ended: ended };
+      });
   }
 });
 
@@ -19785,6 +20002,8 @@ export = {
   pendingForAccounts: slot.forward('pendingForAccounts'),
   accountsView: slot.forward('accountsView'),
   accountsAct: slot.forward('accountsAct'),
+  sweepExpiredSessions: slot.forward('sweepExpiredSessions'),
+  sweepExpiredSessionsInSlices: slot.forward('sweepExpiredSessionsInSlices'),
   sweepAccountSets: slot.forward('sweepAccountSets'),
   sweepAccountSetsInSlices: slot.forward('sweepAccountSetsInSlices'),
   sweepAccountSetsBudgeted: slot.forward('sweepAccountSetsBudgeted'),
@@ -19961,6 +20180,9 @@ export = {
   // the emailed factor's shells.
   stepPagePath: slot.forward('stepPagePath'),
   mfaView: slot.forward('mfaView'),
+  // #1300: who is asking, for the emailed factor's view and the consent
+  // screen.
+  clientDisplay: slot.forward('clientDisplay'),
   stepRefused: slot.forward('stepRefused'),
   mfaTotpAct: slot.forward('mfaTotpAct'),
   mfaBackupCodeAct: slot.forward('mfaBackupCodeAct'),

@@ -466,13 +466,15 @@ async function mintTheCredentials() {
   unstored = await credentials.mint({
     subject: "CN=" + PEP_CN + ",OU=remote-peps,O=iya-sts tests" });
   for (const one of [trusted, rogue, xacmlUser, unstored]) {
-    const posted = await credentials.trustAnchor(base, one.anchorPem);
+    // Recorded before it is posted (#1307): an add applied but answered
+    // late is still removed when the job finishes.
+    const posted = await credentials.trustRecorded(base, one.anchorPem,
+                                                   addedAnchors);
     assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
       "Root CA this " +
       "file just built; it answered " + posted.status + " " +
       String(posted.why || posted.body).slice(0, 200) + ". Without the " +
       "anchor every assertion below is about an unverified certificate.");
-    addedAnchors.push(one.anchorPem);
   }
   log.info("Minted a REMOTE_PEPS credential for " + trusted.subject +
            ", an XACML_USER one for " + xacmlUser.subject +

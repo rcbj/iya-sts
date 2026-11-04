@@ -88,10 +88,38 @@ const DIGEST_LABEL = 'directory-index';
 // written by the service. An entry written before this carries no key until
 // it is next written; storing the certificate IS a write (no migration, by
 // rcbj's decision on #1061).
+//
+// **AND A SECOND DERIVED KEY: `grantinggroup` (#1306, 2026-11-04).** A
+// partner's token may name a group that does not exist yet, and federated
+// provisioning must not create one whose NAME already stands for something
+// here (`ldap_server.js`'s `federatedGroupAuthority()`, #358): a group an
+// entry names, by cn or DN, in one of GRANTING_ATTRIBUTES below. The
+// question is asked on a sign-in, and in a windowed process the entries
+// that hold such a value may not be here — a service account's
+// `stsServiceAccountOwner` is under `ou=users` — or may have been written by
+// another process this one has not yet heard from. The values compare
+// trimmed and in any case, and a DN by its normalised form, which an exact
+// lookup cannot answer, so each value is keyed as `grantingKeysOf()` reads
+// it. Like `usercertificatesha256`, no attribute of that name is ever on an
+// entry, and an entry written before this carries no key until it is next
+// written (rcbj's no-migration rule on #636 and #1061).
 const VALUE_INDEXED = ['uid', 'didsubject', 'spiffesubject', 'x509subject',
                        'federationlink', 'stsdevicekeythumbprint',
                        'stsdevicesecrethash', 'stsdevicecredentialid',
-                       'owner', 'usercertificatesha256'];
+                       'owner', 'usercertificatesha256', 'grantinggroup'];
+
+// The attributes that confer something on the members of the group they
+// name (#358, #607): a role's member group, the three owner attributes, an
+// application's delegation subject group, a relationship's subject group.
+// `ldap_server.js` reads this list too, so the walk over what this process
+// holds and the store's `grantinggroup` key cannot disagree about it.
+const GRANTING_ATTRIBUTES = Object.freeze(['rolemembergroup', 'owner',
+  'appowner', 'stsserviceaccountowner', 'appdelegationsubjectgroup',
+  'fedsubjectgroup']);
+
+// A value written as a DN: an attribute type and `=` at the front. The
+// directory's own `DN_SHAPED`.
+const DN_SHAPED = /^[A-Za-z][A-Za-z0-9-]*=/;
 
 // The attribute names a stored certificate is held under: RFC 4523's type with
 // RFC 4522's `;binary` transfer option (what an LDAP client and this service
@@ -223,6 +251,58 @@ function certificateDigestsOf(attrs) {
   return out;
 }
 
+/**
+ * The keys one value of a granting attribute is found by: the value trimmed
+ * and lower-cased (a group's cn), and for a DN-shaped value its normalised
+ * form as well (each RDN trimmed and lower-cased — `ldap_server.js`'s
+ * `normalizeDn()`). A name or a DN asked of `grantinggroup` is asked in one
+ * of these forms.
+ *
+ * @param value - the stored value, or the name or DN being asked about
+ * @returns the keys, each once
+ */
+function grantingKeysOf(value) {
+  log.debug("Entering grantingKeysOf().");
+  const text = String(value == null ? '' : value).trim();
+  const out = [];
+  if (text) {
+    out.push(text.toLowerCase());
+    if (DN_SHAPED.test(text)) {
+      const dn = text.split(',').map(function (part) {
+        return part.trim().toLowerCase();
+      }).join(',');
+      if (out.indexOf(dn) < 0) {
+        out.push(dn);
+      }
+    }
+  }
+  log.debug("Leaving grantingKeysOf().");
+  return out;
+}
+
+/**
+ * The `grantinggroup` keys of an entry: `grantingKeysOf()` of every value of
+ * every granting attribute it holds, each once.
+ *
+ * @param attrs - the entry's attributes, plaintext
+ * @returns the keys
+ */
+function grantingGroupKeysOf(attrs) {
+  log.debug("Entering grantingGroupKeysOf().");
+  const out = [];
+  GRANTING_ATTRIBUTES.forEach(function (name) {
+    valuesOf(attrs, name).forEach(function (one) {
+      grantingKeysOf(one).forEach(function (key) {
+        if (out.indexOf(key) < 0) {
+          out.push(key);
+        }
+      });
+    });
+  });
+  log.debug("Leaving grantingGroupKeysOf(). " + out.length + ".");
+  return out;
+}
+
 function lowered(list) {
   log.debug("Entering lowered().");
   log.debug("Leaving lowered().");
@@ -254,7 +334,9 @@ function indexOf(attrs) {
   const valueKeys = [];
   VALUE_INDEXED.forEach(function (name) {
     const values = name === 'usercertificatesha256'
-      ? certificateDigestsOf(a) : unique(valuesOf(a, name));
+      ? certificateDigestsOf(a)
+      : (name === 'grantinggroup' ? grantingGroupKeysOf(a)
+        : unique(valuesOf(a, name)));
     values.forEach(function (one) {
       valueKeys.push(lookupOf('attr:' + name, one));
     });
@@ -528,6 +610,9 @@ function openAnswer(codec, name, answer) {
 module.exports = {
   LABEL: LABEL,
   VALUE_INDEXED: VALUE_INDEXED,
+  GRANTING_ATTRIBUTES: GRANTING_ATTRIBUTES,
+  grantingKeysOf: grantingKeysOf,
+  grantingGroupKeysOf: grantingGroupKeysOf,
   CLASS_INDEXED: CLASS_INDEXED,
   CERTIFICATE_ATTRIBUTES: CERTIFICATE_ATTRIBUTES,
   certificateDerOf: certificateDerOf,

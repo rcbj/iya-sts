@@ -787,6 +787,12 @@ ldif or multi-cell service is unchanged.
     realm's groups (never its people, never a membership), a page of at
     most 100 from a clamped offset, the excluded DNs left out before the
     paging; `groupsNamed()` resolves cns or DNs, a name asked twice once.
+  - **`federatedGroupAuthorityAsync()` (#1306)** asks the store whether an
+    entry names a group a partner's token named, by the derived
+    `grantinggroup` value key: two `byAttribute` questions, asynchronous,
+    `LIMIT 1`, after the walk of the resident entries — `federation/CLAUDE.md`
+    argues it. A row written before #1306 is keyed by #1311's one-time
+    backfill (`persistence/CLAUDE.md`).
   - `personCount()` is the store's count (above); `allPersons()` pages
     `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it.
   - **THE REQUESTS ARE ASYNCHRONOUS WHERE THEY READ MANY ROWS (#616,
@@ -898,12 +904,53 @@ ldif or multi-cell service is unchanged.
       store gives these pages carries no code, so `storeAsked()` marks it
       `STS-LDAP-0139` and `/admin-api` answers it 503; anything else is a
       500 (`STS-LDAP-0176`, `mgmt-api/admin_api.ts`'s
-      `answerDirectoryFailure()`). **A known cost, not fixed:** a needle
-      search's `rdnCount` is `position($3 in rdn_value) > 0`, which no
-      index serves, so it reads every direct child of `ou=users` in the
-      realm (the page itself stops at the next match, inside the rdn
-      walk). It is asked asynchronously and once per page; a trigram
-      index or a prefix-only search would be what stops it.
+      `answerDirectoryFailure()`). **A needle search's count is CAPPED**
+      (#1308, rcbj's decision 2026-11-04): `rdnCount` is
+      `position($3 in rdn_value) > 0` (MariaDB: `LOCATE`), which no index
+      serves, so it is counted inside a `LIMIT cap + 1` subquery and stops
+      at the cap and one more. The cap is `WINDOWED_PAGE_CAP`, 100,000 —
+      the walk's own, so every match counted is one the pager can reach
+      and the count costs no more than the deepest page; `rdnCountCap()`
+      in `persistence/directory_queries.js` clamps a caller's cap to it
+      for both dialects. An answer over the cap is MORE THAN the cap:
+      `candidatePageAsync()` answers `matched` as the cap and
+      `countCapped: true` (and `incomplete.capped`), `/admin-api/rbac`
+      carries `candidateSearch.countCapped` and `countCap`, and the
+      console's pane says "of more than N matches"
+      (`consoleKit.chooser.showingMore`). Held in memory the count is
+      exact and `countCapped` false. **A selective needle is an index
+      probe (#1310, 2026-11-04):** the cap bounds the matches counted, not
+      the rows read, so until #1310 a needle matching FEW children read
+      every child to learn that, and so did its page. On PostgreSQL the
+      count and the page are now asked of `sts_ldap_entries_uid_trgm` —
+      schema version 23's `pg_trgm` GIN over `rdn_value`, partial on
+      `ou=users`, built for `/portal/delegate` and already the right index,
+      so NO new index and NO schema version — as `rdn_value LIKE $n ESCAPE
+      '\'` with the needle's `%`, `_` and `\` escaped and the index's
+      condition repeated. `rdn_value` and the needle are both lower-cased,
+      so LIKE matches what `position()` did. The predicates sit in a
+      `MATERIALIZED` CTE with the LIMIT outside it: with the LIMIT beside
+      them the planner chose the rdn index's ordered read for a page whose
+      needle matched 0.2% of 2M children (467,564 buffers, 1.2 s, where
+      the trigram index read 5,234 in 13 ms). The COUNT goes this way for
+      every such needle; the PAGE only when its matches are few —
+      `candidatePageAsync()` passes its count, and `matchesCheaper()`
+      reads the page by its matches when `matched² ≤ walk × total` and the
+      count was not capped, else the walk, so a page reads at most
+      `matched` rows either way. Measured on postgres:18, 300,000 people:
+      an eleven-match needle's count read 22 buffers to `position()`'s
+      17,698, and its page 22 to the walk's 56,001
+      (`tests/directory_parent_statistics.js` F). **Which needles:** under
+      `ou=users`, with three ASCII letters or digits in a row
+      (`needleIndexed()`). pg_trgm extracts no trigram from less, so **a
+      one- or two-character needle (or one like `a.b`) is still #1308's
+      read of the parent's children**, stopped by the cap only when it is
+      broad; such a needle usually is, and a narrow one is a third
+      character away. **On MariaDB nothing changes**: a needle stays
+      `LOCATE` and a bounded scan of the parent, because MariaDB has no
+      substring index — FULLTEXT is word-based, and the n-gram parser is
+      MySQL's (`WITH PARSER ngram` on 11.8.9 answers `Function 'ngram' is
+      not defined`; the official image ships no Mroonga) — `mariadb/CLAUDE.md`.
     - **Still a whole walk on a request path**, recorded as `owed` in
       `tests/no_full_directory_walk_in_requests.js`: SCIM's user list for
       any filter but `userName eq` (asked of the name index since #616).
@@ -4103,7 +4150,10 @@ this directory's:
   of the names. One missing a required attribute is logged under
   STS-FED-0158 and nobody is created, so `authn.startSession()` refuses the
   sign-in as it refuses an unprovisioned person. No other automatic create
-  happens in product mode.
+  happens in product mode. **It is the backstop since #701**: the federation
+  door asks the same question first and sends the newcomer to a form for the
+  missing values (`federation/CLAUDE.md`), so this refusal is reached only for
+  a name nobody can be asked for, or a form whose values still fall short.
 * **The LDAP add (65, STS-LDAP-0162)** asks after the password policy, with
   the RDN's value counted as the entry's own (RFC 4512 2.3.1); nothing is
   derived — an LDAP client writes what it sends. **The LDAP modify (65,
