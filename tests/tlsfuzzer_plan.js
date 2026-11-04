@@ -17,7 +17,7 @@
 // declined, and that the adapter retargets TLS 1.2 to the matching ECDHE
 // suite. The stale extension probes are decode_error on every listener,
 // including the debugger. Since #1303 three scripts alone need an RSA
-// server certificate, and the thirty-seven whose RSA signature list is
+// server certificate, and the forty whose RSA signature list is
 // boilerplate ask the adapter to rewrite it hash for hash on an ECDSA
 // listener, which the map also prints. The map is
 // tests/tlsfuzzer/sts_adapter_map.py, which this file runs; the assertions
@@ -463,8 +463,40 @@ async function run(t) {
   }).length;
   t.equal(rsaMarked, 3, 'three scripts need an RSA server certificate');
   t.equal(ecMarked, 2, 'two scripts need an ECDSA server certificate');
-  t.equal(sigMarked, 37, 'thirty-seven scripts have their RSA signature ' +
+  t.equal(sigMarked, 40, 'forty scripts have their RSA signature ' +
           'list retargeted on an ECDSA listener');
+
+  const sigEntry = entryNamed('test-signature-algorithms.py');
+  t.check(kit.argsFor(sigEntry, 'main',
+    Object.assign({}, target, { serverKey: 'ec' })).indexOf('--ecdsa') > 0,
+          'an ECDSA listener passes a script its own --ecdsa');
+  t.check(kit.argsFor(sigEntry, 'main',
+    Object.assign({}, target, { serverKey: 'rsa' })).indexOf('--ecdsa') < 0,
+          'an RSA listener does not');
+
+  const groups = entryNamed('test-ecdhe-rsa-key-share-random.py');
+  const groupProbes = function (key, curve) {
+    log.debug('Entering groupProbes().');
+    log.debug('Leaving groupProbes().');
+    return kit.exceptionsFor(groups, 'main', curve, key)
+      .filter(function (one) {
+        return one.alert === 'handshake_failure' &&
+          String(one.probe).indexOf('Protocol (3, 3) with') === 0;
+      }).map(function (one) {
+        return one.probe;
+      });
+  };
+  const onP256 = groupProbes('ec', 'P-256');
+  t.check(onP256.indexOf('Protocol (3, 3) with secp256r1 group') < 0 &&
+          onP256.indexOf('Protocol (3, 3) with x25519 group') >= 0 &&
+          onP256.indexOf('Protocol (3, 3) with secp384r1 group') >= 0,
+          'a P-256 listener is excused every TLS 1.2 group but its own',
+          onP256.join(', '));
+  t.check(groupProbes('ec', 'P-384')
+            .indexOf('Protocol (3, 3) with secp256r1 group') >= 0,
+          'a P-384 listener is excused the P-256 group');
+  t.equal(groupProbes('rsa', '').length, 0,
+          'an RSA listener is excused no TLS 1.2 group');
   t.equal(planGap(), '', 'every plan entry follows its server key');
   t.equal(kit.curveName('prime256v1'), 'P-256',
           'prime256v1 is the plan\'s P-256');
@@ -493,6 +525,7 @@ module.exports = {
             'stale extension probes as decode_error on every listener, ' +
             'the adapter suite that matches the key, and (#1303) three ' +
             'RSA-only scripts, the RSA signature list retargeted hash ' +
-            'for hash for thirty-seven others',
+            'for hash for forty others, and a TLS 1.2 group excused only ' +
+            'on an ECDSA listener on another curve',
   run: run
 };

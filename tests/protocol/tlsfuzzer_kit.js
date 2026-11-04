@@ -316,6 +316,15 @@ const WHY = {
     "section 4.2 requires decode_error. The script samples 20 probes, " +
     "so a run that does not draw this one reports the exception as " +
     "not seen; every listener sends decode_error when it is drawn" },
+  // #1303, from the first run against an ECDSA listener (2026-11-04).
+  ecCertCurve: { why: "tool", reason: "an ECDSA listener only: the probe " +
+    "is a TLS 1.2 hello whose supported_groups names one group, and the " +
+    "listener's certificate is on another curve. RFC 8422 section 5.3 " +
+    "says the server certificate's public key MUST respect the client's " +
+    "choice of curves, and that a server that cannot MUST NOT choose an " +
+    "ECC suite, so OpenSSL answers handshake_failure — correctly. The " +
+    "script was written for an RSA certificate, which has no curve; the " +
+    "group the certificate is on is still asked and passes" },
   cipherOrder: { why: "design", reason: "honorCipherOrder: the SERVER's " +
     "BCP 195 order wins, which puts AES-128-GCM before AES-256-GCM for TLS " +
     "1.2 where the probe expects the client's first choice" }
@@ -341,6 +350,27 @@ const GROUPS = "x25519mlkem768,secp256r1mlkem768,secp384r1mlkem1024," +
   "x25519,secp256r1,x448,secp384r1,secp521r1";
 
 const OLD = /Protocol \(3, [012]\)|TLSv1\.[01]|SSLv3|SSL3\.0|\(3, [012]\)/;
+
+// #1303. A TLS 1.2 probe that offers one group (tlsfuzzer names it
+// "Protocol (3, 3) with <group> group") is refused on an ECDSA listener
+// whose certificate is on another curve (ecCertCurve): one exception per
+// group, each excusing the curves that are not that group.
+function tls12GroupOnly() {
+  log.debug("Entering tls12GroupOnly().");
+  const nist = { secp256r1: "P-256", secp384r1: "P-384",
+                 secp521r1: "P-521" };
+  const all = ["P-256", "P-384", "P-521"];
+  const list = ["secp256r1", "secp384r1", "secp521r1", "x25519", "x448"]
+    .map(function (group) {
+      return ex("Protocol (3, 3) with " + group + " group",
+                "handshake_failure", "ecCertCurve",
+                { serverKey: "ec", curves: all.filter(function (curve) {
+                  return curve !== nist[group];
+                }) });
+    });
+  log.debug("Leaving tls12GroupOnly().");
+  return list;
+}
 const REFUSED_OLD = ["protocol_version", "handshake_failure"];
 
 // One exception: the probe (a name, or a pattern for a family of names),
@@ -371,7 +401,11 @@ const NOT_CR = "LDAPS asks for no client certificate (ldap/CLAUDE.md), so " +
 //     adapter adds);
 //   * thirty-seven write the RSA signature schemes into their hello as
 //     boilerplate, so an ECDSA listener had nothing to sign with and every
-//     probe ended in handshake_failure. They carry `retargetSigAlgs`, and
+//     probe ended in handshake_failure. They carry `retargetSigAlgs` — and
+//     so do three that already ran for both keys and, run for the first
+//     time against ECDSA, failed the same way (test-tls13-certificate-
+//     request, test-tls13-session-resumption, one probe of
+//     test-tls13-mldsa-in-certificate-verify) — and
 //     the adapter rewrites that list hash for hash (sts_adapter.py,
 //     --retarget-sigalgs). A probe NAME that says rsa then runs with the
 //     ECDSA scheme of the same hash. The CertificateVerify scripts among
@@ -382,6 +416,19 @@ const NOT_CR = "LDAPS asks for no client certificate (ldap/CLAUDE.md), so " +
 // sign with, or refuse to) and test-x25519 (its TLS 1.2 groups cannot carry
 // an ECDSA certificate's curve). An exception that only an RSA key explains
 // carries `serverKey: "rsa"` (exceptionsFor()).
+//
+// THE ECDSA PLAN WAS FIRST RUN ON 2026-11-04, against a supplied P-256
+// leaf on the main port and LDAPS of a development-mode service (#1303).
+// It CONFIRMED the exceptions #321 wrote from the scripts: SHA-1 and
+// SHA-224 refused (test-ecdsa-sig-flexibility, and the client side in
+// test-ecdsa-in-certificate-verify), brainpool refused and the P-384 and
+// P-521 schemes refused for a P-256 certificate (test-tls13-ecdsa-support).
+// The closure races beside them (refusalCloseRace) were not seen, quiet or
+// with both listeners' lanes running: they stay, as on RSA, for a busy
+// host. It FOUND three things nobody had predicted: a TLS 1.2 hello that
+// offers one group not the certificate's curve (ecCertCurve, RFC 8422
+// section 5.3), test-signature-algorithms needing its own --ecdsa
+// (`keyArgs`), and a different alert for one malformed compression list.
 const RSA_SERVER = "needs an RSA server certificate; this listener " +
   "presents ECDSA";
 const EC_SERVER = "needs an ECDSA server certificate; this listener " +
@@ -563,13 +610,13 @@ const PLAN = [
   { script: "test-ecdhe-padded-shared-secret.py", args: ["-n", "0"],
     exceptions: [ex(OLD, REFUSED_OLD, "oldVersion"),
                  ex(/in SSLv2 compatible ClientHello/, "handshake_failure",
-                    "sslv2Hello")] },
+                    "sslv2Hello")].concat(tls12GroupOnly()) },
   { script: "test-ecdhe-rsa-key-exchange.py" },
   { script: "test-ecdhe-rsa-key-exchange-with-bad-messages.py" },
   { script: "test-ecdhe-rsa-key-share-random.py",
     exceptions: [ex(OLD, REFUSED_OLD, "oldVersion"),
                  ex(/in SSLv2 compatible ClientHello/, "handshake_failure",
-                    "sslv2Hello")] },
+                    "sslv2Hello")].concat(tls12GroupOnly()) },
   // ECDSA SERVER CERTIFICATE (#321). The adapter retargets TLS 1.2 suites
   // to ECDHE-ECDSA. SHA-1 and SHA-224 are refused by policy; a TLS 1.3
   // scheme for a curve other than the certificate's is refused because the
@@ -645,7 +692,16 @@ const PLAN = [
   { script: "test-invalid-client-hello-w-record-overflow.py",
     args: ["-n", "0"],
     exceptions: [ex("compression methods len fuzz to 48 w/ext",
-                    "handshake_failure", "compression48Busy")] },
+                    "handshake_failure", "compression48Busy"),
+                 // #1303: every time on a quiet ECDSA listener, the main
+                 // port and LDAPS alike (2026-11-04, three runs).
+                 ex("compression methods len fuzz to 30 w/ext",
+                    "handshake_failure", "alertChoice",
+                    { serverKey: "ec", reason: WHY.alertChoice.reason +
+                      ". On an ECDSA listener only: the same bytes get " +
+                      "decode_error from an RSA one, so OpenSSL meets " +
+                      "the key's refusal before the malformed field's; " +
+                      "which check that is was not established" })] },
   { script: "test-invalid-compression-methods.py" },
   { script: "test-invalid-content-type.py" },
   { script: "test-invalid-server-name-extension.py",
@@ -735,7 +791,8 @@ const PLAN = [
       ex(/sha1|sha-1/, "handshake_failure", "noSha1"),
       ex("without signature_algorithms ext", "server_hello",
          "addedSigAlgs")] },
-  { script: "test-signature-algorithms.py",
+  // #1303: the script's own --ecdsa makes its expected signature ECDSA.
+  { script: "test-signature-algorithms.py", keyArgs: { ec: ["--ecdsa"] },
     exceptions: [ex("explicit SHA-1+RSA/ECDSA", "handshake_failure",
                     "noSha1")] },
   { script: "test-ssl-death-alert.py" },
@@ -753,7 +810,7 @@ const PLAN = [
   { script: "test-tls13-ccs.py",
     retargetSigAlgs: true },
   { script: "test-tls13-certificate-request.py", on: CR,
-    args: ["-s", SIGALGS_13],
+    retargetSigAlgs: true, args: ["-s", SIGALGS_13],
     exceptions: [ex("verify extensions in CertificateRequest",
                     "unexpected extension(s): 47", "certAuthorities")] },
   { script: "test-tls13-certificate-verify.py",
@@ -822,7 +879,8 @@ const PLAN = [
     exceptions: [ex("version (3, 0)", "handshake_failure",
                     "legacyVersion")] },
   { script: "test-tls13-mldsa-in-certificate-verify.py", on: CR,
-    certificate: "mldsa", args: ["-s", SIGALGS_13] },
+    retargetSigAlgs: true, certificate: "mldsa",
+    args: ["-s", SIGALGS_13] },
   { script: "test-tls13-mlkem.py",
     exceptions: [ex(/mlkem\d+: invalid ECDH point format: hybrid$/,
                     "server_hello", "hybridPointMlkem")] },
@@ -861,7 +919,7 @@ const PLAN = [
   { script: "test-tls13-serverhello-random.py",
     retargetSigAlgs: true,
     exceptions: [ex(/ffdhe/, "handshake_failure", "noFfdhe")] },
-  { script: "test-tls13-session-resumption.py",
+  { script: "test-tls13-session-resumption.py", retargetSigAlgs: true,
     exceptions: [
       ex(/^session resumption( - PSK_WITH_DHE)?$/, "ApplicationData",
          "noTicketAfterResumption"),
@@ -905,7 +963,7 @@ const PLAN = [
   // #1303: RSA-only, and not for the suite. Its probes are TLS 1.2
   // hellos whose supported_groups holds x25519 or x448 ALONE; with an
   // ECDSA certificate that list must also name the certificate's curve
-  // (RFC 8422 section 5.1.1 and 5.3), so OpenSSL refuses every one with
+  // (RFC 8422 section 5.3), so OpenSSL refuses every one with
   // handshake_failure and the script would test that instead (run against
   // P-256, 2026-11-04: 17 of 24 probes). TLS 1.3 X25519 and X448 on an
   // ECDSA listener are test-tls13-ecdhe-curves and test-tls13-crfg-curves.
@@ -913,7 +971,7 @@ const PLAN = [
     serverKey: "rsa", skip: RSA_SERVER + ": its TLS 1.2 hellos offer " +
     "x25519 or x448 alone, and an ECDSA certificate's curve must be in " +
     "supported_groups (RFC 8422 section 5.3), so every probe would be " +
-    "refused for that",
+    "refused for that (ecCertCurve)",
     exceptions: [
       ex(/^empty x(25519|448) key share$/, "illegal_parameter",
          "alertChoice"),
@@ -945,7 +1003,9 @@ function argsFor(entry, listener, target) {
   argv.push("--tls12-aead");
   argv.push(path.join(TLSFUZZER_DIR, "tlsfuzzer", "scripts", entry.script),
             "-h", target.host, "-p", String(target.port));
-  (entry.args || []).forEach(function (one) {
+  // A script's own option for the key, where it has one (#1303).
+  (entry.args || []).concat((entry.keyArgs &&
+    entry.keyArgs[target.serverKey || "rsa"]) || []).forEach(function (one) {
     argv.push(one);
   });
   if (entry.certificate) {
