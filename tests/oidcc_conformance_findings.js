@@ -31,6 +31,9 @@
 //   6. OpenID4VCI Credential Response encryption to an EC key.
 //   7. A request naming no response_type is told it names none, rather
 //      than that response_type "" is not supported (2026-11-04).
+//   8. An unregistered redirect_uri or post_logout_redirect_uri is refused
+//      in a sentence whose number agrees, naming no directory attribute
+//      (2026-11-04; the endpoint's own page is rp_initiated_logout.js e).
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -412,6 +415,55 @@ function checkMissingResponseType(t) {
   log.debug("Leaving checkMissingResponseType().");
 }
 
+// ---------------------------------------------------------------------------
+// 8. "NONE OF THE 1": THE REGISTERED-LIST REFUSALS AS SENTENCES.
+// ---------------------------------------------------------------------------
+function checkRegisteredListSentences(t) {
+  log.debug("Entering checkRegisteredListSentences().");
+  t.log.info('=== 8. a registered-list refusal agrees in number ===');
+  const one = { redirect_uris: ['https://a.example/cb'],
+                post_logout_redirect_uris: ['https://a.example/out'] };
+  const two = { redirect_uris: ['https://a.example/cb', 'https://b.example/cb'],
+                post_logout_redirect_uris: ['https://a.example/out',
+                                            'https://b.example/out'] };
+  const inBcp = function (client) {
+    log.debug("Entering inBcp().");
+    const out = inRealm({ 'oauth2.rfc9700': true }, function () {
+      return bcp.checkRedirectUri({ redirectUri: 'https://c.example/cb',
+                                    client: client, clientId: 'occf-c' });
+    });
+    log.debug("Leaving inBcp().");
+    return String((out && out.description) || '');
+  };
+  const clean = function (text) {
+    return !/the 1 |\(s\)|ou=|oauthRedirectUri|none of/.test(text);
+  };
+  const single = inBcp(one);
+  const plural = inBcp(two);
+  t.check(single === 'RFC 9700 section 2.1: "https://c.example/cb" is not ' +
+          'the redirect URI registered for this client ' +
+          '(https://a.example/cb), and a redirect_uri must match one by ' +
+          'exact string comparison (RFC 3986 section 6.2.1).' &&
+          /is not one of the 2 redirect URIs registered for this client \(https:\/\/a\.example\/cb, https:\/\/b\.example\/cb\)/
+            .test(plural) && clean(single) && clean(plural),
+          '8a. RFC 9700 mode: an unregistered redirect_uri is not THE ' +
+          'redirect URI, or not one of the 2, registered for this client',
+          single + ' | ' + plural);
+  const out1 = bcp.checkPostLogoutRedirectUri({ client: one,
+    target: 'https://c.example/out' });
+  const out2 = bcp.checkPostLogoutRedirectUri({ client: two,
+    target: 'https://c.example/out' });
+  t.check(out1.reason === 'it is not the post-logout redirect URI this ' +
+          'client registered (https://a.example/out)' &&
+          /^it is not one of the 2 post-logout redirect URIs this client registered \(/
+            .test(String(out2.reason)) &&
+          out1.citation === 'RP-Initiated Logout 1.0 section 3' &&
+          clean(String(out1.description)) && clean(String(out2.description)),
+          '8b. a post_logout_redirect_uri: the same, for one and for two',
+          JSON.stringify([out1, out2]));
+  log.debug("Leaving checkRegisteredListSentences().");
+}
+
 function removeRealms() {
   log.debug("Entering removeRealms().");
   if (made && realms.get(REALM)) {
@@ -431,6 +483,7 @@ function run(t) {
     checkEcdhPartyInfo(t);
     checkCredentialResponseEcdh(t);
     checkMissingResponseType(t);
+    checkRegisteredListSentences(t);
   } finally {
     removeRealms();
   }

@@ -26,6 +26,11 @@
 //      private-use address nobody registered is not followed, and
 //      development still follows an http(s) address for a client that
 //      registered none. No session at all: straight back, with state.
+//   e. THE AUTHORIZATION ENDPOINT'S OWN REFUSALS, read on the same server
+//      and client (2026-11-04): a redirect_uri this client did not register
+//      or none at all is a 400 that a browser reads as the error page and
+//      anything else as JSON, with the same values; a request for an ID
+//      Token with no nonce says it has no nonce.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -287,6 +292,17 @@ function childMain() {
          'd1. a registered client is held to its own list: an address it ' +
          'did not register is not followed, and the page says why',
          r.status + ' ' + r.headers.location);
+    // d1b (2026-11-04): the page says why in ONE sentence, its number
+    // agreeing — no "the 1 ... uri(s)", no quotation left open.
+    const notReturned = (String(r.text)
+      .match(/You were not returned to [\s\S]*?<\/p>/) || [''])[0];
+    note(notReturned === 'You were not returned to <code>' +
+           'https://evil.example/x</code>: it is not the post-logout ' +
+           'redirect URI this client registered (' + BACK + ') ' +
+           '(RP-Initiated Logout 1.0 section 3).</p>' &&
+           !/the 1 |\(s\)|"/.test(notReturned),
+         'd1b. and why is one sentence: not the post-logout redirect URI ' +
+         'this client registered, with the section', notReturned);
     jar = {};
     r = await logout({ client_id: 'rl-bare',
                        post_logout_redirect_uri: 'https://rp.rl.example/any',
@@ -314,6 +330,61 @@ function childMain() {
            !/mock/i.test(r.text),
          'd4. with nowhere to return, a page — not text/plain "mock"',
          r.headers['content-type']);
+
+    // --- e. the authorization endpoint's own refusals ------------------------
+    jar = {};
+    const authorize = function (params, accept) {
+      return request(port, 'GET', '/oauth2/authorize?' +
+        new URLSearchParams(Object.assign({ client_id: 'rl-rp',
+          response_type: 'code', scope: 'openid', state: 'st', nonce: 'n' },
+          params)).toString(),
+        { headers: accept ? { accept: accept } : {} });
+    };
+    const HTML = 'text/html,application/xhtml+xml,*/*;q=0.8';
+    const WRONG = 'https://rp.rl.example/elsewhere';
+    const SENTENCE = '\'' + WRONG + '\' is not the redirect URI registered ' +
+      'for this client (' + REDIRECT + ')';
+    const plain = await authorize({ redirect_uri: WRONG });
+    const page = await authorize({ redirect_uri: WRONG }, HTML);
+    const described = String((plain.json || {}).error_description || '');
+    note(plain.status === 400 && !plain.headers.location &&
+           plain.json && plain.json.error === 'invalid_request' &&
+           described.indexOf(SENTENCE) >= 0 &&
+           !/the 1 |\(s\)|ou=|oauthRedirectUri|none of/.test(described),
+         'e1. an unregistered redirect_uri is a 400, never redirected, and ' +
+         'says it is not the redirect URI registered for this client, with ' +
+         'no directory detail', plain.status + ' ' + described);
+    note(page.status === 400 && !page.headers.location &&
+           /text\/html/.test(String(page.headers['content-type'])) &&
+           /<h1>This request could not be completed<\/h1>/.test(page.text) &&
+           page.text.indexOf('invalid_request') >= 0 &&
+           page.text.replace(/&#39;|&#x27;|&apos;/g, '\'')
+             .indexOf(SENTENCE) >= 0,
+         'e2. and a browser is shown that refusal on the error page, with ' +
+         'the same status, error and description',
+         page.status + ' ' + page.headers['content-type'] + ' ' +
+         page.text.slice(-500));
+    const none = await authorize({}, HTML);
+    const noneJson = await authorize({});
+    note(none.status === 400 && !none.headers.location &&
+           /text\/html/.test(String(none.headers['content-type'])) &&
+           /A valid absolute redirect_uri is required\./.test(none.text) &&
+           noneJson.status === 400 && noneJson.json &&
+           noneJson.json.error_description ===
+             'A valid absolute redirect_uri is required.',
+         'e3. no redirect_uri: the error page for a browser, the JSON ' +
+         'otherwise, both 400', none.status + ' ' + noneJson.status + ' ' +
+         noneJson.text.slice(0, 200));
+    const noNonce = await request(port, 'GET', '/oauth2/authorize?' +
+      new URLSearchParams({ client_id: 'rl-rp', response_type: 'id_token',
+        redirect_uri: REDIRECT, scope: 'openid', state: 'st' }).toString());
+    const noNonceAt = decodeURIComponent(
+      String(noNonce.headers.location || '') + ' ' + noNonce.text)
+      .replace(/\+/g, ' ');
+    note(/this request has no nonce, and response_type .id_token. returns an ID Token from the authorization endpoint, for which OIDC Core makes nonce REQUIRED \(section 3\.2\.2\.1, the implicit flow\)/
+           .test(noNonceAt),
+         'e4. an implicit request with no nonce is told it has none',
+         noNonce.status + ' ' + noNonceAt.slice(0, 400));
 
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));
