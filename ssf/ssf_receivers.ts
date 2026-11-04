@@ -1546,6 +1546,36 @@ class SsfReceivers {
           return false;
         }
       };
+      // A RISC EVENT REPORTING THE ACCOUNT HOLDER'S OWN ACT (2026-11-03): the
+      // `credential-change` rule above, for the profile that cannot say who
+      // acted. A person who revokes their own key pair or TLS client
+      // certificate for `keyCompromise` on the portal sends CAEP's revoke
+      // (`user`, skipped) AND RISC's `credential-compromise`, which carries no
+      // `initiating_entity`; acting on it revoked the token the person had
+      // just made the report with. This service's own transmitter notes the
+      // act's `txn` on the account's RISC row (`risc.ts`'s `noteOwnAct()`),
+      // and only a SET this register says so of is left alone — a detector's
+      // compromise, an administrator's, or one the row cannot speak for still
+      // acts.
+      const ownRiscAct = function ownRiscAct(): boolean {
+        log.debug("Entering ownRiscAct().");
+        if (family !== 'risc') {
+          log.debug("Leaving ownRiscAct(). Not RISC.");
+          return false;
+        }
+        let own = false;
+        try {
+          own = !!require('./risc').ownAct(
+            entry.claims && entry.claims.sub_id,
+            entry.claims && entry.claims.txn);
+        } catch (e) {
+          log.debug("Caught in ownRiscAct(): " + ((e && e.message) || e));
+          // No RISC register here: nothing says it was the person's.
+          own = false;
+        }
+        log.debug("Leaving ownRiscAct(). " + own);
+        return own;
+      };
       let skip = '';
       if (family === 'caep' && short === 'session-revoked' &&
           initiator === 'policy') {
@@ -1556,6 +1586,8 @@ class SsfReceivers {
       } else if (family === 'caep' && short === 'credential-change' &&
                  changeType === 'create') {
         skip = 'a credential added, which takes nothing away';
+      } else if (ownRiscAct()) {
+        skip = 'the person\'s own report';
       }
       (decided.reactions || []).forEach(function (reaction: string): void {
         if (skip) {

@@ -5116,6 +5116,13 @@ class SharedSignals {
     log.debug("Leaving SharedSignals.sendOneRiscEvent().");
     // ONE `txn` FOR EVERY SET THIS ONE EVENT BECOMES (SSF 1.0 section 4.1.9).
     const txn = this.newTxn();
+    // AN ACT THE ACCOUNT HOLDER MADE (2026-11-03) is noted on the account's
+    // row under this `txn`, before any SET of it is built, so this service's
+    // own receivers can leave a person's own report alone — RISC has no
+    // `initiating_entity` to say it on the wire. See risc.ts's noteOwnAct().
+    if (due.initiatingEntity === 'user') {
+      risc.noteOwnAct(due.row, txn);
+    }
     this.riscBurst.open += 1;
     return Promise.all(candidates.map((record) => {
       return this.transmit(record, { txn: txn, uri: due.uri,

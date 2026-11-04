@@ -81,7 +81,11 @@ const PASSWORD = "Kt!" + crypto.randomBytes(12).toString("base64url") + "7x";
 const KEYTAB_PASSWORD = "Kp!" + crypto.randomBytes(12).toString("base64url") +
                         "6w";
 const BACK_URL = "https://kt-back-" + SUFFIX + ".example";
-const CLIENT_ID = "kt-front-" + SUFFIX;
+// The front end's OAuth client_id IS its entry's identifier (2026-11-03):
+// the token endpoint finds a client by its identifier
+// (`applications.clientConfigOf()`), so a client_id added beside it as a
+// second `oauthClientId` is refused in product mode as an entry it has
+// none for (STS-OAUTH-0193). Read after the set-up has learned the realm.
 const CLIENT_SECRET = "kt-front-secret-" + crypto.randomBytes(16)
   .toString("hex");
 const WST = "http://docs.oasis-open.org/ws-sx/ws-trust/200512";
@@ -323,7 +327,6 @@ async function setUp() {
   await set(idOf("other"), "appDelegationSemantics", "add", "impersonation");
   await set(idOf("back"), "wstrustAppliesTo", "add", BACK_URL);
   await set(idOf("back"), "oauthAudience", "add", BACK_URL);
-  await set(idOf("front"), "oauthClientId", "add", CLIENT_ID);
   await set(idOf("front"), "oauthClientSecret", "set", CLIENT_SECRET);
   await set(idOf("front"), "oauthTokenEndpointAuthMethod", "add",
             "client_secret_post");
@@ -430,7 +433,7 @@ async function exchange(form) {
   const r = await fetch(base + "/oauth2/token", { method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams(Object.assign({ grant_type: EXCHANGE,
-      client_id: CLIENT_ID, client_secret: CLIENT_SECRET,
+      client_id: idOf("front"), client_secret: CLIENT_SECRET,
       audience: BACK_URL }, form)).toString() });
   const text = await r.text();
   let json = {};
@@ -457,7 +460,8 @@ async function exchangeSection(w) {
     assert.strictEqual(x.status, 200, JSON.stringify(x.json));
     const claims = JSON.parse(Buffer.from(String(x.json.access_token)
       .split(".")[1], "base64url").toString("utf8"));
-    assert.ok(claims.act && String(claims.act.sub).indexOf(CLIENT_ID) >= 0,
+    assert.ok(claims.act &&
+              String(claims.act.sub).indexOf(idOf("front")) >= 0,
               JSON.stringify(claims.act));
   });
   await ok("/config/set", { key: "oauth2.tokenExchangeKerberosOutput",

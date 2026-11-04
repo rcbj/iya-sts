@@ -168,6 +168,12 @@ interface RiscRow {
   events: any[];
   streams: string[];
   notes: string[];
+  // THE ACCOUNT HOLDER'S OWN ACTS (2026-11-03): the `txn` of each SET an act
+  // the person made went out under, newest first, bounded as `events` is.
+  // RISC gives no event an `initiating_entity`, so this is what lets this
+  // service's own receivers tell a person's own report from somebody else's
+  // (`ownAct()`). Absent on a row from before it.
+  ownActs?: Array<{ txn: string; at: string }>;
   [member: string]: any;
 }
 
@@ -188,6 +194,9 @@ interface DueEvent {
   subject: Record<string, any> | null;
   row: RiscRow;
   act: string;
+  // Who made the act, as the door said (`user`, `admin`, `policy`,
+  // `system`); '' where it said nothing. Not on the wire: see `ownActs`.
+  initiatingEntity?: string;
 }
 
 interface RiscRegisterDeps {
@@ -1537,6 +1546,70 @@ class RiscRegister {
   }
 
   // ---------------------------------------------------------------------------
+  // THE ACCOUNT HOLDER'S OWN ACT (2026-11-03).
+  //
+  // CAEP gives every event an `initiating_entity`, and this service's own
+  // receivers leave a `credential-change` the PERSON made alone (keep the
+  // session that made the change, OWASP ASVS 3.3; `ssf_receivers.ts`). RISC
+  // gives that member to none of its fourteen, so a person revoking their own
+  // key pair or TLS client certificate for `keyCompromise` on the portal sent a
+  // `credential-compromise` the portal's receiver could not tell from a
+  // detector's, and it revoked the very token the person made the report with
+  // (#1290 made the key pair's revoke send one; `sts_portal_signing_key`,
+  // single-node, found it).
+  //
+  // The fact does not go on the wire — a member RISC does not define would be
+  // a SET a conforming receiver refuses. It is kept HERE, on the account's
+  // row, under the `txn` every SET of the act carries (SSF 1.0 section
+  // 4.1.9), and asked by `txn`, so only the receivers that share this
+  // register — this service's own — can read it. `noteOwnAct()` is called by
+  // `ssf.ts` as the act's `txn` is minted, before any SET is built, so the row
+  // is written ahead of the SET a receiver could collect.
+  // ---------------------------------------------------------------------------
+  /**
+   * Records that the SETs of one act, sent under `txn`, report an act the
+   * account holder made themselves.
+   *
+   * @param row - the account's row, as the act's due event carries it
+   * @param txn - the act's transaction identifier
+   */
+  noteOwnAct(row: RiscRow | null, txn: string): void {
+    const { log, iso } = this.deps;
+    log.debug("Entering RiscRegister.noteOwnAct().");
+    if (!row || !txn) {
+      log.debug("Leaving RiscRegister.noteOwnAct(). Nothing to note.");
+      return;
+    }
+    const held = Array.isArray(row.ownActs) ? row.ownActs : [];
+    row.ownActs = [{ txn: String(txn), at: iso() }].concat(held)
+      .slice(0, this.eventsPerAccount());
+    this.touch(row);
+    log.debug("Leaving RiscRegister.noteOwnAct().");
+  }
+
+  /**
+   * Says whether a SET this service sent reports an act the account holder
+   * made themselves: its subject's row holds its `txn` among `ownActs`.
+   *
+   * @param subject - the SET's `sub_id`
+   * @param txn - the SET's `txn`
+   * @returns true only where the register says so; false where it cannot say
+   */
+  ownAct(subject: unknown, txn: unknown): boolean {
+    const { log } = this.deps;
+    log.debug("Entering RiscRegister.ownAct().");
+    const wanted = String(txn || '');
+    const accountId = wanted ? this.accountIdOf(subject) : '';
+    const row = accountId ? register.get(accountId) : null;
+    const own = !!row && Array.isArray(row.ownActs) &&
+      row.ownActs.some(function (one: { txn: string }): boolean {
+        return !!one && one.txn === wanted;
+      });
+    log.debug("Leaving RiscRegister.ownAct(). " + own);
+    return own;
+  }
+
+  // ---------------------------------------------------------------------------
   // A DIRECTORY WRITE HAPPENED, AND WHAT — IF ANYTHING — SHOULD GO OUT.
   //
   // `ssf.ts` installs this as `ldap_server.setAccountObserver()`'s function and
@@ -1778,7 +1851,8 @@ class RiscRegister {
         summary: 'A RISC ' + short + ' is due for account ' + accountId,
         detail: { type: uri, dn: String(asked.dn || '') } });
       due.push({ uri: uri, payload: payload, subject: subject, row: row,
-        act: act.act });
+        act: act.act,
+        initiatingEntity: String(asked.initiatingEntity || '') });
     });
     log.debug("Leaving RiscRegister.dueForActs(). " + due.length + ' due.');
     return due;
@@ -2812,6 +2886,9 @@ export = {
   applyDue: slot.forward('applyDue'),
   refusals: slot.forward('refusals'),
   noteTransmitted: slot.forward('noteTransmitted'),
+  // The account holder's own acts, by `txn` (2026-11-03).
+  noteOwnAct: slot.forward('noteOwnAct'),
+  ownAct: slot.forward('ownAct'),
   observe: slot.forward('observe'),
   actsFor: slot.forward('actsFor'),
   // The account holder's section 2.8 choice (#146).
