@@ -261,7 +261,20 @@ function validate() {
 const FUZZ_USER = "fuzzer";
 // Meets a typical product password policy: upper, lower, digit, symbol, long.
 const FUZZ_PASSWORD = "Fuzz-Runner-Passw0rd!2026";
-const FUZZ_ROLES = ["ADMIN_READ", "ADMIN_WRITE", "REPORT_USE", "REPORT_ADMIN"];
+// The two console roles are granted on the roster (`/admin-api/rbac/grant`,
+// `rbacAction`); the report roles are configured roles granted on the role
+// register (`/admin-api/roles/add-member`, `rolesAction`). Granting a console
+// role through the role register is refused 400 — they are not that kind.
+const FUZZ_CONSOLE_ROLES = ["ADMIN_READ", "ADMIN_WRITE"];
+const FUZZ_CONFIGURED_ROLES = ["REPORT_USE", "REPORT_ADMIN"];
+// The person-create attributes a realm's attribute policy requires every
+// person to hold (#396): cn, sn, givenName, mail (uid is the `username`).
+// Product mode does not INVENT claim values (`mode.inventsClaimValues()` is
+// false), so they are given explicitly rather than left to `invent`. The mail
+// value is a non-routable `.invalid` address — it is only stored (mail sending
+// is off by default), so nothing is dialed and nothing leaves the device.
+const FUZZ_ATTRIBUTES = { cn: "Fuzz Runner", sn: "Runner",
+  givenName: "Fuzz", mail: "fuzzer@fuzz.invalid" };
 // The four APIs are fuzzed from their real schemas, so the synthesized
 // protocol document leaves their paths out.
 const API_BASES = ["/account-api", "/admin-api", "/authn-api", "/report-api"];
@@ -270,11 +283,12 @@ const PROXY_SCRIPT = path.join(__dirname, "..", "schemathesis",
 const HOOKS_FILE = path.join(__dirname, "..", "schemathesis", "sts_checks.py");
 const MAX_EXAMPLES = parseInt(
   process.env.STS_SCHEMATHESIS_MAX_EXAMPLES || "50", 10);
-// The venv the tests image builds (build-schemathesis.sh), or the PATH.
+// The venv the tests image builds, or the PATH. STS_SCHEMATHESIS_DIR is the
+// venv ROOT (the Dockerfile's `python3 -m venv /opt/schemathesis`), so the
+// executable is `<dir>/bin/schemathesis` — no `venv` segment.
 const SCHEMATHESIS_BIN = process.env.STS_SCHEMATHESIS_BIN ||
   (process.env.STS_SCHEMATHESIS_DIR
-    ? path.join(process.env.STS_SCHEMATHESIS_DIR, "venv", "bin",
-                "schemathesis")
+    ? path.join(process.env.STS_SCHEMATHESIS_DIR, "bin", "schemathesis")
     : "schemathesis");
 
 // The management API's bearer token the launcher minted for this run.
@@ -321,7 +335,8 @@ async function provision(serviceBase, profile, say) {
       made.status + " " + JSON.stringify(made.json).slice(0, 300));
   }
   const person = await adminCall(serviceBase, realmPrefix, "POST",
-    "/admin-api/users/create", { username: FUZZ_USER, invent: true });
+    "/admin-api/users/create",
+    { username: FUZZ_USER, attributes: FUZZ_ATTRIBUTES, credential: "none" });
   if ([200, 201, 409].indexOf(person.status) < 0) {
     throw new Error("could not create the fuzz person in " + profile.realm +
       ": " + person.status + " " + JSON.stringify(person.json).slice(0, 300));
@@ -334,15 +349,24 @@ async function provision(serviceBase, profile, say) {
       profile.realm + ": " + password.status + " " +
       JSON.stringify(password.json).slice(0, 300));
   }
-  for (let i = 0; i < FUZZ_ROLES.length; i++) {
+  for (let i = 0; i < FUZZ_CONSOLE_ROLES.length; i++) {
     const granted = await adminCall(serviceBase, realmPrefix, "POST",
-      "/admin-api/roles/add-member",
-      { role: FUZZ_ROLES[i], kind: "user", member: FUZZ_USER });
+      "/admin-api/rbac/grant",
+      { username: FUZZ_USER, role: FUZZ_CONSOLE_ROLES[i] });
     if (granted.status !== 200) {
       // A missing role is not fatal: the surface that needs it will fail its
       // own sign-in, which the run reports.
-      say("[schemathesis] WARNING: granting " + FUZZ_ROLES[i] + " in " +
+      say("[schemathesis] WARNING: granting " + FUZZ_CONSOLE_ROLES[i] + " in " +
         profile.realm + " answered " + granted.status);
+    }
+  }
+  for (let i = 0; i < FUZZ_CONFIGURED_ROLES.length; i++) {
+    const granted = await adminCall(serviceBase, realmPrefix, "POST",
+      "/admin-api/roles/add-member",
+      { role: FUZZ_CONFIGURED_ROLES[i], kind: "user", member: FUZZ_USER });
+    if (granted.status !== 200) {
+      say("[schemathesis] WARNING: granting " + FUZZ_CONFIGURED_ROLES[i] +
+        " in " + profile.realm + " answered " + granted.status);
     }
   }
   say("[schemathesis] provisioned realm " + profile.realm + " (" +

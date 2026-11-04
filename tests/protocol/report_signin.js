@@ -141,8 +141,9 @@ async function signInToReport(base, user, log2, options) {
     log.debug("Entering fetchKeeping().");
     const r = await fetch(url, { redirect: "manual",
       headers: { "User-Agent": AGENT, cookie: cookies.header() } });
-    cookies.keep({ setCookies: r.headers.getSetCookie
-      ? r.headers.getSetCookie() : [] });
+    // keep() reads the fetch Response's own headers.getSetCookie(); the jar
+    // from console_signin.js takes the response itself, not a {setCookies}.
+    cookies.keep(r);
     log.debug("Leaving fetchKeeping().");
     return r;
   }
