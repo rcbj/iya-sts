@@ -10933,7 +10933,14 @@ class AdminApi {
                          'and a person who has signed in with no entry is ' +
                          'not listed (a typed name can still be granted). ' +
                          '`candidateSearch` says how many candidates there ' +
-                         'are in all and how many matched, and `complete` ' +
+                         'are in all and how many matched. A windowed ' +
+                         'search\'s count stops at `countCap` (100,000, ' +
+                         'the furthest the pager reaches; #1308): where ' +
+                         'more match, `matched` is `countCap` and ' +
+                         '`countCapped` is true — MORE THAN `matched` ' +
+                         'match, and `candidatesPaging` stops there. Held ' +
+                         'in memory, the count is exact and `countCapped` ' +
+                         'is false. `complete` says ' +
                          'whether this page holds every one it counted: ' +
                          'where it is false, `incomplete` says how many ' +
                          'names a DN cannot hold were left out ' +

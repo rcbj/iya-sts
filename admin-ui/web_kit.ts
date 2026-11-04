@@ -1345,7 +1345,9 @@ class WebKit {
   //   slice       optional, { matched, from }: `entries` is then the pane's
   //               results already searched and paged — by the view, for a
   //               catalogue too big to send whole (#446) — and these say how
-  //               many matched and where the page starts
+  //               many matched and where the page starts; `countCapped`
+  //               true when MORE than `matched` matched (#1308, a count
+  //               that stopped at its cap), which the count line says
   /**
    * Draws a search box and a paged, scrolling pane of matching entries,
    * shared by every chooser on the console.
@@ -1468,10 +1470,16 @@ class WebKit {
     const counted = { n: matchedCount, from: from + 1,
                       to: from + shown.length,
                       searched: wanted ? 'yes' : 'no' };
+    // A COUNT THAT STOPPED AT ITS CAP IS NOT A NUMBER OF MATCHES (#1308):
+    // "of 100000" would be a number the store never counted to, so the
+    // line says "more than". The pager still stops at `matched`.
+    const countCapped = Boolean(sliced && sliced.countCapped);
     const count = matchedCount
-      ? (matchedCount > WebKit.CHOOSER_HITS
-          ? t.html('consoleKit.chooser.showing', counted)
-          : t.html('consoleKit.chooser.count', counted))
+      ? (countCapped
+          ? t.html('consoleKit.chooser.showingMore', counted)
+          : (matchedCount > WebKit.CHOOSER_HITS
+              ? t.html('consoleKit.chooser.showing', counted)
+              : t.html('consoleKit.chooser.count', counted)))
       : '';
     const more = [];
     if (from > 0) {

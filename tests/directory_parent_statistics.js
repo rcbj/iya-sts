@@ -37,8 +37,8 @@
 //      big one, after a cursor), a subtree page, `keysUnder`, `namesUnder`,
 //      `hasChild` of a group and of a person, `byName`, `withNames` and
 //      `byAttribute` under a parent, an `rdnPage` (plain, after a cursor,
-//      and with a needle) and a `containerPage` (the first page and an
-//      offset) —
+//      and with a needle), a `containerPage` (the first page and an
+//      offset) and a needle's capped `rdnCount` (#1308) —
 //      no sequential scan, no primary key or realm index on the table; the
 //      restore's and the pages' rows through the parent index, and an
 //      `rdnPage` through `sts_ldap_entries_rdn`.
@@ -227,8 +227,13 @@ function statementsToPlan() {
     ['byAttribute under ou=devices',
      queries.byAttribute('default', 'stsdeviceid', 'x', 10, DEVICES), false],
     // #359. The rdn index has no dn_key, so these must not be asked to
-    // read the parent index. `rdnCount` is a count, not a walk, and is
-    // not planned here.
+    // read the parent index. `rdnCount` is a count, not a walk: since
+    // #1308 it is capped by a LIMIT, which lets a planner prefer a scan
+    // that finds the first rows soonest, so it is held to the rule every
+    // statement here is — no sequential scan, no primary key — and to no
+    // particular index.
+    ['rdnCount containing a needle, capped',
+     queries.rdnCount('default', USERS, 'u5'), false],
     ['rdnPage of the big container',
      queries.rdnPage('default', USERS, '', 1000), 'rdn'],
     ['rdnPage after a cursor',

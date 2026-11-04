@@ -22770,6 +22770,8 @@ const DIRECTORY_SEARCH_PAGE = 500;
 // How far `persistence/directory_queries.js`'s `rdnPage` and
 // `containerPage` walk: their offset and their walk are capped here, so a
 // deep page cannot become a walk of the container. Kept equal to theirs.
+// It is also the cap a needle search's COUNT stops at (#1308,
+// `rdnCount`'s `RDN_COUNT_CAP`): a match past it could never be paged to.
 const WINDOWED_PAGE_CAP = 100000;
 
 /**
@@ -26322,19 +26324,28 @@ function storeAsked(promise) {
  * (`WINDOWED_PAGE_CAP`; `capped`). `complete` is false when any of them
  * touched this page, and the console says which.
  *
+ * **A NEEDLE'S COUNT IS CAPPED** (#1308): `rdnCount` counts at most
+ * `WINDOWED_PAGE_CAP + 1` matches, so a count over the cap is not a number
+ * of matches. `matched` is then the cap and `countCapped` is true — MORE
+ * THAN `matched` match — and `capped` is true with it, since the pager
+ * stops there too. A count the caller passes back keeps its
+ * `countCapped`. An empty needle is the container's counter, exact.
+ *
  * @param offset - rows to skip
  * @param limit - how many
  * @param needle - a substring, or ''
- * @param options - a count already known (`total`, `matched`)
- * @returns a promise of `{ rows, total, matched, complete, incomplete }`
+ * @param options - a count already known (`total`, `matched`,
+ *   `countCapped`)
+ * @returns a promise of `{ rows, total, matched, countCapped, complete,
+ *   incomplete }`
  */
 async function candidatePageAsync(offset, limit, needle, options) {
   log.debug('Entering candidatePageAsync().');
   const opts = options || {};
   if (!directoryWindow) {
     log.debug('Leaving candidatePageAsync(). Not windowed.');
-    return { rows: [], total: 0, matched: 0, complete: true,
-             incomplete: null };
+    return { rows: [], total: 0, matched: 0, countCapped: false,
+             complete: true, incomplete: null };
   }
   const realmId = realms.currentId();
   const parent = normalizeDn(usersDn());
@@ -26342,19 +26353,27 @@ async function candidatePageAsync(offset, limit, needle, options) {
   const count = Math.max(0, Math.floor(Number(limit) || 0));
   let total = opts.total;
   let matched = opts.matched;
+  let countCapped = false;
   if (total === undefined || total === null ||
       matched === undefined || matched === null) {
     total = Number(await storeAsked(directoryWindow.askAsync('count',
       [realmId, parent]))) || 0;
-    matched = wanted
-      ? (Number(await storeAsked(directoryWindow.askAsync('rdnCount',
-          [realmId, parent, wanted]))) || 0)
-      : total;
+    if (wanted) {
+      // At most the cap and one more (#1308): the one more is how the
+      // store says there are more than the cap.
+      const counted = Number(await storeAsked(directoryWindow.askAsync(
+        'rdnCount', [realmId, parent, wanted, WINDOWED_PAGE_CAP]))) || 0;
+      countCapped = counted > WINDOWED_PAGE_CAP;
+      matched = countCapped ? WINDOWED_PAGE_CAP : counted;
+    } else {
+      matched = total;
+    }
   } else {
     total = Number(total) || 0;
     matched = Number(matched) || 0;
+    countCapped = opts.countCapped === true;
   }
-  const capped = matched > WINDOWED_PAGE_CAP;
+  const capped = countCapped || matched > WINDOWED_PAGE_CAP;
   const from = Math.max(0, Math.floor(Number(offset) || 0));
   const incompleteness = function (unusable, short) {
     const whole = unusable === 0 && short === 0 && !capped;
@@ -26367,7 +26386,8 @@ async function candidatePageAsync(offset, limit, needle, options) {
     const counted = incompleteness(0, 0);
     log.debug('Leaving candidatePageAsync(). Counted.');
     return { rows: [], total: total, matched: matched,
-             complete: counted.complete, incomplete: counted.incomplete };
+             countCapped: countCapped, complete: counted.complete,
+             incomplete: counted.incomplete };
   }
   if (from >= WINDOWED_PAGE_CAP) {
     // PAST THE CAP the store would answer the cap's page instead, which
@@ -26375,7 +26395,8 @@ async function candidatePageAsync(offset, limit, needle, options) {
     const past = incompleteness(0, 0);
     log.debug('Leaving candidatePageAsync(). Past the cap.');
     return { rows: [], total: total, matched: matched,
-             complete: past.complete, incomplete: past.incomplete };
+             countCapped: countCapped, complete: past.complete,
+             incomplete: past.incomplete };
   }
   const page = await storeAsked(directoryWindow.rdnPageAsync(realmId,
     parent, '', count, { offset: from, needle: wanted }));
@@ -26399,7 +26420,8 @@ async function candidatePageAsync(offset, limit, needle, options) {
   const answer = incompleteness(unusable, short);
   log.debug('Leaving candidatePageAsync(). ' + rows.length + ' row(s).');
   return { rows: rows, total: total, matched: matched,
-           complete: answer.complete, incomplete: answer.incomplete };
+           countCapped: countCapped, complete: answer.complete,
+           incomplete: answer.incomplete };
 }
 
 /**
@@ -30296,6 +30318,8 @@ module.exports = {
   DELEGATE_CANDIDATE_CAP: DELEGATE_CANDIDATE_CAP,
   DELEGATE_CANDIDATE_MIN: DELEGATE_CANDIDATE_MIN,
   candidatePageAsync: candidatePageAsync,
+  // How far the role chooser pages and counts (#359, #1308).
+  CANDIDATE_COUNT_CAP: WINDOWED_PAGE_CAP,
   candidateByNameAsync: candidateByNameAsync,
   // /admin/ldap/directory's view, for the in-process test that counts what
   // it copies (#352).
