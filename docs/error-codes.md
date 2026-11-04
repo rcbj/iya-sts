@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5192** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5193** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 95
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 100
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 101
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
@@ -421,6 +421,7 @@ Raised from: persistence/.
 | `STS-STORE-0160` | A risk row was refused on MariaDB because a value is not what its column holds (an address that is not one, a number that is not an integer); the batch is refused whole rather than stored with a substitute. | — |
 | `STS-STORE-0161` | The one-time session index backfill skipped a stored sign-on session whose sealed body will not open, will not parse or yields no index columns; the walk finishes and writes its completion mark, that session is lost and its person signs in again. The last line gives the count. | — |
 | `STS-STORE-0162` | The persistence.minted-expiry-purge-global job, run by the one cell holding the global run claim, could not delete the global tier's expired, orphaned or stale minted rows (#695); the cell tier's purge is a job of its own and is not affected, a start skips the rows anyway, and the next run tries again. | none — logged, and the job run is recorded as failed |
+| `STS-STORE-0163` | The one-time session index backfill found stored sign-on sessions and could read NOT ONE of them (#1312): the key-encryption or data key this process holds is almost certainly not the store's. The completion mark is not written and the start fails, so the next start with the right key walks again; a backfill that reads some and skips others still finishes (STS-STORE-0161). | — |
 
 ## STS-CLUSTER
 
