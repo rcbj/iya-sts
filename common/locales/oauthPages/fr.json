@@ -25,6 +25,7 @@
   "signedOut.heading": "Déconnecté",
   "signedOut.ended": "La session de {username} est terminée, et chaque application connectée par son intermédiaire en est informée.",
   "signedOut.none": "Il n’y avait aucune session à terminer.",
+  "signedOut.notRegistered": "<strong>Le post_logout_redirect_uri de cette demande de déconnexion n’est pas l’un de ceux que ce client a enregistrés ; il n’a donc pas été suivi.</strong> La demande indiquait <code>{uri}</code> ; ce client a enregistré <code>{registered}</code> (RP-Initiated Logout 1.0, section 3).",
   "signedOut.frontSub": "OpenID Connect RP-Initiated Logout 1.0, avec Front-Channel Logout 1.0",
   "signedOut.frontEnded": "La session de {username} est terminée. C’est la session que partagent WS-Federation et SAML 2.0 : vous en êtes donc déconnecté aussi.",
   "signedOut.frontNone": "Il n’y avait aucune session à terminer. Le cookie a tout de même été effacé.",

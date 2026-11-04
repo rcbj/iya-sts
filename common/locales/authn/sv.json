@@ -2,6 +2,8 @@
   "login.title": "Logga in — autentiseringstjänst",
   "login.heading": "Logga in",
   "login.at": "Autentiseringstjänst på <code>{base}</code>",
+  "login.reauthPromptLogin": "Programmet bad dig att logga in igen (prompt=login).",
+  "login.reauthMaxAge": "Programmet bad dig att logga in igen eftersom din senaste inloggning är äldre än det tillåter (max_age).",
   "login.linkAccount": "<strong>Koppla ditt konto.</strong> En federationspartner loggade in dig som <code>{name}</code>, och det kontot är ännu inte kopplat till den. Logga in här som {name} för att koppla dem; Avbryt kopplar ingenting.",
   "login.username": "Användarnamn",
   "login.password": "Lösenord",

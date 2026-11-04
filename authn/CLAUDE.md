@@ -453,6 +453,24 @@ name the one origin (`ShellDocument`'s `images`). The argument, and why it is
 not `img-src https:`, is in `oauth-oidc/CLAUDE.md` (*What the screens show
 about a client*).
 
+## WHY A SECOND SIGN-IN (#1302, 2026-11-04)
+
+**A pending sign-in carries `reauthentication`** — `prompt_login`,
+`max_age` or '' — which the authorization endpoint passes to
+`beginAuthentication()` when it sends a person who ALREADY HAS a session to
+sign in again because of `prompt=login` or a session older than `max_age`
+(`oauth-oidc/CLAUDE.md`). The record keeps only those two values, the
+`screenView()` carries it, and `web_authn_login.ts`'s `reauthentication()`
+draws one `.warn` line under the heading: `authn.login.reauthPromptLogin`,
+"The application asked you to sign in again (prompt=login).", or
+`authn.login.reauthMaxAge`, "The application asked you to sign in again
+because your last sign-in is older than it allows (max_age)." A first
+sign-in, and every other reason a sign-in is asked for, draw nothing — the
+screen is otherwise the same, and nothing about who is sent here changed. It
+exists because the OpenID Foundation's reviewer is asked to SEE the person
+asked to sign in a second time, and an identical screen did not show it.
+`tests/rp_initiated_logout.js` f.
+
 ## WHAT AN AUTHENTICATED IDENTITY IS HERE (2026-09-14)
 
 **It is this module's session: an internal, protocol-independent record, and

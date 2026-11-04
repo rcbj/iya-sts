@@ -2,6 +2,8 @@
   "login.title": "Connexion — service d’authentification",
   "login.heading": "Connexion",
   "login.at": "Service d’authentification à <code>{base}</code>",
+  "login.reauthPromptLogin": "L’application vous a demandé de vous reconnecter (prompt=login).",
+  "login.reauthMaxAge": "L’application vous a demandé de vous reconnecter, car votre dernière connexion est plus ancienne qu’elle ne le permet (max_age).",
   "login.linkAccount": "<strong>Liez votre compte.</strong> Un partenaire de fédération vous a connecté en tant que <code>{name}</code>, et ce compte n’y est pas encore lié. Connectez-vous ici en tant que {name} pour les lier ; Annuler ne lie rien.",
   "login.username": "Nom d’utilisateur",
   "login.password": "Mot de passe",

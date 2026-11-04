@@ -2663,7 +2663,17 @@ nothing registered, a private-use address never (`0290`), OAuth 2.1 mode never
 (`0286`), product never (`0603`), development yes. `oauth2.redirectUris` — the
 AUTHORIZATION list — is no longer read. A refused return is NOT a refusal of
 the sign-out: the person is signed out and the page says where they were not
-sent. `state` rides on every return (`withLogoutState()`), including the
+sent. **An address the client did not register (`0123`) is a WARNING BOX as
+prominent as the green "signed out" one since #1302**, ABOVE it, in the
+page's language (`oauthPages.signedOut.notRegistered`): that the request's
+`post_logout_redirect_uri` is not one this client registered and so was not
+followed, then the address asked for, the registered ones
+(`checkPostLogoutRedirectUri()`'s `registered`) and section 3. The OpenID
+Foundation's `oidcc-rp-initiated-logout-bad-post-logout-redirect-uri` and
+`-query-added-to-post-logout-redirect-uri` ask their reviewer for a page
+saying the request is invalid for exactly that, and a grey sentence under the
+banner did not. Every other refused return keeps its grey English sentence.
+`state` rides on every return (`withLogoutState()`), including the
 front-channel page's refresh and link. When the registered return URI already
 has a `state`, the request's value replaces it; duplicate query values can
 make an RP read stale state.
@@ -5709,6 +5719,23 @@ the decisions rcbj made on #118:
   account that consented. `authn/CLAUDE.md`, *Several signed-in accounts in
   one browser*, argues all of it. **An essential `acr` in a claims request**
   is a step-up requirement: `step_up.ts`'s `essentialAcrValuesOf()`.
+* **A forced second sign-in says why (#1302)**: where a person WITH a
+  session is sent to sign in because of `prompt=login`, or because the
+  session is older than `max_age` (the request's, or `default_max_age`),
+  `beginAuthentication()` is given `reauthentication: 'prompt_login'` or
+  `'max_age'`, and the sign-in screen draws one line for it
+  (`authn/CLAUDE.md`, *Why a second sign-in*). Nothing for a first sign-in,
+  `select_account`, a hint naming somebody else or an unmet `acr`. Wording
+  only: who is sent to sign in is decided exactly as before. The OpenID
+  Foundation's `oidcc-prompt-login` and `oidcc-max-age-1` ask the reviewer to
+  see the person "asked to login for a second time".
+* **No `redirect_uri` at all is told apart from an empty one (#1302)**: the
+  400 page and JSON (`invalid_request`, `STS-OAUTH-0160`) say "This
+  authorization request has no redirect_uri, and one is required: without it
+  there is nowhere to send the response." for an absent parameter
+  (`oidcc-ensure-redirect-uri-in-authorization-request`), and keep "A valid
+  absolute redirect_uri is required." for `redirect_uri=`; a malformed one is
+  the validator's (`0159`), as it was.
 * **`offline_access`** (section 11): `offlineAccessScope()` strips it without a
   code, and without `prompt=consent` or a recorded consent to it. **A refresh
   token without it is online**: it carries `sid` inside its JWE, and the refresh

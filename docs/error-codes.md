@@ -1811,7 +1811,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0157` | The OpenID Connect Core 5.5 claims request on an authorization request is malformed. | invalid_request (redirected error) |
 | `STS-OAUTH-0158` | RFC 9700 mode refused a request for a reason the policy did not name (fallback; the policy normally names one of STS-OAUTH-0119 to -0147). | the error the RFC 9700 check named (HTTP 400 or redirected) |
 | `STS-OAUTH-0159` | The authorization request is malformed (the input validator refused it); answered here rather than redirected. | invalid_request (HTTP 400) |
-| `STS-OAUTH-0160` | The authorization request has no redirect_uri, so the error cannot be redirected. (What is usable is the schema's question since 2026-09-13; a value it refuses is STS-OAUTH-0159.) | invalid_request (HTTP 400) |
+| `STS-OAUTH-0160` | The authorization request has no redirect_uri (or an empty one), so the error cannot be redirected. (What is usable is the schema's question since 2026-09-13; a value it refuses is STS-OAUTH-0159.) | invalid_request (HTTP 400) |
 | `STS-OAUTH-0161` | The authorization request named no client_id. | invalid_request (redirected error, or HTTP 400 page before sign-in) |
 | `STS-OAUTH-0162` | The authorization request asked for a response_type this service does not implement. | unsupported_response_type (redirected error, or HTTP 400 page) |
 | `STS-OAUTH-0163` | The authorization request asked for a response_type this authorization server profile does not advertise. | unsupported_response_type (redirected error, or HTTP 400 page) |

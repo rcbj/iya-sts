@@ -2,6 +2,8 @@
   "login.title": "Mag-sign in — serbisyo ng pagpapatunay",
   "login.heading": "Mag-sign in",
   "login.at": "Serbisyo ng pagpapatunay sa <code>{base}</code>",
+  "login.reauthPromptLogin": "Hiniling ng application na mag-sign in ka ulit (prompt=login).",
+  "login.reauthMaxAge": "Hiniling ng application na mag-sign in ka ulit dahil mas luma ang huli mong pag-sign in kaysa sa pinapayagan nito (max_age).",
   "login.linkAccount": "<strong>I-link ang iyong account.</strong> Na-sign in ka ng isang federation partner bilang <code>{name}</code>, at hindi pa naka-link dito ang account na iyon. Mag-sign in dito bilang {name} para i-link ang mga ito; walang ili-link ang Kanselahin.",
   "login.username": "Username",
   "login.password": "Password",

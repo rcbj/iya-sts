@@ -546,7 +546,12 @@ page says why it asks: the request carried no `id_token_hint` (and, when the
 return address will not be followed, that the person will not be sent on to
 it), the hint was for another session, the `logout_hint` names somebody
 else, or the request arrived without the browser's sign-in cookie. A return
-that is refused still signs the person out.
+that is refused still signs the person out. When the client registered
+return addresses and the request names another one (a query added to a
+registered one counts as another), the signed-out page shows a warning box
+next to the "signed out" one. It says the `post_logout_redirect_uri` is not
+one this client registered, so it was not followed, and names the address
+asked for and the registered ones.
 
 ## Front-Channel Logout
 
@@ -673,6 +678,13 @@ on that ladder (see [below](#phishing-resistant-sign-in-phr-and-phrh)).
 `acr_values_supported` in discovery lists them all. If the person cannot meet
 the requirement, the answer is `unmet_authentication_requirements` in every
 mode.
+
+A person who is already signed in and is sent to sign in again sees one line
+on the sign-in screen saying why. For `prompt=login` it reads "The
+application asked you to sign in again (prompt=login)." For a session older
+than `max_age` it reads "The application asked you to sign in again because
+your last sign-in is older than it allows (max_age)." A first sign-in shows
+no such line.
 
 Taken from `sts_step_up.js`.
 

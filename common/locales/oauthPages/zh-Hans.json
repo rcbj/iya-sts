@@ -25,6 +25,7 @@
   "signedOut.heading": "已退出登录",
   "signedOut.ended": "{username} 的会话已结束，通过该会话登录的每个应用都会收到通知。",
   "signedOut.none": "没有需要结束的会话。",
+  "signedOut.notRegistered": "<strong>此退出登录请求中的 post_logout_redirect_uri 不是此客户端注册的地址，因此未将您转到该地址。</strong>请求指定的是 <code>{uri}</code>；此客户端注册的是 <code>{registered}</code>（RP-Initiated Logout 1.0 第 3 节）。",
   "signedOut.frontSub": "OpenID Connect RP-Initiated Logout 1.0，以及 Front-Channel Logout 1.0",
   "signedOut.frontEnded": "{username} 的会话已结束。WS-Federation 和 SAML 2.0 共用此会话，因此它们也已退出登录。",
   "signedOut.frontNone": "没有需要结束的会话。Cookie 仍已被清除。",
