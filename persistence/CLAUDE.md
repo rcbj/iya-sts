@@ -3306,7 +3306,16 @@ batches of 500 until a completion row commits with the last page. A
 non-empty table is not that mark: another node may already have written a
 live row, and a throw leaves the mark unwritten so the next start walks
 again. A throw is fatal, and a page that has committed is not reported as
-nothing changed. The last page's transaction deletes index rows whose
+nothing changed. **A body that will not open is not a throw (#695, rcbj's
+decision)**: one that will not open, will not parse or yields no index
+columns is logged under `STS-STORE-0161` (the first ten by key, then the
+count), skipped and left in `sts_minted`, and the walk finishes and writes
+its mark. Until #695 one corrupt row stopped every start. Done with skips is
+done: a re-run with the same keys reads the same bytes, so an unwritten mark
+would only re-walk every session on every start. Those sessions are lost —
+a restore leaves an unreadable row out and the window answers a failed
+read, never a session — and the person signs in again; the last line says
+how many. A store or driver failure is still a throw. The last page's transaction deletes index rows whose
 session body is missing or a tombstone, and does not delete the completion
 row: a resume's new head would hide an older build's delete, and a body
 `purgeTombstones` already removed is not in the change log. That head is

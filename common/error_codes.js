@@ -1918,6 +1918,13 @@ const CODES = [
       'an integer); the batch is refused whole rather than stored with a ' +
       'substitute.',
     spec: '' },
+  { code: 'STS-STORE-0161',
+    summary: 'The one-time session index backfill skipped a stored sign-on ' +
+      'session whose sealed body will not open, will not parse or yields ' +
+      'no index columns; the walk finishes and writes its completion mark, ' +
+      'that session is lost and its person signs in again. The last line ' +
+      'gives the count.',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
