@@ -412,8 +412,11 @@ function childMain() {
          'C5. /web is answered on every listener and in every cell');
 
     // --- D. the card is one stylesheet -------------------------------------
+    // The chooser's rules as the card carries them: each colour a realm may
+    // set read through its custom property (#717, `themed()`).
     note(WebCardCss.CARD_CSS === authn.CARD_CSS &&
-         WebCardCss.CARD_CSS.indexOf(WebCardCss.CHOOSER_CSS) > 0,
+         WebCardCss.CARD_CSS.indexOf(
+           WebCardCss.themed(WebCardCss.CHOOSER_CSS)) > 0,
          'D1. the card is the sign-in screen\'s stylesheet, chooser rules ' +
          'included');
 
