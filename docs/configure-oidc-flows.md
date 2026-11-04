@@ -541,8 +541,12 @@ If the client has registered return URIs, the request must match one exactly,
 in every mode. If it has registered none, development mode follows the
 return anyway, and product and OAuth 2.1 mode never do. A request that names
 no client is never redirected. If there is no `id_token_hint` whose `sid`
-matches the current session, the person sees a confirmation page first. A
-return that is refused still signs the person out.
+matches the current session, the person sees a confirmation page first. The
+page says why it asks: the request carried no `id_token_hint` (and, when the
+return address will not be followed, that the person will not be sent on to
+it), the hint was for another session, the `logout_hint` names somebody
+else, or the request arrived without the browser's sign-in cookie. A return
+that is refused still signs the person out.
 
 ## Front-Channel Logout
 
