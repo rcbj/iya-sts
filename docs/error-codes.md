@@ -418,7 +418,7 @@ Raised from: persistence/.
 | `STS-STORE-0140` | A directory flush was refused on MariaDB before it wrote: an entry's DN key is longer than the 352 characters `dn_key` holds (or its realm than 64), which InnoDB's key limit fixes; nothing of the flush was written. | — |
 | `STS-STORE-0141` | A directory write on MariaDB found one of the count rows it folds into gone between making it and adding to it (its realm was removed meanwhile); the write was rolled back rather than counted into nothing. | — |
 | `STS-STORE-0160` | A risk row was refused on MariaDB because a value is not what its column holds (an address that is not one, a number that is not an integer); the batch is refused whole rather than stored with a substitute. | — |
-| `STS-STORE-0161` | The persistence.minted-expiry-purge-global job, run by the one cell holding the global run claim, could not delete the global tier's expired, orphaned or stale minted rows (#695); the cell tier's purge is a job of its own and is not affected, a start skips the rows anyway, and the next run tries again. | none — logged, and the job run is recorded as failed |
+| `STS-STORE-0162` | The persistence.minted-expiry-purge-global job, run by the one cell holding the global run claim, could not delete the global tier's expired, orphaned or stale minted rows (#695); the cell tier's purge is a job of its own and is not affected, a start skips the rows anyway, and the next run tries again. | none — logged, and the job run is recorded as failed |
 
 ## STS-CLUSTER
 

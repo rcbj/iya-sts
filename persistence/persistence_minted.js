@@ -3394,7 +3394,7 @@ function ensureTombstoneJob(schedulerInstance) {
 //
 // The run's summary records what a run deleted. The failure is once per
 // run (the no-per-event-failure-logs rule), with STS-STORE-0065 for this
-// cell's store or the only one and STS-STORE-0161 for the global tier's
+// cell's store or the only one and STS-STORE-0162 for the global tier's
 // (#695, below: in a service deployed as cells each tier is its own job).
 // ---------------------------------------------------------------------------
 const EXPIRY_PURGE_JOB = 'persistence.minted-expiry-purge';
@@ -3663,7 +3663,7 @@ function ensureExpiryPurgeJob(schedulerInstance) {
       },
       run: function () {
         return Promise.resolve().then(function () {
-          return runExpiryPurge('global', 'STS-STORE-0161');
+          return runExpiryPurge('global', 'STS-STORE-0162');
         });
       }
     });

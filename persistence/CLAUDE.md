@@ -3628,7 +3628,7 @@ leader purged the one shared global `sts_minted`. Now:
   constants in `persistence_minted.js`;
 * each KIND is settled on its own: a run tries all three, reports every
   count, and fails once with its tier's code — STS-STORE-0065 for the cell's
-  (or the only) store, STS-STORE-0161 for the global tier's. The cell's
+  (or the only) store, STS-STORE-0162 for the global tier's. The cell's
   orphan kind still needs the global registry, so with the global database
   down it is the one kind that fails there; the cell's expired and stale
   rows are deleted and counted;

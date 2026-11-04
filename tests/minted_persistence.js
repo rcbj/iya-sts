@@ -981,9 +981,9 @@ async function body(t, dir) {
           globalDb.rows.size === 2,
           'and the global job\'s run fails on its own, its rows left for ' +
           'the next run', globalJobError ? globalJobError.message : 'ok');
-  t.check(errorCodes.isKnown('STS-STORE-0161') &&
+  t.check(errorCodes.isKnown('STS-STORE-0162') &&
           errorCodes.isKnown('STS-STORE-0065'),
-          'the global tier\'s failure has a code of its own, STS-STORE-0161, ' +
+          'the global tier\'s failure has a code of its own, STS-STORE-0162, ' +
           'beside the cell\'s STS-STORE-0065');
   globalDown = false;
   const recovered = await minted.purgeExpired(Date.now(), 'global');

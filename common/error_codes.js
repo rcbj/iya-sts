@@ -1918,7 +1918,7 @@ const CODES = [
       'an integer); the batch is refused whole rather than stored with a ' +
       'substitute.',
     spec: '' },
-  { code: 'STS-STORE-0161',
+  { code: 'STS-STORE-0162',
     summary: 'The persistence.minted-expiry-purge-global job, run by the one ' +
       'cell holding the global run claim, could not delete the global ' +
       'tier\'s expired, orphaned or stale minted rows (#695); the cell ' +
