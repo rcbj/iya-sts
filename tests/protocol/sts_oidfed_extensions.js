@@ -394,6 +394,23 @@ async function test() {
                            "crawled the collection");
   const view = await hop("GET", root + "/admin-api/oidfed");
   const after = await hop("GET", collection);
+  // EVERY PAGE HERE TOO (#694's realm, 2026-11-04): this read took page
+  // one only, so a run whose leftover realms filled more than a page could
+  // put this realm on page two — a realm whose identifier sorts first (one
+  // on another host, `https://sts.example.com…`, sorts before every
+  // `https://sts:8081…`) was enough. Both assertions read every page.
+  const afterEntities = [];
+  let afterPage = after;
+  for (let n = 0; n < 50 && afterPage.status === 200; n++) {
+    afterPage.json.entities.forEach(function (e) {
+      afterEntities.push(e);
+    });
+    if (!afterPage.json.next) {
+      break;
+    }
+    afterPage = await hop("GET", collection + "?from=" +
+                                 encodeURIComponent(afterPage.json.next));
+  }
   check("a crawl through /admin-api: the subordinates that cannot be " +
         "resolved from here are left out and named, and the endpoint still " +
         "answers", function () {
@@ -402,12 +419,12 @@ async function test() {
     const problems = view.json.collection.crawl.problems.join(" ");
     assert.ok(problems.indexOf(subs[0]) >= 0, problems);
     assert.strictEqual(after.status, 200);
-    assert.ok(after.json.entities.some(function (e) {
+    assert.ok(afterEntities.some(function (e) {
       return e.entity_id === leafId;
-    }), after.text.slice(0, 400));
-    assert.ok(!after.json.entities.some(function (e) {
+    }), "the realm is on no page: " + after.text.slice(0, 400));
+    assert.ok(!afterEntities.some(function (e) {
       return e.entity_id === subs[0];
-    }));
+    }), subs[0] + " is on a page");
   });
 
   // The subordinates go; their histories stay, as they should.
