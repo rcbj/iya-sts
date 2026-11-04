@@ -721,8 +721,31 @@ class SpiffeTargets {
   }
 
   /**
+   * Whether `task` was started by one of this cluster's node services.
+   * ECS names a service's tasks' `group` `service:<service name>`, and the
+   * node services are `<cluster>-node-a`, `-node-b`, ... (environment/
+   * ecs.tf). Anything else RUNNING in the cluster — the suite runner and
+   * the cell conversion are `run-task` tasks here (`family:...`), and a
+   * service added later would be another name — is not a node, and its
+   * address in a SPIFFE target group would be a target nothing answers on
+   * (#674's review, #695).
+   *
+   * @param {any} task - a DescribeTasks entry
+   * @param {string} cluster - this cluster's name
+   * @returns {boolean}
+   */
+  static isNodeTask(task, cluster) {
+    log.debug("Entering SpiffeTargets.isNodeTask().");
+    const group = String((task && task.group) || '');
+    const node = group.indexOf('service:' + cluster + '-node-') === 0;
+    log.debug("Leaving SpiffeTargets.isNodeTask(). " + node);
+    return node;
+  }
+
+  /**
    * The private addresses of `arns`, a hundred at a time (DescribeTasks'
-   * limit). A task with no IPv4 address is skipped.
+   * limit). A task that is not a node's (isNodeTask()) or has no IPv4
+   * address is skipped.
    *
    * @param {any} client
    * @param {any} sdk
@@ -742,6 +765,9 @@ class SpiffeTargets {
           tasks: slice
         }));
         (out.tasks || []).forEach(function (task) {
+          if (!SpiffeTargets.isNodeTask(task, cluster)) {
+            return;
+          }
           const ip = SpiffeTargets.ipv4OfTask(task);
           if (ip) {
             ips.push({ ip: ip });
