@@ -10378,18 +10378,18 @@ debugger, the one surface still a relying party here, verifies it on every
 request at its gate. The refresh token is redeemed and the ID Token re-read,
 so neither can be a digest.
 
-## `version.js`: M.N.O, and why the build is not recorded at startup (2026-09-06; #1298)
+## `version.js`: M.N.O.<build>, and why the build is not recorded at startup (2026-09-06; #1298; #1317)
 
 **It is a PORT of the parent project's `client/version.js`, not an invention**
-(though since #1298 its version is a plain semantic version and the parent's
-is not — the scheme below),
+(though since #1298 its release is a whole M.N.O and the parent's is M.N —
+the scheme below),
 and the whole reason to say so first is that this repository is a submodule of
 that one: its container is built beside that project's two, and a reader who
 has learnt to read one version string should not have to learn a second. What
 changed in the port is written down in this file's own header — five things,
 each with its reason — and is not repeated here. The scheme, the surfaces it
 reaches and the one number this repository cannot reconcile with the parent are
-under *The scheme: M.N.O is the release, and the BUILD is recorded beside it*
+under *The scheme: M.N.O is the release, and the build number follows it*
 at the end of this section, moved from the root `CLAUDE.md`'s *Versioning*.
 
 What belongs here is the four properties that make it a `common/` module rather
@@ -10444,38 +10444,71 @@ to the container root rather than beside the shim.
 **`userAgent()` LIVES HERE FOR THE REASON THE MODULE DOES.** This service makes
 four outbound requests and three of them reach somebody else's server —
 federation's, SSF's RFC 8935 push, and XACML's change nudge. Each says
-`sts/<M.N.O> (<component>)` in RFC 9110 product form, built from one copy
+`sts/<M.N.O.build> (<component>)` in RFC 9110 product form, built from one copy
 of the product token, because three hand-written strings in three modules is
 three places for a rename to reach two of. It is not a claim about HTTP living
 in a version module: it is the one string in this service that is *made of* the
 version.
 
-### The scheme: M.N.O is the release, and the BUILD is recorded beside it
+### The scheme: M.N.O is the release, and the build number follows it
 
 **This moved here from the root `CLAUDE.md`'s *Versioning* when that file was
 broken up.** Its `xacml-pep/` half is in `xacml-pep/CLAUDE.md`.
 
-**Since 2026-11-04 (rcbj, #1298) the version is a plain semantic version, read
-WHOLE from the repo-root `VERSION` file — `1.0.0` — and nothing is appended to
-it.** Until then it was the parent project's scheme (`id-proto-debugger/
-client/version.js`): `VERSION` held M.N and O was the UTC build instant as
-`YYYYMMDDHHMMSS`, or `BUILD_NUMBER`. rcbj retired it because the version is
-the RELEASE — the one an OpenID Foundation certification names (#1293) — and a
-release is not renamed by rebuilding it. `BUILD_NUMBER` is read by nothing.
+**The release is read WHOLE from the repo-root `VERSION` file — `1.0.0`
+(rcbj, #1298) — and the version every surface draws is that release followed
+by a BUILD NUMBER (#1317).** rcbj, 2026-11-04: *"there continues to be the
+usual build number based on date + time by default, unless it is flagged as a
+release version, which the build number will be specified."*
+
+* **By default** the build number is the UTC build instant, `YYYYMMDDHHMMSS`
+  — `1.0.0.20261104151200`.
+* **A RELEASE build** is flagged with `STS_RELEASE=true` and names its number
+  in `BUILD_NUMBER`, a non-negative integer with no leading zero (`0` itself
+  allowed): `1.0.0.0`. The flag is `true`, `false` or empty; anything else is
+  refused rather than guessed at.
+* **A release flag without a valid number is REFUSED** at `--stamp`
+  (`STS-CORE-0164`, naming both variables, non-zero exit), so the image does
+  not build: a "release" carrying a date is the artifact nobody can name.
+* **Without the flag `BUILD_NUMBER` is IGNORED**, and the stamp says so on
+  stdout. Until #1298 it overrode the date on its own; a CI system exports a
+  variable of that name for its own purposes, and a stray one must not pass an
+  ordinary build off as a release.
+* **Only `--stamp` reads the two variables.** A record computed from a
+  checkout uses the instant the process started and is never a release.
+
+For one day (#1298) the version was the bare release with no build number at
+all; a stamp a build of that day wrote (no `build`, no `release`) is still
+read and reports the bare `M.N.O` it was written with. Before #1298 it was the
+parent project's scheme (`id-proto-debugger/client/version.js`): `VERSION`
+held M.N and the third component was the build instant or `BUILD_NUMBER`.
 
 ```
-1.0.0          version   VERSION's M.N.O, exactly; major, minor and patch
-               commit    the first twelve characters of GIT_COMMIT (or git)
-               builtAt   the instant the image was built (or the process started)
-               stamped   whether the record came off version.json
+1.0.0.20261104151200  version   M.N.O.<build>
+                      major, minor, patch   VERSION's M.N.O
+                      build     YYYYMMDDHHMMSS, or a release's BUILD_NUMBER
+                      release   true only for a build flagged STS_RELEASE=true
+                      commit    the first twelve characters of GIT_COMMIT (or git)
+                      builtAt   the instant the image was built (or the process started)
+                      stamped   whether the record came off version.json
 ```
 
-The file must be exactly three non-negative integers with no leading zero; a
+**How to build a release**: `docker build --build-arg STS_RELEASE=true
+--build-arg BUILD_NUMBER=0 .` (and the same two arguments to
+`-f xacml-pep/Dockerfile`, so the PEP is the same release build);
+`STS_RELEASE=true BUILD_NUMBER=0 docker compose build` passes both through
+`docker-compose.yml`; and `.github/workflows/build-container.yml`'s manual
+run takes `release` and `build_number`, publishing `:<M.N.O.build>`,
+`:<M.N.O>` and `:latest` from main where an ordinary build publishes the full
+version and `:latest` only.
+
+The `VERSION` file must be exactly three non-negative integers with no leading zero; a
 `v1.0.0`, a `-rc.1`, the old two-component `0.1` or a fourth component is
 `STS-CORE-0039` and the version is `0.0.0` — never a failure (below). **No
 pre-release suffix is accepted**, because nothing needs one and every reader
 of the version (the User-Agent, the PEP's comparison with the PDP, the
-published image tag) would have to be taught what it means.
+published image tag) would have to be taught what it means. The build number
+is the fourth component and is never in `VERSION`.
 
 **WHICH BUILD IS DECIDED AT IMAGE BUILD TIME AND NOT AT STARTUP, AND THAT IS
 STILL THE WHOLE DESIGN.** `Dockerfile` runs `node common/version.js --stamp .`
@@ -10486,24 +10519,26 @@ different one every time its container restarted — which makes *which build is
 this* unanswerable in exactly the situation where it gets asked, because
 restarting is what somebody does when they suspect the build. **A record that
 was computed rather than stamped says so**, and every surface that draws the
-version repeats it: `stamped: false` means a checkout is being run and
-`builtAt` is when it started.
+version repeats it: `stamped: false` means a checkout is being run and its
+build number and `builtAt` are when it started.
 
-**`buildId()` is the one place the build is joined into a string** — the build
-instant's digits and the commit, opaque, never drawn as a version. It exists
-because the static surfaces' catalogs are served `immutable` under
-`?v=<build>` (`common/public_assets.ts`, the shell's `data-sts-build`): they
-were keyed by the version until #1298, and every build of 1.0.0 is 1.0.0, so a
-rebuild's corrected words would have sat behind an address the browser had
-been told to keep for a year.
+**`buildId()` is the one opaque key of a build** — the build instant's digits
+and the commit, never drawn as a version. It exists because the static
+surfaces' catalogs are served `immutable` under `?v=<build>`
+(`common/public_assets.ts`, the shell's `data-sts-build`): they were keyed by
+the version until #1298, when every build of 1.0.0 was 1.0.0, and it stays the
+key since #1317 because two release builds that name the same `BUILD_NUMBER`
+are two different builds of `1.0.0.0`, and a rebuild's corrected words must
+not sit behind an address the browser was told to keep for a year.
 
 **SEVEN SURFACES DRAW IT AND THERE IS ONE SOURCE.** The startup banner, the front
 page's version line, the foot of every admin console page, the foot of every
-user portal page, `GET /admin-api` (with `commit`, `builtAt` and `stamped`
-broken out beside it, so a client reads fields rather than writing a regular
-expression; its `build` number went with #1298), `/admin/sts-metadata` — the
+user portal page, `GET /admin-api` (with `build`, `release`, `commit`, `builtAt` and
+`stamped` broken out beside it — version.json's own names — so a client reads
+fields rather than writing a regular expression), `/admin/sts-metadata` — the
 one page whose subject is what this service IS, where it is in the lead
-paragraph and in the JSON (`build.commit`, `build.at`, `build.stamped`) — and
+paragraph and in the JSON (`build.number`, `build.release`, `build.commit`,
+`build.at`, `build.stamped`) — and
 **the remote PEP's own `GET /`, together with the row it registers on the PDP's
 `/admin/xacml/peps`**, which is the seventh and the subject of
 `xacml-pep/CLAUDE.md`. **Two
@@ -10514,15 +10549,16 @@ ever made. `tests/version.js` asserts the SOURCE
 each of them reads and not the string it renders, because two surfaces reading
 two different sources agree perfectly right up until they stop.
 
-**THE THREE OUTBOUND REQUESTS SAY WHICH RELEASE IS CALLING**, in RFC 9110 product
-form — `sts/1.0.0 (federation)`, `(ssf-transmitter)`,
+**THE THREE OUTBOUND REQUESTS SAY WHICH BUILD IS CALLING**, in RFC 9110 product
+form — `sts/1.0.0.20261104151200 (federation)`, `(ssf-transmitter)`,
 `(xacml-pdp-notify)` — built by `version.userAgent()` so there is one copy of
 the product token. Each of those reaches somebody else's server, and their
 access log is where an integration with a mock they did not install gets
 diagnosed.
 
 **`package.json` carries VERSION's M.N.O exactly** since #1298 (it was `M.N.0`,
-semver's three parts with the build number not one of them). `node
+semver's three parts with the build number not one of them), and never the
+build number (#1317). `node
 common/version.js --check-manifests` reports drift and `--sync-manifests` fixes
 it. The Rust crates' `Cargo.toml` versions are Cargo's and are not kept in
 step: nothing reads them at runtime, and the PEP reports `VERSION`.

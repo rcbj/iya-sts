@@ -513,23 +513,32 @@ after it.
 
 ## The version this container reports
 
-**It is `M.N.O` from the one `VERSION` file the service reads, exactly** — a
-plain semantic version since #1298 (`1.0.0`), with no build number — stamped
-into `version.json` at image build time by the binary itself (`xacml-pep
---stamp .`, `sts-core::version`, a port of `common/version.js`), with the
-commit and the build instant beside it. It rides on the
-registration and every heartbeat, the PDP stores it as `xacmlPepVersion`, and
-`/admin/xacml/peps` draws it — which is why it may never be a hand-written
-label (it was `'mock-sts xacml-pep, phase five'` until 2026-09-06). **A
-version may never stop this container starting**: an unreadable `VERSION` is
-0.0.0 (`STS-CORE-0040`), a corrupt stamp a computed record, and a stamp
-written before #1298 (with a `build` number and no `patch`) still loads.
+**It is `M.N.O.<build>` under the service's own rules (#1317)** — the
+release from the one `VERSION` file the service reads, then a build number
+that is the UTC build instant, `YYYYMMDDHHMMSS`, unless the image is built as
+a RELEASE (`--build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0`, the
+same two arguments the service's `Dockerfile` takes), when it is that number:
+`1.0.0.0`. A release flag with no valid number fails the image build
+(`STS-CORE-0164`) and without the flag `BUILD_NUMBER` is ignored. It is
+stamped into `version.json` at image build time by the binary itself
+(`xacml-pep --stamp .`, `sts-core::version`'s `stamp()`, a port of
+`common/version.js` with `cargo test -p sts-core` holding the same cases as
+`tests/version.js`), with `build`, `release`, the commit and the build
+instant. It rides on the registration and every heartbeat, the PDP stores it
+as `xacmlPepVersion`, and `/admin/xacml/peps` draws it — which is why it may
+never be a hand-written label (it was `'mock-sts xacml-pep, phase five'`
+until 2026-09-06). **A version may never stop this container starting**: an
+unreadable `VERSION` is 0.0.0 (`STS-CORE-0040`), a corrupt stamp a computed
+record, and a stamp a #1298 build wrote (no `build`) still loads, reporting
+the bare `M.N.O`.
 
-**The version must equal the PDP's and the builds need not**: two images,
-built separately, each stamped with the instant it was built. `GET /`'s
-`build` carries `commit`, `at` and `stamped` (its `number` went with #1298),
-and `build.what` says so. `BUILD_NUMBER` is read by nothing; the crates'
-`Cargo.toml` versions are Cargo's and nothing reads them at runtime.
+**The release must equal the PDP's and an ordinary build number need not**:
+two images, built separately, each numbered by the instant it was built. Two
+images built as the same release report the same version, and
+`sts_xacml_remote_pep.js` then asserts the whole string. `GET /`'s `build`
+carries `number`, `release`, `commit`, `at` and `stamped`, and `build.what`
+says so. The crates' `Cargo.toml` versions are Cargo's and nothing reads them
+at runtime.
 
 ## THE AUTHZEN EDGE PDP (#1179)
 

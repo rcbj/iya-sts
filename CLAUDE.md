@@ -1077,15 +1077,19 @@ served `Cache-Control: no-store`.** If you add one, it needs that header too —
 `tests/protocol/sts_metadata_anonymous.js` asks it of every metadata document
 and fails until the row is there.
 
-## Versioning: M.N.O is the release; the build is recorded beside it
+## Versioning: M.N.O.<build>, fixed when an artifact is BUILT
 
-**`VERSION` at the repo root holds the whole version, a plain semantic
-version — `1.0.0` since 2026-11-04 (rcbj, #1298)** — and every surface reports
-exactly that, with no build number and no date appended; `package.json`
-carries the same string. Which BUILD an artifact is — the commit and the build
-instant — is stamped into `version.json` by the `Dockerfile` as fields of
-their own, so a restarted container reports the same build. Bump a release by
-editing `VERSION` and running `node common/version.js --sync-manifests`.
+**`VERSION` at the repo root holds the release, `M.N.O` — `1.0.0` since
+2026-11-04 (rcbj, #1298)** — and `package.json` carries the same string. Every
+surface reports `M.N.O.<build>` (#1317): **the build number is the UTC build
+instant, `YYYYMMDDHHMMSS`, unless the build is flagged as a RELEASE**
+(`STS_RELEASE=true`), when it is the `BUILD_NUMBER` the build names —
+`docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 .` is
+`1.0.0.0`. A release flag with no valid number fails the image build
+(`STS-CORE-0164`); without the flag `BUILD_NUMBER` is ignored. The number, the
+commit and the build instant are stamped into `version.json` by the
+`Dockerfile`, so a restarted container reports the same build. Bump a release
+by editing `VERSION` and running `node common/version.js --sync-manifests`.
 **There is one source**, `common/version.js`, and every surface that draws a
 version reads it — `tests/version.js` asserts the source each reads, not the
 string it renders. **A version may never be the thing that stops this service
