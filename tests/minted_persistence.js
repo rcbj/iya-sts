@@ -968,8 +968,10 @@ async function body(t, dir) {
   const linesOf = function (re) {
     log.debug("Entering linesOf().");
     log.debug("Leaving linesOf().");
+    // The test's own ✓/✗ lines go through bunyan too, and may quote a
+    // logged line in their detail; only the service's lines are counted.
     return logged.filter(function (line) {
-      return re.test(line);
+      return !/^\s*[\u2713\u2717]/.test(line) && re.test(line);
     });
   };
   globalDown = true;
@@ -1027,7 +1029,8 @@ async function body(t, dir) {
   });
   cellDb.purgeExpiredMinted = cellPurge;
   t.check(!!cellJobError && /this cell's store/.test(cellJobError.message) &&
-          /expired: the cell database refused it/.test(cellJobError.message) &&
+          /expired: [^;]*the cell database refused it/
+            .test(cellJobError.message) &&
           /orphan check was skipped/.test(cellJobError.message) &&
           !/orphan:/.test(cellJobError.message) &&
           linesOf(/STS-STORE-0065/).length === 1,

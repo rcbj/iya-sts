@@ -736,7 +736,7 @@ async function run(t) {
     await s.w.advance(1000);
     const rows = rowsOf(s.w, 'test.delegated');
     t.check(rows.length === 1 && rows[0].state === 'succeeded' &&
-            !rows[0].errorCode && !rows[0].ranIn &&
+            !rows[0].errorCode && rows[0].ranIn === 'worker' &&
             rows[0].why === 'The orphan check was skipped.' &&
             /"removed":3/.test(String(rows[0].result)),
             'L1: a body on a worker that answers a why succeeds, and the ' +
