@@ -4480,6 +4480,18 @@ const CODES = [
       'underscores and brackets) (#1290).',
     spec: 'the caller\'s refusal: /account-api/signing-key HTTP 400, a ' +
       'console refusal banner, /admin-api HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-PKI-0226',
+    summary: 'A realm\'s signing keys were made before its certificate ' +
+      'authority branch, and the branch could not be built or adopted when ' +
+      'they were to be certified, so they stay uncertified and a token ' +
+      'whose use case asks for x5c or x5u carries none.',
+    spec: 'none — the keys still sign; the header is left off' },
+  { code: 'STS-PKI-0227',
+    summary: 'A token whose use case asks for x5c or x5u was signed with a ' +
+      'key this realm has not certified, after the issuer read the store ' +
+      'and asked for the certificate, so it carries no x5c or x5u (an ' +
+      'OpenID4VCI credential a wallet cannot verify offline).',
+    spec: 'none — the token is issued without the header' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

@@ -174,6 +174,7 @@ interface VcIssuerDeps {
   signingKeyFor: typeof helpers.signingKeyFor;
   requestEncryptionKeyFor: typeof helpers.requestEncryptionKeyFor;
   certificateHeaderFor: typeof helpers.certificateHeaderFor;
+  certificateHeaderForAsync: typeof helpers.certificateHeaderForAsync;
   publishedKidFor: typeof helpers.publishedKidFor;
   stsCrypto: typeof stsCrypto;
   config: typeof config;
@@ -514,6 +515,7 @@ class VcIssuer {
       signingKeyFor: helpers.signingKeyFor,
       requestEncryptionKeyFor: helpers.requestEncryptionKeyFor,
       certificateHeaderFor: helpers.certificateHeaderFor,
+      certificateHeaderForAsync: helpers.certificateHeaderForAsync,
       publishedKidFor: helpers.publishedKidFor,
       stsCrypto: stsCrypto,
       config: config,
@@ -1611,7 +1613,7 @@ class VcIssuer {
   private async buildSdJwtVc(subjectClaims, holderJwk, credentialIssuer,
                              issuerDid, status, signingAlg?: string,
                              holderKid?: string) {
-    const { log, logArtifact, b64u, certificateHeaderFor, stsCrypto,
+    const { log, logArtifact, b64u, certificateHeaderForAsync, stsCrypto,
             VCI_VCT } = this.deps;
     // An extension, not the spec: draft-ietf-oauth-sd-jwt-vc defines no
     // DID-based issuer signature mechanism. When one is configured the iss
@@ -1683,11 +1685,16 @@ class VcIssuer {
     // a payload that has none.
     // `oid4vci.credentialCertificateHeader` decides the `x5c` / `x5u` — and
     // SD-JWT VC section 3.5 names `x5c` as one of the ways a verifier may find
-    // the issuer's key, which is the case this setting exists for.
+    // the issuer's key, which is the case this setting exists for. The
+    // ASYNCHRONOUS form (2026-11-04): a realm made a moment ago in a cluster
+    // may not have its key's certificate in this process yet, and a
+    // credential that silently left `x5c` off could not be verified offline
+    // by the wallet holding it (`helpers.certificateHeaderForAsync()`).
     const issuerJwt = await stsCrypto.signJwsAsync(payload, signer.key, {
       algorithm: signer.alg,
-      header: Object.assign(certificateHeaderFor('vci-credential', signer.alg,
-                                                 signer.kid),
+      header: Object.assign(await certificateHeaderForAsync('vci-credential',
+                                                            signer.alg,
+                                                            signer.kid),
                             { alg: signer.alg, typ: 'dc+sd-jwt',
                               kid: signer.headerKid })
     });
@@ -1721,7 +1728,7 @@ class VcIssuer {
   private async buildJwtVcJson(subjectClaims, holderJwk, credentialIssuer,
                                issuerDid, status, signingAlg?: string,
                                holderKid?: string) {
-    const { log, logArtifact, certificateHeaderFor, stsCrypto,
+    const { log, logArtifact, certificateHeaderForAsync, stsCrypto,
             VCI_JWT_TYPES, VC_CONTEXT } = this.deps;
     // As for ldp_vc, naming the issuer by DID is ordinary in a W3C credential
     // rather than an extension — this is VCDM, and the DID goes in both the
@@ -1795,10 +1802,12 @@ class VcIssuer {
                             kid: signer.headerKid },
                   payload: payload });
 
+    // `buildSdJwtVc()`'s reason for the asynchronous form.
     const token = await stsCrypto.signJwsAsync(payload, signer.key, {
       algorithm: signer.alg,
-      header: Object.assign(certificateHeaderFor('vci-credential', signer.alg,
-                                                 signer.kid),
+      header: Object.assign(await certificateHeaderForAsync('vci-credential',
+                                                            signer.alg,
+                                                            signer.kid),
                             { alg: signer.alg, typ: 'JWT',
                               kid: signer.headerKid })
     });
