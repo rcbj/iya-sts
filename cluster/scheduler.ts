@@ -1963,7 +1963,8 @@ class Scheduler {
         .catch(function (e: Json): void {
           log.error(errorCodes.tag('STS-SCHED-0013') + 'scheduler: run ' +
                     row.runId + ' of ' + job.id + ' could not be checked ' +
-                    'for abandonment: ' + ((e && e.message) || e) + '.');
+                    'for abandonment: ' +
+                    String((e && e.message) || e).replace(/\.+$/, '') + '.');
         })
         .then(function (): void {
           self.orphanClaims.delete(row.runId);
@@ -2050,7 +2051,7 @@ class Scheduler {
       self.inFlight.delete(row.runId);
       log.error(errorCodes.tag('STS-SCHED-0013') + 'scheduler: run ' +
                 row.runId + ' of ' + job.id + ' could not be started: ' +
-                ((e && e.message) || e) + '.');
+                String((e && e.message) || e).replace(/\.+$/, '') + '.');
     });
     log.debug("Leaving Scheduler.attempt().");
   }
@@ -2735,7 +2736,7 @@ class Scheduler {
     } catch (e) {
       log.warn(errorCodes.tag('STS-SCHED-0015') + 'scheduler: the ' +
                'per-process job ' + job.id + ' failed in this process: ' +
-               ((e && e.message) || e) + '.');
+               String((e && e.message) || e).replace(/\.+$/, '') + '.');
       outcome = { state: 'failed', errorCode: 'STS-SCHED-0015',
                   why: String((e && e.message) || e), result: null };
     }

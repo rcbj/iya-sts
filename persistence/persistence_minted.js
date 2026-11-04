@@ -3365,8 +3365,8 @@ function ensureTombstoneJob(schedulerInstance) {
         return { removed: Number(removed) || 0 };
       }, function (e) {
         log.warn(errorCodes.tag('STS-STORE-0055') + 'persistence: sweeping ' +
-                 'expired tombstones failed: ' + ((e && e.message) || e) +
-                 '.');
+                 'expired tombstones failed: ' +
+                 String((e && e.message) || e).replace(/\.+$/, '') + '.');
         throw e;
       });
     }

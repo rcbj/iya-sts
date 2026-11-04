@@ -5869,8 +5869,14 @@ function kemPrivateKeyFor(alg, key) {
       log.debug('Leaving kemPrivateKeyFor(). Not this alg\'s AKP key.');
       throw new Error('alg "' + alg + '" is decrypted with an AKP key for ' +
                       'that algorithm, and the key held is ' +
-                      (jwk.kty === 'AKP' ? 'for "' + (jwk.alg || '') + '"'
-                        : 'of type "' + (jwk.kty || '(none)') + '"'));
+                      // Each of the three ways this fails is named, rather
+                      // than an AKP key with no alg quoted as for "".
+                      (jwk.kty !== 'AKP'
+                        ? 'of type "' + (jwk.kty || '(none)') + '"'
+                        : jwk.alg !== alg
+                          ? (jwk.alg ? 'for "' + jwk.alg + '"'
+                                     : 'an AKP key naming no algorithm')
+                          : 'that algorithm\'s, with no private part'));
     }
     log.debug('Leaving kemPrivateKeyFor(). AKP.');
     return Buffer.from(String(jwk.priv), 'base64url');
@@ -12943,7 +12949,7 @@ function httpsigComponentItem(component) {
     log.debug("Leaving httpsigComponentItem(). Malformed.");
     return httpsigRefuse('STS-KEYS-0113',
                        'A covered component identifier is malformed: ' +
-                       e.message + '.');
+                       String((e && e.message) || e).replace(/\.+$/, '') + '.');
   }
   const name = item.value;
   const fieldName = /^[!#$%&'*+\-.^_`|~0-9a-z]+$/;
@@ -13542,7 +13548,7 @@ function httpSignatureBase(message, covered, signatureParams, options) {
     log.debug("Leaving httpSignatureBase(). Parameters.");
     return httpsigRefuse('STS-KEYS-0129',
                        'The signature parameters cannot be serialized: ' +
-                       e.message + '.');
+                       String((e && e.message) || e).replace(/\.+$/, '') + '.');
   }
   const paramProblem = httpsigCheckSignatureParams(params);
   if (paramProblem) {
@@ -13863,7 +13869,7 @@ function signHttpMessage(message, options) {
     log.debug("Leaving signHttpMessage(). Parameters.");
     return httpsigRefuse('STS-KEYS-0129',
                        'The signature parameters cannot be serialized: ' +
-                       e.message + '.');
+                       String((e && e.message) || e).replace(/\.+$/, '') + '.');
   }
   const algParam = sf.paramValue(params, 'alg');
   const name = opts.algorithm !== undefined ? opts.algorithm : algParam;
@@ -13901,7 +13907,8 @@ function signHttpMessage(message, options) {
     log.debug("Leaving signHttpMessage(). The key cannot be read.");
     return httpsigRefuse('STS-KEYS-0131',
                          'The key for ' + name + ' cannot be read: ' +
-                         e.message + '.');
+                         String((e && e.message) || e).replace(/\.+$/, '') +
+                         '.');
   }
   const keyProblem = httpsigCheckKey(name, entry, signingKey, 'sign');
   if (keyProblem) {
@@ -14444,7 +14451,8 @@ function httpsigVerifyOne(message, parsed, opts, now) {
     log.debug("Leaving httpsigVerifyOne(). The key cannot be read.");
     return httpsigRefuse('STS-KEYS-0131',
                          'The key for ' + name + ' cannot be read: ' +
-                         e.message + '.');
+                         String((e && e.message) || e).replace(/\.+$/, '') +
+                         '.');
   }
   const keyProblem = httpsigCheckKey(name, entry, verifyingKey, 'verify');
   if (keyProblem) {

@@ -3085,7 +3085,8 @@ async function ocspFrom(url, target) {
     } catch (e) {
       log.warn(errorCodes.tag('STS-PKI-0122') + 'revocation: an OCSP request ' +
                                                 'for ' +
-               url + ' could not be built: ' + e.message + '.');
+               url + ' could not be built: ' +
+               String((e && e.message) || e).replace(/\.+$/, '') + '.');
       return { ok: false, why: 'the request could not be built: ' + e.message };
     }
     const fetched = await fetchBytes(url, { body: built.der,
