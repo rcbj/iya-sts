@@ -338,7 +338,7 @@ function ensureWindowPurgeJob(schedulerInstance) {
       }, function (e) {
         log.warn(errorCodes.tag('STS-CLUSTER-0024') + 'cluster counters: ' +
                  'sweeping finished rate-limit windows failed: ' +
-                 ((e && e.message) || e) + '.');
+                 String((e && e.message) || e).replace(/\.+$/, '') + '.');
         throw e;
       });
     }
@@ -367,7 +367,8 @@ function windowFailure(what, scope, e) {
   log.debug("Entering windowFailure().");
   log.warn(errorCodes.tag('STS-CLUSTER-0023') + 'cluster counters: the ' +
            'store could not be asked to ' + what + ' a "' + scope + '" ' +
-           'window: ' + ((e && e.message) || e) + '.');
+           'window: ' +
+           String((e && e.message) || e).replace(/\.+$/, '') + '.');
   log.debug("Leaving windowFailure().");
   return { ok: false, reason: 'store', why: (e && e.message) || String(e) };
 }

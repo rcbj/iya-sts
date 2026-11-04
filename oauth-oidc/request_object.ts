@@ -631,9 +631,12 @@ class RequestObject {
           response.on('error', function (e) {
             log.debug("Caught in RequestObject.fetchRequestUri(): " +
                       "" + ((e && e.message) || e));
+            // Here and below, a cause's own trailing full stop is dropped
+            // before ours is added, so the page a client's developer (or a
+            // certification reviewer) reads does not end in two.
             done(self.refusal('STS-OAUTH-0347', 'invalid_request_uri',
               'the request_uri "' + target.href + '" could not be read: ' +
-              e.message + '.'));
+              String((e && e.message) || e).replace(/\.+$/, '') + '.'));
           });
         });
       } catch (e) {
@@ -641,7 +644,7 @@ class RequestObject {
                   "" + ((e && e.message) || e));
         done(self.refusal('STS-OAUTH-0347', 'invalid_request_uri',
           'the request_uri "' + target.href + '" could not be dialled: ' +
-          e.message + '.'));
+          String((e && e.message) || e).replace(/\.+$/, '') + '.'));
         return;
       }
       request.on('timeout', function () {
@@ -653,7 +656,7 @@ class RequestObject {
                   "" + ((e && e.message) || e));
         done(self.refusal('STS-OAUTH-0347', 'invalid_request_uri',
           'the request_uri "' + target.href + '" could not be fetched: ' +
-          e.message + '.'));
+          String((e && e.message) || e).replace(/\.+$/, '') + '.'));
       });
       request.end();
     });
@@ -919,7 +922,8 @@ class RequestObject {
         log.debug("Leaving RequestObject.verify(). The unsigned claims are " +
                   "refused.");
         return self.refusal('STS-OAUTH-0364', 'invalid_request_object',
-          'the unsigned request object is refused: ' + e.message + '.');
+          'the unsigned request object is refused: ' +
+          String((e && e.message) || e).replace(/\.+$/, '') + '.');
       }
     }
     if (applications.REQUEST_OBJECT_SIGNING_ALGS.indexOf(alg) < 0) {

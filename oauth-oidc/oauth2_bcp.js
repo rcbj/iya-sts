@@ -1655,22 +1655,46 @@ function registeredUrisFor(client) {
       client.redirect_uris.length) {
     log.debug("Leaving registeredUrisFor(). " + client.redirect_uris.length +
               " URI(s) from this client's own entry.");
+    // `source` is read by a person on an error page (2026-11-04), so it
+    // says whose list it is rather than where the directory keeps it.
     return { list: client.redirect_uris.map(String),
-             source: 'this client\'s own entry in the application registry ' +
-                     '(ou=applications, attribute oauthRedirectUri)' };
+             source: 'registered for this client' };
   }
   // OAuth 2.1 section 2.3.1: a client registers ITS OWN complete redirect URI,
   // and a list every client may use is the opposite of that — so that mode
   // answers with nothing to match and `checkRedirectUri()` refuses by name.
   if (oauth21.enabled()) {
     log.debug("Leaving registeredUrisFor(). OAuth 2.1 mode reads no fallback.");
-    return { list: [], source: 'this client\'s own entry (OAuth 2.1 mode ' +
-                               'does not read oauth2.redirectUris)' };
+    return { list: [], source: 'registered for this client (OAuth 2.1 ' +
+                               'mode does not read oauth2.redirectUris)' };
   }
   const list = configuredRedirectUris();
   log.debug("Leaving registeredUrisFor(). " + list.length + " URI(s) from " +
       "oauth2.redirectUris.");
-  return { list: list, source: 'the oauth2.redirectUris setting' };
+  return { list: list, source: 'listed in the oauth2.redirectUris setting' };
+}
+
+// "is not the redirect URI registered for this client (a)" or "is not one
+// of the 3 redirect URIs registered for this client (a, b, c)": a refusal a
+// person reads on an error page (2026-11-04), so it is a sentence with its
+// number agreeing rather than "none of the 1" or "URI(s)". `noun` is the
+// singular; `where` follows it.
+/**
+ * Says that a presented URI is not one of a registered list.
+ *
+ * @param list - the registered URIs
+ * @param noun - the singular noun, e.g. "redirect URI"
+ * @param where - what follows the noun, e.g. "registered for this client"
+ * @returns the phrase, starting "is not"
+ */
+function notAmong(list, noun, where) {
+  log.debug("Entering notAmong().");
+  const phrase = list.length === 1
+    ? 'is not the ' + noun + ' ' + where + ' (' + list[0] + ')'
+    : 'is not one of the ' + list.length + ' ' + noun + 's ' + where +
+      ' (' + list.join(', ') + ')';
+  log.debug("Leaving notAmong().");
+  return phrase;
 }
 
 // Only "none" — or nothing at all — says public. The DEFAULTING is not done
@@ -1871,11 +1895,11 @@ function checkRedirectUri(opts) {
     log.debug("Leaving checkRedirectUri(). Not one of the client's own.");
     return { ok: false, errorCode: 'STS-OAUTH-0569', error: 'invalid_request',
              requirement: 'redirect-exact-match',
-             description: 'OIDC Core section 3.1.2.1: redirect_uri must ' +
-                          'exactly match one of the redirect URIs registered ' +
-                          'for this client, and "' + presentedUri + '" ' +
-                          'matches none of its ' + own.length + ': ' +
-                          own.join(', ') + '. This holds in every mode.' };
+             description: 'OIDC Core section 3.1.2.1: "' + presentedUri +
+                          '" ' + notAmong(own, 'redirect URI',
+                                          'registered for this client') +
+                          ', and a redirect_uri must match one exactly. ' +
+                          'This holds in every mode.' };
   }
   const presented = String(opts.redirectUri || '');
   const parsed = parseUri(presented);
@@ -1933,14 +1957,11 @@ function checkRedirectUri(opts) {
     log.debug("Leaving checkRedirectUri(). No registered URI matches.");
     return { ok: false, errorCode: 'STS-OAUTH-0122', error: 'invalid_request',
              requirement: 'redirect-exact-match',
-             description: 'RFC 9700 section 2.1: redirect_uri must match one ' +
-                          'of the URIs registered for this client by exact ' +
-                          'string comparison (RFC 3986 section 6.2.1). ' +
-                          '"' + presented + '" matches none ' +
-                              'of the ' +
-                          registered.list.length + ' in ' + registered.source +
-                          ': ' +
-                          registered.list.join(', ') + '.' };
+             description: 'RFC 9700 section 2.1: "' + presented + '" ' +
+                          notAmong(registered.list, 'redirect URI',
+                                   registered.source) +
+                          ', and a redirect_uri must match one by exact ' +
+                          'string comparison (RFC 3986 section 6.2.1).' };
   }
   log.debug("Leaving checkRedirectUri(). Accepted by " + matched.how + ".");
   return { ok: true, matched: matched.uri, how: matched.how };
@@ -1975,12 +1996,19 @@ function checkPostLogoutRedirectUri(opts) {
     });
     if (!found) {
       log.debug("Leaving checkPostLogoutRedirectUri(). Not registered.");
+      // `reason` and `citation` are the signed-out page's (2026-11-04): it
+      // writes "You were not returned to X: <reason> (<citation>)." as one
+      // sentence, where the description is the log's.
+      const reason = 'it ' + notAmong(declared, 'post-logout redirect URI',
+                                      'this client registered');
       return { ok: false, errorCode: 'STS-OAUTH-0123',
                error: 'invalid_request', requirement: 'no-open-redirector',
+               reason: reason,
+               citation: 'RP-Initiated Logout 1.0 section 3',
                description: 'RP-Initiated Logout 1.0 section 3: "' +
-                 presented + '" is not among the ' + declared.length +
-                 ' post_logout_redirect_uri(s) this client registered: ' +
-                 declared.join(', ') + '.' };
+                 presented + '" ' + notAmong(declared,
+                   'post-logout redirect URI', 'this client registered') +
+                 '.' };
     }
     log.debug("Leaving checkPostLogoutRedirectUri(). Registered.");
     return { ok: true };
@@ -4041,10 +4069,15 @@ function coreRefreshRefusal(claims, body, presentedClient) {
                description: 'RFC 6749 section 6: a refresh must not request ' +
                             'a scope the original grant did not carry ' +
                             '(and RFC 9700 section 2.3 restricts a token\'s ' +
-                            'privileges to the minimum). This grant carries ' +
-                            '"' + (claims.scope || '') + '" ' +
-                            'and the request asks additionally ' +
-                            'for: ' + extra.join(', ') + '.' };
+                            'privileges to the minimum). ' +
+                            // A grant with no scope is said to carry none,
+                            // rather than quoted as "".
+                            (claims.scope
+                              ? 'This grant carries "' + claims.scope +
+                                '" and the request asks additionally for: '
+                              : 'This grant carries no scope, and the ' +
+                                'request asks for: ') +
+                            extra.join(', ') + '.' };
     }
   }
   log.debug("Leaving coreRefreshRefusal(). Nothing refused.");

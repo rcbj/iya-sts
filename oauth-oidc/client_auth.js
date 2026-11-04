@@ -659,10 +659,13 @@ async function verifyAssertion(opts) {
     return { ok: false, errorCode: 'STS-OAUTH-0008', description: 'RFC 7523 ' +
                                      'section 3: a client assertion names ' +
                                      'the client as both `iss` and `sub`. ' +
-                                     'This one has sub="' +
-                                     (claims.sub || '') + '" where the ' +
-                                         'client is "' + clientId +
-                                     '" — an assertion a client made ABOUT ' +
+                                     (claims.sub
+                                       ? 'This one has sub="' + claims.sub +
+                                         '" where the client is "' +
+                                         clientId + '"'
+                                       : 'This one names no sub, and the ' +
+                                         'client is "' + clientId + '"') +
+                                     ' — an assertion a client made ABOUT ' +
                                      'somebody else is not that somebody ' +
                                      'authenticating.' };
   }
@@ -1258,9 +1261,11 @@ async function verify(opts) {
       return { ok: false, errorCode: 'STS-OAUTH-0022',
                description: 'client_assertion_type ' +
           'must be "' + ASSERTION_TYPE +
-                                       '" (RFC 7523 section 2.2). This ' +
-                                       'request says "' +
-                                       (info.assertionType || '') + '".' };
+                                       '" (RFC 7523 section 2.2). ' +
+                                       (info.assertionType
+                                         ? 'This request says "' +
+                                           info.assertionType + '".'
+                                         : 'This request names none.') };
     }
     // The AUDIENCE POLICY is part of the key (2026-09-13): two callers asking
     // about one document with two policies must not have the first answer

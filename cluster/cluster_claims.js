@@ -194,7 +194,7 @@ function ensurePurgeJob(schedulerInstance) {
       }, function (e) {
         log.warn(errorCodes.tag('STS-CLUSTER-0015') + 'cluster claims: ' +
                  'sweeping expired claims failed: ' +
-                 ((e && e.message) || e) + '.');
+                 String((e && e.message) || e).replace(/\.+$/, '') + '.');
         throw e;
       });
     }

@@ -489,7 +489,8 @@ class AwsIidAttestor {
                 ((e && e.message) || e));
       throw this.refuse(call, 'STS-SPIFFE-0085', status.FAILED_PRECONDITION,
                         'aws_iid is not configured in this realm: ' +
-                        e.message + '.');
+                        String((e && e.message) || e).replace(/\.+$/, '') +
+                        '.');
     }
     const sdk = this.sdk();
     if (sdk.missing) {

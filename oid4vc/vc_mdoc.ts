@@ -474,7 +474,7 @@ class VcMdoc {
                 'presentation could not be read: ' + e.message);
       this.check(checks, 'Format', false, 'an mso_mdoc presentation is a ' +
                  'base64url DeviceResponse holding one Document; ' +
-                 e.message + '.');
+                 String((e && e.message) || e).replace(/\.+$/, '') + '.');
       return done('Unreadable.');
     }
     const docType = String(document.get('docType') || '');
@@ -501,7 +501,8 @@ class VcMdoc {
       log.error(errorCodes.tag('STS-VC-0156') + 'oid4vp: an mdoc\'s ' +
                 'issuerAuth could not be read: ' + e.message);
       this.check(checks, 'Issuer signature', false, 'issuerAuth cannot be ' +
-                 'read: ' + e.message + '.');
+                 'read: ' +
+                 String((e && e.message) || e).replace(/\.+$/, '') + '.');
       return done('No issuerAuth.');
     }
     const chained = await this.chainToAnchors(this.x5chainOf(issuerAuth),
@@ -544,7 +545,8 @@ class VcMdoc {
       log.debug("Caught in VcMdoc.verify(): " + ((e && e.message) || e));
       log.error(errorCodes.tag('STS-VC-0156') + 'oid4vp: an mdoc\'s MSO ' +
                 'could not be read: ' + e.message);
-      this.check(checks, 'Mobile Security Object', false, e.message + '.');
+      this.check(checks, 'Mobile Security Object', false,
+                 String((e && e.message) || e).replace(/\.+$/, '') + '.');
       return done('No MSO.');
     }
     const digestAlg = DIGEST_ALGS[String(mso.get('digestAlgorithm'))];
@@ -736,7 +738,8 @@ class VcMdoc {
     } catch (e) {
       log.debug("Caught in VcMdoc.verify(): " + ((e && e.message) || e));
       this.check(checks, 'Credential status', false, 'the Mobile Security ' +
-                 'Object\'s status is malformed: ' + e.message + '.');
+                 'Object\'s status is malformed: ' +
+                 String((e && e.message) || e).replace(/\.+$/, '') + '.');
     }
     return done('Checked.');
   }

@@ -10086,6 +10086,84 @@ class OAuth2Server {
   // variant never gets one: a POST cannot be made by markup alone.
   // ---------------------------------------------------------------------------
   /**
+   * The top of the authorization endpoint's error page, shared by the
+   * redirect interstitial and the refusal page: the document's head, the
+   * heading, and the error with its description.
+   *
+   * @param error - the OAuth error value
+   * @param description - its description
+   * @param extraHead - markup for the head (a meta refresh), or ''
+   * @returns the markup, up to the end of the error box
+   */
+  private errorPageTop(error: string, description: string,
+                       extraHead: string): string {
+    const { log, xmlEscape } = this.deps;
+    log.debug("Entering OAuth2Server.errorPageTop().");
+    log.debug("Leaving OAuth2Server.errorPageTop().");
+    return '<!doctype html><html lang="en"><head><meta ' +
+      'charset="utf-8">' + extraHead +
+      '<title>This request could not be completed</title>' +
+      '<style>body{font-family:system-ui,sans-serif;margin:2rem;' +
+      'max-width:46rem;color:#222}code{font-family:ui-monospace,Menlo,' +
+      'monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;' +
+      'border-radius:3px;word-break:break-all}' +
+      '.sub{color:#666;font-size:.92rem}' +
+      '.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem ' +
+      '.9rem;border-radius:4px;margin:1rem ' +
+      '0}dt{font-weight:600;margin-top:.7rem}dd{margin:.15rem 0 0 ' +
+      '0}</style></head><body><h1>This request could not be completed</h1>' +
+      '<div ' +
+      'class="warn"><strong>' + xmlEscape(error) + '</strong><br>' +
+      xmlEscape(description) + '</div>';
+  }
+
+  // A BROWSER IS A GET WHOSE Accept NAMES text/html (2026-11-04). A client
+  // library, a test or curl sends no such Accept and keeps the JSON body it
+  // always had; a person's browser always sends one.
+  /**
+   * Whether an authorization request came from a person's browser.
+   *
+   * @param req - the request
+   * @returns true for a GET whose Accept names text/html
+   */
+  isBrowserRequest(req: Req): boolean {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.isBrowserRequest().");
+    const accept = String((req.headers && req.headers.accept) || '');
+    const out = String(req.method || 'GET').toUpperCase() === 'GET' &&
+      /text\/html/i.test(accept);
+    log.debug("Leaving OAuth2Server.isBrowserRequest(). " + out);
+    return out;
+  }
+
+  /**
+   * Sends a refusal that is never redirected as the error page a person
+   * reads, with the status and the error and description the JSON body
+   * would have carried (RFC 6749 section 4.1.2.1: the server SHOULD inform
+   * the resource owner).
+   *
+   * @param res - the response
+   * @param status - the HTTP status
+   * @param error - the OAuth error value
+   * @param description - its description
+   */
+  sendRefusalPage(res: Res, status: number, error: string,
+                  description: string): void {
+    const { log, oauth21 } = this.deps;
+    log.debug("Entering OAuth2Server.sendRefusalPage(). error=" + error);
+    const html = this.errorPageTop(error,
+      oauth21.sanitizeDescription(description), '') +
+      '<p class="sub">Nothing has been sent anywhere: this request names ' +
+      'no address this service may return you to, so the error is reported ' +
+      'here instead (RFC 6749 section 4.1.2.1). The application that sent ' +
+      'you here needs correcting.</p></body></html>';
+    // error-code: none — every caller marks its own condition before this
+    res.status(status).type('text/html').set('Cache-Control', 'no-store')
+       .send(html);
+    log.debug("Leaving OAuth2Server.sendRefusalPage().");
+  }
+
+  /**
    * Sends the page shown instead of a redirect a person must decide on: the
    * error, and a plain link to the client.
    *
@@ -10099,25 +10177,11 @@ class OAuth2Server {
               info.error);
     const after = info.form ? 0 :
       Math.max(0, Number(config.value('oauth2.errorPageAutoRedirectS')) || 0);
-    const html = '<!doctype html><html lang="en"><head><meta ' +
-      'charset="utf-8">' +
-      (after > 0
+    const html = this.errorPageTop(info.error, info.description,
+      after > 0
         ? '<meta http-equiv="refresh" content="' + after + ';url=' +
           xmlEscape(info.target) + '">'
         : '') +
-      '<title>This request could not be completed</title>' +
-      '<style>body{font-family:system-ui,sans-serif;margin:2rem;' +
-      'max-width:46rem;color:#222}code{font-family:ui-monospace,Menlo,' +
-      'monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;' +
-      'border-radius:3px;word-break:break-all}' +
-      '.sub{color:#666;font-size:.92rem}' +
-      '.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem ' +
-      '.9rem;border-radius:4px;margin:1rem ' +
-      '0}dt{font-weight:600;margin-top:.7rem}dd{margin:.15rem 0 0 ' +
-      '0}</style></head><body><h1>This request could not be completed</h1>' +
-      '<div ' +
-      'class="warn"><strong>' + xmlEscape(info.error) + '</strong><br>' +
-      xmlEscape(info.description) + '</div>' +
       '<p class="sub">' + xmlEscape(info.why) + '</p>' +
       '<dl>' +
       '<dt>The application that sent you here</dt><dd><code>' +
@@ -10796,6 +10860,18 @@ class OAuth2Server {
       return { ok: false, redirect: false, status: 400, error: error,
                description: description, code: code };
     };
+    // A REFUSAL ABOUT THE redirect_uri ITSELF is one a person's browser
+    // lands on, since there is nowhere trusted to send it (RFC 6749 section
+    // 4.1.2.1: the server SHOULD inform the resource owner and MUST NOT
+    // redirect). `page` lets the endpoint answer a browser with the error
+    // page rather than raw JSON (2026-11-04); status and values are the same.
+    const refuseOnPage = function (code, error, description) {
+      log.debug("Entering refuseOnPage(). " + code);
+      const out: Json = refuse(code, error, description);
+      out.page = true;
+      log.debug("Leaving refuseOnPage().");
+      return out;
+    };
 
     // --- SHAPE FIRST, AND ANSWERED HERE RATHER THAN REDIRECTED
     // ----------------
@@ -10888,15 +10964,15 @@ class OAuth2Server {
           log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). OAuth " +
                     "2.1: no " +
                     "redirect_uri to default to (" + chosen.requirement + ").");
-          return refuse(chosen.errorCode || 'STS-OAUTH-0273', chosen.error,
-                        chosen.description);
+          return refuseOnPage(chosen.errorCode || 'STS-OAUTH-0273',
+                              chosen.error, chosen.description);
         }
         const storedProblem = validation.redirectUriProblem(chosen.uri);
         if (storedProblem) {
           log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). OAuth " +
                     "2.1: the one " +
                     "registered redirect URI is not usable.");
-          return refuse('STS-OAUTH-0274', 'invalid_request',
+          return refuseOnPage('STS-OAUTH-0274', 'invalid_request',
             'OAuth 2.1 (' + oauth21.DRAFT + ') section 4.1.1: this request ' +
             'named no redirect_uri, and the one client "' + q.client_id + '" ' +
             'has registered cannot be used — it ' + storedProblem +
@@ -10919,8 +10995,8 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). There is " +
                 "no usable " +
                 "redirect_uri to report to.");
-      return refuse('STS-OAUTH-0160', 'invalid_request',
-                    'A valid absolute redirect_uri is required.');
+      return refuseOnPage('STS-OAUTH-0160', 'invalid_request',
+                          'A valid absolute redirect_uri is required.');
     }
 
     // --- RFC 9700 section 2.1, and it has to be FIRST
@@ -10974,8 +11050,8 @@ class OAuth2Server {
                 "redirect_uri (" + redirectCheck.requirement +
                 "), so nothing " +
                 "is redirected anywhere.");
-      return refuse(redirectCheck.errorCode || 'STS-OAUTH-0158',
-                    redirectCheck.error, redirectCheck.description);
+      return refuseOnPage(redirectCheck.errorCode || 'STS-OAUTH-0158',
+                          redirectCheck.error, redirectCheck.description);
     }
     if (redirectCheck.how) {
       log.debug("The redirect_uri was accepted by " + redirectCheck.how + ".");
@@ -11064,9 +11140,18 @@ class OAuth2Server {
         types.some(function (t) { return known.indexOf(t) < 0; })) {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). " +
                 "Unsupported response_type.");
+      // A REQUEST NAMING NO RESPONSE TYPE IS SAID TO NAME NONE (2026-11-04).
+      // The OpenID Foundation's oidcc-response-type-missing photographs this
+      // refusal, and it read `response_type "" is not supported`: true of
+      // the comparison, and no sentence a reader could follow. The error
+      // and the code are unchanged; only the description says which case
+      // this is.
+      const namedType = String(q.response_type || '').trim();
       return redirectable('STS-OAUTH-0162', 'unsupported_response_type',
-                          'response_type "' + (q.response_type || '') + '" ' +
-                          'is not supported.');
+        namedType
+          ? 'response_type "' + namedType + '" is not supported.'
+          : 'this request names no response_type, and every authorization ' +
+            'request must name one (RFC 6749 section 3.1.1).');
     }
     // WHAT THIS AUTHORIZATION SERVER SAYS IT DOES. `response_types_supported`
     // in the document a client read is the list this endpoint answers — the
@@ -11092,7 +11177,7 @@ class OAuth2Server {
           'The "' + self.profileOf(req) + '" authorization server advertises ' +
           'response_types_supported ' + JSON.stringify(advertisedTypes) + ' ' +
           'and this request asks for ' +
-          '"' + (q.response_type || '') + '". What its metadata says is what ' +
+          '"' + types.join(' ') + '". What its metadata says is what ' +
           'it does — the document is this authorization server rather ' +
           'than a description of one.');
       }
@@ -11312,11 +11397,15 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). An ID " +
                 "Token from the authorization endpoint with no nonce.");
       return redirectable('STS-OAUTH-0562', 'invalid_request',
-        'response_type "' + q.response_type + '" returns an ID Token from ' +
-        'the authorization endpoint, and OIDC Core makes nonce REQUIRED for ' +
-        'it (section ' + (implicit ? '3.2.2.1, the implicit flow'
-                                   : '3.3.2.1, the hybrid flow') +
-        ') — it is what the client checks the ID Token against to detect a ' +
+        // It leads with what is missing (2026-11-04): the OpenID
+        // Foundation's reviewers read this page, and it used to explain
+        // why a nonce matters without saying there was none.
+        'this request has no nonce, and response_type "' + q.response_type +
+        '" returns an ID Token from the authorization endpoint, for which ' +
+        'OIDC Core makes nonce REQUIRED (section ' +
+        (implicit ? '3.2.2.1, the implicit flow'
+                  : '3.3.2.1, the hybrid flow') +
+        '): it is what the client checks the ID Token against to detect a ' +
         'replay.');
     }
     if (implicit) {
@@ -11668,9 +11757,10 @@ class OAuth2Server {
     const audiences = [].concat(claims.aud || []).map(String);
     if (String(claims.iss || '') !== issuer) {
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Another issuer.");
-      return { ok: false, why: 'the id_token_hint was issued by "' +
-               (claims.iss || '') + '", and this authorization server is "' +
-               issuer + '".' };
+      return { ok: false, why: (claims.iss
+        ? 'the id_token_hint was issued by "' + claims.iss + '"'
+        : 'the id_token_hint names no issuer (no iss)') +
+               ', and this authorization server is "' + issuer + '".' };
     }
     if (audiences.indexOf(String(clientId)) < 0) {
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Another client.");
@@ -11721,6 +11811,12 @@ class OAuth2Server {
                 vetted.code + ").");
       errorCodes.mark(res, vetted.code);
       log.debug("Leaving OAuth2Server.authorizeRequest().");
+      if (vetted.page && self.isBrowserRequest(req)) {
+        // error-code: none — the code is vetAuthorizationRequest()'s,
+        // marked above
+        return self.sendRefusalPage(res, vetted.status, vetted.error,
+                                    vetted.description);
+      }
       // error-code: none — the code is vetAuthorizationRequest()'s, marked
       // above
       return self.oauthError(res, vetted.status, vetted.error,
@@ -12759,9 +12855,14 @@ class OAuth2Server {
         errorCodes.mark(res, check.errorCode || 'STS-OAUTH-0123');
         log.info('oauth2: a post_logout_redirect_uri was not followed (' +
                  (check.errorCode || '') + '): ' + check.description);
+        // One sentence: the address, why, and the section, where the
+        // check gives the page its own reason; its description otherwise.
         refusedNote = '<p class="sub">You were not returned to <code>' +
           xmlEscape(String(target)) + '</code>: ' +
-          xmlEscape(check.description) + '</p>';
+          (check.reason
+            ? xmlEscape(check.reason) + ' (' + xmlEscape(check.citation) +
+              ').'
+            : xmlEscape(check.description)) + '</p>';
       }
     }
     // --- 4. confirmation ---------------------------------------------------

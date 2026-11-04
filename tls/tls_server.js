@@ -751,7 +751,8 @@ if (typeof config.addWriteRule === 'function') {
       log.fatal(errorCodes.tag('STS-TLS-0001') + 'tls: NOT STARTING. The ' +
                 kind + ' listener\'s own TLS settings (listener' +
                 kind.charAt(0).toUpperCase() + kind.slice(1) + '.*) cannot ' +
-                'build a TLS context: ' + e.message + '.');
+                'build a TLS context: ' +
+                String((e && e.message) || e).replace(/\.+$/, '') + '.');
       process.exit(1);
     }
     if (policy.trustAnchorsFile &&
@@ -6008,7 +6009,8 @@ let anchorsFileReport = { file: '', loaded: 0 };
     log.fatal(errorCodes.tag('STS-TLS-0019') +
               'tls: NOT STARTING. tls.trustAnchorsFile ' +
               '(STS_TLS_TRUST_ANCHORS_FILE) is ' +
-              '"' + file + '" and it could not be read: ' + e.message + '.');
+              '"' + file + '" and it could not be read: ' +
+              String((e && e.message) || e).replace(/\.+$/, '') + '.');
     process.exit(1);
   }
   const found = splitPemCertificates(text);

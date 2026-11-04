@@ -4378,9 +4378,12 @@ async function pushSecret(target) {
   }
   if ((t.provider === 'azure' || t.provider === 'vault') &&
       !/^https:\/\/[^\s\/?#]+/i.test(String(t.endpoint || ''))) {
-    throw pushRefusal('secret destination "' + t.label + '" is reached at ' +
-      '"' + (t.endpoint || '') + '", which is not an https URL. A write ' +
-      'credential and a password do not cross plain http.',
+    // An endpoint that is absent is said to be absent, not quoted as "".
+    throw pushRefusal('secret destination "' + t.label + '" ' +
+      (t.endpoint ? 'is reached at "' + t.endpoint + '", which is not an ' +
+        'https URL'
+        : 'names no endpoint, and it must name an https URL') +
+      '. A write credential and a password do not cross plain http.',
       'STS-SECDEST-0008');
   }
   if (t.provider === 'aws' && !t.region) {

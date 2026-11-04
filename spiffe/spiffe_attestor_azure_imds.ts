@@ -574,7 +574,8 @@ class AzureImdsAttestor {
                 ((e && e.message) || e));
       throw this.refuse(call, 'STS-SPIFFE-0085', status.FAILED_PRECONDITION,
                         'azure_imds is not configured in this realm: ' +
-                        e.message + '.');
+                        String((e && e.message) || e).replace(/\.+$/, '') +
+                        '.');
     }
     const modules: Record<string, any> = {};
     for (let i = 0; i < PACKAGES.length; i++) {

@@ -597,7 +597,7 @@ class RiskUpload {
                   f.dataset + ' failed to import: ' +
                   ((e && e.stack) || e));
         answer(RiskUpload.refusal(500, 'STS-RISK-0037', 'The import failed: ' +
-          ((e && e.message) || e) + '.'));
+          String((e && e.message) || e).replace(/\.+$/, '') + '.'));
       }).then(function (): Promise<void> {
         return self.release(target);
       });
@@ -871,7 +871,8 @@ class RiskUpload {
                     'fields could not be checked: ' + ((e && e.stack) || e));
           file.resume();
           finish(RiskUpload.refusal(500, 'STS-RISK-0037', 'The upload ' +
-            'could not be checked: ' + ((e && e.message) || e) + '.', true));
+            'could not be checked: ' +
+            String((e && e.message) || e).replace(/\.+$/, '') + '.', true));
         });
       });
       parser.on('filesLimit', function (): void {

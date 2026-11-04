@@ -1492,8 +1492,8 @@ class RequestWorker {
         // may be told it is current before them.
         log.warn(errorCodes.tag('STS-WORKER-0032') + 'request_worker: the ' +
                  'writes of scheduler run ' + runId + ' could not be ' +
-                 'flushed before it answered: ' + ((e && e.message) || e) +
-                 '.');
+                 'flushed before it answered: ' +
+                 String((e && e.message) || e).replace(/\.+$/, '') + '.');
       }).then(() => {
         report(answer);
       });
