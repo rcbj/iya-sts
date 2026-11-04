@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5183** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5184** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -76,7 +76,7 @@ is an ordinary outcome.
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 81
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 151
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 152
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
@@ -3690,6 +3690,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0149` | A Workload API caller on the workload agent's Unix socket no longer matches the process that connected: it has exited, its pid was reused, or it has executed a different program (#324). | — |
 | `STS-SPIFFE-0150` | The workload agent refused a Workload API caller that is entitled to nothing it asked for: no registration entry matches it (#324). | — |
 | `STS-SPIFFE-0151` | The workload agent could not obtain an SVID or a bundle from the SPIRE Server API (#324). | — |
+| `STS-SPIFFE-0152` | The workload agent attested and bound its Unix socket but could not write the file named by --ready-file, so it stopped rather than serve a socket its workload waits on and cannot find (#695). | — |
 
 ## STS-TLS
 
