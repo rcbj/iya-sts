@@ -31,6 +31,10 @@
 //     same client PERMISSION_DENIED (STS-SPIFFE-0149). The code is recorded
 //     and not sent.
 //
+// And, in this process (#695), the `--ready-file` a sidecar's workload
+// waits for: read off argv, written whole, removed, and a path that cannot
+// be written reported rather than thrown (STS-SPIFFE-0152).
+//
 // It does not weaken `tests/spiffe_workload_tcp_product.js`. The realm is
 // left standing with SPIFFE off, for that file's reason.
 // ===========================================================================

@@ -44,7 +44,9 @@
 #      so one report answers for the run;
 #   6. DESTROYS the callback stack — pass, fail or interrupt (an EXIT trap).
 #
-# THE TWO CALLBACK JOBS, and why they cannot run here:
+# THE CALLBACK JOBS, and why they cannot run here (and, since #695,
+# sts_spiffe_grpc, which can but runs there against the task's Workload API
+# sidecar — see CALLBACK_JOBS below):
 #   sts_xacml_remote_pep  the PDP nudges a remote PEP container, and the job
 #                         writes that PEP's listener certificate into a
 #                         directory the container reads — so the job runs in
@@ -99,6 +101,16 @@ IN_AWS="${STS_SUITE_IN_AWS:-0}"
 if [ "${IN_AWS}" = "1" ];
 then
   WITH_CALLBACKS=1
+fi
+# AND sts_spiffe_grpc, WHERE THERE IS A CALLBACK TASK (#695). Its agent path
+# calls the Workload API through an agent, and in the task that agent is the
+# `spiffe-agent` sidecar from the service's own image (suite-callbacks/
+# main.tf), in another container, as a workload would run it. Without a
+# task (STS_SUITE_CALLBACKS=0) the job runs here and starts the agent in its
+# own process, as it did.
+if [ "${WITH_CALLBACKS}" = "1" ];
+then
+  CALLBACK_JOBS="${CALLBACK_JOBS},sts_spiffe_grpc.js"
 fi
 export AWS_REGION="${AWS_REGION:-us-west-2}"
 
@@ -452,6 +464,7 @@ then
     PEP_REALM="pep-$(date -u +%m%d%H%M%S)"
     OVERRIDES="$(RUN_ID="${RUN_ID}" PEP_REALM="${PEP_REALM}" ONLY="${TASK_JOBS}" \
       KEEP="${TASK_KEEP_REALMS}" UNPUB="${UNPUBLISHED}" \
+      SPIFFE_SERVER="${STS_SPIFFE_SERVER_URL:-}" \
       JT="${STS_SUITE_JOB_TIMEOUT_MS:-}" node -e '
       const env = function (pairs) {
         return Object.keys(pairs).filter(function (k) { return pairs[k]; })
@@ -464,6 +477,7 @@ then
             STS_SUITE_ONLY: process.env.ONLY,
             STS_SUITE_KEEP_REALMS: process.env.KEEP || "",
             STS_TEST_UNPUBLISHED: process.env.UNPUB || "",
+            STS_SPIFFE_SERVER_URL: process.env.SPIFFE_SERVER || "",
             STS_SUITE_JOB_TIMEOUT_MS: process.env.JT || "" }) },
         { name: "xacml-pep", environment: env({
             XACML_PEP_REALM: process.env.PEP_REALM }) }
