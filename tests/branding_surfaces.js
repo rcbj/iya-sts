@@ -154,10 +154,10 @@ function childMain() {
          '1a. the default realm\'s front door links no theme and carries no ' +
          'brand', r.text.slice(0, 600));
     r = await call(port, '/home-api/front');
-    note(r.status === 200 && r.json && r.json.logo &&
-         r.json.logo.src === '/logo.png',
+    let view = (r.json && r.json.view) || {};
+    note(r.status === 200 && view.logo && view.logo.src === '/logo.png',
          '1b. and its view draws the service\'s own image',
-         JSON.stringify(r.json && r.json.logo));
+         JSON.stringify(r.json));
     const plainPortal = realms.run(realms.get(realms.DEFAULT_ID), function () {
       return require(ROOT_DIR + '/portal/portal').shellDocument(null, {});
     });
@@ -188,11 +188,12 @@ function childMain() {
          'the realm\'s prefix, and carries the layout, the name and the logo',
          r.text.slice(0, 900));
     r = await call(port, PREFIX + '/home-api/front');
-    note(r.status === 200 && r.json && r.json.logo === null,
+    view = (r.json && r.json.view) || {};
+    note(r.status === 200 && view.name && view.logo === null,
          '2b. its view drops the service\'s image, so the realm\'s logo in ' +
          'the brand header is the only one', JSON.stringify(r.json));
     const framed = WebHomeFront.frame('<p>body</p>',
-      { view: r.json, t: { text: function (k) {
+      { view: view, t: { text: function (k) {
         return k;
       } } });
     note(framed.indexOf('class="hero"') < 0 &&
