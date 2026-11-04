@@ -26398,8 +26398,12 @@ async function candidatePageAsync(offset, limit, needle, options) {
              countCapped: countCapped, complete: past.complete,
              incomplete: past.incomplete };
   }
+  // The count goes with the needle (#1310): with few matches the store
+  // reads the page through the trigram index instead of walking the
+  // container (`directory_queries.js`'s `matchesCheaper()`).
   const page = await storeAsked(directoryWindow.rdnPageAsync(realmId,
-    parent, '', count, { offset: from, needle: wanted }));
+    parent, '', count, { offset: from, needle: wanted, matched: matched,
+                         total: total, countCapped: countCapped }));
   const rows = [];
   let unusable = 0;
   ((page && page.rows) || []).forEach(function (row) {

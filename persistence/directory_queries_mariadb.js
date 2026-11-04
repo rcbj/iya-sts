@@ -965,7 +965,10 @@ function rdnPage(ask, realm, parentKey, afterRdn, limit, options) {
 }
 
 // CAPPED AT `cap + 1` (#1308), as `directory_queries.rdnCount()` is and
-// for its reason: LOCATE has no index either. A LIMIT in a derived table
+// for its reason: LOCATE has no index. PostgreSQL's needle is a trigram
+// probe since #1310; MariaDB has no substring index (FULLTEXT is by word,
+// the n-gram parser is MySQL's), so here a needle stays a bounded scan of
+// the parent — `mariadb/CLAUDE.md`. A LIMIT in a derived table
 // is MariaDB's too (the restriction is on IN subqueries), and the same
 // cap is computed by the one copy, `rdnCountCap()`.
 function rdnCount(ask, realm, parentKey, needle, cap) {

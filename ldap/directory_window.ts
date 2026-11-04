@@ -1914,12 +1914,16 @@ class DirectoryWindow {
    * @param parentKey - the parent's normalised DN
    * @param afterRdn - the previous page's last RDN, or ''
    * @param limit - the page size (at most 1,000)
-   * @param options - `offset` and `needle`
+   * @param options - `offset` and `needle`; with a needle, the caller's
+   *   count (`matched`, `total`, `countCapped`), which lets the store read
+   *   a needle with few matches through its trigram index (#1310)
    * @returns `{ rows, asked, last }`
    */
   async rdnPageAsync(realmId: string, parentKey: string, afterRdn: string,
                      limit: number,
-                     options?: { offset?: number; needle?: string }):
+                     options?: { offset?: number; needle?: string;
+                                 matched?: number; total?: number;
+                                 countCapped?: boolean }):
       Promise<{ rows: Array<{ key: string; entry: Entry; rdn: string }>;
                 asked: number; last: string }> {
     log.debug("Entering DirectoryWindow.rdnPageAsync().");

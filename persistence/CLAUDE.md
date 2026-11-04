@@ -3344,6 +3344,20 @@ an extension behind it, which the driver creates first where it may. How a
 large store builds it without holding writes is in `postgres/CLAUDE.md`, and
 the search itself is in `ldap/CLAUDE.md`.
 
+**Since #1310 (2026-11-04) it also serves the role chooser's needle**, the
+capped `rdnCount` and `rdnPage` of `directory_queries.js`, which were
+`position()` and read every child of the parent. No schema version: the
+index was already the right one, and a composite `btree_gin` index of
+`(realm, parent_key, rdn_value gin_trgm_ops)` measured worse (179 buffers
+to 56 for a selective needle; its realm and parent entries are posting trees
+of every row). What changed is the statements: LIKE with the needle
+escaped, the index's condition repeated, and a `MATERIALIZED` CTE so a
+LIMIT does not price the rdn index's ordered read as cheap. A needle with
+no run of three ASCII letters or digits keeps `position()` — pg_trgm has no
+trigram for it. **On MariaDB a needle is still a bounded scan** of the
+parent: no substring index exists there (`mariadb/CLAUDE.md`).
+`ldap/CLAUDE.md` has the measurements and the page's rule.
+
 **`sts_sessions_surface` is the seventh index (#754, schema version 22).**
 `session.surface` — a hosted surface's relying-party sessions, which
 `Authn.endRelyingPartySessions()` asks for every signal the surface

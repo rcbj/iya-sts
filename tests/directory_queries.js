@@ -17,7 +17,8 @@
 //      lower-cased as a JSON array for `@>`, never lets a `%` in a DN become
 //      a wildcard, bounds a page at 1,000, and refuses a query it does not
 //      know. `answerOf()` shapes rows as `readEntry()` always did. A
-//      needle's `rdnCount` is capped (#1308): A23–A26.
+//      needle's `rdnCount` is capped (#1308): A23–A26, its LIMIT outside a
+//      MATERIALIZED CTE (#1310).
 //   B. THE DRIVER'S DOOR: `directoryQuery()` runs exactly the builder's
 //      statement on the READ pool and answers in the directory's shape; an
 //      unknown query is a rejection, not a statement.
@@ -236,10 +237,14 @@ function builders(t) {
           'A22. rdnCount answers a number');
   // A NEEDLE'S COUNT IS CAPPED (#1308): the matches are counted inside a
   // LIMIT of the cap and one more, so the store answers at most cap + 1.
+  // The LIMIT is outside a MATERIALIZED CTE since #1310, so the planner
+  // prices the whole read and the LIMIT still stops it.
   const capped = queries.rdnCount('default', users, 'Li');
-  t.check(/^SELECT count\(\*\)::bigint AS n FROM \(SELECT 1 AS one FROM /
+  t.check(/^WITH m AS MATERIALIZED \(SELECT 1 AS one FROM /
       .test(capped.text) &&
-          /position\(\$3 in rdn_value\) > 0 LIMIT \$4\) AS matched$/
+          /position\(\$3 in rdn_value\) > 0\) SELECT count\(\*\)::bigint /
+            .test(capped.text) &&
+          /FROM \(SELECT one FROM m LIMIT \$4\) AS matched$/
             .test(capped.text) &&
           capped.values[2] === 'li' &&
           capped.values[3] === queries.RDN_COUNT_CAP + 1 &&
