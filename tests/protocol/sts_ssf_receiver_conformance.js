@@ -350,15 +350,29 @@ async function signIn(prepared) {
 }
 
 // THE EFFECT (header point 4): the person's sessions are gone, and the
-// inbox says the session-revoked ended them.
-async function effectOf(prepared, plan, liveBefore, findings) {
+// inbox says the session-revoked ended them. ONLY THIS MODULE'S ARRIVALS
+// COUNT (2026-11-04): `before` is the inbox as the module started, and a
+// row already in it — the previous module's session-revoked, done — is not
+// this module's. Matching it made a module whose events never arrived
+// report "reaction recorded done: true" beside a live session.
+async function effectOf(prepared, plan, liveBefore, findings, before) {
   log.debug("Entering effectOf().");
+  // Keyed by the SET's jti, which a row keeps while its reactions are
+  // written; a row with none is keyed by its arrival time.
+  const keyOf = function keyOf(row) {
+    log.debug("Entering keyOf().");
+    log.debug("Leaving keyOf().");
+    return String(row.jti || row.receivedAt || "");
+  };
+  const earlier = new Set((before || []).map(keyOf));
   let live = null;
   let ended = false;
   const deadline = Date.now() + 20000;
   while (Date.now() < deadline) {
     live = await liveSessions(prepared);
-    ended = (await arrivals(prepared)).some(function (row) {
+    ended = (await arrivals(prepared)).filter(function (row) {
+      return !earlier.has(keyOf(row));
+    }).some(function (row) {
       return (row.events || []).indexOf(CAEP + "session-revoked") >= 0 &&
              row.person === prepared.person && row.verified === true &&
              (row.reactions || []).some(function (x) {
@@ -373,8 +387,8 @@ async function effectOf(prepared, plan, liveBefore, findings) {
   if (!(liveBefore > 0 && ended && live.length === 0)) {
     findings.push(plan.key + ": the CAEP session-revoked did not end " +
       prepared.person + "'s sessions (" + liveBefore + " before, " +
-      (live ? live.length : "?") + " after; reaction recorded done: " +
-      ended + ")");
+      (live ? live.length : "?") + " after; a reaction to this module's " +
+      "session-revoked recorded done: " + ended + ")");
   } else {
     log.info("    the session-revoked ended " + prepared.person + "'s " +
              liveBefore + " session(s), verified and recorded");
@@ -400,7 +414,8 @@ async function operate(prepared, plan, id, moduleName, findings) {
     return;
   }
   const short = moduleName.replace(/^openid-ssf-receiver-/, "");
-  const seenBefore = (await arrivals(prepared)).length;
+  const inboxBefore = await arrivals(prepared);
+  const seenBefore = inboxBefore.length;
   if (short === "happypath") {
     await signals(prepared, "signals-read-stream");
     await signals(prepared, "signals-update-stream");
@@ -450,7 +465,7 @@ async function operate(prepared, plan, id, moduleName, findings) {
     });
     log.info("    " + ((await arrivals(prepared)).length - seenBefore) +
              " SET(s) arrived");
-    await effectOf(prepared, plan, liveBefore, findings);
+    await effectOf(prepared, plan, liveBefore, findings, inboxBefore);
     if (short === "stream-supported-events") {
       await signals(prepared, "signals-delete-stream");
     }
