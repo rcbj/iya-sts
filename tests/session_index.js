@@ -974,6 +974,97 @@ async function backfillCases(t, handle) {
   t.equal(minted.sessionIndexChangeFloor(), 18,
           'the floor is published once the mark commits');
 
+  // NOT ONE BODY READ (#1312): every stored session unreadable is a key
+  // that is not the store's, not lost sessions, so the walk refuses under
+  // STS-STORE-0163 and writes no completion row, and the next start tries
+  // again.
+  const unreadPages = [[bad, garbled]];
+  const unreadWrote = [];
+  install({
+    loadMinted: emptyLoad,
+    saveMinted: emptySave,
+    origin: testOrigin,
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return Promise.resolve(false);
+    },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(19);
+    },
+    loadSessionBodies: function () {
+      log.debug("Entering loadSessionBodies().");
+      const page = unreadPages.shift() || [];
+      log.debug("Leaving loadSessionBodies().");
+      return Promise.resolve(page);
+    },
+    writeSessionIndexes: function (rows, complete) {
+      log.debug("Entering writeSessionIndexes().");
+      unreadWrote.push({ rows: rows, complete: complete });
+      log.debug("Leaving writeSessionIndexes().");
+      return Promise.resolve();
+    }
+  });
+  let unreadFailed = null;
+  const unreadCodes = await taggedDuring(function () {
+    return minted.backfillSessionIndex().catch(function (e) {
+      unreadFailed = e;
+      log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
+    });
+  });
+  t.check(!!unreadFailed && unreadFailed.errorCode === 'STS-STORE-0163',
+          'a store whose every session body is unreadable refuses under ' +
+          'STS-STORE-0163 (#1312)', unreadFailed && unreadFailed.message);
+  t.check(unreadWrote.every(function (w) {
+    return !w.complete;
+  }), 'and writes no completion row, so the next start walks again',
+          JSON.stringify(unreadWrote));
+  t.check(unreadCodes.indexOf('STS-STORE-0163') >= 0,
+          'the refusal is tagged STS-STORE-0163', JSON.stringify(unreadCodes));
+
+  // An empty store has nothing to read, and finishes (#1312's refusal is
+  // for bodies that exist and cannot be read).
+  const blankWrote = [];
+  install({
+    loadMinted: emptyLoad,
+    saveMinted: emptySave,
+    origin: testOrigin,
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return Promise.resolve(false);
+    },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(20);
+    },
+    loadSessionBodies: function () {
+      log.debug("Entering loadSessionBodies().");
+      log.debug("Leaving loadSessionBodies().");
+      return Promise.resolve([]);
+    },
+    writeSessionIndexes: function (rows, complete) {
+      log.debug("Entering writeSessionIndexes().");
+      blankWrote.push({ rows: rows, complete: complete });
+      log.debug("Leaving writeSessionIndexes().");
+      return Promise.resolve();
+    }
+  });
+  let blankFailed = null;
+  try {
+    await minted.backfillSessionIndex();
+  } catch (e) {
+    blankFailed = e;
+    log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
+  }
+  t.equal(blankFailed, null, 'an empty store still finishes',
+          blankFailed && blankFailed.message);
+  t.check(blankWrote.length === 1 && blankWrote[0].complete === true,
+          'and writes its completion row', JSON.stringify(blankWrote));
+
   // A write that fails is still a throw, and still the start's failure:
   // only a body that will not open is skipped.
   const throwPages = [full, [good]];

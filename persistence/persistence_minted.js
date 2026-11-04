@@ -4259,6 +4259,16 @@ const SESSION_SKIP_LINES = 10;
 // a restore leaves an unreadable row out, and the session window answers a
 // failed read rather than a session, so the person is not signed in and
 // signs in again — and the line at the end says how many.
+//
+// UNLESS NOT ONE BODY COULD BE READ (#1312, rcbj's decision). Stored sessions
+// every one of which this process cannot open are not lost sessions: they
+// are almost certainly a key-encryption or data key that is not this
+// store's, an operator's error that marking the walk done would make
+// permanent — the next start with the right key would find the mark and
+// never index them. So when the walk ends with bodies skipped and none
+// read, it throws under STS-STORE-0163 before the last page's transaction,
+// the mark stays unwritten, and the start fails saying so. An empty store
+// (nothing to read) still finishes.
 function backfillSessionIndex() {
   log.debug("Entering backfillSessionIndex().");
   const active = /** @type {any} */ (driver);
@@ -4293,8 +4303,10 @@ function backfillSessionIndex() {
     log.debug("Leaving mark().");
     throw err;
   }
-  // How many bodies the walk skipped (#695), across every page.
+  // How many bodies the walk skipped (#695), and read (#1312), across
+  // every page.
   let skipped = 0;
+  let read = 0;
   // One body of a page, opened and indexed, or null where it is skipped.
   function indexedOrSkipped(one) {
     log.debug("Entering indexedOrSkipped().");
@@ -4346,10 +4358,22 @@ function backfillSessionIndex() {
         for (let i = 0; i < rows.length; i++) {
           const indexed = indexedOrSkipped(rows[i]);
           if (indexed) {
+            read += 1;
             ready.push(indexed);
           }
         }
         const last = rows.length < SESSION_INDEX_BATCH;
+        // Not one body read, and some skipped: refused before the last
+        // page's transaction, which is the one that writes the mark (#1312).
+        if (last && skipped > 0 && read === 0) {
+          const none = new Error(errorCodes.tag('STS-STORE-0163') +
+            'persistence: the session index backfill found ' + skipped +
+            ' stored session(s) and could read none of them, so the key ' +
+            'this process holds is probably not the store\'s. The backfill ' +
+            'is NOT marked done; start again with the store\'s key.');
+          /** @type {any} */ (none).errorCode = 'STS-STORE-0163';
+          return Promise.reject(none);
+        }
         const writing = (ready.length || last)
           ? active.writeSessionIndexes(ready, last) : Promise.resolve();
         return Promise.resolve(writing).then(function () {

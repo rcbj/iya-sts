@@ -1942,6 +1942,14 @@ const CODES = [
       'tier\'s purge is a job of its own and is not affected, a start skips ' +
       'the rows anyway, and the next run tries again.',
     spec: 'none — logged, and the job run is recorded as failed' },
+  { code: 'STS-STORE-0163',
+    summary: 'The one-time session index backfill found stored sign-on ' +
+      'sessions and could read NOT ONE of them (#1312): the key-encryption ' +
+      'or data key this process holds is almost certainly not the store\'s. ' +
+      'The completion mark is not written and the start fails, so the next ' +
+      'start with the right key walks again; a backfill that reads some and ' +
+      'skips others still finishes (STS-STORE-0161).',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

@@ -3326,7 +3326,12 @@ done: a re-run with the same keys reads the same bytes, so an unwritten mark
 would only re-walk every session on every start. Those sessions are lost —
 a restore leaves an unreadable row out and the window answers a failed
 read, never a session — and the person signs in again; the last line says
-how many. A store or driver failure is still a throw. The last page's transaction deletes index rows whose
+how many. **Except when not one body could be read (#1312, rcbj's
+decision)**: stored sessions that are ALL unreadable are a key that is not
+the store's, not lost sessions, so the walk throws under `STS-STORE-0163`
+before the last page's transaction, the mark stays unwritten, and the start
+fails saying so; the next start with the right key walks again. An empty
+store still finishes. A store or driver failure is still a throw. The last page's transaction deletes index rows whose
 session body is missing or a tombstone, and does not delete the completion
 row: a resume's new head would hide an older build's delete, and a body
 `purgeTombstones` already removed is not in the change log. That head is
