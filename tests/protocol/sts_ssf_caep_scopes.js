@@ -26,7 +26,8 @@
 //      declaration, and the read role authorizes it. SSF_MANAGE does not.
 //   3. A client that declares only `ssf.read` is refused `ssf.read` until
 //      it holds SSF_READ, then is issued it, lists streams and is refused
-//      a create. The 403 names `ssf.manage`. It is refused `ssf.manage`.
+//      a create. The 403 names `ssf.manage`, and its challenge names the
+//      write scopes alone. It is refused `ssf.manage`.
 //   4. A client that declares only `ssf:read` is refused `ssf.read`; the
 //      `ssf:read` token it can still get is refused by the transmitter. A
 //      client that declares only `ssf:write` is refused `ssf.manage`.
@@ -354,6 +355,15 @@ async function test() {
   check("and is refused a create, which names ssf.manage", function () {
     assert.strictEqual(r.status, 403, r.text.slice(0, 400));
     assert.ok(/ssf\.manage/.test(r.text), r.text.slice(0, 400));
+  });
+  check("and the 403's challenge names the write scopes alone, not the " +
+        "read scope the token already holds (RFC 6750 section 3.1, #695)",
+        function () {
+    const challenge = r.headers.get("www-authenticate") || "";
+    const scope = (/Bearer[^,]*,\s*scope="([^"]*)"/.exec(challenge) ||
+                   [])[1] || "";
+    assert.ok(/\bssf\.manage\b/.test(scope), challenge);
+    assert.ok(!/\bssf\.read\b/.test(scope), challenge);
   });
 
   log.info("=== 4. the colon names are not Shared Signals scopes ===");

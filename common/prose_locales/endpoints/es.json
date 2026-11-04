@@ -1048,8 +1048,8 @@
     "text": "Los agentes atestiguados"
   },
   "endpoints.route./admin-api/spiffe/agents/:action.name": {
-    "en": "109f2fc8119d9c06",
-    "text": "Prohibir, readmitir u olvidar un agente"
+    "en": "db7439843e5d6273",
+    "text": "Prohibir, readmitir u olvidar un agente, o emitir un join token"
   },
   "endpoints.route./admin-api/spiffe/brokers.name": {
     "en": "3afd6d3f274707ff",

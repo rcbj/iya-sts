@@ -1952,8 +1952,8 @@
     "text": "GET /admin/spiffe/agents sobre JSON, filtrado y paginado, con ?agent= para uno de ellos. Un REGISTRO y no configuración: todo lo que hay en estas entradas lo escribió este servicio cuando un agente se atestó, y nada de ello se verificó."
   },
   "stsmetadata.endpoints./admin-api/spiffe/agents/:action.what": {
-    "en": "27852c51f25bf2ea",
-    "text": "ban, unban y delete. El veto se APLICA en AttestAgent, que es lo que impide que sea una mentira; delete es olvidar y no revocar, ya que el agente reaparece en cuanto vuelve a atestarse."
+    "en": "7312163578d55aee",
+    "text": "ban, unban, delete y join-token. El veto se APLICA en AttestAgent, que es lo que impide que sea una mentira; delete es olvidar y no revocar, ya que el agente reaparece en cuanto vuelve a atestarse. join-token emite un join token para un agente sidecar (#324), que se entrega una sola vez, con el alias `agentId`."
   },
   "stsmetadata.endpoints./admin-api/spiffe/brokers.what": {
     "en": "01e56a072ac7b944",

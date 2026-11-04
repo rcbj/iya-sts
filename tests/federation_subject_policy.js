@@ -695,30 +695,34 @@ function childMain() {
     // relationship leaves empty), the partner's sub is urn:uuid:, and the
     // entry is <relationship>~sub-<uuid>. Product mode, and a realm whose
     // ldap.autocreateUsers is off, still create it when the relationship
-    // switch is on. Restored afterwards: later sections match on
-    // preferred_username.
+    // switch is on. Restored in a `finally`: later sections match on
+    // preferred_username, and a sign-in that throws must not leave the
+    // overrides on for them (tests/CLAUDE.md's rule).
     const cleared = setRel('fedUsernameSource', '');
     inSp(function () {
       config.setOverride('ldap.autocreateUsers', 'false');
     });
-    const UMA = 'fsp-sub-' + MODE;
-    const sub = partnerSubjectOf(UMA);
-    got = await signIn(UMA, {});
-    const uuid = String(sub || '').replace(/^urn:uuid:/i, '').toLowerCase();
-    const expected = REL + '~sub-' + uuid;
-    const made = entryOf(expected);
-    note(cleared.ok && /^urn:uuid:/i.test(String(sub || '')) &&
-         got.r.status === 200 && made && !entryOf(UMA) &&
-         !entryOf(REL + '~' + UMA) &&
-         attr(made, 'federationLink').length === 1 &&
-         attr(made, 'uid')[0] === expected,
-         '1n. a partner urn:uuid subject is filed as ' + expected +
-         ' and signed in, with ldap.autocreateUsers off',
-         got.r.status + ' ' + String(sub) + ' ' + !!made);
-    setRel('fedUsernameSource', 'preferred_username');
-    inSp(function () {
-      config.clearOverride('ldap.autocreateUsers');
-    });
+    try {
+      const UMA = 'fsp-sub-' + MODE;
+      const sub = partnerSubjectOf(UMA);
+      got = await signIn(UMA, {});
+      const uuid = String(sub || '').replace(/^urn:uuid:/i, '').toLowerCase();
+      const expected = REL + '~sub-' + uuid;
+      const made = entryOf(expected);
+      note(cleared.ok && /^urn:uuid:/i.test(String(sub || '')) &&
+           got.r.status === 200 && made && !entryOf(UMA) &&
+           !entryOf(REL + '~' + UMA) &&
+           attr(made, 'federationLink').length === 1 &&
+           attr(made, 'uid')[0] === expected,
+           '1n. a partner urn:uuid subject is filed as ' + expected +
+           ' and signed in, with ldap.autocreateUsers off',
+           got.r.status + ' ' + String(sub) + ' ' + !!made);
+    } finally {
+      setRel('fedUsernameSource', 'preferred_username');
+      inSp(function () {
+        config.clearOverride('ldap.autocreateUsers');
+      });
+    }
 
     // =======================================================================
     // 2. ADMINISTRATORS

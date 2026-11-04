@@ -123,6 +123,14 @@ What each SP-initiated switch does when it is off:
 | WS-Federation | a registered reply URL (`wsfedReplyUrl`); a `wreply` on the link is refused |
 | OpenID Connect | `oauthInitiateLoginUri`: the client's `initiate_login_uri`, https without a fragment. RFC 7591 registration writes it, and the console and `/admin-api` edit it. |
 
+**Changed in #426, for an install upgraded from before it.** An OpenID
+Connect client's launch link from the user portal now needs
+`oauth2.thirdPartyInitiatedLogin` (or the client's
+`oauthThirdPartyInitiatedLogin`), which is off by default. A client whose
+`initiate_login_uri` is held only inside its stored registration document
+(`appRegistrationJson`) is no longer launchable. Copy the address to
+`oauthInitiateLoginUri`, or register the client again.
+
 ## It is the same sign-in
 
 An IdP-initiated sign-in is checked exactly like an SP-initiated one. The

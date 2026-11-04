@@ -549,18 +549,35 @@ async function adapters(t) {
     let body;
     if (batch.length === 100) {
       body = { tasks: [
-        { attachments: [{ details: [
-          { name: 'privateIPv4Address', value: '010.0.0.1' }
-        ] }] },
+        { group: 'service:' + PREFIX + '-node-a',
+          attachments: [{ details: [
+            { name: 'privateIPv4Address', value: '010.0.0.1' }
+          ] }] },
+        { group: 'service:' + PREFIX + '-node-a',
+          containers: [{ networkInterfaces: [
+            { privateIpv4Address: '10.0.0.2' }
+          ] }] },
+        // A run-task task in the same cluster (the suite runner, the cell
+        // conversion) is not a node (#695).
+        { group: 'family:' + PREFIX + '-suite',
+          containers: [{ networkInterfaces: [
+            { privateIpv4Address: '10.0.0.3' }
+          ] }] },
+        // Nor is another service's, nor one with no group at all.
+        { group: 'service:' + PREFIX + '-pep',
+          containers: [{ networkInterfaces: [
+            { privateIpv4Address: '10.0.0.4' }
+          ] }] },
         { containers: [{ networkInterfaces: [
-          { privateIpv4Address: '10.0.0.2' }
+          { privateIpv4Address: '10.0.0.5' }
         ] }] }
       ] };
     } else {
       body = { tasks: [
-        { containers: [{ networkInterfaces: [
-          { privateIpv4Address: '10.1.0.1' }
-        ] }] }
+        { group: 'service:' + PREFIX + '-node-b',
+          containers: [{ networkInterfaces: [
+            { privateIpv4Address: '10.1.0.1' }
+          ] }] }
       ] };
     }
     log.debug('Leaving send().');
@@ -573,7 +590,8 @@ async function adapters(t) {
   t.equal(described.sent[1].input.tasks.length, 1, 'then the remainder');
   t.equal(JSON.stringify(ips),
           JSON.stringify([{ ip: '10.0.0.2' }, { ip: '10.1.0.1' }]),
-          'a leading-zero address is not registered');
+          'a leading-zero address is not registered, nor a task no node ' +
+          'service started');
   const changes = scripted([{}]);
   await SpiffeTargets.changeMembers(changes, elbSdk(), 'arn:g',
     [{ id: '10.0.0.2', port: 8092 }], true);

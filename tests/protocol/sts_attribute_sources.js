@@ -301,7 +301,20 @@ function pgClient(urlText, database) {
 
 async function mysqlAdmin(spec, database) {
   log.debug("Entering mysqlAdmin(). " + (database || "(the URL's)"));
-  const mysql = require("mysql2/promise");
+  // SAID IN A SENTENCE (#695): a tests image built before mysql2 joined
+  // tests/package.json — a `--no-build` run on an old image — otherwise
+  // fails here with a bare MODULE_NOT_FOUND that names no cause.
+  let mysql;
+  try {
+    mysql = require("mysql2/promise");
+  } catch (e) {
+    log.debug("Caught in mysqlAdmin(): " + ((e && e.message) || e));
+    log.debug("Leaving mysqlAdmin(). No mysql2.");
+    throw new Error("this tests image has no mysql2, which the MariaDB " +
+                    "pass needs (tests/package.json): it was built before " +
+                    "mysql2 was added. Run without --no-build, or rebuild " +
+                    "the tests image. (" + ((e && e.message) || e) + ")");
+  }
   const url = new URL(spec.url);
   const named = database || url.pathname.replace(/^\//, "");
   const conn = await mysql.createConnection({

@@ -1065,14 +1065,16 @@ realms, the product honour rule and classic delegation across realms.
 register on EVERY TGS-REQ (`crossRealmPath()`) and `krb5_principals.js` on
 every cross-realm name and every routing miss, both through
 `principals.trustRegister()`, a LAZY `require('./krb5_trusts')` inside a `try`
-— so the four in-process jobs load it at their first TGS-REQ. The commit that
-bumps the `sts/` pin across #430 owes `COPY sts/kerberos/krb5_trusts.js
+— so the four in-process jobs load it at their first TGS-REQ. HISTORY, kept
+because #695 asked: until #1280 the commit that bumped the `sts/` pin across
+#430 owed `COPY sts/kerberos/krb5_trusts.js
 ./sts/kerberos/`, COMPILED from its `.ts` (the #186 precedent for a lazily
 reached TypeScript module; the 2026-10-13 rule that a module required AT LOAD is
 `.js` in the checkout does not apply to a lazy one), and with it `COPY
 sts/common/instance_slot.js ./sts/common/`, also compiled from its `.ts` (it
-requires nothing). **Those two lines are the whole debt**, checked against the
-parent's `tests/Dockerfile` on 2026-10-19 when #721 was merged:
+requires nothing). **Those two lines were the whole debt**, checked against
+the parent's `tests/Dockerfile` on 2026-10-19 when #721 was merged (since
+#1280, what the parent copies is its business):
 `common/keystore.js`, reached lazily when a record is read, is already there
 (with `secrets.js`, `pki_merge.js` and `cluster/cluster_capabilities.js`, which
 it requires), and so is everything `krb5_trusts` requires at load (`helpers`,
@@ -2511,8 +2513,8 @@ its `kerberos-pac` selection (nothing ticked by default); rcbj's rules:
 **THIS FILE CHANGED NOTHING FOR IT.** `admin_stats.js` reads the selection
 through the attribute resolver slot's fourth member, `selectedAttributes`
 (filled by `claim_attributes.ts`; the require would close rule 2's cycle),
-and the entry through the third, so the parent's COPY closure still owes
-nothing.
+and the entry through the third, so the parent's COPY closure owed nothing
+(and since #1280 is owed nothing at all).
 
 Tests: `tests/pac_claims.js` (in process: the rows, a TGT's claims and
 signatures, carry versus re-evaluation, the override on one SPN only, a krbtgt

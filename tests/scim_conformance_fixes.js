@@ -430,6 +430,19 @@ function childMain() {
            namesOf(r).length === 0 && r.json.itemsPerPage === 0,
            'B12. count 0 is an empty page and the match is still counted',
            pageShape(r));
+      // RFC 7644 section 3.4.2.4: "A value less than 1 SHALL be interpreted
+      // as 1" (#695: no case sent one).
+      const lowStarts = ['0', '-1'];
+      for (let k = 0; k < lowStarts.length; k++) {
+        r = await scim('GET', '/Users?filter=' + pageFilter +
+                       '&count=2&startIndex=' + lowStarts[k]);
+        note(r.status === 200 && r.json.totalResults === 4 &&
+             r.json.startIndex === 1 &&
+             namesOf(r).join(',') === order.slice(0, 2).join(','),
+             'B' + (13 + k) + '. startIndex ' + lowStarts[k] +
+             ' is read as 1: the first two names',
+             pageShape(r) + ' vs ' + order.slice(0, 2).join(','));
+      }
     });
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify({ findings: findings }));

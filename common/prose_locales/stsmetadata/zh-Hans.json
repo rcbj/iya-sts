@@ -1952,8 +1952,8 @@
     "text": "以 JSON 形式提供的 GET /admin/spiffe/agents，经过滤和分页，?agent= 获取其中一个。这是记录而不是配置——这些条目上的一切都是本服务在代理进行证明时写入的，其中没有任何内容经过验证。"
   },
   "stsmetadata.endpoints./admin-api/spiffe/agents/:action.what": {
-    "en": "27852c51f25bf2ea",
-    "text": "ban、unban 和 delete。封禁在 AttestAgent 处强制执行，这使它不至于成为谎言；delete 是遗忘而不是吊销，因为代理一旦再次证明就会重新出现。"
+    "en": "7312163578d55aee",
+    "text": "ban、unban、delete 和 join-token。封禁在 AttestAgent 处强制执行，这使它不至于成为谎言；delete 是遗忘而不是吊销，因为代理一旦再次证明就会重新出现。join-token 为边车代理签发一个加入令牌（#324），只返回一次，其别名为 `agentId`。"
   },
   "stsmetadata.endpoints./admin-api/spiffe/brokers.what": {
     "en": "01e56a072ac7b944",

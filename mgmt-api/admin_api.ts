@@ -6652,15 +6652,10 @@ class AdminApi {
           }, function (e) {
             log.debug("Caught in the management API status endpoint: " +
                       ((e && e.message) || e));
-            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
-                                     'STS-LDAP-0139') +
-                      'admin-api: the console\'s totals could not be read ' +
-                      'from the store: ' + ((e && e.message) || e));
-            res.setHeader('Retry-After', '5');
-            errorCodes.mark(res, errorCodes.codeOf(e) || 'STS-LDAP-0139');
-            self.sendJson(res, 503, { error: 'temporarily_unavailable',
-              error_description: 'The directory could not be read; try ' +
-                'again shortly.' });
+            // 503 for a store it could not read, 500 for anything else
+            // (#695: every failure was a "try again shortly").
+            self.answerDirectoryFailure(res, e, 'the console\'s totals',
+                                        'STS-LDAP-0176');
           });
         } },
 
@@ -6985,17 +6980,10 @@ class AdminApi {
               // The directory read failed after the handler had already
               // started: answer 503 here, and do not rethrow, so a
               // drill-down's fresh() does not also call next().
-              log.error(errorCodes.tag(errorCodes.codeOf(e) ||
-                                       'STS-LDAP-0139') +
-                        'admin-api: the users list ' +
-                        'could not be read from the store: ' +
-                        ((e && e.message) || e));
-              res.setHeader('Retry-After', '5');
-              errorCodes.mark(res, errorCodes.codeOf(e) ||
-                                   'STS-LDAP-0139');
-              self.sendJson(res, 503, { error: 'temporarily_unavailable',
-                error_description: 'The directory could not be read; try ' +
-                  'again shortly.' });
+              // 503 for a store it could not read, 500 for anything else
+              // (#695: every failure was a "try again shortly").
+              self.answerDirectoryFailure(res, e, 'the users list',
+                                          'STS-LDAP-0176');
               log.debug("Leaving run(). The directory could not be read.");
             });
           };
@@ -10518,17 +10506,10 @@ class AdminApi {
             }, function (e) {
               log.debug("Caught in the management API directory entries " +
                         "endpoint: " + ((e && e.message) || e));
-              log.error(errorCodes.tag(errorCodes.codeOf(e) ||
-                                       'STS-LDAP-0139') +
-                        'admin-api: the directory ' +
-                        'page could not be read from the store: ' +
-                        ((e && e.message) || e));
-              res.setHeader('Retry-After', '5');
-              errorCodes.mark(res, errorCodes.codeOf(e) ||
-                                   'STS-LDAP-0139');
-              self.sendJson(res, 503, { error: 'temporarily_unavailable',
-                error_description: 'The directory could not be read; try ' +
-                  'again shortly.' });
+              // 503 for a store it could not read, 500 for anything else
+              // (#695: every failure was a "try again shortly").
+              self.answerDirectoryFailure(res, e, 'the directory page',
+                                          'STS-LDAP-0176');
               log.debug("Leaving the management API directory entries " +
                         "endpoint. Unavailable.");
             });
@@ -11193,17 +11174,10 @@ class AdminApi {
           }, function (e) {
             log.debug("Caught in the management API multi-factor " +
                       "endpoint: " + ((e && e.message) || e));
-            log.error(errorCodes.tag(errorCodes.codeOf(e) ||
-                                     'STS-LDAP-0139') +
-                      'admin-api: the roster could ' +
-                      'not be read from the store: ' +
-                      ((e && e.message) || e));
-            res.setHeader('Retry-After', '5');
-            errorCodes.mark(res, errorCodes.codeOf(e) ||
-                                 'STS-LDAP-0139');
-            self.sendJson(res, 503, { error: 'temporarily_unavailable',
-              error_description: 'The directory could not be read; try ' +
-                'again shortly.' });
+            // 503 for a store it could not read, 500 for anything else
+            // (#695: every failure was a "try again shortly").
+            self.answerDirectoryFailure(res, e, 'the multi-factor roster',
+                                        'STS-LDAP-0176');
           });
         } },
 
@@ -25971,8 +25945,10 @@ class AdminApi {
           log.debug("Entering the management API SPIFFE agents action " +
                     "endpoint.");
           const body = parseBody(req);
+          // The token's subject for the audit row, as rbacAction's caller
+          // passes it (#695).
           const result = adminActions.spiffeAgentsAction(self.withAction(req,
-              body));
+              body), { via: 'api', actor: self.callerNameOf(res) });
           if (!result.ok) {
             errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-API-0064');
           }

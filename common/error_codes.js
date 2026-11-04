@@ -15148,8 +15148,10 @@ const CODES = [
     spec: 'HTTP 503 with Retry-After; an LDAP operation answers ' +
       'unavailable (52)' },
   { code: 'STS-LDAP-0176',
-    summary: 'GET /admin-api/ldap/devices or /admin-api/rbac failed to draw ' +
-      'its page with something other than a store it could not read ' +
+    summary: 'GET /admin-api/ldap/devices, /admin-api/rbac, /admin-api/users, ' +
+      '/admin-api/ldap/directory, /admin-api/mfa or /admin-api/status (#695) ' +
+      'failed to draw its page with something other than a store it could ' +
+      'not read ' +
       '(#359: STS-LDAP-0130, 0131, 0139 and 0175 are the 503s) and with no ' +
       'code of its own: a fault in this service, answered as one and ' +
       'logged with the stack, never a "try again shortly".',

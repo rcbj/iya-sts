@@ -1048,8 +1048,8 @@
     "text": "Les agents attestés"
   },
   "endpoints.route./admin-api/spiffe/agents/:action.name": {
-    "en": "109f2fc8119d9c06",
-    "text": "Bannir, réhabiliter ou oublier un agent"
+    "en": "db7439843e5d6273",
+    "text": "Bannir, réhabiliter ou oublier un agent, ou émettre un jeton de jonction"
   },
   "endpoints.route./admin-api/spiffe/brokers.name": {
     "en": "3afd6d3f274707ff",

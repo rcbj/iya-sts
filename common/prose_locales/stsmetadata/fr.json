@@ -1952,8 +1952,8 @@
     "text": "GET /admin/spiffe/agents en JSON, filtré et paginé, avec ?agent= pour l’un d’eux. Un ENREGISTREMENT plutôt qu’une configuration — tout ce que portent ces entrées a été écrit par ce service lorsqu’un agent s’est attesté, et rien n’en a été vérifié."
   },
   "stsmetadata.endpoints./admin-api/spiffe/agents/:action.what": {
-    "en": "27852c51f25bf2ea",
-    "text": "ban, unban et delete. Le bannissement est APPLIQUÉ à AttestAgent, ce qui l’empêche d’être un mensonge ; delete relève de l’oubli plutôt que de la révocation, puisque l’agent réapparaît dès qu’il s’atteste à nouveau."
+    "en": "7312163578d55aee",
+    "text": "ban, unban, delete et join-token. Le bannissement est APPLIQUÉ à AttestAgent, ce qui l’empêche d’être un mensonge ; delete relève de l’oubli plutôt que de la révocation, puisque l’agent réapparaît dès qu’il s’atteste à nouveau. join-token émet un jeton de jonction pour un agent sidecar (#324), remis une seule fois, avec l’alias `agentId`."
   },
   "stsmetadata.endpoints./admin-api/spiffe/brokers.what": {
     "en": "01e56a072ac7b944",

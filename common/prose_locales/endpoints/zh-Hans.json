@@ -1048,8 +1048,8 @@
     "text": "已证明的代理"
   },
   "endpoints.route./admin-api/spiffe/agents/:action.name": {
-    "en": "109f2fc8119d9c06",
-    "text": "封禁、解封或遗忘代理"
+    "en": "db7439843e5d6273",
+    "text": "封禁、解封或遗忘代理，或签发加入令牌"
   },
   "endpoints.route./admin-api/spiffe/brokers.name": {
     "en": "3afd6d3f274707ff",

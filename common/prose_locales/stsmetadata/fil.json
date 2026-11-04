@@ -1952,8 +1952,8 @@
     "text": "GET /admin/spiffe/agents sa JSON, sinala at naka-page, na may ?agent= para sa isa sa kanila. Isang TALAAN sa halip na configuration — lahat ng nasa mga entry na ito ay isinulat ng serbisyong ito nang mag-attest ang isang agent, at wala sa mga iyon ang na-verify."
   },
   "stsmetadata.endpoints./admin-api/spiffe/agents/:action.what": {
-    "en": "27852c51f25bf2ea",
-    "text": "ban, unban at delete. IPINAPATUPAD ang ban sa AttestAgent, na siyang pumipigil dito na maging kasinungalingan; ang delete ay paglimot sa halip na pag-revoke, dahil muling lumilitaw ang agent sa sandaling mag-attest ito muli."
+    "en": "7312163578d55aee",
+    "text": "ban, unban, delete at join-token. IPINAPATUPAD ang ban sa AttestAgent, na siyang pumipigil dito na maging kasinungalingan; ang delete ay paglimot sa halip na pag-revoke, dahil muling lumilitaw ang agent sa sandaling mag-attest ito muli. Ang join-token ay gumagawa ng join token para sa isang sidecar agent (#324), na ibinibigay nang isang beses lamang, na may alias na `agentId`."
   },
   "stsmetadata.endpoints./admin-api/spiffe/brokers.what": {
     "en": "01e56a072ac7b944",

@@ -125,7 +125,10 @@ environment can be reused: each suite run first removes what the previous
 runs left — every realm but the default one, and in the default realm the
 bulk-load people and groups, the applications the suite registered and the
 runtime overrides (`deploy/aws/reset-environment.js`; `--dry-run` lists them;
-`STS_SUITE_KEEP_REALMS=1` keeps everything).
+`STS_SUITE_KEEP_REALMS=1` keeps everything). It also removes every runtime
+client-certificate trust anchor named `iya-sts test Root CA`, which includes
+a root an operator minted with `tests/tools/pep-credential.js`
+([The remote PEP](remote-pep.md#minting-the-certificate)).
 
 **From GitHub Actions**: the *AWS cluster test* workflow
 (`.github/workflows/aws-cluster.yml`), started by hand, with the actions
@@ -148,6 +151,26 @@ node in one go, not one at a time**, the first time a cluster moves to a
 build with the change; after that, rolling upgrades are as safe as before.
 This deployment's ECS services already do: they stop the old tasks before
 starting new ones (`deployment_minimum_healthy_percent = 0`).
+
+**Re-apply `foundation/` before the environment, once, for the SPIFFE target
+groups (#323).** A node keeps the SPIFFE load-balancer target groups equal to
+the running nodes (the scheduler job `spiffe.target-reconcile`), and the
+permission it needs is granted by `deploy/aws/foundation/`, which only an
+administrator applies. Until an administrator has re-applied it, that job
+fails every 15 seconds with `STS-CLUSTER-0027` in the logs. The service keeps
+serving, but a node restarted since the last apply is not reachable on the
+SPIFFE ports.
+
+### A start that fails takes about ten minutes to say so
+
+A starting node is given ten minutes before a failed health check counts
+against it (#330): the listener binds only after the node has restored its
+state and started its first workers, which can take minutes. So a deploy of
+a build that never starts fails after about ten minutes, not seconds. The
+same holds on GCP, whose autohealing waits ten minutes too. On Azure a node
+taken out of rotation comes back after three good health checks, about 30
+seconds. A node that has been up is replaced after three failed checks in a
+row, about 30 seconds.
 
 ## Several regions: cells
 

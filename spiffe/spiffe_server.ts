@@ -1331,6 +1331,30 @@ class SpiffeServer {
     // registrations are wrapped too, so a later one does not silently leave
     // the realm. The original method is kept: a readable stream's `on`
     // resumes the flow, and calling it is what does that.
+    //
+    // ONE BOUND WRAPPER PER LISTENER, AND REMOVAL TRANSLATES (#695). The
+    // emitter holds the wrapper, so `removeListener(event, listener)` with
+    // the function the handler registered found nothing and the listener
+    // stayed. The wrapper is kept against the original, and `off` and
+    // `removeListener` hand the emitter the wrapper instead.
+    const wrappers = new WeakMap();
+    const wrapperOf = function (listener) {
+      if (typeof listener !== 'function') {
+        return listener;
+      }
+      let bound = wrappers.get(listener);
+      if (!bound) {
+        bound = realms.bind(realm, listener);
+        // `once` registers its own wrapper through `on` — this one — and
+        // EventEmitter finds a once listener by that wrapper's `listener`
+        // property, which the bound copy has to keep for `off` to match.
+        if (listener.listener) {
+          bound.listener = listener.listener;
+        }
+        wrappers.set(listener, bound);
+      }
+      return bound;
+    };
     const methods = ['on', 'once', 'addListener', 'prependListener',
                      'prependOnceListener'];
     methods.forEach(function (method) {
@@ -1339,8 +1363,17 @@ class SpiffeServer {
         return;
       }
       call[method] = function (event, listener) {
+        return original.call(this, event, wrapperOf(listener));
+      };
+    });
+    ['off', 'removeListener'].forEach(function (method) {
+      const original = call[method];
+      if (typeof original !== 'function') {
+        return;
+      }
+      call[method] = function (event, listener) {
         const bound = typeof listener === 'function'
-          ? realms.bind(realm, listener) : listener;
+          ? wrappers.get(listener) || listener : listener;
         return original.call(this, event, bound);
       };
     });

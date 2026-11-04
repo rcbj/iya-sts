@@ -1048,8 +1048,8 @@
     "text": "已證明的代理程式"
   },
   "endpoints.route./admin-api/spiffe/agents/:action.name": {
-    "en": "109f2fc8119d9c06",
-    "text": "封鎖、解除封鎖或遺忘代理程式"
+    "en": "db7439843e5d6273",
+    "text": "封鎖、解除封鎖或遺忘代理程式，或簽發加入權杖"
   },
   "endpoints.route./admin-api/spiffe/brokers.name": {
     "en": "3afd6d3f274707ff",

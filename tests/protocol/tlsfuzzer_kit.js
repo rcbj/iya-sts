@@ -1187,13 +1187,11 @@ function curveName(named) {
 // "" when the handshake fails, which the caller reads as "not detected".
 function presentedCertificate(host, port) {
   log.debug("Entering presentedCertificate().");
-  return new Promise(function (resolve) {
+  const answer = new Promise(function (resolve) {
     const finish = function (found) {
       log.debug("Entering finish().");
-      log.debug("Leaving presentedCertificate(). " +
-                (found.type || "no handshake") +
+      log.debug("Leaving finish(). " + (found.type || "no handshake") +
                 (found.curve ? " " + found.curve : ""));
-      log.debug("Leaving finish().");
       resolve(found);
     };
     // An IP address is not a server name (RFC 6066). Node warns, and a
@@ -1227,6 +1225,8 @@ function presentedCertificate(host, port) {
       finish({ type: "", curve: "" });
     });
   });
+  log.debug("Leaving presentedCertificate().");
+  return answer;
 }
 
 // The key one listener's plan runs under. A listener whose handshake named
