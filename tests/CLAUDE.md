@@ -2434,11 +2434,12 @@ certification differs:
   because two plans under one alias interfere. The realm waives RFC 9700
   section 2.1.2 and lets a self-registering client enable the four token
   response types (#1295, #1296), which the Implicit, Hybrid and Dynamic OP
-  profiles need. Its MEDIUM risk threshold is 8.00, and the run's person has
-  an authenticator app enrolled through the account API, which
-  `conformance_browser.js` uses to answer a risk step-up at `/authn/totp`
-  (rcbj's choice over switching risk off; a run is hundreds of sign-ins by one
-  new person, exactly what the model flags).
+  profiles need. It does not assess sign-in risk (`risk.assessSignIns` off,
+  rcbj 2026-11-04): a run is hundreds of sign-ins by one new person, exactly
+  what the model flags, and a raised MEDIUM threshold and then an
+  authenticator for the person (which drew HIGH refusals) both failed.
+  `conformance_browser.js` still answers `/authn/totp` when a driver passes
+  `o.totpSecret`.
 * **A browser visit has a deadline** (`CONFORMANCE_BROWSER_VISIT_MS`, three
   minutes): one hung WebDriver call once held the browser's lock and lost a
   whole run. A suite page that stalls logs the browser console, which is how
