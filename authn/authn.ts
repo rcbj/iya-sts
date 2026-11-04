@@ -984,6 +984,9 @@ let sessionObserver = null;
 // The scheduler job's id, and its interval's setting.
 const SESSION_EXPIRY_JOB = 'authn.session-expiry';
 const SESSION_SWEEP_SETTING = 'authn.sessionSweepS';
+// Sessions walked, read through the window, or ended between two turns of
+// the event loop in the sliced sweep (#704; sweepExpiredSessionsInSlices()).
+const SESSION_SWEEP_SLICE = 500;
 // The account sets' clean-up job (#561).
 const ACCOUNT_SET_EXPIRY_JOB = 'authn.account-set-expiry';
 
@@ -5073,6 +5076,123 @@ class Authn {
                'nobody is ever told about.');
     }
     log.debug("Leaving Authn.sweepExpiredSessions(). " +
+              (gone + shed) + " ended.");
+    return gone + shed;
+  }
+
+  /**
+   * `sweepExpiredSessions()`, a slice at a time (#704): the body of the
+   * session-expiry scheduler job. The same decisions, made by the same
+   * `sessionEnded()` and ended through the same `expireSession()`, with a
+   * turn of the event loop between realms, every SESSION_SWEEP_SLICE
+   * sessions of a realm's walk, and every SESSION_SWEEP_SLICE ends — so the
+   * process that runs it answers requests while it does. The synchronous
+   * form stays, for a caller that wants the count now.
+   *
+   * @returns a promise of how many sessions were ended
+   */
+  async sweepExpiredSessionsInSlices() {
+    const { realms, log } = this.deps;
+    const self = this;
+    log.debug("Entering Authn.sweepExpiredSessionsInSlices().");
+    const nowMs = Date.now();
+    let gone = 0;
+    const turn = function (): Promise<void> {
+      log.debug("Entering turn().");
+      log.debug("Leaving turn().");
+      return new Promise(function (resolve: () => void): void {
+        setImmediate(resolve);
+      });
+    };
+    // A session the sweep ends, and why; '' when it is live. Hot path: asked
+    // of every session of every realm, so no Entering/Leaving pair — it
+    // would add two log lines per session held.
+    const whyEnded = function (session: any): string {
+      if (session.expires && session.expires <= nowMs) {
+        return 'expired';
+      }
+      return self.sessionEnded(session, nowMs) || '';
+    };
+    for (const realm of realms.list()) {
+      const store = sessions.realmMap(realm.id);
+      if (self.windowOn()) {
+        const keys = realms.run(realm, function (): any {
+          const idle = self.sessionIdleTimeoutMs();
+          const cutoff = idle > 0 ? nowMs - idle : 0;
+          return sessionWindow.indexKeys('session.expired',
+                                         [realm.id, nowMs, cutoff]);
+        });
+        for (let i = 0; keys && i < keys.length;
+             i += SESSION_SWEEP_SLICE) {
+          realms.run(realm, function (): void {
+            keys.slice(i, i + SESSION_SWEEP_SLICE).forEach(
+              function (digest: string): void {
+                const loaded = sessionWindow.loadByDigest(realm.id, digest);
+                if (!loaded.ok) {
+                  return;
+                }
+                const why = whyEnded(loaded.session);
+                if (!why) {
+                  return;
+                }
+                self.expireSession(store, loaded.session.id, loaded.session,
+                                   'the session sweep', why);
+                gone++;
+              });
+          });
+          await turn();
+        }
+        await turn();
+        continue;
+      }
+      if (!store || !store.size) {
+        continue;
+      }
+      // Collected first and ended afterwards, for the synchronous form's
+      // reason; the walk is in slices, and a Map's iterator survives what
+      // other code writes between them.
+      const expired: any[] = [];
+      const it = store.entries();
+      let done = false;
+      while (!done) {
+        for (let i = 0; i < SESSION_SWEEP_SLICE; i++) {
+          const step = it.next();
+          if (step.done) {
+            done = true;
+            break;
+          }
+          const session = step.value[1];
+          const why = session ? whyEnded(session) : '';
+          if (why) {
+            expired.push([step.value[0], session, why]);
+          }
+        }
+        if (!done) {
+          await turn();
+        }
+      }
+      for (let i = 0; i < expired.length; i += SESSION_SWEEP_SLICE) {
+        realms.run(realm, function (): void {
+          expired.slice(i, i + SESSION_SWEEP_SLICE).forEach(
+            function (one: any[]): void {
+              self.expireSession(store, one[0], one[1], 'the session sweep',
+                                 one[2]);
+              gone++;
+            });
+        });
+        await turn();
+      }
+      await turn();
+    }
+    const shed = this.shedSubjectSurplus();
+    if (gone) {
+      log.info('authn: the session sweep ended ' + gone + ' expired ' +
+               'session(s). Each one is an audit row and a CAEP ' +
+               'session-revoked, which is the whole reason the sweep exists: ' +
+               'an expiry noticed only when somebody comes back is an expiry ' +
+               'nobody is ever told about.');
+    }
+    log.debug("Leaving Authn.sweepExpiredSessionsInSlices(). " +
               (gone + shed) + " ended.");
     return gone + shed;
   }
@@ -19708,8 +19828,13 @@ scheduler.register({
   owner: 'authn/authn.ts',
   everySetting: SESSION_SWEEP_SETTING,
   everySettingUnit: 's',
+  // IN SLICES (#704): the job runs on a request worker since #408, and a
+  // walk of every session of every realm in one turn held that worker.
   run: function (): any {
-    return { ended: slot.get().sweepExpiredSessions() };
+    return slot.get().sweepExpiredSessionsInSlices().then(
+      function (ended: number): any {
+        return { ended: ended };
+      });
   }
 });
 
@@ -19877,6 +20002,8 @@ export = {
   pendingForAccounts: slot.forward('pendingForAccounts'),
   accountsView: slot.forward('accountsView'),
   accountsAct: slot.forward('accountsAct'),
+  sweepExpiredSessions: slot.forward('sweepExpiredSessions'),
+  sweepExpiredSessionsInSlices: slot.forward('sweepExpiredSessionsInSlices'),
   sweepAccountSets: slot.forward('sweepAccountSets'),
   sweepAccountSetsInSlices: slot.forward('sweepAccountSetsInSlices'),
   sweepAccountSetsBudgeted: slot.forward('sweepAccountSetsBudgeted'),

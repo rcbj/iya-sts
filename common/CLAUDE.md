@@ -7278,6 +7278,19 @@ built at 23b-ii beside the signing rotation. What a maintainer needs:
   naming the old DEK would be written back by its next flush — after the DEK
   may be gone. A minted row is held in the clear and re-sealed at its next
   flush; a cluster secret is held opened.
+* **EVERY OTHER PROCESS TAKES A RE-SEALED KEY-SET ROW (#704)**, cluster or
+  not. `resealOwnRows()` writes the running process's copies; until #704
+  `applyStoredChange()` read a key row only where the store ARBITRATES, so
+  with `cluster.mode=off` a request worker (or the front, had a worker run
+  the pass) kept its copy sealed under the superseded DEK, and at the
+  destruction lost its signing keys until it restarted — the count saw only
+  the store. Where the store does not arbitrate it now reads the row and
+  `adoptResealedKeyRow()` takes the new ciphertext ONLY when it seals the set
+  already held: a re-seal decides nothing between two sets, so the reason the
+  early return exists does not reach it, and a different set or a removal is
+  still left to the pool's key channel. A certificate-authority row was
+  already adopted wherever it merges. This is what lets
+  `keys.data-key-reencrypt` run on any process (`cluster/CLAUDE.md`).
 * **A DEK IS DESTROYED ONLY ON A COUNT OF ZERO**, and only once superseded for
   `keys.dataKeyRetireAfterDays` (7, at least 1). A store that cannot count
   (`ldif`, `memory`) never says zero, so nothing is destroyed there. The
@@ -12169,8 +12182,22 @@ cluster, each process has its own caches, and nothing here is coordinated,
 because a cache is exactly what a store is not. **What crosses to another node
 is a SNAPSHOT** (`snapshot()`, 2026-09-18): each front process puts its stores'
 sizes and counters — never a row — on its cluster membership row, refreshed
-every thirty seconds on a timer of its own, and `/admin/caches` draws every
+every thirty seconds by `cluster.cache-report`, and `/admin/caches` draws every
 snapshot that is not its own process's. `cluster/CLAUDE.md` has the channel.
+
+**A SNAPSHOT COUNTS, IT DOES NOT LIST (#704).** It was `report()` cut down,
+which built a row object for every entry of every store — a SHA-256 for each
+key `digestKey()` shows — only to count them, every thirty seconds on the
+front process. `tallyOf()` counts instead: a store's own `tally(now)` when it
+declares one (`{ size, largestRealm, valid }`), otherwise the PLAN its
+ejector carries when `mapEjector()` or `realmMapEjector()` built it (the Maps
+and the owner's expiry test) — sizes are the Maps' own `size`, kept by the
+Map and read, and `valid` is the size less what the expiry test marks, in one
+walk that allocates nothing. Any other store is still listed. So a tallied
+store's `valid` is "not past the owner's ejection test", which for every
+store the helpers serve is the reader's own test. `snapshotAsync()`, what the
+job runs, yields between stores and every `TALLY_SLICE` (500) entries. The
+local page (`report()`, `detail()`) still lists rows: it shows them.
 
 ### Ejecting expired entries (#49 P5, 2026-09-22)
 
@@ -12188,6 +12215,14 @@ latter asks it inside each realm (`realms.run()`), because a lifetime is
 usually a realm's setting. Where a store has a companion (an OpenID4VP
 transaction's request, a SCIM digest nonce's counts, a HOBA triple's
 challenge), the ejector removes both, as the reader does.
+
+**IN SLICES (#704).** The job runs `ejectExpiredAsync()`: a turn of the
+event loop between stores, and for a store whose ejector the two helpers
+built, every `TALLY_SLICE` entries inside it, deleting through the store's
+own Map as it goes (`slicedWalk()`; a Map's iterator survives the writes
+other code makes between slices). An ejector written by hand is still called
+whole, one store a turn. `ejectExpired()` stays for a caller that wants the
+answer at once.
 
 Twenty-four stores eject; `tests/cache_eject.js` holds the list. **Two that
 expire deliberately do not**: `oauth2.backchannelDeliveries`, whose sweep job

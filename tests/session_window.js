@@ -30,7 +30,6 @@ const minted = require('../persistence/persistence_minted');
 const tiers = require('../persistence/tiers');
 const authn = require('../authn/authn');
 const sessionWindow = require('../authn/session_window');
-const scheduler = require('../cluster/scheduler');
 
 const log = require('bunyan').createLogger({ name: 'session_window',
   level: process.env.LOG_LEVEL || 'info' });
@@ -268,20 +267,14 @@ function cacheEntries(n) {
 // The window is restart-only, so a test sets the process environment
 // rather than a runtime override. Cache size and the read timeout stay
 // overridable; they are still the process value.
+// The sweep's SYNCHRONOUS form, which these sections need: each runs
+// inside setting overrides cleared as its callback returns. The job runs
+// the sliced form since #704 (`sweepExpiredSessionsInSlices()`), which makes
+// the same decisions through the same `expireSession()`; `scheduler_jobs`
+// and `job_slices` drive that one through the job.
 function runSweep() {
   log.debug("Entering runSweep().");
-  const job = scheduler.job('authn.session-expiry');
-  const result = job.run({
-    realm: REALM, runId: 'window-shed', trigger: 'manual',
-    params: null,
-    stillOwner: function () {
-      return true;
-    },
-    nowMs: function () {
-      return Date.now();
-    },
-    log: log
-  });
+  const result = { ended: authn.sweepExpiredSessions() };
   log.debug("Leaving runSweep().");
   return result;
 }

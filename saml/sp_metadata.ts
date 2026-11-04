@@ -2025,13 +2025,13 @@ class SpMetadata {
                 'MDQ responder; a document past its validUntil is refused.',
       owner: 'saml/sp_metadata.ts',
       everySetting: 'saml2.spMetadataRefreshIntervalS', everySettingUnit: 's',
-      // ON THE FRONT (#408), and only because of WHERE it is registered:
-      // `server.js`'s `listen()` calls this, and a request worker never does,
-      // so a worker has no such job to run. Said here rather than learnt at
-      // the first run as STS-SCHED-0020. Registering it in every process
-      // would let it move.
-      onFront: 'it is registered only by the front process, from ' +
-               'server.js\'s listen(), so no request worker has it',
+      // ON ANY PROCESS SINCE #704. It was pinned to the front (#408) only
+      // because `server.js`'s `listen()` was the one place that registered
+      // it, so a request worker had no such job to run. The module's wire
+      // step registers it now, in every process that builds the stack, and
+      // its body works through the shared store and a cluster claim. What
+      // stays per process is the refresh STATE the page reads
+      // (`refreshStatus()`), which a worker answering the page never held.
       run: function () {
         return self.sweepOnce();
       }
@@ -2293,10 +2293,15 @@ const mdqRefusals = realms.map({ persist: 'saml2.mdqRefusals' });
 const refusingRealms = new Set<string>();
 const refusalSummary: { at: number, since: number } = { at: 0, since: 0 };
 
+// THE WIRE STEP REGISTERS THE REFRESHER (#704), in every process that builds
+// the stack, so the scheduler may run its body on a request worker.
+// `server.js` still calls `startRefresher()`, which then finds it registered.
 const slot = new InstanceSlot<SpMetadata>(
   'saml/sp_metadata',
   () => new SpMetadata(SpMetadata.defaultDeps()),
-  null,
+  function (instance: SpMetadata): void {
+    instance.startRefresher();
+  },
   helpers.log);
 
 // Standalone, build the default now, as loading this module always did.

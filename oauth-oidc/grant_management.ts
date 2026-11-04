@@ -82,6 +82,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import realms = require('../common/realms');
+import loopSlices = require('../common/loop_slices');
 import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
 import stats = require('../common/admin_stats');
@@ -915,32 +916,36 @@ class GrantManagement {
   // ---------------------------------------------------------------------------
   /**
    * Purges token rows past their expiry and grants past their last token's. The
-   * scheduler job's body.
+   * scheduler job's body. Each register is walked in slices, a turn of the
+   * event loop between them (#704, `common/loop_slices.js`); the deletes
+   * follow each walk, as before.
    *
-   * @returns `{ summary }` for the scheduler
+   * @returns a promise of `{ summary }` for the scheduler
    */
-  purge(): Json {
+  async purge(): Promise<Json> {
     const { log, now } = this.deps;
     log.debug("Entering GrantManagement.purge().");
     const at = now();
     const rows: string[] = [];
-    issued.forEach(function (row: Json, jti: string): void {
-      if (!row || Number(row.forget) <= at) {
-        rows.push(jti);
-      }
-    });
+    await loopSlices.walkInSlices(issued.realmMap(),
+      function (row: Json, jti: string): void {
+        if (!row || Number(row.forget) <= at) {
+          rows.push(jti);
+        }
+      });
     rows.forEach(function (jti: string): void {
       issued.delete(jti);
     });
     const skewS = Math.max(0, Number(this.deps.config.value(
       'oauth2.clockSkewS')));
     const gone: string[] = [];
-    grants.forEach(function (record: Json, id: string): void {
-      if (Number(record.expiresAt) > 0 &&
-          (Number(record.expiresAt) + skewS) * 1000 <= at) {
-        gone.push(id);
-      }
-    });
+    await loopSlices.walkInSlices(grants.realmMap(),
+      function (record: Json, id: string): void {
+        if (Number(record.expiresAt) > 0 &&
+            (Number(record.expiresAt) + skewS) * 1000 <= at) {
+          gone.push(id);
+        }
+      });
     gone.forEach(function (id: string): void {
       grants.delete(id);
     });
@@ -973,7 +978,7 @@ class GrantManagement {
         return 3600000;
       },
       manual: true,
-      run: function (): Json {
+      run: function (): Promise<Json> {
         return self.purge();
       }
     });

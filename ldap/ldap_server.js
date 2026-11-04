@@ -13721,16 +13721,10 @@ function attributeSourcePeoplePage(after, limit) {
     rows = page.rows;
     more = page.more;
   } else {
-    const all = entriesUnder(usersDn()).map(function (stored) {
-      return { key: normalizeDn(stored.dn), entry: stored };
-    }).filter(function (one) {
-      return one.key !== base && one.key.endsWith(suffix) &&
-             (!after || one.key > after);
-    }).sort(function (a, b) {
-      return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
-    });
-    more = all.length > most;
-    rows = all.slice(0, most);
+    const all = sortedPeopleOf(entriesUnder(usersDn()), base, suffix);
+    const from = firstAfter(all, String(after || ''));
+    more = all.length - from > most;
+    rows = all.slice(from, from + most);
   }
   const names = [];
   rows.forEach(function (one) {
@@ -13747,21 +13741,93 @@ function attributeSourcePeoplePage(after, limit) {
   return { names: names, cursor: cursor, more: more };
 }
 
+// ONE SORT PER LISTING, NOT ONE PER PAGE (#704). The in-memory page above
+// mapped, filtered and sorted every entry under `ou=users` to answer two
+// hundred, on every run of `attribute-sources.refresh` while a cycle is open
+// — a cycle over N people sorted N people N/200 times. `entriesUnder()`
+// answers the SAME array until a write under the container (its kept
+// listing), so the sorted keys are kept beside it, keyed by that array: a
+// write makes a new listing and so a new sort, and a cycle over an
+// unchanged directory sorts once. A page is then a binary search for the
+// cursor and a slice. Held weakly, so a listing nobody keeps any more takes
+// its sort with it.
+/** @type {WeakMap<object, Array<{key: string, entry: any}>>} */
+const sortedPeople = new WeakMap();
+
+function sortedPeopleOf(listing, base, suffix) {
+  log.debug('Entering sortedPeopleOf().');
+  const held = sortedPeople.get(listing);
+  if (held) {
+    log.debug('Leaving sortedPeopleOf(). Kept.');
+    return held;
+  }
+  const all = listing.map(function (stored) {
+    return { key: normalizeDn(stored.dn), entry: stored };
+  }).filter(function (one) {
+    return one.key !== base && one.key.endsWith(suffix);
+  }).sort(function (a, b) {
+    return a.key < b.key ? -1 : (a.key > b.key ? 1 : 0);
+  });
+  sortedPeople.set(listing, all);
+  log.debug('Leaving sortedPeopleOf(). Sorted ' + all.length + '.');
+  return all;
+}
+
+// The index of the first row whose key sorts after `after` ('' is before
+// every key).
+function firstAfter(all, after) {
+  log.debug('Entering firstAfter().');
+  let lo = 0;
+  let hi = all.length;
+  if (!after) {
+    log.debug('Leaving firstAfter(). From the start.');
+    return 0;
+  }
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (all[mid].key > after) {
+      hi = mid;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  log.debug('Leaving firstAfter(). ' + lo + '.');
+  return lo;
+}
+
 // The people of the ambient realm, by username, sorted — for the scheduled
 // refresh, which pages through them after a cursor (#94). Kept for a caller
 // of the older interface; the refresh asks `attributeSourcePeoplePage()`.
+// Its sorted names are kept per listing too (#704), for the reason above.
+/** @type {WeakMap<object, string[]>} */
+const sortedUsernames = new WeakMap();
+
 function attributeSourcePeople(after, limit) {
   log.debug('Entering attributeSourcePeople(). after=' + (after || ''));
-  const names = entriesUnder(usersDn()).filter(function (stored) {
-    return isPersonEntry(stored);
-  }).map(function (stored) {
-    return canonicalUsernameOfDn(stored.dn);
-  }).filter(Boolean).sort();
-  const start = after ? names.filter(function (name) {
-    return name > after;
-  }) : names;
+  const listing = entriesUnder(usersDn());
+  let names = sortedUsernames.get(listing);
+  if (!names) {
+    names = listing.filter(function (stored) {
+      return isPersonEntry(stored);
+    }).map(function (stored) {
+      return canonicalUsernameOfDn(stored.dn);
+    }).filter(Boolean).sort();
+    sortedUsernames.set(listing, names);
+  }
+  let from = 0;
+  if (after) {
+    let hi = names.length;
+    while (from < hi) {
+      const mid = (from + hi) >>> 1;
+      if (names[mid] > after) {
+        hi = mid;
+      } else {
+        from = mid + 1;
+      }
+    }
+  }
   log.debug('Leaving attributeSourcePeople().');
-  return start.slice(0, Math.max(1, Number(limit) || 100));
+  return names.slice(from, from + Math.max(1, Number(limit) || 100));
 }
 
 // THE ONE WRITE OF A SOURCE'S VALUES ONTO A PERSON (#94). `changes` is

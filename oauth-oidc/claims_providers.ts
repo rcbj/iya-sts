@@ -98,6 +98,8 @@ type Req = any;
  * flows.
  */
 const REFRESH_JOB = 'oauth2.claim-sources-refresh';
+// Holders whose links the refresh opens between two turns of the loop (#704).
+const HOLDER_SLICE = 50;
 const FLOW_TTL_MS = 10 * 60 * 1000;
 const REFRESH_AHEAD_MS = 5 * 60 * 1000;
 /**
@@ -1244,7 +1246,17 @@ class ClaimsProviders {
       }
     });
     const providers = this.list();
+    // A TURN OF THE LOOP EVERY HOLDER_SLICE HOLDERS (#704). Each holder's
+    // links are decrypted and parsed (`linksRaw()`), and a run with nothing
+    // due awaited nothing, so every holder of the realm was opened in one
+    // turn of the process running the job.
+    let seen = 0;
     for (const holder of (this.store('claimSourceTokenHolders', []) || [])) {
+      if (++seen % HOLDER_SLICE === 0) {
+        await new Promise(function (resolve: (v?: unknown) => void): void {
+          setImmediate(resolve);
+        });
+      }
       const map = this.linksRaw(holder.username);
       for (const provider of providers) {
         const link = map[provider.id];

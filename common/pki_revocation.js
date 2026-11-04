@@ -1124,6 +1124,32 @@ async function agreedCrlNumber(scopeId, caId, candidate) {
   return null;
 }
 
+// One revocation as a CRL entry (RFC 5280 section 5.1.2.6). Hot path: called
+// once per revocation of every list built, so no Entering/Leaving pair — it
+// would add two log lines per revoked certificate to every CRL signed.
+function revokedEntryOf(one) {
+  const revoked = new pkijs.RevokedCertificate();
+  revoked.userCertificate = new asn1js.Integer({
+    valueHex: serialBytes(one.serialHex)
+  });
+  revoked.revocationDate = crlTime(one.revokedAt);
+  // THE REASON CODE, OMITTED FOR `unspecified` — see the REASONS table.
+  if (one.reasonCode) {
+    revoked.crlEntryExtensions = new pkijs.Extensions({
+      extensions: [new pkijs.Extension({
+        extnID: '2.5.29.21',
+        critical: false,
+        extnValue: new asn1js.Enumerated({ value: one.reasonCode })
+          .toBER(false)
+      })]
+    });
+  }
+  return revoked;
+}
+
+/** Revocations made CRL entries between two turns of the loop (#704). */
+const CRL_BUILD_SLICE = 500;
+
 /**
  * Builds and signs one authority's CRL (RFC 5280 section 5).
  *
@@ -1152,27 +1178,24 @@ async function buildCrl(scopeId, caId) {
   crl.thisUpdate = crlTime(now);
   crl.nextUpdate = crlTime(now.getTime() + crlLifetimeMs());
 
+  // AN ENTRY AT A TIME, WITH A TURN OF THE LOOP EVERY CRL_BUILD_SLICE (#704).
+  // `publishAll()` yields between lists; inside one, every revocation became
+  // an ASN.1 object in one turn, which for an authority with a long list is
+  // the whole list on the loop of the process running
+  // `pki.crl-directory-refresh` — or answering a CRL fetch. The encoding of
+  // the finished list stays one step.
   const entries = listFor(scopeId, caId);
   if (entries.length) {
-    crl.revokedCertificates = entries.map(function (one) {
-      const revoked = new pkijs.RevokedCertificate();
-      revoked.userCertificate = new asn1js.Integer({
-        valueHex: serialBytes(one.serialHex)
-      });
-      revoked.revocationDate = crlTime(one.revokedAt);
-      // THE REASON CODE, OMITTED FOR `unspecified` — see the REASONS table.
-      if (one.reasonCode) {
-        revoked.crlEntryExtensions = new pkijs.Extensions({
-          extensions: [new pkijs.Extension({
-            extnID: '2.5.29.21',
-            critical: false,
-            extnValue: new asn1js.Enumerated({ value: one.reasonCode })
-              .toBER(false)
-          })]
+    const built = [];
+    for (let i = 0; i < entries.length; i++) {
+      if (i > 0 && i % CRL_BUILD_SLICE === 0) {
+        await new Promise(function (resolve) {
+          setImmediate(resolve);
         });
       }
-      return revoked;
-    });
+      built.push(revokedEntryOf(entries[i]));
+    }
+    crl.revokedCertificates = built;
   }
 
   // TWO EXTENSIONS, AND BOTH ARE LOAD-BEARING RATHER THAN DECORATION.

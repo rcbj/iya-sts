@@ -5870,6 +5870,45 @@ function applyStoredChange(rowKey, round) {
   // A CERTIFICATE AUTHORITY ROW IS ADOPTED WHEREVER IT IS MERGED
   // (mergesPkiRows()): a merged row is the store's answer, and a process
   // that holds less than it must take it.
+  //
+  // **BUT A RE-SEAL IS TAKEN EVERYWHERE (#704).** `keys.data-key-reencrypt`
+  // re-seals the key-set rows under the current data key, in the process
+  // that runs it (`resealOwnRows()`), and writes them with a change row. With
+  // `cluster.mode=off` every OTHER process — a container's request workers,
+  // or its front when a worker ran the pass — returned here and kept its own
+  // copy sealed under the superseded key; once that key was destroyed, its
+  // next unseal of the set failed (STS-KEYS-0033) and every signature in
+  // that process threw until it restarted. A re-seal is the same key set
+  // under a new data key, so taking it decides nothing between two sets and
+  // the argument above does not reach it: `adoptResealedKeyRow()` takes the
+  // row's ciphertext only when the set inside is the one already held, and
+  // leaves a different set, or a removal, to the pool's key channel as before.
+  if (!isPki && !arbitrates()) {
+    if (writes.has(key) || !material.has(id) || !store ||
+        typeof store.loadKey !== 'function') {
+      log.debug("Leaving applyStoredChange(). The store does not " +
+                "arbitrate, and there is no held copy to re-seal.");
+      return Promise.resolve({ kind: kind, realm: id, adopted: false });
+    }
+    log.debug("Leaving applyStoredChange(). Reading the row for a re-seal.");
+    return Promise.resolve().then(function () {
+      return store.loadKey(key);
+    }).then(function (cipher) {
+      return (cipher && namesUnheldDek(cipher) ? refreshDekRows()
+                                               : Promise.resolve(0))
+        .then(function () {
+          return adoptResealedKeyRow(id, cipher);
+        });
+    }).catch(function (e) {
+      log.debug("Caught in applyStoredChange(): " + ((e && e.message) || e));
+      log.error(errorCodes.tag('STS-KEYS-0058') + 'keystore: the "' + key +
+                '" row another process wrote could not be opened: ' +
+                ((e && e.message) || e) + '. This process keeps what it ' +
+                'holds.');
+      return { kind: kind, realm: id, adopted: false,
+               error: String((e && e.message) || e) };
+    });
+  }
   if (isPki ? !mergesPkiRows() : !arbitrates()) {
     log.debug("Leaving applyStoredChange(). The store does not arbitrate.");
     return Promise.resolve({ kind: kind, realm: id, adopted: false });
@@ -5914,6 +5953,30 @@ function applyStoredChange(rowKey, round) {
       return { kind: kind, realm: id, adopted: false, error: e.message };
     }
   });
+}
+
+// A KEY-SET ROW TAKEN ONLY AS A RE-SEAL (#704; `applyStoredChange()` where
+// the store does not arbitrate): the row's ciphertext replaces the one held
+// when the set it seals is the set already held — the same data, under the
+// data key the row names — and nothing else changes. A different set, or a
+// row gone, is left alone: deciding between two sets is the pool's key
+// channel's in one container, and this is not the place to start.
+function adoptResealedKeyRow(id, cipher) {
+  log.debug("Entering adoptResealedKeyRow(). realm=" + id);
+  const entry = material.get(id);
+  if (!entry || !cipher || entry.cipher === cipher) {
+    log.debug("Leaving adoptResealedKeyRow(). Nothing to take.");
+    return { kind: 'keys', realm: id, adopted: false };
+  }
+  const stored = openBlob(cipher, 'signing-keys');
+  const held = entry.plain || openBlob(entry.cipher, 'signing-keys');
+  if (!held || !sameKeySet(held, stored)) {
+    log.debug("Leaving adoptResealedKeyRow(). Another set; not taken.");
+    return { kind: 'keys', realm: id, adopted: false };
+  }
+  entry.cipher = cipher;
+  log.debug("Leaving adoptResealedKeyRow(). Re-sealed.");
+  return { kind: 'keys', realm: id, adopted: false, resealed: true };
 }
 
 function adoptKeyRow(id, cipher) {
