@@ -717,6 +717,58 @@ async function run(t) {
             'K3: a job whose own off() turned true while it ran still ' +
             'owns its run');
   }
+
+  // -------------------------------------------------------------------------
+  // L. A SUCCESS THAT SAYS WHY (#1313): a body may answer a `why` beside
+  // its counts (the minted expiry purge skipping its orphan check while the
+  // global registry is down), and the row carries it with no code — from a
+  // worker, where only the summary's text used to cross the channel, and
+  // inline.
+  t.log.info('=== L. a succeeded run with a why ===');
+  {
+    const s = setup();
+    const answer = { removed: 3, why: 'The orphan check was skipped.' };
+    s.front.scheduler.register(job());
+    s.worker.scheduler.register(job({ run: function () {
+      return answer;
+    } }));
+    s.front.scheduler.start('front');
+    await s.w.advance(1000);
+    const rows = rowsOf(s.w, 'test.delegated');
+    t.check(rows.length === 1 && rows[0].state === 'succeeded' &&
+            !rows[0].errorCode && !rows[0].ranIn &&
+            rows[0].why === 'The orphan check was skipped.' &&
+            /"removed":3/.test(String(rows[0].result)),
+            'L1: a body on a worker that answers a why succeeds, and the ' +
+            'row carries the why beside its summary', JSON.stringify(rows));
+  }
+  {
+    const s = setup();
+    s.pool.loads = [];
+    s.front.scheduler.register(job({ run: function () {
+      return { removed: 1, why: 'Skipped a part.' };
+    } }));
+    s.front.scheduler.start('front');
+    await s.w.advance(1000);
+    const rows = rowsOf(s.w, 'test.delegated');
+    t.check(rows.length === 1 && rows[0].state === 'succeeded' &&
+            rows[0].ranIn === 'front' && rows[0].why === 'Skipped a part.',
+            'L2: and inline the same', JSON.stringify(rows));
+  }
+  {
+    const s = setup();
+    s.front.scheduler.register(job());
+    s.worker.scheduler.register(job({ run: function () {
+      return { ran: 'there' };
+    } }));
+    s.front.scheduler.start('front');
+    await s.w.advance(1000);
+    const rows = rowsOf(s.w, 'test.delegated');
+    t.check(rows.length === 1 && rows[0].state === 'succeeded' &&
+            !rows[0].why,
+            'L3: a body that answers no why leaves the row\'s empty',
+            JSON.stringify(rows));
+  }
   log.debug('Leaving run().');
 }
 

@@ -213,7 +213,13 @@ function stubDriver(name) {
       calls.push({ op: 'purgeClaims' });
       return Promise.resolve(2);
     },
-    purgeTombstones: function () { return Promise.resolve(1); },
+    purgeTombstones: function (beforeMs, options) {
+      log.debug("Entering purgeTombstones().");
+      calls.push({ op: 'purgeTombstones', beforeMs: beforeMs,
+                   options: options, args: arguments.length });
+      log.debug("Leaving purgeTombstones().");
+      return Promise.resolve(1);
+    },
     changeRowsWritten: function () { return 2; },
     adoptOrigin: function () {
       return Promise.resolve({ adopted: true, origin: name });
@@ -340,6 +346,40 @@ async function globalJobs(t) {
   t.check(!cellA.calls.concat(cellB.calls).some(function (x) {
     return x.op === 'purgeExpiredMinted';
   }), 'and neither cell\'s own database is asked by the global purge');
+
+  // AND THE GLOBAL TIER'S TOMBSTONE SWEEP THE SAME (#1313).
+  t.check(tiers.isGlobalJob('persistence.tombstone-purge-global') &&
+          !tiers.isGlobalJob('persistence.tombstone-purge'),
+          'the global tier\'s tombstone sweep is a global job and the ' +
+          'cell\'s is not');
+  const sweepGlobal = function (store) {
+    log.debug("Entering sweepGlobal().");
+    log.debug("Leaving sweepGlobal().");
+    return store.claimOnce(tiers.GLOBAL_RUN_SCOPE, '', 't-slot-1', {})
+      .then(function (answer) {
+        if (!answer.ok) {
+          return { ran: false };
+        }
+        return store.purgeTombstones(9, { tier: 'global', limit: 7 })
+          .then(function (n) {
+            return { ran: true, removed: n };
+          });
+      });
+  };
+  const sweptB = await sweepGlobal(inB);
+  const sweptA = await sweepGlobal(inA);
+  const globalSweeps = shared.calls.filter(function (x) {
+    return x.op === 'purgeTombstones';
+  });
+  t.check(sweptB.ran === true && sweptB.removed === 1 &&
+          sweptA.ran === false && globalSweeps.length === 1 &&
+          JSON.stringify(globalSweeps[0].options) === '{"limit":7}',
+          'ONLY THE CELL THAT WINS THE GLOBAL RUN CLAIM SWEEPS THE GLOBAL ' +
+          'TOMBSTONES, once, with its own limit',
+          JSON.stringify([sweptA, sweptB, globalSweeps]));
+  t.check(!cellA.calls.concat(cellB.calls).some(function (x) {
+    return x.op === 'purgeTombstones';
+  }), 'and no cell\'s own database is swept by it');
   log.debug("Leaving globalJobs().");
 }
 
@@ -549,6 +589,13 @@ async function tieredDriver(t) {
   t.check(!!unreadRefused && ofKind(c, 'orphan').length === 1 &&
           ofKind(g, 'orphan').length === 1,
           'when the registry cannot be read, no tier purges an orphan');
+  t.check(!!unreadRefused && unreadRefused.registryUnreadable === true &&
+          unreadRefused.removed === 0 &&
+          /global realm registry could not be read/.test(
+            unreadRefused.message),
+          'and the refusal is MARKED as an unreadable registry (#1313), so ' +
+          'the cell\'s job can count the orphan check skipped rather than ' +
+          'its run failed', unreadRefused ? unreadRefused.message : '');
   g.loadRealms = realmsBefore;
   const gStale = ofKind(g, 'stale');
   const cStale = ofKind(c, 'stale');
@@ -609,6 +656,54 @@ async function tieredDriver(t) {
           'and the cell tier\'s own purge does not notice the global one ' +
           'is down');
   g.purgeExpiredMinted = globalPurge;
+
+  // THE TOMBSTONES, ONE TIER WHEN ONE IS NAMED (#1313), the expiry purge's
+  // rule: the tier consumed here, the limit that database's alone; asked
+  // of both, settled apart.
+  const tombsOf = function (driver) {
+    log.debug("Entering tombsOf().");
+    log.debug("Leaving tombsOf().");
+    return driver.calls.filter(function (x) {
+      return x.op === 'purgeTombstones';
+    });
+  };
+  t.equal(await d.purgeTombstones(11, { tier: 'cell', limit: 5 }), 1,
+          'a tombstone sweep naming the cell counts the cell\'s');
+  t.check(tombsOf(c).length === 1 && tombsOf(g).length === 0 &&
+          tombsOf(c)[0].beforeMs === 11 &&
+          JSON.stringify(tombsOf(c)[0].options) === '{"limit":5}',
+          'and asks only the cell, with its own limit, the tier name ' +
+          'stopping at the tiered driver', JSON.stringify(tombsOf(c)));
+  t.equal(await d.purgeTombstones(12, { tier: 'global', limit: 5 }), 1,
+          'one naming the global tier counts the global tier\'s');
+  t.check(tombsOf(g).length === 1 && tombsOf(c).length === 1,
+          'and asks only the global database');
+  t.equal(await d.purgeTombstones(13), 2,
+          'with no tier both are asked and the counts summed');
+  t.check(tombsOf(g)[1].options === undefined &&
+          tombsOf(c)[1].options === undefined,
+          'each with no limit, the statement each database always ran');
+  const globalTombs = g.purgeTombstones;
+  g.purgeTombstones = function () {
+    log.debug("Entering purgeTombstones(), the global one, unreachable.");
+    log.debug("Leaving purgeTombstones().");
+    return Promise.reject(new Error('the global database is unreachable'));
+  };
+  let tombsRefused = null;
+  await d.purgeTombstones(14).catch(function (e) {
+    log.debug("Caught in the sweep of both: " + ((e && e.message) || e));
+    tombsRefused = e;
+  });
+  t.check(!!tombsRefused && tombsRefused.removed === 1 &&
+          tombsRefused.tier === 'global' && tombsOf(c).length === 3,
+          'A DOWN GLOBAL DATABASE LOSES NO CELL COUNT: asked of both, the ' +
+          'cell is swept and its count rides on the refusal, which names ' +
+          'the tier that failed',
+          tombsRefused ? tombsRefused.message + ' ' + tombsRefused.removed
+            : 'it succeeded');
+  t.equal(await d.purgeTombstones(15, { tier: 'cell', limit: 5 }), 1,
+          'and the cell\'s own sweep does not notice');
+  g.purgeTombstones = globalTombs;
   t.equal(d.changeRowsWritten(), 4, 'the change rows written are both ' +
           'databases\' together');
   ['STS-CELL-0001', 'STS-CELL-0002', 'STS-CELL-0003', 'STS-CELL-0004',

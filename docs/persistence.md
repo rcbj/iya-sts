@@ -78,7 +78,13 @@ that has been removed. You can see it on Monitoring → Scheduler. In a
 service deployed as cells, that job cleans each cell's own database, and
 `persistence.minted-expiry-purge-global` cleans the global database, run by
 one cell at a time; one database being unreachable does not stop the other
-being cleaned.
+being cleaned. While the global database is unreachable a cell's run cannot
+tell which realms still exist, so it deletes no row as left behind by a
+removed realm, says so once in the log (`STS-STORE-0164`), and still
+records the run as succeeded, with the reason on Monitoring → Scheduler.
+The tombstones of ended rows are swept the same way, by
+`persistence.tombstone-purge` in each cell and
+`persistence.tombstone-purge-global` for the global database.
 
 **A restarted node carries on where it left off.** Each node writes its own
 share of the audit log and the statistics. When a container restarts under the
