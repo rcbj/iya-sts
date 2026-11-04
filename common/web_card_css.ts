@@ -229,7 +229,20 @@ class WebCardCss {
       .replace(/solid #eee(?=[;}])/g, 'solid var(--sts-rule,#eee)')
       .replace(/color:#666(?=[;}])/g, 'color:var(--sts-muted,#666)')
       .replace(/color:#777(?=[;}])/g, 'color:var(--sts-faint,#777)')
-      .replace(/color:#555(?=[;}])/g, 'color:var(--sts-dim,#555)');
+      .replace(/color:#555(?=[;}])/g, 'color:var(--sts-dim,#555)')
+      // THE PALE BOXES AND THE STATUS WORDS (#717's review): a scope or a
+      // right in its box, a table's head, a verdict's band, a code span.
+      // Their text follows the realm's, so their backgrounds must too, or
+      // light text on a dark card meets a near-white box; and a red or green
+      // word must stay readable on whatever card it is on. Each keeps its own
+      // literal as its fallback, so nothing changes where no theme is linked.
+      .replace(/background:#fafafd/g, 'background:var(--sts-tint,#fafafd)')
+      .replace(/background:(#f0f0f5|#f0f0f8|#f4f4f8)/g,
+               'background:var(--sts-tint-2,$1)')
+      .replace(/(\.bad\{|\.fail\{)color:#b00020/g,
+               '$1color:var(--sts-bad,#b00020)')
+      .replace(/\.pass\{color:#0b6b4f/g,
+               '.pass{color:var(--sts-good,#0b6b4f)');
   }
 
   /**
@@ -262,7 +275,11 @@ class WebCardCss {
     'lign-self:center}@media (max-width:720px){html[data-sts-layout=split] ' +
     'body{flex-direction:column}html[data-sts-layout=split] .sts-brand{flex' +
     ':none;padding:16px}html[data-sts-layout=split] body>.card{margin:24px ' +
-    'auto}}';
+    'auto}}' +
+    // The one fixed-colour box whose text was inherited: a passing check's
+    // band on the wide card keeps dark text on its pale green, whatever the
+    // realm's text colour.
+    'html[data-sts-layout] .wide .ok{color:#1d5c1d}';
 
   /**
    * The stylesheet of the sign-in screen and the federation chooser, shared

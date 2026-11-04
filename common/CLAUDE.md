@@ -1416,7 +1416,14 @@ screen, per realm, and decided six questions on it (D1–D6, on the ticket).
   six hex digits. `web_card_css.ts`'s `themed()` turns every colour of the
   card into `var(--sts-…, <the old literal>)`, so with no theme linked the
   card is the bytes it rendered before. A realm whose text and card are the
-  defaults keeps the old literals for the derived tones exactly.
+  defaults keeps the old literals for the derived tones exactly, and
+  **the stylesheet carries only the properties that differ** from a realm
+  that set nothing (`DEFAULT_PROPERTIES`), so each page keeps its OWN
+  fallback for the rest — the portal its blue accent, a table head its own
+  grey. The pale boxes (a scope's, a right's, a table head, a verdict's
+  band) and the red and green status words are properties too (`tint`,
+  `tint-2`, `bad`, `good`), because their text follows the realm's and a
+  dark card with light text met a near-white box (#717's review).
 * **A SHELL CARRIES THE FACTS, THE RUNTIME DRAWS THE HEADER.**
   `ShellDocument.document()` asks `shellParts()` for any shell that links
   `/web/card.css` (or says `branded: true`): the theme's address (`?v=` its

@@ -68,10 +68,10 @@ of its own:
   becomes `var(--sts-…, <the literal it replaced>)`, so with no theme linked
   the portal draws what it did. Its accent's fallback is the PORTAL'S blue
   (`#2c5cc5`), not the card's indigo, because that is what it always drew.
-  **A realm that sets anything gets all ten properties**, the accent among
-  them, so a realm that only uploaded a logo draws its portal in the
-  card's default indigo — the realm's accent, which is what the sign-in
-  screen it just left shows. The semantic colours (an error's red, a
+  **A realm's `theme.css` carries only the properties it changed**
+  (`common/branding.ts`, `DEFAULT_PROPERTIES`), so a realm that only
+  uploaded a logo, or changed only its page colour, keeps the portal's own
+  blue; a realm that set an accent draws it here as on the sign-in screen. The semantic colours (an error's red, a
   success's green) and the mid greys stay literal. The two buttons that are
   NOT in the accent (`button.danger`, `.secondary`) write their white
   `#ffffff`, which `themed()` skips, so a light accent's black button text

@@ -86,8 +86,22 @@ const DEFAULTS = Object.freeze({
   // The derived tones' literals, used where the text and card are the
   // defaults, so such a realm keeps them exactly.
   onAccent: '#ffffff', muted: '#666666', faint: '#777777', dim: '#555555',
-  border: '#d5d5dd', rule: '#eeeeee'
+  border: '#d5d5dd', rule: '#eeeeee', tint: '#fafafd', tint2: '#f0f0f5',
+  bad: '#b00020', good: '#0b6b4f'
 });
+
+// The custom properties as a realm that set nothing would have them: what
+// `theme()` leaves out of a realm's stylesheet, so that a property the realm
+// did not change keeps each page's OWN fallback — the portal's blue accent,
+// a table head's own grey (#717's review: a realm that only uploaded a logo
+// must not repaint the portal).
+const DEFAULT_PROPERTIES: Record<string, string> = {
+  accent: DEFAULTS.accent, 'on-accent': DEFAULTS.onAccent,
+  page: DEFAULTS.page, card: DEFAULTS.card, text: DEFAULTS.text,
+  muted: DEFAULTS.muted, faint: DEFAULTS.faint, dim: DEFAULTS.dim,
+  border: DEFAULTS.border, rule: DEFAULTS.rule, tint: DEFAULTS.tint,
+  'tint-2': DEFAULTS.tint2, bad: DEFAULTS.bad, good: DEFAULTS.good
+};
 
 /** WCAG 2.2 AA's contrast for normal text (success criterion 1.4.3). */
 const AA_CONTRAST = 4.5;
@@ -229,10 +243,10 @@ class Branding {
   }
 
   /**
-   * Every colour a page reads, the four set and the six derived.
+   * Every colour a page reads, the four set and the ten derived.
    *
    * @param set - `accent`, `page`, `card` and `text`
-   * @returns the ten, by custom property name without its `--sts-` prefix
+   * @returns the fourteen, by custom property name without its `--sts-` prefix
    */
   static palette(set: Record<string, string>): Record<string, string> {
     log.debug("Entering Branding.palette().");
@@ -251,10 +265,44 @@ class Branding {
       faint: asBefore ? DEFAULTS.faint : Branding.quieter(text, card, 0.38),
       dim: asBefore ? DEFAULTS.dim : Branding.quieter(text, card, 0.24),
       border: asBefore ? DEFAULTS.border : Branding.mix(text, card, 0.81),
-      rule: asBefore ? DEFAULTS.rule : Branding.mix(text, card, 0.93)
+      rule: asBefore ? DEFAULTS.rule : Branding.mix(text, card, 0.93),
+      // The pale boxes, a little toward the text from the card.
+      tint: asBefore ? DEFAULTS.tint : Branding.mix(card, text, 0.03),
+      'tint-2': asBefore ? DEFAULTS.tint2 : Branding.mix(card, text, 0.07),
+      // A failed and a passed check's word: the old colour where it reads on
+      // this card, a light one where the card is dark.
+      bad: asBefore ? DEFAULTS.bad
+        : Branding.readable(['#b00020', '#ff8a80'], card),
+      good: asBefore ? DEFAULTS.good
+        : Branding.readable(['#0b6b4f', '#69f0ae'], card)
     };
     log.debug("Leaving Branding.palette().");
     return out;
+  }
+
+  /**
+   * Of several colours, the first with AA contrast against a background, or
+   * the one with the most where none has it.
+   *
+   * @param choices - `#rrggbb` colours, preferred first
+   * @param background - the background
+   * @returns the chosen colour
+   */
+  static readable(choices: string[], background: string): string {
+    log.debug("Entering Branding.readable().");
+    let best = choices[0];
+    for (const one of choices) {
+      if (Branding.contrast(one, background) >= AA_CONTRAST) {
+        log.debug("Leaving Branding.readable().");
+        return one;
+      }
+      if (Branding.contrast(one, background) >
+          Branding.contrast(best, background)) {
+        best = one;
+      }
+    }
+    log.debug("Leaving Branding.readable(). None reaches AA.");
+    return best;
   }
 
   /**
@@ -390,7 +438,11 @@ class Branding {
       url: PATHS.logo + '?v=' + String(record.sha256).slice(0, 16),
       alt: alt, link: Branding.httpsUrl(link) ? link : '' } : null;
     const palette = Branding.palette(set);
-    const css = ':root{' + Object.keys(palette).map(function (k: string) {
+    // Only what differs from a realm that set nothing (DEFAULT_PROPERTIES):
+    // every other property keeps the page's own fallback.
+    const css = ':root{' + Object.keys(palette).filter(function (k: string) {
+      return palette[k] !== DEFAULT_PROPERTIES[k];
+    }).map(function (k: string) {
       return '--sts-' + k + ':' + palette[k];
     }).join(';') + '}';
     const active = layout !== 'centered' || !!displayName || !!logo ||
