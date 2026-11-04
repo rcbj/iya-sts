@@ -503,8 +503,14 @@
     "en": "758dfacad5326b05",
     "text": "Sa bawat process: pinananatiling sariwa ang mga dataset upload na ini-import ng process na ito, at binubura mula sa risk.uploadDirectory ang upload na hindi nagalaw ng anumang live na process sa loob ng risk.importStallMinutes — ang iniwan ng process na tumigil sa kalagitnaan ng import."
   },
-  "sched.jobs.saml2.sp-metadata-refresh.title": "Tagapag-refresh ng metadata ng SAML service provider",
-  "sched.jobs.saml2.sp-metadata-refresh.describe": "Kinukuha muli ang metadata ng bawat service provider na lampas na sa cacheDuration nito, mula sa samlSpMetadataUrl nito o sa MDQ responder; tinatanggihan ang dokumentong lampas na sa validUntil nito.",
+  "sched.jobs.saml2.sp-metadata-refresh.title": {
+    "en": "9f8571bb756121c9",
+    "text": "Tagapag-refresh ng metadata ng SAML service provider"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.describe": {
+    "en": "33dfb3951da97b51",
+    "text": "Kinukuha muli ang metadata ng bawat service provider na lampas na sa cacheDuration nito, mula sa samlSpMetadataUrl nito o sa MDQ responder; tinatanggihan ang dokumentong lampas na sa validUntil nito."
+  },
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",
     "text": "History ng mga run ng scheduler"

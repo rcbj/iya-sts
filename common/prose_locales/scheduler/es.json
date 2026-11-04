@@ -503,8 +503,14 @@
     "en": "758dfacad5326b05",
     "text": "En cada proceso: mantiene actualizadas las cargas de conjuntos de datos que este proceso está importando, y elimina de risk.uploadDirectory una carga que ningún proceso activo haya tocado durante risk.importStallMinutes — lo que dejó atrás un proceso que se detuvo a mitad de una importación."
   },
-  "sched.jobs.saml2.sp-metadata-refresh.title": "Actualizador de metadatos de proveedores de servicios SAML",
-  "sched.jobs.saml2.sp-metadata-refresh.describe": "Vuelve a obtener los metadatos de cada proveedor de servicios que han superado su cacheDuration, desde su samlSpMetadataUrl o el respondedor MDQ; se rechaza un documento que ha superado su validUntil.",
+  "sched.jobs.saml2.sp-metadata-refresh.title": {
+    "en": "9f8571bb756121c9",
+    "text": "Actualizador de metadatos de proveedores de servicios SAML"
+  },
+  "sched.jobs.saml2.sp-metadata-refresh.describe": {
+    "en": "33dfb3951da97b51",
+    "text": "Vuelve a obtener los metadatos de cada proveedor de servicios que han superado su cacheDuration, desde su samlSpMetadataUrl o el respondedor MDQ; se rechaza un documento que ha superado su validUntil."
+  },
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",
     "text": "Historial de ejecuciones del planificador"
