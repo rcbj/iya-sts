@@ -10545,14 +10545,14 @@ const PROTOCOL_SETTINGS_PAGES = [
            'this service did before.',
            '<strong>It shares STATE and not SOCKETS, and the difference is ' +
            'where the surprises are.</strong> The KDC, the two LDAP ' +
-           'listeners, the main port and SPIFFE\'s four are bound per ' +
-           'process and always will be. And the <strong>replay caches and ' +
-           'DPoP <code>jti</code> sets converge rather than ' +
-           'synchronise</strong>: between a write in one process and its ' +
-           'arrival in another there is a window the size of ' +
-           '<code>persistence.pollInterval</code> in which a proof one ' +
-           'process refused is accepted by another. Sticky sessions at the ' +
-           'load balancer close it; nothing here does.',
+           'listeners, the main port and SPIFFE\'s sockets are bound per ' +
+           'process and always will be. <strong>A single-use value is spent ' +
+           'once across every process</strong>: an authorization code, a ' +
+           'DPoP <code>jti</code>, a SAML artifact, a Kerberos ' +
+           'authenticator and the rest are each spent through one atomic ' +
+           'claim in the store, so a value one process accepted is refused ' +
+           'by every other at once, with no window between them. A value ' +
+           'the store cannot be asked about is refused.',
            '<strong>A restored person shows on ' +
            '<a href="/admin/users">Users</a> as a directory person, not as ' +
            'having authenticated.</strong> They exist — an entry, searchable ' +

@@ -482,12 +482,13 @@ function createReplication(label) {
       startRetention();
       log.info('persistence: coordinating with other processes against this ' +
                'store, from change ' + applied + '. The change log is the ' +
-               'contract and is polled every ' + intervalMs() + 'ms; the ' +
-               'LISTEN/NOTIFY nudge only makes it prompt, so losing it costs ' +
-               'latency and never a change. THIS DOES NOT SHARE SOCKETS: ' +
-               'the KDC, the LDAP listeners, the TLS ports and SPIFFE\'s ' +
-               'four are per process, and the replay caches converge rather ' +
-               'than synchronise.');
+               'contract and is polled every ' + intervalMs() + 'ms; a ' +
+               'LISTEN/NOTIFY nudge, where the store sends one, only makes ' +
+               'it prompt, so losing it costs latency and never a change. ' +
+               'THIS DOES NOT SHARE SOCKETS: the KDC, the LDAP listeners, ' +
+               'the main port and SPIFFE\'s sockets are per process. A ' +
+               'single-use value is spent once across every process, ' +
+               'through one atomic claim in the store.');
       log.debug('Leaving start(). Coordinating from ' + applied + '.');
       return { coordinating: true, from: applied };
     }).catch(function (err) {

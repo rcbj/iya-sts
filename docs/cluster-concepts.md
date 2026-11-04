@@ -415,7 +415,7 @@ node. A browser that signs in through `node-a` and is redirected may land on
   many). A request that wrote anything is answered only after its writes have
   committed. If the commit fails, the client gets `503` with `Retry-After`
   instead of the success, or LDAP result `unavailable` (52) for an LDAP
-  write ([Persistence](persistence.md#with-postgres-a-write-is-answered-only-after-it-has-committed)).
+  write ([Persistence](persistence.md#with-a-database-store-a-write-is-answered-only-after-it-has-committed)).
   A response sent before its commit is an acknowledgement a crashed node
   could lose.
 - **Messages a node sends wait too** (active-active). A back-channel logout,

@@ -68,8 +68,9 @@ covers.
 A **node is a container, not a process**. The front process joins with a fresh
 UUID, heartbeats, and holds the leases; its request workers are the same node.
 `gate()` puts the node id, the mode and the service lease's token into
-`process.env` under `STS_CLUSTER_INTERNAL_*`, and `request_pool.js` forks with
-`Object.assign({}, process.env, …)`, so every worker inherits them and
+`process.env` under `STS_CLUSTER_INTERNAL_*`, and `request_pool.js` starts
+each worker thread (`worker_threads` since #364, no longer a fork) with
+`env: Object.assign({}, process.env, …)`, so every worker inherits them and
 `attach()`es — the same fence, no row, no heartbeat.
 
 **Every time is the database's clock** (`DB_NOW` in the driver). Two
@@ -294,7 +295,8 @@ and to the file the row names.
 ## The barrier (active-active — and its second rule everywhere, #351)
 
 **Since 2026-09-29 (#351) rule 2 is not a cluster rule**: it holds in every
-process whose store is postgres (`persistence.answersAfterCommit()`), one node
+process whose store is a database, postgres or MariaDB
+(`persistence.answersAfterCommit()`), one node
 or many, and a commit that FAILS answers the request 503 with `Retry-After`
 (STS-STORE-0066), or an LDAP operation `unavailable` (52, STS-STORE-0067),
 instead of the success its handler wrote. A worker on testidp answered SCIM

@@ -16,11 +16,13 @@
 // carries the write to the others a moment later — and inside that moment two
 // nodes both accept. Issue #46 section 2 lists fourteen of them.
 //
-// `claim()` is the one primitive they are all moved onto. On a postgres store it
-// is one `INSERT … ON CONFLICT` under the primary key's lock, so every process
-// against that store agrees at once: exactly one concurrent caller wins. On any
-// other store it is this process's memory, which is exactly as atomic as the map
-// it replaces and is correct because a non-postgres store cannot be shared.
+// `claim()` is the one primitive they are all moved onto. On a database store
+// (postgres, or MariaDB through `persistence/cluster_portable.js`) it is one
+// atomic insert under the primary key's lock, so every process against that
+// store agrees at once: exactly one concurrent caller wins. On any other store
+// it is this process's memory, which is exactly as atomic as the map it
+// replaces and is correct because a store that is not a database cannot be
+// shared.
 //
 // ---------------------------------------------------------------------------
 // THREE DECISIONS.

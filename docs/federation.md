@@ -328,18 +328,18 @@ they find out.
 ### Which people a partner may assert
 
 A partner signs in **only the person its subject is linked to**. The link is a
-`federationLink` value on the person's entry, `<relationship> <issuer>
-<subject>`: the relationship, the partner's issuer (its `fedPeer`, which every
-response is already checked against) and the partner's stable identifier for
-the person — OpenID Connect's `sub`, a SAML NameID. OpenID Connect Core section
-5.7 makes `iss` and `sub` together the only identifier a relying party may rely
-on, and says `email` and `preferred_username` must not be used as one; SAML 2.0
-Core section 8.3.7 has a persistent NameID linked to a local account rather than
-matched against one. So a name — however `fedUsernameSource` maps it — never
-signs anybody in on its own, except under `any-existing`, which product
-refuses. A **transient** NameID names nobody for longer than
-one exchange and is refused (`STS-FED-0096`); configure the partner to send a
-persistent (or other stable) NameID.
+`federationLink` value on the person's entry,
+`<relationship> <issuer> <subject>`: the relationship, the partner's issuer (its
+`fedPeer`, which every response is already checked against) and the partner's
+stable identifier for the person — OpenID Connect's `sub`, a SAML NameID. OpenID
+Connect Core section 5.7 makes `iss` and `sub` together the only identifier a
+relying party may rely on, and says `email` and `preferred_username` must not be
+used as one; SAML 2.0 Core section 8.3.7 has a persistent NameID linked to a
+local account rather than matched against one. So a name — however
+`fedUsernameSource` maps it — never signs anybody in on its own, except under
+`any-existing`, which product refuses. A **transient** NameID names nobody for
+longer than one exchange and is refused (`STS-FED-0096`); configure the partner
+to send a persistent (or other stable) NameID.
 
 `fedSubjectPolicy` decides what happens to a subject nobody has linked yet:
 

@@ -144,7 +144,8 @@
 // done — ~600 deleted people came back on testidp. A request that changed the
 // store is now answered only once that change has COMMITTED, and 503 (an LDAP
 // operation `unavailable`) when it did not: `cluster/cluster_barrier.js`'s
-// rule 2, which `answersAfterCommit()` turns on for every postgres process.
+// rule 2, which `answersAfterCommit()` turns on for every process on a
+// database store (postgres or MariaDB, `store_modes.isDatabase()`).
 // This file's old argument against refusing — "a database outage would take
 // down sixteen protocol families that do not need a database" — is answered
 // by what is refused: a request that WROTE, which a database outage cannot
@@ -4541,23 +4542,26 @@ function coordinate() {
 // ---------------------------------------------------------------------------
 const MINTED_TAIL = 'What this service MINTS — sessions, tokens, codes, ' +
   'artifacts, Kerberos tickets, the counters and the audit log — is ' +
-  'persisted in PRODUCT mode on a postgres store, encrypted under the same ' +
-  'key-encryption key as the signing keys, and in no other configuration: ' +
+  'persisted in PRODUCT mode on a database store (postgres or MariaDB), ' +
+  'encrypted under the same key-encryption key as the signing keys, and in ' +
+  'no other configuration: ' +
   'development mode regenerates the signing key on every start, so a ' +
   'restored token would verify against nothing.';
 const STATUS_PROSE = Object.freeze({
   coordinating: 'Processes against this store COORDINATE: every change is ' +
     'written to a monotonic log inside the transaction that made it, and ' +
-    'each process applies what the others committed. The LISTEN/NOTIFY ' +
-    'nudge only makes that prompt — the log is the contract, so a missed ' +
-    'notification costs latency and never a change. What is NOT shared is ' +
-    'sockets: the KDC, the LDAP listeners, the TLS ports and SPIFFE\'s four ' +
-    'are per process, and the replay caches converge rather than ' +
-    'synchronise. ' + MINTED_TAIL,
+    'each process applies what the others committed. A nudge (postgres\'s ' +
+    'LISTEN/NOTIFY) or a poll (MariaDB) only makes that prompt — the log is ' +
+    'the contract, so a missed nudge costs latency and never a change. ' +
+    'What is NOT shared is ' +
+    'sockets: the KDC, the LDAP listeners, the main port and SPIFFE\'s ' +
+    'sockets are per process. A single-use value — an authorization code, ' +
+    'a DPoP jti, a Kerberos authenticator — is spent once across every ' +
+    'process, through one atomic claim in the store. ' + MINTED_TAIL,
   notCoordinating: 'Persistence is not coordination in this configuration. ' +
     'Two processes pointed at one store each hold their own copy in memory ' +
     'and will not see each other\'s writes until they restart. Set ' +
-    'persistence.coordinate on a postgres store to change that. ' +
+    'persistence.coordinate on a database store to change that. ' +
     MINTED_TAIL,
   // WHAT THE CONNECTION IS, SAID THE WAY `persistence_postgres.dialOptions()`
   // DIALS IT (#543 follow-up). Until then this table described libpq's

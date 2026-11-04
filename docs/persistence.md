@@ -381,9 +381,11 @@ database and user parsed out of it.
 
 ## Things worth knowing before you rely on it
 
-### With postgres, a write is answered only after it has committed
+<a id="with-postgres-a-write-is-answered-only-after-it-has-committed"></a>
 
-With `persistence.mode=postgres`, a request that changes anything this service
+### With a database store, a write is answered only after it has committed
+
+With `persistence.mode=postgres` or `mariadb`, a request that changes anything this service
 stores is answered only after that change has been **committed** to the
 database. This covers an HTTP request, and an LDAP add, delete, modify or
 rename. If the commit fails, the request does not get its success:

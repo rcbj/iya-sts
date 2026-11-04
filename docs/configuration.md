@@ -857,15 +857,18 @@ out of memory, and `/admin/persistence` and `GET /admin/ldap/service` both carry
 The next change recomputes the same difference and tries again, so a failure
 loses nothing.
 
-**Processes against one Postgres store coordinate.** Every change goes into a monotonic log
-inside the transaction that made it, and each process applies what the others
-committed; a `LISTEN`/`NOTIFY` nudge only makes that prompt, so a missed
-notification costs latency and never a change. `persistence.coordinate` turns it
-off and `persistence.pollInterval` sets the worst-case lag. It shares **state and
-not sockets** — the KDC, the LDAP listeners and SPIFFE's four are
-per process — and the replay caches *converge* rather than synchronise, except
-the RFC 7523 / RFC 7522 used-assertion history, which is claimed atomically. See
-[Persistence](persistence.md).
+**Processes against one database store (PostgreSQL or MariaDB) coordinate.**
+Every change goes into a monotonic log inside the transaction that made it, and
+each process applies what the others committed; on PostgreSQL a
+`LISTEN`/`NOTIFY` nudge makes that prompt (MariaDB is polled), so a missed
+notification costs latency and never a change. `persistence.coordinate` turns
+it off and `persistence.pollInterval` sets the worst-case lag. It shares
+**state and not sockets** — the KDC, the LDAP listeners, the main port and
+SPIFFE's sockets are per process. A single-use value — an authorization code,
+a DPoP `jti`, a SAML artifact, a Kerberos authenticator, an RFC 7523 or RFC 7522
+assertion — is spent once across every process through one atomic claim in the
+store, so there is no window in which a second process accepts it. See
+[Persistence](persistence.md) and [How the cluster works](cluster-concepts.md).
 
 ### The TOTP settings, and the two that behave differently from the rest
 
