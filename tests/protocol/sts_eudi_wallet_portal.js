@@ -717,7 +717,14 @@ async function addCredential(driver, wallet, state) {
   let listed = [];
   for (;;) {
     listed = await walletListing(wallet);
-    if (listed.length || Date.now() > bound) {
+    // The listing carries `signature` once the wallet has checked it
+    // against the issuer's keys, which it fetches through the issuer's
+    // address. In cluster mode that is the balancer, and a node that has
+    // not yet seen this new realm cannot answer (cluster convergence is
+    // 0.5-1 s), so the entry can be listed before it is checked
+    // (2026-11-04: the wallet said "Signature valid" and the listing had
+    // no `signature`). The entry is waited for WITH its check.
+    if ((listed.length && listed[0].signature) || Date.now() > bound) {
       break;
     }
     await sleep(500);
@@ -730,8 +737,11 @@ async function addCredential(driver, wallet, state) {
     assert.strictEqual(Number(listed[0].batch_size || 1), state.batch,
                        JSON.stringify(listed[0]).slice(0, 600));
     assert.strictEqual(listed[0].format, "dc+sd-jwt");
+    // The whole entry and the wallet's last lines when it fails: a missing
+    // `signature` (seen in cluster mode, 2026-11-04) says nothing alone.
     assert.strictEqual((listed[0].signature || {}).self_consistent, true,
-                       JSON.stringify(listed[0].signature));
+                       JSON.stringify(listed[0]).slice(0, 1500) + "\n" +
+                       wallet.lines.slice(-30).join("\n"));
   });
   // The store is written after the API answers; it is waited for.
   let stored = [];
