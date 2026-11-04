@@ -8064,9 +8064,10 @@ const CODES = [
       'refused it); answered here rather than redirected.',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-OAUTH-0160',
-    summary: 'The authorization request has no redirect_uri, so the error ' +
-      'cannot be redirected. (What is usable is the schema\'s question since ' +
-      '2026-09-13; a value it refuses is STS-OAUTH-0159.)',
+    summary: 'The authorization request has no redirect_uri (or an empty ' +
+      'one), so the error cannot be redirected. (What is usable is the ' +
+      'schema\'s question since 2026-09-13; a value it refuses is ' +
+      'STS-OAUTH-0159.)',
     spec: 'invalid_request (HTTP 400)' },
   { code: 'STS-OAUTH-0161',
     summary: 'The authorization request named no client_id.',

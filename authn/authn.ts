@@ -11143,6 +11143,13 @@ class Authn {
       // languages the relying party asked this screen to be drawn in, ahead
       // of the person's own and the browser's (`common/page_locale.ts`).
       uiLocales: String(opts.uiLocales || '').slice(0, 256),
+      // WHY A PERSON WITH A SESSION IS ASKED AGAIN (#1302): `prompt_login`
+      // or `max_age`, from the authorization endpoint, and '' otherwise —
+      // anything else a caller passes is dropped, because the screen draws
+      // a catalog sentence per value and has none for it.
+      reauthentication: ['prompt_login', 'max_age'].indexOf(
+        String(opts.reauthentication || '')) >= 0
+        ? String(opts.reauthentication) : '',
       federation: home,
       expires: Date.now() + this.pendingTtlMs()
     };
@@ -13729,6 +13736,10 @@ class Authn {
       // WHO IS ASKING (#1300): the client's name, logo, privacy policy and
       // terms, where it registered any of them; null otherwise.
       clientDisplay: this.clientDisplay(record.application),
+      // WHY THIS IS A SECOND SIGN-IN (#1302): `prompt_login`, `max_age`, or
+      // '' — a first sign-in, or any other reason. The browser draws the
+      // one-line notice for it; the screen is otherwise the same.
+      reauthentication: String(record.reauthentication || ''),
       // THE CERTIFICATE ON THIS CONNECTION (#1051): "Continue as <name>
       // with your certificate", where `certificateOption()` says so.
       certificate: screenOffered && !usernameless

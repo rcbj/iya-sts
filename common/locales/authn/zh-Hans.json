@@ -2,6 +2,8 @@
   "login.title": "登录 — 身份验证服务",
   "login.heading": "登录",
   "login.at": "身份验证服务，地址 <code>{base}</code>",
+  "login.reauthPromptLogin": "应用要求您重新登录（prompt=login）。",
+  "login.reauthMaxAge": "应用要求您重新登录，因为您上次登录的时间早于它允许的范围（max_age）。",
   "login.linkAccount": "<strong>关联您的账户。</strong>一个联合身份合作方已将您以 <code>{name}</code> 身份登录，但该账户尚未与其关联。请在此以 {name} 身份登录以完成关联；点击“取消”则不会关联任何内容。",
   "login.username": "用户名",
   "login.password": "密码",

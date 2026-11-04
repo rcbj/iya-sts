@@ -1996,14 +1996,15 @@ function checkPostLogoutRedirectUri(opts) {
     });
     if (!found) {
       log.debug("Leaving checkPostLogoutRedirectUri(). Not registered.");
-      // `reason` and `citation` are the signed-out page's (2026-11-04): it
-      // writes "You were not returned to X: <reason> (<citation>)." as one
-      // sentence, where the description is the log's.
+      // `reason` and `citation` are a sentence's (2026-11-04): "<reason>
+      // (<citation>)", where the description is the log's. `registered` is
+      // the signed-out page's since #1302: its warning box names the
+      // address asked for and these, in the page's language.
       const reason = 'it ' + notAmong(declared, 'post-logout redirect URI',
                                       'this client registered');
       return { ok: false, errorCode: 'STS-OAUTH-0123',
                error: 'invalid_request', requirement: 'no-open-redirector',
-               reason: reason,
+               reason: reason, registered: declared.slice(),
                citation: 'RP-Initiated Logout 1.0 section 3',
                description: 'RP-Initiated Logout 1.0 section 3: "' +
                  presented + '" ' + notAmong(declared,

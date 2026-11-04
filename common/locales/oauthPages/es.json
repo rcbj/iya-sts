@@ -25,6 +25,7 @@
   "signedOut.heading": "Sesión cerrada",
   "signedOut.ended": "La sesión de {username} terminó, y se avisa a cada aplicación en la que se inició sesión a través de ella.",
   "signedOut.none": "No había ninguna sesión que terminar.",
+  "signedOut.notRegistered": "<strong>El post_logout_redirect_uri de esta solicitud de cierre de sesión no es uno de los que registró este cliente, así que no se siguió.</strong> La solicitud nombraba <code>{uri}</code>; este cliente registró <code>{registered}</code> (RP-Initiated Logout 1.0, sección 3).",
   "signedOut.frontSub": "OpenID Connect RP-Initiated Logout 1.0, con Front-Channel Logout 1.0",
   "signedOut.frontEnded": "La sesión de {username} terminó. Es la sesión que comparten WS-Federation y SAML 2.0, así que también se cerró en ellos.",
   "signedOut.frontNone": "No había ninguna sesión que terminar. De todos modos, se borró la cookie.",

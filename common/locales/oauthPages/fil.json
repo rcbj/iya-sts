@@ -25,6 +25,7 @@
   "signedOut.heading": "Naka-sign out na",
   "signedOut.ended": "Natapos na ang session ni {username}, at sasabihan ang bawat application na naka-sign in sa pamamagitan nito.",
   "signedOut.none": "Walang session na tatapusin.",
+  "signedOut.notRegistered": "<strong>Hindi isa sa mga inirehistro ng client na ito ang post_logout_redirect_uri sa sign-out request na ito, kaya hindi ito sinundan.</strong> Ang pinangalanan ng request ay <code>{uri}</code>; ang inirehistro ng client na ito ay <code>{registered}</code> (RP-Initiated Logout 1.0 seksyon 3).",
   "signedOut.frontSub": "OpenID Connect RP-Initiated Logout 1.0, kasama ang Front-Channel Logout 1.0",
   "signedOut.frontEnded": "Natapos na ang session ni {username}. Ito ang session na pinagsasaluhan ng WS-Federation at SAML 2.0, kaya naka-sign out na rin ang mga iyon.",
   "signedOut.frontNone": "Walang session na tatapusin. Binura pa rin ang cookie.",

@@ -2,6 +2,8 @@
   "login.title": "Sign in — authentication service",
   "login.heading": "Sign in",
   "login.at": "Authentication service at <code>{base}</code>",
+  "login.reauthPromptLogin": "The application asked you to sign in again (prompt=login).",
+  "login.reauthMaxAge": "The application asked you to sign in again because your last sign-in is older than it allows (max_age).",
   "login.linkAccount": "<strong>Link your account.</strong> A federation partner signed you in as <code>{name}</code>, and that account is not linked to it yet. Sign in here as {name} to link them; Cancel links nothing.",
   "login.username": "Username",
   "login.password": "Password",

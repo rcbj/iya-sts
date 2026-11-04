@@ -2,6 +2,8 @@
   "login.title": "登入 — 身分驗證服務",
   "login.heading": "登入",
   "login.at": "身分驗證服務，位址 <code>{base}</code>",
+  "login.reauthPromptLogin": "應用程式要求您重新登入（prompt=login）。",
+  "login.reauthMaxAge": "應用程式要求您重新登入，因為您上次登入的時間早於它允許的範圍（max_age）。",
   "login.linkAccount": "<strong>連結您的帳戶。</strong>一個聯合身分合作夥伴已將您以 <code>{name}</code> 身分登入，但該帳戶尚未與其連結。請在此以 {name} 身分登入以完成連結；按「取消」則不會連結任何內容。",
   "login.username": "使用者名稱",
   "login.password": "密碼",
