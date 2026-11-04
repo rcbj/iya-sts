@@ -26250,6 +26250,14 @@ const CODES = [
       'an RFC 7592 update, a create and an attribute write.',
     spec: 'HTTP 400 {error: invalid_client_metadata} at registration; a ' +
       'console or management API refusal otherwise' },
+  // #700 (2026-11-04): a realm's custom attributes as claim catalogue rows.
+  { code: 'STS-REG-0366',
+    summary: 'A realm\'s custom attribute is named as a claim of the ' +
+      'directory attribute catalogue is (a custom birthdate, say), so it is ' +
+      'not offered to the claim sets: the catalogue\'s claim would be ' +
+      'overwritten. An attribute claim can carry it under another name ' +
+      '(#700).',
+    spec: 'log line; the attribute is absent from every claim set' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

@@ -44,6 +44,7 @@
   "noneOnEntry": "rien dans l’entrée : pas de claim",
   "wouldBeGenerated": "serait générée",
   "entrysOwn": "celle de l’entrée",
+  "customDefinedBy": "attribut personnalisé de ce domaine ({syntax})",
   "carries": "Porte {n} attribut(s) d’annuaire : ",
   "carriesNone": "Ne porte aucun attribut d’annuaire. Cochez-en et cliquez sur Mettre à jour.",
   "colIn": "Inclus",

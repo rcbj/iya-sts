@@ -44,6 +44,7 @@
   "noneOnEntry": "inget på posten: inget anspråk",
   "wouldBeGenerated": "skulle genereras",
   "entrysOwn": "postens egen",
+  "customDefinedBy": "anpassat attribut i denna sfär ({syntax})",
   "carries": "Bär {n} katalogattribut: ",
   "carriesNone": "Bär inget katalogattribut. Kryssa i några och tryck på Uppdatera.",
   "colIn": "Med",

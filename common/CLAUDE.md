@@ -4100,6 +4100,20 @@ with `Cannot find module` naming a file the operator never mentioned.
    (`APP_SELECTION_ATTRIBUTES` has no row; `applicationClaimSelections()`
    leaves it out).
 
+   **A REALM'S CUSTOM ATTRIBUTES ARE CATALOGUE ROWS TOO (#700)**, made per
+   realm by `customRows()` from `attribute_policy.ts`'s register (3co) and
+   walked after the catalogue's own wherever `CATALOGUE` was walked —
+   `rowsInRealm()`, which `ssf/caep.ts` reads too. The catalogue is the
+   process's and fixed at load, the register the realm's and changed while
+   the service runs, which is why they are joined at the read and never
+   merged into `CATALOGUE`. A custom row is claimed under its own name, its
+   value is the directory's only (`from` null, so nothing is invented in
+   either mode), and its syntax types it in a JWT (integer a number, boolean
+   true/false, date YYYY-MM-DD); in an assertion it is text, a multi-valued
+   one as `values`. A name that is also a catalogue claim name is left out
+   (STS-REG-0366). A stored selection naming a removed attribute keeps the
+   name and selects nothing.
+
    **Nothing is selected on a fresh start, in any of the sets.** Unlike
    `/admin/vc`'s ten defaults — which reproduce what that issuer already carried
    — this page changes what every client of this service receives, so it does

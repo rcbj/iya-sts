@@ -176,7 +176,11 @@ interface CaepRegisterDeps {
                 Record<string, any> };
   stepUp: { LEVELS: string[] };
   claimAttributes: { CATALOGUE: ReadonlyArray<{ ldap: string;
-                                                 claim: string[] }> };
+                                                 claim: string[] }>;
+                     // The catalogue and the realm's custom attributes
+                     // (#700). Optional, so a test need not supply it.
+                     rowsInRealm?(): ReadonlyArray<{ ldap: string;
+                                                     claim: string[] }> };
   groupClaims: { groupsOf(username: unknown): { enabled?: boolean;
                                                 claim: string;
                                                 values: string[] } };
@@ -442,7 +446,12 @@ class CaepRegister {
       const valuesAt = function (map: Record<string, any>, name: string) {
         return (map[name] || []).map(String);
       };
-      claimAttributes.CATALOGUE.forEach(function (row) {
+      // The catalogue and the realm's custom attributes (#700), which are
+      // claimed under their own names.
+      const catalogue: ReadonlyArray<{ ldap: string; claim: string[] }> =
+        typeof claimAttributes.rowsInRealm === 'function'
+          ? claimAttributes.rowsInRealm() : claimAttributes.CATALOGUE;
+      catalogue.forEach(function (row) {
         const name = row.ldap.toLowerCase();
         const now = valuesAt(after, name);
         if (JSON.stringify(valuesAt(before, name)) === JSON.stringify(now)) {
