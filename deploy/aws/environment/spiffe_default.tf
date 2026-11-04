@@ -22,9 +22,11 @@
 # the suite nothing to fetch an SVID from. A workload runs a local agent
 # (`spiffe/workload_agent.ts`): the agent attests with a join token over
 # this Server API and serves the Workload API on a Unix socket in the
-# workload's own task. `spiffe_workload_port` stays a variable so a plan
-# that still passes it, and a destroy of state that published 8092, still
-# succeed. The next apply removes that target group, listener and rules.
+# workload's own task — in the suite task, the `spiffe-agent` sidecar
+# (suite-callbacks/main.tf, #695). `spiffe_workload_port` stays a variable
+# so a plan that still passes it, and a destroy of state that published
+# 8092, still succeed. The next apply removes that target group, listener
+# and rules.
 #
 # **THE NODES ARE REGISTERED BY ADDRESS, BECAUSE ECS MANAGES AT MOST FIVE
 # TARGET GROUPS PER SERVICE** and `published_ports` uses all five (https,

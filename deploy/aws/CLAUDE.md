@@ -15,7 +15,7 @@ Dockerfile removes this directory from the image.
 | `environment/envs/<env>.cells.tfvars.json` | per environment | **a multi-cell environment's cells (#98)**: each cell's region, jurisdiction and VPC CIDR, which cell holds the global database's writer, and (since #367) each jurisdiction's pinned countries. Its presence is what makes an environment multi-cell; `testidpna` (two cells) and `globalidp` (six, the target test case) are the two there are | the deployer role |
 | `environment/envs/<env>.conversion.tfvars.json` | per conversion | **a single-region environment converted into this one's cells (#98)**: which old environment, each converted cell's source snapshot and the copy it restores from, and the carry-over secret. Laid over the cells file by `entrypoint.sh` ONLY with `TF_CONVERT=1` (*Converting a single-region environment into cells*, below); `testidpna`'s converts `testidp` | the deployer role |
 | `convert-to-cells.sh` | per conversion | the conversion's runbook: checks (read only, the default), `--carry-secrets`, `--copy-snapshot`, and the `terraform-local.sh` commands in order — never an apply or a destroy itself | a person |
-| `*/tests/render.tftest.hcl` | — | **offline renders (#367)** of `foundation/`, `global/`, `environment/` and `certificate/`: `terraform test` with nothing asked of AWS — the region rule, the mesh, the DNS tree (*What was checked*, below) | a person, after changing a stack |
+| `*/tests/render.tftest.hcl` | — | **offline renders (#367)** of `foundation/`, `global/`, `environment/` and `certificate/`, and (#695) `suite-callbacks/`: `terraform test` with nothing asked of AWS — the region rule, the mesh, the DNS tree (*What was checked*, below) | a person, after changing a stack |
 | `global/` | per multi-cell environment | the global tier of a multi-cell environment (#98): the global PostgreSQL writer and a cross-region read replica per other cell, the global secrets and their replicas, the peering mesh and the inter-cell name associations — state at `environment/<env>/global.tfstate` (*Cells*, below) | the deployer role, through `entrypoint.sh` |
 | `schema-init/` | per image | a `postgres:18` image that applies `postgres/schema.sql` as the RDS master user | built by CI |
 | `cert-init/` | per image | an `aws-cli` image that exports the public ACM certificate into the task before the node starts, so the NODE presents it (only where `public_hostname` is set) | built by CI |
@@ -24,7 +24,7 @@ Dockerfile removes this directory from the image.
 | `terraform-local.sh` | per run | runs that image on a developer machine, with the credentials in the environment or the AWS CLI's session | a person |
 | `reset-environment.js` | per run | removes every realm but the default one, clears the default realm's runtime overrides, and removes runtime client-certificate trust anchors a suite job added (#335), before a run, so an environment can be reused | both runners |
 | `run-suite.sh` | per run | **the whole suite against any environment, from this machine** (2026-09-18): every job runs here against the load balancer except the two the nodes must call back to, which run in an ephemeral `suite-callbacks/` task; one merged report (*Running the suite from this machine*, below). **Not a launcher since 2026-09-21, and the ONE AWS suite**: `../../run-tests.sh --target=aws:<env>` and `--target=aws-ephemeral` both run it, and so does `aws-cluster.yml` | `./run-tests.sh` |
-| `suite-callbacks/` | per run | the callback task for one `run-suite.sh` run — a subnet, a NAT gateway the load balancer admits, a task role and a task definition (credential step, remote PEP, the two callback jobs) — applied at the start of the run and DESTROYED at its end, pass, fail or interrupt; state at `environment/<env>/suite-callbacks.tfstate` | `run-suite.sh` |
+| `suite-callbacks/` | per run | the callback task for one `run-suite.sh` run — a subnet, a NAT gateway the load balancer admits, a task role and a task definition (credential step, remote PEP, the Workload API agent sidecar since #695, the callback jobs) — applied at the start of the run and DESTROYED at its end, pass, fail or interrupt; state at `environment/<env>/suite-callbacks.tfstate` | `run-suite.sh` |
 | `../../.github/workflows/aws-cluster.yml` | per run | ordered jobs — images, terraform, suite, teardown — in the Terraform image, the suite through `./run-tests.sh --target=aws:<env>` after re-applying `allowed_cidrs` with the suite runner's own address; actions `apply-and-test`, `apply`, `test`, `plan`, `destroy` | GitHub Actions (dispatch only) |
 | `../../.github/workflows/testidp-deploy.yml`, `testidp-destroy.yml` | per deployment | build `testidp`'s two images and apply it, admitting only the address(es) given as `allowed_ip`; destroy it (typed confirmation) | GitHub Actions (dispatch only) |
 
@@ -1396,8 +1396,43 @@ rules, because the `for_each` key is gone. `proxy_protocol_v2` stays false.
 `suite-callbacks` opens the suite task to every key of `spiffe_default_ports`,
 which is 8181 only. `sts_spiffe_grpc.js` still asserts the TCP refusal
 (`GET /spiffe`'s `workloadAttestation.tcp` says `not served`), and then fetches
-SVIDs through an agent the suite task starts. The realm's `spiffe.workloadPort`
-stays 8092, so the job does not take the port-0 skip.
+SVIDs through an agent. The realm's `spiffe.workloadPort` stays 8092, so the
+job does not take the port-0 skip.
+
+**THAT AGENT IS A SIDECAR IN THE SUITE TASK (#695, rcbj's decision
+2026-11-04).** `suite-callbacks/main.tf` runs a fourth container,
+`spiffe-agent`, from the SERVICE image at the environment's `image_tag`
+output (the tag the nodes run — `run-suite.sh` pushes only `runner-` and
+`pep-` images, so there is no new image). Its command is a bash line that
+waits for `/shared/spiffe/join-token` and then `exec`s
+`node /usr/src/sts/spiffe/workload_agent.js` with `--join-token-file`,
+`--trust-bundle-file`, `--socket=/shared/spiffe/api.sock`,
+`--ready-file=/shared/spiffe/ready` and the lines of `agent-args`. The JOB
+writes the token, when it runs, rather than a container at task start: the
+agent does not renew its own SVID (an hour, `spiffe.svidTtl`), and in a
+`STS_SUITE_IN_AWS` task the job may run hours after the start. The suite
+container carries `STS_SPIFFE_AGENT_DIR=/shared/spiffe`; the job makes the
+directory 0777 (the agent is uid 10001, the suite root), writes
+`bundle.pem`, `agent-args` (the Server API address it would have dialled,
+the trust domain, the realm's two Workload API switches) and the token last,
+waits up to three minutes for `ready`, and calls the socket there. The
+agent attests over the load balancer's 8181 from the task's own network,
+which the rules above already admit; the socket is in the shared volume, so
+no port is opened. Across containers SO_PEERCRED gives uid and gid, and pid
+0, because the task shares no pid namespace — the agent attests on uid and
+gid only, which is what the job's entries select. **Not essential, nothing
+`dependsOn` it, no health check**: it waits for a token that exists only
+while one job runs, and a sidecar that fails fails that job, whose message
+names this container's log stream (`<env>-callbacks/spiffe-agent/<task>`);
+`cpu` 256 and `memoryReservation` 256 out of the task's 4 vCPU / 16 GiB.
+**`run-suite.sh` runs `sts_spiffe_grpc.js` in the callback task whenever
+there is one** (`CALLBACK_JOBS`), and passes `STS_SPIFFE_SERVER_URL`
+through; with `STS_SUITE_CALLBACKS=0` it runs on this machine with the agent
+in its own process, as before. An environment whose nodes run an image older
+than `--ready-file` fails the job until it is redeployed. Nothing here is a
+new resource kind for the deployer role: one more container in a task
+definition it already registers. `suite-callbacks/tests/render.tftest.hcl`
+holds the container offline.
 
 `spiffe-realm/` publishes ONE additional realm's SPIRE Server API, the same
 number outside and inside, and is applied once per realm, after the realm
