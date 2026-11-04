@@ -78,6 +78,8 @@ const log = bunyan.createLogger({ name: "conformance_browser",
 const SETTLE_MS = Number(process.env.CONFORMANCE_BROWSER_SETTLE_MS) || 4000;
 
 let shared = null;
+// How many Chromes this process has opened with a network log (one file each).
+let netlogCount = 0;
 let queue = Promise.resolve();
 
 function waitMs(ms) {
@@ -159,6 +161,24 @@ async function browser(serviceBase) {
       args.push("--disable-features=" + extra);
     }
     log.info("Chrome features disabled on request: " + extra);
+  }
+  // CHROME'S OWN NETWORK LOG (#1293, rcbj 2026-11-04). Several modules on
+  // the hosted suite stalled with test-idp never seeing the request; the
+  // NetLog is written by Chrome itself, not through WebDriver, so it
+  // survives a hung WebDriver call, and it records every request, the socket
+  // and connection it rode, the TLS handshake and whether and when it ended.
+  // CONFORMANCE_BROWSER_NETLOG names a directory; each Chrome this job opens
+  // writes its own file there (a replaced browser starts a new one).
+  const netlogDir = String(process.env.CONFORMANCE_BROWSER_NETLOG || "")
+    .trim();
+  if (netlogDir) {
+    fs.mkdirSync(netlogDir, { recursive: true });
+    netlogCount += 1;
+    const file = require("path").join(netlogDir, "netlog-" + process.pid +
+      "-" + netlogCount + "-" + Date.now() + ".json");
+    options.addArguments("--log-net-log=" + file,
+                         "--net-log-capture-mode=Default");
+    log.info("Chrome's network log: " + file);
   }
   shared = await new Builder().forBrowser("chrome")
     .setChromeOptions(options).build();
@@ -778,10 +798,20 @@ async function follow(o, driver, id, action, suiteBase) {
       const yes = await driver.findElements(
         By.xpath("//button[@value='yes']"));
       if (yes.length) {
-        await photograph(o, driver, id, "the end-session page");
+        // "confirm-then-photograph": the module asks for the page AFTER the
+        // person is signed out (the suite's "upload a screenshot of the
+        // successful logout page"), so the confirmation is pressed first and
+        // the page it leads to is the evidence — where it moves on, the page
+        // it settles on is photographed by the branches below.
+        if (action !== "confirm-then-photograph") {
+          await photograph(o, driver, id, "the end-session page");
+        }
         await yes[0].click();
         if (await moved(driver, here, 20000)) {
           continue;
+        }
+        if (action === "confirm-then-photograph") {
+          await photograph(o, driver, id, "the signed-out page");
         }
         break;
       }
