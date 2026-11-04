@@ -491,7 +491,7 @@ async function staticChecks(t) {
   // A NEEDLE'S COUNT IS CAPPED (#1308), as PostgreSQL's: inside a derived
   // table's LIMIT of the cap and one more, the cap clamped by the one copy.
   const countSent = runner.sent.filter(function (one) {
-    return /\/\* sts:directory\.rdnCount \*\/$/.test(one.text);
+    return /\/\* sts:directory\.q\.rdnCount \*\/$/.test(one.text);
   });
   const countOne = countSent[0] || { text: '', values: [] };
   t.check(countSent.length === 1 &&
