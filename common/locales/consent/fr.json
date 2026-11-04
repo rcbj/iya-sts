@@ -18,5 +18,7 @@
   "deny": "Refuser",
   "meta.allow": "Autoriser inscrit une valeur <code>{attribute}</code> par portée sur votre fiche sous <code>ou=users</code>, afin que la question ne vous soit plus posée pour celles-ci. Refuser renvoie <code>access_denied</code> à l’application et n’enregistre rien.",
   "meta.nothingIssued": "Rien n’a encore été émis. Cet écran correspond à <code>oauth2.consentRequired</code>, activé par défaut ; /admin/consent permet de consulter et de retirer chaque réponse donnée ici.",
-  "meta.consentingFor": "Consentement pour : <code>{protocol}</code>"
+  "meta.consentingFor": "Consentement pour : <code>{protocol}</code>",
+  "client.policy": "Politique de confidentialité",
+  "client.tos": "Conditions d’utilisation"
 }

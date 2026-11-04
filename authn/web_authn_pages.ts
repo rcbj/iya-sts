@@ -40,6 +40,9 @@ import WebAuthnSpnego = require('../kerberos/web_authn_spnego');
 // THE OAUTH CONSENT SCREEN (#576), whose renderer is beside its server
 // module in `oauth-oidc/`.
 import WebConsentScreen = require('../oauth-oidc/web_consent_screen');
+// WHO IS ASKING (#1300): the client's name, logo and documents, drawn by
+// the frame above every page whose view carries them.
+import WebClientDisplay = require('./web_client_display');
 
 type Json = any;
 
@@ -247,9 +250,14 @@ class AuthnPages {
     // The SPNEGO sign-in's tables need the wide card (#575); the consent
     // screen's scope rows a wider card of their own (#576), as its own
     // stylesheet had it.
+    // WHO IS ASKING (#1300), first in the card, wherever the view says: the
+    // consent screen's labels are in its own catalog, the only one it
+    // loads.
+    const shown = WebClientDisplay.render(ctx.view.clientDisplay, ctx.t,
+      ctx.view.consent === true ? 'consent' : 'authn');
     return '<div class="card' + (ctx.view.door === 'spnego' ? ' wide'
-      : (ctx.view.consent === true ? ' consent' : '')) + '">' + body +
-      '</div>';
+      : (ctx.view.consent === true ? ' consent' : '')) + '">' + shown +
+      body + '</div>';
   }
 
   /**

@@ -3104,6 +3104,47 @@ const SCHEMA = {
             'OpenID Connect Core section 4\'s initiate_login_uri, which ' +
             '/launch/{app} and the user portal send a person to with iss, ' +
             'login_hint and target_link_uri. https only, with no fragment.' },
+    // ---------------------------------------------------------------------
+    // WHAT A PERSON IS SHOWN ABOUT THIS CLIENT WHILE SIGNING IN TO IT
+    // (#1300). OpenID Connect Registration section 2's `logo_uri` ("the
+    // server SHOULD display this image to the End-User during approval"),
+    // `policy_uri` and `tos_uri` (the OP SHOULD display them). They lived
+    // only inside appRegistrationJson until #1300, so nothing drew them and
+    // a client an administrator made could not have them; registration and
+    // RFC 7592 update write them now, and the console and the management
+    // API edit them, as `oauthInitiateLoginUri` above. (`client_uri` is
+    // already kept, as `appHomePageUrl`.)
+    //
+    // **THE BROWSER LOADS THE LOGO; THIS SERVICE NEVER DIALS IT.** The
+    // sign-in and consent screens draw an `<img>` whose `src` is this value
+    // and add exactly its origin to that page's `img-src`
+    // (`clientDisplayOf()`, `ShellDocument`'s `images`) — the rule that this
+    // service dials no URL a caller supplied is untouched. https only
+    // (STS-REG-0365): an http image on an https page is mixed content a
+    // browser blocks, and an http policy link is a document a network can
+    // rewrite. clientDisplayOf() checks again on the read, because
+    // `ldapmodify` reaches the attributes unchecked.
+    // ---------------------------------------------------------------------
+    { name: 'oauthLogoUri', kind: 'single',
+      from: 'RFC 7591 logo_uri, the console, the management API, or by hand',
+      families: ['oauth2', 'oidc'],
+      what: 'THE CLIENT\'S LOGO: OpenID Connect Registration section 2\'s ' +
+            'logo_uri, drawn on the sign-in and consent screens beside the ' +
+            'client\'s name. The person\'s browser loads it from this ' +
+            'address; this service never fetches it. An absolute https URL.' },
+    { name: 'oauthPolicyUri', kind: 'single',
+      from: 'RFC 7591 policy_uri, the console, the management API, or by ' +
+            'hand',
+      families: ['oauth2', 'oidc'],
+      what: 'THE CLIENT\'S PRIVACY POLICY: OpenID Connect Registration ' +
+            'section 2\'s policy_uri, linked from the sign-in and consent ' +
+            'screens. An absolute https URL.' },
+    { name: 'oauthTosUri', kind: 'single',
+      from: 'RFC 7591 tos_uri, the console, the management API, or by hand',
+      families: ['oauth2', 'oidc'],
+      what: 'THE CLIENT\'S TERMS OF SERVICE: OpenID Connect Registration ' +
+            'section 2\'s tos_uri, linked from the sign-in and consent ' +
+            'screens. An absolute https URL.' },
 
     // ---------------------------------------------------------------------
     // THE SIXTH OAUTH OVERRIDE, ADDED 2026-09-01, AND THE FIRST ATTRIBUTE IN
@@ -5011,6 +5052,12 @@ const EDITABLE = {
   oauthThirdPartyInitiatedLogin: 'set',
   oauthSpInitiatedSso: 'set',
   oauthInitiateLoginUri: 'set',
+  // #1300: what the sign-in and consent screens show about the client —
+  // `set`, one each, written by register() too, oauthInitiateLoginUri's
+  // arrangement.
+  oauthLogoUri: 'set',
+  oauthPolicyUri: 'set',
+  oauthTosUri: 'set',
   appLaunchProtocol: 'set',
   // The OAuth 2.0 / OIDC per-client five, the group claim's four and
   // WS-Federation's one. Same rule as the SAML ten above: `set`, because a
@@ -7217,6 +7264,10 @@ const FIELD_EXAMPLES = {
   oauthBackchannelLogoutUri: 'https://app.example.com/backchannel-logout',
   // #426: OpenID Connect Core section 4's initiate_login_uri, https only.
   oauthInitiateLoginUri: 'https://app.example.com/login/initiate',
+  // #1300: what the sign-in and consent screens show, https only.
+  oauthLogoUri: 'https://app.example.com/logo.png',
+  oauthPolicyUri: 'https://app.example.com/privacy',
+  oauthTosUri: 'https://app.example.com/terms',
   oauthGrantType: 'authorization_code',
   oauthResponseType: 'code',
   oauthAllowedTokenResponseTypes: 'id_token token',
@@ -7930,6 +7981,102 @@ function initiateLoginUriProblem(value) {
   }
   log.debug("Leaving initiateLoginUriProblem().");
   return problem;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT THE SIGN-IN AND CONSENT SCREENS SHOW ABOUT A CLIENT (#1300): OpenID
+// Connect Registration section 2's `logo_uri`, `policy_uri` and `tos_uri`,
+// the registration member and the attribute each is written to. Held to an
+// absolute https URL with a host and no credentials wherever it is written
+// (clientDisplayUriProblem(), STS-REG-0365: registration, RFC 7592 update,
+// a create and an attribute write) and again where it is read
+// (clientDisplayOf()), because `ldapmodify` reaches the attributes
+// unchecked. A value that fails on the read is not drawn — the screen shows
+// what it can rather than refusing a sign-in over a picture.
+// ---------------------------------------------------------------------------
+const CLIENT_DISPLAY_MEMBERS = [
+  ['logo_uri', 'oauthLogoUri'],
+  ['policy_uri', 'oauthPolicyUri'],
+  ['tos_uri', 'oauthTosUri']
+];
+const CLIENT_DISPLAY_ATTRIBUTES = CLIENT_DISPLAY_MEMBERS.map(function (row) {
+  return row[1];
+});
+
+/**
+ * Says what is wrong with a value for `oauthLogoUri`, `oauthPolicyUri` or
+ * `oauthTosUri` (or the registration member each is written from): it must
+ * be an absolute https URL with a host and no credentials in it.
+ *
+ * @param name - the attribute or member, for the sentence
+ * @param value - the value
+ * @returns the problem, or '' when it is usable
+ */
+function clientDisplayUriProblem(name, value) {
+  log.debug("Entering clientDisplayUriProblem(). " + name);
+  const text = String(value == null ? '' : value);
+  let problem = '';
+  if (typeof value !== 'string' || !text || /\s/.test(text)) {
+    problem = name + ' must be an absolute https URL with no spaces ' +
+              '(OpenID Connect Registration section 2).';
+  } else {
+    try {
+      const parsed = new URL(text);
+      if (parsed.protocol !== 'https:' || !parsed.hostname) {
+        problem = name + ' must be an https URL: the sign-in and consent ' +
+                  'screens are served over https and draw it there ' +
+                  '(OpenID Connect Registration section 2).';
+      } else if (parsed.username || parsed.password) {
+        problem = name + ' may not carry a user name or password.';
+      }
+    } catch (e) {
+      log.debug("Caught in clientDisplayUriProblem(): " +
+                ((e && e.message) || e));
+      // Not a URL at all.
+      problem = name + ' must be an absolute https URL (OpenID Connect ' +
+                'Registration section 2).';
+    }
+  }
+  log.debug("Leaving clientDisplayUriProblem().");
+  return problem;
+}
+
+/**
+ * What the sign-in and consent screens show about an OAuth client (#1300):
+ * its name, its logo and the origin a page's `img-src` must name for it,
+ * and its privacy policy and terms of service — each held to https again
+ * here, a value that fails left out. Null for a client_id no application
+ * answers to, and for one with none of the three.
+ *
+ * @param clientId - the client_id the sign-in or consent is for
+ * @returns `{ name, logo, logoOrigin, policy, tos }`, or null
+ */
+function clientDisplayOf(clientId) {
+  log.debug("Entering clientDisplayOf().");
+  const id = String(clientId == null ? '' : clientId).trim();
+  const entry = id ? forClientId(id) : null;
+  if (!entry) {
+    log.debug("Leaving clientDisplayOf(). No such client.");
+    return null;
+  }
+  const fields = entry.fields || {};
+  const usable = function (attribute) {
+    log.debug("Entering usable(). " + attribute);
+    const text = String(valuesOf(fields[attribute])[0] || '');
+    log.debug("Leaving usable().");
+    return text && !clientDisplayUriProblem(attribute, text) ? text : '';
+  };
+  const logo = usable('oauthLogoUri');
+  const policy = usable('oauthPolicyUri');
+  const tos = usable('oauthTosUri');
+  if (!logo && !policy && !tos) {
+    log.debug("Leaving clientDisplayOf(). Nothing to show.");
+    return null;
+  }
+  log.debug("Leaving clientDisplayOf(). " + entry.identifier);
+  return { name: String(entry.name || valuesOf(fields.appName)[0] || id),
+           logo: logo, logoOrigin: logo ? new URL(logo).origin : '',
+           policy: policy, tos: tos };
 }
 
 // ---------------------------------------------------------------------------
@@ -9915,6 +10062,21 @@ function oidcRegistrationProblem(values) {
     log.debug("Leaving oidcRegistrationProblem(). initiate_login_uri.");
     return refusal('STS-REG-0188', 'initiate_login_uri', 'must be an https ' +
       'URL (OpenID Connect Registration section 2).');
+  }
+  // #1300: what the sign-in and consent screens show — clientDisplayOf().
+  // Only the plain member: a language-tagged one (`logo_uri#ja`, section
+  // 2.1) is kept in the registration as it was sent and drawn nowhere.
+  for (let i = 0; i < CLIENT_DISPLAY_MEMBERS.length; i++) {
+    const member = CLIENT_DISPLAY_MEMBERS[i][0];
+    if (asked[member] === undefined) {
+      continue;
+    }
+    const displayProblem = clientDisplayUriProblem(member, asked[member]);
+    if (displayProblem) {
+      log.debug("Leaving oidcRegistrationProblem(). " + member + ".");
+      return { errorCode: 'STS-REG-0365', error: 'invalid_client_metadata',
+               member: member, description: displayProblem };
+    }
   }
   log.debug("Leaving oidcRegistrationProblem(). Nothing refused.");
   return null;
@@ -12047,6 +12209,14 @@ function normaliseFields(value) {
         return;
       }
     }
+    if (CLIENT_DISPLAY_ATTRIBUTES.indexOf(name) >= 0 && values[0]) {
+      const problem = clientDisplayUriProblem(name, values[0]);
+      if (problem) {
+        errors.push(problem);
+        code = code || 'STS-REG-0365';
+        return;
+      }
+    }
     if (name === 'gnapOwnerLookupUri') {
       const problem = ownerLookupUriProblem(values[0]);
       if (problem) {
@@ -14105,6 +14275,17 @@ function applyRegistrationFields(record, registration, statement) {
   // kept, for #289's reason below: an RFC 7592 update that drops it means it.
   delete record.fields.oauthInitiateLoginUri;
   setField(record, 'oauthInitiateLoginUri', meta.initiate_login_uri);
+  // OpenID Connect Registration section 2's `logo_uri`, `policy_uri` and
+  // `tos_uri` (#1300), each an attribute the sign-in and consent screens
+  // read (clientDisplayOf()), held to https by oidcRegistrationProblem()
+  // before this runs, and REPLACED for the same reason: an update that drops
+  // one means the client no longer has it.
+  CLIENT_DISPLAY_MEMBERS.forEach(function (row) {
+    delete record.fields[row[1]];
+    if (typeof meta[row[0]] === 'string') {
+      setField(record, row[1], meta[row[0]]);
+    }
+  });
   // REPLACED, NOT ADDED TO (#289): the endpoints hold the client to these two
   // lists, and RFC 7592 section 2.2 replaces the whole registration, so an
   // update that narrows grant_types must narrow what the client may use. A
@@ -16036,6 +16217,14 @@ function updateApplication(identifier, change) {
       log.debug("Leaving updateApplication(). Not a usable " +
                 "initiate_login_uri.");
       return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0188');
+    }
+  }
+  if (CLIENT_DISPLAY_ATTRIBUTES.indexOf(attribute) >= 0 && mode === 'set' &&
+      value) {
+    const problem = clientDisplayUriProblem(attribute, value);
+    if (problem) {
+      log.debug("Leaving updateApplication(). Not a usable display URI.");
+      return errorCodes.mark({ ok: false, errors: [problem] }, 'STS-REG-0365');
     }
   }
   if (attribute === 'gnapOwnerLookupUri' && mode === 'set' && value) {
@@ -21880,6 +22069,8 @@ module.exports = {
   // this module exists to prevent.
   homePageOf: homePageOf,
   initiateLoginUriOf: initiateLoginUriOf,
+  clientDisplayOf: clientDisplayOf,
+  clientDisplayUriProblem: clientDisplayUriProblem,
   initiateLoginUriProblem: initiateLoginUriProblem,
   LAUNCH_PROTOCOLS: LAUNCH_PROTOCOLS,
   homePageProblem: homePageProblem,

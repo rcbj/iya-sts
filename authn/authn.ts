@@ -12648,7 +12648,10 @@ class Authn {
     const view: any = { page: page, id: String(mfaId),
                         username: String(step.username),
                         passwordless: !!step.passwordless,
-                        links: this.stepLinks(page, step) };
+                        links: this.stepLinks(page, step),
+                        // WHO IS ASKING (#1300), as on the screen.
+                        clientDisplay: this.clientDisplay(step.authn &&
+                                                   step.authn.application) };
     if (page === 'totp') {
       // What the AUTHENTICATOR was told, off the person's own enrolment, so
       // the field asks for the right number of digits.
@@ -13723,6 +13726,9 @@ class Authn {
       // no Sign In, the passkey button the way in.
       usernameless: usernameless,
       email: emailFirst,
+      // WHO IS ASKING (#1300): the client's name, logo, privacy policy and
+      // terms, where it registered any of them; null otherwise.
+      clientDisplay: this.clientDisplay(record.application),
       // THE CERTIFICATE ON THIS CONNECTION (#1051): "Continue as <name>
       // with your certificate", where `certificateOption()` says so.
       certificate: screenOffered && !usernameless
@@ -14111,6 +14117,12 @@ class Authn {
   signInShell(req, res, application: string, person?: string): void {
     const { log, app } = this.deps;
     log.debug("Entering Authn.signInShell().");
+    // THE CLIENT'S LOGO (#1300) is loaded by the browser from the client's
+    // own address, so this page's `img-src` names exactly that origin —
+    // the shell is drawn per request, for one pending sign-in's
+    // application, which is why the policy can say so here rather than
+    // allowing every https image on every sign-in page.
+    const shown = this.clientDisplay(application);
     const html = ShellDocument.document({
       title: 'Sign in — IYA STS',
       attributes: ([['data-sts-prefix', realms.currentPrefix()]] as
@@ -14128,8 +14140,43 @@ class Authn {
       loading: '<p class="sub">Loading&hellip;</p>'
     });
     ShellDocument.serve(app, req, res, html,
-                        { csp: { 'style-src': "'self'" } });
+                        { csp: { 'style-src': "'self'" },
+                          images: shown && shown.logoOrigin
+                            ? [shown.logoOrigin] : [] });
     log.debug("Leaving Authn.signInShell().");
+  }
+
+  // ===========================================================================
+  // WHO IS ASKING (#1300): what the sign-in pages and the consent screen show
+  // about the OAuth client a sign-in is for — OpenID Connect Registration
+  // section 2's `logo_uri`, `policy_uri` and `tos_uri`, read by
+  // `applications.clientDisplayOf()`, which holds each to https again. Null
+  // for a sign-in with no application, one that is not an OAuth client (a
+  // SAML service provider's entity ID answers to no client_id) and a client
+  // that registered none of the three, and the pages then draw nothing.
+  // ===========================================================================
+  /**
+   * What the sign-in pages show about the client a sign-in is for.
+   *
+   * @param application - the pending sign-in's application, or ''
+   * @returns `{ name, logo, logoOrigin, policy, tos }`, or null
+   */
+  clientDisplay(application: unknown): any {
+    const { log, applications } = this.deps;
+    log.debug("Entering Authn.clientDisplay().");
+    let shown: any = null;
+    try {
+      shown = application ? applications.clientDisplayOf(String(application))
+                          : null;
+    } catch (e) {
+      log.debug("Caught in Authn.clientDisplay(): " +
+                ((e && e.message) || e));
+      // No directory in this process: a sign-in page without the client's
+      // picture, never a sign-in refused over it.
+      shown = null;
+    }
+    log.debug("Leaving Authn.clientDisplay().");
+    return shown;
   }
 
   /**
@@ -19995,6 +20042,9 @@ export = {
   // the emailed factor's shells.
   stepPagePath: slot.forward('stepPagePath'),
   mfaView: slot.forward('mfaView'),
+  // #1300: who is asking, for the emailed factor's view and the consent
+  // screen.
+  clientDisplay: slot.forward('clientDisplay'),
   stepRefused: slot.forward('stepRefused'),
   mfaTotpAct: slot.forward('mfaTotpAct'),
   mfaBackupCodeAct: slot.forward('mfaBackupCodeAct'),

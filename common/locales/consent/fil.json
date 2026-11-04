@@ -18,5 +18,7 @@
   "deny": "Tanggihan",
   "meta.allow": "Ang Payagan ay nagsusulat ng isang <code>{attribute}</code> na value bawat scope sa iyong entry sa ilalim ng <code>ou=users</code>, para hindi ka na tanungin ulit tungkol sa mga ito. Ang Tanggihan ay nagbabalik ng <code>access_denied</code> sa application at walang itinatala.",
   "meta.nothingIssued": "Wala pang naibibigay. Ang screen na ito ay <code>oauth2.consentRequired</code>, na naka-on bilang default; sa /admin/consent mababasa at mababawi ang bawat sagot na ibinigay dito.",
-  "meta.consentingFor": "Pumapayag para sa: <code>{protocol}</code>"
+  "meta.consentingFor": "Pumapayag para sa: <code>{protocol}</code>",
+  "client.policy": "Patakaran sa privacy",
+  "client.tos": "Mga tuntunin ng serbisyo"
 }
