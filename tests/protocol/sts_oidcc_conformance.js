@@ -458,96 +458,6 @@ async function prepare(plan) {
   return configuration;
 }
 
-// The states a scheduler run ends in (`cluster/scheduler.ts`'s FINAL).
-const FINAL_RUN_STATES = ["succeeded", "failed", "abandoned"];
-
-// ---------------------------------------------------------------------------
-// THE OP'S OPERATOR. oidcc-server-rotate-keys is not started by the suite: it
-// reads the JWKS, asks the operator to rotate the OP's signing keys, and
-// compares once it is started. So this job rotates the realm's keys
-// (`/admin-api/keys/rotate`, the console's Rotate), waits for the scheduler
-// run it queues, and starts the module.
-// ---------------------------------------------------------------------------
-// The kids of the realm's signing keys its JWKS publishes now: those with
-// `use` "sig" or no `use`, which is what the module compares.
-async function signingKids(api) {
-  log.debug("Entering signingKids().");
-  const base = api.replace(/\/admin-api\/?$/, "");
-  const discovery = await oidf.send(base +
-                                    "/.well-known/openid-configuration");
-  const jwksUri = discovery.body && discovery.body.jwks_uri;
-  const jwks = jwksUri ? await oidf.send(jwksUri) : null;
-  const keys = (jwks && jwks.body && jwks.body.keys) || [];
-  const out = keys.filter(function (k) {
-    return k && k.kid && (!k.use || k.use === "sig");
-  }).map(function (k) {
-    return String(k.kid);
-  });
-  log.debug("Leaving signingKids(). " + out.length);
-  return out;
-}
-
-function operatorFor(api) {
-  log.debug("Entering operatorFor().");
-  const started = {};
-  // Attempts per module. A step that throws (a request the service did not
-  // answer — the memory mode's event loop has been seen blocked for six
-  // seconds under the plans running side by side) is tried again on the
-  // next poll, because runModule() calls this on every poll while the module
-  // is CONFIGURED. It was marked started BEFORE the rotation until
-  // 2026-10-08, so one failed request left the module never started and the
-  // plan reported it unexplained. A repeated rotation is harmless: the
-  // module compares the JWKS before and after whatever rotations ran.
-  const attempts = {};
-  log.debug("Leaving operatorFor().");
-  return async function (id, info) {
-    log.debug("Entering the OP operator. " + id);
-    if (started[id] || !info || info.status !== "CONFIGURED" ||
-        info.testName !== "oidcc-server-rotate-keys" ||
-        (attempts[id] || 0) >= 5) {
-      log.debug("Leaving the OP operator. Nothing to do.");
-      return;
-    }
-    attempts[id] = (attempts[id] || 0) + 1;
-    const before = await signingKids(api);
-    const rotated = await oidf.send(api + "/keys/rotate", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: "{}" });
-    assert.strictEqual(rotated.status, 202, "the key rotation: " +
-                       rotated.raw.slice(0, 300));
-    // THE RUN'S OWN STATE, then a NEW signing key in the published JWKS.
-    // This matched a final-looking word anywhere in the answer until
-    // 2026-10-26, and t-post-cl's module was started at 16:36:36.703 while
-    // that realm's rotation went on writing generations until 16:36:37.159:
-    // the module read a JWKS with no new key and failed
-    // VerifyNewJwksHasNewSigningKey with "No new keys". The JWKS is the
-    // module's own test, so it is the one this waits on.
-    for (let i = 0; i < 30; i++) {
-      const run = await oidf.send(api + "/scheduler?run=" +
-                                  encodeURIComponent(rotated.body.runId));
-      const detail = (run.body && run.body.detail) || {};
-      if (FINAL_RUN_STATES.indexOf(String(detail.state || "")) >= 0) {
-        break;
-      }
-      await oidf.waitMs(1000);
-    }
-    for (let i = 0; i < 30; i++) {
-      const now = await signingKids(api);
-      if (now.some(function (kid) {
-        return before.indexOf(kid) < 0;
-      })) {
-        break;
-      }
-      await oidf.waitMs(1000);
-    }
-    const r = await oidf.suite("POST", "api/runner/" + id);
-    started[id] = true;
-    log.info("  rotated the realm's signing keys and started the module: " +
-             r.status);
-    log.debug("Leaving the OP operator.");
-  };
-}
-
 // ONE PLAN, prepared, run and judged; answers the lines that are not
 // explained. Several run at once (see test()), so it touches nothing a
 // neighbour reads.
@@ -563,7 +473,7 @@ async function runOnePlan(plan) {
     const someone = configuration.person;
     delete configuration.realmApi;
     delete configuration.person;
-    const operator = operatorFor(realmApi);
+    const operator = oidf.keyRotationOperator(realmApi);
     ran = await oidf.runPlan(plan.name, plan.variant, configuration,
                              plan.key, async function (id, info) {
                                log.debug("Entering the plan's people.");

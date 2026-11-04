@@ -102,14 +102,21 @@ extra_environment = {
   LDAP_WORKER_DIRECTORY = "postgres-lru"
 }
 
+# ONE NODE WITH TWO WORKER THREADS (rcbj, 2026-11-03, #1293): the OpenID
+# certification runs go to one deployment, and rcbj asked for a single node
+# with two request workers. Three isolates (the front and two threads) is
+# within task_cpu / 1024 + 1 at 2 vCPU, and 4 GiB gives each a derived heap
+# share well above the 336 MiB the front ran out at in 1 GiB (above).
+node_count = 1
+
 sts_mode                = "product"
-workers_request_count   = 0
+workers_request_count   = 2
 workers_surface_count   = 0
 workers_dispatch        = "*"
 workers_read_your_write = true
 
-task_cpu    = 512
-task_memory = 1024
+task_cpu    = 2048
+task_memory = 4096
 
 delete_automated_backups = true
 vpc_cidr                 = "10.52.0.0/16"
