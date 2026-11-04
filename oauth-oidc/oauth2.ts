@@ -12924,7 +12924,8 @@ class OAuth2Server {
     }
     if (mustAsk) {
       log.debug("Leaving OAuth2Server.logoutRequest(). Asking.");
-      return self.logoutConfirmPage(req, res, q, session, client, t);
+      return self.logoutConfirmPage(req, res, q, session, client, t,
+        undefined, self.logoutAskReason(q, session, hinted, returnTo));
     }
     // --- 5. the sign-out ---------------------------------------------------
     // The same session WS-Federation's wsignout1.0 ends, through the same
@@ -12938,13 +12939,57 @@ class OAuth2Server {
                              refusedNote, t, frontDoor);
   }
 
+  // WHY THE PAGE ASKS, named for the case at hand (#1301). The page used to
+  // say only that the request "did not prove it came from an application",
+  // which never said WHAT was missing, nor that a person asked without a
+  // hint is not sent on to the address the request named — the OpenID
+  // Foundation's oidcc-rp-initiated-logout-no-id-token-hint reviewer reads
+  // the page for exactly that. One catalog key per reason, each a whole
+  // sentence (word order differs between the languages), checked in the
+  // order `logoutRequest()`'s `mustAsk` tests them:
+  //
+  //   * no session: a POST without the sign-on cookie (cross-site);
+  //   * no id_token_hint — with the address the request named where it will
+  //     NOT be followed (`returnTo` empty: no client named, or not one the
+  //     client registered), without it where there is none, or where a
+  //     named client registered it and the confirmed sign-out returns there;
+  //   * a hint with no `sid`, or one for another session;
+  //   * otherwise the `logout_hint` named somebody else.
+  //
+  // Wording only: what is asked, followed and answered is unchanged.
+  private logoutAskReason(q: Json, session: Json, hinted: Json,
+                          returnTo: string): { key: string, params: Json } {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.logoutAskReason().");
+    let key = 'oauthPages.logout.whyLogoutHint';
+    let params: Json = {};
+    const target = String(q.post_logout_redirect_uri || '');
+    if (!session) {
+      key = 'oauthPages.logout.whyNoCookie';
+    } else if (!hinted) {
+      if (target && !returnTo) {
+        key = 'oauthPages.logout.whyNoHintNoReturn';
+        params = { uri: target };
+      } else {
+        key = 'oauthPages.logout.whyNoHint';
+      }
+    } else if (!hinted.sid) {
+      key = 'oauthPages.logout.whyHintNoSid';
+    } else if (String(hinted.sid) !== String(session.id)) {
+      key = 'oauthPages.logout.whyHintOtherSession';
+    }
+    log.debug("Leaving OAuth2Server.logoutAskReason(). " + key);
+    return { key: key, params: params };
+  }
+
   // The page that asks (#124, #115). A real form that POSTs back here with
   // the request's own parameters and the value only this session's page can
   // carry; no script (the root CLAUDE.md: a form needs none).
   private logoutConfirmPage(req: Req, res: Res, q: Json, session: Json,
                             client: Json,
                             t: ReturnType<typeof PageLocale.forPage>,
-                            accounts?: Json[]): Json {
+                            accounts?: Json[],
+                            reason?: { key: string, params: Json }): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutConfirmPage().");
     const names = ['post_logout_redirect_uri', 'client_id',
@@ -13021,7 +13066,9 @@ class OAuth2Server {
       t.html('oauthPages.logout.signOut') + '</button> ' +
       '<button type="submit" name="confirm" value="no">' +
       t.html('oauthPages.logout.stay') +
-      '</button></form><p class="sub">' + t.html('oauthPages.logout.why') +
+      '</button></form><p class="sub">' +
+      t.html((reason && reason.key) || 'oauthPages.logout.whyNoHint',
+             (reason && reason.params) || {}) +
       '</p>', t, chooser);
   }
 
