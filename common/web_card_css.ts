@@ -204,10 +204,73 @@ class WebCardCss {
     'x}';
 
   /**
+   * A REALM'S SIGN-IN APPEARANCE (#717, `common/branding.ts`): every colour
+   * the card is drawn in, read through a custom property whose fallback is
+   * the literal it replaced — so with no `/web/theme.css` linked (every
+   * realm that set nothing) the card is drawn exactly as before, and a
+   * realm's theme sets the properties. Applied to the finished stylesheet
+   * rather than written into each rule, so the rules above stay readable
+   * and one table says which literal means what. The order matters: the
+   * accent first, then the text on it.
+   *
+   * @param css - the card's stylesheet as written
+   * @returns the same rules, each colour a custom property with its fallback
+   */
+  static themed(css: string): string {
+    return css
+      .replace(/#12107c/g, 'var(--sts-accent,#12107c)')
+      .replace(/background:var\(--sts-accent,#12107c\);color:#fff/g,
+               'background:var(--sts-accent,#12107c);' +
+               'color:var(--sts-on-accent,#fff)')
+      .replace(/background:#f4f4f7/g, 'background:var(--sts-page,#f4f4f7)')
+      .replace(/background:#fff(?=[;}])/g, 'background:var(--sts-card,#fff)')
+      .replace(/;color:#222(?=[;}])/g, ';color:var(--sts-text,#222)')
+      .replace(/solid #d5d5dd/g, 'solid var(--sts-border,#d5d5dd)')
+      .replace(/solid #eee(?=[;}])/g, 'solid var(--sts-rule,#eee)')
+      .replace(/color:#666(?=[;}])/g, 'color:var(--sts-muted,#666)')
+      .replace(/color:#777(?=[;}])/g, 'color:var(--sts-faint,#777)')
+      .replace(/color:#555(?=[;}])/g, 'color:var(--sts-dim,#555)');
+  }
+
+  /**
+   * THE THREE LAYOUTS AND THE BRAND HEADER (#717): keyed on `<html
+   * data-sts-layout>`, which a shell carries only for a realm whose
+   * appearance differs from the service's, so none of these rules applies
+   * anywhere else. The header (`sts-brand`) is drawn before the card by the
+   * runtime; the card and its form are untouched in every layout.
+   *
+   *   * centered — the header above the card, both in the middle.
+   *   * banner — the header a band in the accent colour across the top,
+   *     the card below it.
+   *   * split — the header a panel in the accent colour beside the card,
+   *     above it on a screen narrower than 720 pixels.
+   */
+  static readonly BRAND_CSS =
+    'html[data-sts-layout] body{flex-direction:column}.sts-brand{display:fl' +
+    'ex;align-items:center;justify-content:center;gap:12px;margin:24px 0 16' +
+    'px;color:var(--sts-text,#222)}img.sts-brand-logo{display:block;max-wi' +
+    'dth:240px;max-height:64px}a.sts-brand-link{display:block;line-height:0' +
+    '}.sts-brand-name{font-weight:600;font-size:1.15em;overflow-wrap:anywhe' +
+    're}html[data-sts-layout=banner] body{justify-content:flex-start}html[d' +
+    'ata-sts-layout=banner] .sts-brand{align-self:stretch;justify-content:f' +
+    'lex-start;margin:0 0 32px;padding:12px 24px;background:var(--sts-accen' +
+    't,#12107c);color:var(--sts-on-accent,#fff)}html[data-sts-layout=split]' +
+    ' body{flex-direction:row;align-items:stretch}html[data-sts-layout=spli' +
+    't] .sts-brand{flex:0 0 38%;flex-direction:column;margin:0;padding:32px' +
+    ';background:var(--sts-accent,#12107c);color:var(--sts-on-accent,#fff);' +
+    'text-align:center}html[data-sts-layout=split] body>.card{margin:auto;a' +
+    'lign-self:center}@media (max-width:720px){html[data-sts-layout=split] ' +
+    'body{flex-direction:column}html[data-sts-layout=split] .sts-brand{flex' +
+    ':none;padding:16px}html[data-sts-layout=split] body>.card{margin:24px ' +
+    'auto}}';
+
+  /**
    * The stylesheet of the sign-in screen and the federation chooser, shared
    * with the consent screen; the wide card's rules after the chooser's.
+   * Every colour a realm may set is a custom property (`themed()`), and the
+   * layouts' rules come last (#717).
    */
-  static readonly CARD_CSS =
+  static readonly CARD_CSS = WebCardCss.themed(
     'body{font-family:system-ui,-apple-system,"Segoe UI",Arial,sans-serif;bac' +
     'kground:#f4f4f7;margin:0;display:flex;align-items:center;justify-content' +
     ':center;min-height:100vh;color:#222}.card{background:#fff;border:1px sol' +
@@ -265,7 +328,9 @@ class WebCardCss {
     // The account control's (#561), scoped to its own classes.
     WebCardCss.ACCOUNTS_CSS +
     // Who is asking (#1300), scoped to its own classes.
-    WebCardCss.CLIENT_CSS;
+    WebCardCss.CLIENT_CSS +
+    // A realm's layout and brand header (#717), under `data-sts-layout`.
+    WebCardCss.BRAND_CSS);
 }
 
 export = WebCardCss;

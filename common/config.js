@@ -395,10 +395,50 @@ const TYPES = {
       log.debug("Leaving text().");
       return String(v == null ? '' : v);
     },
-    check: function () {
+    // A ROW MAY BOUND ITS LENGTH with `maxLength` (#717: a realm's sign-in
+    // display name and its logo's alternative text, which a page draws).
+    // Optional, as `int`'s bounds are: a row without it is any text, as
+    // every string row was before.
+    check: function (raw, setting) {
       log.debug("Entering check().");
+      const max = setting && setting.maxLength;
+      const s = raw === undefined || raw === null ? '' : String(raw);
+      if (typeof max === 'number' && s.length > max) {
+        log.debug("Leaving check(). Too long.");
+        return 'must be at most ' + max + ' characters, got ' + s.length;
+      }
       log.debug("Leaving check().");
       return null;
+    }
+  },
+
+  // A COLOUR (#717): `#rgb` or `#rrggbb`, read as lower-case `#rrggbb`. What
+  // is not one is refused by name, so a value that reaches a stylesheet
+  // (`common/branding.ts`'s `/web/theme.css`) is always six hex digits and
+  // never text an administrator typed.
+  color: {
+    parse: function (raw) {
+      log.debug("Entering parse().");
+      const s = String(raw === undefined || raw === null ? '' : raw).trim()
+        .toLowerCase();
+      const m = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(s);
+      log.debug("Leaving parse().");
+      return m ? '#' + m[1] + m[1] + m[2] + m[2] + m[3] + m[3] : s;
+    },
+    text: function (v) {
+      log.debug("Entering text().");
+      log.debug("Leaving text().");
+      return String(v == null ? '' : v);
+    },
+    check: function (raw) {
+      log.debug("Entering check().");
+      const s = String(raw === undefined || raw === null ? '' : raw).trim();
+      if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(s)) {
+        log.debug("Leaving check().");
+        return null;
+      }
+      log.debug("Leaving check(). Refused.");
+      return 'must be a colour written #rgb or #rrggbb, got "' + raw + '"';
     }
   },
 
@@ -2244,6 +2284,106 @@ const SETTINGS = [
                  'session becomes the first account of its set; turned ' +
                  'off, the browser\'s default session carries on alone and ' +
                  'the others run out as usual.' },
+
+  // -------------------------------------------------------------------------
+  // A REALM'S SIGN-IN APPEARANCE (#717): its colours, layout and logo, set
+  // per realm and read by `common/branding.ts`, which draws them into the
+  // realm's `/web/theme.css` and the shell's brand header. Every default is
+  // the look the service always had, so a realm that sets nothing looks as
+  // it did. The logo itself is not a setting: it is uploaded through
+  // `/admin-api/branding/logo` and kept in the realm's own store.
+  // -------------------------------------------------------------------------
+  { key: 'branding.layout', group: 'Sign-in appearance',
+    label: 'Sign-in layout',
+    env: 'STS_BRANDING_LAYOUT', type: 'enum',
+    enumValues: ['centered', 'split', 'banner'], dflt: 'centered',
+    runtime: true,
+    description: 'How the sign-in screen, its steps, the consent screen and ' +
+                 'the other public pages are laid out in this realm. ' +
+                 'centered: the card in the middle of the page, with the ' +
+                 'logo and display name above it (the default, the look ' +
+                 'the service always had). split: a panel in the accent ' +
+                 'colour carrying the logo and display name beside the ' +
+                 'card, above it on a narrow screen. banner: a band in the ' +
+                 'accent colour across the top carrying them, with the card ' +
+                 'below. Every layout keeps the form, its fields and their ' +
+                 'order exactly as they are.' },
+
+  { key: 'branding.accentColor', group: 'Sign-in appearance',
+    label: 'Accent colour',
+    env: 'STS_BRANDING_ACCENT_COLOR', type: 'color', dflt: '#12107c',
+    runtime: true,
+    description: 'The colour of buttons, links and focus rings on this ' +
+                 'realm\'s public pages, and of the split panel and the ' +
+                 'banner. Written #rgb or #rrggbb. The text on a button is ' +
+                 'black or white, whichever reads better on it, so it is ' +
+                 'not set separately. A colour whose links would fall below ' +
+                 'WCAG 2.2 AA contrast (4.5:1) against the card colour is ' +
+                 'refused (STS-AUTHN-0544).' },
+
+  { key: 'branding.pageColor', group: 'Sign-in appearance',
+    label: 'Page background colour',
+    env: 'STS_BRANDING_PAGE_COLOR', type: 'color', dflt: '#f4f4f7',
+    runtime: true,
+    description: 'The background behind the card on this realm\'s public ' +
+                 'pages. Written #rgb or #rrggbb.' },
+
+  { key: 'branding.cardColor', group: 'Sign-in appearance',
+    label: 'Card colour',
+    env: 'STS_BRANDING_CARD_COLOR', type: 'color', dflt: '#ffffff',
+    runtime: true,
+    description: 'The background of the card the sign-in form is drawn on. ' +
+                 'Written #rgb or #rrggbb. The text and accent colours must ' +
+                 'each keep WCAG 2.2 AA contrast (4.5:1) against it, or the ' +
+                 'change is refused (STS-AUTHN-0544).' },
+
+  { key: 'branding.textColor', group: 'Sign-in appearance',
+    label: 'Text colour',
+    env: 'STS_BRANDING_TEXT_COLOR', type: 'color', dflt: '#222222',
+    runtime: true,
+    description: 'The colour of the text on the card. Written #rgb or ' +
+                 '#rrggbb. The quieter text (notes, hints) is mixed from it ' +
+                 'and the card colour, never below WCAG 2.2 AA contrast. A ' +
+                 'colour below 4.5:1 against the card is refused ' +
+                 '(STS-AUTHN-0544).' },
+
+  { key: 'branding.displayName', group: 'Sign-in appearance',
+    label: 'Display name',
+    env: 'STS_BRANDING_DISPLAY_NAME', type: 'string', dflt: '',
+    maxLength: 80, runtime: true,
+    description: 'A name shown beside the logo on this realm\'s public ' +
+                 'pages and in the browser tab\'s title ("Sign in — ' +
+                 '<name>"), as plain text, never markup, and not ' +
+                 'translated. Empty, no name is shown and the title is the ' +
+                 'one the page always had. At most 80 characters.' },
+
+  { key: 'branding.logoAlt', group: 'Sign-in appearance',
+    label: 'Logo alternative text',
+    env: 'STS_BRANDING_LOGO_ALT', type: 'string', dflt: '',
+    maxLength: 160, runtime: true,
+    description: 'What a screen reader reads in place of this realm\'s ' +
+                 'logo, usually the organisation\'s name. Required while ' +
+                 'the realm has a logo: a logo cannot be uploaded without ' +
+                 'it, and it cannot be emptied while a logo is held ' +
+                 '(STS-AUTHN-0548). At most 160 characters.' },
+
+  { key: 'branding.logoLinkUrl', group: 'Sign-in appearance',
+    label: 'Logo link',
+    env: 'STS_BRANDING_LOGO_LINK_URL', type: 'string', dflt: '',
+    maxLength: 2048, runtime: true,
+    description: 'Where the logo leads when it is followed, an absolute ' +
+                 'https URL (STS-AUTHN-0551 otherwise). Empty, the logo is ' +
+                 'not a link, which is the default: a sign-in page with ' +
+                 'nothing to follow off it is the safer one.' },
+
+  { key: 'branding.logoMaxBytes', group: 'Sign-in appearance',
+    label: 'Largest logo (bytes)',
+    env: 'STS_BRANDING_LOGO_MAX_BYTES', type: 'int', dflt: 262144,
+    min: 1024, max: 2097152, runtime: true, perProcess: true,
+    description: 'The largest logo an upload may carry, for every realm. ' +
+                 'A larger one is refused (STS-AUTHN-0546). The logo is ' +
+                 'kept in the store and replicated to every process, so it ' +
+                 'is kept small: 256 KiB by default, 2 MiB at most.' },
 
   { key: 'authn.maxBrowserAccounts', group: 'Web security',
     label: 'Most accounts one browser remembers',

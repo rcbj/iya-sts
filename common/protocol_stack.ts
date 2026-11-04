@@ -258,6 +258,13 @@ class ProtocolStack {
     this.build('common/public_assets', require('./public_assets'),
                'PublicAssets');
     this.register(app, require('./public_assets'), 'common/public_assets');
+    // A REALM'S SIGN-IN APPEARANCE (#717): `/web/theme.css`,
+    // `/web/branding/logo` and `/web/branding/preview`, beside the card
+    // they style.
+    // A library of `config`, `realms`, `crypto` and `shell_document`; its
+    // paths collide with nothing, and requiring it adds the write rules that
+    // hold its colours to WCAG 2.2 AA before any setting is restored.
+    this.register(app, require('./branding'), 'common/branding');
 
     // The authentication service: the sign-in screen every protocol here sends
     // a person to, and the session store it fills. FIRST of the modules that
