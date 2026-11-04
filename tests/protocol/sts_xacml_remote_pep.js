@@ -385,13 +385,15 @@ async function mintTheCredential() {
   log.debug("Entering mintTheCredential().");
   xacmlUser = await credentials.mint({
     subject: "CN=xacml-user-1,OU=xacml-users,O=iya-sts tests" });
-  const posted = await credentials.trustAnchor(base, xacmlUser.anchorPem);
+  // Recorded before it is posted (#1307): an add applied but answered late
+  // is still removed when the job finishes.
+  const posted = await credentials.trustRecorded(base, xacmlUser.anchorPem,
+                                                 addedAnchors);
   assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
     "Root CA this file " +
     "just built; it answered " + posted.status + ". Without the anchor the " +
     "certificate verifies against nothing and section 3 cannot ask the PDP " +
     "anything at all.");
-  addedAnchors.push(xacmlUser.anchorPem);
   log.info("Minted an XACML_USER credential for " + xacmlUser.subject +
            " — the PDP's four endpoints want that role, where the container " +
            "holds REMOTE_PEPS.");
@@ -909,7 +911,9 @@ async function mintTheContainersCredential() {
   log.debug("Entering mintTheContainersCredential().");
   await provisionTheContainersIdentity();
   const cred = await credentials.mint({ subject: containerSubject() });
-  const posted = await credentials.trustAnchor(base, cred.anchorPem);
+  // Recorded before it is posted (#1307).
+  const posted = await credentials.trustRecorded(base, cred.anchorPem,
+                                                 addedAnchors);
   assert.ok(posted.ok,
     "POST /admin-api/tls/trust/add should accept the Root CA for the PEP " +
     "container this " +
@@ -917,7 +921,6 @@ async function mintTheContainersCredential() {
     "anchor that container's certificate verifies against nothing, it " +
     "registers as an unauthenticated caller, and the PDP refuses it with a " +
     "403 naming REMOTE_PEPS.");
-  addedAnchors.push(cred.anchorPem);
 
   // ON DISK BECAUSE `pep.js` READS FILES, and in a directory of this job's
   // own rather than the launcher's `tests/report/pep-credential`: two runs on

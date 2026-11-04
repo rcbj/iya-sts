@@ -207,11 +207,14 @@ async function test() {
       subject: "CN=tls-connection-" + STAMP + ",O=iya-sts tests" });
     const fingerprint = new crypto.X509Certificate(cred.anchorPem)
       .fingerprint256;
-    const added = await credentials.trustAnchor(base, cred.anchorPem);
-    assert.ok(added.ok, "POST /admin-api/tls/trust/add should accept the " +
-              "Root this job minted; it answered " + added.status + " " +
-              String(added.body || added.why || "").slice(0, 300));
+    // INSIDE the try (#1307): an add applied but answered after send()'s
+    // timeout still reaches the remove in the finally, and a remove of an
+    // anchor the service never took only answers "not held".
     try {
+      const added = await credentials.trustAnchor(base, cred.anchorPem);
+      assert.ok(added.ok, "POST /admin-api/tls/trust/add should accept the " +
+                "Root this job minted; it answered " + added.status + " " +
+                String(added.body || added.why || "").slice(0, 300));
       // EVERY NODE APPLIES THE ANCHOR ON ITS NEXT CHANGE PULL (2026-10-13).
       // It is a row in ou=trustAnchors, and a node reloads its handshake
       // truststore when it applies the row — but the handshake comes before

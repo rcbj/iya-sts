@@ -539,11 +539,13 @@ async function setUp() {
   // the resource server — sts_fga.js's arrangement.
   authzenCaller = await credentials.mint({
     subject: "CN=" + AUTHZEN_CALLER + ",OU=authzen,O=iya-sts tests" });
-  const posted = await credentials.trustAnchor(base,
-                                               authzenCaller.anchorPem);
+  // Recorded before it is posted (#1307): an add applied but answered late
+  // is still removed when the job finishes.
+  const posted = await credentials.trustRecorded(base,
+                                                 authzenCaller.anchorPem,
+                                                 addedAnchors);
   assert.ok(posted.ok, "POST /admin-api/tls/trust/add should accept the " +
     "Root CA this file built; it answered " + posted.status);
-  addedAnchors.push(authzenCaller.anchorPem);
   storedHere.push(await credentials.storeOnEntry(apiPair(), base, PREFIX,
     AUTHZEN_CALLER, authzenCaller.leaf.pem));
   await must("/groups/add-member",
