@@ -335,6 +335,14 @@
     "en": "049675db215c0863",
     "text": "Compte les clés d’accès du domaine pour Supervision → Clés d’accès (#942) : par algorithme et par voie, les personnes qui détiennent uniquement du post-quantique, uniquement du classique ou les deux, et quels modèles d’authentificateur détiennent quels algorithmes. Ne lit que les personnes qui détiennent une clé d’accès, une page à la fois ; les changements faits après sont ajoutés à mesure qu’ils sont écrits."
   },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "Rattrapage de l'index des groupes qui accordent"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "Donne à chaque entrée de l'annuaire écrite avant #1306 les clés d'index grantinggroup de ses attributs qui accordent, une page du magasin à la fois, afin que la question posée au magasin par le provisionnement fédéré trouve un groupe qu'une telle entrée nomme ; marque le magasin comme complet une seule fois, puis reste désactivé (#1311)."
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "Purge des lignes créées expirées"

@@ -1942,6 +1942,21 @@ const CODES = [
       'tier\'s purge is a job of its own and is not affected, a start skips ' +
       'the rows anyway, and the next run tries again.',
     spec: 'none — logged, and the job run is recorded as failed' },
+  { code: 'STS-STORE-0163',
+    summary: 'A run of the persistence.granting-key-backfill job, which ' +
+      'gives the directory entries written before #1306 their ' +
+      'grantinggroup index keys, stopped on a store error (#1311); the ' +
+      'pages it finished are kept, and the next run resumes after the last ' +
+      'one.',
+    spec: 'none — logged; federated provisioning\'s store question still ' +
+      'misses the entries not yet reached' },
+  { code: 'STS-STORE-0164',
+    summary: 'The grantinggroup key backfill (#1311) skipped a directory ' +
+      'entry whose sealed attributes do not open in this process, even ' +
+      'after the data-key rows were read again; the walk finishes and ' +
+      'writes its mark, and the entry is keyed when it is next written. ' +
+      'The first few are named, then a count per run.',
+    spec: '' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +

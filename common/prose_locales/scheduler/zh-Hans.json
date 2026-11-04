@@ -335,6 +335,14 @@
     "en": "049675db215c0863",
     "text": "为 监控 → 通行密钥 统计领域的通行密钥（#942）：按算法和通道，统计仅持有后量子、仅持有传统或两者皆有的人员，以及哪些验证器型号持有哪些算法。只读取持有通行密钥的人员，每次一页；之后发生的变更会在写入时计入。"
   },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "授权组索引回填"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "为 #1306 之前写入的每个目录条目补上其授权属性的 grantinggroup 索引键，每次处理存储中的一页，使联合预配向存储提出的问题能找到此类条目所指名的组；只将存储标记为完成一次，此后即处于关闭状态（#1311）。"
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "过期铸造行清除"

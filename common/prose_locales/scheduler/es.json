@@ -335,6 +335,14 @@
     "en": "049675db215c0863",
     "text": "Cuenta las llaves de acceso del dominio para Supervisión → Llaves de acceso (#942): por algoritmo y carril, las personas que tienen solo poscuánticas, solo clásicas o ambas, y qué modelos de autenticador tienen qué algoritmos. Lee solo las personas que tienen una llave de acceso, una página a la vez; los cambios hechos después se suman a medida que se escriben."
   },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "Relleno del índice de grupos que otorgan"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "Da a cada entrada del directorio escrita antes de #1306 las claves de índice grantinggroup de sus atributos que otorgan, una página del almacén cada vez, para que la pregunta al almacén del aprovisionamiento federado encuentre un grupo que esa entrada nombre; marca el almacén como completo una sola vez y queda desactivado desde entonces (#1311)."
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "Purga de filas acuñadas caducadas"

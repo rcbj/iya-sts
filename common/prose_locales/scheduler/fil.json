@@ -335,6 +335,14 @@
     "en": "049675db215c0863",
     "text": "Binibilang ang mga passkey ng realm para sa Monitoring → Mga passkey (#942): ayon sa algorithm at lane, ang mga taong may hawak na post-quantum lang, classical lang o pareho, at kung aling mga modelo ng authenticator ang may hawak ng aling mga algorithm. Binabasa lang ang mga taong may hawak ng passkey, isang page sa bawat pagkakataon; idinadagdag ang mga pagbabagong ginawa pagkatapos nito habang isinusulat ang mga ito."
   },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "Backfill ng index ng mga grupong nagbibigay"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "Ibinibigay sa bawat entry ng direktoryo na isinulat bago ang #1306 ang mga grantinggroup index key ng mga katangian nitong nagbibigay, isang pahina ng store sa bawat pagkakataon, upang mahanap ng tanong sa store ng federated provisioning ang isang grupong pinangangalanan ng naturang entry; minamarkahang kumpleto ang store nang isang beses, at naka-off na mula noon (#1311)."
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "Pag-purge ng mga expired na minted row"

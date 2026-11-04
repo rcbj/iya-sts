@@ -335,6 +335,14 @@
     "en": "049675db215c0863",
     "text": "為 監控 → 密碼金鑰 統計領域的密碼金鑰（#942）：依演算法和通道，統計僅持有後量子、僅持有傳統或兩者皆有的人員，以及哪些驗證器型號持有哪些演算法。只讀取持有密碼金鑰的人員，每次一頁；之後發生的變更會在寫入時計入。"
   },
+  "sched.jobs.persistence.granting-key-backfill.title": {
+    "en": "1440e4f073e4af41",
+    "text": "授權群組索引回填"
+  },
+  "sched.jobs.persistence.granting-key-backfill.describe": {
+    "en": "9ea934f2bedc77b1",
+    "text": "為 #1306 之前寫入的每個目錄條目補上其授權屬性的 grantinggroup 索引鍵，每次處理儲存區中的一頁，使聯合佈建向儲存區提出的問題能找到此類條目所指名的群組；只將儲存區標記為完成一次，此後即處於關閉狀態（#1311）。"
+  },
   "sched.jobs.persistence.minted-expiry-purge.title": {
     "en": "2e5c5abaf78a47c9",
     "text": "過期產生資料列清除"
