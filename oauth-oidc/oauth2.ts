@@ -24,7 +24,7 @@
 //   POST /oauth2/par         RFC 9126 pushed authorization requests
 //   *    /oauth2/register    RFC 7591 registration + RFC 7592 management
 //   GET  /oauth2/logout      end_session_endpoint (RP-Initiated Logout)
-//   GET  /oauth2/check_session  the OP iframe, and its script beside it
+//   GET  /oauth2/check_session  the OP iframe, its script inline (#1297)
 //                            (Session Management, #121; off by default)
 //   GET  /oauth2/rfc9700     NON-SPEC: whether the RFC 9700 Security BCP mode
 //                            is on, and every requirement it does and does not
@@ -22335,14 +22335,18 @@ class OAuth2Server {
     // still 'none'), and X-Frame-Options, which can only say DENY or
     // SAMEORIGIN, is removed so it cannot overrule the narrower CSP.
     //
-    // THE NINTH SCRIPTED PAGE, argued from scratch (the root CLAUDE.md's
-    // table): the iframe's whole job is to ANSWER A `postMessage`, and no
-    // markup can, so there is no submit button to fall back on — with script
-    // off it answers nothing, and a relying party's `postMessage` goes
-    // unanswered, which the specification already treats as the iframe
-    // being unusable. `script-src 'self'` naming the one sibling resource.
+    // ITS SCRIPT IS INLINE, UNDER THE SHA-256 OF ITS EXACT TEXT (#1297,
+    // rcbj's option A; `oauth-oidc/CLAUDE.md` 3ax): the root CLAUDE.md's one
+    // named exception to "`script-src 'self'`, never inline". The iframe's
+    // whole job is to ANSWER A `postMessage`, and no markup can, so there is
+    // no submit button to fall back on — with script off it answers nothing,
+    // which the specification already treats as the iframe being unusable.
+    // It was a sibling `check_session.js` until #1297; two requests before
+    // the listener existed lost the OpenID conformance suite's single
+    // `postMessage`, sent 500 ms after its own iframe loads. The hash admits
+    // that one text and nothing else — narrower than `'self'`.
     //
-    // Off (the default), both paths answer a 404 of their own that names the
+    // Off (the default), the path answers a 404 of its own that names the
     // setting — NOT Express's `Cannot GET`, which is how
     // tests/protocol/sts_metadata.js tells a path nobody routed from an
     // endpoint answering 404.
@@ -22354,32 +22358,18 @@ class OAuth2Server {
         log.debug("Leaving the OP iframe. Session Management is off.");
         return self.sessionManagementOff(res);
       }
+      // The list's script with `authn.multipleAccounts` on (#561); the page
+      // and the hash in its policy are always the same one's.
+      const accounts = authn.multipleAccounts();
       res.set('Content-Security-Policy',
               app.framedContentSecurityPolicy(
                 sessionManagement.frameAncestors(),
-                { 'script-src': "'self'", 'style-src': null }));
+                { 'script-src': sessionManagement.scriptHashFor(accounts),
+                  'style-src': null }));
       res.removeHeader('X-Frame-Options');
       res.status(200).type('text/html').set('Cache-Control', 'no-store')
-         .send(sessionManagement.iframePage());
+         .send(sessionManagement.iframePage(accounts));
       log.debug("Leaving the OP iframe.");
-      return undefined;
-    });
-
-    app.get(sessionManagement.SCRIPT_PATH, function (req, res) {
-      log.debug("Entering the OP iframe's script.");
-      if (!sessionManagement.enabled()) {
-        errorCodes.mark(res, 'STS-OAUTH-0601');
-        log.debug("Leaving the OP iframe's script. Session Management is off.");
-        return self.sessionManagementOff(res);
-      }
-      res.set('Content-Security-Policy',
-              app.contentSecurityPolicy({ 'style-src': null,
-                                          'img-src': null }));
-      res.status(200).type('application/javascript')
-         .set('Cache-Control', 'no-store')
-         // The list's script with `authn.multipleAccounts` on (#561).
-         .send(sessionManagement.scriptFor(authn.multipleAccounts()));
-      log.debug("Leaving the OP iframe's script.");
       return undefined;
     });
 

@@ -9023,12 +9023,6 @@ const ENDPOINTS: EndpointEntry[] = [
           'state it can read and answers changed, unchanged or error. The ' +
           'one page here that may be framed, and only by the origins of the ' +
           'realm\'s registered redirect URIs.' },
-  { path: '/oauth2/check_session.js', group: 'OAuth 2.0 / OIDC',
-    name: 'OP iframe script', specs: ['oidc-session'],
-    what: 'The OP iframe\'s one script, served from this origin because ' +
-          'every page here runs under script-src \'none\' or \'self\'. ' +
-          'Answers a postMessage with changed, unchanged or error, posted ' +
-          'to the asking origin only.' },
   { path: '/oauth2/logout', group: 'OAuth 2.0 / OIDC', name: 'Session end ' +
       '(end_session_endpoint)',
     specs: ['oidc', 'oidc-logout', 'oidc-bclogout'],

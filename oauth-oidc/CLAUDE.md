@@ -2517,8 +2517,8 @@ the same day and read it at introspection instead.
    |---|---|
    | Who may frame the OP iframe | The origins of the realm's registered redirect URIs — `frame-ancestors` narrowed, never dropped |
    | On by default | No: `oauth2.sessionManagement`, per realm |
-   | The script | The ninth scripted page, with no button |
-   | Tests | The served script in a node vm with a fake window |
+   | The script | INLINE in the page under `script-src 'sha256-…'` of its exact text (#1297, option A; it was the ninth `script-src 'self'` page until then), with no button |
+   | Tests | The page's inline script in a node vm with a fake window |
 
    **THE OP BROWSER STATE** is `session.browserState`, a random value
    `authn.ts`'s `mintSessionHandle()` sets beside the handle, so it changes at
@@ -2543,12 +2543,59 @@ the same day and read it at introspection instead.
    realm's) is the one framable page: `app.framedContentSecurityPolicy()`
    and X-Frame-Options removed. Its script hashes the MESSAGE's origin, so
    a page that is not the relying party computes a different value.
-   `/oauth2/check_session.js` answers a relying party's `postMessage`, which
-   no markup can; so it is the one scripted page with **NO submit button**,
-   and with script off a relying party's question simply goes unanswered
-   (moved from the root `CLAUDE.md`'s scripted-pages table, 2026-10-13). Off, both
-   paths answer a 404 naming the setting (`STS-OAUTH-0601`), never Express's
+   The script answers a relying party's `postMessage`, which no markup can;
+   so it is the one scripted page with **NO submit button**, and with script
+   off a relying party's question simply goes unanswered (moved from the
+   root `CLAUDE.md`'s scripted-pages table, 2026-10-13). Off, the path
+   answers a 404 naming the setting (`STS-OAUTH-0601`), never Express's
    `Cannot GET`, which `tests/protocol/sts_metadata.js` reads as unrouted.
+
+   **THE SCRIPT IS INLINE, UNDER THE SHA-256 OF ITS EXACT TEXT (#1297,
+   rcbj's option A, 2026-11-04)** — the root `CLAUDE.md`'s ONE named
+   exception to "`script-src 'self'`, never inline". Until then the page
+   was `<script src="check_session.js">` and the script a sibling served
+   `no-store`: two requests (two round trips, more on a new TLS connection)
+   before the `message` listener existed. The OpenID Foundation's hosted
+   suite loads its own RP iframe beside ours, posts `client_id
+   session_state` ONCE, `setTimeout(checkSession, 500)` after that iframe
+   loads, and never retries; from a test browser 0.22 s a round trip away
+   (0.45–1.5 s on a new connection) our listener was not there yet, and
+   `oidcc-session-management-rp-initiated-logout` timed out on every
+   response type — its console said `checkSession started` and never
+   `receiveMessage`, with no CSP or framing error. A real relying party's
+   first poll had the same race. Now:
+
+   * **One document, one request.** `iframePage(accounts)` is a constant
+     built at load around `scriptFor(accounts)`, byte for byte — nothing
+     templates it afterwards, because a byte changed after hashing is a
+     script the browser silently refuses. The script's text depends only on
+     `COOKIE`, which no realm changes, so there are exactly two pages and two
+     hashes (#561's list script is the second).
+   * **`script-src 'sha256-<base64>'` INSTEAD of `'self'`** (CSP Level 3
+     section 8.4), from `scriptHashFor(accounts)`, computed once through
+     `common/crypto.js`'s `digest()` — the one place this service hashes.
+     A hash source admits that one text and nothing else, which is narrower
+     than `'self'` (any script this origin serves); the script holds no
+     `</script`, which would end the element early. Everything else in the
+     policy is as it was: `default-src 'none'`, `img-src 'self' data:`,
+     `base-uri 'none'`, `frame-ancestors` the registered redirect origins
+     (`'none'` with none), X-Frame-Options removed, `no-store`.
+   * **`app.framedContentSecurityPolicy()` narrows `script-src` to exact
+     sources**: only `'none'`, `'self'` and `'sha256/384/512-…'` pass;
+     `'unsafe-inline'`, `'unsafe-eval'`, `*`, a host, a scheme or a nonce is
+     dropped, and nothing left is `'none'`. The framed door is where an
+     inline allowance would hurt most, so it is refused there by
+     construction rather than by convention.
+   * **`/oauth2/check_session.js` is GONE**, with its `sts_metadata.ts`
+     entry and its prose-catalog keys: nothing referenced it but the page
+     and the tests of it. No back-compatibility path: a relying party never
+     named it (only `check_session_iframe` is published).
+
+   Option B (the script at a versioned, immutable URL) was rejected because
+   a browser's first visit still makes two requests, and the first Session
+   Management module of a plan is exactly the one that timed out; option C
+   (a test browser near the OP) changes the tester, not the OP, and leaves
+   real relying parties' first poll racing.
 
    **NOT DONE, AND ON THE CARD**: a session that EXPIRES or that an
    administrator ends keeps its cookie, so the iframe says `unchanged` until
@@ -5340,7 +5387,7 @@ failure in its driver):
   two origins the wrong way round), so it refuses to load the OP iframe
   framed from the suite's origin, which this OP lists. Shown by driving
   HtmlUnit directly: refused as served; with the OP's own origin added to
-  the header it loads, runs `check_session.js` and answers. Listing that
+  the header it loads, runs the iframe's script and answers. Listing that
   origin here would mean taking it from the request (the suite reaches the
   OP as `sts:8081`), so the module is argued, and the iframe is held by
   `tests/session_management.js` and `tests/protocol/sts_session_management.js`.

@@ -3083,10 +3083,6 @@
     "en": "67b6934792210c8e",
     "text": "Session Management avsnitt 3.2 (#121), medan oauth2.sessionManagement är på i sfären, och annars en 404 som namnger den inställningen. En förlitande part ramar in den och postar \"client_id session_state\"; dess skript jämför det med det OP-webbläsartillstånd det kan läsa och svarar changed, unchanged eller error. Den enda sidan här som får ramas in, och endast av ursprungen för sfärens registrerade omdirigerings-URI:er."
   },
-  "stsmetadata.endpoints./oauth2/check_session.js.what": {
-    "en": "d0428e57643dabd6",
-    "text": "OP-iframens enda skript, serverat från det här ursprunget eftersom varje sida här körs under script-src 'none' eller 'self'. Besvarar ett postMessage med changed, unchanged eller error, postat endast till det frågande ursprunget."
-  },
   "stsmetadata.endpoints./oauth2/logout.what": {
     "en": "bfeb68315a7d7f5f",
     "text": "Det som end_session_endpoint i OIDC:s discovery-dokument pekar på, på GET och POST (#124). Begäran valideras INNAN något avslutas; en id_token_hint verifieras som en ID Token som den här servern utfärdat (en som gått ut räknas fortfarande) och namnger klienten; personen ombeds bekräfta om inte den ledtråden gäller just den här sessionen; post_logout_redirect_uri följs endast när klienten har registrerat den exakt — utvecklingsläget följer fortfarande en för en klient som inte registrerat någon, produktläget gör det inte — och state skickas tillbaka med den. Vägranden är sidor, inte JSON."

@@ -111,6 +111,13 @@ function childMain() {
       return screen.call({ port: port, jar: jar, method: 'GET',
                            path: p.replace(/^https?:\/\/[^/]+/, '') });
     };
+    // #1297: the OP iframe's script is inline in its page; this is the text
+    // of its one `<script>`, as the page carries it.
+    const iframeScript = async function () {
+      const page = await get({}, sm.IFRAME_PATH);
+      const m = /<script>([\s\S]*?)<\/script>/.exec(String(page.text || ''));
+      return Object.assign({}, page, { text: m ? m[1] : '' });
+    };
     const json = function (jar, method, p, body, csrf) {
       return screen.call({ port: port, jar: jar, method: method,
         path: p.replace(/^https?:\/\/[^/]+/, ''),
@@ -271,7 +278,7 @@ function childMain() {
          '2. off: IsPassive with no session is NoPassive, today\'s sentence',
          JSON.stringify(f.saml));
     config.setOverride('oauth2.sessionManagement', 'true');
-    let r = await get({}, sm.SCRIPT_PATH);
+    let r = await iframeScript();
     note(r.status === 200 && crypto.createHash('sha256').update(r.text)
            .digest('hex') === BEFORE && r.text === sm.IFRAME_SCRIPT,
          '3. off: the OP iframe\'s script is byte for byte the one before ' +
@@ -430,7 +437,7 @@ function childMain() {
                           paramsOf(f.final).get('code') }));
     f = await drive(jar, authorize({ login_hint: BOB }), '');
     const bobState = paramsOf(f.final).get('session_state') || '';
-    r = await get({}, sm.SCRIPT_PATH);
+    r = await iframeScript();
     note(r.text === sm.IFRAME_SCRIPT_ACCOUNTS && r.text !== sm.IFRAME_SCRIPT,
          '7b. and the script served is the one that reads the list');
     const ask = async function (cookie, state) {

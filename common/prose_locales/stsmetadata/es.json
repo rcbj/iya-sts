@@ -3083,10 +3083,6 @@
     "en": "67b6934792210c8e",
     "text": "Session Management sección 3.2 (#121), mientras oauth2.sessionManagement está activo en el dominio, y un 404 que nombra ese ajuste en caso contrario. Una parte que confía lo enmarca y envía \"client_id session_state\"; su script lo compara con el estado de navegador del OP que puede leer y responde changed, unchanged o error. La única página de aquí que se puede enmarcar, y solo desde los orígenes de los URI de redirección registrados del dominio."
   },
-  "stsmetadata.endpoints./oauth2/check_session.js.what": {
-    "en": "d0428e57643dabd6",
-    "text": "El único script del iframe del OP, servido desde este origen porque cada página de aquí se ejecuta bajo script-src 'none' o 'self'. Responde a un postMessage con changed, unchanged o error, enviado solo al origen que pregunta."
-  },
   "stsmetadata.endpoints./oauth2/logout.what": {
     "en": "bfeb68315a7d7f5f",
     "text": "Adonde apunta end_session_endpoint en el documento de discovery de OIDC, en GET y POST (#124). La solicitud se valida ANTES de que termine nada; un id_token_hint se verifica como un ID Token que emitió este servidor (uno caducado sigue contando) y nombra al cliente; se pide confirmación a la persona salvo que esa pista sea para esta misma sesión; post_logout_redirect_uri solo se sigue cuando el cliente lo registró exactamente (desarrollo todavía sigue uno para un cliente que no registró ninguno, producto no) y state vuelve con él. Los rechazos son páginas, no JSON."

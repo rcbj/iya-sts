@@ -2168,6 +2168,11 @@ When it is on:
   posts `client_id session_state`. It answers `changed`, `unchanged` or
   `error`.
 * Only the origins of the realm's registered redirect URIs may frame it.
+* The iframe is one document: its script is inline, and its
+  `Content-Security-Policy` admits exactly that script by its SHA-256
+  (`script-src 'sha256-…'`), never `'unsafe-inline'`. So the iframe is
+  listening as soon as the page has loaded, and a relying party that posts
+  once, soon after loading it, gets an answer.
 
 The OP browser state is the cookie `sts_op_browser_state`. Script can read
 it, and on an HTTPS port it is `SameSite=None` so the iframe is sent it. It

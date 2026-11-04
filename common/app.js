@@ -822,14 +822,51 @@ const CONTENT_SECURITY_POLICY = contentSecurityPolicy({});
 // `contentSecurityPolicy()` above keeps its rule unchanged: this is a second,
 // named door, so that a relaxation cannot grow into a framing permission by
 // accident.
+//
+// **ITS `script-src` NAMES SCRIPTS EXACTLY, OR NOT AT ALL** (#1297). The OP
+// iframe carries its script inline under the SHA-256 of that text (rcbj's
+// option A, `oauth-oidc/CLAUDE.md` 3ax), so this door must take a hash
+// source — and a framed page is exactly where `'unsafe-inline'` would hurt
+// most. So the only tokens it passes in `script-src` are `'none'`, `'self'`
+// and `'sha256-…'` / `'sha384-…'` / `'sha512-…'`; anything else
+// (`'unsafe-inline'`, `'unsafe-eval'`, `*`, a host, a scheme, a nonce) is
+// dropped, and nothing left is `'none'`. Nothing calls it with one today;
+// the rule is here so nothing can.
 // ---------------------------------------------------------------------------
+const FRAMED_SCRIPT_SOURCE =
+  /^'(?:none|self|sha(?:256|384|512)-[A-Za-z0-9+/]+={0,2})'$/;
+
+/**
+ * Narrows a `script-src` value to the sources that name a script exactly.
+ *
+ * @param value - the value asked for, or null/undefined for the base's
+ * @returns the value with every other token dropped, `'none'` when empty
+ */
+function exactScriptSources(value) {
+  log.debug("Entering exactScriptSources().");
+  const kept = String(value === null || value === undefined
+    ? CSP_DIRECTIVES['script-src'] : value)
+    .split(/\s+/)
+    .filter(function (one) {
+      return FRAMED_SCRIPT_SOURCE.test(one);
+    });
+  // `'none'` beside a source is meaningless (CSP3 section 2.3.1), so it
+  // goes when anything else is kept.
+  const sources = kept.filter(function (one) {
+    return one !== "'none'";
+  });
+  log.debug("Leaving exactScriptSources(). " + sources.length + " kept.");
+  return sources.length ? sources.join(' ') : "'none'";
+}
+
 /**
  * Builds the policy for the one page that may be framed (the OpenID Connect
  * Session Management OP iframe), with `frame-ancestors` narrowed to named
  * origins.
  *
  * Anything that is not an http or https origin is dropped, and an empty list is
- * `'none'`.
+ * `'none'`. `script-src` keeps only `'self'` and hash sources (#1297): never
+ * `'unsafe-inline'`.
  *
  * @param origins - the origins that may frame the page
  * @param overrides - directive names to values, as for
@@ -845,6 +882,7 @@ function framedContentSecurityPolicy(origins, overrides) {
     });
   const merged = Object.assign({}, CSP_DIRECTIVES, overrides || {});
   merged['base-uri'] = CSP_DIRECTIVES['base-uri'];
+  merged['script-src'] = exactScriptSources(merged['script-src']);
   merged['frame-ancestors'] = allowed.length ? allowed.join(' ')
                                              : CSP_DIRECTIVES['frame-ancestors'];
   log.debug("Leaving framedContentSecurityPolicy(). " + allowed.length +

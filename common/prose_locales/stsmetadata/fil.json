@@ -3083,10 +3083,6 @@
     "en": "67b6934792210c8e",
     "text": "Session Management section 3.2 (#121), habang naka-on ang oauth2.sessionManagement sa realm, at 404 na nagpapangalan sa setting na iyon kung hindi. Ifine-frame ito ng relying party at nagpo-post ng \"client_id session_state\"; ikinukumpara iyon ng script nito sa OP browser state na nababasa nito at sumasagot ng changed, unchanged o error. Ang nag-iisang page dito na maaaring i-frame, at ng mga origin lamang ng mga rehistradong redirect URI ng realm."
   },
-  "stsmetadata.endpoints./oauth2/check_session.js.what": {
-    "en": "d0428e57643dabd6",
-    "text": "Ang nag-iisang script ng OP iframe, inihahain mula sa origin na ito dahil tumatakbo ang bawat page dito sa ilalim ng script-src 'none' o 'self'. Sinasagot ang postMessage ng changed, unchanged o error, ipinopost lamang sa nagtatanong na origin."
-  },
   "stsmetadata.endpoints./oauth2/logout.what": {
     "en": "bfeb68315a7d7f5f",
     "text": "Ang itinuturo ng end_session_endpoint sa OIDC discovery document, sa GET at POST (#124). Vina-validate ang request BAGO may matapos; vine-verify ang id_token_hint bilang ID Token na ibinigay ng server na ito (binibilang pa rin ang expired) at pinangangalanan nito ang client; hinihilingang magkumpirma ang tao maliban kung para mismo sa session na ito ang hint na iyon; sinusundan lamang ang post_logout_redirect_uri kapag eksaktong inirehistro ito ng client — sinusundan pa rin ng development ang isa para sa client na walang inirehistro, hindi ng product — at ibinabalik kasama nito ang state. Mga page ang mga pagtanggi, hindi JSON."

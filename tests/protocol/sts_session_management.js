@@ -10,11 +10,13 @@
 //
 // In a throwaway realm, with no sign-in (runnable in product mode):
 //
-//   a. OFF (the default): the OP iframe and its script are 404s naming
-//      oauth2.sessionManagement, and discovery names no check_session_iframe.
+//   a. OFF (the default): the OP iframe is a 404 naming
+//      oauth2.sessionManagement, discovery names no check_session_iframe, and
+//      the old `/oauth2/check_session.js` is routed by nobody (#1297).
 //   b. ON: discovery names the realm's OP iframe; the iframe page is framable
 //      by the registered relying party's origin and nobody else (no `*`, no
-//      X-Frame-Options), runs one 'self' script, and that script is served.
+//      X-Frame-Options), and carries ONE inline script admitted by
+//      `script-src 'sha256-…'` of its exact text, recomputed here (#1297).
 //   c. prompt=none with no session: login_required carrying a session_state
 //      that verifies, by section 3's formula computed HERE, over the empty
 //      OP browser state — and an OAuth request without openid carries none.
@@ -137,8 +139,9 @@ async function test() {
     assert.ok(/oauth2\.sessionManagement/.test(r.raw), r.raw.slice(0, 200));
     assert.ok(!/Cannot GET/.test(r.raw), r.raw.slice(0, 200));
   });
+  // #1297: the script is inline; its old sibling path is routed by nobody.
   r = await send(base + R + "/oauth2/check_session.js");
-  check("and so is its script", function () {
+  check("and the old script path is not routed at all (#1297)", function () {
     assert.strictEqual(r.status, 404, r.raw.slice(0, 200));
   });
   r = await send(base + R + "/.well-known/openid-configuration");
@@ -169,16 +172,33 @@ async function test() {
               ancestors.indexOf("'none'") < 0, csp);
     assert.strictEqual(r.headers.get("x-frame-options"), null);
   });
-  check("and runs one 'self' script, no inline one", function () {
-    assert.ok(/script-src 'self'/.test(csp), csp);
-    assert.ok(/<script src="check_session\.js"><\/script>/.test(r.raw),
-              r.raw.slice(0, 300));
+  // #1297: ONE document, its script inline, admitted by the SHA-256 of its
+  // exact text and by nothing else.
+  const scripts = [];
+  const scriptRe = /<script([^>]*)>([\s\S]*?)<\/script>/gi;
+  for (let m = scriptRe.exec(r.raw); m; m = scriptRe.exec(r.raw)) {
+    scripts.push({ attributes: m[1], text: m[2] });
+  }
+  const directive = function (name) {
+    const found = csp.split(/;\s*/).filter(function (one) {
+      return one.split(" ")[0] === name;
+    });
+    return found.length === 1 ? found[0].slice(name.length + 1) : null;
+  };
+  check("and carries ONE inline script, no src=", function () {
+    assert.strictEqual(scripts.length, 1, r.raw.slice(0, 300));
+    assert.strictEqual(scripts[0].attributes, "", r.raw.slice(0, 300));
+    assert.ok(!/\ssrc\s*=/i.test(r.raw), r.raw.slice(0, 300));
+    assert.ok(/postMessage/.test(scripts[0].text) &&
+              /sts_op_browser_state/.test(scripts[0].text));
   });
-  r = await send(base + R + "/oauth2/check_session.js");
-  check("and the script is served as JavaScript", function () {
-    assert.strictEqual(r.status, 200);
-    assert.ok(/javascript/.test(r.headers.get("content-type") || ""));
-    assert.ok(/postMessage/.test(r.raw) && /sts_op_browser_state/.test(r.raw));
+  check("whose script-src is exactly its SHA-256, never 'self' or " +
+        "'unsafe-inline'; default-src and base-uri 'none'", function () {
+    const hash = "'sha256-" + crypto.createHash("sha256")
+      .update(scripts[0].text, "utf8").digest("base64") + "'";
+    assert.strictEqual(directive("script-src"), hash, csp);
+    assert.strictEqual(directive("default-src"), "'none'", csp);
+    assert.strictEqual(directive("base-uri"), "'none'", csp);
   });
 
   log.info("=== c. prompt=none with no session ===");
