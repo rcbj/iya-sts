@@ -661,7 +661,8 @@ class DeviceAttestation {
       log.debug("Leaving DeviceAttestation.csrAttestation(). Malformed.");
       return this.refuse('STS-DEVICE-0021', 'The request\'s attestation ' +
                          'attribute cannot be read: ' +
-                         String((e && e.message) || e) + '.');
+                         String((e && e.message) || e).replace(/\.+$/, '') +
+                         '.');
     }
     const tpm = bundle.attestations.filter(function (one: Json): boolean {
       return one.type === stsCrypto.TCG_ATTEST_TPM_CERTIFY;

@@ -333,6 +333,9 @@ function childMain() {
       if (p === '/ro/slow') {
         return;
       }
+      if (p === '/ro/hangup') {
+        return req.socket.destroy();
+      }
       if (p === '/ro/unregistered') {
         res.writeHead(200, { 'content-type': 'application/oauth-authz-req+jwt' });
         return res.end(served['/ro/good']);
@@ -400,7 +403,8 @@ function childMain() {
     make('r91', { oauthRequestUri: [RO + '/ro/good', RO + '/ro/jwt',
                                      RO + '/ro/plain', RO + '/ro/missing',
                                      RO + '/ro/redirect', RO + '/ro/big',
-                                     RO + '/ro/slow', RO + '/ro/digest'] });
+                                     RO + '/ro/slow', RO + '/ro/digest',
+                                     RO + '/ro/hangup'] });
     make('r91-nokeys', { oauthJwks: null });
     make('r91-es256', { oauthRequestObjectSigningAlg: 'ES256' });
     make('r91-enc', { oauthRequestObjectEncryptionAlg: 'RSA-OAEP-256' });
@@ -729,6 +733,18 @@ function childMain() {
     } finally {
       config.clearOverride('oauth2.requestUriTimeoutMs');
     }
+    // 3aw-ii (2026-11-04): a request_uri whose host hangs up is refused in a
+    // sentence that names the address and the cause and ends in ONE full
+    // stop, since a cause's own is dropped before the refusal's is added.
+    // The quotation marks arrive as apostrophes: an error_description may
+    // not carry %x22 (RFC 6749 section 5.2), and the endpoint swaps them.
+    r = await byRef(RO + '/ro/hangup');
+    note(refusedWith(r, 'invalid_request_uri',
+                     /^the request_uri ['"]http[^'"]+\/ro\/hangup['"] could not be (fetched|read): [^.]+[^.]\.$/) &&
+         !/""|''|\.\.$/.test(r.json.error_description),
+         '3aw-ii. a request_uri that hangs up is refused in one sentence, ' +
+         'one full stop at its end',
+         r.text.slice(0, 200));
     served['/ro/digest'] = good('r91');
     applications.updateApplication('r91', { attribute: 'oauthRequestUri',
       mode: 'add', value: digestUri(served['/ro/digest']) });

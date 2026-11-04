@@ -841,8 +841,12 @@ function authorizationRefusal(query, context) {
     log.debug("Leaving authorizationRefusal(). Not code.");
     return refusal('STS-OAUTH-0582', 'unsupported_response_type',
                    'response-type',
-                   'response_type "' + String(q.response_type || '') +
-                   '" is not code, the only one this profile allows (FAPI ' +
+                   (q.response_type
+                     ? 'response_type "' + String(q.response_type) +
+                       '" is not code'
+                     : 'this request names no response_type, and code is ' +
+                       'required') +
+                   ', the only one this profile allows (FAPI ' +
                    '2.0 section 5.3.2.2 item 1)');
   }
   // FAPI 2.0 Message Signing section 5.4.2 item 1 (#141): JARM, required.
@@ -850,8 +854,11 @@ function authorizationRefusal(query, context) {
       JARM_MODES.indexOf(String(q.response_mode || '')) < 0) {
     log.debug("Leaving authorizationRefusal(). Not JARM.");
     return refusal('STS-OAUTH-0591', 'invalid_request', 'jarm-required',
-                   'response_mode "' + String(q.response_mode || '') + '" ' +
-                   'is not a JWT-secured one; this profile requires JARM ' +
+                   (q.response_mode
+                     ? 'response_mode "' + String(q.response_mode) + '" ' +
+                       'is not a JWT-secured one'
+                     : 'this request names no response_mode') +
+                   '; this profile requires JARM ' +
                    '(FAPI 2.0 Message Signing section 5.4.2 item 1) — ' +
                    'response_mode=jwt');
   }
@@ -867,19 +874,26 @@ function authorizationRefusal(query, context) {
       log.debug("Leaving authorizationRefusal(). code without JARM.");
       return refusal('STS-OAUTH-0783', 'invalid_request', 'response-type',
                      'response_type "code" is allowed only with ' +
-                     'response_mode=jwt (JARM), and this request\'s ' +
-                     'response_mode is "' + String(q.response_mode || '') +
-                     '" (Part 2 section 5.2.2 item 2)');
+                     'response_mode=jwt (JARM), and this request ' +
+                     (q.response_mode
+                       ? 'asks for response_mode "' +
+                         String(q.response_mode) + '"'
+                       : 'names no response_mode') +
+                     ' (Part 2 section 5.2.2 item 2)');
     }
     if (!(type === 'code id_token' || (type === 'code' && jarm))) {
       log.debug("Leaving authorizationRefusal(). A response type Advanced " +
                 "does not allow.");
       return refusal('STS-OAUTH-0582', 'unsupported_response_type',
                      'response-type',
-                     'response_type "' + String(q.response_type || '') +
-                     '"' + (q.response_mode ? ' with response_mode "' +
-                     q.response_mode + '"' : '') + ' is not one this ' +
-                     'profile allows: it is `code id_token`, or `code` ' +
+                     (q.response_type
+                       ? 'response_type "' + String(q.response_type) + '"' +
+                         (q.response_mode ? ' with response_mode "' +
+                         q.response_mode + '"' : '') + ' is not one this ' +
+                         'profile allows'
+                       : 'this request names no response_type, and this ' +
+                         'profile requires one') +
+                     ': it allows `code id_token`, or `code` ' +
                      'with response_mode=jwt (JARM) (Part 2 section 5.2.2 ' +
                      'item 2)');
     }

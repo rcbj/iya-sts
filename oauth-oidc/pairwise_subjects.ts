@@ -564,8 +564,9 @@ class PairwiseSubjects {
       }).catch(function (e: Json) {
         log.debug("Caught in PairwiseSubjects.sectorIdentifierProblem(): " +
                   ((e && e.message) || e));
+        // The cause's own full stop is dropped before ours is added.
         return refusal('"' + uri + '" could not be fetched: ' +
-                       ((e && e.message) || e) + '.');
+                       String((e && e.message) || e).replace(/\.+$/, '') + '.');
       });
   }
 }

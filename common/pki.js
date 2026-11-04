@@ -5362,7 +5362,9 @@ async function registerCertificate(realmId, opts) {
       log.debug('Leaving registerCertificate(). An unreadable certificate.');
       return uploadRefusal('STS-PKI-0143', 'Certificate ' + (i + 1) + ' of ' +
                            everything.length + ' in the upload could not be ' +
-                           'read: ' + e.message + '.');
+                           'read: ' +
+                           String((e && e.message) || e).replace(/\.+$/, '') +
+                           '.');
     }
     const key = cert.raw.toString('base64');
     if (seen[key]) {
@@ -5552,7 +5554,8 @@ async function registerCertificate(realmId, opts) {
       log.debug("Caught in registerCertificate(): " + ((e && e.message) || e));
       log.debug('Leaving registerCertificate(). The path would not parse.');
       return uploadRefusal('STS-PKI-0143', 'The chain could not be read: ' +
-                           e.message + '.');
+                           String((e && e.message) || e).replace(/\.+$/, '') +
+                           '.');
     }
     for (let i = 0; i < links.length; i++) {
       const link = links[i];
@@ -5955,7 +5958,8 @@ async function verifySignerChain(realmId, material) {
     log.debug("Caught in verifySignerChain(): " + ((e && e.message) || e));
     log.debug('Leaving verifySignerChain(). Unreadable.');
     return refuse('STS-PKI-0161', 'A certificate in ' + source + ' could not ' +
-                  'be read: ' + e.message + '.');
+                  'be read: ' +
+                  String((e && e.message) || e).replace(/\.+$/, '') + '.');
   }
   const leafName = oneLineName(leaf.cert.subject);
 
@@ -6000,7 +6004,8 @@ async function verifySignerChain(realmId, material) {
       log.debug('Leaving verifySignerChain(). The pinned certificate would ' +
                 'not parse.');
       return refuse('STS-PKI-0161', 'The certificate "' + leafName + '" in ' +
-                    source + ' could not be read: ' + e.message + '.');
+                    source + ' could not be read: ' +
+                    String((e && e.message) || e).replace(/\.+$/, '') + '.');
     }
     const broken = linkProblem(links);
     if (broken) {
@@ -6118,7 +6123,9 @@ async function verifySignerChain(realmId, material) {
     log.debug("Caught in verifySignerChain(): " + ((e && e.message) || e));
     log.debug('Leaving verifySignerChain(). The path would not parse.');
     return refuse('STS-PKI-0161', 'The chain of "' + leafName + '" could not ' +
-                  'be read: ' + e.message + '.', { path: chainSubjects });
+                  'be read: ' +
+                  String((e && e.message) || e).replace(/\.+$/, '') +
+                  '.', { path: chainSubjects });
   }
   // The foreign rule of `alternativeProblem()` (#68): wrong is refused.
   const altProblem = await alternativeProblem(path.map(function (one) {

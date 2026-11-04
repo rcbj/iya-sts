@@ -3442,7 +3442,8 @@ async function adoptDekRow(rowKey, text, fatal) {
     row = parseDekRow(text);
   } catch (e) {
     log.error(errorCodes.tag('STS-KEYS-0094') + 'keystore: the "' + rowKey +
-              '" data-key row could not be read: ' + e.message + '.');
+              '" data-key row could not be read: ' +
+              String((e && e.message) || e).replace(/\.+$/, '') + '.');
     if (fatal) {
       throw new Error(errorCodes.tag('STS-KEYS-0094') + 'the "' + rowKey +
                       '" data-key row could not be read: ' + e.message);
@@ -5655,7 +5656,8 @@ function writePkiNow(rowKey, payload) {
     }, function (e) {
       log.error(errorCodes.tag('STS-KEYS-0042') +
                 'keystore: the "' + id + '" realm\'s certificate authority ' +
-                'could not be removed from the store: ' + e.message + '.');
+                'could not be removed from the store: ' +
+                String((e && e.message) || e).replace(/\.+$/, '') + '.');
       return { ok: false, error: e.message, lost: [] };
     });
   }

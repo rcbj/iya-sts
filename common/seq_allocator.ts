@@ -363,8 +363,8 @@ class SeqAllocator {
       log.debug('Caught in SeqAllocator.lease(): ' + ((e && e.message) || e));
       log.warn(errorCodes.tag('STS-STORE-0077') +
                'seq_allocator: a block of "' + stream.name +
-               '" numbers could not be leased: ' + ((e && e.message) || e) +
-               '.');
+               '" numbers could not be leased: ' +
+               String((e && e.message) || e).replace(/\.+$/, '') + '.');
     }).then(function () {
       stream.leasing = false;
     });
