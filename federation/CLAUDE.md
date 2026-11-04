@@ -1942,7 +1942,8 @@ has not reached is still missed. `tests/federation_group_authority.js` section W
 `tests/granting_index_backfill.js` for the backfill.
 
 **AND IN PRODUCT, A NEWCOMER THE ATTRIBUTE POLICY REFUSES IS `STS-FED-0158` ON THE PAGE
-(#396 with #358).** `ldap_server.js`'s `autoCreateUser()` writes `refusedWith` and the
+(#396 with #358)** — once the newcomer's form (#701) could not supply what is
+missing; see *A NEWCOMER THE ATTRIBUTE POLICY WOULD REFUSE*. `ldap_server.js`'s `autoCreateUser()` writes `refusedWith` and the
 missing attributes on the sign-in's own `federation` object, and `startFederatedSession()`
 answers that before the generic `STS-FED-0090` *the directory declined*.
 `tests/federation_subject_policy.js` 1m-0. **This said, until #1306, that a directory
@@ -2128,8 +2129,14 @@ mapped ones, a `cn` made of the names — to the realm's attribute policy
 (`common/CLAUDE.md` 3co, `ldap/CLAUDE.md`). One missing a required attribute
 creates nobody (STS-FED-0158, logged), and `authn.startSession()` refuses the
 sign-in as it refuses an unprovisioned person. rcbj's choice on #396 was this
-refusal over exempting the door; a sign-in step that asks the person for what
-the partner did not send is a follow-up ticket.
+refusal over exempting the door. **Since #701 (2026-11-04) the person is ASKED
+first, for every relationship**: `startFederatedSession()` sends any newcomer
+the policy would refuse to `/federation/profile/{handle}`, the step #729 built
+for consumer providers (*CONSUMER AND SOCIAL PROVIDERS*, below, has the
+mechanics), so STS-FED-0158 is left for a required name nobody can be given a
+value of, and for a form's return whose values still leave the policy unmet —
+a return is never asked again, because a fresh form would reset the five-try
+cap.
 
 ## CONSUMER AND SOCIAL PROVIDERS (#565, 2026-10-19)
 
@@ -2232,8 +2239,13 @@ The ones a reader of this directory needs:
   `profileSupplied` back through `completeSignIn()`, so the subject decision,
   the creation question and the policy are asked again, and only onto an
   entry this sign-in CREATES (`withProfileValues()`). A typed address is
-  unverified. An enterprise partner keeps the refusal: its mapping is where
-  a missing attribute is supplied.
+  unverified. **#729 kept the refusal for an enterprise partner, on the
+  argument that its mapping is where a missing attribute is supplied; #701
+  reversed that (rcbj's choice, 2026-11-04)**, and every relationship's
+  newcomer is asked. The mapping still wins wherever it says anything:
+  `withProfileValues()` never replaces a value the partner sent, and the
+  form asks only what is missing. `profileContext()` no longer asks the
+  category either.
 * **NO SESSION OUTLIVES A REFUSED SIGN-IN** (rcbj's decision 3 on #729). The
   step-up's second factor starts a local session before the browser returns
   to `/federation/stepup/{handle}`; `holdStepUpSession()` holds it on the

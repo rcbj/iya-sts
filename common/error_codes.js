@@ -12814,9 +12814,12 @@ const CODES = [
   { code: 'STS-FED-0158',
     summary: 'A federated first sign-in created nobody: in a product-mode ' +
       'realm the partner supplied no value of an attribute the realm\'s ' +
-      'attribute policy requires of every person (#396), so the sign-in ' +
-      'is refused as one for a person nobody provisioned. Map the attribute ' +
-      'from the partner, or provision the person first.',
+      'attribute policy requires of every person (#396), and the person ' +
+      'could not be asked for it at /federation/profile/{handle} (#701: no ' +
+      'person can be given a value of that attribute, or the values they ' +
+      'gave still left the policy unmet), so the sign-in is refused as one ' +
+      'for a person nobody provisioned. Map the attribute from the ' +
+      'partner, or provision the person first.',
     spec: 'HTTP 403 page (the session refusal is audited STS-AUTHN-0180)' },
   { code: 'STS-FED-0161',
     summary: 'A group name in a partner\'s assertion was not applied: it ' +
@@ -12944,11 +12947,12 @@ const CODES = [
   // STEP-UP'S SESSION ENDED WITH ITS REFUSAL (rcbj's decisions 2 and 3 on
   // #729).
   { code: 'STS-FED-0188',
-    summary: 'A consumer provider signed in a newcomer without a value this ' +
-      'realm\'s attribute policy requires of every person (product mode), ' +
-      'so the person was sent to /federation/profile/{handle} to give ' +
-      'exactly the missing values before the account is created (#729). ' +
-      'Nothing was created yet.',
+    summary: 'A federation partner signed in a newcomer without a value ' +
+      'this realm\'s attribute policy requires of every person (product ' +
+      'mode), so the person was sent to /federation/profile/{handle} to ' +
+      'give exactly the missing values before the account is created ' +
+      '(#729 for consumer providers, #701 for every relationship). Nothing ' +
+      'was created yet.',
     spec: 'HTTP 303 to the form; the code is not in the body' },
   { code: 'STS-FED-0189',
     summary: 'A /federation/profile/{handle} submission did not carry the ' +

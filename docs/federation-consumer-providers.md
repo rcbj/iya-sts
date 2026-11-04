@@ -271,7 +271,8 @@ sets itself, such as `state`, `nonce` and `redirect_uri`, are refused.
   relaxed. This covers Sign in with Apple, which sends the name on the first
   authorization only. An address typed there is recorded as unverified. The
   form is good for one sign-in, in the browser it started in, and for five
-  tries.
+  tries. The same form is shown for an enterprise partner's newcomer
+  (#701); see [Federation](federation.md).
 * **An email address is never used to find an existing person**, whether or
   not it is verified. A local person with the same name and the same address
   is left exactly as they were. `any-existing` is refused on these

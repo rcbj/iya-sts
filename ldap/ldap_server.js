@@ -8264,8 +8264,12 @@ function autoCreateUser(detail) {
   // it — the plan's attributes and the partner's, a `cn` made of the names —
   // is asked before anything is written, and one missing a required
   // attribute creates nobody. `authn.startSession()` then refuses the
-  // sign-in as it refuses a person nobody provisioned. The partner's mapping
-  // (`federation/CLAUDE.md`) is where a missing attribute is supplied, or
+  // sign-in as it refuses a person nobody provisioned. THE BACKSTOP SINCE
+  // #701: the federation door asks the policy the same question first and
+  // sends the newcomer to a form for what is missing
+  // (`federation/CLAUDE.md`), so this is reached only for a name nobody can
+  // be asked for, or a form whose values still fall short. The partner's
+  // mapping is where a missing attribute is supplied without the form, or
   // the person is provisioned ahead of time.
   if (info.federation) {
     const prospective = Object.assign({}, plan.attributes);

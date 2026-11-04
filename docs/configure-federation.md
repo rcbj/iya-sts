@@ -91,7 +91,9 @@ not permissive in development. What changes is what you must fill in.
 * **The attributes a new person must hold.** In product, a person a sign-in
   creates must meet the realm's attribute policy: by default a given name, a
   surname and an address. Map them from the partner's names with
-  `fedAttributeMap` (below), or the sign-in is refused (`STS-FED-0158`).
+  `fedAttributeMap` (below). Otherwise the person is asked for the missing
+  values on a short form before the account is created (`STS-FED-0188`), and
+  an address they type is recorded as unverified.
 * **Plaintext assertions.** Product refuses a plaintext SAML 2.0 or
   WS-Federation assertion, and a signed-only ID Token by `form_post`
   (`STS-FED-0140`). Have the partner encrypt
@@ -533,8 +535,9 @@ switch in **Switches**.
 | `fedProvisionCap` | empty (unlimited for an enterprise partner) | how many people this relationship may create |
 | `fedProvisionIdleMinutes` | empty (off) | disable a person whose only way in is this relationship, once they have not signed in for this long |
 
-**For product mode, map the names the attribute policy needs.** Taken from
-`sts_federation_consumer.js`:
+**For product mode, map the names the attribute policy needs.** A newcomer
+whose partner sends none of them is asked for them on a form instead. Taken
+from `sts_federation_consumer.js`:
 
 ```bash
 for m in given_name=givenName family_name=sn email=mail; do

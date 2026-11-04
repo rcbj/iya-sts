@@ -14208,9 +14208,12 @@ suite SWEPT rather than the policy weakened for it.
   `default` profile in product mode, and the custom attributes are the
   `CustomAttributes` extension, read and written (`scim/CLAUDE.md`, *THE
   REALM'S SCHEMAS*).
-* **Left for follow-up tickets**, as the design comment says:
-  a sign-in step that collects a missing value instead of refusing a
-  federated newcomer.
+* **A federated newcomer is ASKED rather than refused (#701)**: the
+  federation door holds the entry it would write to `createRefusal()` before
+  the session and sends the person to `/federation/profile/{handle}` for the
+  missing values (`federation/CLAUDE.md`, *A NEWCOMER THE ATTRIBUTE POLICY
+  WOULD REFUSE*); `autoCreateUser()`'s STS-FED-0158 is the backstop. The
+  policy is not relaxed: the person supplies what it requires.
 
 `tests/attribute_policy.js` holds it in process, and
 `tests/attribute_policy_named.js` the named profiles (#1241).

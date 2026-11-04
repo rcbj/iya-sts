@@ -3308,17 +3308,27 @@ class FederationSp {
   }
 
   // ---------------------------------------------------------------------------
-  // WHAT A CONSUMER NEWCOMER IS ASKED FOR (rcbj's decision 2 on #729).
+  // WHAT A FEDERATED NEWCOMER IS ASKED FOR (rcbj's decision 2 on #729, for
+  // consumer providers; every relationship since #701, rcbj's choice there).
   //
-  // A consumer provider's newcomer is created by the sign-in, and in product
-  // mode this realm's attribute policy (#396, `common/attribute_policy.ts`)
-  // refuses a create that leaves a required attribute empty — so a provider
-  // that sends no surname, or Apple, which sends the name on the FIRST
-  // authorization only, would refuse the person at the door (STS-FED-0158).
-  // Nothing in the policy is relaxed: the person is asked for EXACTLY the
-  // required values the provider did not send, on a short form of the
-  // federation surface (`/federation/profile/{handle}`, common/CLAUDE.md
-  // 3cl), and the account is created from the provider's values and theirs.
+  // A newcomer is created by the sign-in, and in product mode this realm's
+  // attribute policy (#396, `common/attribute_policy.ts`) refuses a create
+  // that leaves a required attribute empty — so a provider that sends no
+  // surname, Apple, which sends the name on the FIRST authorization only, or
+  // an enterprise partner whose assertion or mapping carries no address,
+  // would refuse the person at the door (STS-FED-0158). Nothing in the
+  // policy is relaxed: the person is asked for EXACTLY the required values
+  // the partner did not send, on a short form of the federation surface
+  // (`/federation/profile/{handle}`, common/CLAUDE.md 3cl), and the account
+  // is created from the partner's values and theirs.
+  //
+  // * #729 kept the refusal for an ENTERPRISE partner, on the argument that
+  //   its mapping (`fedAttributeMap`) is where a missing attribute is
+  //   supplied. #701 reversed that: the person is asked whatever the
+  //   category, and a value the partner DOES send is never replaced by a
+  //   typed one (`withProfileValues()`), so a mapping still wins wherever it
+  //   says anything. STS-FED-0158 is left for a name nobody can be asked
+  //   for, and for a form whose values still leave the policy unmet.
   //
   // * The answer is the entry as this sign-in would write it — `uid`, the
   //   mapped attributes, a `cn` made of the names (`deriveCommonName()`) —
@@ -3495,8 +3505,7 @@ class FederationSp {
     }
     const record = federation.get(context.id);
     if (!record || record.fedRole !== 'service-provider' ||
-        !federation.signsIn(record) || !federation.isUsable(record) ||
-        consumerProviders.categoryOf(record) !== 'consumer') {
+        !federation.signsIn(record) || !federation.isUsable(record)) {
       errorCodes.mark(res, record && federation.isEnabled(record)
         ? 'STS-FED-0006' : 'STS-FED-0005');
       log.debug("Leaving FederationSp.profileContext(). Not usable now.");
@@ -3924,10 +3933,13 @@ class FederationSp {
           'The assertion verified, and this service will not create an ' +
           'account from it.');
       }
-      // WHAT THE ATTRIBUTE POLICY NEEDS AND THE PROVIDER DID NOT SEND
-      // (rcbj's decision 2 on #729): a consumer provider's newcomer is
-      // asked for it before anything is created. See profileMissing().
-      if (consumerProviders.categoryOf(record) === 'consumer') {
+      // WHAT THE ATTRIBUTE POLICY NEEDS AND THE PARTNER DID NOT SEND
+      // (rcbj's decision 2 on #729, for every relationship since #701): the
+      // newcomer is asked for it before anything is created. See
+      // profileMissing(). A held answer the form returns with
+      // (`profileSupplied`) is not asked again: what is still missing then
+      // is the directory's refusal, STS-FED-0158, below.
+      if (!result.profileSupplied) {
         const asked = this.profileMissing(username, mapped);
         if (asked.length && asked.every((n) => this.profileAskable(n))) {
           log.debug("Leaving FederationSp.startFederatedSession(). Asking " +
