@@ -4092,12 +4092,34 @@ function sessionIndexChangeFloor() {
   return sessionIndexFloor;
 }
 
+// How many skipped bodies the backfill names one line each; past it only the
+// count at the end says more (a store whose every body is unreadable must not
+// write a line per row).
+const SESSION_SKIP_LINES = 10;
+
 // Fills `sts_sessions` from sealed `authn.sessions` rows until the completion
 // row commits with the last page (#350). A non-empty table is not that mark:
 // another node may already have written a live row, and deleting would throw
 // that row away. A throw leaves the mark unwritten, so the next start walks
 // again. Upserts are idempotent. SQL cannot open the bodies. Expired rows
 // are included; a tombstone is the only absence.
+//
+// A BODY THAT WILL NOT OPEN IS SKIPPED, AND THE WALK STILL FINISHES (#695,
+// rcbj's decision). Until #695 it threw, and `persistence.start()` treats a
+// throw here as fatal, so one corrupt row stopped the service from starting
+// on every attempt. Now a body that will not open, will not parse or yields
+// no index columns is logged under STS-STORE-0161 (an operator's signal,
+// never sent), counted, and left where it is; the rest of its page is
+// written, and the last page writes the completion mark as before.
+//
+// "Done" with skips is DONE, and that is argued rather than assumed: a
+// skipped body is one this process cannot read with the keys it holds, and
+// a re-run with the same keys reads the same bytes and skips them again, so
+// leaving the mark unwritten would only buy a walk of every session on every
+// start for nothing. Those sessions are lost — no reader opens them either:
+// a restore leaves an unreadable row out, and the session window answers a
+// failed read rather than a session, so the person is not signed in and
+// signs in again — and the line at the end says how many.
 function backfillSessionIndex() {
   log.debug("Entering backfillSessionIndex().");
   const active = /** @type {any} */ (driver);
@@ -4132,10 +4154,48 @@ function backfillSessionIndex() {
     log.debug("Leaving mark().");
     throw err;
   }
-  // Every body in the page is opened before that page's transaction, so one
-  // that will not open throws before the batch commits. A live body with no
-  // columns is the same failure: skipping it would leave a hole the mark
-  // would then call finished.
+  // How many bodies the walk skipped (#695), across every page.
+  let skipped = 0;
+  // One body of a page, opened and indexed, or null where it is skipped.
+  function indexedOrSkipped(one) {
+    log.debug("Entering indexedOrSkipped().");
+    let why = '';
+    let columns = null;
+    try {
+      const text = keystore.open(one.body, 'minted-rows');
+      if (text == null) {
+        why = 'it will not open under this process\'s keys';
+      } else {
+        columns = indexColumns(row, JSON.parse(text));
+        if (!columns) {
+          why = 'it yields no index columns';
+        }
+      }
+    } catch (e) {
+      // A throw from opening or parsing is the same unreadable body as a
+      // null: skipped and counted below, never the end of the walk.
+      log.debug("Caught in indexedOrSkipped(): " + ((e && e.message) || e));
+      why = 'it will not open or parse (' + ((e && e.message) || e) + ')';
+    }
+    if (why) {
+      skipped += 1;
+      if (skipped <= SESSION_SKIP_LINES) {
+        log.error(errorCodes.tag('STS-STORE-0161') + 'persistence: the ' +
+                  'session index backfill skipped the stored session "' +
+                  one.key + '" in realm "' + (one.realm || '') + '": ' +
+                  why + '. That session is lost.');
+      }
+      log.debug("Leaving indexedOrSkipped(). Skipped.");
+      return null;
+    }
+    log.debug("Leaving indexedOrSkipped().");
+    return { realm: one.realm, key: one.key, body: one.body,
+             index: columns };
+  }
+  // Every body in the page is opened before that page's transaction. One
+  // that cannot be read is skipped (above): it was never indexed, and the
+  // last page's sweep removes only index rows whose body is gone, so a
+  // skipped body's own row, if another node wrote one, is left as it was.
   function fillFrom(afterRealm, afterKey) {
     log.debug("Entering fillFrom().");
     log.debug("Leaving fillFrom().");
@@ -4145,25 +4205,10 @@ function backfillSessionIndex() {
         const rows = page || [];
         const ready = [];
         for (let i = 0; i < rows.length; i++) {
-          const one = rows[i];
-          const text = keystore.open(one.body, 'minted-rows');
-          if (text == null) {
-            throw new Error('a stored session body will not open');
+          const indexed = indexedOrSkipped(rows[i]);
+          if (indexed) {
+            ready.push(indexed);
           }
-          let value;
-          try {
-            value = JSON.parse(text);
-          } catch (e) {
-            log.debug("Caught in a callback in fillFrom(): " +
-                      ((e && e.message) || e));
-            throw e;
-          }
-          const columns = indexColumns(row, value);
-          if (!columns) {
-            throw new Error('a stored session body has no index columns');
-          }
-          ready.push({ realm: one.realm, key: one.key, body: one.body,
-                       index: columns });
         }
         const last = rows.length < SESSION_INDEX_BATCH;
         const writing = (ready.length || last)
@@ -4198,6 +4243,12 @@ function backfillSessionIndex() {
       return fillFrom('', '').then(function () {
         if (sampled !== null) {
           sessionIndexFloor = sampled;
+        }
+        if (skipped) {
+          log.error(errorCodes.tag('STS-STORE-0161') + 'persistence: the ' +
+                    'session index backfill finished and skipped ' + skipped +
+                    ' stored session(s) that could not be read; those ' +
+                    'sessions are lost, and each person signs in again.');
         }
         return null;
       });

@@ -26,6 +26,7 @@ const postgres = require('../persistence/persistence_postgres');
 const replication = require('../persistence/persistence_replication');
 const scheduler = require('../cluster/scheduler');
 const authn = require('../authn/authn');
+const errorCodes = require('../common/error_codes');
 const storeDouble = require('./tools/store_double');
 const flushDouble = require('./tools/minted_flush_double');
 
@@ -819,16 +820,47 @@ async function nullDigestCase(t, handle, captured) {
   log.debug("Leaving nullDigestCase().");
 }
 
+// The codes a call tagged a log line with (#695): `errorCodes.tag()` is the
+// door every tagged line goes through, and it is asked by property, so a
+// stand-in sees each code the backfill records.
+async function taggedDuring(fn) {
+  log.debug("Entering taggedDuring().");
+  const codes = [];
+  const realTag = errorCodes.tag;
+  errorCodes.tag = function (code) {
+    codes.push(String(code));
+    return realTag(code);
+  };
+  try {
+    await fn();
+  } catch (e) {
+    log.debug("Caught in taggedDuring(): " + ((e && e.message) || e));
+    throw e;
+  } finally {
+    errorCodes.tag = realTag;
+  }
+  log.debug("Leaving taggedDuring().");
+  return codes;
+}
+
 async function backfillCases(t, handle) {
   log.debug("Entering backfillCases().");
-  t.log.info('=== backfill opens every body before it writes ===');
+  t.log.info('=== backfill skips a body that will not open, and finishes ' +
+             '(#695) ===');
   const value = sessionValue({ lastSeenAt: 4242 });
   const good = { realm: REALM, key: 'backfill-good', body: sealSession(value) };
   const bad = { realm: REALM, key: 'backfill-bad', body: 'not-a-seal' };
+  // Opens and parses, but is not JSON: the same unreadable body.
+  const garbled = { realm: REALM, key: 'backfill-garbled',
+                    body: keystore.seal('{not json', 'minted-rows',
+                                        tiers.mintedTierOf('authn.sessions'),
+                                        { realm: REALM }) };
+  const after = { realm: REALM, key: 'backfill-later',
+                  body: sealSession(sessionValue({ lastSeenAt: 4343 })) };
   const wrote = [];
   const seen = [];
   const order = [];
-  const pages = [[good, bad]];
+  const pages = [[good, bad, garbled, after]];
   install({
     loadMinted: emptyLoad,
     saveMinted: emptySave,
@@ -852,33 +884,41 @@ async function backfillCases(t, handle) {
       log.debug("Leaving loadSessionBodies().");
       return Promise.resolve(page);
     },
-    writeSessionIndexes: function (rows) {
+    writeSessionIndexes: function (rows, complete) {
       log.debug("Entering writeSessionIndexes().");
-      wrote.push(rows);
+      wrote.push({ rows: rows, complete: complete });
       log.debug("Leaving writeSessionIndexes().");
       return Promise.resolve();
     }
   });
   let failed = null;
-  try {
-    await minted.backfillSessionIndex();
-  } catch (e) {
-    failed = e;
-    log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
-  }
-  t.check(failed && /will not open/.test(failed.message),
-          'a body that will not open throws', failed && failed.message);
-  t.equal(failed && failed.sessionIndexCommitted, undefined,
-          'and a throw before any page commits names nothing written');
-  t.equal(wrote.length, 0, 'and that page writes nothing');
+  const codes = await taggedDuring(function () {
+    return minted.backfillSessionIndex().catch(function (e) {
+      failed = e;
+      log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
+    });
+  });
+  t.equal(failed, null, 'a body that will not open no longer throws',
+          failed && failed.message);
+  t.equal(wrote.length, 1, 'the page is written');
+  t.equal(wrote[0] && wrote[0].complete, true,
+          'and, being the last, it carries the completion row');
+  t.equal(JSON.stringify((wrote[0] ? wrote[0].rows : []).map(function (r) {
+    return r.key;
+  })), JSON.stringify(['backfill-good', 'backfill-later']),
+  'every readable body is migrated, the two unreadable ones are not');
+  t.equal(codes.filter(function (c) {
+    return c === 'STS-STORE-0161';
+  }).length, 3, 'STS-STORE-0161 is recorded per skipped body and once ' +
+          'for the count at the end', JSON.stringify(codes));
   t.equal(seen[0].limit, 500, 'a page asks for 500');
   t.equal(seen[0].afterRealm, '', 'starting from an empty realm');
   t.equal(seen[0].afterKey, '', 'and an empty key');
   t.check(order.indexOf('seq') >= 0 &&
           order.indexOf('seq') < order.indexOf('load'),
           'the change seq is taken before the first page');
-  t.equal(minted.sessionIndexChangeFloor(), null,
-          'a walk that throws publishes no floor');
+  t.equal(minted.sessionIndexChangeFloor(), 17,
+          'a walk that skipped still publishes its floor');
 
   const full = [];
   for (let i = 0; i < 500; i++) {
@@ -920,13 +960,64 @@ async function backfillCases(t, handle) {
     splitFailed = e;
     log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
   }
-  t.check(splitFailed && /will not open/.test(splitFailed.message),
-          'a later page that will not open throws',
+  t.equal(splitFailed, null,
+          'a later page whose only body will not open does not throw',
           splitFailed && splitFailed.message);
-  t.equal(splitWrote.length, 1, 'the page that committed is kept');
+  t.equal(splitWrote.length, 2, 'both pages are written');
   t.equal(splitWrote[0].complete, false,
-          'and it is not marked finished');
-  t.equal(splitFailed.sessionIndexCommitted, true,
+          'the full page is not marked finished');
+  t.equal(splitWrote[0].rows.length, 500, 'and holds all 500 rows');
+  t.equal(splitWrote[1].rows.length, 0,
+          'the last page writes no row for the skipped body');
+  t.equal(splitWrote[1].complete, true,
+          'and still carries the completion row');
+  t.equal(minted.sessionIndexChangeFloor(), 18,
+          'the floor is published once the mark commits');
+
+  // A write that fails is still a throw, and still the start's failure:
+  // only a body that will not open is skipped.
+  const throwPages = [full, [good]];
+  const throwWrote = [];
+  install({
+    loadMinted: emptyLoad,
+    saveMinted: emptySave,
+    origin: testOrigin,
+    sessionIndexDone: function () {
+      log.debug("Entering sessionIndexDone().");
+      log.debug("Leaving sessionIndexDone().");
+      return Promise.resolve(false);
+    },
+    latestChangeSeq: function () {
+      log.debug("Entering latestChangeSeq().");
+      log.debug("Leaving latestChangeSeq().");
+      return Promise.resolve(21);
+    },
+    loadSessionBodies: function () {
+      log.debug("Entering loadSessionBodies().");
+      const page = throwPages.shift() || [];
+      log.debug("Leaving loadSessionBodies().");
+      return Promise.resolve(page);
+    },
+    writeSessionIndexes: function (rows, complete) {
+      log.debug("Entering writeSessionIndexes().");
+      throwWrote.push({ rows: rows, complete: complete });
+      log.debug("Leaving writeSessionIndexes().");
+      return complete
+        ? Promise.reject(new Error('the last page would not commit'))
+        : Promise.resolve();
+    }
+  });
+  let writeFailed = null;
+  try {
+    await minted.backfillSessionIndex();
+  } catch (e) {
+    writeFailed = e;
+    log.debug("Caught in backfillCases(): " + ((e && e.message) || e));
+  }
+  t.check(writeFailed && /would not commit/.test(writeFailed.message),
+          'a page that will not commit still throws',
+          writeFailed && writeFailed.message);
+  t.equal(writeFailed && writeFailed.sessionIndexCommitted, true,
           'the throw says a page has committed');
   t.equal(minted.sessionIndexChangeFloor(), null,
           'a resume head is not the floor until the mark commits');
