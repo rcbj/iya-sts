@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5195** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5197** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 95
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 103
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 105
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
@@ -424,6 +424,8 @@ Raised from: persistence/.
 | `STS-STORE-0163` | The one-time session index backfill found stored sign-on sessions and could read NOT ONE of them (#1312): the key-encryption or data key this process holds is almost certainly not the store's. The completion mark is not written and the start fails, so the next start with the right key walks again; a backfill that reads some and skips others still finishes (STS-STORE-0161). | — |
 | `STS-STORE-0164` | In a service deployed as cells, the minted expiry purge could not read the global realm registry, so it skips its orphan check and deletes no row as an orphan (#1313); its expired and stale rows are still purged and the run is recorded as succeeded, saying why. Logged once when the skipping starts, and a line says when the check is made again. | none — logged once per outage; the run succeeds with a why |
 | `STS-STORE-0165` | The persistence.tombstone-purge-global job, run by the one cell holding the global run claim, could not sweep the global tier's expired tombstones of ended minted rows (#1313); the cell tier's sweep is a job of its own (STS-STORE-0055) and is not affected, and the next run tries again. | none — logged, and the job run is recorded as failed |
+| `STS-STORE-0166` | A run of the persistence.granting-key-backfill job, which gives the directory entries written before #1306 their grantinggroup index keys, stopped on a store error (#1311); the pages it finished are kept, and the next run resumes after the last one. | none — logged; federated provisioning's store question still misses the entries not yet reached |
+| `STS-STORE-0167` | The grantinggroup key backfill (#1311) skipped a directory entry whose sealed attributes do not open in this process, even after the data-key rows were read again; the walk finishes and writes its mark, and the entry is keyed when it is next written. The first few are named, then a count per run. | — |
 
 ## STS-CLUSTER
 

@@ -1502,6 +1502,180 @@ function create(deps) {
     log.debug("Leaving resealEntry().");
   }
 
+  // =========================================================================
+  // THE `grantinggroup` KEYS OF ENTRIES WRITTEN BEFORE #1306, ONCE (#1311)
+  // =========================================================================
+  //
+  // `granting_index_backfill.js`'s walk over MariaDB's statements; the
+  // driver's `indexGrantingKeys()` hands it these. PostgreSQL's arrangement,
+  // with the differences the engine needs: the row form is not a range here,
+  // so a page's cursor is spelled out as an OR (`loadRows()`'s); the JSON
+  // test is `JSON_OVERLAPS` over the clear `attr_names`; and the index is
+  // the `value` key rows as well as the `value_keys` column, so a write
+  // locks the candidates in key order (the flush's order), compares each
+  // blob with the one read, and replaces that entry's `value` key rows in
+  // the same transaction — the entry's own row lock orders it against a
+  // flush of that entry, as `rewriteKeys()` is ordered. The cursor and the
+  // mark are `sts_minted_index` rows, written `INSERT IGNORE` (their values
+  // are bounded: a realm of 64, a DN key of 352, under the column's 512, so
+  // IGNORE hides no strict-mode refusal). No change row: no process holds
+  // `value_keys`.
+  // -------------------------------------------------------------------------
+  const grantingBackfill = require('./granting_index_backfill');
+  const GRANTING_STEP = 'the grantinggroup key backfill';
+
+  function grantingAsk(name, text, values) {
+    log.debug("Entering grantingAsk(). " + name);
+    log.debug("Leaving grantingAsk().");
+    return maintenance(GRANTING_STEP, function () {
+      return send(pool, name, text, values);
+    });
+  }
+
+  function grantingMarkRows(client, deleteKey, insertKey, insertValue) {
+    log.debug("Entering grantingMarkRows().");
+    log.debug("Leaving grantingMarkRows().");
+    return send(client, 'granting.mark', 'INSERT IGNORE INTO ' +
+      'sts_minted_index (handle, realm, index_key, `key`) VALUES (?, \'\', ' +
+      '?, ?)', [grantingBackfill.HANDLE, insertKey, insertValue])
+      .then(function () {
+        return send(client, 'granting.unmark', 'DELETE FROM ' +
+          'sts_minted_index WHERE handle = ? AND realm = \'\' AND ' +
+          'index_key = ? AND `key` <> ?',
+          [grantingBackfill.HANDLE, deleteKey, insertValue]);
+      });
+  }
+
+  const grantingOps = {
+    readState: function () {
+      log.debug("Entering grantingOps.readState().");
+      log.debug("Leaving grantingOps.readState().");
+      return grantingAsk('granting.state', 'SELECT index_key, `key` FROM ' +
+        'sts_minted_index WHERE handle = ? AND realm = \'\' AND index_key ' +
+        'IN (?, ?)', [grantingBackfill.HANDLE, grantingBackfill.MARK_KEY,
+                       grantingBackfill.CURSOR_KEY]).then(function (r) {
+        const rows = dialect.rowsOf(r);
+        const mark = rows.some(function (row) {
+          return row.index_key === grantingBackfill.MARK_KEY;
+        });
+        const at = rows.filter(function (row) {
+          return row.index_key === grantingBackfill.CURSOR_KEY;
+        })[0];
+        return { done: mark,
+                 cursor: at ? grantingBackfill.cursorOf(at.key) : null };
+      });
+    },
+    readPage: function (cursor, limit) {
+      log.debug("Entering grantingOps.readPage().");
+      const granting = JSON.stringify(
+        require('./directory_codec').GRANTING_ATTRIBUTES);
+      const pick = 'SELECT realm, dn_key, CASE WHEN JSON_OVERLAPS(' +
+        'attr_names, ?) THEN attrs END AS attrs, CASE WHEN JSON_OVERLAPS(' +
+        'attr_names, ?) THEN value_keys END AS value_keys FROM ' +
+        'sts_ldap_entries';
+      const order = ' ORDER BY realm, dn_key LIMIT ?';
+      log.debug("Leaving grantingOps.readPage().");
+      return (cursor
+        ? grantingAsk('granting.page', pick + ' WHERE realm > ? OR (realm = ' +
+            '? AND dn_key > ?)' + order,
+            [granting, granting, cursor.realm, cursor.realm, cursor.dnKey,
+             limit])
+        : grantingAsk('granting.page', pick + order,
+            [granting, granting, limit])).then(function (r) {
+        return dialect.rowsOf(r).map(function (row) {
+          const out = shaped(row);
+          out.value_keys = jsonOf(out.value_keys);
+          return out;
+        });
+      });
+    },
+    writeKeys: function (items) {
+      log.debug("Entering grantingOps.writeKeys(). " + items.length);
+      const sorted = items.slice().sort(function (a, b) {
+        const left = a.realm + '\n' + a.dnKey;
+        const right = b.realm + '\n' + b.dnKey;
+        return left < right ? -1 : (left > right ? 1 : 0);
+      });
+      log.debug("Leaving grantingOps.writeKeys().");
+      return maintenance(GRANTING_STEP, function () {
+        return deps.withTransaction(async function (client) {
+          const values = [];
+          sorted.forEach(function (one) {
+            values.push(one.realm, one.dnKey);
+          });
+          const locked = new Map();
+          rowsOf(await send(client, 'granting.lock', 'SELECT realm, dn_key, ' +
+            'attrs FROM sts_ldap_entries WHERE (realm, dn_key) IN (' +
+            sorted.map(function () {
+              return '(?, ?)';
+            }).join(', ') + ') ORDER BY realm, dn_key FOR UPDATE', values))
+            .forEach(function (row) {
+              locked.set(String(row.realm) + '\n' + String(row.dn_key), row);
+            });
+          let written = 0;
+          for (const one of sorted) {
+            const row = locked.get(one.realm + '\n' + one.dnKey);
+            // Compare-and-set: a writer that changed the entry since the
+            // page was read wrote its own keys, and wins.
+            if (!row || JSON.stringify(row.attrs) !==
+                JSON.stringify(one.attrs)) {
+              continue;
+            }
+            await send(client, 'granting.write', 'UPDATE sts_ldap_entries ' +
+              'SET value_keys = ? WHERE realm = ? AND dn_key = ?',
+              [JSON.stringify(one.valueKeys), one.realm, one.dnKey]);
+            await send(client, 'granting.keys.delete', 'DELETE FROM ' +
+              'sts_ldap_entry_keys WHERE realm = ? AND dn_key = ? AND ' +
+              'kind = \'value\'', [one.realm, one.dnKey]);
+            const keys = Array.from(new Set(one.valueKeys.map(function (k) {
+              return mariadbQueries.tableKey(k);
+            })));
+            if (keys.length) {
+              const rows = [];
+              keys.forEach(function (k) {
+                rows.push(one.realm, 'value', k, one.dnKey);
+              });
+              await send(client, 'granting.keys.insert', 'INSERT INTO ' +
+                'sts_ldap_entry_keys (realm, kind, k, dn_key) VALUES ' +
+                keys.map(function () {
+                  return '(?, ?, ?, ?)';
+                }).join(', '), rows);
+            }
+            written += 1;
+          }
+          return written;
+        });
+      });
+    },
+    saveCursor: function (realmId, dnKey) {
+      log.debug("Entering grantingOps.saveCursor().");
+      const value = grantingBackfill.cursorValue(realmId, dnKey);
+      log.debug("Leaving grantingOps.saveCursor().");
+      return maintenance(GRANTING_STEP, function () {
+        return deps.withTransaction(function (client) {
+          return grantingMarkRows(client, grantingBackfill.CURSOR_KEY,
+                                  grantingBackfill.CURSOR_KEY, value);
+        });
+      });
+    },
+    saveDone: function () {
+      log.debug("Entering grantingOps.saveDone().");
+      log.debug("Leaving grantingOps.saveDone().");
+      return maintenance(GRANTING_STEP, function () {
+        return deps.withTransaction(function (client) {
+          return grantingMarkRows(client, grantingBackfill.CURSOR_KEY,
+                                  grantingBackfill.MARK_KEY,
+                                  grantingBackfill.MARK_KEY);
+        });
+      });
+    },
+    open: function (row) {
+      log.debug("Entering grantingOps.open().");
+      log.debug("Leaving grantingOps.open().");
+      return entryCodec.openAttributes(row.dn_key, row.attrs);
+    }
+  };
+
   log.debug("Leaving create().");
   return {
     loadRows: loadRows,
@@ -1513,6 +1687,8 @@ function create(deps) {
     countSealed: countSealed,
     countAllSealed: countAllSealed,
     resealSealed: resealSealed,
+    // The `grantinggroup` key backfill's statements (#1311).
+    grantingOps: grantingOps,
     // For the tests: what a row contributes, and the bases of a parent.
     basesOf: basesOf
   };

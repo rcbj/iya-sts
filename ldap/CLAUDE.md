@@ -791,7 +791,8 @@ ldif or multi-cell service is unchanged.
     entry names a group a partner's token named, by the derived
     `grantinggroup` value key: two `byAttribute` questions, asynchronous,
     `LIMIT 1`, after the walk of the resident entries — `federation/CLAUDE.md`
-    argues it.
+    argues it. A row written before #1306 is keyed by #1311's one-time
+    backfill (`persistence/CLAUDE.md`).
   - `personCount()` is the store's count (above); `allPersons()` pages
     `ou=users` alone; `entriesUnder()` pages a windowed container and does NOT cache it.
   - **THE REQUESTS ARE ASYNCHRONOUS WHERE THEY READ MANY ROWS (#616,

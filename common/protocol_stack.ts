@@ -1903,6 +1903,12 @@ class ProtocolStack {
     // reaches is reached lazily, so the order is for a reader.
     this.build('kerberos/krb5_krbtgt_rotation',
                require('../kerberos/krb5_krbtgt_rotation'), 'KrbtgtRotation');
+    // 23b-iii-b. THE `grantinggroup` KEY BACKFILL (#1311): a library that
+    // registers one scheduler job and no route, in every process so every
+    // process lists it. After `ldap/ldap_server` (21), whose entries it keys,
+    // beside the krbtgt rotation for a reader; the store, the scheduler and
+    // the keystore are reached lazily, so the order is for a reader too.
+    require('../persistence/granting_index_backfill').install();
     // 23b-iv. OPENID PROVIDER COMMANDS (#151): the library — Command Tokens
     // on the shared outbound queue, tenant runs, the account-state register
     // — whose wire step registers the `oauth2.command-sweep` job and adds it

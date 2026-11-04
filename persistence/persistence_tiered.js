@@ -1070,6 +1070,30 @@ function create(options) {
       });
     });
   };
+  // The `grantinggroup` key backfill (#1311) in BOTH databases, each walked
+  // and marked by itself, one after the other, each with the whole budget;
+  // complete only when both are. Every cell's leader walks the global tier
+  // too until its mark is written: the writes are compare-and-set and any
+  // cursor names a finished prefix, so two walkers cost time, never keys.
+  driver.indexGrantingKeys = function (options) {
+    log.debug("Entering tiered indexGrantingKeys().");
+    const backfill = require('./granting_index_backfill');
+    const each = function (one, what) {
+      log.debug("Entering each().");
+      log.debug("Leaving each().");
+      return typeof one.indexGrantingKeys === 'function'
+        ? one.indexGrantingKeys(Object.assign({}, options || {},
+                                              { what: what }))
+        : Promise.resolve({ complete: true, already: true });
+    };
+    log.debug("Leaving tiered indexGrantingKeys().");
+    return each(globalDriver, 'the global tier').then(function (first) {
+      return each(cellDriver, 'this cell\'s database')
+        .then(function (second) {
+          return backfill.combined(first, second);
+        });
+    });
+  };
   driver.resealSealed = function (dekIds, reseal, options) {
     log.debug("Entering tiered resealSealed().");
     log.debug("Leaving tiered resealSealed().");
