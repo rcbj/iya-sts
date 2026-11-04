@@ -540,6 +540,67 @@ async function visitOne(o, id, moduleName, one, jars, action) {
 
 // Where the browser goes from the page it is on, as a person would, until
 // it reaches the suite's callback or a page that stays.
+// THE PERSON'S AUTHENTICATOR APP (#1293). Where a driver gives the person a
+// TOTP secret (`o.totpSecret`, base32, enrolled through the account API), a
+// risk step-up to /authn/totp is answered with the current code (RFC 6238,
+// the SHA-1 / 6-digit / 30 s defaults), so a sign-in the risk model scores
+// MEDIUM completes as a person with an authenticator would complete it,
+// instead of hanging the module. A code is never sent twice: the service
+// refuses a replayed time step, so a second step-up inside the same 30 s
+// waits for the next step.
+let lastTotpStep = -1;
+
+function base32Bytes(text) {
+  log.debug("Entering base32Bytes().");
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const out = [];
+  let bits = 0;
+  let value = 0;
+  String(text || "").toUpperCase().replace(/[^A-Z2-7]/g, "").split("")
+    .forEach(function (ch) {
+      value = (value << 5) | alphabet.indexOf(ch);
+      bits += 5;
+      if (bits >= 8) {
+        out.push((value >>> (bits - 8)) & 255);
+        bits -= 8;
+      }
+    });
+  log.debug("Leaving base32Bytes().");
+  return Buffer.from(out);
+}
+
+function totpAt(secret, step) {
+  log.debug("Entering totpAt().");
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(step));
+  const digest = nodeCrypto.createHmac("sha1", base32Bytes(secret))
+    .update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24) |
+                 ((digest[offset + 1] & 0xff) << 16) |
+                 ((digest[offset + 2] & 0xff) << 8) |
+                 (digest[offset + 3] & 0xff);
+  log.debug("Leaving totpAt().");
+  return String(binary % 1000000).padStart(6, "0");
+}
+
+// The code for a time step not used before, waiting for the next step when
+// this one was.
+async function freshTotp(secret) {
+  log.debug("Entering freshTotp().");
+  let step = Math.floor(Date.now() / 30000);
+  if (step <= lastTotpStep) {
+    const wait = (lastTotpStep + 1) * 30000 - Date.now() + 500;
+    log.info("  waiting " + Math.ceil(wait / 1000) + " s for a fresh " +
+             "TOTP time step");
+    await waitMs(Math.max(0, wait));
+    step = Math.floor(Date.now() / 30000);
+  }
+  lastTotpStep = step;
+  log.debug("Leaving freshTotp().");
+  return totpAt(secret, step);
+}
+
 async function follow(o, driver, id, action, suiteBase) {
   log.debug("Entering follow(). " + action);
   let signedIn = false;
@@ -606,6 +667,17 @@ async function follow(o, driver, id, action, suiteBase) {
       }
       await moved(driver, here, 15000);
       continue;
+    }
+    // A RISK STEP-UP (#1293): the person's authenticator answers it.
+    if (/\/authn\/totp$/.test(path) && o.totpSecret) {
+      const box = await present(driver, "code", 10000);
+      if (box) {
+        await box.sendKeys(await freshTotp(o.totpSecret));
+        await (await driver.findElement(By.id("totp-submit"))).click();
+        log.info("  answered a TOTP step-up for " + id);
+        await moved(driver, here, 15000);
+        continue;
+      }
     }
     // AN ADMINISTRATOR'S OFFERED SECOND FACTOR (#246), a page of the
     // sign-in surface since #572: Ignore, as a person who only wants to
@@ -724,7 +796,17 @@ async function signOutOne(o, id, moduleName, base, jars, options) {
   log.debug("Leaving signOutOne().");
 }
 
+// A time step a driver has spent elsewhere (the enrolment's confirming code),
+// so the first step-up does not reuse it.
+function usedTotpStep(step) {
+  log.debug("Entering usedTotpStep().");
+  lastTotpStep = Math.max(lastTotpStep, Number(step));
+  log.debug("Leaving usedTotpStep().");
+}
+
 module.exports = {
   person: person,
-  quit: quit
+  quit: quit,
+  totpAt: totpAt,
+  usedTotpStep: usedTotpStep
 };

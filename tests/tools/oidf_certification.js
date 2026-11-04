@@ -399,6 +399,35 @@ async function runOne(plan, realm, someone) {
   return summary;
 }
 
+// THE PERSON'S AUTHENTICATOR APP (#1293, rcbj's choice over switching risk
+// off): enrolled the way the person would enrol it, through the portal's
+// account API (`/portal/mfa` start, then confirm with a code), so a sign-in
+// the risk model sends to a step-up is answered by conformance_browser.js
+// at /authn/totp. Risk stays scored and enforced in the realm.
+async function enrolTotp(base, username, password) {
+  log.debug("Entering enrolTotp().");
+  const portal = require(path.join(PROTOCOL, "portal_signin.js"));
+  const c = await portal.signInToThePortal(base, username, null,
+                                           { password: password });
+  assert.ok(c && c.token, "the test person could not sign in to the " +
+            "portal to enrol an authenticator");
+  await c.act("/portal/mfa", { action: "start" });
+  const page = await c.page("/portal/mfa");
+  const secret = String((page.json && page.json.setup &&
+                         page.json.setup.grouped) || "").replace(/\s+/g, "");
+  assert.ok(secret, "no shared secret on /portal/mfa: " +
+            String(page.text).slice(0, 300));
+  const step = Math.floor(Date.now() / 30000);
+  const done = await c.act("/portal/mfa", { action: "confirm",
+    code: conformanceBrowser.totpAt(secret, step) });
+  assert.ok(done && done.status === 200, "confirming the authenticator " +
+            "answered " + (done && done.status));
+  conformanceBrowser.usedTotpStep(step);
+  log.info("Enrolled an authenticator app for " + username + ".");
+  log.debug("Leaving enrolTotp().");
+  return secret;
+}
+
 async function main() {
   log.debug("Entering main().");
   const plans = expanded().filter(wanted);
@@ -444,9 +473,10 @@ async function main() {
     st: "TX",
     postalCode: "78701"
   });
+  const totpSecret = await enrolTotp(realm.base, username, password);
   const someone = conformanceBrowser.person({
     suite: oidf.suite, suiteBase: oidf.SUITE, serviceBase: realm.base,
-    username: username, password: password,
+    username: username, password: password, totpSecret: totpSecret,
     actions: {
       "oidcc-prompt-login": "photograph",
       "oidcc-max-age-1": "photograph",
