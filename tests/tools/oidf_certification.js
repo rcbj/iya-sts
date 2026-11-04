@@ -89,6 +89,22 @@ const program = new Command()
   .parse(process.argv);
 const opts = program.opts();
 
+// SESSION MANAGEMENT'S BROWSER (#1297, rcbj 2026-11-04). The suite's RP
+// iframe posts its one check 500 ms after it loads; our OP iframe answers in
+// one request, but Chrome partitions connections by top-level site, so from
+// a browser far from test-idp the iframe opens a fresh TLS connection inside
+// the suite's page and is not listening in time (seen: "checkSession
+// started", never "receiveMessage"). With partitioning off it reuses the
+// warm connection and both checks pass (unchanged, then changed). The flag
+// is the tester's browser, never the service. Set only when EVERY plan of
+// the run is a Session Management plan, because one Chrome serves the run:
+// run those plans on their own.
+const SESSION_BROWSER_FEATURES = [
+  "PartitionConnectionsByNetworkIsolationKey",
+  "PartitionNetworkStateByNetworkIsolationKey",
+  "SplitHostCacheByNetworkIsolationKey",
+  "SplitCacheByNetworkIsolationKey"].join(",");
+
 // What the helpers read at require time, set before they are required.
 // No Entering/Leaving pair: it runs before the logger exists, which is made
 // after these values are in the environment (`common/config_file.js`'s
@@ -249,15 +265,15 @@ async function ensureRealm() {
                     ["oauth2.requestUriFragmentCheck", false],
                     oidf.CLASSICAL_SETTING,
                     // A RUN IS HUNDREDS OF SIGN-INS BY ONE NEW PERSON FROM ONE
-                    // ADDRESS, which the risk model rightly finds unusual: its
-                    // user term put them at 3.0-3.6 against MEDIUM's default
-                    // 3.00 (risk.mediumScorePercent), and a MEDIUM sign-in in
-                    // product is asked for a second factor this person does
-                    // not have (STS-RISK-0017/0018), so oidcc-scope-profile
-                    // hung on 2026-11-03. Raised for THIS realm only, below
-                    // HIGH (1000), so risk is still scored and enforced; the
-                    // setting's own description says to tune it per realm.
-                    ["risk.mediumScorePercent", 800],
+                    // ADDRESS within minutes, which is exactly what the risk
+                    // model is built to flag. MEDIUM at 8 still let modules
+                    // hang on a step-up, and an authenticator for the person
+                    // (2026-11-04) made every sign-in ask for a code and drew
+                    // HIGH scores (11-14), which are refused outright. This
+                    // realm certifies the OpenID protocol, not the risk
+                    // model, so it does not assess sign-ins (rcbj,
+                    // 2026-11-04); every other realm keeps the default.
+                    ["risk.assessSignIns", false],
                     // THE TOKEN RESPONSE TYPES (#1295, #1296). Product mode
                     // refuses them (RFC 9700 section 2.1.2); the Implicit,
                     // Hybrid and Dynamic OP profiles need them. The realm
@@ -399,38 +415,21 @@ async function runOne(plan, realm, someone) {
   return summary;
 }
 
-// THE PERSON'S AUTHENTICATOR APP (#1293, rcbj's choice over switching risk
-// off): enrolled the way the person would enrol it, through the portal's
-// account API (`/portal/mfa` start, then confirm with a code), so a sign-in
-// the risk model sends to a step-up is answered by conformance_browser.js
-// at /authn/totp. Risk stays scored and enforced in the realm.
-async function enrolTotp(base, username, password) {
-  log.debug("Entering enrolTotp().");
-  const portal = require(path.join(PROTOCOL, "portal_signin.js"));
-  const c = await portal.signInToThePortal(base, username, null,
-                                           { password: password });
-  assert.ok(c && c.token, "the test person could not sign in to the " +
-            "portal to enrol an authenticator");
-  await c.act("/portal/mfa", { action: "start" });
-  const page = await c.page("/portal/mfa");
-  const secret = String((page.json && page.json.setup &&
-                         page.json.setup.grouped) || "").replace(/\s+/g, "");
-  assert.ok(secret, "no shared secret on /portal/mfa: " +
-            String(page.text).slice(0, 300));
-  const step = Math.floor(Date.now() / 30000);
-  const done = await c.act("/portal/mfa", { action: "confirm",
-    code: conformanceBrowser.totpAt(secret, step) });
-  assert.ok(done && done.status === 200, "confirming the authenticator " +
-            "answered " + (done && done.status));
-  conformanceBrowser.usedTotpStep(step);
-  log.info("Enrolled an authenticator app for " + username + ".");
-  log.debug("Leaving enrolTotp().");
-  return secret;
-}
-
 async function main() {
   log.debug("Entering main().");
   const plans = expanded().filter(wanted);
+  const sessionOnly = plans.length && plans.every(function (plan) {
+    return plan.group === "session";
+  });
+  if (sessionOnly && !process.env.CONFORMANCE_BROWSER_DISABLE_FEATURES) {
+    process.env.CONFORMANCE_BROWSER_DISABLE_FEATURES =
+      SESSION_BROWSER_FEATURES;
+  } else if (!sessionOnly && plans.some(function (plan) {
+    return plan.group === "session";
+  })) {
+    log.warn("Session Management plans pass from a distant browser only on " +
+             "a run of their own (#1297); run them with --plans session.");
+  }
   if (opts.list) {
     expanded().forEach(function (plan) {
       process.stdout.write((wanted(plan) ? "* " : "  ") + plan.key +
@@ -473,10 +472,9 @@ async function main() {
     st: "TX",
     postalCode: "78701"
   });
-  const totpSecret = await enrolTotp(realm.base, username, password);
   const someone = conformanceBrowser.person({
     suite: oidf.suite, suiteBase: oidf.SUITE, serviceBase: realm.base,
-    username: username, password: password, totpSecret: totpSecret,
+    username: username, password: password,
     actions: {
       "oidcc-prompt-login": "photograph",
       "oidcc-max-age-1": "photograph",
