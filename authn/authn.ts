@@ -1498,13 +1498,47 @@ class Authn {
       log.debug("Leaving Authn.noteSessionChanged(). No session.");
       return false;
     }
-    // A read error is not "the session is gone": the change is written so a
-    // parent that only the index holds still records backsConsole.
+    // A READ THAT FAILED IS NOT "THE SESSION IS GONE", AND NOT "IT IS LIVE"
+    // EITHER (#695, from #350; rcbj's decision). Until #695 a failed read
+    // re-set the caller's whole session, so that a parent the window had
+    // loaded from the index still recorded `backsConsole`. The store's
+    // tombstone kept that write from reviving a STORED session another
+    // request had ended meanwhile, but the realm map took the row back, and
+    // this process answered the ended session as live until it was evicted.
+    //
+    // Now only `backsConsole` is merged, and only onto a row this process
+    // already holds, in the realm map. An ended session is deleted from that
+    // map, so a row found there is one nobody has ended here; a row found
+    // nowhere is left alone, and nothing is created. With today's window
+    // the held case does not arise — `get()` answers from its cache and then
+    // from the realm map before it asks the store, so a failed read means
+    // neither holds the row — and the merge is there so that a window which
+    // ever reads in another order still cannot revive anything (the test
+    // reaches it with a stubbed read). The cost is stated rather than
+    // hidden: a parent held nowhere, read while the store is failing, does
+    // not record that it backs the console. The flag is a record — ORed by
+    // `mergeSessionRows()` and filed in the index, read by no decision —
+    // and losing it is cheaper than a session that came back. The caller's
+    // other in-place edits are not written on a failed read at all: nothing
+    // is known about the row they would belong to.
     if (this.windowOn()) {
       const read = sessionWindow.get(realms.currentId(), session.id);
       if (!read.ok && read.error) {
-        sessions.set(session.id, session);
-        log.debug("Leaving Authn.noteSessionChanged(). Re-set.");
+        const local = sessions.get(session.id);
+        if (!local) {
+          log.debug("Leaving Authn.noteSessionChanged(). The read failed " +
+                    "and no row is held here; nothing was set.");
+          return false;
+        }
+        if (session.backsConsole !== true) {
+          log.debug("Leaving Authn.noteSessionChanged(). The read failed; " +
+                    "no backsConsole to merge onto the held row.");
+          return false;
+        }
+        local.backsConsole = true;
+        sessions.set(session.id, local);
+        log.debug("Leaving Authn.noteSessionChanged(). The read failed; " +
+                  "backsConsole merged onto the held row.");
         return true;
       }
       if (!read.ok) {

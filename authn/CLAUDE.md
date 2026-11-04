@@ -3472,7 +3472,16 @@ LogoutRequest (`sts_saml_encryption`, the suite's `cluster` mode). Each now
 calls **`noteSessionChanged(session)`** right after its edit: it re-sets the
 row by id, **merges** with `mergeSessionRows()` when replication has replaced
 the stored object meanwhile, and **refuses to write a session that is no longer
-there**, so it cannot resurrect one ended in between. `notePresented()` spends
+there**, so it cannot resurrect one ended in between. **With the session
+window on, a read that FAILED is neither (#695, from #350; rcbj's
+decision)**: until #695 it re-set the caller's whole session, which the
+store's tombstone kept from reviving a stored session but which put an
+ended one back in the realm map until eviction. Now it merges only
+`backsConsole`, and only onto a row this process already holds in the realm
+map; with none held it sets nothing (said at debug). The cost: a parent held
+nowhere, read while the store fails, does not record `backsConsole`, a flag
+no decision reads. `tests/session_window.js`, `noteChangedCase()`.
+`notePresented()` spends
 `firstPresentationIsTheSignIn` through it too. An in-place edit of a session
 anywhere else owes the same call; `tests/cluster_node_state_sharing.js` holds
 the four call sites to it.
