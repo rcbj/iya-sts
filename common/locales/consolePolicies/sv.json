@@ -173,5 +173,15 @@
   "attributes.defineHeading": "Definiera ett anpassat attribut",
   "attributes.labelPlaceholder": "Passerkortsnummer",
   "attributes.define": "Definiera attributet",
+  "attributes.portal": "Användarportalen",
+  "attributes.portalVisible": "Visa det för personen i portalen",
+  "attributes.portalEditable": "Låt personen ändra det i portalen",
+  "attributes.portalNote": "Båda är av som standard. Att tillåta ändring visar det också.",
+  "attributes.portalStateHidden": "visas inte",
+  "attributes.portalStateVisible": "visas",
+  "attributes.portalStateEditable": "visas, kan ändras",
+  "attributes.change": "Ändra",
+  "attributes.changeFixed": "Syntaxen och om det har flera värden kan inte ändras.",
+  "attributes.saveChange": "Spara ändringen",
   "securityOnly": "Endast en säkerhetsadministratör får spara, återställa eller agera på en policy här, eller ange en för ett program, en grupp eller en person. Du kan läsa varje policy; en ändring avvisas."
 }

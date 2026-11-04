@@ -106,7 +106,19 @@ portal needs JavaScript; with scripts blocked it says so and shows nothing.
 Refresh and Sign out, and on the pages drawn for nobody (activation, a
 password reset, address verification). The Overview has a **Language and
 region** card: it sets the person's own `preferredLanguage`, or removes it
-to follow the browser. Error text stays English. Its **Times you have signed
+to follow the browser. Error text stays English.
+
+The Overview's **More about you** card lists the realm's
+[custom attributes](policies.md#the-attribute-policy) that the administrator has
+chosen to show on the portal, with the person's own values. Each one the
+administrator has also made editable has a form: one box per value, and for
+an attribute with several values an empty box to add one. Clearing a box
+removes that value. The values are checked against the attribute's syntax,
+and in product mode a value the realm's attribute policy requires cannot be
+removed. Both choices are off for a new custom attribute, so the card is not
+drawn until an administrator turns one on.
+
+Its **Times you have signed
 in** is the service's own count of this person's accepted sign-ins, the same
 figure the admin console's user page shows; in product mode it is read from
 the store, so it survives a restart of the service and is not bounded by what

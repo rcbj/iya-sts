@@ -2766,7 +2766,10 @@ class AdminViews {
       }).join('') + ')',
       missingAsked: asked,
       missing: asked ? attributePolicy.peopleMissing() : null,
+      // #700: `update` changes a definition's label, description and
+      // portal flags in place.
       actions: { define: 'define-person-attribute',
+                 update: 'update-person-attribute',
                  remove: 'remove-person-attribute' }
     };
     log.debug("Leaving AdminViews.attributePolicyExtras().");

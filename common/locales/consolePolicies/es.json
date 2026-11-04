@@ -173,5 +173,15 @@
   "attributes.defineHeading": "Definir un atributo personalizado",
   "attributes.labelPlaceholder": "Número de credencial",
   "attributes.define": "Definir el atributo",
+  "attributes.portal": "Portal de usuario",
+  "attributes.portalVisible": "Mostrarlo a la persona en el portal",
+  "attributes.portalEditable": "Permitir que la persona lo cambie en el portal",
+  "attributes.portalNote": "Ambos desactivados de forma predeterminada. Permitir el cambio también lo muestra.",
+  "attributes.portalStateHidden": "no se muestra",
+  "attributes.portalStateVisible": "se muestra",
+  "attributes.portalStateEditable": "se muestra, editable",
+  "attributes.change": "Cambiar",
+  "attributes.changeFixed": "La sintaxis y si admite varios valores no se pueden cambiar.",
+  "attributes.saveChange": "Guardar el cambio",
   "securityOnly": "Solo un administrador de seguridad puede guardar, restablecer o aplicar una política aquí, o asignar una a una aplicación, un grupo o una persona. Puede leer todas las políticas; un cambio se rechaza."
 }

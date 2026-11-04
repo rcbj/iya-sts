@@ -1691,22 +1691,6 @@
     "en": "df463dd3d0380799",
     "text": "La classe de ce service pour une politique d’attributs : les attributs que toute personne d’un domaine doit avoir. Nommée par le PROFIL (`cn=default`, ou un profil nommé propre au domaine)."
   },
-  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Quelle politique d’attributs nommée s’applique lorsque la personne et ses groupes en nomment plusieurs : la plus basse, de 1 à 1000."
-  },
-  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
-    "en": "7631cfea872f9233",
-    "text": "Sur une personne ou un groupe : la politique d’attributs qu’il nomme, `default` ou un profil nommé du domaine. Une valeur."
-  },
-  "attributes.SELECTORS.precedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "Quelle politique d’attributs nommée s’applique lorsque la personne et ses groupes en nomment plusieurs : la plus basse, de 1 à 1000."
-  },
-  "attributes.sentences.named": {
-    "en": "a18571bfeeea1845",
-    "text": "elle s’applique à une personne qui la nomme, ou qui est dans un groupe qui la nomme, lorsqu’aucune autre politique qu’elle nomme n’a une précédence inférieure à {{precedence}}"
-  },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
     "text": "La classe de ce service pour un attribut personnalisé d’un domaine, dans ou=attributeDefinitions, nommée par l’attribut (`cn=<name>`)."
@@ -1730,6 +1714,26 @@
   "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
     "en": "b6a0dfd5be9d81fd",
     "text": "TRUE si un attribut personnalisé a une seule valeur, FALSE s’il en a plusieurs."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "TRUE lorsqu’une personne voit ses propres valeurs d’un attribut personnalisé dans la vue d’ensemble du portail utilisateur. FALSE, ou absent, par défaut."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "TRUE lorsqu’une personne peut modifier ses propres valeurs d’un attribut personnalisé dans le portail utilisateur. Implique stsAttributePortalVisible. FALSE, ou absent, par défaut."
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Quelle politique d’attributs nommée s’applique lorsque la personne et ses groupes en nomment plusieurs : la plus basse, de 1 à 1000."
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "Sur une personne ou un groupe : la politique d’attributs qu’il nomme, `default` ou un profil nommé du domaine. Une valeur."
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "Quelle politique d’attributs nommée s’applique lorsque la personne et ses groupes en nomment plusieurs : la plus basse, de 1 à 1000."
   },
   "attributes.SYNTAXES.string.what": {
     "en": "6f2c36f9a836b2f4",
@@ -1783,9 +1787,17 @@
     "en": "3867ffa1e351efa2",
     "text": "L’attribut personnalisé {{name}} est défini dans ce domaine à {{dn}}. Il peut désormais être donné à une personne et exigé par cette politique."
   },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "L’attribut personnalisé {{name}} est modifié. Sa syntaxe et le fait qu’il contienne plusieurs valeurs restent inchangés."
+  },
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "L’attribut personnalisé {{name}} n’est plus défini dans ce domaine."
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "elle s’applique à une personne qui la nomme, ou qui est dans un groupe qui la nomme, lorsqu’aucune autre politique qu’elle nomme n’a une précédence inférieure à {{precedence}}"
   },
   "kinds.postLogin.label": {
     "en": "22a1a1f2caf79722",

@@ -373,9 +373,12 @@ their groups name, the one with the lowest precedence applies.
 `cn=<name>,ou=attributeDefinitions` is one of the realm's custom attributes:
 `objectClass: top, stsAttributeDefinition`, `stsAttributeLabel`,
 `stsAttributeSyntax` (`string`, `integer`, `boolean`, `date`, `email`, `uri`,
-`dn`), `stsAttributeSingleValued` (`TRUE` or `FALSE`) and an optional
-`description`. Its values are stored on a person under that name, like any
-other attribute. See `common/attribute_policy.ts`.
+`dn`), `stsAttributeSingleValued` (`TRUE` or `FALSE`), an optional
+`description`, and since #700 `stsAttributePortalVisible` and
+`stsAttributePortalEditable` (`TRUE` or `FALSE`; absent is `FALSE`): whether
+the person sees their own values on the user portal, and whether they may
+change them there. Editable implies visible. Its values are stored on a
+person under that name, like any other attribute. See `common/attribute_policy.ts`.
 
 ## SPIFFE: `ou=spiffe`
 

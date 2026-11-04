@@ -14181,6 +14181,19 @@ suite SWEPT rather than the policy weakened for it.
   `catalogue()` never offers an `sts` name: the person editor's universe
   holds the declared policy references, which are not facts a profile could
   require.
+* **On the user portal by the definition's two flags (#700)**,
+  `stsAttributePortalVisible` and `stsAttributePortalEditable`, both FALSE by
+  default; `definitions()` answers them as `portalVisible` and
+  `portalEditable`. **Editable implies visible, NORMALISED, not refused**:
+  `define()` and `redefine()` store an editable one visible and a hidden one
+  not editable, and the read ORs them, so an entry an LDAP client wrote with
+  only the second flag is answered alike. **`update-person-attribute`**
+  (`redefine()`, the kind's third act) changes the label, the description
+  and the flags in place; the syntax and the cardinality are FIXED
+  (STS-LDAP-0208) because held values were checked against them, and sent
+  as they are they are accepted. 0206 (not defined), 0207 (a field), 0209
+  (not stored). The portal's side — the Overview's `customAttributes` and
+  `POST /account-api/attributes` — is `portal/CLAUDE.md`'s.
 * **The count of people who lack one is a walk**, so it is asked only on
   request (`GET /admin-api/policies?missing=count`), and not at all where the
   directory is in the store; the view always gives the LDAP filter that finds
@@ -14193,7 +14206,8 @@ suite SWEPT rather than the policy weakened for it.
   group names one no group is read.
 * **Left for follow-up tickets**, as the design comment says: SCIM `/Schemas`
   publishing `required` and the custom attributes as a per-realm extension;
-  custom attributes as token, UserInfo and SAML claims and on the portal; and
+  custom attributes as token, UserInfo and SAML claims (the portal half
+  is done, #700, above); and
   a sign-in step that collects a missing value instead of refusing a
   federated newcomer.
 

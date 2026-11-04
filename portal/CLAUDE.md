@@ -124,6 +124,38 @@ action of its own at all — see `common/access_gate.ts`'s `ACTION` — and a
 deployment that later lets a helpdesk role READ an account without changing it
 needs the two to have been kept apart from the beginning.
 
+## THE REALM'S CUSTOM ATTRIBUTES ON THE OVERVIEW (#700, 2026-11-04)
+
+rcbj's ticket: the portal's account page shows a realm's custom attributes,
+"with a per-attribute flag for whether the person sees each one and whether
+they may edit it themselves (off by default)". The flags are the definition's
+(`common/CLAUDE.md` 3co: `portalVisible`, `portalEditable`, editable implying
+visible).
+
+* **`GET /account-api/overview`'s `customAttributes`**:
+  `[{ name, label, description, syntax, multi, values, editable }]`, one per
+  definition with `portalVisible`, empty where the person has no entry. Drawn
+  from the REGISTER and never by iterating the entry, the inetOrgPerson
+  table's rule. `web_overview.ts`'s *More about you* card, not drawn when the
+  list is empty.
+* **`POST /account-api/attributes`** (mirrors `POST /portal/attributes`),
+  `{ attribute, values }`: the values the attribute is to hold AFTERWARDS,
+  so none clears it. The person is the token's subject; no username is
+  taken. Refused for an undefined attribute (STS-PORTAL-0626), a hidden one
+  (0627, 403) and a read-only one (0628, 403); values checked by the person
+  editor's `checkCreateValues()` (0629 for a value or a count it refuses).
+* **Written through the person editor**, `setLanguage()`'s way, one edit at
+  a time with `via: 'the user portal'`, so its audit row, syntax check and
+  the attribute policy's `editRefusal()` hold. **Adds before removes** for a
+  multi-valued attribute, so replacing a required value is never an empty
+  moment; emptying one outright is asked of `editRefusal()` before anything
+  is written (STS-LDAP-0164, nothing changed). A single-valued one is one
+  `set`. A refusal part-way records the editor's own code.
+* **The form**: one box per held value, plus one empty box for a
+  multi-valued attribute; a cleared box is no value. `tests/account_api.js`
+  2c/2d hold that the form has its operation and sends only its fields;
+  `tests/portal_custom_attributes.js` holds the rest.
+
 ## `/portal/applications`: THE ISSUANCE POLICY, ASKED ON SOMEBODY'S BEHALF (2026-09-06)
 
 Every other page here is about the person. This one is about what the account

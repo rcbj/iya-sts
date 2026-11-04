@@ -1691,22 +1691,6 @@
     "en": "df463dd3d0380799",
     "text": "本服務用於屬性原則的類別：一個領域中每個人都必須持有的屬性。以設定檔命名（`cn=default`，或該領域自己的具名設定檔）。"
   },
-  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "當此人及其群組指定了多個具名屬性原則時，哪一個適用：最低者，範圍 1 至 1000。"
-  },
-  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
-    "en": "7631cfea872f9233",
-    "text": "在人員或群組上：其所指定的屬性原則，`default` 或該領域的一個具名設定檔。一個值。"
-  },
-  "attributes.SELECTORS.precedence.what": {
-    "en": "aae577af9c4de4d2",
-    "text": "當此人及其群組指定了多個具名屬性原則時，哪一個適用：最低者，範圍 1 至 1000。"
-  },
-  "attributes.sentences.named": {
-    "en": "a18571bfeeea1845",
-    "text": "它適用於指定它的人，或屬於指定它的群組的人，且他們所指定的其他原則都沒有比 {{precedence}} 更低的優先順序"
-  },
   "attributes.SCHEMA.objectClasses.stsAttributeDefinition.what": {
     "en": "a1a975c54d05126f",
     "text": "本服務用於領域自訂屬性的類別，位於 ou=attributeDefinitions，以屬性命名（`cn=<name>`）。"
@@ -1730,6 +1714,26 @@
   "attributes.SCHEMA.attributes.stsAttributeSingleValued.what": {
     "en": "b6a0dfd5be9d81fd",
     "text": "自訂屬性只有一個值時為 TRUE，有多個值時為 FALSE。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalVisible.what": {
+    "en": "1d436a3f3d4be8c0",
+    "text": "為 TRUE 時，本人可在使用者入口網站的概覽中看到自己在某個自訂屬性上的值。預設為 FALSE 或不存在。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributePortalEditable.what": {
+    "en": "7bda04372c270eb4",
+    "text": "為 TRUE 時，本人可在使用者入口網站上變更自己在某個自訂屬性上的值。隱含 stsAttributePortalVisible。預設為 FALSE 或不存在。"
+  },
+  "attributes.SCHEMA.attributes.stsAttributePolicyPrecedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "當此人及其群組指定了多個具名屬性原則時，哪一個適用：最低者，範圍 1 至 1000。"
+  },
+  "attributes.SCHEMA.personAttributes.stsAttributePolicy.what": {
+    "en": "7631cfea872f9233",
+    "text": "在人員或群組上：其所指定的屬性原則，`default` 或該領域的一個具名設定檔。一個值。"
+  },
+  "attributes.SELECTORS.precedence.what": {
+    "en": "aae577af9c4de4d2",
+    "text": "當此人及其群組指定了多個具名屬性原則時，哪一個適用：最低者，範圍 1 至 1000。"
   },
   "attributes.SYNTAXES.string.what": {
     "en": "6f2c36f9a836b2f4",
@@ -1783,9 +1787,17 @@
     "en": "3867ffa1e351efa2",
     "text": "自訂屬性 {{name}} 已在此領域的 {{dn}} 定義。現在可以將其賦予人員，並由此原則設為必填。"
   },
+  "attributes.sentences.updated": {
+    "en": "bb46010bdf65b89d",
+    "text": "自訂屬性 {{name}} 已變更。其語法以及是否包含多個值維持不變。"
+  },
   "attributes.sentences.undefined": {
     "en": "36e7b5eba26472f2",
     "text": "自訂屬性 {{name}} 已不再在此領域中定義。"
+  },
+  "attributes.sentences.named": {
+    "en": "a18571bfeeea1845",
+    "text": "它適用於指定它的人，或屬於指定它的群組的人，且他們所指定的其他原則都沒有比 {{precedence}} 更低的優先順序"
   },
   "kinds.postLogin.label": {
     "en": "22a1a1f2caf79722",

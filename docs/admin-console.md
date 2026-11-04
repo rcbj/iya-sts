@@ -780,7 +780,12 @@ required. They belong to the realm (`ou=attributeDefinitions`) and are not
 inherited. `POST /admin-api/policies/define-person-attribute` and
 `remove-person-attribute` do the same over the API; a custom attribute cannot be
 removed while anybody holds a value of it or any of the realm's policies
-requires it.
+requires it. The **User portal** column says whether the person sees the
+attribute on the portal, and whether they may change it there; both are off
+by default, and the define form has a box for each. **Change** on a row edits
+the label, the description and those two boxes
+(`update-person-attribute`); letting the person change it also shows it. The
+syntax and whether it holds several values are fixed once it is defined.
 `/admin/users/new` and a person's Attributes tab outline every required field
 in red and mark it *required*.
 
