@@ -513,10 +513,47 @@ async function photograph(o, driver, id, why) {
 
 // Opens an address the module asked for: GET by navigating, POST as the
 // suite's page posts it — a form of the address's query.
+// A NAVIGATION THAT NEVER ARRIVES IS TRIED AGAIN (#1293, 2026-11-04). On
+// the hosted suite a GET of test-idp's authorization endpoint once never
+// reached the service (its per-minute request summary shows none), most
+// likely a connection that had died between this machine and the load
+// balancer, and WebDriver waits five minutes for a page load. The page load
+// is held to PAGE_LOAD_MS; past it the browser stops, waits a moment and
+// asks once more, on a fresh connection. A page the service is slow to draw
+// still has 45 seconds, which is far more than any it serves.
+const PAGE_LOAD_MS = Number(process.env.CONFORMANCE_BROWSER_PAGE_LOAD_MS) ||
+                     45000;
+
+async function getOnce(driver, url) {
+  log.debug("Entering getOnce().");
+  await driver.manage().setTimeouts({ pageLoad: PAGE_LOAD_MS });
+  try {
+    await driver.get(url);
+  } catch (e) {
+    if (!/timeout/i.test(String((e && e.name) || "") + " " +
+                         String((e && e.message) || ""))) {
+      log.debug("Leaving getOnce(). Not a timeout.");
+      throw e;
+    }
+    log.warn("  a page load passed " + PAGE_LOAD_MS + " ms; stopping it " +
+             "and asking once more: " + String(url).slice(0, 120));
+    try {
+      await driver.executeScript("window.stop();");
+    } catch (stopError) {
+      log.debug("Caught in getOnce(): " +
+                ((stopError && stopError.message) || stopError));
+      // Nothing to stop: the retry below is the point.
+    }
+    await waitMs(1000);
+    await driver.get(url);
+  }
+  log.debug("Leaving getOnce().");
+}
+
 async function open(driver, one) {
   log.debug("Entering open(). " + one.method);
   if (String(one.method).toUpperCase() !== "POST") {
-    await driver.get(one.url);
+    await getOnce(driver, one.url);
     log.debug("Leaving open(). GET.");
     return;
   }
