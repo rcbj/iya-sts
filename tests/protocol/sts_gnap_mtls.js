@@ -424,6 +424,8 @@ async function test() {
   credentials.recordAnchor(addedAnchors, foreign.caPem);
   await ok(h.api + "/tls/trust/add", { certificates: foreign.caPem },
            "installed the foreign authority as a client trust anchor");
+  // Its add answered 2xx, so a later "not held" is a node behind (#1307).
+  credentials.confirmAnchor(foreign.caPem);
   const foreignTls = { cert: foreign.pem + foreign.caPem,
                        key: foreign.keyPem };
   await register("pki-foreign", { oauthTlsClientAuthSanDns: dns });

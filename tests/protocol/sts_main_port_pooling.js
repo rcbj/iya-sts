@@ -400,6 +400,8 @@ async function resumption() {
   assert.strictEqual(added.status, 200,
     "adding the test Root through POST /admin-api/tls/trust/add answered " +
     added.status + " " + added.text.slice(0, 200));
+  // Its add answered 2xx, so a later "not held" is a node behind (#1307).
+  credentials.confirmAnchor(pki.anchorPem);
 
   const ask = [
     { path: "/admin-api/cluster",

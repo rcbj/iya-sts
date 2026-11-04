@@ -7,7 +7,7 @@
 //
 // ===========================================================================
 // THE CLEANUP OF A JOB'S CLIENT-CERTIFICATE TRUST ANCHORS (#1307, from #695's
-// review of #682 and #335).
+// review of #682 and #335; the confirmed-anchor retry, the same ticket).
 //
 // Every protocol job that posts a suite CA to `POST /admin-api/tls/trust/add`
 // removes it when it finishes, through `tests/tools/pep-credential.js`'s
@@ -25,9 +25,13 @@
 //      no list is a thrown error, not a silent skip.
 //   2. THE REMOVE. It names the anchor by SHA-256 fingerprint at
 //      `/admin-api/tls/trust/remove`; the real `tls/tls_server.js` refusal
-//      sentence for a fingerprint not held, in a 400, is DONE (`absent`); any
-//      other 400, a timeout, or a PEM that is not a certificate is a failure
-//      with its reason.
+//      sentence for a fingerprint not held, in a 400, is DONE (`absent`) for
+//      an anchor whose add was never confirmed; any other 400, a timeout, or
+//      a PEM that is not a certificate is a failure with its reason. For a
+//      CONFIRMED anchor (its add answered 2xx: `trustRecorded()`, or a job's
+//      own `confirmAnchor()`) "not held" is a cluster node behind: asked
+//      again, five tries in all, then a failure saying so — and a node that
+//      catches up on the third try is a remove that is done.
 //   3. `forgetAnchors()`: one remove per anchor, in order, falsy entries
 //      skipped, a failure not stopping the rest, the not-held one not a
 //      problem.
@@ -42,13 +46,16 @@
 // truststore, and the fingerprint asked for is one nobody holds.
 //
 // MUTATION RECORD (2026-11-04). Each applied to `pep-credential.js`, run,
-// seen red, and restored. Five mutants, all caught:
+// seen red, and restored. Eight mutants, all caught:
 //
 //   * `trustRecorded()` recording after the post             — 1 red (1)
-//   * `removeAnchor()` without the not-held branch           — 3 red
+//   * `removeAnchor()` without the not-held branch           — 4 red (2, 3)
 //   * the not-held branch accepting any 400                  — 1 red (2)
 //   * `settleAnchors()` dropping a passing job's failure     — 1 red (4)
 //   * `useSender(null)` keeping the fake                     — 2 red (5)
+//   * "not held" done whether confirmed or not               — 5 red (2b)
+//   * a confirmed "not held" failing on the first try        — 6 red (2b, 3)
+//   * `trustRecorded()` never confirming                     — 1 red (1)
 // ===========================================================================
 
 const path = require('path');
@@ -96,10 +103,13 @@ async function run(t) {
   const credentials = require('./tools/pep-credential.js');
   const tls = require(path.join(ROOT, 'tls', 'tls_server.js'));
   const previous = credentials.useSender(null);
+  const previousDelay = credentials.useRetryDelay(5);
+  t.equal(previousDelay, 1000, 'a confirmed remove waits 1s between tries');
   try {
     await claims(t, credentials, tls);
   } finally {
     credentials.useSender(previous);
+    credentials.useRetryDelay(previousDelay);
   }
   log.debug("Leaving run().");
 }
@@ -157,8 +167,12 @@ async function claims(t, credentials, tls) {
     t.check(calls.length && calls[0].body &&
             calls[0].body.certificates === one && calls[0].verify === true,
             'with the PEM as `certificates`, verifying the connection');
+    t.check(!credentials.isConfirmed(one),
+            'an add that timed out leaves the anchor unconfirmed');
     credentials.useSender(fakeSender(calls, okAnswer));
     await credentials.trustRecorded(BASE + '/', one, added);
+    t.check(credentials.isConfirmed(one),
+            'an add answered 2xx confirms it');
     credentials.recordAnchor(added, one);
     credentials.recordAnchor(added, '');
     t.equal(added.length, 1, 'an anchor is recorded once, however often, ' +
@@ -167,6 +181,10 @@ async function claims(t, credentials, tls) {
     t.check(added.length === 2 && added[1] === two,
             'recordAnchor() alone records for a job posting through its own ' +
             'door');
+    t.check(!credentials.isConfirmed(two),
+            'and leaves it unconfirmed until the job says otherwise');
+    t.check(!credentials.confirmAnchor('not a PEM'),
+            'confirming a PEM that is not a certificate confirms nothing');
     let threw = false;
     try {
       credentials.recordAnchor(null, one);
@@ -188,6 +206,8 @@ async function claims(t, credentials, tls) {
             'the remove went to the gated door');
     t.equal(calls.length && calls[0].body && calls[0].body.fingerprint,
             fingerprintOf(one), 'naming the anchor by SHA-256 fingerprint');
+    t.check(!credentials.isConfirmed(one),
+            'a finished remove forgets the confirmation');
 
     credentials.useSender(fakeSender(calls, function () {
       log.debug("Entering the not-held remove.");
@@ -196,8 +216,9 @@ async function claims(t, credentials, tls) {
     }));
     const absent = await credentials.removeAnchor(BASE, one);
     t.check(absent.ok && absent.absent === true,
-            'the service holding no such anchor is a remove that is done',
-            JSON.stringify(absent));
+            'an UNCONFIRMED anchor the service does not hold is a remove ' +
+            'that is done', JSON.stringify(absent));
+    t.equal(calls.length, 2, 'asked once, with no retry');
 
     credentials.useSender(fakeSender(calls, function () {
       log.debug("Entering the refused remove.");
@@ -226,6 +247,43 @@ async function claims(t, credentials, tls) {
     t.check(!notCert.ok && /not a certificate/.test(notCert.why || '') &&
             calls.length === before,
             'a PEM that is not a certificate fails without a request');
+  }
+
+  // ---- 2b. a CONFIRMED anchor not held: a node behind ---------------------
+  {
+    const calls = [];
+    credentials.confirmAnchor(three);
+    credentials.useSender(fakeSender(calls, function () {
+      log.debug("Entering the never-held remove.");
+      log.debug("Leaving the never-held remove.");
+      return Promise.resolve(notHeld);
+    }));
+    const stuck = await credentials.removeAnchor(BASE, three);
+    t.check(!stuck.ok && !stuck.absent &&
+            /CONFIRMED and it is still not held after 5 tries/
+              .test(stuck.why || ''),
+            'a CONFIRMED anchor still not held fails, saying so',
+            JSON.stringify(stuck));
+    t.equal(calls.length, 5, 'after five tries, no more');
+    t.check(credentials.isConfirmed(three),
+            'and it stays confirmed, since nothing removed it');
+
+    const later = [];
+    credentials.confirmAnchor(two);
+    credentials.useSender(fakeSender(later, function (call, index) {
+      log.debug("Entering the catching-up remove.");
+      log.debug("Leaving the catching-up remove.");
+      return index < 2 ? Promise.resolve(notHeld) : okAnswer();
+    }));
+    const caught = await credentials.removeAnchor(BASE, two);
+    t.check(caught.ok && !caught.absent,
+            'a node that catches up within the tries is a remove that is done',
+            JSON.stringify(caught));
+    t.check(later.length === 3 && later.every(function (call) {
+      return call.body && call.body.fingerprint === fingerprintOf(two);
+    }), 'two "not held" answers, then the remove, of the same fingerprint');
+    t.check(!credentials.isConfirmed(two),
+            'and the confirmation is forgotten');
   }
 
   // ---- 3. forgetAnchors() -------------------------------------------------
