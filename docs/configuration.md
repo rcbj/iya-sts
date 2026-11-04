@@ -1654,6 +1654,27 @@ passwords.
 | `security.passwordResetTtlMinutes` | `STS_SECURITY_PASSWORD_RESET_TTL_MINUTES` | `60` | yes | How long a password reset link an administrator issues from a person's `/admin/users` page stays usable at `/portal/reset-password`. Issuing one also removes the person's current password and signs them out everywhere, so the link is the only way back in until it is used or another is issued. |
 | `credentials.factorScanLimit` | `STS_CREDENTIALS_FACTOR_SCAN_LIMIT` | `5000` | yes | How many directory entries the second-factor columns on `/admin/users` and `GET /admin-api/mfa` read before stopping; the reply says when it stopped. |
 
+### Sign-in appearance
+
+A realm's colours, layout, display name and logo on the sign-in screen and
+the other public pages, the front door and the user portal. Every default is
+the look the service always had. Set them per realm, on the console's
+*Sign-in appearance* page or through `/admin-api/branding`; the logo itself
+is uploaded rather than set. [Sign-in appearance](sign-in-appearance.md) is
+the whole story.
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `branding.layout` | `STS_BRANDING_LAYOUT` | `centered` | yes | How this realm's public pages are laid out: `centered` (the card in the middle, the logo and name above it), `split` (a panel in the accent colour beside the card) or `banner` (a band in the accent colour across the top). The form is never changed. |
+| `branding.accentColor` | `STS_BRANDING_ACCENT_COLOR` | `#12107c` | yes | Buttons, links, focus rings, the split panel and the banner. `#rgb` or `#rrggbb`; the text on a button is black or white, whichever reads better. Refused below 4.5:1 against the card (`STS-AUTHN-0544`). |
+| `branding.pageColor` | `STS_BRANDING_PAGE_COLOR` | `#f4f4f7` | yes | The background behind the card. |
+| `branding.cardColor` | `STS_BRANDING_CARD_COLOR` | `#ffffff` | yes | The card's background. The text and accent must each keep 4.5:1 against it (`STS-AUTHN-0544`). |
+| `branding.textColor` | `STS_BRANDING_TEXT_COLOR` | `#222222` | yes | The text on the card; the quieter text is mixed from it and the card. Refused below 4.5:1 against the card (`STS-AUTHN-0544`). |
+| `branding.displayName` | `STS_BRANDING_DISPLAY_NAME` | *(empty)* | yes | A name shown beside the logo and at the end of the browser tab's title, as plain text and never translated. At most 80 characters. |
+| `branding.logoAlt` | `STS_BRANDING_LOGO_ALT` | *(empty)* | yes | What a screen reader reads in place of the logo. Required while the realm has a logo (`STS-AUTHN-0548`). At most 160 characters. |
+| `branding.logoLinkUrl` | `STS_BRANDING_LOGO_LINK_URL` | *(empty)* | yes | Where the logo leads, an absolute https URL (`STS-AUTHN-0551` otherwise). Empty, the default, the logo is not a link. |
+| `branding.logoMaxBytes` | `STS_BRANDING_LOGO_MAX_BYTES` | `262144` | yes — this process, not one realm | The largest logo an upload may carry, for every realm (1024–2097152). A larger one is refused (`STS-AUTHN-0546`). |
+
 ### OAuth 2.0 / OIDC
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |
