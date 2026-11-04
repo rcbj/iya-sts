@@ -3,7 +3,8 @@
 #
 # File: sts_adapter_map.py
 #
-# Prints the TLS 1.2 suite map tests/tlsfuzzer_plan.js asserts (#321).
+# Prints the TLS 1.2 suite map tests/tlsfuzzer_plan.js asserts (#321),
+# and the signature-list rewrite (#1303).
 # sts_adapter.py imports tlsfuzzer only after it has parsed a script, so
 # this loads the two functions that do not, against a stand-in
 # CipherSuite, and writes one JSON object. It decides nothing: the plan
@@ -56,6 +57,12 @@ def main():
         'rsa_ecdsa_gcm':
             rsa[suite.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256],
         'rsa_rsa_gcm': rsa[suite.TLS_RSA_WITH_AES_128_GCM_SHA256],
+        # #1303: the signature list rewrite, as (hash, signature) pairs.
+        'retarget_pss': mod.ecdsa_for_rsa([(8, 4), (8, 5), (8, 6),
+                                           (8, 9)]),
+        'retarget_pkcs1': mod.ecdsa_for_rsa([(6, 1), (2, 1), (1, 1)]),
+        'retarget_mixed': mod.ecdsa_for_rsa([(8, 4), (4, 3)]),
+        'retarget_other': mod.ecdsa_for_rsa([(8, 7)]),
     }, sys.stdout)
     sys.stdout.write('\n')
 

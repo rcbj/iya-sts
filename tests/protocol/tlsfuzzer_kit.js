@@ -29,7 +29,12 @@
 //                          is ECDHE-RSA when the listener's certificate is
 //                          RSA, and ECDHE-ECDSA when it is ECDSA (#321):
 //                          --server-key ec, set from the certificate the
-//                          listener presented.
+//                          listener presented;
+//   --retarget-sigalgs     on an ECDSA listener only, for the entries that
+//                          carry `retargetSigAlgs` (#1303): the script's
+//                          own RSA signature schemes are boilerplate, and
+//                          each becomes the ECDSA scheme of the same hash,
+//                          entry for entry.
 //
 // THE PLAN IS EVERY SCRIPT tlsfuzzer SHIPS, EACH ONE OF THREE THINGS:
 //
@@ -356,6 +361,27 @@ const NOT_CR = "LDAPS asks for no client certificate (ldap/CLAUDE.md), so " +
 // other. The default key is RSA: that is the certificate this service issues
 // for itself (`tls.certificateAlgorithms`). A supplied ECDSA certificate
 // selects the other plan. A script with `skip` and no `serverKey` never runs.
+//
+// #1303 (2026-11-04). Until then fifty-four scripts carried `serverKey:
+// "rsa"`, written from their names. Read against the pinned sources and RUN
+// against a P-256 listener, fifty-one test something other than the
+// server's key and now run for both:
+//   * fourteen needed nothing: their RSA is a TLS 1.2 suite the adapter
+//     already retargets, with no signature list of their own (or one the
+//     adapter adds);
+//   * thirty-seven write the RSA signature schemes into their hello as
+//     boilerplate, so an ECDSA listener had nothing to sign with and every
+//     probe ended in handshake_failure. They carry `retargetSigAlgs`, and
+//     the adapter rewrites that list hash for hash (sts_adapter.py,
+//     --retarget-sigalgs). A probe NAME that says rsa then runs with the
+//     ECDSA scheme of the same hash. The CertificateVerify scripts among
+//     them keep their RSA CLIENT certificate, which is what they test:
+//     the server's key only carries the handshake.
+// Three stay RSA-only, each saying why: test-tls13-rsa-signatures and
+// test-tls13-pkcs-signature (every probe is an RSA scheme the server must
+// sign with, or refuse to) and test-x25519 (its TLS 1.2 groups cannot carry
+// an ECDSA certificate's curve). An exception that only an RSA key explains
+// carries `serverKey: "rsa"` (exceptionsFor()).
 const RSA_SERVER = "needs an RSA server certificate; this listener " +
   "presents ECDSA";
 const EC_SERVER = "needs an ECDSA server certificate; this listener " +
@@ -488,10 +514,10 @@ const PLAN = [
 
   // --- run as written (with the arguments that describe this service) --
   { script: "test-aes-gcm-nonces.py" },
-  { script: "test-alpn-negotiation.py",
-    serverKey: "rsa", skip: RSA_SERVER, on: CR, notOn: { ldaps: "LDAPS " +
-    "negotiates no ALPN: ldapjs sets no ALPNProtocols, no identifier is " +
-    "registered for LDAP, and RFC 7301 lets a server ignore the extension" },
+  { script: "test-alpn-negotiation.py", on: CR,
+    notOn: { ldaps: "LDAPS negotiates no ALPN: ldapjs sets no " +
+    "ALPNProtocols, no identifier is registered for LDAP, and RFC 7301 " +
+    "lets a server ignore the extension" },
     exceptions: [
       ex(/^renegotiation/, "no_renegotiation", "renegotiation"),
       ex(/^resumption with(out)? alpn( change)?$/,
@@ -501,38 +527,36 @@ const PLAN = [
          "Unexpected message from peer: ApplicationData", "h2Preface")] },
   { script: "test-ccs.py" },
   { script: "test-certificate-malformed.py",
-    serverKey: "rsa", skip: RSA_SERVER, on: CR, certificate: "rsa",
+    retargetSigAlgs: true, on: CR, certificate: "rsa",
     exceptions: [ex(/^fuzz empty certificate/, "decode_error",
                     "alertChoice")] },
   { script: "test-certificate-request.py", on: CR,
     args: ["-s", SIGALGS_12, "-T", "rsa_sign ecdsa_sign"] },
   { script: "test-certificate-verify.py",
-    serverKey: "rsa", skip: RSA_SERVER, on: CR, certificate: "rsa" },
+    retargetSigAlgs: true, on: CR, certificate: "rsa" },
   { script: "test-certificate-verify-malformed.py",
-    serverKey: "rsa", skip: RSA_SERVER, on: CR,
+    retargetSigAlgs: true, on: CR,
     certificate: "rsa" },
   { script: "test-certificate-verify-malformed-sig.py",
-    serverKey: "rsa", skip: RSA_SERVER, on: CR,
+    retargetSigAlgs: true, on: CR,
     certificate: "rsa",
     exceptions: [ex(/sha1|SHA-1/, "illegal_parameter", "sha1Envelope")] },
   { script: "test-client-compatibility.py",
-    serverKey: "rsa", skip: RSA_SERVER, args: ["-n", "0"],
+    args: ["-n", "0"],
     exceptions: [ex(/./, REFUSED_OLD, "oldVersion", { reason:
       WHY.oldVersion.reason + " — the replayed hellos of 2013-era " +
       "browsers, crawlers and Java/Android runtimes that offer nothing " +
       "BCP 195 allows" })] },
   { script: "test-client-hello-max-size.py",
-    serverKey: "rsa", skip: RSA_SERVER,
     exceptions: [ex("max client hello", "Can't represent value",
                     "overflow")] },
-  { script: "test-clienthello-md5.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+  { script: "test-clienthello-md5.py" },
   { script: "test-connection-abort.py" },
   { script: "test-conversation.py" },
   { script: "test-cve-2004-0079.py" },
   { script: "test-cve-2016-6309.py" },
   { script: "test-downgrade-protection.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     args: ["--server-max-protocol=TLSv1.3"],
     exceptions: [ex(OLD, REFUSED_OLD, "oldVersion")] },
   { script: "test-early-application-data.py" },
@@ -583,13 +607,13 @@ const PLAN = [
     certificate: "ed25519" },
   { script: "test-empty-extensions.py" },
   { script: "test-export-ciphers-rejected.py",
-    serverKey: "rsa", skip: RSA_SERVER, refusal: true,
+    refusal: true,
     exceptions: [ex(/./, REFUSED_OLD, "noDhe", { why: "design", reason:
       "RUN AS A REFUSAL: no export suite, and no CBC suite for the " +
       "script's AES_128 fallback either, so every hello is refused — " +
       "handshake_failure in TLS 1.2, protocol_version below it" })] },
   { script: "test-extended-master-secret-extension.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [
       ex(/renegotiat/, "no_renegotiation", "renegotiation"),
       ex(/^EMS with session resume/, ["session_id == srv_hello.session_id",
@@ -602,7 +626,7 @@ const PLAN = [
          "Server Key Exchange signature invalid", "perNodeKey",
          { clustered: true })] },
   { script: "test-extended-master-secret-extension-with-client-cert.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     on: CR, certificate: "rsa",
     exceptions: [ex("resume with certificate and EMS",
                     "session_id == srv_hello", "sessionCache")] },
@@ -610,7 +634,7 @@ const PLAN = [
     exceptions: [ex(/^16383 extensions/, "Can't represent value",
                     "overflow")] },
   { script: "test-fallback-scsv.py",
-    serverKey: "rsa", skip: RSA_SERVER, args: ["--tls-1.3"],
+    args: ["--tls-1.3"],
     exceptions: [ex(/TLSv1\.[01]|SSL3\.0/, REFUSED_OLD, "oldVersion")] },
   { script: "test-fuzzed-ciphertext.py" },
   { script: "test-fuzzed-finished.py" },
@@ -625,14 +649,14 @@ const PLAN = [
   { script: "test-invalid-compression-methods.py" },
   { script: "test-invalid-content-type.py" },
   { script: "test-invalid-server-name-extension.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex(/^sanity$|^Sanity check, SNI$/, "\"illegal_parameter\"",
                     "levelZeroAlert", { on: ["ldaps"] }),
                  ex(/SNI|hostname|host_name/,
                     ["server_hello", "decode_error", "unrecognized_name"],
                     "sniParse")] },
   { script: "test-invalid-server-name-extension-resumption.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex(/^sanity$|^Sanity check, SNI$/, "\"illegal_parameter\"",
                     "levelZeroAlert", { on: ["ldaps"] }),
                  ex(/bad SNI|malformed SNI/, "unrecognized_name",
@@ -643,22 +667,19 @@ const PLAN = [
   { script: "test-invalid-session-id.py" },
   { script: "test-invalid-version.py" },
   { script: "test-large-hello.py",
-    serverKey: "rsa", skip: RSA_SERVER, timeoutMs: 1800000,
+    timeoutMs: 1800000,
     exceptions: [ex(/./, "Can't represent value", "overflow")] },
   { script: "test-large-number-of-extensions.py",
-    serverKey: "rsa", skip: RSA_SERVER,
     exceptions: [ex(/^16383 extensions/, "Can't represent value",
                     "overflow")] },
   { script: "test-legacy-renegotiation.py",
-    serverKey: "rsa", skip: RSA_SERVER,
     exceptions: [ex(/renegotiat/, "no_renegotiation", "renegotiation")] },
   { script: "test-message-duplication.py" },
   { script: "test-message-skipping.py" },
-  { script: "test-no-heartbeat.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+  { script: "test-no-heartbeat.py" },
   { script: "test-no-mlkem-in-old-tls.py" },
   { script: "test-ocsp-stapling.py",
-    serverKey: "rsa", skip: RSA_SERVER, args: ["--no-status"],
+    args: ["--no-status"],
     exceptions: [ex(/^renegotiate/, "no_renegotiation", "renegotiation")] },
   { script: "test-openssl-3712.py",
     exceptions: [ex("weaved app data and handshake proto",
@@ -680,12 +701,12 @@ const PLAN = [
       Object.assign({ exclude: true, probe: "try secure renegotiation" },
                     WHY.renegotiation)] },
   { script: "test-rsa-pss-sigs-on-certificate-verify.py",
-    serverKey: "rsa", skip: RSA_SERVER, on: CR,
+    retargetSigAlgs: true, on: CR,
     certificate: "rsa",
     exceptions: [ex(/^rsa_pss_pss_sha\d+ in CertificateVerify with rsa key$/,
                     "illegal_parameter", "schemeBeforeSignature")] },
   { script: "test-rsa-sigs-on-certificate-verify.py",
-    serverKey: "rsa", skip: RSA_SERVER, on: CR,
+    retargetSigAlgs: true, on: CR,
     certificate: "rsa",
     exceptions: [ex(/sha1/, "illegal_parameter", "sha1Envelope")] },
   { script: "test-serverhello-random.py",
@@ -705,9 +726,9 @@ const PLAN = [
                     "Server Key Exchange signature invalid"],
                     "perNodeTicketKey", { clustered: true, on: ["main"] })] },
   { script: "test-sig-algs.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex(/^rsa_pss_pss_sha\d+ only$/, "handshake_failure",
-                    "rsaKey")] },
+                    "rsaKey", { serverKey: "rsa" })] },
   { script: "test-sig-algs-renegotiation-resumption.py",
     exceptions: [
       ex(/renegotiation/, "no_renegotiation", "renegotiation"),
@@ -717,41 +738,39 @@ const PLAN = [
   { script: "test-signature-algorithms.py",
     exceptions: [ex("explicit SHA-1+RSA/ECDSA", "handshake_failure",
                     "noSha1")] },
-  { script: "test-ssl-death-alert.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+  { script: "test-ssl-death-alert.py" },
   { script: "test-sslv2-connection.py" },
   { script: "test-sslv2-force-cipher-3des.py" },
   { script: "test-sslv2-force-cipher-non3des.py" },
   { script: "test-sslv2-force-cipher.py" },
   { script: "test-sslv2-force-export-cipher.py" },
   { script: "test-sslv2hello-protocol.py",
-    serverKey: "rsa", skip: RSA_SERVER, args: ["--no-ssl2"],
+    args: ["--no-ssl2"],
     exceptions: [ex(/^Empty SSLv2 record/, "Unexpected closure",
                     "emptySslv2")] },
   { script: "test-tls13-0rtt-garbage.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    retargetSigAlgs: true },
   { script: "test-tls13-ccs.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    retargetSigAlgs: true },
   { script: "test-tls13-certificate-request.py", on: CR,
     args: ["-s", SIGALGS_13],
     exceptions: [ex("verify extensions in CertificateRequest",
                     "unexpected extension(s): 47", "certAuthorities")] },
   { script: "test-tls13-certificate-verify.py",
-    serverKey: "rsa", skip: RSA_SERVER, on: CR, certificate: "rsa",
+    retargetSigAlgs: true, on: CR, certificate: "rsa",
     args: ["-s", SIGALGS_13] },
   { script: "test-tls13-connection-abort.py" },
   { script: "test-tls13-conversation.py" },
   { script: "test-tls13-count-tickets.py",
-    serverKey: "rsa", skip: RSA_SERVER, args: ["-t", "2"] },
+    retargetSigAlgs: true, args: ["-t", "2"] },
   { script: "test-tls13-crfg-curves.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex(/^empty x(25519|448) key share$/, "decode_error",
                     "alertChoice")] },
   { script: "test-tls13-dhe-shared-secret-padding.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex(/ffdhe/, "handshake_failure", "noFfdhe")] },
-  { script: "test-tls13-ecdhe-curves.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+  { script: "test-tls13-ecdhe-curves.py" },
   // RUN AS A REFUSAL, AND THE REGRESSION CHECK FOR THE NIST-CURVE GUARD
   // (#212): a client certificate on a curve other than P-256/P-384/P-521.
   // Every probe must be refused in the handshake, and the service must
@@ -765,20 +784,20 @@ const PLAN = [
   { script: "test-tls13-eddsa-in-certificate-verify.py", on: CR,
     certificate: "ed25519", args: ["-s", SIGALGS_13] },
   { script: "test-tls13-empty-alert.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    retargetSigAlgs: true },
   { script: "test-tls13-finished.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex(/^padding - /, "illegal_parameter", "alertChoice")] },
   { script: "test-tls13-finished-plaintext.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    retargetSigAlgs: true },
   { script: "test-tls13-hrr.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    retargetSigAlgs: true },
   { script: "test-tls13-invalid-ciphers.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    retargetSigAlgs: true },
   { script: "test-tls13-keyshare-omitted.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    retargetSigAlgs: true },
   { script: "test-tls13-keyupdate.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex("app data split, conversation with KeyUpdate msg",
                     "Timeout", "keyUpdateLazy"),
                  ex("large KeyUpdate message", "illegal_parameter",
@@ -790,7 +809,7 @@ const PLAN = [
                  ex(/^invalid message_type - \d+, in KeyUpdate msg$/,
                     "Unexpected closure from peer", "refusalCloseRace")] },
   { script: "test-tls13-large-number-of-extensions.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     args: ["--supgroup"],
     exceptions: [ex("empty unassigned extensions, ids in range from " +
                     "2 to 4119", "decode_error",
@@ -799,7 +818,7 @@ const PLAN = [
                     "range from 2 to 1047", "decode_error",
                     "randomAssignedExtension")] },
   { script: "test-tls13-legacy-version.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex("version (3, 0)", "handshake_failure",
                     "legacyVersion")] },
   { script: "test-tls13-mldsa-in-certificate-verify.py", on: CR,
@@ -811,14 +830,20 @@ const PLAN = [
     exceptions: [ex(/CCS/, ["decode_error", "Unexpected closure",
                             "BrokenPipe"], "recordVersion")] },
   { script: "test-tls13-nociphers.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    retargetSigAlgs: true },
   { script: "test-tls13-no-unknown-groups.py", args: ["--groups", GROUPS] },
   { script: "test-tls13-obsolete-curves.py",
     args: ["--relaxed", "-a", "handshake_failure"] },
+  // #1303: RSA-only. Every probe asks whether the server signs its TLS
+  // 1.3 CertificateVerify with RSA-PSS when PKCS #1 v1.5 is also offered
+  // (RFC 8446 section 4.2.3); an ECDSA key has no such choice, and its
+  // counterpart is test-tls13-ecdsa-support.
   { script: "test-tls13-pkcs-signature.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    serverKey: "rsa", skip: RSA_SERVER + ": every probe is about which " +
+    "RSA scheme (PSS, never PKCS #1 v1.5) the server signs TLS 1.3 with; " +
+    "test-tls13-ecdsa-support is the ECDSA counterpart" },
   { script: "test-tls13-record-layer-limits.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [
       ex(/^too big plaintext/, "ApplicationData", "paddedRecord"),
       ex(/^max size of Finished msg/, "Timeout", "paddedRecord"),
@@ -826,11 +851,15 @@ const PLAN = [
       ex(/^too big payload in app_data/, "Unexpected closure from peer",
          "overflowClose")] },
   { script: "test-tls13-record-padding.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    retargetSigAlgs: true },
+  // #1303: RSA-only, for the same reason: the probes are the RSA-PSS
+  // schemes one by one, and an ECDSA key can sign none of them.
   { script: "test-tls13-rsa-signatures.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    serverKey: "rsa", skip: RSA_SERVER + ": every probe offers one " +
+    "RSA scheme and checks the server signs with it; " +
+    "test-tls13-ecdsa-support is the ECDSA counterpart" },
   { script: "test-tls13-serverhello-random.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex(/ffdhe/, "handshake_failure", "noFfdhe")] },
   { script: "test-tls13-session-resumption.py",
     exceptions: [
@@ -843,24 +872,24 @@ const PLAN = [
       ex(/^session resumption( - PSK_WITH_DHE)?$/, "pre_shared_key",
          "perNodeTicketKey", { clustered: true, on: ["main"] })] },
   { script: "test-tls13-shuffled-extentions.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex(/^HRR reversed order/, "server_hello",
                     "secondHelloOrder")] },
   { script: "test-tls13-signature-algorithms.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    retargetSigAlgs: true },
   { script: "test-tls13-symetric-ciphers.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex(/CCM/, "handshake_failure", "noCcm")] },
   { script: "test-tls13-unencrypted-alert.py" },
   { script: "test-tls13-unrecognised-groups.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex(/ffdhe2048/, "handshake_failure", "noFfdhe")] },
   { script: "test-tls13-version-negotiation.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    retargetSigAlgs: true,
     exceptions: [ex(/ to 1\.[01]$/, REFUSED_OLD, "oldVersion")] },
   { script: "test-tls13-zero-content-type.py" },
   { script: "test-tls13-zero-length-data.py",
-    serverKey: "rsa", skip: RSA_SERVER },
+    retargetSigAlgs: true },
   { script: "test-truncating-of-client-hello.py",
     exceptions: [
       ex(/^max pad/, "Can't represent value", "overflow"),
@@ -873,8 +902,18 @@ const PLAN = [
     exceptions: [ex("check for unsupported curve fallback",
                     "handshake_failure", "noDhe")] },
   { script: "test-version-numbers.py" },
+  // #1303: RSA-only, and not for the suite. Its probes are TLS 1.2
+  // hellos whose supported_groups holds x25519 or x448 ALONE; with an
+  // ECDSA certificate that list must also name the certificate's curve
+  // (RFC 8422 section 5.1.1 and 5.3), so OpenSSL refuses every one with
+  // handshake_failure and the script would test that instead (run against
+  // P-256, 2026-11-04: 17 of 24 probes). TLS 1.3 X25519 and X448 on an
+  // ECDSA listener are test-tls13-ecdhe-curves and test-tls13-crfg-curves.
   { script: "test-x25519.py",
-    serverKey: "rsa", skip: RSA_SERVER,
+    serverKey: "rsa", skip: RSA_SERVER + ": its TLS 1.2 hellos offer " +
+    "x25519 or x448 alone, and an ECDSA certificate's curve must be in " +
+    "supported_groups (RFC 8422 section 5.3), so every probe would be " +
+    "refused for that",
     exceptions: [
       ex(/^empty x(25519|448) key share$/, "illegal_parameter",
          "alertChoice"),
@@ -897,6 +936,11 @@ function argsFor(entry, listener, target) {
   // so an RSA listener's command line does not carry --server-key.
   if ((target.serverKey || "rsa") === "ec") {
     argv.push("--server-key", "ec");
+    // #1303: the script's own RSA signature list is boilerplate, so the
+    // adapter rewrites it hash for hash (its header argues it).
+    if (entry.retargetSigAlgs) {
+      argv.push("--retarget-sigalgs");
+    }
   }
   argv.push("--tls12-aead");
   argv.push(path.join(TLSFUZZER_DIR, "tlsfuzzer", "scripts", entry.script),
@@ -913,7 +957,8 @@ function argsFor(entry, listener, target) {
     }
     argv.push("-k", pair.key, "-c", pair.cert);
   }
-  exceptionsFor(entry, listener, target && target.curve).filter(function (one) {
+  exceptionsFor(entry, listener, target && target.curve,
+                target && target.serverKey).filter(function (one) {
     return one.exclude;
   }).forEach(function (one) {
     argv.push("-e", one.probe);
@@ -934,14 +979,19 @@ function clustered() {
 // The exceptions that apply on this listener. One marked `clustered` applies
 // only behind a balancer, so it cannot excuse the same failure on one node.
 // One marked `curves` applies only when the listener's certificate is on one
-// of those curves (#321): a TLS 1.3 ECDSA scheme for a different curve.
-function exceptionsFor(entry, listener, curve) {
+// of those curves (#321): a TLS 1.3 ECDSA scheme for a different curve. One
+// marked `serverKey` applies only to a listener presenting that key (#1303),
+// so an RSA-key failure cannot excuse the same probe on an ECDSA listener;
+// an omitted key is RSA, as everywhere in this file.
+function exceptionsFor(entry, listener, curve, serverKey) {
   log.debug("Entering exceptionsFor().");
+  const key = serverKey || "rsa";
   log.debug("Leaving exceptionsFor().");
   return (entry.exceptions || []).filter(function (one) {
     return (!one.on || one.on.indexOf(listener) >= 0) &&
       (!one.clustered || clustered()) &&
-      (!one.curves || (curve && one.curves.indexOf(curve) >= 0));
+      (!one.curves || (curve && one.curves.indexOf(curve) >= 0)) &&
+      (!one.serverKey || one.serverKey === key);
   });
 }
 
@@ -994,10 +1044,10 @@ function probeBlock(out, name) {
 // Every failed probe, each either explained by an exception of this entry
 // on this listener — its name matches and its failure text carries the
 // alert the exception names — or unexplained.
-function classify(entry, listener, out, failed, curve) {
+function classify(entry, listener, out, failed, curve, serverKey) {
   log.debug("Entering classify().");
-  const exceptions = exceptionsFor(entry, listener, curve).filter(
-    function (one) {
+  const exceptions = exceptionsFor(entry, listener, curve, serverKey)
+    .filter(function (one) {
       return !one.exclude;
     });
   const seen = new Set();
@@ -1092,7 +1142,7 @@ function runScript(entry, listener, target) {
       clearTimeout(timer);
       const counts = summarise(out);
       const verdict = classify(entry, listener, out, counts.failed,
-                               target.curve);
+                               target.curve, target.serverKey);
       // Passed: a summary, nothing unexpectedly passing, and every failed
       // probe explained. A script with failures exits 1, so the exit code
       // is read only where nothing failed.
@@ -1336,7 +1386,20 @@ if (require.main === module) {
                              cert: path.join(certDir, kind + ".crt") };
     });
   }
-  runPlan({ host: host, port: Number(port), certificates: certificates },
+  // The plan follows the certificate the listener presents, as the jobs'
+  // does (#321); until #1303 a hand run always ran the RSA plan.
+  presentedCertificate(host, port).then(function (seen) {
+    const declined = declineReason({ main: seen });
+    if (declined) {
+      process.stdout.write("declined: " + declined + "\n");
+      process.exit(0);
+    }
+    const cert = planFor(seen, { type: "", curve: "" });
+    process.stdout.write("the listener presents " + cert.type +
+                         (cert.curve ? " " + cert.curve : "") + "\n");
+    return runPlan({ host: host, port: Number(port),
+                     certificates: certificates, serverKey: cert.type,
+                     curve: cert.curve },
           listener, { only: only, concurrency: Number(process.env
             .STS_TLSFUZZER_CONCURRENCY || 6),
           onResult: function (r) {
@@ -1346,7 +1409,8 @@ if (require.main === module) {
                 listener + "-" + r.script + ".log"), r.command + "\n" +
                 r.output);
             }
-          } })
+          } });
+  })
     .then(function (results) {
       const bad = results.filter(function (r) {
         return !r.ok;

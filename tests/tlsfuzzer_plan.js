@@ -16,8 +16,12 @@
 // a real handshake names the key and the curve, that any other key is
 // declined, and that the adapter retargets TLS 1.2 to the matching ECDHE
 // suite. The stale extension probes are decode_error on every listener,
-// including the debugger. The map is tests/tlsfuzzer/sts_adapter_map.py,
-// which this file runs; the assertions stay here. It does not run tlsfuzzer.
+// including the debugger. Since #1303 three scripts alone need an RSA
+// server certificate, and the thirty-seven whose RSA signature list is
+// boilerplate ask the adapter to rewrite it hash for hash on an ECDSA
+// listener, which the map also prints. The map is
+// tests/tlsfuzzer/sts_adapter_map.py, which this file runs; the assertions
+// stay here. It does not run tlsfuzzer.
 // ===========================================================================
 
 const childProcess = require('child_process');
@@ -95,9 +99,11 @@ function planGap() {
     const listener = (entry.on && entry.on[0]) || 'main';
     const onRsa = kit.appliesTo(entry, listener, 'rsa');
     const onEc = kit.appliesTo(entry, listener, 'ec');
+    // #1303: an RSA-only reason starts with the shared sentence and says
+    // what in the script needs the RSA key.
     if (entry.serverKey === 'rsa') {
       return !(onRsa && !onEc &&
-        why(listener, 'ec', entry.script) === RSA_SERVER);
+        why(listener, 'ec', entry.script).indexOf(RSA_SERVER) === 0);
     }
     if (entry.serverKey === 'ec') {
       return !(!onRsa && onEc &&
@@ -267,6 +273,15 @@ function adapterSuites(t) {
           'ecdsa_secp256r1_sha256,ecdsa_secp384r1_sha384,' +
           'ecdsa_secp521r1_sha512',
           'an ECDSA listener is offered the three NIST schemes');
+  t.equal(JSON.stringify(got.retarget_pss), '[[4,3],[5,3],[6,3],[4,3]]',
+          'rsa_pss_rsae and rsa_pss_pss become ECDSA of the same hash, ' +
+          'entry for entry');
+  t.equal(JSON.stringify(got.retarget_pkcs1), '[[6,3],[2,3],[1,3]]',
+          'PKCS #1 v1.5 with SHA-512, SHA-1 and MD5 keeps its hash');
+  t.equal(JSON.stringify(got.retarget_mixed), '[[8,4],[4,3]]',
+          'a list that already names ECDSA is left alone');
+  t.equal(JSON.stringify(got.retarget_other), '[[8,7]]',
+          'a scheme that is not RSA (Ed25519) is kept');
   const refused = childProcess.spawnSync('python3',
     [path.join(dir, 'sts_adapter.py'), '--server-key', 'ed25519'],
     { encoding: 'utf8', env: env });
@@ -297,25 +312,32 @@ async function run(t) {
               script + ' runs against an ECDSA listener');
     });
 
-  ['test-sig-algs.py', 'test-tls13-rsa-signatures.py',
-   'test-clienthello-md5.py'].forEach(function (script) {
+  ['test-tls13-rsa-signatures.py', 'test-tls13-pkcs-signature.py',
+   'test-x25519.py'].forEach(function (script) {
     t.check(rsa.indexOf(script) < 0,
             script + ' runs against an RSA listener');
     t.check(ec.indexOf(script) >= 0,
             script + ' is not applicable to an ECDSA listener');
-    t.equal(why(null, 'ec', script), RSA_SERVER,
-            script + ' says why it does not run against ECDSA');
+    const reason = why(null, 'ec', script);
+    t.check(reason.indexOf(RSA_SERVER + ': ') === 0 &&
+            reason.length > RSA_SERVER.length + 20,
+            script + ' says why it does not run against ECDSA', reason);
   });
+
+  // #1303: what the scripts' names suggested was RSA-only, and is not.
+  ['test-sig-algs.py', 'test-clienthello-md5.py', 'test-no-heartbeat.py',
+   'test-tls13-zero-length-data.py', 'test-tls13-signature-algorithms.py']
+    .forEach(function (script) {
+      t.check(rsa.indexOf(script) < 0 && ec.indexOf(script) < 0,
+              script + ' runs for both server keys');
+    });
 
   const rsaMain = skipped('main', 'rsa');
   const ecMain = skipped('main', 'ec');
-  t.check(rsaMain.indexOf('test-certificate-verify.py') < 0,
-          'the RSA CertificateVerify script runs on an RSA main port');
-  t.check(ecMain.indexOf('test-certificate-verify.py') >= 0,
-          'the RSA CertificateVerify script does not run on an ECDSA ' +
-          'main port');
-  t.equal(why('main', 'ec', 'test-certificate-verify.py'), RSA_SERVER,
-          'the RSA CertificateVerify script is skipped for the server key');
+  t.check(rsaMain.indexOf('test-certificate-verify.py') < 0 &&
+          ecMain.indexOf('test-certificate-verify.py') < 0,
+          'the RSA client CertificateVerify script runs on the main port ' +
+          'whichever key the listener presents');
 
   ['test-aes-gcm-nonces.py', 'test-ecdhe-rsa-key-exchange.py',
    'test-invalid-client-hello-w-record-overflow.py'].forEach(
@@ -405,14 +427,44 @@ async function run(t) {
             .indexOf('--server-key') < 0,
           'an omitted server key keeps the RSA command line');
 
+  const verifyEntry = entryNamed('test-certificate-verify.py');
+  const retargeted = kit.argsFor(verifyEntry, 'main',
+    Object.assign({}, target, { serverKey: 'ec', certificates: {
+      rsa: { key: 'rsa.key', cert: 'rsa.crt' } } }));
+  t.check(retargeted.indexOf('--retarget-sigalgs') > retargeted
+            .indexOf('--server-key'),
+          'an ECDSA listener retargets a boilerplate RSA signature list');
+  t.check(kit.argsFor(verifyEntry, 'main',
+    Object.assign({}, target, { serverKey: 'rsa', certificates: {
+      rsa: { key: 'rsa.key', cert: 'rsa.crt' } } }))
+            .indexOf('--retarget-sigalgs') < 0,
+          'an RSA listener never retargets the signature list');
+  t.check(kit.argsFor(entryNamed('test-clienthello-md5.py'), 'main',
+    Object.assign({ serverKey: 'ec' }, target))
+            .indexOf('--retarget-sigalgs') < 0,
+          'a script without the marker is not retargeted');
+
+  const sigAlgs = entryNamed('test-sig-algs.py');
+  t.equal(kit.exceptionsFor(sigAlgs, 'main', '', 'rsa').length, 1,
+          'the RSA-key exception applies to an RSA listener');
+  t.equal(kit.exceptionsFor(sigAlgs, 'main', 'P-256', 'ec').length, 0,
+          'the RSA-key exception does not excuse an ECDSA listener');
+  t.equal(kit.exceptionsFor(sigAlgs, 'main').length, 1,
+          'an omitted key is RSA for an exception too');
+
   const rsaMarked = kit.PLAN.filter(function (entry) {
     return entry.serverKey === 'rsa';
   }).length;
   const ecMarked = kit.PLAN.filter(function (entry) {
     return entry.serverKey === 'ec';
   }).length;
-  t.equal(rsaMarked, 54, 'fifty-four scripts need an RSA server certificate');
+  const sigMarked = kit.PLAN.filter(function (entry) {
+    return entry.retargetSigAlgs;
+  }).length;
+  t.equal(rsaMarked, 3, 'three scripts need an RSA server certificate');
   t.equal(ecMarked, 2, 'two scripts need an ECDSA server certificate');
+  t.equal(sigMarked, 37, 'thirty-seven scripts have their RSA signature ' +
+          'list retargeted on an ECDSA listener');
   t.equal(planGap(), '', 'every plan entry follows its server key');
   t.equal(kit.curveName('prime256v1'), 'P-256',
           'prime256v1 is the plan\'s P-256');
@@ -439,6 +491,8 @@ module.exports = {
             'default, the ECDSA-server scripts when the certificate is ' +
             'ECDSA, a curve exception only for the curves it names, the ' +
             'stale extension probes as decode_error on every listener, ' +
-            'and the adapter suite that matches the key',
+            'the adapter suite that matches the key, and (#1303) three ' +
+            'RSA-only scripts, the RSA signature list retargeted hash ' +
+            'for hash for thirty-seven others',
   run: run
 };
