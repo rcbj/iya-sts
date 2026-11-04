@@ -1931,10 +1931,15 @@ event loop. Any row answers "it grants", whatever this process holds of that ent
 store that cannot answer does too (`STS-LDAP-0205`, logged when it stops and when it
 answers again). The walk of what this process holds still runs first, for its own
 writes not yet flushed. Outside a window nothing is asked. So `applyFederatedGroups()`
-is a promise, and `startFederatedSession()` waits for it before the browser goes on. A
-row written before #1306 carries no `grantinggroup` key until it is next written
-(rcbj's no-migration rule, as on #636 and #1061). `tests/federation_group_authority.js`
-section W.
+is a promise, and `startFederatedSession()` waits for it before the browser goes on.
+~~A row written before #1306 carries no `grantinggroup` key until it is next written
+(rcbj's no-migration rule, as on #636 and #1061).~~ **Since #1311 such a row is keyed
+by a one-time backfill**, rcbj's decision on #1306's open point: the cluster job
+`persistence.granting-key-backfill` walks each database's directory a page at a time
+and writes the keys the codec derives, then a done mark (`persistence/CLAUDE.md`, *The
+`grantinggroup` keys of rows written before #1306*). Until its mark is written a row it
+has not reached is still missed. `tests/federation_group_authority.js` section W, and
+`tests/granting_index_backfill.js` for the backfill.
 
 **AND IN PRODUCT, A NEWCOMER THE ATTRIBUTE POLICY REFUSES IS `STS-FED-0158` ON THE PAGE
 (#396 with #358).** `ldap_server.js`'s `autoCreateUser()` writes `refusedWith` and the
@@ -1958,7 +1963,7 @@ copies the payload, or a directory reached over a channel, owes this a way back.
 * `groupByFederatedName()` walks every group on each sign-in that names a group not at its DN; so does `federatedGroupAuthority()`'s walk over what the process holds (resident entries only, in a window; it runs before the store is asked, for this process's unflushed writes).
 * Groups are only ever added: a name the partner stops sending leaves the membership in place.
 * The idle sweep ignores passkeys: a person whose other path is a passkey alone is still disabled.
-* ~~`federatedGroupAuthority()` reads resident entries only, so in a windowed directory a person-side owner value (`stsServiceAccountOwner`) that is not resident is not seen.~~ Fixed by #1306: the store is asked (above). A row written before #1306 is seen once it is next written.
+* ~~`federatedGroupAuthority()` reads resident entries only, so in a windowed directory a person-side owner value (`stsServiceAccountOwner`) that is not resident is not seen.~~ Fixed by #1306: the store is asked (above); a row written before #1306 is keyed by #1311's one-time backfill.
 
 `tests/federation_provisioning.js` drives a real OIDC federated sign-in between two realms
 of one process — the default realm's OpenID Provider and a service-provider realm of its

@@ -1558,8 +1558,11 @@ postgres driver writes and reads every entry through it.
   or joins a group a partner named, so a name an entry this process does not
   hold makes grant is still refused — `federation/CLAUDE.md`, *A partner's
   token never buys a group that grants something*. Index key only, same
-  no-schema-version reasoning; a row written before is keyed when next
-  written.
+  no-schema-version reasoning. **A row written before it is keyed by a
+  one-time backfill since #1311** (*The `grantinggroup` keys of rows
+  written before #1306*, below) — the one exception to the
+  no-migration rule, by rcbj's decision, because a missed key here lets a
+  partner's token buy a group that grants something.
 * **A QUERY IS KEYED AND OPENED ON THE THREAD THAT HOLDS THE KEYS.** The
   windowed directory's bridge thread builds a statement and shapes its rows
   with no keystore, so `persistence.js` wraps the bridge: `keyArgs()` before
@@ -1623,6 +1626,59 @@ postgres driver writes and reads every entry through it.
 * `cell_convert.js` opens the source entries to plan them (a group's members
   split between tiers) and seals what it writes for the tier it writes to.
 * A file (ldif) store is not sealed.
+
+### The `grantinggroup` keys of rows written before #1306 (#1311)
+
+`granting_index_backfill.js` argues it; this is what a maintainer looks for.
+
+* **A CLUSTER SCHEDULER JOB, `persistence.granting-key-backfill`, NOT A STEP
+  OF THE START.** The session index's backfill (#350) is a start step because
+  a window cannot answer a session walk without it, and a throw there is
+  fatal; this index is not needed to start, and a walk of every directory
+  row at 50M is hours. #820's minted backfill was a start step first and ran
+  8081's front out of heap; #623's data-key catch-up runs in jobs under a
+  budget. So: every two minutes until done, at most 45 s of work a run, the
+  scheduler's claim is the exclusion between nodes, the body runs in a
+  request worker where there is one (#408). Registered from
+  `common/protocol_stack.ts` (23b-iii-b) in every process.
+* **EVERY ROW, IN PRIMARY-KEY ORDER, 500 A PAGE.** No index selects "holds a
+  granting attribute": `attr_names` is indexed only for ASKED_ATTRIBUTES (an
+  expression index, a schema version to change), and `value_keys` holds
+  digests. So a page is the next 500 rows after the cursor by `(realm,
+  dn_key)`, and the statement hands back the blob and the held `value_keys`
+  only for a row whose clear `attr_names` names one of the six
+  (`?|` here, `JSON_OVERLAPS` on MariaDB); the rest cost a key and a name
+  list. Constant per page, asynchronous, a yield between pages; never a
+  request's path.
+* **ONLY THE INDEX IS WRITTEN, COMPARE-AND-SET.** A candidate is opened and
+  given to `indexOf()`; where its `valueKeys` differ from the row's,
+  PostgreSQL sets `value_keys` while `attrs` is still the blob read
+  (`indexSealed()`'s rule), and MariaDB locks the candidates in key order,
+  compares the blob, and replaces `value_keys` and the entry's `value` key
+  rows in one transaction. No body is rewritten and no change row logged:
+  no process holds `value_keys`.
+* **THE CURSOR AND THE DONE MARK ARE `sts_minted_index` ROWS** under the
+  handle `ldap.grantinggroup`, which no minted store declares, realm '', keys
+  with a `$` (`$cursor$` holding `realm\ndn_key`, `$index-complete$`): the
+  table both engines and both tiers have, holding #820's marks already, so
+  no schema version. **One mark per database, not per realm** — the walk is
+  one keyset over the table, and a realm made after this build is written
+  with its keys. The cursor is written after each page has committed, so a
+  restart, a lost claim or the budget resumes after the last finished page;
+  once the mark is read, a run is that one read. In a service deployed as
+  cells the tiered driver walks the global tier and then the cell's
+  database, each to its own mark; two cells' leaders on the global tier cost
+  time, never keys (compare-and-set, and every cursor names a finished
+  prefix).
+* **A BLOB THAT WILL NOT OPEN IS SKIPPED** after the data-key rows are read
+  again once a run (`STS-STORE-0164`, the first ten by key, then a count),
+  and the walk still writes its mark — #695's argument: no process holding
+  these keys can answer about that entry anyway (`openAnswer()` drops it),
+  and it is keyed when next written. A store error stops the run
+  (`STS-STORE-0163`) and the next resumes.
+
+`tests/granting_index_backfill.js` holds both engines against doubles that
+keep the table.
 
 ## A MINTED ROW'S NAME IS A DIGEST, AND THE NAME IS SEALED (#222, 2026-10-01)
 
