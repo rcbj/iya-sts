@@ -47,7 +47,9 @@ const log = bunyan.createLogger({ name: 'MANIFEST',
 // `sts_eudi_wallet_portal.js` (#668) hands the portal's offers and sign-in
 // requests to a real wallet's web UI in the same Chrome — the eudi-dev
 // wallet, a child of the job — which no wallet written here can stand in
-// for.
+// for. Its native counterpart, `sts_oid4vc_wallet.js` (#694), needs no
+// browser: rcbj/oid4vc-wallet answers from its command line, and the job
+// follows what it prints in a cookie jar.
 //
 // ---------------------------------------------------------------------------
 // `docker: true` MEANS THE JOB NEEDS A REMOTE PEP CONTAINER, AND IT IS A
@@ -1203,6 +1205,20 @@ const JOBS = [
   // realm in the stack's mode (product pins global.publicBaseUrl first).
   // `local: true`: this repository's feature.
   { file: 'sts_person_did.js',           browser: false },
+  // THE NATIVE OID4VC WALLET (#694, 2026-11-04): rcbj/oid4vc-wallet (built
+  // into the tests image, tests/Dockerfile's oid4vc-wallet stage) run as
+  // this job's child from its command line — `accept`, `present
+  // --approve|--refuse`, `self-issued` — with a throwaway HOME and its
+  // storage key in a file, never a desktop key ring. In a throwaway realm on
+  // a host of two labels (the runner maps `<host>.example.com`, since a
+  // did:web cannot name `sts`): a portal offer accepted as a batch, each
+  // copy's index VALID and on its portal row; an OpenID4VP sign-in approved
+  // and refused; the JWK thumbprint, did:jwk and did:key enrolled, each
+  // signing in, the thumbprint removed and refused (STS-VC-0091); a did:web
+  // this realm publishes with the wallet's key, signing in; Remove all, every
+  // index INVALID, the revoked copy refused (STS-VC-0072). `local: true`:
+  // this repository's portal, issuer, Verifier and self-issued sign-in.
+  { file: 'sts_oid4vc_wallet.js',        browser: false },
   // THE x509_san_dns AND x509_hash CLIENT IDENTIFIERS (#230, 2026-09-26):
   // each prefix's Request Object checked as a wallet checks it — the x5c
   // chain to the service Root, the signature, the dNSName or the hash — a

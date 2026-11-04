@@ -749,6 +749,13 @@ other host, add the service Root on **Settings → Trust anchors**.
   not from an address inside its own network). A DID proved this way can be
   made the person's preferred DID. Changing the choice changes the
   identifier, which must then be enrolled again.
+* **From a terminal:** `oid4vc-wallet accept <offer link> --tx-code <code>`
+  redeems an offer, `oid4vc-wallet present <openid4vp:// or siopv2:// link>
+  --approve` (or `--refuse`) answers a request and prints the address to open
+  in your browser, and `oid4vc-wallet self-issued --subject did:key` prints the
+  subject a sign-in sends. None of them opens the window. On a computer with
+  no key ring, such as a container, set `OID4VC_WALLET_KEY_FILE` to keep the
+  storage key in a file. iya-sts's own test suite runs the wallet this way.
 * **Not usable with it:** the Digital Credentials API (it is a desktop app),
   DID holder binding (its key proofs carry a `jwk`), and `jwt_vc_json` or
   `ldp_vc` presentations.

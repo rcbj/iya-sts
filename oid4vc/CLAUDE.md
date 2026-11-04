@@ -725,6 +725,17 @@ list.
 
 ### What has no test
 
+**A native wallet IS run since #694 (2026-11-04)**:
+`tests/protocol/sts_oid4vc_wallet.js` drives rcbj/oid4vc-wallet from its
+command line — a portal offer accepted, an OpenID4VP sign-in approved and
+refused, the JWK thumbprint, `did:jwk`, `did:key` and a wallet-custody
+did:web (#1291) enrolled and signing in, a removed subject and a revoked
+credential refused (`tests/CLAUDE.md` has the row). **What it cannot
+reach**, because the wallet does not do it: an offer by reference (the QR
+code), deferred issuance, the Digital Credentials API, a `jwt_vc_json` or
+`ldp_vc` presentation, and DID holder binding (its key proofs carry a
+`jwk`).
+
 **The parent project's wallet has not been RUN against this door**, and cannot
 be from here: its presentation code (`client/src/sd_jwt_vp.js`,
 `vc_presentation_*.js`) is not among the files vendored into `tests/protocol/`,

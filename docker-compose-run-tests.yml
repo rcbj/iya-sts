@@ -1275,6 +1275,18 @@ services:
 
   tests:
     container_name: ${STS_TESTS_CONTAINER_NAME:-iya-sts-test-runner}
+    # A DOTTED NAME FOR THE SERVICE, FOR THE RUNNER ONLY (#694). `sts` is one
+    # label, and a did:web has to name a host of two or more: the native
+    # OID4VC wallet refuses `did:web:sts%3A8081:…`. So sts_oid4vc_wallet.js
+    # runs its realm on `<host>.example.com` and pins that as the realm's
+    # global.publicBaseUrl, and the name resolves here, where the job and
+    # its wallet run, and nowhere else — the service never dials a DID it
+    # publishes, and an alias on `sts` would follow it into `sts2`, which
+    # extends it. It is already in the certificate's SANs (`tls.hostnames`).
+    # The address is the one the runner's `sts` is (cells mode can move it);
+    # the cluster file adds `sts-lb.example.com`.
+    extra_hosts:
+      - "sts.example.com:${STS_TEST_ENTRY_ADDRESS:-${STS_ADDRESS:-172.30.0.10}}"
     image: ${STS_TESTS_IMAGE:-${IMAGE_REGISTRY:-ghcr.io/rcbj/iya-sts}/iya-sts-tests:${IMAGE_TAG:-latest}}
     build:
       # The same context as the service, with the root .dockerignore deciding
