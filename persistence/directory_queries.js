@@ -354,32 +354,73 @@ function rdnPage(realm, parentKey, afterRdn, limit, options) {
            values: values };
 }
 
+// ---------------------------------------------------------------------------
+// A NEEDLE SEARCH'S COUNT IS CAPPED (#1308, rcbj's decision 2026-11-04).
+//
+// `position($3 in rdn_value) > 0` is a substring, and no index serves one:
+// the count read every direct child of the parent, so under a parent of
+// millions each search's count was a scan of millions. The count now stops
+// at `cap + 1` matches — a LIMIT inside the count, as
+// `countWithAttributeUpTo()` has — and an answer of `cap + 1` means MORE
+// THAN `cap`, which the caller says in those words. No schema change.
+//
+// **THE CAP IS THE WALK'S CAP, 100,000** (`rdnPage()`'s `walk`): no page
+// past it can be asked, so a count past it bought a number nobody could
+// page to, and a count up to it costs what the deepest page already costs.
+// A caller may ask a smaller cap (a test does); never a larger one. The
+// cost is bounded by the MATCHES: a needle that matches few children still
+// reads every child to find that out, which only an index on the substring
+// would stop (the ticket's other option).
+// ---------------------------------------------------------------------------
+const RDN_COUNT_CAP = 100000;
+
 /**
- * How many direct children of a parent have an RDN containing `needle`.
+ * The cap a count is asked with: a whole number from 1 to `RDN_COUNT_CAP`,
+ * and `RDN_COUNT_CAP` when none (or nonsense) is given.
  *
- * An empty needle is every direct child. This is a count of the table,
- * not the counter: the counter cannot see a substring. A caller that
- * wants the container's size asks `count` instead, and this is asked
- * asynchronously — a heavier plan must not hold the event loop.
+ * @param cap - the caller's cap, or undefined
+ * @returns the cap
+ */
+function rdnCountCap(cap) {
+  log.debug("Entering rdnCountCap().");
+  const n = Math.floor(Number(cap));
+  log.debug("Leaving rdnCountCap().");
+  return isFinite(n) && n >= 1 ? Math.min(n, RDN_COUNT_CAP) : RDN_COUNT_CAP;
+}
+
+/**
+ * How many direct children of a parent have an RDN containing `needle`,
+ * COUNTED NO FURTHER THAN `cap + 1` (#1308): an answer over `cap` means
+ * more than `cap`, and is never the number of matches.
+ *
+ * An empty needle is every direct child, capped the same way. This is a
+ * count of the table, not the counter: the counter cannot see a
+ * substring. A caller that wants the container's size asks `count`
+ * instead, and this is asked asynchronously — a heavier plan must not
+ * hold the event loop.
  *
  * @param realm - the realm id
  * @param parentKey - the parent's normalised DN
  * @param needle - the substring, or ''
+ * @param cap - the most it reports exactly (`rdnCountCap()`)
  * @returns the statement
  */
-function rdnCount(realm, parentKey, needle) {
+function rdnCount(realm, parentKey, needle, cap) {
   log.debug("Entering rdnCount().");
   const wanted = String(needle || '').toLowerCase();
-  log.debug("Leaving rdnCount().");
-  if (!wanted) {
-    return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
-                   'WHERE realm = $1 AND parent_key = $2',
-             values: [String(realm), String(parentKey)] };
+  /** @type {Array<string | number>} */
+  const values = [String(realm), String(parentKey)];
+  let filter = '';
+  if (wanted) {
+    values.push(wanted);
+    filter = ' AND position($' + values.length + ' in rdn_value) > 0';
   }
-  return { text: 'SELECT count(*)::bigint AS n FROM sts_ldap_entries ' +
-                 'WHERE realm = $1 AND parent_key = $2 AND position($3 ' +
-                 'in rdn_value) > 0',
-           values: [String(realm), String(parentKey), wanted] };
+  values.push(rdnCountCap(cap) + 1);
+  log.debug("Leaving rdnCount().");
+  return { text: 'SELECT count(*)::bigint AS n FROM (SELECT 1 AS one FROM ' +
+                 'sts_ldap_entries WHERE realm = $1 AND parent_key = $2' +
+                 filter + ' LIMIT $' + values.length + ') AS matched',
+           values: values };
 }
 
 // ---------------------------------------------------------------------------
@@ -1586,12 +1627,14 @@ module.exports = {
   ASKED_NAMES_HELD: ASKED_NAMES_HELD,
   GROUP_CLASSES_HELD: GROUP_CLASSES_HELD,
   MAX_PAGE: MAX_PAGE,
+  RDN_COUNT_CAP: RDN_COUNT_CAP,
   QUERIES: QUERIES,
   parentOf: parentOf,
   // For `directory_queries_mariadb.js`, the same questions spelt for MariaDB
   // (#677): one copy of how a value is keyed and a page is bounded.
   keyed: keyed,
   pageSize: pageSize,
+  rdnCountCap: rdnCountCap,
   suffixLength: suffixLength,
   build: build,
   answerOf: answerOf,

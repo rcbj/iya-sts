@@ -6797,7 +6797,9 @@ Three things are decisions:
   the shared `per`, answered in `candidatesPaging` — twenty by default, the
   pane's size, so without `per` the reply and the pane show the same people;
   `personfrom` is honoured as the page it falls on. `candidateSearch` (total,
-  matched) and `picked` sit beside it. It was the whole list, which on a large
+  matched) and `picked` sit beside it; a windowed search's count stops at
+  `countCap` and says so with `countCapped`, which the pane draws as "of
+  more than N matches" (#1308, `ldap/CLAUDE.md`). It was the whole list, which on a large
   directory was thousands of rows on every read of the roster. `CHOOSER_HITS`
   moved to `admin-core/admin_views.ts` so the pane and the reply share one
   number. **`roles` lost `members` and `claimed` in the same change**: every

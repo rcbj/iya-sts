@@ -120,6 +120,7 @@ class RbacPage {
       label: t.text('consoleRbac.body.findPerson'),
       placeholder: t.text('consoleRbac.body.findPlaceholder'),
       slice: { matched: json.candidatePane.matched,
+               countCapped: json.candidatePane.countCapped === true,
                from: json.candidatePane.from },
       entries: json.candidatePane.shown.map(function (row) {
         return {

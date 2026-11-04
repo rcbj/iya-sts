@@ -24,6 +24,7 @@
   "seconds.hours": "{n, plural, one {{shown} oras} other {{shown} oras}}",
   "seconds.days": "{n, plural, one {{shown} araw} other {{shown} araw}}",
   "chooser.showing": "Ipinapakita ang {from}&ndash;{to} sa {n} {searched, select, yes {{n, plural, one {tugma} other {tugma}}} other {nasa listahan}}. ",
+  "chooser.showingMore": "Ipinapakita ang {from}&ndash;{to} sa higit sa {n} na tugma. ",
   "chooser.count": "{n} {searched, select, yes {{n, plural, one {tugma} other {tugma}}} other {nasa listahan}}. ",
   "chooser.previous": "&larr; nakaraang {n}",
   "chooser.previous.title": "Ang dalawampu bago ang mga ito",

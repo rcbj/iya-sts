@@ -24,6 +24,7 @@
   "seconds.hours": "{n, plural, one {{shown} timme} other {{shown} timmar}}",
   "seconds.days": "{n, plural, one {{shown} dag} other {{shown} dagar}}",
   "chooser.showing": "Visar {from}&ndash;{to} av {n} {searched, select, yes {{n, plural, one {träff} other {träffar}}} other {i listan}}. ",
+  "chooser.showingMore": "Visar {from}&ndash;{to} av fler än {n} träffar. ",
   "chooser.count": "{n} {searched, select, yes {{n, plural, one {träff} other {träffar}}} other {i listan}}. ",
   "chooser.previous": "&larr; föregående {n}",
   "chooser.previous.title": "De tjugo före dessa",
