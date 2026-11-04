@@ -9218,6 +9218,83 @@ async function certifyKeySet(realmId, keys) {
   return failed.length ? errorCodes.mark(verdict, 'STS-PKI-0031') : verdict;
 }
 
+// ---------------------------------------------------------------------------
+// A KEY SET MADE BEFORE ITS REALM'S BRANCH EXISTS IS CERTIFIED ONCE THE
+// BRANCH DOES (2026-11-04).
+//
+// `helpers.js`'s `certifyLater()` calls this when a realm's key set is made.
+// It called `certifyKeySet()` directly, which answers STS-PKI-0008 for a realm
+// with no branch yet — and nothing asked again. In one process that is
+// harmless: the realm watcher builds the branch in the process that created
+// the realm, finds that process holding the keys, and certifies them. **IN A
+// CLUSTER IT IS NOT.** The keys are made by whichever process first has a
+// request that needs them, the branch by whichever process first asks for it,
+// and the watcher certifies only where it built the branch itself AND holds
+// the keys. On 2026-11-04 (`sts_eudi_wallet_portal`, cluster mode) a realm's
+// keys were made by one worker at 10:54:51.44 and its branch by another
+// process at 10:54:53.29: nobody certified the classical keys, so every
+// OpenID4VCI credential that realm issued went out with no `x5c` although
+// `oid4vci.credentialCertificateHeader` is `x5c`, and a wallet verifying
+// offline could not find the issuer's key. `tests/jose_certificate_header.js`
+// had been working round the same gap ("ask once, as a restart would").
+//
+// **SO THIS ASKS FOR THE BRANCH FIRST**, through `ensureScope()` — the
+// explicit ask the watcher's own comment allows: one build at a time in this
+// process, one in the cluster (`oneBuildInTheCluster()` reads the store and
+// adopts a build another process or node made, or waits for one in
+// progress). Only where this process builds branches for runtime realms at
+// all — `pki.start()` ran with `pki.autoBuild` on, which is when the watcher
+// is subscribed. `npm test`'s in-process files, the parent project's jobs and
+// a service with `pki.autoBuild` off get exactly the old answer.
+//
+// `stillCurrent`, where given, is asked after the wait: a key set this process
+// held when it was made may have been replaced by a sibling's (first generator
+// wins), and certifying a set nobody signs with would put a certificate over
+// a discarded key into the plain slot. The process that made the winning set
+// certifies it.
+// ---------------------------------------------------------------------------
+/**
+ * Certifies a realm's key set, asking for the realm's certificate authority
+ * branch first where it does not exist yet and this process builds branches.
+ *
+ * @param realmId - the realm
+ * @param keys - the realm's key set
+ * @param stillCurrent - optional: answers whether `keys` is still the set
+ *   this process signs with, asked once the branch is in hand
+ * @returns a promise of `certifyKeySet()`'s answer, or a refusal
+ */
+async function certifyKeySetWhenBranched(realmId, keys, stillCurrent) {
+  log.debug('Entering certifyKeySetWhenBranched(). realm=' + realmId);
+  const id = realmIdOf(realmId);
+  const branched = function () {
+    const row = rawRowFor(id);
+    return !!(row && row.issuing);
+  };
+  if (!branched() && watching) {
+    const made = await ensureScope(id);
+    if (!made || !made.ok) {
+      log.warn(errorCodes.tag('STS-PKI-0226') + 'pki: the "' +
+               (id || 'default') + '" realm\'s signing keys were made before ' +
+               'its certificate authority branch, and the branch could not ' +
+               'be had: ' + ((made && made.errors) || []).join(' ') +
+               ' They still SIGN — what they lack is a certificate chaining ' +
+               'to this service\'s Root, so a token whose use case asks for ' +
+               'x5c or x5u carries none.');
+      log.debug('Leaving certifyKeySetWhenBranched(). No branch.');
+      return errorCodes.mark({ ok: false, certified: 0,
+        errors: ((made && made.errors) || []).slice() }, 'STS-PKI-0226');
+    }
+    if (typeof stillCurrent === 'function' && !stillCurrent()) {
+      log.debug('Leaving certifyKeySetWhenBranched(). The set was replaced ' +
+                'while the branch was awaited; its maker certifies the one ' +
+                'that won.');
+      return { ok: true, certified: 0, failed: [], replaced: true };
+    }
+  }
+  log.debug('Leaving certifyKeySetWhenBranched().');
+  return certifyKeySet(id, keys);
+}
+
 
 // ---------------------------------------------------------------------------
 // THE REVOCATION POINTERS EVERY CERTIFICATE THIS SERVICE MINTS CARRIES
@@ -11606,6 +11683,23 @@ function watchRealms() {
   log.debug("Leaving watchRealms().");
 }
 
+// Whether this process builds certificate authority branches for realms made
+// at runtime: `pki.start()` ran with `pki.autoBuild` on and subscribed the
+// realm watcher. A signer asks it before waiting for a certificate
+// (`helpers.certificateHeaderForAsync()`): where it is false nothing here
+// will ever certify a runtime realm's keys, so there is nothing to wait for.
+/**
+ * Answers whether this process builds certificate authority branches for
+ * realms created at runtime (`pki.start()` ran with `pki.autoBuild` on).
+ *
+ * @returns true once the realm watcher is subscribed
+ */
+function buildsRealmBranches() {
+  log.debug("Entering buildsRealmBranches().");
+  log.debug("Leaving buildsRealmBranches(). " + watching);
+  return watching;
+}
+
 // A scope's branch, built only if it is not there. The counterpart of
 // `ensureRoot()` and for its reason: rebuilding a branch that exists would
 // invalidate every certificate under it, and a restart in PRODUCT mode — where
@@ -13841,6 +13935,8 @@ module.exports = {
   issueEnrolled: issueEnrolled,
   describeIssuer: describeIssuer,
   certifyKeySet: certifyKeySet,
+  certifyKeySetWhenBranched: certifyKeySetWhenBranched,
+  buildsRealmBranches: buildsRealmBranches,
   certifyStandbyKeys: certifyStandbyKeys,
   // The eleven post-quantum keys per realm, under its JOSE Issuing CA
   // (2026-09-13) — and the one translation that makes that possible, exported

@@ -625,6 +625,48 @@ function headerFor(useCaseId, signer) {
 }
 
 // ---------------------------------------------------------------------------
+// DOES THIS SIGNATURE WANT A HEADER THAT THE KEY HAS NO CERTIFICATE FOR YET
+// (2026-11-04)? True where the use case asks for `x5c`, `x5u` or both, the key
+// has a certificate slot, and this process holds no certificate over that key
+// in it — what `helpers.certificateHeaderForAsync()` asks before it reads the
+// store and asks for one, so a signer that can wait does not take "not here
+// yet" for "not certified". False wherever `headerFor()` would answer from a
+// certificate, and wherever there is no certificate authority here at all.
+// ---------------------------------------------------------------------------
+/**
+ * Answers whether a signature's use case asks for a certificate header that
+ * the signing key has no certificate for in this process.
+ *
+ * @param useCaseId - the use case the signature belongs to
+ * @param signer - what `helpers.certificateHeaderFor()` resolves
+ * @returns true when a certificate is wanted and not held
+ */
+function awaitsCertificate(useCaseId, signer) {
+  log.debug("Entering awaitsCertificate(). use=" + useCaseId);
+  if (!useCase(useCaseId) || modeFor(useCaseId) === 'none' || !signer ||
+      !signer.slot) {
+    log.debug("Leaving awaitsCertificate(). No header is asked for.");
+    return false;
+  }
+  const pki = pkiModule();
+  if (!pki) {
+    log.debug("Leaving awaitsCertificate(). No certificate authority.");
+    return false;
+  }
+  try {
+    const record = pki.certificateFor(signer.realm, 'jose', signer.slot);
+    const held = !!(record && record.certificatePem &&
+                    holdsKey(pki, record, signer));
+    log.debug("Leaving awaitsCertificate(). " + !held);
+    return !held;
+  } catch (e) {
+    log.debug("Caught in awaitsCertificate(): " + ((e && e.message) || e));
+    log.debug("Leaving awaitsCertificate(). Unreadable; nothing to wait for.");
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // THE `x5u` RESOURCE: the PEM chain of the JOSE certificate with this SHA-256,
 // in this scope, or null. Only the `jose` use case is searched — it is the only
 // one an `x5u` this module wrote can name — and the thumbprint is matched
@@ -712,6 +754,7 @@ module.exports = {
   enterRequest: enterRequest,
   currentRequest: currentRequest,
   headerFor: headerFor,
+  awaitsCertificate: awaitsCertificate,
   chainPemFor: chainPemFor,
   report: report
 };

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5186** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5188** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 20
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 154
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 212
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 214
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
@@ -971,6 +971,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0223` | A person already holds pki.personSigningKeyMax valid RFC 7523 (or RFC 7522) signing key pairs, so another was not issued or uploaded (#1290). | the caller's refusal: /account-api/signing-key HTTP 400, a console refusal banner, /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0224` | A signing key pair revocation named a kid, thumbprint or serial the person holds no key pair of that profile under (#1290). | the caller's refusal: /account-api/signing-key HTTP 400, a console refusal banner, /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0225` | A signing key pair was asked for with a label that is not a short name (at most 40 letters, digits, spaces, dots, dashes, underscores and brackets) (#1290). | the caller's refusal: /account-api/signing-key HTTP 400, a console refusal banner, /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0226` | A realm's signing keys were made before its certificate authority branch, and the branch could not be built or adopted when they were to be certified, so they stay uncertified and a token whose use case asks for x5c or x5u carries none. | none — the keys still sign; the header is left off |
+| `STS-PKI-0227` | A token whose use case asks for x5c or x5u was signed with a key this realm has not certified, after the issuer read the store and asked for the certificate, so it carries no x5c or x5u (an OpenID4VCI credential a wallet cannot verify offline). | none — the token is issued without the header |
 
 ## STS-ENROLL
 
