@@ -788,6 +788,10 @@ const SURVEY = `
         index: i,
         method: (f.getAttribute('method') || 'GET').toUpperCase(),
         action: f.getAttribute('action'),
+        // A FORM THAT OPENS A NEW TAB (#717's preview): the walk of GET forms
+        // follows it into that tab, which the network inspector, attached
+        // to the first tab only, does not see.
+        target: f.getAttribute('target') || '',
         // NOT the form's own action property. A form's named controls
         // SHADOW the properties of the form element itself, and every console
         // form carries an input named "action" -- so reading f.action hands
@@ -2042,6 +2046,78 @@ async function everyLinkResolves(driver, links) {
   log.debug("Leaving everyLinkResolves().");
 }
 
+// A GET FORM WITH target="_blank" (#717's Preview, the one such form): the
+// browser answers it in a NEW TAB, so the tab this walk watches makes no
+// request and stays where it was — which read as "a GET form that reaches
+// nothing". It is followed into that tab instead, and three things are asked
+// of what it opened: the address is the form's own action, IN THIS REALM and
+// prefixed once (the page drew the API's already-prefixed address and the
+// runtime prefixed it again, `/realm/x/realm/x/web/...`, a 404); the fields
+// are in its query; and that address answers under 400. The status is asked
+// with a fetch from the new tab, since the inspector is not attached there.
+async function getFormInANewTab(driver, path, index, form, values) {
+  log.debug("Entering getFormInANewTab(). " + path + " form " + index);
+  const home = await driver.getWindowHandle();
+  const before = await driver.getAllWindowHandles();
+  await driver.executeScript(
+    "const f = document.forms[arguments[0]];" +
+    "const v = arguments[1];" +
+    "Object.keys(v).forEach(function (n) {" +
+    "  if (f.elements[n]) { f.elements[n].value = String(v[n]); }" +
+    "});" +
+    "f.requestSubmit();", index, values);
+  let opened = null;
+  await driver.wait(async function () {
+    const now = await driver.getAllWindowHandles();
+    opened = now.find(function (h) {
+      return before.indexOf(h) < 0;
+    }) || null;
+    return opened !== null;
+  }, 15000, "the GET form " + index + " on " + path + " has target=_blank " +
+     "and opened no tab");
+  let url = "";
+  let status = 0;
+  try {
+    await driver.switchTo().window(opened);
+    await driver.wait(async function () {
+      const state = await driver.executeScript(
+        "return document.readyState;");
+      return state === "complete";
+    }, 15000, "the tab the GET form " + index + " on " + path +
+       " opened never finished loading");
+    url = await driver.getCurrentUrl();
+    status = await driver.executeAsyncScript(
+      "const done = arguments[arguments.length - 1];" +
+      "fetch(location.href, { credentials: 'same-origin' })" +
+      "  .then(function (r) { done(r.status); }," +
+      "        function () { done(0); });");
+  } finally {
+    await driver.close();
+    await driver.switchTo().window(home);
+  }
+  const expected = new URL(form.resolvedAction).pathname;
+  const landed = new URL(url);
+  check(path + " GET form " + index + " opens its tab", function () {
+    assert.strictEqual(landed.pathname, expected,
+      "the form's new tab should be at its own action, " + expected +
+      "; it went to " + url);
+    assert.ok(expected.indexOf("/realm/" + REALM + "/") === 0 &&
+              expected.indexOf("/realm/" + REALM + "/realm/") < 0,
+      "the form's action should be in this realm, prefixed once: " +
+      expected);
+    assert.ok(status > 0 && status < 400,
+      "the tab's address answered " + status + ": " + url);
+    Object.keys(values).forEach(function (name) {
+      if (values[name] !== "") {
+        assert.strictEqual(landed.searchParams.get(name),
+                           String(values[name]),
+          "the tab's address should carry " + name + "; it is " + url);
+      }
+    });
+  });
+  log.debug("Leaving getFormInANewTab().");
+}
+
 // ---------------------------------------------------------------------------
 // EVERY GET FORM, FILLED IN AND SUBMITTED — AND NOTHING EVER CHECKED THESE.
 //
@@ -2096,6 +2172,13 @@ async function everyGetFormSubmits(driver, pages) {
           values[control.name] = "";
         }
       });
+
+      if (form.target === "_blank") {
+        await getFormInANewTab(driver, path, i, form, values);
+        submitted += 1;
+        await open(driver, realm(path));
+        continue;
+      }
 
       const from = mark();
       await fillAndPress(driver, i, values);

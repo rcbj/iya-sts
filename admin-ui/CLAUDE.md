@@ -8665,8 +8665,13 @@ Four tabs (`PROTOCOL_TABS`: `colours`, `layout`, `preview`, `settings`):
   operation's types it picks), `alt` as a query parameter; and *Remove
   logo*, `action=remove-logo`, drawn only while a logo is held.
 * **Preview (D5).** A `method="get"` form whose action is the view's
-  `previewUrl` (the realm's `/web/branding/preview`, prefixed by the API) and
-  `target="_blank"`. It is NOT a console path, so `onSubmit()` returns
+  `preview`, the ROOT-RELATIVE `/web/branding/preview`, and
+  `target="_blank"`. **Never the view's `previewUrl` or `logo.src`**: the
+  runtime puts every drawing through `realmLinks()`, which prefixes it, so
+  an address the API had already prefixed came out
+  `/realm/x/realm/x/web/...` — a realm's logo broken and its preview a 404,
+  found by `sts_admin_console`'s GET-form walk on c319939d9. Those two stay
+  in the view for a machine caller. It is NOT a console path, so `onSubmit()` returns
   without `preventDefault()` and the browser opens the preview in a new tab
   with the form's values: pending values, seen before anything is saved.
   The runtime is untouched by this; a second kind of form it intercepts
