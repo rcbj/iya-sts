@@ -89,6 +89,22 @@ const program = new Command()
   .parse(process.argv);
 const opts = program.opts();
 
+// SESSION MANAGEMENT'S BROWSER (#1297, rcbj 2026-11-04). The suite's RP
+// iframe posts its one check 500 ms after it loads; our OP iframe answers in
+// one request, but Chrome partitions connections by top-level site, so from
+// a browser far from test-idp the iframe opens a fresh TLS connection inside
+// the suite's page and is not listening in time (seen: "checkSession
+// started", never "receiveMessage"). With partitioning off it reuses the
+// warm connection and both checks pass (unchanged, then changed). The flag
+// is the tester's browser, never the service. Set only when EVERY plan of
+// the run is a Session Management plan, because one Chrome serves the run:
+// run those plans on their own.
+const SESSION_BROWSER_FEATURES = [
+  "PartitionConnectionsByNetworkIsolationKey",
+  "PartitionNetworkStateByNetworkIsolationKey",
+  "SplitHostCacheByNetworkIsolationKey",
+  "SplitCacheByNetworkIsolationKey"].join(",");
+
 // What the helpers read at require time, set before they are required.
 // No Entering/Leaving pair: it runs before the logger exists, which is made
 // after these values are in the environment (`common/config_file.js`'s
@@ -402,6 +418,18 @@ async function runOne(plan, realm, someone) {
 async function main() {
   log.debug("Entering main().");
   const plans = expanded().filter(wanted);
+  const sessionOnly = plans.length && plans.every(function (plan) {
+    return plan.group === "session";
+  });
+  if (sessionOnly && !process.env.CONFORMANCE_BROWSER_DISABLE_FEATURES) {
+    process.env.CONFORMANCE_BROWSER_DISABLE_FEATURES =
+      SESSION_BROWSER_FEATURES;
+  } else if (!sessionOnly && plans.some(function (plan) {
+    return plan.group === "session";
+  })) {
+    log.warn("Session Management plans pass from a distant browser only on " +
+             "a run of their own (#1297); run them with --plans session.");
+  }
   if (opts.list) {
     expanded().forEach(function (plan) {
       process.stdout.write((wanted(plan) ? "* " : "  ") + plan.key +

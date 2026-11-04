@@ -140,6 +140,26 @@ async function browser(serviceBase) {
     options.addArguments("--ignore-certificate-errors-spki-list=" +
                          pins.join(","));
   }
+  // MORE FEATURES OFF, BY REQUEST (#1293): CONFORMANCE_BROWSER_DISABLE_FEATURES
+  // is a comma list merged into the one --disable-features switch the access
+  // flags already set (Chrome keeps only the last occurrence of a switch, so
+  // a second one would undo theirs). For an experiment such as Session
+  // Management's network-partitioning question; unset, nothing changes.
+  const extra = String(process.env.CONFORMANCE_BROWSER_DISABLE_FEATURES ||
+                       "").trim();
+  if (extra) {
+    const chromeOptions = options.get("goog:chromeOptions") || {};
+    const args = chromeOptions.args || [];
+    const at = args.findIndex(function (a) {
+      return /^--disable-features=/.test(a);
+    });
+    if (at >= 0) {
+      args[at] = args[at] + "," + extra;
+    } else {
+      args.push("--disable-features=" + extra);
+    }
+    log.info("Chrome features disabled on request: " + extra);
+  }
   shared = await new Builder().forBrowser("chrome")
     .setChromeOptions(options).build();
   log.info("Opened the person's browser (headless Chrome) for the " +
