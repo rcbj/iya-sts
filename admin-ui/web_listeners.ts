@@ -292,9 +292,14 @@ class ListenersPage {
           : t.text('consoleListeners.noLimit')]].concat(
         // HTTP/2 (#407) is offered in the TLS handshake, so only a TLS
         // listener has an answer to give; the revocation listener has none.
+        // The stream cap (#1304) beside it: what an HTTP/2 session is told
+        // in its SETTINGS, shown whether or not h2 is offered now, because
+        // turning it on again applies the cap that is set.
         policy ? [[t.text('consoleListeners.rowHttp2'), pooling.http2
           ? t.text('consoleListeners.yes')
-          : t.text('consoleListeners.no')]] : []);
+          : t.text('consoleListeners.no')],
+        [t.text('consoleListeners.rowHttp2Streams'),
+         String(pooling.http2MaxConcurrentStreams)]] : []);
       return '<h2>' + t.html('consoleListeners.headInForce') +
         '</h2><table class="grid"><tbody>' +
         tlsRows.concat(httpRows).map(function (row) {

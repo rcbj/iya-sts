@@ -637,6 +637,16 @@ const CODES = [
       'naming different hosts, which makes it malformed (RFC 9113 section ' +
       '8.3.1); it was refused before any endpoint saw it.',
     spec: 'HTTP 400 text/plain' },
+  // CONNECT (#1304): RFC 9110 sections 9.1 and 9.3.6,
+  // common/connect_refusal.ts.
+  { code: 'STS-HTTP-0025',
+    summary: 'A CONNECT request reached one of this service\'s HTTP ' +
+      'listeners. This service is an origin server, not a proxy, and ' +
+      'implements no CONNECT, so it was answered 501 before any endpoint ' +
+      'saw it. The first is logged, and the rest are counted into one ' +
+      'line a minute at most.',
+    spec: 'HTTP 501 text/plain (HTTP/2, or HTTP/1.1 with the connection ' +
+      'closed)' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +

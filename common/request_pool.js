@@ -2733,6 +2733,25 @@ const NEVER_DISPATCHED = ['/tls', '/admin/tls/trust', '/admin-api/tls/trust',
 // ---------------------------------------------------------------------------
 const ANSWERED_AT_ONCE = ['/healthcheck'];
 
+// ---------------------------------------------------------------------------
+// **AND `OPTIONS *` (#1304, 2026-11-04).** The asterisk form (RFC 9112
+// section 3.2.4; `:path: *` in HTTP/2, RFC 9113 section 8.3.1) names no
+// resource: it asks about the server as a whole (RFC 9110 section 9.3.7), and
+// the answer is the CORS preflight's 204, which reads no state. So it is the
+// liveness probe's case — the process holding the listener answers, with no
+// catch-up — and no dispatch prefix can name it: `*` in `workers.dispatch`
+// means every PATH, and `*` is not one. It was dispatched like any path until
+// #1304, which found it paying a worker's barriers for an answer this process
+// gives alike. It carries no realm prefix, so it is always the default
+// realm's.
+// ---------------------------------------------------------------------------
+function answeredAtOnce(url) {
+  log.debug("Entering answeredAtOnce().");
+  const yes = String(url || '') === '*' || matchesAny(url, ANSWERED_AT_ONCE);
+  log.debug("Leaving answeredAtOnce().");
+  return yes;
+}
+
 /**
  * Tells whether a request is handled in a request worker rather than here.
  *
@@ -2753,8 +2772,7 @@ function dispatched(url) {
     log.debug("Leaving dispatched().");
     return false;
   }
-  if (matchesAny(url, NEVER_DISPATCHED) ||
-      matchesAny(url, ANSWERED_AT_ONCE)) {
+  if (matchesAny(url, NEVER_DISPATCHED) || answeredAtOnce(url)) {
     log.debug("Leaving dispatched().");
     return false;
   }
@@ -6538,8 +6556,8 @@ function middleware(options) {
       // THE LIVENESS PROBE CATCHES UP ON NOTHING (#624): it reads no state,
       // and the wait below is up to 2,000 ms plus a store round trip, which a
       // probe with a 5 s timeout cannot afford on a busy node. See
-      // ANSWERED_AT_ONCE.
-      if (matchesAny(req.originalUrl || req.url, ANSWERED_AT_ONCE)) {
+      // ANSWERED_AT_ONCE, and `OPTIONS *` beside it (answeredAtOnce()).
+      if (answeredAtOnce(req.originalUrl || req.url)) {
         next();
         return;
       }

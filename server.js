@@ -1139,6 +1139,8 @@ function customListener(label, certificate, certificateOf, listenerId) {
   tlsServer.registerHttpListener(server, 'custom', listenerId);
   server.prependListener('request',
     require('./common/http2_framing').markFramedBody);
+  // A CONNECT is answered 501 here, as on the main port (#1304).
+  require('./common/connect_refusal').install(server, label);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1241,6 +1243,11 @@ if (useHttps) {
   // above the realm middleware — common/http2_framing.ts.
   mainServer.prependListener('request',
     require('./common/http2_framing').markFramedBody);
+  // A CONNECT IS ANSWERED 501 (#1304): this is an origin server, not a proxy
+  // (RFC 9110 sections 9.1 and 9.3.6), and node never hands one to the
+  // application — common/connect_refusal.ts.
+  require('./common/connect_refusal').install(mainServer,
+    'the main port (' + PORT + ')');
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
@@ -1306,6 +1313,9 @@ if (useHttps) {
   // thing with the server object hidden — and the PROXY protocol has to be
   // installed on that object before it listens.
   const plainServer = http.createServer(app);
+  // A CONNECT is answered 501 here too (#1304).
+  require('./common/connect_refusal').install(plainServer,
+    'the main port (' + PORT + ')');
   proxyProtocol.install(plainServer, { label: 'the main port (' + PORT + ')',
                                        channel: 'http' });
   plainServer.listen(PORT, HOST, announce);

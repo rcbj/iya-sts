@@ -60,6 +60,27 @@
 //  10. THE EXPRESS MODULE IS UNTOUCHED: the adapter gives the app an own
 //      `lazyrouter` and changes nothing on `express.application`, so a
 //      plain `express()` app elsewhere in the process is express's.
+//  11. `tls.http2` AS THE STRINGS "true" AND "false" (#1304), beside on and
+//      off: a custom listener's definition is accepted with either, each
+//      decides that listener's offer whatever http.http2 says, a real
+//      handshake on each negotiates accordingly, and http.http2 written as
+//      "true" is on.
+//  12. THE DEBUGGER'S API PROXY OVER HTTP/2 (#1304): the debugger listener's
+//      own app forwards an HTTP/2 POST to the api process with no
+//      pseudo-header and its :authority as host; :authority and host naming
+//      different hosts is refused 400 with STS-HTTP-0024 and never
+//      forwarded; and `forward()` refuses a host changed after the app's
+//      check, on its own.
+//  13. CONNECT (#1304): answered 501 over HTTP/2 and HTTP/1.1 by
+//      `common/connect_refusal.ts`, no-store and frame-ancestors kept,
+//      marked STS-HTTP-0025, never reaching the application. Node's own
+//      answers were a 405 with no Allow and a dropped connection.
+//  14. `OPTIONS *` OVER HTTP/2 (#1304): answered 204 by the application's
+//      preflight, and never dispatched, even with `workers.dispatch` `*`
+//      (`request_pool.js` `answeredAtOnce()`).
+//  15. THE LISTENERS PAGE (#1304): the `/admin-api/listeners` view carries
+//      `http2MaxConcurrentStreams`, and `admin-ui/web_listeners.ts` draws it
+//      beside HTTP/2 offered.
 // ---------------------------------------------------------------------------
 
 const fs = require('fs');
@@ -615,6 +636,415 @@ function childMain() {
     raw.close();
     hosted.close();
 
+    // 11. `tls.http2` as the strings "true" and "false" (#1304): a custom
+    // listener's definition may say either, as well as on and off, and each
+    // decides that listener's offer over the service's http.http2.
+    for (const value of ['true', 'false', true, false]) {
+      const one = define(value);
+      note(!one.problem && one.listeners.length === 1,
+           '11. a custom listener\'s tls.http2 ' + JSON.stringify(value) +
+           ' is accepted', JSON.stringify(one.problem));
+    }
+    let customSet = '';
+    try {
+      config.setOverride('listeners.custom', JSON.stringify([
+        { id: 'h2true', port: 9556, publicBaseUrl: 'https://t.example.com',
+          tls: { http2: 'true' } },
+        { id: 'h2false', port: 9557, publicBaseUrl: 'https://f.example.com',
+          tls: { http2: 'false' } }]));
+    } catch (e) {
+      customSet = String((e && e.message) || e);
+    }
+    note(!customSet && listenerMap.listenerById('h2true') &&
+         listenerMap.listenerById('h2false'),
+         '11. two custom listeners saying "true" and "false" are defined',
+         customSet);
+    const offerOf = function (id) {
+      return tlsServer.httpPolicyFor('custom', id).http2;
+    };
+    note(offerOf('h2true') === true && offerOf('h2false') === false,
+         '11. "true" offers h2 and "false" does not, the service\'s on',
+         offerOf('h2true') + ' / ' + offerOf('h2false'));
+    config.setOverride('http.http2', 'false');
+    settle();
+    note(offerOf('h2true') === true && offerOf('h2false') === false &&
+         offerOf('nobody') === false,
+         '11. and with the service\'s off, "true" still offers it, "false" ' +
+         'still does not, and a listener saying nothing follows the service',
+         offerOf('h2true') + ' / ' + offerOf('h2false') + ' / ' +
+         offerOf('nobody'));
+    // On real servers registered as those two listeners, what a client
+    // offering both protocols is given.
+    const alpnOn = async function (id) {
+      const probe = http2.createSecureServer({
+        allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem },
+      function (req, res) {
+        res.end('ok');
+      });
+      const unregister = tlsServer.registerHttpListener(probe, 'custom', id);
+      await new Promise(function (r) { probe.listen(0, '127.0.0.1', r); });
+      const chosen = await new Promise(function (resolve) {
+        const socket = tlsModule.connect({
+          host: '127.0.0.1', port: probe.address().port,
+          ALPNProtocols: ['h2', 'http/1.1'], rejectUnauthorized: false },
+        function () {
+          const got = socket.alpnProtocol;
+          socket.end();
+          resolve(got);
+        });
+        socket.on('error', function (e) {
+          resolve('error: ' + (e && e.message));
+        });
+      });
+      unregister();
+      probe.close();
+      return chosen;
+    };
+    const trueChose = await alpnOn('h2true');
+    config.clearOverride('http.http2');
+    settle();
+    const falseChose = await alpnOn('h2false');
+    note(trueChose === 'h2' && falseChose === 'http/1.1',
+         '11. so a handshake on "true" (the service off) negotiates h2, and ' +
+         'on "false" (the service on) http/1.1', trueChose + ' / ' +
+         falseChose);
+    config.setOverride('http.http2', 'true');
+    settle();
+    note(config.value('http.http2') === true &&
+         tlsServer.httpPolicyFor('main').http2 === true,
+         '11. http.http2 itself written as the string "true" is on',
+         JSON.stringify(config.value('http.http2')));
+    config.clearOverride('http.http2');
+    config.clearOverride('listeners.custom');
+    settle();
+
+    // 12. The debugger's API proxy over HTTP/2: the debugger listener's own
+    // app, on the kind of server debugger_server.ts builds, forwarding to a
+    // stand-in api process that says what reached it.
+    const dbg = require(ROOT_DIR + '/debugger/debugger_server');
+    const apiProcess = require(ROOT_DIR + '/debugger/debugger_api_process');
+    const apiSocket = pathModule.join(os.tmpdir(), 'sts-h2-dbg-' +
+                                      process.pid + '.sock');
+    const apiSeen = [];
+    const fakeApi = http.createServer(function (req, res) {
+      let body = '';
+      req.setEncoding('utf8');
+      req.on('data', function (d) { body += d; });
+      req.on('end', function () {
+        apiSeen.push({ method: req.method, url: req.url,
+                       headers: req.headers, body: body });
+        res.setHeader('Content-Type', 'application/json');
+        res.end('{"ok":true}');
+      });
+    });
+    await new Promise(function (r) { fakeApi.listen(apiSocket, r); });
+    const stub = {
+      ready: function () { return true; },
+      socketPath: function () { return apiSocket; },
+      status: function () {
+        return { state: 'running', uiUrl: 'http://child.invalid:1',
+                 allowList: false, allowedRanges: [] };
+      },
+      updateAnchor: function () { return false; }
+    };
+    const saved = {};
+    Object.keys(stub).forEach(function (k) {
+      saved[k] = apiProcess[k];
+      apiProcess[k] = stub[k];
+    });
+    const dbgServer = http2.createSecureServer({
+      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem }, dbg.app);
+    dbgServer.prependListener('request',
+      require(ROOT_DIR + '/common/http2_framing').markFramedBody);
+    let dbgRes = null;
+    dbgServer.prependListener('request', function (req, res) {
+      dbgRes = res;
+    });
+    await new Promise(function (r) { dbgServer.listen(0, '127.0.0.1', r); });
+    const dbgAuthority = '127.0.0.1:' + dbgServer.address().port;
+    const dbgSession = http2.connect('https://' + dbgAuthority,
+                                     { rejectUnauthorized: false });
+    dbgSession.on('error', function () {});
+    // `POST /api/samlacs` is a landing: no credential, straight to the
+    // forwarder (tests/debugger_server.js B).
+    const toDebugger = function (who, host) {
+      return new Promise(function (resolve) {
+        const headers = { ':method': 'POST', ':path': '/api/samlacs',
+                          ':authority': dbgAuthority,
+                          'content-type': 'application/x-www-form-urlencoded',
+                          accept: 'application/json' };
+        if (host !== undefined) {
+          headers.host = host;
+        }
+        const st = who.request(headers);
+        let status = 0;
+        let body = '';
+        st.on('response', function (h) { status = h[':status']; });
+        st.setEncoding('utf8');
+        st.on('data', function (d) { body += d; });
+        st.on('end', function () { resolve({ status: status, body: body }); });
+        st.on('error', function (e) {
+          resolve({ status: 0, body: String(e && e.message) });
+        });
+        st.end('SAMLResponse=abc');
+      });
+    };
+    const dbgGood = await toDebugger(dbgSession);
+    const reached = apiSeen[apiSeen.length - 1] || { headers: {} };
+    const reachedNames = Object.keys(reached.headers);
+    note(dbgGood.status === 200 && reached.url === '/samlacs' &&
+         reached.body === 'SAMLResponse=abc',
+         '12. an HTTP/2 POST to the debugger\'s /api reaches the api process ' +
+         'with the prefix stripped and its body whole',
+         dbgGood.status + ' ' + JSON.stringify(reached).slice(0, 300));
+    note(reachedNames.length > 0 && reachedNames.every(function (n) {
+      return n.charAt(0) !== ':';
+    }) && reached.headers.host === dbgAuthority &&
+         reached.headers['x-forwarded-host'] === dbgAuthority,
+         '12. with no pseudo-header, and its :authority as host and as the ' +
+         'forwarded host', reachedNames.join(',') + ' host=' +
+         reached.headers.host);
+    const seenBefore = apiSeen.length;
+    const dbgBad = await toDebugger(dbgSession, 'evil.example');
+    note(dbgBad.status === 400 && dbgRes && dbgRes[MARK] === 'STS-HTTP-0024' &&
+         apiSeen.length === seenBefore,
+         '12. :authority and host naming different hosts is refused 400 ' +
+         'with STS-HTTP-0024 on the debugger listener, and never reaches ' +
+         'the api', dbgBad.status + ' ' + (dbgRes && dbgRes[MARK]) + ' ' +
+         (apiSeen.length - seenBefore) + ' forwarded');
+    const dbgSame = await toDebugger(dbgSession, dbgAuthority.toUpperCase());
+    note(dbgSame.status === 200,
+         '12. the same host in another case is forwarded', dbgSame.status);
+    // And the forwarder asks it ITSELF (debugger_server.ts forward()),
+    // because the api believes the host it is sent: here a host that
+    // changed after the app's own check saw the request, on an instance
+    // built over the stand-in.
+    const forwarder = new dbg.DebuggerServer(Object.assign(
+      dbg.DebuggerServer.defaultDeps(), { apiProcess: stub }));
+    const changed = H2.adapt(express());
+    changed.use(function (req, res) {
+      req.headers.host = 'evil.example';
+      dbgRes = res;
+      forwarder.forward(req, res);
+    });
+    const changedServer = http2.createSecureServer({
+      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem }, changed);
+    await new Promise(function (r) {
+      changedServer.listen(0, '127.0.0.1', r);
+    });
+    const changedSession = http2.connect('https://127.0.0.1:' +
+      changedServer.address().port, { rejectUnauthorized: false });
+    changedSession.on('error', function () {});
+    const forwardBefore = apiSeen.length;
+    const changedAnswer = await new Promise(function (resolve) {
+      const st = changedSession.request({ ':method': 'GET',
+                                          ':path': '/api/healthcheck',
+                                          accept: 'application/json' });
+      let status = 0;
+      st.on('response', function (h) { status = h[':status']; });
+      st.resume();
+      st.on('end', function () { resolve(status); });
+      st.on('error', function (e) { resolve(String(e && e.code)); });
+      st.end();
+    });
+    note(changedAnswer === 400 && dbgRes[MARK] === 'STS-HTTP-0024' &&
+         apiSeen.length === forwardBefore,
+         '12. the forwarder refuses a host that no longer matches the ' +
+         ':authority itself, 400 with STS-HTTP-0024, forwarding nothing',
+         changedAnswer + ' ' + dbgRes[MARK]);
+    changedSession.close();
+    changedServer.close();
+    dbgSession.close();
+    dbgServer.close();
+    Object.keys(saved).forEach(function (k) {
+      apiProcess[k] = saved[k];
+    });
+    fakeApi.close();
+    try {
+      require('fs').unlinkSync(apiSocket);
+    } catch (e) {
+      // Already gone with the server; recorded rather than failed.
+      note(true, '12. (the api socket was already gone: ' +
+           String((e && e.message) || e) + ')', '');
+    }
+
+    // 13. CONNECT (RFC 9110 sections 9.1 and 9.3.6). This service is an
+    // origin server and implements none, so 501, over either protocol, from
+    // the refusal server.js installs on the main port; the application never
+    // sees it (it has no path to route). Node's own answers were a bare 405
+    // with no Allow over HTTP/2 and a dropped connection over HTTP/1.1.
+    const ConnectRefusal = require(ROOT_DIR + '/common/connect_refusal');
+    const fresh = http2.createSecureServer({
+      allowHTTP1: true, cert: own.certPem, key: own.privateKeyPem }, app);
+    ConnectRefusal.install(fresh, 'the probe');
+    let connectRes = null;
+    fresh.on('connect', function (req, res) {
+      connectRes = res;
+    });
+    let appSaw = 0;
+    fresh.prependListener('request', function () {
+      appSaw += 1;
+    });
+    await new Promise(function (r) { fresh.listen(0, '127.0.0.1', r); });
+    const freshPort = fresh.address().port;
+    const freshSession = http2.connect('https://127.0.0.1:' + freshPort,
+                                       { rejectUnauthorized: false });
+    freshSession.on('error', function () {});
+    const connectTo = function (target) {
+      return new Promise(function (resolve) {
+        const st = freshSession.request({ ':method': 'CONNECT',
+                                          ':authority': target });
+        let status = 0;
+        let got = {};
+        let body = '';
+        st.on('response', function (h) {
+          status = h[':status'];
+          got = h;
+        });
+        st.setEncoding('utf8');
+        st.on('data', function (d) { body += d; });
+        st.on('end', function () {
+          resolve({ status: status, headers: got, body: body });
+        });
+        st.on('error', function (e) {
+          resolve({ status: 0, headers: {}, body: String(e && e.code) });
+        });
+        st.end();
+      });
+    };
+    for (const target of ['example.com:443', '127.0.0.1:' + freshPort]) {
+      const answer = await connectTo(target);
+      note(answer.status === 501 &&
+           answer.headers['cache-control'] === 'no-store' &&
+           /frame-ancestors 'none'/.test(
+             String(answer.headers['content-security-policy'])) &&
+           !/STS-/.test(answer.body) &&
+           connectRes && connectRes[MARK] === 'STS-HTTP-0025',
+           '13. an HTTP/2 CONNECT to ' + target + ' is answered 501, ' +
+           'no-store, frame-ancestors kept, marked STS-HTTP-0025 and the ' +
+           'code not sent', answer.status + ' ' +
+           JSON.stringify(answer.headers) + ' ' + answer.body.slice(0, 120));
+    }
+    note(appSaw === 0, '13. and the application saw neither', appSaw);
+    const afterConnect = await new Promise(function (resolve) {
+      const st = freshSession.request({ ':path':
+                                        '/.well-known/openid-configuration' });
+      let status = 0;
+      st.on('response', function (h) { status = h[':status']; });
+      st.resume();
+      st.on('end', function () { resolve(status); });
+      st.on('error', function (e) { resolve(String(e && e.code)); });
+      st.end();
+    });
+    note(afterConnect === 200,
+         '13. while the same session goes on answering', afterConnect);
+    const overOne = await new Promise(function (resolve) {
+      const socket = tlsModule.connect({
+        host: '127.0.0.1', port: freshPort, ALPNProtocols: ['http/1.1'],
+        rejectUnauthorized: false }, function () {
+        socket.write('CONNECT example.com:443 HTTP/1.1\r\n' +
+                     'Host: example.com:443\r\n\r\n');
+      });
+      let got = '';
+      socket.setEncoding('utf8');
+      socket.on('data', function (d) { got += d; });
+      socket.on('close', function () { resolve(got); });
+      socket.on('error', function (e) {
+        resolve(got + ' error: ' + (e && e.message));
+      });
+      setTimeout(function () { socket.destroy(); }, 5000);
+    });
+    note(/^HTTP\/1\.1 501 /.test(overOne) && /Connection: close/i
+      .test(overOne) && /frame-ancestors 'none'/.test(overOne) &&
+         !/STS-/.test(overOne),
+         '13. and an HTTP/1.1 CONNECT on the same port is answered 501 ' +
+         'and the connection closed, not dropped unanswered',
+         JSON.stringify(overOne.slice(0, 200)));
+    freshSession.close();
+    fresh.close();
+
+    // 14. `OPTIONS *` (RFC 9110 section 9.3.7; `:path: *`, RFC 9113 8.3.1):
+    // the server as a whole. Answered by the application's CORS preflight,
+    // 204, and never dispatched: no dispatch prefix — not even `*`, which
+    // means every PATH — names it, and like the liveness probe it reads no
+    // state (request_pool.js answeredAtOnce()).
+    const starSession = http2.connect('https://127.0.0.1:' + port, tls);
+    starSession.on('error', function () {});
+    let starUrl = '';
+    server.prependListener('request', function (req) {
+      if (req.method === 'OPTIONS') {
+        starUrl = req.url;
+      }
+    });
+    const star = await new Promise(function (resolve) {
+      const st = starSession.request({ ':method': 'OPTIONS', ':path': '*' });
+      let status = 0;
+      let got = {};
+      st.on('response', function (h) {
+        status = h[':status'];
+        got = h;
+      });
+      st.resume();
+      st.on('end', function () { resolve({ status: status, headers: got }); });
+      st.on('error', function (e) {
+        resolve({ status: String(e && e.code), headers: {} });
+      });
+      st.end();
+    });
+    note(star.status === 204 && starUrl === '*' &&
+         /frame-ancestors 'none'/.test(
+           String(star.headers['content-security-policy'])),
+         '14. OPTIONS * over HTTP/2 reaches the application as * and is ' +
+         'answered 204, frame-ancestors kept',
+         star.status + ' url=' + starUrl);
+    note(String(config.value('workers.dispatch')) === '*' &&
+         pool.dispatched('*') === false &&
+         pool.dispatched('/.well-known/openid-configuration') === true &&
+         pool.dispatched('/healthcheck') === false,
+         '14. and with workers.dispatch * it is not dispatched, as ' +
+         '/healthcheck is not, while every path is',
+         'dispatch=' + config.value('workers.dispatch') + ' * ' +
+         pool.dispatched('*'));
+    starSession.close();
+
+    // 15. The Listeners page shows the stream cap beside HTTP/2 (#1304): the
+    // view /admin-api/listeners answers carries it, and the page draws it.
+    // This child runs with global.https off, so the main port's tab shows
+    // no TLS rows (it is plain HTTP); a custom listener, always TLS, is the
+    // tab drawn.
+    const listenersAdmin = require(ROOT_DIR + '/admin-ui/listeners_admin');
+    const ListenersPage = require(ROOT_DIR + '/admin-ui/web_listeners');
+    config.setOverride('listenerMain.http2MaxConcurrentStreams', '7');
+    config.setOverride('listeners.custom', JSON.stringify([
+      { id: 'h2cap', port: 9558, publicBaseUrl: 'https://c.example.com',
+        tls: { http2MaxConcurrentStreams: 9 } }]));
+    settle();
+    const view = listenersAdmin.listenersView();
+    const mainRow = (view.listeners || []).filter(function (row) {
+      return row.id === 'main';
+    })[0] || {};
+    const capRow = (view.custom || []).filter(function (row) {
+      return row.id === 'h2cap';
+    })[0] || {};
+    note(mainRow.http && mainRow.http.http2MaxConcurrentStreams === 7 &&
+         capRow.http && capRow.http.http2MaxConcurrentStreams === 9 &&
+         capRow.http.http2 === true,
+         '15. the listeners view carries each listener\'s stream cap, the ' +
+         'main port\'s and a custom listener\'s',
+         JSON.stringify(mainRow.http) + ' / ' + JSON.stringify(capRow.http));
+    const drawn = ListenersPage.render(view);
+    const tab = drawn.slice(drawn.indexOf('id="tab-custom-h2cap"'));
+    note(tab.indexOf('<th>HTTP/2 offered</th><td><code>yes</code></td>' +
+                     '</tr><tr><th>HTTP/2 streams at once per connection' +
+                     '</th><td><code>9</code></td>') >= 0,
+         '15. and the page draws it beside HTTP/2 offered in that ' +
+         'listener\'s tab',
+         JSON.stringify(tab.slice(tab.indexOf('HTTP/2'),
+                                  tab.indexOf('HTTP/2') + 200)));
+    config.clearOverride('listeners.custom');
+    config.clearOverride('listenerMain.http2MaxConcurrentStreams');
+    settle();
+
     // 10. The express module is untouched.
     const plain = express();
     note(plain.lazyrouter === express.application.lazyrouter &&
@@ -697,6 +1127,12 @@ function checkTheSource(t) {
           /server\.prependListener\('request', Http2Framing\.markFramedBody\);/
             .test(debuggerServer),
           '5. and the debugger\'s listener, with its own app adapted', '');
+  t.check((server.match(/require\('\.\/common\/connect_refusal'\)\.install\(/g) ||
+           []).length === 3 &&
+          /ConnectRefusal\.install\(server, /.test(debuggerServer),
+          '5. and a CONNECT is answered by common/connect_refusal.ts on the ' +
+          'main port (TLS and plain), every custom listener and the ' +
+          'debugger\'s (#1304)', '');
   t.check(/const app = require\('\.\/http2_express'\)\.adapt\(express\(\)\);/
     .test(app),
           '5. and common/app.js adapts the application', '');
@@ -756,6 +1192,9 @@ module.exports = {
             'on one session, the lingering close leaving an HTTP/2 stream ' +
             'alone, http.http2 on by default and turned off in the ' +
             'next handshake, the HTTP/2 stream cap, idle timeout and ' +
-            'request count, and :authority against host',
+            'request count, :authority against host there and on the ' +
+            'debugger\'s proxy, tls.http2 as "true" and "false", CONNECT ' +
+            'answered 501, OPTIONS * kept in the front process, and the ' +
+            'stream cap on the Listeners page',
   run: run
 };

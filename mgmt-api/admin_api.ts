@@ -3907,13 +3907,15 @@ class AdminApi {
                  'and which hosted application is on which',
         description: 'For the realm the call is in: `realm`; `listeners`, ' +
                      'the built-in ones (each `id`, `name`, `setting`, ' +
-                     '`port`, `tls`, `what` and `policy`); `custom`, the ' +
+                     '`port`, `tls`, `what`, `policy` and `http`); ' +
+                     '`custom`, the ' +
                      'custom listeners this realm sees — the service\'s ' +
                      '(`listeners.custom`) and its own (`listeners.realm`), ' +
                      'every realm\'s in the default realm — each with ' +
                      '`id`, `owner`, `port`, `publicBaseUrl`, `hostnames`, ' +
                      '`clientAuth`, `certificateSource`, its `state` on this ' +
-                     'node, `certificate` and `policy`; `applications`, each ' +
+                     'node, `certificate`, `policy` and `http`; ' +
+                     '`applications`, each ' +
                      'hosted application with the `listeners` it is on, the ' +
                      '`advertised` one its URLs are built on and what ' +
                      '`decidedBy` (realm, service or default); ' +
@@ -3924,7 +3926,13 @@ class AdminApi {
                      '`minVersion`, `tls12`, `tls13Suites` (each `name` and ' +
                      '`postQuantum`, in order), `tls12Ciphers`, `pqcOnly`, ' +
                      '`groups` and `clientAuth` (`none`, `optional`, ' +
-                     '`required`, or the protocol\'s rule).',
+                     '`required`, or the protocol\'s rule). An `http` is ' +
+                     'the HTTP listener\'s pooling in force, or null: ' +
+                     '`keepAliveTimeoutS`, `headersTimeoutS`, ' +
+                     '`maxRequestsPerSocket`, `maxConnections`, `http2` ' +
+                     '(whether h2 is offered) and ' +
+                     '`http2MaxConcurrentStreams` (the streams one HTTP/2 ' +
+                     'connection may have open at once).',
         mirrors: 'GET /admin/listeners',
         responseDescription: 'The listeners view.',
         responseSchema: { type: 'object',
