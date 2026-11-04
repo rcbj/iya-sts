@@ -1313,6 +1313,16 @@ const JOBS = [
   // see half-way through.
   { file: 'sts_tlsfuzzer.js',            browser: false,
     timeoutMs: 2700000, exclusive: true },
+  // SCHEMATHESIS AGAINST THE FOUR APIS AND THE PROTOCOL SURFACE (#1299,
+  // OURS): provisions three realm profiles and a fuzz person, then runs the
+  // CLI (pinned in the tests image by tests/schemathesis/build-schemathesis.sh)
+  // through tests/schemathesis/auth_proxy.js against each (realm x surface).
+  // `local` because it drives this service's own /admin-api to provision;
+  // `exclusive` because it creates realms and fuzzes the whole surface hard;
+  // the `fuzz` mode of run-tests.sh stands up its own network-isolated
+  // product stack. schemathesis_kit.js holds the PLAN and the run.
+  { file: 'sts_schemathesis.js',         browser: false, local: true,
+    timeoutMs: 3600000, exclusive: true },
   // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
   // 2026-09-26): each Working Group suite, pinned and installed in the tests
   // image by tests/vc-suites/fetch-suites.sh, run against the W3C VC API
