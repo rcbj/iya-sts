@@ -1667,7 +1667,7 @@ postgres driver writes and reads every entry through it.
   one keyset over the table, and a realm made after this build is written
   with its keys. The cursor is written after each page has committed, so a
   restart, a lost claim or the budget resumes after the last finished page;
-  once the mark is read, a run is that one read. In a service deployed as
+  a run that finds the mark is that one read. In a service deployed as
   cells the tiered driver walks the global tier and then the cell's
   database, each to its own mark; two cells' leaders on the global tier cost
   time, never keys (compare-and-set, and every cursor names a finished
@@ -1679,8 +1679,29 @@ postgres driver writes and reads every entry through it.
   and it is keyed when next written. A store error stops the run
   (`STS-STORE-0166`) and the next resumes.
 
+* **THE FINISHED JOB IS OFF IN EVERY PROCESS (#1316, rcbj's decision on
+  #1311).** Until then only the process that ran the body knew — usually a
+  request worker — so the front scheduled it every two minutes for good and
+  `/admin/scheduler` showed it on until a restart. Its `off()` now answers
+  from the MARK: the driver's `grantingKeysComplete()` (the same indexed
+  read as the walk's `readState()`; in cells the tiered driver's, true only
+  when the global tier's AND the cell's marks are written), remembered once
+  true, since the mark is never removed. `off()` is synchronous, so the
+  read is PRIMED and not awaited: at `install()` (where the store is open by
+  then; at the stack's start it is not, and that read is skipped) and from
+  `off()` itself, at most once an interval (two minutes) while the mark is
+  unseen — the scheduler asks `off()` at its ticks, so a process learns at
+  the latest one interval after the walk finished, and there is no timer
+  of its own. Until the read answers the job is on, as before #1316; a
+  read that fails leaves it on and asks again an interval later (no code:
+  the job's own run reports a store that is down, `STS-STORE-0166`). The
+  reason is English, "finished: every directory entry has its
+  grantinggroup keys": a job's own `off()` reason is not in the scheduler's
+  prose catalog (`cluster/scheduler.ts`'s SENTENCES header).
+
 `tests/granting_index_backfill.js` holds both engines against doubles that
-keep the table.
+keep the table, and (K) the job off in a second process loaded afresh over
+the same store, and in cells only once both tiers are marked.
 
 ## A MINTED ROW'S NAME IS A DIGEST, AND THE NAME IS SEALED (#222, 2026-10-01)
 

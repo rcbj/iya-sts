@@ -80,7 +80,8 @@
 // A LIBRARY: the walk, over a driver's statements (`walk()`), and the job,
 // registered by `install()` from `common/protocol_stack.ts` beside the other
 // libraries that own jobs. It reaches the scheduler, the persistence module
-// and the keystore lazily.
+// and the keystore lazily. Its `off()` answers from the mark as every process
+// reads it, so the finished job is off in all of them (#1316, below).
 // ===========================================================================
 
 const errorCodes = require('../common/error_codes');
@@ -114,9 +115,16 @@ const MARK_KEY = '$index-complete$';
 const CURSOR_KEY = '$cursor$';
 
 // Whether this process has seen the mark in every database it walks, so the
-// job says it is off rather than asking again.
+// job says it is off rather than asking again. Set by a run that finds or
+// writes the mark, and by a read of the mark (`primeAsync()`); never unset,
+// since the mark is never removed.
 let completeHere = false;
 let installed = false;
+// The read of the mark in flight, so `off()` asked again meanwhile starts no
+// second one; and when the last one started, so a process that has not seen
+// the mark asks the store at most once an interval (#1316).
+let priming = null;
+let primedAtMs = 0;
 
 /**
  * The cursor row's `key` for a position: realm and DN key, which a realm id
@@ -355,8 +363,88 @@ function walkableDriver() {
     ? driver : null;
 }
 
+// ---------------------------------------------------------------------------
+// THE JOB IS OFF IN EVERY PROCESS ONCE THE MARK IS WRITTEN (#1316).
+//
+// The run that writes the mark is usually a request worker's (#408), and a
+// run's result reaches no other process's module state, so until #1316 only
+// that worker knew: the front went on scheduling the job every two minutes
+// for good — each run one read of the mark — and `/admin/scheduler` (another
+// worker) showed it on until a restart. So `off()` answers from the MARK, as
+// every process reads it, cached once true; a mark is never removed, so a
+// true answer is never asked again.
+//
+// `off()` is synchronous and the mark is a row in the store, so the answer
+// is PRIMED: a read started without waiting for it (`primeAsync()`), whose
+// answer a later `off()` sees. Until it has answered the job is on, as it
+// was before #1316 — the worst that costs is the one more run that reads
+// the mark. It is primed at `install()` (in a process whose store is open
+// by then; at the start of the stack none is, and that read is skipped) and
+// from `off()` itself, at most once an interval while the mark is unseen:
+// the scheduler's tick asks `off()` of every job, so that is when a process
+// that never runs the body learns the walk finished, at the latest one
+// interval after it did. No timer of its own (root `CLAUDE.md`, *Anything
+// periodic is a scheduler job*): a read is started only by a question the
+// scheduler asks. The process that ran the body knows from the run's
+// answer and reads nothing.
+//
+// In a service deployed as cells the store's answer is both tiers' marks
+// (`persistence_tiered.js`'s `grantingKeysComplete()`), so "finished" means
+// the global tier and this cell's database are both keyed.
+// ---------------------------------------------------------------------------
 /**
- * Why the job is off here, or ''.
+ * Reads the done mark from the store, once at a time, and remembers a true
+ * answer. Never throws and never rejects: a store that cannot be asked
+ * leaves the job on.
+ *
+ * @returns whether this process now knows the walk is complete
+ */
+function primeAsync() {
+  log.debug("Entering primeAsync().");
+  if (completeHere) {
+    log.debug("Leaving primeAsync(). Known.");
+    return Promise.resolve(true);
+  }
+  if (priming) {
+    log.debug("Leaving primeAsync(). In flight.");
+    return priming;
+  }
+  const driver = walkableDriver();
+  if (!driver || typeof driver.grantingKeysComplete !== 'function') {
+    log.debug("Leaving primeAsync(). Nothing to ask.");
+    return Promise.resolve(false);
+  }
+  primedAtMs = Date.now();
+  let asked;
+  try {
+    asked = Promise.resolve(driver.grantingKeysComplete());
+  } catch (e) {
+    // A driver that throws rather than rejects: the same answer as below.
+    log.debug("Caught in primeAsync(): " + ((e && e.message) || e));
+    asked = Promise.reject(e);
+  }
+  priming = asked.then(function (done) {
+    if (done === true) {
+      completeHere = true;
+    }
+    priming = null;
+    return completeHere;
+  }, function (e) {
+    // No code: nothing failed that anyone has to act on. The job stays on,
+    // the next interval asks again, and a store that is really down fails
+    // the job's own run, which is STS-STORE-0166.
+    log.debug("Caught in primeAsync(): " + ((e && e.message) || e));
+    priming = null;
+    return false;
+  });
+  log.debug("Leaving primeAsync(). Asked.");
+  return priming;
+}
+
+/**
+ * Why the job is off here, or ''. Starts a read of the mark, without
+ * waiting for it, when this process has not seen it and has not asked in
+ * the last interval.
  *
  * @returns the reason
  */
@@ -364,11 +452,14 @@ function offReason() {
   log.debug("Entering offReason().");
   if (completeHere) {
     log.debug("Leaving offReason(). Complete.");
-    return 'every directory entry has its grantinggroup keys';
+    return 'finished: every directory entry has its grantinggroup keys';
   }
   if (!walkableDriver()) {
     log.debug("Leaving offReason(). No database.");
     return 'the directory is not kept in a database here';
+  }
+  if (!priming && Date.now() - primedAtMs >= EVERY_MS) {
+    primeAsync();
   }
   log.debug("Leaving offReason(). On.");
   return '';
@@ -467,6 +558,8 @@ function install(schedulerInstance) {
   });
   // Set after the registration, never before (`cluster/CLAUDE.md`).
   installed = true;
+  // A process whose store is already open learns the mark now (#1316).
+  primeAsync();
   log.debug("Leaving install().");
   return true;
 }
@@ -478,6 +571,8 @@ function reset() {
   log.debug("Entering reset().");
   completeHere = false;
   installed = false;
+  priming = null;
+  primedAtMs = 0;
   log.debug("Leaving reset().");
 }
 
@@ -494,6 +589,7 @@ module.exports = {
   walk: walk,
   combined: combined,
   offReason: offReason,
+  primeAsync: primeAsync,
   runOnce: runOnce,
   install: install,
   reset: reset

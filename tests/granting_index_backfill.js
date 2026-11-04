@@ -34,6 +34,13 @@
 //      not before, and the mark stops a second run.
 //   J. THE JOB: registered once as a cluster job with no `onFront`, its run
 //      answering that there is no database where the store is not one.
+//   K. OFF IN EVERY PROCESS ONCE FINISHED (#1316): before the mark the job
+//      is on and a process asks the store at most once an interval; a run
+//      in one process writes the mark, and a SECOND process — the module
+//      loaded afresh, its own scheduler, the same store — is on until its
+//      read of the mark answers and then off with the reason, reading
+//      nothing more; in a service deployed as cells it is off only once
+//      both tiers' marks are written.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -45,6 +52,7 @@ const backfill = require('../persistence/granting_index_backfill');
 const directoryPortable = require('../persistence/directory_portable');
 const mariadbQueries = require('../persistence/directory_queries_mariadb');
 const sqlDialect = require('../persistence/sql_dialect');
+const tiered = require('../persistence/persistence_tiered');
 
 const log = require('bunyan').createLogger({ name: 'granting_index_backfill',
   level: process.env.LOG_LEVEL || 'info' });
@@ -681,12 +689,173 @@ async function theJob(t) {
   log.debug("Leaving theJob().");
 }
 
+// ---------------------------------------------------------------------------
+// K. OFF IN EVERY PROCESS (#1316)
+// ---------------------------------------------------------------------------
+
+const BACKFILL_PATH = require.resolve('../persistence/granting_index_backfill');
+
+// The module as another process holds it: loaded afresh, so nothing the
+// first instance learned is known here. The cache entry is put back after.
+function freshBackfill() {
+  log.debug("Entering freshBackfill().");
+  const kept = require.cache[BACKFILL_PATH];
+  delete require.cache[BACKFILL_PATH];
+  try {
+    log.debug("Leaving freshBackfill().");
+    return require(BACKFILL_PATH);
+  } finally {
+    require.cache[BACKFILL_PATH] = kept;
+  }
+}
+
+// A scheduler stand-in of one process: what it was given to register.
+function schedulerOf() {
+  log.debug("Entering schedulerOf().");
+  const registered = [];
+  log.debug("Leaving schedulerOf().");
+  return {
+    registered: registered,
+    job: function (id) {
+      log.debug("Entering job().");
+      log.debug("Leaving job().");
+      return registered.filter(function (one) {
+        return one.id === id;
+      })[0] || null;
+    },
+    register: function (spec) {
+      log.debug("Entering register().");
+      registered.push(spec);
+      log.debug("Leaving register().");
+    }
+  };
+}
+
+// How many reads of the mark and cursor the double has answered.
+function markReads(db) {
+  log.debug("Entering markReads().");
+  log.debug("Leaving markReads().");
+  return db.statements.filter(function (sql) {
+    return /FROM sts_minted_index WHERE handle = \$1 AND realm = '' AND index_key = ANY/
+      .test(sql);
+  }).length;
+}
+
+// One process's job over a store: the module afresh, registered on a
+// scheduler of its own, `persistence.currentDriver()` answering `driver`.
+function processOver(driver) {
+  log.debug("Entering processOver().");
+  const mod = freshBackfill();
+  const scheduler = schedulerOf();
+  require('../persistence/persistence').currentDriver = function () {
+    return driver;
+  };
+  mod.install(scheduler);
+  log.debug("Leaving processOver().");
+  return { mod: mod, spec: scheduler.registered[0] };
+}
+
+async function offEverywhere(t) {
+  log.debug("Entering offEverywhere().");
+  t.log.info('=== K. off in every process once finished (#1316) ===');
+  // The module the job asks for its store, as `walkableDriver()` does.
+  const persistence = require('../persistence/persistence');
+  const realDriver = persistence.currentDriver;
+  try {
+    const db = table();
+    seeded(db, 4);
+    const driver = pgDriver(db, {});
+
+    const front = processOver(driver);
+    await front.mod.primeAsync();
+    const readsThen = markReads(db);
+    const asked = [front.spec.off(), front.spec.off(), front.spec.off()];
+    t.check(asked.every(function (one) {
+      return one === '';
+    }) && markReads(db) === readsThen,
+            'K1. before the mark the job is on, and a process that has ' +
+            'just read the mark does not read it again within the interval',
+            JSON.stringify({ asked: asked, reads: markReads(db) - readsThen }));
+
+    const worker = processOver(driver);
+    const ran = await worker.spec.run({ stillOwner: function () {
+      return true;
+    } });
+    t.check(ran.complete && /finished/.test(worker.spec.off()) &&
+            front.spec.off() === '',
+            'K2. a run in one process writes the mark and that process is ' +
+            'off at once; another that read the store before it is still on',
+            JSON.stringify({ ran: ran.summary, worker: worker.spec.off() }));
+
+    const second = processOver(driver);
+    const unprimed = second.spec.off();
+    const primed = await second.mod.primeAsync();
+    const reason = second.spec.off();
+    const readsNow = markReads(db);
+    second.spec.off();
+    second.spec.off();
+    await second.mod.primeAsync();
+    t.check(unprimed === '' && primed === true &&
+            reason === 'finished: every directory entry has its ' +
+            'grantinggroup keys' && markReads(db) === readsNow,
+            'K3. a second process over the same store, its module loaded ' +
+            'afresh, is on until its read of the mark answers, then off ' +
+            'with the reason, and never reads the mark again',
+            JSON.stringify({ unprimed: unprimed, primed: primed,
+                             reason: reason }));
+
+    const failing = processOver({
+      indexGrantingKeys: function () {
+        return Promise.resolve({});
+      },
+      grantingKeysComplete: function () {
+        return Promise.reject(new Error('the store went away'));
+      }
+    });
+    const failed = await failing.mod.primeAsync();
+    t.check(failed === false && failing.spec.off() === '',
+            'K4. a store that cannot be asked leaves the job on',
+            JSON.stringify({ failed: failed }));
+
+    // Cells: the global tier and this cell's database, each a store of its
+    // own, and the tiered driver over both.
+    const globalDb = table();
+    const cellDb = table();
+    seeded(globalDb, 2);
+    seeded(cellDb, 2);
+    const globalDriver = pgDriver(globalDb, {});
+    const cellDriver = pgDriver(cellDb, {});
+    const cell = tiered.create({ global: globalDriver, cell: cellDriver,
+                                 cellId: 'k' });
+    await globalDriver.indexGrantingKeys({ budgetMs: 60000 });
+    const half = processOver(cell);
+    const halfPrimed = await half.mod.primeAsync();
+    t.check(halfPrimed === false && half.spec.off() === '' &&
+            mintedRows(globalDb, backfill.HANDLE,
+                       [backfill.MARK_KEY]).length === 1 &&
+            !mintedRows(cellDb, backfill.HANDLE,
+                        [backfill.MARK_KEY]).length,
+            'K5. cells: with only the global tier\'s mark written the job ' +
+            'is on', JSON.stringify({ primed: halfPrimed }));
+    await cellDriver.indexGrantingKeys({ budgetMs: 60000 });
+    const whole = processOver(cell);
+    const wholePrimed = await whole.mod.primeAsync();
+    t.check(wholePrimed === true && /^finished: /.test(whole.spec.off()),
+            'K6. cells: with both tiers\' marks written another process is ' +
+            'off with the reason', JSON.stringify({ off: whole.spec.off() }));
+  } finally {
+    persistence.currentDriver = realDriver;
+  }
+  log.debug("Leaving offEverywhere().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   await postgresCases(t);
   await postgresContention(t);
   await mariadbCases(t);
   await theJob(t);
+  await offEverywhere(t);
   log.debug("Leaving run().");
 }
 
@@ -696,6 +865,8 @@ module.exports = {
             'entry is found by the store question only after it, on ' +
             'PostgreSQL and MariaDB; the mark stops a second run; an ' +
             'interrupted or failed run resumes after its cursor; a store ' +
-            'with no granting entry finishes at once',
+            'with no granting entry finishes at once; once the mark is ' +
+            'written the job is off in every process, read from the store ' +
+            '(#1316)',
   run: run
 };
