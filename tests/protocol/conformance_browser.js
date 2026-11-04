@@ -78,6 +78,8 @@ const log = bunyan.createLogger({ name: "conformance_browser",
 const SETTLE_MS = Number(process.env.CONFORMANCE_BROWSER_SETTLE_MS) || 4000;
 
 let shared = null;
+// How many Chromes this process has opened with a network log (one file each).
+let netlogCount = 0;
 let queue = Promise.resolve();
 
 function waitMs(ms) {
@@ -159,6 +161,24 @@ async function browser(serviceBase) {
       args.push("--disable-features=" + extra);
     }
     log.info("Chrome features disabled on request: " + extra);
+  }
+  // CHROME'S OWN NETWORK LOG (#1293, rcbj 2026-11-04). Several modules on
+  // the hosted suite stalled with test-idp never seeing the request; the
+  // NetLog is written by Chrome itself, not through WebDriver, so it
+  // survives a hung WebDriver call, and it records every request, the socket
+  // and connection it rode, the TLS handshake and whether and when it ended.
+  // CONFORMANCE_BROWSER_NETLOG names a directory; each Chrome this job opens
+  // writes its own file there (a replaced browser starts a new one).
+  const netlogDir = String(process.env.CONFORMANCE_BROWSER_NETLOG || "")
+    .trim();
+  if (netlogDir) {
+    fs.mkdirSync(netlogDir, { recursive: true });
+    netlogCount += 1;
+    const file = require("path").join(netlogDir, "netlog-" + process.pid +
+      "-" + netlogCount + "-" + Date.now() + ".json");
+    options.addArguments("--log-net-log=" + file,
+                         "--net-log-capture-mode=Default");
+    log.info("Chrome's network log: " + file);
   }
   shared = await new Builder().forBrowser("chrome")
     .setChromeOptions(options).build();

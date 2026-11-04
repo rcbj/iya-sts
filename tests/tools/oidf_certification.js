@@ -86,6 +86,8 @@ const program = new Command()
     .default("oidf-certification-" +
              new Date().toISOString().replace(/[:.]/g, "-") + ".json"))
   .addOption(new Option("--list", "list the plans and stop"))
+  .addOption(new Option("--no-netlog", "do not write Chrome's network " +
+    "log beside the report"))
   .parse(process.argv);
 const opts = program.opts();
 
@@ -129,6 +131,13 @@ process.env.STS_TEST_SERVICE_URL = target;
 // timeout is longer than the local job's five minutes.
 process.env.CONFORMANCE_MODULE_SECONDS =
   process.env.CONFORMANCE_MODULE_SECONDS || "600";
+// Chrome's network log for every run, beside the report (#1293): a stalled
+// module is then explained by the request that stalled, not guessed at.
+// `--no-netlog` turns it off.
+if (opts.netlog !== false && !process.env.CONFORMANCE_BROWSER_NETLOG) {
+  process.env.CONFORMANCE_BROWSER_NETLOG =
+    path.resolve(String(opts.out).replace(/\.json$/, "") + "-netlog");
+}
 
 const bunyan = require("bunyan");
 const log = bunyan.createLogger({ name: "oidf_certification",
