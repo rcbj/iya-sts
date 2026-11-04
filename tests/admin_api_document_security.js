@@ -90,7 +90,7 @@ function documentWith(authRequired) {
   log.debug("Leaving documentWith().");
   return spec.buildSpec(adminApi.ROUTES, {
     baseUrl: 'https://sts.example:8081',
-    version: '0.1.20260910000000',
+    version: '1.0.0',
     authRequired: authRequired
   });
 }

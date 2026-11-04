@@ -840,11 +840,11 @@ const CODES = [
     summary: 'The logo was requested and none was read at startup.',
     spec: 'HTTP 404 text/plain' },
   { code: 'STS-CORE-0039',
-    summary: 'The VERSION file is not M.N and was ignored.',
+    summary: 'The VERSION file is not M.N.O and was ignored.',
     spec: '' },
   { code: 'STS-CORE-0040',
     summary: 'No readable VERSION file was found, so the version is reported ' +
-      'as 0.0.',
+      'as 0.0.0.',
     spec: '' },
   { code: 'STS-CORE-0041',
     summary: 'The build stamp version.json could not be written at image ' +

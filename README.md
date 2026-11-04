@@ -195,14 +195,16 @@ AWS cluster.
 
 ## Versioning
 
-The version is **M.N.O**: M.N from the `VERSION` file, and O the UTC build
-instant (or `BUILD_NUMBER`), stamped into the image when it is built.
+The version is **M.N.O**, a plain semantic version read whole from the
+`VERSION` file (currently `1.0.0`). Which build an image is — the commit and
+the instant it was built — is stamped into it beside the version, never
+appended to it.
 
 ```bash
-node common/version.js                    # 0.1.20260906143205
+node common/version.js                    # 1.0.0
 node common/version.js --sync-manifests   # after editing VERSION
-BUILD_NUMBER=$(date -u +%Y%m%d%H%M%S) GIT_COMMIT=$(git rev-parse HEAD) \
-  docker compose --profile xacml build    # one release, both images
+GIT_COMMIT=$(git rev-parse HEAD) \
+  docker compose --profile xacml build    # both images, naming the commit
 ```
 
 ## Running the tests

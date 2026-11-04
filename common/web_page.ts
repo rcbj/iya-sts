@@ -100,7 +100,7 @@ class WebPage {
    * One attribute of the shell's `<html>` element.
    *
    * @param env - the browser's objects
-   * @param name - the attribute, `data-sts-version`
+   * @param name - the attribute, `data-sts-build`
    * @returns its value, or '' where it is absent
    */
   static attribute(env: Json, name: string): string {

@@ -225,7 +225,7 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `STS_KEYS_KEK_PROVIDER` | `vault-transit` | `vault` reads the key from KV (`STS_KEYS_KEK_REF=secret/data/sts`) instead of using the Transit key |
 | `OPENBAO_TAG` | `latest` | The OpenBao image tag |
 | `STS_IMAGE`, `XACML_PEP_IMAGE`, `STS_COMPANION_IMAGE` | `iyasec/iya-sts`, `iyasec/iya-sts-xacml-pep`, `iya-sts-companion` | Image names. Set them to a name no registry has to keep a local build apart from the published image ([above](#building-from-this-checkout-or-pulling-the-published-image)) |
-| `BUILD_NUMBER`, `GIT_COMMIT`, `DEBUGGER_IMAGE` | empty | Build arguments: see [Which build am I running?](getting-started.md#which-build-am-i-running) and the embedded debugger |
+| `GIT_COMMIT`, `DEBUGGER_IMAGE` | empty | Build arguments: see [Which build am I running?](getting-started.md#which-build-am-i-running) and the embedded debugger |
 | `*_CONTAINER_NAME` | `sts`, `sts-postgres`, `sts-openbao`, … | Container names, which are machine-wide; change them to run a second stack beside this one |
 
 `OID4VCI_WALLET_URL` is not in the file. Add it under `sts` → `environment`

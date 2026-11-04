@@ -124,11 +124,12 @@ class WebShell {
     // constantly, and an answer that is one page away is an answer somebody
     // guesses instead.
     //
-    // The number is what gets quoted; the tooltip carries the provenance —
-    // the build instant, the commit where there is one, and whether this is a
-    // stamped artifact or a checkout being run. That last distinction is the
-    // one worth a tooltip rather than a footnote: two instances reporting
-    // different build numbers mean nothing if neither was ever built.
+    // The release is what gets quoted; the tooltip carries which build of it
+    // this is (#1298) — the build instant, the commit where there is one, and
+    // whether this is a stamped artifact or a checkout being run. That last
+    // distinction is the one worth a tooltip rather than a footnote: two
+    // instances reporting different build times mean nothing if neither was
+    // ever built.
     '<div title="' + kit.esc(shell.version.buildInfo) + '">' +
     t.html('console.shell.version', { version: shell.version.version }) +
     (shell.version.stamped ? '' : t.html('console.shell.notStamped')) +

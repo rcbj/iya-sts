@@ -11062,11 +11062,13 @@ class StsMetadata {
       // WHICH BUILD PRODUCED THIS DOCUMENT. The endpoint list below is read
       // from the running router, so it describes the process that answered —
       // and this says which process that was. Downloaded, the two travel
-      // together, which is the point: an endpoint list with no build number on
+      // together, which is the point: an endpoint list with no build on
       // it is a claim about a service and not about a release of one.
       version: APP_VERSION.version,
+      // `version` is the release, VERSION's M.N.O exactly (#1298); `build`
+      // says which build of it — the commit and the instant, never a number
+      // appended to the version.
       build: {
-        number: APP_VERSION.build,
         commit: APP_VERSION.commit || undefined,
         at: APP_VERSION.builtAt,
         // See the management API index for what this distinction is worth.

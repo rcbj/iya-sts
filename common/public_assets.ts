@@ -40,11 +40,15 @@
 // differs nowhere there — is `{}`, which is the truth, and the browser's
 // chain falls through to the base and to English as the server's does.
 //
-// CACHING BY VERSION: an address carrying `?v=` equal to this build's
-// version (`common/version.js`, the shell's `data-sts-version`) is the same
-// bytes for the life of the build, so it is `public, max-age=31536000,
-// immutable`; any other is `no-cache`, revalidated by its ETag. A new build
-// is a new version, so a browser never holds a stale catalog past a deploy.
+// CACHING BY BUILD: an address carrying `?v=` equal to this build's
+// identifier (`common/version.js`'s `buildId()`, the shell's
+// `data-sts-build`) is the same bytes for the life of the build, so it is
+// `public, max-age=31536000, immutable`; any other is `no-cache`, revalidated
+// by its ETag. A new build is a new identifier, so a browser never holds a
+// stale catalog past a deploy. **IT WAS THE VERSION UNTIL #1298**, when the
+// version stopped carrying a build number: every build of 1.0.0 is 1.0.0, and
+// keyed by that, a rebuild's corrected words would sit behind a year-long
+// `immutable` the browser had already been told to trust.
 // Compressed where the request accepts it (`ShellDocument.sendCompressed()`):
 // static text with no secret beside it, which BREACH needs.
 //
@@ -128,7 +132,7 @@ class PublicAssets {
     log.debug("Entering PublicAssets.cachingFor().");
     const asked = req && req.query && typeof req.query.v === 'string'
       ? req.query.v : '';
-    const out = asked && asked === String(version.load().version)
+    const out = asked && asked === String(version.buildId())
       ? IMMUTABLE : 'no-cache';
     log.debug("Leaving PublicAssets.cachingFor(). " + out);
     return out;

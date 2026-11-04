@@ -194,8 +194,8 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0036` | The service refused to start because the configured persistence store could not be opened or read. | — |
 | `STS-CORE-0037` | The front page's logo could not be read from disk at startup; the page is drawn without it. | — |
 | `STS-CORE-0038` | The logo was requested and none was read at startup. | HTTP 404 text/plain |
-| `STS-CORE-0039` | The VERSION file is not M.N and was ignored. | — |
-| `STS-CORE-0040` | No readable VERSION file was found, so the version is reported as 0.0. | — |
+| `STS-CORE-0039` | The VERSION file is not M.N.O and was ignored. | — |
+| `STS-CORE-0040` | No readable VERSION file was found, so the version is reported as 0.0.0. | — |
 | `STS-CORE-0041` | The build stamp version.json could not be written at image build time. | — |
 | `STS-CORE-0042` | A shared store's reconciler threw while deciding whether a restored or replicated row (or its removal) may be applied, so it was not applied and what the process held is unchanged. | — |
 | `STS-CORE-0043` | The plain-HTTP revocation listener (pki.httpPort) could not bind, so every http:// CRL, OCSP and caIssuers address in this service's certificates answers nothing. | — |

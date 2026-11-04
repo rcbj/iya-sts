@@ -1,15 +1,18 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // SPDX-License-Identifier: BUSL-1.1
 
-//! The version, M.N.O, fixed when an artifact is BUILT. A port of
+//! The version, M.N.O, a plain semantic version (#1298). A port of
 //! `common/version.js`, with the same two files and the same rule.
 //!
-//! `VERSION` holds M.N. The build number is the UTC build instant
-//! (`BUILD_NUMBER` overrides it), stamped into `version.json` when an image
-//! is built (`--stamp <dir>`), so a restarted container reports the same
-//! build. Without a stamp the version is COMPUTED at start and says so
-//! (`stamped: false`). **A version may never be the thing that stops a
-//! process starting**: an unreadable `VERSION` is 0.0, a corrupt stamp is a
+//! `VERSION` holds the whole M.N.O and the version reported is exactly that;
+//! nothing is appended to it (until #1298 the third component was the UTC
+//! build instant, and `BUILD_NUMBER` overrode it — it is no longer read).
+//! What identifies one BUILD — the commit and the build instant — is
+//! stamped into `version.json` beside the version when an image is built
+//! (`--stamp <dir>`), so a restarted container reports the same build.
+//! Without a stamp the record is COMPUTED at start and says so (`stamped:
+//! false`). **A version may never be the thing that stops a process
+//! starting**: an unreadable `VERSION` is 0.0.0, a corrupt stamp is a
 //! computed record.
 
 use std::path::{Path, PathBuf};
@@ -28,7 +31,10 @@ pub struct VersionInfo {
     pub version: String,
     pub major: String,
     pub minor: String,
-    pub build: String,
+    /// Absent from a stamp written before #1298, whose third component was
+    /// a build number; such a stamp still loads.
+    #[serde(default)]
+    pub patch: String,
     pub commit: String,
     pub built_at: String,
     pub stamped: bool,
@@ -44,22 +50,31 @@ fn find_root(dir: &Path) -> PathBuf {
     dir.to_path_buf()
 }
 
-fn read_major_minor(root: &Path) -> (String, String) {
+/// One component of a semantic version: digits, and no leading zero
+/// (Semantic Versioning 2.0.0, section 2).
+fn is_component(s: &str) -> bool {
+    !s.is_empty()
+        && s.chars().all(|c| c.is_ascii_digit())
+        && (s == "0" || !s.starts_with('0'))
+}
+
+/// `VERSION`'s M.N.O, or 0.0.0 — never a failure.
+fn read_release(root: &Path) -> (String, String, String) {
     let file = root.join(VERSION_FILE);
     match std::fs::read_to_string(&file) {
         Ok(raw) => {
             let raw = raw.trim();
-            if let Some((major, minor)) = raw.split_once('.') {
-                let digits = |s: &str| {
-                    !s.is_empty() && s.chars().all(|c| c.is_ascii_digit())
-                };
-                if digits(major) && digits(minor) {
-                    return (major.to_string(), minor.to_string());
-                }
+            let parts: Vec<&str> = raw.split('.').collect();
+            if parts.len() == 3 && parts.iter().all(|p| is_component(p)) {
+                return (
+                    parts[0].to_string(),
+                    parts[1].to_string(),
+                    parts[2].to_string(),
+                );
             }
             if !raw.is_empty() {
                 tracing::error!(
-                    "{}[version] ignoring malformed {}: \"{}\" (want M.N)",
+                    "{}[version] ignoring malformed {}: \"{}\" (want M.N.O)",
                     crate::log::tag("STS-CORE-0039"),
                     file.display(),
                     raw
@@ -71,11 +86,11 @@ fn read_major_minor(root: &Path) -> (String, String) {
         }
     }
     tracing::error!(
-        "{}[version] no readable {}; falling back to 0.0",
+        "{}[version] no readable {}; falling back to 0.0.0",
         crate::log::tag("STS-CORE-0040"),
         VERSION_FILE
     );
-    ("0".into(), "0".into())
+    ("0".into(), "0".into(), "0".into())
 }
 
 fn git_commit(root: &Path) -> String {
@@ -92,21 +107,16 @@ fn git_commit(root: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// The version computed now, from `VERSION`, `BUILD_NUMBER` and the clock.
+/// The version computed now: `VERSION`'s M.N.O, the commit and the clock.
 pub fn resolve(dir: &Path) -> VersionInfo {
     let root = find_root(dir);
-    let (major, minor) = read_major_minor(&root);
+    let (major, minor, patch) = read_release(&root);
     let now = Utc::now();
-    let build = std::env::var("BUILD_NUMBER")
-        .ok()
-        .map(|b| b.trim().to_string())
-        .filter(|b| !b.is_empty())
-        .unwrap_or_else(|| now.format("%Y%m%d%H%M%S").to_string());
     VersionInfo {
-        version: format!("{}.{}.{}", major, minor, build),
+        version: format!("{}.{}.{}", major, minor, patch),
         major,
         minor,
-        build,
+        patch,
         commit: git_commit(&root),
         built_at: crate::time::iso_seconds(now),
         stamped: false,
@@ -157,11 +167,25 @@ mod tests {
         let dir = std::env::temp_dir()
             .join(format!("sts-version-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join(VERSION_FILE), "2.7\n").unwrap();
+        std::fs::write(dir.join(VERSION_FILE), "2.7.1\n").unwrap();
         let written = stamp(&dir);
-        assert!(written.version.starts_with("2.7."));
+        assert_eq!(written.version, "2.7.1");
+        assert_eq!(written.patch, "1");
+        assert!(written.stamped);
         let read = load(&dir);
         assert_eq!(read, written);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_malformed_version_is_zero_never_a_failure() {
+        let dir = std::env::temp_dir()
+            .join(format!("sts-version-bad-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for bad in ["0.1", "v1.0.0", "1.0.0-rc1", "01.0.0", "1.0.0.0"] {
+            std::fs::write(dir.join(VERSION_FILE), bad).unwrap();
+            assert_eq!(resolve(&dir).version, "0.0.0", "{}", bad);
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

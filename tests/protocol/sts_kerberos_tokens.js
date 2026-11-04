@@ -331,6 +331,10 @@ async function setUp() {
   await set(idOf("front"), "oauthTokenEndpointAuthMethod", "add",
             "client_secret_post");
   await set(idOf("front"), "oauthGrantType", "add", EXCHANGE);
+  // A Kerberos service's entry is declared for krb5 alone, and product mode
+  // serves an application only the protocols it is declared for
+  // (appAllowedProtocol): the front end is an OAuth client too.
+  await set(idOf("front"), "appAllowedProtocol", "add", "oauth2");
   await ok("/users/create", { username: PERSON, invent: false,
                               credential: "password", password: PASSWORD,
                               attributes: { cn: PERSON, givenName: "KT",

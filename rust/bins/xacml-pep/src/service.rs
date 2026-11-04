@@ -598,16 +598,15 @@ impl Pep {
             },
             "version": v.version,
             "build": {
-                "number": v.build,
                 "commit": if v.commit.is_empty() { Value::Null }
                           else { Value::from(v.commit.clone()) },
                 "at": v.built_at,
                 "stamped": v.stamped,
-                "what": "M.N comes from the same VERSION file the PDP's \
-                         does, so a difference THERE is a PEP left behind \
-                         across a release. The build number is per IMAGE: \
-                         these are two artifacts and they differ unless the \
-                         same BUILD_NUMBER was passed to both builds."
+                "what": "The version is the release, read whole from the \
+                         same VERSION file the PDP's is, so a difference \
+                         THERE is a PEP left behind across a release. The \
+                         build (commit and instant) is per IMAGE: these are \
+                         two artifacts, each stamped when it was built."
             },
             "pdp": o.pdp_url,
             "bias": o.bias.as_str(),

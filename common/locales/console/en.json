@@ -6,7 +6,7 @@
   "shell.memory.after": " and is off by default.",
   "shell.json": "Every page here also answers <code>?format=json</code>, and every form also accepts a JSON body, so a test can drive this console without a browser.",
   "shell.version": "iya-sts version <code>{version}</code>",
-  "shell.notStamped": " (not a stamped build — this process is a checkout, and the build number is when it started)",
+  "shell.notStamped": " (not a stamped build — this process is a checkout, and its build time is when it started)",
   "shell.open.text": "<strong>This console is not protected.</strong> The gate is OFF, so nothing here checks a credential — and nothing else in this service does either: the username typed at the sign-in screen is the identity in every token it issues. Anyone who can reach this port can revoke every token and change what the next one contains. That is fine on a laptop or a compose network and is not fine on a public address. Say who may get in on ",
   "shell.adminRoles": "Admin roles",
   "shell.open.after": ", which draws every setting behind this page.",

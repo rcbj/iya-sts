@@ -6,7 +6,7 @@
   "shell.memory.after": " at naka-off bilang default.",
   "shell.json": "Ang bawat pahina dito ay sumasagot din sa <code>?format=json</code>, at ang bawat form ay tumatanggap din ng JSON body, kaya kayang patakbuhin ng isang test ang console na ito nang walang browser.",
   "shell.version": "Bersyon ng iya-sts <code>{version}</code>",
-  "shell.notStamped": " (hindi stamped build — checkout ang process na ito, at ang build number ay kung kailan ito nag-start)",
+  "shell.notStamped": " (hindi stamped build — checkout ang process na ito, at ang oras ng build nito ay kung kailan ito nag-start)",
   "shell.open.text": "<strong>Hindi protektado ang console na ito.</strong> NAKA-OFF ang gate, kaya walang anumang dito na nagche-check ng credential — at wala ring iba sa serbisyong ito: ang username na tina-type sa sign-in screen ang identity sa bawat token na ibinibigay nito. Kahit sino na makaabot sa port na ito ay puwedeng mag-revoke ng bawat token at baguhin ang laman ng susunod. Ayos lang iyan sa laptop o sa compose network, pero hindi ayos sa public address. Itakda kung sino ang puwedeng pumasok sa ",
   "shell.adminRoles": "Mga admin role",
   "shell.open.after": ", na nagpapakita ng bawat setting sa likod ng pahinang ito.",
