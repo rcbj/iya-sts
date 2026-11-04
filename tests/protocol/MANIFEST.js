@@ -1803,6 +1803,10 @@ const LOCAL_HELPERS = [
   // from (#568): the static portal signs in as the public client
   // `sts-user-portal` and draws every page from `/account-api`.
   'portal_signin.js',
+  // The reporting application's sign-in (#1299): a DPoP-bound
+  // `report:use report:admin` token for the public client `sts-report`, for
+  // the Schemathesis auth proxy. There is no other report-api sign-in helper.
+  'report_signin.js',
   // What the OpenID conformance suite's drivers share (#187): the suite's
   // API, a plan run module by module, and the ledger of argued failures and
   // known warnings. `sts_fapi_conformance.js` keeps its own copy (#176).

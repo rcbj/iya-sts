@@ -619,6 +619,12 @@ async function signInToTheConsole(base, user, log2, options) {
       return refreshToken;
     },
     cookie: cookies.header(),
+    // The DPoP key this sign-in is bound to, so a caller that forwards its
+    // own requests (the Schemathesis auth proxy, #1299) can sign a fresh
+    // proof for each one; `portal_signin.js` already exposes its key the same
+    // way. `key.proof(method, url, token)` signs, `key.keepNonce(response)`
+    // adopts a `use_dpop_nonce` challenge's nonce.
+    key: key,
     api: api,
     raw: raw,
     refresh: refresh,
