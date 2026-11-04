@@ -598,15 +598,21 @@ impl Pep {
             },
             "version": v.version,
             "build": {
+                "number": if v.build.is_empty() { Value::Null }
+                          else { Value::from(v.build.clone()) },
+                "release": v.release,
                 "commit": if v.commit.is_empty() { Value::Null }
                           else { Value::from(v.commit.clone()) },
                 "at": v.built_at,
                 "stamped": v.stamped,
-                "what": "The version is the release, read whole from the \
-                         same VERSION file the PDP's is, so a difference \
-                         THERE is a PEP left behind across a release. The \
-                         build (commit and instant) is per IMAGE: these are \
-                         two artifacts, each stamped when it was built."
+                "what": "The version is M.N.O.<build> (#1317): the release, \
+                         read from the same VERSION file the PDP's is, and \
+                         the build number. A difference in the RELEASE is \
+                         a PEP left behind across a release. The build \
+                         number is per IMAGE — the UTC instant it was \
+                         built, unless it is a release build, which names \
+                         its own — so two images of one tree differ there \
+                         unless both were built as the same release."
             },
             "pdp": o.pdp_url,
             "bias": o.bias.as_str(),

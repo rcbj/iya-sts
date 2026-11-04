@@ -519,8 +519,9 @@ docker compose up -d --wait
   volumes, and the next `up` comes back with the same directory, signing keys
   and sessions. `docker compose down -v` deletes it all.
 * **Which build.** `IYA_STS_TAG` picks the image tag: `latest` is the newest
-  build of `main`, and the release's `M.N.O` (`1.0.0`) names the newest build
-  of that release. `STS_PORT`,
+  build of `main`, the release's `M.N.O` (`1.0.0`) names the release build cut
+  for it, and the full `M.N.O.<build>` (`1.0.0.0`, or
+  `1.0.0.20261104151200`) names exactly one build. `STS_PORT`,
   `PKI_PORT` and `KDC_PORT` move the published ports.
 * **Kerberos works from the start.** The KDC is published on 88 (TCP and
   UDP), and the SPNEGO acceptor holds `HTTP/localhost`, the name a browser
@@ -582,28 +583,31 @@ its own description of itself.
 
 ## Which build am I running?
 
-Every page says so, and so does the log. The version is **M.N.O** — a plain
-semantic version, the release, exactly as the repo-root `VERSION` file says
-it (`1.0.0`). Which **build** of that release you are running is reported
-beside it, never appended to it: the commit it was built from and the instant
-the image was built.
+Every page says so, and so does the log. The version is **M.N.O.build**:
+the release, exactly as the repo-root `VERSION` file says it (`1.0.0`),
+followed by a **build number**. An ordinary build is numbered by the UTC
+instant the image was built, `YYYYMMDDHHMMSS`; a **release build** names its
+own number, so the 1.0.0 release is `1.0.0.0`. The commit it was built from
+and the build instant are reported beside it.
 
 ```
-1.0.0                                  the version (the release)
-Built 2026-11-04T12:00:00Z — commit 0123456789ab   the build, beside it
+1.0.0.20261104120000      an ordinary build of release 1.0.0
+1.0.0.0                   the 1.0.0 release build
+Build 20261104120000 — Built 2026-11-04T12:00:00Z — commit 0123456789ab
 ```
 
 The quickest ways to read it:
 
 ```bash
-curl -sk https://localhost:8081/admin-api | head -8   # version, commit, builtAt, stamped
+curl -sk https://localhost:8081/admin-api | head -10  # version, build, release, commit, builtAt, stamped
 curl -sk https://localhost:8081/home-api/front        # the front page's version
 node common/version.js                                # from a checkout, without running it
 ```
 
 It is also in the foot of every admin console page and every user portal page
 (the build in the tooltip), in the first paragraph of `/admin/sts-metadata`
-(whose JSON carries `build.commit` and `build.at`), and in the first line the
+(whose JSON carries `build.number`, `build.release`, `build.commit` and
+`build.at`), and in the first line the
 service logs when it starts.
 
 **The remote XACML PEP reports one too**, if you are running it
@@ -614,11 +618,12 @@ and in the Version column of `/admin/xacml/peps` on this service's console:
 curl -s http://localhost:9090/ | head -20      # the PEP's own page
 ```
 
-Its **version always matches** this service's — both images are built from
-one tree and one `VERSION` file — while its **build is its own** (its
-`build.at` and `build.commit`), because they are two images built at two
-instants. So a different version on that row is a PEP left behind across an
-upgrade, and a different build time is just two artifacts.
+Its **release always matches** this service's — both images are built from
+one tree and one `VERSION` file — while an ordinary build's **build number is
+its own** (its `build.number` and `build.at`), because they are two images
+built at two instants. Built as the same release, both are the same version
+(`1.0.0.0`). So a different release on that row is a PEP left behind across an
+upgrade, and a different build number is just two artifacts.
 
 **`stamped` is the field worth knowing about.** A container reports a build
 that was fixed when the image was built, so restarting it reports the same
@@ -635,6 +640,26 @@ GIT_COMMIT=$(git rev-parse HEAD) docker compose build sts
 
 The commit is a build argument rather than something the image works out,
 because the build context deliberately carries no `.git`.
+
+### Building a release
+
+A release build is flagged and names its build number. Pass both build
+arguments, to both images:
+
+```bash
+docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 .
+docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 \
+  -f xacml-pep/Dockerfile .
+# or, both at once:
+STS_RELEASE=true BUILD_NUMBER=0 docker compose --profile xacml build
+```
+
+That is `1.0.0.0`. The build number is a non-negative integer with no leading
+zero. `STS_RELEASE=true` with no valid `BUILD_NUMBER` fails the build
+(`STS-CORE-0164`) rather than making a release with a date in it. Without
+`STS_RELEASE=true`, `BUILD_NUMBER` is ignored and the build is numbered by its
+build instant, so a CI system's own `BUILD_NUMBER` cannot make an ordinary
+build look like a release.
 
 
 ## First-Time Admin Login

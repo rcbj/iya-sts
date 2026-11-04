@@ -37,15 +37,23 @@ RUN apt-get update \
 WORKDIR /usr/src/pep
 COPY --from=build /usr/src/rust/target/release/xacml-pep /usr/local/bin/xacml-pep
 
-# THE VERSION, M.N.O, AND WHICH BUILD THIS IS, STAMPED AT BUILD TIME by the
-# binary itself (`sts-core::version`, a port of common/version.js): the
-# version is the one VERSION file the service reads too, exactly (#1298), and
-# the commit and the build instant are recorded beside it. `version.json` is
-# in the working directory, where the binary looks for it and where CI reads
-# it.
+# THE VERSION, M.N.O.<build>, STAMPED AT BUILD TIME by the binary itself
+# (`sts-core::version`, a port of common/version.js, under the same rules,
+# #1317): the release is the one VERSION file the service reads too, and the
+# build number is the UTC build instant unless STS_RELEASE=true names one in
+# BUILD_NUMBER — the same two build arguments the service's Dockerfile takes,
+# so the PEP and the service built as one release report one version
+# (`--build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0`, 1.0.0.0). A
+# release flag without a valid number fails this RUN; without the flag
+# BUILD_NUMBER is ignored. The commit and the build instant are recorded
+# beside it. `version.json` is in the working directory, where the binary
+# looks for it and where CI reads it.
 COPY VERSION ./VERSION
 ARG GIT_COMMIT=
-RUN GIT_COMMIT="${GIT_COMMIT}" \
+ARG STS_RELEASE=
+ARG BUILD_NUMBER=
+RUN GIT_COMMIT="${GIT_COMMIT}" STS_RELEASE="${STS_RELEASE}" \
+    BUILD_NUMBER="${BUILD_NUMBER}" \
     xacml-pep --stamp . && cat version.json
 
 LABEL org.opencontainers.image.source="https://github.com/rcbj/iya-sts" \

@@ -369,13 +369,21 @@ RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
 # `debugger.uiDirectory` and `debugger.apiDirectory` default to.
 COPY --from=debugger /debugger/ ./debugger/embedded/
 # ---------------------------------------------------------------------------
-# RECORD WHICH BUILD THIS IMAGE IS, BESIDE ITS VERSION, IN version.json.
+# RECORD WHICH BUILD THIS IMAGE IS, AND ITS BUILD NUMBER, IN version.json.
 #
-# The version is the repo-root VERSION file's M.N.O, exactly — a plain
-# semantic version with nothing appended (#1298; until then its third
-# component was a build number decided here). What this line fixes is the
-# BUILD: the commit and the instant, recorded beside the version and not in
-# it, at image build time rather than at startup. That is the whole reason
+# The version is M.N.O.<build> (#1317): the repo-root VERSION file's
+# release, then the build number this line decides — the UTC build instant
+# as YYYYMMDDHHMMSS by default, or, for a RELEASE build, the number the build
+# names:
+#
+#   docker build --build-arg STS_RELEASE=true --build-arg BUILD_NUMBER=0 .
+#
+# is 1.0.0.0. STS_RELEASE=true without a valid BUILD_NUMBER FAILS THIS RUN
+# (STS-CORE-0164, naming both), so no image is made; WITHOUT STS_RELEASE,
+# BUILD_NUMBER is ignored, so a CI system's own variable of that name cannot
+# make an ordinary build look like a release. Beside the number go the commit
+# and the instant, at image build time rather than at startup. That is the
+# whole reason
 # this line exists: a service that recorded its build when the process
 # started would report a different one every time the container restarted,
 # which makes "which build is this" unanswerable in exactly the situation
@@ -390,14 +398,17 @@ COPY --from=debugger /debugger/ ./debugger/embedded/
 # GIT_COMMIT is a build argument because .dockerignore excludes .git, so there
 # is no history in the build context for `git rev-parse` to read. Pass it and
 # the build names a commit; leave it and the commit is simply absent, which is
-# a missing tooltip and nothing else. (BUILD_NUMBER was a second argument
-# until #1298; nothing reads it now.)
+# a missing tooltip and nothing else. STS_RELEASE and BUILD_NUMBER default
+# to empty, which is an ordinary (date and time) build.
 #
 # `cat` afterwards so the record is in the build log: when somebody asks which
 # build an image is, the answer is in the log of the build that made it as well
 # as in the image.
 ARG GIT_COMMIT=
-RUN GIT_COMMIT="${GIT_COMMIT}" \
+ARG STS_RELEASE=
+ARG BUILD_NUMBER=
+RUN GIT_COMMIT="${GIT_COMMIT}" STS_RELEASE="${STS_RELEASE}" \
+    BUILD_NUMBER="${BUILD_NUMBER}" \
     node common/version.js --stamp . && cat version.json
 # OCI metadata, read by ghcr.io and Docker Hub (2026-10-02). `source` is what
 # LINKS the published package (ghcr.io/rcbj/iya-sts, pushed by

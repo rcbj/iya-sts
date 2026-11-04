@@ -3074,18 +3074,25 @@ class AdminApi {
           self.sendJson(res, 200, {
             name: 'IYA STS management API',
             version: VERSION,
-            // WHICH BUILD THIS IS, BESIDE THE VERSION AND NOT IN IT (#1298).
-            // `version` is the release, VERSION's M.N.O exactly; a test
-            // asserting "this stack is running the build it just made" wants
-            // the build instant on its own, and a report saying which commit
-            // an instance is on wants the commit — so each is a field rather
-            // than something a client writes a regular expression for.
+            // WHICH BUILD THIS IS, BROKEN OUT (#1298, #1317). `version` is
+            // M.N.O.<build>; `build` is the build number on its own (the UTC
+            // build instant, or a release build's own) and `release` whether
+            // the build was flagged as a release — version.json's own names
+            // for both, so a check can compare the two member by member.
+            // A test asserting "this stack is running the build it just made"
+            // wants the number and the instant on their own, and a report
+            // saying which commit an instance is on wants the commit — so each
+            // is a field rather than something a client writes a regular
+            // expression for. `build` is absent on a stamp a #1298 build
+            // wrote, whose version is the bare release.
             //
             // `stamped` is the one that is easy to leave out and worth most:
             // false means this process computed its own record at startup
             // because nothing stamped an artifact, so `builtAt` is the moment
             // it STARTED and comparing it with another instance's says
             // nothing.
+            build: APP_VERSION.build || undefined,
+            release: APP_VERSION.release === true,
             commit: APP_VERSION.commit || undefined,
             builtAt: APP_VERSION.builtAt,
             stamped: APP_VERSION.stamped === true,
@@ -28406,10 +28413,11 @@ import senderConstraints = require('../oauth-oidc/sender_constraints');
 // from this repository, so it cannot move a route or join a cycle.
 //
 // **IT USED TO BE `require('../package.json').version`**, which was M.N.0 — the
-// manifest's placeholder patch while the version carried a build number. The
-// version is the release since #1298 and package.json carries the same one,
-// but the module stays the one source, and the build is identified beside it
-// by `commit` and `builtAt`. See common/version.js.
+// manifest's placeholder patch while the version carried a build number.
+// package.json carries the release, M.N.O, since #1298; the version this
+// module answers is that release followed by the build number (#1317), which
+// package.json has nowhere to put, so the module stays the one source. See
+// common/version.js.
 import version = require('../common/version');
 const APP_VERSION = version.load();
 const VERSION = APP_VERSION.version;

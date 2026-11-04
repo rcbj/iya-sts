@@ -124,8 +124,9 @@ class WebShell {
     // constantly, and an answer that is one page away is an answer somebody
     // guesses instead.
     //
-    // The release is what gets quoted; the tooltip carries which build of it
-    // this is (#1298) — the build instant, the commit where there is one, and
+    // The version (M.N.O.<build>, #1317) is what gets quoted; the tooltip
+    // carries the rest of the build — whether it is a release build, the
+    // build instant, the commit where there is one, and
     // whether this is a stamped artifact or a checkout being run. That last
     // distinction is the one worth a tooltip rather than a footnote: two
     // instances reporting different build times mean nothing if neither was

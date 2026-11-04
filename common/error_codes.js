@@ -1200,6 +1200,14 @@ const CODES = [
       'wait, so this process made them itself; the cluster may hold two ' +
       'sets until one is replaced.',
     spec: 'none — logged; group signatures go on' },
+  // A RELEASE BUILD NAMES ITS BUILD NUMBER (#1317).
+  { code: 'STS-CORE-0164',
+    summary: 'The build stamp (common/version.js --stamp, or xacml-pep ' +
+      '--stamp) was refused: STS_RELEASE=true marks a release build, which ' +
+      'must name its BUILD_NUMBER as a non-negative integer with no leading ' +
+      'zero, and it did not — or STS_RELEASE was neither true nor false. ' +
+      'Nothing is written and the image build fails.',
+    spec: 'none — the image build exits non-zero' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
