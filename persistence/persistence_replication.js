@@ -234,6 +234,10 @@ function createReplication(label) {
   // pause between (2026-10-27; applyRows()).
   const SEALED_ROW_RETRIES = 5;
   const SEALED_ROW_RETRY_PAUSE_MS = 200;
+  // Rows applied between two turns of the event loop (#704; applyRows()).
+  // Small: a turn costs a few microseconds, and a page is at most PAGE rows,
+  // so twenty turns a full page add nothing a barrier's deadline would see.
+  const APPLY_YIELD_EVERY = 25;
   // Directory changes of a realm this process does not define yet, kept by
   // kind, realm and key until the realm's own row has been applied
   // (2026-10-27; applyRows()), and the time after which one is given up.
@@ -1253,7 +1257,19 @@ function createReplication(label) {
         rest.push(row);
       }
     });
-    first.concat(rest).forEach(function (row) {
+    // A TURN OF THE EVENT LOOP EVERY APPLY_YIELD_EVERY ROWS (#704). The
+    // chain is promises, and a synchronous applier resolves in a microtask,
+    // so a page of 500 synchronous rows ran start to finish with no request,
+    // heartbeat or timer let in between — every 5 s, in every process. The
+    // order and the serial apply are unchanged; only the turns are added.
+    first.concat(rest).forEach(function (row, i) {
+      if (i > 0 && i % APPLY_YIELD_EVERY === 0) {
+        chain = chain.then(function () {
+          return new Promise(function (resolve) {
+            setImmediate(resolve);
+          });
+        });
+      }
       chain = chain.then(function () {
         if (row.kind === 'directory' && row.realm && !realms.get(row.realm)) {
           deferForRealm(row);
