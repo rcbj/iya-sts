@@ -136,9 +136,11 @@ x-mirror-contexts: &mirror-contexts
 # Every service that BUILDS the sts tag passes these. The last build of the
 # tag wins, so one of them omitting STS_CLOUD_SDKS would ship an image the
 # attribute-source job cannot load mysql2 from (#356). GIT_COMMIT is
-# optional and empty by default; the `sts` service argues it. (BUILD_NUMBER
-# was passed too until #1298, when the version stopped carrying a build
-# number: nothing reads it.)
+# optional and empty by default; the `sts` service argues it. STS_RELEASE
+# and BUILD_NUMBER (#1317) are NOT passed: a test stack's image is never a
+# release build, so its build number is the UTC build instant the
+# Dockerfile's stamp takes by default — and a BUILD_NUMBER a CI runner
+# happens to export could not reach it anyway.
 x-sts-image-args: &sts-image-args
   GIT_COMMIT: "${GIT_COMMIT:-}"
   STS_CLOUD_SDKS: "mysql2"
@@ -579,8 +581,9 @@ services:
       # docker-compose.yml passes. It is here so that a CI run of this stack
       # can stamp its image with the commit, which is the environment where
       # "which build produced this report" is asked most and answerable
-      # least. The version is VERSION's release whatever is passed (#1298);
-      # the build instant is recorded beside it either way.
+      # least. The version is VERSION's release followed by the build
+      # number, here always the UTC build instant: a test stack is never a
+      # release build (#1317), so STS_RELEASE is not passed.
       #
       # AND STS_CLOUD_SDKS, in the anchor every build of this tag uses
       # (x-sts-image-args, #356). mysql2 is what the attribute-source job's
@@ -920,9 +923,9 @@ services:
       additional_contexts: *mirror-contexts
       dockerfile: xacml-pep/Dockerfile
       # THE BUILD'S IDENTITY, exactly as the sts service above takes it. Both
-      # images report the one VERSION file's release (#1298); each records
-      # the instant it was built beside it, which is two different builds for
-      # two artifacts and is the honest default.
+      # images report the one VERSION file's release; each is numbered by
+      # the instant it was built (#1317), which is two different build
+      # numbers for two artifacts and is the honest default.
       args:
         GIT_COMMIT: "${GIT_COMMIT:-}"
     depends_on:

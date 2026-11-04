@@ -11069,10 +11069,12 @@ class StsMetadata {
       // together, which is the point: an endpoint list with no build on
       // it is a claim about a service and not about a release of one.
       version: APP_VERSION.version,
-      // `version` is the release, VERSION's M.N.O exactly (#1298); `build`
-      // says which build of it — the commit and the instant, never a number
-      // appended to the version.
+      // `version` is M.N.O.<build> (#1317); `build` breaks it out — the
+      // build number, whether it is a release build, the commit and the
+      // instant.
       build: {
+        number: APP_VERSION.build || undefined,
+        release: APP_VERSION.release === true,
         commit: APP_VERSION.commit || undefined,
         at: APP_VERSION.builtAt,
         // See the management API index for what this distinction is worth.

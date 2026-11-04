@@ -337,8 +337,9 @@ async function theIndexAgreesWithTheDocument(doc) {
 // EVERY SURFACE REPORTS THE SAME BUILD.
 //
 // The version is M.N.O — the release, exactly as the repo-root VERSION file
-// declares it, with nothing appended (#1298; until then O was a build number
-// fixed when the image was built — see CLAUDE.md, *Versioning*). Several
+// declares it, followed by the build number fixed when the image was built
+// (#1317: the UTC build instant, or a release build's own — see CLAUDE.md,
+// *Versioning*). Several
 // surfaces draw it, and `tests/version.js` asserts in process that each of them
 // reads the same MODULE. What only a running service can be asked is whether
 // they then report the same STRING, and the same BUILD beside it, which is the
@@ -359,20 +360,27 @@ async function everySurfaceReportsTheSameBuild(index, consoleClient) {
   log.debug("Entering everySurfaceReportsTheSameBuild().");
   log.info("=== The version ===");
 
-  // THE RELEASE AND NOTHING ELSE (#1298). Three plain numbers: a service
-  // that appended a date, a build number or a suffix fails here. That they
-  // are exactly the repo-root VERSION file's is `tests/version.js`'s claim,
-  // in process — this job may run against a deployment from a tree that is
-  // not the one the image was built from, so it does not read the file.
-  assert.ok(/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(index.version),
-    "the index's version should be a plain M.N.O semantic version (#1298), " +
-    "with no build number or date appended. It is " +
+  // THE RELEASE AND THE BUILD NUMBER (#1317): M.N.O.<build>, the build
+  // number on its own in `build` and whether it is a release in `release`.
+  // A date-and-time build's number is YYYYMMDDHHMMSS; a release names its
+  // own (1.0.0.0). That the release is exactly the repo-root VERSION file's
+  // is `tests/version.js`'s claim, in process — this job may run against a
+  // deployment from a tree that is not the one the image was built from, so
+  // it does not read the file.
+  const FULL = /^((0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*))\.(0|[1-9]\d*)$/;
+  assert.ok(FULL.test(index.version),
+    "the index's version should be M.N.O.<build> (#1317). It is " +
     JSON.stringify(index.version) + ".");
-  assert.ok(!/\d{8}/.test(index.version),
-    "and no component of it is a date: " + JSON.stringify(index.version));
-  assert.ok(!("build" in index),
-    "the index should carry no `build` member: the build number it held " +
-    "until #1298 is gone, and the build is `commit` and `builtAt`.");
+  assert.strictEqual(index.version.split(".").slice(3).join("."),
+    String(index.build),
+    "`build` should be the build number the version ends with; they are " +
+    JSON.stringify(index.build) + " and " + JSON.stringify(index.version));
+  assert.strictEqual(typeof index.release, "boolean",
+    "the index should say whether this is a release build: " +
+    JSON.stringify(index.release));
+  assert.ok(index.release || /^\d{14}$/.test(String(index.build)),
+    "a build that is not a release is numbered by its UTC build instant, " +
+    "YYYYMMDDHHMMSS; this one is " + JSON.stringify(index.build));
   assert.strictEqual(typeof index.stamped, "boolean",
     "the index should say whether this version came off a build stamp or was " +
     "computed at startup. Without it a build time is unreadable: two " +
@@ -401,8 +409,10 @@ async function everySurfaceReportsTheSameBuild(index, consoleClient) {
     "version now, so this is where two sources would disagree.");
   assert.strictEqual(metadata.build.commit, index.commit,
     "and the same commit.");
-  assert.ok(!("number" in metadata.build),
-    "and the metadata page's `build` carries no number (#1298).");
+  assert.strictEqual(metadata.build.number, index.build,
+    "and the same build number (#1317).");
+  assert.strictEqual(metadata.build.release, index.release,
+    "and agree about whether it is a release build.");
   assert.strictEqual(metadata.build.stamped, index.stamped,
     "and agree about whether it was stamped.");
 

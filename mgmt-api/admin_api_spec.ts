@@ -1296,10 +1296,25 @@ const SCHEMAS = {
       name: { type: 'string' },
       version: {
         type: 'string',
-        description: 'M.N.O — the release, exactly as the repo-root ' +
-                     'VERSION file declares it. A plain semantic version: ' +
-                     'no build number or date is appended; the build is ' +
-                     'identified by `commit` and `builtAt`.'
+        description: 'M.N.O.<build> — the release the repo-root ' +
+                     'VERSION file declares, followed by the build number: ' +
+                     'the UTC build instant as YYYYMMDDHHMMSS by default, or ' +
+                     'the number a release build names (1.0.0.0). A stamp ' +
+                     'written before build numbers returned (#1317) reports ' +
+                     'the bare M.N.O.'
+      },
+      build: {
+        type: 'string',
+        description: 'The build number on its own: the UTC build instant ' +
+                     'as YYYYMMDDHHMMSS, or the BUILD_NUMBER a release build ' +
+                     'named. Absent on a stamp that carries none.'
+      },
+      release: {
+        type: 'boolean',
+        description: 'True when this build was flagged as a release ' +
+                     '(STS_RELEASE=true) and named its build number; false ' +
+                     'for an ordinary date-and-time build and for a process ' +
+                     'running from a checkout.'
       },
       commit: {
         type: 'string',
@@ -1310,7 +1325,8 @@ const SCHEMAS = {
       },
       builtAt: {
         type: 'string', format: 'date-time',
-        description: 'When this build was made. Read it with ' +
+        description: 'When this build was made (for a date-and-time ' +
+                     'build, the instant its build number is). Read it with ' +
                      '`stamped`: this is when the ARTIFACT was built, or ' +
                      'when this PROCESS started if there is no artifact.'
       },
@@ -1320,8 +1336,9 @@ const SCHEMAS = {
                      'image build time, which is what a container reports. ' +
                      'False means the process computed its own record at ' +
                      'startup because nothing was ever built — a checkout ' +
-                     'being run — so `builtAt` is the moment it started and ' +
-                     'comparing it against another instance says nothing.'
+                     'being run — so `builtAt` and the build number are the ' +
+                     'moment it started and comparing them against another ' +
+                     'instance says nothing.'
       },
       openapi: { type: 'string', description: 'Where the document is.' },
       docs: { type: 'string', description: 'Where the explorer is.' },

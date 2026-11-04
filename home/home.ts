@@ -146,11 +146,11 @@ import mode = require('../common/mode');
 //
 // **IT USED TO BE `require('../package.json').version` AND THAT WAS A DIFFERENT
 // NUMBER.** The manifest held M.N.0 while the real version's third part was a
-// build number, so this page reported `0.9.0` for every build ever made. Since
-// #1298 the version is the release (VERSION's M.N.O, which package.json now
-// carries too), and which BUILD it is — the build instant and the commit —
-// rides in the tooltip from `buildInfo()`. `load()` reads the record the image
-// build stamped. See common/version.js.
+// build number, so this page reported `0.9.0` for every build ever made. The
+// version is VERSION's M.N.O (which package.json carries too, #1298) followed
+// by the build number (#1317), and the rest of the build — release or not,
+// the build instant and the commit — rides in the tooltip from `buildInfo()`.
+// `load()` reads the record the image build stamped. See common/version.js.
 import version = require('../common/version');
 
 // The registry of failure codes, a LEAF — see common/error_codes.js.
