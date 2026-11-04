@@ -173,6 +173,33 @@ run "orphan_pin_refused" {
   }
   expect_failures = [var.jurisdictions]
 }
+# #695: a worker start timeout the 600 s grace cannot hold is refused at
+# plan; 300000 (the environments' own) plus the margin fits.
+run "start_timeout_inside_grace" {
+  command = plan
+  variables {
+    environment       = "dev"
+    public_hostname   = ""
+    cells             = {}
+    jurisdictions     = {}
+    primary_cell      = ""
+    extra_environment = { STS_WORKERS_START_TIMEOUT_MS = "300000" }
+  }
+}
+
+run "start_timeout_past_grace_refused" {
+  command = plan
+  variables {
+    environment       = "dev"
+    public_hostname   = ""
+    cells             = {}
+    jurisdictions     = {}
+    primary_cell      = ""
+    extra_environment = { STS_WORKERS_START_TIMEOUT_MS = "900000" }
+  }
+  expect_failures = [aws_ecs_service.first]
+}
+
 run "single_cell_dev_unchanged" {
   command = plan
   variables {

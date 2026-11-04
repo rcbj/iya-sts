@@ -110,6 +110,7 @@ stsModeEnv()
       cat <<'EOF'
 STS_MODE=development
 STS_PERSISTENCE_MODE=memory
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=false
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0
@@ -154,6 +155,7 @@ EOF
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
@@ -181,9 +183,15 @@ EOF
       # PostgreSQL stays this service's primary store (rcbj on #677); this
       # mode is the suite run against the second engine, and a failure here
       # and not in `single-node` is a finding about the MariaDB driver.
+      # Here the `mariadb` server is the whole store, so its buffer pool is
+      # sized for that (STS_MARIADB_BUFFER_POOL); every other mode, where it
+      # serves one job, names the laptop-sized 128M (rcbj on #695) — named
+      # rather than left to the compose default, since a mode that does not
+      # name a variable inherits the previous mode's (unit_job_environment).
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=mariadb
+STS_MARIADB_BUFFER_POOL=1G
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
@@ -255,6 +263,7 @@ EOF
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3
@@ -287,6 +296,7 @@ EOF
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=portable
 STS_WORKERS_REQUEST_COUNT=3
@@ -330,6 +340,7 @@ EOF
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=postgres
+STS_MARIADB_BUFFER_POOL=128M
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=0

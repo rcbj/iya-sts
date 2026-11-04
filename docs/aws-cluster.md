@@ -127,7 +127,8 @@ bulk-load people and groups, the applications the suite registered and the
 runtime overrides (`deploy/aws/reset-environment.js`; `--dry-run` lists them;
 `STS_SUITE_KEEP_REALMS=1` keeps everything). It also removes every runtime
 client-certificate trust anchor named `iya-sts test Root CA`, which includes
-a root an operator minted with `tests/tools/pep-credential.js`
+a root an operator minted with `tests/tools/pep-credential.js` without a
+`--root-subject` of its own
 ([The remote PEP](remote-pep.md#minting-the-certificate)).
 
 **From GitHub Actions**: the *AWS cluster test* workflow

@@ -457,6 +457,16 @@ locals {
   service_common = {
     health_check_grace_period_seconds = 600
   }
+
+  # THE TIMEOUT THE GRACE HAS TO HOLD (rcbj on #695): the worker start an
+  # environment configures, in seconds, plus 60 for the front's restore in
+  # front of it and the two healthy checks after it. Only a timeout set in
+  # `extra_environment` is seen here; one set at runtime through the console
+  # is outside Terraform. Absent, the service default is inside the grace.
+  grace_needed_seconds = (
+    try(tonumber(var.extra_environment["STS_WORKERS_START_TIMEOUT_MS"]), 0) /
+    1000 + 60
+  )
 }
 
 resource "aws_ecs_service" "first" {
@@ -546,6 +556,16 @@ resource "aws_ecs_service" "first" {
   timeouts {
     create = "30m"
     update = "30m"
+  }
+
+  # Refused at plan rather than found as a task replaced mid-start (#695):
+  # a grace shorter than the start it waits for kills every start.
+  lifecycle {
+    precondition {
+      condition = (local.service_common.health_check_grace_period_seconds >=
+      local.grace_needed_seconds)
+      error_message = "health_check_grace_period_seconds (${local.service_common.health_check_grace_period_seconds}) is shorter than STS_WORKERS_START_TIMEOUT_MS / 1000 + 60 (${local.grace_needed_seconds}): a starting task would be replaced before its workers could finish starting. Raise the grace in ecs.tf's service_common, or lower the timeout."
+    }
   }
 }
 

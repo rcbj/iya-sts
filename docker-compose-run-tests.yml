@@ -310,6 +310,13 @@ services:
     # `bash` first, so the image entrypoint execs it without initialising;
     # the inner `docker-entrypoint.sh mariadbd` is what initialises. The
     # socket healthcheck still counts as a secure transport.
+    # SIZED FOR A LAPTOP (rcbj on #695): a 128M buffer pool, overridable
+    # with STS_MARIADB_BUFFER_POOL as postgres's shared_buffers is with
+    # STS_POSTGRES_SHARED_BUFFERS, and the performance schema off. Outside
+    # the `mariadb` mode only sts_attribute_sources.js's MariaDB pass uses
+    # this server; that mode, where it is the whole store, names 1G
+    # (tests/tools/modes.sh). No mem_limit: a limit is a container killed
+    # mid-run, where a small pool is only slower.
     command: >
       bash -c 'set -euo pipefail;
       chown mysql:mysql /mariadb-tls/tls
@@ -320,7 +327,9 @@ services:
       exec docker-entrypoint.sh mariadbd
       --ssl-cert=/mariadb-tls/tls/server.crt
       --ssl-key=/mariadb-tls/tls/server.key
-      --require-secure-transport=ON'
+      --require-secure-transport=ON
+      --innodb-buffer-pool-size=${STS_MARIADB_BUFFER_POOL:-128M}
+      --performance-schema=OFF'
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 5s

@@ -27,7 +27,8 @@
 //   3. A client that declares only `ssf.read` is refused `ssf.read` until
 //      it holds SSF_READ, then is issued it, lists streams and is refused
 //      a create. The 403 names `ssf.manage`, and its challenge names the
-//      write scopes alone. It is refused `ssf.manage`.
+//      write scopes alone. A poll that acknowledges is refused it too
+//      (#695). It is refused `ssf.manage`.
 //   4. A client that declares only `ssf:read` is refused `ssf.read`; the
 //      `ssf:read` token it can still get is refused by the transmitter. A
 //      client that declares only `ssf:write` is refused `ssf.manage`.
@@ -348,6 +349,26 @@ async function test() {
   const readToken = r.json.access_token;
   r = await call("GET", realmBase + "/ssf/stream", undefined, auth(readToken));
   check("ssf.read lists the caller's streams", function () {
+    assert.strictEqual(r.status, 200, r.text.slice(0, 400));
+  });
+  // ACKNOWLEDGING IS A WRITE (#695). The stream is section 2's, the manage
+  // client's; the scope gate answers before ownership is asked, so the read
+  // token's 403 is about the scope, and the manage token's 200 is its own
+  // stream.
+  r = await call("POST", realmBase + "/ssf/poll",
+                 { stream_id: stream, ack: ["not-a-real-jti"],
+                   returnImmediately: true, maxEvents: 0 },
+                 auth(readToken));
+  check("a poll that acknowledges is refused to ssf.read, naming " +
+        "ssf.manage (#695)", function () {
+    assert.strictEqual(r.status, 403, r.text.slice(0, 400));
+    assert.ok(/ssf\.manage/.test(r.text), r.text.slice(0, 400));
+  });
+  r = await call("POST", realmBase + "/ssf/poll",
+                 { stream_id: stream, ack: ["not-a-real-jti"],
+                   returnImmediately: true, maxEvents: 0 },
+                 auth(manageToken));
+  check("and is answered for ssf.manage", function () {
     assert.strictEqual(r.status, 200, r.text.slice(0, 400));
   });
   r = await call("POST", realmBase + "/ssf/stream",
