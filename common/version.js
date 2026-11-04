@@ -87,10 +87,10 @@
 // in its own MANIFESTS list and its `--sync-manifests` rewrites
 // `sts/package.json` to the PARENT's M.N.0. That checkout is this repository,
 // so after a parent sync its `package.json` says the parent's version and this
-// one's says this service's. The two numbers answer different questions — "which
-// release of the debugger is this submodule pinned into" against "which release
-// of IYA STS is this" — and this file has no business editing the parent
-// to settle it. `--check-manifests` here checks THIS tree only, and the sibling
+// one's says this service's. The two numbers answer different questions —
+// "which release of the debugger is this submodule pinned into" against "which
+// release of IYA STS is this" — and this file has no business editing the
+// parent to settle it. `--check-manifests` here checks THIS tree only, and the sibling
 // checkout at `../id-proto-debugger/sts` is read-only forever.
 //
 // Run directly to print or stamp:
@@ -561,8 +561,8 @@ function syncManifests() {
  * the VERSION file.
  *
  * What identifies one build — the commit and the build instant — is fixed
- * when an artifact is built and stamped into version.json beside it. Every surface that draws a version
- * reads it here. Run directly it stamps, checks or syncs the manifests.
+ * when an artifact is built and stamped into version.json beside it. Every
+ * surface that draws a version reads it here. Run directly it stamps, checks or syncs the manifests.
  * @namespace
  */
 module.exports = { resolve, stamp, load, buildInfo, buildId, userAgent,
