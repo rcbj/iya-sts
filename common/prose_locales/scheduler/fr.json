@@ -503,6 +503,8 @@
     "en": "758dfacad5326b05",
     "text": "Dans chaque processus : maintient à jour les téléversements de jeux de données que ce processus importe, et supprime de risk.uploadDirectory un téléversement qu’aucun processus actif n’a touché depuis risk.importStallMinutes — ce qu’a laissé un processus arrêté en plein import."
   },
+  "sched.jobs.saml2.sp-metadata-refresh.title": "Actualisation des métadonnées des fournisseurs de services SAML",
+  "sched.jobs.saml2.sp-metadata-refresh.describe": "Récupère à nouveau les métadonnées de chaque fournisseur de services ayant dépassé leur cacheDuration, depuis son samlSpMetadataUrl ou le répondeur MDQ ; un document ayant dépassé son validUntil est refusé.",
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",
     "text": "Historique des exécutions du planificateur"

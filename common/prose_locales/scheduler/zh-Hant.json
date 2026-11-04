@@ -503,6 +503,8 @@
     "en": "758dfacad5326b05",
     "text": "在每個程序中：讓此程序正在匯入的資料集上傳保持新鮮，並從 risk.uploadDirectory 刪除已有 risk.importStallMinutes 沒有任何存活程序觸及的上傳——即中途停止匯入的程序所遺留的檔案。"
   },
+  "sched.jobs.saml2.sp-metadata-refresh.title": "SAML 服務提供者中繼資料更新",
+  "sched.jobs.saml2.sp-metadata-refresh.describe": "重新取得每個已超過其 cacheDuration 的服務提供者中繼資料，來源為其 samlSpMetadataUrl 或 MDQ 回應者；已超過其 validUntil 的文件會被拒絕。",
   "sched.jobs.scheduler.history.title": {
     "en": "90b5d921c8c2f750",
     "text": "排程器執行歷程"

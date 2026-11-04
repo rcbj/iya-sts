@@ -125,6 +125,8 @@
   "sched.jobs.risk.stalled-imports.describe": "Marks refused (STS-RISK-0035) every dataset version left loading with no progress for risk.importStallMinutes — an import whose process stopped part-way — and drops whatever rows it had written.",
   "sched.jobs.risk.upload-cleanup.title": "Risk upload clean-up",
   "sched.jobs.risk.upload-cleanup.describe": "In every process: keeps the dataset uploads this process is importing fresh, and deletes from risk.uploadDirectory an upload no live process has touched for risk.importStallMinutes — what a process that stopped mid-import left behind.",
+  "sched.jobs.saml2.sp-metadata-refresh.title": "SAML service provider metadata refresher",
+  "sched.jobs.saml2.sp-metadata-refresh.describe": "Fetches again every service provider's metadata that is past its cacheDuration, from its samlSpMetadataUrl or the MDQ responder; a document past its validUntil is refused.",
   "sched.jobs.scheduler.history.title": "Scheduler run history",
   "sched.jobs.scheduler.history.describe": "Keeps, per job, its last scheduler.runHistoryCount runs or its last scheduler.runHistoryHours, whichever is more, and always its latest run; deletes the rest — and every row naming a realm that was removed — in batches of 2000, at most 25 a run.",
   "sched.jobs.scim-client.deliver.title": "Outbound SCIM deliveries",
