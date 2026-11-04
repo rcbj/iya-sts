@@ -109,6 +109,10 @@ the directory is kept in the database, a search's count stops at 100,000:
 past that the page says *more than 100,000 matches* and pages only through
 the first 100,000, so type more of the name to narrow it.
 `GET /admin-api/rbac` says the same with `candidateSearch.countCapped`.
+On PostgreSQL a search of three letters or digits or more is answered from
+the login-name index, so a rare name is found at once however many people
+the realm holds; one or two characters, or any search on MariaDB, reads
+through the realm's people instead.
 
 **Each trust realm has administrators of its own, confined to it.** The
 console asks the roster of the realm a person signed in through; the default
