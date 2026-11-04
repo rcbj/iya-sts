@@ -340,8 +340,16 @@
     "text": "過期產生資料列清除"
   },
   "sched.jobs.persistence.minted-expiry-purge.describe": {
-    "en": "51010ce2ada820cd",
-    "text": "從共用儲存區中，以每批 5000 筆、每次執行每種類別最多 20 批的方式，刪除任何啟動都不會再讀取的產生資料列：已超過其自身到期時間者、屬於已不再定義之領域者（寫入超過一小時），以及短期儲存區中沒有到期時間且早於 persistence.mintedRetention 的資料列。"
+    "en": "51b75ecbc03ac6ba",
+    "text": "從此叢集的儲存區（在以單元方式部署的服務中，為此單元自己的資料庫）中，以每批 5000 筆、每次執行每種類別最多 20 批的方式，刪除任何啟動都不會再讀取的產生資料列：已超過其自身到期時間者、屬於已不再定義之領域者（寫入超過一小時），以及短期儲存區中沒有到期時間且早於 persistence.mintedRetention 的資料列。"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "過期產生資料列清除（全域層）"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "在以單元方式部署的服務中，以相同的批次從全域層的資料庫中刪除同樣三類產生資料列；其執行在全域層中認領，因此每個時段只有一個單元執行。在只有一個資料庫的服務中關閉，由另一項清除涵蓋。"
   },
   "sched.jobs.persistence.tombstone-purge.title": {
     "en": "1eba3997d260e28f",

@@ -340,8 +340,16 @@
     "text": "Pag-purge ng mga expired na minted row"
   },
   "sched.jobs.persistence.minted-expiry-purge.describe": {
-    "en": "51010ce2ada820cd",
-    "text": "Binubura mula sa shared store, nang tig-5000 bawat batch at hanggang 20 batch ng bawat uri bawat run, ang mga minted row na hindi na babasahin ng anumang start: lampas na sa sarili nilang expiry, ng realm na hindi na naka-define (isinulat mahigit isang oras na ang nakalipas), at ang mga row ng short-lived na store na walang expiry na mas matanda kaysa sa persistence.mintedRetention."
+    "en": "51b75ecbc03ac6ba",
+    "text": "Binubura mula sa store ng cluster na ito (sa isang serbisyong naka-deploy bilang mga cell, ang sariling database ng cell na ito), nang tig-5000 bawat batch at hanggang 20 batch ng bawat uri bawat run, ang mga minted row na hindi na babasahin ng anumang start: lampas na sa sarili nilang expiry, ng realm na hindi na naka-define (isinulat mahigit isang oras na ang nakalipas), at ang mga row ng short-lived na store na walang expiry na mas matanda kaysa sa persistence.mintedRetention."
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "Pag-purge ng mga expired na minted row, global tier"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "Sa isang serbisyong naka-deploy bilang mga cell, binubura mula sa database ng global tier ang parehong tatlong uri ng minted row, sa parehong mga batch; kine-claim ang run nito sa global tier, kaya iisang cell lang ang nagpapatakbo ng bawat slot. Naka-off sa serbisyong may iisang database, kung saan sakop ito ng isa pang purge."
   },
   "sched.jobs.persistence.tombstone-purge.title": {
     "en": "1eba3997d260e28f",

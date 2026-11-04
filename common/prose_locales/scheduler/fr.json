@@ -340,8 +340,16 @@
     "text": "Purge des lignes créées expirées"
   },
   "sched.jobs.persistence.minted-expiry-purge.describe": {
-    "en": "51010ce2ada820cd",
-    "text": "Supprime du magasin partagé, par lots de 5000 et au plus 20 lots de chaque type par exécution, les lignes créées qu’aucun démarrage ne relira : celles dont l’expiration propre est dépassée, celles d’un domaine qui n’est plus défini (écrites il y a plus d’une heure), et les lignes sans expiration d’un magasin à courte durée de vie plus anciennes que persistence.mintedRetention."
+    "en": "51b75ecbc03ac6ba",
+    "text": "Supprime du magasin de ce cluster (dans un service déployé en cellules, la base de données propre à cette cellule), par lots de 5000 et au plus 20 lots de chaque type par exécution, les lignes créées qu’aucun démarrage ne relira : celles dont l’expiration propre est dépassée, celles d’un domaine qui n’est plus défini (écrites il y a plus d’une heure), et les lignes sans expiration d’un magasin à courte durée de vie plus anciennes que persistence.mintedRetention."
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "Purge des lignes créées expirées, niveau global"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "Dans un service déployé en cellules, supprime de la base de données du niveau global les trois mêmes types de ligne créée, par les mêmes lots ; son exécution est réclamée dans le niveau global, de sorte qu’une seule cellule exécute chaque créneau. Désactivée dans un service à une seule base de données, où l’autre purge la couvre."
   },
   "sched.jobs.persistence.tombstone-purge.title": {
     "en": "1eba3997d260e28f",

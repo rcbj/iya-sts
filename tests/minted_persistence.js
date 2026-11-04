@@ -47,6 +47,7 @@ const config = require('../common/config');
 const realms = require('../common/realms');
 const keystore = require('../common/keystore');
 const minted = require('../persistence/persistence_minted');
+const errorCodes = require('../common/error_codes');
 const replication = require('../persistence/persistence_replication');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
@@ -814,11 +815,15 @@ async function body(t, dir) {
       return null;
     }
   });
-  t.check(jobs.length === 1 && jobs[0].id ===
+  // Two since #695: the second is the global tier's, off unless the store
+  // is deployed as cells, and claimed in the global tier where it is.
+  t.check(jobs.length === 2 && jobs[0].id ===
           'persistence.minted-expiry-purge' && jobs[0].kind === 'cluster' &&
           jobs[0].owner === 'persistence/persistence_minted.js' &&
-          jobs[0].everyMs() > 0 && /batches of \d+/.test(jobs[0].describe),
-          'the purge is ONE cluster scheduler job, bounded per run',
+          jobs[0].everyMs() > 0 && /batches of \d+/.test(jobs[0].describe) &&
+          jobs[1].id === 'persistence.minted-expiry-purge-global' &&
+          jobs[1].kind === 'cluster' && jobs[1].everyMs() > 0,
+          'the purge is ONE cluster scheduler job per tier, bounded per run',
           JSON.stringify(jobs.map(function (j) {
             return { id: j.id, kind: j.kind, describe: j.describe };
           })));
@@ -836,6 +841,159 @@ async function body(t, dir) {
   const rest = await minted.purgeExpired(Date.now());
   t.check(rest.expired === 10 && rest.more === false,
           'and the next run finishes the backlog', JSON.stringify(rest));
+  // A single store is asked with no tier, exactly as before #695.
+  let tierAsked = 'unasked';
+  const plainPurge = driver.purgeExpiredMinted;
+  driver.purgeExpiredMinted = function (kind, options) {
+    log.debug("Entering purgeExpiredMinted(), recording the tier.");
+    tierAsked = Object.prototype.hasOwnProperty.call(options, 'tier')
+      ? String(options.tier) : '';
+    log.debug("Leaving purgeExpiredMinted().");
+    return plainPurge.call(this, kind, options);
+  };
+  const single = await minted.purgeExpired(Date.now());
+  driver.purgeExpiredMinted = plainPurge;
+  t.check(tierAsked === '' && single.tier === '' &&
+          single.failures.length === 0,
+          'a single-database store is purged as before: no tier is named ' +
+          'and nothing failed', JSON.stringify([tierAsked, single]));
+  t.check(jobs[1].off() === 'this store has no global tier',
+          'and the global tier\'s purge is off there', jobs[1].off());
+
+  // -------------------------------------------------------------------------
+  // 6c. ONE TIER AT A TIME (#695). In a service deployed as cells the store
+  //     is two databases, and the purge used to ask both in one call with
+  //     one limit, summing the counts — up to twice the limit per batch, a
+  //     stop test asked of the sum, and an unreachable global database
+  //     losing the cell's count with it. Each tier is its own job now, with
+  //     its own batches and its own failure; the global one is claimed in
+  //     the global tier (cell_tiers.js asserts that), so one cell runs it.
+  // -------------------------------------------------------------------------
+  t.log.info('=== the expiry purge, one tier at a time (#695) ===');
+  const tieredStore = require('../persistence/persistence_tiered');
+  const globalDb = fakeDriver('global');
+  const cellDb = fakeDriver('cell');
+  let globalDown = false;
+  globalDb.loadRealms = function () {
+    log.debug("Entering loadRealms(), the global registry.");
+    log.debug("Leaving loadRealms().");
+    return globalDown ? Promise.reject(new Error('the global database is ' +
+                                                 'unreachable'))
+                      : Promise.resolve([{ id: 'default' }]);
+  };
+  const limitsOf = { global: [], cell: [] };
+  [['global', globalDb], ['cell', cellDb]].forEach(function (pair) {
+    const own = pair[1].purgeExpiredMinted;
+    pair[1].purgeExpiredMinted = function (kind, options) {
+      log.debug("Entering purgeExpiredMinted(), the " + pair[0] + " tier.");
+      limitsOf[pair[0]].push({ kind: kind, limit: options.limit,
+                               tier: options.tier });
+      if (pair[0] === 'global' && globalDown) {
+        log.debug("Leaving purgeExpiredMinted(). Unreachable.");
+        return Promise.reject(new Error('the global database is ' +
+                                        'unreachable'));
+      }
+      log.debug("Leaving purgeExpiredMinted().");
+      return own.call(this, kind, options);
+    };
+  });
+  const fill = function (db, count, prefix) {
+    log.debug("Entering fill(). " + prefix);
+    for (let i = 0; i < count; i++) {
+      db.rows.set(prefix + '\u0000default\u0000' + i,
+                  { handle: 'test.expiring', realm: 'default',
+                    key: prefix + i, body: 'x', writtenAt: now,
+                    expiresAt: now - 1 });
+    }
+    log.debug("Leaving fill().");
+  };
+  fill(cellDb, 5000 + 3, 'c');
+  fill(globalDb, 5000 + 7, 'g');
+  const both = tieredStore.create({ global: globalDb, cell: cellDb,
+                                    cellId: 'test-cell' });
+  minted.reset();
+  minted.setDriver(both, 'postgres');
+  t.equal(jobs[1].off(), '',
+          'in a tiered store the global tier\'s purge is on');
+  const cellRun = await minted.purgeExpired(Date.now());
+  const cellExpired = limitsOf.cell.filter(function (x) {
+    return x.kind === 'expired';
+  });
+  t.check(cellRun.tier === 'cell' && cellRun.expired === 5003 &&
+          cellDb.rows.size === 0 && globalDb.rows.size === 5007 &&
+          limitsOf.global.length === 0,
+          'THE CELL\'S PURGE DELETES ONLY THE CELL\'S ROWS: the global tier ' +
+          'is not asked at all',
+          JSON.stringify([cellRun, cellDb.rows.size, globalDb.rows.size,
+                          limitsOf.global.length]));
+  t.check(cellExpired.length === 2 && cellExpired.every(function (x) {
+    return x.limit === 5000 && x.tier === undefined;
+  }), 'with its OWN limit per batch — two batches for 5003 rows, each ' +
+      'of 5000, the tier name consumed by the tiered driver',
+          JSON.stringify(cellExpired));
+  const globalRun = await minted.purgeExpired(Date.now(), 'global');
+  const globalExpired = limitsOf.global.filter(function (x) {
+    return x.kind === 'expired';
+  });
+  t.check(globalRun.tier === 'global' && globalRun.expired === 5007 &&
+          globalDb.rows.size === 0 && globalExpired.length === 2 &&
+          globalExpired.every(function (x) {
+            return x.limit === 5000;
+          }) && cellExpired.length ===
+            limitsOf.cell.filter(function (x) {
+              return x.kind === 'expired';
+            }).length,
+          'and the global tier\'s purge deletes only the global rows, in ' +
+          'its own batches, without asking the cell',
+          JSON.stringify([globalRun, globalExpired]));
+  // The global database unreachable: the cell's job still purges and
+  // counts what it can; only the orphan kind, which needs the global realm
+  // registry, fails, and the run says so.
+  globalDown = true;
+  fill(cellDb, 4, 'down');
+  fill(globalDb, 2, 'unreached');
+  const downRun = await minted.purgeExpired(Date.now());
+  t.check(downRun.expired === 4 && cellDb.rows.size === 0 &&
+          downRun.failures.length === 1 &&
+          downRun.failures[0].kind === 'orphan',
+          'AN UNREACHABLE GLOBAL DATABASE DOES NOT LOSE THE CELL\'S PURGE: ' +
+          'the cell\'s expired rows are deleted and counted, and only the ' +
+          'orphan kind (judged against the global registry) fails',
+          JSON.stringify(downRun));
+  let cellJobError = null;
+  await jobs[0].run().catch(function (e) {
+    log.debug("Caught in the cell job's run: " + ((e && e.message) || e));
+    cellJobError = e;
+  });
+  t.check(!!cellJobError && /this cell's store/.test(cellJobError.message) &&
+          /orphan/.test(cellJobError.message),
+          'the cell job\'s run is recorded failed, once, naming its tier ' +
+          'and the kind that failed',
+          cellJobError ? cellJobError.message : 'it succeeded');
+  let globalJobError = null;
+  await jobs[1].run().catch(function (e) {
+    log.debug("Caught in the global job's run: " + ((e && e.message) || e));
+    globalJobError = e;
+  });
+  t.check(!!globalJobError &&
+          /the global tier's store/.test(globalJobError.message) &&
+          /expired/.test(globalJobError.message) &&
+          globalDb.rows.size === 2,
+          'and the global job\'s run fails on its own, its rows left for ' +
+          'the next run', globalJobError ? globalJobError.message : 'ok');
+  t.check(errorCodes.isKnown('STS-STORE-0162') &&
+          errorCodes.isKnown('STS-STORE-0065'),
+          'the global tier\'s failure has a code of its own, STS-STORE-0162, ' +
+          'beside the cell\'s STS-STORE-0065');
+  globalDown = false;
+  const recovered = await minted.purgeExpired(Date.now(), 'global');
+  t.check(recovered.expired === 2 && recovered.failures.length === 0 &&
+          globalDb.rows.size === 0,
+          'and once the global database answers, the next run finishes it',
+          JSON.stringify(recovered));
+  minted.reset();
+  minted.setDriver(driver, 'postgres');
+
   // An unknown retention word is refused and read as keep.
   const odd = realms.map({ persist: 'test.odd-retain', retain: 'forever' });
   t.equal(realms.handleFor('test.odd-retain').retain, 'keep',

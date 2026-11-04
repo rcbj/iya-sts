@@ -340,8 +340,16 @@
     "text": "Rensning av utgångna skapade rader"
   },
   "sched.jobs.persistence.minted-expiry-purge.describe": {
-    "en": "51010ce2ada820cd",
-    "text": "Tar bort från det delade lagret, i omgångar om 5000 och högst 20 omgångar av varje slag per körning, de skapade rader som ingen start kommer att läsa igen: de som passerat sin egen utgång, de som tillhör en sfär som inte längre är definierad (skrivna för mer än en timme sedan), och ett kortlivat lagers rader utan utgång som är äldre än persistence.mintedRetention."
+    "en": "51b75ecbc03ac6ba",
+    "text": "Tar bort från detta klusters lager (i en tjänst som driftsätts som celler, denna cells egen databas), i omgångar om 5000 och högst 20 omgångar av varje slag per körning, de skapade rader som ingen start kommer att läsa igen: de som passerat sin egen utgång, de som tillhör en sfär som inte längre är definierad (skrivna för mer än en timme sedan), och ett kortlivat lagers rader utan utgång som är äldre än persistence.mintedRetention."
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.title": {
+    "en": "7ae4ff84c63a236e",
+    "text": "Rensning av utgångna skapade rader, global nivå"
+  },
+  "sched.jobs.persistence.minted-expiry-purge-global.describe": {
+    "en": "a07e8b16ce91dc76",
+    "text": "I en tjänst som driftsätts som celler tar den bort samma tre slag av skapade rader från den globala nivåns databas, i samma omgångar; dess körning tas i anspråk i den globala nivån, så att en enda cell kör varje tidsfack. Avstängd i en tjänst med en enda databas, där den andra rensningen täcker den."
   },
   "sched.jobs.persistence.tombstone-purge.title": {
     "en": "1eba3997d260e28f",
