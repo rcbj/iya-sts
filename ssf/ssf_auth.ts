@@ -580,7 +580,8 @@ class SsfAuth {
         ' and this operation needs one of "' + accepted.join('", "') +
         '". Write includes read. A read scope reads a stream, its status ' +
         'and its poll queue, and a write scope ' +
-        'changes what this transmitter delivers and to whom. Ask for the ' +
+        'changes what this transmitter delivers and to whom, including ' +
+        'acknowledging polled events (ack, setErrs). Ask for the ' +
         'one you need, as a client whose oauthAllowedScope declares that ' +
         'permission.',
         { 'WWW-Authenticate': this.challenges(null, need) },

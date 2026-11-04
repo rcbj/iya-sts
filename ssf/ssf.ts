@@ -2855,9 +2855,19 @@ class SharedSignals {
         }
         record = internal;
       } else {
-        const decision = this.gate(req, res, 'read');
+        // ACKNOWLEDGING IS A WRITE (rcbj on #695). RFC 8936's `ack` and
+        // `setErrs` delete the events they name from the stream's queue, so
+        // a poll that carries either changes what this transmitter still
+        // holds for the receiver — more than a read scope gives. A poll
+        // that only collects stays a read.
+        const acks = !!early && typeof early === 'object' &&
+          ((Array.isArray(early.ack) && early.ack.length > 0) ||
+           (!!early.setErrs && typeof early.setErrs === 'object' &&
+            Object.keys(early.setErrs).length > 0));
+        const decision = this.gate(req, res, acks ? 'write' : 'read');
         if (!decision) {
-          log.debug('Leaving POST /ssf/poll. Refused.');
+          log.debug('Leaving POST /ssf/poll. Refused' +
+                    (acks ? ' an acknowledgement.' : '.'));
           return;
         }
         if (!body) {

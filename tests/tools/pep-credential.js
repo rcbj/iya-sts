@@ -98,6 +98,12 @@
 //   --url       the mock, where the anchor is POSTed. Required.
 //   --out       where the three files go. Required; created if absent.
 //   --subject   the leaf's DN in RFC 4514 order. Defaults to the CN below.
+//   --root-subject
+//               the Root CA's DN (#695). Default `CN=iya-sts test Root CA,
+//               O=iya-sts tests`, the name the test suite's own roots carry
+//               — and the AWS suite reset (deploy/aws/reset-environment.js)
+//               removes every runtime anchor with that common name. An
+//               operator's PEP sets its own, so the reset leaves its root.
 //   --years     the leaf's life. Default 1.
 //   --quiet     only the DN on stdout, for a launcher to capture.
 //   --crl-base  where the Issuing CA's and the leaf's CRLs will be served
@@ -188,6 +194,7 @@ function parseArgs(argv) {
     if (name === '--url') { opts.url = value; }
     else if (name === '--out') { opts.out = value; }
     else if (name === '--subject') { opts.subject = value; }
+    else if (name === '--root-subject') { opts.rootSubject = value; }
     else if (name === '--years') { opts.years = parseInt(value, 10) || 1; }
     else if (name === '--quiet') { opts.quiet = true; }
     else if (name === '--store-on') { opts.storeOn = value; }
@@ -549,6 +556,7 @@ async function main() {
   // THE LISTS GO WHERE --crl-base SAYS, OR NOWHERE (#174): this process exits
   // as soon as it has written the credential, so it cannot serve them itself.
   const minted = await mint({ subject: opts.subject, years: opts.years,
+                              rootSubject: opts.rootSubject || '',
                               crlBase: opts.crlBase || false });
   const root = minted.root;
   const issuing = minted.issuing;

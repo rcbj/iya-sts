@@ -181,9 +181,14 @@ EOF
       # PostgreSQL stays this service's primary store (rcbj on #677); this
       # mode is the suite run against the second engine, and a failure here
       # and not in `single-node` is a finding about the MariaDB driver.
+      # Here the `mariadb` server is the whole store, so its buffer pool is
+      # sized for that (STS_MARIADB_BUFFER_POOL); in every other mode it
+      # serves one job and keeps the compose file's laptop-sized 128M
+      # (rcbj on #695).
       cat <<'EOF'
 STS_MODE=product
 STS_PERSISTENCE_MODE=mariadb
+STS_MARIADB_BUFFER_POOL=1G
 STS_PERSISTENCE_COORDINATE=true
 STS_PERSISTENCE_SQL_DIALECT=native
 STS_WORKERS_REQUEST_COUNT=3

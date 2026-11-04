@@ -1103,6 +1103,13 @@ class Scim {
   // than the count that was asked. A startIndex on the last result is
   // that one row, and ListResponse already sliced it. Users, Groups and
   // every .search leave through forTheWire(), so this is the one place.
+  //
+  // AND EVERY PAGE'S itemsPerPage IS WHAT IT RETURNED (rcbj on #695,
+  // 2026-11-04). scimmy echoes the `count` that was asked, so a short page
+  // inside the match — four names, count 10, startIndex 3 — said 10 while
+  // it carried two. RFC 7644 section 3.4.2 defines it as "the number of
+  // resources returned in a list response page"; it was pinned as the echo
+  // until then.
   // ---------------------------------------------------------------------------
   private emptyPagePastTheEnd(plain: any): void {
     const { log } = this.deps;
@@ -1115,6 +1122,9 @@ class Scim {
       plain.itemsPerPage = 0;
       log.debug("Leaving Scim.emptyPagePastTheEnd(). Past " + total + ".");
       return;
+    }
+    if (Array.isArray(plain.Resources) && plain.itemsPerPage !== undefined) {
+      plain.itemsPerPage = plain.Resources.length;
     }
     log.debug("Leaving Scim.emptyPagePastTheEnd().");
   }

@@ -857,8 +857,12 @@ received sees the same people twice. Found on testidp: four `bulk-` names,
 `forTheWire()` empties that page on the way out and sets `itemsPerPage` to 0,
 the number returned. The requested `startIndex` stays, and `totalResults`
 stays the size of the match. An empty match is the same rule (nothing is at
-index 1). A startIndex on the last result is that one row. Users, Groups,
-`.search` and the root search all leave through that function.
+index 1). A startIndex on the last result is that one row. **Every other
+page's `itemsPerPage` is the number of resources it returned too** (rcbj on
+#695, 2026-11-04, RFC 7644 section 3.4.2): scimmy echoes the `count` asked
+for, so a short page inside the match said 10 while it carried two, and that
+echo had been pinned. Users, Groups, `.search` and the root search all leave
+through that function.
 `tests/scim_conformance_fixes.js` section B holds it. The reset script's
 count stop stays: it is what ended the loop while the page repeated.
 

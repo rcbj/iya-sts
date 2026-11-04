@@ -1559,7 +1559,12 @@ Discovery's `scopes_supported` lists every published name. The default
 access-token lifetime (`oauth2.accessTokenTtlS`, 3600 seconds) meets the
 profile's sixty-minute ceiling; these tokens have no separate cap. Operations
 the profile does not name stay where they were: update, subjects and status
-are write; poll is read.
+are write; poll is read. **A poll that ACKNOWLEDGES is write (rcbj on #695,
+2026-11-04)**: RFC 8936's `ack` and `setErrs` delete events from the stream's
+queue, which is changing what this transmitter holds, so a non-empty `ack` or
+`setErrs` needs the write permission (`ssf.manage`) and a read-only token gets
+the 403 naming it; a poll that only collects is still read. This service's
+own receivers present their own credential and are not gated this way.
 
 Basic grants BOTH, and says so: a scheme with no scope in it cannot express the
 difference, and returning a read-only decision would be a refusal with nothing

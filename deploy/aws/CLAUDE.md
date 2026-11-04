@@ -194,7 +194,10 @@ ends. A port that is still down then fails steady state, which is the
 load-bearing property above. The grace does not cover `workers.startTimeoutMs`
 at its setting maximum (900000); a deployment that raises the timeout past
 what 600 holds has to raise the grace too (`ecs.tf` says how the 600 was
-reached). A task that has already been up is outside the grace: three
+reached), and since #695 the plan REFUSES one that does not: a precondition
+on `aws_ecs_service.first` holds the grace to `STS_WORKERS_START_TIMEOUT_MS`
+in `extra_environment` / 1000 + 60 (`tests/render.tftest.hcl`'s
+`start_timeout_*` runs). A timeout set at runtime is outside Terraform. A task that has already been up is outside the grace: three
 consecutive failures of any target group replace it, about 30 seconds at
 the load balancer's interval of 10 (`unhealthy_threshold` 3). Two successes
 mark a group healthy again. GCP and Azure use the same failure count. The
