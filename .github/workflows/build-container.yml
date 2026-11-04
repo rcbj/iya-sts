@@ -130,8 +130,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # THE REMOTE XACML PEP (2026-10-02), with the same build number and
-      # commit, so the two images published from one run carry one version.
+      # THE REMOTE XACML PEP (2026-10-02), with the same commit, so the two
+      # images published from one run carry one version (VERSION's) and name
+      # one commit.
       # Its one FROM comes from the mirror, as the service's do.
       - name: Build the XACML PEP image
         uses: docker/build-push-action@v6
@@ -290,7 +291,7 @@ jobs:
           }
           echo "${body}" | grep -q '"stamped": true' || {
             echo "The container computed its version at startup rather than" >&2
-            echo "reading a stamp, so its build number would change on every" >&2
+            echo "reading a stamp, so its build instant would change on every" >&2
             echo "restart." >&2
             exit 1
           }

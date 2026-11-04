@@ -375,7 +375,7 @@ async function everySurfaceReportsTheSameBuild(index, consoleClient) {
     "until #1298 is gone, and the build is `commit` and `builtAt`.");
   assert.strictEqual(typeof index.stamped, "boolean",
     "the index should say whether this version came off a build stamp or was " +
-    "computed at startup. Without it a build number is unreadable: two " +
+    "computed at startup. Without it a build time is unreadable: two " +
     "instances reporting different ones mean nothing if neither was built.");
   assert.ok(index.builtAt && !isNaN(Date.parse(index.builtAt)),
     "`builtAt` should be a timestamp. It is " + JSON.stringify(index.builtAt));

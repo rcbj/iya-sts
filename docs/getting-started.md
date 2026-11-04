@@ -519,7 +519,8 @@ docker compose up -d --wait
   volumes, and the next `up` comes back with the same directory, signing keys
   and sessions. `docker compose down -v` deletes it all.
 * **Which build.** `IYA_STS_TAG` picks the image tag: `latest` is the newest
-  build of `main`, and every build also has its `M.N.O`. `STS_PORT`,
+  build of `main`, and the release's `M.N.O` (`1.0.0`) names the newest build
+  of that release. `STS_PORT`,
   `PKI_PORT` and `KDC_PORT` move the published ports.
 * **Kerberos works from the start.** The KDC is published on 88 (TCP and
   UDP), and the SPNEGO acceptor holds `HTTP/localhost`, the name a browser
@@ -581,26 +582,28 @@ its own description of itself.
 
 ## Which build am I running?
 
-Every page says so, and so does the log. The version is **M.N.O** — a release
-from the repo-root `VERSION` file plus a build number:
+Every page says so, and so does the log. The version is **M.N.O** — a plain
+semantic version, the release, exactly as the repo-root `VERSION` file says
+it (`1.0.0`). Which **build** of that release you are running is reported
+beside it, never appended to it: the commit it was built from and the instant
+the image was built.
 
 ```
-0.1.20260906143205
-│ │ └── the build: the UTC instant the image was built (or BUILD_NUMBER)
-│ └──── minor
-└────── major
+1.0.0                                  the version (the release)
+Built 2026-11-04T12:00:00Z — commit 0123456789ab   the build, beside it
 ```
 
 The quickest ways to read it:
 
 ```bash
-curl -sk https://localhost:8081/admin-api | head -8   # version, build, commit, stamped
+curl -sk https://localhost:8081/admin-api | head -8   # version, commit, builtAt, stamped
 curl -sk https://localhost:8081/home-api/front        # the front page's version
 node common/version.js                                # from a checkout, without running it
 ```
 
-It is also in the foot of every admin console page and every user portal page,
-in the first paragraph of `/admin/sts-metadata`, and in the first line the
+It is also in the foot of every admin console page and every user portal page
+(the build in the tooltip), in the first paragraph of `/admin/sts-metadata`
+(whose JSON carries `build.commit` and `build.at`), and in the first line the
 service logs when it starts.
 
 **The remote XACML PEP reports one too**, if you are running it
@@ -611,23 +614,23 @@ and in the Version column of `/admin/xacml/peps` on this service's console:
 curl -s http://localhost:9090/ | head -20      # the PEP's own page
 ```
 
-Its **M.N always matches** this service's — both images are built from one tree
-and one `VERSION` file — while its **build number is its own**, because they are
-two images built at two instants. So a different release on that row is a PEP
-left behind across an upgrade, and a different build number is just two
-artifacts. Pass one `BUILD_NUMBER` to both builds to say they are one release.
+Its **version always matches** this service's — both images are built from
+one tree and one `VERSION` file — while its **build is its own** (its
+`build.at` and `build.commit`), because they are two images built at two
+instants. So a different version on that row is a PEP left behind across an
+upgrade, and a different build time is just two artifacts.
 
 **`stamped` is the field worth knowing about.** A container reports a build
-number that was fixed when the image was built, so restarting it reports the
-same one. A checkout run with `node server.js` was never built at all — it
-computes a number when the process starts and reports `stamped: false`, and
-every page says so in as many words. Two instances of the same release with
-different build numbers mean nothing if neither was ever built.
+that was fixed when the image was built, so restarting it reports the same
+one. A checkout run with `node server.js` was never built at all — it records
+the instant the process started and reports `stamped: false`, and every page
+says so in as many words. Two instances of the same release with different
+build times mean nothing if neither was ever built.
 
-To give an image a build number and a commit of your own:
+To name the commit an image was built from:
 
 ```bash
-BUILD_NUMBER=1234 GIT_COMMIT=$(git rev-parse HEAD) docker compose build sts
+GIT_COMMIT=$(git rev-parse HEAD) docker compose build sts
 ```
 
 The commit is a build argument rather than something the image works out,
