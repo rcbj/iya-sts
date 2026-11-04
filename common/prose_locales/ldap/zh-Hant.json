@@ -1087,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "「由第三方開始登入此用戶端的位置」：OpenID Connect Core section 4 的 initiate_login_uri，/launch/{app} 與使用者入口網站會帶著 iss、login_hint 與 target_link_uri 將某人送往此處。僅限 https，且不得帶有片段。"
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "用戶端的標誌：OpenID Connect Registration 第 2 節的 logo_uri，繪製於登入與同意畫面上用戶端名稱旁邊。由使用者的瀏覽器從此位址載入；本服務從不擷取它。一個絕對 https URL。"
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "用戶端的隱私權政策：OpenID Connect Registration 第 2 節的 policy_uri，從登入與同意畫面連結。一個絕對 https URL。"
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "用戶端的服務條款：OpenID Connect Registration 第 2 節的 tos_uri，從登入與同意畫面連結。一個絕對 https URL。"
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "此用戶端執行的 RFC 8693 權杖交換，是否在交換所得的存取權杖之外再取得一個 `refresh_token`，僅為它覆寫 oauth2.tokenExchangeRefreshToken。為三個詞之一：`never`、`when-requested`（全服務預設值——用戶端以 RFC 8693 第 2.1 節的 `requested_token_type` 提出要求，只有要求了才會取得）或 `always`。\n\n「它是在執行交換的用戶端上讀取」，而不是在對象上讀取，因為重新整理權杖是交給用戶端的：它是該方要持有、撤銷並最終兌換的認證。在值得關注的情況下，交換所「關於」的主體在此登錄中根本沒有項目，因為交換的重點就在於來自別處的 subject_token。\n\n**它適用於 OAuth 2.0 與 OpenID Connect 系列，不適用於其他系列，而且與此處其他每個屬性不同，這一點是「強制執行」的。**未宣告用於任一系列的項目，會被主控台的兩個入口以及管理 API 拒絕，並指出要先勾選的系列——因為此處的值是關於權杖端點的原則，而一個任何權杖請求都無法指名的項目若攜帶它，看起來就像它正在生效。此列上方的區塊論證了這一點。`ldapmodify` 和對待其他屬性一樣可以修改此屬性，且不會受到檢查。\n\n「不屬於三個詞之一的值，在寫入時不算錯誤，但也不會無聲無息」：settingFor() 會發出警告，指出項目、屬性及其內容，並由全服務的設定決定——與此項目上其他每個覆寫一樣，具有相同的三態誠實性。"

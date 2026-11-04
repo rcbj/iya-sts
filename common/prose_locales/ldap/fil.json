@@ -1087,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "KUNG SAAN SINISIMULAN NG ISANG THIRD PARTY ANG SIGN-IN SA CLIENT NA ITO: ang initiate_login_uri ng OpenID Connect Core section 4, kung saan ipinapadala ng /launch/{app} at ng user portal ang isang tao kasama ang iss, login_hint at target_link_uri. https lang, walang fragment."
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "ANG LOGO NG CLIENT: ang logo_uri ng OpenID Connect Registration section 2, iginuguhit sa sign-in at consent screen sa tabi ng pangalan ng client. Nilo-load ito ng browser ng tao mula sa address na ito; hindi ito kailanman kinukuha ng serbisyong ito. Isang absolute na https URL."
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "ANG PATAKARAN SA PRIVACY NG CLIENT: ang policy_uri ng OpenID Connect Registration section 2, naka-link mula sa sign-in at consent screen. Isang absolute na https URL."
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "ANG MGA TUNTUNIN NG SERBISYO NG CLIENT: ang tos_uri ng OpenID Connect Registration section 2, naka-link mula sa sign-in at consent screen. Isang absolute na https URL."
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "KUNG ANG RFC 8693 TOKEN EXCHANGE NA GINAWA NG CLIENT NA ITO AY NAKAKAKUHA NG `refresh_token` KATABI NG NA-EXCHANGE NA ACCESS TOKEN, na nangingibabaw sa oauth2.tokenExchangeRefreshToken para dito lang. Isa sa tatlong salita: `never`, `when-requested` (ang default para sa buong serbisyo — humihingi ang client gamit ang `requested_token_type` ng RFC 8693 section 2.1 at nakakakuha lang kung humingi ito) o `always`.\n\nBINABASA ITO SA CLIENT NA GUMAGAWA NG EXCHANGE at hindi sa audience, dahil ibinibigay ang refresh token sa client: credential iyon ng partidong iyon na hahawakan, ire-revoke at kalaunan ay ire-redeem. Ang subject na PINATUTUNGKULAN ng exchange ay walang entry sa registry na ito sa kawili-wiling kaso, dahil ang buong punto ng exchange ay isang subject_token mula sa ibang lugar.\n\n**NAAANGKOP ITO SA MGA PAMILYANG OAUTH 2.0 AT OPENID CONNECT AT HINDI SA IBA, at hindi tulad ng bawat ibang attribute dito, IPINAPATUPAD ITO.** Ang entry na hindi idineklara para sa alinman ay tinatanggihan ng parehong pinto ng console at ng management API, na pinapangalanan ang pamilyang dapat munang i-tsek — dahil ang value dito ay patakaran tungkol sa token endpoint, at ang entry na hindi kailanman mapapangalanan ng anumang token request ay magdadala nito na parang may bisa. Ipinapaliwanag ito ng block sa itaas ng row na ito. Naaabot ng `ldapmodify` ang attribute na ito tulad ng bawat iba at hindi ito sinusuri.\n\nANG VALUE NA HINDI ISA SA TATLONG SALITA AY HINDI ERROR SA ORAS NG PAGSULAT AT HINDI RIN TAHIMIK: nagbababala ang settingFor() na pinapangalanan ang entry, ang attribute at ang hawak nito, at ang setting para sa buong serbisyo ang nagpapasya — ang parehong three-state na katapatan na nakukuha ng bawat ibang override sa entry na ito."

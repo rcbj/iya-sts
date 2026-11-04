@@ -1087,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "DÓNDE INICIA UN TERCERO UN INICIO DE SESIÓN EN ESTE CLIENTE: el initiate_login_uri de OpenID Connect Core sección 4, al que /launch/{app} y el portal de usuario envían a una persona con iss, login_hint y target_link_uri. Solo https, sin fragmento."
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "EL LOGOTIPO DEL CLIENTE: el logo_uri de la sección 2 de OpenID Connect Registration, dibujado en las pantallas de inicio de sesión y de consentimiento junto al nombre del cliente. El navegador de la persona lo carga desde esta dirección; este servicio nunca lo obtiene. Una URL https absoluta."
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "LA POLÍTICA DE PRIVACIDAD DEL CLIENTE: el policy_uri de la sección 2 de OpenID Connect Registration, enlazado desde las pantallas de inicio de sesión y de consentimiento. Una URL https absoluta."
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "LAS CONDICIONES DEL SERVICIO DEL CLIENTE: el tos_uri de la sección 2 de OpenID Connect Registration, enlazado desde las pantallas de inicio de sesión y de consentimiento. Una URL https absoluta."
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "SI UN INTERCAMBIO DE TOKENS RFC 8693 REALIZADO POR ESTE CLIENTE RECIBE UN `refresh_token` JUNTO AL TOKEN DE ACCESO INTERCAMBIADO, prevaleciendo sobre oauth2.tokenExchangeRefreshToken solo para él. Una de tres palabras: `never`, `when-requested` (el valor predeterminado de todo el servicio — el cliente lo pide con el `requested_token_type` de RFC 8693 sección 2.1 y solo lo recibe si lo pidió) o `always`.\n\nSE LEE EN EL CLIENTE QUE REALIZA EL INTERCAMBIO y no en la audiencia, porque el token de actualización se entrega al cliente: es la credencial de esa parte para guardar, revocar y finalmente canjear. El sujeto SOBRE el que trata el intercambio no tiene ninguna entrada en este registro en el caso interesante, ya que todo el sentido de un intercambio es un subject_token de otra parte.\n\n**SE APLICA A LAS FAMILIAS OAUTH 2.0 Y OPENID CONNECT Y A NINGUNA OTRA, y a diferencia de todos los demás atributos de aquí, eso SE HACE CUMPLIR.** Una entrada declarada para ninguna de las dos es rechazada por ambas puertas de la consola y por la API de administración, que nombran la familia que hay que marcar primero — porque un valor aquí es una política sobre el endpoint de token, y una entrada que ninguna solicitud de token puede nombrar la llevaría como si estuviera en vigor. El bloque de encima de esta fila lo argumenta. `ldapmodify` llega a este atributo como a cualquier otro y no se comprueba.\n\nUN VALOR QUE NO SEA UNA DE LAS TRES PALABRAS NO ES UN ERROR EN EL MOMENTO DE LA ESCRITURA NI PASA EN SILENCIO: settingFor() emite una advertencia que nombra la entrada, el atributo y lo que contiene, y decide el ajuste de todo el servicio — la misma honestidad de tres estados que recibe cualquier otra anulación de esta entrada."

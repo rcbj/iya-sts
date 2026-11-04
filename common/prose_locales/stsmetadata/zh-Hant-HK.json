@@ -328,8 +328,8 @@
     "text": "partial：提供者組態文件，具備第 3 節的每個「必要」成員，透過擴充 RFC 8414 文件建構，讓兩者在共用的二十個成員上不會不一致。在 well-known 路徑、第 4 節的簽發者帶路徑形式，以及 RFC 8414 的插入路徑形式上提供。自 #118 起發布 public 與 pairwise 的 subject_types_supported、全部四種 prompt 值、display_values_supported、claims_locales_supported、address 與 phone 範圍及其所指名的每個宣告。WebFinger（第 2 節，#119）依 DNS 網域所屬的領域解析 acct:、電郵或主機資源，依 /realm/<id> 路徑解析 https URL，從不查找該人；插入與附加形式的探索都讀取 [realm/<id>][/<server>]，其他任何形式回應 404，因此每份文件所指名的簽發者都確實有東西從那裡簽發。check_session_iframe 不存在（#121）。"
   },
   "stsmetadata.specs.oidc-registration.coverage": {
-    "en": "52a4926873bf6dbe",
-    "text": "partial：/oauth2/register 與 RFC 7592 管理會接受並遵循本服務所實作的 OpenID Connect 客戶端元數據——subject_type 與 sector_identifier_uri（會擷取並要求列出每個 redirect_uri；第 5 節）、token_endpoint_auth_signing_alg、id_token_signed_response_alg、id_token_encrypted_response_alg/enc、userinfo_signed_response_alg 及其加密成員、請求物件成員，以及前端與後端通道登出成員；以及（#120）application_type（web、native）及其重新導向 URI 規則，強制執行 grant_types 與 response_types，對兩者都未指名的請求套用 default_max_age 與 default_acr_values，require_auth_time（只要已知就會攜帶 auth_time），擷取 jwks_uri，並從用戶入口網站以 iss 與 login_hint 啟動 initiate_login_uri（Core 第 4 節）。未涵蓋：policy_uri 與 tos_uri 會被儲存並傳回，但不會繪製在同意畫面上。"
+    "en": "f938f6e1a6211dd2",
+    "text": "partial：/oauth2/register 與 RFC 7592 管理會接受並遵循本服務所實作的 OpenID Connect 客戶端元數據——subject_type 與 sector_identifier_uri（會擷取並要求列出每個 redirect_uri；第 5 節）、token_endpoint_auth_signing_alg、id_token_signed_response_alg、id_token_encrypted_response_alg/enc、userinfo_signed_response_alg 及其加密成員、請求物件成員，以及前端與後端通道登出成員；以及（#120）application_type（web、native）及其重新導向 URI 規則，強制執行 grant_types 與 response_types，對兩者都未指名的請求套用 default_max_age 與 default_acr_values，require_auth_time（只要已知就會攜帶 auth_time），擷取 jwks_uri，並從用戶入口網站以 iss 與 login_hint 啟動 initiate_login_uri（Core 第 4 節）；以及（#1300）會被保存並顯示在登入與同意畫面上的 logo_uri、policy_uri 與 tos_uri，標誌由用戶的瀏覽器載入，本服務從不擷取。未涵蓋：帶語言標籤的 logo_uri、policy_uri 或 tos_uri（第 2.1 節）會依原樣保存，不會繪製。"
   },
   "stsmetadata.specs.oidc-logout.coverage": {
     "en": "762ca8fb1eb8c94b",

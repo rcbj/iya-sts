@@ -1087,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "由第三方发起此客户端登录的位置：OpenID Connect Core 第 4 节的 initiate_login_uri，/launch/{app} 和用户门户会带着 iss、login_hint 和 target_link_uri 将某人发送到这里。仅限 https，且不得带片段。"
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "客户端的徽标：OpenID Connect Registration 第 2 节的 logo_uri，绘制在登录和同意界面上客户端名称旁边。由用户的浏览器从此地址加载；本服务从不获取它。一个绝对 https URL。"
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "客户端的隐私政策：OpenID Connect Registration 第 2 节的 policy_uri，从登录和同意界面链接。一个绝对 https URL。"
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "客户端的服务条款：OpenID Connect Registration 第 2 节的 tos_uri，从登录和同意界面链接。一个绝对 https URL。"
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "由此客户端执行的 RFC 8693 令牌交换，是否在交换得到的访问令牌之外还获得一个 `refresh_token`，仅对它覆盖 oauth2.tokenExchangeRefreshToken。取三个词之一：`never`、`when-requested`（全服务范围的默认值——客户端以 RFC 8693 第 2.1 节的 `requested_token_type` 请求，只有请求了才会得到）或 `always`。\n\n它在执行交换的客户端上读取，而不是在受众上读取，因为刷新令牌是交给客户端的：它是该方持有、吊销并最终兑换的凭据。在值得关注的情况下，交换所涉及的主体在此注册表中根本没有条目，因为交换的全部意义就在于来自别处的 subject_token。\n\n**它适用于 OAuth 2.0 和 OpenID Connect 族，不适用于其他任何族，而且与这里的其他所有属性不同，这一点是强制执行的。** 未声明用于这两族之一的条目会被两个控制台入口和管理 API 拒绝，并指明需要先勾选的族——因为这里的值是关于令牌端点的策略，而一个任何令牌请求都无法指向的条目若携带它，看起来就像它已生效一样。此行上方的说明块对此进行了论证。`ldapmodify` 与访问其他属性一样可以访问此属性，且不受检查。\n\n不属于这三个词之一的值在写入时不算错误，但也不会被悄悄忽略：settingFor() 会发出警告，指明条目、属性及其所持有的值，并由全服务范围的设置决定——与此条目上其他每个覆盖项一样，诚实地对待三种状态。"
