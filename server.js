@@ -565,9 +565,10 @@ function announce() {
   // same day the sockets went; it binds nothing, and still restores the stored
   // trust anchors and re-applies the context to the registered listeners.
   tlsServer.listen();
-  // A scheduler job and not a socket (#49 P5), registered here where its
-  // timer used to start: the job saml2.sp-metadata-refresh, once for the
-  // cluster, on the leader (see sp_metadata.ts).
+  // A scheduler job and not a socket (#49 P5): saml2.sp-metadata-refresh,
+  // once for the cluster, on the leader. The module's wire step registers it
+  // in every process since #704 (see sp_metadata.ts), so this call finds it
+  // registered and is kept for a process that loaded the module alone.
   spMetadata.startRefresher();
   log.info('tls: this port asks every connection for a client certificate ' +
            'and requires none, so presenting one is the client\'s decision. ' +

@@ -1237,7 +1237,11 @@ consumption; with none, halfway to validUntil), or **fresh**.
   scheduler*), every `saml2.spMetadataRefreshIntervalS` on the leader, switched
   by `saml2.spMetadataRefresh`. It was a timer `server.js`'s `announce()`
   started in every process until #49; `server.js` still calls
-  `startRefresher()`, which now only registers the job. The `cluster_claims`
+  `startRefresher()`, which now only registers the job — and since #704 the
+  module's wire step registers it first, in every process, so the scheduler
+  may run its body on a request worker. The refresh STATE
+  `refreshStatus()` answers stays per process, as it always was for a
+  worker answering the page. The `cluster_claims`
   claim keyed by realm, entity and the consumption it replaces stays, as the
   guard against a refresh asked for by hand at the same moment. **A failed refresh changes nothing**, so the old
   document works until it expires; the failure is a STATE

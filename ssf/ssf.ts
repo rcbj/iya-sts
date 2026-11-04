@@ -1723,7 +1723,18 @@ class SharedSignals {
     const now = Date.now();
     const all = realms.list();
     let chain: Promise<unknown> = Promise.resolve();
-    all.forEach((realm) => {
+    // A TURN OF THE EVENT LOOP BETWEEN REALMS (#704). The chain is
+    // promises, which settle in microtasks: a realm whose sweep had no probe
+    // to await went straight on to the next, so every realm's walk of its
+    // dead letters ran in one turn of the process running the job.
+    all.forEach((realm, i) => {
+      if (i > 0) {
+        chain = chain.then(function (): Promise<void> {
+          return new Promise(function (resolve: () => void): void {
+            setImmediate(resolve);
+          });
+        });
+      }
       chain = chain.then(() => {
         return realms.run(realm, () => {
           try {

@@ -170,6 +170,8 @@ const audit = require('./audit');
 // `errorCodes.mark()` on the RESULT OBJECT — so a caller can read it with
 // `errorCodes.codeOf(result)` and the JSON a client receives is unchanged.
 const errorCodes = require('./error_codes');
+// A leaf over `config` (#704): the client-secret sweep's slices.
+const loopSlices = require('./loop_slices');
 const cacheRegistry = require('./cache_registry');
 // THE ROLE REGISTER, for one string and one reason: `DEFAULT_REQUIRED_ROLE`.
 // A plain require in the ordinary direction and it can stay one — `roles.js`
@@ -17252,55 +17254,112 @@ function clientSecretSummariesOf(fields, nowS) {
  */
 function sweepClientSecrets(nowMs) {
   log.debug("Entering sweepClientSecrets().");
-  const now = Number(nowMs) || Date.now();
-  const nowS = Math.floor(now / 1000);
-  const warnS = Number(config.value('oauth2.clientSecretExpiryWarningDays')) *
-                86400;
+  const at = clientSecretSweepClock(nowMs);
   const out = { expiring: [], expired: [], cleared: [] };
   list().forEach(function (row) {
-    const records = clientSecretRecordsOf(row.fields || {});
-    if (!records.length) {
-      return;
-    }
-    const expired = records.filter(function (one) {
-      return clientSecretExpired(one, nowS);
-    });
-    const live = records.filter(function (one) {
-      return !clientSecretExpired(one, nowS);
-    });
-    if (!live.length) {
-      out.expired.push(row.identifier);
-    } else if (live.some(function (one) {
-      return one.expiresAt > 0 && one.expiresAt - nowS <= warnS;
-    })) {
-      out.expiring.push(row.identifier);
-    }
-    // The expired secrets an application holds another beside: removed. With
-    // none live, every expired one but the newest.
-    const removable = live.length ? expired : expired.slice(1);
-    if (removable.length) {
-      const loaded = load(row.identifier);
-      if (loaded.known) {
-        const gone = removable.map(function (one) { return one.id; });
-        try {
-          writeClientSecretRecords(loaded.record,
-            clientSecretRecordsOf(loaded.record.fields).filter(function (one) {
-              return gone.indexOf(one.id) < 0;
-            }));
-          save(loaded.record);
-          out.cleared.push(row.identifier);
-        } catch (e) {
-          // The expired secrets stay until a later sweep can seal what is
-          // left: they authenticate nothing meanwhile, being expired.
-          log.debug("Caught in sweepClientSecrets(): " +
-                    ((e && e.message) || e));
-          log.error(errorCodes.tag('STS-REG-0213') + 'applications: the ' +
-                    'expired client secrets of "' + row.identifier + '" ' +
-                    'were not removed. ' + e.message);
-        }
+    sweepClientSecretOf(row, at, out);
+  });
+  reportClientSecretSweep(out);
+  log.debug("Leaving sweepClientSecrets(). " + JSON.stringify({
+    expiring: out.expiring.length, expired: out.expired.length,
+    cleared: out.cleared.length }));
+  return out;
+}
+
+// THE SAME, IN SLICES (#704): what `oauth2.client-secret-expiry` runs. Every
+// application's secrets are unsealed to be judged, and a realm's every
+// application in one turn held the loop of the process running the job;
+// this gives it a turn every CLIENT_SECRET_SWEEP_SLICE applications. The
+// decisions are `sweepClientSecretOf()`'s, the same as the form above.
+/** Applications judged between two turns of the event loop (#704). */
+const CLIENT_SECRET_SWEEP_SLICE = 50;
+
+/**
+ * `sweepClientSecrets()`, a turn of the event loop every
+ * CLIENT_SECRET_SWEEP_SLICE applications (#704).
+ *
+ * @param nowMs - the time in milliseconds; now when omitted
+ * @returns a promise of the identifiers expiring, expired and cleared
+ */
+async function sweepClientSecretsInSlices(nowMs) {
+  log.debug("Entering sweepClientSecretsInSlices().");
+  const at = clientSecretSweepClock(nowMs);
+  const out = { expiring: [], expired: [], cleared: [] };
+  await loopSlices.eachInSlices(list(), function (row) {
+    sweepClientSecretOf(row, at, out);
+  }, CLIENT_SECRET_SWEEP_SLICE);
+  reportClientSecretSweep(out);
+  log.debug("Leaving sweepClientSecretsInSlices(). " + JSON.stringify({
+    expiring: out.expiring.length, expired: out.expired.length,
+    cleared: out.cleared.length }));
+  return out;
+}
+
+// The sweep's clock and warning window, read once per sweep in its realm.
+function clientSecretSweepClock(nowMs) {
+  log.debug("Entering clientSecretSweepClock().");
+  const now = Number(nowMs) || Date.now();
+  log.debug("Leaving clientSecretSweepClock().");
+  return { nowS: Math.floor(now / 1000),
+           warnS: Number(config.value(
+             'oauth2.clientSecretExpiryWarningDays')) * 86400 };
+}
+
+// One application's secrets judged, and its expired ones removed where the
+// sweep may: the identifier joins `out`'s lists.
+function sweepClientSecretOf(row, at, out) {
+  log.debug("Entering sweepClientSecretOf().");
+  const nowS = at.nowS;
+  const warnS = at.warnS;
+  const records = clientSecretRecordsOf(row.fields || {});
+  if (!records.length) {
+    log.debug("Leaving sweepClientSecretOf(). None held.");
+    return;
+  }
+  const expired = records.filter(function (one) {
+    return clientSecretExpired(one, nowS);
+  });
+  const live = records.filter(function (one) {
+    return !clientSecretExpired(one, nowS);
+  });
+  if (!live.length) {
+    out.expired.push(row.identifier);
+  } else if (live.some(function (one) {
+    return one.expiresAt > 0 && one.expiresAt - nowS <= warnS;
+  })) {
+    out.expiring.push(row.identifier);
+  }
+  // The expired secrets an application holds another beside: removed. With
+  // none live, every expired one but the newest.
+  const removable = live.length ? expired : expired.slice(1);
+  if (removable.length) {
+    const loaded = load(row.identifier);
+    if (loaded.known) {
+      const gone = removable.map(function (one) { return one.id; });
+      try {
+        writeClientSecretRecords(loaded.record,
+          clientSecretRecordsOf(loaded.record.fields).filter(function (one) {
+            return gone.indexOf(one.id) < 0;
+          }));
+        save(loaded.record);
+        out.cleared.push(row.identifier);
+      } catch (e) {
+        // The expired secrets stay until a later sweep can seal what is
+        // left: they authenticate nothing meanwhile, being expired.
+        log.debug("Caught in sweepClientSecretOf(): " +
+                  ((e && e.message) || e));
+        log.error(errorCodes.tag('STS-REG-0213') + 'applications: the ' +
+                  'expired client secrets of "' + row.identifier + '" ' +
+                  'were not removed. ' + e.message);
       }
     }
-  });
+  }
+  log.debug("Leaving sweepClientSecretOf().");
+}
+
+// The audit rows and the warning a sweep owes, once it has judged them all.
+function reportClientSecretSweep(out) {
+  log.debug("Entering reportClientSecretSweep().");
   out.expiring.forEach(function (id) {
     audit.audit({ action: 'application.secret-expiring', actor: 'scheduler',
       protocol: 'console', channel: 'internal', target: String(id),
@@ -17331,10 +17390,7 @@ function sweepClientSecrets(nowMs) {
              out.expiring.join(', ') + '). Add or rotate one on ' +
              '/admin/applications.');
   }
-  log.debug("Leaving sweepClientSecrets(). " + JSON.stringify({
-    expiring: out.expiring.length, expired: out.expired.length,
-    cleared: out.cleared.length }));
-  return out;
+  log.debug("Leaving reportClientSecretSweep().");
 }
 
 // THE BOOTSTRAP CLIENT, WHILE ITS SECRET IS PINNED — `sts-api-client` since
@@ -22252,6 +22308,7 @@ module.exports = {
   addClientSecret: addClientSecret,
   removeClientSecret: removeClientSecret,
   sweepClientSecrets: sweepClientSecrets,
+  sweepClientSecretsInSlices: sweepClientSecretsInSlices,
   secretExpiryOf: secretExpiryOf,
   clientSecretRecordsOf: clientSecretRecordsOf,
   registrationAccessTokenOf: registrationAccessTokenOf,

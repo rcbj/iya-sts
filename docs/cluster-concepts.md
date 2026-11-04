@@ -334,6 +334,12 @@ instead when:
 - a worker answers that it does not know the job's realm yet (a realm
   created a moment ago), for that one run.
 
+A request worker answers requests too, so a body that walks many rows (every
+session, every token, every expired cache entry) does it a few hundred rows
+at a time and lets the worker's requests in between. The per-process jobs,
+which clean what only their own process holds and so never move, do the
+same.
+
 A scheduled run of a job that may wait is held for a while when even the
 least-busy worker is busy (`scheduler.niceBusyThreshold`,
 `scheduler.niceLagMs`), never longer than `scheduler.niceMaxDeferS` and never

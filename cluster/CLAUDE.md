@@ -920,12 +920,10 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   and runs on the front for the process's life.
 * **An exemption is a reason**: `onFront: '<why>'` on the registration. An
   empty or non-string one is refused (`STS-SCHED-0009`), and
-  `tests/scheduler_workers.js` F holds it. Seven jobs carry one. The first
-  three because they must:
+  `tests/scheduler_workers.js` F holds it. Five jobs carry one. The first
+  two because they must:
   `scheduler.history`, which reads the whole of `scheduler.runs`, which a
-  worker does not restore (#617); `keys.data-key-reencrypt`, whose
-  `keystore.resealOwnRows()` re-seals the rows THIS process holds sealed in
-  memory before a superseded key is destroyed; and
+  worker does not restore (#617); and
   `spiffe.target-reconcile` (added in the review of #705), whose halt while
   stopping reads `SpiffeTargets.stopping`, a static only the front's
   `beginStop()` sets — in a worker a reconcile would register this task
@@ -934,13 +932,34 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   replicates) and found to work through the store or the pool's channels.
   The ticket key and the TUF root are persisted shared maps, the SPIFFE
   authorities are a persisted realm map, key rotations bump the key set's
-  generation, and every outbound delivery is claimed per row. The fourth,
-  `saml2.sp-metadata-refresh`, stays only because its owner registers it
-  from `server.js`'s `listen()` alone, so no worker has it; registering it
-  in every process would let it move. The fifth, sixth and seventh,
-  `report.drain`, `report.retention` and `report.schedule` (#956), stay on
-  the front because the fence of a running report is a set in this process,
-  which a worker does not share (`report/CLAUDE.md`).
+  generation, and every outbound delivery is claimed per row. The third,
+  fourth and fifth, `report.drain`, `report.retention` and
+  `report.schedule` (#956), stay on the front because the fence of a
+  running report is a set in this process, which a worker does not share
+  (`report/CLAUDE.md`).
+* **Two left the front in #704.** `saml2.sp-metadata-refresh` was there only
+  because `server.js`'s `listen()` was the one place that registered it;
+  `saml/sp_metadata.ts`'s wire step registers it in every process now.
+  `keys.data-key-reencrypt` was there because `keystore.resealOwnRows()`
+  re-seals the rows the RUNNING process holds sealed in memory — and that
+  pin protected the front alone: with `cluster.mode=off` every request
+  worker kept its copy of a realm's key set under the superseded key, and
+  lost its signing keys when the pass later destroyed it
+  (`keystore.applyStoredChange()` did not read a key row where the store
+  does not arbitrate). Every process now takes a re-sealed key-set row of
+  the set it holds (`adoptResealedKeyRow()`, `common/CLAUDE.md`, *Rotation,
+  re-sealing, destruction*), so whichever process runs the pass, the others
+  follow it from the change log, days before any destruction.
+* **A body on any process gives that process's loop turns (#704).** A
+  worker answers requests too, so moving a body off the front moved its
+  stall rather than ending it. A body that walks a store does it in slices
+  — `common/loop_slices.js`'s `walkInSlices()` and `eachInSlices()`, or a
+  `setImmediate()` every few rows — and makes a key pair in node's thread
+  pool rather than with `generateKeyPairSync()`. The per-process jobs, which
+  cannot move at all, do the same: `cluster.cache-report` counts rather
+  than lists (`cacheRegistry.snapshotAsync()`), `caches.eject-expired`
+  ejects in slices (`ejectExpiredAsync()`), and `persistence.change-log-pull`
+  yields every 25 rows of a page. `tests/job_slices.js` holds each.
 * **Nice: a run held for load, never for long.** A due SCHEDULED run of a
   job whose `nice` (0–19, default 10) is above 0 waits before its claim,
   while even the least-loaded worker is heavy. Heavy means
@@ -994,7 +1013,7 @@ row's body runs on a request worker except those marked **front**:
 | `risk.retention` | cluster, service; hourly — deletes the rows of superseded and refused dataset versions and the failures past their retention (#62) | `risk/risk_datasets.ts` |
 | `risk.stalled-imports` | cluster, service; `risk.uploadSweepS` — refuses a dataset version left `loading` with no progress for `risk.importStallMinutes`, the import whose process stopped (#215) | `risk/risk_datasets.ts` |
 | `risk.upload-cleanup` | per-process, quiet; `risk.uploadSweepS` — touches the upload files this process is importing and deletes the leftovers of one that stopped from `risk.uploadDirectory` (#215) | `risk/risk_upload.ts` |
-| `saml2.sp-metadata-refresh` | cluster, service, **front** (registered by the front process alone); `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
+| `saml2.sp-metadata-refresh` | cluster, service (registered in every process by the module's wire step since #704; on the front until then); `saml2.spMetadataRefreshIntervalS` | `saml/sp_metadata.ts` (P5) |
 | `persistence.change-log-pull` | per-process, **quiet**; `persistence.pollInterval` | `persistence/persistence_replication.js` (P5) |
 | `persistence.change-log-purge` | cluster, service; five minutes — replaced the `ops.change-log-purge` lease | `persistence/persistence_replication.js` (P5) |
 | `persistence.minted-index-backfill` | cluster, service; five minutes, registered by every front process's restore that has an on-demand store (since 2026-10-27; until then only where an index was incomplete, so the nodes' job lists disagreed and a non-leader's registration never ran), the run doing nothing once every index is complete — files the rows stored before schema version 24 in `sts_minted_index` and writes the completion mark (#820) | `persistence/persistence_minted.js` |
@@ -1027,7 +1046,7 @@ row's body runs on a request worker except those marked **front**:
 | `post-login.activity-mail` | cluster, realm; every 10 minutes and Run now, off in a realm with no started post-login activity running — one slice of each running one's people after a key cursor (the realm's through `passkeyScanAsync()`, the union of its groups' through `groupMembersAfterAsync()`, #1123), each person `post_login.dueFor()` names mailed a reminder to sign in unless inside the interval or past its maximum; the cursor starts over at the end of the people; `stillOwner()` and its state asked before each person; one audit row per started activity per run (#1111) | `common/post_login_activities.ts`, `common/CLAUDE.md` 3ct |
 | `oauth2.expired-token-purge` | cluster, service; hourly — a token record past its expiry and `oauth2.expiredTokenRetentionS`, and the revocation of an expired token, dated by the `exp` the revocation carries since #345 (not per-process: the revocation set is replicated, so one delete on the leader reaches every process) | `common/admin_stats.js` (P5; the ticket's "tracked tokens"), `common/CLAUDE.md` 3b |
 | `oauth2.client-secret-expiry` | cluster, realm; daily — warns (audit + log) about secrets expiring within `oauth2.clientSecretExpiryWarningDays` or applications whose every secret has expired, and removes expired secrets an application holds an unexpired one beside (never its last) | `common/signing_rotation.ts`, `common/applications.js` (P5) |
-| `keys.data-key-reencrypt` | cluster, service, **front**; hourly — re-seals every value under a superseded data key and destroys one nothing is sealed under; on the front because `keystore.resealOwnRows()` re-seals the rows the running process holds sealed in memory (#408) | `common/data_key_rotation.ts`, `common/CLAUDE.md` (*Rotation, re-sealing, destruction*) |
+| `keys.data-key-reencrypt` | cluster, service; hourly — re-seals every value under a superseded data key and destroys one nothing is sealed under. On the front from #408 to #704, because `keystore.resealOwnRows()` re-seals the rows the running process holds sealed in memory; every other process takes the re-sealed key-set row since #704 (*Two left the front*, above) | `common/data_key_rotation.ts`, `common/CLAUDE.md` (*Rotation, re-sealing, destruction*) |
 | `report.drain` | cluster, realm, **front**; every 2 s — claims queued report jobs up to the concurrency caps and writes each artifact. The fence is a set in this process, so the body stays on the front (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 | `report.retention` | cluster, realm, **front**; every 60 s — deletes artifacts past their retention, drops finished job rows past theirs, and fails a running job whose fence is gone (#956) | `report/jobs.ts`, `report/CLAUDE.md` |
 | `report.schedule` | cluster, realm, **front**; every 60 s — enqueues a job for each due definition, as its owner, while that owner can still run it. A stored parameter default is used; a missing parameter does not consume the slot (#956) | `report/jobs.ts`, `report/CLAUDE.md` |

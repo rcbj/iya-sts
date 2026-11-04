@@ -785,9 +785,11 @@ function refreshTokenJwkOf(privateKey, kind) {
  *
  * @param madeRsa - an RSA key pair already made, to use in place of generating
  * one
+ * @param madeEc - an EC key pair already made on the configured curve, the
+ * same
  * @returns `{ rsa, ec, secret, secretKid }`
  */
-function makeRefreshTokenEncryptionKeys(madeRsa) {
+function makeRefreshTokenEncryptionKeys(madeRsa, madeEc) {
   log.debug("Entering makeRefreshTokenEncryptionKeys().");
   const bits = rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits');
   const curveName = String(config.value('oauth2.refreshTokenEncryptionCurve') ||
@@ -796,7 +798,8 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
                 REFRESH_TOKEN_CURVES['P-256'];
   const rsa = madeRsa ||
               stsCrypto.generateKeyPairSync('rsa', { modulusLength: bits });
-  const ec = stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
+  const ec = madeEc ||
+             stsCrypto.generateKeyPairSync('ec', { namedCurve: curve });
   const secret = stsCrypto.randomBytes(REFRESH_TOKEN_SECRET_BYTES);
   const out = {
     rsa: { privateKey: rsa.privateKey,
@@ -814,6 +817,39 @@ function makeRefreshTokenEncryptionKeys(madeRsa) {
             " bits, " +
             curveName + ", kid=" + out.rsa.publicJwk.kid);
   return out;
+}
+
+// THE SAME, WITH BOTH PAIRS MADE IN NODE'S THREAD POOL (#704), for a
+// rotation: `signing.rotate` made them with `generateKeyPairSync()`, an RSA
+// key of `oauth2.refreshTokenEncryptionKeyBits` on the event loop of the
+// process running the job. The sizes are read in the realm before anything
+// is awaited, and the set is assembled by the one maker above.
+/**
+ * Makes a realm's refresh-token encryption keys with the RSA and EC pairs
+ * generated off the event loop.
+ *
+ * @param realmId - the realm whose settings size the keys
+ * @returns a promise of what `makeRefreshTokenEncryptionKeys()` answers
+ */
+async function makeRefreshTokenEncryptionKeysAsync(realmId) {
+  log.debug("Entering makeRefreshTokenEncryptionKeysAsync().");
+  const realm = realms.get(String(realmId || '')) ||
+                realms.get(realms.DEFAULT_ID);
+  const sizes = realms.run(realm, function () {
+    const curveName = String(
+      config.value('oauth2.refreshTokenEncryptionCurve') || 'P-256');
+    return { bits: rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits'),
+             curve: REFRESH_TOKEN_CURVES[curveName] ||
+                    REFRESH_TOKEN_CURVES['P-256'] };
+  });
+  const pairs = await Promise.all([
+    generateRsaPairAsync(sizes.bits),
+    stsCrypto.generateKeyPairAsync('ec', { namedCurve: sizes.curve })
+  ]);
+  log.debug("Leaving makeRefreshTokenEncryptionKeysAsync().");
+  return realms.run(realm, function () {
+    return makeRefreshTokenEncryptionKeys(pairs[0], pairs[1]);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -6150,15 +6186,21 @@ function retireExpiredGenerations(realmId, nowMs) {
  * @param realmId - the realm
  * @param graceMs - how long the retired set still opens tokens
  * @param why - the reason, for the log
+ * @param madeKeys - a set already made off the event loop, to install in
+ *   place of making one here
  * @returns what storing the new generation answered
  */
-function rotateRefreshTokenKeys(realmId, graceMs, why) {
+function rotateRefreshTokenKeys(realmId, graceMs, why, madeKeys) {
   log.debug("Entering rotateRefreshTokenKeys(). realm=" + realmId);
   const id = String(realmId || '');
   const keys = stsKeysFor.of(id);
   const old = refreshTokenKeysFor(keys);
   const realm = realms.get(id) || realms.get(realms.DEFAULT_ID);
-  const made = realms.run(realm, makeRefreshTokenEncryptionKeys);
+  // `madeKeys`, when given, is the set `makeRefreshTokenEncryptionKeysAsync()`
+  // made off the event loop (#704); a caller that has none gets one made here.
+  const made = madeKeys || realms.run(realm, function () {
+    return makeRefreshTokenEncryptionKeys();
+  });
   const now = Date.now();
   const copy = plainCopyOf(keys, { refreshTokenEncKeys: made });
   copy.generations.retiredRefresh = copy.generations.retiredRefresh.concat([
@@ -9132,6 +9174,7 @@ module.exports = {
   browserDeviceSigner: browserDeviceSigner,
   browserDeviceVerifiers: browserDeviceVerifiers,
   makeRefreshTokenEncryptionKeys: makeRefreshTokenEncryptionKeys,
+  makeRefreshTokenEncryptionKeysAsync: makeRefreshTokenEncryptionKeysAsync,
   requestEncryptionJwkOf: requestEncryptionJwkOf,
   VCI_REQUEST_ENC_ALG: VCI_REQUEST_ENC_ALG,
   // The count as a word, for the refusal sentences that name what they
