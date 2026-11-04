@@ -2809,8 +2809,10 @@ spent when the response goes out. `launch/CLAUDE.md` argues it. The
 unsolicited ID Token some providers post straight to a `redirect_uri` is
 not offered: no `state`, no `nonce`.
 
-**NOT DONE**: `policy_uri` and `tos_uri` are not drawn on the consent
-screen. `tests/oidc_registration.js` holds the rest.
+**DONE SINCE #1300**: `logo_uri`, `policy_uri` and `tos_uri` are drawn on
+the sign-in and consent screens (*What the screens show about a client*,
+above); a language-tagged one is not. `tests/oidc_registration.js` holds the
+rest.
 
 ## DISCOVERY ON THE REALM MODEL, AND WEBFINGER (#119, 2026-09-22)
 
