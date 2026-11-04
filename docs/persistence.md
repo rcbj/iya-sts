@@ -485,25 +485,13 @@ already makes about its own pull.
 Turn it off with `persistence.coordinate`; `persistence.pollInterval` (5s) is the
 worst-case convergence lag when a notification is lost.
 
-#### What it does *not* share
+Several containers against one store go further than this: membership,
+leases, a barrier before each request, and claims for every value used once.
+[How the cluster works](cluster-concepts.md) explains them, and what each
+node still holds alone.
 
-* **Sockets.** The KDC, both LDAP listeners, the two TLS ports and SPIFFE's four
-  are bound per process, and always will be. Coordination is about state.
-* **The replay caches and DPoP `jti` sets converge rather than synchronise.**
-  Between a write in one process and its arrival in another there is a window the
-  size of the poll interval in which a proof one process refused is accepted by
-  another. Sticky sessions at the load balancer close it; nothing here does.
-  **The RFC 7523 / RFC 7522 used-assertion history does not have that window**:
-  on postgres, recording a use is one atomic `INSERT … ON CONFLICT` in the table
-  `sts_used_assertions`, so two processes can never both accept one assertion.
-  A database built by an older `postgres/schema.sql` has no such table — run
-  that file again as the owner; it adds the table and changes nothing else.
-* **A realm's signing keys are not adopted mid-life.** A key changed in another
-  process is logged and ignored here: taking it would strand everything this
-  process has already signed. Rotation across processes is a rolling restart.
-
-`/admin/persistence` reports all of it, and `status.replication` carries it in
-the JSON.
+`/admin/persistence` reports the change log's state, and `status.replication`
+carries it in the JSON.
 
 ### Request workers can hold the directory as a window
 

@@ -11,6 +11,8 @@ behind an internet-facing Network Load Balancer, against RDS PostgreSQL 18 with
 a read replica. The encryption key and the database password come from AWS
 Secrets Manager. A GitHub Actions workflow creates an environment, runs the
 protocol suite against it, and destroys it.
+[How the cluster works](cluster-concepts.md) explains what the three nodes do
+together.
 
 ```
 you (allowed CIDRs) ──443──▶ NLB ──8081, PROXY v2──▶ node-a | node-b | node-c

@@ -226,7 +226,7 @@ async function run(t) {
     problems.push('the cert-issuance page was not in the page table');
   }
   const cluster = DocLinks.forConsolePage('/admin/cluster');
-  if (!cluster || cluster.indexOf(ORIGIN + 'configuration.html#cluster')
+  if (!cluster || cluster.indexOf(ORIGIN + 'cluster-concepts.html')
       !== 0) {
     problems.push('/admin/cluster');
   }

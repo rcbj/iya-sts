@@ -2851,10 +2851,11 @@ roles `REPORT_USE` and `REPORT_ADMIN`, held through the seeded groups
 
 ### Cluster
 
-Several containers against one PostgreSQL store (`cluster/CLAUDE.md`). Most of
-the cluster's settings are read when a node joins and are argued on
-Server configuration → **Cluster** (`/admin/cluster`); this is the one that
-belongs to the pages that show every node.
+Several containers against one PostgreSQL store. Most of the cluster's
+settings are read when a node joins and are argued on Server configuration →
+**Cluster** (`/admin/cluster`), and
+[How the cluster works](cluster-concepts.md#the-settings) lists them. This is
+the one that belongs to the pages that show every node.
 
 | Setting | Environment | Default | Change while running | What it does |
 |---|---|---|---|---|
