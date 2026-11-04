@@ -469,6 +469,19 @@ async function photograph(o, driver, id, why) {
     return false;
   }
   const png = await driver.takeScreenshot();
+  // THE PAGE'S WORDS BESIDE ITS PICTURE (#1293, 2026-11-04): a reviewer
+  // reads the screenshot, so its sentence is part of the certification; the
+  // text is logged so a run can be checked for wording ("", "..", a code
+  // path) without reading every image.
+  try {
+    const text = await driver.executeScript(
+      "return document.body ? document.body.innerText : '';");
+    log.info("  page text for " + id + ": " +
+             String(text || "").replace(/\s+/g, " ").trim().slice(0, 1500));
+  } catch (e) {
+    log.debug("Caught in photograph(): " + ((e && e.message) || e));
+    // No text: the picture is still the evidence.
+  }
   const r = await o.suite("POST", "api/log/" + id + "/images/" +
                           encodeURIComponent(String(unfilled[0].upload)),
                           "data:image/png;base64," + png, "text/plain");
