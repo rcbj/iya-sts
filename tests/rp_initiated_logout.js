@@ -16,7 +16,10 @@
 //   b. CONFIRMATION: no hint → the page, the session alive; "no" keeps it;
 //      a forged or stale confirm_for is asked again; the page's own form ends
 //      it. A cross-site POST (no cookie) is asked rather than answered with a
-//      cookie clear.
+//      cookie clear. The page names WHY it asks, one sentence per case
+//      (#1301): no id_token_hint (and, where the address will not be
+//      followed, that the person is not sent on to it), no cookie, a hint
+//      for another session, a logout_hint naming somebody else.
 //   c. THE HINT: a verified id_token_hint for THIS session signs out at once
 //      and returns to the registered address WITH state, by GET and by POST;
 //      a tampered hint, and a client_id it was not issued to, are refused
@@ -204,6 +207,51 @@ function childMain() {
          'b1. no hint: a confirmation page with a real button and no script, ' +
          'and the session alive', r.status);
     const asked = hiddenOf(r.text);
+    // WHY IT ASKS, one sentence per case (#1301): what the request lacked,
+    // and — where the address it named will not be followed — that the
+    // person is not sent on to it. Read as the page's closing sentence.
+    const whyOf = function (text) {
+      return ((/<\/form><p class="sub">([\s\S]*?)<\/p>/.exec(String(text)) ||
+               [])[1] || '');
+    };
+    const NO_HINT = 'This sign-out request carried no id_token_hint, so ' +
+      'this service cannot tell which application sent it';
+    const SECTION = ' (RP-Initiated Logout 1.0 section 2).';
+    const emptyQuoted = function (text) {
+      return /<code>\s*<\/code>|""|\(\s*\)/.test(String(text));
+    };
+    let why = whyOf(r.text);
+    note(why === NO_HINT + SECTION && !emptyQuoted(why),
+         'b1b. no hint, a client that registered the address: the page says ' +
+         'the request carried no id_token_hint, and promises nothing about ' +
+         'the return it will make', why);
+    let w = await logout({ post_logout_redirect_uri:
+                             'https://rp.rl.example/any', state: 's' });
+    why = whyOf(w.text);
+    note(w.status === 200 && !w.headers.location &&
+           why === NO_HINT + ', and it will not send you on to <code>' +
+             'https://rp.rl.example/any</code> afterwards' + SECTION &&
+           await alive(),
+         'b1c. no hint and an address no client vouches for: the page says ' +
+         'what was missing and that the person will not be sent on to it',
+         why);
+    w = await logout({ client_id: 'rl-rp',
+                       post_logout_redirect_uri: 'https://evil.example/x' });
+    why = whyOf(w.text);
+    note(why === NO_HINT + ', and it will not send you on to <code>' +
+           'https://evil.example/x</code> afterwards' + SECTION,
+         'b1d. no hint and an address the named client did not register: ' +
+         'the same, naming that address', why);
+    w = await logout({});
+    why = whyOf(w.text);
+    note(w.status === 200 && why === NO_HINT + SECTION &&
+           !emptyQuoted(why) && await alive(),
+         'b1e. no parameters at all: the page says the request carried no ' +
+         'id_token_hint, and names no address', why);
+    w = await logout({ state: 'only-state', client_id: 'rl-rp' });
+    why = whyOf(w.text);
+    note(why === NO_HINT + SECTION && !emptyQuoted(why),
+         'b1f. only state and client_id: the same sentence', why);
     let d = await request(port, 'POST', '/oauth2/logout',
       { form: Object.assign({}, asked, { confirm: 'no' }) });
     note(d.status === 200 && /still signed in/i.test(d.text) &&
@@ -220,6 +268,12 @@ function childMain() {
            !String(d.headers['set-cookie'] || '').includes('sts_session=;'),
          'b4. a cross-site POST (no cookie) is asked, and no cookie is cleared',
          JSON.stringify(d.headers['set-cookie'] || []));
+    note(whyOf(d.text) === 'This sign-out request arrived without the ' +
+           'sign-in cookie of this browser, as a form sent from another ' +
+           'site does, so this service cannot tell which session it is for' +
+           SECTION,
+         'b4b. and the page says the request came without this browser\'s ' +
+         'sign-in cookie', whyOf(d.text));
     jar = withCookie;
     d = await request(port, 'POST', '/oauth2/logout',
       { form: Object.assign({}, asked, { confirm: 'yes' }) });
@@ -277,6 +331,22 @@ function childMain() {
     note(r.status === 200 && /name="confirm_for"/.test(r.text) &&
            await alive(),
          'c4. a logout_hint naming somebody else asks, even with the hint');
+    note(whyOf(r.text) === 'The logout_hint in this sign-out request ' +
+           'names somebody other than the person signed in to this browser' +
+           SECTION,
+         'c4b. and the page says the logout_hint names somebody else',
+         whyOf(r.text));
+    // A hint for an EARLIER session: verified, and its sid not this one.
+    const earlier = idToken;
+    await signIn('rl-alice');
+    r = await logout({ id_token_hint: earlier });
+    note(r.status === 200 && /name="confirm_for"/.test(r.text) &&
+           whyOf(r.text) === 'The id_token_hint in this sign-out request ' +
+             'was issued to another session, not the one signed in to this ' +
+             'browser' + SECTION && await alive(),
+         'c4c. a hint for another session asks, and the page says so',
+         whyOf(r.text));
+    idToken = await signIn('rl-alice');
     r = await request(port, 'POST', '/oauth2/logout',
       { form: { id_token_hint: idToken, post_logout_redirect_uri: BACK } });
     note(r.status === 302 && !(await alive()),
