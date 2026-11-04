@@ -8113,11 +8113,15 @@ function removeSocketDir() {
 // argues it; this is the transport, in the shape of the operation channel:
 //
 //   front -> worker   { schedulerRun, runId, jobId, realm, trigger, params,
-//                       clockOffsetMs }
+//                       clockOffsetMs, deadlineMs, grantUntilMs }
 //   worker -> front   { schedulerRunDone, runId, ok, result | error, code }
 //                     or { schedulerRunDone, runId, unknownJob }
 //   front -> worker   { schedulerFence, runId }   (time limit, lost lease,
-//                                                   removed realm)
+//                                                   removed realm, a row
+//                                                   taken over)
+//   front -> worker   { schedulerRenew, runId, untilMs, off }  (#1305: the
+//                       leader still owns the run; the body's grant runs to
+//                       `untilMs`, and `off` is why its job was switched off)
 //
 // A run's answer is resolved ONCE: the answer, the fence (the leader stopped
 // waiting) or the worker's exit (STS-SCHED-0019), whichever comes first. A
@@ -8131,7 +8135,8 @@ const LOOP_LAG_FRESH_MS = 30 * 1000;
 /**
  * What the scheduler's leader hands a cluster job's body to (#408).
  *
- * @returns `{ workers(), run(workerId, request), fence(runId) }`
+ * @returns `{ workers(), run(workerId, request), fence(runId),
+ *   renew(runId, untilMs, off) }`
  */
 function schedulerRunner() {
   log.debug("Entering schedulerRunner().");
@@ -8139,7 +8144,8 @@ function schedulerRunner() {
   return {
     workers: schedulerWorkers,
     run: runSchedulerJob,
-    fence: fenceSchedulerJob
+    fence: fenceSchedulerJob,
+    renew: renewSchedulerJob
   };
 }
 
@@ -8229,6 +8235,33 @@ function fenceSchedulerJob(runId) {
   held.resolve({ ok: false, fenced: true,
                  error: 'the leader stopped waiting for it' });
   log.debug("Leaving fenceSchedulerJob().");
+}
+
+/**
+ * Renews the grant of the worker running a cluster run (#1305): the leader
+ * still owns the run, and keeps waiting for its answer.
+ *
+ * @param runId - the run
+ * @param untilMs - the grant's end, on this process's clock
+ * @param off - why the run's job was switched off, or ''
+ */
+function renewSchedulerJob(runId, untilMs, off) {
+  log.debug("Entering renewSchedulerJob(). " + runId);
+  const held = schedulerRuns.get(String(runId || ''));
+  if (!held) {
+    log.debug("Leaving renewSchedulerJob(). Not running.");
+    return;
+  }
+  try {
+    held.entry.child.send({ schedulerRenew: true, runId: String(runId),
+                            untilMs: Number(untilMs) || 0,
+                            off: String(off || '') });
+  } catch (e) {
+    // A worker that cannot be reached is going, and its run with it; a
+    // grant not renewed runs out there by itself.
+    log.debug("Caught in renewSchedulerJob(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving renewSchedulerJob().");
 }
 
 function receiveSchedulerRunDone(entry, message) {

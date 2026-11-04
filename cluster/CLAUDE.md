@@ -845,6 +845,58 @@ per-process jobs and the algorithmic fixes are a follow-up. `scheduler.ts`'s
   worker's `ctx.stillOwner()` answers false from then on. The front's timer
   now fires on time, because its thread was never the one held. A worker
   that ends under a run fails it at once with `STS-SCHED-0019`.
+* **AND THE BODY'S OWNERSHIP IS A GRANT, NOT THE ABSENCE OF A FENCE (#1305,
+  2026-11-04).** #695's review of #705 found that `stillOwner()` on the
+  worker was only "no fence has arrived". A fence that never came — the
+  front's thread stuck, the message lost, or a takeover the leader saw
+  only through the change log and sent nothing for — left a body owning a
+  run another node had claimed. And whether the job was on was asked at
+  the tick alone, so a switch-off did not reach a body already running.
+  Both are now decided by the leader, which looks at every run in flight
+  every 5 s (`watchRun()`, `checkRun()`); the worker decides only what
+  needs no message to arrive:
+  * **The worker's `stillOwner()` is true only while** no fence came, no
+    renewal said the job was switched off, the run's time limit has not
+    passed, and its last grant has not run out (`delegatedOwns()`). The
+    hand-off carries `deadlineMs` (the time limit) and `grantUntilMs` (a
+    first grant of 20 s), both instants on the process's clock, which the
+    worker thread shares. Each false is final: a renewal that arrives late
+    cannot hand back a run its body has stopped owning. A request with no
+    instants owns nothing.
+  * **The leader renews while it still owns the run** — what its own
+    `stillOwner()` asks: it leads, the run has not timed out, the realm is
+    defined, the row still carries this attempt's fence — with `{
+    schedulerRenew, runId, untilMs, off }`. If it no longer does, it sends
+    the fence instead, which is the takeover case's fence; that outcome was
+    already not written (`STS-SCHED-0003`). A grant that runs out on the
+    worker is `STS-SCHED-0021`, said once per run, and the body stops at
+    its next step. Four renewals missed is twenty seconds in which the
+    front ran no timer, when the leader cannot stand behind anything it
+    handed out.
+  * **The time limit is the bound that matters across nodes.** A run's
+    claim lasts its time limit and a second, so no other node can claim it
+    while the worker still believes it owns it, even if the leader's thread
+    never runs again. The grant is shorter, for the cases inside that bound:
+    a lost lease, a takeover, a switch-off.
+  * **Rejected: the worker reading the run row itself.** A worker does not
+    restore `scheduler.runs` (#617) and sees the leader's `running` row only
+    once the change log brings it, so "no row" or an older attempt's row
+    would have to mean "owned" — and a stuck front, the case that matters
+    most, changes no row at all.
+  * **A switch-off is the scheduler's three switches**: `scheduler.enabled`
+    off, the job in `scheduler.disabledJobs`, its interval set to 0
+    (`serviceOffReason()`). Once one answers, the run's `stillOwner()` is
+    false INLINE AND ON A WORKER, the leader keeps waiting for the body's
+    answer (no fence), and the run is recorded as it ends — a switch-off is
+    no failure, so no code — with a `why` saying it was switched off. **NOT
+    the job's own `off()`**: that is mostly "nothing to do" (no Claims
+    Provider registered, no post-login activity running), which a body's
+    own work makes true halfway through; a job whose own switch must stop
+    a run reads it itself. `tests/scheduler_workers.js` J and K hold both
+    halves.
+  * **The 5 s look is a timer of one run**, armed when the run starts and
+    cleared when it ends, like its time limit: a timeout inside one
+    operation, not periodic work (root `CLAUDE.md`).
 * **A worker that does not know the run's realm yet** (one created a moment
   ago) answers `unknownRealm`, and that one run is inline; a realm removed
   meanwhile runs nothing (`STS-SCHED-0018`, #338's rule). A worker's load

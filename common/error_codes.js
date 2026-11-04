@@ -2603,6 +2603,13 @@ const CODES = [
       'every later run of it in this process does too; register it at its ' +
       'owner\'s load, or give it an onFront reason.',
     spec: '' },
+  { code: 'STS-SCHED-0021',
+    summary: 'A cluster run\'s body on a request worker stopped owning its ' +
+      'run because the leader had not renewed its grant in time (#1305): ' +
+      'the leader\'s thread did not run, or its renewals did not arrive. ' +
+      'The body stops at its next step; the leader, or the attempt that ' +
+      'takes the run over, decides the run.',
+    spec: '' },
   // ===== KEYS ==============================================================
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
