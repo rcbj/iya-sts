@@ -4133,7 +4133,9 @@ const SETTINGS = [
   // because it loads the service, and the pool is brought up BEFORE the
   // listener binds so that cost is paid where nobody is waiting.
   // `workers.giveUpRetryMs` is the exception. It is read when a pool gives
-  // up, so a change applies to the next cool-down. A table that said
+  // up, and since #695 again when it changes: a pool already given up is
+  // armed a wait it lacks, or has its wait cancelled by 0
+  // (`request_pool.js`'s applyGiveUpRetrySetting()). A table that said
   // `runtime: true` and meant "on restart" is the lie this file refuses to
   // tell about a bound port.
   // ---------------------------------------------------------------------

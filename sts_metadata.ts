@@ -6438,12 +6438,13 @@ const ENDPOINTS: EndpointEntry[] = [
           'everything on these entries was written by this service when an ' +
           'agent attested, and none of it was verified.' },
   { path: '/admin-api/spiffe/agents/:action', group: 'Management API',
-    name: 'Ban, unban or forget an agent',
+    name: 'Ban, unban or forget an agent, or mint a join token',
     specs: ['openapi', 'spire-server-api'],
-    what: 'ban, unban and delete. The ban is ENFORCED at AttestAgent, which ' +
-          'is what keeps it from being a lie; delete is forgetting rather ' +
-          'than revoking, since the agent reappears the moment it attests ' +
-          'again.' },
+    what: 'ban, unban, delete and join-token. The ban is ENFORCED at ' +
+          'AttestAgent, which is what keeps it from being a lie; delete is ' +
+          'forgetting rather than revoking, since the agent reappears the ' +
+          'moment it attests again. join-token mints a join token for a ' +
+          'sidecar agent (#324), answered once, its alias `agentId`.' },
   { path: '/admin-api/spiffe/brokers', group: 'Management API',
     name: 'The SPIFFE Broker API\'s brokers',
     specs: ['openapi', 'spiffe-broker-api'],

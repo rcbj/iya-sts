@@ -81,6 +81,7 @@ locals {
 
     LDAP_MAX_ENTRIES          = tostring(var.ldap_max_entries)
     STS_APPLICATIONS_MAX      = tostring(var.applications_max)
+    STS_REALMS_MAX_COUNT      = tostring(var.realms_max_count)
     STS_RISK_UPLOAD_DIRECTORY = local.risk_upload_dir
     },
     # The public certificate, where there is one: both settings or neither.

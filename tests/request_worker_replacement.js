@@ -35,6 +35,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const pool = require('../common/request_pool');
+const config = require('../common/config');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for.
@@ -360,10 +361,19 @@ async function checkAFailedStartIsBounded(t, stubPath) {
             'starts in a row');
     t.equal(pool.workerTable().length, 0,
             'and nothing is left running or being forked');
-    t.equal(statsOf(PROTO).giveUpRetryMs, 0,
+    t.equal(statsOf(PROTO).giveUpRetryArmedMs, 0,
             'workers.giveUpRetryMs 0 arms no cool-down');
     t.equal(statsOf(PROTO).giveUpAttempt, 0,
             'and no attempt is counted');
+    // THE SETTING IS RUNTIME (#695): raised after the give-up, it arms the
+    // wait the give-up did not; put back to 0, it cancels it.
+    config.setOverride('workers.giveUpRetryMs', '60000');
+    t.equal(statsOf(PROTO).giveUpRetryArmedMs, 60000,
+            'raising workers.giveUpRetryMs after the give-up arms the wait');
+    config.setOverride('workers.giveUpRetryMs', '0');
+    t.equal(statsOf(PROTO).giveUpRetryArmedMs, 0,
+            'and setting it back to 0 cancels the wait');
+    config.clearOverride('workers.giveUpRetryMs');
     t.check(pids[0] && pool.workerTable().every(function (one) {
       return one.pid !== pids[0];
     }), 'the worker that said it could not start was ended rather than ' +
@@ -391,9 +401,14 @@ async function checkAPoolRetriesAfterGivingUp(t, stubPath) {
     process.env.STUB_MODE = 'ok';
     const waiting = statsOf(PROTO);
     t.equal(pool.workerTable().length, 0, 'nothing is left running');
-    t.check(waiting.giveUpRetryMs > 0 && waiting.giveUpRetryMs <= 500,
-            'the cool-down is the setting, and short enough to wait for',
-            String(waiting.giveUpRetryMs));
+    // THE ARMED LENGTH, NOT THE TIME LEFT (#695): the time left depends on
+    // when this line runs, which a loaded machine moves.
+    t.equal(waiting.giveUpRetryArmedMs, 400,
+            'the cool-down is the setting, and short enough to wait for');
+    t.check(waiting.giveUpRetryLeftMs >= 0 &&
+            waiting.giveUpRetryLeftMs <= 400,
+            'and the time left is within it',
+            String(waiting.giveUpRetryLeftMs));
     t.equal(waiting.giveUpProbing, false,
             'routing stays given up while the cool-down runs');
     t.check(await waitFor(function () {
@@ -410,14 +425,14 @@ async function checkAPoolRetriesAfterGivingUp(t, stubPath) {
   await withStubPool(stubPath, 1, 'fail', async function () {
     pool.fork(PROTO, 0);
     t.check(await waitFor(function () {
-      return statsOf(PROTO).giveUpAttempt === 1;
+      const now = statsOf(PROTO);
+      return now.giveUpAttempt === 1 && now.giveUpRetryArmedMs > 0;
     }, 10000), 'a try that fails arms the doubled wait',
                JSON.stringify(statsOf(PROTO)));
     const again = statsOf(PROTO);
-    t.check(again.gaveUp && again.giveUpRetryMs > 450 &&
-            again.giveUpRetryMs <= 650,
-            'the second wait is about twice the 300ms setting',
-            String(again.giveUpRetryMs));
+    t.check(again.gaveUp && again.giveUpRetryArmedMs === 600,
+            'the second wait is twice the 300ms setting',
+            String(again.giveUpRetryArmedMs));
     t.equal(pool.workerTable().length, 0,
             'and the pool is not forking while it waits');
   }, { STS_WORKERS_GIVE_UP_RETRY_MS: '300' });
