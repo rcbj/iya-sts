@@ -1408,7 +1408,9 @@ declares two things at `realms.map()` (`common/realms.js`):
 
 Tombstones expire with `persistence.mintedRetention` (0 keeps them with
 everything else): `purgeTombstones()`, at most every ten minutes from a
-successful minted flush, any node (`STS-STORE-0055` when it fails).
+successful minted flush, any node (`STS-STORE-0055` when it fails). In a
+service deployed as cells each tier has its own sweep since #1313 — see
+*Each tier is purged by a job of its own*, below.
 
 `tests/cluster_lww_stores.js` holds all three against a `pg` double both
 "nodes'" drivers share, and `persistence.js` itself over it; five mutants
@@ -3679,6 +3681,43 @@ A single-database store is untouched: no tier is named, the global job is
 off ("this store has no global tier"), and the one job purges the one
 database as it did. `tests/cell_tiers.js` and `tests/minted_persistence.js`
 (6c) hold it.
+
+**AN UNREADABLE GLOBAL REGISTRY SKIPS THE ORPHAN CHECK; IT DOES NOT FAIL THE
+RUN (#1313, rcbj, 2026-11-04).** Until then the cell's run was recorded
+failed (STS-STORE-0065) every five minutes of a global outage although its
+expired and stale rows had been deleted. The tiered driver now marks the
+refusal (`registryUnreadable`, no tier asked — still no deleting on a
+guess), `purgeExpired()` lists it under `skipped` rather than `failures`,
+and the job's run SUCCEEDS with `orphanCheck: 'skipped'`, the outage's
+skipped-run count (`orphanSkippedRuns`) and a `why` the scheduler writes on
+the run row (`cluster/CLAUDE.md`, *A success may say why it did less*).
+STS-STORE-0164 is logged once when the skipping starts and one info line
+when the check is made again, with how many runs skipped it — per tier, in
+the process that ran them (the no-per-event-failure-logs rule). A failure
+of the tier's own deleting still fails the run, its message naming the
+skip as well.
+
+**THE TOMBSTONE SWEEP IS PER TIER TOO (#1313).** `purgeTombstones()` was
+the last purge the tiered driver sent to both databases through
+`Promise.all`: a down global database lost the cell's count, and every
+cell's leader swept the shared global `sts_minted`. It takes
+`{ tier, limit }` now, with `purgeExpiredMinted()`'s rule — one database
+when a tier is named, the limit that database's, the two settled apart when
+none is (`removed`, `tier` on the refusal). `persistence.tombstone-purge`
+sweeps this cell's database in batches of 5000, at most 20 per run, with
+its own short-batch stop test (STS-STORE-0055); the new
+`persistence.tombstone-purge-global` is in `GLOBAL_JOBS` and sweeps the
+global one the same way (STS-STORE-0165). They are a pair of their own
+beside the expiry pair, not folded into it: another schedule (ten minutes
+against five), another rule (the retention alone, against three kinds and
+an orphan grace) and a failure code of their own since #46 — folding would
+change a cadence nobody asked to change and put two failures under one
+code. The postgres and portable statements take the limit as the expiry
+purge's do (ctid; MariaDB's `DELETE … LIMIT`). **A single database is
+asked as it always was**: the instant only, so the driver runs its one
+unbounded statement; bounding that too would be a one-line change, not made
+because nothing asked for it. `tests/minted_persistence.js` (6d) and
+`tests/cell_tiers.js` hold it.
 
 **TWO CHANGE LOGS, TWO FOLLOWERS.** `persistence_replication.js` is a factory
 since #98: the module's own exports are the instance for the process's main

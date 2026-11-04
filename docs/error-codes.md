@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5193** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5195** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 95
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 101
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 103
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
@@ -375,7 +375,7 @@ Raised from: persistence/.
 | `STS-STORE-0052` | A directory entry this process added was already in the store as a DIFFERENT entry another node created first; the stored entry was kept and this process's copy replaced by it. | none — logged |
 | `STS-STORE-0053` | A change to a directory entry was not written because another node deleted the entry after this process last saw it; the entry was removed here too. | none — logged |
 | `STS-STORE-0054` | A minted row (a session, a code, a token) was not written back because another node had already ended it and the store holds its tombstone; this process's copy was dropped. | none — logged |
-| `STS-STORE-0055` | Expired tombstones of ended minted rows could not be swept from the store. | none — logged |
+| `STS-STORE-0055` | Expired tombstones of ended minted rows could not be swept from the store (in a service deployed as cells, this cell's own database: the global tier's sweep is STS-STORE-0165, #1313). | none — logged |
 | `STS-STORE-0056` | A minted row another node had changed could not be merged with this process's copy (it would not open or the merge threw), so this process's copy was written as it was. | none — logged |
 | `STS-STORE-0057` | A process found its place among the change log's readers removed since it last reported: it had been declared gone, so changes it had not applied may have been trimmed. It should be restarted. | — |
 | `STS-STORE-0058` | A process could not report its position in the change log; the log is not trimmed past where it last said it was, and the report is retried after the next pull. | — |
@@ -422,6 +422,8 @@ Raised from: persistence/.
 | `STS-STORE-0161` | The one-time session index backfill skipped a stored sign-on session whose sealed body will not open, will not parse or yields no index columns; the walk finishes and writes its completion mark, that session is lost and its person signs in again. The last line gives the count. | — |
 | `STS-STORE-0162` | The persistence.minted-expiry-purge-global job, run by the one cell holding the global run claim, could not delete the global tier's expired, orphaned or stale minted rows (#695); the cell tier's purge is a job of its own and is not affected, a start skips the rows anyway, and the next run tries again. | none — logged, and the job run is recorded as failed |
 | `STS-STORE-0163` | The one-time session index backfill found stored sign-on sessions and could read NOT ONE of them (#1312): the key-encryption or data key this process holds is almost certainly not the store's. The completion mark is not written and the start fails, so the next start with the right key walks again; a backfill that reads some and skips others still finishes (STS-STORE-0161). | — |
+| `STS-STORE-0164` | In a service deployed as cells, the minted expiry purge could not read the global realm registry, so it skips its orphan check and deletes no row as an orphan (#1313); its expired and stale rows are still purged and the run is recorded as succeeded, saying why. Logged once when the skipping starts, and a line says when the check is made again. | none — logged once per outage; the run succeeds with a why |
+| `STS-STORE-0165` | The persistence.tombstone-purge-global job, run by the one cell holding the global run claim, could not sweep the global tier's expired tombstones of ended minted rows (#1313); the cell tier's sweep is a job of its own (STS-STORE-0055) and is not affected, and the next run tries again. | none — logged, and the job run is recorded as failed |
 
 ## STS-CLUSTER
 

@@ -947,28 +947,95 @@ async function body(t, dir) {
           'its own batches, without asking the cell',
           JSON.stringify([globalRun, globalExpired]));
   // The global database unreachable: the cell's job still purges and
-  // counts what it can; only the orphan kind, which needs the global realm
-  // registry, fails, and the run says so.
+  // counts what it can; the orphan kind, which needs the global realm
+  // registry, is SKIPPED rather than failed (#1313): no tier is asked, so
+  // nothing is deleted on a guess, and the run succeeds saying why.
+  // The lines the purge logs, caught at bunyan's prototype as
+  // cache_registry.js does, to hold "once per outage".
+  const bunyanProto = require('bunyan').createLogger({ name: 'probe' })
+    .constructor.prototype;
+  const ownWarn = bunyanProto.warn;
+  const ownInfo = bunyanProto.info;
+  const logged = [];
+  bunyanProto.warn = function (msg) {
+    logged.push(String(msg));
+    return ownWarn.apply(this, arguments);
+  };
+  bunyanProto.info = function (msg) {
+    logged.push(String(msg));
+    return ownInfo.apply(this, arguments);
+  };
+  const linesOf = function (re) {
+    log.debug("Entering linesOf().");
+    log.debug("Leaving linesOf().");
+    // The test's own ✓/✗ lines go through bunyan too, and may quote a
+    // logged line in their detail; only the service's lines are counted.
+    return logged.filter(function (line) {
+      return !/^\s*[\u2713\u2717]/.test(line) && re.test(line);
+    });
+  };
   globalDown = true;
   fill(cellDb, 4, 'down');
   fill(globalDb, 2, 'unreached');
   const downRun = await minted.purgeExpired(Date.now());
   t.check(downRun.expired === 4 && cellDb.rows.size === 0 &&
-          downRun.failures.length === 1 &&
-          downRun.failures[0].kind === 'orphan',
+          downRun.failures.length === 0 && downRun.skipped.length === 1 &&
+          downRun.skipped[0].kind === 'orphan' &&
+          /global realm registry could not be read/.test(
+            downRun.skipped[0].message),
           'AN UNREACHABLE GLOBAL DATABASE DOES NOT LOSE THE CELL\'S PURGE: ' +
-          'the cell\'s expired rows are deleted and counted, and only the ' +
-          'orphan kind (judged against the global registry) fails',
+          'the cell\'s expired rows are deleted and counted, and the orphan ' +
+          'kind (judged against the global registry) is SKIPPED, not failed',
           JSON.stringify(downRun));
+  fill(cellDb, 3, 'down2');
   let cellJobError = null;
+  const skipRun = await jobs[0].run().catch(function (e) {
+    log.debug("Caught in the cell job's run: " + ((e && e.message) || e));
+    cellJobError = e;
+  });
+  t.check(!cellJobError && !!skipRun && skipRun.orphanCheck === 'skipped' &&
+          skipRun.orphanSkippedRuns === 1 && skipRun.expired === 3 &&
+          /^The orphan check was skipped: the global realm registry could /
+            .test(skipRun.why) && /3 expired/.test(skipRun.why),
+          'THE CELL JOB\'S RUN SUCCEEDS with the orphan check skipped: the ' +
+          'result says so, counts the skipped run and carries a why the ' +
+          'scheduler writes on the row',
+          cellJobError ? cellJobError.message : JSON.stringify(skipRun));
+  const skipAgain = await jobs[0].run();
+  t.check(skipAgain.orphanCheck === 'skipped' &&
+          skipAgain.orphanSkippedRuns === 2 &&
+          linesOf(/STS-STORE-0164.*this cell's store/).length === 1,
+          'and the skip is logged ONCE per outage (STS-STORE-0164), however ' +
+          'many runs skip it; the count goes on in each run\'s result',
+          JSON.stringify([skipAgain.orphanSkippedRuns,
+                          linesOf(/STS-STORE-0164/)]));
+  t.check(linesOf(/STS-STORE-0065/).length === 0,
+          'no run of the cell job is logged as failed while only the ' +
+          'registry is unreadable', JSON.stringify(linesOf(/STS-STORE-0065/)));
+  // A failure of the cell's OWN delete is still a failure, skip or not.
+  const cellPurge = cellDb.purgeExpiredMinted;
+  cellDb.purgeExpiredMinted = function (kind, options) {
+    log.debug("Entering purgeExpiredMinted(), the cell's, which fails.");
+    if (kind === 'expired') {
+      log.debug("Leaving purgeExpiredMinted(). Refused.");
+      return Promise.reject(new Error('the cell database refused it'));
+    }
+    log.debug("Leaving purgeExpiredMinted().");
+    return cellPurge.call(this, kind, options);
+  };
   await jobs[0].run().catch(function (e) {
     log.debug("Caught in the cell job's run: " + ((e && e.message) || e));
     cellJobError = e;
   });
+  cellDb.purgeExpiredMinted = cellPurge;
   t.check(!!cellJobError && /this cell's store/.test(cellJobError.message) &&
-          /orphan/.test(cellJobError.message),
-          'the cell job\'s run is recorded failed, once, naming its tier ' +
-          'and the kind that failed',
+          /expired: [^;]*the cell database refused it/
+            .test(cellJobError.message) &&
+          /orphan check was skipped/.test(cellJobError.message) &&
+          !/orphan:/.test(cellJobError.message) &&
+          linesOf(/STS-STORE-0065/).length === 1,
+          'but a failure of the cell\'s own purge still fails the run, once, ' +
+          'under STS-STORE-0065, naming the kind that failed and the skip',
           cellJobError ? cellJobError.message : 'it succeeded');
   let globalJobError = null;
   await jobs[1].run().catch(function (e) {
@@ -982,15 +1049,202 @@ async function body(t, dir) {
           'and the global job\'s run fails on its own, its rows left for ' +
           'the next run', globalJobError ? globalJobError.message : 'ok');
   t.check(errorCodes.isKnown('STS-STORE-0162') &&
-          errorCodes.isKnown('STS-STORE-0065'),
+          errorCodes.isKnown('STS-STORE-0065') &&
+          errorCodes.isKnown('STS-STORE-0164'),
           'the global tier\'s failure has a code of its own, STS-STORE-0162, ' +
-          'beside the cell\'s STS-STORE-0065');
+          'beside the cell\'s STS-STORE-0065, and the skip STS-STORE-0164');
+  globalDown = false;
+  const madeAgain = await jobs[0].run();
+  t.check(madeAgain.orphanCheck === 'made' && !madeAgain.why &&
+          linesOf(/makes its orphan check again.*after 3 run\(s\)/)
+            .length === 1,
+          'once the registry can be read the check is made again, the run ' +
+          'carries no why, and one line says it recovered and how many ' +
+          'runs skipped it', JSON.stringify([madeAgain,
+            linesOf(/orphan check again/)]));
+  await jobs[0].run();
+  t.equal(linesOf(/orphan check again/).length, 1,
+          'and says it only once');
+  bunyanProto.warn = ownWarn;
+  bunyanProto.info = ownInfo;
   globalDown = false;
   const recovered = await minted.purgeExpired(Date.now(), 'global');
   t.check(recovered.expired === 2 && recovered.failures.length === 0 &&
           globalDb.rows.size === 0,
           'and once the global database answers, the next run finishes it',
           JSON.stringify(recovered));
+
+  // -------------------------------------------------------------------------
+  // 6d. THE TOMBSTONES, ONE TIER AT A TIME (#1313). The sweep was the last
+  //     purge sent to both databases through Promise.all: a down global
+  //     database lost the cell's count with it, and every cell's leader
+  //     swept the shared global table. Each tier is its own job now, in
+  //     its own batches; the global one is a GLOBAL_JOBS job (cell_tiers.js
+  //     asserts the claim). A single database is asked as it always was.
+  // -------------------------------------------------------------------------
+  t.log.info('=== the tombstone sweep, one tier at a time (#1313) ===');
+  const tombCalls = { global: [], cell: [] };
+  [['global', globalDb], ['cell', cellDb]].forEach(function (pair) {
+    pair[1].purgeTombstones = function (beforeMs, options) {
+      log.debug("Entering purgeTombstones(), the " + pair[0] + " tier.");
+      tombCalls[pair[0]].push({ beforeMs: beforeMs, args: arguments.length,
+                                options: options });
+      if (pair[0] === 'global' && globalDown) {
+        log.debug("Leaving purgeTombstones(). Unreachable.");
+        return Promise.reject(new Error('the global database is ' +
+                                        'unreachable'));
+      }
+      const limit = options && options.limit > 0 ? options.limit : Infinity;
+      let gone = 0;
+      pair[1].rows.forEach(function (row, k) {
+        if (gone < limit && row.body === 'TOMBSTONE' &&
+            Number(row.writtenAt) < beforeMs) {
+          pair[1].rows.delete(k);
+          gone++;
+        }
+      });
+      log.debug("Leaving purgeTombstones().");
+      return Promise.resolve(gone);
+    };
+  });
+  const bury = function (db, count, prefix) {
+    log.debug("Entering bury(). " + prefix);
+    for (let i = 0; i < count; i++) {
+      db.rows.set(prefix + '\u0000default\u0000' + i,
+                  { handle: 'test.expiring', realm: 'default',
+                    key: prefix + i, body: 'TOMBSTONE', writtenAt: 0,
+                    expiresAt: null });
+    }
+    log.debug("Leaving bury().");
+  };
+  // The jobs: registered at the first flush with the real scheduler (or
+  // here, with this fake, when none had been).
+  const tombJobs = [];
+  minted.ensureTombstoneJob({
+    register: function (spec) {
+      tombJobs.push(spec);
+    },
+    job: function () {
+      return null;
+    }
+  });
+  const tombJob = function (id) {
+    log.debug("Entering tombJob(). " + id);
+    const mine = tombJobs.filter(function (j) {
+      return j.id === id;
+    })[0];
+    log.debug("Leaving tombJob().");
+    return mine || require('../cluster/scheduler').job(id);
+  };
+  const cellTombs = tombJob('persistence.tombstone-purge');
+  const globalTombs = tombJob('persistence.tombstone-purge-global');
+  t.check(!!cellTombs && !!globalTombs &&
+          (globalTombs.kind || 'cluster') === 'cluster' &&
+          globalTombs.owner === 'persistence/persistence_minted.js' &&
+          globalTombs.everyMs() === cellTombs.everyMs() &&
+          /batches of 5000/.test(cellTombs.describe),
+          'the sweep is ONE cluster job per tier, on the same ten-minute ' +
+          'schedule it always had');
+  minted.reset();
+  minted.setDriver(both, 'postgres');
+  t.equal(globalTombs.off(), '',
+          'in a tiered store the global tier\'s sweep is on');
+  bury(cellDb, 5000 + 3, 'tc');
+  bury(globalDb, 5000 + 7, 'tg');
+  const cellSwept = await cellTombs.run();
+  t.check(cellSwept.removed === 5003 && cellSwept.more === false &&
+          cellDb.rows.size === 0 && globalDb.rows.size === 5007 &&
+          tombCalls.global.length === 0 && tombCalls.cell.length === 2 &&
+          tombCalls.cell.every(function (x) {
+            return x.options && x.options.limit === 5000 &&
+                   !('tier' in x.options);
+          }),
+          'THE CELL\'S SWEEP SWEEPS ONLY THE CELL: two batches of its own ' +
+          '5000 for 5003 tombstones, the stop test its own, the tier name ' +
+          'consumed by the tiered driver, and the global tier not asked',
+          JSON.stringify([cellSwept, tombCalls]));
+  const globalSwept = await globalTombs.run();
+  t.check(globalSwept.removed === 5007 && globalDb.rows.size === 0 &&
+          tombCalls.global.length === 2 && tombCalls.cell.length === 2 &&
+          tombCalls.global.every(function (x) {
+            return x.options && x.options.limit === 5000;
+          }),
+          'and the global tier\'s sweeps only the global database, in its ' +
+          'own batches', JSON.stringify([globalSwept, tombCalls.global]));
+  // A backlog larger than one run is left for the next.
+  bury(cellDb, 20 * 5000 + 1, 'tb');
+  const boundedSweep = await cellTombs.run();
+  t.check(boundedSweep.removed === 20 * 5000 && boundedSweep.more === true &&
+          cellDb.rows.size === 1,
+          'one run sweeps at most its bound and says more remain',
+          JSON.stringify(boundedSweep));
+  await cellTombs.run();
+  // The global database down: the cell's sweep does not notice; the
+  // global one fails on its own, under its own code.
+  globalDown = true;
+  bury(cellDb, 4, 'td');
+  bury(globalDb, 2, 'tu');
+  logged.length = 0;
+  bunyanProto.warn = function (msg) {
+    logged.push(String(msg));
+    return ownWarn.apply(this, arguments);
+  };
+  const downSweep = await cellTombs.run();
+  let globalSweepError = null;
+  await globalTombs.run().catch(function (e) {
+    log.debug("Caught in the global sweep: " + ((e && e.message) || e));
+    globalSweepError = e;
+  });
+  // Asked of both, as nothing batching does, the refusal still carries the
+  // cell's count.
+  bury(cellDb, 5, 'tboth');
+  let bothSweepError = null;
+  await both.purgeTombstones(Date.now()).catch(function (e) {
+    log.debug("Caught in the sweep of both: " + ((e && e.message) || e));
+    bothSweepError = e;
+  });
+  bunyanProto.warn = ownWarn;
+  t.check(downSweep.removed === 4 && cellDb.rows.size === 0,
+          'A DOWN GLOBAL DATABASE LOSES NO CELL COUNT: the cell\'s sweep ' +
+          'sweeps and counts its own', JSON.stringify(downSweep));
+  t.check(!!globalSweepError && globalDb.rows.size === 2 &&
+          linesOf(/STS-STORE-0165.*the global tier's store/).length === 1 &&
+          linesOf(/STS-STORE-0055/).length === 0,
+          'and the global tier\'s sweep fails on its own, once, under ' +
+          'STS-STORE-0165, its tombstones left for the next run',
+          JSON.stringify(linesOf(/STS-STORE-01|STS-STORE-0055/)));
+  t.check(!!bothSweepError && bothSweepError.removed === 5 &&
+          bothSweepError.tier === 'global' &&
+          /tombstone purge failed/.test(bothSweepError.message),
+          'asked of both with no tier, the tiered driver settles them apart: ' +
+          'the refusal names the failed tier and carries the cell\'s count',
+          bothSweepError ? bothSweepError.message : 'it succeeded');
+  globalDown = false;
+  t.equal((await globalTombs.run()).removed, 2,
+          'and once the global database answers, the next run sweeps it');
+  // A single database: the one statement it always ran — no tier, no
+  // limit — and the global sweep off.
+  const lone = fakeDriver('lone');
+  const loneCalls = [];
+  lone.purgeTombstones = function (beforeMs) {
+    log.debug("Entering purgeTombstones(), the only database.");
+    loneCalls.push({ beforeMs: beforeMs, args: arguments.length });
+    log.debug("Leaving purgeTombstones().");
+    return Promise.resolve(7);
+  };
+  minted.reset();
+  minted.setDriver(lone, 'postgres');
+  const loneSwept = await cellTombs.run();
+  t.check(loneSwept.removed === 7 && loneCalls.length === 1 &&
+          loneCalls[0].args === 1 && loneCalls[0].beforeMs <= Date.now(),
+          'A SINGLE DATABASE IS SWEPT AS BEFORE: one call, the instant only, ' +
+          'no tier and no limit', JSON.stringify([loneSwept, loneCalls]));
+  t.equal(globalTombs.off(), 'this store has no global tier',
+          'and the global tier\'s sweep is off there');
+  t.check(errorCodes.isKnown('STS-STORE-0165') &&
+          errorCodes.isKnown('STS-STORE-0055'),
+          'the global tier\'s sweep has a code of its own, STS-STORE-0165, ' +
+          'beside the cell\'s (and the only store\'s) STS-STORE-0055');
   minted.reset();
   minted.setDriver(driver, 'postgres');
 

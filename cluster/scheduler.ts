@@ -2181,7 +2181,9 @@ class Scheduler {
       return self.runInWorker(runner as RunRunner, target, job, running,
                               flight, inline);
     }).then(function (result: Json): Json {
-      return { ok: true, result: result };
+      // A body on a worker sent its `why` beside its summary (#1313).
+      return { ok: true, result: result,
+               why: flight.delegatedWhy || Scheduler.whyOf(result) };
     }, function (e: Json): Json {
       return { ok: false, error: e };
     });
@@ -2240,14 +2242,20 @@ class Scheduler {
       } else {
         final.state = 'succeeded';
         final.result = Scheduler.summaryOf(outcome.result);
+        // A SUCCESS THAT DID LESS THAN A WHOLE RUN SAYS SO (#1313): a body
+        // may answer a `why` beside its counts — the minted expiry purge
+        // skipping its orphan check while the global registry is down —
+        // and the row carries it, as a switch-off's does, with no code.
+        final.why = String(outcome.why || '');
       }
       // SWITCHED OFF WHILE IT RAN (#1305): not a failure — the body was
       // told it no longer owned the run and stopped where it could — but
       // the row says why it may have done less than a whole run.
-      if (flight.switchedOff && !final.why) {
+      if (flight.switchedOff && (!final.why || final.state === 'succeeded')) {
         final.why = 'It was switched off while it ran (' +
                     String(flight.switchedOff).replace(/\.+$/, '') +
-                    '), and its body was told it no longer owned the run.';
+                    '), and its body was told it no longer owned the run.' +
+                    (final.why ? ' ' + final.why : '');
       }
       final.errorCode = errorCode;
       self.writeRow(realmId, final);
@@ -2414,6 +2422,9 @@ class Scheduler {
         return inline();
       }
       if (a.ok) {
+        // The summary crossed the channel as text, so the body's `why`
+        // crossed beside it (#1313, runDelegated()).
+        flight.delegatedWhy = String(a.why || '');
         return a.result;
       }
       const e: Json = new Error(String(a.error || 'it failed'));
@@ -2749,7 +2760,8 @@ class Scheduler {
       // The leader keeps a summary of at most 500 characters; the same
       // reduction made here means what crosses the channel is text, which a
       // structured clone always carries.
-      return { ok: true, result: Scheduler.summaryOf(result) };
+      return { ok: true, result: Scheduler.summaryOf(result),
+               why: Scheduler.whyOf(result) };
     }, function (e: Json): Json {
       return { ok: false, error: String((e && e.message) || e) };
     }).then(function (answer: Json): Json {
@@ -2836,6 +2848,24 @@ class Scheduler {
    * @param result - what the job's run() returned
    * @returns the text, or null for no result
    */
+  /**
+   * The `why` a body that succeeded answered beside its result (#1313), or
+   * '' — a string member `why` of an object result, at most 500 characters.
+   * @param result - what the body resolved to
+   * @returns the text, or ''
+   */
+  static whyOf(result: Json): string {
+    helpers.log.debug("Entering Scheduler.whyOf().");
+    if (!result || typeof result !== 'object' ||
+        typeof result.why !== 'string' || !result.why) {
+      helpers.log.debug("Leaving Scheduler.whyOf(). None.");
+      return '';
+    }
+    const text = result.why;
+    helpers.log.debug("Leaving Scheduler.whyOf().");
+    return text.length > 500 ? text.slice(0, 497) + '...' : text;
+  }
+
   static summaryOf(result: Json): Json {
     helpers.log.debug("Entering Scheduler.summaryOf().");
     if (result === undefined || result === null) {
@@ -2952,7 +2982,8 @@ class Scheduler {
           });
         });
       });
-      outcome = { state: 'succeeded', errorCode: '', why: '',
+      outcome = { state: 'succeeded', errorCode: '',
+                  why: Scheduler.whyOf(result),
                   result: Scheduler.summaryOf(result) };
     } catch (e) {
       log.warn(errorCodes.tag('STS-SCHED-0015') + 'scheduler: the ' +
