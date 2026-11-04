@@ -88,8 +88,8 @@
     "text": "從此叢集的儲存區（在以單元方式部署的服務中，為此單元自己的數據庫）中，以每批 5000 筆、每次執行每種類別最多 20 批的方式，刪除任何啟動都不會再讀取的產生數據列：已超過其自身到期時間者、屬於已不再定義之領域者（寫入超過一小時），以及短期儲存區中沒有到期時間且早於 persistence.mintedRetention 的數據列。"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "b33891eaa8d4681d",
-    "text": "從此叢集的儲存區中刪除已結束之產生數據列中早於 persistence.mintedRetention 的墓碑（在以單元方式部署的服務中，為此單元自己的數據庫，每批 5000 筆、每次執行最多 20 批）。"
+    "en": "56aed2e95604a1b4",
+    "text": "從此叢集的儲存區中刪除已結束之產生數據列中早於 persistence.mintedRetention 的墓碑，每批 5000 筆、每次執行最多 20 批（在以單元方式部署的服務中，為此單元自己的數據庫）。"
   },
   "sched.jobs.risk.dataset-directory.title": {
     "en": "73f11f291cb6c096",

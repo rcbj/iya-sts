@@ -364,8 +364,8 @@
     "text": "Balayage des pierres tombales expirées"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "b33891eaa8d4681d",
-    "text": "Supprime du magasin de ce cluster les pierres tombales des lignes créées terminées plus anciennes que persistence.mintedRetention (dans un service déployé en cellules, la base de données propre à cette cellule, par lots de 5000 et au plus 20 lots par exécution)."
+    "en": "56aed2e95604a1b4",
+    "text": "Supprime du magasin de ce cluster les pierres tombales des lignes créées terminées plus anciennes que persistence.mintedRetention, par lots de 5000 et au plus 20 lots par exécution (dans un service déployé en cellules, la base de données propre à cette cellule)."
   },
   "sched.jobs.persistence.tombstone-purge-global.title": {
     "en": "15e3f193cfee5337",

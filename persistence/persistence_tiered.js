@@ -934,6 +934,10 @@ function create(options) {
         String((first && first.message) || first).replace(/\.+$/, '')));
       err.removed = removed;
       err.tier = failed.join(',');
+      // The database's own error, for a caller that writes its own
+      // sentence around it (#1315: the tombstone job's line said the
+      // failure twice, its words around these).
+      err.cause = first;
       throw err;
     });
   }

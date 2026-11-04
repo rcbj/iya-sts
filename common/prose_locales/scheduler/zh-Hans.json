@@ -364,8 +364,8 @@
     "text": "过期墓碑清理"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "b33891eaa8d4681d",
-    "text": "从此集群的存储中删除早于 persistence.mintedRetention 的已结束铸造行的墓碑（在以单元方式部署的服务中，为此单元自己的数据库，每批 5000 个、每次运行最多 20 批）。"
+    "en": "56aed2e95604a1b4",
+    "text": "从此集群的存储中删除早于 persistence.mintedRetention 的已结束铸造行的墓碑，每批 5000 个、每次运行最多 20 批（在以单元方式部署的服务中，为此单元自己的数据库）。"
   },
   "sched.jobs.persistence.tombstone-purge-global.title": {
     "en": "15e3f193cfee5337",

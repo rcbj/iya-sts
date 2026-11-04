@@ -3353,16 +3353,17 @@ let tombstoneJobRegistered = false;
 // cadence of a sweep nobody asked to change and mix two failures under
 // one code. The pair mirrors the expiry pair one for one instead.
 //
-// A SINGLE-DATABASE STORE IS UNTOUCHED: no tier and no limit is named, so
-// the driver runs the one unbounded statement it always ran, once a run,
-// and the global job is off ("this store has no global tier").
-// Bounding that statement too is a one-line change, not made here because
-// nothing asked for it.
+// A SINGLE-DATABASE STORE IS BOUNDED THE SAME WAY (#1315, rcbj's
+// decision): no tier is named, but the limit is, so its sweep is the same
+// batches of TOMBSTONE_BATCH, at most TOMBSTONE_MAX_BATCHES a run, and a
+// backlog larger than that is left for the next run rather than deleted in
+// one statement holding its locks for as long as that takes. Its global job
+// is still off ("this store has no global tier").
 
-// One tier's sweep, batch after batch until a batch comes back short or
-// the bound is reached. Resolves to `{ removed, more, error }`, as
-// purgeKind() does, with what the batches before a failure deleted still
-// counted.
+// One tier's sweep — or, with no tier, a single store's (#1315) — batch
+// after batch until a batch comes back short or the bound is reached.
+// Resolves to `{ removed, more, error }`, as purgeKind() does, with what the
+// batches before a failure deleted still counted.
 function sweepTombstoneTier(tier, beforeMs) {
   log.debug("Entering sweepTombstoneTier(). " + tier);
   let removed = 0;
@@ -3376,8 +3377,9 @@ function sweepTombstoneTier(tier, beforeMs) {
     batches++;
     log.debug("Leaving nextSweep().");
     return Promise.resolve().then(function () {
-      return driver.purgeTombstones(beforeMs, { tier: tier,
-                                                limit: TOMBSTONE_BATCH });
+      return driver.purgeTombstones(beforeMs, tier
+        ? { tier: tier, limit: TOMBSTONE_BATCH }
+        : { limit: TOMBSTONE_BATCH });
     }).then(function (count) {
       const n = Number(count) || 0;
       removed += n;
@@ -3398,24 +3400,17 @@ function sweepTombstoneTier(tier, beforeMs) {
  * Sweeps the tombstones older than the retention from one tier.
  * @param nowMs - the instant, in epoch milliseconds
  * @param tier - 'cell' or 'global' in a store deployed as cells, where it
- *   defaults to 'cell'; ignored by a single store, which is asked as it
- *   always was: one statement, no tier, no limit
+ *   defaults to 'cell'; ignored by a single store, which is swept in the
+ *   same bounded batches with no tier named (#1315)
  * @returns a promise of `{ removed, more, tier }`, rejected with the
  *   error (carrying `removed`) when the sweep failed
  */
 function purgeTombstonesOf(nowMs, tier) {
   log.debug("Entering purgeTombstonesOf().");
   const beforeMs = nowMs - retentionMs();
-  if (!(driver && driver.tiered)) {
-    log.debug("Leaving purgeTombstonesOf(). One database.");
-    return Promise.resolve().then(function () {
-      return driver.purgeTombstones(beforeMs);
-    }).then(function (removed) {
-      return { removed: Number(removed) || 0, more: false, tier: '' };
-    });
-  }
-  const which = tier === 'global' ? 'global' : 'cell';
-  log.debug("Leaving purgeTombstonesOf().");
+  const which = !(driver && driver.tiered) ? ''
+    : tier === 'global' ? 'global' : 'cell';
+  log.debug("Leaving purgeTombstonesOf(). " + (which || 'one database'));
   return sweepTombstoneTier(which, beforeMs).then(function (r) {
     if (r.error) {
       const err = /** @type {any} */ (r.error instanceof Error ? r.error
@@ -3443,9 +3438,12 @@ function runTombstonePurge(tier, code) {
     return { removed: result.removed, more: result.more };
   }, function (e) {
     const removed = Number(e && e.removed) || 0;
+    // The database's own error where the tiered driver wrapped it (#1315):
+    // its sentence and this one said the same failure twice.
+    const cause = (e && e.cause) || e;
     log.warn(errorCodes.tag(code) + 'persistence: sweeping expired ' +
              'tombstones from ' + where + ' failed: ' +
-             String((e && e.message) || e).replace(/\.+$/, '') +
+             String((cause && cause.message) || cause).replace(/\.+$/, '') +
              (removed ? ' (after sweeping ' + removed + ')' : '') + '.');
     throw e;
   });
@@ -3478,10 +3476,10 @@ function ensureTombstoneJob(schedulerInstance) {
       id: TOMBSTONE_JOB,
       title: 'Expired tombstones sweep',
       describe: 'Deletes the tombstones of ended minted rows older than ' +
-                'persistence.mintedRetention from this cluster\'s store ' +
-                '(in a service deployed as cells, this cell\'s own ' +
-                'database, in batches of ' + TOMBSTONE_BATCH + ' and at ' +
-                'most ' + TOMBSTONE_MAX_BATCHES + ' batches per run).',
+                'persistence.mintedRetention from this cluster\'s store, ' +
+                'in batches of ' + TOMBSTONE_BATCH + ' and at most ' +
+                TOMBSTONE_MAX_BATCHES + ' batches per run (in a service ' +
+                'deployed as cells, this cell\'s own database).',
       owner: 'persistence/persistence_minted.js',
       everyMs: function () {
         return TOMBSTONE_SWEEP_MS;

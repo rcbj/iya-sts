@@ -1080,7 +1080,8 @@ async function body(t, dir) {
   //     database lost the cell's count with it, and every cell's leader
   //     swept the shared global table. Each tier is its own job now, in
   //     its own batches; the global one is a GLOBAL_JOBS job (cell_tiers.js
-  //     asserts the claim). A single database is asked as it always was.
+  //     asserts the claim). A single database is batched the same way,
+  //     with no tier named (#1315).
   // -------------------------------------------------------------------------
   t.log.info('=== the tombstone sweep, one tier at a time (#1313) ===');
   const tombCalls = { global: [], cell: [] };
@@ -1209,9 +1210,12 @@ async function body(t, dir) {
           'sweeps and counts its own', JSON.stringify(downSweep));
   t.check(!!globalSweepError && globalDb.rows.size === 2 &&
           linesOf(/STS-STORE-0165.*the global tier's store/).length === 1 &&
+          linesOf(/STS-STORE-0165.*tombstone purge failed/).length === 0 &&
           linesOf(/STS-STORE-0055/).length === 0,
           'and the global tier\'s sweep fails on its own, once, under ' +
-          'STS-STORE-0165, its tombstones left for the next run',
+          'STS-STORE-0165, its tombstones left for the next run, and its ' +
+          'line says the failure once (the database\'s words, not the ' +
+          'tiered driver\'s sentence around them, #1315)',
           JSON.stringify(linesOf(/STS-STORE-01|STS-STORE-0055/)));
   t.check(!!bothSweepError && bothSweepError.removed === 5 &&
           bothSweepError.tier === 'global' &&
@@ -1222,23 +1226,38 @@ async function body(t, dir) {
   globalDown = false;
   t.equal((await globalTombs.run()).removed, 2,
           'and once the global database answers, the next run sweeps it');
-  // A single database: the one statement it always ran — no tier, no
-  // limit — and the global sweep off.
+  // A SINGLE DATABASE IS BOUNDED TOO (#1315): no tier is named, the limit
+  // is, and a backlog larger than a run's cap is left for the next run.
   const lone = fakeDriver('lone');
   const loneCalls = [];
-  lone.purgeTombstones = function (beforeMs) {
+  let loneBacklog = 5000 * 20 + 3;
+  lone.purgeTombstones = function (beforeMs, options) {
     log.debug("Entering purgeTombstones(), the only database.");
-    loneCalls.push({ beforeMs: beforeMs, args: arguments.length });
+    loneCalls.push({ beforeMs: beforeMs, options: options || null });
+    const limit = Number(options && options.limit) || loneBacklog;
+    const n = Math.min(limit, loneBacklog);
+    loneBacklog -= n;
     log.debug("Leaving purgeTombstones().");
-    return Promise.resolve(7);
+    return Promise.resolve(n);
   };
   minted.reset();
   minted.setDriver(lone, 'postgres');
   const loneSwept = await cellTombs.run();
-  t.check(loneSwept.removed === 7 && loneCalls.length === 1 &&
-          loneCalls[0].args === 1 && loneCalls[0].beforeMs <= Date.now(),
-          'A SINGLE DATABASE IS SWEPT AS BEFORE: one call, the instant only, ' +
-          'no tier and no limit', JSON.stringify([loneSwept, loneCalls]));
+  t.check(loneCalls.length === 20 && loneCalls.every(function (c) {
+    return c.options && c.options.limit === 5000 && !('tier' in c.options) &&
+           c.beforeMs <= Date.now();
+  }), 'A SINGLE DATABASE IS SWEPT IN BOUNDED BATCHES (#1315): 20 calls of ' +
+      '5000, no tier named', JSON.stringify(loneCalls.slice(0, 2)));
+  t.check(loneSwept.removed === 100000 && loneSwept.more === true &&
+          loneBacklog === 3,
+          'and a backlog larger than a run is left for the next one',
+          JSON.stringify([loneSwept, loneBacklog]));
+  loneCalls.length = 0;
+  const loneNext = await cellTombs.run();
+  t.check(loneNext.removed === 3 && loneNext.more === false &&
+          loneCalls.length === 1,
+          'the next run sweeps the rest in one short batch',
+          JSON.stringify([loneNext, loneCalls.length]));
   t.equal(globalTombs.off(), 'this store has no global tier',
           'and the global tier\'s sweep is off there');
   t.check(errorCodes.isKnown('STS-STORE-0165') &&

@@ -364,8 +364,8 @@
     "text": "過期墓碑清理"
   },
   "sched.jobs.persistence.tombstone-purge.describe": {
-    "en": "b33891eaa8d4681d",
-    "text": "從此叢集的儲存區中刪除已結束之產生資料列中早於 persistence.mintedRetention 的墓碑（在以單元方式部署的服務中，為此單元自己的資料庫，每批 5000 筆、每次執行最多 20 批）。"
+    "en": "56aed2e95604a1b4",
+    "text": "從此叢集的儲存區中刪除已結束之產生資料列中早於 persistence.mintedRetention 的墓碑，每批 5000 筆、每次執行最多 20 批（在以單元方式部署的服務中，為此單元自己的資料庫）。"
   },
   "sched.jobs.persistence.tombstone-purge-global.title": {
     "en": "15e3f193cfee5337",
