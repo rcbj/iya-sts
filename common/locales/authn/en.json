@@ -197,5 +197,7 @@
   "postLogin.subAttestation": "{name}, your post-quantum passkey was not attested with post-quantum algorithms. Register one that is.",
   "postLogin.failed": "Your device did not create the passkey ({error}).",
   "postLogin.failedHelp": "If your device or browser cannot make an ML-DSA passkey, register it on a separate security key that supports ML-DSA, or ask an administrator: where your passkey policy lets an administrator enrol a passkey for you, they can register one, and they can upgrade your passkey from the console.",
-  "postLogin.failedSkip": "You can also skip this for now."
+  "postLogin.failedSkip": "You can also skip this for now.",
+  "client.policy": "Privacy policy",
+  "client.tos": "Terms of service"
 }

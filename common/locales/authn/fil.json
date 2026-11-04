@@ -197,5 +197,7 @@
   "postLogin.subAttestation": "{name}, hindi na-attest gamit ang mga post-quantum na algorithm ang iyong post-quantum na passkey. Magrehistro ng isang na-attest nang ganoon.",
   "postLogin.failed": "Hindi nagawa ng iyong device ang passkey ({error}).",
   "postLogin.failedHelp": "Kung hindi kayang gumawa ng iyong device o browser ng ML-DSA na passkey, irehistro ito sa hiwalay na security key na sumusuporta sa ML-DSA, o lumapit sa isang administrator: kung pinapayagan ng iyong passkey policy ang isang administrator na magrehistro ng passkey para sa iyo, magagawa niya iyon, at maaari niyang i-upgrade ang iyong passkey mula sa console.",
-  "postLogin.failedSkip": "Puwede mo rin itong laktawan muna sa ngayon."
+  "postLogin.failedSkip": "Puwede mo rin itong laktawan muna sa ngayon.",
+  "client.policy": "Patakaran sa privacy",
+  "client.tos": "Mga tuntunin ng serbisyo"
 }

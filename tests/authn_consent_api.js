@@ -34,6 +34,14 @@
 //      access_denied` and records nothing.
 //   6. THE ID IS NEVER IN AN AUDIT ROW.
 //   7. THE OLD FORM POST IS GONE.
+//   8. WHO IS ASKING (#1300): a client that registered `logo_uri`,
+//      `policy_uri` and `tos_uri` is shown by them on the consent screen and
+//      the sign-in screen — `clientDisplay` in each view, and the page's
+//      `img-src` naming exactly the logo's origin (`'self' data:` and it,
+//      nothing wider) — and a client without them shows nothing and adds
+//      nothing; the frame draws the name, the logo with the name as its
+//      alternative text, and the two links in a new tab with
+//      `rel="noopener noreferrer"`.
 // ===========================================================================
 
 const fs = require('fs');
@@ -326,6 +334,98 @@ function childMain() {
     note(r.status === 404 && !!consentScreen.pendingFor(
       decodeURIComponent(at.split('consent=')[1])),
          '7. POST /oauth2/consent is gone', r.status);
+
+    // --- 8. who is asking (#1300) -------------------------------------------
+    const applications = require(ROOT_DIR + '/common/applications');
+    const pages = require(ROOT_DIR + '/authn/web_authn_pages');
+    const LOGO = 'https://cdn.ca.example:8443/img/logo.png';
+    const POLICY = 'https://ca.example/privacy?x=1&y=2';
+    const TOS = 'https://ca.example/terms';
+    applications.register('ca-logo-client', {
+      client_id: 'ca-logo-client', client_name: 'CA Logo <Co>',
+      redirect_uris: ['https://rp.ca.example/cb'], logo_uri: LOGO,
+      policy_uri: POLICY, tos_uri: TOS });
+    const imgSrc = function (headers) {
+      const m = /(?:^|;\s*)img-src ([^;]*)/.exec(
+        String(headers['content-security-policy'] || ''));
+      return m ? m[1].trim() : '(none)';
+    };
+    const shownOk = function (shown) {
+      return !!shown && shown.name === 'CA Logo <Co>' && shown.logo === LOGO &&
+        shown.policy === POLICY && shown.tos === TOS;
+    };
+    at = consentScreen.beginConsent({
+      returnTo: '/oauth2/authorize?client_id=ca-logo-client&state=s8',
+      username: 'ca-alice', clientId: 'ca-logo-client',
+      clientName: 'CA Logo <Co>', protocol: 'OAuth 2.0 / OIDC',
+      scopes: [{ scope: 'ca.read', permission: null }] });
+    opened = await screen.openConsent({ port: port, jar: alice, at: at });
+    note(opened.shell.status === 200 && opened.status === 200 &&
+         shownOk(opened.view && opened.view.clientDisplay),
+         '8a. the consent view carries the client\'s name, logo, policy and ' +
+         'terms', JSON.stringify(opened.view && opened.view.clientDisplay));
+    note(imgSrc(opened.shell.headers) ===
+           "'self' data: https://cdn.ca.example:8443" &&
+         /frame-ancestors 'none'/.test(String(
+           opened.shell.headers['content-security-policy'])),
+         '8b. the consent shell\'s img-src names exactly the logo\'s origin, ' +
+         'and frame-ancestors is kept',
+         opened.shell.headers['content-security-policy']);
+    const plain = await screen.openConsent({ port: port, jar: alice,
+                                             at: begin('ca-alice') });
+    note(plain.status === 200 && plain.view &&
+         plain.view.clientDisplay === null &&
+         imgSrc(plain.shell.headers) === "'self' data:",
+         '8c. a client with none of the three shows nothing and adds no ' +
+         'image origin',
+         JSON.stringify(plain.view && plain.view.clientDisplay) + ' ' +
+         imgSrc(plain.shell.headers));
+    const signInAt = authn.beginAuthentication({ returnTo: '/ca/after8',
+      protocol: 'OAuth 2.0 / OIDC', application: 'ca-logo-client' });
+    const login = await screen.open({ port: port, jar: {}, at: signInAt });
+    note(login.shell.status === 200 && login.status === 200 &&
+         shownOk(login.view && login.view.clientDisplay) &&
+         imgSrc(login.shell.headers) ===
+           "'self' data: https://cdn.ca.example:8443",
+         '8d. the sign-in screen\'s view carries them, and its shell\'s ' +
+         'img-src names exactly the logo\'s origin',
+         JSON.stringify(login.view && login.view.clientDisplay) + ' ' +
+         imgSrc(login.shell.headers));
+    const bare = await screen.open({ port: port, jar: {},
+      at: authn.beginAuthentication({ returnTo: '/ca/after8b',
+        protocol: 'ca-probe', application: '' }) });
+    note(bare.status === 200 && bare.view.clientDisplay === null &&
+         imgSrc(bare.shell.headers) === "'self' data:",
+         '8e. a sign-in for no client shows nothing and adds no image origin',
+         JSON.stringify(bare.view.clientDisplay) + ' ' +
+         imgSrc(bare.shell.headers));
+    const t = { html: function (key) {
+      return '[' + key + ']';
+    } };
+    const drawn = pages.frame('<h1>x</h1>', { t: t, view: login.view });
+    note(drawn.indexOf('<img id="client-logo" class="client-logo" src="' +
+           LOGO + '" alt="CA Logo &lt;Co&gt;" referrerpolicy="no-referrer">') >
+           0 &&
+         drawn.indexOf('id="client-name">CA Logo &lt;Co&gt;</div>') > 0 &&
+         drawn.indexOf('<a id="client-policy" href="' +
+           POLICY.replace('&', '&amp;') + '" target="_blank" ' +
+           'rel="noopener noreferrer">[authn.client.policy]</a>') > 0 &&
+         drawn.indexOf('<a id="client-tos" href="' + TOS + '" target=' +
+           '"_blank" rel="noopener noreferrer">[authn.client.tos]</a>') > 0,
+         '8f. the frame draws the name, the logo named by it, and the two ' +
+         'links in a new tab with rel="noopener noreferrer"', drawn);
+    const drawnConsent = pages.frame('<h1>x</h1>',
+                                     { t: t, view: opened.view });
+    note(drawnConsent.indexOf('[consent.client.policy]') > 0 &&
+         drawnConsent.indexOf('[consent.client.tos]') > 0 &&
+         pages.frame('<h1>x</h1>', { t: t, view: plain.view })
+           .indexOf('client-display') < 0,
+         '8g. on the consent screen in its own catalog\'s words, and nothing ' +
+         'for a client without them', drawnConsent);
+    note(pages.frame('<h1>x</h1>', { t: t, view: { clientDisplay: {
+      name: 'N', logo: 'javascript:alert(1)', policy: 'http://x.example/p',
+      tos: '' } } }).indexOf('client-display') < 0,
+         '8h. a view carrying anything but https draws nothing of it');
 
     server.close();
     fs.writeFileSync(OUT, JSON.stringify(findings));

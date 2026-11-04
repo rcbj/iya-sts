@@ -119,6 +119,13 @@ interface ServeOptions {
   // Directives beyond `script-src`, `connect-src` and `style-src`, or
   // replacing them; `frame-ancestors` and `base-uri` cannot be.
   csp?: Record<string, string>;
+  // THE ORIGINS OF IMAGES THE PAGE LOADS FROM ELSEWHERE (#1300), for
+  // `img-src` beside the base policy's `'self' data:`: a client's logo on
+  // the sign-in and consent screens, which the browser loads and this
+  // service never fetches. Only an https origin is named — anything else
+  // given (a path, a wildcard, a scheme alone, http) is dropped, so this
+  // door cannot widen `img-src` past the exact origins asked for.
+  images?: string[];
   // Compress the document where the request accepts it.
   compress?: boolean;
   // The realm's path prefix, for the rewrite a compressed body needs.
@@ -237,6 +244,36 @@ class ShellDocument {
   }
 
   /**
+   * The `img-src` a shell names other origins in (#1300): the base policy's
+   * `'self' data:` and each https origin given exactly, or nothing to add
+   * where none is usable.
+   *
+   * @param origins - the origins asked for
+   * @returns `{ 'img-src': … }`, or an empty object
+   */
+  static imageSources(origins?: string[]): Record<string, string> {
+    log.debug("Entering ShellDocument.imageSources().");
+    const named = (origins || []).filter(function (one: string): boolean {
+      let url: URL | null = null;
+      try {
+        url = new URL(String(one));
+      } catch (e) {
+        log.debug("Caught in ShellDocument.imageSources(): " +
+                  ((e && (e as Error).message) || e));
+        // Not a URL: named nowhere.
+        url = null;
+      }
+      return !!url && url.protocol === 'https:' && url.origin === one;
+    }).filter(function (one: string, at: number, all: string[]): boolean {
+      return all.indexOf(one) === at;
+    });
+    log.debug("Leaving ShellDocument.imageSources(). " + named.length);
+    // The base policy's own `img-src` (`common/app.js`), then the origins.
+    return named.length ? { 'img-src': ["'self'", 'data:'].concat(named)
+                                         .join(' ') } : {};
+  }
+
+  /**
    * The Content-Security-Policy a shell is sent with, through
    * `app.contentSecurityPolicy()`.
    *
@@ -251,7 +288,7 @@ class ShellDocument {
       'script-src': "'self'",
       'connect-src': ["'self'"].concat(asked.connect || []).join(' '),
       'style-src': "'self' 'unsafe-inline'"
-    }, asked.csp || {});
+    }, ShellDocument.imageSources(asked.images), asked.csp || {});
     const out = app.contentSecurityPolicy(directives);
     log.debug("Leaving ShellDocument.policy().");
     return out;

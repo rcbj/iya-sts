@@ -26168,6 +26168,14 @@ const CODES = [
       'and oauth2.allowImplicitTokenResponses is off, or OAuth 2.1 mode or ' +
       'a FAPI profile is on (#1296). A remove is never refused.',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0365',
+    summary: 'A logo_uri, policy_uri or tos_uri (oauthLogoUri, ' +
+      'oauthPolicyUri, oauthTosUri) is not an absolute https URL with a ' +
+      'host and no credentials: the sign-in and consent screens draw it ' +
+      '(OpenID Connect Registration section 2, #1300). At registration, ' +
+      'an RFC 7592 update, a create and an attribute write.',
+    spec: 'HTTP 400 {error: invalid_client_metadata} at registration; a ' +
+      'console or management API refusal otherwise' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

@@ -197,5 +197,7 @@
   "postLogin.subAttestation": "{name}, votre clé d’accès post-quantique n’a pas été attestée avec des algorithmes post-quantiques. Enregistrez-en une qui l’est.",
   "postLogin.failed": "Votre appareil n’a pas créé la clé d’accès ({error}).",
   "postLogin.failedHelp": "Si votre appareil ou votre navigateur ne peut pas créer de clé d’accès ML-DSA, enregistrez-la sur une clé de sécurité distincte prenant en charge ML-DSA, ou adressez-vous à un administrateur : là où votre politique de clés d’accès permet à un administrateur d’en enregistrer une pour vous, il peut le faire, et il peut mettre à niveau votre clé d’accès depuis la console.",
-  "postLogin.failedSkip": "Vous pouvez aussi ignorer cette étape pour l’instant."
+  "postLogin.failedSkip": "Vous pouvez aussi ignorer cette étape pour l’instant.",
+  "client.policy": "Politique de confidentialité",
+  "client.tos": "Conditions d’utilisation"
 }

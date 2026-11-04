@@ -3019,9 +3019,12 @@ const SPECS: Spec[] = [
               'request that names neither, require_auth_time (auth_time is ' +
               'carried whenever known), jwks_uri fetched, and ' +
               'initiate_login_uri launched from the user portal with iss ' +
-              'and login_hint (Core section 4). Not covered: policy_uri and ' +
-              'tos_uri are stored and returned but not drawn on the consent ' +
-              'screen.' },
+              'and login_hint (Core section 4); and (#1300) logo_uri, ' +
+              'policy_uri and tos_uri kept and shown on the sign-in and ' +
+              'consent screens, the logo loaded by the person\'s browser and ' +
+              'never fetched by this service. Not covered: a language-tagged ' +
+              'logo_uri, policy_uri or tos_uri (section 2.1) is kept as sent ' +
+              'and not drawn.' },
   { id: 'oidc-logout', name: 'OpenID Connect RP-Initiated Logout 1.0',
     where: 'OpenID Foundation',
     url: 'https://openid.net/specs/openid-connect-rpinitiated-1_0.html',

@@ -840,6 +840,52 @@ POST /oauth2/register
 → 201 client_id, client_secret, registration_access_token, registration_client_uri
 ```
 
+### What the sign-in and consent screens show about the client
+
+OpenID Connect Registration section 2 asks the server to show the person a
+client's logo, privacy policy and terms of service while they approve it. A
+registration's `logo_uri`, `policy_uri` and `tos_uri` are kept as the
+client's `oauthLogoUri`, `oauthPolicyUri` and `oauthTosUri`, returned in the
+registration response, and replaced by an RFC 7592 update (an update that
+leaves one out removes it). Each must be an absolute `https` URL with a host
+and no user name or password; anything else is refused with
+`invalid_client_metadata` (`STS-REG-0365`).
+
+For a client that has any of them, the sign-in screen, the steps after it
+(the second factors, the emailed code or link) and the consent screen show,
+at the top of the card:
+
+* the client's name (`client_name`);
+* its logo, with the name as the image's alternative text;
+* **Privacy policy** and **Terms of service** links, which open in a new tab.
+
+**Your browser loads the logo straight from the client's address; this
+service never fetches it.** The page's `Content-Security-Policy` adds exactly
+that one origin (scheme, host and port) to `img-src` for that page alone.
+A client without them shows none of this.
+
+```
+POST /oauth2/register
+{"client_name":"Endpoint Test Client","redirect_uris":["https://rp.example.com/callback"],
+ "logo_uri":"https://rp.example.com/logo.png",
+ "policy_uri":"https://rp.example.com/privacy",
+ "tos_uri":"https://rp.example.com/terms"}
+→ 201 … "logo_uri":"https://rp.example.com/logo.png", …
+
+GET /authn/login?authn=<id>
+→ 200, Content-Security-Policy: … img-src 'self' data: https://rp.example.com; …
+```
+
+**Console:** for a client you created yourself, set `oauthLogoUri`,
+`oauthPolicyUri` and `oauthTosUri` on its **Configuration** tab,
+**OAuth 2.0 / OpenID Connect** sub-tab, **Advanced view (every field)**, and
+click **Save OAuth 2.0 / OpenID Connect**. **API:**
+
+```bash
+api applications/set '{"application":"launch-rp",
+  "attribute":"oauthLogoUri","value":"https://rp.launch.example/logo.png"}'
+```
+
 A registered client appears in the Applications list like any other, marked
 as registered through RFC 7591. **Revoke the RFC 7591 registration**, on the
 application page's **Remove** tab (API `applications/revoke-registration`),

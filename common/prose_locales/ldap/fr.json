@@ -1087,6 +1087,18 @@
     "en": "bee89c2346a1fa39",
     "text": "L’ENDROIT OÙ UN TIERS DÉMARRE UNE CONNEXION À CE CLIENT : l’initiate_login_uri d’OpenID Connect Core section 4, vers lequel /launch/{app} et le portail utilisateur envoient une personne avec iss, login_hint et target_link_uri. https uniquement, sans fragment."
   },
+  "applications.schema.attributes.oauthLogoUri.what": {
+    "en": "64dae51f73c65edd",
+    "text": "LE LOGO DU CLIENT : le logo_uri de la section 2 d’OpenID Connect Registration, affiché sur les écrans de connexion et de consentement à côté du nom du client. Le navigateur de la personne le charge depuis cette adresse ; ce service ne le récupère jamais. Une URL https absolue."
+  },
+  "applications.schema.attributes.oauthPolicyUri.what": {
+    "en": "12d19dd73c561846",
+    "text": "LA POLITIQUE DE CONFIDENTIALITÉ DU CLIENT : le policy_uri de la section 2 d’OpenID Connect Registration, en lien depuis les écrans de connexion et de consentement. Une URL https absolue."
+  },
+  "applications.schema.attributes.oauthTosUri.what": {
+    "en": "523070281e913404",
+    "text": "LES CONDITIONS D’UTILISATION DU CLIENT : le tos_uri de la section 2 d’OpenID Connect Registration, en lien depuis les écrans de connexion et de consentement. Une URL https absolue."
+  },
   "applications.schema.attributes.oauthTokenExchangeRefreshToken.what": {
     "en": "25b5b04c83819b5b",
     "text": "INDIQUE SI UN ÉCHANGE DE JETON RFC 8693 EFFECTUÉ PAR CE CLIENT OBTIENT UN `refresh_token` À CÔTÉ DU JETON D’ACCÈS ÉCHANGÉ, en remplaçant oauth2.tokenExchangeRefreshToken pour lui seul. L’un de trois mots : `never`, `when-requested` (la valeur par défaut à l’échelle du service — le client le demande avec le `requested_token_type` de RFC 8693 section 2.1 et n’en obtient un que s’il l’a fait) ou `always`.\n\nIL EST LU SUR LE CLIENT QUI EFFECTUE L’ÉCHANGE et non sur l’audience, car le jeton d’actualisation est remis au client : c’est à cette partie qu’il revient de détenir, de révoquer et finalement d’utiliser cet identifiant. Le sujet SUR LEQUEL porte l’échange n’a, dans le cas intéressant, aucune entrée dans ce registre, puisque tout l’intérêt d’un échange est un subject_token venu d’ailleurs.\n\n**IL S’APPLIQUE AUX FAMILLES OAUTH 2.0 ET OPENID CONNECT ET À AUCUNE AUTRE, et contrairement à tous les autres attributs ici, cela est APPLIQUÉ.** Une entrée déclarée pour aucune des deux est refusée par les deux portes de la console et par l’API de gestion, qui nomment la famille à cocher d’abord — car une valeur ici est une politique concernant le point de terminaison de jeton, et une entrée qu’aucune requête de jeton ne peut jamais nommer la porterait en donnant l’impression qu’elle est en vigueur. Le bloc au-dessus de cette ligne le justifie. `ldapmodify` atteint cet attribut comme tous les autres et n’est pas vérifié.\n\nUNE VALEUR QUI N’EST PAS L’UN DES TROIS MOTS N’EST PAS UNE ERREUR À L’ÉCRITURE ET N’EST PAS SILENCIEUSE : settingFor() émet un avertissement nommant l’entrée, l’attribut et ce qu’il contient, et le paramètre à l’échelle du service décide — la même honnêteté à trois états que reçoit toute autre surcharge sur cette entrée."

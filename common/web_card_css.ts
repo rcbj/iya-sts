@@ -190,6 +190,20 @@ class WebCardCss {
     'accounts li span{color:#777}a.sts-accounts-another{color:#12107c}';
 
   /**
+   * WHO IS ASKING (#1300, `authn/web_client_display.ts`): the client's logo,
+   * name and documents at the head of a sign-in page or the consent screen
+   * — the logo bounded, since the client chose its size, and centred above
+   * the name.
+   */
+  static readonly CLIENT_CSS =
+    'div.client-display{text-align:center;margin:0 0 14px;padding-bottom:1' +
+    '0px;border-bottom:1px solid #eee}img.client-logo{display:block;margin' +
+    ':0 auto 6px;max-width:120px;max-height:64px}div.client-name{font-weig' +
+    'ht:600;font-size:.95em;overflow-wrap:anywhere}div.client-links{font-s' +
+    'ize:.75em;margin-top:4px}div.client-links a{color:#12107c;margin:0 4p' +
+    'x}';
+
+  /**
    * The stylesheet of the sign-in screen and the federation chooser, shared
    * with the consent screen; the wide card's rules after the chooser's.
    */
@@ -249,7 +263,9 @@ class WebCardCss {
     // The diagnostic pages' last (#583), scoped to `.diag` and `.tls`.
     WebCardCss.DIAG_CSS +
     // The account control's (#561), scoped to its own classes.
-    WebCardCss.ACCOUNTS_CSS;
+    WebCardCss.ACCOUNTS_CSS +
+    // Who is asking (#1300), scoped to its own classes.
+    WebCardCss.CLIENT_CSS;
 }
 
 export = WebCardCss;

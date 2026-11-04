@@ -2690,6 +2690,7 @@ metadata and honoured little of it. rcbj's answers:
 | A `jwks_uri` | FETCHED, under the outbound policy — the eighth outbound fetch in the root index |
 | `grant_types` / `response_types` | Enforced in every mode, for a registered client — and since #289 for every client that declares them |
 | `initiate_login_uri` | Validated, written to `oauthInitiateLoginUri`, and launched through `/launch/{app}` (#426) |
+| `logo_uri`, `policy_uri`, `tos_uri` | Validated (https), written to `oauthLogoUri`, `oauthPolicyUri`, `oauthTosUri`, and SHOWN on the sign-in and consent screens (#1300) |
 
 **`applications.oidcRegistrationProblem()` is the grammar**, asked at RFC
 7591 registration and RFC 7592 update beside the other metadata checks, in
@@ -2704,6 +2705,38 @@ required for the redirect grants (`0184`), the two signing algorithms
 `default_max_age` / `require_auth_time` / `default_acr_values` (`0187`) and
 an https `initiate_login_uri` (`0188`). `withRegistrationDefaults()` applies
 section 2's defaults, which are stored and returned (RFC 7591 section 3.2.1).
+
+**WHAT THE SCREENS SHOW ABOUT A CLIENT (#1300, 2026-11-04).** Section 2's
+`logo_uri` ("the server SHOULD display this image to the End-User during
+approval"), `policy_uri` and `tos_uri` were stored only inside
+`appRegistrationJson` and drawn nowhere, so the OpenID Foundation's
+`oidcc-registration-logo-uri`, `-policy-uri` and `-tos-uri` photographed a
+sign-in page with none of them. They are attributes now, written by
+registration and REPLACED by an RFC 7592 update (`initiate_login_uri`'s
+arrangement), editable in the console and `/admin-api`, and held at every
+door to an absolute https URL with a host and no credentials (`0365` —
+http would be mixed content on an https page, and a policy a network can
+rewrite). `applications.clientDisplayOf()` reads them back for a client_id
+and checks again; `Authn.clientDisplay()` puts the answer in the sign-in
+screen's, the steps', the emailed factor's and the consent screen's views as
+`clientDisplay`, and `authn/web_client_display.ts` draws it in the sign-in
+surface's frame. A language-tagged member (`logo_uri#ja`) is kept in the
+registration as sent and drawn nowhere. `client_uri` was already kept, as
+`appHomePageUrl`, and is not drawn on these screens.
+
+**THE BROWSER LOADS THE LOGO; THIS SERVICE NEVER DIALS IT**, so it is not a
+row in the root's index of dialled URLs. What it costs is one CSP source:
+each shell (`Authn.signInShell()`, `ConsentScreen.shell()`) is drawn per
+request for one pending sign-in or consent, and so for one client, which is
+what lets `ShellDocument`'s `images` add EXACTLY that logo's https origin
+to that page's `img-src` beside `'self' data:` — through
+`app.contentSecurityPolicy()`, so `frame-ancestors` and `base-uri` stay —
+rather than `img-src https:` on every sign-in page. `images` drops anything
+that is not an https origin, so the door cannot widen past what it is
+given. The `<img>` carries `referrerpolicy="no-referrer"`, so the client's
+image server is not told the pending sign-in's address. Tests:
+`tests/oidc_registration.js` (1a, 1b-iii, 2f) and
+`tests/authn_consent_api.js` (8).
 
 **ENFORCEMENT READS THE DECLARED LISTS, `oauthGrantType` AND
 `oauthResponseType`** (`declaredFlowsOf()`), for every client however they
@@ -2776,8 +2809,10 @@ spent when the response goes out. `launch/CLAUDE.md` argues it. The
 unsolicited ID Token some providers post straight to a `redirect_uri` is
 not offered: no `state`, no `nonce`.
 
-**NOT DONE**: `policy_uri` and `tos_uri` are not drawn on the consent
-screen. `tests/oidc_registration.js` holds the rest.
+**DONE SINCE #1300**: `logo_uri`, `policy_uri` and `tos_uri` are drawn on
+the sign-in and consent screens (*What the screens show about a client*,
+above); a language-tagged one is not. `tests/oidc_registration.js` holds the
+rest.
 
 ## DISCOVERY ON THE REALM MODEL, AND WEBFINGER (#119, 2026-09-22)
 

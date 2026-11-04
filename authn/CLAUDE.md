@@ -433,6 +433,26 @@ the sign-in screen by its script still tell the two apart.
 query value; and both operations answer only the browser whose session is
 the person asked — the shell's check, made again at each.
 
+## WHO IS ASKING: THE CLIENT'S NAME, LOGO AND DOCUMENTS (#1300, 2026-11-04)
+
+**Every view that knows the OAuth client carries `clientDisplay`** —
+`screenView()`, `mfaView()`, the emailed factor's `view()` and the consent
+screen's `consentView()`, each from `Authn.clientDisplay()` over
+`applications.clientDisplayOf()` — and **the surface's FRAME draws it**
+(`web_authn_pages.ts`'s `frame()`, `web_client_display.ts`), first in the
+card, so a page added later that puts `clientDisplay` in its view shows it
+with nothing else to write. The labels are `client.policy` and `client.tos`
+in BOTH the `authn` and the `consent` catalogs, because the consent screen
+loads only its own. Null — and nothing drawn — for a sign-in with no
+application, one that is not an OAuth client, and a client with none of
+`logo_uri`, `policy_uri` and `tos_uri`.
+
+**The logo's origin is in that page's `img-src` and nowhere else**:
+`signInShell()` is asked for one pending sign-in's application, so it can
+name the one origin (`ShellDocument`'s `images`). The argument, and why it is
+not `img-src https:`, is in `oauth-oidc/CLAUDE.md` (*What the screens show
+about a client*).
+
 ## WHAT AN AUTHENTICATED IDENTITY IS HERE (2026-09-14)
 
 **It is this module's session: an internal, protocol-independent record, and
