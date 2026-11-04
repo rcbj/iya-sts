@@ -497,6 +497,41 @@ async function present(driver, cssId, ms) {
 
 // The page as the module's evidence, uploaded to its first unfilled
 // placeholder — what a human tester's "upload an image" does.
+// THE PAGE'S PICTURES BEFORE ITS PHOTOGRAPH (#1293, 2026-11-04): the
+// dynamic registration's logo module photographed the sign-in screen before
+// the client's logo — fetched by the browser from the suite's own host, ~1 s
+// away — had arrived, so the evidence showed the name and no logo. Every
+// <img> on the page is waited for (loaded or failed) up to IMAGES_MS; one
+// that failed is logged, since the screenshot would show it missing.
+const IMAGES_MS = Number(process.env.CONFORMANCE_BROWSER_IMAGES_MS || 8000);
+async function imagesSettled(driver, id) {
+  log.debug("Entering imagesSettled().");
+  try {
+    const state = await driver.executeAsyncScript(
+      "var done = arguments[arguments.length - 1];" +
+      "var until = Date.now() + arguments[0];" +
+      "(function poll() {" +
+      "  var imgs = Array.prototype.slice.call(document.images || []);" +
+      "  var pending = imgs.filter(function (i) { return !i.complete; });" +
+      "  if (!pending.length || Date.now() > until) {" +
+      "    done({ total: imgs.length, pending: pending.length," +
+      "           broken: imgs.filter(function (i) {" +
+      "             return i.complete && !i.naturalWidth; })" +
+      "             .map(function (i) { return i.src; }) });" +
+      "  } else { setTimeout(poll, 100); }" +
+      "})();", IMAGES_MS);
+    if (state && (state.pending || (state.broken || []).length)) {
+      log.info("  images on the page for " + id + ": " + state.total +
+               ", still loading " + state.pending + ", broken " +
+               JSON.stringify(state.broken || []));
+    }
+  } catch (e) {
+    log.debug("Caught in imagesSettled(): " + ((e && e.message) || e));
+    // The script timed out or the page went: photograph what is there.
+  }
+  log.debug("Leaving imagesSettled().");
+}
+
 async function photograph(o, driver, id, why) {
   log.debug("Entering photograph(). " + why);
   const images = await o.suite("GET", "api/log/" + id + "/images");
@@ -508,6 +543,7 @@ async function photograph(o, driver, id, why) {
     log.debug("Leaving photograph(). No placeholder.");
     return false;
   }
+  await imagesSettled(driver, id);
   const png = await driver.takeScreenshot();
   // THE PAGE'S WORDS BESIDE ITS PICTURE (#1293, 2026-11-04): a reviewer
   // reads the screenshot, so its sentence is part of the certification; the
