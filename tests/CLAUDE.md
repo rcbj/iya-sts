@@ -2431,7 +2431,19 @@ certification differs:
 
 * **One kept realm** (`oidf-cert`), product mode unless `--development`,
   post-quantum signing off; one alias (`iya-sts`), the plans one at a time,
-  because two plans under one alias interfere.
+  because two plans under one alias interfere. The realm waives RFC 9700
+  section 2.1.2 and lets a self-registering client enable the four token
+  response types (#1295, #1296), which the Implicit, Hybrid and Dynamic OP
+  profiles need. Its MEDIUM risk threshold is 8.00, and the run's person has
+  an authenticator app enrolled through the account API, which
+  `conformance_browser.js` uses to answer a risk step-up at `/authn/totp`
+  (rcbj's choice over switching risk off; a run is hundreds of sign-ins by one
+  new person, exactly what the model flags).
+* **A browser visit has a deadline** (`CONFORMANCE_BROWSER_VISIT_MS`, three
+  minutes): one hung WebDriver call once held the browser's lock and lost a
+  whole run. A suite page that stalls logs the browser console, which is how
+  #1297 (the OP iframe missing Session Management's single postMessage) was
+  found.
 * **A report, not a verdict**: certification reads the module result, not our
   ledger, so every module that did not PASS is listed and a plan with a FAILED
   or INTERRUPTED module is marked not certifiable. Nothing is published.
