@@ -203,13 +203,25 @@ try {
 } catch (e) {
   log.debug("Caught reading the suite's certificate: " +
             ((e && e.message) || e));
-  log.warn("The conformance suite's certificate is not in the shared " +
-           "directory, so its API is called without verifying it.");
+  if (!process.env.CONFORMANCE_SUITE_TOKEN) {
+    log.warn("The conformance suite's certificate is not in the shared " +
+             "directory, so its API is called without verifying it.");
+  }
   suiteCa = null;
 }
+// THE HOSTED SUITE (#1293): www.certification.openid.net answers with a
+// publicly trusted certificate and wants an API token, made by the person
+// who owns the plans in the suite's own UI. The token is only ever PASSED
+// IN (`CONFORMANCE_SUITE_TOKEN`, which tests/tools/oidf_certification.js
+// sets from its --token-file); nothing in this repository holds one. With a
+// token and no local certificate the calls verify against the system's
+// roots: the unverified fallback is for a suite started by hand, never for
+// one on the internet.
+const SUITE_TOKEN = String(process.env.CONFORMANCE_SUITE_TOKEN || "").trim();
 const SUITE_AGENT = new https.Agent(suiteCa
   ? { ca: suiteCa, keepAlive: true }
-  : { rejectUnauthorized: false, keepAlive: true });
+  : SUITE_TOKEN ? { keepAlive: true }
+                : { rejectUnauthorized: false, keepAlive: true });
 
 // `contentType`, when given, sends `body` as it is under that type (an image
 // uploaded as a data: URL is text/plain); otherwise a body is JSON.
@@ -220,8 +232,10 @@ function suite(method, path, body, contentType) {
   return new Promise(function (resolve, reject) {
     const req = https.request(new URL(SUITE + path), {
       method: method, agent: SUITE_AGENT,
-      headers: body ? { "Content-Type": contentType || "application/json",
-                        "Content-Length": Buffer.byteLength(payload) } : {}
+      headers: Object.assign(
+        body ? { "Content-Type": contentType || "application/json",
+                 "Content-Length": Buffer.byteLength(payload) } : {},
+        SUITE_TOKEN ? { Authorization: "Bearer " + SUITE_TOKEN } : {})
     }, function (res) {
       let raw = "";
       res.setEncoding("utf8");
@@ -726,7 +740,101 @@ function selected(key) {
          });
 }
 
+// ---------------------------------------------------------------------------
+// The states a scheduler run ends in (`cluster/scheduler.ts`'s FINAL).
+const FINAL_RUN_STATES = ["succeeded", "failed", "abandoned"];
+
+// ---------------------------------------------------------------------------
+// THE OP'S OPERATOR (moved here from sts_oidcc_conformance.js for #1293,
+// whose tests/tools/oidf_certification.js drives the same module on the
+// hosted suite). oidcc-server-rotate-keys is not started by the suite: it
+// reads the JWKS, asks the operator to rotate the OP's signing keys, and
+// compares once it is started. So the driver rotates the realm's keys
+// (`/admin-api/keys/rotate`, the console's Rotate), waits for the scheduler
+// run it queues, and starts the module.
+// ---------------------------------------------------------------------------
+// The kids of the realm's signing keys its JWKS publishes now: those with
+// `use` "sig" or no `use`, which is what the module compares.
+async function signingKids(api) {
+  log.debug("Entering signingKids().");
+  const base = api.replace(/\/admin-api\/?$/, "");
+  const discovery = await send(base +
+                                    "/.well-known/openid-configuration");
+  const jwksUri = discovery.body && discovery.body.jwks_uri;
+  const jwks = jwksUri ? await send(jwksUri) : null;
+  const keys = (jwks && jwks.body && jwks.body.keys) || [];
+  const out = keys.filter(function (k) {
+    return k && k.kid && (!k.use || k.use === "sig");
+  }).map(function (k) {
+    return String(k.kid);
+  });
+  log.debug("Leaving signingKids(). " + out.length);
+  return out;
+}
+
+function keyRotationOperator(api) {
+  log.debug("Entering keyRotationOperator().");
+  const started = {};
+  // Attempts per module. A step that throws (a request the service did not
+  // answer — the memory mode's event loop has been seen blocked for six
+  // seconds under the plans running side by side) is tried again on the
+  // next poll, because runModule() calls this on every poll while the module
+  // is CONFIGURED. It was marked started BEFORE the rotation until
+  // 2026-10-08, so one failed request left the module never started and the
+  // plan reported it unexplained. A repeated rotation is harmless: the
+  // module compares the JWKS before and after whatever rotations ran.
+  const attempts = {};
+  log.debug("Leaving keyRotationOperator().");
+  return async function (id, info) {
+    log.debug("Entering the OP operator. " + id);
+    if (started[id] || !info || info.status !== "CONFIGURED" ||
+        info.testName !== "oidcc-server-rotate-keys" ||
+        (attempts[id] || 0) >= 5) {
+      log.debug("Leaving the OP operator. Nothing to do.");
+      return;
+    }
+    attempts[id] = (attempts[id] || 0) + 1;
+    const before = await signingKids(api);
+    const rotated = await send(api + "/keys/rotate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: "{}" });
+    assert.strictEqual(rotated.status, 202, "the key rotation: " +
+                       rotated.raw.slice(0, 300));
+    // THE RUN'S OWN STATE, then a NEW signing key in the published JWKS.
+    // This matched a final-looking word anywhere in the answer until
+    // 2026-10-26, and t-post-cl's module was started at 16:36:36.703 while
+    // that realm's rotation went on writing generations until 16:36:37.159:
+    // the module read a JWKS with no new key and failed
+    // VerifyNewJwksHasNewSigningKey with "No new keys". The JWKS is the
+    // module's own test, so it is the one this waits on.
+    for (let i = 0; i < 30; i++) {
+      const run = await send(api + "/scheduler?run=" +
+                                  encodeURIComponent(rotated.body.runId));
+      const detail = (run.body && run.body.detail) || {};
+      if (FINAL_RUN_STATES.indexOf(String(detail.state || "")) >= 0) {
+        break;
+      }
+      await waitMs(1000);
+    }
+    for (let i = 0; i < 30; i++) {
+      const now = await signingKids(api);
+      if (now.some(function (kid) {
+        return before.indexOf(kid) < 0;
+      })) {
+        break;
+      }
+      await waitMs(1000);
+    }
+    const r = await suite("POST", "api/runner/" + id);
+    started[id] = true;
+    log.info("  rotated the realm's signing keys and started the module: " +
+             r.status);
+    log.debug("Leaving the OP operator.");
+  };
+}
+
 module.exports = {
+  keyRotationOperator: keyRotationOperator,
   SUITE: SUITE,
   SELF_HOST: SELF_HOST,
   EXTENSION_METADATA: EXTENSION_METADATA,

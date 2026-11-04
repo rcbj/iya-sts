@@ -66,7 +66,7 @@
 const fs = require("fs");
 const nodeCrypto = require("crypto");
 const bunyan = require("bunyan");
-const { Builder, By } = require("selenium-webdriver");
+const { Builder, By, logging } = require("selenium-webdriver");
 const chrome = require("selenium-webdriver/chrome");
 const browserFlags = require("./browser_flags.js");
 
@@ -119,6 +119,12 @@ async function browser(serviceBase) {
     return shared;
   }
   const options = new chrome.Options();
+  // THE PAGES' CONSOLE, KEPT (#1293): a suite page whose own script never
+  // moves on (Session Management's session_verify, whose RP iframe logs
+  // every step) is otherwise a bare timeout. Read only by consoleOf().
+  const prefs = new logging.Preferences();
+  prefs.setLevel(logging.Type.BROWSER, logging.Level.ALL);
+  options.setLoggingPrefs(prefs);
   options.addArguments("--headless=new", "--no-sandbox",
                        "--disable-dev-shm-usage", "--window-size=1100,900");
   browserFlags.addBrowserAccessFlags(options, serviceBase);
@@ -159,9 +165,47 @@ async function quit() {
 }
 
 // One visit at a time, whatever plans run side by side.
+// A VISIT HAS A DEADLINE (#1293, 2026-11-03). On the hosted suite one visit
+// never returned — a WebDriver call that hung, with Chrome idle — and since
+// visits hold one lock, every module after it timed out too: a 27-plan run
+// lost to one stuck call. Past the deadline the visit is abandoned and its
+// Chrome thrown away (closed in the background, never awaited, because the
+// call that hung may hang the close as well); the next visit opens a fresh
+// one. The module whose visit it was times out on its own and is re-run.
+const VISIT_MS = Number(process.env.CONFORMANCE_BROWSER_VISIT_MS) || 180000;
+
+function withDeadline(work) {
+  log.debug("Entering withDeadline().");
+  let timer = null;
+  const deadline = new Promise(function (resolve) {
+    timer = setTimeout(function () {
+      log.warn("A browser visit ran past " + VISIT_MS + " ms; abandoning " +
+               "it and replacing the browser.");
+      const was = shared;
+      shared = null;
+      if (was) {
+        was.quit().catch(function (e) {
+          log.debug("Caught closing a stuck browser: " +
+                    ((e && e.message) || e));
+          // Gone or stuck: either way it is no longer the browser.
+        });
+      }
+      resolve(null);
+    }, VISIT_MS);
+  });
+  const done = Promise.resolve().then(work);
+  log.debug("Leaving withDeadline().");
+  return Promise.race([done, deadline]).finally(function () {
+    clearTimeout(timer);
+  });
+}
+
 function serially(work) {
   log.debug("Entering serially().");
-  const run = queue.then(work, work);
+  const guarded = function () {
+    return withDeadline(work);
+  };
+  const run = queue.then(guarded, guarded);
   queue = run.then(function () {
     return null;
   }, function () {
@@ -363,6 +407,24 @@ async function currentUrl(driver) {
 }
 
 // Waits for the address to change from `from`, or for `ms`.
+// The browser console since the last read, every frame's, logged at info:
+// for a suite page that never moved on.
+async function consoleOf(driver, where) {
+  log.debug("Entering consoleOf().");
+  try {
+    const entries = await driver.manage().logs().get(logging.Type.BROWSER);
+    log.info("The browser console on " + where + " (" + entries.length +
+             " entries):");
+    entries.forEach(function (e) {
+      log.info("  console " + e.level.name + ": " + e.message);
+    });
+  } catch (e) {
+    log.debug("Caught in consoleOf(): " + ((e && e.message) || e));
+    // A driver that keeps no log: nothing to add to the timeout.
+  }
+  log.debug("Leaving consoleOf().");
+}
+
 async function moved(driver, from, ms) {
   log.debug("Entering moved().");
   const end = Date.now() + ms;
@@ -478,6 +540,67 @@ async function visitOne(o, id, moduleName, one, jars, action) {
 
 // Where the browser goes from the page it is on, as a person would, until
 // it reaches the suite's callback or a page that stays.
+// THE PERSON'S AUTHENTICATOR APP (#1293). Where a driver gives the person a
+// TOTP secret (`o.totpSecret`, base32, enrolled through the account API), a
+// risk step-up to /authn/totp is answered with the current code (RFC 6238,
+// the SHA-1 / 6-digit / 30 s defaults), so a sign-in the risk model scores
+// MEDIUM completes as a person with an authenticator would complete it,
+// instead of hanging the module. A code is never sent twice: the service
+// refuses a replayed time step, so a second step-up inside the same 30 s
+// waits for the next step.
+let lastTotpStep = -1;
+
+function base32Bytes(text) {
+  log.debug("Entering base32Bytes().");
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  const out = [];
+  let bits = 0;
+  let value = 0;
+  String(text || "").toUpperCase().replace(/[^A-Z2-7]/g, "").split("")
+    .forEach(function (ch) {
+      value = (value << 5) | alphabet.indexOf(ch);
+      bits += 5;
+      if (bits >= 8) {
+        out.push((value >>> (bits - 8)) & 255);
+        bits -= 8;
+      }
+    });
+  log.debug("Leaving base32Bytes().");
+  return Buffer.from(out);
+}
+
+function totpAt(secret, step) {
+  log.debug("Entering totpAt().");
+  const message = Buffer.alloc(8);
+  message.writeBigUInt64BE(BigInt(step));
+  const digest = nodeCrypto.createHmac("sha1", base32Bytes(secret))
+    .update(message).digest();
+  const offset = digest[digest.length - 1] & 0x0f;
+  const binary = ((digest[offset] & 0x7f) << 24) |
+                 ((digest[offset + 1] & 0xff) << 16) |
+                 ((digest[offset + 2] & 0xff) << 8) |
+                 (digest[offset + 3] & 0xff);
+  log.debug("Leaving totpAt().");
+  return String(binary % 1000000).padStart(6, "0");
+}
+
+// The code for a time step not used before, waiting for the next step when
+// this one was.
+async function freshTotp(secret) {
+  log.debug("Entering freshTotp().");
+  let step = Math.floor(Date.now() / 30000);
+  if (step <= lastTotpStep) {
+    const wait = (lastTotpStep + 1) * 30000 - Date.now() + 500;
+    log.info("  waiting " + Math.ceil(wait / 1000) + " s for a fresh " +
+             "TOTP time step");
+    await waitMs(Math.max(0, wait));
+    step = Math.floor(Date.now() / 30000);
+  }
+  lastTotpStep = step;
+  log.debug("Leaving freshTotp().");
+  return totpAt(secret, step);
+}
+
 async function follow(o, driver, id, action, suiteBase) {
   log.debug("Entering follow(). " + action);
   let signedIn = false;
@@ -502,6 +625,9 @@ async function follow(o, driver, id, action, suiteBase) {
       if (await moved(driver, here, 20000)) {
         continue;
       }
+      // Stalled on the suite's own page: what its script said is the only
+      // record of why (#1293).
+      await consoleOf(driver, here);
       break;
     }
     if (/\/authn\/login$/.test(path)) {
@@ -541,6 +667,17 @@ async function follow(o, driver, id, action, suiteBase) {
       }
       await moved(driver, here, 15000);
       continue;
+    }
+    // A RISK STEP-UP (#1293): the person's authenticator answers it.
+    if (/\/authn\/totp$/.test(path) && o.totpSecret) {
+      const box = await present(driver, "code", 10000);
+      if (box) {
+        await box.sendKeys(await freshTotp(o.totpSecret));
+        await (await driver.findElement(By.id("totp-submit"))).click();
+        log.info("  answered a TOTP step-up for " + id);
+        await moved(driver, here, 15000);
+        continue;
+      }
     }
     // AN ADMINISTRATOR'S OFFERED SECOND FACTOR (#246), a page of the
     // sign-in surface since #572: Ignore, as a person who only wants to
@@ -659,7 +796,17 @@ async function signOutOne(o, id, moduleName, base, jars, options) {
   log.debug("Leaving signOutOne().");
 }
 
+// A time step a driver has spent elsewhere (the enrolment's confirming code),
+// so the first step-up does not reuse it.
+function usedTotpStep(step) {
+  log.debug("Entering usedTotpStep().");
+  lastTotpStep = Math.max(lastTotpStep, Number(step));
+  log.debug("Leaving usedTotpStep().");
+}
+
 module.exports = {
   person: person,
-  quit: quit
+  quit: quit,
+  totpAt: totpAt,
+  usedTotpStep: usedTotpStep
 };
