@@ -15346,6 +15346,15 @@ const CODES = [
       'characters of normalised DN), and the flush would refuse it after ' +
       'it was in memory.',
     spec: '' },
+  // #1306 (2026-11-04): the federated group question, asked of the store.
+  { code: 'STS-LDAP-0205',
+    summary: 'In a windowed directory, the store could not answer whether a ' +
+      'group name from a federation partner\'s assertion is named by a ' +
+      'granting attribute (a role\'s member group, an owner, a delegation ' +
+      'or subject group). The name is treated as granting and not applied ' +
+      '(audited STS-FED-0164); the sign-in stands. Logged once when the ' +
+      'store stops answering, and again when it answers.',
+    spec: 'none (the audit row of the ignored group carries STS-FED-0164)' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +

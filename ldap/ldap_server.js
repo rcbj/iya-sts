@@ -8286,9 +8286,10 @@ function autoCreateUser(detail) {
       // SAID ON THE SIGN-IN'S OWN RECORD (#358 with #396): the federation
       // object is the one `federation_sp.ts` handed `authn.startSession()`,
       // so its refusal page can name this code and the missing attributes
-      // rather than a generic "the directory declined" (STS-FED-0090). A
-      // directory reached in another process cannot write here, and that
-      // sign-in falls back to the generic answer.
+      // rather than a generic "the directory declined" (STS-FED-0090). This
+      // function is the funnel's synchronous observer in the process that
+      // serves the sign-in, handed that object by reference, so the code
+      // always gets back (#1306; `federation/CLAUDE.md`).
       info.federation.refusedWith = 'STS-FED-0158';
       info.federation.refusedMissing = incomplete.missing.slice(0);
       log.debug('Leaving autoCreateUser(). The attribute policy refused the ' +
@@ -25032,20 +25033,28 @@ function stampFederationRelationship(dn, fedId) {
 //   * a group an XACML policy of this realm names as an attribute value,
 //     since the access gate hands a person's groups to the PDP by cn and DN.
 //
-// The walk is over resident entries, `groupsOwnedBy()`'s reach. A register
-// that cannot be read answers "it grants": not knowing is not permission.
+// What this process holds is walked: the resident entries, `groupsOwnedBy()`'s
+// reach, which outside a window is the whole directory and inside one sees
+// this process's own writes before they are flushed. A WINDOWED process also
+// asks the store (`federatedGroupAuthorityAsync()`, #1306). A register that
+// cannot be read answers "it grants": not knowing is not permission.
 // Returns the reason, or '' when the name grants nothing.
-const GRANTING_ATTRIBUTES = ['rolemembergroup', 'owner', 'appowner',
-  'stsserviceaccountowner', 'appdelegationsubjectgroup', 'fedsubjectgroup'];
+const GRANTING_ATTRIBUTES = require('../persistence/directory_codec')
+  .GRANTING_ATTRIBUTES;
 
 function federatedGroupAuthority(name, dn) {
   log.debug('Entering federatedGroupAuthority().');
+  const codec = require('../persistence/directory_codec');
   const cn = String(name == null ? '' : name).trim().toLowerCase();
   const dnKey = dn ? normalizeDn(String(dn)) : '';
+  // The codec's reading of a value, so the walk here and the store's
+  // `grantinggroup` key are one rule: a value names the group by its cn,
+  // or, written as a DN, by the group's DN.
   const matches = function (value) {
-    const text = String(value == null ? '' : value).trim();
-    return text.toLowerCase() === cn ||
-           (!!dnKey && DN_SHAPED.test(text) && normalizeDn(text) === dnKey);
+    const keys = codec.grantingKeysOf(value);
+    return keys.indexOf(cn) >= 0 ||
+           (!!dnKey && DN_SHAPED.test(String(value == null ? '' : value)
+             .trim()) && keys.indexOf(dnKey) >= 0);
   };
   try {
     const settings = require('../common/ownership').GRANTING_GROUP_SETTINGS;
@@ -25061,15 +25070,7 @@ function federatedGroupAuthority(name, dn) {
       if (found) {
         return;
       }
-      GRANTING_ATTRIBUTES.some(function (attribute) {
-        const values = (stored.attributes && stored.attributes[attribute]) ||
-                       [];
-        if (values.some(matches)) {
-          found = attribute + ' of ' + stored.dn;
-          return true;
-        }
-        return false;
-      });
+      found = grantingAttributeNaming(stored, matches);
     });
     if (found) {
       log.debug('Leaving federatedGroupAuthority(). An entry.');
@@ -25096,12 +25097,121 @@ function federatedGroupAuthority(name, dn) {
   return '';
 }
 
+// The first granting attribute of an entry with a value `matches` accepts,
+// as the reason `federatedGroupAuthority()` gives, or ''. Called once per
+// resident entry of the walk above: no Entering/Leaving pair, the hot-path
+// exception the code style allows, stated as it requires.
+function grantingAttributeNaming(stored, matches) {
+  let found = '';
+  GRANTING_ATTRIBUTES.some(function (attribute) {
+    const values = (stored && stored.attributes &&
+                    stored.attributes[attribute]) || [];
+    if (values.some(matches)) {
+      found = attribute + ' of ' + stored.dn;
+      return true;
+    }
+    return false;
+  });
+  return found;
+}
+
+// WHETHER THE STORE KNOWS OF AN ENTRY THAT MAKES THE NAME GRANT (#1306).
+//
+// `federatedGroupAuthority()` walks what this process holds, and in a
+// windowed process that is not the directory: an entry under `ou=users` or
+// `ou=devices` is held only while the window has it — a service account's
+// `stsServiceAccountOwner` naming its owner group, a group placed under
+// `ou=users` with an `owner` — and any entry another process wrote reaches
+// this one only when the change log is next pulled, so a role created on
+// another node a moment ago named a member group this sign-in could create.
+// The store holds every committed row, and the codec keys each value of the
+// six attributes as `grantinggroup` (`directory_codec.js`), so the question
+// is two indexed lookups — the name, and the DN the group would have or has
+// — on the GIN index over `value_keys`, `LIMIT 1` each, asked through the
+// bridge's asynchronous `queryAsync()`: constant in the size of the
+// directory, and the event loop runs while the store answers. Any row is an
+// answer of "it grants", whatever this process holds of that entry — a
+// value removed here and not yet flushed is still the store's until it is,
+// and the cost of being early is a group not joined on one sign-in. A
+// question that fails answers "it grants" too, `STS-LDAP-0205`, logged when
+// the store stops answering and again when it answers.
+//
+// Outside a window nothing is asked: the process holds the whole directory,
+// and the walk is the answer it always was.
+let grantingQuestionFailing = false;
+
+async function federatedGroupAuthorityAsync(name, dn) {
+  log.debug('Entering federatedGroupAuthorityAsync().');
+  const held = federatedGroupAuthority(name, dn);
+  if (held || !directoryWindow) {
+    log.debug('Leaving federatedGroupAuthorityAsync(). ' +
+              (held ? 'Held here.' : 'No window.'));
+    return held;
+  }
+  const codec = require('../persistence/directory_codec');
+  const realmId = realms.currentId();
+  const asked = codec.grantingKeysOf(name).slice(0, 1);
+  if (dn) {
+    const dnKey = normalizeDn(String(dn));
+    if (dnKey && asked.indexOf(dnKey) < 0) {
+      asked.push(dnKey);
+    }
+  }
+  try {
+    const answers = await Promise.all(asked.map(function (key) {
+      return directoryWindow.askAsync('byAttribute',
+        [realmId, 'grantinggroup', key, 1]);
+    }));
+    if (grantingQuestionFailing) {
+      grantingQuestionFailing = false;
+      log.info('ldap: the store answers the federated group question ' +
+               'again.');
+    }
+    let found = '';
+    answers.forEach(function (rows) {
+      [].concat(rows || []).forEach(function (row) {
+        if (found || !row) {
+          return;
+        }
+        const entry = row.entry || {};
+        const dnOf = String(entry.dn || row.key || '');
+        found = grantingAttributeNaming(entry, function (value) {
+          const keys = codec.grantingKeysOf(value);
+          return asked.some(function (key) {
+            return keys.indexOf(key) >= 0;
+          });
+        }) || ('a granting attribute of ' + dnOf);
+      });
+    });
+    log.debug('Leaving federatedGroupAuthorityAsync(). ' +
+              (found ? 'The store names it.' : 'Grants nothing.'));
+    return found;
+  } catch (e) {
+    log.debug('Caught in federatedGroupAuthorityAsync(): ' +
+              ((e && e.message) || e));
+    if (!grantingQuestionFailing) {
+      grantingQuestionFailing = true;
+      log.warn(errorCodes.tag('STS-LDAP-0205') + 'ldap: the store could ' +
+               'not say whether a group name from a partner\'s assertion ' +
+               'is named by a granting attribute (' +
+               ((e && e.message) || e) + '); such names are not applied ' +
+               'until it can. Logged once until it answers again.');
+    }
+    log.debug('Leaving federatedGroupAuthorityAsync(). Unreadable.');
+    return 'its registers could not be read';
+  }
+}
+
 // Group names from one partner's assertion, for one person (#358). A name
 // that is not a DN value, that names a group this relationship did not
 // create, or that names a group which grants something by being held
-// (`federatedGroupAuthority()`, reason `grants`), is ignored. The caller audits the ignores and the sign-in
-// continues. `memberOf` is never written: addGroupMember does not.
-function applyFederatedGroups(fedId, username, names) {
+// (`federatedGroupAuthorityAsync()`, reason `grants`), is ignored. The
+// caller audits the ignores and the sign-in continues. `memberOf` is never
+// written: addGroupMember does not. A promise since #1306, because in a
+// windowed process the authority question is asked of the store; the names
+// are taken one at a time, in the order the partner sent them, so a group
+// created for the first is seen by the second's questions.
+async function applyFederatedGroups(fedId, username, names) {
   log.debug('Entering applyFederatedGroups(). ' + fedId);
   const id = String(fedId || '');
   const who = String(username || '').trim();
@@ -25115,28 +25225,33 @@ function applyFederatedGroups(fedId, username, names) {
   const seen = {};
   const opts = { actor: 'federation:' + id, channel: 'internal',
                  origin: 'federation', protocol: 'Federation' };
-  [].concat(names || []).forEach(function (raw) {
+  for (const raw of [].concat(names || [])) {
     const name = String(raw == null ? '' : raw).trim();
     const fold = name.toLowerCase();
     if (!name || seen[fold]) {
-      return;
+      continue;
     }
     seen[fold] = true;
     if (DN_SHAPED.test(name) || !nameUsableInDn(name)) {
       ignored.push({ name: name, reason: 'unusable' });
-      return;
+      continue;
     }
-    const existing = groupByFederatedName(name);
-    const authority = federatedGroupAuthority(name,
-      existing ? existing.dn : groupDnFor(name));
+    const before = groupByFederatedName(name);
+    const authority = await federatedGroupAuthorityAsync(name,
+      before ? before.dn : groupDnFor(name));
     if (authority) {
       ignored.push({ name: name, reason: 'grants', detail: authority });
-      return;
+      continue;
     }
+    // Looked at again AFTER the question, at the DN a create would use: the
+    // store's answer took a turn of the event loop, and a group another
+    // sign-in in this process made meanwhile is the existing group, not a
+    // name to create twice.
+    const existing = before || getEntry(groupDnFor(name));
     if (existing) {
       if (!markedForRelationship(existing, id)) {
         ignored.push({ name: name, reason: 'exists' });
-        return;
+        continue;
       }
       const added = addGroupMember(existing.dn || name, who, opts);
       if (added && added.ok) {
@@ -25144,17 +25259,17 @@ function applyFederatedGroups(fedId, username, names) {
       } else {
         ignored.push({ name: name, reason: 'add' });
       }
-      return;
+      continue;
     }
     const made = createGroup(name, Object.assign({ members: [],
       note: 'created for federation relationship ' + id }, opts));
     if (!made || !made.ok) {
       ignored.push({ name: name, reason: 'create' });
-      return;
+      continue;
     }
     if (!stampFederationRelationship(made.dn, id)) {
       ignored.push({ name: name, reason: 'stamp' });
-      return;
+      continue;
     }
     created.push(name);
     const added = addGroupMember(made.dn, who, opts);
@@ -25163,7 +25278,7 @@ function applyFederatedGroups(fedId, username, names) {
     } else {
       ignored.push({ name: name, reason: 'add' });
     }
-  });
+  }
   log.debug('Leaving applyFederatedGroups(). ' + joined.length +
             ' joined, ' + ignored.length + ' ignored.');
   return { joined: joined, ignored: ignored, created: created };

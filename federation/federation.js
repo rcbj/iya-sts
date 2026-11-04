@@ -2412,20 +2412,22 @@ function provisionIdleMinutesOf(record) {
 
 /**
  * Applies group names from a partner's assertion to one person, through
- * the directory. A missing directory answers that nothing was done.
+ * the directory. A missing directory answers that nothing was done. A
+ * promise (#1306): in a windowed process the directory asks the store
+ * whether a name grants something before it creates or joins the group.
  *
  * @param fedId - the relationship id
  * @param username - the local person
  * @param names - the group names
- * @returns `{ joined, ignored, created }`
+ * @returns a promise of `{ joined, ignored, created }`
  */
-function applyFederatedGroups(fedId, username, names) {
+async function applyFederatedGroups(fedId, username, names) {
   log.debug("Entering applyFederatedGroups().");
   if (!directoryHas('applyFederatedGroups')) {
     log.debug("Leaving applyFederatedGroups(). No directory.");
     return { joined: [], ignored: [], created: [] };
   }
-  const applied = directory.applyFederatedGroups(String(fedId || ''),
+  const applied = await directory.applyFederatedGroups(String(fedId || ''),
     String(username || ''), names || []);
   log.debug("Leaving applyFederatedGroups().");
   return applied || { joined: [], ignored: [], created: [] };

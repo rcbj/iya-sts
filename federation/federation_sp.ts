@@ -2020,7 +2020,11 @@ class FederationSp {
   // A name that collides with a group this relationship did not create is
   // ignored and audited; the sign-in already happened and is not undone.
   // One array element is one group name. memberOf is never written.
-  private provisionGroups(record, username, mapped, decision): void {
+  // A promise since #1306 — the directory may ask the store whether a name
+  // grants something — that never rejects: a failure is audited and the
+  // sign-in stands.
+  private async provisionGroups(record, username, mapped, decision):
+      Promise<void> {
     const { federation, audit, errorCodes, log } = this.deps;
     log.debug("Entering FederationSp.provisionGroups().");
     if (!federation.boolOf(record.fedProvisionGroups, false)) {
@@ -2030,8 +2034,8 @@ class FederationSp {
     const names = this.groupNamesOf(mapped);
     let applied: any = null;
     try {
-      applied = federation.applyFederatedGroups(record.fedId, username,
-                                                names);
+      applied = await federation.applyFederatedGroups(record.fedId, username,
+                                                      names);
     } catch (e) {
       log.debug("Caught in FederationSp.provisionGroups(): " +
                 ((e && e.message) || e));
@@ -4062,9 +4066,30 @@ class FederationSp {
     }
     // GROUP NAMES FROM THE PARTNER (#358), after the session exists and
     // never a reason to end it. fedSubjectGroup already ran, on an entry
-    // that was in none of these groups.
-    this.provisionGroups(record, username, mapped, decision);
+    // that was in none of these groups. Waited for (#1306), so the
+    // memberships are there before the browser goes on to whatever reads
+    // them. A group that could not be applied is never a reason to stop.
+    const self = this;
+    log.debug("Leaving FederationSp.startFederatedSession(). Applying the " +
+              "partner's groups.");
+    return this.provisionGroups(record, username, mapped, decision)
+      .then(function (): void {
+        self.sendSignedIn(req, res, record, result, mapped, session,
+                          username);
+      }, function (e: any): void {
+        log.debug("Caught in FederationSp.startFederatedSession(): " +
+                  ((e && e.message) || e));
+        self.sendSignedIn(req, res, record, result, mapped, session,
+                          username);
+      });
+  }
 
+  // The end of a federated sign-in once its session and its groups are in
+  // place: the attribute sources, then the browser sent on (#94, #580).
+  private sendSignedIn(req, res, record, result, mapped, session,
+                       username): void {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.sendSignedIn().");
     const returnTo = result.returnTo || '';
     const self = this;
     // THE ATTRIBUTE SOURCES A SIGN-IN READS (#94), after the partner's
@@ -4116,7 +4141,7 @@ class FederationSp {
                   why + ' This realm\'s attribute source says a sign-in it ' +
                   'cannot read is refused, and the session was ended.');
     });
-    log.debug("Leaving FederationSp.startFederatedSession(). " +
+    log.debug("Leaving FederationSp.sendSignedIn(). " +
               (returnTo ? "Sending them on to " + returnTo + "."
                         : "Drawing the result page."));
   }

@@ -1916,21 +1916,49 @@ A register that cannot be read answers "it grants". `STS-FED-0164`, audited
 `tests/federation_group_authority.js` holds it, and `tests/federation_provisioning.js` 8
 holds the console's `admin-write` refused through a real sign-in.
 
+**AND IN A WINDOWED DIRECTORY THE STORE IS ASKED (#1306, 2026-11-04).** The check
+walked only what the process held, and in a windowed process (`ldap/CLAUDE.md`, the
+default on postgres) that is not the directory: a service account's
+`stsServiceAccountOwner` under `ou=users` was seen only while the window held that
+person, and any entry another process wrote — a role naming a member group, a group
+naming an owner — only once the change log reached this one. Since #1306 the codec
+keys every value of the six attributes as the derived `grantinggroup` key in
+`value_keys` (`persistence/directory_codec.js`: trimmed, lower-cased, a DN also in its
+normalised form, the one reading both halves use), and `federatedGroupAuthorityAsync()`
+asks the store two `byAttribute` questions, the name and the DN, `LIMIT 1` each,
+through the bridge's `queryAsync()`: constant in the directory's size and off the
+event loop. Any row answers "it grants", whatever this process holds of that entry; a
+store that cannot answer does too (`STS-LDAP-0205`, logged when it stops and when it
+answers again). The walk of what this process holds still runs first, for its own
+writes not yet flushed. Outside a window nothing is asked. So `applyFederatedGroups()`
+is a promise, and `startFederatedSession()` waits for it before the browser goes on. A
+row written before #1306 carries no `grantinggroup` key until it is next written
+(rcbj's no-migration rule, as on #636 and #1061). `tests/federation_group_authority.js`
+section W.
+
 **AND IN PRODUCT, A NEWCOMER THE ATTRIBUTE POLICY REFUSES IS `STS-FED-0158` ON THE PAGE
 (#396 with #358).** `ldap_server.js`'s `autoCreateUser()` writes `refusedWith` and the
 missing attributes on the sign-in's own `federation` object, and `startFederatedSession()`
-answers that before the generic `STS-FED-0090` *the directory declined*. A directory
-reached in another process cannot write there; that sign-in gets the generic answer.
-`tests/federation_subject_policy.js` 1m-0.
+answers that before the generic `STS-FED-0090` *the directory declined*.
+`tests/federation_subject_policy.js` 1m-0. **This said, until #1306, that a directory
+reached in another process could not write there and that sign-in got 0090; no such
+directory exists, so the sentence went.** `autoCreateUser()` is
+`admin_stats.recordAuthentication()`'s synchronous observer, installed by
+`ldap_server.js` in every process that loads the stack — the front and each request
+worker; the surface pool serves no federation path — and `startSession()` hands it the
+`federation` object by reference (`statsExtra` is a shallow copy), so the refusal is
+always written where the page reads it. 0158 is the right code whenever the attribute
+policy refused; 0090 stays the case where nothing says why. A future observer that
+copies the payload, or a directory reached over a channel, owes this a way back.
 
 **Known limits of #358's provisioning, recorded rather than fixed:**
 
 * `provisionedCount` counts people linked by confirm-at-first-sign-in too, not only people the relationship created, so `fedProvisionCap` fills sooner than its name says.
 * The cap check is not atomic across nodes or cells: two first sign-ins at once can each see room and both create.
-* `groupByFederatedName()` walks every group on each sign-in that names a group not at its DN; so does `federatedGroupAuthority()`'s walk over resident entries.
+* `groupByFederatedName()` walks every group on each sign-in that names a group not at its DN; so does `federatedGroupAuthority()`'s walk over what the process holds (resident entries only, in a window; it runs before the store is asked, for this process's unflushed writes).
 * Groups are only ever added: a name the partner stops sending leaves the membership in place.
 * The idle sweep ignores passkeys: a person whose other path is a passkey alone is still disabled.
-* `federatedGroupAuthority()` reads resident entries only, so in a windowed directory a person-side owner value (`stsServiceAccountOwner`) that is not resident is not seen.
+* ~~`federatedGroupAuthority()` reads resident entries only, so in a windowed directory a person-side owner value (`stsServiceAccountOwner`) that is not resident is not seen.~~ Fixed by #1306: the store is asked (above). A row written before #1306 is seen once it is next written.
 
 `tests/federation_provisioning.js` drives a real OIDC federated sign-in between two realms
 of one process — the default realm's OpenID Provider and a service-provider realm of its

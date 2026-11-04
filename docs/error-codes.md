@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 195
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 254
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 158
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 159
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -3353,6 +3353,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0202` | An email-shaped pseudonym is already some other person's mail address, or a mail address is already some other person's uid or live pseudonym (#644). Two people may still share a mail attribute with each other. | HTTP 400 JSON (the sentence; the code is recorded) |
 | `STS-LDAP-0203` | In product mode, an LDAP add, modify, delete or rename that only a Security Administrator may make — an entry under a Directory → Policies container, the Security Administrator's group, a policy reference attribute, a memberOf naming that group, or the entry of a person who holds the role — was asked by a bound DN that does not hold it. Admin Write does not reach these. | LDAP insufficientAccessRights (50) |
 | `STS-LDAP-0204` | An entry was refused before it was created or renamed: its DN is longer than the store can hold as a key (MariaDB, 352 characters of normalised DN), and the flush would refuse it after it was in memory. | — |
+| `STS-LDAP-0205` | In a windowed directory, the store could not answer whether a group name from a federation partner's assertion is named by a granting attribute (a role's member group, an owner, a delegation or subject group). The name is treated as granting and not applied (audited STS-FED-0164); the sign-in stands. Logged once when the store stops answering, and again when it answers. | none (the audit row of the ignored group carries STS-FED-0164) |
 
 ## STS-ATTR
 
