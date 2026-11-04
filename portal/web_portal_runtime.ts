@@ -69,6 +69,9 @@ import WebAccounts = require('../common/web_accounts');
 import DocLinks = require('../common/web_doc_links');
 import WebNavSections = require('../common/web_nav_sections');
 import WebAnnouncements = require('../common/web_announcements');
+// The realm's brand header and its facts (#717): the one copy the public
+// surfaces draw, read off the shell's `<html>` here as there.
+import WebSurface = require('../common/web_surface');
 
 type Json = any;
 
@@ -676,8 +679,15 @@ class PortalRuntime extends SpaClient {
    */
   put(title: string, html: string): void {
     const doc = this.env.document;
-    doc.title = title + ' — IYA STS';
-    doc.body.innerHTML = PortalRuntime.realmLinks(html, this.prefix);
+    // THE REALM'S BRAND (#717, `common/branding.ts`): its name ends the
+    // title in place of the service's, and its header — the logo and the
+    // name — goes above the page, drawn on every page because the body is
+    // replaced on each. Nothing where the shell carries no brand, which is
+    // every shell of a realm that set nothing.
+    const brand = WebSurface.brandOf(doc.documentElement);
+    doc.title = title + ' — ' + (brand.name || 'IYA STS');
+    doc.body.innerHTML = PortalRuntime.realmLinks(
+      WebSurface.brandHeader(brand) + html, this.prefix);
     // A page just drawn holds nothing typed (#561's unsaved-changes test).
     this.dirty = false;
     this.drawnAt = this.env.location.pathname + this.env.location.search;
