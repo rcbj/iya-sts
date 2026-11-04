@@ -262,10 +262,12 @@ const FUZZ_USER = "fuzzer";
 // Meets a typical product password policy: upper, lower, digit, symbol, long.
 const FUZZ_PASSWORD = "Fuzz-Runner-Passw0rd!2026";
 // The two console roles are granted on the roster (`/admin-api/rbac/grant`,
-// `rbacAction`); the report roles are configured roles granted on the role
-// register (`/admin-api/roles/add-member`, `rolesAction`). Granting a console
-// role through the role register is refused 400 — they are not that kind.
-const FUZZ_CONSOLE_ROLES = ["ADMIN_READ", "ADMIN_WRITE"];
+// `rbacAction`), by their SHORT roster ids — `read` and `write`, not the
+// permission names (`admin-ui/admin_rbac.ts` ROLES; an unknown id is 400,
+// STS-ADMIN-0582). `write` implies `read`, but both are granted for clarity.
+// The report roles are CONFIGURED roles granted on the role register by NAME
+// (`/admin-api/roles/add-member`, `rolesAction`).
+const FUZZ_CONSOLE_ROLES = ["read", "write"];
 const FUZZ_CONFIGURED_ROLES = ["REPORT_USE", "REPORT_ADMIN"];
 // The person-create attributes a realm's attribute policy requires every
 // person to hold (#396): cn, sn, givenName, mail (uid is the `username`).
