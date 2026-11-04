@@ -439,6 +439,18 @@
     "en": "96ed2387e40a779a",
     "text": "La feuille de style de carte des surfaces publiques"
   },
+  "endpoints.route./web/theme.css.name": {
+    "en": "955c14dc632bdf90",
+    "text": "La feuille de style de l’apparence de connexion d’un domaine"
+  },
+  "endpoints.route./web/branding/logo.name": {
+    "en": "2ce72d622f586a26",
+    "text": "Le logo de connexion d’un domaine"
+  },
+  "endpoints.route./web/branding/preview.name": {
+    "en": "54aca7174dc0a2b0",
+    "text": "Un aperçu de l’apparence de connexion"
+  },
   "endpoints.route./web/locales/catalogs.json.name": {
     "en": "54bbd31e0a5afc5b",
     "text": "L’index des catalogues de langue"
@@ -1162,6 +1174,18 @@
   "endpoints.route./admin-api/audit-export/:action.name": {
     "en": "b9a19e739aa5ebd6",
     "text": "Modifier les destinations de l’export d’audit"
+  },
+  "endpoints.route./admin-api/branding.name": {
+    "en": "4f6e7c69e356bf65",
+    "text": "Apparence de la connexion"
+  },
+  "endpoints.route./admin-api/branding/logo.name": {
+    "en": "febcf32d571a0fbf",
+    "text": "Téléverser le logo de connexion"
+  },
+  "endpoints.route./admin-api/branding/:action.name": {
+    "en": "d7fa23e10dac9b1d",
+    "text": "Modifier l’apparence de la connexion"
   },
   "endpoints.route./admin-api/audit.name": {
     "en": "e4d36f9a4e22d3a2",

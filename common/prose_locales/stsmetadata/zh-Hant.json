@@ -1211,6 +1211,18 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登入畫面卡片與語言選擇器的規則，合為一個樣式表，供靜態公開介面的外殼連結（common/web_card_css.ts）。在每個接聽程式上提供；帶有此組建 ?v= 的位址會被永久快取。"
   },
+  "stsmetadata.endpoints./web/theme.css.what": {
+    "en": "3f3b19caa8978c23",
+    "text": "NON-SPEC (#717)。領域的登入顏色，作為 /web/card.css 讀取的 CSS 自訂屬性（common/branding.ts）：四種 branding.* 顏色以及由它們衍生的色調，僅由經過驗證的值建構。僅當領域的外觀與服務的外觀不同時，外殼才在卡片之後連結它；帶有其摘要作為 ?v= 的位址會被永久快取。"
+  },
+  "stsmetadata.endpoints./web/branding/logo.what": {
+    "en": "83a680ab27412042",
+    "text": "NON-SPEC (#717)。透過 /admin-api/branding/logo 為此領域上傳的 PNG、JPEG 或 WebP 標誌，從此來源提供，使登入頁面的 img-src 'self' 接受它，且沒有第三方得知誰在登入；nosniff、沙箱化、其摘要的 ETag。領域沒有標誌時為 404。"
+  },
+  "stsmetadata.endpoints./web/branding/preview.what": {
+    "en": "a2af93aaf34bbbe3",
+    "text": "NON-SPEC (#717)。以待定顏色和版面配置繪製的此領域登入卡片範例（查詢中的 accent、page、card、text、layout，每一項都依設定的方式檢查），供主控台在儲存前於新分頁中開啟。其中任何內容都不會讓任何人登入。"
+  },
   "stsmetadata.endpoints./web/locales/catalogs.json.what": {
     "en": "213f3eea35021e22",
     "text": "NON-SPEC（#570）。存在哪些目錄（標籤、自稱、狀態、覆蓋層所擴充的基礎目錄）以及語言選擇器提供哪些地區設定——即 common/locales/catalogs.json，供靜態介面的執行階段在瀏覽器中依 #539 的順序協商頁面語言。公開，在每個接聽程式上提供，在此組建的 ?v= 下被永久快取。"
@@ -2086,6 +2098,18 @@
   "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
     "en": "c3015da7d4779805",
     "text": "非規格端點（#641）。add、update、remove、enable、disable 與 test：主控台的六個動作，每個都會被稽核。權杖只接收、絕不傳回。測試事件不是稽核資料列。"
+  },
+  "stsmetadata.endpoints./admin-api/branding.what": {
+    "en": "fca0d849cb68e8d7",
+    "text": "NON-SPEC (#717)。伺服器設定 → 登入外觀在所要求的領域中繪製的內容：版面配置、四種顏色及由它們衍生的色調、它們相對於 WCAG 2.2 AA 的對比度、顯示名稱、不含位元組的已儲存標誌，以及該頁面的設定。"
+  },
+  "stsmetadata.endpoints./admin-api/branding/logo.what": {
+    "en": "b28154e101349408",
+    "text": "NON-SPEC (#717)。請求本文就是影像：PNG、JPEG 或 WebP，由其位元組決定，最多 branding.logoMaxBytes。它取代領域的標誌，並連同其摘要一起稽核。"
+  },
+  "stsmetadata.endpoints./admin-api/branding/:action.what": {
+    "en": "6c8c19ee983ea097",
+    "text": "NON-SPEC (#717)。save 一起寫入領域的 branding 設定，拒絕相對於卡片低於 4.5:1 的文字或連結；remove-logo 移除標誌並予以稽核。"
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",

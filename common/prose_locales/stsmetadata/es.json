@@ -1211,6 +1211,18 @@
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Las reglas de la tarjeta de la pantalla de inicio de sesión y del selector de idioma, como una sola hoja de estilo que enlaza el shell de una superficie pública estática (common/web_card_css.ts). Se sirve en cada escucha; una dirección que lleva el ?v= de esta compilación se almacena en caché para siempre."
   },
+  "stsmetadata.endpoints./web/theme.css.what": {
+    "en": "3f3b19caa8978c23",
+    "text": "NON-SPEC (#717). Los colores de inicio de sesión del dominio como las propiedades personalizadas CSS que lee /web/card.css (common/branding.ts): los cuatro colores branding.* y los tonos derivados de ellos, construidos solo a partir de valores validados. Un shell la enlaza después de la tarjeta solo donde la apariencia del dominio difiere de la del servicio; una dirección que lleva su resumen como ?v= se guarda en caché para siempre."
+  },
+  "stsmetadata.endpoints./web/branding/logo.what": {
+    "en": "83a680ab27412042",
+    "text": "NON-SPEC (#717). El logotipo PNG, JPEG o WebP subido para este dominio mediante /admin-api/branding/logo, servido desde este origen para que el img-src 'self' de las páginas de inicio de sesión lo admita y ningún tercero sepa quién inicia sesión; nosniff, aislado, un ETag de su resumen. 404 donde el dominio no tiene ninguno."
+  },
+  "stsmetadata.endpoints./web/branding/preview.what": {
+    "en": "a2af93aaf34bbbe3",
+    "text": "NON-SPEC (#717). Una muestra de la tarjeta de inicio de sesión de este dominio dibujada con colores pendientes y un diseño (accent, page, card, text, layout en la consulta, cada uno comprobado como lo harían los ajustes), para que la consola la abra en una pestaña nueva antes de guardar. Nada en ella inicia la sesión de nadie."
+  },
   "stsmetadata.endpoints./web/locales/catalogs.json.what": {
     "en": "213f3eea35021e22",
     "text": "NON-SPEC (#570). Qué catálogos existen (etiqueta, endónimo, estado, la base que extiende una superposición) y qué configuraciones regionales ofrece el selector de idioma — common/locales/catalogs.json, para que el runtime de una superficie estática negocie el idioma de la página en el navegador en el orden de #539. Público, en cada escucha, almacenado en caché para siempre bajo el ?v= de esta compilación."
@@ -2086,6 +2098,18 @@
   "stsmetadata.endpoints./admin-api/audit-export/:action.what": {
     "en": "c3015da7d4779805",
     "text": "NO ESTÁNDAR (#641). add, update, remove, enable, disable y test: los seis actos de la consola, cada uno auditado. Un token se recibe y nunca se devuelve. El evento de prueba no es una fila de auditoría."
+  },
+  "stsmetadata.endpoints./admin-api/branding.what": {
+    "en": "fca0d849cb68e8d7",
+    "text": "NON-SPEC (#717). Lo que dibuja Configuración del servidor → Apariencia del inicio de sesión, en el dominio pedido: el diseño, los cuatro colores y los tonos derivados de ellos, su contraste frente a WCAG 2.2 AA, el nombre mostrado, el logotipo guardado sin sus bytes y los ajustes de la página."
+  },
+  "stsmetadata.endpoints./admin-api/branding/logo.what": {
+    "en": "b28154e101349408",
+    "text": "NON-SPEC (#717). El cuerpo es la imagen: un PNG, un JPEG o un WebP, según sus bytes, como máximo branding.logoMaxBytes. Sustituye el logotipo del dominio y se audita con su resumen."
+  },
+  "stsmetadata.endpoints./admin-api/branding/:action.what": {
+    "en": "6c8c19ee983ea097",
+    "text": "NON-SPEC (#717). save escribe juntos los ajustes branding del dominio y rechaza texto o enlaces por debajo de 4,5:1 frente a la tarjeta; remove-logo quita el logotipo y se audita."
   },
   "stsmetadata.endpoints./admin-api/audit.what": {
     "en": "55d3dcbe157b0e3f",
