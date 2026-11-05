@@ -5436,8 +5436,8 @@
     "text": "Uppskjuten: klar efter (ms)"
   },
   "oid4vci.deferredReadyMs|description": {
-    "en": "ddc34c16902c4571",
-    "text": "Hur länge en uppskjuten autentiseringsuppgift förblir issuance_pending innan den är klar. Länge nog för att en plånbok ska behöva polla och kort nog för att ett test inte ska nå sin tidsgräns."
+    "en": "2456e341de78a860",
+    "text": "Hur lång tid det tar innan ett uppskjutet intyg är klart. Fram till dess svarar den uppskjutna slutpunkten 202 med samma transaction_id och ett interval. Tillräckligt länge för att en plånbok ska behöva fråga igen och tillräckligt kort för att ett test inte ska få timeout."
   },
   "oid4vci.deferredIntervalS|label": {
     "en": "b4633676d2065b89",

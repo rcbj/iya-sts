@@ -5436,8 +5436,8 @@
     "text": "Diferida: lista tras (ms)"
   },
   "oid4vci.deferredReadyMs|description": {
-    "en": "ddc34c16902c4571",
-    "text": "Cuánto tiempo permanece una credencial diferida en issuance_pending antes de estar lista. Lo bastante largo para que una billetera tenga que sondear y lo bastante corto para que una prueba no agote su tiempo de espera."
+    "en": "2456e341de78a860",
+    "text": "Cuánto tarda una credencial diferida en estar lista. Hasta entonces, el endpoint diferido responde 202 con el mismo transaction_id y un interval. Lo bastante largo para que una cartera tenga que sondear y lo bastante corto para que una prueba no agote el tiempo."
   },
   "oid4vci.deferredIntervalS|label": {
     "en": "b4633676d2065b89",

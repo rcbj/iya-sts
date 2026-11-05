@@ -325,10 +325,9 @@ The page then loads each relying party's cleanup URL as an image:
 GET /wsfed?wa=wsignout1.0[&wtrealm=<wtrealm>][&wreply=<URL>]
 ```
 
-* **The cleanup URL** is the `wreply` each sign-in response was posted to,
-  with `wa=wsignoutcleanup1.0` added. Nothing to configure.
-  `wsfedSignOutUri` can be set on an entry, but the sign-out does not read it
-  yet.
+* **The cleanup URL** is the application's `wsfedSignOutUri`, every value of it,
+  with `wa=wsignoutcleanup1.0` added. With none set it is the `wreply` the
+  sign-in response was posted to.
 * **With `wreply`**, the page offers a link back rather than redirecting, so
   the cleanup images can finish.
 * **`wsignoutcleanup1.0`** ends the session and sends no cleanups of its own.

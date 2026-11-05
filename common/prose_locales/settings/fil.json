@@ -5436,8 +5436,8 @@
     "text": "Deferred: handa pagkalipas ng (ms)"
   },
   "oid4vci.deferredReadyMs|description": {
-    "en": "ddc34c16902c4571",
-    "text": "Gaano katagal nananatiling issuance_pending ang isang deferred credential bago ito maging handa. Sapat ang haba para kailanganin ng wallet na mag-poll at sapat ang ikli para hindi mag-time out ang isang test."
+    "en": "2456e341de78a860",
+    "text": "Gaano katagal bago maging handa ang deferred credential. Hanggang doon, sumasagot ang deferred endpoint ng 202 na may parehong transaction_id at isang interval. Sapat ang haba para kailangang mag-poll ng wallet at sapat ang ikli para hindi mag-time out ang test."
   },
   "oid4vci.deferredIntervalS|label": {
     "en": "b4633676d2065b89",

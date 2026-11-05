@@ -5436,8 +5436,8 @@
     "text": "Différé : prêt après (ms)"
   },
   "oid4vci.deferredReadyMs|description": {
-    "en": "ddc34c16902c4571",
-    "text": "Durée pendant laquelle un justificatif différé reste issuance_pending avant d’être prêt. Assez longue pour qu’un portefeuille doive interroger et assez courte pour qu’un test n’expire pas."
+    "en": "2456e341de78a860",
+    "text": "Le temps qu’une attestation différée met à être prête. Jusque-là, le point de terminaison différé répond 202 avec le même transaction_id et un interval. Assez long pour qu’un portefeuille doive interroger, et assez court pour qu’un test n’expire pas."
   },
   "oid4vci.deferredIntervalS|label": {
     "en": "b4633676d2065b89",

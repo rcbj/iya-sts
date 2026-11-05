@@ -4694,6 +4694,17 @@ function update(id, change) {
                       'relationship. GET /admin/ldap/federations publishes ' +
                       'the whole schema.'] };
   }
+  // ADDING TO OR REMOVING FROM A LIST TAKES A LIST (#747). A single-valued
+  // field took the assignment below, so asking to take a value off fedSsoUrl
+  // answered 200 and SET it to that value.
+  if (info.valueOfList && row.editable && row.editable !== 'multi') {
+    log.debug('Leaving update(). Not a list.');
+    actionRefused('STS-FED-0234', id, '"' + field + '" holds one value');
+    return { ok: false,
+             errors: ['"' + field + '" holds one value, so there is no list ' +
+                      'to add to or remove from. Nothing was changed. Use ' +
+                      '`set`.'] };
+  }
   if (!row.editable) {
     log.debug('Leaving update(). Not editable.');
     actionRefused('STS-FED-0067', id, '"' + field + '" is not editable');

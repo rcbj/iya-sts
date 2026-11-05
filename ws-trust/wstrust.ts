@@ -629,6 +629,33 @@ class WsTrust {
     return String(kept || '').trim();
   }
 
+  // WHO ?encrypt=1 ENCRYPTS TO (#747): the requester, by the certificate in its
+  // own WS-Security header. Not the first X509Certificate in the document,
+  // which with a UsernameToken requester and an OnBehalfOf or ActAs assertion
+  // was the delegated assertion's, so the token went to the wrong party's key.
+  // An assertion in the header is skipped too: its KeyInfo is its ISSUER's
+  // certificate, which is this service's, and names nobody asking.
+  private recipientCertificateOf(doc) {
+    const { log, firstByLocal } = this.deps;
+    log.debug("Entering WsTrust.recipientCertificateOf().");
+    const found = (node) => {
+      const kids = (node && node.childNodes) || [];
+      for (let i = 0; i < kids.length; i += 1) {
+        const kid = kids[i];
+        if (kid.nodeType === 1 && kid.localName !== 'Assertion') {
+          const inner = kid.localName === 'X509Certificate' ? kid : found(kid);
+          if (inner) {
+            return inner;
+          }
+        }
+      }
+      return null;
+    };
+    const cert = found(firstByLocal(doc, 'Security'));
+    log.debug("Leaving WsTrust.recipientCertificateOf(). " + !!cert);
+    return cert ? String(cert.textContent || '').replace(/\s+/g, '') : '';
+  }
+
   // THE APPLICATION A TOKEN IS FOR (#483): the one registered for the
   // AppliesTo, found the way the register finds it (`forAppliesTo()`,
   // which skips the entry `seen()` files under the address itself), and
@@ -3774,7 +3801,10 @@ class WsTrust {
     const statusTokenType = trustNs + '/RSTR/Status';
     const statusValid = trustNs + '/status/valid';
     const statusInvalid = trustNs + '/status/invalid';
-    const keyTypeReq = textByLocal(doc, 'KeyType') || (trustNs + '/Bearer');
+    // THE RSTR STATES WHAT WAS ISSUED (#747), not what was asked: every token
+    // here is a bearer token with no proof key, so echoing a requested
+    // PublicKey or SymmetricKey told the client it held a key it did not.
+    const keyTypeIssued = trustNs + '/Bearer';
 
     const tokenTypeReq = textByLocal(doc, 'TokenType');
     const appliesToEl = firstByLocal(doc, 'AppliesTo');
@@ -4191,7 +4221,7 @@ class WsTrust {
     const issuing = { options: options, doc: doc, version: version,
                       trustNs: trustNs, audience: audience, subject: subject,
                       auth: auth, delegationDecision: delegationDecision,
-                      lifetimeMin: lifetimeMin, keyTypeReq: keyTypeReq,
+                      lifetimeMin: lifetimeMin, keyTypeIssued: keyTypeIssued,
                       op: op, tokenType: tokenType, delegates: delegates,
                       requester: requester };
     // #658: A KERBEROS TOKEN IS MINTED ASYNCHRONOUSLY (the KDC encrypts), so
@@ -4224,7 +4254,7 @@ class WsTrust {
     } = this.deps;
     log.debug("Entering WsTrust.finishIssue().");
     const { options, doc, version, trustNs, audience, subject, auth,
-            delegationDecision, lifetimeMin, keyTypeReq, op } = issuing;
+            delegationDecision, lifetimeMin, keyTypeIssued, op } = issuing;
 
     // Optional encryption (?encrypt=1): encrypt the SAML assertion to the
     // recipient certificate carried in the request's WS-Security signature
@@ -4244,19 +4274,21 @@ class WsTrust {
     // way out, which is the question here, rather than who may drive a test
     // control.
     if (options.encrypt && tok.tokenType === SAML2_TOKEN_TYPE) {
-      const x509 = firstByLocal(doc, 'X509Certificate');
-      const recipB64 = x509 ? (x509.textContent || '').replace(/\s+/g, '') : '';
+      const recipB64 = this.recipientCertificateOf(doc);
+      // BY THE APPLICATION THE ASSERTION IS FOR (#747, #483's defect): an
+      // AppliesTo need not be the entry's identifier.
+      const answering = this.appliesToApplication(audience) || audience || '';
       let failure = '';
       if (recipB64) {
         const recipPem = '-----BEGIN CERTIFICATE-----\n' +
             (recipB64.match(/.{1,64}/g) || []).join('\n') + '\n-----END ' +
             'CERTIFICATE-----\n';
         const how = {
-          algorithm: String(applications.settingFor(audience || '',
+          algorithm: String(applications.settingFor(answering,
                                                     'saml2.encryptionAlgorithm',
                                                     config) || ''),
           keyTransport: String(applications.settingFor(
-            audience || '', 'saml2.keyTransportAlgorithm', config) || '')
+            answering, 'saml2.keyTransportAlgorithm', config) || '')
         };
         try {
           tok.xml = encryptAssertion(tok.xml, recipPem, how);
@@ -4482,7 +4514,7 @@ class WsTrust {
       '<wsu:Created>' + (tok.created || iso(0)) +
       '</wsu:Created><wsu:Expires>' + (tok.expires || iso(lifetimeMin)) +
       '</wsu:Expires></wst:Lifetime><wst:KeyType>' +
-      keyTypeReq + '</wst:KeyType>' +
+      keyTypeIssued + '</wst:KeyType>' +
       // 2004/04 spells the reference RequestedTokenReference (#188).
       (trustNs === WST_2004_04_NS
         ? tok.ref.split('wst:RequestedAttachedReference')

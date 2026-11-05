@@ -2531,11 +2531,11 @@ class AdminApi {
       { path: '/kerberos', console: '/admin/kerberos', tag: 'Kerberos',
         operationId: 'getKerberosSettings',
         summary: 'The KDC\'s own settings',
-        description: 'The nineteen `krb5.*` settings: the realm, the two raw ' +
+        description: 'The `krb5.*` settings: the realm, the two raw ' +
                      'ports, the clock skew and the deliberate clock OFFSET, ' +
                      'the one password every user account shares, the names ' +
-                     'that stay unknown, the long-term keys behind krbtgt ' +
-                     'and the inter-realm trust, `s2kparams`, and the two ' +
+                     'that stay unknown, the long-term keys behind krbtgt, ' +
+                     '`s2kparams`, and the two ' +
                      'that decide whether a ticket presented at ' +
                      '/authn/spnego may start a browser session.\n\nMOST OF ' +
                      'THEM ARE RESTART-ONLY, and one fact is why: the ' +
@@ -2708,6 +2708,7 @@ class AdminApi {
                      'assertion\'s Issuer alike.\n\n' +
                      'WS-Trust here issues a JWT when the request\'s ' +
                      'TokenType is `urn:ietf:params:oauth:token-type:jwt` ' +
+                     'a SAML 1.1 assertion when it names SAML 1.1 (#487), ' +
                      'and a SAML 2.0 assertion for any other TokenType, ' +
                      'built by the same builder the SAML 2.0 profile uses; ' +
                      'what that assertion CONTAINS is `GET ' +
@@ -13898,10 +13899,11 @@ class AdminApi {
 
           { action: 'add-value', operationId: 'addFederationValue',
             summary: 'Add a value to a multi-valued field',
-            description: 'Two fields take values: `fedAttributeMap` on a ' +
-                         'service-provider-side relationship, and ' +
-                         '`fedRelease` on an identity-provider-side ' +
-                         'one.\n\n**`fedAttributeMap`** is written ' +
+            description: 'Any multi-valued field: the relationship\'s own ' +
+                         '`editable` table marks them, and this operation\'s ' +
+                         '`field` lists them. A field holding one value is ' +
+                         'refused rather than assigned (#747). Two have rules ' +
+                         'of their own.\n\n**`fedAttributeMap`** is written ' +
                          '`<incoming name>=<LDAP attribute>` and is split at ' +
                          'the FIRST equals sign — which matters, because an ' +
                          'incoming name can be a URL and a URL can hold one. ' +
@@ -20172,13 +20174,11 @@ class AdminApi {
                          'Only `credential-compromise` has a REQUIRED ' +
                          'member, `credential_type`, which RISC defines by ' +
                          'reference to CAEP\'s `credential-change` — the two ' +
-                         'lists are the same list.\n\nTEN OF THE FOURTEEN ' +
-                         'ARE ONLY EVER PRODUCED THIS WAY. No breach corpus ' +
-                         'is searched by this service and no recovery flow ' +
-                         'runs in it. The other four fire on their own when ' +
-                         'the DIRECTORY changes and `risc.autoEmit` is on — ' +
-                         'a person deleted, `active` going false or true, a ' +
-                         'mail address or telephone number moving.\n\nFOUR ' +
+                         'lists are the same list.\n\nEVERY ONE OF THE FOURTEEN ' +
+                         'HAS SOMETHING HERE THAT SENDS IT when it happens ' +
+                         '(`docs/shared-signals.md` lists each, #164), where ' +
+                         '`risc.autoEmit` is on. This sends any of them by ' +
+                         'hand, whatever that is.\n\nFOUR ' +
                          'OF THEM CHANGE REAL STATE WHEN THEY ' +
                          'GO. RISC section 2.8 defines each ' +
                          'opt-out event as "the account is in this state" ' +
@@ -25473,17 +25473,19 @@ class AdminApi {
         actions: [
           { action: 'rotate', operationId: 'rotateSpiffeAuthority',
             summary: 'Rotate the X.509 authority, the JWT authority, or both',
-            description: 'A new authority is PREPENDED — everything is ' +
-                         'signed with it from that moment — and the old one ' +
-                         'stays in the published bundle, so SVIDs already in ' +
-                         'the field go on verifying. That is what a bundle ' +
-                         'is FOR, and dropping the old one is the difference ' +
-                         'between a rotation and an outage.\n\nThe bundle ' +
-                         '`spiffe_sequence` changes, which is how a consumer ' +
-                         'that polls the bundle endpoint knows to refetch. ' +
-                         'At most four authorities are retained; past that ' +
-                         'the oldest is dropped and anything it signed stops ' +
-                         'verifying at that moment.\n\nThis is also the ONLY ' +
+            description: 'ROTATION IS TWO DIFFERENT ACTS. Under the service ' +
+                         'Root, which is the usual case, it re-issues the ' +
+                         'SPIFFE Issuing CA and leaves the anchor alone: the ' +
+                         'X.509 bundle does not change, and SVIDs already in ' +
+                         'the field go on verifying because their chain still ' +
+                         'reaches the same Root.\n\nOn the self-signed ' +
+                         'fallback, and for the JWT authority, a new ' +
+                         'authority is PREPENDED — everything is signed with ' +
+                         'it from that moment — and the old one stays in the ' +
+                         'published bundle, whose `spiffe_sequence` changes. ' +
+                         'Past `spiffe.retainedAuthorities` the oldest is ' +
+                         'dropped, and anything it signed stops verifying at ' +
+                         'that moment.\n\nThis is also the ONLY ' +
                          'way to add an authority to this trust domain. The ' +
                          'SPIRE Server API\'s AppendBundle and ' +
                          'PublishJWTAuthority are refused, because they ' +

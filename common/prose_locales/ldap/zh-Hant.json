@@ -736,8 +736,8 @@
     "text": "AuthZEN 存取請求回呼（#1180）：此用戶端作為 AuthZEN PEP 可指定為存取請求 callback.endpoint 的 https URL——每個值一個，須完全相符。指定其他任何 URL 的請求都會被拒絕；本服務絕不會僅憑請求中的 URL 就向其發出回呼。由管理員設定，絕不由呼叫端設定。"
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
-    "en": "847d2fc846138cb9",
-    "text": "RFC 9470 第 3 節：此應用程式作為資源伺服器，對存取權杖背後之驗證所要求的 acr 值——以空格分隔，最偏好者在前。acr 不符合任何一個的權杖，會收到 401 insufficient_user_authentication 挑戰，並以這些值作為 acr_values。等級 0 < 1 < mfa 有先後順序；hwk、phr 與 phrh 由密碼加上安全金鑰滿足；其他任何值只由完全相同的 acr 滿足。空白則不要求任何東西。"
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 第 3 節：此應用程式作為資源伺服器，對存取權杖背後之驗證所要求的 acr 值——以空格分隔，最偏好者在前。acr 不符合任何一個的權杖，會收到 401 insufficient_user_authentication 挑戰，並以這些值作為 acr_values。等級 0 < 1 < mfa 有先後順序；hwk 由密碼加上安全金鑰滿足；phr 與 phrh 只由其所指的抗網路釣魚驗證滿足 (#723)；其他任何值只由完全相同的 acr 滿足。空白則不要求任何東西。"
   },
   "applications.schema.attributes.oauthStepUpMaxAge.what": {
     "en": "fdd12480b52b8006",
@@ -1260,8 +1260,8 @@
     "text": "TRUE 或 FALSE：是否回應此依賴方自己的 wsignin1.0，覆寫 wsfed.spInitiatedSso。wsignin1.0 是未簽署的 URL，因此 FALSE 是把門關上，而不是證明是誰開的門。"
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
-    "en": "493ac4121c2076ca",
-    "text": "此應用程式之 wsignoutcleanup1.0 通知的傳送位置——WS-Federation 的登出 URI，也是此表在 2026-08-30 之前所沒有的。是「宣告的」，而非觀察到的，這使它與 samlSingleLogoutService 而非 wsfedReplyUrl 同類：清理是在「工作階段」結束時傳送，那時原本會攜帶 wreply 的請求早已結束。\n\n**登出目前「尚未」讀取它**，這一點明確說明而非暗示。`cleanupTargetsFor()` 從 `session.wsfedRealms` 建立清單，其中記錄每個登入回應實際送往的 wreply——因此本服務目前通知的是它「觀察到」的，而此屬性是營運者「宣告」的。這是兩項不同的事實，而第二項是設定應用程式的人可以事先說明的。將它接入、作為未帶 wreply 登入之領域的後備，是顯而易見的下一步，但此處刻意不這麼做：此變更新增欄位與儲存，而改變清理的去處，是改變協定的行為。"
+    "en": "677e7babd8d711d3",
+    "text": "此應用程式之 wsignoutcleanup1.0 通知的傳送位置——WS-Federation 的登出 URI，也是此表在 2026-08-30 之前所沒有的。是「宣告的」，而非觀察到的，這使它與 samlSingleLogoutService 而非 wsfedReplyUrl 同類：清理是在「工作階段」結束時傳送，那時原本會攜帶 wreply 的請求早已結束。\n\n**宣告的位址優先於觀察到的位址** (#747)。對於工作階段已登入的領域，`cleanupTargetsFor()` 會通知此處的每個值；只有此處為空白時，才使用登入回應所送往的 wreply，它由 `session.wsfedRealms` 記錄。"
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",

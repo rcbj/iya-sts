@@ -1263,8 +1263,9 @@ const SECTIONS = [
                'directory itself.' },
       { path: '/admin/wstrust', label: 'WS-Trust',
         blurb: 'The security token service at <code>/sts</code>, ' +
-               'WS-Trust 1.0 to 1.4, and the one setting it has of its own — ' +
-               'who its tokens say issued them. What an assertion CONTAINS ' +
+               'WS-Trust 1.0 to 1.4, and its settings. Its tokens name the ' +
+               'realm\'s OAuth issuer, which no setting changes (#523). What ' +
+               'an assertion CONTAINS ' +
                'is the SAML pages next door, because the assertion is built ' +
                'by the same two functions the SAML profiles use.' },
       { path: '/admin/wsfed', label: 'WS-Federation',
@@ -10698,11 +10699,13 @@ const PROTOCOL_SETTINGS_PAGES = [
            '<code>Issuer</code>, a JWT\'s <code>iss</code>, and the ' +
            'entityID SAML SSO and WS-Federation publish. There is no ' +
            'setting for it; it follows the public base URL.',
-           '<strong>Nothing about a request is checked.</strong> An ' +
-           '<code>OnBehalfOf</code> or <code>ActAs</code> element names ' +
-           'anybody and gets an assertion for them — this service polices no ' +
-           'delegation in WS-Trust, which <a href="/admin/delegation">' +
-           'Delegation</a> says beside every act it recorded.'],
+           '<strong>A delegation is decided by policy.</strong> An ' +
+           '<code>OnBehalfOf</code> or <code>ActAs</code> element goes to ' +
+           'the delegation policy (#108, #186), which refuses a ' +
+           '<code>may_act</code> naming somebody else in every mode and the ' +
+           'rest of what it decides in product mode. ' +
+           '<a href="/admin/delegation">Delegation</a> shows every act it ' +
+           'recorded.'],
     links: [['/sts', 'the token service, for a person'],
             ['/sts/cert', 'the certificate its assertions verify against'],
             ['/admin/saml-attributes', 'what goes into the assertion'],

@@ -39,7 +39,7 @@ namespace works:
 
 | `RequestType` | Answer |
 |---|---|
-| `Issue` | an RSTR Collection carrying a freshly minted, signed token, its `wst:Lifetime`, the `KeyType` asked for (Bearer by default) and a reference to the token |
+| `Issue` | an RSTR Collection carrying a freshly minted, signed token, its `wst:Lifetime`, `KeyType` Bearer (every token here is a bearer token, whatever was asked for) and a reference to the token |
 | `Renew` | an RSTR carrying a fresh token for the subject of the `RenewTarget` |
 | `Validate` | an RSTR carrying `wst:Status` — `valid` when the `ValidateTarget` holds a token, `invalid` when it holds none |
 | `Cancel` | an RSTR carrying `wst:RequestedTokenCancelled` |

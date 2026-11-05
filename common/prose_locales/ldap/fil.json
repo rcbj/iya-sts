@@ -736,8 +736,8 @@
     "text": "CALLBACK NG AUTHZEN ACCESS REQUEST (#1180): isang https URL na maaaring ipangalan ng client na ito, bilang AuthZEN PEP, bilang callback.endpoint ng isang access request — isa bawat value, eksaktong tugma. Tinatanggihan ang request na may ibang pinangalanan; hindi kailanman nagda-dial ang serbisyong ito ng callback URL na galing lang sa isang request. Itinatakda ng administrator, hindi kailanman ng caller."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
-    "en": "847d2fc846138cb9",
-    "text": "RFC 9470 section 3: ang mga acr value na hinihingi ng application na ito, bilang resource server, sa authentication sa likod ng isang access token — pinaghihiwalay ng espasyo, ang pinakagusto ang una. Ang token na walang natutugunang acr ay hinahamon ng 401 insufficient_user_authentication na ang mga ito ang acr_values. Nakaayos ang mga level na 0 < 1 < mfa; ang hwk, phr at phrh ay natutugunan ng password kasama ang security key; ang anumang ibang value ay ng eksaktong acr na iyon lang. ANG WALANG LAMAN ay walang hinihingi."
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 section 3: ang mga acr value na hinihingi ng application na ito, bilang resource server, sa authentication sa likod ng isang access token — pinaghihiwalay ng espasyo, ang pinakagusto ang una. Ang token na walang natutugunang acr ay hinahamon ng 401 insufficient_user_authentication na ang mga ito ang acr_values. Nakaayos ang mga level na 0 < 1 < mfa; ang hwk ay natutugunan ng password kasama ang security key; ang phr at phrh ay ng phishing-resistant na authentication na pinangangalanan nila lang (#723); ang anumang ibang value ay ng eksaktong acr na iyon lang. ANG WALANG LAMAN ay walang hinihingi."
   },
   "applications.schema.attributes.oauthStepUpMaxAge.what": {
     "en": "fdd12480b52b8006",
@@ -1260,8 +1260,8 @@
     "text": "TRUE o FALSE: sinasagot ba ang sariling wsignin1.0 ng relying party na ito, na nangingibabaw sa wsfed.spInitiatedSso. Unsigned URL ang wsignin1.0, kaya isinasara ng FALSE ang pinto sa halip na patunayan kung sino ang nagbukas nito."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
-    "en": "493ac4121c2076ca",
-    "text": "KUNG SAAN IPINAPADALA ANG wsignoutcleanup1.0 PING para sa application na ito — ang logout URI ng WS-Federation, at ang wala sa table na ito hanggang 2026-08-30. IDINEKLARA, hindi naobserbahan, kaya kapatid ito ng samlSingleLogoutService at hindi ng wsfedReplyUrl: ipinapadala ang cleanup kapag nagtapos ang isang SESSION, at sa oras na iyon ay matagal nang tapos ang request na magdadala sana ng wreply.\n\n**HINDI PA ITO BINABASA NG SIGN-OUT**, at sinasabi ito nang tahasan sa halip na ipahiwatig. Binubuo ng `cleanupTargetsFor()` ang listahan nito mula sa `session.wsfedRealms`, na nagtatala ng wreply na talagang pinuntahan ng bawat sign-in response — kaya ang pini-ping ng serbisyong ito ngayon ay ang NAOBSERBAHAN nito, at ang attribute na ito ay ang IDINEKLARA ng operator. Dalawang magkaibang katotohanan ang mga ito at ang ikalawa ang kayang sabihin nang maaga ng taong nagse-set up ng application. Ang pagkabit nito bilang fallback para sa realm na pinag-sign in-an nang walang wreply ay ang halatang susunod na hakbang at sadyang hindi ginagawa rito: idinadagdag ng pagbabagong ito ang field at ang storage, at ang pagbabago kung saan napupunta ang cleanup ay pagbabago sa ginagawa ng protocol."
+    "en": "677e7babd8d711d3",
+    "text": "KUNG SAAN IPINAPADALA ANG wsignoutcleanup1.0 PING para sa application na ito — ang logout URI ng WS-Federation, at ang wala sa table na ito hanggang 2026-08-30. IDINEKLARA, hindi naobserbahan, kaya kapatid ito ng samlSingleLogoutService at hindi ng wsfedReplyUrl: ipinapadala ang cleanup kapag nagtapos ang isang SESSION, at sa oras na iyon ay matagal nang tapos ang request na magdadala sana ng wreply.\n\n**NANGUNGUNA ANG IDINEKLARANG ADDRESS SA NAOBSERBAHAN** (#747). Pina-ping ng `cleanupTargetsFor()` ang bawat value dito para sa realm na na-sign in-an ng session, at ang wreply na pinuntahan ng sign-in response, na itinatala ng `session.wsfedRealms`, kapag walang laman lang ito."
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",
