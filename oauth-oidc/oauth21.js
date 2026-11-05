@@ -419,10 +419,11 @@ function registeredClientRefusal(client, clientId) {
     return refusal('STS-OAUTH-0272', 'invalid_request',
       'registered-client-required',
       'section 2.3.1: a client must have registered its complete redirect ' +
-      'URI. Client "' + clientId + '" holds ' + withheld.length + ' ' +
-      'redirect URI(s) this service observed and nobody has confirmed (' +
-      withheld.join(', ') + '), and product mode does not believe an ' +
-      'observed address. Confirm the one it should use on ' +
+      // The observed addresses are not named (#1331): they are values a
+      // caller could aim at, and the operator sees them on the console.
+      'URI. Client "' + clientId + '" has only redirect URIs this service ' +
+      'observed and nobody has confirmed, and product mode does not ' +
+      'believe an observed address. Confirm the one it should use on ' +
       '/admin/applications, or POST /admin-api/applications/confirm-address.');
   }
   log.debug("Leaving registeredClientRefusal(). None at all.");

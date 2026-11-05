@@ -383,9 +383,8 @@ function childMain() {
       return '<div class="warn" role="alert" id="logout-not-registered">' +
         '<strong>The post_logout_redirect_uri in this sign-out request is ' +
         'not one this client registered, so it was not followed.</strong> ' +
-        'The request named <code>' + uri + '</code>; this client ' +
-        'registered <code>' + BACK + '</code> (RP-Initiated Logout 1.0 ' +
-        'section 3).</div>';
+        'The request named <code>' + uri + '</code> (RP-Initiated ' +
+        'Logout 1.0 section 3).</div>';
     };
     const okAt = String(r.text).indexOf('<div class="ok">');
     note(warningOf(r.text) === warningFor('https://evil.example/x') &&
@@ -394,10 +393,12 @@ function childMain() {
            /\.warn\{background:#fff8e1;border-left:4px solid #b26a00;/
              .test(r.text) &&
            /<h1>Sign-out request partly refused<\/h1>/.test(r.text) &&
-           /<title>Sign-out request partly refused<\/title>/.test(r.text),
+           /<title>Sign-out request partly refused<\/title>/.test(r.text) &&
+           r.text.indexOf(BACK) < 0,
          'd1b. and the page says so in a warning box as prominent as the ' +
          '"signed out" banner, above it: not one this client registered, ' +
-         'not followed, both addresses, the section; the heading and the ' +
+         'not followed, the address asked for and the section, and nowhere ' +
+         'on the page the address registered (#1331); the heading and the ' +
          'title name the refusal', warningOf(r.text) ||
          r.text.slice(-700));
     // d1c (#1302): the suite's other case, the registered address with a
@@ -418,7 +419,7 @@ function childMain() {
            /^<div class="warn" role="alert" id="logout-not-registered"><strong>Le post_logout_redirect_uri de cette demande de déconnexion n’est pas l’un de ceux que ce client a enregistrés/
              .test(warningOf(r.text)) &&
            warningOf(r.text).indexOf('<code>https://evil.example/x</code>') >
-             0 && warningOf(r.text).indexOf('<code>' + BACK + '</code>') > 0 &&
+             0 && r.text.indexOf(BACK) < 0 &&
            /<h1>Demande de déconnexion refusée en partie<\/h1>/.test(r.text),
          'd1d. ui_locales=fr: the box and the heading in French, the ' +
          'addresses as they are',
@@ -462,14 +463,16 @@ function childMain() {
     };
     const HTML = 'text/html,application/xhtml+xml,*/*;q=0.8';
     const WRONG = 'https://rp.rl.example/elsewhere';
-    const SENTENCE = '\'' + WRONG + '\' is not the redirect URI registered ' +
-      'for this client (' + REDIRECT + ')';
+    // #1331: only the address sent is named, never the registered one.
+    const SENTENCE = '\'' + WRONG + '\' is not a redirect URI registered ' +
+      'for this client';
     const plain = await authorize({ redirect_uri: WRONG });
     const page = await authorize({ redirect_uri: WRONG }, HTML);
     const described = String((plain.json || {}).error_description || '');
     note(plain.status === 400 && !plain.headers.location &&
            plain.json && plain.json.error === 'invalid_request' &&
            described.indexOf(SENTENCE) >= 0 &&
+           described.indexOf(REDIRECT) < 0 &&
            !/the 1 |\(s\)|ou=|oauthRedirectUri|none of/.test(described),
          'e1. an unregistered redirect_uri is a 400, never redirected, and ' +
          'says it is not the redirect URI registered for this client, with ' +
@@ -479,7 +482,7 @@ function childMain() {
            /<h1>This request could not be completed<\/h1>/.test(page.text) &&
            page.text.indexOf('invalid_request') >= 0 &&
            page.text.replace(/&#39;|&#x27;|&apos;/g, '\'')
-             .indexOf(SENTENCE) >= 0,
+             .indexOf(SENTENCE) >= 0 && page.text.indexOf(REDIRECT) < 0,
          'e2. and a browser is shown that refusal on the error page, with ' +
          'the same status, error and description',
          page.status + ' ' + page.headers['content-type'] + ' ' +
