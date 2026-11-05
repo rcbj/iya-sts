@@ -1611,6 +1611,10 @@
     "en": "1bd56e73b838da2d",
     "text": "Den här tjänstens EGNA SAML-metadata, per partner"
   },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "Klientmetadata för en Bluesky-relation (#746)"
+  },
   "endpoints.route./federation/jwks/:id.name": {
     "en": "56f010e78f399989",
     "text": "En OpenID Connect-relations krypteringsnyckel (#168)"

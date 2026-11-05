@@ -2695,6 +2695,10 @@
     "en": "bbe97109d1d3a58e",
     "text": "一个 SPSSODescriptor 而不是 IDPSSODescriptor——这是本服务作为服务提供方的那一半。按关系提供，因为本服务对每个合作方都以不同的名称称呼自己。刻意不签名，而且它是此处唯一不签名的元数据文档：/saml2/metadata 之所以签名，是因为配置对本服务信任的服务提供方可以从核实文档作者中获益，而这里，合作方被告知把东西发往何处所依据的，正是签名本会使用的那个密钥。对于非 SAML 的关系它返回 404，而 /saml2/metadata 不会因任何情况返回 404——因为那个会为任何请求的 entityID 签发文档，而这个描述的是一个要么存在、要么不存在的安排。自 #168 起，SAML 2.0 关系的元数据携带 KeyDescriptor use=\"encryption\" 及其接受的 EncryptionMethod，WS-Federation 关系也有一份：一个带有 fed:ApplicationServiceType RoleDescriptor（WS-Federation 1.2 section 3.1）的 EntityDescriptor、其 PassiveRequestorEndpoint 及其加密密钥。"
   },
+  "stsmetadata.endpoints./federation/atproto/client/:id.what": {
+    "en": "ec1fd8df6b7f7ded",
+    "text": "在本服务目录中为 NON-SPEC：AT Protocol 的 OAuth 配置文件没有注册步骤，因此这个公开 JSON 文档的地址就是客户端标识，由 Bluesky 的服务器获取。它不包含任何密钥，不可用的关系返回 404。"
+  },
   "stsmetadata.endpoints./federation/jwks/:id.what": {
     "en": "ffaafc6508d21968",
     "text": "关系当前的加密密钥，以 JWKS 形式提供，use: enc，带有其接受的 alg——合作方将其注册为此依赖方的 jwks_uri（或其 jwks），用于加密 ID Token（OpenID Connect Registration section 2，Core section 10.2）。被轮换替换的密钥在 federation.encryptionKeyGraceS 期间仍可解密，且绝不会被公布。Cache-Control: no-store。对 OpenID Connect 服务提供方一侧关系以外的任何情况返回 404。"

@@ -1611,6 +1611,10 @@
     "en": "1bd56e73b838da2d",
     "text": "Les métadonnées SAML PROPRES à ce service, par partenaire"
   },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "Métadonnées client d'une relation Bluesky (#746)"
+  },
   "endpoints.route./federation/jwks/:id.name": {
     "en": "56f010e78f399989",
     "text": "La clé de chiffrement d’une relation OpenID Connect (#168)"

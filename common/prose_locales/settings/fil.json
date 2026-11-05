@@ -4579,6 +4579,14 @@
     "en": "f24b1c4bc1251e30",
     "text": "Ang <md:NameIDFormat> na inilalathala sa /federation/metadata/{id}, na siyang format na ipinapadala ng subject ng partner na naka-configure mula sa document na iyon. Ang default ay ang literal na palaging inilalathala ng serbisyong ito."
   },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "PLC directory para sa mga sign-in ng Bluesky"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Kung saan hinahanap ng Bluesky sign-in ang natanggap na did:plc, upang tiyakin na pinagkakatiwalaan ng data server ng tao ang issuer na nagpangalan sa kanya. Ang Bluesky relationship lang ang bumabasa nito."
+  },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",
     "text": "Itinatago ang naunang encryption key nang (segundo)"

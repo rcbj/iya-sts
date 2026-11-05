@@ -330,6 +330,9 @@ const ROWS: Row[] = [
     why: 'a partner\'s browser flow, served where the browser is pinned' },
   { prefix: '/federation/metadata', strategy: 'local',
     why: 'a relationship\'s metadata is the global tier\'s' },
+  { prefix: '/federation/atproto/client', strategy: 'local',
+    why: 'a Bluesky relationship\'s client metadata is drawn from its entry, ' +
+         'and federation relationships are the global tier\'s (#746)' },
   { prefix: '/federation/jwks', strategy: 'local',
     why: 'a relationship\'s keys are the global tier\'s' },
   // THE FEDERATION PAGES' SCRIPT (#580): the same file in every cell.

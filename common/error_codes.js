@@ -13174,6 +13174,29 @@ const CODES = [
     summary: 'The Steam Web API gave no summary of a person, so their entry ' +
       'has no name or picture from it. The sign-in is unaffected (#746).',
     spec: 'Logged' },
+  { code: 'STS-FED-0229',
+    summary: 'A DiscourseConnect answer was refused: not signed with the ' +
+      'shared secret, for another sign-in\'s nonce, or naming nobody (#746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0230',
+    summary: 'A Bluesky sign-in could not start: the issuer\'s metadata could ' +
+      'not be read or named another issuer, or it refused the pushed ' +
+      'authorization request (#746).',
+    spec: 'HTTP 502 page' },
+  { code: 'STS-FED-0231',
+    summary: 'A Bluesky answer was refused: it named another issuer or no ' +
+      'code, or the code could not be redeemed for a DPoP token with the ' +
+      'atproto scope and a subject (#746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0232',
+    summary: 'A Bluesky answer\'s subject was not believed: not a did:plc, no ' +
+      'data server in its document, or a data server that does not name this ' +
+      'issuer (#746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0233',
+    summary: 'GET /federation/atproto/client/{id} named no usable Bluesky ' +
+      'relationship (#746).',
+    spec: 'HTTP 404' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

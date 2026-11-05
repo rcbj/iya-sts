@@ -156,6 +156,7 @@
 // ---------------------------------------------------------------------------
 
 import zlib = require('zlib');
+import AtprotoClient = require('./atproto_client');
 import jwt = require('jsonwebtoken');
 import xmldom = require('@xmldom/xmldom');
 // One signer and one verifier for the whole service since 2026-08-27.
@@ -297,6 +298,9 @@ const OPENID2_NS = 'http://specs.openid.net/auth/2.0';
 const STEAM_CLAIMED_ID =
   /^https?:\/\/steamcommunity\.com\/openid\/id\/([0-9]{17})$/;
 const STEAM_NONCE_KEEP_MS = 24 * 60 * 60 * 1000;
+
+// The most a compressed profile may open to (`queryTokenProfile()`, #746).
+const PROFILE_OPENED_MAX = 1024 * 1024;
 const METADATA_PATH = federation.PATHS.metadata;
 const LINK_PATH = federation.PATHS.link;
 // The inter-cell operation that asks whether a resident carries a partner's
@@ -670,6 +674,9 @@ class FederationSp {
     });
     // GET /federation/jwks/{id} — an OpenID Connect relationship's
     // encryption key (#168).
+    app.get(federation.PATHS.atprotoClient + '/:id', (req, res) => {
+      return this.atprotoClientEndpoint(req, res);
+    });
     app.get(federation.PATHS.jwks + '/:id', (req, res) => {
       return this.jwksEndpoint(req, res);
     });
@@ -2940,6 +2947,9 @@ class FederationSp {
         !federation.signsIn(record) || !federation.isUsable(record) ||
         federation.categoryOf(record) !== 'consumer' ||
         (record.fedProtocol !== 'oidc' && record.fedProtocol !== 'oauth2') ||
+        // BLUESKY'S REQUEST IS A DIAL (#746), and this door answers an address
+        // at once, with no dial in it.
+        consumerProviders.adapts(record, 'atproto-oauth') ||
         String(record.fedTrustAnchor || '').trim()) {
       log.debug("Leaving FederationSp.beginConnect(). Not connectable.");
       return { ok: false, code: 'STS-FED-0184',
@@ -4632,11 +4642,250 @@ class FederationSp {
       log.debug("Leaving FederationSp.authorizationRequestUrl(). OpenID 2.0.");
       return this.steamRequestUrl(base, record, context);
     }
+    if (consumerProviders.adapts(record, 'discourse-connect')) {
+      log.debug("Leaving FederationSp.authorizationRequestUrl(). Discourse.");
+      return this.discourseRequestUrl(base, record, context);
+    }
     const params = this.authorizationParams(base, record, context);
     const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
     const url = String(record.fedSsoUrl) + joiner + params.toString();
     log.debug("Leaving FederationSp.authorizationRequestUrl().");
     return url;
+  }
+
+  // ---------------------------------------------------------------------------
+  // DISCOURSE: DISCOURSECONNECT (#746), the `discourse-connect` adapter.
+  //
+  // No dial at all: a nonce and a return address, base64, under an HMAC of the
+  // shared secret, and an answer of the same shape. The signature is checked
+  // first, in constant time, and nothing in the payload is read before it. The
+  // nonce is this sign-in's own, and the context it is held in is single-use.
+  // ---------------------------------------------------------------------------
+  private discourseRequestUrl(base, record, context) {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.discourseRequestUrl().");
+    const payload = Buffer.from(new URLSearchParams({
+      nonce: String(context.nonce),
+      return_sso_url: this.acsUrl(base, record) + '?state=' +
+                      encodeURIComponent(String(context.handle))
+    }).toString(), 'utf8').toString('base64');
+    const signature = stsCrypto.hmacSha256(
+      Buffer.from(String(federation.clientSecretOf(record)), 'utf8'),
+      Buffer.from(payload, 'utf8')).toString('hex');
+    log.debug("Leaving FederationSp.discourseRequestUrl().");
+    return String(record.fedSsoUrl) + '?sso=' + encodeURIComponent(payload) +
+           '&sig=' + signature;
+  }
+
+  private consumeDiscourseAnswer(req, res, record, context, params) {
+    const { federation, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.consumeDiscourseAnswer().");
+    const payload = String(params.sso || '');
+    const expected = stsCrypto.hmacSha256(
+      Buffer.from(String(federation.clientSecretOf(record)), 'utf8'),
+      Buffer.from(payload, 'utf8')).toString('hex');
+    const signed = !!payload && stsCrypto.constantTimeEquals(
+      expected, String(params.sig || '').toLowerCase());
+    const said: any = signed ? Object.fromEntries(new URLSearchParams(
+      Buffer.from(payload, 'base64').toString('utf8')).entries()) : {};
+    if (!signed || said.nonce !== String(context.nonce) || !said.external_id) {
+      errorCodes.mark(res, 'STS-FED-0229');
+      log.debug("Leaving FederationSp.consumeDiscourseAnswer(). Refused.");
+      return this.refuse(res, record, 401, 'The answer was refused',
+                         'The answer from Discourse was not signed with the ' +
+                         'shared secret, was for another sign-in, or names ' +
+                         'nobody.');
+    }
+    const reading = this.consumerReading(record, { token: said }, {},
+      String(said.external_id), this.federatedAmr([]), '');
+    log.debug("Leaving FederationSp.consumeDiscourseAnswer().");
+    return this.completeSignIn(req, res, record, {
+      subject: reading.subject,
+      issuer: String(record.fedPeer || ''),
+      bag: reading.bag, amr: reading.amr, acr: reading.acr,
+      // An HMAC: a shared secret, and no key anybody could revoke.
+      signer: FederationSp.signerOf('none'),
+      returnTo: this.fromContext(context).returnTo,
+      connect: this.fromContext(context).connect,
+      application: this.fromContext(context).application,
+      authnPending: this.fromContext(context).authnPending
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PROVIDERS THAT TAKE THE TOKEN ON THE QUERY (#746, `query-access-token`):
+  // Stack Exchange's API and OSChina's, neither of which reads a bearer header.
+  // So this address holds a credential, and what it answers has the shape of
+  // `fetchJson()`'s with the query taken off: its `url` and `why` reach a page.
+  // Stack Exchange compresses every answer whatever it was asked, and what it
+  // opens to is capped as a dial's body is.
+  // ---------------------------------------------------------------------------
+  private async queryTokenProfile(record, accessToken) {
+    const { fedHttp, log } = this.deps;
+    log.debug("Entering FederationSp.queryTokenProfile().");
+    const address = String(record.fedUserinfoUrl || '').trim();
+    const shown = address.split('?')[0];
+    const failed = function (why: string): any {
+      log.debug("Leaving FederationSp.queryTokenProfile(). " + why);
+      return { ok: false, json: null, url: shown, why: why,
+               errorCode: 'STS-FED-0056' };
+    };
+    const asked = await fedHttp.fetchPublished(address +
+      (address.indexOf('?') >= 0 ? '&' : '?') + 'access_token=' +
+      encodeURIComponent(String(accessToken)), { accept: 'application/json' });
+    if (!asked.ok) {
+      return failed('it answered ' + asked.status);
+    }
+    let json = null;
+    try {
+      const body = asked.body;
+      const opened = body[0] === 0x1f && body[1] === 0x8b
+        ? zlib.gunzipSync(body, { maxOutputLength: PROFILE_OPENED_MAX }) : body;
+      json = JSON.parse(String(opened));
+    } catch (e) {
+      log.debug("Caught in FederationSp.queryTokenProfile(): " +
+                ((e && e.name) || 'an error'));
+      return failed('its answer could not be read');
+    }
+    log.debug("Leaving FederationSp.queryTokenProfile().");
+    return { ok: true, json: json, url: shown, why: '', errorCode: '' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // BLUESKY (#746, `atproto-oauth`): `atproto_client.ts` holds the protocol, and
+  // these two are where it meets the flow. The authorization request is a POST
+  // made before the browser goes anywhere, so this answers the redirect itself.
+  // ---------------------------------------------------------------------------
+  private atprotoClientId(base, record) {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.atprotoClientId().");
+    log.debug("Leaving FederationSp.atprotoClientId().");
+    return base + federation.PATHS.atprotoClient + '/' +
+           encodeURIComponent(record.fedId);
+  }
+
+  private async atprotoRedirect(req, res, record, context) {
+    const { fedHttp, errorCodes, log, baseUrlOf } = this.deps;
+    log.debug("Entering FederationSp.atprotoRedirect().");
+    const base = baseUrlOf(req);
+    const issuer = String(record.fedPeer);
+    const dial = (url, options) => {
+      return fedHttp.fetchPublished(url, options);
+    };
+    const refused = () => {
+      errorCodes.mark(res, 'STS-FED-0230');
+      log.debug("Leaving FederationSp.atprotoRedirect(). Refused.");
+      return this.refuse(res, record, 502, 'Bluesky would not start the ' +
+                         'sign-in', 'Its server metadata could not be read, ' +
+                         'or it refused the pushed authorization request. Its ' +
+                         'client metadata has to be reachable at this ' +
+                         'service\'s public https address.');
+    };
+    const server = await AtprotoClient.serverMetadata(dial, issuer);
+    if (!server) {
+      return refused();
+    }
+    const clientId = this.atprotoClientId(base, record);
+    const pushed = await AtprotoClient.postWithDpop(dial,
+      String(server.pushed_authorization_request_endpoint), {
+        client_id: clientId, response_type: 'code',
+        redirect_uri: this.acsUrl(base, record),
+        scope: AtprotoClient.SCOPE, state: String(context.handle),
+        code_challenge: String(context.pkceChallenge),
+        code_challenge_method: 'S256'
+      }, context.atproto);
+    if (!pushed.ok || !pushed.json || !pushed.json.request_uri) {
+      return refused();
+    }
+    res.redirect(302, String(server.authorization_endpoint) + '?' +
+      new URLSearchParams({ client_id: clientId,
+                            request_uri: String(pushed.json.request_uri) })
+        .toString());
+    log.debug("Leaving FederationSp.atprotoRedirect().");
+    return undefined;
+  }
+
+  private async consumeAtprotoAnswer(req, res, record, context, params) {
+    const { fedHttp, config, errorCodes, log, baseUrlOf } = this.deps;
+    log.debug("Entering FederationSp.consumeAtprotoAnswer().");
+    const issuer = String(record.fedPeer);
+    const dial = (url, options) => {
+      return fedHttp.fetchPublished(url, options);
+    };
+    const refused = (code: string, why: string) => {
+      // error-code: none — the caller's own, one of the two named below
+      errorCodes.mark(res, code);
+      log.debug("Leaving FederationSp.consumeAtprotoAnswer(). " + why);
+      return this.refuse(res, record, 401, 'The sign-in was refused',
+                         'Bluesky\'s answer was refused: ' + why + '.');
+    };
+    // RFC 9207, which the profile requires: the answer names who gave it.
+    const server = String(params.iss || '') === issuer && params.code
+      ? await AtprotoClient.serverMetadata(dial, issuer) : null;
+    if (!server) {
+      return refused('STS-FED-0231', 'it names another issuer, or no code');
+    }
+    const base = baseUrlOf(req);
+    const tokens = await AtprotoClient.postWithDpop(dial,
+      String(server.token_endpoint), {
+        grant_type: 'authorization_code', code: String(params.code),
+        redirect_uri: this.acsUrl(base, record),
+        client_id: this.atprotoClientId(base, record),
+        code_verifier: String(context.pkceVerifier)
+      }, context.atproto);
+    const answer = tokens.json || {};
+    const scopes = String(answer.scope || '').split(' ');
+    if (!tokens.ok || !answer.sub || scopes.indexOf('atproto') < 0 ||
+        String(answer.token_type || '').toLowerCase() !== 'dpop') {
+      return refused('STS-FED-0231', 'the code could not be redeemed');
+    }
+    const problem = await AtprotoClient.subjectProblem(dial, String(answer.sub),
+      issuer, String(config.value('federation.atprotoPlcDirectory')));
+    if (problem) {
+      return refused('STS-FED-0232', problem);
+    }
+    // The access token goes no further: a person's profile is public, and its
+    // failure costs a name and never the sign-in.
+    const address = String(record.fedUserinfoUrl || '').trim();
+    const profile = address
+      ? await dial(address + '?actor=' + encodeURIComponent(String(answer.sub)),
+                   { accept: 'application/json' }) : null;
+    const reading = this.consumerReading(record,
+      { token: { sub: String(answer.sub) },
+        userinfo: profile && profile.ok ? AtprotoClient.jsonOf(profile) : null },
+      {}, String(answer.sub), this.federatedAmr([]), '');
+    log.debug("Leaving FederationSp.consumeAtprotoAnswer().");
+    return this.completeSignIn(req, res, record, {
+      subject: reading.subject, issuer: issuer,
+      bag: reading.bag, amr: reading.amr, acr: reading.acr,
+      signer: FederationSp.signerOf('none'),
+      returnTo: this.fromContext(context).returnTo,
+      connect: this.fromContext(context).connect,
+      application: this.fromContext(context).application,
+      authnPending: this.fromContext(context).authnPending
+    });
+  }
+
+  // GET /federation/atproto/client/{id}: the public document that is the
+  // client, and nothing for a relationship that is not a Bluesky one.
+  private atprotoClientEndpoint(req, res) {
+    const { federation, errorCodes, baseUrlOf, log } = this.deps;
+    log.debug("Entering FederationSp.atprotoClientEndpoint().");
+    const record = federation.get(String(req.params.id || ''));
+    if (!record || !consumerProviders.adapts(record, 'atproto-oauth') ||
+        !federation.isUsable(record)) {
+      errorCodes.mark(res, 'STS-FED-0233');
+      res.status(404).type('text/plain').set('Cache-Control', 'no-store')
+         .send('There is no such client.');
+      log.debug("Leaving FederationSp.atprotoClientEndpoint(). None.");
+      return;
+    }
+    const base = baseUrlOf(req);
+    res.status(200).set('Cache-Control', 'no-store').json(
+      AtprotoClient.clientMetadata(this.atprotoClientId(base, record),
+                                   this.acsUrl(base, record),
+                                   String(record.fedName || record.fedId)));
+    log.debug("Leaving FederationSp.atprotoClientEndpoint().");
   }
 
   // ---------------------------------------------------------------------------
@@ -5266,6 +5515,20 @@ class FederationSp {
     }
 
     // OIDC and OAuth 2.0.
+    if (consumerProviders.adapts(record, 'atproto-oauth')) {
+      contextRecord.atproto = AtprotoClient.newKey();
+      const held = this.heldContext(this.putContext(contextRecord));
+      log.debug("Leaving the federation login endpoint. A pushed request.");
+      return this.atprotoRedirect(req, res, record, held).catch((e) => {
+        log.error(errorCodes.tag('STS-FED-0042') + 'federation: the Bluesky ' +
+                  'sign-in through ' + record.fedId + ' threw: ' +
+                  ((e && e.message) || e));
+        errorCodes.mark(res, 'STS-FED-0042');
+        return this.refuse(res, record, 500, 'This service failed while ' +
+                           'starting the sign-in', 'The request could not be ' +
+                           'made.');
+      });
+    }
     const handle = this.putContext(contextRecord);
     const stored = this.heldContext(handle);
     let url = '';
@@ -7341,6 +7604,25 @@ class FederationSp {
             'response without one did not come from a flow it started.');
     }
 
+    // DISCOURSE AND BLUESKY (#746), each with an answer of its own.
+    if (consumerProviders.adapts(record, 'discourse-connect')) {
+      log.debug("Leaving FederationSp.consumeOauthResponse(). Discourse.");
+      return this.consumeDiscourseAnswer(req, res, record, context, params);
+    }
+    if (consumerProviders.adapts(record, 'atproto-oauth')) {
+      log.debug("Leaving FederationSp.consumeOauthResponse(). Bluesky.");
+      return this.consumeAtprotoAnswer(req, res, record, context, params)
+        .catch((e) => {
+          log.error(errorCodes.tag('STS-FED-0042') + 'federation: the Bluesky ' +
+                    'answer for ' + record.fedId + ' threw: ' +
+                    ((e && e.message) || e));
+          errorCodes.mark(res, 'STS-FED-0042');
+          return this.refuse(res, record, 500, 'This service failed while ' +
+                             'finishing the sign-in', 'The answer could not ' +
+                             'be checked.');
+        });
+    }
+
     // STEAM (#746): an OpenID 2.0 assertion, with no code to redeem.
     if (consumerProviders.adapts(record, 'steam-openid2')) {
       log.debug("Leaving FederationSp.consumeOauthResponse(). OpenID 2.0.");
@@ -8174,9 +8456,12 @@ class FederationSp {
         'for a profile names nobody.');
     }
     log.debug("Leaving FederationSp.finishOauth2().");
-    return fedHttp.fetchJson(record, 'fedUserinfoUrl',
-                             { method: 'GET', bearer: accessToken })
-                  .then((answer) => {
+    const asked: Promise<any> =
+      consumerProviders.adapts(record, 'query-access-token')
+        ? this.queryTokenProfile(record, accessToken)
+        : fedHttp.fetchJson(record, 'fedUserinfoUrl',
+                            { method: 'GET', bearer: accessToken });
+    return asked.then((answer) => {
       if (!answer.ok || !answer.json) {
         log.debug("Leaving FederationSp.finishOauth2(). The userinfo call " +
                   'failed.');

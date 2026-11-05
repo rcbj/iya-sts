@@ -4579,6 +4579,14 @@
     "en": "f24b1c4bc1251e30",
     "text": "在 /federation/metadata/{id} 中发布的 <md:NameIDFormat>，依据该文档配置的合作方会以此格式发送主体。默认值是本服务一直以来发布的字面值。"
   },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "Bluesky 登录使用的 PLC 目录"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Bluesky 登录在此查找收到的 did:plc，以确认该用户的数据服务器信任指明该用户的颁发者。只有 Bluesky 关系会读取此设置。"
+  },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",
     "text": "旧加密密钥保留时长（秒）"

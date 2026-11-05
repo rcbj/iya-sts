@@ -2695,6 +2695,10 @@
     "en": "bbe97109d1d3a58e",
     "text": "Un SPSSODescriptor plutôt qu’un IDPSSODescriptor — c’est la moitié de ce service qui est un fournisseur de services. Par relation, car ce service se présente sous un nom différent à chaque partenaire. NON SIGNÉ, délibérément, et c’est le seul document de métadonnées ici à l’être : /saml2/metadata est signé parce qu’un fournisseur de services qui configure sa confiance envers ce service gagne à vérifier qui a écrit le document, alors qu’ici on indique au partenaire où envoyer les choses par la clé même avec laquelle une signature serait faite. Il renvoie une 404 pour une relation qui n’est pas SAML, là où /saml2/metadata n’en renvoie jamais — car celui-là produit un document pour tout entityID demandé, tandis que celui-ci décrit un arrangement qui existe ou n’existe pas. Depuis #168, celui d’une relation SAML 2.0 porte un KeyDescriptor use=\"encryption\" avec les EncryptionMethods qu’il accepte, et une relation WS-Federation en reçoit un aussi : un EntityDescriptor avec un RoleDescriptor fed:ApplicationServiceType (WS-Federation 1.2 section 3.1), son PassiveRequestorEndpoint et sa clé de chiffrement."
   },
+  "stsmetadata.endpoints./federation/atproto/client/:id.what": {
+    "en": "ec1fd8df6b7f7ded",
+    "text": "NON-SPEC dans le catalogue de ce service : le profil OAuth de l'AT Protocol n'a pas d'enregistrement, l'adresse de ce document JSON public est donc l'identifiant client, et le serveur de Bluesky le récupère. Il ne contient aucune clé, et une relation inutilisable répond 404."
+  },
   "stsmetadata.endpoints./federation/jwks/:id.what": {
     "en": "ffaafc6508d21968",
     "text": "La clé de chiffrement ACTUELLE de la relation sous forme de JWKS, use: enc, avec l’alg qu’elle accepte — ce que le partenaire enregistre comme jwks_uri (ou jwks) de cette partie de confiance pour y chiffrer l’ID Token (OpenID Connect Registration section 2, Core section 10.2). Une clé remplacée par une rotation déchiffre encore pendant federation.encryptionKeyGraceS et n’est jamais publiée. Cache-Control: no-store. 404 pour tout ce qui n’est pas une relation OpenID Connect côté fournisseur de services."

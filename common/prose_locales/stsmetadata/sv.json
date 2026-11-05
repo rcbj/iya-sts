@@ -2695,6 +2695,10 @@
     "en": "bbe97109d1d3a58e",
     "text": "En SPSSODescriptor snarare än en IDPSSODescriptor — detta är den halva av den här tjänsten som är en tjänsteleverantör. Per relation, eftersom den här tjänsten kallar sig något annat för varje partner. OSIGNERAT, avsiktligt, och det är det enda metadatadokumentet här som är det: /saml2/metadata är signerat eftersom en tjänsteleverantör som konfigurerar sitt förtroende för den här tjänsten vinner på att kontrollera vem som skrev dokumentet, och här får partnern veta vart den ska skicka saker med just den nyckel som en signatur skulle göras med. Det ger 404 för en relation som inte är SAML, där /saml2/metadata ger 404 för ingenting — eftersom det skapar ett dokument för vilket entityID som helst som efterfrågas och detta beskriver ett arrangemang som antingen finns eller inte finns. Sedan #168 bär en SAML 2.0-relations dokument KeyDescriptor use=\"encryption\" med de EncryptionMethods den godtar, och en WS-Federation-relation får också ett: en EntityDescriptor med en fed:ApplicationServiceType RoleDescriptor (WS-Federation 1.2 avsnitt 3.1), dess PassiveRequestorEndpoint och dess krypteringsnyckel."
   },
+  "stsmetadata.endpoints./federation/atproto/client/:id.what": {
+    "en": "ec1fd8df6b7f7ded",
+    "text": "NON-SPEC i den här tjänstens katalog: AT Protocols OAuth-profil saknar registrering, så adressen till detta offentliga JSON-dokument är klient-id:t, och Blueskys server hämtar det. Det innehåller ingen nyckel, och en relation som inte kan användas svarar 404."
+  },
   "stsmetadata.endpoints./federation/jwks/:id.what": {
     "en": "ffaafc6508d21968",
     "text": "Relationens AKTUELLA krypteringsnyckel som en JWKS, use: enc, med den alg den godtar — det som partnern registrerar som den här förlitande partens jwks_uri (eller dess jwks) att kryptera ID Token till (OpenID Connect Registration avsnitt 2, Core avsnitt 10.2). En nyckel som en rotation ersatte dekrypterar fortfarande under federation.encryptionKeyGraceS och publiceras aldrig. Cache-Control: no-store. 404 för allt utom en OpenID Connect-relation på tjänsteleverantörssidan."

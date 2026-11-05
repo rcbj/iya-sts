@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5221** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5226** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 200
+* [Federation (`STS-FED`)](#sts-fed) — 205
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 254
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 163
@@ -2867,6 +2867,11 @@ Raised from: federation/.
 | `STS-FED-0226` | Steam did not confirm a Steam assertion: check_authentication failed or did not answer is_valid:true (#746). | HTTP 401 page |
 | `STS-FED-0227` | A Steam assertion's nonce was already used, or the replay history could not prove it unused (OpenID Authentication 2.0 section 11.3, #746). | HTTP 401 page |
 | `STS-FED-0228` | The Steam Web API gave no summary of a person, so their entry has no name or picture from it. The sign-in is unaffected (#746). | Logged |
+| `STS-FED-0229` | A DiscourseConnect answer was refused: not signed with the shared secret, for another sign-in's nonce, or naming nobody (#746). | HTTP 401 page |
+| `STS-FED-0230` | A Bluesky sign-in could not start: the issuer's metadata could not be read or named another issuer, or it refused the pushed authorization request (#746). | HTTP 502 page |
+| `STS-FED-0231` | A Bluesky answer was refused: it named another issuer or no code, or the code could not be redeemed for a DPoP token with the atproto scope and a subject (#746). | HTTP 401 page |
+| `STS-FED-0232` | A Bluesky answer's subject was not believed: not a did:plc, no data server in its document, or a data server that does not name this issuer (#746). | HTTP 401 page |
+| `STS-FED-0233` | GET /federation/atproto/client/{id} named no usable Bluesky relationship (#746). | HTTP 404 |
 
 ## STS-OIDFED
 

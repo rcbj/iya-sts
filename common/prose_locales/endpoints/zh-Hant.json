@@ -1611,6 +1611,10 @@
     "en": "1bd56e73b838da2d",
     "text": "本服務「自己的」SAML 中繼資料，依夥伴"
   },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "Bluesky 關係的用戶端中繼資料 (#746)"
+  },
   "endpoints.route./federation/jwks/:id.name": {
     "en": "56f010e78f399989",
     "text": "OpenID Connect 關係的加密金鑰（#168）"

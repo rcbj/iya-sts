@@ -906,6 +906,7 @@ argued in its own file — `common/CLAUDE.md` (3cf), `common/CLAUDE.md` (3ce), `
 * **The twentieth is an AuthZEN access request's CALLBACK (2026-10-30, #1180)** — the companion profile's `callback.endpoint`, which the request names, so the caller's kind of URL; what makes it an administrator's is that it must EQUAL one of the URLs registered for the requesting PEP (`appAuthzenCallbackUri` on an application, `stsAuthzenCallbackUri` on a person's or service account's entry, written only by the AuthZEN tab's `set-callbacks`, https, no credentials or fragment), checked at the submission, and never one taken from the request alone (rcbj's decision 4). It is SENT to, never fetched from: `federation_http.deliverJson()` under the SENDABLE attribute `authzenCallbackEndpoint` — the kill switch, https verified, no redirect, the internal-address refusal with the connection pinned, the cap — once per finished task, with a 300-second JWT the realm signs as the Bearer, carrying no `result`. A failure is recorded (`STS-AUTHZEN-0091`) and not retried, because the task status endpoint is the record (`authzen/CLAUDE.md`).
 * **The twenty-first is an AUDIT EXPORT DESTINATION an administrator names (2026-11-01, #641)** — a webhook URL, a Splunk HEC URL, or a syslog TLS host, SENT to, never a caller-supplied fetch. `https` by default (`common/outbound_tls.ts`); product mode refuses plain `http`; skip-TLS is development-only and ignored in product mode; a CA file sits beside node's store; no userinfo. Loopback, link-local and private addresses, including RFC 6598 `100.64.0.0/10`, are refused in product mode unless `auditExport.allowPrivateDestinations` is on. Cloud metadata addresses are refused in every mode, and while that setting is on. Development mode still allows a loopback host whose every resolved address is loopback. The name is resolved before connect, a private answer is refused, a lookup failure at send pauses the destination, and a redirect is left unfollowed (`common/audit_export.ts`, `common/CLAUDE.md` 3da).
 * **The twenty-second is a PERSON'S WEBFINGER (2026-11-03, #930, rcbj's decision)** — `/federation/webfinger/{id}`, where a person types an identifier and this service asks the host it names who their OpenID Provider is (OpenID Connect Discovery 1.0 section 2). The host is the caller's to choose, which is why it is an exception: OFF by default per relationship (`fedWebFinger`, with `fedDiscovery`), through `fetchPublished()` (https only, verified; internal addresses refused in product mode with the connection pinned; no redirect; the cap and timeout); the issuer it names must lie WITHIN `fedPeer` — parsed, never a string prefix: the same scheme, host and effective port, no userinfo, query or fragment, and `fedPeer`'s path or one below it at a `/` boundary (`FederationSp.issuerWithin()`) — so it selects only within the partner an administrator configured; its discovery document must name it exactly; and nothing continues until the person follows the link the answer shows. The registration endpoint and the discovery document after it are the administrator's kind (named by a document of an issuer bounded by `fedPeer`).
+* **The twenty-fourth is a BLUESKY ACCOUNT'S DATA SERVER (2026-11-05, #746)** — named by a DID's document, so the caller's kind of URL; what bounds it is that it is reached only with a DID the relationship's own issuer answered, a did:plc read from the operator's `federation.atprotoPlcDirectory`, through `fetchPublished()`, and only to ask whether that server names this issuer. `atproto_client.ts`. A did:web is refused rather than dialled.
 
 ---
 
@@ -2336,6 +2337,27 @@ exactly the fetch `wreqptr` refuses, and only Steam's fixed endpoint is asked.
 neither the URL nor `why`. `fetchPublished()`'s `why` can quote a redirect's
 `Location`, which is why that matters.
 
+### The other three that a profile cannot say (#746 Tier 2, 2026-11-05)
+
+**`query-access-token`** is Stack Exchange's API and OSChina's, which read no
+bearer header. The address then holds a credential, so `queryTokenProfile()`
+answers `fetchJson()`'s shape with the query taken off and never quotes
+`fetchPublished()`'s `why`, since both reach the refusal page.
+
+**`discourse-connect`** dials nothing. The signature is checked in constant time
+before a byte of the payload is read, and readiness excuses the token and
+profile endpoints the protocol would otherwise ask for.
+
+**`atproto-oauth`** is `atproto_client.ts`, whose header is the argument. Its one
+step that must not be weakened is `subjectProblem()`: anybody can run an
+authorization server in that protocol, so without it any server could name any
+person. It is a public client on purpose, since nothing outlives the sign-in. It
+adds one more URL a caller's kind of value could name, a DID document's data
+server, which is dialled only after a named issuer's answer and through
+`fetchPublished()`. `beginConnect()` refuses it because that door answers an
+address synchronously and this protocol's request is a dial; making the door
+asynchronous would lift that.
+
 ### Tests
 
 `tests/federation_consumer_providers.js` drives a Discord, a GitHub and a
@@ -2350,7 +2372,8 @@ category over HTTP between two realms of one service through the
 login endpoint, creation from the profile, the list's category, a newcomer's
 own entry with a namesake left alone, and any-existing refused. The first
 file's section N holds rcbj's #729 decisions 2-4, and its A11 decision 1.
-Its section O drives #746's global providers the same way, and Steam's refusals.
+Its sections O and P drive #746's providers the same way, with Steam's,
+Discourse's and Bluesky's refusals.
 **Not covered yet:** a consumer provider on an application's chooser beside
 an enterprise partner, the details form after Apple's second authorization
 (the mechanism is the generic one N drives), and any profile against its
