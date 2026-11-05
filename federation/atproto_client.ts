@@ -116,6 +116,9 @@ class AtprotoClient {
       claims.nonce = nonce;
     }
     log.debug("Leaving AtprotoClient.proof().");
+    // certificate-header: none — a DPoP proof is verified against the `jwk` in
+    // its own header (RFC 9449 section 4.2), a key made for one sign-in that no
+    // certificate was ever issued for.
     return stsCrypto.signJws(claims, key.pem, {
       algorithm: 'ES256', header: { typ: 'dpop+jwt', jwk: key.jwk } });
   }

@@ -1152,11 +1152,16 @@ class FederationSp {
    * @param jwk - the partner key that verified a JWT, if that is what is
    *   checked
    * @param unsigned - true for an answer no signature was verified on (the
-   *   opaque OAuth 2.0 token's profile answer), re-entering from a held step:
+   *   opaque OAuth 2.0 token's profile answer, or a `no-signer:` site's),
+   *   re-entering from a held step:
    *   there is no signer to look up, and the sign-in goes on
+   * @param stillTrue - with `unsigned`, what a held answer with no signer
+   *   rested on, asked again: resolves to `{ code, why }` when it no longer
+   *   holds, and to null when it does (`heldSigner()`)
    * @returns a promise of what `proceed` or the refusal returns
    */
-  signerStillAccepted(req, res, record, proceed, jwk?, unsigned?: boolean) {
+  signerStillAccepted(req, res, record, proceed, jwk?, unsigned?: boolean,
+                      stillTrue?: () => Promise<any>) {
     const { errorCodes, revocationStatus, log } = this.deps;
     log.debug("Entering FederationSp.signerStillAccepted(). id=" +
               record.fedId);
@@ -1192,7 +1197,18 @@ class FederationSp {
         log.debug('signerStillAccepted(): the answer rested on no ' +
                   'signature (an opaque access token), so no signer is ' +
                   'looked up.');
-        return proceed();
+        if (!stillTrue) {
+          return proceed();
+        }
+        return stillTrue().then((problem) => {
+          if (!problem) {
+            return proceed();
+          }
+          // error-code: none — the code heldSigner()'s question answered with
+          errorCodes.mark(res, problem.code);
+          return this.refuse(res, record, 401, 'The sign-in was refused',
+            problem.why + ' Start the federated sign-in again.');
+        });
       }
       log.debug('signerStillAccepted(): ' +
                 revocationStatus.registeredSummary(verdict) + '.');
@@ -1227,8 +1243,12 @@ class FederationSp {
   // verified: `{ kind: 'certificate' }` for the relationship's
   // fedSigningCertificate (SAML 2.0, SAML 1.1, WS-Federation), `{ kind:
   // 'jwk', jwk }` for the partner key that verified a JWT (OIDC, a JWT
-  // access token), and `{ kind: 'none' }` for the opaque OAuth 2.0 token's
-  // profile answer, where no signature was verified at all. A held answer
+  // access token), and `{ kind: 'none' }` for an answer no signature was
+  // verified on: the opaque OAuth 2.0 token's profile answer, and Steam's.
+  // Discourse and Bluesky have no signer either, but what they rested on can
+  // still change while the person is away, so they carry `{ kind:
+  // 'shared-secret', fingerprint }` and `{ kind: 'did', did }`, and that is
+  // asked again instead (`federation/CLAUDE.md`). A held answer
   // with no `signer` is refused (STS-FED-0194) rather than finished
   // unchecked: nothing this module writes lacks one, so its absence is a
   // defect, and the safe reading of a defect is no.
@@ -1237,15 +1257,94 @@ class FederationSp {
    * The `signer` an answer carries: what verified it, for the re-check when
    * a held step returns.
    *
-   * @param kind - `certificate`, `jwk` or `none`
-   * @param jwk - with `jwk`, the key that verified the token
+   * @param kind - `certificate`, `jwk`, `shared-secret`, `did` or `none`
+   * @param detail - with `jwk`, the key that verified the token; with
+   *   `shared-secret`, the secret's fingerprint; with `did`, the subject's DID
    * @returns the descriptor
    */
-  static signerOf(kind: string, jwk?: any): { kind: string; jwk?: any } {
+  static signerOf(kind: string, detail?: any): any {
     helpers.log.debug("Entering FederationSp.signerOf(). " + kind);
     helpers.log.debug("Leaving FederationSp.signerOf().");
-    return kind === 'jwk' ? { kind: 'jwk', jwk: jwk || null }
+    if (kind === 'shared-secret') {
+      return { kind: kind, fingerprint: String(detail || '') };
+    }
+    if (kind === 'did') {
+      return { kind: kind, did: String(detail || '') };
+    }
+    return kind === 'jwk' ? { kind: 'jwk', jwk: detail || null }
                           : { kind: kind === 'none' ? 'none' : 'certificate' };
+  }
+
+  /**
+   * Names the shared secret a Discourse answer was verified under, for a held
+   * answer to be held to. It is an HMAC under that secret, which is what every
+   * sign-in already puts in a browser's address bar, so holding one tells a
+   * reader of the context store nothing a browser was not told.
+   *
+   * @param record - the federation relationship
+   * @returns its fingerprint, or '' with no usable secret
+   */
+  private sharedSecretFingerprint(record): string {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.sharedSecretFingerprint().");
+    const secret = String(federation.clientSecretOf(record) || '');
+    log.debug("Leaving FederationSp.sharedSecretFingerprint().");
+    return secret ? stsCrypto.hmacSha256(Buffer.from(secret, 'utf8'),
+      Buffer.from('federation held answer', 'utf8')).toString('hex') : '';
+  }
+
+  /**
+   * Asks whether a Bluesky answer's `sub` may be believed, now.
+   *
+   * @param record - the federation relationship
+   * @param did - the answer's `sub`
+   * @returns why not, or ''
+   */
+  private atprotoSubjectProblem(record, did: string): Promise<string> {
+    const { fedHttp, config, log } = this.deps;
+    log.debug("Entering FederationSp.atprotoSubjectProblem().");
+    log.debug("Leaving FederationSp.atprotoSubjectProblem().");
+    return AtprotoClient.subjectProblem((url, options) => {
+      return fedHttp.fetchPublished(url, options);
+    }, did, String(record.fedPeer),
+    String(config.value('federation.atprotoPlcDirectory')));
+  }
+
+  /**
+   * Asks again what a held Discourse answer rested on: a secret replaced while
+   * the person was away is a secret somebody stopped trusting.
+   *
+   * @param record - the federation relationship
+   * @param held - the fingerprint the answer carried
+   * @returns `{ code, why }`, or null while it still holds
+   */
+  private async heldSecretProblem(record, held: string): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.heldSecretProblem().");
+    const now = this.sharedSecretFingerprint(record);
+    const same = !!now && stsCrypto.constantTimeEquals(now, held);
+    log.debug("Leaving FederationSp.heldSecretProblem(). " + same);
+    return same ? null : {
+      code: 'STS-FED-0235',
+      why: 'The secret this answer was verified under has been replaced.' };
+  }
+
+  /**
+   * Asks again what a held Bluesky answer rested on: whether the DID's data
+   * server still names this issuer.
+   *
+   * @param record - the federation relationship
+   * @param did - the DID the answer carried
+   * @returns `{ code, why }`, or null while it still holds
+   */
+  private async heldDidProblem(record, did: string): Promise<any> {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.heldDidProblem().");
+    const problem = await this.atprotoSubjectProblem(record, did);
+    log.debug("Leaving FederationSp.heldDidProblem(). " + !problem);
+    return problem ? {
+      code: 'STS-FED-0236',
+      why: 'Bluesky\'s answer is no longer believed: ' + problem + '.' } : null;
   }
 
   /**
@@ -1255,7 +1354,8 @@ class FederationSp {
    * @param res - the response
    * @param record - the federation relationship
    * @param result - the held answer
-   * @returns `{ jwk, unsigned }`, or `{ refused }` with the refusal's return
+   * @returns `{ jwk, unsigned, stillTrue }`, or `{ refused }` with the
+   *   refusal's return
    */
   private heldSigner(res, record, result): any {
     const { errorCodes, log } = this.deps;
@@ -1265,6 +1365,18 @@ class FederationSp {
     if (kind === 'none') {
       log.debug("Leaving FederationSp.heldSigner(). Nothing was signed.");
       return { jwk: undefined, unsigned: true };
+    }
+    if (kind === 'shared-secret' && signer.fingerprint) {
+      log.debug("Leaving FederationSp.heldSigner(). A shared secret.");
+      return { jwk: undefined, unsigned: true, stillTrue: () => {
+        return this.heldSecretProblem(record, String(signer.fingerprint));
+      } };
+    }
+    if (kind === 'did' && signer.did) {
+      log.debug("Leaving FederationSp.heldSigner(). A DID.");
+      return { jwk: undefined, unsigned: true, stillTrue: () => {
+        return this.heldDidProblem(record, String(signer.did));
+      } };
     }
     if (kind === 'jwk' && signer.jwk && typeof signer.jwk === 'object') {
       log.debug("Leaving FederationSp.heldSigner(). A partner key.");
@@ -2617,7 +2729,7 @@ class FederationSp {
                                Object.assign({}, decision, {
                                  how: 'confirmed', create: false,
                                  link: context.link || decision.link }));
-    }, heldBy.jwk, heldBy.unsigned);
+    }, heldBy.jwk, heldBy.unsigned, heldBy.stillTrue);
   }
 
   // ---------------------------------------------------------------------------
@@ -3324,7 +3436,7 @@ class FederationSp {
       return this.completeSignIn(req, res, record,
         Object.assign({}, context.result, {
           amr: this.federatedAmr(proved), acr: 'mfa', steppedUp: true }));
-    }, heldBy.jwk, heldBy.unsigned);
+    }, heldBy.jwk, heldBy.unsigned, heldBy.stillTrue);
   }
 
   // ---------------------------------------------------------------------------
@@ -3786,7 +3898,7 @@ class FederationSp {
     return this.signerStillAccepted(req, res, record, () => {
       return this.completeSignIn(req, res, record,
         Object.assign({}, context.result, { profileSupplied: values }));
-    }, heldBy.jwk, heldBy.unsigned);
+    }, heldBy.jwk, heldBy.unsigned, heldBy.stillTrue);
   }
 
   // The values a newcomer gave, on the mapped attributes this sign-in
@@ -4706,10 +4818,14 @@ class FederationSp {
     const { federation, errorCodes, log } = this.deps;
     log.debug("Entering FederationSp.consumeDiscourseAnswer().");
     const payload = String(params.sso || '');
+    // NO SECRET VERIFIES NOTHING. A sealed secret that will not open reads as
+    // '' and readiness sees only the sealed text, and an HMAC under an empty
+    // key is one anybody can make, with the nonce off their own redirect.
+    const secret = String(federation.clientSecretOf(record) || '');
     const expected = stsCrypto.hmacSha256(
-      Buffer.from(String(federation.clientSecretOf(record)), 'utf8'),
+      Buffer.from(secret, 'utf8'),
       Buffer.from(payload, 'utf8')).toString('hex');
-    const signed = !!payload && stsCrypto.constantTimeEquals(
+    const signed = !!secret && !!payload && stsCrypto.constantTimeEquals(
       expected, String(params.sig || '').toLowerCase());
     const said: any = signed ? Object.fromEntries(new URLSearchParams(
       Buffer.from(payload, 'base64').toString('utf8')).entries()) : {};
@@ -4724,12 +4840,15 @@ class FederationSp {
     const reading = this.consumerReading(record, { token: said }, {},
       String(said.external_id), this.federatedAmr([]), '');
     log.debug("Leaving FederationSp.consumeDiscourseAnswer().");
+    // no-signer: discourse-hmac — an HMAC under the relationship's shared
+    // secret: no key an issuer could withdraw. Replacing the secret is the
+    // withdrawal, and a held answer is held to the one it was verified under.
     return this.completeSignIn(req, res, record, {
       subject: reading.subject,
       issuer: String(record.fedPeer || ''),
       bag: reading.bag, amr: reading.amr, acr: reading.acr,
-      // An HMAC: a shared secret, and no key anybody could revoke.
-      signer: FederationSp.signerOf('none'),
+      signer: FederationSp.signerOf('shared-secret',
+                                    this.sharedSecretFingerprint(record)),
       returnTo: this.fromContext(context).returnTo,
       connect: this.fromContext(context).connect,
       application: this.fromContext(context).application,
@@ -4831,7 +4950,7 @@ class FederationSp {
   }
 
   private async consumeAtprotoAnswer(req, res, record, context, params) {
-    const { fedHttp, config, errorCodes, log, baseUrlOf } = this.deps;
+    const { fedHttp, errorCodes, log, baseUrlOf } = this.deps;
     log.debug("Entering FederationSp.consumeAtprotoAnswer().");
     const issuer = String(record.fedPeer);
     const dial = (url, options) => {
@@ -4864,8 +4983,8 @@ class FederationSp {
         String(answer.token_type || '').toLowerCase() !== 'dpop') {
       return refused('STS-FED-0231', 'the code could not be redeemed');
     }
-    const problem = await AtprotoClient.subjectProblem(dial, String(answer.sub),
-      issuer, String(config.value('federation.atprotoPlcDirectory')));
+    const problem = await this.atprotoSubjectProblem(record,
+                                                     String(answer.sub));
     if (problem) {
       return refused('STS-FED-0232', problem);
     }
@@ -4880,10 +4999,14 @@ class FederationSp {
         userinfo: profile && profile.ok ? AtprotoClient.jsonOf(profile) : null },
       {}, String(answer.sub), this.federatedAmr([]), '');
     log.debug("Leaving FederationSp.consumeAtprotoAnswer().");
+    // no-signer: atproto-back-channel — no partner's signature is verified:
+    // `sub` is the token endpoint's answer over TLS, believed on the DID's
+    // document as dialled just now (and again if the answer is held), and the
+    // one key here is this sign-in's own.
     return this.completeSignIn(req, res, record, {
       subject: reading.subject, issuer: issuer,
       bag: reading.bag, amr: reading.amr, acr: reading.acr,
-      signer: FederationSp.signerOf('none'),
+      signer: FederationSp.signerOf('did', String(answer.sub)),
       returnTo: this.fromContext(context).returnTo,
       connect: this.fromContext(context).connect,
       application: this.fromContext(context).application,
@@ -5070,11 +5193,13 @@ class FederationSp {
       { token: { steamid: steamid }, userinfo: summary }, {},
       steamid, this.federatedAmr([]), '');
     log.debug("Leaving FederationSp.consumeSteamAssertion().");
+    // no-signer: steam-check-authentication — Steam said `is_valid:true` over
+    // TLS about its own signature (section 11.4.2). This service verified none
+    // and never holds the association's key, so there is no signer to ask of.
     return this.completeSignIn(req, res, record, {
       subject: reading.subject,
       issuer: String(record.fedPeer || ''),
       bag: reading.bag, amr: reading.amr, acr: reading.acr,
-      // The OP vouched for the signature, and this service checked none.
       signer: FederationSp.signerOf('none'),
       returnTo: this.fromContext(context).returnTo,
       connect: this.fromContext(context).connect,

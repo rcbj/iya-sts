@@ -275,6 +275,9 @@ to register: the address of a document this service serves,
   in. An account on its own authorization server, or with a `did:web`, is refused.
 * **No email address is read**, and a Bluesky account cannot be connected to an
   existing one from the portal.
+* **A sign-in waiting on a form or a second factor is asked about again.** If
+  the person's data server stops naming the issuer in that time, the sign-in is
+  refused. The same goes for a Discourse relationship whose secret is replaced.
 
 Anybody can run an authorization server in this protocol, so the DID in its
 answer is checked before it is believed: the DID's document names the person's

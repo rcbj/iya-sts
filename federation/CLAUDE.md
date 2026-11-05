@@ -376,8 +376,34 @@ somebody in. Every answer now carries `signer` where its signature was
 verified (`certificate`, `jwk` with the key, or `none` for the opaque token's
 profile answer), the three returns ask `signerStillAccepted()` again with it
 (`heldSigner()`), and a held answer with no `signer` is refused
-(`STS-FED-0194`) rather than finished unchecked. Seven `completeSignIn()`
-sites, six wrapped; the seventh is the opaque token's.
+(`STS-FED-0194`) rather than finished unchecked.
+
+**TEN `completeSignIn()` SITES, SIX WRAPPED, AND THE OTHER FOUR EACH FOR A
+REASON OF ITS OWN (#746, 2026-11-05).** The question is whether the answer rests
+on a signature whose signer could be withdrawn. Wrapping a site that has none
+would only look like an answer, so each unwrapped one says why, and
+`tests/revocation_status.js` holds the reason against what that method does:
+
+| Site | Marker | What the answer rests on, and why no signer can be asked about |
+|---|---|---|
+| the opaque OAuth 2.0 token | the refusal sentence before it | a profile endpoint's answer to a token this service cannot read; no signature was verified |
+| Discourse | `no-signer: discourse-hmac` | an HMAC under the relationship's shared secret, which no issuer stands behind; replacing the secret is the withdrawal. No secret verifies nothing: a sealed secret that will not open reads as `''`, and an HMAC under an empty key is one anybody can make |
+| Steam | `no-signer: steam-check-authentication` | OpenID 2.0 section 11.4.2: Steam answers `is_valid:true` over TLS about its own signature; its association key is never here |
+| Bluesky | `no-signer: atproto-back-channel` | the token endpoint's `sub` over TLS, believed only on `subjectProblem()`'s chain from the DID's document. The profile has no ID Token, the access token is dropped unread, the directory's signed operations are not verified, and the one key is this sign-in's own DPoP key |
+
+**A new site is one of three things**: wrapped, the opaque token's, or a new
+reason added to the test's table with evidence it can read. Adding a marker alone
+fails the test.
+
+**NO SIGNER IS NOT THE SAME AS NOTHING TO ASK AGAIN (rcbj, 2026-11-05).** What a
+held answer rested on can change while the person is away, so two of these carry
+it. A Discourse answer holds a fingerprint of the secret (`shared-secret`, an
+HMAC under that secret, as every sign-in already shows a browser), and is refused
+if the secret was replaced (`STS-FED-0235`). A Bluesky answer holds its DID (`did`)
+and asks `subjectProblem()` again, refused if the data server no longer names this
+issuer or cannot be asked (`STS-FED-0236`). **Steam and the opaque token carry
+`none` and finish on the check already made**: Steam's nonce is spent and its
+answer cannot be asked for twice, and the opaque path was left as it was.
 
 ---
 
