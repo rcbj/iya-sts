@@ -10123,6 +10123,7 @@ class OAuth2Server {
       mode: String(query.response_mode || ''),
       method: String(query.code_challenge_method || ''),
       client: String(query.client_id || ''),
+      requestUri: String(query.request_uri || ''),
       prompt: String(query.prompt || ''),
       tenant: String(query.tenant || '')
     }, named.params || {});
@@ -10222,6 +10223,32 @@ class OAuth2Server {
       /text\/html/i.test(accept);
     log.debug("Leaving OAuth2Server.isBrowserRequest(). " + out);
     return out;
+  }
+
+  /**
+   * Answers a refusal of an authorization request that is never redirected:
+   * the shared error page for a browser (#1326), the JSON a client library
+   * gets otherwise, with the same status, error and description.
+   *
+   * @param req - the request
+   * @param res - the response, its error code already marked
+   * @param status - the HTTP status
+   * @param error - the OAuth error value
+   * @param description - its English description
+   * @returns undefined
+   */
+  refuseAuthorization(req: Req, res: Res, status: number, error: string,
+                      description: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.refuseAuthorization(). " + error);
+    if (this.isBrowserRequest(req)) {
+      log.debug("Leaving OAuth2Server.refuseAuthorization(). A page.");
+      // error-code: none — the caller marks its own condition first
+      return this.sendRefusalPage(req, res, status, error, description);
+    }
+    log.debug("Leaving OAuth2Server.refuseAuthorization(). JSON.");
+    // error-code: none — the caller marks its own condition first
+    return this.oauthError(res, status, error, description);
   }
 
   /**
@@ -10687,8 +10714,8 @@ class OAuth2Server {
           errorCodes.mark(res, String(got.code || 'STS-OIDFED-0052'));
           log.debug("Leaving OAuth2Server.authorizeEndpoint(). Automatic " +
                     "registration refused.");
-          return self.oauthError(res, got.status || 400, got.error,
-                                 got.description);
+          return self.refuseAuthorization(req, res, got.status || 400,
+                                          got.error, got.description);
         }
         log.debug("Leaving OAuth2Server.authorizeEndpoint(). Registered " +
                   "through the federation.");
@@ -10699,8 +10726,8 @@ class OAuth2Server {
                   (e && e.stack ? e.stack : e));
         if (!res.headersSent) {
           errorCodes.mark(res, 'STS-OIDFED-0050');
-          self.oauthError(res, 500, 'server_error',
-                          String((e && e.message) || e));
+          self.refuseAuthorization(req, res, 500, 'server_error',
+                                   String((e && e.message) || e));
         }
       });
       return undefined;
@@ -10745,7 +10772,9 @@ class OAuth2Server {
         log.debug("Leaving OAuth2Server.authorizeWithClient(). The request " +
                   "object is refused.");
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-OAUTH-0340');
-        return self.oauthError(res, 400, result.error, result.description);
+        // A browser sees the shared error page (#1326).
+        return self.refuseAuthorization(req, res, 400, result.error,
+                                        result.description);
       }
       if (result.used) {
         req.stsJar = { outer: outer, source: result.source, alg: result.alg,
@@ -10765,8 +10794,8 @@ class OAuth2Server {
                 (e && e.stack ? e.stack : e));
       if (!res.headersSent) {
         errorCodes.mark(res, 'STS-OAUTH-0373');
-        self.oauthError(res, 500, 'server_error',
-                        String((e && e.message) || e));
+        self.refuseAuthorization(req, res, 500, 'server_error',
+                                 String((e && e.message) || e));
       }
     });
     log.debug("Leaving OAuth2Server.authorizeWithClient(). Resolving a " +
@@ -11929,7 +11958,8 @@ class OAuth2Server {
       log.debug("Leaving the authorization endpoint. " + policy.description);
       errorCodes.mark(res, errorCodes.codeOf(policy) || 'STS-OAUTH-0419');
       log.debug("Leaving OAuth2Server.authorizeRequest().");
-      return self.oauthError(res, 400, policy.error, policy.description);
+      return self.refuseAuthorization(req, res, 400, policy.error,
+                                      policy.description);
     }
 
     // The request-level checks, in `vetAuthorizationRequest()` so that the PAR

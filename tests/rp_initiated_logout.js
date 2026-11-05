@@ -586,6 +586,20 @@ function childMain() {
            e6.text.indexOf(frFrame.portal) > 0,
          'e6. ui_locales=fr: the refusal page in French, frame and message',
          e6.text.slice(0, 300));
+    // e9 (#1326): a request-object refusal reaches a browser as the same
+    // page with its own sentence; a client library still gets the JSON.
+    const e9Query = { request: 'x.y.z',
+                      request_uri: 'https://rp.rl.example/r' };
+    const e9 = await authorize(e9Query, HTML);
+    const e9Json = await authorize(e9Query);
+    const en = catalog('oauthPages', 'en');
+    note(e9.status === 400 && shaped(e9.text) &&
+           e9.text.indexOf(en['refusal.STS-OAUTH-0341']) > 0 &&
+           e9Json.status === 400 && e9Json.json &&
+           e9Json.json.error === 'invalid_request',
+         'e9. both request and request_uri: the page for a browser, saying ' +
+         'so in its own sentence; the JSON otherwise',
+         e9.status + ' ' + e9Json.status + ' ' + e9.text.slice(0, 300));
     idToken = await signIn('rl-alice');
     const e8Tampered = idToken.slice(0, -4) + (idToken.slice(-4) === 'AAAA'
       ? 'BBBB' : 'AAAA');
