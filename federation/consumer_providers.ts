@@ -50,7 +50,8 @@
 //   |                | (Apple's `user`, the name, sent once and unsigned)      |
 //
 // and the path is dotted (`data.id`), a number indexes an array, and
-// `@primary` selects the first element of an array whose `primary` is true.
+// `@primary` selects the first element of an array whose `primary` is true
+// (`is_primary`, in Bitbucket's spelling, #746).
 //
 // WHAT A PROFILE PRODUCES IS A CLAIM BAG, AND NOTHING ELSE. The bag is the
 // raw scalar members of the profile's primary source, with the profile's
@@ -167,10 +168,23 @@ interface Profile {
   note: string;
 }
 
+// What GitLab's UserInfo says of a person, on gitlab.com and on an instance
+// alike (#746). Its ID Token carries little more than the subject.
+const GITLAB_CLAIMS: Record<string, string> = {
+  name: 'userinfo:name',
+  nickname: 'userinfo:nickname',
+  preferred_username: 'userinfo:preferred_username',
+  picture: 'userinfo:picture',
+  profile: 'userinfo:profile',
+  website: 'userinfo:website',
+  email: 'userinfo:email'
+};
+
 /** The named adapters, a closed set (rcbj, #565). */
 const ADAPTERS = ['github-verified-email', 'tiktok-client-key',
                   'apple-client-secret', 'apple-user-form-field',
-                  'apple-notifications', 'microsoft-tenant-issuer'];
+                  'apple-notifications', 'microsoft-tenant-issuer',
+                  'steam-openid2'];
 
 // The tenant Microsoft signs personal accounts' tokens as (#565).
 const MICROSOFT_CONSUMERS_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
@@ -613,6 +627,275 @@ const PROFILES: Profile[] = [
           'once and unsigned. The address may be a private relay one. ' +
           'Register /federation/notifications/<id> as the server-to-server ' +
           'notification endpoint.' },
+  // -------------------------------------------------------------------------
+  // THE GLOBAL PROVIDERS OF #746's FIRST TIER (2026-11-05). The endpoints of
+  // the six that publish a discovery document were read from it on that date;
+  // Bitbucket, Patreon and Box answer 404 there and are their own
+  // documentation's. Battle.net, Epic and Roblox publish a claims list that
+  // does not promise an address, so none of the three reads one.
+  // -------------------------------------------------------------------------
+  { id: 'gitlab', label: 'GitLab.com', protocol: 'oidc', generic: false,
+    docs: 'https://docs.gitlab.com/integration/openid_connect_provider/',
+    defaults: {
+      fedSsoUrl: 'https://gitlab.com/oauth/authorize',
+      fedTokenUrl: 'https://gitlab.com/oauth/token',
+      fedJwksUri: 'https://gitlab.com/oauth/discovery/keys',
+      fedUserinfoUrl: 'https://gitlab.com/oauth/userinfo',
+      fedPeer: 'https://gitlab.com',
+      fedScope: 'openid profile email',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'id_token', subject: 'id_token:sub',
+    // The ID Token names the person and UserInfo describes them.
+    claims: GITLAB_CLAIMS,
+    emailVerified: 'userinfo:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect at gitlab.com. A self-managed instance is ' +
+          'gitlab-self-managed, whose issuer is its own address.' },
+  { id: 'gitlab-self-managed', label: 'GitLab (self-managed)',
+    protocol: 'oidc', generic: false,
+    docs: 'https://docs.gitlab.com/integration/openid_connect_provider/',
+    // No address here: each instance is its own issuer, and nothing about a
+    // gitlab.com default would be true of it.
+    defaults: { fedScope: 'openid profile email',
+                fedTokenAuth: 'client_secret_basic' },
+    needs: ['fedClientSecret', 'fedTokenUrl', 'fedJwksUri', 'fedUserinfoUrl'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: GITLAB_CLAIMS,
+    emailVerified: 'userinfo:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect at your own instance: set its address as the ' +
+          'issuer, and its /oauth/authorize, /oauth/token, ' +
+          '/oauth/discovery/keys and /oauth/userinfo. An instance vouches ' +
+          'for its own addresses, so trust one only if you trust whoever ' +
+          'runs it.' },
+  { id: 'bitbucket', label: 'Bitbucket', protocol: 'oauth2', generic: false,
+    docs: 'https://developer.atlassian.com/cloud/bitbucket/oauth-2/',
+    defaults: {
+      fedSsoUrl: 'https://bitbucket.org/site/oauth2/authorize',
+      fedTokenUrl: 'https://bitbucket.org/site/oauth2/access_token',
+      fedUserinfoUrl: 'https://api.bitbucket.org/2.0/user',
+      fedEmailsUrl: 'https://api.bitbucket.org/2.0/user/emails',
+      fedPeer: 'https://bitbucket.org',
+      fedScope: 'account email',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo',
+    // The uuid, never a username, which can be renamed.
+    subject: 'userinfo:uuid',
+    claims: {
+      name: 'userinfo:display_name',
+      nickname: 'userinfo:nickname',
+      picture: 'userinfo:links.avatar.href',
+      email: 'emails:values.@primary.email'
+    },
+    emailVerified: 'emails:values.@primary.is_confirmed',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OAuth 2.0 with no ID Token. The person is /2.0/user; the address ' +
+          'is the primary one on /2.0/user/emails, verified where Bitbucket ' +
+          'says it is confirmed.' },
+  { id: 'patreon', label: 'Patreon', protocol: 'oauth2', generic: false,
+    docs: 'https://docs.patreon.com/',
+    defaults: {
+      fedSsoUrl: 'https://www.patreon.com/oauth2/authorize',
+      fedTokenUrl: 'https://www.patreon.com/api/oauth2/token',
+      // APIv2 answers only the fields a request names.
+      fedUserinfoUrl: 'https://www.patreon.com/api/oauth2/v2/identity?' +
+                      'fields%5Buser%5D=email,first_name,last_name,full_name,' +
+                      'image_url,is_email_verified,url,vanity',
+      fedPeer: 'https://www.patreon.com',
+      fedScope: 'identity identity[email]',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo', subject: 'userinfo:data.id',
+    claims: {
+      name: 'userinfo:data.attributes.full_name',
+      given_name: 'userinfo:data.attributes.first_name',
+      family_name: 'userinfo:data.attributes.last_name',
+      preferred_username: 'userinfo:data.attributes.vanity',
+      picture: 'userinfo:data.attributes.image_url',
+      profile: 'userinfo:data.attributes.url',
+      email: 'userinfo:data.attributes.email'
+    },
+    emailVerified: 'userinfo:data.attributes.is_email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OAuth 2.0 with APIv2\'s /identity, whose answer is nested under ' +
+          'data. It says whether the address is confirmed.' },
+  { id: 'roblox', label: 'Roblox', protocol: 'oidc', generic: false,
+    docs: 'https://create.roblox.com/docs/cloud/auth/oauth2-overview',
+    defaults: {
+      fedSsoUrl: 'https://apis.roblox.com/oauth/v1/authorize',
+      fedTokenUrl: 'https://apis.roblox.com/oauth/v1/token',
+      fedJwksUri: 'https://apis.roblox.com/oauth/v1/certs',
+      // The trailing slash is Roblox's issuer, exactly.
+      fedPeer: 'https://apis.roblox.com/oauth/',
+      fedScope: 'openid profile',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      name: 'id_token:name',
+      nickname: 'id_token:nickname',
+      preferred_username: 'id_token:preferred_username',
+      profile: 'id_token:profile',
+      picture: 'id_token:picture'
+    },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect, ES256. Registering an application needs an ID ' +
+          'verified Roblox account, and a person must be 13 or older to ' +
+          'authorize one. No address is read.' },
+  { id: 'battlenet', label: 'Battle.net', protocol: 'oidc', generic: false,
+    docs: 'https://community.developer.battle.net/documentation/guides/' +
+          'using-oauth',
+    defaults: {
+      fedSsoUrl: 'https://oauth.battle.net/authorize',
+      fedTokenUrl: 'https://oauth.battle.net/token',
+      fedJwksUri: 'https://oauth.battle.net/jwks/certs',
+      fedUserinfoUrl: 'https://oauth.battle.net/userinfo',
+      fedPeer: 'https://oauth.battle.net',
+      fedScope: 'openid',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'id_token', subject: 'id_token:sub',
+    // A BattleTag is a display name its holder can change.
+    claims: { preferred_username: 'userinfo:battletag' },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect, global accounts. China has its own host, ' +
+          'oauth.battlenet.com.cn, which this profile does not cover. No ' +
+          'address is offered.' },
+  { id: 'epic', label: 'Epic Games', protocol: 'oidc', generic: false,
+    docs: 'https://dev.epicgames.com/docs/web-api-ref/authentication',
+    defaults: {
+      fedSsoUrl: 'https://www.epicgames.com/id/authorize',
+      fedTokenUrl: 'https://api.epicgames.dev/epic/oauth/v1/token',
+      fedJwksUri: 'https://api.epicgames.dev/epic/oauth/v1/.well-known/' +
+                  'jwks.json',
+      fedUserinfoUrl: 'https://api.epicgames.dev/epic/oauth/v1/userInfo',
+      fedPeer: 'https://api.epicgames.dev/epic/oauth/v1',
+      fedScope: 'openid basic_profile',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: { preferred_username: 'userinfo:preferred_username' },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect through Epic Account Services, which an ' +
+          'application must have set up in the Epic Developer Portal, with ' +
+          'the application\'s brand review where Epic asks for one. No ' +
+          'address is read.' },
+  // SIGN-IN, NOT PAYMENT (#746): "Log in with PayPal", and no payment scope.
+  // It is OAuth 2.0 here although PayPal publishes OpenID Connect, because
+  // its discovery document offers HS256 beside RS256 and claims only
+  // `user_id`, while the identity API documents the person's profile.
+  { id: 'paypal', label: 'PayPal', protocol: 'oauth2', generic: false,
+    docs: 'https://developer.paypal.com/docs/log-in-with-paypal/',
+    defaults: {
+      fedSsoUrl: 'https://www.paypal.com/connect',
+      fedTokenUrl: 'https://api-m.paypal.com/v1/oauth2/token',
+      fedUserinfoUrl: 'https://api-m.paypal.com/v1/identity/openidconnect/' +
+                      'userinfo?schema=openid',
+      fedPeer: 'https://www.paypal.com',
+      fedScope: 'openid profile email',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo', subject: 'userinfo:sub',
+    claims: {
+      name: 'userinfo:name',
+      given_name: 'userinfo:given_name',
+      family_name: 'userinfo:family_name',
+      picture: 'userinfo:picture',
+      email: 'userinfo:email'
+    },
+    emailVerified: 'userinfo:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'Log in with PayPal: signing in, with no payment scope. Turn the ' +
+          'feature on for the application, and choose the fields it may ' +
+          'read, in the PayPal developer dashboard.' },
+  { id: 'dropbox', label: 'Dropbox', protocol: 'oidc', generic: false,
+    docs: 'https://developers.dropbox.com/oidc-guide',
+    // No UserInfo: Dropbox's takes POST alone, and the ID Token holds it all.
+    defaults: {
+      fedSsoUrl: 'https://www.dropbox.com/oauth2/authorize',
+      fedTokenUrl: 'https://api.dropboxapi.com/oauth2/token',
+      fedJwksUri: 'https://www.dropbox.com/.well-known/jwks',
+      fedPeer: 'https://www.dropbox.com',
+      fedScope: 'openid email profile',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      given_name: 'id_token:given_name',
+      family_name: 'id_token:family_name',
+      email: 'id_token:email'
+    },
+    emailVerified: 'id_token:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect with the code flow. Select the openid, email and ' +
+          'profile scopes on the application in the Dropbox App Console.' },
+  { id: 'box', label: 'Box', protocol: 'oauth2', generic: false,
+    docs: 'https://developer.box.com/guides/authentication/oauth2/',
+    // No scope: a Box application's scopes are set on the application.
+    defaults: {
+      fedSsoUrl: 'https://account.box.com/api/oauth2/authorize',
+      fedTokenUrl: 'https://api.box.com/oauth2/token',
+      fedUserinfoUrl: 'https://api.box.com/2.0/users/me',
+      fedPeer: 'https://account.box.com',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo', subject: 'userinfo:id',
+    // `login` is the account's address, with no statement that it was proved.
+    claims: {
+      name: 'userinfo:name',
+      picture: 'userinfo:avatar_url',
+      email: 'userinfo:login'
+    },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OAuth 2.0 with /2.0/users/me. The address is the account\'s login ' +
+          'and is unverified here.' },
+  // STEAM IS OPENID 2.0 (#746), the one provider here that is not OAuth at
+  // all: no client, no secret, no token. It is an `oauth2` relationship only
+  // because that is the family it sits beside, and `steam-openid2` replaces
+  // both halves of the flow (`federation_sp.ts`). `fedTokenUrl` is the OP
+  // Endpoint, where the assertion is checked: Steam's discovery document says
+  // /openid/login, and its documentation calls /openid/ the endpoint.
+  // `fedClientId` exists because the relationship's protocol needs one, and
+  // no request sends it. `fedClientSecret`, optional, is a Steam Web API key:
+  // without one a person has an identifier and no name.
+  { id: 'steam', label: 'Steam', protocol: 'oauth2', generic: false,
+    docs: 'https://partner.steamgames.com/doc/features/auth',
+    defaults: {
+      fedSsoUrl: 'https://steamcommunity.com/openid/login',
+      fedTokenUrl: 'https://steamcommunity.com/openid/login',
+      fedUserinfoUrl: 'https://api.steampowered.com/ISteamUser/' +
+                      'GetPlayerSummaries/v2/',
+      fedPeer: 'https://steamcommunity.com/openid',
+      fedClientId: 'steam-openid2'
+    },
+    needs: [],
+    primary: 'token', subject: 'token:steamid',
+    claims: {
+      name: 'userinfo:response.players.0.personaname',
+      picture: 'userinfo:response.players.0.avatarfull',
+      profile: 'userinfo:response.players.0.profileurl'
+    },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: ['steam-openid2'],
+    note: 'OpenID 2.0, with no client id or secret. The person is the SteamID ' +
+          'in the claimed identifier, and no address exists. Put a Steam Web ' +
+          'API key in fedClientSecret for a name and a picture; without one ' +
+          'the person has neither.' },
   { id: 'generic-oidc', label: 'Another OpenID Connect provider',
     protocol: 'oidc', generic: true, docs: '',
     defaults: { fedScope: 'openid profile email' },
@@ -874,7 +1157,8 @@ export = class ConsumerProviders {
       if (step === '@primary') {
         at = Array.isArray(at)
           ? at.filter(function (one) {
-            return one && typeof one === 'object' && one.primary === true;
+            return one && typeof one === 'object' &&
+                   (one.primary === true || one.is_primary === true);
           })[0]
           : undefined;
         continue;

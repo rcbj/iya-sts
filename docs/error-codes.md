@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5216** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5221** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 195
+* [Federation (`STS-FED`)](#sts-fed) — 200
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 254
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 163
@@ -2862,6 +2862,11 @@ Raised from: federation/.
 | `STS-FED-0216` | A typed identifier could not be looked up by WebFinger: it is not one, its host did not answer, or the answer named no OpenID Connect issuer (OpenID Connect Discovery 1.0 section 2, #930). | HTTP 400 or 502 page |
 | `STS-FED-0217` | WebFinger named an issuer that does not begin with the relationship's fedPeer, so it was not used (#930). | HTTP 403 page |
 | `STS-FED-0218` | A Request Object was asked for at an address that names none: never made, already fetched once, or expired (#930). | HTTP 404 |
+| `STS-FED-0224` | A Steam sign-in came back with no OpenID 2.0 assertion: the mode was not id_res, usually a person cancelling on its page (#746). | HTTP 400 page |
+| `STS-FED-0225` | A Steam assertion was refused before the provider was asked: another return address or endpoint, a required field missing or unsigned, or a claimed identifier that is not a SteamID on Steam's host (OpenID Authentication 2.0 section 11, #746). | HTTP 401 page |
+| `STS-FED-0226` | Steam did not confirm a Steam assertion: check_authentication failed or did not answer is_valid:true (#746). | HTTP 401 page |
+| `STS-FED-0227` | A Steam assertion's nonce was already used, or the replay history could not prove it unused (OpenID Authentication 2.0 section 11.3, #746). | HTTP 401 page |
+| `STS-FED-0228` | The Steam Web API gave no summary of a person, so their entry has no name or picture from it. The sign-in is unaffected (#746). | Logged |
 
 ## STS-OIDFED
 

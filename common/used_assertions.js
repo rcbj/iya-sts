@@ -151,6 +151,9 @@ config.registerLogger(log);
  */
 const FORMATS = {
   jwt: 'RFC 7523 JWT',
+  // #746: Steam's assertion, keyed by its `openid.response_nonce` (OpenID
+  // Authentication 2.0 section 11.3), which is no kind of document above.
+  openid2: 'OpenID 2.0 assertion',
   saml: 'RFC 7522 SAML 2.0 assertion',
   // #114: a SAML 1.1 assertion exchanged under RFC 8693, keyed by its
   // AssertionID — a namespace of its own beside SAML 2.0's ID, for the
@@ -180,6 +183,8 @@ const FORMATS = {
  * label the console draws for it.
  */
 const USES = {
+  // #746: OpenID Authentication 2.0 section 11.3, Steam's assertion.
+  'steam-assertion': 'a sign-in through Steam',
   'client-authentication': 'client authentication (RFC 7521 section 4.2)',
   'authorization-grant': 'authorization grant (RFC 7521 section 4.1)',
   // RFC 9101 (#35, 2026-09-17). A request object is a JWT its CLIENT signs,

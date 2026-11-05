@@ -2313,6 +2313,29 @@ and `user` field, the Microsoft tenant issuer and TikTok's `client_key` are
 the next. Which platforms can be supported is
 `../docs/federation-consumer-providers.md`.
 
+### Steam is the one provider that is not OAuth (#746, 2026-11-05)
+
+**The `steam-openid2` adapter replaces both halves of the flow**, because OpenID
+2.0 has no client, no code and no token, and a profile cannot say that. It is an
+`oauth2` relationship rather than a seventh protocol: everything after the
+assertion is the same funnel, and a new protocol would have touched every table
+keyed on one for a single provider. `fedTokenUrl` is the OP Endpoint, already
+diallable, and `fedClientId` is a placeholder the protocol's `needs` wants and
+no request sends.
+
+**What stands in for the signature** is `check_authentication`: this service
+holds no association, so the OP says whether it signed the assertion. What is
+this service's own is section 11, in `steamAssertionProblem()`, and the check
+worth protecting is that `claimed_id`, `identity`, `return_to` and `op_endpoint`
+are inside `openid.signed`, because anything outside it is the browser's to
+write. The claimed identifier is held to Steam's host by a pattern, and it is
+**never dialled**: OpenID 2.0 discovery on a caller's identifier would be
+exactly the fetch `wreqptr` refuses, and only Steam's fixed endpoint is asked.
+
+**The Web API key goes on the URL**, as Steam takes it, so `steamSummary()` logs
+neither the URL nor `why`. `fetchPublished()`'s `why` can quote a redirect's
+`Location`, which is why that matters.
+
 ### Tests
 
 `tests/federation_consumer_providers.js` drives a Discord, a GitHub and a
@@ -2327,6 +2350,7 @@ category over HTTP between two realms of one service through the
 login endpoint, creation from the profile, the list's category, a newcomer's
 own entry with a namesake left alone, and any-existing refused. The first
 file's section N holds rcbj's #729 decisions 2-4, and its A11 decision 1.
+Its section O drives #746's global providers the same way, and Steam's refusals.
 **Not covered yet:** a consumer provider on an application's chooser beside
 an enterprise partner, the details form after Apple's second authorization
 (the mechanism is the generic one N drives), and any profile against its

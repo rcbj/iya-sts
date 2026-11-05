@@ -40,7 +40,7 @@ covers:
 
 ## Supported providers
 
-16 provider profiles, plus 2 generic profiles for a provider outside the
+27 provider profiles, plus 2 generic profiles for a provider outside the
 catalogue. **None has yet been run against its live provider.** Doing so needs
 an application registered at each provider, with its credentials.
 
@@ -72,6 +72,17 @@ The *Tested* column says how each profile is exercised by
 | Facebook (`facebook`) | OAuth 2.0, Graph API `/me` | the app-scoped `id` | `email`, never verified | Profile only |
 | Amazon (`amazon`) | OAuth 2.0, `/user/profile` | `user_id` | `email`, never verified | Profile only |
 | Spotify (`spotify`) | OAuth 2.0, `/v1/me` | `id` | `email`, never verified | Profile only |
+| GitLab.com (`gitlab`) | OpenID Connect | the ID Token's `sub` | UserInfo's `email`, verified where `email_verified` is true | Sign-in |
+| GitLab, self-managed (`gitlab-self-managed`) | OpenID Connect, your instance's own addresses | the ID Token's `sub` | as above, on your instance's word | Creation only |
+| Bitbucket (`bitbucket`) | OAuth 2.0 | `/2.0/user`'s `uuid`, never a username | the `is_primary` address on `/2.0/user/emails`, verified where `is_confirmed` is true | Sign-in |
+| Patreon (`patreon`) | OAuth 2.0, APIv2 `/identity` | `data.id` | `data.attributes.email`, verified where `is_email_verified` is true | Sign-in |
+| Roblox (`roblox`) | OpenID Connect, ES256 | the ID Token's `sub` | none | Sign-in |
+| Battle.net (`battlenet`) | OpenID Connect | the ID Token's `sub`, never the BattleTag, which can be changed | none | Sign-in |
+| Epic Games (`epic`) | OpenID Connect (Epic Account Services) | the ID Token's `sub` | none | Sign-in |
+| PayPal (`paypal`) | OAuth 2.0, identity API, no payment scope | `sub` | `email`, verified where `email_verified` is true | Sign-in |
+| Dropbox (`dropbox`) | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true | Sign-in |
+| Box (`box`) | OAuth 2.0, `/2.0/users/me` | `id` | `login`, never verified | Sign-in |
+| Steam (`steam`) | OpenID 2.0, no client id or secret | the SteamID in the claimed identifier | none: Steam offers no address | Sign-in |
 | Another OpenID Connect provider (`generic-oidc`) | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true | Sign-in, over HTTP |
 | Another OAuth 2.0 provider (`generic-oauth2`) | OAuth 2.0 | `sub`, `id` or `user_id` | `email`, verified where `email_verified` is true | Profile only |
 
@@ -183,6 +194,17 @@ directions rather than click paths. In every case:
 
 | Provider | Where | What it needs besides the redirect URI |
 |---|---|---|
+| GitLab.com | User settings → Applications | The redirect URI, and the `openid`, `profile` and `email` scopes. |
+| GitLab, self-managed | The same, on your instance | As above. Set the issuer to the instance's address, and the four endpoints under it. |
+| Bitbucket | Workspace settings → OAuth consumers | The callback URL, and the Account and Email permissions. |
+| Patreon | Clients & API Keys on the Patreon developer portal | The redirect URI. |
+| Roblox | Creator Dashboard → OAuth 2.0 apps | The `openid` and `profile` scopes. The account registering the app must be ID verified. |
+| Battle.net | Blizzard Developer Portal → API Access | The redirect URL. |
+| Epic Games | Epic Developer Portal → your product → Epic Account Services | A client with a redirect URL, and whatever brand review Epic asks for. |
+| PayPal | PayPal Developer Dashboard → your app → Log in with PayPal | Turn the feature on, set the return URL, and choose the fields the app may read. |
+| Dropbox | Dropbox App Console → your app | The redirect URI, and the `openid`, `email` and `profile` scopes. |
+| Box | Box Developer Console → a custom app using user authentication | The redirect URI. Its scopes are set on the app. |
+| Steam | Nothing to register | See [Signing in with Steam](#signing-in-with-steam). |
 | Google | Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application) | The OAuth consent screen configured. |
 | Apple | Apple Developer → Certificates, Identifiers & Profiles: an App ID with Sign in with Apple, a **Services ID** (the client ID), and a **key** with Sign in with Apple enabled | The Services ID's return URL. The team id, the key id and the key's `.p8` file go into iya-sts (see [Sign in with Apple](#sign-in-with-apple)). Needs an Apple Developer Program membership. |
 | Microsoft (`microsoft`) | Microsoft Entra admin center → App registrations → New registration | Supported account types: **personal Microsoft accounts only**. A client secret under Certificates & secrets. |
@@ -199,6 +221,23 @@ directions rather than click paths. In every case:
 | Spotify | Spotify Developer Dashboard → your app → Settings | The redirect URI. |
 | X | X Developer Portal → your project's app → User authentication settings | OAuth 2.0, type *Web App* (confidential client), the callback URL. An address needs an elevated access tier. |
 | TikTok | TikTok for Developers → your app → Login Kit | The redirect URI. The client key is the client ID. App review is required. |
+
+### Signing in with Steam
+
+Steam uses OpenID 2.0, which is older than OAuth and works differently:
+
+* **There is nothing to register**, and no client ID or secret. Create the
+  relationship with `fedProvider` set to `steam`.
+* **Steam gives no email address**, ever. A person's account here has the
+  SteamID as its identifier and no address, so anything your realm requires of
+  every person has to come from the details form.
+* **A name and picture need a Steam Web API key.** Put one in `fedClientSecret`.
+  Without a key, a person signs in with neither.
+
+Steam's documentation names `https://steamcommunity.com/openid/` as the endpoint,
+and its discovery document there names `/openid/login`, which is what the profile
+uses. Each assertion is checked with Steam before it is believed, its nonce is
+accepted once, and its claimed identifier must be a SteamID on Steam's own host.
 
 ### Sign in with Apple
 
@@ -385,7 +424,7 @@ endpoint, described [above](#sign-in-with-apple).
 ## Limits and what is not verified
 
 * **No profile has been run against its live provider.** Each one is built
-  from the provider's published documentation. Six are exercised against
+  from the provider's published documentation. Sixteen are exercised against
   servers that behave as the documentation describes. Providers change their
   endpoints, scopes and review rules, so the first live sign-in through each
   is the real test.
@@ -451,6 +490,27 @@ endpoints and review requirements.
 | Spotify | OAuth 2.0, `/v1/me` | `id` | `email`, editable by the user, with no verification statement | The documentation frames it as authorization for its Web API rather than as sign-in. | **Built** (profile; the address is unverified) |
 | Sentry | OAuth 2.0 for integrations | to be established | to be established | Its OAuth exists to authorize an integration's API calls. Whether it supports signing a person in is not established. | Not yet feasible |
 | Netflix | none published | — | — | Netflix publishes no interface for signing a person in to a third party. | **Not feasible** |
+
+### The global providers of #746's first tier
+
+**Read in November 2026.** Where a provider publishes a discovery document, its
+endpoints were read from there. The same caution applies: each row is checked
+again when its profile is first used live.
+
+| Platform | Protocol | Identifier | Email | Restrictions and notes | State |
+|---|---|---|---|---|---|
+| GitLab.com | OpenID Connect | `sub` | UserInfo's `email` with `email_verified` | Its ID Token carries little beyond the subject, so the profile reads UserInfo. | **Built**; sign-in tested against a provider-shaped server |
+| GitLab, self-managed | OpenID Connect | `sub` | as GitLab.com | Each instance is its own issuer and vouches for its own addresses. | **Built**; creation tested |
+| Bitbucket | OAuth 2.0, no discovery document | `uuid` | `is_primary` on `/2.0/user/emails` | Requests go to `api.bitbucket.org` with a Bearer token. | **Built**; sign-in tested against a provider-shaped server |
+| Patreon | OAuth 2.0, no discovery document | `data.id` | `email` with `is_email_verified` | APIv2 answers only the fields a request names. | **Built**; sign-in tested against a provider-shaped server |
+| Roblox | OpenID Connect, ES256 | `sub` | none read | Its issuer ends in a slash. The registering account must be ID verified, and a person must be 13 or older. | **Built**; sign-in tested against a provider-shaped server |
+| Battle.net | OpenID Connect | `sub` | none | China has its own host, `oauth.battlenet.com.cn`, which the profile does not cover. | **Built**; sign-in tested against a provider-shaped server |
+| Epic Games | OpenID Connect | `sub` | none read | Needs Epic Account Services set up for the application. Its scope names could not be confirmed from a published list. | **Built**; sign-in tested against a provider-shaped server |
+| PayPal | OAuth 2.0 here, though PayPal publishes OpenID Connect | `sub` | `email` with `email_verified` | Its discovery document offers HS256 and claims little, while its identity API documents the person. No payment scope is asked for. | **Built**; sign-in tested against a provider-shaped server |
+| Dropbox | OpenID Connect | `sub` | `email` with `email_verified` | The code flow only. Its UserInfo takes POST alone, so the profile reads the ID Token. | **Built**; sign-in tested against a provider-shaped server |
+| Box | OAuth 2.0, no discovery document | `id` | `login`, with no verification statement | An app's scopes are set on the app. | **Built**; sign-in tested against a provider-shaped server |
+| Steam | OpenID 2.0 | SteamID | none exists | No client or secret. A name and picture need a Web API key. | **Built**; sign-in tested against a provider-shaped server |
+| NAVER Z / ZEPETO | none found | — | — | The ticket labels it "Global, Korea" and asks to verify its login API. No published interface for signing a person in to a third party was found. | Not built |
 
 ## Related
 
