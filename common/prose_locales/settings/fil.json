@@ -1535,6 +1535,14 @@
     "en": "6ca0d3f207d8dcd4",
     "text": "Ang mga JWS algorithm na ginagamit ng realm na ito sa pagpirma at pinaglalathalaan nito ng mga key. **Kapag walang laman, ang default, nananatili ang bawat algorithm na mayroon ang realm.** Dapat kasama sa listahan ang RS256: hinihingi ito ng OpenID Connect Discovery sa `id_token_signing_alg_values_supported`, at ito ang default para sa mga ID Token at access token. Kapag may listahan: walang signing key para sa algorithm na wala sa listahan sa `/oauth2/jwks` (kasama ang mga standby, pinned, at signer-group key; nagsisilbi ang isang RSA key sa bawat RS at PS algorithm, kaya nananatili ito); wala ang algorithm na wala sa listahan sa mga signing list ng ID Token, UserInfo, introspection, o JARM sa discovery; hindi ito mairerehistro o maibibigay sa isang client para sa mga tugong iyon; tinatanggihan ang pirmang hinihingi pa rin gamit ito sa halip na gawin gamit ang key na hindi makukuha ninuman; at RS256 ang ipinipirma ng `oauth2.accessTokenSigningAlg` na wala sa listahan. Isama rin ang PS256 para sa FAPI 1.0 Advanced. Patuloy na umiiral ang `keys.postQuantumSigning` at `keys.eddsaSigning`: hindi binubuksan ang pamilya ng algorithm dahil lang nakalista ito. **Hindi nagbabago:** ang tinatanggap ng realm na ito mula sa mga client (mga client assertion, DPoP proof, request object, wallet proof); ang plain JSON na tugon ng UserInfo; ang mga encryption key; ang COSE, mga XML signature, DKIM, at TLS; at ang mga algorithm na itinatakda ng `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg`, at ng credential algorithm ng OpenID4VCI, kaya pangalanan doon ang nasa listahan."
   },
+  "keys.jwksCertificateUrl|label": {
+    "en": "b910ac23ecc20134",
+    "text": "Pangalanan sa URL ang mga certificate ng nakalathalang key"
+  },
+  "keys.jwksCertificateUrl|description": {
+    "en": "83d67129453bea8c",
+    "text": "Kung pinangangalanan ng `/oauth2/jwks` ang certificate chain ng bawat key gamit ang `x5u` (RFC 7517 section 4.6) sa halip na isama ito sa `x5c`. **Naka-off bilang default.** Kapag naka-on: inilalathala ng key ang address ng chain nito sa `/pki/chain/{scope}/{sha256}.pem`, na nagpapaliit nang husto sa JWK Set; kinukuha ito sa TLS ng client na gusto ang chain. Pinapanatili ang `x5c` ng key na ang chain ay hindi kayang ibigay ng address na iyon. **Hindi nagbabago:** ang `x5c` o `x5u` header ng token, na itinatakda ng sariling setting ng bawat use case."
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "Format ng kid ng signed token"

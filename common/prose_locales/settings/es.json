@@ -1535,6 +1535,14 @@
     "en": "6ca0d3f207d8dcd4",
     "text": "Los algoritmos JWS con los que este dominio firma y para los que publica claves. **Vacío, el valor predeterminado, conserva todos los algoritmos que el dominio tenga por lo demás.** Una lista debe incluir RS256: OpenID Connect Discovery lo exige en `id_token_signing_alg_values_supported`, y es el valor predeterminado para los ID Token y los tokens de acceso. Con una lista: en `/oauth2/jwks` no hay ninguna clave de firma de un algoritmo no incluido (ni las de reserva, las fijadas o las de grupos de firmantes; una clave RSA sirve para todos los algoritmos RS y PS, así que se mantiene); un algoritmo no incluido no aparece en las listas de firma de ID Token, UserInfo, introspección o JARM del documento de descubrimiento; un cliente no puede registrarlo ni recibirlo para esas respuestas; una firma que aún se solicite con él se rechaza en lugar de hacerse con una clave que nadie puede obtener; y un `oauth2.accessTokenSigningAlg` no incluido firma con RS256 en su lugar. Incluya también PS256 para FAPI 1.0 Advanced. `keys.postQuantumSigning` y `keys.eddsaSigning` siguen aplicándose: incluir un algoritmo no activa su familia. **Sin cambios:** lo que este dominio acepta de los clientes (aserciones de cliente, pruebas DPoP, objetos de solicitud, pruebas de cartera); una respuesta UserInfo en JSON sin firmar; las claves de cifrado; COSE, las firmas XML, DKIM y TLS; y los algoritmos que configuran `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` y el algoritmo de credenciales de OpenID4VCI, así que indique allí uno incluido."
   },
+  "keys.jwksCertificateUrl|label": {
+    "en": "b910ac23ecc20134",
+    "text": "Nombrar por URL los certificados de una clave publicada"
+  },
+  "keys.jwksCertificateUrl|description": {
+    "en": "83d67129453bea8c",
+    "text": "Si `/oauth2/jwks` nombra la cadena de certificados de cada clave con `x5u` (sección 4.6 de RFC 7517) en lugar de incluirla en `x5c`. **Desactivado de forma predeterminada.** Activado: una clave publica la dirección de su cadena en `/pki/chain/{scope}/{sha256}.pem`, lo que hace mucho más pequeño el conjunto JWK; un cliente que quiera la cadena la obtiene mediante TLS. Una clave cuya cadena esa dirección no pueda servir conserva su `x5c`. **Sin cambios:** el encabezado `x5c` o `x5u` de un token, que decide la configuración propia de cada caso de uso."
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "Formato del kid de los tokens firmados"

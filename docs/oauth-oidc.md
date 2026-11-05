@@ -1355,6 +1355,18 @@ plain JSON. `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` and
 `oid4vci.credentialSigningAlgorithm` still sign with what they name, so name a
 listed algorithm there.
 
+#### Naming a published key's certificates by URL
+
+**`keys.jwksCertificateUrl`** (Key material, per realm, **off by default**)
+makes `/oauth2/jwks` name each key's certificate chain with `x5u` (RFC 7517
+section 4.6) instead of carrying it in `x5c`. The address is
+`/pki/chain/{scope}/{sha256}.pem`, the same document a token's `x5u` header
+names. It makes the JWK Set much smaller, and a client that wants the chain
+fetches it over TLS, so check that your clients do not read `x5c` from the JWK
+Set before you turn it on. A key whose chain that address cannot serve keeps
+its `x5c`. A token's own header is unaffected: each use case's setting decides
+that.
+
 ### Custom claims — `/admin/claims`
 
 **Protocols → OAuth2 / OIDC → Custom claims** says what to add to every access

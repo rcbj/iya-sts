@@ -1535,6 +1535,14 @@
     "en": "6ca0d3f207d8dcd4",
     "text": "Les algorithmes JWS avec lesquels ce domaine signe et pour lesquels il publie des clés. **Vide, la valeur par défaut, conserve tous les algorithmes dont le domaine dispose par ailleurs.** Une liste doit inclure RS256 : OpenID Connect Discovery l'exige dans `id_token_signing_alg_values_supported`, et c'est la valeur par défaut des jetons d'identité et des jetons d'accès. Avec une liste : `/oauth2/jwks` ne contient aucune clé de signature d'un algorithme non listé (clés de réserve, épinglées et de groupes de signataires comprises ; une clé RSA sert à tous les algorithmes RS et PS, elle reste donc) ; un algorithme non listé ne figure pas dans les listes de signature des jetons d'identité, d'UserInfo, de l'introspection ou de JARM du document de découverte ; un client ne peut ni l'enregistrer ni se le voir attribuer pour ces réponses ; une signature encore demandée avec lui est refusée plutôt que faite avec une clé que personne ne peut récupérer ; et un `oauth2.accessTokenSigningAlg` non listé signe avec RS256 à la place. Listez aussi PS256 pour FAPI 1.0 Advanced. `keys.postQuantumSigning` et `keys.eddsaSigning` s'appliquent toujours : lister un algorithme n'active pas sa famille. **Sans changement :** ce que ce domaine accepte des clients (assertions client, preuves DPoP, objets de requête, preuves de portefeuille) ; une réponse UserInfo en JSON simple ; les clés de chiffrement ; COSE, les signatures XML, DKIM et TLS ; et les algorithmes que configurent `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` et l'algorithme de justificatif d'OpenID4VCI, indiquez donc là un algorithme listé."
   },
+  "keys.jwksCertificateUrl|label": {
+    "en": "b910ac23ecc20134",
+    "text": "Nommer par URL les certificats d’une clé publiée"
+  },
+  "keys.jwksCertificateUrl|description": {
+    "en": "83d67129453bea8c",
+    "text": "Indique si `/oauth2/jwks` nomme la chaîne de certificats de chaque clé avec `x5u` (RFC 7517 section 4.6) au lieu de l’inclure dans `x5c`. **Désactivé par défaut.** Activé : une clé publie l’adresse de sa chaîne à `/pki/chain/{scope}/{sha256}.pem`, ce qui réduit fortement le jeu de clés JWK ; un client qui veut la chaîne la récupère via TLS. Une clé dont cette adresse ne peut pas servir la chaîne conserve son `x5c`. **Sans changement :** l’en-tête `x5c` ou `x5u` d’un jeton, que décide le réglage propre à chaque cas d’usage."
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "Format du kid des jetons signés"

@@ -301,6 +301,10 @@ async function ensureRealm() {
   // 2026-11-05). Only the realm this tool configures: every other realm keeps
   // the default, an empty list.
   settings.push(["keys.signingAlgorithms", "RS256"]);
+  // AND ITS JWK SET NAMES CERTIFICATE CHAINS BY ADDRESS (#1351): the suite
+  // records the JWK Set several times in every test, and the submission form
+  // refused a package at 56 MB.
+  settings.push(["keys.jwksCertificateUrl", true]);
   if (expanded().some(function (plan) {
     return plan.group === "session" && wanted(plan);
   })) {

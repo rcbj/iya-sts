@@ -22,6 +22,8 @@
 //      Set and discovery; what it accepts from clients is unchanged; a
 //      registration naming ES256 for its ID Tokens is refused there and
 //      accepted in the default realm.
+//   E. `keys.jwksCertificateUrl` (#1351): off, `x5c`; on, `x5u` at an address
+//      that answers the same chain, and the default realm untouched.
 //
 // **IN A CHILD** for `tests/jose_kid.js`'s reason: loading the whole protocol
 // stack into `run.js`'s one process changes what later files see.
@@ -261,7 +263,130 @@ function childMain() {
          'the default realm and refused in the realm with the list',
          JSON.stringify([here, there]));
 
+    // ==== E. keys.jwksCertificateUrl (#1351) ==============================
+    const URL_KEY = 'keys.jwksCertificateUrl';
+    const urlRow = config.SETTINGS.filter(function (one) {
+      return one.key === URL_KEY;
+    })[0] || {};
+    note(urlRow.type === 'bool' && urlRow.dflt === false &&
+         urlRow.runtime === true && !urlRow.perProcess,
+         'E1. the flag is a bool, off by default, runtime, per realm',
+         JSON.stringify(urlRow));
+    const withChain = function (body) {
+      return (body.keys || []).filter(function (k) {
+        return Array.isArray(k.x5c) && k.x5c.length > 0;
+      });
+    };
+    // A new realm's RSA key holds its self-signed birth certificate until it
+    // is certified, and that is in no register, so certify both realms first:
+    // the flag is about a certificate the address can serve.
+    const pki = require(ROOT + '/common/pki');
+    await pki.ensureScope(REALM);
+    const certifiedIn = function (realmId) {
+      return !!pki.certificateFor(realmId, 'jose', 'RS256');
+    };
+    await pki.certifyKeySet(REALM, helpers.stsKeysFor.of(REALM));
+    await pki.certifyKeySet('default', helpers.stsKeysFor.of('default'));
+    for (let i = 0; i < 80 && !(certifiedIn(REALM) && certifiedIn('default'));
+      i++) {
+      await new Promise(function (r) {
+        setTimeout(r, 100);
+      });
+    }
+    note(certifiedIn(REALM) && certifiedIn('default'),
+         'E1a. both realms\' RSA keys are certified, which the rest rests on');
+    const before = (await get(port, prefix + '/oauth2/jwks')).json;
+    const chains = withChain(before);
+    note(chains.length > 0 && chains[0].x5c.length > 1 &&
+         !chains.some(function (k) {
+           return k.x5u;
+         }),
+    'E2. off: the keys carry x5c and no x5u', chains.length);
+    const beforeSize = JSON.stringify(before).length;
     realms.run(realms.get(REALM), function () {
+      config.setOverride(URL_KEY, true);
+    });
+    const after = (await get(port, prefix + '/oauth2/jwks')).json;
+    const named = (after.keys || []).filter(function (k) {
+      return k.x5u;
+    });
+    note(named.length === chains.length && withChain(after).length === 0 &&
+         named.every(function (k) {
+           return k.x5c === undefined && k.n;
+         }),
+         'E3. on: every key names its chain by x5u, none carries x5c, and ' +
+         'each is still a usable key', named.length + '/' + chains.length);
+    const size = JSON.stringify(after).length;
+    note(size < beforeSize / 2,
+         'E4. and the JWK Set is less than half the size',
+         beforeSize + ' -> ' + size);
+    const address = new URL(named[0].x5u);
+    const chainText = await new Promise(function (resolve, reject) {
+      const req = http.request({ host: '127.0.0.1', port: port,
+                                 path: address.pathname, method: 'GET' },
+      function (res) {
+        let text = '';
+        res.on('data', function (c) {
+          text += c;
+        });
+        res.on('error', reject);
+        res.on('end', function () {
+          resolve({ status: res.statusCode, text: text });
+        });
+      });
+      req.on('error', reject);
+      req.end();
+    });
+    const original = chains.filter(function (k) {
+      return k.kid === named[0].kid;
+    })[0];
+    const served = chainText.text.split('-----END CERTIFICATE-----')
+      .map(function (part) {
+        return part.replace(/-----BEGIN CERTIFICATE-----/g, '')
+          .replace(/\s+/g, '');
+      }).filter(Boolean);
+    note(chainText.status === 200 &&
+         JSON.stringify(served) === JSON.stringify(original.x5c),
+         'E5. the address answers the same chain the x5c carried',
+         chainText.status + ' ' + served.length);
+    const unserved = realms.run(realms.get(REALM), function () {
+      const certificateHeader =
+        require(ROOT + '/common/jose_certificate_header');
+      const foreign = { kty: 'RSA', kid: 'x', x5c: [served[0].slice(0, 20)] };
+      try {
+        return certificateHeader.withCertificateUrls([foreign])[0];
+      } catch (e) {
+        return { threw: e.message };
+      }
+    });
+    note(Array.isArray(unserved.x5c) && unserved.x5u === undefined,
+         'E6. a certificate the address cannot serve is not given a dead link',
+         JSON.stringify(unserved).slice(0, 160));
+    const defaultKeys = (await get(port, '/oauth2/jwks')).json.keys || [];
+    note(defaultKeys.some(function (k) {
+      return k.x5c;
+    }) && !defaultKeys.some(function (k) {
+      return k.x5u;
+    }),
+    'E7. the default realm is unchanged');
+
+    config.setOverride(URL_KEY, true);
+    const defaultNamed = ((await get(port, '/oauth2/jwks')).json.keys || [])
+      .filter(function (k) {
+        return k.x5u;
+      });
+    config.clearOverride(URL_KEY);
+    note(defaultNamed.length > 0,
+         'E8. and the flag works in the default realm too',
+         defaultNamed.length);
+    const rs256 = realms.run(realms.get(REALM), function () {
+      config.setOverride(KEY, 'RS256');
+      return JSON.stringify(helpers.withoutUnlistedSigningKeys(named)).length;
+    });
+    note(rs256 > 0, 'E9. the flag and the allowlist compose', rs256);
+
+    realms.run(realms.get(REALM), function () {
+      config.clearOverride(URL_KEY);
       config.clearOverride(KEY);
     });
     server.close();
@@ -320,7 +445,9 @@ function run(t) {
 module.exports = {
   name: 'signing_algorithm_allowlist',
   describe: 'keys.signingAlgorithms (#1348): a realm limited to named ' +
-            'signing algorithms publishes, advertises and signs only those, accepts ' +
-            'what it always did from clients, and empty changes nothing',
+            'signing algorithms publishes, advertises and signs only those, ' +
+            'accepts what it always did from clients, and empty changes ' +
+            'nothing; keys.jwksCertificateUrl (#1351) names a key\'s chain by ' +
+            'x5u',
   run: run
 };

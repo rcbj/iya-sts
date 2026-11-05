@@ -1535,6 +1535,14 @@
     "en": "6ca0d3f207d8dcd4",
     "text": "此领域用于签名并为其发布密钥的 JWS 算法。**默认值为空，保留领域原有的所有算法。** 列表必须包含 RS256：OpenID Connect Discovery 要求它出现在 `id_token_signing_alg_values_supported` 中，它也是 ID 令牌和访问令牌的默认算法。设置列表后：`/oauth2/jwks` 中不含未列出算法的签名密钥（包括备用密钥、固定密钥和签名者组密钥；一个 RSA 密钥可用于所有 RS 和 PS 算法，因此会保留）；未列出的算法不会出现在发现文档的 ID 令牌、UserInfo、内省或 JARM 签名列表中；客户端不能为这些响应注册或被分配该算法；仍要求使用该算法的签名会被拒绝，而不是用无人能获取的密钥签名；未列出的 `oauth2.accessTokenSigningAlg` 改用 RS256 签名。使用 FAPI 1.0 Advanced 时还需列出 PS256。`keys.postQuantumSigning` 和 `keys.eddsaSigning` 仍然有效：列出某个算法不会开启其算法系列。**不变的内容：**此领域从客户端接受的内容（客户端断言、DPoP 证明、请求对象、钱包证明）；纯 JSON 的 UserInfo 响应；加密密钥；COSE、XML 签名、DKIM 和 TLS；以及 `oauth2.httpSignatureResponseAlg`、`oidfed.signingAlg` 和 OpenID4VCI 凭证算法所配置的算法，因此请在这些设置中指定已列出的算法。"
   },
+  "keys.jwksCertificateUrl|label": {
+    "en": "b910ac23ecc20134",
+    "text": "通过 URL 指明已发布密钥的证书"
+  },
+  "keys.jwksCertificateUrl|description": {
+    "en": "83d67129453bea8c",
+    "text": "`/oauth2/jwks` 是否用 `x5u`（RFC 7517 第 4.6 节）指明每个密钥的证书链，而不是将其放在 `x5c` 中。**默认关闭。** 开启后：密钥发布其证书链的地址 `/pki/chain/{scope}/{sha256}.pem`，这会使 JWK 集小得多；需要证书链的客户端通过 TLS 获取。该地址无法提供其证书链的密钥保留 `x5c`。**不变的内容：**令牌的 `x5c` 或 `x5u` 标头，由各用例自己的设置决定。"
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "签名令牌的 kid 格式"

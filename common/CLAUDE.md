@@ -752,6 +752,15 @@ over it.
 
 `tests/signing_algorithm_allowlist.js` holds it.
 
+## A JWK'S CERTIFICATE CHAIN AS AN ADDRESS (#1351, 2026-11-05)
+
+**`keys.jwksCertificateUrl`, OFF BY DEFAULT.** `withCertificateUrls()` in
+`jose_certificate_header.js` filters `/oauth2/jwks`'s finished list, replacing
+`x5c` with `x5u` from `chainUrlFor()`. **A key keeps its `x5c` where
+`chainPemFor()` would not serve the address**, because a dead link loses the
+chain and an inline one only costs bytes. `tests/signing_algorithm_allowlist.js`
+section E holds it.
+
 ## `crypto.js` SECTION 4a: POST-QUANTUM AND HPKE KEY ESTABLISHMENT (#82, 2026-09-27)
 
 **JWE had RSA-OAEP and ECDH-ES only, so every encrypted token this service
