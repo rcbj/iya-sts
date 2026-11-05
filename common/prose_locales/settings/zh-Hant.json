@@ -1535,6 +1535,14 @@
     "en": "6ca0d3f207d8dcd4",
     "text": "此領域用於簽章並為其發布金鑰的 JWS 演算法。**預設值為空，保留領域原有的所有演算法。** 清單必須包含 RS256：OpenID Connect Discovery 要求它出現在 `id_token_signing_alg_values_supported` 中，它也是 ID 權杖和存取權杖的預設演算法。設定清單後：`/oauth2/jwks` 中不含未列出演算法的簽章金鑰（包括備用金鑰、固定金鑰和簽署者群組金鑰；一個 RSA 金鑰可用於所有 RS 和 PS 演算法，因此會保留）；未列出的演算法不會出現在探索文件的 ID 權杖、UserInfo、內省或 JARM 簽章清單中；用戶端不能為這些回應註冊或被指派該演算法；仍要求使用該演算法的簽章會被拒絕，而不是用無人能取得的金鑰簽章；未列出的 `oauth2.accessTokenSigningAlg` 改用 RS256 簽章。使用 FAPI 1.0 Advanced 時還需列出 PS256。`keys.postQuantumSigning` 和 `keys.eddsaSigning` 仍然有效：列出某個演算法不會開啟其演算法系列。**不變的內容：**此領域從用戶端接受的內容（用戶端判斷提示、DPoP 證明、請求物件、錢包證明）；純 JSON 的 UserInfo 回應；加密金鑰；COSE、XML 簽章、DKIM 和 TLS；以及 `oauth2.httpSignatureResponseAlg`、`oidfed.signingAlg` 和 OpenID4VCI 憑證演算法所設定的演算法，因此請在這些設定中指定已列出的演算法。"
   },
+  "keys.jwksCertificateUrl|label": {
+    "en": "b910ac23ecc20134",
+    "text": "以 URL 指名已發布金鑰的憑證"
+  },
+  "keys.jwksCertificateUrl|description": {
+    "en": "83d67129453bea8c",
+    "text": "`/oauth2/jwks` 是否以 `x5u`（RFC 7517 第 4.6 節）指名每個金鑰的憑證鏈，而不是將其放在 `x5c` 中。**預設關閉。** 開啟後：金鑰發布其憑證鏈的位址 `/pki/chain/{scope}/{sha256}.pem`，這會使 JWK 集小得多；需要憑證鏈的用戶端透過 TLS 取得。該位址無法提供其憑證鏈的金鑰保留 `x5c`。**不變的內容：**權杖的 `x5c` 或 `x5u` 標頭，由各使用案例自己的設定決定。"
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "已簽署權杖的 kid 格式"

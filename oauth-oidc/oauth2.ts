@@ -129,6 +129,7 @@ import httpSignatures = require('./http_signatures');
 // WHICH `kid` A JWK SET NAMES EACH SIGNING KEY UNDER (2026-09-13). A LEAF over
 // `config`, `crypto` and `error_codes`; `sendJwks()` is the one reader here.
 import joseKid = require('../common/jose_kid');
+import certificateHeader = require('../common/jose_certificate_header');
 // RFC 8705 — certificate-bound access tokens, the other mechanism RFC 9700
 // section 2.2 names. A library like dpop.ts, and read here for one thing: the
 // confirmation claim that goes on a token issued over a connection that carried
@@ -3533,7 +3534,11 @@ class OAuth2Server {
         //
         // **AND WITH `keys.signingAlgorithms` NAMING A LIST (#1348) NO SIGNING
         // KEY FOR AN ALGORITHM IT LEAVES OUT**, by the same filter.
-        keys: helpers.withoutUnlistedSigningKeys(
+        //
+        // **AND WITH `keys.jwksCertificateUrl` ON (#1351) A KEY NAMES ITS CHAIN
+        // BY `x5u`**, by a last pass over the same finished list.
+        keys: certificateHeader.withCertificateUrls(
+          helpers.withoutUnlistedSigningKeys(
           helpers.withoutEddsaSigningKeys(helpers.withoutPqSigningKeys(
           joseKid.withThumbprintUriEntries([{
           kty: 'RSA', use: 'sig', kid: STS.kid,
@@ -3608,7 +3613,7 @@ class OAuth2Server {
         // one without the key.
           .concat(helpers.kemEncryptionKeysFor().map(function (one) {
             return stsCrypto.publicJweKemJwk(one.publicJwk);
-          })))))
+          }))))))
       }, null, 2));
       log.debug("Leaving OAuth2Server.sendJwks().");
     } catch (e) {

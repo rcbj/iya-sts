@@ -3868,6 +3868,22 @@ const SETTINGS = [
                  '`oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` ' +
                  'and OpenID4VCI\'s credential algorithm configure, so name ' +
                  'a listed one there.' },
+  // A JWK'S CERTIFICATE CHAIN AS AN ADDRESS (#1351, 2026-11-05, rcbj). What
+  // `common/jose_certificate_header.js` already does for a token's header,
+  // for the JWK Set. `withCertificateUrls()` there is the one reader.
+  { key: 'keys.jwksCertificateUrl', group: 'Key material',
+    label: 'Name a published key\'s certificates by URL',
+    path: 'keys.jwksCertificateUrl', env: 'STS_KEYS_JWKS_CERTIFICATE_URL',
+    type: 'bool', dflt: false, runtime: true,
+    description: 'Whether `/oauth2/jwks` names each key\'s certificate chain ' +
+                 'with `x5u` (RFC 7517 section 4.6) instead of carrying it ' +
+                 'in `x5c`. **Off by default.** On: a key publishes the ' +
+                 'address of its chain at `/pki/chain/{scope}/{sha256}.pem`, ' +
+                 'which makes the JWK Set much smaller; a client that wants ' +
+                 'the chain fetches it over TLS. A key whose chain that ' +
+                 'address cannot serve keeps its `x5c`. **Not changed:** the ' +
+                 '`x5c` or `x5u` header of a token, which each use case\'s ' +
+                 'own setting decides.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',
