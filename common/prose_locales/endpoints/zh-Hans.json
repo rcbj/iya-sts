@@ -447,6 +447,10 @@
     "en": "2ce72d622f586a26",
     "text": "域的登录徽标"
   },
+  "endpoints.route./web/photo/{id}.name": {
+    "en": "f2cc426998480c9c",
+    "text": "个人的个人资料照片"
+  },
   "endpoints.route./web/branding/preview.name": {
     "en": "54aca7174dc0a2b0",
     "text": "登录外观的预览"

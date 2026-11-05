@@ -1219,6 +1219,10 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717). El logotipo PNG, JPEG o WebP subido para este dominio mediante /admin-api/branding/logo, servido desde este origen para que el img-src 'self' de las páginas de inicio de sesión lo admita y ningún tercero sepa quién inicia sesión; nosniff, aislado, un ETag de su resumen. 404 donde el dominio no tiene ninguno."
   },
+  "stsmetadata.endpoints./web/photo/{id}.what": {
+    "en": "32d1ba774784074d",
+    "text": "NON-SPEC en sí mismo (#719), y lo que nombra el claim picture de OpenID Connect Core 5.1 para una persona con una foto aquí. El JPEG o PNG que estableció en el portal o la copia de un socio de federación, en una dirección aleatoria que cambia con la foto; sin credencial, porque una parte de confianza la obtiene sin ninguna. nosniff, en sandbox, con ETag. 404 para una persona deshabilitada o eliminada."
+  },
   "stsmetadata.endpoints./web/branding/preview.what": {
     "en": "a2af93aaf34bbbe3",
     "text": "NON-SPEC (#717). Una muestra de la tarjeta de inicio de sesión de este dominio dibujada con colores pendientes y un diseño (accent, page, card, text, layout en la consulta, cada uno comprobado como lo harían los ajustes), para que la consola la abra en una pestaña nueva antes de guardar. Nada en ella inicia la sesión de nadie."

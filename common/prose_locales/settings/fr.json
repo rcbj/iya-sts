@@ -863,6 +863,54 @@
     "en": "37f4c903152cd219",
     "text": "Le plus grand logo qu’un téléversement peut porter, pour chaque domaine. Un logo plus grand est refusé (STS-AUTHN-0546). Le logo est conservé dans le stockage et répliqué vers chaque processus ; il reste donc petit : 256 Kio par défaut, 2 Mio au plus."
   },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "Les personnes peuvent définir leur propre photo"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "Indique si une personne peut définir et remplacer sa propre photo de profil sur le portail utilisateur. Désactivé, le portail ne propose pas d'envoi et l'opération est refusée (STS-PORTAL-0634) ; une personne peut toujours retirer la photo qu'elle a."
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "Copier la photo d'un partenaire de fédération"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "Indique si une adresse d'image envoyée par un partenaire de fédération est récupérée après la connexion et conservée ici, afin que le claim picture nomme la copie de ce domaine. Désactivé, ou si la copie échoue, le claim porte l'adresse du partenaire. La récupération suit la politique sortante de fédération et aucune redirection."
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "Plus grand fichier qu'une personne peut choisir (octets)"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "Le plus grand fichier que le portail permet de choisir, 5 Mio par défaut. Le navigateur le recadre et le redimensionne avant l'envoi, ce n'est donc pas ce qui est conservé : c'est profilePhoto.maxStoredBytes."
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "Plus grande photo conservée (octets)"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "La plus grande image que ce domaine conserve, d'une personne ou d'un partenaire de fédération. Une plus grande est refusée (STS-PORTAL-0631). 1 Mio par défaut et 3 Mio au plus : l'image voyage encodée en base64 dans une requête JSON."
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "Plus petit côté de la photo d'une personne (pixels)"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "Le plus petit côté que peut avoir une photo définie par une personne. Une plus petite est refusée (STS-PORTAL-0632). Cela ne s'applique pas à la copie d'un partenaire, souvent plus petite."
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "Plus grand côté d'une photo (pixels)"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "Le plus grand côté que peut avoir une photo conservée, car chaque navigateur qui l'affiche doit la décoder. Une plus grande est refusée (STS-PORTAL-0632)."
+  },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
     "text": "Nombre maximal de comptes mémorisés par un navigateur"

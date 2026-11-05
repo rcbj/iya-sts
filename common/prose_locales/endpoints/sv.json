@@ -447,6 +447,10 @@
     "en": "2ce72d622f586a26",
     "text": "En domäns inloggningslogotyp"
   },
+  "endpoints.route./web/photo/{id}.name": {
+    "en": "f2cc426998480c9c",
+    "text": "En persons profilfoto"
+  },
   "endpoints.route./web/branding/preview.name": {
     "en": "54aca7174dc0a2b0",
     "text": "En förhandsvisning av inloggningsutseendet"

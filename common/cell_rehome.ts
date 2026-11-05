@@ -192,6 +192,12 @@ class CellRehome {
       }
       attrs.stspublisheddid = dids;
     }
+    // A profile photo's image, inside its record (#719), lazily for the same
+    // reason. It is not on the entry here, and the row stays this cell's.
+    if (attrs.stsprofilephoto) {
+      attrs.stsprofilephoto = require('./profile_photo')
+        .movingOut(attrs.stsprofilephoto);
+    }
     const openedEntry = CellRehome.opened(attrs);
     const openedDevices = devices.map(function (d) {
       return { dn: d.dn, opened: CellRehome.opened(d.attributes) };
@@ -337,6 +343,16 @@ class CellRehome {
           throw new Error('a published DID\'s key could not be sealed here');
         }
         attributes.stspublisheddid = dids;
+      }
+      // The image is kept under an id of this cell, and `pictureUrl` names it
+      // (#719): the old address is relayed to the cell the person left.
+      if (attributes.stsprofilephoto) {
+        const moved = require('./profile_photo').movingIn(
+          attributes.stsprofilephoto, (attributes.pictureurl || [''])[0]);
+        attributes.stsprofilephoto = moved.values;
+        if (moved.pictureUrl) {
+          attributes.pictureurl = [moved.pictureUrl];
+        }
       }
       ldap.adoptEntry(String(body.dn), attributes, 'rehomed');
       if (personDid) {

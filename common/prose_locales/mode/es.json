@@ -215,6 +215,18 @@
     "en": "f2869db882e1f25d",
     "text": "Ese inicio de sesión se rechaza (STS-VC-0127), se audita, y la persona vuelve a inscribir el DID demostrándolo en /portal/self-issued. En ambos modos se rechaza una clave que la fijación no nombra (STS-VC-0126)."
   },
+  "mode.requirements.photo-address-base.what": {
+    "en": "b2f20f3f61f5b011",
+    "text": "La dirección de una foto de perfil se crea sobre la URL base pública fijada"
+  },
+  "mode.requirements.photo-address-base.development": {
+    "en": "9824abf896b0c613",
+    "text": "Sin una URL base pública fijada, una foto establecida en /portal o copiada de un socio de federación se direcciona en el host al que llegó la solicitud, y los tokens llevan esa dirección."
+  },
+  "mode.requirements.photo-address-base.product": {
+    "en": "af32e32ff746f573",
+    "text": "Establecerla se rechaza (STS-PORTAL-0635) y la de un socio no se copia (STS-FED-0220) hasta que global.publicBaseUrl fije la base: una cabecera Host nunca pasa a formar parte de una dirección que lleve un token."
+  },
   "mode.requirements.person-did-base.what": {
     "en": "58a07bbd2f445d15",
     "text": "El did:web publicado de una persona se acuña sobre la URL base pública fijada"

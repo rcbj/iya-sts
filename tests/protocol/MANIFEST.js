@@ -1205,6 +1205,11 @@ const JOBS = [
   // realm in the stack's mode (product pins global.publicBaseUrl first).
   // `local: true`: this repository's feature.
   { file: 'sts_person_did.js',           browser: false },
+  // A PERSON'S PROFILE PHOTO (#719, 2026-11-05): the upload's refusals, the
+  // public address and its headers, the metadata gone, the portal's card, and
+  // removal. Reaches the default realm's people only. `local: true`: this
+  // repository's portal and account API.
+  { file: 'sts_profile_photo.js',        browser: false },
   // THE NATIVE OID4VC WALLET (#694, 2026-11-04): rcbj/oid4vc-wallet (built
   // into the tests image, tests/Dockerfile's oid4vc-wallet stage) run as
   // this job's child from its command line — `accept`, `present

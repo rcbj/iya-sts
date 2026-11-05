@@ -1384,6 +1384,20 @@ function pinsSelfIssuedKeysOnFirstUse() {
 // one is refused (STS-VC-0168) until `global.publicBaseUrl` (or the
 // verifiable credentials application's advertised listener) pins the base.
 // `oid4vc/person_did.ts` asks it.
+// `common/profile_photo.ts` asks it (#719): a photo's address goes into tokens
+// and onto the entry, so it is the same question as the DID's.
+/**
+ * Tells whether a profile photo's address may be built on the request's own
+ * base URL when no public base URL is pinned.
+ *
+ * @returns true in development mode
+ */
+function mintsPhotoAddressesOnRequestAddress() {
+  log.debug("Entering mintsPhotoAddressesOnRequestAddress().");
+  log.debug("Leaving mintsPhotoAddressesOnRequestAddress().");
+  return !isProduct();
+}
+
 /**
  * Tells whether a person's published `did:web` may be minted on the request's
  * own base URL when no public base URL is pinned.
@@ -2493,6 +2507,16 @@ const REQUIREMENTS = [
              'name is refused (STS-VC-0126).',
     where: 'oid4vc/siop.ts' },
   // #1291 (2026-11-03).
+  { id: 'photo-address-base',
+    what: 'A profile photo\'s address is built on the pinned public base URL',
+    development: 'With no public base URL pinned, a photo set on /portal or ' +
+                 'copied from a federation partner is addressed on the host ' +
+                 'the request arrived at, and tokens carry that address.',
+    product: 'Setting one is refused (STS-PORTAL-0635), and a partner\'s is ' +
+             'not copied (STS-FED-0220), until global.publicBaseUrl pins ' +
+             'the base: a Host header never becomes part of an address a ' +
+             'token carries.',
+    where: 'common/profile_photo.ts' },
   { id: 'person-did-base',
     what: 'A person\'s published did:web is minted on the pinned public ' +
           'base URL',
@@ -4179,6 +4203,7 @@ module.exports = {
   enrolsKeysOnFirstUse: enrolsKeysOnFirstUse,
   pinsSelfIssuedKeysOnFirstUse: pinsSelfIssuedKeysOnFirstUse,
   mintsPersonDidsOnRequestAddress: mintsPersonDidsOnRequestAddress,
+  mintsPhotoAddressesOnRequestAddress: mintsPhotoAddressesOnRequestAddress,
   acceptsUnverifiedAttestation: acceptsUnverifiedAttestation,
   acceptsUnattestedDeviceKeys: acceptsUnattestedDeviceKeys,
   refusesUncheckedAttestationRevocation: refusesUncheckedAttestationRevocation,

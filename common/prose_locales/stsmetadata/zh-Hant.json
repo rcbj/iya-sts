@@ -1219,6 +1219,10 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717)。透過 /admin-api/branding/logo 為此領域上傳的 PNG、JPEG 或 WebP 標誌，從此來源提供，使登入頁面的 img-src 'self' 接受它，且沒有第三方得知誰在登入；nosniff、沙箱化、其摘要的 ETag。領域沒有標誌時為 404。"
   },
+  "stsmetadata.endpoints./web/photo/{id}.what": {
+    "en": "32d1ba774784074d",
+    "text": "本身為 NON-SPEC（#719），也是 OpenID Connect Core 5.1 的 picture 宣告為在此擁有相片的人所指向的內容。即在入口網站設定的 JPEG 或 PNG，或聯合夥伴的副本，位於隨相片變化的隨機位址；無需認證，因為信賴方取得時不帶任何認證。nosniff、沙箱化，帶 ETag。已停用或已刪除的人傳回 404。"
+  },
   "stsmetadata.endpoints./web/branding/preview.what": {
     "en": "a2af93aaf34bbbe3",
     "text": "NON-SPEC (#717)。以待定顏色和版面配置繪製的此領域登入卡片範例（查詢中的 accent、page、card、text、layout，每一項都依設定的方式檢查），供主控台在儲存前於新分頁中開啟。其中任何內容都不會讓任何人登入。"

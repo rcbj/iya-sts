@@ -307,7 +307,8 @@ class PortalShell {
     return PortalShell.page(
       '<header class="pagehead"><div><h1>' +
       kit.esc(PortalShell.headingFor(page.active, t)) + '</h1>' +
-      '<p class="who">' + t.html('portal.shell.signedInAs',
+      '<p class="who">' + PortalShell.photo(user) +
+      t.html('portal.shell.signedInAs',
         { name: user.username || '' }) + '</p></div>' +
       '<div class="acts">' +
       PortalShell.refreshForm(page.active, page.query, t) +
@@ -326,6 +327,20 @@ class PortalShell {
       (page.message ? '<div class="ok">' + kit.esc(page.message) + '</div>'
                     : '') +
       page.cards + '</div></div>', true, me && me.version);
+  }
+
+  // THE PERSON'S PHOTO (#719), this realm's own copy and nothing else: its
+  // path is under `/web`, so `img-src 'self'` admits it on any listener. It
+  // repeats the name beside it, so its alternative text is empty.
+  /**
+   * Draws the person's photo beside their name.
+   *
+   * @param user - `GET /account-api/me`'s `user`
+   * @returns the image's HTML, or ''
+   */
+  static photo(user: Json): string {
+    return user && user.photo
+      ? '<img class="menuphoto" alt="" src="' + kit.esc(user.photo) + '">' : '';
   }
 
   // THE ACCOUNT MENU (#561): a `<details>`, as the console's is, so it opens

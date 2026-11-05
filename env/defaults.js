@@ -218,6 +218,16 @@ var config = {
     logoMaxBytes: 262144    // Largest logo (bytes)
   },
 
+  // --- Profile photos --------------------------------------------------
+  profilePhoto: {
+    selfService: true,       // People may set their own photo
+    cacheFederated: true,    // Copy a federation partner's photo
+    maxFileBytes: 5242880,   // Largest file a person may choose (bytes)
+    maxStoredBytes: 1048576, // Largest photo kept (bytes)
+    minPixels: 250,          // Shortest side of a person's photo (pixels)
+    maxPixels: 4096          // Longest side of a photo (pixels)
+  },
+
   // --- Web security ----------------------------------------------------
   oidcRp: {
     maxFlows: 200,           // Console and portal sign-ins in flight, per realm

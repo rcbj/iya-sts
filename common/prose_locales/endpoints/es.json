@@ -447,6 +447,10 @@
     "en": "2ce72d622f586a26",
     "text": "El logotipo de inicio de sesión de un dominio"
   },
+  "endpoints.route./web/photo/{id}.name": {
+    "en": "f2cc426998480c9c",
+    "text": "La foto de perfil de una persona"
+  },
   "endpoints.route./web/branding/preview.name": {
     "en": "54aca7174dc0a2b0",
     "text": "Una vista previa de la apariencia de inicio de sesión"

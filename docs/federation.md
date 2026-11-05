@@ -325,6 +325,21 @@ that would actually work are offered; a button leading to a refusal is worse
 than no button, because the person has already left the screen by the time
 they find out.
 
+**A partner's photo is copied** (`profilePhoto.cacheFederated`, on by default).
+When the mapped attributes carry a `pictureUrl`, as the OpenID Connect `picture`
+claim does, this service fetches the image after the sign-in has finished and
+keeps it, and the person's `picture` claim names that copy from then on. No
+sign-in waits for it or fails because of it. The fetch follows
+[the outbound policy](#outbound-requests) and follows no redirect, the image must
+be a JPEG or PNG of at most `profilePhoto.maxStoredBytes`, and the same address
+is not fetched again for a week. Where a copy cannot be made the claim keeps the
+partner's address (`STS-FED-0219`, `STS-FED-0220`, `STS-FED-0221` in the log), and
+the next sign-in tries again. In product mode a copy needs `global.publicBaseUrl`.
+
+A photo the person set themselves is never replaced, and one they removed is not
+copied again. With `fedUpdateUserAttributes` off, a returning person's photo is
+left as it is.
+
 ### Which people a partner may assert
 
 A partner signs in **only the person its subject is linked to**. The link is a

@@ -1030,6 +1030,8 @@ class ReportRuntime extends SpaClient {
   private username: string;
   // The announcement banner's poller (#1086), once the tab holds a token.
   private announcements: WebAnnouncements | null = null;
+  // The path of the reader's own photo, for the user menu (#719).
+  photo = '';
   private i18n: any;
   private t: any;
   private accountsListening: boolean;
@@ -1765,11 +1767,28 @@ class ReportRuntime extends SpaClient {
   }
 
   /**
+   * Reads the reader's own profile photo for the user menu (#719). A menu
+   * without a picture is still a menu, so a failure changes nothing.
+   *
+   * @returns nothing
+   */
+  async readPhoto(): Promise<void> {
+    try {
+      const res = await this.sendOnce('GET', this.url('/report-api/me'));
+      const answer = res && res.status === 200 ? await res.json() : null;
+      this.photo = String((answer && answer.photo) || '');
+    } catch (e) {
+      this.photo = '';
+    }
+  }
+
+  /**
    * Remembers the signed-in accounts and hears later changes once.
    *
    * @returns nothing
    */
   async hearAccounts(): Promise<void> {
+    await this.readPhoto();
     await this.readAccounts(this.username);
     if (this.accountsListening) {
       return;
@@ -1820,6 +1839,8 @@ class ReportRuntime extends SpaClient {
     return '<details class="usermenu"><summary title="' +
       esc(several ? t.text('report.accounts.summaryTitle', { user: name })
         : name) + '">' +
+      (page.photo
+        ? '<img class="menuphoto" alt="" src="' + esc(page.photo) + '">' : '') +
       esc(name) + '</summary><div class="usermenupanel">' +
       '<p class="usermenuwho">' +
       t.html('report.accounts.who', { user: name }) + '</p>' +

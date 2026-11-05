@@ -1219,6 +1219,10 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717)。通过 /admin-api/branding/logo 为此域上传的 PNG、JPEG 或 WebP 徽标，从此源提供，使登录页面的 img-src 'self' 接受它，且没有第三方得知谁在登录；nosniff、沙盒化、其摘要的 ETag。域没有徽标时为 404。"
   },
+  "stsmetadata.endpoints./web/photo/{id}.what": {
+    "en": "32d1ba774784074d",
+    "text": "本身为 NON-SPEC（#719），也是 OpenID Connect Core 5.1 的 picture 声明为在此拥有照片的人所指向的内容。即在门户设置的 JPEG 或 PNG，或联合伙伴的副本，位于随照片变化的随机地址；无需凭据，因为依赖方获取时不带任何凭据。nosniff、沙盒化，带 ETag。已禁用或已删除的人返回 404。"
+  },
   "stsmetadata.endpoints./web/branding/preview.what": {
     "en": "a2af93aaf34bbbe3",
     "text": "NON-SPEC (#717)。用待定颜色和布局绘制的此域登录卡片示例（查询中的 accent、page、card、text、layout，每一项都按设置的方式检查），供控制台在保存前于新标签页中打开。其中任何内容都不会让任何人登录。"

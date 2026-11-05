@@ -95,6 +95,7 @@ All the inetOrgPerson attributes (RFC 2798, RFC 4519) can be stored, and
 | `schacDateOfBirth`, `schacCountryOfCitizenship`, `schacPersonalTitle` | SCHAC names, released as `birthdate`, `nationalities`, `title` |
 | `salutation`, `birthFamilyName`, `birthGivenName`, `birthMiddleName`, `alsoKnownAs`, `placeOfBirthCountry`, `placeOfBirthRegion`, `placeOfBirthLocality` | this service's own, for Identity Assurance claims |
 | `schacGender`, `middleName`, `timeZone`, `pictureUrl`, `profileUrl` | the `profile` scope's `gender` (SCHAC, ISO/IEC 5218 codes, answered `male`, `female`, `not known` or `not applicable`), `middle_name`, `zoneinfo`, `picture` and `profile` (#1292); all but `schacGender` are this service's own |
+| `stsProfilePhoto` | a person's [profile photo](user-facing-pages.md#the-user-portal): which image is theirs and whose it was, as one JSON value. Withheld from every read, and written only by the portal and a federated sign-in. The image is not on the entry, and while a person has one `pictureUrl` holds its address. `jpegPhoto` is a separate attribute this service neither reads nor writes |
 | `scimExternalId` | SCIM `externalId`, on people and groups |
 | `userPrincipalName` | read by certificate enrollment's smartcard-logon profile. Nothing in the service writes it; a client supplies it |
 | `pwdChangedTime`, `pwdHistory` | draft-behera password policy: when the password last changed, and earlier hashes for the history rule |

@@ -1219,6 +1219,10 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717). Le logo PNG, JPEG ou WebP téléversé pour ce domaine via /admin-api/branding/logo, servi depuis cette origine afin que l’img-src 'self' des pages de connexion l’admette et qu’aucun tiers n’apprenne qui se connecte ; nosniff, en bac à sable, un ETag de son condensé. 404 là où le domaine n’en a pas."
   },
+  "stsmetadata.endpoints./web/photo/{id}.what": {
+    "en": "32d1ba774784074d",
+    "text": "NON-SPEC en soi (#719), et ce que nomme le claim picture d'OpenID Connect Core 5.1 pour une personne ayant une photo ici. Le JPEG ou PNG défini sur le portail ou la copie d'un partenaire de fédération, à une adresse aléatoire qui change avec la photo ; sans identifiant, car une partie de confiance la récupère sans aucun. nosniff, en sandbox, avec un ETag. 404 pour une personne désactivée ou supprimée."
+  },
   "stsmetadata.endpoints./web/branding/preview.what": {
     "en": "a2af93aaf34bbbe3",
     "text": "NON-SPEC (#717). Un exemple de la carte de connexion de ce domaine dessiné avec des couleurs en attente et une mise en page (accent, page, card, text, layout dans la requête, chacun vérifié comme le feraient les paramètres), que la console ouvre dans un nouvel onglet avant l’enregistrement. Rien n’y connecte qui que ce soit."

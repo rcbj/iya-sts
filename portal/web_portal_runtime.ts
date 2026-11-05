@@ -65,6 +65,7 @@ import PortalShell = require('./web_portal_shell');
 import PortalPages = require('./web_portal_pages');
 import PortalWebAuthn = require('./web_portal_webauthn');
 import DelegatePages = require('./web_delegate');
+import PhotoPicker = require('./web_photo');
 import WebAccounts = require('../common/web_accounts');
 import DocLinks = require('../common/web_doc_links');
 import WebNavSections = require('../common/web_nav_sections');
@@ -1463,6 +1464,8 @@ class PortalRuntime extends SpaClient {
       }
     });
     PortalRuntime.wireDependentSelects(doc);
+    // The Overview's profile photo (#719): choosing a file draws the preview.
+    PhotoPicker.wire(doc, this.env.window || {}, this.t);
     // `/portal/delegate`'s search (2026-10-20): asked through this
     // runtime's own token, its answers drawn in place.
     DelegatePages.wire(doc, this.env.window || {}, function (path: string) {

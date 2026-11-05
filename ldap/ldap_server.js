@@ -3793,6 +3793,14 @@ const OWN_NAMES = [
   // (`did.personDids`), never a walk.
   'stsPublishedDid',
 
+  // AND THEIR PROFILE PHOTO'S RECORD (#719): one JSON value saying which row
+  // of `profilePhoto.images` is theirs, whose it was, and whether they
+  // declined a partner's copy. The image is not on the entry, because every
+  // token reads the entry; `common/profile_photo.ts` argues it. Withheld
+  // (SECRET_ATTRIBUTES): the id is the capability the address is made of, and
+  // the partner's address is nobody's business.
+  'stsProfilePhoto',
+
   // AND THE DEVICE REGISTER'S (#130, 2026-09-23): RFC 4519's `device` class
   // has `cn`, `owner` and `description` and nothing about what a device is
   // used for or what it holds, so these are this service's own — the class
@@ -7546,6 +7554,13 @@ function applyFederatedAttributes(stored, info, how) {
       log.warn(errorCodes.tag('STS-FED-0153') + 'applyFederatedAttributes(): ' +
                'not writing "' + name + '" onto ' + stored.dn + ': ' +
                refused + '.');
+      return;
+    }
+    // A PHOTO THIS REALM HOLDS OUTRANKS THE PARTNER'S ADDRESS (#719), and so
+    // does one the person declined: `pictureUrl` names this realm's copy, or
+    // nothing, and a sign-in does not put the partner's address back. What
+    // happens to that address is `common/profile_photo.ts`'s.
+    if (lower === 'pictureurl' && stored.attributes.stsprofilephoto) {
       return;
     }
     const canonical = canonicalName(lower);
@@ -11952,6 +11967,9 @@ const SECRET_ATTRIBUTES = [
   // A person's published DIDs (#1291): the version history a verifier
   // resolves, and in `realm` custody the sealed private key.
   'stspublisheddid',
+  // A person's profile photo record (#719): the id its public address is
+  // made of, and the partner address it was copied from.
+  'stsprofilephoto',
   // A device's Native SSO secret, hashed (#130): a credential's verifier.
   'stsdevicesecrethash',
   // A person's CIBA user code, hashed (#131).
@@ -12410,6 +12428,9 @@ const CREDENTIAL_ATTRIBUTE_DOORS = {
   // verifier resolved.
   stspublisheddid: '/portal/self-issued (publish, change a key, ' +
     'deactivate), or /admin/users (deactivate)',
+  // Written whole by `common/profile_photo.ts` (#719), with the row it names:
+  // a value written by hand would point a person's photo at somebody else's.
+  stsprofilephoto: '/portal (Profile photo)',
   stsmailfactor: '/portal/mfa, or /admin/users',
   stsmailfactorfailures: 'the emailed factor\'s own sign-in step',
   stskrb5keys: 'a verified sign-in, or the Kerberos keys controls on ' +
@@ -14037,6 +14058,46 @@ function writePublishedDids(key, values) {
   touchDirectory();
   log.debug('Leaving writePublishedDids(). ' + list.length +
             ' on ' + stored.dn + '.');
+  return true;
+}
+
+// A PERSON'S PROFILE PHOTO RECORD (#719): the one JSON value, and `pictureUrl`
+// beside it, written together so a claim never names a photo the record does
+// not. `common/profile_photo.ts` decides what they say; this only carries
+// them. An empty record or address removes that attribute.
+function readProfilePhoto(key) {
+  log.debug('Entering readProfilePhoto(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored) {
+    log.debug('Leaving readProfilePhoto(). No entry.');
+    return null;
+  }
+  log.debug('Leaving readProfilePhoto().');
+  return String((stored.attributes.stsprofilephoto || [''])[0]);
+}
+
+function writeProfilePhoto(key, record, pictureUrl) {
+  log.debug('Entering writeProfilePhoto(). key=' + key);
+  const stored = locateEntry(String(key || '')).stored;
+  if (!stored) {
+    log.warn(errorCodes.tag('STS-PORTAL-0633') +
+             'ldap: "' + key + '" has no entry in this realm, so no profile ' +
+             'photo was recorded.');
+    log.debug('Leaving writeProfilePhoto(). No entry.');
+    return false;
+  }
+  if (record) {
+    stored.attributes.stsprofilephoto = [String(record)];
+  } else {
+    delete stored.attributes.stsprofilephoto;
+  }
+  if (pictureUrl) {
+    stored.attributes.pictureurl = [String(pictureUrl)];
+  } else {
+    delete stored.attributes.pictureurl;
+  }
+  touchDirectory();
+  log.debug('Leaving writeProfilePhoto(). ' + stored.dn);
   return true;
 }
 
@@ -26800,6 +26861,18 @@ function startSelfVerification(stored, before) {
 
 function noteAccountChange(kind, dn, before, after, options) {
   log.debug('Entering noteAccountChange(). ' + kind + ' ' + dn);
+  // A DELETED PERSON'S PHOTO GOES WITH THEM (#719). Its address has answered
+  // 404 from the moment the entry went; this removes the image itself, which
+  // nothing would ever read again and which is theirs.
+  if (String(kind).indexOf('deleted') === 0 && before &&
+      before.stsprofilephoto) {
+    try {
+      require('../common/profile_photo').forgetEntry(before.stsprofilephoto);
+    } catch (e) {
+      log.warn(errorCodes.tag('STS-PORTAL-0633') + 'ldap: the profile photo ' +
+               'of ' + dn + ' was not removed: ' + ((e && e.message) || e));
+    }
+  }
   // A LOCK THAT MOVED IS AN ACCOUNT DISABLED OR ENABLED (2026-09-17), and
   // whichever door moved it — a SCIM `active`, an `ldapmodify`, a console
   // create — what the person holds has to end with it. That is
@@ -30314,6 +30387,9 @@ module.exports = {
   autoCreateUser: autoCreateUser,
   createUser: createUser,
   existingUserEntry: existingUserEntry,
+  // A person's profile photo record (#719), `common/profile_photo.ts`'s.
+  readProfilePhoto: readProfilePhoto,
+  writeProfilePhoto: writeProfilePhoto,
   // The name an entry is filed under, and the one writer of stsPseudonym
   // (#644). recordAuthentication() asks the first once the directory is
   // loaded; the portal and set-pseudonyms ask the second.

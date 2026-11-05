@@ -863,6 +863,54 @@
     "en": "37f4c903152cd219",
     "text": "Ang pinakamalaking logo na maaaring dalhin ng isang upload, para sa bawat realm. Tinatanggihan ang mas malaki (STS-AUTHN-0546). Iniimbak ang logo sa store at nire-replicate sa bawat proseso, kaya pinananatili itong maliit: 256 KiB bilang default, 2 MiB ang pinakamarami."
   },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "Maaaring magtakda ang mga tao ng sariling larawan"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "Kung maaaring magtakda at magpalit ang isang tao ng sariling larawan sa profile sa user portal. Kapag naka-off, walang upload sa portal at tinatanggihan ang operasyon (STS-PORTAL-0634); maaari pa ring alisin ng tao ang larawang mayroon siya."
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "Kopyahin ang larawan ng federation partner"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "Kung kukunin pagkatapos ng sign-in at itatago rito ang address ng larawang ipinadala ng federation partner, upang ang kopya ng realm na ito ang pangalanan ng picture claim. Kapag naka-off, o kapag pumalya ang pagkopya, dala ng claim ang address ng partner. Sinusunod ng pagkuha ang outbound policy ng federation at walang redirect."
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "Pinakamalaking file na mapipili ng tao (bytes)"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "Ang pinakamalaking file na pinapayagan ng portal na piliin, 5 MiB bilang default. Kino-crop at sini-scale ito ng browser bago ipadala, kaya hindi ito ang itinatago: ang profilePhoto.maxStoredBytes ang sukatan niyon."
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "Pinakamalaking larawang itinatago (bytes)"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "Ang pinakamalaking larawang itinatago ng realm na ito, mula sa tao o federation partner. Tinatanggihan ang mas malaki (STS-PORTAL-0631). 1 MiB bilang default at 3 MiB sa pinakamarami: naglalakbay ang larawan na naka-base64 sa isang JSON request."
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "Pinakamaikling gilid ng larawan ng tao (pixel)"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "Ang pinakamaikling gilid na maaaring taglayin ng larawang itinakda ng tao. Tinatanggihan ang mas maliit (STS-PORTAL-0632). Hindi ito nalalapat sa kopya mula sa partner, na madalas na mas maliit."
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "Pinakamahabang gilid ng larawan (pixel)"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "Ang pinakamahabang gilid na maaaring taglayin ng itinatagong larawan, dahil kailangan itong i-decode ng bawat browser na nagpapakita nito. Tinatanggihan ang mas malaki (STS-PORTAL-0632)."
+  },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
     "text": "Pinakamaraming account na natatandaan ng isang browser"

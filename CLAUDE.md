@@ -494,6 +494,7 @@ preference; this table says what the constraint is and the named file says why.
 | 6a | `home/home` | No constraint; first among the route modules, and so the first `register()`. | `home/CLAUDE.md` |
 | 6a-web | `common/public_assets` | No constraint (#570): libraries only, and `/web/*` collides with nothing. | `common/CLAUDE.md` (3cl) |
 | 6a-brand | `common/branding` | Beside 6a-web (#717): a library whose routes are all under `/web`. Its require adds the write rules that hold a realm's colours to WCAG 2.2 AA, so it is above every setting restored. | `common/CLAUDE.md` (*A realm's sign-in appearance*) |
+| 6a-photo | `common/profile_photo` | Beside 6a-brand (#719), a library whose one route is under `/web`. It reaches the directory, the account state and federation's dialer lazily. | `common/CLAUDE.md` (3db) |
 | 8 | `authn/authn` | Before `oauth2`: it owns the session that module reads. | `authn/CLAUDE.md` |
 | 8-api | `authn/authn_api` | Just after `authn` (#571), whose views and acts it reaches through that module's exports; `/authn-api/*` collides with nothing. | `authn/CLAUDE.md` |
 | 7 | `ws-trust/wstrust` | After `authn` since 2026-09-05 (it calls `startSession()`); the number predates the move. | `ws-trust/CLAUDE.md` |
@@ -692,6 +693,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3cx | `policy_selection.ts` (#1235): what a named policy covers names it — the application, the group, the person — and one ranking by precedence for every policy kind; the recipe a kind follows | `common/CLAUDE.md`, `ldap/CLAUDE.md`, `admin-core/CLAUDE.md` |
 | 3cz | `fga_gate.ts`, `fga_pep.ts` (#564 P3, P4): fine-grained authorization at the authorization, PAR and token endpoints, the token exchange's bound, and AuthZEN deciding against an enforcing application's own policy | `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md`, `authzen/CLAUDE.md` |
 | 3da | `audit_export.ts` (#641): this process delivers its own audit ring to operator-configured destinations, at-least-once | `common/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
+| 3db | `profile_photo.ts` (#719): a person's photo, kept off the entry, set on the portal or copied from a partner | `common/CLAUDE.md`, `federation/CLAUDE.md`, `ldap/CLAUDE.md`, `portal/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
 | 5 | `admin.js` after `oauth2.js` | `admin-ui/CLAUDE.md` |
@@ -1145,7 +1147,7 @@ the file the row names.
 | Federate with anybody it was not CONFIGURED to federate with — the one refusal by default | `federation/CLAUDE.md` |
 | Poll a partner about a person while the session lasts; ~~consume a federated sign-out~~ reversed 2026-09-23 (#167); ~~decrypt a partner's encrypted assertion~~ reversed 2026-09-23 (#168) | `federation/CLAUDE.md` |
 | ~~Keep a partner's refresh token, register itself at a partner, find one by WebFinger or send it request objects~~ — reversed 2026-11-03 (#930) behind `fedRefreshTokens`, `fedRegister`, `fedWebFinger` and `fedRequestObject`, each off by default | `federation/CLAUDE.md`, *THE OPENID CONNECT RELYING PARTY PLANS* |
-| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — twenty-two argued exceptions | `federation/CLAUDE.md`, *The URLs this service dials that a caller's kind of URL could name* |
+| Dial a URL a CALLER supplied to fetch something FROM (`wreqptr`) — twenty-three argued exceptions | `federation/CLAUDE.md`, *The URLs this service dials that a caller's kind of URL could name* |
 | ~~Ask anybody's permission before it issues something~~ — reversed 2026-09-01 (`/oauth2/consent`) | `common/CLAUDE.md`, `oauth-oidc/CLAUDE.md` |
 | Let a page on another origin read an answer, unless it is this service's own or listed in `appCorsOrigin` | `common/CLAUDE.md` (`cors.js`) |
 | Check an end user's password, **in development mode** | `authn/CLAUDE.md`, `kerberos/CLAUDE.md`, `common/CLAUDE.md` |

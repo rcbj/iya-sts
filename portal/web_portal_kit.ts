@@ -75,6 +75,10 @@ const STYLE_AS_WRITTEN =
   // it drags it down past the heading's baseline. The form's margin is reset
   // because `button` carries a top margin of its own for the stacked forms
   // below, which is right there and wrong here.
+  '.menuphoto{width:24px;height:24px;border-radius:50%;object-fit:cover;' +
+  'vertical-align:middle;margin-right:6px}.photoshown{width:128px;' +
+  'height:128px;border-radius:50%;object-fit:cover;display:block;' +
+  'margin:8px 0}' +
   '.pagehead{display:flex;gap:12px;align-items:start;' +
   'justify-content:space-between;flex-wrap:wrap}.pagehead ' +
   'h1{margin:0}.pagehead form{margin:0}.pagehead .acts{display:flex;' +

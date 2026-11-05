@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5216** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5226** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 195
+* [Federation (`STS-FED`)](#sts-fed) — 198
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 254
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 163
@@ -93,7 +93,7 @@ is an ordinary outcome.
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 258
 * [Management API (`STS-API`)](#sts-api) — 88
-* [User portal (`STS-PORTAL`)](#sts-portal) — 114
+* [User portal (`STS-PORTAL`)](#sts-portal) — 121
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
@@ -2862,6 +2862,9 @@ Raised from: federation/.
 | `STS-FED-0216` | A typed identifier could not be looked up by WebFinger: it is not one, its host did not answer, or the answer named no OpenID Connect issuer (OpenID Connect Discovery 1.0 section 2, #930). | HTTP 400 or 502 page |
 | `STS-FED-0217` | WebFinger named an issuer that does not begin with the relationship's fedPeer, so it was not used (#930). | HTTP 403 page |
 | `STS-FED-0218` | A Request Object was asked for at an address that names none: never made, already fetched once, or expired (#930). | HTTP 404 |
+| `STS-FED-0219` | A federation partner's profile photo was not copied: the address was refused by the outbound policy, redirected, too large or did not answer. The picture claim keeps the partner's address and the next sign-in tries again (#719). | Logged; the sign-in is unaffected |
+| `STS-FED-0220` | A federation partner's profile photo was not copied in product mode, because global.publicBaseUrl is not set and its address here would be built on a Host header (#719). | Logged; the sign-in is unaffected |
+| `STS-FED-0221` | A federation partner's profile photo was fetched and not kept: it is not a readable JPEG or PNG, or its sides are out of range (#719). | Logged; the sign-in is unaffected |
 
 ## STS-OIDFED
 
@@ -5593,6 +5596,13 @@ Raised from: portal/.
 | `STS-PORTAL-0627` | POST /account-api/attributes named a custom attribute whose definition does not show it on the user portal (stsAttributePortalVisible is not TRUE) (#700). | HTTP 403 JSON |
 | `STS-PORTAL-0628` | POST /account-api/attributes named a custom attribute the person sees on the portal but may not change there (stsAttributePortalEditable is not TRUE) (#700). | HTTP 403 JSON |
 | `STS-PORTAL-0629` | A person's change to their own custom attribute on /account-api/attributes was not made: they have no directory entry, a value was refused for the attribute's syntax or cardinality, or the directory did not store it. Where the person editor refused with a code of its own (a required value taken away, STS-LDAP-0164), that code is recorded instead (#700). | HTTP 400 JSON |
+| `STS-PORTAL-0630` | A profile photo was refused: its bytes are not a JPEG or PNG file that can be read to its end (#719). | HTTP 400 JSON |
+| `STS-PORTAL-0631` | A profile photo was refused: it is larger than profilePhoto.maxStoredBytes (#719). | HTTP 413 JSON |
+| `STS-PORTAL-0632` | A profile photo was refused: a side is shorter than profilePhoto.minPixels or longer than profilePhoto.maxPixels (#719). | HTTP 400 JSON |
+| `STS-PORTAL-0633` | A profile photo could not be recorded or removed: the person has no directory entry in this realm, or the directory did not take it (#719). | HTTP 404 JSON, or a log line where a deletion could not remove it |
+| `STS-PORTAL-0634` | POST /account-api/photo in a realm whose profilePhoto.selfService is off (#719). | HTTP 403 JSON |
+| `STS-PORTAL-0635` | A profile photo was not saved in product mode: its address would be built on a Host header, because global.publicBaseUrl is not set (#719). | HTTP 409 JSON |
+| `STS-PORTAL-0636` | GET /web/photo/{id} answered 404: no such photo, its person was deleted, or their account is disabled (#719). | HTTP 404 |
 
 ## STS-ACCOUNT
 

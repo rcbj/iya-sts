@@ -1675,6 +1675,21 @@ the whole story.
 | `branding.logoLinkUrl` | `STS_BRANDING_LOGO_LINK_URL` | *(empty)* | yes | Where the logo leads, an absolute https URL (`STS-AUTHN-0551` otherwise). Empty, the default, the logo is not a link. |
 | `branding.logoMaxBytes` | `STS_BRANDING_LOGO_MAX_BYTES` | `262144` | yes — this process, not one realm | The largest logo an upload may carry, for every realm (1024–2097152). A larger one is refused (`STS-AUTHN-0546`). |
 
+### Profile photos
+
+What a person may set on the portal, and what is copied from a federation
+partner. [The user portal](user-facing-pages.md#the-user-portal) describes the
+card, and each of these applies per realm.
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `profilePhoto.selfService` | `STS_PROFILE_PHOTO_SELF_SERVICE` | `true` | yes | Whether a person may set and replace their own profile photo on the user portal. Off, the portal offers no upload and the operation is refused (`STS-PORTAL-0634`); a person may still remove the photo they have. |
+| `profilePhoto.cacheFederated` | `STS_PROFILE_PHOTO_CACHE_FEDERATED` | `true` | yes | Whether a picture address a federation partner sends is fetched after the sign-in and kept here, so that the picture claim names this realm's copy. Off, or where the copy fails, the claim carries the partner's address. The fetch follows the federation outbound policy and no redirect. |
+| `profilePhoto.maxFileBytes` | `STS_PROFILE_PHOTO_MAX_FILE_BYTES` | `5242880` | yes | The largest file the portal lets a person choose, 5 MiB by default. The browser crops and scales it before it is sent, so this is not what is kept: `profilePhoto.maxStoredBytes` is. |
+| `profilePhoto.maxStoredBytes` | `STS_PROFILE_PHOTO_MAX_STORED_BYTES` | `1048576` | yes | The largest image this realm keeps, from a person or a federation partner. A larger one is refused (`STS-PORTAL-0631`). 1 MiB by default and 3 MiB at most: the image travels base64-encoded in a JSON request. |
+| `profilePhoto.minPixels` | `STS_PROFILE_PHOTO_MIN_PIXELS` | `250` | yes | The shortest side a photo a person sets may have. A smaller one is refused (`STS-PORTAL-0632`). It does not apply to a partner's copy, which is often smaller. |
+| `profilePhoto.maxPixels` | `STS_PROFILE_PHOTO_MAX_PIXELS` | `4096` | yes | The longest side a kept photo may have, because every browser showing it has to decode it. A larger one is refused (`STS-PORTAL-0632`). |
+
 ### OAuth 2.0 / OIDC
 
 | Appconfig key | Environment variable | Default | Change while running? | What it does |

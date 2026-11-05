@@ -447,6 +447,10 @@
     "en": "2ce72d622f586a26",
     "text": "領域的登入標誌"
   },
+  "endpoints.route./web/photo/{id}.name": {
+    "en": "f2cc426998480c9c",
+    "text": "個人的個人資料相片"
+  },
   "endpoints.route./web/branding/preview.name": {
     "en": "54aca7174dc0a2b0",
     "text": "登入外觀的預覽"

@@ -1219,6 +1219,10 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717). PNG-, JPEG- eller WebP-logotypen som laddats upp för den här domänen via /admin-api/branding/logo, serverad från detta ursprung så att inloggningssidornas img-src 'self' tillåter den och ingen tredje part får veta vem som loggar in; nosniff, sandlådad, en ETag av dess sammandrag. 404 där domänen inte har någon."
   },
+  "stsmetadata.endpoints./web/photo/{id}.what": {
+    "en": "32d1ba774784074d",
+    "text": "NON-SPEC i sig (#719), och det som OpenID Connect Core 5.1:s picture-anspråk namnger för en person med ett foto här. Den JPEG eller PNG som angetts på portalen eller en federationspartners kopia, på en slumpmässig adress som ändras med fotot; utan autentiseringsuppgift, eftersom en förlitande part hämtar den utan någon. nosniff, i sandlåda, med en ETag. 404 för en inaktiverad eller borttagen person."
+  },
   "stsmetadata.endpoints./web/branding/preview.what": {
     "en": "a2af93aaf34bbbe3",
     "text": "NON-SPEC (#717). Ett exempel på den här domänens inloggningskort ritat med väntande färger och en layout (accent, page, card, text, layout i frågan, var och en kontrollerad som inställningarna skulle göra), för konsolen att öppna i en ny flik innan något sparas. Ingenting på den loggar in någon."

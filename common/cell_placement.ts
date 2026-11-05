@@ -140,6 +140,11 @@ const ROWS: Row[] = [
   { prefix: '/users', strategy: 'artifact', segment: 2,
     why: 'a person\'s DID document is served where its id was minted ' +
          '(#1291)' },
+  // A PERSON'S PROFILE PHOTO (#719), the row above's argument: the image is
+  // cell-tier, the id random and stamped, and a relying party carries no
+  // affinity cookie. More specific than `/web`, whose files are in every cell.
+  { prefix: '/web/photo', strategy: 'artifact', segment: 3,
+    why: 'a person\'s photo is served where its id was minted (#719)' },
   { prefix: '/applications', strategy: 'local',
     why: 'an application\'s DID document is drawn from its entry, and ' +
          'ou=applications is the global tier\'s' },
