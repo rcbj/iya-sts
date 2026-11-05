@@ -558,8 +558,7 @@ again when its profile is first used live.
 
 **Read in November 2026.** "Nothing found" below means no published way to sign a
 person in to a third party turned up, which is weaker than a provider saying it
-offers none. The ticket's table ends in a stray `|` after row 48, so it may have
-been cut off.
+offers none.
 
 | Platform | Protocol | Identifier | Email | Restrictions and notes | State |
 |---|---|---|---|---|---|
