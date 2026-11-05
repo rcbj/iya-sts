@@ -1,0 +1,15 @@
+{
+  "title": "Inloggningen kunde inte startas",
+  "refusal.STS-LAUNCH-0001": "Det finns inget program <code>{app}</code> i den här förtroendedomänen, så det finns inget att logga in dig i.",
+  "refusal.STS-LAUNCH-0002": "<code>{protocol}</code> är inget protokoll som en inloggning kan startas i. En länk här startar saml2, saml11, wsfed eller oidc.",
+  "refusal.STS-LAUNCH-0003": "Det här programmet loggar inte in med <code>{protocol}</code>.",
+  "refusal.STS-LAUNCH-0004": "Det här programmet kan startas i mer än ett protokoll, och länken säger inte vilket.",
+  "refusal.STS-LAUNCH-0005": "Det här programmet kan inte startas härifrån. Starta inloggningen i själva programmet.",
+  "refusal.STS-LAUNCH-0006": "Det här programmet har ingen registrerad adress att skicka dig till, så en inloggning som startas här har ingenstans att ta vägen.",
+  "refusal.STS-LAUNCH-0007": "Länken anger en adress att skicka dig till som inte är registrerad för det här programmet, så den avvisades.",
+  "refusal.general": "Inloggningen kunde inte startas.",
+  "background": "Den här länken startar en inloggning hos den här identitetsleverantören för ett program (inloggning initierad av identitetsleverantören). Inget har skickats till något program ännu, så problemet rapporteras här i stället.",
+  "application": "Program",
+  "protocol": "protocol",
+  "target": "target"
+}

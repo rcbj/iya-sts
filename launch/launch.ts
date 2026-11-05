@@ -37,7 +37,10 @@ import applications = require('../common/applications');
 import realms = require('../common/realms');
 import authn = require('../authn/authn');
 import LaunchLinks = require('../common/launch_links');
-import Html = require('../common/html');
+// The one error page (#1327): a library requiring `audit`, `realms` and the
+// page's language, none of which requires this module.
+import ErrorPage = require('../common/error_page');
+import PageLocale = require('../common/page_locale');
 import InstanceSlot = require('../common/instance_slot');
 
 type Json = any;
@@ -111,22 +114,50 @@ class Launch {
     log.debug("Leaving Launch.registerRoutes().");
   }
 
-  // A refusal is a short page: the person followed a link, and there is no
-  // relying party yet to hand a protocol error to. English, as every refusal
-  // here is (#539). No script, so the service's own policy needs no change.
+  // A REFUSAL IS THE SHARED ERROR PAGE (#1327): the person followed a link,
+  // and there is no relying party yet to hand a protocol error to, so the
+  // page is the whole answer. Until #1327 it was a heading and an English
+  // sentence, ending with nowhere to go; now the sentence is chosen by the
+  // code the caller marked, in the page's language, with the English detail
+  // among the diagnostics as data. No script, so the service's own policy
+  // needs no change.
+  //
+  // `params` are the values a sentence may name: `app`, `protocol`.
   // error-code: none — the helper's definition; each caller marks its code
   private refuse(res: Json, status: number, title: string,
-                 detail: string): void {
+                 detail: string, params?: Json): void {
+    const { errorCodes, authn } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering Launch.refuse(). " + status);
-    res.status(status)
-      .type('text/html')
-      .set('Cache-Control', 'no-store')
-      .send('<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-            '<meta name="viewport" content="width=device-width, ' +
-            'initial-scale=1"><title>' + Html.esc(title) + '</title>' +
-            '</head><body><h1>' + Html.esc(title) + '</h1><p>' +
-            Html.esc(detail) + '</p></body></html>');
+    const req: Json = res.req || { headers: {} };
+    const named: Json = params || {};
+    const session = authn.sessionOf(req);
+    const username = String((session && session.user &&
+                             session.user.username) || '');
+    const t = PageLocale.translatorFor(req, {
+      application: String(named.app || ''), username: username });
+    const code = errorCodes.codeOf(res);
+    const query = req.query || {};
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: status,
+      title: t.text('launchErrors.title'),
+      message: ErrorPage.sentence(t, [
+        code ? 'launchErrors.refusal.' + code : '',
+        'launchErrors.refusal.general'
+      ], { app: String(named.app || ''),
+           protocol: String(named.protocol || '') }),
+      background: t.html('launchErrors.background'),
+      diagnostics: [
+        { label: t.text('launchErrors.application'), value: named.app },
+        { label: t.text('launchErrors.protocol'), value: query.protocol },
+        { label: t.text('launchErrors.target'), value: query.target },
+        { label: t.text('errorPages.signedInAs'), value: username },
+        { label: t.text('errorPages.summary'), value: title },
+        { label: t.text('errorPages.detail'), value: detail }
+      ]
+    });
     log.debug("Leaving Launch.refuse().");
   }
 
@@ -212,7 +243,8 @@ class Launch {
       errorCodes.mark(res, 'STS-LAUNCH-0001');
       log.debug("Leaving Launch.launch(). No such application.");
       return this.refuse(res, 404, 'No such application',
-        'There is no application "' + identifier + '" in this realm.');
+        'There is no application "' + identifier + '" in this realm.',
+        { app: identifier });
     }
     const query = req.query || {};
     const chosen = this.chooseProtocol(view, String(query.protocol || ''));
@@ -220,7 +252,9 @@ class Launch {
       errorCodes.mark(res, chosen.code);
       log.debug("Leaving Launch.launch(). " + chosen.title);
       // error-code: none — chosen.code, marked above, is STS-LAUNCH-0002..0005
-      return this.refuse(res, chosen.status, chosen.title, chosen.detail);
+      return this.refuse(res, chosen.status, chosen.title, chosen.detail,
+                         { app: identifier,
+                           protocol: String(query.protocol || '') });
     }
     const protocol = chosen.protocol;
     const row = LaunchLinks.protocol(protocol);
@@ -231,7 +265,8 @@ class Launch {
         'This application cannot be started from here',
         'Identity-provider-initiated sign-in is off for this application ' +
         'in ' + row.label + ' (' + row.attribute + ', else ' + row.setting +
-        '). Start the sign-in at the application.');
+        '). Start the sign-in at the application.',
+        { app: identifier, protocol: protocol });
     }
     const missing = LaunchLinks.missingOf(view, protocol);
     if (missing.length) {
@@ -239,7 +274,8 @@ class Launch {
       log.debug("Leaving Launch.launch(). Missing " + missing.join(', '));
       return this.refuse(res, 409, 'There is nowhere to send you',
         'The application has no registered ' + missing.join(', ') +
-        ', so a ' + row.label + ' sign-in started here has nowhere to go.');
+        ', so a ' + row.label + ' sign-in started here has nowhere to go.',
+        { app: identifier, protocol: protocol });
     }
     const base = baseUrlOf(req);
     const target = String(query.target || '');
@@ -266,7 +302,8 @@ class Launch {
         'A launch of this application may send you on only to an https ' +
         'address registered on it (oauthRedirectUri, oauthInitiateLoginUri ' +
         'or appHomePageUrl), and the link named another. Remove target ' +
-        'from the link, or register the address.');
+        'from the link, or register the address.',
+        { app: identifier, protocol: protocol });
     }
     return this.launchOidc(req, res, view, base, landing, realms);
   }
@@ -329,7 +366,8 @@ class Launch {
       errorCodes.mark(res, 'STS-LAUNCH-0006');
       log.debug("Leaving Launch.launchOidc(). No section 4 address.");
       return this.refuse(res, 409, 'There is nowhere to send you',
-        'The client has no usable initiate_login_uri.');
+        'The client has no usable initiate_login_uri.',
+        { app: clientId, protocol: 'oidc' });
     }
     LaunchLinks.noteLaunch(session, clientId, nowSec());
     authn.noteSessionChanged(session);
