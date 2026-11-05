@@ -13167,6 +13167,29 @@ const CODES = [
       'kept: it is not a readable JPEG or PNG, or its sides are out of range ' +
       '(#719).',
     spec: 'Logged; the sign-in is unaffected' },
+  { code: 'STS-FED-0224',
+    summary: 'A Steam sign-in came back with no OpenID 2.0 assertion: the ' +
+      'mode was not id_res, usually a person cancelling on its page (#746).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0225',
+    summary: 'A Steam assertion was refused before the provider was asked: ' +
+      'another return address or endpoint, a required field missing or ' +
+      'unsigned, or a claimed identifier that is not a SteamID on Steam\'s ' +
+      'host (OpenID Authentication 2.0 section 11, #746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0226',
+    summary: 'Steam did not confirm a Steam assertion: check_authentication ' +
+      'failed or did not answer is_valid:true (#746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0227',
+    summary: 'A Steam assertion\'s nonce was already used, or the replay ' +
+      'history could not prove it unused (OpenID Authentication 2.0 section ' +
+      '11.3, #746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0228',
+    summary: 'The Steam Web API gave no summary of a person, so their entry ' +
+      'has no name or picture from it. The sign-in is unaffected (#746).',
+    spec: 'Logged' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

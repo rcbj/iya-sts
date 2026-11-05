@@ -290,6 +290,13 @@ interface RouteRegistrar {
 const BASE_PATH = federation.PATHS.base;
 const LOGIN_PATH = federation.PATHS.login;
 const ACS_PATH = federation.PATHS.acs;
+
+// OpenID Authentication 2.0 (#746). A SteamID is seventeen digits, and Steam's
+// documentation writes this address both ways round, so both are read.
+const OPENID2_NS = 'http://specs.openid.net/auth/2.0';
+const STEAM_CLAIMED_ID =
+  /^https?:\/\/steamcommunity\.com\/openid\/id\/([0-9]{17})$/;
+const STEAM_NONCE_KEEP_MS = 24 * 60 * 60 * 1000;
 const METADATA_PATH = federation.PATHS.metadata;
 const LINK_PATH = federation.PATHS.link;
 // The inter-cell operation that asks whether a resident carries a partner's
@@ -4646,11 +4653,219 @@ class FederationSp {
   private authorizationRequestUrl(base, record, context) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.authorizationRequestUrl().");
+    if (consumerProviders.adapts(record, 'steam-openid2')) {
+      log.debug("Leaving FederationSp.authorizationRequestUrl(). OpenID 2.0.");
+      return this.steamRequestUrl(base, record, context);
+    }
     const params = this.authorizationParams(base, record, context);
     const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
     const url = String(record.fedSsoUrl) + joiner + params.toString();
     log.debug("Leaving FederationSp.authorizationRequestUrl().");
     return url;
+  }
+
+  // ---------------------------------------------------------------------------
+  // STEAM: OPENID 2.0 (#746), the `steam-openid2` adapter.
+  //
+  // There is no client and no token. A person is sent to the OP Endpoint with
+  // `checkid_setup` and comes back with a signed assertion on the query, which
+  // this service cannot verify itself in stateless mode and asks the OP about:
+  // `check_authentication`, OpenID Authentication 2.0 section 11.4.2. What is
+  // this service's to check first is section 11: that the assertion is for the
+  // return address it asked for (11.1), from the endpoint it asked (11.2), not
+  // seen before (11.3), and with the fields that matter covered by the
+  // signature (11.4), since a field outside the signature is the browser's to
+  // write. **The claimed identifier is held to one shape**, Steam's, on Steam's
+  // host: the SteamID in it is what a person's account hangs on.
+  //
+  // The state on the return address is the same single-use, browser-bound
+  // context an OAuth relationship's `state` is, so everything after it is the
+  // funnel every other relationship goes through.
+  // ---------------------------------------------------------------------------
+  private steamRequestUrl(base, record, context) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.steamRequestUrl().");
+    const identifierSelect = 'http://specs.openid.net/auth/2.0/' +
+                             'identifier_select';
+    const params = new URLSearchParams();
+    params.set('openid.ns', OPENID2_NS);
+    params.set('openid.mode', 'checkid_setup');
+    params.set('openid.return_to', this.steamReturnTo(base, record, context));
+    params.set('openid.realm', new URL(base).origin + '/');
+    params.set('openid.identity', identifierSelect);
+    params.set('openid.claimed_id', identifierSelect);
+    log.debug("Leaving FederationSp.steamRequestUrl().");
+    return String(record.fedSsoUrl) + '?' + params.toString();
+  }
+
+  private steamReturnTo(base, record, context) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.steamReturnTo().");
+    log.debug("Leaving FederationSp.steamReturnTo().");
+    return this.acsUrl(base, record) + '?state=' +
+           encodeURIComponent(String(context.handle));
+  }
+
+  /**
+   * Says what is wrong with an OpenID 2.0 assertion before the OP is asked
+   * about it, or '' with nothing wrong. A pure reading of the request.
+   *
+   * @param fields - the `openid.*` parameters
+   * @param returnTo - the return address this sign-in asked for
+   * @param endpoint - the OP Endpoint this relationship names
+   * @returns the problem, or ''
+   */
+  static steamAssertionProblem(fields: any, returnTo: string,
+                               endpoint: string): string {
+    const { log } = helpers;
+    log.debug("Entering FederationSp.steamAssertionProblem().");
+    const refused = function (why: string): string {
+      log.debug("Leaving FederationSp.steamAssertionProblem(). " + why);
+      return why;
+    };
+    if (fields['openid.ns'] !== OPENID2_NS) {
+      return refused('it is not an OpenID 2.0 response');
+    }
+    if (fields['openid.return_to'] !== returnTo) {
+      return refused('it is for another return address');
+    }
+    if (fields['openid.op_endpoint'] !== endpoint) {
+      return refused('it names another endpoint');
+    }
+    if (!fields['openid.response_nonce'] || !fields['openid.assoc_handle'] ||
+        !fields['openid.sig']) {
+      return refused('it lacks a field the specification requires');
+    }
+    const signed = String(fields['openid.signed'] || '').split(',');
+    const uncovered = ['op_endpoint', 'return_to', 'response_nonce',
+                       'assoc_handle', 'claimed_id', 'identity']
+      .filter(function (one: string): boolean {
+        return signed.indexOf(one) < 0;
+      });
+    if (uncovered.length) {
+      return refused('its signature does not cover ' + uncovered.join(', '));
+    }
+    const claimed = String(fields['openid.claimed_id'] || '');
+    if (claimed !== fields['openid.identity'] ||
+        !STEAM_CLAIMED_ID.test(claimed)) {
+      return refused('its claimed identifier is not a SteamID on Steam\'s ' +
+                     'host');
+    }
+    log.debug("Leaving FederationSp.steamAssertionProblem().");
+    return '';
+  }
+
+  private async consumeSteamAssertion(req, res, record, context, params) {
+    const {
+      fedHttp, errorCodes, log, baseUrlOf, federation
+    } = this.deps;
+    log.debug("Entering FederationSp.consumeSteamAssertion().");
+    const fields: any = {};
+    Object.keys(params).forEach(function (name) {
+      if (name.indexOf('openid.') === 0 && typeof params[name] === 'string') {
+        fields[name] = params[name];
+      }
+    });
+    if (fields['openid.mode'] !== 'id_res') {
+      errorCodes.mark(res, 'STS-FED-0224');
+      log.debug("Leaving FederationSp.consumeSteamAssertion(). Not an " +
+                "assertion.");
+      return this.refuse(res, record, 400, 'The sign-in was not completed',
+        'Steam did not answer with an assertion. Somebody may have cancelled ' +
+        'on its page.');
+    }
+    const problem = FederationSp.steamAssertionProblem(fields,
+      this.steamReturnTo(baseUrlOf(req), record, context),
+      String(record.fedTokenUrl || ''));
+    if (problem) {
+      errorCodes.mark(res, 'STS-FED-0225');
+      log.debug("Leaving FederationSp.consumeSteamAssertion(). " + problem);
+      return this.refuse(res, record, 401, 'The assertion was refused',
+                         'The assertion was refused: ' + problem + '.');
+    }
+    // SECTION 11.4.2: the OP says whether it signed this. The same parameters,
+    // with the mode changed, and an answer that is Key-Value form.
+    const body = new URLSearchParams(fields);
+    body.set('openid.mode', 'check_authentication');
+    const asked = await fedHttp.fetchPublished(String(record.fedTokenUrl), {
+      method: 'POST', body: body.toString(),
+      contentType: 'application/x-www-form-urlencoded', accept: 'text/plain' });
+    const valid = asked.ok && String(asked.body).split('\n')
+      .some(function (line: string): boolean {
+        return line.trim() === 'is_valid:true';
+      });
+    if (!valid) {
+      errorCodes.mark(res, 'STS-FED-0226');
+      log.debug("Leaving FederationSp.consumeSteamAssertion(). Not valid.");
+      return this.refuse(res, record, 401, 'The assertion did not verify',
+                         'Steam did not confirm that it signed this ' +
+                         'assertion.');
+    }
+    // SECTION 11.3: an OP's nonce is accepted once. The time at its front says
+    // when it was made, and the history need keep it no longer than this.
+    const claimed = await usedAssertions.claim({ format: 'openid2',
+      use: 'steam-assertion', issuer: String(record.fedPeer),
+      identifier: fields['openid.response_nonce'], request: req,
+      expiresAt: Date.now() + STEAM_NONCE_KEEP_MS });
+    if (!claimed.ok) {
+      errorCodes.mark(res, 'STS-FED-0227');
+      log.debug("Leaving FederationSp.consumeSteamAssertion(). Replay.");
+      return this.refuse(res, record, 401, 'The assertion was refused',
+                         'This assertion was already used, or could not be ' +
+                         'proved unused.');
+    }
+    const steamid = String(STEAM_CLAIMED_ID.exec(
+      fields['openid.claimed_id'])[1]);
+    const summary = await this.steamSummary(record, steamid, federation);
+    const reading = this.consumerReading(record,
+      { token: { steamid: steamid }, userinfo: summary }, {},
+      steamid, this.federatedAmr([]), '');
+    log.debug("Leaving FederationSp.consumeSteamAssertion().");
+    return this.completeSignIn(req, res, record, {
+      subject: reading.subject,
+      issuer: String(record.fedPeer || ''),
+      bag: reading.bag, amr: reading.amr, acr: reading.acr,
+      // The OP vouched for the signature, and this service checked none.
+      signer: FederationSp.signerOf('none'),
+      returnTo: this.fromContext(context).returnTo,
+      connect: this.fromContext(context).connect,
+      application: this.fromContext(context).application,
+      authnPending: this.fromContext(context).authnPending
+    });
+  }
+
+  // A PERSON'S NAME AND PICTURE (#746), only where an administrator gave a
+  // Steam Web API key. A failure costs them and never the sign-in: the
+  // SteamID already names the person. The key is on this URL because that is
+  // how Steam takes it, so neither the URL nor a reason that could quote one
+  // is logged.
+  private async steamSummary(record, steamid, federation) {
+    const { fedHttp, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.steamSummary().");
+    const key = String(federation.clientSecretOf(record) || '');
+    const base = String(record.fedUserinfoUrl || '').trim();
+    if (!key || !base) {
+      log.debug("Leaving FederationSp.steamSummary(). No key.");
+      return null;
+    }
+    const asked = await fedHttp.fetchPublished(base + '?key=' +
+      encodeURIComponent(key) + '&steamids=' + encodeURIComponent(steamid),
+    { accept: 'application/json' });
+    let out = null;
+    try {
+      out = asked.ok ? JSON.parse(String(asked.body)) : null;
+    } catch (e) {
+      log.debug("Caught in FederationSp.steamSummary(): " +
+                ((e && e.name) || 'a parse error'));
+      out = null;
+    }
+    if (!out) {
+      log.info(errorCodes.tag('STS-FED-0228') + 'federation: ' + record.fedId +
+               ': the Steam Web API gave no summary (status ' + asked.status +
+               '), so this person has no name or picture from it.');
+    }
+    log.debug("Leaving FederationSp.steamSummary().");
+    return out;
   }
 
   // The authorization request's parameters, for the query or — for an OP
@@ -7149,6 +7364,21 @@ class FederationSp {
             'with a warning.'
           : 'No state came back at all. This service always sends one, so a ' +
             'response without one did not come from a flow it started.');
+    }
+
+    // STEAM (#746): an OpenID 2.0 assertion, with no code to redeem.
+    if (consumerProviders.adapts(record, 'steam-openid2')) {
+      log.debug("Leaving FederationSp.consumeOauthResponse(). OpenID 2.0.");
+      return this.consumeSteamAssertion(req, res, record, context, params)
+        .catch((e) => {
+          log.error(errorCodes.tag('STS-FED-0042') + 'federation: the Steam ' +
+                    'assertion for ' + record.fedId + ' threw: ' +
+                    ((e && e.message) || e));
+          errorCodes.mark(res, 'STS-FED-0042');
+          return this.refuse(res, record, 500, 'This service failed while ' +
+                             'finishing the sign-in', 'The assertion could ' +
+                             'not be checked.');
+        });
     }
 
     // A PARTNER READ FROM ITS DISCOVERY DOCUMENT (#930): the endpoints the
