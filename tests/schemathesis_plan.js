@@ -12,10 +12,11 @@
 // auth, the checks and the run-sabotage exclusions. A Schemathesis run needs
 // the tests image and a dedicated product stack, and the choices can be
 // asserted without either: that the three realm profiles are product baseline,
-// RFC 9700 and OAuth 2.1; that each surface names a known auth kind and at
-// least the no-server-error check; that the synthesized protocol surface runs
-// only that check; that the three custom checks are this service's own
-// invariants; and that every exclusion carries a reason (an op excluded with
+// RFC 9700 and OAuth 2.1; that each surface names a known auth kind and
+// enables the no-uncaught-5xx check; that the synthesized protocol surface
+// runs exactly the four invariant checks; that the four custom checks are this
+// service's own invariants; and that every exclusion carries a reason (an op
+// excluded with
 // no reason is indistinguishable from one dropped by accident). This is the
 // tlsfuzzer_plan.js split: the data is the kit's, the assertions are here, and
 // the fuzzer itself is not run here.
@@ -23,10 +24,12 @@
 
 const kit = require("./protocol/schemathesis_kit");
 
-// The three custom checks the plan must name, each this service's own
-// cross-cutting invariant.
-const INVARIANT_CHECKS = ["no_error_code_leak", "frame_ancestors_present",
-  "no_outbound_fetch"];
+// The four custom checks the plan must name, each this service's own
+// cross-cutting invariant. no_uncaught_server_error is the no-uncaught-5xx
+// invariant as a custom check (501-tolerant), in place of the built-in
+// not_a_server_error, which mis-flags this service's deliberate 501s.
+const INVARIANT_CHECKS = ["no_uncaught_server_error", "no_error_code_leak",
+  "frame_ancestors_present", "no_outbound_fetch"];
 
 // The expected auth kind of each surface, so a silent change to one is caught.
 const EXPECTED_AUTH = {
@@ -83,25 +86,34 @@ function run(t) {
       t.check(!!kit.surfaceNamed(key), "the " + key + " surface is present");
     });
 
-  // Each surface names the auth kind it must, and every surface runs the
-  // no-server-error check (the floor for the synthesized doc, included in the
-  // built-ins for the others).
+  // The checks a surface actually enables: its own (none today) plus the four
+  // custom invariants, exactly as runSurface() builds the --checks argument.
+  const enabledFor = function (surface) {
+    return surface.checks.concat(kit.CUSTOM_CHECKS);
+  };
+
+  // Each surface names the auth kind it must, names NO built-in check (the
+  // no-server-error invariant is the custom no_uncaught_server_error), and so
+  // enables the no-uncaught-5xx check.
   kit.SURFACES.forEach(function (surface) {
     t.equal(surface.auth, EXPECTED_AUTH[surface.key],
       "the " + surface.key + " surface uses the expected auth kind");
-    t.check(surface.checks.indexOf("not_a_server_error") >= 0,
-      "the " + surface.key + " surface checks for no server error");
+    t.equal(surface.checks.length, 0,
+      "the " + surface.key + " surface names no built-in check");
+    t.check(enabledFor(surface).indexOf("no_uncaught_server_error") >= 0,
+      "the " + surface.key + " surface checks for no uncaught server error");
   });
 
   // The synthesized protocol surface is built from the router walk and runs
-  // only the no-server-error check (it has no response schemas).
+  // exactly the four custom invariants (it has no response schemas, so no
+  // conformance check applies).
   const protocol = kit.surfaceNamed("protocol");
   t.equal(protocol.kind, "synthesized",
     "the protocol surface is synthesized");
   t.equal(protocol.schemaPath, "/admin-api/sts-metadata",
     "the protocol surface is built from the router walk");
-  t.equal(protocol.checks.length, 1,
-    "the protocol surface runs exactly the no-server-error check");
+  t.equal(enabledFor(protocol).length, INVARIANT_CHECKS.length,
+    "the protocol surface runs exactly the four invariant checks");
 
   // The openapi'd surfaces publish or gate their schema document as expected.
   t.equal(kit.surfaceNamed("account-api").schemaAuth, "none",
@@ -113,9 +125,9 @@ function run(t) {
   t.equal(kit.surfaceNamed("report-api").schemaAuth, "dpop-report",
     "the report-api schema is read with the report token");
 
-  // The custom checks are exactly this service's three invariants.
+  // The custom checks are exactly this service's four invariants.
   t.equal(kit.CUSTOM_CHECKS.length, INVARIANT_CHECKS.length,
-    "there are three custom checks");
+    "there are four custom checks");
   INVARIANT_CHECKS.forEach(function (check) {
     t.check(kit.CUSTOM_CHECKS.indexOf(check) >= 0,
       "the custom checks include " + check);

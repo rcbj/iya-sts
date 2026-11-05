@@ -85,16 +85,25 @@ const AUTH_KINDS = ["none", "authn", "dpop-portal", "dpop-console",
 
 // ---------------------------------------------------------------------------
 // THE CHECKS. The gate asserts THIS SERVICE'S FOUR INVARIANTS and nothing else
-// (rcbj, 2026-11-04): the built-in `not_a_server_error` (no uncaught 5xx — the
-// fault boundary holds) and the three custom checks below (no leaked error
-// code, frame-ancestors kept, no outbound fetch). It does NOT assert strict
-// OpenAPI conformance — this is a mock identity service, so "schema-valid
-// request rejected" is overwhelmingly product-mode gating doing its job, and a
-// 400 for an undeclared method or an accepted schema-violating body is not a
-// robustness defect we are hunting. So every surface runs exactly the four
-// checks (the run enables them BY NAME rather than `--checks all`, which turns
-// on the conformance checks too). `BUILTIN_CHECKS` is the catalogue a surface
-// MAY name; today every surface names only `not_a_server_error`.
+// (rcbj, 2026-11-04), and ALL FOUR are CUSTOM checks loaded from the hooks
+// file (no uncaught 5xx, no leaked error code, frame-ancestors kept, no
+// outbound fetch). It does NOT assert strict OpenAPI conformance — this is a
+// mock identity service, so "schema-valid request rejected" is overwhelmingly
+// product-mode gating doing its job, and a 400 for an undeclared method or an
+// accepted schema-violating body is not a robustness defect we are hunting. So
+// every surface runs exactly the four checks (the run enables them BY NAME
+// rather than `--checks all`, which turns on the conformance checks too).
+//
+// The no-uncaught-5xx invariant is the CUSTOM `no_uncaught_server_error`
+// rather than the built-in `not_a_server_error`, because the invariant is "no
+// UNCAUGHT 5xx — the fault boundary holds": this service deliberately answers
+// 501 Not Implemented for a feature it does not implement or a realm turned
+// off (the VC API, UMA, EST /fullcmc), each a handled refusal with a marked
+// operator error code, which the built-in would mis-flag as a server error.
+// The custom check allows 501 alone and fails every other 5xx (a 502 included
+// — in this harness that can only be the auth proxy failing to forward, since
+// the service gateways nothing). `BUILTIN_CHECKS` is the catalogue a surface
+// MAY name; today no surface names any built-in.
 // ---------------------------------------------------------------------------
 const BUILTIN_CHECKS = [
   "not_a_server_error",
@@ -104,12 +113,18 @@ const BUILTIN_CHECKS = [
   "response_headers_conformance"
 ];
 
-// The built-in checks every surface actually enables: the no-server-error
-// invariant alone. The others above are left for a surface that ever needs
-// one; naming them would reintroduce the conformance noise this gate excludes.
-const INVARIANT_BUILTIN = ["not_a_server_error"];
+// The built-in checks every surface enables: NONE. The no-server-error
+// invariant is the custom `no_uncaught_server_error` below, because the
+// built-in `not_a_server_error` mis-flags this service's deliberate 501s. The
+// catalogue above is left for a surface that ever needs a conformance check;
+// naming one would reintroduce the noise this gate excludes.
+const INVARIANT_BUILTIN = [];
 
 const CUSTOM_CHECKS = [
+  // No UNCAUGHT 5xx: the fault boundary holds. A deliberate 501 Not Implemented
+  // is a handled refusal and is allowed; every other 5xx fails. Custom rather
+  // than the built-in not_a_server_error, which cannot tell the two apart.
+  "no_uncaught_server_error",
   // Every refusal records an operator error code and NEVER sends it; a code in
   // a response body is a leak (root CLAUDE.md, Every failure has an error
   // code).
@@ -233,8 +248,17 @@ function validate() {
     if (surface.auth !== "per-op" && AUTH_KINDS.indexOf(surface.auth) < 0) {
       problems.push("surface " + surface.key + " has an unknown auth kind");
     }
-    if (!Array.isArray(surface.checks) || surface.checks.length === 0) {
+    // The checks actually enabled are the surface's own (a built-in catalogue
+    // name, none today) plus the four custom invariants — exactly what
+    // runSurface() passes to --checks. The set must be non-empty and must
+    // carry the no-uncaught-5xx invariant.
+    const enabled = (surface.checks || []).concat(CUSTOM_CHECKS);
+    if (!Array.isArray(surface.checks) || enabled.length === 0) {
       problems.push("surface " + surface.key + " runs no check");
+    }
+    if (enabled.indexOf("no_uncaught_server_error") < 0) {
+      problems.push("surface " + surface.key + " omits the no-uncaught-5xx " +
+        "invariant");
     }
     (surface.checks || []).forEach(function (check) {
       if (BUILTIN_CHECKS.indexOf(check) < 0) {
@@ -485,6 +509,20 @@ function synthesizeProtocolDoc(rows) {
     }
     const key = openApiPathOf(row.path);
     paths[key] = paths[key] || {};
+    // A path template parameter ({id}) MUST be declared with in:path,
+    // required:true and a schema, or OpenAPI 3.1 is invalid and Schemathesis
+    // reports a per-operation "Schema Error" and never fuzzes it. Declare them
+    // once on the path item (inherited by every verb). A loose string lets a
+    // fuzzed value be anything.
+    const names = (key.match(/\{([^}]+)\}/g) || []).map(function (token) {
+      return token.slice(1, -1);
+    });
+    if (names.length > 0) {
+      paths[key].parameters = names.map(function (name) {
+        return { name: name, in: "path", required: true,
+          schema: { type: "string" } };
+      });
+    }
     (row.methods || []).forEach(function (method) {
       const verb = String(method).toLowerCase();
       if (verbs.indexOf(verb) < 0) {
@@ -543,8 +581,9 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
       schemaLocation = "http://127.0.0.1:" + port + surface.schemaPath;
     }
     const base = "http://127.0.0.1:" + port;
-    // Enable EXACTLY the four invariant checks by name — the surface's built-in
-    // (not_a_server_error) and the three custom ones from the hooks file.
+    // Enable EXACTLY the four invariant checks by name — all four are custom
+    // checks from the hooks file (no_uncaught_server_error, no_error_code_leak,
+    // frame_ancestors_present, no_outbound_fetch); no surface names a built-in.
     // `--checks all` would also turn on the strict OpenAPI-conformance checks
     // (undeclared-method, schema-valid-rejected, schema-violating-accepted),
     // which this gate does not assert (rcbj, 2026-11-04); naming the checks is

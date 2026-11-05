@@ -136,6 +136,11 @@ async function signInToReport(base, user, log2, options) {
   const redirectUri = base + "/report/callback";
   const state = b64u(crypto.randomBytes(16));
   const nonce = b64u(crypto.randomBytes(16));
+  // The body of the last refusal a hop answered (status >= 400), for the
+  // diagnostic: a 400 at the authorization endpoint carries the OAuth error
+  // (invalid_request / invalid_scope / unauthorized_client …) that says WHY,
+  // which the assertion alone (status and Location) cannot.
+  let lastRefusal = "";
 
   async function fetchKeeping(url) {
     log.debug("Entering fetchKeeping().");
@@ -144,6 +149,14 @@ async function signInToReport(base, user, log2, options) {
     // keep() reads the fetch Response's own headers.getSetCookie(); the jar
     // from console_signin.js takes the response itself, not a {setCookies}.
     cookies.keep(r);
+    if (r.status >= 400) {
+      // Read a clone so the caller still has the body if it wants it.
+      lastRefusal = await r.clone().text().then(function (text) {
+        return (r.status + " at " + url + ": " + String(text)).slice(0, 500);
+      }, function () {
+        return r.status + " at " + url;
+      });
+    }
     log.debug("Leaving fetchKeeping().");
     return r;
   }
@@ -249,7 +262,7 @@ async function signInToReport(base, user, log2, options) {
             back.searchParams.get("state") === state,
     "the authorization endpoint should answer the report callback with a " +
     "code and the state; it answered " + at.status + " to \"" + location +
-    "\"");
+    "\"" + (lastRefusal ? " [last refusal: " + lastRefusal + "]" : ""));
 
   const tokenUrl = base + "/oauth2/token";
   async function tokenRequest(form) {

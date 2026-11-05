@@ -37,6 +37,16 @@ import schemathesis
 # log form; it must never appear in a response body.
 _ERROR_CODE = re.compile(rb"STS-[A-Z]+-[0-9]{4}")
 
+# The invariant is "no UNCAUGHT 5xx (the fault boundary holds)". A deliberate
+# 501 Not Implemented is a handled refusal, not a fault: this service answers
+# 501 for a feature it does not implement or a realm has turned off (the VC
+# API, UMA, EST /fullcmc), each with a marked operator error code, and the
+# fault boundary never fires. So 501 is allowed and every other 5xx fails --
+# including a 502, which in this harness can only be the auth proxy failing to
+# forward (the service gateways nothing), so leaving it failing keeps a future
+# proxy regression visible.
+_ALLOWED_SERVER_STATUS = frozenset((501,))
+
 # Markers of an attempted outbound DNS lookup that the no-egress network blocks.
 # Narrow on purpose: these name resolution failures rather than any error text.
 _EGRESS_MARKERS = (b"getaddrinfo", b"ENOTFOUND", b"EAI_AGAIN")
@@ -71,6 +81,22 @@ def _body_bytes(response):
     if isinstance(body, str):
         return body.encode("utf-8", "replace")
     return b""
+
+
+@schemathesis.check
+def no_uncaught_server_error(ctx, response, case):
+    """No uncaught 5xx: the fault boundary holds. A deliberate 501 is allowed."""
+    status = getattr(response, "status_code", None)
+    try:
+        status = int(status)
+    except (TypeError, ValueError):
+        return
+    if status >= 500 and status not in _ALLOWED_SERVER_STATUS:
+        raise AssertionError(
+            "server error " + str(status)
+            + " (the fault boundary should hold; only a deliberate 501 "
+            "Not Implemented is allowed)"
+        )
 
 
 @schemathesis.check

@@ -67,9 +67,19 @@ const AGENT = SERVICE.protocol === "http:" ? undefined
   : new https.Agent({ rejectUnauthorized: false });
 
 // The session established for a gated surface: a DPoP key, the current token,
-// a refresh(), and (for authn) the sign-on cookie. Filled by signIn().
-const session = { key: null, token: "", refresh: null, cookie: "", csrf: "",
-  origin: SERVICE.origin };
+// a refresh(), the sign-in wrapper (its `token` getter is live, so a refresh
+// is read from there rather than from refresh()'s own return — which is the
+// token RESPONSE object its internal retry consumes, not the access-token
+// string), and (for authn) the sign-on cookie. Filled by signIn().
+const session = { key: null, token: "", refresh: null, wrapper: null,
+  cookie: "", csrf: "", origin: SERVICE.origin };
+
+// The access token in force right now: the wrapper's live getter once a
+// gated surface has signed in, so a value replaced by a refresh is picked up
+// without the proxy ever holding a stale or non-string token.
+function currentToken() {
+  return session.wrapper ? session.wrapper.token : session.token;
+}
 
 // Signs the surface's credential in, reusing the matching helper. The authn
 // surface takes no token but its POSTs are bound, so a portal sign-in's
@@ -86,18 +96,21 @@ async function signIn() {
     session.key = wrapper.key;
     session.token = wrapper.token;
     session.refresh = wrapper.refresh;
+    session.wrapper = wrapper;
   } else if (AUTH === "dpop-console") {
     const wrapper = await require("../protocol/console_signin")
       .signInToTheConsole(REALM_BASE, USER, say, { password: PASSWORD });
     session.key = wrapper.key;
     session.token = wrapper.token;
     session.refresh = wrapper.refresh;
+    session.wrapper = wrapper;
   } else if (AUTH === "dpop-report") {
     const wrapper = await require("../protocol/report_signin")
       .signInToReport(REALM_BASE, USER, say, { password: PASSWORD });
     session.key = wrapper.key;
     session.token = wrapper.token;
     session.refresh = wrapper.refresh;
+    session.wrapper = wrapper;
   } else if (AUTH === "authn") {
     // The authn-api operations take no token; its POSTs are bound (an Origin,
     // and X-CSRF-Token matching the sts_session cookie). A portal sign-in
@@ -129,8 +142,9 @@ function outboundHeaders(req, url) {
   headers.host = SERVICE.host;
   if (AUTH === "dpop-portal" || AUTH === "dpop-console" ||
       AUTH === "dpop-report") {
-    headers.authorization = "DPoP " + session.token;
-    headers.dpop = session.key.proof(req.method, url, session.token);
+    const token = currentToken();
+    headers.authorization = "DPoP " + token;
+    headers.dpop = session.key.proof(req.method, url, token);
   } else if (AUTH === "authn") {
     if (session.cookie) {
       headers.cookie = session.cookie +
@@ -204,7 +218,9 @@ async function forward(req, url, body) {
       outboundHeaders(req, url), body);
   } else if (dpop && answer.status === 401 &&
              /invalid_token/.test(answer.challenge) && session.refresh) {
-    session.token = await session.refresh();
+    // refresh() returns the token RESPONSE object its own retry consumes; the
+    // new access token is read from the wrapper's live getter, never from here.
+    await session.refresh();
     answer = await forwardOnce(req.method, url,
       outboundHeaders(req, url), body);
   }
