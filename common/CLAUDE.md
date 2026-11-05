@@ -722,6 +722,36 @@ them by default would refuse conforming clients for nothing.
 
 `tests/oidcc_conformance_defaults.js` section E holds it.
 
+## A REALM'S SIGNING ALGORITHMS, NAMED ONE BY ONE (#1348, 2026-11-05)
+
+**`keys.signingAlgorithms`, EMPTY BY DEFAULT.** rcbj: the OpenID Connect
+certification configuration has only RS256 enabled. It is the EdDSA switch
+above applied to any algorithm, at the same places, and both switches still win
+over it.
+
+* **One reader, in `helpers.js`**: `signingAlgAllowlist()` (the ambient realm,
+  per call). **RS256 is always in it**: `signingAlgorithmsWriteRule()` refuses a
+  list without it (`STS-KEYS-0167`), and the reader adds it for a value from an
+  appconfig file or the environment, which reaches no write rule. That is what
+  makes "use RS256 instead" safe in `accessTokenAlg()` and what keeps an RSA key
+  in the JWKS whatever else the list says.
+* **What is published and advertised**: `withoutUnlistedSigningKeys()` filters
+  `/oauth2/jwks`'s finished list and `withoutUnlistedSigningAlgs()` narrows
+  `OWN_SIGNING_ALG_MEMBERS`, after the EdDSA filters.
+* **What a client may choose**: `signableJwsAlgs()` applies the list, so the
+  console's choices and the registration checks follow.
+* **What is refused**: `signJwtAs()` and `signJwtAsAsync()`
+  (`unlistedSignatureRefusal()`, `STS-KEYS-0166`, logged once per realm), AHEAD
+  of the HMAC branch, because the list governs HS256 too. `accessTokenAlg()`
+  replaces rather than refuses, as it does for FAPI. **`signJwt()` and
+  `signingKeyFor()` are NOT refused**, for the EdDSA switch's reason, and
+  `signing_rotation.ts` reads a key's kid through the latter.
+* **`none` is not governed**: a UserInfo response may be plain JSON.
+* **It does not shrink the generations.** An RS256-only realm still publishes
+  every live generation of its RSA key.
+
+`tests/signing_algorithm_allowlist.js` holds it.
+
 ## `crypto.js` SECTION 4a: POST-QUANTUM AND HPKE KEY ESTABLISHMENT (#82, 2026-09-27)
 
 **JWE had RSA-OAEP and ECDH-ES only, so every encrypted token this service

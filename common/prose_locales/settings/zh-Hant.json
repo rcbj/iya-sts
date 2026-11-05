@@ -1527,6 +1527,14 @@
     "en": "d14784fabbda974e",
     "text": "此領域是否以 EdDSA（RFC 8037，Ed25519 與 Ed448）為用戶端選擇演算法的 JOSE 物件簽章，並發布其 kty OKP 簽章金鑰。**預設關閉**，因為 OpenID 一致性測試套件無法剖析 JWKS 中的 OKP 金鑰，而 OpenID Connect 認證執行的正是該套件。關閉時：`/oauth2/jwks` 中沒有 OKP 簽章金鑰（包括備用、固定與簽署者群組金鑰）；EdDSA 不在 `id_token_signing_alg_values_supported`、`userinfo_signing_alg_values_supported`、`introspection_signing_alg_values_supported` 或 `authorization_signing_alg_values_supported` 中；用戶端不能為 ID Token、UserInfo、內省或 JARM 回應註冊或被指定 EdDSA；仍被要求的此類簽章——由在此設定開啟時註冊的用戶端，或由設為 EdDSA 的 SSF、WS-Trust 或 Provider Commands 演算法——會被拒絕，而不是以無人能取得的金鑰產生。**不變：**用戶端用來簽章的 EdDSA（用戶端斷言、DPoP 證明、請求物件、錢包證明）仍被接受並宣告為接受；營運者設定的存取權杖、聯盟或憑證演算法（`oauth2.accessTokenSigningAlg`、`oidfed.signingAlg`、OpenID4VCI 的憑證演算法）仍會簽章，因此在此設定關閉時不要在那裡設定 EdDSA；DID 文件、COSE、XML 簽章、DKIM 與 TLS 不屬於 JOSE JWKS 發布。開啟時：依 `oauth2.eddsaCurve` 的設定簽章並發布 EdDSA。"
   },
+  "keys.signingAlgorithms|label": {
+    "en": "23087da9ac3a37f0",
+    "text": "此領域使用的簽章演算法"
+  },
+  "keys.signingAlgorithms|description": {
+    "en": "6ca0d3f207d8dcd4",
+    "text": "此領域用於簽章並為其發布金鑰的 JWS 演算法。**預設值為空，保留領域原有的所有演算法。** 清單必須包含 RS256：OpenID Connect Discovery 要求它出現在 `id_token_signing_alg_values_supported` 中，它也是 ID 權杖和存取權杖的預設演算法。設定清單後：`/oauth2/jwks` 中不含未列出演算法的簽章金鑰（包括備用金鑰、固定金鑰和簽署者群組金鑰；一個 RSA 金鑰可用於所有 RS 和 PS 演算法，因此會保留）；未列出的演算法不會出現在探索文件的 ID 權杖、UserInfo、內省或 JARM 簽章清單中；用戶端不能為這些回應註冊或被指派該演算法；仍要求使用該演算法的簽章會被拒絕，而不是用無人能取得的金鑰簽章；未列出的 `oauth2.accessTokenSigningAlg` 改用 RS256 簽章。使用 FAPI 1.0 Advanced 時還需列出 PS256。`keys.postQuantumSigning` 和 `keys.eddsaSigning` 仍然有效：列出某個演算法不會開啟其演算法系列。**不變的內容：**此領域從用戶端接受的內容（用戶端判斷提示、DPoP 證明、請求物件、錢包證明）；純 JSON 的 UserInfo 回應；加密金鑰；COSE、XML 簽章、DKIM 和 TLS；以及 `oauth2.httpSignatureResponseAlg`、`oidfed.signingAlg` 和 OpenID4VCI 憑證演算法所設定的演算法，因此請在這些設定中指定已列出的演算法。"
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "已簽署權杖的 kid 格式"
