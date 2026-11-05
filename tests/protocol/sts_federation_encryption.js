@@ -176,8 +176,13 @@ function realmBase(realm) {
 function squash(text) {
   log.debug("Entering squash().");
   log.debug("Leaving squash().");
+  // THE SHARED ERROR PAGE (#1326, #1327) opens with the language chooser
+  // and keeps the English what and why in its diagnostics, below the
+  // translated sentence: the chooser is dropped and the window is wide
+  // enough to hold both.
   return String(text || "").replace(/<style[\s\S]*?<\/style>/g, " ")
-    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 400);
+    .replace(/<details class="language-row">[\s\S]*?<\/details>/g, " ")
+    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
 }
 
 function htmlDecode(text) {
@@ -1150,7 +1155,8 @@ async function samlFromSelf(world) {
     await refused(cipherName + " under " + transport,
       await post(encryptXml(signed(), cert, { cipher: cipherName,
         transport: transport, wrapper: "saml:EncryptedAssertion",
-        declare: true })), 401, /algorithm this relationship refuses/);
+        declare: true })), 401,
+      /algorithm this relationship (?:does not accept|refuses)/);
   }
   const other = await (async function () {
     const r = await hop(null, realmBase(SP) + "/federation/metadata/" +
@@ -1176,14 +1182,38 @@ async function samlFromSelf(world) {
                 /could not be decrypted/);
   await check("a wrong key and an altered ciphertext read THE SAME (no " +
               "oracle)", async function () {
+    // WHAT THE PAGE SAYS, BOTH WAYS IT CAN (#1326, #1327): the sentence in
+    // the error box, and every diagnostics row but the time and the incident
+    // ID, which differ per request by design. A wrong key and a tampered
+    // ciphertext must read identically in all of it, or the page is an
+    // oracle (common/crypto.js, #202 item 12).
     const why = function (r) {
       log.debug("Entering why().");
+      const body = String(r.body || "");
+      const box = /<div class="warn" role="alert">([\s\S]*?)<\/div>/
+        .exec(body);
+      const rows = [];
+      const row = /<dt>([^<]*)<\/dt><dd><code>([^<]*)<\/code><\/dd>/g;
+      let m = row.exec(body);
+      while (m !== null) {
+        if (!/^(Time|Incident)/.test(m[1])) {
+          rows.push(m[1] + "=" + m[2]);
+        }
+        m = row.exec(body);
+      }
       log.debug("Leaving why().");
-      return (/<p class="bad">[^<]*<\/p><p>([^<]*)<\/p>/.exec(r.body) ||
-              [])[1] || "";
+      return box ? squash(box[1]) + " || " + rows.join(" | ") : "";
     };
-    assert.ok(why(wrong) && why(wrong) === why(tampered),
+    const reason = function (r) {
+      log.debug("Entering reason().");
+      log.debug("Leaving reason().");
+      return why(r).split(" || ")[0];
+    };
+    assert.ok(reason(wrong) && why(wrong) === why(tampered),
               why(wrong) + " | " + why(tampered));
+    assert.ok(!/STS-[A-Z0-9]+-\d{4}/.test(String(wrong.body)) &&
+              !/STS-[A-Z0-9]+-\d{4}/.test(String(tampered.body)),
+              "an error code is on the page");
   });
   await refused("an encrypted and a plaintext assertion together",
     await post(sealed + signed()), 400, /more than one assertion/);
@@ -1231,7 +1261,7 @@ async function wsfed(world) {
   await refused("aes256-cbc in the RSTR",
     await post(encryptXml(selfAssertion(world.signer, acs), cert,
       { cipher: "aes256-cbc", transport: "rsa-oaep" })), 401,
-    /algorithm this relationship refuses/);
+    /algorithm this relationship (?:does not accept|refuses)/);
   const plain = await post(selfAssertion(world.signer, acs));
   if (isProduct) {
     await refused("PRODUCT: a plaintext token", plain, 401, /not encrypted/);
@@ -1300,11 +1330,11 @@ async function oidc(world) {
   begun = await begin();
   await refused("enc A128CBC-HS256", await answer(begun,
     jweTo(jwk, begun.signed, { enc: "A128CBC-HS256" })), 401,
-    /algorithm this relationship refuses/);
+    /algorithm this relationship (?:does not accept|refuses)/);
   begun = await begin();
   await refused("alg RSA1_5", await answer(begun,
     jweTo(jwk, begun.signed, { alg: "RSA1_5" })), 401,
-    /algorithm this relationship refuses/);
+    /algorithm this relationship (?:does not accept|refuses)/);
   const stranger = nodeCrypto.generateKeyPairSync("ec",
     { namedCurve: "prime256v1" }).publicKey.export({ format: "jwk" });
   begun = await begin();

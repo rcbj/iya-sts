@@ -870,6 +870,93 @@ function childMain() {
            confirmed.status + ' ' + twice.status);
     }
 
+    // THE TWO SIGN-OUT OUTCOMES ARE TRANSLATED (#1327, rcbj), and neither is
+    // the error page: an outcome keeps its own layout and its 200.
+    //
+    // 5m. The partner answers the round trip with a status other than
+    // Success: "signed out here, and not at the partner", in French for a
+    // browser that asks for it, its StatusCode and StatusMessage as sent.
+    await samlSignIn('idx-three-' + MODE, '');
+    const byeAgain = await signOutHere({ scope: 'global' });
+    const againLink = decodeHtml((/href="(https:\/\/partner\.invalid\/slo[^"]*)"/
+      .exec(byeAgain.text) || [])[1] || '');
+    let refusedOutcome = { status: 0, text: '' };
+    if (againLink) {
+      const raw = new URL(againLink).search.slice(1);
+      const pick = function (name) {
+        const m = new RegExp('(?:^|&)' + name + '=([^&]*)').exec(raw);
+        return m ? m[1] : '';
+      };
+      const xml = zlib.inflateRawSync(Buffer.from(decodeURIComponent(
+        pick('SAMLRequest')), 'base64')).toString('utf8');
+      const requestId = (/ID="([^"]+)"/.exec(xml) || [])[1];
+      const lrXml = '<samlp:LogoutResponse xmlns:samlp="urn:oasis:names:tc:' +
+        'SAML:2.0:protocol" xmlns:saml="urn:oasis:names:tc:SAML:2.0:' +
+        'assertion" ID="_lresp' + nodeCrypto.randomBytes(6).toString('hex') +
+        '" Version="2.0" IssueInstant="' + new Date().toISOString() +
+        '" Destination="' + samlSlo + '" InResponseTo="' + requestId +
+        '"><saml:Issuer>' + PARTNER + '</saml:Issuer><samlp:Status>' +
+        '<samlp:StatusCode Value="urn:oasis:names:tc:SAML:2.0:status:' +
+        'Responder"/><samlp:StatusMessage>fso partner busy' +
+        '</samlp:StatusMessage></samlp:Status></samlp:LogoutResponse>';
+      let qs = 'SAMLResponse=' + encodeURIComponent(zlib.deflateRawSync(
+        Buffer.from(lrXml)).toString('base64')) + '&RelayState=' +
+        encodeURIComponent(decodeURIComponent(pick('RelayState'))) +
+        '&SigAlg=' + encodeURIComponent(RSA_SHA256);
+      qs += '&Signature=' + encodeURIComponent(nodeCrypto.sign('sha256',
+        Buffer.from(qs), partnerKey.privateKeyPem).toString('base64'));
+      since = marks.length;
+      refusedOutcome = await request('GET', '/realm/' + SP +
+        '/federation/slo/' + SAML + '?' + qs,
+        { headers: { 'accept-language': 'fr' } });
+    }
+    note(refusedOutcome.status === 200 && marked(since, 'STS-FED-0125') &&
+         /<html lang="fr"/.test(refusedOutcome.text) &&
+         /Déconnecté ici, mais pas chez le partenaire/
+           .test(refusedOutcome.text) &&
+         /<code>urn:oasis:names:tc:SAML:2\.0:status:Responder<\/code>/
+           .test(refusedOutcome.text) &&
+         /fso partner busy/.test(refusedOutcome.text) &&
+         /class="language-row"/.test(refusedOutcome.text) &&
+         !/<div class="warn"/.test(refusedOutcome.text) &&
+         !/Signed out here/.test(refusedOutcome.text),
+         '5m. a partner\'s non-Success LogoutResponse is the outcome page ' +
+         '(0125), 200, in French with its chooser, the StatusCode and ' +
+         'StatusMessage as sent, and not the error page',
+         refusedOutcome.status + ' ' + refusedOutcome.text.slice(0, 600));
+
+    // 5n. A WS-Federation partner's wsignoutcleanup1.0 for a browser that
+    // holds none of its sessions: "nothing to sign out", in French.
+    const WSFED = 'fso-wsfed';
+    const wsMade = inSp(function () {
+      return federation.create({ fedId: WSFED, fedRole: 'service-provider',
+                                 fedProtocol: 'wsfed' });
+    });
+    ['fedPeer:urn:test:fso-wsfed-partner:' + MODE,
+     'fedSsoUrl:https://wsfed-partner.invalid/sts',
+     'fedSigningCertificate:' + partnerKey.der,
+     // Product refuses a plaintext assertion unless allowed, as for SAML.
+     'fedAllowUnencrypted:TRUE',
+     'fedEnabled:TRUE'].forEach(function (one) {
+      const at = one.indexOf(':');
+      setRel(WSFED, one.slice(0, at), one.slice(at + 1));
+    });
+    since = marks.length;
+    const nothing = await request('GET', '/realm/' + SP +
+      '/federation/slo/' + WSFED + '?wa=wsignoutcleanup1.0',
+      { headers: { 'accept-language': 'fr' } });
+    note(wsMade.ok && nothing.status === 200 &&
+         marked(since, 'STS-FED-0122') &&
+         /<html lang="fr"/.test(nothing.text) &&
+         /<h1>Rien à déconnecter<\/h1>/.test(nothing.text) &&
+         nothing.text.indexOf(WSFED) > 0 &&
+         /class="language-row"/.test(nothing.text) &&
+         !/<div class="warn"/.test(nothing.text) &&
+         !/Nothing to sign out/.test(nothing.text),
+         '5n. a wsignoutcleanup1.0 with nothing to end is the outcome page ' +
+         '(0122), 200, in French with its chooser, and not the error page',
+         nothing.status + ' ' + nothing.text.slice(0, 600));
+
     // =======================================================================
     // 6. SessionNotOnOrAfter
     // =======================================================================

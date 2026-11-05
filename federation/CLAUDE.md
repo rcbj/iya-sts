@@ -1242,10 +1242,16 @@ English: a program fetches those documents. `tests/federation_pages.js` 4a–4c.
 in the person's language, the sentence chosen by the code marked
 (`federationSloErrors.refusal.<code>`, then a general one), "no session was
 ended" kept below the box, the English `what` and `why` among the
-diagnostics. The back channel's JSON (`refuseJson()`) is unchanged; the two
-200 outcome pages ("Signed out here, and not at the partner", "Nothing to
-sign out") are outcomes, not refusals, and stay as they were.
-`tests/federation_signout.js` 5c-ii.
+diagnostics. The back channel's JSON (`refuseJson()`) is unchanged. **The
+two 200 outcome pages are NOT the error page** — "Signed out here, and not
+at the partner" (`STS-FED-0125`) and "Nothing to sign out" (`STS-FED-0122`,
+for WS-Federation and inside the Front-Channel Logout frame) are outcomes,
+not refusals — **but they are translated too (rcbj, #1327)**, in their own
+layout and status, from `federationSloErrors.outcome.*`, with the language
+chooser (the 0125 page's returns to the front door, since the partner's
+answer it drew is spent; the frame has none, nobody reads it). The
+partner's name, StatusCode and StatusMessage are data.
+`tests/federation_signout.js` 5c-ii, 5m, 5n.
 
 ### Each is the shell, carrying its view (`federation_pages.ts`)
 

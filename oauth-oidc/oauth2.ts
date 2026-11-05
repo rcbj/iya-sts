@@ -11192,9 +11192,7 @@ class OAuth2Server {
                 "), so nothing " +
                 "is redirected anywhere.");
       return refuseOnPage(redirectCheck.errorCode || 'STS-OAUTH-0158',
-                          redirectCheck.error, redirectCheck.description,
-                          { params: { registered: (redirectCheck.registered ||
-                                                   []).join(', ') } });
+                          redirectCheck.error, redirectCheck.description);
     }
     if (redirectCheck.how) {
       log.debug("The redirect_uri was accepted by " + redirectCheck.how + ".");
@@ -13057,7 +13055,22 @@ class OAuth2Server {
     // --- 3. the return -----------------------------------------------------
     let returnTo = '';
     let refusedNote = '';
-    let unregistered: { uri: string, registered: string } | null = null;
+    // A RETURN THAT IS NOT FOLLOWED IS ONE THING, SAID ONE WAY (#1302,
+    // #1331, rcbj 2026-11-05: "be consistent in how we handle this").
+    // Whatever the reason — no client named, an address the client did not
+    // register, a private-use address nobody vouches for, a client that
+    // registered nothing — the request named a post_logout_redirect_uri and
+    // will not be sent there, and EVERY page this sign-out draws leads with
+    // the amber box saying so: the question (section 2's "MUST ask"), the
+    // page after it is declined, and the signed-out page, which is then
+    // "partly refused". The sentence is the reason's own
+    // (`oauthPages.signedOut.<key>`), in the page's language, names only
+    // the address the request sent (never a registered one, #1331), and is
+    // in the present tense so the same words are true before and after the
+    // person answers. Until 2026-11-05 only the unregistered address had
+    // the box; the rest were one grey English sentence, and the question
+    // page showed none of it.
+    let unfollowed: { uri: string, key: string } | null = null;
     // Its English description, for the page's diagnostics (#1326).
     let refusedDetail = '';
     const target = q.post_logout_redirect_uri;
@@ -13076,11 +13089,10 @@ class OAuth2Server {
       errorCodes.mark(res, 'STS-OAUTH-0785');
       log.info('oauth2: a post_logout_redirect_uri was not followed ' +
                '(STS-OAUTH-0785): the request named no client.');
-      refusedNote = '<p class="sub">You were not returned to <code>' +
-        xmlEscape(String(target)) + '</code>: RP-Initiated Logout 1.0 ' +
-        'section 2 — a sign-out that carries neither an id_token_hint nor ' +
-        'a client_id is not redirected, because nothing confirms the ' +
-        'address belongs to the application that sent you here.</p>';
+      unfollowed = { uri: String(target), key: 'noClient' };
+      refusedDetail = 'RP-Initiated Logout 1.0 section 2: a sign-out that ' +
+        'carries neither an id_token_hint nor a client_id is not ' +
+        'redirected.';
     } else if (target && self.logoutTargetConsidered(target)) {
       const check = bcp.checkPostLogoutRedirectUri({ target: String(target),
                                                      client: client });
@@ -13090,23 +13102,19 @@ class OAuth2Server {
         errorCodes.mark(res, check.errorCode || 'STS-OAUTH-0123');
         log.info('oauth2: a post_logout_redirect_uri was not followed (' +
                  (check.errorCode || '') + '): ' + check.description);
-        // AN ADDRESS THE CLIENT DID NOT REGISTER (#1302) is a warning box
-        // as prominent as the "signed out" one, drawn once the page's
-        // language is known (below): the OpenID Foundation's
+        // The OpenID Foundation's
         // oidcc-rp-initiated-logout-bad-post-logout-redirect-uri asks its
         // reviewer for a page saying the request is invalid because the
-        // address is not a registered one, and a grey sentence under a
-        // green banner did not say it. The session still ends (sections 2
-        // and 4 allow it). Every other refusal keeps its one grey sentence.
-        if (Array.isArray(check.registered)) {
-          unregistered = { uri: String(target),
-                           registered: check.registered.join(', ') };
-          refusedDetail = String(check.description || '');
-        } else {
-          refusedNote = '<p class="sub">You were not returned to <code>' +
-            xmlEscape(String(target)) + '</code>: ' +
-            xmlEscape(check.description) + '</p>';
-        }
+        // address is not a registered one (#1302). The session still ends
+        // (sections 2 and 4 allow it).
+        const code = String(check.errorCode || '');
+        unfollowed = { uri: String(target),
+                       key: code === 'STS-OAUTH-0123' ? 'notRegistered'
+                         : code === 'STS-OAUTH-0290' ? 'privateUse'
+                         : (code === 'STS-OAUTH-0286' ||
+                            code === 'STS-OAUTH-0603') ? 'clientRegisteredNone'
+                         : 'notFollowed' };
+        refusedDetail = String(check.description || '');
       }
     }
     // --- 4. confirmation ---------------------------------------------------
@@ -13140,14 +13148,22 @@ class OAuth2Server {
     // language it was.
     const t = self.pageTranslator(req, clientId, String(q.ui_locales || ''),
       String((session && session.user && session.user.username) || ''));
-    // The unregistered address's warning box (#1302, above), in that
-    // language: what was wrong first, then the two addresses and the section.
-    // Drawn ABOVE the green banner: the refusal is the news, the session
-    // ending is what happened anyway.
-    if (unregistered) {
+    // The box (above), in that language: what was wrong first, then the
+    // address asked for and the section. Drawn ABOVE everything else on
+    // whichever page this is: the refusal is the news. Each key is a whole
+    // sentence, named in full so the catalogs' check can find it.
+    if (unfollowed) {
+      const sentences: Json = {
+        noClient: t.html('oauthPages.signedOut.noClient', unfollowed),
+        notRegistered: t.html('oauthPages.signedOut.notRegistered',
+                              unfollowed),
+        privateUse: t.html('oauthPages.signedOut.privateUse', unfollowed),
+        clientRegisteredNone: t.html(
+          'oauthPages.signedOut.clientRegisteredNone', unfollowed),
+        notFollowed: t.html('oauthPages.signedOut.notFollowed', unfollowed)
+      };
       refusedNote = '<div class="warn" role="alert" ' +
-        'id="logout-not-registered">' +
-        t.html('oauthPages.signedOut.notRegistered', unregistered) + '</div>';
+        'id="logout-return-refused">' + sentences[unfollowed.key] + '</div>';
     }
     // The chooser on a page drawn once the request has been ACTED on returns
     // to the front door: asking for the sign-out again would act again (a
@@ -13159,6 +13175,7 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.logoutRequest(). Declined.");
       return self.logoutAnswer(res, 200,
         t.text('oauthPages.logout.stillTitle'),
+        refusedNote +
         '<p>' + t.html('oauthPages.logout.nothingEnded') + '</p>' + (returnTo
           ? '<p><a href="' + xmlEscape(returnTo) + '">' +
             t.html('oauthPages.logout.returnToApp') + '</a></p>' : ''),
@@ -13173,12 +13190,14 @@ class OAuth2Server {
     if (choices.length > 1) {
       log.debug("Leaving OAuth2Server.logoutRequest(). Asking which " +
                 "account.");
-      return self.logoutConfirmPage(req, res, q, null, client, t, choices);
+      return self.logoutConfirmPage(req, res, q, null, client, t, choices,
+                                    undefined, refusedNote);
     }
     if (mustAsk) {
       log.debug("Leaving OAuth2Server.logoutRequest(). Asking.");
       return self.logoutConfirmPage(req, res, q, session, client, t,
-        undefined, self.logoutAskReason(q, session, hinted, returnTo));
+        undefined, self.logoutAskReason(q, session, hinted, returnTo,
+                                        !!unfollowed), refusedNote);
     }
     // --- 5. the sign-out ---------------------------------------------------
     // The same session WS-Federation's wsignout1.0 ends, through the same
@@ -13189,8 +13208,8 @@ class OAuth2Server {
     // (#561); `endSession()` ignores it with the setting off.
     const ended = endSession(req, res, several && session ? session.id : '');
     // WHAT THE PAGE'S ENDING SHOWS where the return was refused (#1326).
-    const partly = unregistered ? {
-      clientId: clientId, uri: unregistered.uri, state: q.state,
+    const partly = unfollowed ? {
+      clientId: clientId, uri: unfollowed.uri, state: q.state,
       username: String((session && session.user &&
                         session.user.username) || ''),
       detail: refusedDetail
@@ -13217,8 +13236,12 @@ class OAuth2Server {
   //   * otherwise the `logout_hint` named somebody else.
   //
   // Wording only: what is asked, followed and answered is unchanged.
+  // A request whose return is refused has the box above the question, which
+  // already says there was no hint; the grey line is then left out rather
+  // than repeat it (`null`).
   private logoutAskReason(q: Json, session: Json, hinted: Json,
-                          returnTo: string): { key: string, params: Json } {
+                          returnTo: string, boxed?: boolean):
+                          { key: string, params: Json } | null {
     const { log } = this.deps;
     log.debug("Entering OAuth2Server.logoutAskReason().");
     let key = 'oauthPages.logout.whyLogoutHint';
@@ -13227,12 +13250,11 @@ class OAuth2Server {
     if (!session) {
       key = 'oauthPages.logout.whyNoCookie';
     } else if (!hinted) {
-      if (target && !returnTo) {
-        key = 'oauthPages.logout.whyNoHintNoReturn';
-        params = { uri: target };
-      } else {
-        key = 'oauthPages.logout.whyNoHint';
+      if (target && !returnTo && boxed) {
+        log.debug("Leaving OAuth2Server.logoutAskReason(). The box says it.");
+        return null;
       }
+      key = 'oauthPages.logout.whyNoHint';
     } else if (!hinted.sid) {
       key = 'oauthPages.logout.whyHintNoSid';
     } else if (String(hinted.sid) !== String(session.id)) {
@@ -13249,7 +13271,8 @@ class OAuth2Server {
                             client: Json,
                             t: ReturnType<typeof PageLocale.forPage>,
                             accounts?: Json[],
-                            reason?: { key: string, params: Json }): Json {
+                            reason?: { key: string, params: Json } | null,
+                            refused?: string): Json {
     const { log, xmlEscape } = this.deps;
     log.debug("Entering OAuth2Server.logoutConfirmPage().");
     const names = ['post_logout_redirect_uri', 'client_id',
@@ -13300,7 +13323,7 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.logoutConfirmPage(). Which account.");
       return this.logoutAnswer(res, 200,
         t.text('oauthPages.logout.confirmTitle'),
-        '<p>' + (app
+        (refused || '') + '<p>' + (app
           ? t.html('oauthPages.logout.askWhichApp',
                    { app: String(app), count: accounts.length })
           : t.html('oauthPages.logout.askWhich',
@@ -13318,7 +13341,7 @@ class OAuth2Server {
              : t.html('oauthPages.logout.ask'));
     log.debug("Leaving OAuth2Server.logoutConfirmPage().");
     return this.logoutAnswer(res, 200, t.text('oauthPages.logout.confirmTitle'),
-      '<p>' + ask + '</p>' +
+      (refused || '') + '<p>' + ask + '</p>' +
       '<form method="post" action="logout">' + carried +
       '<input type="hidden" name="confirm_for" value="' +
       xmlEscape(this.logoutConfirmFor(session)) + '">' +
@@ -13326,10 +13349,11 @@ class OAuth2Server {
       t.html('oauthPages.logout.signOut') + '</button> ' +
       '<button type="submit" name="confirm" value="no">' +
       t.html('oauthPages.logout.stay') +
-      '</button></form><p class="sub">' +
-      t.html((reason && reason.key) || 'oauthPages.logout.whyNoHint',
-             (reason && reason.params) || {}) +
-      '</p>', t, chooser);
+      '</button></form>' +
+      // No line where the box above already says why (`reason` null).
+      (reason === null ? '' : '<p class="sub">' +
+        t.html((reason && reason.key) || 'oauthPages.logout.whyNoHint',
+               (reason && reason.params) || {}) + '</p>'), t, chooser);
   }
 
   // After the session has ended: the front-channel page, the return, or a

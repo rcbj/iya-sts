@@ -303,6 +303,19 @@ function run(t) {
             /PRODUCT/.test(refused.why),
             'and the refusal names the attribute to register it on',
             refused.why);
+    // #1331: the refusal reaches the person's error page, so it names the
+    // address the request sent and never a registered or observed one, nor
+    // how many there are.
+    const two = returnAddress.resolve(spec('https://evil.test/acs',
+      ['https://sp.test/acs', 'https://sp.test/acs2']));
+    t.check(two.ok === false && /evil\.test/.test(two.why) &&
+            !/sp\.test|\b2\b|address\(es\)/.test(two.why),
+            'and it names neither the registered addresses nor their ' +
+            'number (#1331)', two.why);
+    const observed = returnAddress.resolve(Object.assign(spec('', []),
+      { unconfirmed: ['https://seen.test/acs'] }));
+    t.check(observed.ok === false && !/seen\.test/.test(observed.why),
+            'nor an observed, unconfirmed address (#1331)', observed.why);
     t.equal(returnAddress.resolve(spec('https://sp.test/acs/../x',
                                        ['https://sp.test/acs'])).ok,
             false, 'the comparison is exact, not a prefix');

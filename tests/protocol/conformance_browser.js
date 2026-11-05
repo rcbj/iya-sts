@@ -586,6 +586,14 @@ async function photograph(o, driver, id, why) {
     log.debug("Leaving photograph(). No placeholder.");
     return false;
   }
+  const failed = await networkError(driver);
+  if (failed) {
+    log.warn("  " + id + ": not photographing Chrome's error page (" +
+             failed + ") as " + why + "; the module's evidence is left " +
+             "empty for its retry.");
+    log.debug("Leaving photograph(). Chrome's error page.");
+    return false;
+  }
   await imagesSettled(driver, id);
   const png = await driver.takeScreenshot();
   // THE PAGE'S WORDS BESIDE ITS PICTURE (#1293, 2026-11-04): a reviewer
@@ -629,6 +637,17 @@ async function getOnce(driver, url) {
   try {
     await driver.get(url);
   } catch (e) {
+    // A NETWORK ERROR LEAVES THE BROWSER ON CHROME'S ERROR PAGE (2026-11-05)
+    // rather than ending the visit: WebDriver throws `net::ERR_…` for some
+    // failures (a refused connection) and not for others (a network change),
+    // and in both cases the page to recover from is the same one, which
+    // `follow()` loads again — see `networkError()`.
+    if (/net::ERR_/.test(String((e && e.message) || ""))) {
+      log.warn("  the browser could not load " + String(url).slice(0, 120) +
+               " (" + String(e.message).split("\n")[0] + ")");
+      log.debug("Leaving getOnce(). A network error.");
+      return;
+    }
     if (!/timeout/i.test(String((e && e.name) || "") + " " +
                          String((e && e.message) || ""))) {
       log.debug("Leaving getOnce(). Not a timeout.");
@@ -707,6 +726,47 @@ async function visitOne(o, id, moduleName, one, jars, action) {
   log.debug("Leaving visitOne().");
 }
 
+// ---------------------------------------------------------------------------
+// A PAGE CHROME COULD NOT LOAD IS LOADED AGAIN (2026-11-05). Another session
+// on the same machine starting or stopping a Docker stack removes a bridge
+// interface, the kernel announces an address change, and Chrome closes every
+// connection and fails whatever was in flight with ERR_NETWORK_CHANGED — the
+// link to test-idp never changed. The browser is left on its own error page
+// at the address it was asked for, the suite's module goes on WAITING for a
+// callback that never comes, and the run loses ten minutes to the module
+// timeout before the retry does what a person would have done: load the
+// page again. The OIDF re-run of 2026-11-05 lost twenty minutes this way
+// (Form Post Hybrid's oidcc-claims-essential at 08:04:40, the NetLog's
+// NETWORK_IP_ADDRESSES_CHANGED beside NetworkManager's bridge removal).
+//
+// `networkError()` names the error when the browser is on Chrome's error
+// page (`chrome-error://chromewebdata/`), '' otherwise. `follow()` reloads a
+// page of THIS SERVICE that failed this way, up to NETWORK_RETRIES times
+// with a growing pause; the suite's module is still waiting, so the reload
+// continues it exactly as the module retry would. A SUITE address is left
+// alone: its callback may be a form POST, and loading it again as a GET is
+// not the same request. And `photograph()` never uploads Chrome's error page
+// as a module's evidence.
+// ---------------------------------------------------------------------------
+const NETWORK_RETRIES = 3;
+
+async function networkError(driver) {
+  log.debug("Entering networkError().");
+  let out = "";
+  try {
+    out = String(await driver.executeScript(
+      "if (document.documentURI !== 'chrome-error://chromewebdata/') " +
+      "{ return ''; } var c = document.querySelector('.error-code'); " +
+      "return (c && c.textContent.trim()) || 'a network error';") || "");
+  } catch (e) {
+    log.debug("Caught in networkError(): " + ((e && e.message) || e));
+    // A page in the middle of loading: not an error page yet.
+    out = "";
+  }
+  log.debug("Leaving networkError(). " + (out || "none"));
+  return out;
+}
+
 // Where the browser goes from the page it is on, as a person would, until
 // it reaches the suite's callback or a page that stays.
 // THE PERSON'S AUTHENTICATOR APP (#1293). Where a driver gives the person a
@@ -774,8 +834,28 @@ async function follow(o, driver, id, action, suiteBase) {
   log.debug("Entering follow(). " + action);
   let signedIn = false;
   let photographed = false;
+  let reloads = 0;
   for (let step = 0; step < 12; step++) {
     const here = await currentUrl(driver);
+    // CHROME'S OWN ERROR PAGE, for an address of this service: loaded again
+    // (see `networkError()`), and the step counted against nothing.
+    const failed = here && here.indexOf(suiteBase) !== 0
+      ? await networkError(driver) : "";
+    if (failed && reloads < NETWORK_RETRIES) {
+      reloads += 1;
+      log.warn("  " + id + ": the browser could not load " +
+               here.slice(0, 120) + " (" + failed + "); loading it again (" +
+               reloads + " of " + NETWORK_RETRIES + ")");
+      await waitMs(2000 * Math.pow(2, reloads - 1));
+      try {
+        await getOnce(driver, here);
+      } catch (e) {
+        log.debug("Caught in follow(): " + ((e && e.message) || e));
+        // Still failing: the next turn of the loop looks again.
+      }
+      step -= 1;
+      continue;
+    }
     let path = "";
     try {
       path = new URL(here).pathname;

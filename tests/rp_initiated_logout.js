@@ -215,7 +215,7 @@ function childMain() {
            !/<script/i.test(r.text) && await alive(),
          'b1. no hint: a confirmation page with a real button and no script, ' +
          'and the session alive', r.status);
-    const asked = hiddenOf(r.text);
+    let asked = hiddenOf(r.text);
     // WHY IT ASKS, one sentence per case (#1301): what the request lacked,
     // and — where the address it named will not be followed — that the
     // person is not sent on to it. Read as the page's closing sentence.
@@ -234,23 +234,64 @@ function childMain() {
          'b1b. no hint, a client that registered the address: the page says ' +
          'the request carried no id_token_hint, and promises nothing about ' +
          'the return it will make', why);
+    // A RETURN THAT WILL NOT BE FOLLOWED IS THE AMBER BOX, FIRST, ON THE
+    // QUESTION TOO (rcbj, 2026-11-05): "not valid as sent", the address
+    // asked for and the section, above the question section 2 requires; the
+    // grey line is left out rather than repeat it. The OpenID Foundation's
+    // oidcc-rp-initiated-logout-no-id-token-hint reviewer is asked for a
+    // page saying the request is invalid as the id_token_hint is missing.
+    const enPages = JSON.parse(fs.readFileSync(path.join(ROOT, 'common',
+      'locales', 'oauthPages', 'en.json'), 'utf8'));
+    const boxOf = function (text) {
+      return (String(text).match(
+        /<div class="warn" role="alert" id="logout-return-refused">[\s\S]*?<\/div>/) ||
+        [''])[0];
+    };
+    const boxFor = function (key, uri) {
+      return '<div class="warn" role="alert" id="logout-return-refused">' +
+        enPages['signedOut.' + key].replace('{uri}', uri) + '</div>';
+    };
+    const leads = function (text) {
+      const body = String(text);
+      return boxOf(body) !== '' &&
+        body.indexOf(boxOf(body)) < body.indexOf('<form method="post"');
+    };
     let w = await logout({ post_logout_redirect_uri:
                              'https://rp.rl.example/any', state: 's' });
     why = whyOf(w.text);
     note(w.status === 200 && !w.headers.location &&
-           why === NO_HINT + ', and it will not send you on to <code>' +
-             'https://rp.rl.example/any</code> afterwards' + SECTION &&
-           await alive(),
-         'b1c. no hint and an address no client vouches for: the page says ' +
-         'what was missing and that the person will not be sent on to it',
-         why);
+           boxOf(w.text) === boxFor('noClient', 'https://rp.rl.example/any') &&
+           /not valid as sent: it carries neither an id_token_hint nor a client_id/
+             .test(w.text) &&
+           leads(w.text) && why === '' &&
+           /name="confirm_for"/.test(w.text) && await alive(),
+         'b1c. no hint and no client: the box first — not valid as sent, no ' +
+         'id_token_hint, the address not followed — then the question, and ' +
+         'no grey line repeating it', boxOf(w.text) || w.text.slice(0, 400));
+    const confirmed = await request(port, 'POST', '/oauth2/logout',
+      { form: Object.assign(hiddenOf(w.text), { confirm: 'yes' }) });
+    note(confirmed.status === 200 && !confirmed.headers.location &&
+           boxOf(confirmed.text) ===
+             boxFor('noClient', 'https://rp.rl.example/any') &&
+           /<h1>Sign-out request partly refused<\/h1>/.test(confirmed.text) &&
+           /<section class="diagnostics"/.test(confirmed.text) &&
+           /href="\/portal"/.test(confirmed.text) && !(await alive()),
+         'b1c-ii. and once confirmed: signed out, the page partly refused, ' +
+         'the same box, the diagnostics and the way back',
+         confirmed.status + ' ' + boxOf(confirmed.text));
+    idToken = await signIn('rl-alice');
     w = await logout({ client_id: 'rl-rp',
                        post_logout_redirect_uri: 'https://evil.example/x' });
     why = whyOf(w.text);
-    note(why === NO_HINT + ', and it will not send you on to <code>' +
-           'https://evil.example/x</code> afterwards' + SECTION,
+    note(boxOf(w.text) === boxFor('notRegistered', 'https://evil.example/x') &&
+           leads(w.text) && why === '' && w.text.indexOf(BACK) < 0,
          'b1d. no hint and an address the named client did not register: ' +
-         'the same, naming that address', why);
+         'the same box, its own reason, the address sent and never the ' +
+         'registered one', boxOf(w.text) || w.text.slice(0, 400));
+    // b1c-ii signed the first session out; the checks below confirm b1's
+    // question, so it is asked again of the session signed in for b1d.
+    asked = hiddenOf((await logout({ client_id: 'rl-rp',
+      post_logout_redirect_uri: BACK, state: 'st-b' })).text);
     w = await logout({});
     why = whyOf(w.text);
     note(w.status === 200 && why === NO_HINT + SECTION &&
@@ -367,25 +408,16 @@ function childMain() {
     r = await logout({ id_token_hint: idToken,
                        post_logout_redirect_uri: 'https://evil.example/x' });
     note(r.status === 200 && !r.headers.location &&
-           /it was not followed/.test(r.text) && !(await alive()),
+           /so it is not followed/.test(r.text) && !(await alive()),
          'd1. a registered client is held to its own list: an address it ' +
          'did not register is not followed, and the page says why',
          r.status + ' ' + r.headers.location);
     // d1b (#1302): the refusal is a WARNING BOX beside the "signed out"
     // one, leading with what was wrong, then both addresses and the
     // section — where it was a grey sentence under a green banner.
-    const warningOf = function (text) {
-      return (String(text).match(
-        /<div class="warn" role="alert" id="logout-not-registered">[\s\S]*?<\/div>/) ||
-        [''])[0];
-    };
+    const warningOf = boxOf;
     const warningFor = function (uri) {
-      return '<div class="warn" role="alert" id="logout-not-registered">' +
-        '<strong>The post_logout_redirect_uri in this sign-out request is ' +
-        'not one this client registered, so it was not followed.</strong> ' +
-        'The request named <code>' + uri + '</code>; this client ' +
-        'registered <code>' + BACK + '</code> (RP-Initiated Logout 1.0 ' +
-        'section 3).</div>';
+      return boxFor('notRegistered', uri);
     };
     const okAt = String(r.text).indexOf('<div class="ok">');
     note(warningOf(r.text) === warningFor('https://evil.example/x') &&
@@ -394,10 +426,12 @@ function childMain() {
            /\.warn\{background:#fff8e1;border-left:4px solid #b26a00;/
              .test(r.text) &&
            /<h1>Sign-out request partly refused<\/h1>/.test(r.text) &&
-           /<title>Sign-out request partly refused<\/title>/.test(r.text),
+           /<title>Sign-out request partly refused<\/title>/.test(r.text) &&
+           r.text.indexOf(BACK) < 0,
          'd1b. and the page says so in a warning box as prominent as the ' +
          '"signed out" banner, above it: not one this client registered, ' +
-         'not followed, both addresses, the section; the heading and the ' +
+         'not followed, the address asked for and the section, and nowhere ' +
+         'on the page the address registered (#1331); the heading and the ' +
          'title name the refusal', warningOf(r.text) ||
          r.text.slice(-700));
     // d1c (#1302): the suite's other case, the registered address with a
@@ -415,10 +449,11 @@ function childMain() {
     r = await logout({ id_token_hint: idToken, ui_locales: 'fr',
                        post_logout_redirect_uri: 'https://evil.example/x' });
     note(r.status === 200 && !(await alive()) &&
-           /^<div class="warn" role="alert" id="logout-not-registered"><strong>Le post_logout_redirect_uri de cette demande de déconnexion n’est pas l’un de ceux que ce client a enregistrés/
-             .test(warningOf(r.text)) &&
+           warningOf(r.text).indexOf(JSON.parse(fs.readFileSync(path.join(
+             ROOT, 'common', 'locales', 'oauthPages', 'fr.json'), 'utf8'))[
+             'signedOut.notRegistered'].split('<code>')[0]) > 0 &&
            warningOf(r.text).indexOf('<code>https://evil.example/x</code>') >
-             0 && warningOf(r.text).indexOf('<code>' + BACK + '</code>') > 0 &&
+             0 && r.text.indexOf(BACK) < 0 &&
            /<h1>Demande de déconnexion refusée en partie<\/h1>/.test(r.text),
          'd1d. ui_locales=fr: the box and the heading in French, the ' +
          'addresses as they are',
@@ -462,14 +497,16 @@ function childMain() {
     };
     const HTML = 'text/html,application/xhtml+xml,*/*;q=0.8';
     const WRONG = 'https://rp.rl.example/elsewhere';
-    const SENTENCE = '\'' + WRONG + '\' is not the redirect URI registered ' +
-      'for this client (' + REDIRECT + ')';
+    // #1331: only the address sent is named, never the registered one.
+    const SENTENCE = '\'' + WRONG + '\' is not a redirect URI registered ' +
+      'for this client';
     const plain = await authorize({ redirect_uri: WRONG });
     const page = await authorize({ redirect_uri: WRONG }, HTML);
     const described = String((plain.json || {}).error_description || '');
     note(plain.status === 400 && !plain.headers.location &&
            plain.json && plain.json.error === 'invalid_request' &&
            described.indexOf(SENTENCE) >= 0 &&
+           described.indexOf(REDIRECT) < 0 &&
            !/the 1 |\(s\)|ou=|oauthRedirectUri|none of/.test(described),
          'e1. an unregistered redirect_uri is a 400, never redirected, and ' +
          'says it is not the redirect URI registered for this client, with ' +
@@ -479,7 +516,7 @@ function childMain() {
            /<h1>This request could not be completed<\/h1>/.test(page.text) &&
            page.text.indexOf('invalid_request') >= 0 &&
            page.text.replace(/&#39;|&#x27;|&apos;/g, '\'')
-             .indexOf(SENTENCE) >= 0,
+             .indexOf(SENTENCE) >= 0 && page.text.indexOf(REDIRECT) < 0,
          'e2. and a browser is shown that refusal on the error page, with ' +
          'the same status, error and description',
          page.status + ' ' + page.headers['content-type'] + ' ' +

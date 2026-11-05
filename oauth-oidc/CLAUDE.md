@@ -2667,8 +2667,32 @@ sent. **An address the client did not register (`0123`) is a WARNING BOX as
 prominent as the green "signed out" one since #1302**, ABOVE it, in the
 page's language (`oauthPages.signedOut.notRegistered`): that the request's
 `post_logout_redirect_uri` is not one this client registered and so was not
-followed, then the address asked for, the registered ones
-(`checkPostLogoutRedirectUri()`'s `registered`) and section 3. The OpenID
+followed, then the address asked for and section 3. ~~and the registered
+ones (`checkPostLogoutRedirectUri()`'s `registered`)~~ — **never the
+registered ones since #1331 (rcbj, 2026-11-05)**: naming them handed the
+caller the exact value to aim at. `checkPostLogoutRedirectUri()` answers
+`notRegistered: true` instead, and its description names only the address
+sent; the registered set is logged at debug for the operator.
+
+**ONE RULE FOR EVERY RETURN THAT IS NOT FOLLOWED (rcbj, 2026-11-05: "be
+consistent in how we handle this").** Whatever the reason — no
+`id_token_hint` and no `client_id` (`STS-OAUTH-0785`), not registered
+(`0123`), a private-use address nobody vouches for (`0290`), a client that
+registered nothing (`0286`, `0603`) — the request named a
+`post_logout_redirect_uri` that will not be followed, and EVERY page this
+sign-out draws leads with the same amber box (`id="logout-return-refused"`),
+its reason's sentence `oauthPages.signedOut.{noClient, notRegistered,
+privateUse, clientRegisteredNone, notFollowed}`: "This sign-out request is not
+valid as sent: …", the address asked for, the section — in the present tense,
+because the same words stand on the question (section 2's MUST ask, which
+stays), on the page after it is declined, and on the signed-out page, which
+is then "Sign-out request partly refused" with the shared footer. Where the
+box is drawn the question's grey reason line is left out rather than repeat
+it. Until then only the unregistered address had the box; the others were a
+grey English sentence, and the question showed none of it — which is what
+the OpenID Foundation's `oidcc-rp-initiated-logout-no-id-token-hint`
+reviewer reads (*an error page saying the request is invalid as the
+id_token_hint is missing*). `tests/rp_initiated_logout.js` b1c–b1d, d1b–d1d. The OpenID
 Foundation's `oidcc-rp-initiated-logout-bad-post-logout-redirect-uri` and
 `-query-added-to-post-logout-redirect-uri` ask their reviewer for a page
 saying the request is invalid for exactly that, and a grey sentence under the
@@ -2704,8 +2728,12 @@ a browser, not only those about the redirect_uri) and RFC 9700 section
 refusal names (`pageText.key`, where one code covers two cases), else
 `oauthPages.refusal.<the code marked on the response>`, else
 `oauthPages.oauthError.<error>`, else a general one. The values a sentence
-names are the request's own plus `pageText.params` (the registered URIs from
-`checkRedirectUri()`'s `registered`). The English `error_description` is in
+names are the request's own plus `pageText.params`. **No refusal names a
+REGISTERED address, or how many there are (#1331)** — not the redirect URIs
+(`0569`, `0122`), not the post-logout ones, not OAuth 2.1's unconfirmed ones
+(`0272`), in the `error_description` or on the page: only the address the
+request sent. `saml/return_address.ts` holds SAML and WS-Federation to the
+same rule. The English `error_description` is in
 the diagnostics, as the value an application receives. `tests/rp_initiated_logout.js` holds
 it in a child process; `tests/protocol/sts_rp_initiated_logout.js` over HTTP.
 

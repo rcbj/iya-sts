@@ -28,5 +28,14 @@
   "refusal.STS-FED-0137": "Part of the sign-out message is encrypted, and this relationship holds no key that can decrypt it.",
   "refusal.STS-FED-0138": "An encrypted part of the sign-out message (its EncryptedID) could not be decrypted, or did not hold a NameID.",
   "refusal.STS-FED-0139": "Part of the sign-out message is encrypted with an algorithm this relationship does not accept.",
-  "refusal.STS-AUTHN-0338": "This service could not read the sign-on sessions just now, so it could not tell what to sign out. Try again in a moment."
+  "refusal.STS-AUTHN-0338": "This service could not read the sign-on sessions just now, so it could not tell what to sign out. Try again in a moment.",
+  "outcome.partnerRefused.title": "Signed out here",
+  "outcome.partnerRefused.heading": "Signed out here, and not at the partner",
+  "outcome.partnerRefused.lead": "The session here had already ended. {partner} answered <code>{status}</code>, so you may still be signed in there.",
+  "outcome.partnerRefused.leadMessage": "The session here had already ended. {partner} answered <code>{status}</code>: {message}. You may still be signed in there.",
+  "outcome.partnerRefused.noStatus": "(no status)",
+  "outcome.nothing.title": "Nothing to sign out",
+  "outcome.nothing.lead": "This browser holds no session that {partner} signed in here.",
+  "outcome.nothing.frameLead": "No session here was started by that partner session.",
+  "outcome.nothing.frameLeadUnreachable": "No session here that this service could reach was started by that partner session."
 }

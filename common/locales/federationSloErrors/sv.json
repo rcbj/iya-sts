@@ -28,5 +28,14 @@
   "refusal.STS-FED-0137": "En del av utloggningsmeddelandet är krypterad, och den här relationen har ingen nyckel som kan dekryptera den.",
   "refusal.STS-FED-0138": "En krypterad del av utloggningsmeddelandet (dess EncryptedID) kunde inte dekrypteras, eller innehöll inget NameID.",
   "refusal.STS-FED-0139": "En del av utloggningsmeddelandet är krypterad med en algoritm som den här relationen inte godtar.",
-  "refusal.STS-AUTHN-0338": "Den här tjänsten kunde inte läsa inloggningssessionerna just nu, så den kunde inte avgöra vad som skulle loggas ut. Försök igen om en stund."
+  "refusal.STS-AUTHN-0338": "Den här tjänsten kunde inte läsa inloggningssessionerna just nu, så den kunde inte avgöra vad som skulle loggas ut. Försök igen om en stund.",
+  "outcome.partnerRefused.title": "Utloggad här",
+  "outcome.partnerRefused.heading": "Utloggad här, men inte hos partnern",
+  "outcome.partnerRefused.lead": "Sessionen här hade redan avslutats. {partner} svarade <code>{status}</code>, så du kan fortfarande vara inloggad där.",
+  "outcome.partnerRefused.leadMessage": "Sessionen här hade redan avslutats. {partner} svarade <code>{status}</code>: {message}. Du kan fortfarande vara inloggad där.",
+  "outcome.partnerRefused.noStatus": "(ingen status)",
+  "outcome.nothing.title": "Inget att logga ut från",
+  "outcome.nothing.lead": "Den här webbläsaren har ingen session som {partner} loggade in här.",
+  "outcome.nothing.frameLead": "Ingen session här startades av den partnersessionen.",
+  "outcome.nothing.frameLeadUnreachable": "Ingen session här som den här tjänsten kunde nå startades av den partnersessionen."
 }
