@@ -783,6 +783,16 @@ cookies are not logged. IPv6 is off, because the allowlist is IPv4.
 and `region_fence`'s second statement). A cache policy cannot be scoped, so the
 deployer may edit any custom cache policy in the account.
 
+**THE DISTRIBUTION WAS CREATED BY A LOCAL ADMINISTRATOR APPLY**, because the
+deployer is refused `InvalidViewerCertificate` for a certificate an administrator
+may use (#1343). `IMAGE_TAG=$(git rev-parse --short=12 HEAD)
+ALLOWED_CIDR=<all of them> deploy/aws/terraform-local.sh testidp apply` is that
+apply. **The tag is 12 characters**: a shorter one names no image, and because a
+deployment replaces every task at once, that took `testidp` down for about twenty
+minutes on 2026-11-05. A workflow deploy that changes only the allowlist touches
+the WAF IP set and not the distribution, so it should not meet this refusal; one
+that changes the distribution may. **Every other pattern is #1341.**
+
 ## Sizing a node: every process is a whole copy (#340, 2026-09-29)
 
 **A node runs 1 + `workers_request_count` + `workers_surface_count` node
