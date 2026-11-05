@@ -393,10 +393,12 @@ function childMain() {
            !/You were not returned/.test(r.text) &&
            /\.warn\{background:#fff8e1;border-left:4px solid #b26a00;/
              .test(r.text) &&
-           /<h1>Signed out<\/h1>/.test(r.text),
+           /<h1>Sign-out request partly refused<\/h1>/.test(r.text) &&
+           /<title>Sign-out request partly refused<\/title>/.test(r.text),
          'd1b. and the page says so in a warning box as prominent as the ' +
          '"signed out" banner, above it: not one this client registered, ' +
-         'not followed, both addresses, the section', warningOf(r.text) ||
+         'not followed, both addresses, the section; the heading and the ' +
+         'title name the refusal', warningOf(r.text) ||
          r.text.slice(-700));
     // d1c (#1302): the suite's other case, the registered address with a
     // query added — the same box, naming the address as sent, and the
@@ -416,8 +418,10 @@ function childMain() {
            /^<div class="warn" role="alert" id="logout-not-registered"><strong>Le post_logout_redirect_uri de cette demande de déconnexion n’est pas l’un de ceux que ce client a enregistrés/
              .test(warningOf(r.text)) &&
            warningOf(r.text).indexOf('<code>https://evil.example/x</code>') >
-             0 && warningOf(r.text).indexOf('<code>' + BACK + '</code>') > 0,
-         'd1d. ui_locales=fr: the box in French, the addresses as they are',
+             0 && warningOf(r.text).indexOf('<code>' + BACK + '</code>') > 0 &&
+           /<h1>Demande de déconnexion refusée en partie<\/h1>/.test(r.text),
+         'd1d. ui_locales=fr: the box and the heading in French, the ' +
+         'addresses as they are',
          warningOf(r.text));
     jar = {};
     r = await logout({ client_id: 'rl-bare',
@@ -518,7 +522,7 @@ function childMain() {
     const noNonceAt = decodeURIComponent(
       String(noNonce.headers.location || '') + ' ' + noNonce.text)
       .replace(/\+/g, ' ');
-    note(/this request has no nonce, and response_type .id_token. returns an ID Token from the authorization endpoint, for which OIDC Core makes nonce REQUIRED \(section 3\.2\.2\.1, the implicit flow\)/
+    note(/This request has no nonce, and response_type .id_token. returns an ID Token from the authorization endpoint, for which OIDC Core makes nonce REQUIRED \(section 3\.2\.2\.1, the implicit flow\)/
            .test(noNonceAt),
          'e4. an implicit request with no nonce is told it has none',
          noNonce.status + ' ' + noNonceAt.slice(0, 400));

@@ -403,7 +403,7 @@ function checkMissingResponseType(t) {
   t.check([missing, empty].every(function (r) {
     return r.code === 'STS-OAUTH-0162' &&
       r.error === 'unsupported_response_type' &&
-      r.description === 'this request names no response_type, and every ' +
+      r.description === 'This request names no response_type, and every ' +
         'authorization request must name one (RFC 6749 section 3.1.1).';
   }), '7a. a request with no response_type, or an empty one, is told it ' +
       'names none (oidcc-response-type-missing), quoting no ""',

@@ -2672,7 +2672,11 @@ followed, then the address asked for, the registered ones
 Foundation's `oidcc-rp-initiated-logout-bad-post-logout-redirect-uri` and
 `-query-added-to-post-logout-redirect-uri` ask their reviewer for a page
 saying the request is invalid for exactly that, and a grey sentence under the
-banner did not. Every other refused return keeps its grey English sentence.
+banner did not. **Since 2026-11-04 that page's heading and title are
+`oauthPages.signedOut.partlyRefused`** ("Sign-out request partly refused")
+rather than "Signed out": the reviewer reads the heading first, and a success
+heading over the box still read as a success page. Every other refused return
+keeps its grey English sentence and the "Signed out" heading.
 `state` rides on every return (`withLogoutState()`), including the
 front-channel page's refresh and link. When the registered return URI already
 has a `state`, the request's value replaces it; duplicate query values can
