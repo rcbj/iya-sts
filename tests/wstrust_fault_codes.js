@@ -305,6 +305,17 @@ function everyRefusal(t) {
     ['?encrypt=1 with no recipient certificate', 'product',
      { security: stripCertificates(signed('wf-alice')), appliesTo: BACK },
      'STS-WSTRUST-0012', 'InvalidRequest', { encrypt: true }],
+    // #747: only the requester's own header names who to encrypt to, so a
+    // certificate inside an assertion is nobody's to be encrypted to: in the
+    // header it is its issuer's, and in OnBehalfOf or ActAs it is a third party's.
+    ['?encrypt=1 with a certificate only inside the header\'s assertion',
+     'product', { security: signed('wf-alice'), appliesTo: BACK },
+     'STS-WSTRUST-0012', 'InvalidRequest', { encrypt: true }],
+    ['?encrypt=1 with a certificate only inside the delegated assertion',
+     'product', { security: stripCertificates(signed('wf-front')),
+                  body: actAs(signed('wf-alice', 'wf-front')),
+                  appliesTo: BACK },
+     'STS-WSTRUST-0012', 'InvalidRequest', { encrypt: true }],
     ['?encrypt=1 to a certificate that is not one', 'product',
      { security: badCertificate + signed('wf-alice'), appliesTo: BACK },
      'STS-WSTRUST-0013', 'RequestFailed', { encrypt: true }],
@@ -385,6 +396,40 @@ function everyRefusal(t) {
               String(r.body).slice(0, 500));
     });
   });
+  // #747: what the RSTR says was issued is what was: a bearer token, with no
+  // proof key, whatever the request asked for.
+  const asked = inMode('development', function () {
+    return wstrust.handleRst(rst({ security: usernameToken('wf-alice', 'x'),
+      appliesTo: BACK,
+      body: '<wst:KeyType>' + WST + '/PublicKey</wst:KeyType>' }),
+    'application/soap+xml');
+  });
+  t.check(String(asked.body).indexOf(WST + '/Bearer</wst:KeyType>') > 0 &&
+          String(asked.body).indexOf('/PublicKey') < 0,
+          'E. the RSTR states Bearer when PublicKey was asked for',
+          String(asked.body).slice(0, 400));
+  // #747: ?encrypt=1 reads its algorithm from the application the AppliesTo
+  // belongs to, whose identifier is not the AppliesTo, and it encrypts to the
+  // certificate in the requester's own header.
+  const certificate = (/<ds:X509Certificate>([^<]+)</.exec(signed('wf-alice')) ||
+                       [])[1] || '';
+  t.check(!!certificate, 'E. precondition: a real certificate to encrypt to');
+  const perApp = applications.updateApplication('wf-back', { mode: 'set',
+    attribute: 'saml2EncryptionAlgorithm', value: 'aes128-gcm' });
+  const encrypted = inMode('development', function () {
+    return wstrust.handleRst(rst({ appliesTo: BACK,
+      security: usernameToken('wf-alice', 'x') +
+        '<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">' +
+        '<ds:KeyInfo><ds:X509Data><ds:X509Certificate>' + certificate +
+        '</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature>' }),
+    'application/soap+xml', { encrypt: true });
+  });
+  applications.updateApplication('wf-back', { mode: 'remove',
+    attribute: 'saml2EncryptionAlgorithm', value: 'aes128-gcm' });
+  t.check(perApp.ok && /EncryptedAssertion/.test(String(encrypted.body)) &&
+          /xmlenc11#aes128-gcm/.test(String(encrypted.body)),
+          'E. a per-application cipher is honoured when the AppliesTo is not ' +
+          'the application\'s identifier', String(encrypted.body).slice(0, 500));
   // B. The namespace is the request's: a 2005/02 request is answered in
   // 2005/02's.
   const feb = 'http://schemas.xmlsoap.org/ws/2005/02/trust';

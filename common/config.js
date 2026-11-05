@@ -10488,7 +10488,7 @@ const SETTINGS = [
   // the page that says so. `wsfed.entityId` beside it, this service's own
   // name, was the other group until #523 retired it.
   //
-  // IT IS DRAWN ON /admin/saml-assertions rather than on /admin/wsfed, and that
+  // IT IS DRAWN ON /admin/saml2 rather than on /admin/wsfed, and that
   // is not filing it under the wrong protocol: a WS-Federation sign-in response
   // CARRIES A SAML 1.1 ASSERTION, built by the same buildSaml11Assertion() the
   // SAML 1.1 profiles use, so this row and `saml11.assertionLifetimeMin` decide
@@ -11105,9 +11105,10 @@ const SETTINGS = [
   { key: 'oid4vci.deferredReadyMs', group: 'OID4VCI',
     label: 'Deferred: ready after (ms)', env: 'OID4VCI_DEFERRED_READY_MS',
     type: 'int', dflt: 4000, runtime: true,
-    description: 'How long a deferred credential stays issuance_pending ' +
-                 'before it is ready. Long enough that a wallet has to poll ' +
-                 'and short enough that a test does not time out.' },
+    description: 'How long a deferred credential takes to become ready. ' +
+                 'Until then the deferred endpoint answers 202 with the same ' +
+                 'transaction_id and an interval. Long enough that a wallet ' +
+                 'has to poll and short enough that a test does not time out.' },
 
   { key: 'oid4vci.deferredIntervalS', group: 'OID4VCI',
     label: 'Deferred: poll interval (s)', env: 'OID4VCI_DEFERRED_INTERVAL_S',

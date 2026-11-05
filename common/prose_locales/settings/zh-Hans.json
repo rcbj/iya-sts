@@ -5436,8 +5436,8 @@
     "text": "延迟签发：就绪时间（毫秒）"
   },
   "oid4vci.deferredReadyMs|description": {
-    "en": "ddc34c16902c4571",
-    "text": "延迟签发的凭证在就绪之前保持 issuance_pending 状态的时长。足够长，使钱包必须轮询；又足够短，使测试不会超时。"
+    "en": "2456e341de78a860",
+    "text": "延迟凭证变为就绪所需的时间。在此之前，延迟端点以 202 响应，并返回相同的 transaction_id 和一个 interval。时间足够长，钱包必须轮询；又足够短，测试不会超时。"
   },
   "oid4vci.deferredIntervalS|label": {
     "en": "b4633676d2065b89",

@@ -30,7 +30,7 @@
   "jwtEncrypted": "Nakapaloob sa isang JWE: para sa <code>gnapJweKey</code> ng resource server, o para sa authorization server na ito (i-introspect ito)",
   "macaroon": "HMAC-SHA256 sa ilalim ng isang root key bawat resource server, naka-seal bilang <code>gnapMacaroonKey</code> sa entry nito",
   "biscuit": "Ed25519 root key <code>{key}</code>",
-  "zcap": "Ed25519Signature2020 na delegasyon mula sa <code>{controller}</code>",
+  "zcap": "{suite} na delegasyon mula sa <code>{controller}</code>",
   "grants": "Mga grant",
   "grantCount": "{n} grant",
   "thGrant": "Grant",

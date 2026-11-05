@@ -120,7 +120,7 @@ const ACTION_BODY = vz.looseObject({
   identifier: vt.opt(vt.name),
   profile: vt.opt(vt.oneOf(core.PROFILE_IDS)),
   keyAlg: vt.opt(vt.identifier),
-  serialHex: vt.opt(vz.string().min(1).max(80)
+  serial: vt.opt(vz.string().min(1).max(80)
     .regex(/^[0-9A-Fa-f:]+$/, 'must be a hexadecimal serial number')),
   reason: vt.opt(vt.oneOf(REVOCATION_REASONS)),
   hostName: vt.opt(vz.string().min(1).max(253)),
@@ -502,7 +502,7 @@ class EstConsole {
    * console's administrator or the management API.
    *
    * @param body - `action` and its fields (`kind`, `identifier`, `profile`,
-   * `keyAlg`, `serialHex`, `reason`, `hostName`)
+   * `keyAlg`, `serial`, `reason`, `hostName`)
    * @param context - `via` (`console` or `api`) and `req`
    * @returns a promise of the outcome, or a refusal with its status
    */
@@ -536,9 +536,9 @@ class EstConsole {
       result = need(['kind', 'identifier']) ||
                await this.issueServerKey(asked, actor, via);
     } else if (action === 'revoke-certificate') {
-      result = need(['serialHex']);
+      result = need(['serial']);
       if (!result) {
-        const done = await core.revokeEnrolled(asked.serialHex,
+        const done = await core.revokeEnrolled(asked.serial,
                                                asked.reason || 'unspecified',
                                                actor, { family: FAMILY });
         result = done.ok ? Object.assign({}, done, {

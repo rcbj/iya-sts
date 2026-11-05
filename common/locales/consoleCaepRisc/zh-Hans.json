@@ -118,7 +118,7 @@
   "risc.directory3": " 以及从控制台到达此目录，因为观察者位于写入操作上，而不是某一个入口上。",
   "risc.activeNote": "自 2026-09-17 起，<strong>将 <code>active</code> 设为 false 会禁用该账户</strong> — 在此之前它的说明是“不会停用任何人”。它会写入密码策略锁 <code>pwdAccountLockedTime</code>，在其存在期间每个入口都会拒绝此人，并且此人持有的一切都会立即终止。RISC 事件没有变化，仍是一如既往的样子：发送方报告，接收方决定 — 变化之处在于本服务现在也会据此采取行动。",
   "risc.googleWarn": "<code>risc.googleSubjectType</code> 已开启，因此从这里发出的每个 RISC 主体都将其判别字段写作 <code>subject_type</code> 而不是 <code>format</code>。这是 RISC 第 3.1 节关于一个实际运行中的生产发送方的兼容性说明：规范规定新服务不得使用该名称，然后又告诉依赖方无论如何都需要代码来绕过它。接收方正是借此发现自己是否有这段代码。CAEP 和 SSF 事件不受影响。",
-  "risc.emitNote": "十四种中有十种描述的是这里没有任何东西会做的事 &mdash; 本服务不搜索任何泄露数据库，也不运行任何恢复流程 &mdash; 因此此表单是产生它们的唯一途径。<strong>这十种中有四种在发出时会改变真实状态</strong>：RISC 第 2.8 节将每个退出事件定义为<em>账户处于此状态</em>，而不是报告状态发生了变化，所以在这里发出一个就是完成了转换。主体由您选择的账户组成，格式由 <code>risc.subjectFormat</code> 指定 &mdash; 两个标识符事件除外，它们无论如何都使用电子邮件地址，因为对这两个事件而言，标识符就是消息。",
+  "risc.emitNote": "十四种中的每一种在本服务中都有在其发生时发送它的机制；此表单可手动发送其中任何一种。<strong>其中四种在发出时会改变真实状态</strong>：RISC 第 2.8 节将每个退出事件定义为<em>账户处于此状态</em>，而不是报告状态发生了变化，所以在这里发出一个就是完成了转换。主体由您选择的账户组成，格式由 <code>risc.subjectFormat</code> 指定 &mdash; 两个标识符事件除外，它们无论如何都使用电子邮件地址，因为对这两个事件而言，标识符就是消息。",
   "risc.emittingAbout": "正在就 <strong>{who}</strong> 发出事件 &mdash; <code>{subject}</code>。其生命周期为 <code>{lifecycle}</code>，退出状态为 <code>{optOut}</code>。",
   "risc.pickNote": "在上方选择一个账户，或在下方输入一个。<strong>本服务从未持有过的账户也会被接受</strong>，这与 CAEP 表单对未知会话的处理正好相反；这是规范之间的差异，而非不一致：本服务从未生成过的会话标识符无法组成任何主体，而账户就是一个人。RISC 面向不同提供方之间，因此接收方收到警告的账户通常是它从未见过的。",
   "risc.reasonNote": "两个原因字段只在十四种类型中的一种上会实际发出。RISC 只将 <code>reason_admin</code>、<code>reason_user</code> 和 <code>event_timestamp</code> 赋予 <code>credential-compromise</code>，别无其他 &mdash; 而 CAEP 将四个声明赋予其全部八种事件 &mdash; 因此对任何其他类型，它们会被组成后由目录丢弃，而不是作为规范未定义的成员发送。",

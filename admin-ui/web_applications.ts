@@ -1345,7 +1345,10 @@ class ApplicationsPage {
         // declared for `did`.
         { id: 'tab-credentials',
           label: t.text('consoleApplications.a2.tabCredentials'),
-          html: forFamilies(OAUTH,
+          // WS-TRUST AUTHENTICATES WITH THESE TOO (#519, #521, #747): a client
+          // secret and a message-signing certificate, which a WS-Trust-only
+          // application had no tab to reach.
+          html: forFamilies(OAUTH.concat(['wstrust']),
             ApplicationsPage.applicationCredentialsSection(ctx, json,
               carryBack)) +
             forFamilies(['did'], '<h3 id="credentials-did">' +

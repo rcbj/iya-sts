@@ -1358,7 +1358,7 @@
   "oid4vci.batchSize|label": "Batch size",
   "oid4vci.batchSize|description": "batch_credential_issuance.batch_size in the issuer metadata: how many proofs one credential request may carry, and therefore how many credentials come back from it.",
   "oid4vci.deferredReadyMs|label": "Deferred: ready after (ms)",
-  "oid4vci.deferredReadyMs|description": "How long a deferred credential stays issuance_pending before it is ready. Long enough that a wallet has to poll and short enough that a test does not time out.",
+  "oid4vci.deferredReadyMs|description": "How long a deferred credential takes to become ready. Until then the deferred endpoint answers 202 with the same transaction_id and an interval. Long enough that a wallet has to poll and short enough that a test does not time out.",
   "oid4vci.deferredIntervalS|label": "Deferred: poll interval (s)",
   "oid4vci.deferredIntervalS|description": "The `interval` this issuer asks a wallet to wait between deferred polls.",
   "oid4vci.offerUsername|label": "Offer username",

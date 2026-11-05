@@ -719,7 +719,7 @@ async function test() {
     assert.ok(before.indexOf(serials["code-signing"]) < 0);
   });
   await ok(realmApi + "/est/revoke-certificate",
-           { serialHex: serials["code-signing"], reason: "keyCompromise" },
+           { serial: serials["code-signing"], reason: "keyCompromise" },
            "revoked the code-signing certificate");
   const after = est.crlSerials((await est.send({ method: "GET",
     url: base + "/pki/crl/" + REALM + "/est" })).body);

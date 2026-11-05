@@ -5436,8 +5436,8 @@
     "text": "延遲：就緒時間（毫秒）"
   },
   "oid4vci.deferredReadyMs|description": {
-    "en": "ddc34c16902c4571",
-    "text": "延遲認證在就緒前維持 issuance_pending 多久。長到錢包必須輪詢，又短到測試不會逾時。"
+    "en": "2456e341de78a860",
+    "text": "延遲憑證變為就緒所需的時間。在此之前，延遲端點以 202 回應，並傳回相同的 transaction_id 和一個 interval。時間夠長，錢包必須輪詢；又夠短，測試不會逾時。"
   },
   "oid4vci.deferredIntervalS|label": {
     "en": "b4633676d2065b89",

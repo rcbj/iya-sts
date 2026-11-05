@@ -2408,14 +2408,6 @@ async function theFederationRegisterRoundTrips() {
   // writes its own lines into it, so a value added there is not the only thing
   // in the list.
   //
-  // WHAT THIS PAIR CANNOT CATCH, and it is worth writing down beside the
-  // check that does not make it: the operations DOCUMENT an enum of three
-  // fields and federation.js's update() does not enforce it. A single-valued
-  // field sent to `remove-value` takes the single-valued branch and is
-  // ASSIGNED the value — so a caller asking for a value to be taken off
-  // fedSsoUrl gets 200 and a fedSsoUrl set to it. Asserting that here would
-  // either lock in the behaviour or fail against the service as it stands, so
-  // it is reported rather than encoded.
   const multiField = ((await relationship(id)).editable || []).filter(
       function (row) {
     return row.editable === "multi" && row.name !== "description" &&
@@ -2445,6 +2437,18 @@ async function theFederationRegisterRoundTrips() {
     "and this relationship is about to be deleted, so the only place it can " +
     "be caught is here. " + multiField.name + " still holds " +
     JSON.stringify((await relationship(id)).fields[multiField.name]));
+
+  // A SINGLE-VALUED FIELD HAS NO LIST (#747): it answered 200 and was ASSIGNED
+  // the value, so taking a value off fedSsoUrl set fedSsoUrl to it.
+  const peerBefore = (await relationship(id)).fields.fedPeer;
+  const notAList = await post("/federation/remove-value",
+    { id: id, field: "fedPeer", value: "https://not-a-list.example" });
+  assert.ok(notAList.status >= 400 &&
+            JSON.stringify((await relationship(id)).fields.fedPeer) ===
+            JSON.stringify(peerBefore),
+    "`remove-value` on a single-valued field should change nothing and say " +
+    "so; it answered " + notAList.status + " and fedPeer holds " +
+    JSON.stringify((await relationship(id)).fields.fedPeer));
 
   // The secret is write-only through this door, on every read of it.
   const listed = await get("/federation");

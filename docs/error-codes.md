@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5237** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5238** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 208
+* [Federation (`STS-FED`)](#sts-fed) — 209
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 254
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 163
@@ -2876,6 +2876,7 @@ Raised from: federation/.
 | `STS-FED-0231` | A Bluesky answer was refused: it named another issuer or no code, or the code could not be redeemed for a DPoP token with the atproto scope and a subject (#746). | HTTP 401 page |
 | `STS-FED-0232` | A Bluesky answer's subject was not believed: not a did:plc, no data server in its document, or a data server that does not name this issuer (#746). | HTTP 401 page |
 | `STS-FED-0233` | GET /federation/atproto/client/{id} named no usable Bluesky relationship (#746). | HTTP 404 |
+| `STS-FED-0234` | federation/add-value or federation/remove-value named a field that holds one value, so there is no list to change (#747). | HTTP 400 JSON |
 
 ## STS-OIDFED
 

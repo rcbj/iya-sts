@@ -13220,6 +13220,10 @@ const CODES = [
     summary: 'GET /federation/atproto/client/{id} named no usable Bluesky ' +
       'relationship (#746).',
     spec: 'HTTP 404' },
+  { code: 'STS-FED-0234',
+    summary: 'federation/add-value or federation/remove-value named a field ' +
+      'that holds one value, so there is no list to change (#747).',
+    spec: 'HTTP 400 JSON' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +

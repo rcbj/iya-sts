@@ -244,7 +244,8 @@ class GnapPage {
       '</td></tr>' +
       '<tr><th>zcap</th><td>' +
       t.html('consoleGnap.zcap',
-             { controller: material ? material.zcap.controller : '' }) +
+             { suite: material ? material.zcap.cryptosuite : '',
+               controller: material ? material.zcap.controller : '' }) +
       '</td></tr></table><h2 ' +
       'id="list-grantsPage" data-tab="grants">' + t.html('consoleGnap.grants') +
       '</h2><p ' +

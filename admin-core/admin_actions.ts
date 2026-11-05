@@ -11316,7 +11316,8 @@ class AdminActions {
       const result = federation.update(id, {
         field: String(body.field || ''),
         value: String(body.value == null ? '' : body.value),
-        mode: action === 'remove-value' ? 'remove' : 'add'
+        mode: action === 'remove-value' ? 'remove' : 'add',
+        valueOfList: action !== 'set'
       });
       log.debug("Leaving AdminActions.federationAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");

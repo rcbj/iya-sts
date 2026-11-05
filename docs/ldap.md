@@ -141,7 +141,8 @@ a running listener from one whose port another process (the host's own `slapd`,
 say) holds. The console's user page reads the same fields and warns in three
 cases rather than two, because telling somebody no client can connect while
 LDAPS is answering costs them an afternoon. Both sockets bind `global.host`, and LDAPS
-takes `tls.minVersion` and `tls.ciphers`. With `global.proxyProtocol` set to
+takes its TLS settings from the per-listener `listenerLdaps.*` rows, which inherit
+`tls.minVersion` and `tls.ciphers` ([TLS](tls.md)). With `global.proxyProtocol` set to
 `v2`, both sockets read a PROXY protocol header first, so the audit log and the
 bind rate limit see the client's real address.
 
@@ -413,6 +414,12 @@ provisioning client must.
 | `ldap.selfWritableAttributes` | `LDAP_SELF_WRITABLE_ATTRIBUTES` | `telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword` | yes | In product mode, the attributes a person bound as themselves may modify on their own entry; empty allows none. |
 | `ldap.directoryReadableAttributes` | `LDAP_DIRECTORY_READABLE_ATTRIBUTES` | empty | yes | In product mode, the attributes a person may read on **other** people's entries; empty (the default) means they read only their own. See the warning above before widening it. |
 | `ldap.groupMembersReadable` | `LDAP_GROUP_MEMBERS_READABLE` | `false` | yes | In product mode, whether a person may read the member list of a group they are in. See the warning above. |
+| `ldap.ldapsDisableOptionalClientCertificate` | `STS_LDAPS_DISABLE_OPTIONAL_CLIENT_CERT` | `true` | yes | LDAPS sends no CertificateRequest (what it always did). |
+| `ldap.ldapsRequireClientCertificate` | `STS_LDAPS_REQUIRE_CLIENT_CERT` | `false` | yes | LDAPS requires a client certificate chaining to the client truststore. |
+| `ldap.workerDirectory` | `LDAP_WORKER_DIRECTORY` | `auto` | **restart** — the directory's store is chosen when the process loads it | How every process — the front process and each request or surface worker — holds the directory. `auto` (the default, #320): `postgres-lru` wherever it can work (`persistence.mode=postgres` and a single cell) and `memory` everywhere else. `memory`: every entry, in every process. `postgres-lru`: the people and devices as a window of at most `ldap.workerCacheEntries` entries per process, the rest read from PostgreSQL when asked for — memory no longer grows with the number of people, and a miss costs one database round trip during which that process does nothing else. Requires `persistence.mode=postgres` and a single cell; set explicitly where it cannot work, the service does not start (STS-LDAP-0133). Measured: 20,000 people cost the front process 47 MB less heap windowed. |
+| `ldap.workerCacheEntries` | `LDAP_WORKER_CACHE_ENTRIES` | `10000` | yes | With `ldap.workerDirectory=postgres-lru`, how many people and devices a request worker holds at once (about 2.5 KB each), the least recently read dropped first. An entry it changed and has not yet written is never dropped. |
+| `ldap.workerDirectoryTimeoutMs` | `LDAP_WORKER_DIRECTORY_TIMEOUT_MS` | `2000` | yes | With `ldap.workerDirectory=postgres-lru`, how long a request worker waits for the database when it needs a directory entry it does not hold. The worker does nothing else while it waits, so this is also the longest a database outage can hold one of its requests; past it the request is refused (503, `STS-LDAP-0130`). |
+| `ldap.workerDirectoryBudgetMs` | `LDAP_WORKER_DIRECTORY_BUDGET_MS` | `5000` | yes | With `ldap.workerDirectory=postgres-lru`, how long one `/admin` or `/admin-api` request may spend waiting, in all, on synchronous directory reads. A question that would pass the budget is refused (503, `STS-LDAP-0175`) and is not asked; one slow question still fails as `STS-LDAP-0130` when it exceeds its own timeout first. Other requests have no such budget. |
 | `groups.claim` | `STS_GROUPS_CLAIM` | `true` | yes | Puts the person's directory groups in every access token, ID Token and SAML assertion, omitted for somebody in no group. |
 | `groups.claimName` | `STS_GROUPS_CLAIM_NAME` | `groups` | yes | The claim or SAML attribute name the groups are carried under. |
 | `groups.claimValue` | `STS_GROUPS_CLAIM_VALUE` | `cn` | yes | Whether each group is named by its common name or its whole DN. |

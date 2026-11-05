@@ -2087,8 +2087,9 @@ const SCHEMA = {
             'access token — space-separated, most preferred first. A token ' +
             'whose acr meets none is challenged 401 ' +
             'insufficient_user_authentication with these as acr_values. The ' +
-            'levels 0 < 1 < mfa are ordered; hwk, phr and phrh are met by a ' +
-            'password with a security key; any other value only by that ' +
+            'levels 0 < 1 < mfa are ordered; hwk is met by a password with a ' +
+            'security key; phr and phrh only by the phishing-resistant ' +
+            'authentication they name (#723); any other value only by that ' +
             'exact acr. EMPTY requires nothing.' },
     { name: 'oauthStepUpMaxAge', kind: 'single',
       from: 'the console, the management API, or by hand',
@@ -3614,18 +3615,11 @@ const SCHEMA = {
             'the sibling of samlSingleLogoutService rather than of ' +
             'wsfedReplyUrl: a cleanup is sent when a SESSION ends, and by ' +
             'then the request that would have carried a wreply is long ' +
-            'over.\n\n**IT IS NOT READ BY THE SIGN-OUT YET**, and that is ' +
-            'stated rather than implied. `cleanupTargetsFor()` builds its ' +
-            'list from `session.wsfedRealms`, which records the wreply each ' +
-            'sign-in response actually went to — so what this service pings ' +
-            'today is what it OBSERVED, and this attribute is what an ' +
-            'operator DECLARED. They are two different facts and the second ' +
-            'is the one a person setting an application up can state in ' +
-            'advance. Wiring it in as the fallback for a realm signed into ' +
-            'with no wreply is the obvious next step and is deliberately not ' +
-            'taken here: this change adds the field and the storage, and ' +
-            'changing where a cleanup goes is a change to what the protocol ' +
-            'does.' },
+            'over.\n\n**A DECLARED ADDRESS OUTRANKS AN OBSERVED ONE** (#747). ' +
+            '`cleanupTargetsFor()` pings every value here for a realm the ' +
+            'session signed into, and the wreply the sign-in response went ' +
+            'to, which `session.wsfedRealms` records, only where this is ' +
+            'empty.' },
     { name: 'wstrustAppliesTo', kind: 'multi', from: 'WS-Trust',
       identifier: true,
       identifierName: 'AppliesTo',

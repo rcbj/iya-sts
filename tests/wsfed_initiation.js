@@ -257,6 +257,31 @@ function childMain() {
          'cleanup list `/logout` reads names it',
          JSON.stringify(targets));
 
+    // #747: what an administrator declared outranks the wreply observed, every
+    // value of it, and a realm with none keeps the wreply.
+    const SIGN_OUT = ['https://rp.example/out-a',
+                      'https://rp.example/out-b?x=1'];
+    const declared = applications.updateApplication(RP_OPEN, {
+      attribute: 'wsfedSignOutUri', mode: 'add', value: SIGN_OUT[0] });
+    const declared2 = applications.updateApplication(RP_OPEN, {
+      attribute: 'wsfedSignOutUri', mode: 'add', value: SIGN_OUT[1] });
+    const declaredTargets = session ? wsfed.cleanupTargetsFor(session) : [];
+    const pings = declaredTargets.filter(function (one) {
+      return one.realm === RP_OPEN;
+    }).map(function (one) { return one.url; });
+    note(declared.ok && declared2.ok && pings.length === 2 &&
+         pings[0] === SIGN_OUT[0] + '?wa=wsignoutcleanup1.0' &&
+         pings[1] === SIGN_OUT[1] + '&wa=wsignoutcleanup1.0',
+         'c6. a declared wsfedSignOutUri is what a cleanup is sent to, every ' +
+         'value of it', JSON.stringify([declared.errors, pings]));
+    applications.updateApplication(RP_OPEN, {
+      attribute: 'wsfedSignOutUri', mode: 'remove', value: SIGN_OUT[0] });
+    applications.updateApplication(RP_OPEN, {
+      attribute: 'wsfedSignOutUri', mode: 'remove', value: SIGN_OUT[1] });
+    note(wsfed.cleanupTargetsFor(session).some(function (one) {
+      return one.realm === RP_OPEN && one.wreply === REPLY_OPEN;
+    }), 'c7. and with none it goes back to the wreply');
+
     // --- d. the ?wtrealm= form, on a session that exists ---------------------
     r = await alice.go('GET', '/wsfed/initiate?' + new URLSearchParams(
       { wtrealm: RP_OPEN, wctx: 'second' }).toString());
