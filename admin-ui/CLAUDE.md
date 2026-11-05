@@ -20,6 +20,16 @@ The others: `admin_scope.ts` (what a realm administrator may not reach, 8d),
 `database_admin.ts` (`/admin/database`), `encryption_admin.ts`
 (`/admin/encryption`) and `secrets_admin.ts` (`/admin/secrets`).
 
+
+**THE CONSOLE'S STARTUP (#1333, 2026-11-05).** Measured through CloudFront, the
+console took about 5 s from `/admin/callback` to its first page, because it asked
+six things one after another, one of them `GET /admin-api/console` at 1.36 MB.
+So `ensureShell()` asks the shell, `/admin-api/me` and the form table together,
+and asks for the shell with `catalogs=files`: the catalogs (over a megabyte, the
+same for everybody, no secret) come from `/web/locales/console-all/<tag>.json?v=<build>`,
+compressed and cached at the edge, where an API answer could be neither (BREACH).
+A file that cannot be had falls back to the plain `GET /admin-api/console`, which
+still carries them, so a page is never drawn in bare keys.
 ## A DESIGN CONSTRAINT: NO PAGE MAKES A READER SCROLL FOR A SECTION (rcbj, 2026-10-02)
 
 > "The user shouldn't have to scroll through multiple pages of settings to

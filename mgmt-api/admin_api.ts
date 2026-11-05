@@ -6596,7 +6596,15 @@ class AdminApi {
                      'caller may see and every page\'s label, a realm\'s ' +
                      'removal in progress, what this process runs as, what ' +
                      'is persisted, and the build. The static console ' +
-                     'fetches it once after sign-in.',
+                     'fetches it once after sign-in. With catalogs=files, ' +
+                     'the language member names the static catalog files ' +
+                     'rather than carrying the catalogs.',
+        parameters: [
+          { name: 'catalogs', in: 'query', required: false,
+            description: 'files: name the static catalog files instead of ' +
+                         'carrying the catalogs.',
+            schema: { type: 'string', enum: ['files'] } }
+        ],
         mirrors: 'GET /admin',
         responseDescription: 'The shell answer.',
         handler: function (req, res) {
@@ -6610,7 +6618,8 @@ class AdminApi {
           // console's catalogs along its chain, for the browser's translator.
           self.sendJson(res, 200, Object.assign(
             admin.shellJson(req, gate, gate),
-            { locale: self.consoleLocale(req, res) }));
+            { locale: self.consoleLocale(req, res,
+              req.query && req.query.catalogs === 'files') }));
           log.debug("Leaving the management API console shell endpoint.");
         } },
 
@@ -27260,14 +27269,16 @@ class AdminApi {
    * @param res - the response, whose `locals.apiCaller` names the caller
    * @returns the console's language data
    */
-  consoleLocale(req, res) {
+  consoleLocale(req, res, asFiles = false) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.consoleLocale().");
     const caller = (res && res.locals && res.locals.apiCaller) || null;
-    const out = PageLocale.consoleData(req, {
+    const page = {
       application: String(oidcRp.SURFACES.admin.clientId),
       username: caller && caller.kind === 'person' ? String(caller.name) : ''
-    });
+    };
+    const out = asFiles ? PageLocale.consoleLanguage(req, page)
+      : PageLocale.consoleData(req, page);
     log.debug("Leaving AdminApi.consoleLocale(). " + out.negotiated.locale);
     return out;
   }

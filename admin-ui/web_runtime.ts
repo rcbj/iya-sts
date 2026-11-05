@@ -1212,8 +1212,17 @@ class ConsoleRuntime extends SpaClient {
    * @returns whether they are in hand
    */
   async ensureShell(): Promise<boolean> {
-    if (!this.shell || this.shellPrefix !== this.prefix) {
-      const shell = await this.apiJson('GET', '/admin-api/console');
+    // THE STARTUP'S REQUESTS GO TOGETHER (#1333): one after another they were
+    // the larger part of a sign-in, each waiting out the round trips of the
+    // last. Only what truly needs an earlier answer waits for it.
+    const wantsShell = !this.shell || this.shellPrefix !== this.prefix;
+    const pendingIndex = this.formTable ? null : this.apiJson('GET',
+      '/admin-api/console/operations');
+    if (wantsShell) {
+      const answers = await Promise.all([
+        this.apiJson('GET', '/admin-api/console?catalogs=files'),
+        this.apiJson('GET', '/admin-api/me')]);
+      const shell = answers[0];
       this.shellRefusal = null;
       if (!shell || shell.status !== 200) {
         // REFUSED, NOT A SIGN-IN BEGUN (#751): an account switched to that
@@ -1228,9 +1237,10 @@ class ConsoleRuntime extends SpaClient {
         return false;
       }
       this.shell = shell.json;
+      this.shell.locale = await this.withCatalogs(this.shell.locale);
       this.applyLocale(this.shell.locale);
       this.shellPrefix = this.prefix;
-      const me = await this.apiJson('GET', '/admin-api/me');
+      const me = answers[1];
       this.me = me && me.status === 200 ? me.json : {};
       // The account menu's photo (#719), which the frame reads off the gate.
       if (this.shell.gate) {
@@ -1248,17 +1258,53 @@ class ConsoleRuntime extends SpaClient {
         self.redrawAccountMenu();
       });
     }
-    if (!this.formTable) {
+    if (pendingIndex) {
       // THE OPERATIONS OF BOTH KINDS (#454): the index, `GET /admin-api`,
       // lists the management operations alone, and a form here may post to
       // one of the console's own form helpers.
-      const index = await this.apiJson('GET', '/admin-api/console/operations');
+      const index = await pendingIndex;
       if (!index || index.status !== 200) {
         return false;
       }
       this.formTable = WebForms.table(index.json.operations || []);
     }
     return true;
+  }
+
+  /**
+   * Reads the static catalog files the shell named into the shape the
+   * translator takes. A file that cannot be had falls back to the one request
+   * that carries them all, so a page is never drawn in bare keys.
+   *
+   * @param locale - the shell's `locale`
+   * @returns the locale with its catalogs
+   */
+  async withCatalogs(locale: Json): Promise<Json> {
+    const files = (locale && locale.catalogFiles) || null;
+    if (!files) {
+      return locale;
+    }
+    const self = this;
+    const tags = Object.keys(files);
+    const read = await Promise.all(tags.map(async function (tag) {
+      try {
+        const res = await self.env.fetch(self.env.location.origin +
+          files[tag]);
+        return res && res.ok ? await res.json() : null;
+      } catch (e) {
+        return null;
+      }
+    }));
+    if (read.indexOf(null) < 0) {
+      const catalogs: Json = {};
+      tags.forEach(function (tag, i) {
+        catalogs[tag] = read[i];
+      });
+      return Object.assign({}, locale, { catalogs: catalogs });
+    }
+    const whole = await this.apiJson('GET', '/admin-api/console');
+    return whole && whole.status === 200 && whole.json && whole.json.locale
+      ? whole.json.locale : locale;
   }
 
   // The page's frame from the shell, its body from the renderer, and the

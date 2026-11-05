@@ -329,6 +329,41 @@ function childMain() {
          '6. a drill-down is titled for its item and its trail goes back ' +
          'to the list as it was filtered', drilled.slice(0, 300));
 
+    // --- 6z. the startup goes together, and its catalogs are static (#1333) -
+    {
+      let inFlight = 0;
+      let peak = 0;
+      let catalogFiles = 0;
+      const counting = async function (url, init) {
+        const address = String(url);
+        const toApi = address.indexOf('/admin-api/') >= 0;
+        if (address.indexOf('/web/locales/console-all/') >= 0) {
+          catalogFiles += 1;
+        }
+        if (toApi) {
+          inFlight += 1;
+          peak = Math.max(peak, inFlight);
+        }
+        try {
+          return await fetch(url, init);
+        } finally {
+          if (toApi) {
+            inFlight -= 1;
+          }
+        }
+      };
+      const started = makeEnv('/admin', '', counting);
+      runtime = new ConsoleRuntime(started.env);
+      await signedIn(runtime);
+      await runtime.route();
+      note(peak >= 3 && catalogFiles >= 1 &&
+           !!runtime.shell.locale.catalogs.en &&
+           Object.keys(runtime.shell.locale.catalogs.en).length > 1000,
+           '6z. the shell, the person and the form table are asked together, ' +
+           'and the catalogs come from the static file',
+           'peak ' + peak + ', catalog files ' + catalogFiles);
+    }
+
     // --- 7. a tab survives the drawing and the act ---
     const seven = makeEnv('/admin/users', '');
     seven.env.location.hash = '#tab-config';

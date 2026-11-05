@@ -523,6 +523,24 @@ async function moved(driver, from, ms) {
   return "";
 }
 
+// Whether the sign-in screen says it refused: its error box, with words in it.
+async function saysRefused(driver) {
+  log.debug("Entering saysRefused().");
+  const boxes = await driver.findElements(By.css(".err, .error, [role=alert]"));
+  for (const box of boxes) {
+    const words = await box.getText().catch(function (e) {
+      log.debug("Caught in saysRefused(): " + ((e && e.message) || e));
+      return "";
+    });
+    if (words.trim()) {
+      log.debug("Leaving saysRefused(). It says so.");
+      return true;
+    }
+  }
+  log.debug("Leaving saysRefused(). It does not.");
+  return false;
+}
+
 async function present(driver, cssId, ms) {
   log.debug("Entering present(). " + cssId);
   const end = Date.now() + ms;
@@ -909,12 +927,18 @@ async function follow(o, driver, id, action, suiteBase) {
           await pw[0].sendKeys(o.password);
         }
         await (await driver.findElement(By.id("kc-login"))).click();
-      } else {
+      } else if (await saysRefused(driver)) {
         // Refused, and drawn again: the evidence, and where it stops.
         await photograph(o, driver, id, "a refused sign-in");
         break;
+      } else if (!await moved(driver, here, 30000)) {
+        // STILL HERE, AND THE PAGE SAYS NOTHING (#1333): a slow answer rather
+        // than a refusal, given one more wait. Calling it refused left the
+        // module WAITING for a browser that had stopped.
+        await photograph(o, driver, id, "a sign-in with no answer");
+        break;
       }
-      await moved(driver, here, 15000);
+      await moved(driver, here, 30000);
       continue;
     }
     // A RISK STEP-UP (#1293): the person's authenticator answers it.

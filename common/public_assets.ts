@@ -177,6 +177,19 @@ class PublicAssets {
       i18n.catalogs().some(function (info: Json): boolean {
         return info.tag === m[1];
       });
+    // EVERY CONSOLE NAMESPACE IN ONE FILE (#1333): 88 namespaces and a chain
+    // of two languages would be 176 requests, so `console-all` is what
+    // `catalogData()` gives the console, one language at a time.
+    if (name === 'console-all' && m && i18n.catalogs().some(
+      function (info: Json): boolean {
+        return info.tag === m[1];
+      })) {
+      const merged = i18n.catalogData({ locale: m[1], chain: [m[1]], catalog: m[1],
+        direction: 'ltr', matched: true }, 'console')
+        .catalogs[m[1]];
+      log.debug("Leaving PublicAssets.catalog(). All of the console's.");
+      return merged;
+    }
     const out = known ? i18n.messagesOf(name, m[1]) : null;
     log.debug("Leaving PublicAssets.catalog(). " +
               (out ? Object.keys(out).length + " message(s)." : 'Unknown.'));
