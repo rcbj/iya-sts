@@ -234,8 +234,13 @@ async function negotiateWith(token) {
 function text(body) {
   log.debug("Entering text().");
   log.debug("Leaving text().");
+  // THE SHARED ERROR PAGE (#1326, #1327) opens with the language chooser
+  // and keeps the English what and why in its diagnostics, below the
+  // translated sentence: the chooser is dropped and the window is wide
+  // enough to hold both.
   return String(body || "").replace(/<style[\s\S]*?<\/style>/g, " ")
-    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 500);
+    .replace(/<details class="language-row">[\s\S]*?<\/details>/g, " ")
+    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
 }
 
 // THE STATE A SPNEGO BODY CARRIES (#575): `/authn/spnego`'s first 401, its

@@ -129,8 +129,13 @@ function realmBase(realm) {
 function squash(text) {
   log.debug("Entering squash().");
   log.debug("Leaving squash().");
+  // THE SHARED ERROR PAGE (#1326, #1327) opens with the language chooser
+  // and keeps the English what and why in its diagnostics, below the
+  // translated sentence: the chooser is dropped and the window is wide
+  // enough to hold both.
   return String(text || "").replace(/<style[\s\S]*?<\/style>/g, " ")
-    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300);
+    .replace(/<details class="language-row">[\s\S]*?<\/details>/g, " ")
+    .replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 2000);
 }
 
 function htmlDecode(text) {
