@@ -6597,6 +6597,18 @@ function parseBody(req) {
   if (/json/i.test(type)) {
     try {
       const parsed = JSON.parse(raw || '{}');
+      // A JSON body of the literal `null`, or a primitive, is valid JSON but
+      // not the plain object every caller of parseBody() reads — body.x and
+      // body[name]. `null.protocol` is a TypeError the fault boundary turns
+      // into a 500 (a fuzzer sends `null`); a primitive reads as undefined but
+      // is still not a body. Treat either as an empty body, which the handlers'
+      // own validation refuses with a 4xx and a recorded error code, exactly as
+      // they do {}. An ARRAY is left as it was, the one non-object a caller may
+      // legitimately send.
+      if (parsed === null || typeof parsed !== 'object') {
+        log.debug("Leaving parseBody(). A null or primitive JSON body; empty.");
+        return {};
+      }
       log.debug("Leaving parseBody(). Parsed a JSON body.");
       return parsed;
     } catch (e) {
