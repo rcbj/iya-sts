@@ -11026,12 +11026,14 @@ class AdminActions {
       const blank = rawTtl === undefined || rawTtl === null ||
                     String(rawTtl).trim() === '';
       const ttl = blank ? 0 : Number(rawTtl);
-      // The upper bound keeps nowSec() + ttl inside the range a Date can hold
+      // The upper bound keeps now + ttl inside the range a Date can hold
       // (ECMAScript dates run to 8.64e12 seconds past the epoch), so the ISO
       // expiry built below cannot throw RangeError on a fuzzed ttl such as
-      // 1e308. It is the representable limit, not a policy ceiling.
+      // 1e308. It is the representable limit, not a policy ceiling, and it is
+      // measured from now: 8.64e12 alone still overflowed once added to it.
+      const latestTtl = 8640000000000 - Math.ceil(Date.now() / 1000);
       if (!blank && !(Number.isSafeInteger(ttl) && ttl > 0 &&
-                      ttl <= 8640000000000)) {
+                      ttl <= latestTtl)) {
         log.debug("Leaving AdminActions.spiffeAgentsAction(). Bad ttl.");
         return this.refused('STS-ADMIN-0858', { ok: false,
           errors: ['ttl must be a whole positive number of seconds within ' +
