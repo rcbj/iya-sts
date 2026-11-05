@@ -447,6 +447,10 @@
     "en": "2ce72d622f586a26",
     "text": "Le logo de connexion d’un domaine"
   },
+  "endpoints.route./web/photo/:id.name": {
+    "en": "f2cc426998480c9c",
+    "text": "La photo de profil d'une personne"
+  },
   "endpoints.route./web/branding/preview.name": {
     "en": "54aca7174dc0a2b0",
     "text": "Un aperçu de l’apparence de connexion"
@@ -578,6 +582,10 @@
   "endpoints.route./report-api/signals.name": {
     "en": "fa5ff98584c701fb",
     "text": "La boîte de réception Shared Signals de l’application de rapports"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "Ce que dessine le menu utilisateur de l'application de rapports"
   },
   "endpoints.route./report-api/announcements.name": {
     "en": "3adb83b8075c6a3a",

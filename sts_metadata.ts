@@ -4864,6 +4864,14 @@ const ENDPOINTS: EndpointEntry[] = [
           'so the sign-in pages\' img-src \'self\' admits it and no third ' +
           'party learns who is signing in; nosniff, sandboxed, an ETag of ' +
           'its digest. 404 where the realm has none.' },
+  { path: '/web/photo/:id', group: 'Service',
+    name: 'A person\'s profile photo', specs: [],
+    what: 'NON-SPEC in itself (#719), and what OpenID Connect Core 5.1\'s ' +
+          'picture claim names for a person with a photo here. The JPEG or ' +
+          'PNG they set on the portal or a federation partner\'s copy, at a ' +
+          'random address that changes with the photo; no credential, ' +
+          'because a relying party fetches it with none. nosniff, sandboxed, ' +
+          'an ETag. 404 for a disabled or deleted person.' },
   { path: '/web/branding/preview', group: 'Service',
     name: 'A sign-in appearance preview', specs: [],
     what: 'NON-SPEC (#717). A sample of this realm\'s sign-in card drawn ' +
@@ -5143,6 +5151,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'in the realm for a report administrator, only the signals about ' +
           'themselves for anybody else. Behind the same token as the rest ' +
           'of /report-api.' },
+  { path: '/report-api/me', group: 'Reporting',
+    name: 'What the reports application\'s user menu draws', specs: [],
+    what: 'NON-SPEC (#719). The path of the signed-in person\'s own profile ' +
+          'photo on this realm, empty where they have none. Behind the same ' +
+          'token as the rest of /report-api.' },
   { path: '/report-api/announcements', group: 'Reporting',
     name: 'Announcements for the reports application', specs: ['ssf'],
     what: 'NON-SPEC (#1086). What an open reports tab collects every ' +

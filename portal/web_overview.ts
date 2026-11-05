@@ -172,6 +172,59 @@ class OverviewPages {
       '<p class="note">' + t.html('portal.directory.notEditable') + '</p>';
   }
 
+  // THE PERSON'S PROFILE PHOTO (#719). The file input is not a field: the
+  // runtime in `web_photo.ts` turns what is chosen into the square that is
+  // previewed, puts that in the hidden field, and only then enables Save, so
+  // what is saved is what the person saw.
+  /**
+   * The profile photo card.
+   *
+   * @param photo - the Overview's `photo`, null with no directory entry
+   * @param t - the translator
+   * @returns the HTML, '' with no entry
+   */
+  static photoCard(photo: Json, t: Json): string {
+    if (!photo) {
+      return '';
+    }
+    const limits = photo.limits || {};
+    const shown = photo.path
+      ? '<img class="photoshown" id="portal-photo-current" alt="' +
+        esc(t.text('portal.photo.alt')) + '" src="' + esc(photo.path) + '">' +
+        (photo.origin === 'federation'
+          ? '<p class="note">' + t.html('portal.photo.fromPartner') + '</p>'
+          : '')
+      : '<p class="sub">' + t.html('portal.photo.none') + '</p>';
+    const upload = photo.selfService
+      ? '<form method="post" action="' + BASE + '/photo" id="portal-photo">' +
+        '<label for="portal-photo-file">' + t.html('portal.photo.choose') +
+        '</label> <input type="file" id="portal-photo-file" ' +
+        'accept="image/jpeg,image/png" data-max-file="' +
+        esc(limits.maxFileBytes) + '" data-max-stored="' +
+        esc(limits.maxStoredBytes) + '" data-min-pixels="' +
+        esc(limits.minPixels) + '"><p class="note">' +
+        t.html('portal.photo.hint', {
+          max: Math.floor(Number(limits.maxFileBytes) / 1048576),
+          min: limits.minPixels }) + '</p>' +
+        '<p class="err" id="portal-photo-problem" role="alert" hidden></p>' +
+        '<div id="portal-photo-preview" hidden><p class="note">' +
+        t.html('portal.photo.preview') + '</p><img class="photoshown" ' +
+        'id="portal-photo-new" alt="' + esc(t.text('portal.photo.newAlt')) +
+        '"></div><input type="hidden" name="image" id="portal-photo-image">' +
+        '<button type="submit" id="portal-photo-save" disabled>' +
+        t.html('portal.photo.save') + '</button></form>'
+      : '<p class="note">' + t.html('portal.photo.off') + '</p>';
+    const remove = photo.path
+      ? '<form method="post" action="' + BASE + '/photo/remove"><button ' +
+        'class="secondary" type="submit">' + t.html('portal.photo.remove') +
+        '</button></form>'
+      : '';
+    return '<div class="card" id="photo"><h2>' +
+      t.html('portal.photo.heading') + '</h2><p class="note">' +
+      t.html('portal.photo.note') + '</p>' + shown + upload + remove +
+      '</div>';
+  }
+
   // THE LANGUAGE ON THE PERSON'S OWN ACCOUNT (#539): a real form and a real
   // select, posting to `/portal/language`; "Use my browser's language"
   // removes the attribute, which the header's chooser cannot do.
@@ -373,6 +426,8 @@ class OverviewPages {
       '</td></tr></table></div>' +
 
       OverviewPages.customCard(view.customAttributes, t) +
+
+      OverviewPages.photoCard(view.photo, t) +
 
       OverviewPages.languageCard(view.language, t) +
 

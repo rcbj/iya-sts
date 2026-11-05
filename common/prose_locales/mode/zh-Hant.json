@@ -215,6 +215,18 @@
     "en": "f2869db882e1f25d",
     "text": "該登入會被拒絕（STS-VC-0127）並記入稽核，當事人須在 /portal/self-issued 上證明該 DID 以重新登記。在兩種模式下，固定紀錄未列出的金鑰都會被拒絕（STS-VC-0126）。"
   },
+  "mode.requirements.photo-address-base.what": {
+    "en": "b2f20f3f61f5b011",
+    "text": "個人資料相片的位址依已固定的公開基礎 URL 建立"
+  },
+  "mode.requirements.photo-address-base.development": {
+    "en": "9824abf896b0c613",
+    "text": "未固定公開基礎 URL 時，在 /portal 設定或從聯合夥伴複製的相片會以請求到達的主機為位址，權杖會攜帶該位址。"
+  },
+  "mode.requirements.photo-address-base.product": {
+    "en": "af32e32ff746f573",
+    "text": "在 global.publicBaseUrl 固定基礎位址之前，設定相片會遭拒絕（STS-PORTAL-0635），夥伴的相片也不會被複製（STS-FED-0220）：Host 標頭絕不會成為權杖所攜帶位址的一部分。"
+  },
   "mode.requirements.person-did-base.what": {
     "en": "58a07bbd2f445d15",
     "text": "個人發布的 did:web 以已固定的公開基礎 URL 產生"

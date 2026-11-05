@@ -1232,6 +1232,10 @@ class ConsoleRuntime extends SpaClient {
       this.shellPrefix = this.prefix;
       const me = await this.apiJson('GET', '/admin-api/me');
       this.me = me && me.status === 200 ? me.json : {};
+      // The account menu's photo (#719), which the frame reads off the gate.
+      if (this.shell.gate) {
+        this.shell.gate.photo = String((this.me || {}).photo || '');
+      }
       // AN ADMINISTRATOR'S ANNOUNCEMENT (#1086): this tab collects what the
       // console's receiver took in, from now on, for the realm the shell is.
       this.startAnnouncements();

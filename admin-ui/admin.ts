@@ -3709,6 +3709,8 @@ class AdminConsole {
       // removes it: the two together, because neither does it in both engines.
       // The same pair is on `details.fold` further down for the same reason.
       '.usermenu{position:relative}' +
+      '.menuphoto{width:22px;height:22px;border-radius:50%;' +
+      'object-fit:cover;vertical-align:middle;margin-right:6px}' +
       '.usermenu>summary{cursor:pointer;list-style:none;display:inline-flex;' +
       'gap:.4em;align-items:center;border:1px solid ' +
       '#d5d5dd;border-radius:6px;padding:4px ' +
@@ -9122,6 +9124,8 @@ const SETTING_HOMES = [
   { group: 'Audit log', pages: ['/admin/audit'] },
   { group: 'Audit export', pages: ['/admin/audit-export'] },
   { group: 'Sign-in appearance', pages: ['/admin/sign-in-appearance'] },
+  // What a person may set, so beside the people it is about (#719).
+  { group: 'Profile photos', pages: ['/admin/users'] },
   // On Protocols → Delegation since 2026-10-01, with the register's controls:
   // Monitoring → Delegation changes nothing.
   { group: 'Delegation', pages: ['/admin/delegation-settings'] },

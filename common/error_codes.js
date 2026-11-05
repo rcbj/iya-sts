@@ -13151,6 +13151,22 @@ const CODES = [
     summary: 'A Request Object was asked for at an address that names none: ' +
       'never made, already fetched once, or expired (#930).',
     spec: 'HTTP 404' },
+  { code: 'STS-FED-0219',
+    summary: 'A federation partner\'s profile photo was not copied: the ' +
+      'address was refused by the outbound policy, redirected, too large or ' +
+      'did not answer. The picture claim keeps the partner\'s address and ' +
+      'the next sign-in tries again (#719).',
+    spec: 'Logged; the sign-in is unaffected' },
+  { code: 'STS-FED-0220',
+    summary: 'A federation partner\'s profile photo was not copied in ' +
+      'product mode, because global.publicBaseUrl is not set and its address ' +
+      'here would be built on a Host header (#719).',
+    spec: 'Logged; the sign-in is unaffected' },
+  { code: 'STS-FED-0221',
+    summary: 'A federation partner\'s profile photo was fetched and not ' +
+      'kept: it is not a readable JPEG or PNG, or its sides are out of range ' +
+      '(#719).',
+    spec: 'Logged; the sign-in is unaffected' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -25293,6 +25309,36 @@ const CODES = [
       'with a code of its own (a required value taken away, STS-LDAP-0164), ' +
       'that code is recorded instead (#700).',
     spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0630',
+    summary: 'A profile photo was refused: its bytes are not a JPEG or PNG ' +
+      'file that can be read to its end (#719).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0631',
+    summary: 'A profile photo was refused: it is larger than ' +
+      'profilePhoto.maxStoredBytes (#719).',
+    spec: 'HTTP 413 JSON' },
+  { code: 'STS-PORTAL-0632',
+    summary: 'A profile photo was refused: a side is shorter than ' +
+      'profilePhoto.minPixels or longer than profilePhoto.maxPixels (#719).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0633',
+    summary: 'A profile photo could not be recorded or removed: the person ' +
+      'has no directory entry in this realm, or the directory did not take ' +
+      'it (#719).',
+    spec: 'HTTP 404 JSON, or a log line where a deletion could not remove it' },
+  { code: 'STS-PORTAL-0634',
+    summary: 'POST /account-api/photo in a realm whose ' +
+      'profilePhoto.selfService is off (#719).',
+    spec: 'HTTP 403 JSON' },
+  { code: 'STS-PORTAL-0635',
+    summary: 'A profile photo was not saved in product mode: its address ' +
+      'would be built on a Host header, because global.publicBaseUrl is not ' +
+      'set (#719).',
+    spec: 'HTTP 409 JSON' },
+  { code: 'STS-PORTAL-0636',
+    summary: 'GET /web/photo/{id} answered 404: no such photo, its person ' +
+      'was deleted, or their account is disabled (#719).',
+    spec: 'HTTP 404' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

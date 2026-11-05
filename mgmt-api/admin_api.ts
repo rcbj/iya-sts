@@ -6747,6 +6747,9 @@ class AdminApi {
               description: '`service` for a default-realm token, which ' +
                            'administers every realm; `realm` for a ' +
                            'realm\'s own, confined to it.' },
+            photo: { type: 'string',
+              description: 'The path of a signed-in person\'s own profile ' +
+                           'photo on this realm, empty where they have none.' },
             scopes: { type: 'array', items: { type: 'string' } },
             roles: { type: 'array', items: { type: 'string' } },
             read: { type: 'boolean' },
@@ -27362,6 +27365,9 @@ class AdminApi {
       // #645: whether a security change would be let through.
       security: !required || roles.indexOf('SECURITY_ADMIN') >= 0,
       expiresAt: caller ? caller.expiresAt : null,
+      // The account menu's picture (#719): this realm's copy, a person's only.
+      photo: caller && caller.kind === 'person'
+        ? require('../common/profile_photo').pathFor(String(caller.name)) : '',
       mode: mode.current(),
       readGroup: config.value('admin.readGroup'),
       writeGroup: config.value('admin.writeGroup'),

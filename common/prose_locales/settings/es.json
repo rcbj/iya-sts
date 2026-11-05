@@ -863,6 +863,54 @@
     "en": "37f4c903152cd219",
     "text": "El logotipo más grande que puede llevar una subida, para todos los dominios. Uno mayor se rechaza (STS-AUTHN-0546). El logotipo se guarda en el almacén y se replica en todos los procesos, por lo que se mantiene pequeño: 256 KiB de forma predeterminada, 2 MiB como máximo."
   },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "Las personas pueden establecer su propia foto"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "Si una persona puede establecer y reemplazar su propia foto de perfil en el portal de usuario. Desactivado, el portal no ofrece la carga y la operación se rechaza (STS-PORTAL-0634); una persona aún puede quitar la foto que tiene."
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "Copiar la foto de un socio de federación"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "Si una dirección de imagen que envía un socio de federación se obtiene después del inicio de sesión y se guarda aquí, de modo que el claim picture nombre la copia de este reino. Desactivado, o si la copia falla, el claim lleva la dirección del socio. La obtención sigue la política de salida de federación y ninguna redirección."
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "Archivo más grande que una persona puede elegir (bytes)"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "El archivo más grande que el portal permite elegir, 5 MiB de forma predeterminada. El navegador lo recorta y lo escala antes de enviarlo, así que esto no es lo que se guarda: lo es profilePhoto.maxStoredBytes."
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "Foto más grande que se guarda (bytes)"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "La imagen más grande que guarda este reino, de una persona o de un socio de federación. Una mayor se rechaza (STS-PORTAL-0631). 1 MiB de forma predeterminada y 3 MiB como máximo: la imagen viaja codificada en base64 en una solicitud JSON."
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "Lado más corto de la foto de una persona (píxeles)"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "El lado más corto que puede tener una foto establecida por una persona. Una menor se rechaza (STS-PORTAL-0632). No se aplica a la copia de un socio, que a menudo es menor."
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "Lado más largo de una foto (píxeles)"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "El lado más largo que puede tener una foto guardada, porque cada navegador que la muestra debe decodificarla. Una mayor se rechaza (STS-PORTAL-0632)."
+  },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
     "text": "Máximo de cuentas que recuerda un navegador"

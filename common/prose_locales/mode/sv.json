@@ -215,6 +215,18 @@
     "en": "f2869db882e1f25d",
     "text": "Den inloggningen nekas (STS-VC-0127), granskas, och personen registrerar DID:en igen genom att bevisa den på /portal/self-issued. I båda lägena nekas en nyckel som fästningen inte anger (STS-VC-0126)."
   },
+  "mode.requirements.photo-address-base.what": {
+    "en": "b2f20f3f61f5b011",
+    "text": "En profilfotos adress byggs på den fastställda offentliga bas-URL:en"
+  },
+  "mode.requirements.photo-address-base.development": {
+    "en": "9824abf896b0c613",
+    "text": "Utan en fastställd offentlig bas-URL adresseras ett foto som angetts på /portal eller kopierats från en federationspartner på den värd som begäran kom till, och token bär den adressen."
+  },
+  "mode.requirements.photo-address-base.product": {
+    "en": "af32e32ff746f573",
+    "text": "Att ange ett avvisas (STS-PORTAL-0635) och en partners kopieras inte (STS-FED-0220) förrän global.publicBaseUrl fastställer basen: ett Host-huvud blir aldrig en del av en adress som en token bär."
+  },
   "mode.requirements.person-did-base.what": {
     "en": "58a07bbd2f445d15",
     "text": "En persons publicerade did:web präglas på den fastlåsta publika bas-URL:en"

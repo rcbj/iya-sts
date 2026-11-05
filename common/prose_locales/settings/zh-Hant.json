@@ -863,6 +863,54 @@
     "en": "37f4c903152cd219",
     "text": "一次上傳可攜帶的最大標誌，適用於所有領域。更大的會被拒絕（STS-AUTHN-0546）。標誌儲存在儲存區並複製到每個處理程序，因此維持較小：預設 256 KiB，最多 2 MiB。"
   },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "允許使用者設定自己的相片"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "使用者是否可在使用者入口網站設定及取代自己的個人資料相片。關閉時，入口網站不提供上傳，該操作遭拒絕（STS-PORTAL-0634）；使用者仍可移除已有的相片。"
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "複製聯合夥伴的相片"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "是否在登入後取得聯合夥伴傳送的圖片位址並保存在此，使 picture 宣告指向本領域的副本。關閉時或複製失敗時，宣告攜帶夥伴的位址。取得遵循聯合輸出原則，且不跟隨重新導向。"
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "使用者可選擇的最大檔案（位元組）"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "入口網站允許使用者選擇的最大檔案，預設 5 MiB。瀏覽器在傳送前會裁剪並縮放，因此這不是保存的大小：保存的大小由 profilePhoto.maxStoredBytes 決定。"
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "保存的最大相片（位元組）"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "本領域保存的最大圖片，無論來自使用者或聯合夥伴。較大的會遭拒絕（STS-PORTAL-0631）。預設 1 MiB，最大 3 MiB：圖片以 base64 編碼在 JSON 請求中傳輸。"
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "使用者相片的最短邊（像素）"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "使用者設定的相片的最短邊。較小的會遭拒絕（STS-PORTAL-0632）。這不適用於夥伴的副本，後者通常較小。"
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "相片的最長邊（像素）"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "保存的相片的最長邊，因為每個顯示它的瀏覽器都必須解碼。較大的會遭拒絕（STS-PORTAL-0632）。"
+  },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
     "text": "一個瀏覽器最多記住的帳號數"

@@ -1698,6 +1698,30 @@ class FederationSp {
 
   // Steps 2 to 5 of completeSignIn(), once the subject is known to be decided
   // HERE.
+  // THE PARTNER'S PHOTO (#719): started once the sign-in has a session, and
+  // never awaited, so no sign-in waits on a partner's image host or fails with
+  // it. Only where this sign-in's attributes were the partner's to write,
+  // which is the rule `applyFederatedAttributes()` follows for `pictureUrl`
+  // itself. `common/profile_photo.ts` and `federation/CLAUDE.md` argue it.
+  private copyPartnerPhoto(req, record, username, session, decision,
+                           detail): void {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.copyPartnerPhoto().");
+    const fed = (detail && detail.federation) || {};
+    const attributes = fed.attributes || {};
+    const name = Object.keys(attributes).filter(function (one) {
+      return one.toLowerCase() === 'pictureurl';
+    })[0];
+    const source = name ? String([].concat(attributes[name])[0] || '') : '';
+    const mayWrite = (decision && decision.create === true) ||
+                     fed.updateAttributes !== false;
+    if (session && source && mayWrite) {
+      require('../common/profile_photo')
+        .noteFederated(req, username, source, record.fedId);
+    }
+    log.debug("Leaving FederationSp.copyPartnerPhoto().");
+  }
+
   private decideAndFinish(req, res, record, result, mapped) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.decideAndFinish(). id=" + record.fedId);
@@ -4026,6 +4050,7 @@ class FederationSp {
     }
     const session = authn.startSession(res, username, amr,
                                        result.acr || '', via, said);
+    this.copyPartnerPhoto(req, record, username, session, decision, detail);
     // -------------------------------------------------------------------------
     // THE ISSUANCE POLICY CAN REFUSE THE SESSION (2026-09-06), and a null is
     // how `startSession()` says so — it never throws, because two of its

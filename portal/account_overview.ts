@@ -45,6 +45,7 @@ import signals = require('../ssf/ssf_receivers');
 import accountSignals = require('../ssf/account_signals');
 import risc = require('../ssf/risc');
 import validation = require('../common/validation');
+import ProfilePhoto = require('../common/profile_photo');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -103,6 +104,15 @@ const LANGUAGE_FORM = vz.object({
   lang: vz.string().max(64).optional()
     .describe('A BCP 47 tag this service has a catalog for, or empty to ' +
               'follow the browser.')
+});
+
+// A PERSON'S OWN PROFILE PHOTO (#719): the file, base64-encoded. The browser
+// has already cropped and scaled it, and the bytes are judged again here; 3 MiB
+// of file is `profilePhoto.maxStoredBytes`' largest value, and four base64
+// characters carry three bytes.
+const PHOTO_FORM = vz.object({
+  image: vz.string().max(4194304)
+    .describe('The JPEG or PNG file, base64-encoded.')
 });
 
 // A PERSON'S OWN VALUES OF ONE CUSTOM ATTRIBUTE (#700): the attribute and
@@ -282,7 +292,9 @@ class AccountOverview {
       language: this.languageOf(entry),
       // #700: the realm's custom attributes this person may see, only
       // where they have an entry to hold them.
-      customAttributes: entry ? this.customAttributesOf(entry) : []
+      customAttributes: entry ? this.customAttributesOf(entry) : [],
+      // #719: the photo card, only for a person with an entry to hang it on.
+      photo: entry ? ProfilePhoto.viewFor(username) : null
     };
     log.debug("Leaving AccountOverview.overview().");
     return view;
@@ -536,6 +548,42 @@ class AccountOverview {
    * @param body - the checked body
    * @returns nothing
    */
+  setPhoto(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
+           body: Json): unknown {
+    const { log } = this.deps;
+    log.debug("Entering AccountOverview.setPhoto().");
+    const done = ProfilePhoto.setOwn(req, caller.username,
+      Buffer.from(String(body.image || ''), 'base64'));
+    if (!done.ok) {
+      log.debug("Leaving AccountOverview.setPhoto(). " + done.code);
+      return ctx.refuse(res, done.status, done.code || 'STS-PORTAL-0633',
+                        done.error);
+    }
+    const t = ctx.translatorFor(caller.username);
+    log.debug("Leaving AccountOverview.setPhoto().");
+    return ctx.json(res, 200, { ok: true, go: ctx.PORTAL, photo: done.path,
+                                message: t.text('portal.done.photo') });
+  }
+
+  /**
+   * Handles `POST /account-api/photo/remove`.
+   *
+   * @param ctx - the API's context
+   * @param res - the response
+   * @param caller - the token's person
+   * @returns what the context's answer returns
+   */
+  removePhoto(ctx: AccountContext, res: Json,
+              caller: AccountCaller): unknown {
+    const { log } = this.deps;
+    log.debug("Entering AccountOverview.removePhoto().");
+    ProfilePhoto.removeOwn(caller.username);
+    const t = ctx.translatorFor(caller.username);
+    log.debug("Leaving AccountOverview.removePhoto().");
+    return ctx.json(res, 200, { ok: true, go: ctx.PORTAL, photo: '',
+                                message: t.text('portal.done.photoRemoved') });
+  }
+
   setLanguage(ctx: AccountContext, res: Json, caller: AccountCaller,
               body: Json): unknown {
     const { log } = this.deps;
@@ -964,6 +1012,35 @@ class AccountOverview {
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.setLanguage(ctx, res, caller, input.body);
+        } },
+      { method: 'POST', path: ctx.BASE + '/photo',
+        operationId: 'setProfilePhoto', tag: 'Overview', access: 'person',
+        mirrors: 'POST ' + ctx.PORTAL + '/photo',
+        summary: 'Sets your profile photo',
+        description: 'Keeps `image`, a base64-encoded JPEG or PNG, as your ' +
+          'photo: its metadata is removed, it gets a new random address, ' +
+          'and the `picture` claim names that address from now on. The ' +
+          'file\'s bytes decide its type, and the realm\'s limits are on ' +
+          'the Overview\'s `photo.limits`.',
+        body: PHOTO_FORM,
+        statuses: { 403: 'This realm does not let people set their own ' +
+                         'photo.',
+                    409: 'Product mode, with no public base URL pinned.',
+                    413: 'The file is larger than the realm keeps.' },
+        handler: function (req: Json, res: Json, caller: AccountCaller,
+                           input: Json): unknown {
+          return self.setPhoto(ctx, req, res, caller, input.body);
+        } },
+      { method: 'POST', path: ctx.BASE + '/photo/remove',
+        operationId: 'removeProfilePhoto', tag: 'Overview', access: 'person',
+        mirrors: 'POST ' + ctx.PORTAL + '/photo/remove',
+        summary: 'Removes your profile photo',
+        description: 'Removes the image and the `picture` claim\'s address. ' +
+          'A copy from a federation partner stays removed: the next ' +
+          'sign-in through them does not bring it back.',
+        handler: function (req: Json, res: Json,
+                           caller: AccountCaller): unknown {
+          return self.removePhoto(ctx, res, caller);
         } },
       { method: 'POST', path: ctx.BASE + '/attributes',
         operationId: 'setCustomAttribute', tag: 'Overview',

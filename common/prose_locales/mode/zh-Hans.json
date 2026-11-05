@@ -215,6 +215,18 @@
     "en": "f2869db882e1f25d",
     "text": "该登录被拒绝（STS-VC-0127）并记入审计，此人需在 /portal/self-issued 上证明该 DID 以重新登记。在两种模式下，固定记录中未列出的密钥都会被拒绝（STS-VC-0126）。"
   },
+  "mode.requirements.photo-address-base.what": {
+    "en": "b2f20f3f61f5b011",
+    "text": "个人资料照片的地址基于已固定的公共基础 URL 构建"
+  },
+  "mode.requirements.photo-address-base.development": {
+    "en": "9824abf896b0c613",
+    "text": "未固定公共基础 URL 时，在 /portal 设置或从联合伙伴复制的照片以请求到达的主机为地址，令牌会携带该地址。"
+  },
+  "mode.requirements.photo-address-base.product": {
+    "en": "af32e32ff746f573",
+    "text": "在 global.publicBaseUrl 固定基础地址之前，设置照片会被拒绝（STS-PORTAL-0635），伙伴的照片也不会被复制（STS-FED-0220）：Host 标头绝不会成为令牌所携带地址的一部分。"
+  },
   "mode.requirements.person-did-base.what": {
     "en": "58a07bbd2f445d15",
     "text": "个人发布的 did:web 基于已固定的公共基础 URL 生成"

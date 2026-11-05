@@ -863,6 +863,54 @@
     "en": "37f4c903152cd219",
     "text": "Den största logotyp en uppladdning får bära, för varje sfär. En större avvisas (STS-AUTHN-0546). Logotypen förvaras i lagret och replikeras till varje process, så den hålls liten: 256 KiB som standard, högst 2 MiB."
   },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "Personer får ange sitt eget foto"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "Om en person får ange och ersätta sitt eget profilfoto på användarportalen. Av: portalen erbjuder ingen uppladdning och åtgärden avvisas (STS-PORTAL-0634); en person kan ändå ta bort det foto den har."
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "Kopiera en federationspartners foto"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "Om en bildadress som en federationspartner skickar hämtas efter inloggningen och sparas här, så att picture-anspråket namnger denna sfärs kopia. Av, eller om kopieringen misslyckas, bär anspråket partnerns adress. Hämtningen följer federationens utgående policy och ingen omdirigering."
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "Största fil en person får välja (byte)"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "Den största fil som portalen låter en person välja, 5 MiB som standard. Webbläsaren beskär och skalar den innan den skickas, så det här är inte vad som sparas: det är profilePhoto.maxStoredBytes."
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "Största foto som sparas (byte)"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "Den största bild som denna sfär sparar, från en person eller en federationspartner. En större avvisas (STS-PORTAL-0631). 1 MiB som standard och högst 3 MiB: bilden skickas base64-kodad i en JSON-begäran."
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "Kortaste sida på en persons foto (pixlar)"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "Den kortaste sida ett foto som en person anger får ha. Ett mindre avvisas (STS-PORTAL-0632). Det gäller inte en partners kopia, som ofta är mindre."
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "Längsta sida på ett foto (pixlar)"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "Den längsta sida ett sparat foto får ha, eftersom varje webbläsare som visar det måste avkoda det. Ett större avvisas (STS-PORTAL-0632)."
+  },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
     "text": "Flest konton som en webbläsare kommer ihåg"

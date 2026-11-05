@@ -215,6 +215,18 @@
     "en": "f2869db882e1f25d",
     "text": "Tinatanggihan ang sign-in na iyon (STS-VC-0127), ina-audit, at ine-enroll muli ng tao ang DID sa pamamagitan ng pagpapatunay nito sa /portal/self-issued. Sa parehong mode, tinatanggihan ang key na hindi pinangalanan ng pin (STS-VC-0126)."
   },
+  "mode.requirements.photo-address-base.what": {
+    "en": "b2f20f3f61f5b011",
+    "text": "Binubuo ang address ng larawan sa profile sa naka-pin na pampublikong base URL"
+  },
+  "mode.requirements.photo-address-base.development": {
+    "en": "9824abf896b0c613",
+    "text": "Kapag walang naka-pin na pampublikong base URL, ang larawang itinakda sa /portal o kinopya mula sa federation partner ay naka-address sa host na dinatnan ng request, at dala ng mga token ang address na iyon."
+  },
+  "mode.requirements.photo-address-base.product": {
+    "en": "af32e32ff746f573",
+    "text": "Tinatanggihan ang pagtatakda (STS-PORTAL-0635) at hindi kinokopya ang sa partner (STS-FED-0220) hanggang i-pin ng global.publicBaseUrl ang base: hindi kailanman nagiging bahagi ng address na dala ng token ang isang Host header."
+  },
   "mode.requirements.person-did-base.what": {
     "en": "58a07bbd2f445d15",
     "text": "Ang inilathalang did:web ng isang tao ay ginagawa sa naka-pin na pampublikong base URL"
