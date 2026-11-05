@@ -870,7 +870,10 @@ after delivery, so without the claim a second run of the job would send
   (#63).~~ Since #63 (2026-09-22) a person starts it at
   `/portal/forgot-password`, and `recovery-activated` is sent with the person
   as the initiating entity (`common/mail_uses.ts`).
-- The deprecated `sessions-revoked` is by hand only.
+- ~~The deprecated `sessions-revoked` is by hand only.~~ Since #164 a person's
+  device compromised or removed sends it (the table below), where
+  `risc.autoEmitTypes` names it, which by default it does not. By hand it is
+  always available.
 - A received event is acted on only by the console's and portal's own
   receivers (#62), and by a realm receiving a federation partner's Shared
   Signals (#153, #373).

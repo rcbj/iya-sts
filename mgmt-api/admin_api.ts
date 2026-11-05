@@ -20177,8 +20177,10 @@ class AdminApi {
                          'lists are the same list.\n\nEVERY ONE OF THE FOURTEEN ' +
                          'HAS SOMETHING HERE THAT SENDS IT when it happens ' +
                          '(`docs/shared-signals.md` lists each, #164), where ' +
-                         '`risc.autoEmit` is on. This sends any of them by ' +
-                         'hand, whatever that is.\n\nFOUR ' +
+                         '`risc.autoEmit` is on and `risc.autoEmitTypes` ' +
+                         'names it, which by default is all but the ' +
+                         'deprecated `sessions-revoked`. This sends any of ' +
+                         'them by hand, whatever that is.\n\nFOUR ' +
                          'OF THEM CHANGE REAL STATE WHEN THEY ' +
                          'GO. RISC section 2.8 defines each ' +
                          'opt-out event as "the account is in this state" ' +
