@@ -81,7 +81,7 @@ resource "aws_acm_certificate" "cloudfront" {
   domain_name       = var.public_hostname
   validation_method = "DNS"
   key_algorithm     = "EC_prime256v1"
-  tags              = { Name = "${var.public_hostname} (CloudFront)" }
+  tags              = { Name = "${var.public_hostname} CloudFront" }
 
   lifecycle {
     create_before_destroy = true
@@ -301,7 +301,7 @@ resource "aws_security_group" "nlb_cloudfront" {
 resource "aws_vpc_security_group_ingress_rule" "nlb_from_cloudfront" {
   count             = local.cloudfront ? 1 : 0
   security_group_id = aws_security_group.nlb_cloudfront[0].id
-  description       = "443 from CloudFront's origin-facing addresses"
+  description       = "443 from the CloudFront origin-facing addresses"
   prefix_list_id    = data.aws_ec2_managed_prefix_list.cloudfront[0].id
   ip_protocol       = "tcp"
   from_port         = 443
