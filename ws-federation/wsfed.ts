@@ -171,9 +171,13 @@ import stepUp = require('../oauth-oidc/step_up');
 // route. The URIs are not copied into a second table here.
 import PhishingResistance = require('../common/phishing_resistance');
 // THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
-// no route and closes no cycle. Only the pages a PERSON passes through use it
-// — the sign-in response and the sign-out page; refusals stay English.
+// no route and closes no cycle. Every page a PERSON reads uses it — the
+// sign-in response, the sign-out page and, since #1327, every refusal.
 import PageLocale = require('../common/page_locale');
+// The one error page (#1327; #1326's). A library: it requires `audit`,
+// `realms`, `helpers` and the page's language, none of which requires this
+// module, so it closes no cycle and moves no route.
+import ErrorPage = require('../common/error_page');
 
 // --- the vocabulary --------------------------------------------------------
 const WSFED_NS = 'http://docs.oasis-open.org/wsfed/federation/200706';
@@ -526,31 +530,106 @@ class WsFederation {
       'class="card">' + inner + '</div></body></html>\n';
   }
 
-  // A sentence naming the parameter that was wrong, and a 400. WS-Federation
-  // defines no error response for this profile — the sign-in request is a
-  // browser navigation and there is nowhere to report to except the screen — so
-  // the error IS a page, and it says what to change rather than "invalid
-  // request".
+  // A sentence naming what was wrong, and a status. WS-Federation defines no
+  // error response for this profile — the sign-in request is a browser
+  // navigation and there is nowhere to report to except the screen — so the
+  // error IS a page.
+  //
+  // **IT IS `common/error_page.ts`'s PAGE SINCE #1327**, in the page's
+  // language: the sentence in the box is chosen by the error code the caller
+  // marked (`wsfedErrors.refusal.<code>`, then a general one, so a missing key
+  // never draws its name), the profile's background collapsed, the way back,
+  // and the diagnostics. The caller's `title` and `detail` are still written
+  // in English, and are shown there as data — the Summary and the Detail an
+  // operator quotes — so every sentence a refusal has always carried is still
+  // on the page; only the prose around them is translated. The request is
+  // the one express hangs on the response (`res.req`), so no caller changed.
+  //
+  // `extra` is drawn below the box, with the page's translator: what the
+  // person can do next (another sign-in, the request without wauth) or what
+  // the endpoint accepts.
   // error-code: none — the helper's definition (a method now), not a call
-  private wsfedError(res, status, title, detail, extra?) {
-    const { log, xmlEscape } = this.deps;
+  private wsfedError(res, status, title, detail,
+                     extra?: (t: any) => string) {
+    const { log, errorCodes, sessionOf } = this.deps;
     // error-code: none — the helper's own trace line; every caller marks its own code
     log.debug("Entering WsFederation.wsfedError(). status=" + status +
               ", title=" + title);
-    const inner = '<h1>' + xmlEscape(title) + '</h1>' +
-      '<p class="sub">WS-Federation passive requestor endpoint at <code>' +
-      PASSIVE_PATH + '</code></p><div ' +
-      'class="err">' + xmlEscape(detail) + '</div>' + (extra || '') +
-      '<div class="meta"><div>This profile has no error response of its own: ' +
-      'a sign-in request is a browser navigation, so there is nothing to ' +
-      'redirect an error to and this page is the answer. The request is ' +
-      'logged in full at debug level.</div></div>';
-    res.status(status)
-       .type('text/html')
-       .set('Cache-Control', 'no-store')
-       .send(this.page(title, inner));
+    const req: any = res.req || { headers: {}, query: {} };
+    let params: Record<string, any> = {};
+    try {
+      params = this.paramsOf(req);
+    } catch (e) {
+      // A body that cannot be read again leaves the request's own values out
+      // of the diagnostics; the page still says what was wrong.
+      log.debug("Caught in WsFederation.wsfedError(): " +
+                ((e && e.message) || e));
+    }
+    const code = String(errorCodes.codeOf(res) || '');
+    // `/wsfed/initiate/{rp}` names the relying party in the path.
+    const realm = String(params.wtrealm ||
+                         (req.params && req.params.rp) || '');
+    const session = sessionOf(req);
+    const username = String((session && session.user &&
+                             session.user.username) || '');
+    // WS-Federation carries no language hint of its own, so the order is
+    // #539's: the person, the chooser's cookie, the browser, the relying
+    // party's locale policy.
+    const t = PageLocale.translatorFor(req, { application: realm,
+                                              username: username });
+    // A LINK THAT NAMED A wreply IS NOT ECHOED (STS-WSFED-0026): the refusal
+    // exists so the address is not used, and the language chooser's return
+    // path would otherwise carry it back onto the page; that chooser returns
+    // to the realm's front door instead, and the diagnostics leave it out.
+    const echoes = code !== 'STS-WSFED-0026';
+    const chooser = echoes ? ErrorPage.chooser(t, req)
+      : PageLocale.chooser(t, realms.currentPrefix(),
+                           realms.currentPrefix() + '/');
+    const heading = code === 'STS-WSFED-0007'
+      ? t.text('wsfedErrors.title.cancelled')
+      : (code === 'STS-WSFED-0012' || code === 'STS-WSFED-0013'
+        ? t.text('wsfedErrors.title.request')
+        : t.text('wsfedErrors.title.signIn'));
+    ErrorPage.send(res, {
+      t: t,
+      chooser: chooser,
+      status: status,
+      title: heading,
+      message: ErrorPage.sentence(t, [
+        code ? 'wsfedErrors.refusal.' + code : '',
+        'wsfedErrors.refusal.general'
+      ], { realm: realm, wa: String(params.wa || '') }),
+      after: extra ? extra(t) : '',
+      background: t.html('wsfedErrors.background'),
+      diagnostics: [
+        { label: t.text('errorPages.wa'), value: params.wa },
+        { label: t.text('errorPages.wtrealm'), value: realm },
+        { label: t.text('errorPages.wreply'),
+          value: echoes ? params.wreply : '' },
+        { label: t.text('errorPages.wctx'), value: params.wctx },
+        { label: t.text('errorPages.signedInAs'), value: username },
+        { label: t.text('errorPages.summary'), value: title },
+        { label: t.text('errorPages.detail'), value: detail }
+      ]
+    });
     // error-code: none — the helper's own trace line; every caller marks its own code
     log.debug("Leaving WsFederation.wsfedError().");
+  }
+
+  // THE TWO WAYS FORWARD a refused wauth demand offers (#1327, translated):
+  // sign in again as the demand asks, or the same request without wauth —
+  // a link, so it is markup, and the sentence and the link's words are two
+  // messages joined here.
+  private waysForward(t, retry: string, params): string {
+    const { log, xmlEscape, stepUpMarker } = this.deps;
+    log.debug("Entering WsFederation.waysForward().");
+    const out = '<h2>' + t.html('wsfedErrors.forward.heading') +
+      '</h2><ul><li>' + retry + '</li><li>' +
+      t.html('wsfedErrors.forward.without') + ' <a href="' + PASSIVE_PATH +
+      '?' + xmlEscape(this.requeryString(params, ['wauth', stepUpMarker])) +
+      '">' + t.html('wsfedErrors.forward.withoutLink') + '</a></li></ul>';
+    log.debug("Leaving WsFederation.waysForward().");
+    return out;
   }
 
   // --- what goes in the token ------------------------------------------------
@@ -1064,15 +1143,14 @@ class WsFederation {
         'perform a password sign-in, a sign-in with a security key, a ' +
         'multi-factor one and a phishing-resistant passkey, and asks the ' +
         'person for what a demand needs when the session does not have it.',
-        '<h2>What it accepts</h2><ul>' +
+        // The URIs are data; the heading and the note are the page's.
+        (t) => '<h2>' + t.html('wsfedErrors.accepts.heading') + '</h2><ul>' +
         WAUTH_PASSWORD.concat(WAUTH_MULTIFACTOR, WAUTH_HARDWARE, [
           PhishingResistance.URI_PHR, PhishingResistance.URI_PHRH
         ]).map((v) => {
           return '<li><code>' + xmlEscape(v) + '</code></li>';
-        }).join('') + '</ul><p>It is refused rather than answered with a ' +
-        'password assertion on purpose: <code>wauth</code> is how a relying ' +
-        'party <em>demands</em> a method, and an identity provider that ' +
-        'ignored it would let the demand appear to have been met.</p>');
+        }).join('') + '</ul><p>' + t.html('wsfedErrors.accepts.note') +
+        '</p>');
     }
 
     // ---------------------------------------------------------------------
@@ -1097,14 +1175,14 @@ class WsFederation {
       errorCodes.mark(res, 'STS-WSFED-0007');
       log.debug("Leaving WsFederation.signIn().");
       return this.wsfedError(res, 200, 'Sign-in cancelled',
+        // Text, escaped once where it is drawn (as diagnostics, #1327).
         'The sign-in did not complete — the authentication service reported "' +
-        xmlEscape(String(params.authn_error_description ||
-                         params.authn_error)) +
+        String(params.authn_error_description || params.authn_error) +
         '". This profile has no error response to send a relying party — ' +
         'unlike an OAuth authorization request, which would be answered with ' +
         'error=access_denied at its redirect_uri, and unlike SAML 2.0, which ' +
         'has a status for it — ' +
-        'so ' + xmlEscape(realm) + ' is simply never posted to.');
+        'so ' + realm + ' is simply never posted to.');
     }
 
     // Already signed in, and fresh enough? Then this is the second pass — after
@@ -1191,12 +1269,9 @@ class WsFederation {
           'again with ' + which + ', and the session that came back ' +
           'still had not earned that class. This service will not claim ' +
           'a class the session did not earn.',
-          '<h2>Two ways forward</h2><ul><li>Start the sign-in again and ' +
-          'use ' + which + '. A person with no key enrolled can add one ' +
-          'at <code>/portal/keys</code>.</li><li>Or ask for what this ' +
-          'session has: <a href="' + PASSIVE_PATH + '?' +
-          xmlEscape(this.requeryString(params, ['wauth', stepUpMarker])) +
-          '">the same request without wauth</a>.</li></ul>');
+          (t) => this.waysForward(t, eapSignIn.phishingClass === 'phrh'
+            ? t.html('wsfedErrors.forward.retryHardwarePasskey')
+            : t.html('wsfedErrors.forward.retryPasskey'), params));
       }
       if (demand === 'hardware') {
         log.debug("Leaving WsFederation.signIn(). wauth asked for a hardware " +
@@ -1208,16 +1283,9 @@ class WsFederation {
           'with a security key, and the session that came back still used ' +
           'none. This service will not claim a key that was never ' +
           'presented.',
-          '<h2>Two ways forward</h2><ul><li>Start the sign-in again and ' +
-          'use the SECURITY KEY — on its own, passwordless, or after your ' +
-          'password. The assertion then says <code>' +
-          xmlEscape(AM_MULTIFACTOR) + '</code> (with a password) or <code>' +
-          xmlEscape(AM_HARDWARE_SAML11) + '</code> (passwordless). A person ' +
-          'with no key enrolled can add one at <code>/portal/keys</code>.' +
-          '</li><li>Or ask for what this session has: ' +
-          '<a href="' + PASSIVE_PATH + '?' +
-          xmlEscape(this.requeryString(params, ['wauth', stepUpMarker])) +
-          '">the same request without wauth</a>.</li></ul>');
+          (t) => this.waysForward(t, t.html('wsfedErrors.forward.retryKey',
+            { multi: AM_MULTIFACTOR, hardware: AM_HARDWARE_SAML11 }),
+            params));
       }
       log.debug("Leaving WsFederation.signIn(). wauth asked for " +
                 "multi-factor and the session still has one factor after " +
@@ -1230,15 +1298,8 @@ class WsFederation {
         'factor. This service will not claim a second factor that did not ' +
         'happen, and a phishing-resistant single factor is still a single ' +
         'one.',
-        '<h2>Two ways forward</h2><ul><li>Start the sign-in again and ' +
-        'complete the second-factor step — a security key or a one-time ' +
-        'code. A person with neither enrolled can add one at <code>' +
-        '/portal/keys</code> or <code>/portal/mfa</code>. The assertion ' +
-        'then says <code>' + xmlEscape(AM_MULTIFACTOR) + '</code>.</li>' +
-        '<li>Or ask for what this session has: ' +
-        '<a href="' + PASSIVE_PATH + '?' +
-        xmlEscape(this.requeryString(params, ['wauth', stepUpMarker])) +
-        '">the same request without wauth</a>.</li></ul>');
+        (t) => this.waysForward(t, t.html('wsfedErrors.forward.retrySecond',
+          { multi: AM_MULTIFACTOR }), params));
     }
     const stepUpNow = session && fresh.ok && unmet;
     if (session && fresh.ok && !stepUpNow) {
@@ -1770,10 +1831,7 @@ class WsFederation {
           : (riskStepUp ? 'STS-WSFED-0029' : 'STS-WSFED-0011')));
       log.debug("Leaving WsFederation.issueSignInResponse().");
       return this.wsfedError(res, 403, 'Refused by policy', roleAnswer.why,
-        '<p>The person is signed in. The XACML issuance policy would not let ' +
-        'this relying party have a token for them &mdash; the roles a ' +
-        '<code>wtrealm</code> requires are on its application entry, and who ' +
-        'holds a role is on <a href="/admin/roles">/admin/roles</a>.</p>');
+        (t) => '<p>' + t.html('wsfedErrors.policy.note') + '</p>');
     }
 
     // THE APPLICATION. wtrealm is WS-Federation's name for the relying party,
@@ -2243,12 +2301,12 @@ class WsFederation {
     return this.wsfedError(res, 400, 'Unknown wa', 'This endpoint does not ' +
                                                    'understand wa="' + wa +
                                                    '".',
-      '<h2>What it understands</h2><ul><li><code>wsignin1.0</code> — sign ' +
-      'in, and get a token posted to wreply</li><li><code>wsignout1.0</code> ' +
-      '— sign out, and send a cleanup request to each relying party</li><li>' +
-      '<code>wsignoutcleanup1.0</code> — end the session without fanning ' +
-      'out</li><li><code>wattr1.0</code>, <code>wpseudo1.0</code> — answered ' +
-      'with 501 and an explanation</li></ul>');
+      (t) => '<h2>' + t.html('wsfedErrors.understands.heading') +
+      '</h2><ul><li>' + t.html('wsfedErrors.understands.signIn') +
+      '</li><li>' + t.html('wsfedErrors.understands.signOut') +
+      '</li><li>' + t.html('wsfedErrors.understands.cleanup') +
+      '</li><li>' + t.html('wsfedErrors.understands.notImplemented') +
+      '</li></ul>');
   }
 
   // What GET /wsfed says when it is followed bare, which is what a reader

@@ -1,0 +1,15 @@
+{
+  "title": "Hindi masimulan ang pag-sign in na ito",
+  "refusal.STS-LAUNCH-0001": "Walang application na <code>{app}</code> sa realm na ito, kaya walang mapag-sign-in-an sa iyo.",
+  "refusal.STS-LAUNCH-0002": "Ang <code>{protocol}</code> ay hindi protocol na mapagsisimulan ng pag-sign in. Ang isang link dito ay nagsisimula ng saml2, saml11, wsfed o oidc.",
+  "refusal.STS-LAUNCH-0003": "Hindi nagsa-sign in ang application na ito gamit ang <code>{protocol}</code>.",
+  "refusal.STS-LAUNCH-0004": "Maaaring simulan ang application na ito sa higit sa isang protocol, at hindi sinasabi ng link kung alin.",
+  "refusal.STS-LAUNCH-0005": "Hindi masisimulan ang application na ito mula rito. Simulan ang pag-sign in sa mismong application.",
+  "refusal.STS-LAUNCH-0006": "Walang nakarehistrong address ang application na ito na mapagpapadalhan sa iyo, kaya walang mapupuntahan ang pag-sign in na sinimulan dito.",
+  "refusal.STS-LAUNCH-0007": "Ang link ay nagbibigay ng address na mapagpapadalhan sa iyo na hindi nakarehistro para sa application na ito, kaya tinanggihan ito.",
+  "refusal.general": "Hindi masimulan ang pag-sign in na ito.",
+  "background": "Sinisimulan ng link na ito ang pag-sign in sa identity provider na ito para sa isang application (identity-provider-initiated sign-in). Wala pang naipapadala sa anumang application, kaya dito iniuulat ang problema.",
+  "application": "Application",
+  "protocol": "protocol",
+  "target": "target"
+}

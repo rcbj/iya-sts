@@ -393,10 +393,12 @@ function childMain() {
            !/You were not returned/.test(r.text) &&
            /\.warn\{background:#fff8e1;border-left:4px solid #b26a00;/
              .test(r.text) &&
-           /<h1>Signed out<\/h1>/.test(r.text),
+           /<h1>Sign-out request partly refused<\/h1>/.test(r.text) &&
+           /<title>Sign-out request partly refused<\/title>/.test(r.text),
          'd1b. and the page says so in a warning box as prominent as the ' +
          '"signed out" banner, above it: not one this client registered, ' +
-         'not followed, both addresses, the section', warningOf(r.text) ||
+         'not followed, both addresses, the section; the heading and the ' +
+         'title name the refusal', warningOf(r.text) ||
          r.text.slice(-700));
     // d1c (#1302): the suite's other case, the registered address with a
     // query added — the same box, naming the address as sent, and the
@@ -416,8 +418,10 @@ function childMain() {
            /^<div class="warn" role="alert" id="logout-not-registered"><strong>Le post_logout_redirect_uri de cette demande de déconnexion n’est pas l’un de ceux que ce client a enregistrés/
              .test(warningOf(r.text)) &&
            warningOf(r.text).indexOf('<code>https://evil.example/x</code>') >
-             0 && warningOf(r.text).indexOf('<code>' + BACK + '</code>') > 0,
-         'd1d. ui_locales=fr: the box in French, the addresses as they are',
+             0 && warningOf(r.text).indexOf('<code>' + BACK + '</code>') > 0 &&
+           /<h1>Demande de déconnexion refusée en partie<\/h1>/.test(r.text),
+         'd1d. ui_locales=fr: the box and the heading in French, the ' +
+         'addresses as they are',
          warningOf(r.text));
     jar = {};
     r = await logout({ client_id: 'rl-bare',
@@ -518,10 +522,98 @@ function childMain() {
     const noNonceAt = decodeURIComponent(
       String(noNonce.headers.location || '') + ' ' + noNonce.text)
       .replace(/\+/g, ' ');
-    note(/this request has no nonce, and response_type .id_token. returns an ID Token from the authorization endpoint, for which OIDC Core makes nonce REQUIRED \(section 3\.2\.2\.1, the implicit flow\)/
+    note(/This request has no nonce, and response_type .id_token. returns an ID Token from the authorization endpoint, for which OIDC Core makes nonce REQUIRED \(section 3\.2\.2\.1, the implicit flow\)/
            .test(noNonceAt),
          'e4. an implicit request with no nonce is told it has none',
          noNonce.status + ' ' + noNonceAt.slice(0, 400));
+
+    // --- e5-e8. ONE ERROR PAGE (#1326) -------------------------------------
+    // The error in the box, the background collapsed, a way back to the
+    // portal, the language chooser, and the diagnostics with an incident ID
+    // that IS the seq of the request's audit row.
+    const audit = require(ROOT + '/common/audit');
+    const catalog = function (ns, tag) {
+      return JSON.parse(fs.readFileSync(path.join(ROOT, 'common', 'locales',
+                                                  ns, tag + '.json'),
+                                        'utf8'));
+    };
+    const incidentOf = function (text) {
+      const m = /<dt>[^<]*<\/dt><dd><code>(\d+)<\/code><\/dd>/
+        .exec(String(text).slice(String(text).indexOf('class="diagnostics"')));
+      return m ? Number(m[1]) : 0;
+    };
+    const shaped = function (text) {
+      const body = String(text);
+      const box = body.indexOf('<div class="warn" role="alert">');
+      const more = body.indexOf('<details class="prose">');
+      const portal = body.indexOf('href="/portal"');
+      const diag = body.indexOf('<section class="diagnostics"');
+      return box > 0 && more > box && portal > more && diag > portal &&
+        /<form class="language-chooser"/.test(body) &&
+        !/<script/i.test(body);
+    };
+    const e5 = await authorize({ redirect_uri: WRONG, state: 'st-e5',
+                                 nonce: 'n-e5' }, HTML);
+    const e5Id = incidentOf(e5.text);
+    const e5Row = audit.localEvents().filter(function (row) {
+      return row.seq === e5Id;
+    })[0];
+    note(e5.status === 400 && shaped(e5.text) && e5Id > 0 && e5Row &&
+           e5Row.target === '/oauth2/authorize' && !!e5Row.errorCode &&
+           /<code>st-e5<\/code>/.test(e5.text) &&
+           /<code>n-e5<\/code>/.test(e5.text) &&
+           /<code>rl-rp<\/code>/.test(e5.text),
+         'e5. the refusal page: the box, then the background collapsed, the ' +
+         'portal, the diagnostics with the state, nonce and client, and an ' +
+         'incident ID that is the seq of the request\'s own audit row',
+         e5Id + ' ' + JSON.stringify(e5Row || null).slice(0, 200));
+    const seqs = audit.localEvents().map(function (row) {
+      return Number(row.seq);
+    });
+    note(seqs.every(function (n, i) {
+      return i === 0 || n > seqs[i - 1];
+    }), 'e5b. and the ring\'s numbers still rise in the order the rows were ' +
+        'written, which the audit export\'s cursor relies on',
+         seqs.slice(-8).join(','));
+    const frPages = catalog('oauthPages', 'fr');
+    const frFrame = catalog('errorPages', 'fr');
+    const e6 = await authorize({ redirect_uri: WRONG, ui_locales: 'fr' },
+                               HTML);
+    note(e6.status === 400 && /<html lang="fr"/.test(e6.text) &&
+           e6.text.indexOf(frPages['authorizeError.title']
+             .replace(/'/g, '&#39;')) > 0 &&
+           e6.text.indexOf(frFrame.diagnostics) > 0 &&
+           e6.text.indexOf(frFrame.portal) > 0,
+         'e6. ui_locales=fr: the refusal page in French, frame and message',
+         e6.text.slice(0, 300));
+    // e9 (#1326): a request-object refusal reaches a browser as the same
+    // page with its own sentence; a client library still gets the JSON.
+    const e9Query = { request: 'x.y.z',
+                      request_uri: 'https://rp.rl.example/r' };
+    const e9 = await authorize(e9Query, HTML);
+    const e9Json = await authorize(e9Query);
+    const en = catalog('oauthPages', 'en');
+    note(e9.status === 400 && shaped(e9.text) &&
+           e9.text.indexOf(en['refusal.STS-OAUTH-0341']) > 0 &&
+           e9Json.status === 400 && e9Json.json &&
+           e9Json.json.error === 'invalid_request',
+         'e9. both request and request_uri: the page for a browser, saying ' +
+         'so in its own sentence; the JSON otherwise',
+         e9.status + ' ' + e9Json.status + ' ' + e9.text.slice(0, 300));
+    idToken = await signIn('rl-alice');
+    const e8Tampered = idToken.slice(0, -4) + (idToken.slice(-4) === 'AAAA'
+      ? 'BBBB' : 'AAAA');
+    const e8 = await logout({ id_token_hint: e8Tampered, ui_locales: 'fr',
+                              state: 'st-e8' });
+    note(e8.status === 400 && await alive() && shaped(e8.text) &&
+           incidentOf(e8.text) > 0 &&
+           e8.text.indexOf(frPages['logoutRefused.refusedTitle']
+             .replace(/'/g, '&#39;')) > 0 &&
+           /<code>st-e8<\/code>/.test(e8.text) &&
+           /<code>rl-alice<\/code>/.test(e8.text),
+         'e8. a refused sign-out: the same page, in French, the state and ' +
+         'the person signed in among the diagnostics, the session alive',
+         e8.status + ' ' + e8.text.slice(0, 400));
 
     // --- f. the second sign-in's notice (#1302) ------------------------------
     // The authorization endpoint's reason rides the pending sign-in into

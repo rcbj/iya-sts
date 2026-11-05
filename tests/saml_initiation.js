@@ -351,6 +351,25 @@ function childMain() {
       r = await request('GET', unsolicited(spOff), alice.cookie);
       note(r.status === 403 && r.code === 'STS-SAML-0091',
            'A2. and with a session too', r.status + ' ' + r.code);
+      // THE PAGE IS THE SHARED ERROR PAGE (#1327): the code's sentence in
+      // the box, the background collapsed, the way back to the portal, and
+      // the diagnostics — the service provider, the target, who is signed
+      // in, the English detail — with the STS code nowhere on it.
+      note(/<div class="warn" role="alert">Sign-in started at this identity provider is turned off for this service provider\./
+             .test(r.text) &&
+           r.text.indexOf('<details class="prose">') >= 0 &&
+           /href="[^"]*\/portal"/.test(r.text) &&
+           r.text.indexOf('<section class="diagnostics"') >= 0 &&
+           r.text.indexOf('Incident ID') >= 0 &&
+           r.text.indexOf('<code>' + spOff + '</code>') >= 0 &&
+           r.text.indexOf('<code>rs-' + stamp + '</code>') >= 0 &&
+           r.text.indexOf('<code>si-alice-' + stamp + '</code>') >= 0 &&
+           r.text.indexOf('saml2.idpInitiatedSso is off') >= 0 &&
+           r.text.indexOf('STS-SAML-0091') < 0 &&
+           /<select[^>]*name="lang"|class="language-row"/.test(r.text),
+           'A2b. the refusal is the shared error page: the sentence, the ' +
+           'background, the portal, the diagnostics and the language ' +
+           'chooser, and no error code', r.text.slice(0, 400));
       r = await request('GET', unsolicited(spOn));
       note(r.status === 303 && /\/authn\//.test(r.location),
            'A3. for one whose entry sets saml2IdpInitiatedSso TRUE, with no ' +
@@ -414,6 +433,15 @@ function childMain() {
            'C1. a SAML 1.1 link with only a TARGET, for a relying party that ' +
            'did not opt in, is REFUSED by default — 403, STS-SAML-0113, no ' +
            'sign-in screen', r.status + ' ' + r.code + ' ' + r.location);
+      note(/<div class="warn" role="alert">Sign-in started at this identity provider is turned off for this relying party\./
+             .test(r.text) &&
+           r.text.indexOf('<details class="prose">') >= 0 &&
+           r.text.indexOf('<section class="diagnostics"') >= 0 &&
+           r.text.indexOf('<code>' + rpOff + '</code>') >= 0 &&
+           r.text.indexOf('STS-SAML-0113') < 0,
+           'C1b. and the SAML 1.1 refusal is the shared error page too ' +
+           '(#1327): the sentence, the background, the relying party in ' +
+           'the diagnostics, no error code', r.text.slice(0, 400));
       r = await request('GET', sso11(rpOn), alice.cookie);
       note(r.status === 200 && /name="SAMLResponse"/.test(r.text) &&
            /name="TARGET"/.test(r.text),

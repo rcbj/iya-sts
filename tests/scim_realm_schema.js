@@ -258,9 +258,23 @@ function childMain() {
         function (one) {
           return one.schema === CUSTOM;
         })[0];
-      note(r.status === 200 && dext && dext.required === false,
-           'S10. the default realm\'s User type lists the extension, not ' +
-           'required', JSON.stringify(dext));
+      note(r.status === 200 && Array.isArray(r.json.schemaExtensions) &&
+           !dext,
+           'S10. the default realm defines none, so its User type names no ' +
+           'extension for them', JSON.stringify(r.json &&
+                                                r.json.schemaExtensions));
+      r = await request(port, 'GET', '/scim/v2/Schemas', {});
+      note(r.status === 200 && Array.isArray(r.json.Resources) &&
+           !r.json.Resources.some(function (one) {
+             return one.id === CUSTOM;
+           }) && r.json.totalResults === r.json.Resources.length,
+           'S11. nor does its /Schemas list, and the count says so',
+           r.status + ' ' + JSON.stringify(r.json && r.json.totalResults));
+      r = await scim(D, 'GET', '/Schemas');
+      note(r.status === 200 && (r.json.Resources || []).some(function (one) {
+        return one.id === CUSTOM;
+      }), 'S12. a realm that defines one lists the extension',
+           String(r.status));
 
       // W. THE WRITES, under a policy SCIM can meet: roomNumber, which no
       // SCIM member carries (S4), would refuse every create.

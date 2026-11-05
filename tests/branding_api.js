@@ -48,6 +48,7 @@ const brandingApi = require('../mgmt-api/branding_api');
 const SignInAppearancePage = require('../admin-ui/web_sign_in_appearance');
 const WebForms = require('../admin-ui/web_forms');
 const kit = require('../admin-ui/web_kit');
+const WebPage = require('../common/web_page');
 const webMessages = require('../common/web_messages');
 
 const REALM = 'brand-api-test';
@@ -334,15 +335,25 @@ function sectionG(t) {
           /name="action" value="remove-logo"/.test(html),
           'G4. the upload is multipart with action=logo, and a logo held ' +
           'can be removed');
-  t.check(html.indexOf('<form method="get" action="/realm/' + REALM +
-                       '/web/branding/preview" target="_blank"') >= 0 &&
+  // ROOT-RELATIVE IN THE DRAWING, ONE PREFIX ONCE THE RUNTIME HAS IT: the
+  // runtime puts every drawing through realmLinks(), so a page that drew
+  // the view's prefixed previewUrl or logo.src was prefixed twice.
+  const inRealm = WebPage.realmLinks(html, '/realm/' + REALM);
+  t.check(html.indexOf('<form method="get" ' +
+                       'action="/web/branding/preview" target="_blank"') >=
+            0 &&
+          inRealm.indexOf('action="/realm/' + REALM +
+                          '/web/branding/preview"') >= 0 &&
+          inRealm.indexOf('/realm/' + REALM + '/realm/') < 0 &&
           /name="layout"><option value="centered">centered<\/option>/
             .test(html) &&
           /<option value="banner" selected>/.test(html),
           'G5. the preview is a GET form to the realm\'s preview, in a ' +
-          'new tab');
-  t.check(/<img class="sia-logo" id="sia-logo" src="\/realm\/brand-api-test\/web\/branding\/logo\?v=abab" alt="Example" width="128" height="32">/
-            .test(html),
+          'new tab, prefixed once');
+  t.check(/<img class="sia-logo" id="sia-logo" src="\/web\/branding\/logo\?v=abab" alt="Example" width="128" height="32">/
+            .test(html) &&
+          inRealm.indexOf('src="/realm/' + REALM +
+                          '/web/branding/logo?v=abab"') >= 0,
           'G6. the logo is drawn by attributes, at most 64 high');
   t.check(html.indexOf('Example &lt;Corp&gt;') >= 0 &&
           html.indexOf('Example <Corp>') < 0,

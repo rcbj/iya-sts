@@ -229,8 +229,12 @@ import returnAddress = require('./return_address');
 import personAttributes = require('./person_attributes');
 // THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
 // no route and closes no cycle. Only the pages a PERSON passes through use it
-// — the hand-off pages and the sign-out pages; refusals stay English.
+// — the hand-off pages, the sign-out pages and, since #1327, the refusals.
 import PageLocale = require('../common/page_locale');
+// THE ONE ERROR PAGE (#1326, #1327): `samlError()` draws it. A library that
+// requires `audit`, `realms` and the page's language, none of which requires
+// this module, so it closes no cycle and moves no route.
+import ErrorPage = require('../common/error_page');
 // The description page's shell and script (#584).
 import DescriptionPages = require('../common/description_pages');
 // THE CLUSTER CLAIM (2026-09-14, #46): the atomic "once" an artifact is spent
@@ -1548,28 +1552,87 @@ class Saml2Sso {
   // tested. Before that point there is nowhere to send anything, and the page
   // is the only honest answer — the same position `wsfed.ts` is in for its
   // whole profile.
+  //
+  // **THE PAGE IS `common/error_page.ts`'s SINCE #1327** (rcbj's design on
+  // #1326): the sentence in the box in the page's language, chosen by the
+  // error code the caller marked (`samlErrors.refusal.<code>`, or the
+  // `pageKey` a caller names where one code covers two cases), else a
+  // general one; why it is a page and not a Response collapsed below it; the
+  // way back; and the diagnostics. The caller's English `title` and `detail`
+  // are no longer the page's prose: they are shown AS DATA in the
+  // diagnostics (the summary and the detail an operator quotes), beside the
+  // service provider, the assertion consumer service URL, the binding and
+  // the RelayState where the caller or the request knows them. The status is
+  // the caller's, unchanged. No protocol error is in the box: nothing here
+  // sends one, and the STS code is an operator's name, never shown.
+  //
+  // `background` is a key under `samlErrors.background.` the caller names for
+  // a case with something more to explain; `diag` is `{ sp, acs, binding,
+  // relayState, pageKey }`, each optional.
   // error-code: none — the helper's definition, not a call to it
-  private samlError(res, status, title, detail, extra?) {
-    const { log, xmlEscape } = this.deps.helpers;
+  private samlError(res, status, title, detail, background?, diag?) {
+    const { errorCodes } = this.deps;
+    const { log } = this.deps.helpers;
+    const { sessionOf } = this.deps.authn;
     // error-code: none — the helper's own debug line; each caller marks its
     // code
     log.debug("Entering Saml2Sso.samlError(). status=" + status + ", title=" +
               title);
-    const inner = '<h1>' + xmlEscape(title) + '</h1>' +
-      '<p class="sub">SAML 2.0 Web Browser SSO at <code>' + SSO_PATH +
-      '</code></p><div ' +
-      'class="err">' + xmlEscape(detail) + '</div>' + (extra || '') +
-      '<div class="meta"><div>This is a page rather than a ' +
-      '<code>&lt;samlp:Response&gt;</code> because the request never got as ' +
-      'far as naming somewhere to send one. Once an assertion consumer ' +
-      'service URL is known, a failure is delivered there as a Response ' +
-      'carrying a status code — which is what section 3.2.2 requires and is ' +
-      'the error path a service provider is least likely to have exercised. ' +
-      'The request is logged in full at debug level.</div></div>';
-    res.status(status)
-       .type('text/html')
-       .set('Cache-Control', 'no-store')
-       .send(this.page(title, inner));
+    const req: any = res.req || { headers: {}, query: {} };
+    const known = diag || {};
+    let params: any = {};
+    try {
+      params = this.paramsOf(req);
+    } catch (e) {
+      // A body that cannot be read leaves the request's own values out of
+      // the diagnostics; the page still says what was wrong.
+      log.debug("Caught in Saml2Sso.samlError(): " + ((e && e.message) || e));
+    }
+    let username = '';
+    try {
+      const session: any = sessionOf(req);
+      username = String((session && session.user &&
+                         session.user.username) || '');
+    } catch (e) {
+      // No session is readable here: the page names nobody signed in.
+      log.debug("Caught in Saml2Sso.samlError(): " + ((e && e.message) || e));
+    }
+    const sp = String(known.sp || params.providerId || '');
+    const t = PageLocale.translatorFor(req, { application: sp,
+                                              username: username });
+    const code = String(errorCodes.codeOf(res) || '');
+    const signOut = String(req.path || '').indexOf(SLO_PATH) >= 0;
+    const heading = status === 503 ? t.text('samlErrors.title.busy')
+      : (signOut ? t.text('samlErrors.title.signOut')
+                 : t.text('samlErrors.title.signIn'));
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: status,
+      title: heading,
+      message: ErrorPage.sentence(t, [
+        known.pageKey ? 'samlErrors.refusal.' + known.pageKey : '',
+        code ? 'samlErrors.refusal.' + code : '',
+        'samlErrors.refusal.general']),
+      // Why a page: the profile's reason always, and the case's own after it.
+      background: '<p>' + t.html('samlErrors.background.saml2') + '</p>' +
+        (background
+          ? '<p>' + ErrorPage.sentence(t,
+              ['samlErrors.background.' + background]) + '</p>'
+          : ''),
+      diagnostics: [
+        { label: t.text('errorPages.entityId'), value: sp },
+        { label: t.text('errorPages.acsUrl'), value: known.acs },
+        { label: t.text('errorPages.binding'), value: known.binding },
+        { label: t.text('errorPages.relayState'),
+          // An unsolicited sign-in carries it as `target` (#189).
+          value: known.relayState !== undefined ? known.relayState
+            : (params.RelayState || params.target) },
+        { label: t.text('errorPages.signedInAs'), value: username },
+        { label: t.text('errorPages.summary'), value: title },
+        { label: t.text('errorPages.detail'), value: detail }
+      ]
+    });
     // error-code: none — the helper's own debug line; each caller marks its
     // code
     log.debug("Leaving Saml2Sso.samlError().");
@@ -2476,7 +2539,7 @@ class Saml2Sso {
       'This service is holding as many unresolved SAML artifacts as it is ' +
       'configured to (saml2.maxArtifacts), so it cannot issue another one ' +
       'until some are resolved or expire. Nothing was sent to the service ' +
-      'provider. Try again shortly.');
+      'provider. Try again shortly.', undefined, { sp: spEntityId });
     log.debug("Leaving Saml2Sso.refuseFullArtifactStore().");
   }
 
@@ -2871,7 +2934,8 @@ class Saml2Sso {
           'provider registered ahead of time (the console, /admin-api, ' +
           'RFC 7591, an LDAP add under ou=applications or verified ' +
           'metadata); one that was only seen is not registered, ' +
-          'and no Response is sent anywhere.');
+          'and no Response is sent anywhere.', undefined,
+          { sp: named, relayState: relayState });
       }
     }
 
@@ -2900,7 +2964,8 @@ class Saml2Sso {
                   "refused.");
         return this.samlError(res, 403, checked.refusal.title ||
                               'That AuthnRequest\'s signature is not accepted',
-                              checked.refusal.why);
+                              checked.refusal.why, undefined,
+        { sp: request.issuer || scoped.entityId, relayState: relayState });
       }
       verification = {
         signed: checked.assessment.signed,
@@ -2963,7 +3028,8 @@ class Saml2Sso {
         log.debug("Leaving Saml2Sso.singleSignOnChecked(). " +
                   refusal.errorCode);
         // error-code: none — marked above: refusal.errorCode is 0085–0089.
-        return this.samlError(res, 400, refusal.title, refusal.why);
+        return this.samlError(res, 400, refusal.title, refusal.why, undefined,
+          { sp: request.issuer || scoped.entityId, relayState: relayState });
       }
     }
 
@@ -3056,7 +3122,9 @@ class Saml2Sso {
       log.debug("Leaving Saml2Sso.singleSignOnChecked(). Not a registered " +
                 "assertion consumer service.");
       return this.samlError(res, 400, 'That assertion consumer service is ' +
-                                      'not registered', consumedAcs.why);
+                                      'not registered', consumedAcs.why,
+        undefined,
+        { sp: spEntityId, acs: request.acsUrl, relayState: relayState });
     }
     const acsKnown =
       applications.returnAddressesOf(known,
@@ -3078,7 +3146,8 @@ class Saml2Sso {
       errorCodes.mark(res, errorCodes.codeOf(acsWhere) || 'STS-SAML-0005');
       log.debug("Leaving Saml2Sso.singleSignOnChecked().");
       return this.samlError(res, 400, 'That assertion consumer service is ' +
-                                      'not registered', acsWhere.why);
+                                      'not registered', acsWhere.why, undefined,
+        { sp: spEntityId, acs: request.acsUrl, relayState: relayState });
     }
     const acsUrl = String(acsWhere.url);
     if (!/^https?:\/\//i.test(acsUrl)) {
@@ -3091,7 +3160,8 @@ class Saml2Sso {
         'It is "' + acsUrl + '". The response is delivered to that address ' +
         'by form POST, by redirect or as an artifact, and a relative value ' +
         'addresses this service instead — which looks exactly like a service ' +
-        'provider that ignored the response.');
+        'provider that ignored the response.', undefined,
+        { sp: spEntityId, acs: acsUrl, relayState: relayState });
     }
     let wanted = this.responseBindingFor(request);
     if (wanted.error) {
@@ -3104,9 +3174,11 @@ class Saml2Sso {
         'This request asked for ProtocolBinding="' + wanted.error + '". This ' +
         'identity provider delivers a response over HTTP POST, HTTP Redirect ' +
         'and HTTP Artifact, which are the three its metadata advertises.',
-        '<p>It is refused rather than quietly answered over HTTP POST, ' +
-        'because a service provider that asked for PAOS and received a form ' +
-        'post would conclude that PAOS worked.</p>');
+        // It is refused rather than quietly answered over HTTP POST, because
+        // a service provider that asked for PAOS and received a form post
+        // would conclude that PAOS worked — said on the page, translated.
+        'paos', { sp: spEntityId, acs: acsUrl, binding: wanted.error,
+                  relayState: relayState });
     }
     // The registered endpoint's own binding, where the metadata chose it.
     if (consumedAcs.consumed && this.deliverable(consumedAcs.binding)) {
@@ -3754,7 +3826,8 @@ class Saml2Sso {
         'setting, or saml2IdpInitiatedSso on its entry), so this identity ' +
         'provider sends it a Response only in answer to an AuthnRequest. ' +
         'Start the sign-in from the service provider, or turn ' +
-        'identity-provider-initiated sign-in on for it.');
+        'identity-provider-initiated sign-in on for it.', undefined,
+        { sp: spEntityId });
     }
     const askedFor = String(params.binding || '').toLowerCase();
     const asked = askedFor === 'artifact' || askedFor === BINDING_ARTIFACT
@@ -3770,7 +3843,8 @@ class Saml2Sso {
         'binding="' + askedFor + '": an unsolicited Response goes on ' +
         'HTTP-POST, HTTP-POST-SimpleSign or HTTP-Artifact — never ' +
         'HTTP-Redirect, which saml-profiles-2.0-os section 4.1.2 forbids ' +
-        'for a Response.');
+        'for a Response.', undefined,
+        { sp: spEntityId, binding: askedFor });
     }
     const idpEntityId = this.idpEntityId();
     const known = this.fieldsOf(spEntityId);
@@ -3781,7 +3855,8 @@ class Saml2Sso {
       errorCodes.mark(res, consumed.errorCode || 'STS-SAML-0070');
       log.debug("Leaving Saml2Sso.unsolicitedSignOn(). Not registered ACS.");
       return this.samlError(res, 400, 'That assertion consumer service is ' +
-                                      'not registered', consumed.why);
+                                      'not registered', consumed.why, undefined,
+        { sp: spEntityId, acs: shire, binding: asked });
     }
     const acsKnown = applications.returnAddressesOf(
       known, 'samlAssertionConsumerService');
@@ -3800,7 +3875,8 @@ class Saml2Sso {
       return this.samlError(res, 400, 'There is nowhere to send it',
         where.ok ? 'This service provider has no registered assertion ' +
                    'consumer service and the link named no shire.'
-                 : String(where.why || ''));
+                 : String(where.why || ''), undefined,
+        { sp: spEntityId, acs: shire, binding: asked });
     }
     const binding = consumed.consumed &&
                     consumed.binding !== BINDING_REDIRECT &&
@@ -5039,7 +5115,8 @@ class Saml2Sso {
           return this.samlError(res, 403, checkedAnswer.refusal.title ||
                                 'That LogoutResponse\'s signature is not ' +
                                 'accepted',
-                                checkedAnswer.refusal.why);
+                                checkedAnswer.refusal.why, undefined,
+                                { sp: answerFrom });
         }
       }
       log.debug("Leaving Saml2Sso.singleLogout(). A LogoutResponse was " +
@@ -5115,7 +5192,7 @@ class Saml2Sso {
                     : 'The LogoutRequest names no Issuer, so no ') +
         'SAML 2.0 service provider is registered under it in this realm. ' +
         'In product mode only a registered service provider may end a ' +
-        'session here; nothing was ended.');
+        'session here; nothing was ended.', undefined, { sp: spEntityId });
     }
     // THE SIGNATURE (#37), before anything is decrypted or ended: a
     // LogoutRequest whose signature fails, or an unsigned one where signed
@@ -5133,7 +5210,7 @@ class Saml2Sso {
       return this.samlError(res, 403, checkedLogout.refusal.title ||
                             'That LogoutRequest\'s signature is not accepted',
                             checkedLogout.refusal.why + ' The session was ' +
-                            'NOT ended.');
+                            'NOT ended.', undefined, { sp: spEntityId });
     }
     // ITS ENVELOPE (#190): Version, IssueInstant and Destination, as an
     // AuthnRequest's — a LogoutRequest ending somebody's session is at least
@@ -5153,7 +5230,7 @@ class Saml2Sso {
       // error-code: none — marked above: STS-SAML-0085, 0086 or 0087.
       return this.samlError(res, 400, logoutEnvelope.title,
                             logoutEnvelope.why + ' The session was NOT ' +
-                            'ended.');
+                            'ended.', undefined, { sp: spEntityId });
     }
     // THE SUBJECT, WHICH MAY BE ENCRYPTED. A service provider that has this
     // service's metadata has an encryption key to use, and section 3.7.1 lets
@@ -5192,12 +5269,15 @@ class Saml2Sso {
         log.debug("Leaving Saml2Sso.singleLogout().");
         return this.samlError(res, 400,
                               'That EncryptedID could not be decrypted',
-          'This LogoutRequest carries a &lt;saml:EncryptedID&gt; rather than ' +
-          'a &lt;saml:NameID&gt;, and ' + xmlEscape(decrypted.why) + '. The ' +
+          // Plain text since #1327: the detail is shown as data, escaped
+          // once by the page (it was escaped twice before).
+          'This LogoutRequest carries a <saml:EncryptedID> rather than ' +
+          'a <saml:NameID>, and ' + decrypted.why + '. The ' +
           'session was NOT ended, because a logout this service cannot ' +
           'attribute to anybody is one it cannot honestly report as done. ' +
           'This service\'s current encryption certificate is in its ' +
-          'metadata, which is regenerated on every start.');
+          'metadata, which is regenerated on every start.', undefined,
+          { sp: spEntityId });
       }
       const reparsed = new DOMParser().parseFromString(decrypted.xml,
                                                        'text/xml');

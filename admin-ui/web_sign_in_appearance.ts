@@ -25,6 +25,15 @@
 //     `target="_blank"`. It is not a console path, so the runtime leaves it
 //     to the browser, which opens the preview in a new tab with the values
 //     in the form: pending values, seen before anything is saved.
+//
+// EVERY ADDRESS IS DRAWN ROOT-RELATIVE: `view.preview` and `logo.url`, never
+// the view's `previewUrl` and `logo.src`. The runtime puts the whole drawing
+// through `WebPage.realmLinks()`, which prefixes every `href`, `action` and
+// `src` starting `/` with the realm's prefix, so an address that already
+// carried it came out `/realm/x/realm/x/web/...` — the realm's logo broken
+// and its preview a 404 (found by `sts_admin_console`'s GET-form walk on
+// c319939d9). The prefixed pair stay in the view for a machine caller, who
+// has no runtime to prefix them.
 //   * SETTINGS — the `Sign-in appearance` group's block, as every page
 //     `SETTING_HOMES` names draws it. It is a second door onto the same
 //     settings, and the only one onto `branding.logoMaxBytes` (the
@@ -228,7 +237,7 @@ class SignInAppearancePage {
                                                        height)) : 64;
     const when = String(logo.updatedAt || '');
     return '<p><img class="sia-logo" id="sia-logo" src="' +
-      esc(logo.src || logo.url || '') + '" alt="' + esc(v.logoAlt || '') +
+      esc(logo.url || '') + '" alt="' + esc(v.logoAlt || '') +
       '" width="' + shownWidth + '" height="' + shownHeight + '"></p>' +
       '<ul><li>' + t.html(key + 'logo.facts', {
         type: String(logo.type || ''), width: width, height: height,
@@ -314,8 +323,7 @@ class SignInAppearancePage {
     const colours = v.colours || {};
     const layouts = Array.isArray(v.layouts) && v.layouts.length
       ? v.layouts : ['centered', 'split', 'banner'];
-    const target = String(v.previewUrl || v.preview ||
-                          '/web/branding/preview');
+    const target = String(v.preview || '/web/branding/preview');
     const rows = COLOURS.map(function (one) {
       return SignInAppearancePage.colourRow(t, 'sia-pv-' + one.name,
         one.name, key + 'colour.' + one.name, '',

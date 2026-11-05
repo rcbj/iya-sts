@@ -346,6 +346,25 @@ account already in the set re-authenticates its session.
 The words are `handoff.wsfed.chooseAccount.*`. `tests/multi_account_protocols.js`
 6 and `tests/multi_account_logout.js` 8.
 
+## Every refusal is `common/error_page.ts`'s page (#1327, 2026-11-05)
+
+**`wsfedError()` draws the shared error page, translated** — #1326's design
+(`common/CLAUDE.md`, `error_page.ts`): no status, header or protocol
+message changed, and nothing goes to the relying party, as before. The box
+carries the sentence for the code the caller marked
+(`wsfedErrors.refusal.<code>`, else `wsfedErrors.refusal.general`); the
+profile's "no error response" paragraph is the collapsed background; the
+ways forward of a refused `wauth`, the accepted methods and the understood
+`wa` values are drawn below it in the page's language. **The caller's
+English title and detail are unchanged and are the Summary and Detail rows
+of the diagnostics**, beside `wa`, `wtrealm`, `wreply`, `wctx` and who is
+signed in — data, escaped once (the cancelled page used to escape twice).
+WS-Federation has no language hint, so the order is #539's without one.
+**STS-WSFED-0026 echoes nothing**: no `wreply` row, and its language chooser
+returns to the realm's front door rather than to the link, because the
+refusal exists so that the address is not used. A new refusal owes a
+sentence in all seven base catalogs. `tests/wsfed_wauth_step_up.js` d3–d4.
+
 ## What no test covers yet
 
 `tests/saml_family_hardcoded.js` pins the 2026-09-12 changes above, and

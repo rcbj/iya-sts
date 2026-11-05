@@ -2672,7 +2672,11 @@ followed, then the address asked for, the registered ones
 Foundation's `oidcc-rp-initiated-logout-bad-post-logout-redirect-uri` and
 `-query-added-to-post-logout-redirect-uri` ask their reviewer for a page
 saying the request is invalid for exactly that, and a grey sentence under the
-banner did not. Every other refused return keeps its grey English sentence.
+banner did not. **Since 2026-11-04 that page's heading and title are
+`oauthPages.signedOut.partlyRefused`** ("Sign-out request partly refused")
+rather than "Signed out": the reviewer reads the heading first, and a success
+heading over the box still read as a success page. Every other refused return
+keeps its grey English sentence and the "Signed out" heading.
 `state` rides on every return (`withLogoutState()`), including the
 front-channel page's refresh and link. When the registered return URI already
 has a `state`, the request's value replaces it; duplicate query values can
@@ -2687,7 +2691,22 @@ it would clear a cookie it never saw. No script: a button needs none.
 
 **`ui_locales` is honoured on the sign-out pages since #539**: the
 confirmation and signed-out pages are drawn in it (namespace `oauthPages`),
-and a refusal stays English. `tests/rp_initiated_logout.js` holds
+~~and a refusal stays English~~ — **and since #1326 a refusal too**:
+`logoutRefusal()` draws `common/error_page.ts`'s page, its sentence chosen
+by the id_token_hint verdict's `reason` (`oauthPages.logoutRefused.hint.*`),
+the English `why` among the diagnostics. The sign-out whose return was
+refused ends with the same page's footer.
+
+**THE AUTHORIZATION ENDPOINT'S TWO PAGES ARE THE SAME PAGE (#1326)**: the
+refusal page (a refusal that is never redirected — since #1326 every one, for
+a browser, not only those about the redirect_uri) and RFC 9700 section
+4.11.2's interstitial. `refusalMessage()` picks the sentence: a key the
+refusal names (`pageText.key`, where one code covers two cases), else
+`oauthPages.refusal.<the code marked on the response>`, else
+`oauthPages.oauthError.<error>`, else a general one. The values a sentence
+names are the request's own plus `pageText.params` (the registered URIs from
+`checkRedirectUri()`'s `registered`). The English `error_description` is in
+the diagnostics, as the value an application receives. `tests/rp_initiated_logout.js` holds
 it in a child process; `tests/protocol/sts_rp_initiated_logout.js` over HTTP.
 
 ## OPENID CONNECT REGISTRATION, AND THE `jwks_uri` (#120, 2026-09-22)

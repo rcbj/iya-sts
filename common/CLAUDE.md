@@ -13638,9 +13638,29 @@ reasons for the shape:
     parameters and markup, and every base catalog complete.
   - **A page's translator is always called `t`, and keys are literals**, so
     the test can scan the source for every key used.
-* **Errors stay English (rcbj).** A refusal is simply never looked up. That is
-  why the namespaces hold labels, prose and success text and no refusal
-  text. Do not "finish" a page by translating its error box.
+* ~~**Errors stay English (rcbj).** A refusal is simply never looked up.~~
+  **REVERSED FOR ERROR PAGES BY #1326 (rcbj, 2026-11-05): a server-drawn
+  error page a person lands on is translated, every word of it** —
+  `error_page.ts` below. What stays English is what a PROGRAM reads: an API's
+  error answer, an `error_description`, a log line. A page shows those as
+  data, in its diagnostics, never as its prose.
+* **`error_page.ts` IS THE ONE ERROR PAGE (#1326).** The error in the yellow
+  box (the protocol's `error` as a value, a sentence in the page's language),
+  an action where the page has one, the background in a `<details>`, a note to
+  close the tab and start again, a link to the realm's `/portal`, and a
+  Diagnostics box: the time, the INCIDENT ID, and the caller's rows (shown as
+  data, escaped, untranslated). The frame's words are the `errorPages`
+  namespace; each caller's sentences are its own. **The incident ID is the
+  `seq` of the request's audit row**: `audit.reserveIncident(res)` takes the
+  number while the page is drawn, and `recordHttp()` writes the row with it
+  in the same synchronous run (the audit export's cursor needs `seq` to rise
+  in write order; `audit.js` argues it). `ErrorPage.footer()` is the ending
+  alone, for a page that draws its own body (the sign-out whose return was
+  refused). The OAuth 2.0 and OpenID Connect pages use it; #1327 moves the
+  other families' error pages onto it. **Its message keys are looked up by
+  code** (`oauthPages.refusal.<error code>`), which test E cannot scan, so the
+  caller asks `t.has()` and falls back to the protocol error's sentence and
+  then to a general one: a missing key never draws its name.
 * **A page builder asks `PageLocale.forPage()`** instead of being handed the
   request. Most builders are called from dozens of places, many inside a
   POST, and threading a translator through every caller was the alternative.
