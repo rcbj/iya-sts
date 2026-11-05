@@ -2405,6 +2405,8 @@ class OAuth2Server {
     // `keys.eddsaSigning` off (#1292, the default): EdDSA out of the lists
     // of what this realm SIGNS, as the JWKS leaves its OKP keys out.
     helpers.withoutEddsaSigningAlgs(metadata);
+    // And to what `keys.signingAlgorithms` lists, if it lists anything (#1348).
+    helpers.withoutUnlistedSigningAlgs(metadata);
     // The PROFILE, last, so it can override anything above it — including what
     // RFC 9700 mode just narrowed. That order is deliberate and it is the one a
     // reader of the form expects: a profile is somebody saying "publish this",
@@ -2483,6 +2485,13 @@ class OAuth2Server {
                        'default');
     let alg = named || (set !== 'default' ? set : '') ||
               fapi.defaultSigningAlg() || 'RS256';
+    // Replaced for FAPI's reason just below: the server's own signature, which
+    // nothing a client did asked for (#1348). The list always holds RS256.
+    if (!helpers.signingAlgListed(alg)) {
+      log.debug("OAuth2Server.accessTokenAlg(): keys.signingAlgorithms does " +
+                "not list " + alg + "; RS256 instead.");
+      alg = 'RS256';
+    }
     if (!fapi.signingAlgAllowed(alg)) {
       log.debug("OAuth2Server.accessTokenAlg(): " + alg + " is not allowed " +
                 "under the FAPI profile; " + fapi.defaultSigningAlg() +
@@ -3359,6 +3368,8 @@ class OAuth2Server {
     // And EdDSA out of the ID Token and UserInfo signing lists while
     // `keys.eddsaSigning` is off (#1292).
     helpers.withoutEddsaSigningAlgs(metadata);
+    // And to what `keys.signingAlgorithms` lists, if it lists anything (#1348).
+    helpers.withoutUnlistedSigningAlgs(metadata);
     // THE PROFILE, AGAIN, and it has to be applied twice.
     //
     // asMetadata() applied it already — and then the Object.assign above
@@ -3519,7 +3530,11 @@ class OAuth2Server {
         // the OpenID conformance suite's nimbus throws on an Ed25519 or Ed448
         // key in a rotated JWKS rather than skipping it, and OpenID Connect
         // certification runs that suite.
-        keys: helpers.withoutEddsaSigningKeys(helpers.withoutPqSigningKeys(
+        //
+        // **AND WITH `keys.signingAlgorithms` NAMING A LIST (#1348) NO SIGNING
+        // KEY FOR AN ALGORITHM IT LEAVES OUT**, by the same filter.
+        keys: helpers.withoutUnlistedSigningKeys(
+          helpers.withoutEddsaSigningKeys(helpers.withoutPqSigningKeys(
           joseKid.withThumbprintUriEntries([{
           kty: 'RSA', use: 'sig', kid: STS.kid,
           n: b64u(pub.n.toString(16)), e: b64u(pub.e.toString(16)),
@@ -3593,7 +3608,7 @@ class OAuth2Server {
         // one without the key.
           .concat(helpers.kemEncryptionKeysFor().map(function (one) {
             return stsCrypto.publicJweKemJwk(one.publicJwk);
-          }))))
+          })))))
       }, null, 2));
       log.debug("Leaving OAuth2Server.sendJwks().");
     } catch (e) {

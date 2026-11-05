@@ -3476,6 +3476,20 @@ const CODES = [
       'made with a key the realm does not publish (#1292).',
     spec: 'the caller\'s: the response that needed the signature fails as ' +
       'it does for an algorithm this realm holds no key for' },
+  { code: 'STS-KEYS-0166',
+    summary: 'A signature through helpers.signJwtAs() (an ID Token, ' +
+      'UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or ' +
+      'Provider Commands token) was asked of a realm whose ' +
+      'keys.signingAlgorithms does not list its algorithm — a client ' +
+      'registered for it before the list was set, or a setting naming it — ' +
+      'and was refused (#1348).',
+    spec: 'the caller\'s: the response that needed the signature fails as ' +
+      'it does for an algorithm this realm holds no key for' },
+  { code: 'STS-KEYS-0167',
+    summary: 'keys.signingAlgorithms was not changed: a list that is not ' +
+      'empty must include RS256, which OpenID Connect Discovery requires ' +
+      'and which is the default for ID Tokens and access tokens (#1348).',
+    spec: 'none: an operator\'s write, refused with its reason' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

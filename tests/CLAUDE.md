@@ -2454,7 +2454,8 @@ operator moved into the helper so the two have one copy), and differs where
 certification differs:
 
 * **One kept realm** (`oidf-cert`), product mode unless `--development`,
-  post-quantum signing off; one alias (`iya-sts`), the plans one at a time,
+  post-quantum signing off, RS256 its only signing algorithm
+  (`keys.signingAlgorithms`, #1348); one alias (`iya-sts`), the plans one at a time,
   because two plans under one alias interfere. The realm waives RFC 9700
   section 2.1.2 and lets a self-registering client enable the four token
   response types (#1295, #1296), which the Implicit, Hybrid and Dynamic OP

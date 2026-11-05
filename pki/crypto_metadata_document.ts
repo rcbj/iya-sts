@@ -336,8 +336,10 @@ class CryptoMetadataDocument {
       jose: {
         // The classical ones alone while `keys.postQuantumSigning` is off
         // (2026-10-23), as the discovery documents say. The units above are
-        // the key INVENTORY and keep listing what the key set holds.
-        signing: helpers.offeredJwsAlgs(stsCrypto.JWS_ASYMMETRIC_ALGS),
+        // the key INVENTORY and keep listing what the key set holds. And only
+        // what `keys.signingAlgorithms` lists, if it lists anything (#1348).
+        signing: helpers.listedSigningAlgs(
+          helpers.offeredJwsAlgs(stsCrypto.JWS_ASYMMETRIC_ALGS)),
         default: 'RS256',
         signedMetadata: String(config.value('oauth2.signedMetadataAlgorithm') ||
                                'RS256'),

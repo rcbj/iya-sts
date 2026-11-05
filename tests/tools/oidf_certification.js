@@ -297,6 +297,10 @@ async function ensureRealm() {
   if (!opts.development) {
     settings.push(["global.mode", "product"]);
   }
+  // THE CERTIFICATION CONFIGURATION SIGNS WITH RS256 ALONE (#1348, rcbj,
+  // 2026-11-05). Only the realm this tool configures: every other realm keeps
+  // the default, an empty list.
+  settings.push(["keys.signingAlgorithms", "RS256"]);
   if (expanded().some(function (plan) {
     return plan.group === "session" && wanted(plan);
   })) {

@@ -314,6 +314,7 @@ var config = {
     offerKemEncryption: false,         // Offer post-quantum / hybrid encryption to clients
     postQuantumSigning: true,          // Post-quantum signing
     eddsaSigning: false,               // EdDSA signing
+    signingAlgorithms: "",             // Signing algorithms this realm uses
     kidFormat: "internal",             // Signed token kid format
     kekProvider: "file",               // Key-encryption key provider; restart to apply
     kekTransitMount: "transit",        // Transit engine mount; restart to apply

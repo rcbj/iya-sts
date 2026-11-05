@@ -1527,6 +1527,14 @@
     "en": "d14784fabbda974e",
     "text": "此领域是否用 EdDSA（RFC 8037，Ed25519 和 Ed448）为客户端选择算法的 JOSE 对象签名，并发布其 kty OKP 签名密钥。**默认关闭**，因为 OpenID 一致性测试套件无法解析 JWKS 中的 OKP 密钥，而 OpenID Connect 认证运行的正是该套件。关闭时：`/oauth2/jwks` 中没有 OKP 签名密钥（包括备用、固定和签名者组密钥）；EdDSA 不在 `id_token_signing_alg_values_supported`、`userinfo_signing_alg_values_supported`、`introspection_signing_alg_values_supported` 或 `authorization_signing_alg_values_supported` 中；客户端不能为 ID 令牌、UserInfo、内省或 JARM 响应注册或被指定 EdDSA；仍被请求的此类签名——由在此设置开启时注册的客户端，或由设为 EdDSA 的 SSF、WS-Trust 或 Provider Commands 算法——会被拒绝，而不是用无人能获取的密钥生成。**不变：**客户端用来签名的 EdDSA（客户端断言、DPoP 证明、请求对象、钱包证明）仍被接受并被宣告为接受；运营者配置的访问令牌、联合或凭证算法（`oauth2.accessTokenSigningAlg`、`oidfed.signingAlg`、OpenID4VCI 的凭证算法）仍会签名，因此在此设置关闭时不要在那里配置 EdDSA；DID 文档、COSE、XML 签名、DKIM 和 TLS 不属于 JOSE JWKS 发布。开启时：按 `oauth2.eddsaCurve` 的设定签名并发布 EdDSA。"
   },
+  "keys.signingAlgorithms|label": {
+    "en": "23087da9ac3a37f0",
+    "text": "此领域使用的签名算法"
+  },
+  "keys.signingAlgorithms|description": {
+    "en": "6ca0d3f207d8dcd4",
+    "text": "此领域用于签名并为其发布密钥的 JWS 算法。**默认值为空，保留领域原有的所有算法。** 列表必须包含 RS256：OpenID Connect Discovery 要求它出现在 `id_token_signing_alg_values_supported` 中，它也是 ID 令牌和访问令牌的默认算法。设置列表后：`/oauth2/jwks` 中不含未列出算法的签名密钥（包括备用密钥、固定密钥和签名者组密钥；一个 RSA 密钥可用于所有 RS 和 PS 算法，因此会保留）；未列出的算法不会出现在发现文档的 ID 令牌、UserInfo、内省或 JARM 签名列表中；客户端不能为这些响应注册或被分配该算法；仍要求使用该算法的签名会被拒绝，而不是用无人能获取的密钥签名；未列出的 `oauth2.accessTokenSigningAlg` 改用 RS256 签名。使用 FAPI 1.0 Advanced 时还需列出 PS256。`keys.postQuantumSigning` 和 `keys.eddsaSigning` 仍然有效：列出某个算法不会开启其算法系列。**不变的内容：**此领域从客户端接受的内容（客户端断言、DPoP 证明、请求对象、钱包证明）；纯 JSON 的 UserInfo 响应；加密密钥；COSE、XML 签名、DKIM 和 TLS；以及 `oauth2.httpSignatureResponseAlg`、`oidfed.signingAlg` 和 OpenID4VCI 凭证算法所配置的算法，因此请在这些设置中指定已列出的算法。"
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "签名令牌的 kid 格式"
