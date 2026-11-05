@@ -167,6 +167,10 @@ import realms = require('../common/realms');
 // THE SIGN-IN SURFACE'S SHELL (#575): the document three of this door's
 // bodies are now, with the state its page is drawn from. A library.
 import ShellDocument = require('../common/shell_document');
+// THE ONE ERROR PAGE (#1327), for this door's refusals: a library requiring
+// `audit`, `realms` and the page's language, none of which requires this
+// module.
+import ErrorPage = require('../common/error_page');
 
 type Translator = InstanceType<typeof i18n.Translator>;
 
@@ -421,8 +425,9 @@ class SpnegoAuthn {
   fallbackHtml(record, translator?: Translator) {
     const { log, xmlEscape, authn } = this.deps;
     log.debug('Entering SpnegoAuthn.fallbackHtml().');
-    // A REFUSAL PAGE draws it in English (#539: refusals are not translated),
-    // from the English catalog, so its words are written once.
+    // A caller that names no translator gets English, from the English
+    // catalog, so its words are written once. Every page here passes one
+    // since #1327, the refusals included.
     const t = translator || this.english();
     if (!record) {
       log.debug('Leaving SpnegoAuthn.fallbackHtml(). Nothing was interrupted.');
@@ -442,9 +447,10 @@ class SpnegoAuthn {
   }
 
   // THE TWO TRANSLATORS (#539). English, from the English catalog, for a
-  // refusal page and a caller that names none; and the request's, with the
-  // `framing` `spnego.js`'s page() draws it in — `lang` and `dir`, the
-  // language chooser returning to this same GET, and the chooser's CSS.
+  // caller that names none (a refusal was one until #1327); and the
+  // request's, with the `framing` `spnego.js`'s page() draws it in — `lang`
+  // and `dir`, the language chooser returning to this same GET, and the
+  // chooser's CSS.
   /**
    * Returns a translator that always answers in English.
    *
@@ -571,6 +577,85 @@ class SpnegoAuthn {
   }
 
   // ---------------------------------------------------------------------------
+  // A TERMINAL REFUSAL, ON THE SHARED ERROR PAGE (#1327).
+  //
+  // The sentence is chosen by the negotiation's OUTCOME
+  // (`spnego.refusal.<outcome>`, `spnego_exchange.js`'s OUTCOMES), which is
+  // more precise than the error code several outcomes share, and falls back
+  // to a general one: a missing key never draws its name. The status and
+  // headers are `applyVerdict()`'s, so the page is sent with the status it
+  // set.
+  // ---------------------------------------------------------------------------
+  /**
+   * Sends a terminal SPNEGO refusal as the shared error page.
+   *
+   * @param req - the request
+   * @param res - the response, its status and headers set
+   * @param record - the pending sign-in, or null
+   * @param verdict - the negotiation's verdict
+   */
+  sendRefusal(req, res, record, verdict): void {
+    const { log, checksTable } = this.deps;
+    log.debug('Entering SpnegoAuthn.sendRefusal(). ' + verdict.code);
+    const t = this.framed(record).t;
+    const labels = {
+      check: t.html('spnego.checks.check'),
+      result: t.html('spnego.checks.result'),
+      detail: t.html('spnego.checks.detail'),
+      passed: t.html('spnego.checks.passed'),
+      failed: t.html('spnego.checks.failed')
+    };
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: res.statusCode || 401,
+      title: t.text('spnego.errorTitle.refused'),
+      message: ErrorPage.sentence(t, [
+        verdict.code ? 'spnego.refusal.' + String(verdict.code) : '',
+        'spnego.refusal.general'
+      ]),
+      after: (verdict.checks
+        ? '<h2>' + t.html('spnego.checked') + '</h2>' +
+          checksTable(verdict.checks, labels)
+        : '') + this.fallbackHtml(record, t),
+      background: t.html('spnego.background.refused'),
+      diagnostics: this.refusalDiagnostics(t, record, verdict.client || '',
+                                           String(verdict.code || ''),
+                                           String(verdict.reason || '')),
+      // The checks table's look, which the shared page does not carry.
+      extraHead: '<style>' + CHECKS_CSS + '</style>'
+    });
+    log.debug('Leaving SpnegoAuthn.sendRefusal().');
+  }
+
+  /**
+   * The diagnostics of a refusal (#1327): the application the interrupted
+   * sign-in was for, the principal the ticket named, the outcome and the
+   * English detail, as data.
+   *
+   * @param t - the page's translator
+   * @param record - the pending sign-in, or null
+   * @param principal - the ticket's client principal, or ''
+   * @param outcome - the negotiation's outcome, or ''
+   * @param detail - the English detail
+   * @returns the rows for `ErrorPage`
+   */
+  refusalDiagnostics(t: Translator, record, principal: string,
+                     outcome: string, detail: string) {
+    const { log } = this.deps;
+    log.debug('Entering SpnegoAuthn.refusalDiagnostics().');
+    const out = [
+      { label: t.text('errorPages.applicationName'),
+        value: record ? record.application : '' },
+      { label: t.text('errorPages.principal'), value: principal },
+      { label: t.text('errorPages.outcome'), value: outcome },
+      { label: t.text('errorPages.detail'), value: detail }
+    ];
+    log.debug('Leaving SpnegoAuthn.refusalDiagnostics().');
+    return out;
+  }
+
+  // ---------------------------------------------------------------------------
   // The endpoint.
   //
   // A GET, because that is what a redirect from a protocol endpoint produces
@@ -670,21 +755,27 @@ class SpnegoAuthn {
       // fix something that is working.
       const waiting = !exchange.OUTCOMES[verdict.code] ||
                       !exchange.OUTCOMES[verdict.code].terminal;
-      // A CONTINUATION IS TRANSLATED (#539); a terminal refusal is not —
-      // rcbj's decision on #539 — so it is drawn in English, as it was, with
-      // no chooser. The acceptor's own reason and the checks table are the
-      // negotiation's diagnostics, and stay as they are.
-      const framed = waiting ? this.framed(record)
-        : { t: this.english(), framing: undefined };
+      // A CONTINUATION IS DRAWN HERE, TRANSLATED (#539). A TERMINAL REFUSAL
+      // IS THE SHARED ERROR PAGE since #1327, translated too (reversing
+      // #539's "a refusal stays English" for pages): the sentence chosen by
+      // the outcome, the checks table below it — the one thing a person
+      // needs to see which check did not pass — the link back to the
+      // password screen, and the acceptor's English reason among the
+      // diagnostics. `applyVerdict()` set the status, the
+      // `WWW-Authenticate` and `no-store`; they are sent as set.
+      if (!waiting) {
+        this.sendRefusal(req, res, record, verdict);
+        log.debug('Leaving SpnegoAuthn.handleSignIn(). ' + verdict.code +
+                  ', refused.');
+        return;
+      }
+      const framed = this.framed(record);
       const t = framed.t;
       res.type('html').send(page(
-        waiting ? t.text('spnego.waiting.title') : 'Kerberos sign-in refused',
-        '<h1>' + (waiting
-          ? t.html('spnego.waiting.heading')
-          : '401 &mdash; that ticket did not sign you in') + '</h1>' +
-        '<div class="' + (waiting ? 'ok' : 'err') + '">' +
-          xmlEscape(verdict.reason) + '</div>' +
-        (waiting ? '<p>' + t.html('spnego.waiting.note') + '</p>' : '') +
+        t.text('spnego.waiting.title'),
+        '<h1>' + t.html('spnego.waiting.heading') + '</h1>' +
+        '<div class="ok">' + xmlEscape(verdict.reason) + '</div>' +
+        '<p>' + t.html('spnego.waiting.note') + '</p>' +
         (verdict.checks ? '<h2>' + t.html('spnego.checked') + '</h2>' +
           checksTable(verdict.checks) : '') +
         this.fallbackHtml(record, t),
@@ -757,16 +848,21 @@ class SpnegoAuthn {
       log.info('krb5-spnego-authn: the issuance policy refused a session for ' +
                username + ' after a valid ticket from ' + verdict.client + '.');
       errorCodes.mark(res, 'STS-KRB-0098');
-      res.status(403).type('html').set('Cache-Control', 'no-store').send(
-        page('Not permitted',
-          '<h1>403 &mdash; the issuance policy refused this sign-in</h1><div ' +
-          'class="err">Your Kerberos ticket verified. This service will not ' +
-          'start a session for this identity.</div><p>That is a POLICY ' +
-          'decision rather than anything wrong with the ticket, the KDC or ' +
-          'the service principal &mdash; presenting it again will not change ' +
-          'it. The role an application requires is on ' +
-          '<code>/admin/roles</code> and the document that decides is on ' +
-          '<code>/admin/xacml</code>.</p>'));
+      // The shared error page (#1327); the 403 and `no-store` as they were.
+      // The sentence says the ticket verified — the half of it that went
+      // right — and the background that the decision is policy.
+      const t = this.framed(record, username).t;
+      ErrorPage.send(res, {
+        t: t,
+        chooser: ErrorPage.chooser(t, req),
+        status: 403,
+        title: t.text('spnego.errorTitle.policy'),
+        message: t.html('spnego.refusal.policy'),
+        background: t.html('spnego.background.policy'),
+        diagnostics: this.refusalDiagnostics(t, record, verdict.client,
+          'policy', 'the issuance policy refused a session for ' + username +
+          ' after a valid ticket from ' + verdict.client)
+      });
       log.debug("Leaving SpnegoAuthn.handleSignIn().");
       return undefined;
     }
@@ -824,7 +920,7 @@ class SpnegoAuthn {
    * @param app - the express app
    */
   registerRoutes(app: RouteApp): void {
-    const { log, SPNEGO_PATH, errorCodes, page, xmlEscape } = this.deps;
+    const { log, SPNEGO_PATH, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering SpnegoAuthn.registerRoutes().");
     app.get(SPNEGO_PATH, function (req, res) {
@@ -838,8 +934,19 @@ class SpnegoAuthn {
                   (e.stack || e.message));
         if (!res.headersSent) {
           errorCodes.mark(res, 'STS-KRB-0099');
-          res.status(500).type('html').send(page('Failed',
-            '<h1>500</h1><div class="err">' + xmlEscape(e.message) + '</div>'));
+          // The shared error page (#1327), the 500 as it was; the exception's
+          // message is the English detail, shown as data.
+          const t = self.framed(null).t;
+          ErrorPage.send(res, {
+            t: t,
+            chooser: ErrorPage.chooser(t, req),
+            status: 500,
+            title: t.text('spnego.errorTitle.failed'),
+            message: t.html('spnego.refusal.failed'),
+            background: t.html('spnego.background.failed'),
+            diagnostics: self.refusalDiagnostics(t, null, '', '',
+                                                 String(e.message || e))
+          });
         }
       });
       log.debug('Leaving GET ' + SPNEGO_PATH + '.');
@@ -871,6 +978,15 @@ const slot = new InstanceSlot<SpnegoAuthn>(
 
 // The language chooser's look on this page (#539): the shell's own CSS knows
 // nothing of it, and its `button` and `select` would otherwise be unstyled.
+// The checks table's look on the shared error page (#1327): `spnego.js`'s
+// page() carries it, and `common/error_page.ts`'s does not.
+const CHECKS_CSS = 'table{border-collapse:collapse;width:100%;' +
+  'margin:.5rem 0 1rem;font-size:.85em}th,td{border:1px solid #ddd;' +
+  'padding:.35rem .55rem;text-align:left;vertical-align:top}' +
+  'th{background:#f0f0f5}.pass{color:#0b6b4f;font-weight:600;' +
+  'white-space:nowrap}.fail{color:#b00020;font-weight:600;' +
+  'white-space:nowrap}h2{font-size:1em;margin:1.4em 0 .4em}';
+
 const CHOOSER_CSS = 'details.language-row{float:right;font-size:.8em;' +
   'margin:0 0 6px 8px}form.language-chooser select,form.language-chooser ' +
   'button{font-size:1em;padding:2px 6px}form.language-chooser label{margin:' +

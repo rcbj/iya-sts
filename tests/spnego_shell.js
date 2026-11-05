@@ -183,11 +183,31 @@ function childMain() {
     snaps.refused = snapshot(r);
     note(r.status === 401 &&
          /^Negotiate\b/.test(String(r.headers['www-authenticate'])) &&
-         !isShell(r) && /<table|<div class="err">/.test(r.text) &&
+         !isShell(r) && /<div class="warn" role="alert">/.test(r.text) &&
          /script-src 'none'/.test(String(
            r.headers['content-security-policy'])),
          '2. a token that is not SPNEGO is the negotiation\'s own 401, drawn ' +
-         'by the server as it was', JSON.stringify(snaps.refused));
+         'by the server — since #1327 as the shared error page',
+         JSON.stringify(snaps.refused));
+    // THE SHARED ERROR PAGE'S SHAPE (#1327): the outcome's sentence, the
+    // portal, the diagnostics with an incident ID and the outcome and the
+    // acceptor's English reason as data; in French when French is asked.
+    note(/neither a SPNEGO token nor a Kerberos one/.test(r.text) &&
+         /href="[^"]*\/portal"/.test(r.text) &&
+         /<dt>Incident ID<\/dt><dd><code>\d+<\/code>/.test(r.text) &&
+         /<dt>Outcome<\/dt><dd><code>undecodable<\/code>/.test(r.text) &&
+         r.text.indexOf('spnego.refusal') < 0,
+         '2a. the refusal carries the outcome\'s sentence and the ' +
+         'diagnostics', r.text.slice(0, 600));
+    r = await get('/authn/spnego?authn=' + encodeURIComponent(idOf(at)),
+      { authorization: 'Negotiate ' +
+          Buffer.from('this is not a SPNEGO token').toString('base64'),
+        'accept-language': 'fr' });
+    note(r.status === 401 && /<html lang="fr"/.test(r.text) &&
+         /Connexion Kerberos refusée/.test(r.text) &&
+         /ni un jeton SPNEGO ni un jeton Kerberos/.test(r.text),
+         '2b. and in French when the browser asks for French',
+         r.text.slice(0, 600));
 
     // --- 3. off --------------------------------------------------------------
     config.setOverride('krb5.spnegoAuthentication', 'false');

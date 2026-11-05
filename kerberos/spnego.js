@@ -150,16 +150,23 @@ function page(title, inner, framing) {
     'class="card">' + (frame.top || '') + inner + '</div></body></html>\n';
 }
 
-function checksTable(checks) {
+// `labels` (#1327): the table's own words in the page's language — `check`,
+// `result`, `detail`, `passed`, `failed`, already escaped HTML — for the
+// refusal drawn on the shared error page. Absent, the words are the English
+// ones, as they always were. The checks' names and details are the
+// acceptor's, shown as data in every language.
+function checksTable(checks, labels) {
   log.debug('Entering checksTable().');
+  const l = labels || { check: 'Check', result: 'Result', detail: 'Detail',
+                        passed: 'passed', failed: 'FAILED' };
   const rows = (checks || []).map(function (c) {
     return '<tr><td>' + xmlEscape(c.name) + '</td><td class="' +
-      (c.ok ? 'pass">passed' : 'fail">FAILED') + '</td><td>' +
+      (c.ok ? 'pass">' + l.passed : 'fail">' + l.failed) + '</td><td>' +
       xmlEscape(c.detail == null ? '' : String(c.detail)) + '</td></tr>';
   }).join('');
   log.debug('Leaving checksTable().');
-  return '<table><tr><th>Check</th><th>Result</th><th>Detail</th></tr>' +
-    rows + '</table>';
+  return '<table><tr><th>' + l.check + '</th><th>' + l.result + '</th><th>' +
+    l.detail + '</th></tr>' + rows + '</table>';
 }
 
 module.exports = {

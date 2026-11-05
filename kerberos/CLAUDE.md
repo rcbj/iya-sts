@@ -276,7 +276,15 @@ snapshot was compared against the tree before #575.
 
 **What stays server-drawn**: a continuation 401 and a terminal refusal of a
 token (the negotiation's own diagnostics, `spnego.js`'s `page()` and
-`checksTable()`), the issuance policy's 403 and the 500. A client that runs
+`checksTable()`), the issuance policy's 403 and the 500. **Since #1327 the
+last three are `common/error_page.ts`'s page**, translated: a terminal
+refusal's sentence is chosen by the negotiation's OUTCOME
+(`spnego.refusal.<outcome>`, then `spnego.refusal.general`), the checks
+table (its headings translated through `checksTable()`'s `labels`) and the
+link back to the password screen below the box, and the application, the
+principal, the outcome and the acceptor's English reason among the
+diagnostics. Status, `WWW-Authenticate` and `no-store` are `applyVerdict()`'s
+as before; only the continuation is still `page()`'s. A client that runs
 no script and wants what a body says reads `data-sts-state`: the protocol
 jobs (`sts_kerberos_spnego.js`, `sts_kerberos_heimdal.js`,
 `sts_kerberos_fast_otp.js`) do.
