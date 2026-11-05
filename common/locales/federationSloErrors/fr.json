@@ -28,5 +28,14 @@
   "refusal.STS-FED-0137": "Une partie du message de déconnexion est chiffrée, et cette relation ne détient aucune clé capable de la déchiffrer.",
   "refusal.STS-FED-0138": "Une partie chiffrée du message de déconnexion (son EncryptedID) n’a pas pu être déchiffrée, ou ne contenait pas de NameID.",
   "refusal.STS-FED-0139": "Une partie du message de déconnexion est chiffrée avec un algorithme que cette relation n’accepte pas.",
-  "refusal.STS-AUTHN-0338": "Ce service n’a pas pu lire les sessions de connexion pour le moment : il n’a donc pas pu déterminer quoi déconnecter. Réessayez dans un instant."
+  "refusal.STS-AUTHN-0338": "Ce service n’a pas pu lire les sessions de connexion pour le moment : il n’a donc pas pu déterminer quoi déconnecter. Réessayez dans un instant.",
+  "outcome.partnerRefused.title": "Déconnecté ici",
+  "outcome.partnerRefused.heading": "Déconnecté ici, mais pas chez le partenaire",
+  "outcome.partnerRefused.lead": "La session ici était déjà terminée. {partner} a répondu <code>{status}</code> : vous êtes peut-être encore connecté chez lui.",
+  "outcome.partnerRefused.leadMessage": "La session ici était déjà terminée. {partner} a répondu <code>{status}</code> : {message}. Vous êtes peut-être encore connecté chez lui.",
+  "outcome.partnerRefused.noStatus": "(aucun statut)",
+  "outcome.nothing.title": "Rien à déconnecter",
+  "outcome.nothing.lead": "Ce navigateur ne détient aucune session ouverte ici par {partner}.",
+  "outcome.nothing.frameLead": "Aucune session ici n’a été ouverte par cette session du partenaire.",
+  "outcome.nothing.frameLeadUnreachable": "Aucune session ici que ce service a pu joindre n’a été ouverte par cette session du partenaire."
 }

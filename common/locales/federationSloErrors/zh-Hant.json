@@ -28,5 +28,14 @@
   "refusal.STS-FED-0137": "登出訊息的一部分已加密，而此關係沒有可以解密它的金鑰。",
   "refusal.STS-FED-0138": "登出訊息中加密的部分（其 EncryptedID）無法解密，或者其中沒有 NameID。",
   "refusal.STS-FED-0139": "登出訊息的一部分使用了此關係不接受的演算法加密。",
-  "refusal.STS-AUTHN-0338": "此服務暫時無法讀取登入工作階段，因此無法判斷要登出什麼。請稍後再試。"
+  "refusal.STS-AUTHN-0338": "此服務暫時無法讀取登入工作階段，因此無法判斷要登出什麼。請稍後再試。",
+  "outcome.partnerRefused.title": "已在此處登出",
+  "outcome.partnerRefused.heading": "已在此處登出，但未在合作夥伴處登出",
+  "outcome.partnerRefused.lead": "此處的工作階段已經結束。{partner} 的回覆是 <code>{status}</code>，因此您可能仍在那裡處於登入狀態。",
+  "outcome.partnerRefused.leadMessage": "此處的工作階段已經結束。{partner} 的回覆是 <code>{status}</code>：{message}。您可能仍在那裡處於登入狀態。",
+  "outcome.partnerRefused.noStatus": "（無狀態）",
+  "outcome.nothing.title": "沒有可登出的工作階段",
+  "outcome.nothing.lead": "此瀏覽器中沒有由 {partner} 在此處登入的工作階段。",
+  "outcome.nothing.frameLead": "此處沒有由該合作夥伴工作階段啟動的工作階段。",
+  "outcome.nothing.frameLeadUnreachable": "在本服務能存取的範圍內，此處沒有由該合作夥伴工作階段啟動的工作階段。"
 }

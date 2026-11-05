@@ -28,5 +28,14 @@
   "refusal.STS-FED-0137": "注销消息的一部分已加密，而此关系没有可以解密它的密钥。",
   "refusal.STS-FED-0138": "注销消息中加密的部分（其 EncryptedID）无法解密，或者其中没有 NameID。",
   "refusal.STS-FED-0139": "注销消息的一部分使用了此关系不接受的算法加密。",
-  "refusal.STS-AUTHN-0338": "此服务暂时无法读取登录会话，因此无法判断要注销什么。请稍后重试。"
+  "refusal.STS-AUTHN-0338": "此服务暂时无法读取登录会话，因此无法判断要注销什么。请稍后重试。",
+  "outcome.partnerRefused.title": "已在此处退出",
+  "outcome.partnerRefused.heading": "已在此处退出，但未在合作方处退出",
+  "outcome.partnerRefused.lead": "此处的会话已经结束。{partner} 的答复是 <code>{status}</code>，因此您可能仍在那里处于登录状态。",
+  "outcome.partnerRefused.leadMessage": "此处的会话已经结束。{partner} 的答复是 <code>{status}</code>：{message}。您可能仍在那里处于登录状态。",
+  "outcome.partnerRefused.noStatus": "（无状态）",
+  "outcome.nothing.title": "没有可退出的会话",
+  "outcome.nothing.lead": "此浏览器中没有由 {partner} 在此处登录的会话。",
+  "outcome.nothing.frameLead": "此处没有由该合作方会话启动的会话。",
+  "outcome.nothing.frameLeadUnreachable": "在本服务能访问到的范围内，此处没有由该合作方会话启动的会话。"
 }
