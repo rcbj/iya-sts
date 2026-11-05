@@ -1370,6 +1370,21 @@ data "aws_iam_policy_document" "deploy_cloudfront" {
     resources = ["*"]
   }
 
+  # CLOUDFRONT LOOKS THE CERTIFICATE UP WITH THE CALLER'S OWN PERMISSIONS, AND A
+  # DENIAL THERE COMES BACK AS InvalidViewerCertificate, "doesn't exist, isn't
+  # in us-east-1, isn't valid". The same certificate and the same request
+  # succeeded with an administrator's credentials (#1336, 2026-11-05), so the
+  # deployer's tag-conditioned ACM statements were not enough on that path. So
+  # these reads carry no tag condition: all of them return only public material.
+  statement {
+    sid = "CloudFrontReadsTheCertificate"
+    actions = [
+      "acm:DescribeCertificate", "acm:GetCertificate", "acm:ListCertificates",
+      "iam:GetServerCertificate", "iam:ListServerCertificates",
+    ]
+    resources = ["*"]
+  }
+
   statement {
     sid = "CloudFrontCachePolicies"
     actions = [
