@@ -2086,15 +2086,19 @@ async function getFormInANewTab(driver, path, index, form, values) {
     }, 15000, "the tab the GET form " + index + " on " + path +
        " opened never finished loading");
     url = await driver.getCurrentUrl();
-    status = await driver.executeAsyncScript(
-      "const done = arguments[arguments.length - 1];" +
-      "fetch(location.href, { credentials: 'same-origin' })" +
-      "  .then(function (r) { done(r.status); }," +
-      "        function () { done(0); });");
   } finally {
     await driver.close();
     await driver.switchTo().window(home);
   }
+  // THE STATUS IS ASKED FROM THE CONSOLE'S TAB, NOT THE NEW ONE: the page a
+  // GET form opens may forbid every fetch (the branding preview answers
+  // `default-src 'none'`), and a fetch its policy refuses reads as 0. The
+  // console's own policy allows `connect-src 'self'`.
+  status = await driver.executeAsyncScript(
+    "const done = arguments[arguments.length - 1];" +
+    "fetch(arguments[0], { credentials: 'same-origin' })" +
+    "  .then(function (r) { done(r.status); }," +
+    "        function () { done(0); });", url);
   const expected = new URL(form.resolvedAction).pathname;
   const landed = new URL(url);
   check(path + " GET form " + index + " opens its tab", function () {
