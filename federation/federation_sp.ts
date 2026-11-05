@@ -196,8 +196,14 @@ import helpers = require('./../common/helpers');
 import InstanceSlot = require('./../common/instance_slot');
 // THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
 // no route and closes no cycle. Only the pages a PERSON passes through use it
-// — the outbound hand-off and the signed-in page; refusals stay English.
+// — the outbound hand-off and the signed-in page — and, since #1327, the
+// refusals drawn here.
 import PageLocale = require('./../common/page_locale');
+// THE ONE ERROR PAGE (#1327): a refusal drawn here — the assertion consumer
+// service's, and any other not on the federation surface — is
+// `common/error_page.ts`'s. A library: it requires `audit`, `realms`,
+// `helpers` and the page's language, none of which requires this module.
+import ErrorPage = require('./../common/error_page');
 // THE FEDERATION PAGES' SHELL (#580): the landing page, and what the login
 // and linking endpoints say, drawn in the browser.
 import FederationPages = require('./federation_pages');
@@ -865,10 +871,15 @@ class FederationSp {
   // browser: the shell, with `what`, `why` and the relationship in
   // `data-sts-state` (`federation_pages.ts`), the status unchanged. On the
   // assertion consumer service — a specification's endpoint — it is drawn
-  // here, as it always was. `what` and `why` are TEXT either way.
+  // here, since #1327 as `common/error_page.ts`'s page (`refusalPage()`).
+  // `what` and `why` are TEXT either way.
+  //
+  // `extra` (#1327) is DATA for the page's diagnostics, never markup:
+  // `{ error, rows }`, `error` a value the PARTNER sent (a SAML StatusCode,
+  // an OAuth `error`) shown in the box, and `rows` `{ key | label, value }`.
   // error-code: none — the definition of the helper, not a call to it
   private refuse(res, record, status, what, why, extra?) {
-    const { federation, log, xmlEscape } = this.deps;
+    const { federation, log } = this.deps;
     log.debug("Entering FederationSp.refuse(). what=" + what);
     const id = (record && record.fedId) || '';
     if (id) federation.recordFailure(id, what + ': ' + why);
@@ -881,28 +892,93 @@ class FederationSp {
       log.debug("Leaving FederationSp.refuse(). " + status + ', the shell.');
       return;
     }
-    const body = '<h1>The federated sign-in was refused</h1>' +
-      '<p class="bad">' + xmlEscape(what) + '</p>' +
-      '<p>' + xmlEscape(why) + '</p>' +
-      (extra || '') +
-      (id ? '<p class="note">This is recorded on the relationship as ' +
-            '<code>fedLastError</code>. The whole record is at <a ' +
-            'href="/admin/federation?relationship=' + encodeURIComponent(id) +
-            '">/admin/federation</a>, ' +
-            'and every refusal is also a row in the audit log.</p>'
-          : '') +
-      '<p class="note"><strong>This service refuses rather than accepting ' +
-      'here, which is the opposite of what it does everywhere else.</strong> ' +
-      'What arrives at this endpoint is an unauthenticated request claiming ' +
-      'to be a person, and the session it would produce is the one every ' +
-      'other protocol in this process reads. See ' +
-      'federation/CLAUDE.md.</p><p><a ' +
-      'href="' + BASE_PATH + '">Back to the federation index</a></p>';
-    res.status(status)
-       .type('html')
-       .set('Cache-Control', 'no-store')
-       .send(this.page('Refused', body));
+    this.refusalPage(res, record, status, what, why, extra);
     log.debug("Leaving FederationSp.refuse(). " + status + '.');
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE REFUSAL A PERSON READS HERE IS THE SHARED ERROR PAGE (#1327, rcbj's
+  // design on #1326): a sentence in the page's language, chosen by the code
+  // the caller marked (`federationErrors.refusal.<code>`, then a general
+  // one, so a missing key never draws its name); why this endpoint refuses
+  // where the rest of the service accepts, collapsed; the start-over note and
+  // the portal; and the diagnostics — the relationship, the partner, the
+  // RelayState / state / wctx the response carried, who is signed in, and
+  // the English `what` and `why` this service has always written, as data.
+  // Until #1327 the page was English, ended with the federation index, and
+  // pointed a person at the console and at a file in this repository.
+  //
+  // It only DRAWS: the status is the caller's, and the bookkeeping (the
+  // relationship's `fedLastError`, the step-up session) is `refuse()`'s, so
+  // the assertion consumer service's two 404s, which record nothing, draw
+  // through here too.
+  // ---------------------------------------------------------------------------
+  // error-code: none — the definition of the helper; every caller marks its
+  // code before
+  private refusalPage(res, record, status, what, why, extra?) {
+    const { errorCodes, log, parseBody } = this.deps;
+    log.debug("Entering FederationSp.refusalPage(). " + status);
+    const req: any = res.req || { headers: {}, query: {} };
+    const more: any = extra && typeof extra === 'object' ? extra : {};
+    let asked: any = Object.assign({}, req.query || {});
+    if (String(req.method || '').toUpperCase() === 'POST') {
+      try {
+        asked = Object.assign(asked, parseBody(req) || {});
+      } catch (e) {
+        // A body that cannot be read again leaves its values out of the
+        // diagnostics; the refusal itself is already decided.
+        log.debug("Caught in FederationSp.refusalPage(): " +
+                  ((e && e.message) || e));
+      }
+    }
+    let username = '';
+    try {
+      const session = authn.sessionOf(req);
+      username = String((session && session.user &&
+                         session.user.username) || '');
+    } catch (e) {
+      // No session to name is the common case at this endpoint.
+      log.debug("Caught in FederationSp.refusalPage(): " +
+                ((e && e.message) || e));
+    }
+    const id = String((record && record.fedId) || '');
+    const partner = String((record && (record.fedName || record.fedId)) ||
+                           '');
+    const t = PageLocale.translatorFor(req, { application: id,
+                                              username: username });
+    const code = String(errorCodes.codeOf(res) || '');
+    const rows = [
+      { label: t.text('errorPages.relationship'), value: id },
+      { label: t.text('errorPages.partner'),
+        value: record && record.fedName ? String(record.fedName) : '' },
+      { label: t.text('errorPages.relayState'), value: asked.RelayState },
+      { label: t.text('errorPages.state'), value: asked.state },
+      { label: t.text('errorPages.wctx'), value: asked.wctx },
+      { label: t.text('errorPages.signedInAs'), value: username }
+    ].concat((more.rows || []).map(function (row: any) {
+      // A row names a catalog key, or carries its label as data (an
+      // attribute name the partner sent).
+      return { label: row.key ? t.text(row.key) : String(row.label || ''),
+               value: row.value };
+    })).concat([
+      { label: t.text('errorPages.summary'), value: what },
+      { label: t.text('errorPages.detail'), value: why }
+    ]);
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: status,
+      title: t.text('federationErrors.title'),
+      error: more.error ? String(more.error) : '',
+      message: ErrorPage.sentence(t, [
+        code ? 'federationErrors.refusal.' + code : '',
+        'federationErrors.refusal.general'
+      ], { partner: partner || id }),
+      background: t.html('federationErrors.background') +
+        (id ? ' ' + t.html('federationErrors.recorded') : ''),
+      diagnostics: rows
+    });
+    log.debug("Leaving FederationSp.refusalPage().");
   }
 
   // ---------------------------------------------------------------------------
@@ -1599,7 +1675,7 @@ class FederationSp {
                         '", which was not sent, and there was no subject either'
                       : 'it carried no subject, and no fedUsernameSource is ' +
                         'configured to take one from an attribute instead'),
-                    this.bagTable(result.bag));
+                    { rows: this.bagRows(result.bag) });
     }
     // A PERSON HOMED IN ANOTHER CELL (#98 D9), before the subject is decided
     // against a directory that does not hold them — and so before anything
@@ -4256,23 +4332,21 @@ class FederationSp {
     return fields;
   }
 
-  private bagTable(bag) {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering FederationSp.bagTable().");
+  // WHAT THE PARTNER SENT, as diagnostics rows (#1327; a table until then):
+  // the number of attributes, then each one's name — the partner's, so data
+  // and not a label to translate — and its values.
+  private bagRows(bag) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.bagRows().");
     const names = Object.keys(bag || {});
-    if (!names.length) {
-      log.debug("Leaving FederationSp.bagTable().");
-      return '<p class="note">The assertion carried no attributes at all.</p>';
-    }
-    log.debug("Leaving FederationSp.bagTable().");
-    return '<h2>What the partner ' +
-           'sent</h2><table><tr><th>Name</th><th>Value(s)</th></tr>' +
-      names.map((name) => {
-        const values = Array.isArray(bag[name]) ? bag[name] : [bag[name]];
-        return '<tr><td><code>' + xmlEscape(name) + '</code></td><td>' +
-          values.map((v) => { return xmlEscape(String(v)); }).join('<br>') +
-          '</td></tr>';
-      }).join('') + '</table>';
+    const out: any[] = [{ key: 'federationErrors.diag.attributeCount',
+                          value: String(names.length) }];
+    names.forEach(function (name: string) {
+      const values = Array.isArray(bag[name]) ? bag[name] : [bag[name]];
+      out.push({ label: name, value: values.map(String).join(', ') });
+    });
+    log.debug("Leaving FederationSp.bagRows().");
+    return out;
   }
 
   // THE SAME PAGE'S FACTS, for the federation surface (#580): what
@@ -6364,7 +6438,12 @@ class FederationSp {
         'It answered ' + (status || '(no StatusCode)') +
         (statusMessage ? ' — "' + statusMessage + '"' : '') +
         '. That is the partner\'s answer, not this service\'s: nothing here ' +
-        'was asked to accept or refuse anything.');
+        'was asked to accept or refuse anything.',
+        // The partner's StatusCode, shown in the box as the value it sent
+        // (#1327).
+        { error: status,
+          rows: [{ key: 'federationErrors.diag.statusMessage',
+                   value: statusMessage }] });
     }
 
     // THE ASSERTION, decrypted where the partner encrypted it (#168) — and
@@ -6405,14 +6484,17 @@ class FederationSp {
             '. Both are checked against fedSigningCertificate on this ' +
             'relationship, and against nothing else — a certificate carried ' +
             'inside the document\'s own ds:KeyInfo is deliberately ignored.',
-        '<p class="note">The certificate configured here is ' +
-        (record.fedSigningCertificate
-          ? '<code>' +
-              xmlEscape(String(record.fedSigningCertificate).slice(0, 60)) +
-              '…</code> ' +
-              '(' +
-            String(record.fedSigningCertificate).length + ' base64 characters)'
-          : '<strong>empty</strong>') + '.</p>');
+        // The certificate configured, as data for the diagnostics (#1327):
+        // its first characters and its length, or nothing where it is empty.
+        { rows: [
+          { key: 'federationErrors.diag.signingCertificate',
+            value: record.fedSigningCertificate
+              ? String(record.fedSigningCertificate).slice(0, 60) + '…'
+              : '' },
+          { key: 'federationErrors.diag.certificateLength',
+            value: record.fedSigningCertificate
+              ? String(record.fedSigningCertificate).length : '' }
+        ] });
     }
 
     // THE ISSUER. It has to be the partner this relationship names — otherwise
@@ -7017,7 +7099,13 @@ class FederationSp {
         '(this one is ' +
         '<code>' + xmlEscape(this.acsUrl(baseUrlOf(req), record)) +
         '</code>) or a ' +
-        'client_id it does not know.');
+        'client_id it does not know.',
+        // The partner's own error, shown in the box as the value it sent
+        // (#1327), and its description among the diagnostics.
+        { error: String(params.error),
+          rows: [{ key: 'errorPages.errorDescription',
+                   value: params.error_description
+                     ? String(params.error_description) : '' }] });
     }
     const context = this.takeContext(String(params.state || ''));
     if (!context) {
@@ -7217,10 +7305,12 @@ class FederationSp {
               'means a proxy in front of the partner rather than the partner ' +
               'itself.'
             : ''),
-          answer.json && answer.json.error_description
-            ? '<p class="note">The partner said: <code>' +
-              xmlEscape(String(answer.json.error_description)) + '</code></p>'
-            : '');
+          // What the partner said, as data (#1327).
+          { error: answer.json && answer.json.error
+              ? String(answer.json.error) : '',
+            rows: [{ key: 'errorPages.errorDescription',
+                     value: answer.json && answer.json.error_description
+                       ? String(answer.json.error_description) : '' }] });
       }
       const tokens = answer.json;
       if (record.fedProtocol === 'oidc') {
@@ -7904,7 +7994,7 @@ class FederationSp {
                      : 'none of sub, id and user_id') +
             ' found a value in it. A sign-in with no stable subject could ' +
             'not be linked to anybody.',
-            this.bagTable(bag));
+            { rows: this.bagRows(bag) });
         }
         log.debug("Leaving the profile answer's continuation.");
         return this.completeSignIn(req, res, record, {
@@ -8020,9 +8110,11 @@ class FederationSp {
               req.params.id);
     if (!this.enabled()) {
       errorCodes.mark(res, 'STS-FED-0001');
-      res.status(404).type('html').send(this.page('Not here',
-        '<h1>Federation is off</h1><p><code>federation.enabled</code> is ' +
-        'off.</p>'));
+      // The shared error page since #1327, with the 404 it always had; it
+      // records nothing, as before.
+      // error-code: none — marked on the line above
+      this.refusalPage(res, null, 404, 'Federation is off',
+                       'federation.enabled is off.');
       log.debug("Leaving the assertion consumer service. Federation is off.");
       return;
     }
@@ -8032,10 +8124,13 @@ class FederationSp {
     if (!record || record.fedRole !== 'service-provider' ||
         !federation.signsIn(record)) {
       errorCodes.mark(res, 'STS-FED-0002');
-      res.status(404).type('html').send(this.page('No such relationship',
-        '<h1>No such assertion consumer service</h1><p>There is no ' +
-        'service-provider-side relationship called ' +
-        '<code>' + xmlEscape(id) + '</code>.</p>'));
+      // The relationship the address named is shown as data, though there
+      // is none of that name to record the refusal on (#1327).
+      // error-code: none — marked on the line above
+      this.refusalPage(res, { fedId: id }, 404,
+                       'No such assertion consumer service',
+                       'There is no service-provider-side relationship ' +
+                       'called "' + id + '".');
       log.debug("Leaving the assertion consumer service. No such " +
                 'relationship.');
       return;
