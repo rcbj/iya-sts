@@ -1338,7 +1338,7 @@ const JOBS = [
   // the `fuzz` mode of run-tests.sh stands up its own network-isolated
   // product stack. schemathesis_kit.js holds the PLAN and the run.
   { file: 'sts_schemathesis.js',         browser: false, local: true,
-    timeoutMs: 3600000, exclusive: true },
+    timeoutMs: 7200000, exclusive: true },
   // THE W3C VERIFIABLE CREDENTIALS AND DID TEST SUITES (#194-#199,
   // 2026-09-26): each Working Group suite, pinned and installed in the tests
   // image by tests/vc-suites/fetch-suites.sh, run against the W3C VC API

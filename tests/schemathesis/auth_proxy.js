@@ -203,24 +203,59 @@ function nonceCarrier(answer) {
   } } };
 }
 
-// Forwards a request, retrying once on a DPoP nonce challenge and once on an
-// expired token (a refresh). The proxy signs a new proof for each try.
+// A gated surface's token can genuinely expire or be disowned over a long
+// run. When that happens the proxy RE-SIGNS IN (a fresh token family) rather
+// than refreshing: replaying a one-time refresh token trips the server's
+// refresh-token reuse-revocation and spins -- on 2026-11-05 that turned every
+// fuzz-induced 401 into a refresh, 56,750 oauth2/token calls, and a run that
+// timed out before it left the first realm. A re-sign-in is bounded by a
+// cooldown so a token that cannot be recovered cannot storm either.
+const RESIGN_COOLDOWN_MS = parseInt(
+  process.env.STS_SCHEMA_RESIGN_COOLDOWN_MS || "20000", 10);
+let lastResignAt = 0;
+
+// Re-signs the surface's credential in, at most once per cooldown. Returns
+// whether it did, so the caller retries only after a fresh sign-in.
+async function resignInIfDue(reason) {
+  log.debug("Entering resignInIfDue().");
+  const now = Date.now();
+  if (now - lastResignAt < RESIGN_COOLDOWN_MS) {
+    log.debug("Leaving resignInIfDue(). within cooldown");
+    return false;
+  }
+  lastResignAt = now;
+  log.info("[schemathesis] re-signing in: " + reason);
+  await signIn();
+  log.debug("Leaving resignInIfDue(). re-signed in");
+  return true;
+}
+
+// Forwards a request, correcting at most a few times for a DPoP nonce
+// challenge (apply the nonce and retry) or the proxy's own token having
+// expired or been disowned (re-sign-in, bounded, and retry). Any other 401 --
+// insufficient_scope, or a fuzz case the turnstile correctly refuses -- is
+// returned unchanged. The proxy signs a fresh proof on every try.
 async function forward(req, url, body) {
   log.debug("Entering forward().");
   let answer = await forwardOnce(req.method, url,
     outboundHeaders(req, url), body);
   const dpop = AUTH === "dpop-portal" || AUTH === "dpop-console" ||
     AUTH === "dpop-report";
-  if (dpop && answer.status === 401 &&
-      /use_dpop_nonce/.test(answer.challenge)) {
-    session.key.keepNonce(nonceCarrier(answer));
-    answer = await forwardOnce(req.method, url,
-      outboundHeaders(req, url), body);
-  } else if (dpop && answer.status === 401 &&
-             /invalid_token/.test(answer.challenge) && session.refresh) {
-    // refresh() returns the token RESPONSE object its own retry consumes; the
-    // new access token is read from the wrapper's live getter, never from here.
-    await session.refresh();
+  if (!dpop) {
+    log.debug("Leaving forward(). " + answer.status);
+    return answer;
+  }
+  for (let attempt = 0; attempt < 3 && answer.status === 401; attempt++) {
+    if (/use_dpop_nonce/.test(answer.challenge)) {
+      session.key.keepNonce(nonceCarrier(answer));
+    } else if (/invalid_token/.test(answer.challenge)) {
+      const resigned = await resignInIfDue("invalid_token on " + SURFACE);
+      if (!resigned) {
+        break;
+      }
+    } else {
+      break;
+    }
     answer = await forwardOnce(req.method, url,
       outboundHeaders(req, url), body);
   }

@@ -37,14 +37,19 @@ import schemathesis
 # log form; it must never appear in a response body.
 _ERROR_CODE = re.compile(rb"STS-[A-Z]+-[0-9]{4}")
 
-# The invariant is "no UNCAUGHT 5xx (the fault boundary holds)". A deliberate
-# 501 Not Implemented is a handled refusal, not a fault: this service answers
-# 501 for a feature it does not implement or a realm has turned off (the VC
-# API, UMA, EST /fullcmc), each with a marked operator error code, and the
-# fault boundary never fires. So 501 is allowed and every other 5xx fails --
-# including a 502, which in this harness can only be the auth proxy failing to
-# forward (the service gateways nothing), so leaving it failing keeps a future
-# proxy regression visible.
+# The invariant is "no UNCAUGHT 5xx (the fault boundary holds)". Two 5xx are
+# handled refusals rather than faults and are allowed:
+#   501 Not Implemented -- a feature this service does not implement or a realm
+#     has turned off (the VC API, UMA, EST /fullcmc), each with a marked
+#     operator error code; the fault boundary never fires.
+#   503 Service Unavailable -- ONLY when it is a documented, handled
+#     degradation: it carries a Retry-After header and leaks no operator error
+#     code (iya-sts-60's 2026-11-05 rule; e.g. STS-LDAP-0131, a windowed
+#     worker's store question failing under load). A 503 WITHOUT Retry-After,
+#     or one that leaks an STS code, is still a finding.
+# Every other 5xx fails -- a 502 included, which in this harness can only be the
+# auth proxy failing to forward (the service gateways nothing), so leaving it
+# failing keeps a future proxy regression visible.
 _ALLOWED_SERVER_STATUS = frozenset((501,))
 
 # Markers of an attempted outbound DNS lookup that the no-egress network blocks.
@@ -85,18 +90,32 @@ def _body_bytes(response):
 
 @schemathesis.check
 def no_uncaught_server_error(ctx, response, case):
-    """No uncaught 5xx: the fault boundary holds. A deliberate 501 is allowed."""
+    """No uncaught 5xx: the fault boundary holds. A deliberate 501 is allowed,
+    and a 503 only when it is a handled degradation -- Retry-After present and
+    no leaked error code."""
     status = getattr(response, "status_code", None)
     try:
         status = int(status)
     except (TypeError, ValueError):
         return
-    if status >= 500 and status not in _ALLOWED_SERVER_STATUS:
+    if status < 500 or status in _ALLOWED_SERVER_STATUS:
+        return
+    if status == 503:
+        retry_after = _header(response, "retry-after")
+        leaks_code = _ERROR_CODE.search(_body_bytes(response)) is not None
+        if retry_after and not leaks_code:
+            return
         raise AssertionError(
-            "server error " + str(status)
-            + " (the fault boundary should hold; only a deliberate 501 "
-            "Not Implemented is allowed)"
+            "service unavailable 503 is a finding here: a handled 503 must "
+            "carry Retry-After and leak no operator error code"
+            + ("" if retry_after else " (no Retry-After)")
+            + (" (leaks an STS code)" if leaks_code else "")
         )
+    raise AssertionError(
+        "server error " + str(status)
+        + " (the fault boundary should hold; only a deliberate 501 Not "
+        "Implemented, or a handled 503 with Retry-After, is allowed)"
+    )
 
 
 @schemathesis.check
