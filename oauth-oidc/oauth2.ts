@@ -10111,7 +10111,14 @@ class OAuth2Server {
       '.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem ' +
       '.9rem;border-radius:4px;margin:1rem ' +
       '0}dt{font-weight:600;margin-top:.7rem}dd{margin:.15rem 0 0 ' +
-      '0}</style></head><body><h1>This request could not be completed</h1>' +
+      '0}' +
+      // THE form_post CONTINUE IS A BUTTON DRAWN AS A LINK (2026-11-04): it
+      // has to be a form, since the error goes to the client as a POST, but
+      // the same page for a query or fragment response carries a link, and
+      // the OpenID Foundation's reviewers see both side by side.
+      'button.as-link{background:none;border:0;padding:0;font:inherit;' +
+      'color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}' +
+      '</style></head><body><h1>This request could not be completed</h1>' +
       '<div ' +
       'class="warn"><strong>' + xmlEscape(error) + '</strong><br>' +
       xmlEscape(description) + '</div>';
@@ -10199,8 +10206,9 @@ class OAuth2Server {
           '">' + Object.keys(info.form).map(function (name: string): string {
             return '<input type="hidden" name="' + xmlEscape(name) +
                    '" value="' + xmlEscape(String(info.form[name])) + '">';
-          }).join('') + '<button type="submit">Continue to ' +
-          xmlEscape(info.redirectUri) + '</button></form>'
+          }).join('') + '<p><button type="submit" class="as-link">' +
+          'Continue to ' +
+          xmlEscape(info.redirectUri) + '</button></p></form>'
         : '<p><a href="' + xmlEscape(info.target) + '">Continue to ' +
           xmlEscape(info.redirectUri) + '</a></p>') +
       (after > 0
@@ -11158,7 +11166,7 @@ class OAuth2Server {
       return redirectable('STS-OAUTH-0162', 'unsupported_response_type',
         namedType
           ? 'response_type "' + namedType + '" is not supported.'
-          : 'this request names no response_type, and every authorization ' +
+          : 'This request names no response_type, and every authorization ' +
             'request must name one (RFC 6749 section 3.1.1).');
     }
     // WHAT THIS AUTHORIZATION SERVER SAYS IT DOES. `response_types_supported`
@@ -11408,7 +11416,7 @@ class OAuth2Server {
         // It leads with what is missing (2026-11-04): the OpenID
         // Foundation's reviewers read this page, and it used to explain
         // why a nonce matters without saying there was none.
-        'this request has no nonce, and response_type "' + q.response_type +
+        'This request has no nonce, and response_type "' + q.response_type +
         '" returns an ID Token from the authorization endpoint, for which ' +
         'OIDC Core makes nonce REQUIRED (section ' +
         (implicit ? '3.2.2.1, the implicit flow'
@@ -12978,7 +12986,7 @@ class OAuth2Server {
     // (#561); `endSession()` ignores it with the setting off.
     const ended = endSession(req, res, several && session ? session.id : '');
     return self.logoutFinish(req, res, ended, backchannelMark, returnTo,
-                             refusedNote, t, frontDoor);
+                             refusedNote, t, frontDoor, !!unregistered);
   }
 
   // WHY THE PAGE ASKS, named for the case at hand (#1301). The page used to
@@ -13120,10 +13128,18 @@ class OAuth2Server {
                        backchannelMark: Json, returnTo: string,
                        refusedNote: string,
                        t: ReturnType<typeof PageLocale.forPage>,
-                       chooser: string): Json {
+                       chooser: string, partlyRefused?: boolean): Json {
     const { log, xmlEscape, frontchannel, backchannel, config } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.logoutFinish().");
+    // A REFUSED ADDRESS HEADS THE PAGE (2026-11-04): where the request's
+    // post_logout_redirect_uri was not followed, the page is titled for the
+    // refusal, not "Signed out" — the OpenID Foundation's reviewer of
+    // oidcc-rp-initiated-logout-bad-post-logout-redirect-uri reads the
+    // heading first, and a success heading over the warning box read as a
+    // success page. The green banner below still says the session ended.
+    const titleKey = partlyRefused ? 'oauthPages.signedOut.partlyRefused'
+      : 'oauthPages.signedOut.title';
     const backchannelRows = session
       ? backchannel.deliveriesFor([session.id], backchannelMark) : [];
     const notifications = frontchannel.enabled()
@@ -13143,7 +13159,8 @@ class OAuth2Server {
       // The front- and back-channel tables are those modules' own markup,
       // and English (#539).
       const inner = chooser + '<h1>' +
-        t.html('oauthPages.signedOut.heading') + '</h1><p class="sub">' +
+        t.html(partlyRefused ? titleKey : 'oauthPages.signedOut.heading') +
+        '</h1><p class="sub">' +
         t.html('oauthPages.signedOut.frontSub') + '</p>' + refusedNote +
         '<div class="ok">' + (session
           ? t.html('oauthPages.signedOut.frontEnded',
@@ -13177,7 +13194,7 @@ class OAuth2Server {
       res.status(200)
          .type('text/html')
          .set('Cache-Control', 'no-store')
-         .send(self.logoutPage(inner, refresh, t));
+         .send(self.logoutPage(inner, refresh, t, t.text(titleKey)));
       log.debug("Leaving OAuth2Server.logoutFinish(). " + notifiable.length + " " +
                 "relying part" +
                 (notifiable.length === 1 ? 'y was' : 'ies were') +
@@ -13189,7 +13206,7 @@ class OAuth2Server {
       return res.redirect(302, returnTo);
     }
     log.debug("Leaving OAuth2Server.logoutFinish().");
-    return self.logoutAnswer(res, 200, t.text('oauthPages.signedOut.title'),
+    return self.logoutAnswer(res, 200, t.text(titleKey),
       refusedNote + '<div class="ok">' + (session
         ? t.html('oauthPages.signedOut.ended',
                  { username: session.user.username })

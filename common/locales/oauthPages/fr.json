@@ -23,6 +23,7 @@
   "logout.returnToApp": "Revenir à l’application",
   "signedOut.title": "Déconnecté",
   "signedOut.heading": "Déconnecté",
+  "signedOut.partlyRefused": "Demande de déconnexion refusée en partie",
   "signedOut.ended": "La session de {username} est terminée, et chaque application connectée par son intermédiaire en est informée.",
   "signedOut.none": "Il n’y avait aucune session à terminer.",
   "signedOut.notRegistered": "<strong>Le post_logout_redirect_uri de cette demande de déconnexion n’est pas l’un de ceux que ce client a enregistrés ; il n’a donc pas été suivi.</strong> La demande indiquait <code>{uri}</code> ; ce client a enregistré <code>{registered}</code> (RP-Initiated Logout 1.0, section 3).",
