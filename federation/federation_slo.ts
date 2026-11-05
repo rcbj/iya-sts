@@ -139,10 +139,14 @@ import xmldom = require('@xmldom/xmldom');
 import cells = require('../common/cells');
 import realms = require('../common/realms');
 // THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
-// no route and closes no cycle. Only the pages a PERSON sees use it — the
-// sign-outs that happened and the confirmation; refusals, and the pages that
-// say nothing was signed out (each carries an error code), stay English.
+// no route and closes no cycle. The sign-outs that happened and the
+// confirmation use it, and since #1327 the refusals too (below); the two
+// outcome pages that say nothing, or not everything, was signed out still
+// stay English.
 import PageLocale = require('../common/page_locale');
+// The one error page (#1327). A library: it requires `audit`, `realms`, the
+// page's language and `helpers`, none of which requires this module.
+import ErrorPage = require('../common/error_page');
 
 type Helpers = typeof helpers;
 
@@ -371,24 +375,106 @@ class FederationSlo {
 
   // A refusal page, recorded on the relationship as a sign-in's is. The code
   // is marked by the caller on the line before, as everywhere else.
+  //
+  // SINCE #1327 IT IS `common/error_page.ts`'s PAGE, in the person's
+  // language: the sentence in the box chosen by the code the caller marked
+  // (`federationSloErrors.refusal.<code>`, falling back to a general one),
+  // "no session was ended" kept visible below it, the reason a sign-out is
+  // checked collapsed, and the English `what` and `why` — which until then
+  // were the page — among the diagnostics as data. The status, the
+  // `fedLastError` and the audit row are as they were.
   // error-code: none — the definition of the helper, not a call to it
   private refuse(res, record, status, what, why) {
-    const { federation, log, xmlEscape } = this.deps;
+    const { federation, log } = this.deps;
     log.debug("Entering FederationSlo.refuse(). " + what);
     const id = (record && record.fedId) || '';
     if (id) {
       federation.recordFailure(id, 'sign-out: ' + what + ': ' + why);
     }
-    res.status(status).type('html').set('Cache-Control', 'no-store')
-       .send(this.page('Refused',
-         '<h1>The partner\'s sign-out was refused</h1><p class="bad">' +
-         xmlEscape(what) + '</p><p>' + xmlEscape(why) + '</p>' +
-         '<p class="note">No session was ended. A sign-out from a federation ' +
-         'partner is authenticated exactly as a sign-in from it is — see ' +
-         'federation/CLAUDE.md, <em>A PARTNER\'S SIGN-OUT</em>.' +
-         (id ? ' This is recorded on the relationship as ' +
-               '<code>fedLastError</code>.' : '') + '</p>'));
+    this.errorPage(res, record, status, 'refused', what, why);
     log.debug("Leaving FederationSlo.refuse(). " + status);
+  }
+
+  // The person signed in on this browser, for the diagnostics, or ''. A
+  // session store that cannot be read (STS-AUTHN-0338 is one of the pages
+  // this draws) leaves the row out rather than failing the page.
+  private signedInAs(req) {
+    const { authn, log } = this.deps;
+    log.debug("Entering FederationSlo.signedInAs().");
+    let out = '';
+    try {
+      const session = req ? authn.sessionOf(req) : null;
+      out = String((session && session.user && session.user.username) || '');
+    } catch (e) {
+      log.debug("Caught in FederationSlo.signedInAs(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving FederationSlo.signedInAs().");
+    return out;
+  }
+
+  // THE ONE ERROR PAGE THIS ENDPOINT DRAWS (#1327), for a refusal and for
+  // the two 404s `relationshipFor()` answers. `kind` picks the heading:
+  // `refused`, `off` (federation.enabled) or `none` (no such relationship).
+  // The code is the one the caller marked; the sentences are keyed by it, so
+  // they are named here only through `ErrorPage.sentence()`, with the general
+  // sentence last.
+  private errorPage(res, record, status, kind, what, why) {
+    const { errorCodes, log } = this.deps;
+    log.debug("Entering FederationSlo.errorPage(). " + kind);
+    const req = res.req || { headers: {}, query: {} };
+    const id = (record && record.fedId) || String((req.params &&
+                                                   req.params.id) || '');
+    const username = this.signedInAs(req);
+    let params: any = {};
+    try {
+      params = this.paramsOf(req);
+    } catch (e) {
+      // A body that cannot be read again leaves its values out of the
+      // diagnostics; the page itself does not depend on them.
+      log.debug("Caught in FederationSlo.errorPage(): " +
+                ((e && e.message) || e));
+    }
+    const t = PageLocale.translatorFor(req, { application: id,
+                                              username: username });
+    const code = String(errorCodes.codeOf(res) || '');
+    const title = kind === 'off'
+      ? t.text('federationSloErrors.title.off')
+      : (kind === 'none' ? t.text('federationSloErrors.title.none')
+                         : t.text('federationSloErrors.title.refused'));
+    // A failure while ending the sessions may have ended some of them, so
+    // the page does not say that none was.
+    const after = code === 'STS-FED-0136'
+      ? t.html('federationSloErrors.mayNotHaveFinished')
+      : t.html('federationSloErrors.nothingEnded');
+    const partner = record
+      ? (record.fedName && record.fedPeer && record.fedName !== record.fedPeer
+          ? record.fedName + ' (' + record.fedPeer + ')'
+          : (record.fedName || record.fedPeer || ''))
+      : '';
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: status,
+      title: title,
+      message: ErrorPage.sentence(t, [
+        code ? 'federationSloErrors.refusal.' + code : '',
+        'federationSloErrors.refusal.general']),
+      after: '<p>' + after + '</p>',
+      background: kind === 'refused'
+        ? t.html('federationSloErrors.background') : '',
+      diagnostics: [
+        { label: t.text('errorPages.relationship'), value: id },
+        { label: t.text('errorPages.partner'), value: partner },
+        { label: t.text('errorPages.wa'), value: params.wa },
+        { label: t.text('errorPages.relayState'), value: params.RelayState },
+        { label: t.text('errorPages.state'), value: params.state },
+        { label: t.text('errorPages.signedInAs'), value: username },
+        { label: t.text('errorPages.summary'), value: what },
+        { label: t.text('errorPages.detail'), value: why }
+      ]
+    });
+    log.debug("Leaving FederationSlo.errorPage().");
   }
 
   // The back channel answers a server, not a person: section 2.8's 400 with
@@ -421,7 +507,7 @@ class FederationSlo {
   // half-configured — a sign-out arriving for a disabled relationship is
   // refused without being looked at, which is what disabling is for.
   private relationshipFor(req, res, json) {
-    const { federation, errorCodes, log, xmlEscape } = this.deps;
+    const { federation, errorCodes, log } = this.deps;
     log.debug("Entering FederationSlo.relationshipFor(). id=" + req.params.id);
     if (!this.enabled()) {
       if (json) {
@@ -429,9 +515,9 @@ class FederationSlo {
         this.refuseJson(res, null, 400, 'federation.enabled is off');
       } else {
         errorCodes.mark(res, 'STS-FED-0001');
-        res.status(404).type('html').send(this.page('Not here',
-          '<h1>Federation is off</h1><p><code>federation.enabled</code> is ' +
-          'off.</p>'));
+        // The shared error page since #1327, in the person's language.
+        this.errorPage(res, null, 404, 'off', 'Federation is off',
+                       'federation.enabled is off.');
       }
       log.debug("Leaving FederationSlo.relationshipFor(). Off.");
       return null;
@@ -448,10 +534,9 @@ class FederationSlo {
                                          '"');
       } else {
         errorCodes.mark(res, 'STS-FED-0002');
-        res.status(404).type('html').send(this.page('No such relationship',
-          '<h1>No such single logout service</h1><p>There is no ' +
-          'service-provider-side relationship called <code>' + xmlEscape(id) +
-          '</code>.</p>'));
+        this.errorPage(res, null, 404, 'none', 'No such single logout service',
+                       'There is no service-provider-side relationship ' +
+                       'called "' + id + '".');
       }
       log.debug("Leaving FederationSlo.relationshipFor(). None.");
       return null;
