@@ -42,15 +42,21 @@ locals {
   # whose must-agree settings (global.mode, publicBaseUrl, keys.source, …)
   # differ from the others', so they are spelt once.
   node_environment = merge({
-    STS_MODE                    = var.sts_mode
-    STS_PERSISTENCE_MODE        = "postgres"
-    STS_PERSISTENCE_COORDINATE  = "true"
-    STS_KEYS_SOURCE             = "persisted"
-    STS_CLUSTER_MODE            = "active-active"
-    STS_PUBLIC_BASE_URL         = local.public_base_url
-    STS_TLS_HOSTNAMES           = join(",", distinct([local.public_host, aws_lb.main.dns_name, "localhost"]))
-    STS_PROXY_PROTOCOL          = "v2"
-    STS_TRUSTED_PROXIES         = join(",", local.public_cidrs)
+    STS_MODE                   = var.sts_mode
+    STS_PERSISTENCE_MODE       = "postgres"
+    STS_PERSISTENCE_COORDINATE = "true"
+    STS_KEYS_SOURCE            = "persisted"
+    STS_CLUSTER_MODE           = "active-active"
+    STS_PUBLIC_BASE_URL        = local.public_base_url
+    STS_TLS_HOSTNAMES          = join(",", distinct([local.public_host, local.direct_host, aws_lb.main.dns_name, "localhost"]))
+    STS_PROXY_PROTOCOL         = "v2"
+    # BEHIND CLOUDFRONT the PROXY header's peer is an edge and the client is in
+    # X-Forwarded-For. With these ranges set the right-most entry that is not
+    # one of them is believed, so a caller cannot forge its address; a caller
+    # at the direct name is not in them, and the socket's peer is the answer.
+    STS_TRUST_PROXY             = tostring(local.cloudfront)
+    STS_TRUSTED_PROXIES         = join(",", concat(local.public_cidrs, local.cloudfront ? data.aws_ip_ranges.cloudfront[0].cidr_blocks : []))
+    STS_EDGE_PROXIES            = local.cloudfront ? join(",", data.aws_ip_ranges.cloudfront[0].cidr_blocks) : ""
     STS_WORKERS_REQUEST_COUNT   = tostring(var.workers_request_count)
     STS_WORKERS_SURFACE_COUNT   = tostring(var.workers_surface_count)
     STS_WORKERS_DISPATCH        = var.workers_dispatch
@@ -85,7 +91,7 @@ locals {
     # the load balancer, and `locals.tf` leaves a default port out of the URL
     # altogether (`pki_public_url`).
     PKI_DISTRIBUTION_BASE_URL  = local.pki_public_url
-    PKI_DISTRIBUTION_LDAP_HOST = local.public_host
+    PKI_DISTRIBUTION_LDAP_HOST = local.direct_host
     PKI_DISTRIBUTION_LDAP_PORT = tostring(local.published_ports.ldap.listener)
 
     # REVOCATION IS NOT CONSULTED ON THESE CLUSTERS (rcbj, #371). A
@@ -232,6 +238,8 @@ locals {
   # environment every value is present and the list is the one it was.
   node_secrets = [for s in concat(
     [{ name = "ADMIN_API_CLIENT_SECRET", valueFrom = local.shared_secret_arns["admin-api-client-secret"] }],
+    # What CloudFront proves itself with (cloudfront.tf, #1336).
+    local.cloudfront ? [{ name = "STS_EDGE_SECRET", valueFrom = aws_secretsmanager_secret.main["cloudfront-edge-secret"].arn }] : [],
     # THE BOOTSTRAP ADMINISTRATOR'S PASSWORD, in product mode. Injected by
     # ECS from Secrets Manager rather than written into the task
     # definition, like the three secrets beside it: a task definition is

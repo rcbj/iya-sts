@@ -1124,6 +1124,26 @@ const SETTINGS = [
                  'a forwarded certificate is a certificate anybody can ' +
                  'forge.' },
 
+  // Added 2026-11-05 (#1336): `common/client_address.js` argues both.
+  { key: 'global.edgeProxies', group: 'Global', label: 'CDN edge addresses',
+    env: 'STS_EDGE_PROXIES', type: 'csv', dflt: '', runtime: true,
+    description: 'The addresses or CIDR ranges a CDN in front of this ' +
+                 'service connects from, comma-separated. A CDN\'s edges ' +
+                 'serve all of its customers, so a request from one of ' +
+                 'these ranges is refused unless it carries ' +
+                 'global.edgeSecret in its X-Origin-Verify header. EMPTY, ' +
+                 'the default, asks nothing of anybody. A value that is not ' +
+                 'an address or a CIDR range is ignored and logged.' },
+
+  { key: 'global.edgeSecret', group: 'Global', label: 'CDN origin secret',
+    env: 'STS_EDGE_SECRET', type: 'string', dflt: '', runtime: false,
+    secret: true, restartReason: 'read once at startup',
+    description: 'What this deployment\'s own CDN distribution sends in ' +
+                 'X-Origin-Verify, which tells it from another customer\'s ' +
+                 'distribution at the same edges. The header is removed ' +
+                 'once read. Empty with global.edgeProxies set refuses ' +
+                 'every request from those ranges.' },
+
   // Added 2026-09-14 (#46 section 8). `global.trustProxy` alone believed a
   // forwarded header from anybody who could reach a node, including past the
   // load balancer; `common/client_address.js` argues the boundary.

@@ -12082,6 +12082,14 @@ Network Load Balancer with TLS passthrough and
 `proxy_protocol_v2.enabled`. The file's header argues every point; the ones a
 maintainer of a listener has to know:
 
+* **A CDN'S EDGES ARE A SECOND LIST, BECAUSE THEY ARE A SECOND QUESTION (#1336).**
+  `global.edgeProxies` does not ask who may say what the client's address is. It
+  asks who must prove they are this deployment's own CDN, since its edges serve
+  all its customers. A request from those ranges without `global.edgeSecret` in
+  `X-Origin-Verify` is refused (`STS-CORE-0165`) in the front process, before
+  dispatch, and the header comes off the request either way, so Monitoring -> TLS
+  connection cannot show it to the caller. Empty asks nothing. Ranges with no
+  secret refuse every edge. `tests/edge_secret.js`, `deploy/aws/CLAUDE.md`.
 * **One list, `global.trustedProxies`**, not a second: the same question one
   layer down. `client_address.isTrustedProxy()` answers it and, unlike
   `peerIsTrustedProxy()`, an EMPTY list trusts nobody — so v2 with no usable

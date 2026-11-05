@@ -25,8 +25,8 @@
 #     certificate for the name and passes its ARN as `adopt_certificate_arn`,
 #     and the import block below takes it into this state.
 #
-# A change that forces a NEW certificate (the name, a cell's console name
-# added to the SANs, the key algorithm) still replaces it — create first, so
+# A change that forces a NEW certificate (the name, a cell's console name or a
+# direct name added to the SANs, the key algorithm) still replaces it — create first, so
 # the old one serves until the new one has validated. That is one issuance per
 # real change, not one per build.
 # ---------------------------------------------------------------------------
@@ -64,7 +64,7 @@ data "aws_route53_zone" "public" {
 resource "aws_acm_certificate" "public" {
   count                     = local.public_name ? 1 : 0
   domain_name               = var.public_hostname
-  subject_alternative_names = local.cell_console_host != "" ? [local.cell_console_host] : []
+  subject_alternative_names = compact([local.cell_console_host, var.direct_hostname])
   validation_method         = "DNS"
   key_algorithm             = "EC_prime256v1"
   tags                      = { Name = var.public_hostname }

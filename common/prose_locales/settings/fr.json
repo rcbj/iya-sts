@@ -95,6 +95,26 @@
     "en": "4369282d9208f4aa",
     "text": "Croire X-Forwarded-Proto et X-Forwarded-Host — ce que définit un proxy inverse qui termine TLS pour indiquer ce que le CLIENT a utilisé. ACTIVEZ-LE lorsque quelque chose se trouve devant ce service, sinon les métadonnées publieront des URL http:// à des clients qui l’ont atteint en https, et chaque preuve DPoP sera refusée pour avoir nommé le véritable point de terminaison. Laissez-le DÉSACTIVÉ lorsque rien ne s’y trouve : sans proxy, ce sont des en-têtes ordinaires que n’importe quel client peut définir, et les croire permet à un appelant de choisir ce que ce service pense être son propre émetteur et ses propres points de terminaison. Surveillance → Connexion TLS montre ce qu’une requête portait réellement et ce qui en a été cru. NOTEZ que ce service ne lit jamais un certificat client depuis un en-tête (X-Client-Cert et apparentés), dans aucun des deux modes — un certificat transmis est un certificat que n’importe qui peut falsifier."
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "Adresses des nœuds CDN"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "Les adresses ou plages CIDR depuis lesquelles se connecte un CDN placé devant ce service, séparées par des virgules. Les nœuds d'un CDN servent tous ses clients ; une requête provenant de l'une de ces plages est donc refusée si elle ne porte pas global.edgeSecret dans son en-tête X-Origin-Verify. VIDE, la valeur par défaut, n'exige rien de personne. Une valeur qui n'est ni une adresse ni une plage CIDR est ignorée et journalisée."
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "Secret d'origine du CDN"
+  },
+  "global.edgeSecret|description": {
+    "en": "eb67106afc0cc7f0",
+    "text": "Ce que la distribution CDN de ce déploiement envoie dans X-Origin-Verify, et qui la distingue de la distribution d'un autre client sur les mêmes nœuds. L'en-tête est supprimé une fois lu. Vide alors que global.edgeProxies est défini, il refuse toute requête provenant de ces plages."
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "lu une seule fois au démarrage"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "Adresses des proxys de confiance"

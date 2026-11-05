@@ -61,6 +61,7 @@ const net = require('net');
 const bunyan = require('bunyan');
 const config = require('./config');
 const cacheRegistry = require('./cache_registry');
+const crypto = require('./crypto');
 
 const log = bunyan.createLogger({ name: 'sts-client-address' });
 config.registerLogger(log);
@@ -70,6 +71,8 @@ const IS_REQUEST_WORKER = !!process.env.STS_REQUEST_WORKER;
 // The parsed ranges, rebuilt only when the setting's text changes — it is
 // runtime, and a BlockList per request would be a parse per request.
 let cachedText = null;
+let edgeCached = null;
+let edgeCachedText = null;
 let cached = null;
 
 // Described to `/admin/caches` (rule 3ap, 2026-09-18). It was one of the four
@@ -101,6 +104,35 @@ const rangesCount = cacheRegistry.register({
                 ' configured',
               validUntil: null,
               valid: cachedText === rangesText().join(','),
+              basis: 'setting text' }];
+  }
+});
+
+// The same thing for the CDN's edges (below).
+const edgeRangesCount = cacheRegistry.register({
+  name: 'global.edge-proxies',
+  title: 'CDN edge ranges',
+  description: 'global.edgeProxies, parsed into a BlockList, so a request ' +
+    'does not re-parse the setting to decide whether it came from a CDN ' +
+    'edge that must carry this deployment\'s secret.',
+  owner: 'common/client_address.js',
+  scope: 'process',
+  settings: ['global.edgeProxies'],
+  maxEntries: function () {
+    return 1;
+  },
+  bound: 'Structural: one parsed copy of the setting.',
+  lifetime: function () {
+    return 'Until the text of global.edgeProxies changes.';
+  },
+  entries: function () {
+    if (!edgeCached) {
+      return [];
+    }
+    return [{ key: edgeCached.count + ' range(s) of ' + edgeCached.configured +
+                ' configured',
+              validUntil: null,
+              valid: edgeCachedText === edgeRangesText().join(','),
               basis: 'setting text' }];
   }
 });
@@ -150,6 +182,14 @@ function ranges() {
     return cached;
   }
   rangesCount.miss();
+  cachedText = text;
+  cached = parseRanges(entries, 'global.trustedProxies');
+  log.debug("Leaving ranges(). " + cached.count + " range(s).");
+  return cached;
+}
+
+function parseRanges(entries, setting) {
+  log.debug("Entering parseRanges().");
   const list = new net.BlockList();
   let count = 0;
   entries.forEach(function (entry) {
@@ -160,7 +200,7 @@ function ranges() {
       : (family === 'ipv4' ? 32 : 128);
     const max = family === 'ipv4' ? 32 : 128;
     if (!family || !Number.isInteger(bits) || bits < 0 || bits > max) {
-      log.warn('client_address: "' + entry + '" in global.trustedProxies is ' +
+      log.warn('client_address: "' + entry + '" in ' + setting + ' is ' +
                'not an address or a CIDR range and is ignored.');
       return;
     }
@@ -168,15 +208,13 @@ function ranges() {
       list.addSubnet(address, bits, family);
       count += 1;
     } catch (e) {
-      log.debug("Caught in ranges(): " + ((e && e.message) || e));
-      log.warn('client_address: "' + entry + '" in global.trustedProxies ' +
-               'could not be read (' + e.message + ') and is ignored.');
+      log.debug("Caught in parseRanges(): " + ((e && e.message) || e));
+      log.warn('client_address: "' + entry + '" in ' + setting +
+               ' could not be read (' + e.message + ') and is ignored.');
     }
   });
-  cachedText = text;
-  cached = { list: list, count: count, configured: entries.length };
-  log.debug("Leaving ranges(). " + count + " range(s).");
-  return cached;
+  log.debug("Leaving parseRanges(). " + count + " range(s).");
+  return { list: list, count: count, configured: entries.length };
 }
 
 function inRanges(address, theRanges) {
@@ -371,6 +409,98 @@ function clientAddressOf(req) {
   return chain[0] || peer || 'unknown';
 }
 
+// ---------------------------------------------------------------------------
+// A CDN'S EDGES ARE EVERYBODY'S, SO BEING ONE PROVES NOTHING (#1336).
+//
+// A load balancer that admits CloudFront admits every CloudFront customer: the
+// published origin-facing prefix list is the only list there is. So somebody
+// else's distribution, pointed at this load balancer, arrives from a peer that
+// looks exactly like ours and has passed none of our WAF's rules. What tells
+// the two apart is a secret our distribution adds to each origin request.
+//
+//   * `global.edgeProxies` empty, the default: no check at all.
+//   * A peer in those ranges without the secret: refused. An empty
+//     `global.edgeSecret` refuses every such peer, because a range named with
+//     no secret is a deployment half made, and it fails closed.
+//   * A peer outside them: no check, since it is not claiming to be an edge.
+//     A node dialling its own public name is one of these (dns.tf).
+//
+// THE HEADER IS REMOVED ONCE READ, wherever it came from and whatever the
+// answer, so nothing downstream can show it: a dispatched request is rebuilt
+// from these headers, and Monitoring -> TLS connection draws what a request
+// carried, for the very caller who sent it through the edge.
+//
+// A hot path in the sense of the style rule only when the setting is on; the
+// usual pair of debug lines is kept.
+// ---------------------------------------------------------------------------
+const EDGE_SECRET_HEADER = 'x-origin-verify';
+
+function edgeRangesText() {
+  log.debug("Entering edgeRangesText().");
+  const raw = config.value('global.edgeProxies');
+  log.debug("Leaving edgeRangesText().");
+  return (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) { return String(one).trim(); })
+    .filter(Boolean);
+}
+
+function edgeRanges() {
+  log.debug("Entering edgeRanges().");
+  const entries = edgeRangesText();
+  const text = entries.join(',');
+  if (text === edgeCachedText && edgeCached) {
+    edgeRangesCount.hit();
+    log.debug("Leaving edgeRanges(). Cached.");
+    return edgeCached;
+  }
+  edgeRangesCount.miss();
+  edgeCachedText = text;
+  edgeCached = parseRanges(entries, 'global.edgeProxies');
+  log.debug("Leaving edgeRanges().");
+  return edgeCached;
+}
+
+function removeEdgeSecret(req) {
+  log.debug("Entering removeEdgeSecret().");
+  delete req.headers[EDGE_SECRET_HEADER];
+  const raw = req.rawHeaders;
+  if (Array.isArray(raw)) {
+    for (let i = raw.length - 2; i >= 0; i -= 2) {
+      if (String(raw[i]).toLowerCase() === EDGE_SECRET_HEADER) {
+        raw.splice(i, 2);
+      }
+    }
+  }
+  log.debug("Leaving removeEdgeSecret().");
+}
+
+/**
+ * Says whether a request came from a CDN edge without this deployment's
+ * secret, and takes the secret off the request either way.
+ *
+ * @param req - the request
+ * @returns true when the request must be refused
+ */
+function edgeRefused(req) {
+  log.debug("Entering edgeRefused().");
+  const theRanges = edgeRanges();
+  if (!theRanges.configured || fromFrontProcess(req)) {
+    log.debug("Leaving edgeRefused(). Not asked here.");
+    return false;
+  }
+  const given = String(req.headers[EDGE_SECRET_HEADER] || '');
+  removeEdgeSecret(req);
+  if (!inRanges(peerOf(req), theRanges)) {
+    log.debug("Leaving edgeRefused(). Not from an edge.");
+    return false;
+  }
+  const secret = String(config.value('global.edgeSecret') || '');
+  const held = secret !== '' && given !== '' &&
+    crypto.constantTimeEquals(given, secret);
+  log.debug("Leaving edgeRefused().");
+  return !held;
+}
+
 // For tests: forget the parsed ranges.
 /**
  * Forgets the parsed ranges; for tests.
@@ -379,6 +509,8 @@ function reset() {
   log.debug("Entering reset().");
   cachedText = null;
   cached = null;
+  edgeCachedText = null;
+  edgeCached = null;
   log.debug("Leaving reset().");
 }
 
@@ -392,6 +524,7 @@ function reset() {
  */
 module.exports = {
   clientAddressOf: clientAddressOf,
+  edgeRefused: edgeRefused,
   forwardedBelieved: forwardedBelieved,
   peerIsTrustedProxy: peerIsTrustedProxy,
   trustedProxyRanges: trustedProxyRanges,

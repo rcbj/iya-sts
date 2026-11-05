@@ -241,6 +241,7 @@ data "aws_iam_policy_document" "execution" {
       local.shared_secret_arns["admin-api-client-secret"],
       aws_secretsmanager_secret.main["db-master-password"].arn,
       aws_secretsmanager_secret.main["db-app-password"].arn,
+      local.cloudfront ? aws_secretsmanager_secret.main["cloudfront-edge-secret"].arn : "",
     ])
   }
 

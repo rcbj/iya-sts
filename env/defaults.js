@@ -56,6 +56,8 @@ var config = {
     port: 8081,                    // HTTP port; restart to apply
     domain: "example.com",         // Domain; restart to apply
     trustProxy: false,             // Trust forwarded headers
+    edgeProxies: "",               // CDN edge addresses
+    edgeSecret: "",                // CDN origin secret; restart to apply
     trustedProxies: "",            // Trusted proxy addresses
     proxyProtocol: "off",          // PROXY protocol on the TCP listeners; restart to apply
     proxyProtocolTimeoutMs: 30000, // PROXY protocol header timeout (ms)

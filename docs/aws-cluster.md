@@ -177,6 +177,25 @@ taken out of rotation comes back after three good health checks, about 30
 seconds. A node that has been up is replaced after three failed checks in a
 row, about 30 seconds.
 
+## CloudFront in front of the load balancer
+
+An environment with `cloudfront_enabled` and `direct_hostname` set gets a
+CloudFront distribution in every edge location. Its public name then goes to
+the distribution, and the direct name goes to the load balancer:
+
+| Use | Name |
+|---|---|
+| Browsers, OAuth and OpenID Connect clients, the issuer | `public_hostname` |
+| Client certificates, Kerberos, LDAP, SPIFFE, CRLs and OCSP | `direct_hostname` |
+
+`allowed_cidrs` applies at both: an AWS WAF allowlist at the distribution, and
+the security group at the load balancer. An administrator must re-apply
+`foundation/` first. IPv6 is off, because the allowlist is IPv4.
+
+Client certificates do not pass through CloudFront, so certificate sign-in and
+RFC 8705 mutual TLS at the public name stop working. CloudFront also limits a
+URL to 8,192 bytes and an origin's first byte to 60 seconds.
+
 ## Several regions: cells
 
 An environment can also be built in several AWS regions at once, as

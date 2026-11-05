@@ -7,8 +7,18 @@ output "service_url" {
 }
 
 output "public_hostname" {
-  description = "The CNAME clients use, when public_hostname is set; empty otherwise."
+  description = "The name clients use, when public_hostname is set; empty otherwise."
   value       = var.public_hostname
+}
+
+output "direct_hostname" {
+  description = "The name that reaches the load balancer itself; the public name unless CloudFront is in front of it."
+  value       = local.direct_host
+}
+
+output "cloudfront_distribution_id" {
+  description = "The CloudFront distribution in front of the load balancer; empty without one."
+  value       = local.cloudfront ? aws_cloudfront_distribution.main[0].id : ""
 }
 
 output "public_certificate_arn" {

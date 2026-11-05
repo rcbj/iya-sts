@@ -52,7 +52,10 @@ locals {
   # load balancer's own DNS name.
   public_host     = var.public_hostname != "" ? var.public_hostname : aws_lb.main.dns_name
   public_base_url = "https://${local.public_host}"
-  container_port  = 8081
+  # The name that reaches the load balancer itself: what is not HTTPS, or needs
+  # the client's own TLS, cannot go through CloudFront (cloudfront.tf).
+  direct_host    = var.cloudfront_enabled ? var.direct_hostname : local.public_host
+  container_port = 8081
 
   # THE PLAIN-HTTP FRONT DOOR AS A URL, because a URL is what goes inside a
   # certificate and a host and a port are not. A DEFAULT PORT IS LEFT OUT of
@@ -60,7 +63,7 @@ locals {
   # STRINGS to everything that compares one, and a cRLDistributionPoints or
   # authorityInfoAccess value is a durable document nobody can edit after it is
   # signed. `ecs.tf` passes it as `PKI_DISTRIBUTION_BASE_URL`.
-  pki_public_url = var.pki_listener_port == 80 ? "http://${local.public_host}" : "http://${local.public_host}:${var.pki_listener_port}"
+  pki_public_url = var.pki_listener_port == 80 ? "http://${local.direct_host}" : "http://${local.direct_host}:${var.pki_listener_port}"
 
   # WHERE cert-init LEAVES THE PUBLIC CERTIFICATE AND THE NODE READS IT: a
   # volume of the task's own, mounted by both containers, made again from ACM
