@@ -11026,11 +11026,17 @@ class AdminActions {
       const blank = rawTtl === undefined || rawTtl === null ||
                     String(rawTtl).trim() === '';
       const ttl = blank ? 0 : Number(rawTtl);
-      if (!blank && !(Number.isFinite(ttl) && ttl > 0)) {
+      // The upper bound keeps nowSec() + ttl inside the range a Date can hold
+      // (ECMAScript dates run to 8.64e12 seconds past the epoch), so the ISO
+      // expiry built below cannot throw RangeError on a fuzzed ttl such as
+      // 1e308. It is the representable limit, not a policy ceiling.
+      if (!blank && !(Number.isSafeInteger(ttl) && ttl > 0 &&
+                      ttl <= 8640000000000)) {
         log.debug("Leaving AdminActions.spiffeAgentsAction(). Bad ttl.");
         return this.refused('STS-ADMIN-0858', { ok: false,
-          errors: ['ttl must be a positive number of seconds. Omit it to ' +
-                   'use spiffe.joinTokenTtl.'] });
+          errors: ['ttl must be a whole positive number of seconds within ' +
+                   'the representable range. Omit it to use ' +
+                   'spiffe.joinTokenTtl.'] });
       }
       // Loaded here, at request time. This module is built at step 18 and
       // the SPIFFE family at step 23; a require at the top of the file
