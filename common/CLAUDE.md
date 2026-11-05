@@ -1453,7 +1453,7 @@ screen, per realm, and decided six questions on it (D1–D6, on the ticket).
   declaration, replicated by the change log, a global store in cells
   (`persistence/tiers.js`), not sealed because a logo is public — and served
   at `/web/branding/logo` with the type its bytes are, `nosniff`, a
-  sandboxing CSP and an ETag. **Under `/web` on purpose**: the sign-in pages,
+  sandboxing CSP through `app.contentSecurityPolicy()` (#1337) and an ETag. **Under `/web` on purpose**: the sign-in pages,
   the front door and the portal draw it, and they may be on different
   listeners; everything under `/web` answers on every one
   (`hosted_applications.js`). No third-party origin ever joins `img-src`.

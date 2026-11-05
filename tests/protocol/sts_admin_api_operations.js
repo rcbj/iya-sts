@@ -5810,6 +5810,13 @@ async function theSignInLogoRoundTrips() {
             bytes.equals(image),
     "the realm's /web/branding/logo should serve the bytes stored; it " +
     "answered " + served.status + " " + served.headers.get("content-type"));
+  // ON THE WIRE (#1337): a policy lacking `frame-ancestors` is replaced as the
+  // response is sent, which only a real response shows.
+  const logoPolicy = String(served.headers.get("content-security-policy"));
+  assert.ok(/(^|;\s*)sandbox(\s*;|\s*$)/.test(logoPolicy) &&
+            /frame-ancestors 'none'/.test(logoPolicy),
+    "the logo should be sent sandboxed and unframable; its policy is " +
+    logoPolicy);
   const refusedFile = await upload(Buffer.from("<svg></svg>"),
                                    "image/png", "");
   assert.strictEqual(refusedFile.status, 415,
@@ -5821,7 +5828,8 @@ async function theSignInLogoRoundTrips() {
     "GET /branding should show no logo after the removal: " +
     String(gone.raw).slice(0, 300));
   log.info("[branding] OK — a PNG stored, read back from the API and the " +
-           "realm's own address, a non-image refused 415, and removed.");
+           "realm's own address sandboxed, a non-image refused 415, and " +
+           "removed.");
   log.debug("Leaving theSignInLogoRoundTrips().");
 }
 

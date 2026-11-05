@@ -125,6 +125,14 @@ const PATHS = Object.freeze({
 // logo is public by definition.
 const assets = realms.map({ persist: 'branding.assets' });
 
+// An image needs nothing, and is sandboxed if it is ever opened as a document.
+// Through `app.contentSecurityPolicy()` (root CLAUDE.md, #1337): until then this
+// was a literal with no `frame-ancestors`, which `app.js` replaces with the base
+// policy as the response is sent, so `sandbox` never reached a client, and a
+// test over a mock response could not see that.
+const LOGO_POLICY = Object.freeze({ 'style-src': null, 'img-src': null,
+                                    sandbox: '' });
+
 /**
  * A realm's appearance as the shell and the stylesheet need it.
  */
@@ -1051,7 +1059,8 @@ class Branding {
         ? req.query.v : '';
       res.set('ETag', etag)
          .set('X-Content-Type-Options', 'nosniff')
-         .set('Content-Security-Policy', "default-src 'none'; sandbox")
+         .set('Content-Security-Policy',
+              app.contentSecurityPolicy(LOGO_POLICY))
          .set('Cache-Control', asked && asked ===
            String(record.sha256).slice(0, 16)
            ? 'public, max-age=31536000, immutable' : 'no-cache');
