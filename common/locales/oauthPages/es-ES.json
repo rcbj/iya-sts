@@ -13,5 +13,5 @@
   "signedOut.ended": "La sesión de {username} ha terminado, y se avisa a cada aplicación en la que se ha iniciado sesión a través de ella.",
   "signedOut.frontEnded": "La sesión de {username} ha terminado. Es la sesión que comparten WS-Federation y SAML 2.0, así que también se ha cerrado en ellos.",
   "signedOut.frontNone": "No había ninguna sesión que terminar. De todos modos, se ha borrado la cookie.",
-  "signedOut.notRegistered": "<strong>El post_logout_redirect_uri de esta solicitud de cierre de sesión no es uno de los que ha registrado este cliente, así que no se ha seguido.</strong> La solicitud nombraba <code>{uri}</code>; este cliente ha registrado <code>{registered}</code> (RP-Initiated Logout 1.0, sección 3)."
+  "signedOut.notRegistered": "<strong>El post_logout_redirect_uri de esta solicitud de cierre de sesión no es uno de los que ha registrado este cliente, así que no se ha seguido.</strong> La solicitud nombraba <code>{uri}</code> (RP-Initiated Logout 1.0, sección 3)."
 }

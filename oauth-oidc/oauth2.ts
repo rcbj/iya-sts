@@ -11192,9 +11192,7 @@ class OAuth2Server {
                 "), so nothing " +
                 "is redirected anywhere.");
       return refuseOnPage(redirectCheck.errorCode || 'STS-OAUTH-0158',
-                          redirectCheck.error, redirectCheck.description,
-                          { params: { registered: (redirectCheck.registered ||
-                                                   []).join(', ') } });
+                          redirectCheck.error, redirectCheck.description);
     }
     if (redirectCheck.how) {
       log.debug("The redirect_uri was accepted by " + redirectCheck.how + ".");
@@ -13057,7 +13055,7 @@ class OAuth2Server {
     // --- 3. the return -----------------------------------------------------
     let returnTo = '';
     let refusedNote = '';
-    let unregistered: { uri: string, registered: string } | null = null;
+    let unregistered: { uri: string } | null = null;
     // Its English description, for the page's diagnostics (#1326).
     let refusedDetail = '';
     const target = q.post_logout_redirect_uri;
@@ -13098,9 +13096,10 @@ class OAuth2Server {
         // address is not a registered one, and a grey sentence under a
         // green banner did not say it. The session still ends (sections 2
         // and 4 allow it). Every other refusal keeps its one grey sentence.
-        if (Array.isArray(check.registered)) {
-          unregistered = { uri: String(target),
-                           registered: check.registered.join(', ') };
+        // The box names the address asked for, never the registered ones
+        // (#1331).
+        if (check.notRegistered) {
+          unregistered = { uri: String(target) };
           refusedDetail = String(check.description || '');
         } else {
           refusedNote = '<p class="sub">You were not returned to <code>' +

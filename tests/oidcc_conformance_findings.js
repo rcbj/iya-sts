@@ -440,26 +440,33 @@ function checkRegisteredListSentences(t) {
   };
   const single = inBcp(one);
   const plural = inBcp(two);
-  t.check(single === 'RFC 9700 section 2.1: "https://c.example/cb" is not ' +
-          'the redirect URI registered for this client ' +
-          '(https://a.example/cb), and a redirect_uri must match one by ' +
-          'exact string comparison (RFC 3986 section 6.2.1).' &&
-          /is not one of the 2 redirect URIs registered for this client \(https:\/\/a\.example\/cb, https:\/\/b\.example\/cb\)/
-            .test(plural) && clean(single) && clean(plural),
-          '8a. RFC 9700 mode: an unregistered redirect_uri is not THE ' +
-          'redirect URI, or not one of the 2, registered for this client',
+  // #1331: the registered URIs are never named, nor how many there are.
+  const SAYS = 'RFC 9700 section 2.1: "https://c.example/cb" is not a ' +
+    'redirect URI registered for this client, and a redirect_uri must ' +
+    'match a registered one by exact string comparison (RFC 3986 section ' +
+    '6.2.1).';
+  const discloses = function (text) {
+    return /a\.example|b\.example|\bthe 2\b|\b2 (?:redirect|post-logout)/
+      .test(String(text));
+  };
+  t.check(single === SAYS && plural === SAYS && clean(single) &&
+          clean(plural) && !discloses(single) && !discloses(plural),
+          '8a. RFC 9700 mode: an unregistered redirect_uri is refused in ' +
+          'one sentence that names only the address sent, never the ' +
+          'registered ones or their number (#1331)',
           single + ' | ' + plural);
   const out1 = bcp.checkPostLogoutRedirectUri({ client: one,
     target: 'https://c.example/out' });
   const out2 = bcp.checkPostLogoutRedirectUri({ client: two,
     target: 'https://c.example/out' });
-  t.check(out1.reason === 'it is not the post-logout redirect URI this ' +
-          'client registered (https://a.example/out)' &&
-          /^it is not one of the 2 post-logout redirect URIs this client registered \(/
-            .test(String(out2.reason)) &&
+  t.check(out1.reason === 'it is not a post-logout redirect URI this ' +
+          'client registered' && out2.reason === out1.reason &&
+          out1.notRegistered === true && out1.registered === undefined &&
           out1.citation === 'RP-Initiated Logout 1.0 section 3' &&
-          clean(String(out1.description)) && clean(String(out2.description)),
-          '8b. a post_logout_redirect_uri: the same, for one and for two',
+          clean(String(out1.description)) && clean(String(out2.description)) &&
+          !discloses(JSON.stringify(out1)) && !discloses(JSON.stringify(out2)),
+          '8b. a post_logout_redirect_uri: the same, for one and for two, ' +
+          'and nothing in the answer names a registered address (#1331)',
           JSON.stringify([out1, out2]));
   log.debug("Leaving checkRegisteredListSentences().");
 }

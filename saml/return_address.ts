@@ -232,11 +232,13 @@ class ReturnAddress {
       log.debug("Leaving ReturnAddress.resolve(). Product: only observed " +
                 "addresses are on the entry.");
       return errorCodes.mark({ ok: false,
+               // The observed addresses are not named (#1331): this
+               // sentence reaches the person's page, and an address is a
+               // value to aim at. The console shows them to the operator.
                why: 'This realm is in PRODUCT mode, so a response is ' +
                     'delivered only to a registered address, and every ' +
-                    spec.attribute + ' on "' + application + '" (' +
-                    unconfirmed.join(', ') +
-                    ') was put there by a request in DEVELOPMENT mode and ' +
+                    spec.attribute + ' on "' + application + '" ' +
+                    'was put there by a request in DEVELOPMENT mode and ' +
                     'is still unconfirmed. The request named no ' +
                     spec.parameter + '. ' + this.confirmHow(spec) },
                'STS-REG-0049');
@@ -271,9 +273,10 @@ class ReturnAddress {
                 "address was named.");
       return { ok: false,
                why: 'This realm is in PRODUCT mode, and the ' +
+                    // Neither the registered addresses nor how many
+                    // (#1331): only the one the request named.
                     spec.parameter + ' "' + requested +
-                    '" is not one of the ' + registered.length +
-                    ' address(es) registered as ' + spec.attribute +
+                    '" is not an address registered as ' + spec.attribute +
                     ' on "' + application + '". The comparison is exact. ' +
                     'Register it on the application entry if it is ' +
                     'genuinely that application\'s, or send the request ' +

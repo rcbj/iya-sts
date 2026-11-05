@@ -1674,29 +1674,6 @@ function registeredUrisFor(client) {
   return { list: list, source: 'listed in the oauth2.redirectUris setting' };
 }
 
-// "is not the redirect URI registered for this client (a)" or "is not one
-// of the 3 redirect URIs registered for this client (a, b, c)": a refusal a
-// person reads on an error page (2026-11-04), so it is a sentence with its
-// number agreeing rather than "none of the 1" or "URI(s)". `noun` is the
-// singular; `where` follows it.
-/**
- * Says that a presented URI is not one of a registered list.
- *
- * @param list - the registered URIs
- * @param noun - the singular noun, e.g. "redirect URI"
- * @param where - what follows the noun, e.g. "registered for this client"
- * @returns the phrase, starting "is not"
- */
-function notAmong(list, noun, where) {
-  log.debug("Entering notAmong().");
-  const phrase = list.length === 1
-    ? 'is not the ' + noun + ' ' + where + ' (' + list[0] + ')'
-    : 'is not one of the ' + list.length + ' ' + noun + 's ' + where +
-      ' (' + list.join(', ') + ')';
-  log.debug("Leaving notAmong().");
-  return phrase;
-}
-
 // Only "none" — or nothing at all — says public. The DEFAULTING is not done
 // here any more: `applications.clientConfigOf()` knows whether an application
 // arrived through RFC 7591 (where section 2 makes client_secret_basic the
@@ -1892,15 +1869,19 @@ function checkRedirectUri(opts) {
         return { ok: true, matched: own[i], how: result.how };
       }
     }
-    log.debug("Leaving checkRedirectUri(). Not one of the client's own.");
-    // `registered` (#1326): the error page names them in its own language.
+    // THE REGISTERED URIs ARE NEVER NAMED TO THE CALLER (#1331, rcbj): a
+    // refusal that listed them handed whoever sent the request the exact
+    // value to aim at, in the error_description and on the error page.
+    // Only the address the request sent is named; the operator finds the
+    // registered set on the application, and here at debug.
+    log.debug("Leaving checkRedirectUri(). Not one of the client's own (" +
+              own.length + " registered: " + own.join(', ') + ").");
     return { ok: false, errorCode: 'STS-OAUTH-0569', error: 'invalid_request',
-             requirement: 'redirect-exact-match', registered: own,
+             requirement: 'redirect-exact-match',
              description: 'OIDC Core section 3.1.2.1: "' + presentedUri +
-                          '" ' + notAmong(own, 'redirect URI',
-                                          'registered for this client') +
-                          ', and a redirect_uri must match one exactly. ' +
-                          'This holds in every mode.' };
+                          '" is not a redirect URI registered for this ' +
+                          'client, and a redirect_uri must match a ' +
+                          'registered one exactly.' };
   }
   const presented = String(opts.redirectUri || '');
   const parsed = parseUri(presented);
@@ -1955,15 +1936,17 @@ function checkRedirectUri(opts) {
     }
   }
   if (!matched) {
-    log.debug("Leaving checkRedirectUri(). No registered URI matches.");
+    // Named to the operator only (#1331), as the check above.
+    log.debug("Leaving checkRedirectUri(). No registered URI matches (" +
+              registered.list.length + " " + registered.source + ": " +
+              registered.list.join(', ') + ").");
     return { ok: false, errorCode: 'STS-OAUTH-0122', error: 'invalid_request',
              requirement: 'redirect-exact-match',
-             registered: registered.list,
-             description: 'RFC 9700 section 2.1: "' + presented + '" ' +
-                          notAmong(registered.list, 'redirect URI',
-                                   registered.source) +
-                          ', and a redirect_uri must match one by exact ' +
-                          'string comparison (RFC 3986 section 6.2.1).' };
+             description: 'RFC 9700 section 2.1: "' + presented + '" is ' +
+                          'not a redirect URI registered for this client, ' +
+                          'and a redirect_uri must match a registered one ' +
+                          'by exact string comparison (RFC 3986 section ' +
+                          '6.2.1).' };
   }
   log.debug("Leaving checkRedirectUri(). Accepted by " + matched.how + ".");
   return { ok: true, matched: matched.uri, how: matched.how };
@@ -1997,21 +1980,23 @@ function checkPostLogoutRedirectUri(opts) {
       return uriMatches(uri, presented).ok;
     });
     if (!found) {
-      log.debug("Leaving checkPostLogoutRedirectUri(). Not registered.");
       // `reason` and `citation` are a sentence's (2026-11-04): "<reason>
-      // (<citation>)", where the description is the log's. `registered` is
-      // the signed-out page's since #1302: its warning box names the
-      // address asked for and these, in the page's language.
-      const reason = 'it ' + notAmong(declared, 'post-logout redirect URI',
-                                      'this client registered');
+      // (<citation>)", where the description is the log's. `notRegistered`
+      // tells the signed-out page to draw its warning box (#1302), which
+      // names the address asked for and, since #1331, never the registered
+      // ones: listing them handed the caller the value to aim at.
+      log.debug("Leaving checkPostLogoutRedirectUri(). Not registered (" +
+                declared.length + " registered: " + declared.join(', ') +
+                ").");
       return { ok: false, errorCode: 'STS-OAUTH-0123',
                error: 'invalid_request', requirement: 'no-open-redirector',
-               reason: reason, registered: declared.slice(),
+               reason: 'it is not a post-logout redirect URI this client ' +
+                       'registered',
+               notRegistered: true,
                citation: 'RP-Initiated Logout 1.0 section 3',
                description: 'RP-Initiated Logout 1.0 section 3: "' +
-                 presented + '" ' + notAmong(declared,
-                   'post-logout redirect URI', 'this client registered') +
-                 '.' };
+                 presented + '" is not a post-logout redirect URI this ' +
+                 'client registered.' };
     }
     log.debug("Leaving checkPostLogoutRedirectUri(). Registered.");
     return { ok: true };

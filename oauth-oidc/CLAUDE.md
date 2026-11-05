@@ -2667,8 +2667,12 @@ sent. **An address the client did not register (`0123`) is a WARNING BOX as
 prominent as the green "signed out" one since #1302**, ABOVE it, in the
 page's language (`oauthPages.signedOut.notRegistered`): that the request's
 `post_logout_redirect_uri` is not one this client registered and so was not
-followed, then the address asked for, the registered ones
-(`checkPostLogoutRedirectUri()`'s `registered`) and section 3. The OpenID
+followed, then the address asked for and section 3. ~~and the registered
+ones (`checkPostLogoutRedirectUri()`'s `registered`)~~ — **never the
+registered ones since #1331 (rcbj, 2026-11-05)**: naming them handed the
+caller the exact value to aim at. `checkPostLogoutRedirectUri()` answers
+`notRegistered: true` instead, and its description names only the address
+sent; the registered set is logged at debug for the operator. The OpenID
 Foundation's `oidcc-rp-initiated-logout-bad-post-logout-redirect-uri` and
 `-query-added-to-post-logout-redirect-uri` ask their reviewer for a page
 saying the request is invalid for exactly that, and a grey sentence under the
@@ -2704,8 +2708,12 @@ a browser, not only those about the redirect_uri) and RFC 9700 section
 refusal names (`pageText.key`, where one code covers two cases), else
 `oauthPages.refusal.<the code marked on the response>`, else
 `oauthPages.oauthError.<error>`, else a general one. The values a sentence
-names are the request's own plus `pageText.params` (the registered URIs from
-`checkRedirectUri()`'s `registered`). The English `error_description` is in
+names are the request's own plus `pageText.params`. **No refusal names a
+REGISTERED address, or how many there are (#1331)** — not the redirect URIs
+(`0569`, `0122`), not the post-logout ones, not OAuth 2.1's unconfirmed ones
+(`0272`), in the `error_description` or on the page: only the address the
+request sent. `saml/return_address.ts` holds SAML and WS-Federation to the
+same rule. The English `error_description` is in
 the diagnostics, as the value an application receives. `tests/rp_initiated_logout.js` holds
 it in a child process; `tests/protocol/sts_rp_initiated_logout.js` over HTTP.
 
