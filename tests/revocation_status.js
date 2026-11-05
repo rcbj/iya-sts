@@ -3443,27 +3443,84 @@ async function theRegisteredDoors(t) {
   // carries (`heldSigner()`), since a key may be revoked while the person is
   // away. The opaque token's refusal sentence grew a provider clause, so its
   // marker is looked for over the statement before the site, not 3 lines.
+  //
+  // TEN SINCE #746: Discourse, Steam and Bluesky rest on no signature whose
+  // signer could be withdrawn, each for a different reason. A marker alone
+  // proves only that somebody typed one, so each reason is held to the method
+  // that carries it, and to what that method must do for the reason to be true;
+  // `federation/CLAUDE.md` argues the three.
+  const NO_SIGNER_REASONS = {
+    'discourse-hmac': {
+      method: 'consumeDiscourseAnswer',
+      evidence: [/\.hmacSha256\(/, /\.constantTimeEquals\(/]
+    },
+    'steam-check-authentication': {
+      method: 'consumeSteamAssertion',
+      evidence: [/'check_authentication'/, /'is_valid:true'/]
+    },
+    'atproto-back-channel': {
+      method: 'consumeAtprotoAnswer',
+      evidence: [/AtprotoClient\.postWithDpop\(/,
+                 /AtprotoClient\.subjectProblem\(/]
+    }
+  };
   fedSource.forEach(function (line, at) {
     if (/^\s*return (?:this\.)?completeSignIn\(/.test(line)) {
       const before = fedSource.slice(Math.max(0, at - 3), at).join('\n');
       const statement = fedSource.slice(Math.max(0, at - 16), at)
         .join('\n');
+      const marked = /\/\/ no-signer: ([a-z0-9-]+) — \S/.exec(
+        fedSource.slice(Math.max(0, at - 5), at).join('\n'));
+      let start = at;
+      while (start > 0 &&
+             !/^ {2}(?:private |static |async )*\w+\(/.test(fedSource[start])) {
+        start -= 1;
+      }
+      const method = /(\w+)\(/.exec(fedSource[start])[1];
       sites.push({ line: at + 1, wrapped: /signerStillAccepted\(/.test(before),
-                   opaque: /The profile endpoint answered/.test(statement) });
+                   opaque: /The profile endpoint answered/.test(statement),
+                   reason: marked ? marked[1] : '', method: method,
+                   body: fedSource.slice(start, at).join('\n'),
+                   after: fedSource.slice(at, at + 8).join('\n') });
     }
   });
-  t.check(sites.length === 7 &&
+  const siteRows = JSON.stringify(sites.map(function (one) {
+    return [one.line, one.method, one.wrapped, one.opaque, one.reason];
+  }));
+  t.check(sites.length === 10 &&
           sites.filter(function (one) { return one.wrapped; }).length === 6 &&
+          sites.filter(function (one) {
+            return !one.wrapped && one.opaque;
+          }).length === 1 &&
           sites.filter(function (one) { return !one.wrapped; })
                .every(function (one) {
-            return one.opaque;
+            return one.opaque || !!one.reason;
           }),
           'EVERY FEDERATED SIGN-IN THAT RESTS ON A SIGNATURE REACHES ' +
           'completeSignIn() THROUGH signerStillAccepted() — SAML 2.0 and ' +
           '1.1, WS-Federation, OIDC, a JWT access token, and the step-up ' +
-          'and profile form that hold one of them — and the one that does ' +
-          'not is the opaque OAuth 2.0 token, where no signature was ' +
-          'verified at all', JSON.stringify(sites));
+          'and profile form that hold one of them — and each that does ' +
+          'not says why: the opaque OAuth 2.0 token, or a no-signer reason',
+          siteRows);
+  const reasoned = sites.filter(function (one) { return !!one.reason; });
+  const reasonProblems = reasoned.filter(function (one) {
+    const rule = NO_SIGNER_REASONS[one.reason];
+    return one.wrapped || !rule || rule.method !== one.method ||
+      !rule.evidence.every(function (shape) {
+        return shape.test(one.body);
+      }) ||
+      /verifyForeignJwt\(|verifyXmlSignature\(|verifyIdToken\(|signerOf\('(?:jwk|certificate)'/
+        .test(one.body) ||
+      !/signer: FederationSp\.signerOf\('none'\)/.test(one.after);
+  });
+  t.check(reasoned.map(function (one) { return one.reason; }).sort().join() ===
+          Object.keys(NO_SIGNER_REASONS).sort().join() &&
+          reasonProblems.length === 0,
+          'and each no-signer reason is used once, in the method it names, ' +
+          'which does what the reason claims, verifies no partner signature ' +
+          'and records its signer as none', JSON.stringify(
+            reasonProblems.map(function (one) { return one.line; })) + ' ' +
+          siteRows);
   const joined = fedSource.join('\n');
   t.check((joined.match(/this\.heldSigner\(res, record, context\.result\)/g) ||
            []).length === 3 &&

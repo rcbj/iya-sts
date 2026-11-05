@@ -1152,7 +1152,8 @@ class FederationSp {
    * @param jwk - the partner key that verified a JWT, if that is what is
    *   checked
    * @param unsigned - true for an answer no signature was verified on (the
-   *   opaque OAuth 2.0 token's profile answer), re-entering from a held step:
+   *   opaque OAuth 2.0 token's profile answer, or a `no-signer:` site's),
+   *   re-entering from a held step:
    *   there is no signer to look up, and the sign-in goes on
    * @returns a promise of what `proceed` or the refusal returns
    */
@@ -1227,8 +1228,9 @@ class FederationSp {
   // verified: `{ kind: 'certificate' }` for the relationship's
   // fedSigningCertificate (SAML 2.0, SAML 1.1, WS-Federation), `{ kind:
   // 'jwk', jwk }` for the partner key that verified a JWT (OIDC, a JWT
-  // access token), and `{ kind: 'none' }` for the opaque OAuth 2.0 token's
-  // profile answer, where no signature was verified at all. A held answer
+  // access token), and `{ kind: 'none' }` for an answer no signature was
+  // verified on: the opaque OAuth 2.0 token's profile answer, and #746's
+  // three `no-signer:` sites (`federation/CLAUDE.md`). A held answer
   // with no `signer` is refused (STS-FED-0194) rather than finished
   // unchecked: nothing this module writes lacks one, so its absence is a
   // defect, and the safe reading of a defect is no.
@@ -4724,11 +4726,13 @@ class FederationSp {
     const reading = this.consumerReading(record, { token: said }, {},
       String(said.external_id), this.federatedAmr([]), '');
     log.debug("Leaving FederationSp.consumeDiscourseAnswer().");
+    // no-signer: discourse-hmac — an HMAC under the relationship's shared
+    // secret: no certificate, no key an issuer could withdraw. Replacing the
+    // secret is the withdrawal, and every new answer is checked against it.
     return this.completeSignIn(req, res, record, {
       subject: reading.subject,
       issuer: String(record.fedPeer || ''),
       bag: reading.bag, amr: reading.amr, acr: reading.acr,
-      // An HMAC: a shared secret, and no key anybody could revoke.
       signer: FederationSp.signerOf('none'),
       returnTo: this.fromContext(context).returnTo,
       connect: this.fromContext(context).connect,
@@ -4880,6 +4884,9 @@ class FederationSp {
         userinfo: profile && profile.ok ? AtprotoClient.jsonOf(profile) : null },
       {}, String(answer.sub), this.federatedAmr([]), '');
     log.debug("Leaving FederationSp.consumeAtprotoAnswer().");
+    // no-signer: atproto-back-channel — no partner's signature is verified:
+    // `sub` is the token endpoint's answer over TLS, believed on the DID's
+    // document as dialled just now, and the one key here is this sign-in's own.
     return this.completeSignIn(req, res, record, {
       subject: reading.subject, issuer: issuer,
       bag: reading.bag, amr: reading.amr, acr: reading.acr,
@@ -5070,11 +5077,13 @@ class FederationSp {
       { token: { steamid: steamid }, userinfo: summary }, {},
       steamid, this.federatedAmr([]), '');
     log.debug("Leaving FederationSp.consumeSteamAssertion().");
+    // no-signer: steam-check-authentication — Steam said `is_valid:true` over
+    // TLS about its own signature (section 11.4.2). This service verified none
+    // and never holds the association's key, so there is no signer to ask of.
     return this.completeSignIn(req, res, record, {
       subject: reading.subject,
       issuer: String(record.fedPeer || ''),
       bag: reading.bag, amr: reading.amr, acr: reading.acr,
-      // The OP vouched for the signature, and this service checked none.
       signer: FederationSp.signerOf('none'),
       returnTo: this.fromContext(context).returnTo,
       connect: this.fromContext(context).connect,
