@@ -249,14 +249,22 @@ async function after(base, stopped) {
   // THE TAKEOVER IS LOOKED FOR AMONG THAT JOB'S RUNS ALONE (2026-10-01): the
   // unfiltered newest 500 scroll past it within minutes, and this wait then
   // ran to its whole bound with the takeover already recorded.
+  // TWO WAYS A DEAD NODE'S RUN IS SETTLED (2026-11-05). The current slot's
+  // row is taken over: a new run records `abandonedOf` it. A row whose slot
+  // has PASSED is abandoned IN PLACE by `abandonOrphans()` (STS-SCHED-0011,
+  // 2026-11-03): its own state becomes `abandoned` and nothing reruns it.
+  // Only the first was looked for, so a crash inside attribute-sources.refresh
+  // — longer since #704 sliced it — waited the whole bound for a run that
+  // is never made.
   await until('the dead node\'s run to be taken over', async function () {
     const r = await report(base, one.jobId);
     return (r.runs || []).some(function (x) {
-      return x.abandonedOf === one.runId;
+      return x.abandonedOf === one.runId ||
+             (x.runId === one.runId && x.state === 'abandoned');
     });
   }, timeoutMs + 3 * tickS * 1000 + 30000);
-  log.info('  ✓ 4. the run ' + stopped + ' left running was taken over and ' +
-           'its attempt recorded abandoned.');
+  log.info('  ✓ 4. the run ' + stopped + ' left running was taken over, or ' +
+           'its passed slot abandoned in place.');
   log.debug('Leaving after().');
 }
 
