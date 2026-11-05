@@ -726,6 +726,7 @@ var config = {
     maxResponseBytes: 262144,                                                // Largest back-channel response (bytes)
     jwtAlgorithms: "RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512",  // Algorithms accepted on a partner's JWT
     spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified", // NameIDFormat in this service's SP metadata
+    atprotoPlcDirectory: "https://plc.directory",                            // PLC directory for Bluesky sign-ins
     encryptionKeyGraceS: 86400                                               // Previous encryption key kept for (seconds)
   },
 

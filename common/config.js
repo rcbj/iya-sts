@@ -9520,6 +9520,14 @@ const SETTINGS = [
                  'default is the literal this service has always published.' },
 
   // --- Federation: the partner's encrypted assertion (#168) ---------------
+  { key: 'federation.atprotoPlcDirectory', group: 'Federation',
+    label: 'PLC directory for Bluesky sign-ins',
+    env: 'STS_FEDERATION_ATPROTO_PLC_DIRECTORY', type: 'string',
+    dflt: 'https://plc.directory', runtime: true,
+    description: 'Where a Bluesky sign-in looks up the did:plc it was given, ' +
+                 'to check that the person\'s data server trusts the issuer ' +
+                 'that named them. A Bluesky relationship is the only reader.' },
+
   { key: 'federation.encryptionKeyGraceS', group: 'Federation',
     label: 'Previous encryption key kept for (seconds)',
     env: 'STS_FEDERATION_ENCRYPTION_KEY_GRACE_S', type: 'int', dflt: 86400,

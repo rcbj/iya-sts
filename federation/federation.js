@@ -267,6 +267,9 @@ const PATHS = {
   // An OpenID Connect relationship's encryption key as a JWKS (#168), what
   // the partner registers to encrypt its ID Token to.
   jwks: '/federation/jwks',
+  // A Bluesky relationship's client id (#746): the AT Protocol's OAuth profile
+  // has no registration, and this document's address is the client.
+  atprotoClient: '/federation/atproto/client',
   // An OpenID Connect relationship's login initiation endpoint (#930,
   // OpenID Connect Core 1.0 section 4): what the partner registers as the
   // client's `initiate_login_uri`, answered only where the relationship
@@ -2547,8 +2550,11 @@ function readinessOf(record) {
     const discovered = discovers(record)
       ? DISCOVERED_FIELDS.concat(registers(record) ? ['fedClientId'] : [])
       : [];
+    // DISCOURSECONNECT (#746) redeems nothing, so it has no token endpoint.
+    const excused = consumerProviders.adapts(record, 'discourse-connect')
+      ? ['fedTokenUrl'] : [];
     needs.forEach(function (name) {
-      if (discovered.indexOf(name) >= 0) return;
+      if (discovered.indexOf(name) >= 0 || excused.indexOf(name) >= 0) return;
       if (!String(record[name] || '').trim()) missing.push(name);
     });
     // A CONSUMER PROVIDER (#565): its profile's fields, and the realm's
@@ -2611,7 +2617,8 @@ function readinessOf(record) {
     // other, and an OPAQUE one cannot be read at all — so a plain OAuth 2.0
     // relationship needs either keys or a userinfo endpoint, and the message
     // says which two rather than naming one and leaving the other to be found.
-    if (record.fedProtocol === 'oauth2' &&
+    if (excused.indexOf('fedTokenUrl') < 0 &&
+        record.fedProtocol === 'oauth2' &&
         !String(record.fedJwks || '').trim() &&
         !String(record.fedJwksUri || '').trim() &&
         !String(record.fedUserinfoUrl || '').trim()) {

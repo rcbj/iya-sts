@@ -4627,6 +4627,14 @@
     "en": "f24b1c4bc1251e30",
     "text": "El <md:NameIDFormat> publicado en /federation/metadata/{id}, que es el formato en el que un socio configurado a partir de ese documento envía un sujeto. El predeterminado es el literal que este servicio siempre ha publicado."
   },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "Directorio PLC para inicios de sesión de Bluesky"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Dónde busca un inicio de sesión de Bluesky el did:plc recibido, para comprobar que el servidor de datos de la persona confía en el emisor que la nombró. Una relación de Bluesky es el único lector."
+  },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",
     "text": "Clave de cifrado anterior conservada durante (segundos)"

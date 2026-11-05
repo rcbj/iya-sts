@@ -1395,7 +1395,8 @@ class FederationHttp {
             response.on('end', function () {
               const ok = status >= 200 && status < 300;
               done({ ok: ok, status: status, body: Buffer.concat(chunks),
-                     contentType: contentType, kind: ok ? '' : 'status',
+                     contentType: contentType, headers: response.headers,
+                     kind: ok ? '' : 'status',
                      why: ok ? '' : 'it answered ' + status });
             });
             response.on('error', function (e) {

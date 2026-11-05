@@ -180,11 +180,22 @@ const GITLAB_CLAIMS: Record<string, string> = {
   email: 'userinfo:email'
 };
 
+// What Gitea and Forgejo's UserInfo says of a person, wherever they run (#746).
+const FORGE_CLAIMS: Record<string, string> = {
+  name: 'userinfo:name',
+  preferred_username: 'userinfo:preferred_username',
+  picture: 'userinfo:picture',
+  profile: 'userinfo:profile',
+  website: 'userinfo:website',
+  email: 'userinfo:email'
+};
+
 /** The named adapters, a closed set (rcbj, #565). */
 const ADAPTERS = ['github-verified-email', 'tiktok-client-key',
                   'apple-client-secret', 'apple-user-form-field',
                   'apple-notifications', 'microsoft-tenant-issuer',
-                  'steam-openid2'];
+                  'steam-openid2', 'query-access-token', 'discourse-connect',
+                  'atproto-oauth'];
 
 // The tenant Microsoft signs personal accounts' tokens as (#565).
 const MICROSOFT_CONSUMERS_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
@@ -896,6 +907,271 @@ const PROFILES: Profile[] = [
           'in the claimed identifier, and no address exists. Put a Steam Web ' +
           'API key in fedClientSecret for a name and a picture; without one ' +
           'the person has neither.' },
+  // -------------------------------------------------------------------------
+  // #746's TIER 2 (2026-11-05): those that publish a way to sign a person in.
+  // `docs/federation-consumer-providers.md` records the rest and why.
+  // -------------------------------------------------------------------------
+  { id: 'codeberg', label: 'Codeberg', protocol: 'oidc', generic: false,
+    docs: 'https://forgejo.org/docs/latest/user/oauth2-provider/',
+    defaults: {
+      fedSsoUrl: 'https://codeberg.org/login/oauth/authorize',
+      fedTokenUrl: 'https://codeberg.org/login/oauth/access_token',
+      fedJwksUri: 'https://codeberg.org/login/oauth/keys',
+      fedUserinfoUrl: 'https://codeberg.org/login/oauth/userinfo',
+      fedPeer: 'https://codeberg.org',
+      fedScope: 'openid profile email',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: FORGE_CLAIMS,
+    emailVerified: 'userinfo:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect at codeberg.org, which runs Forgejo. Another ' +
+          'Forgejo or Gitea instance is the gitea profile.' },
+  { id: 'gitea', label: 'Gitea or Forgejo instance', protocol: 'oidc',
+    generic: false,
+    docs: 'https://docs.gitea.com/development/oauth2-provider',
+    // No address: each instance is its own issuer.
+    defaults: { fedScope: 'openid profile email',
+                fedTokenAuth: 'client_secret_post' },
+    needs: ['fedClientSecret', 'fedTokenUrl', 'fedJwksUri', 'fedUserinfoUrl'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: FORGE_CLAIMS,
+    emailVerified: 'userinfo:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect at your own instance: set its address as the ' +
+          'issuer, and /login/oauth/authorize, /login/oauth/access_token, ' +
+          '/login/oauth/keys and /login/oauth/userinfo under it. An instance ' +
+          'vouches for its own addresses, so trust one only if you trust ' +
+          'whoever runs it.' },
+  { id: 'huggingface', label: 'Hugging Face', protocol: 'oidc', generic: false,
+    docs: 'https://huggingface.co/docs/hub/oauth',
+    defaults: {
+      fedSsoUrl: 'https://huggingface.co/oauth/authorize',
+      fedTokenUrl: 'https://huggingface.co/oauth/token',
+      fedJwksUri: 'https://huggingface.co/oauth/jwks',
+      fedUserinfoUrl: 'https://huggingface.co/oauth/userinfo',
+      fedPeer: 'https://huggingface.co',
+      fedScope: 'openid profile email',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      name: 'userinfo:name',
+      preferred_username: 'userinfo:preferred_username',
+      picture: 'userinfo:picture',
+      profile: 'userinfo:profile',
+      website: 'userinfo:website',
+      email: 'userinfo:email'
+    },
+    emailVerified: 'userinfo:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect (Sign in with Hugging Face).' },
+  { id: 'asana', label: 'Asana', protocol: 'oidc', generic: false,
+    docs: 'https://developers.asana.com/docs/openid-connect',
+    defaults: {
+      fedSsoUrl: 'https://app.asana.com/-/oauth_authorize',
+      fedTokenUrl: 'https://app.asana.com/-/oauth_token',
+      fedJwksUri: 'https://app.asana.com/api/1.0/openid_connect/jwks',
+      fedUserinfoUrl: 'https://app.asana.com/api/1.0/openid_connect/userinfo',
+      fedPeer: 'https://app.asana.com/api/1.0',
+      fedScope: 'openid email profile',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      name: 'userinfo:name',
+      picture: 'userinfo:picture',
+      email: 'userinfo:email'
+    },
+    // Its documentation makes no statement that an address was proved.
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect. The address carries no verification statement.' },
+  // OAuth 2.0 here although Atlassian's server publishes OpenID Connect,
+  // because its documentation for applications is the three-legged flow and
+  // the User Identity API; `audience` is what that flow requires.
+  { id: 'atlassian', label: 'Atlassian', protocol: 'oauth2', generic: false,
+    docs: 'https://developer.atlassian.com/cloud/jira/platform/' +
+          'oauth-2-3lo-apps/',
+    defaults: {
+      fedSsoUrl: 'https://auth.atlassian.com/authorize',
+      fedTokenUrl: 'https://auth.atlassian.com/oauth/token',
+      fedUserinfoUrl: 'https://api.atlassian.com/me',
+      fedPeer: 'https://auth.atlassian.com',
+      fedScope: 'read:me',
+      fedAuthorizeParams: 'audience=api.atlassian.com',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo', subject: 'userinfo:account_id',
+    claims: {
+      name: 'userinfo:name',
+      nickname: 'userinfo:nickname',
+      picture: 'userinfo:picture',
+      email: 'userinfo:email'
+    },
+    emailVerified: 'userinfo:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OAuth 2.0 (three-legged) with the User Identity API, which has to ' +
+          'be added to the application in the developer console.' },
+  { id: 'replit', label: 'Replit', protocol: 'oidc', generic: false,
+    docs: 'https://replit.com/oidc/.well-known/openid-configuration',
+    defaults: {
+      fedSsoUrl: 'https://replit.com/oidc/auth',
+      fedTokenUrl: 'https://replit.com/oidc/token',
+      fedJwksUri: 'https://replit.com/oidc/jwks',
+      fedUserinfoUrl: 'https://replit.com/oidc/me',
+      fedPeer: 'https://replit.com/oidc',
+      fedScope: 'openid profile email',
+      fedTokenAuth: 'client_secret_basic'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'id_token', subject: 'id_token:sub',
+    claims: {
+      name: 'userinfo:name',
+      preferred_username: 'userinfo:preferred_username',
+      picture: 'userinfo:picture',
+      email: 'userinfo:email'
+    },
+    emailVerified: 'userinfo:email_verified',
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OpenID Connect, from Replit\'s discovery document alone. Whether ' +
+          'Replit issues a client to an application it does not host could ' +
+          'not be established.' },
+  { id: 'mastodon', label: 'Mastodon instance', protocol: 'oauth2',
+    generic: false,
+    docs: 'https://docs.joinmastodon.org/methods/oauth/',
+    // No address: a relationship is one instance, and an administrator
+    // registers an application there (POST /api/v1/apps) to get its client.
+    defaults: { fedScope: 'profile', fedTokenAuth: 'client_secret_post' },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo',
+    // A URL naming the account on that instance.
+    subject: 'userinfo:sub',
+    claims: {
+      name: 'userinfo:name',
+      preferred_username: 'userinfo:preferred_username',
+      picture: 'userinfo:picture',
+      profile: 'userinfo:profile'
+    },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OAuth 2.0 with /oauth/userinfo, on Mastodon 4.4 or later. Each ' +
+          'instance is a relationship of its own, whose client comes from ' +
+          'its POST /api/v1/apps. No address is offered.' },
+  { id: 'sourceforge', label: 'SourceForge', protocol: 'oauth2',
+    generic: false,
+    docs: 'https://sourceforge.net/p/forge/documentation/Allura%20API/',
+    defaults: {
+      fedSsoUrl: 'https://sourceforge.net/auth/oauth2/authorize',
+      fedTokenUrl: 'https://sourceforge.net/rest/oauth2/token',
+      fedUserinfoUrl: 'https://sourceforge.net/rest/user',
+      fedPeer: 'https://sourceforge.net',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo', subject: 'userinfo:username',
+    claims: { name: 'userinfo:name', picture: 'userinfo:avatar_url' },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: [],
+    note: 'OAuth 2.0 (Apache Allura). Its documentation could not be read ' +
+          'directly, so check the address of its user endpoint at the first ' +
+          'sign-in. No address is read.' },
+  // THE TWO THAT TAKE THE TOKEN ON THE QUERY (`query-access-token`), which
+  // `federation_sp.ts`'s queryTokenProfile() keeps out of every log and page.
+  { id: 'stackoverflow', label: 'Stack Overflow', protocol: 'oauth2',
+    generic: false,
+    docs: 'https://api.stackexchange.com/docs/authentication',
+    defaults: {
+      fedSsoUrl: 'https://stackoverflow.com/oauth',
+      fedTokenUrl: 'https://stackoverflow.com/oauth/access_token/json',
+      fedUserinfoUrl: 'https://api.stackexchange.com/2.3/me?site=stackoverflow',
+      fedPeer: 'https://stackoverflow.com',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo', subject: 'userinfo:items.0.account_id',
+    claims: {
+      name: 'userinfo:items.0.display_name',
+      picture: 'userinfo:items.0.profile_image',
+      profile: 'userinfo:items.0.link'
+    },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: ['query-access-token'],
+    note: 'OAuth 2.0 with the Stack Exchange API. Add your application\'s ' +
+          'key to fedUserinfoUrl as &key=, as that API requires beside a ' +
+          'token. The account_id is the same across the network. No address ' +
+          'is offered.' },
+  { id: 'oschina', label: 'OSChina', protocol: 'oauth2', generic: false,
+    docs: 'https://www.oschina.net/openapi/docs',
+    defaults: {
+      fedSsoUrl: 'https://www.oschina.net/action/oauth2/authorize',
+      fedTokenUrl: 'https://www.oschina.net/action/openapi/token?dataType=json',
+      fedUserinfoUrl: 'https://www.oschina.net/action/openapi/user?' +
+                      'dataType=json',
+      fedPeer: 'https://www.oschina.net',
+      fedTokenAuth: 'client_secret_post'
+    },
+    needs: ['fedClientSecret', 'fedUserinfoUrl'],
+    primary: 'userinfo', subject: 'userinfo:id',
+    claims: { name: 'userinfo:name', picture: 'userinfo:avatar',
+              profile: 'userinfo:url', email: 'userinfo:email' },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: ['query-access-token'],
+    note: 'OAuth 2.0 with its OpenAPI. The address carries no verification ' +
+          'statement.' },
+  // DISCOURSE (`discourse-connect`): an HMAC-signed payload each way, with no
+  // endpoint dialled at all. `fedClientSecret` is the instance's
+  // `discourse connect provider secrets` value for this service's domain.
+  { id: 'discourse', label: 'Discourse instance', protocol: 'oauth2',
+    generic: false,
+    docs: 'https://meta.discourse.org/t/use-discourse-as-an-identity-provider' +
+          '-sso-discourseconnect/32974',
+    defaults: { fedClientId: 'discourse-connect' },
+    needs: ['fedClientSecret'],
+    primary: 'token', subject: 'token:external_id',
+    claims: {
+      name: 'token:name',
+      preferred_username: 'token:username',
+      picture: 'token:avatar_url',
+      email: 'token:email'
+    },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: ['discourse-connect'],
+    note: 'DiscourseConnect, with the instance as the provider: set its ' +
+          '/session/sso_provider as the sign-in address and its address as ' +
+          'the issuer, and share the secret. The address is unverified here.' },
+  // BLUESKY (`atproto-oauth`): `federation/atproto_client.ts`. The endpoints
+  // here satisfy the protocol's `needs`; a sign-in reads the issuer's metadata.
+  { id: 'bluesky', label: 'Bluesky', protocol: 'oauth2', generic: false,
+    docs: 'https://atproto.com/specs/oauth',
+    defaults: {
+      fedSsoUrl: 'https://bsky.social/oauth/authorize',
+      fedTokenUrl: 'https://bsky.social/oauth/token',
+      fedUserinfoUrl: 'https://public.api.bsky.app/xrpc/' +
+                      'app.bsky.actor.getProfile',
+      fedPeer: 'https://bsky.social',
+      fedClientId: 'atproto-client-metadata',
+      fedScope: 'atproto'
+    },
+    needs: [],
+    primary: 'token', subject: 'token:sub',
+    claims: {
+      name: 'userinfo:displayName',
+      preferred_username: 'userinfo:handle',
+      picture: 'userinfo:avatar'
+    },
+    emailVerified: null,
+    mfa: null, issuerAliases: [], adapters: ['atproto-oauth'],
+    note: 'The AT Protocol\'s OAuth profile, with no registration: this ' +
+          'service publishes its client metadata, so its address has to be ' +
+          'public https. Accounts of the bsky.social issuer whose DID is a ' +
+          'did:plc. No address is read, and it cannot be connected from the ' +
+          'portal.' },
   { id: 'generic-oidc', label: 'Another OpenID Connect provider',
     protocol: 'oidc', generic: true, docs: '',
     defaults: { fedScope: 'openid profile email' },

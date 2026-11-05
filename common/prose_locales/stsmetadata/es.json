@@ -2703,6 +2703,10 @@
     "en": "bbe97109d1d3a58e",
     "text": "Un SPSSODescriptor y no un IDPSSODescriptor: esta es la mitad de este servicio que es un proveedor de servicios. Por relación, porque este servicio se llama de forma distinta ante cada socio. SIN FIRMAR, deliberadamente, y es el único documento de metadatos de aquí que lo está: /saml2/metadata está firmado porque un proveedor de servicios que configura su confianza en este servicio gana al comprobar quién escribió el documento, y aquí al socio se le dice adónde enviar las cosas precisamente con la clave con la que se haría una firma. Devuelve 404 para una relación que no es SAML, mientras que /saml2/metadata nunca devuelve 404, porque aquel acuña un documento para cualquier entityID que se pida y este describe un acuerdo que existe o no existe. Desde #168 el de una relación SAML 2.0 lleva KeyDescriptor use=\"encryption\" con los EncryptionMethods que acepta, y una relación WS-Federation también recibe uno: un EntityDescriptor con un RoleDescriptor fed:ApplicationServiceType (WS-Federation 1.2 sección 3.1), su PassiveRequestorEndpoint y su clave de cifrado."
   },
+  "stsmetadata.endpoints./federation/atproto/client/:id.what": {
+    "en": "ec1fd8df6b7f7ded",
+    "text": "NON-SPEC en el catálogo de este servicio: el perfil OAuth del AT Protocol no tiene registro, así que la dirección de este documento JSON público es el identificador de cliente, y el servidor de Bluesky lo obtiene. No contiene ninguna clave, y una relación que no se puede usar responde 404."
+  },
   "stsmetadata.endpoints./federation/jwks/:id.what": {
     "en": "ffaafc6508d21968",
     "text": "La clave de cifrado ACTUAL de la relación como JWKS, use: enc, con el alg que acepta: lo que el socio registra como jwks_uri (o jwks) de esta parte que confía para cifrar el ID Token para ella (OpenID Connect Registration sección 2, Core sección 10.2). Una clave que una rotación sustituyó sigue descifrando durante federation.encryptionKeyGraceS y nunca se publica. Cache-Control: no-store. 404 para todo lo que no sea una relación OpenID Connect del lado del proveedor de servicios."

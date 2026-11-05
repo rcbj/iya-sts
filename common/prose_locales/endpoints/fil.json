@@ -1619,6 +1619,10 @@
     "en": "1bd56e73b838da2d",
     "text": "Ang SARILING SAML metadata ng serbisyong ito, bawat partner"
   },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "Client metadata ng isang Bluesky relationship (#746)"
+  },
   "endpoints.route./federation/jwks/:id.name": {
     "en": "56f010e78f399989",
     "text": "Ang encryption key ng isang OpenID Connect relationship (#168)"

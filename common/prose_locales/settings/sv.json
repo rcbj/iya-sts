@@ -4627,6 +4627,14 @@
     "en": "f24b1c4bc1251e30",
     "text": "Det <md:NameIDFormat> som publiceras i /federation/metadata/{id}, vilket är det format som en partner som konfigurerats från det dokumentet skickar ett subjekt i. Standardvärdet är den literal som den här tjänsten alltid har publicerat."
   },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "PLC-katalog för Bluesky-inloggningar"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Var en Bluesky-inloggning slår upp den did:plc den fick, för att kontrollera att personens dataserver litar på utfärdaren som namngav personen. En Bluesky-relation är den enda läsaren."
+  },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",
     "text": "Föregående krypteringsnyckel behålls i (sekunder)"

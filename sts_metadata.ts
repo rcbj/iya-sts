@@ -8234,6 +8234,12 @@ const ENDPOINTS: EndpointEntry[] = [
           'fed:ApplicationServiceType RoleDescriptor (WS-Federation 1.2 ' +
           'section 3.1), its PassiveRequestorEndpoint and its encryption ' +
           'key.' },
+  { path: '/federation/atproto/client/:id', group: 'Federation',
+    name: 'A Bluesky relationship\'s client metadata (#746)', specs: [],
+    what: 'NON-SPEC in this service\'s catalogue: the AT Protocol\'s OAuth ' +
+          'profile has no registration, so the address of this public JSON ' +
+          'document is the client id, and Bluesky\'s server fetches it. It ' +
+          'holds no key, and a relationship that is not usable answers 404.' },
   { path: '/federation/jwks/:id', group: 'Federation',
     name: 'An OpenID Connect relationship\'s encryption key (#168)',
     specs: ['oidc-registration', 'rfc7515', 'rfc7516', 'oidc'],

@@ -4627,6 +4627,14 @@
     "en": "f24b1c4bc1251e30",
     "text": "Le <md:NameIDFormat> publié dans /federation/metadata/{id}, qui est le format dans lequel un partenaire configuré à partir de ce document envoie un sujet. La valeur par défaut est le littéral que ce service a toujours publié."
   },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "Annuaire PLC pour les connexions Bluesky"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Où une connexion Bluesky recherche le did:plc reçu, pour vérifier que le serveur de données de la personne fait confiance à l'émetteur qui l'a nommée. Une relation Bluesky est le seul lecteur."
+  },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",
     "text": "Clé de chiffrement précédente conservée pendant (secondes)"
