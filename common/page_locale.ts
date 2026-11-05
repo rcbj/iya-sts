@@ -278,6 +278,31 @@ class PageLocale {
   }
 
   /**
+   * The console's language WITHOUT its catalogs (#1333): the negotiation, the
+   * offered languages, and where each catalog along the chain is. The catalogs
+   * are over a megabyte, the same for everybody, and hold no secret. In an API
+   * answer they could be neither compressed (BREACH) nor cached; as a static
+   * file they are both, at the edge too, under this build's address.
+   *
+   * @param req - the request
+   * @param page - the application and person it is for
+   * @returns `{ negotiated, offered, catalogFiles: { <tag>: <path> } }`
+   */
+  static consoleLanguage(req: any, page: PageFor) {
+    log.debug("Entering PageLocale.consoleLanguage().");
+    const t = PageLocale.translatorFor(req, page);
+    const build = encodeURIComponent(String(version.buildId()));
+    const files: Record<string, string> = {};
+    t.negotiated.chain.forEach(function (tag: string) {
+      files[tag] = '/web/locales/console-all/' + encodeURIComponent(tag) +
+        '.json?v=' + build;
+    });
+    log.debug("Leaving PageLocale.consoleLanguage(). " + t.locale);
+    return { negotiated: t.negotiated, offered: i18n.offered(),
+             catalogFiles: files };
+  }
+
+  /**
    * Holds a return path to a local path: one that starts with a single `/`,
    * names no scheme or host, and carries no control character or backslash.
    * Anything else is `/`.
