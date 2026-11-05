@@ -17,5 +17,22 @@
   "signedInAs": "当前登录身份",
   "error": "error",
   "errorDescription": "error_description",
-  "detail": "详细信息"
+  "detail": "详细信息",
+  "entityId": "服务提供方（entity ID）",
+  "relyingParty": "依赖方",
+  "acsUrl": "断言消费服务 URL",
+  "relayState": "RelayState",
+  "binding": "绑定（binding）",
+  "wa": "wa",
+  "wtrealm": "wtrealm",
+  "wreply": "wreply",
+  "wctx": "wctx",
+  "relationship": "联合关系",
+  "partner": "合作方",
+  "target": "TARGET",
+  "providerId": "providerId",
+  "principal": "Kerberos 主体",
+  "outcome": "结果",
+  "summary": "摘要",
+  "path": "地址"
 }

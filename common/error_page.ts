@@ -185,6 +185,32 @@ class ErrorPage {
   }
 
   /**
+   * The first of `candidates` the page's catalogs hold, drawn with `params`
+   * (#1327). A family's sentence is looked up BY ERROR CODE — a key test E
+   * cannot see in the source, since it is built from the code — so every
+   * caller hands a chain that ends in a general sentence, and a missing key
+   * never draws its own name.
+   *
+   * @param t - the page's translator
+   * @param candidates - keys, most specific first; '' entries are skipped
+   * @param params - the values a sentence may name
+   * @returns the sentence as HTML, or '' where none of them exists
+   */
+  static sentence(t: Translator, candidates: string[],
+                  params?: Record<string, unknown>): string {
+    log.debug("Entering ErrorPage.sentence().");
+    for (let i = 0; i < candidates.length; i++) {
+      const key = candidates[i];
+      if (key && t.has(key)) {
+        log.debug("Leaving ErrorPage.sentence(). " + key);
+        return t.html(key, params || {});
+      }
+    }
+    log.debug("Leaving ErrorPage.sentence(). None.");
+    return '';
+  }
+
+  /**
    * The language chooser's return path for an error page: the request
    * itself where asking again is harmless (a GET, which these pages answer
    * only ever by refusing again), the realm's front door otherwise.
