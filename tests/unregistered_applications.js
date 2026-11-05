@@ -360,6 +360,17 @@ function development(t, unknownFromProduct) {
   log.debug("Leaving development().");
 }
 
+// The part of a page a check reads (#1327): from the shared error page's
+// box, where it has one — its stylesheet and its language chooser come
+// first and are longer than the excerpt — and from the top otherwise.
+function excerpt(body) {
+  log.debug("Entering excerpt().");
+  const text = String(body || '');
+  const at = text.indexOf('<div class="warn"');
+  log.debug("Leaving excerpt().");
+  return text.slice(at < 0 ? 0 : at, (at < 0 ? 0 : at) + 900);
+}
+
 // A chainable stand-in for express's response, recording what was sent.
 function fakeRes() {
   log.debug("Entering fakeRes().");
@@ -443,7 +454,7 @@ function wsfed(t) {
     }
     log.debug("Leaving signIn().");
     return { status: res.statusCode, code: errorCodes.codeOf(res) || '',
-             threw: threw, body: res.body.slice(0, 300),
+             threw: threw, body: excerpt(res.body),
              location: res.headers.location || '' };
   };
   const unknown = 'urn:ua-nobody-' + process.pid;
@@ -640,7 +651,7 @@ async function ask2(handler, m, query) {
   }
   log.debug("Leaving ask2().");
   return { status: res.statusCode, code: errorCodes.codeOf(res) || '',
-           threw: threw, body: res.body.slice(0, 300) };
+           threw: threw, body: excerpt(res.body) };
 }
 
 function deflated(xml) {

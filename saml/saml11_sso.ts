@@ -2400,6 +2400,10 @@ class Saml11Sso {
       pendingFlows.delete(String(params.fid || ''));
       log.debug("Leaving Saml11Sso.interSiteTransfer(). The issuance policy " +
                 "refused it.");
+      // The SAML 2.0 profile answers this with RequestDenied delivered to
+      // the service provider; this one cannot, and the page says so. The
+      // console's /admin/roles link is not drawn for the person (#1327): it
+      // is an operator's page, and the diagnostics are what they forward.
       // A realm being removed (#262) is its own code.
       // A sign-in mechanism still not allowed after the one trip (#457) is
       // its own, and so is a risk step-up still unmet after it (#711).
@@ -2409,10 +2413,6 @@ class Saml11Sso {
                                                : 'STS-SAML-0102')
           : (stepUp && tripped ? 'STS-SAML-0115' : 'STS-SAML-0032')));
       log.debug("Leaving Saml11Sso.interSiteTransfer().");
-      // The SAML 2.0 profile answers this with RequestDenied delivered to
-      // the service provider; this one cannot, and the page says so. The
-      // console's /admin/roles link is not drawn for the person (#1327): it
-      // is an operator's page, and the diagnostics are what they forward.
       return this.samlError(res, 403, 'Refused by policy', roleAnswer.why,
         'policy', { rp: rpId, acs: acsUrl, target: carried.TARGET });
     }
