@@ -9798,8 +9798,8 @@ const SETTINGS = [
 
   // --- SAML 2.0 encryption -------------------------------------------------
   // Four rows in the `SAML 2.0 assertions` group, so they are drawn on
-  // /admin/saml-assertions with the rest of what goes into a document and can
-  // be answered per application. Encryption is exactly the kind of thing two
+  // /admin/saml2's assertions tab with the rest of what goes into a document
+  // and can be answered per application. Encryption is exactly the kind of thing two
   // service providers in one estate disagree about: one is a modern library
   // that wants GCM, the next is an appliance that speaks aes128-cbc and rsa-1_5
   // and nothing else.

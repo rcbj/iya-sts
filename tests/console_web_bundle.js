@@ -1051,6 +1051,36 @@ function childMain() {
           'want=' + one.want.join(',') + '; omit=' + one.omit.join(','));
     }
 
+    // A WS-TRUST-ONLY APPLICATION HAS ITS CREDENTIALS (#747). It authenticates
+    // with a client secret (#519) and signs with a certificate (#521), and the
+    // tab holding both was drawn only for the OAuth families, so neither had a
+    // page. A family with no credential of this kind still draws no such tab.
+    const trustSeeded = applications.createApplication({
+      identifier: 'urn:webcheck:wstrust',
+      kind: 'wstrust-relying-party', protocol: 'WS-Trust',
+      protocols: ['wstrust'],
+      note: 'drawn by the bundle check',
+      fields: { wstrustAppliesTo: ['https://sp.webcheck.example/wstrust'] }
+    });
+    const applicationHtml = async function (query) {
+      const detail = await viewOf(applicationPage, { application: query,
+                                                     per: '10' });
+      return WebPages.render(applicationPage.path, detail,
+                             WebKit.context({ application: query }, true));
+    };
+    const trustOnlyHtml = await applicationHtml('urn:webcheck:wstrust');
+    note(trustSeeded && trustSeeded.ok &&
+         trustOnlyHtml.indexOf('id="tab-credentials"') >= 0 &&
+         trustOnlyHtml.indexOf('id="credentials"') >= 0 &&
+         trustOnlyHtml.indexOf('id="credentials-message-signing"') >= 0,
+         'D-WS-Trust. a WS-Trust-only application draws its Credentials tab, ' +
+         'with its client secrets and its message-signing certificates',
+         JSON.stringify((trustSeeded && trustSeeded.errors) || []));
+    const samlOnlyHtml = await applicationHtml('https://sp.webcheck.example/saml2');
+    note(samlOnlyHtml.indexOf('id="credentials-message-signing"') < 0 &&
+         samlOnlyHtml.indexOf('id="credentials"') < 0,
+         'D-WS-Trust. a SAML-only application still does not');
+
     // THE DRIFT CHECK, IN PROCESS (#446): `/admin/sts-metadata`'s answer
     // reports a route registered and undescribed, and a description of a
     // route that is not registered. Every page converted here owes its
