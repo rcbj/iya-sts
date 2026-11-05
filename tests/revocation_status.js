@@ -3452,16 +3452,19 @@ async function theRegisteredDoors(t) {
   const NO_SIGNER_REASONS = {
     'discourse-hmac': {
       method: 'consumeDiscourseAnswer',
-      evidence: [/\.hmacSha256\(/, /\.constantTimeEquals\(/]
+      evidence: [/\.hmacSha256\(/, /\.constantTimeEquals\(/, /!!secret &&/],
+      signer: /signer: FederationSp\.signerOf\('shared-secret'/
     },
     'steam-check-authentication': {
       method: 'consumeSteamAssertion',
-      evidence: [/'check_authentication'/, /'is_valid:true'/]
+      evidence: [/'check_authentication'/, /'is_valid:true'/],
+      signer: /signer: FederationSp\.signerOf\('none'\)/
     },
     'atproto-back-channel': {
       method: 'consumeAtprotoAnswer',
       evidence: [/AtprotoClient\.postWithDpop\(/,
-                 /AtprotoClient\.subjectProblem\(/]
+                 /this\.atprotoSubjectProblem\(/],
+      signer: /signer: FederationSp\.signerOf\('did'/
     }
   };
   fedSource.forEach(function (line, at) {
@@ -3511,14 +3514,14 @@ async function theRegisteredDoors(t) {
       }) ||
       /verifyForeignJwt\(|verifyXmlSignature\(|verifyIdToken\(|signerOf\('(?:jwk|certificate)'/
         .test(one.body) ||
-      !/signer: FederationSp\.signerOf\('none'\)/.test(one.after);
+      !rule.signer.test(one.after);
   });
   t.check(reasoned.map(function (one) { return one.reason; }).sort().join() ===
           Object.keys(NO_SIGNER_REASONS).sort().join() &&
           reasonProblems.length === 0,
           'and each no-signer reason is used once, in the method it names, ' +
           'which does what the reason claims, verifies no partner signature ' +
-          'and records its signer as none', JSON.stringify(
+          'and records what a held answer is asked about', JSON.stringify(
             reasonProblems.map(function (one) { return one.line; })) + ' ' +
           siteRows);
   const joined = fedSource.join('\n');

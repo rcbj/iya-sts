@@ -2262,6 +2262,97 @@ function childMain() {
          'nothing', String(wrongDoc.status));
     }
 
+    // ----- WHAT A HELD ANSWER RESTED ON, ASKED AGAIN ------------------------
+    // Through the newcomer's profile form, the step that holds an answer: a
+    // change while the person is on the form stops that answer, and with no
+    // change the same steps finish. And an empty secret verifies nothing.
+    {
+      const modeLib = require(ROOT + '/common/mode');
+      const realIncomplete = modeLib.createsIncompletePeople;
+      const realInvents = modeLib.inventsClaimValues;
+      modeLib.createsIncompletePeople = function () { return false; };
+      modeLib.inventsClaimValues = function () { return false; };
+      const formOf = function (r) {
+        const m = /data-sts-state="([^"]*)"/.exec(String((r && r.text) || ''));
+        return m ? JSON.parse(m[1].replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+          .replace(/&amp;/g, '&')).view : null;
+      };
+      const submit = function (form) {
+        const values = { csrf: form.csrf };
+        form.fields.forEach(function (field) {
+          values[field.name] = field.name === 'mail' ? 'held@example.com'
+                                                     : 'Held';
+        });
+        return request('POST', '/realm/' + SP + form.action, { form: values });
+      };
+      const setSecret = function (value) {
+        return inSp(function () {
+          return federation.update('cp-discourse', { field: 'fedClientSecret',
+                                                     value: value });
+        });
+      };
+      discourse.fields = { external_id: '654', name: '', username: 'held',
+                           email: 'held@example.com' };
+      const secretForm = formOf(await signIn('cp-discourse'));
+      setSecret('a-replacement-secret');
+      const secretGone = await submit(secretForm);
+      setSecret(DISCOURSE_SECRET);
+      note(!!secretForm && secretForm.kind === 'profile' &&
+           secretGone.status === 401 && /replaced/.test(secretGone.text) &&
+           !entryFor('cp-discourse', '654'),
+           'HA1. a Discourse answer held across a replaced secret is ' +
+           'refused, and nobody is created', secretGone.status + ' ' +
+           JSON.stringify(secretForm && secretForm.kind));
+      const secretKept = await submit(formOf(await signIn('cp-discourse')));
+      note(secretKept.status < 400 && !!entryFor('cp-discourse', '654'),
+           'HA2. and with the secret unchanged the same steps finish',
+           String(secretKept.status));
+      discourse.fields = null;
+
+      atp.sub = 'did:plc:' + 'h'.repeat(24);
+      const didForm = formOf(await signIn('cp-bluesky'));
+      atp.serverTrusted = false;
+      const didGone = await submit(didForm);
+      atp.serverTrusted = true;
+      note(!!didForm && didForm.kind === 'profile' && didGone.status === 401 &&
+           /no longer believed/.test(didGone.text) &&
+           !entryFor('cp-bluesky', atp.sub),
+           'HA3. a Bluesky answer held while its data server stops naming ' +
+           'this issuer is refused, and nobody is created', didGone.status + ' ' +
+           JSON.stringify(didForm && didForm.kind));
+      const didKept = await submit(formOf(await signIn('cp-bluesky')));
+      note(didKept.status < 400 && !!entryFor('cp-bluesky', atp.sub),
+           'HA4. and with the data server unchanged the same steps finish',
+           String(didKept.status));
+      atp.sub = '';
+      modeLib.createsIncompletePeople = realIncomplete;
+      modeLib.inventsClaimValues = realInvents;
+
+      // A sealed secret that will not open reads as ''. The nonce is off the
+      // attacker's own redirect, and an HMAC under an empty key needs nothing.
+      const realSecretOf = federation.clientSecretOf;
+      federation.clientSecretOf = function () { return ''; };
+      const started = await request('GET', '/realm/' + SP +
+                                           '/federation/login/cp-discourse');
+      const sentSso = new URL(String(started.headers.location), base)
+        .searchParams.get('sso');
+      const sentBack = new URLSearchParams(
+        Buffer.from(String(sentSso), 'base64').toString('utf8'));
+      const forgedSso = Buffer.from(new URLSearchParams({
+        nonce: String(sentBack.get('nonce')), external_id: '777',
+        username: 'forged' }).toString()).toString('base64');
+      const forgedAt = new URL(String(sentBack.get('return_sso_url')), base);
+      forgedAt.searchParams.set('sso', forgedSso);
+      forgedAt.searchParams.set('sig', crypto.createHmac('sha256', '')
+        .update(forgedSso).digest('hex'));
+      const noSecret = await request('GET', forgedAt.toString());
+      federation.clientSecretOf = realSecretOf;
+      note(noSecret.status === 401 && !entryFor('cp-discourse', '777'),
+           'HA5. with no usable secret an answer under an empty key is refused',
+           String(noSecret.status));
+    }
+
     // ===== B. THE REALM SWITCH ==============================================
     inSp(function () {
       config.setOverride('federation.consumerProviders', 'false');

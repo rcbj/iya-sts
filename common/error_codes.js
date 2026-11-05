@@ -13224,6 +13224,15 @@ const CODES = [
     summary: 'federation/add-value or federation/remove-value named a field ' +
       'that holds one value, so there is no list to change (#747).',
     spec: 'HTTP 400 JSON' },
+  { code: 'STS-FED-0235',
+    summary: 'A held Discourse answer returned from its step after the ' +
+      'relationship\'s shared secret was replaced (#746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0236',
+    summary: 'A held Bluesky answer returned from its step and its subject ' +
+      'was no longer believed: the DID\'s data server no longer names this ' +
+      'issuer, or could not be asked (#746).',
+    spec: 'HTTP 401 page' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
