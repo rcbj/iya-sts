@@ -1219,6 +1219,10 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717). El logotipo PNG, JPEG o WebP subido para este dominio mediante /admin-api/branding/logo, servido desde este origen para que el img-src 'self' de las páginas de inicio de sesión lo admita y ningún tercero sepa quién inicia sesión; nosniff, aislado, un ETag de su resumen. 404 donde el dominio no tiene ninguno."
   },
+  "stsmetadata.endpoints./web/photo/:id.what": {
+    "en": "32d1ba774784074d",
+    "text": "NON-SPEC en sí mismo (#719), y lo que nombra el claim picture de OpenID Connect Core 5.1 para una persona con una foto aquí. El JPEG o PNG que estableció en el portal o la copia de un socio de federación, en una dirección aleatoria que cambia con la foto; sin credencial, porque una parte de confianza la obtiene sin ninguna. nosniff, en sandbox, con ETag. 404 para una persona deshabilitada o eliminada."
+  },
   "stsmetadata.endpoints./web/branding/preview.what": {
     "en": "a2af93aaf34bbbe3",
     "text": "NON-SPEC (#717). Una muestra de la tarjeta de inicio de sesión de este dominio dibujada con colores pendientes y un diseño (accent, page, card, text, layout en la consulta, cada uno comprobado como lo harían los ajustes), para que la consola la abra en una pestaña nueva antes de guardar. Nada en ella inicia la sesión de nadie."
@@ -1366,6 +1370,10 @@
   "stsmetadata.endpoints./report-api/signals.what": {
     "en": "f00e66637d8d4146",
     "text": "FUERA DE ESPECIFICACIÓN. Lo que ha recibido la aplicación de informes, receptora del propio transmisor de este servicio (#1042): todas las señales del dominio para un administrador de informes y, para cualquier otro, solo las señales sobre sí mismo. Detrás del mismo token que el resto de /report-api."
+  },
+  "stsmetadata.endpoints./report-api/me.what": {
+    "en": "868625e0bbe4414a",
+    "text": "NON-SPEC (#719). La ruta de la foto de perfil propia de la persona que inició sesión en este reino, vacía si no tiene ninguna. Tras el mismo token que el resto de /report-api."
   },
   "stsmetadata.endpoints./report-api/announcements.what": {
     "en": "0f75f226eeb86f05",
@@ -2694,6 +2702,10 @@
   "stsmetadata.endpoints./federation/metadata/:id.what": {
     "en": "bbe97109d1d3a58e",
     "text": "Un SPSSODescriptor y no un IDPSSODescriptor: esta es la mitad de este servicio que es un proveedor de servicios. Por relación, porque este servicio se llama de forma distinta ante cada socio. SIN FIRMAR, deliberadamente, y es el único documento de metadatos de aquí que lo está: /saml2/metadata está firmado porque un proveedor de servicios que configura su confianza en este servicio gana al comprobar quién escribió el documento, y aquí al socio se le dice adónde enviar las cosas precisamente con la clave con la que se haría una firma. Devuelve 404 para una relación que no es SAML, mientras que /saml2/metadata nunca devuelve 404, porque aquel acuña un documento para cualquier entityID que se pida y este describe un acuerdo que existe o no existe. Desde #168 el de una relación SAML 2.0 lleva KeyDescriptor use=\"encryption\" con los EncryptionMethods que acepta, y una relación WS-Federation también recibe uno: un EntityDescriptor con un RoleDescriptor fed:ApplicationServiceType (WS-Federation 1.2 sección 3.1), su PassiveRequestorEndpoint y su clave de cifrado."
+  },
+  "stsmetadata.endpoints./federation/atproto/client/:id.what": {
+    "en": "ec1fd8df6b7f7ded",
+    "text": "NON-SPEC en el catálogo de este servicio: el perfil OAuth del AT Protocol no tiene registro, así que la dirección de este documento JSON público es el identificador de cliente, y el servidor de Bluesky lo obtiene. No contiene ninguna clave, y una relación que no se puede usar responde 404."
   },
   "stsmetadata.endpoints./federation/jwks/:id.what": {
     "en": "ffaafc6508d21968",

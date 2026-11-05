@@ -1219,6 +1219,10 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717). Ang PNG, JPEG o WebP na logo na in-upload para sa realm na ito sa pamamagitan ng /admin-api/branding/logo, inihahatid mula sa origin na ito upang tanggapin ito ng img-src 'self' ng mga pahina ng pag-sign in at walang ikatlong partido ang makaalam kung sino ang nagsa-sign in; nosniff, naka-sandbox, isang ETag ng digest nito. 404 kung walang logo ang realm."
   },
+  "stsmetadata.endpoints./web/photo/:id.what": {
+    "en": "32d1ba774784074d",
+    "text": "NON-SPEC sa sarili nito (#719), at ang pinangangalanan ng picture claim ng OpenID Connect Core 5.1 para sa taong may larawan dito. Ang JPEG o PNG na itinakda sa portal o ang kopya mula sa federation partner, sa random na address na nagbabago kasama ng larawan; walang credential, dahil kinukuha ito ng relying party nang wala nito. nosniff, naka-sandbox, may ETag. 404 para sa taong naka-disable o nabura."
+  },
   "stsmetadata.endpoints./web/branding/preview.what": {
     "en": "a2af93aaf34bbbe3",
     "text": "NON-SPEC (#717). Isang halimbawa ng sign-in card ng realm na ito na iginuhit gamit ang mga nakabinbing kulay at isang layout (accent, page, card, text, layout sa query, bawat isa sinusuri gaya ng gagawin ng mga setting), para buksan ng console sa bagong tab bago mag-save. Walang sinumang nasa-sign in dito."
@@ -1366,6 +1370,10 @@
   "stsmetadata.endpoints./report-api/signals.what": {
     "en": "f00e66637d8d4146",
     "text": "HINDI MULA SA SPEC. Ang natanggap ng application ng mga ulat, isang receiver ng sariling transmitter ng serbisyong ito (#1042): bawat signal sa realm para sa isang report administrator, at para sa iba ang mga signal lamang tungkol sa kanila. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
+  },
+  "stsmetadata.endpoints./report-api/me.what": {
+    "en": "868625e0bbe4414a",
+    "text": "NON-SPEC (#719). Ang path ng sariling larawan sa profile ng naka-sign in na tao sa realm na ito, walang laman kung wala siya nito. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
   },
   "stsmetadata.endpoints./report-api/announcements.what": {
     "en": "0f75f226eeb86f05",
@@ -2694,6 +2702,10 @@
   "stsmetadata.endpoints./federation/metadata/:id.what": {
     "en": "bbe97109d1d3a58e",
     "text": "Isang SPSSODescriptor sa halip na IDPSSODescriptor — ito ang kalahati ng serbisyong ito na isang service provider. Bawat relationship, dahil iba ang tawag ng serbisyong ito sa sarili nito sa bawat partner. UNSIGNED, sinadya, at ito ang nag-iisang metadata document dito na ganoon: signed ang /saml2/metadata dahil nakikinabang ang service provider na nagko-configure ng tiwala nito sa serbisyong ito sa pagsuri kung sino ang sumulat ng dokumento, at dito ay sinasabihan ang partner kung saan magpapadala ng mga bagay ng mismong key na gagamitin sa paggawa ng signature. Nagbabalik ito ng 404 para sa relationship na hindi SAML, samantalang walang nagbabalik ng 404 sa /saml2/metadata — dahil ang isang iyon ay nagmi-mint ng dokumento para sa anumang entityID na hiningi at ang isang ito ay naglalarawan ng kaayusang umiiral o hindi. Mula noong #168, dala ng sa SAML 2.0 relationship ang KeyDescriptor use=\"encryption\" kasama ang mga EncryptionMethod na tinatanggap nito, at nagkakaroon din ng isa ang WS-Federation relationship: isang EntityDescriptor na may fed:ApplicationServiceType RoleDescriptor (WS-Federation 1.2 section 3.1), ang PassiveRequestorEndpoint nito at ang encryption key nito."
+  },
+  "stsmetadata.endpoints./federation/atproto/client/:id.what": {
+    "en": "ec1fd8df6b7f7ded",
+    "text": "NON-SPEC sa catalogue ng serbisyong ito: walang registration ang OAuth profile ng AT Protocol, kaya ang address ng pampublikong JSON document na ito ang client id, at kinukuha ito ng server ng Bluesky. Walang key ito, at sumasagot ng 404 ang relationship na hindi magagamit."
   },
   "stsmetadata.endpoints./federation/jwks/:id.what": {
     "en": "ffaafc6508d21968",

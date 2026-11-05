@@ -2461,3 +2461,14 @@ everywhere**: the owner is the token's subject, a resource named in the form
 must be theirs and a share named for removal must be in their document
 (`tests/portal_shared.js` D1). The section is always in the column; the page
 says when UMA is off.
+
+## THE OVERVIEW'S PROFILE PHOTO (#719, 2026-11-05)
+
+`web_photo.ts` turns a chosen file into a centered square of at most 720 pixels
+on a canvas, and that one result is both the preview and the hidden field Save
+sends, so Save stays disabled until there is one. **Everything goes through
+`data:` URLs** because the portal's `img-src` is `'self' data:`; a `blob:` URL
+would need the policy widened, and nothing else wants it. The limits arrive on
+the Overview's `photo.limits` and are the server's to enforce:
+`common/CLAUDE.md` (3db).
+

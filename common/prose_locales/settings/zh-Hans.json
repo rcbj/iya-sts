@@ -95,6 +95,26 @@
     "en": "4369282d9208f4aa",
     "text": "相信 X-Forwarded-Proto 和 X-Forwarded-Host——终止 TLS 的反向代理会设置它们，以说明客户端实际使用的是什么。当本服务前面有其他组件时请开启，否则元数据会向通过 https 访问的客户端发布 http:// URL，并且每个 DPoP 证明都会因指向真实端点而被拒绝。前面没有任何组件时请保持关闭：没有代理时，这些只是任何客户端都能设置的普通标头，相信它们就等于让调用方决定本服务认为自己的颁发者和端点是什么。监控 → TLS 连接显示请求实际携带了什么，以及其中哪些被采信。请注意，在任何模式下，本服务都绝不会从标头（X-Client-Cert 及类似标头）中读取客户端证书——转发而来的证书是任何人都能伪造的证书。"
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "CDN 边缘节点地址"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "位于本服务前端的 CDN 用于连接的地址或 CIDR 范围，以逗号分隔。CDN 的边缘节点为其所有客户服务，因此来自这些范围的请求，除非在 X-Origin-Verify 标头中携带 global.edgeSecret，否则会被拒绝。留空（默认值）时不对任何人提出要求。既不是地址也不是 CIDR 范围的值会被忽略并记录到日志。"
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "CDN 源站密钥"
+  },
+  "global.edgeSecret|description": {
+    "en": "eb67106afc0cc7f0",
+    "text": "本部署自身的 CDN 分发在 X-Origin-Verify 中发送的内容，用于将其与同一边缘节点上其他客户的分发区分开来。该标头在读取后即被移除。设置了 global.edgeProxies 而此项为空时，来自这些范围的所有请求都会被拒绝。"
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "启动时读取一次"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "受信任的代理地址"
@@ -862,6 +882,54 @@
   "branding.logoMaxBytes|description": {
     "en": "37f4c903152cd219",
     "text": "一次上传可携带的最大徽标，适用于所有领域。更大的会被拒绝（STS-AUTHN-0546）。徽标保存在存储中并复制到每个进程，因此保持较小：默认 256 KiB，最多 2 MiB。"
+  },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "允许用户设置自己的照片"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "用户是否可以在用户门户上设置和替换自己的个人资料照片。关闭时，门户不提供上传，该操作被拒绝（STS-PORTAL-0634）；用户仍可移除已有的照片。"
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "复制联合伙伴的照片"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "是否在登录后获取联合伙伴发送的图片地址并保存在此，使 picture 声明指向本领域的副本。关闭时或复制失败时，声明携带伙伴的地址。获取遵循联合出站策略，且不跟随重定向。"
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "用户可选择的最大文件（字节）"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "门户允许用户选择的最大文件，默认 5 MiB。浏览器在发送前会裁剪并缩放，因此这不是保存的大小：保存的大小由 profilePhoto.maxStoredBytes 决定。"
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "保存的最大照片（字节）"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "本领域保存的最大图片，无论来自用户还是联合伙伴。更大的会被拒绝（STS-PORTAL-0631）。默认 1 MiB，最大 3 MiB：图片以 base64 编码在 JSON 请求中传输。"
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "用户照片的最短边（像素）"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "用户设置的照片的最短边。更小的会被拒绝（STS-PORTAL-0632）。这不适用于伙伴的副本，后者通常更小。"
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "照片的最长边（像素）"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "保存的照片的最长边，因为每个显示它的浏览器都必须解码。更大的会被拒绝（STS-PORTAL-0632）。"
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -4578,6 +4646,14 @@
   "federation.spNameIdFormat|description": {
     "en": "f24b1c4bc1251e30",
     "text": "在 /federation/metadata/{id} 中发布的 <md:NameIDFormat>，依据该文档配置的合作方会以此格式发送主体。默认值是本服务一直以来发布的字面值。"
+  },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "Bluesky 登录使用的 PLC 目录"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Bluesky 登录在此查找收到的 did:plc，以确认该用户的数据服务器信任指明该用户的颁发者。只有 Bluesky 关系会读取此设置。"
   },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",

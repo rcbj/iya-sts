@@ -215,6 +215,18 @@
     "en": "f2869db882e1f25d",
     "text": "Cette connexion est refusée (STS-VC-0127), auditée, et la personne enrôle de nouveau le DID en le prouvant sur /portal/self-issued. Dans les deux modes, une clé que l’épinglage ne nomme pas est refusée (STS-VC-0126)."
   },
+  "mode.requirements.photo-address-base.what": {
+    "en": "b2f20f3f61f5b011",
+    "text": "L'adresse d'une photo de profil est construite sur l'URL de base publique fixée"
+  },
+  "mode.requirements.photo-address-base.development": {
+    "en": "9824abf896b0c613",
+    "text": "Sans URL de base publique fixée, une photo définie sur /portal ou copiée d'un partenaire de fédération est adressée sur l'hôte auquel la requête est arrivée, et les jetons portent cette adresse."
+  },
+  "mode.requirements.photo-address-base.product": {
+    "en": "af32e32ff746f573",
+    "text": "La définir est refusé (STS-PORTAL-0635) et celle d'un partenaire n'est pas copiée (STS-FED-0220) tant que global.publicBaseUrl ne fixe pas la base : un en-tête Host ne fait jamais partie d'une adresse portée par un jeton."
+  },
   "mode.requirements.person-did-base.what": {
     "en": "58a07bbd2f445d15",
     "text": "Le did:web publié d'une personne est frappé sur l'URL de base publique épinglée"

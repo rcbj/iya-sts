@@ -1488,6 +1488,8 @@ changed only while the default realm is ambient, by a service administrator.
 | `global.domain` | `STS_DOMAIN` | `example.com` | **restart** — the default realm's directory tree is built under it at startup | The DNS domain of the DEFAULT trust realm. Its directory is rooted at the RFC 2247 mapping of it (`example.com` is `dc=example,dc=com`), and a realm created without a domain of its own is given `<id>.<this value>`. It names what the realm invents, never where it is reached. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe X-Forwarded-Proto and X-Forwarded-Host — which is what a TLS-terminating reverse proxy sets to say what the CLIENT used. |
 | `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDR ranges this deployment's own proxies connect from. Read for forwarded headers only with `global.trustProxy` on, and for a PROXY protocol header whenever `global.proxyProtocol` is `v2` — where empty trusts nobody and the service does not start. **Empty keeps the old rule** — forwarded headers believed from any caller, the rate limiter taking the left-most `X-Forwarded-For` entry. Set, they are believed only from a peer in a range and the client is the right-most hop outside them, so a caller reaching a node directly cannot choose its own rate-limit address or this service's URL. `common/CLAUDE.md`, *Several nodes*, also says why mutual TLS needs L4 passthrough. |
+| `global.edgeProxies` | `STS_EDGE_PROXIES` | *(empty)* | yes | The addresses or CIDR ranges a CDN in front of this service connects from, comma-separated. A CDN's edges serve all of its customers, so a request from one of these ranges is refused unless it carries `global.edgeSecret` in its `X-Origin-Verify` header. Empty asks nothing of anybody. |
+| `global.edgeSecret` | `STS_EDGE_SECRET` | *(empty)* | **restart** — read once at startup | What this deployment's own CDN distribution sends in `X-Origin-Verify`, which tells it from another customer's distribution at the same edges. The header is removed once read. Empty with `global.edgeProxies` set refuses every request from those ranges. |
 | `http.keepAliveTimeoutS` | `STS_HTTP_KEEP_ALIVE_TIMEOUT_S` | `60` | yes — applied to each listener's server object at once | How long an HTTP listener keeps an idle connection open for the client's next request (node's own default is 5) — an HTTP/1.1 connection between requests, or an HTTP/2 one on which no frame has passed, which is then closed with a GOAWAY; pipelined requests are answered in order. Every HTTP listener inherits it unless it sets its own `listener<Id>.keepAliveTimeoutS` on Server configuration → Listeners (`-1` inherits). Behind a balancer, keep the balancer's idle timeout above it. It was `global.httpKeepAliveTimeoutS`, the main port's alone, until #429. See [TLS](tls.md). |
 | `http.headersTimeoutS` | `STS_HTTP_HEADERS_TIMEOUT_S` | `0` | yes | How long a request's headers may take to arrive. `0` is the keep-alive timeout plus one second, and a value at or below the keep-alive is raised to that, so a connection reused at the last moment never meets one this end is closing. Per listener as `listener<Id>.headersTimeoutS`. |
 | `http.maxRequestsPerSocket` | `STS_HTTP_MAX_REQUESTS_PER_SOCKET` | `0` | yes | How many requests one connection may carry before the listener closes it; `0` is no limit. Per listener as `listener<Id>.maxRequestsPerSocket`. |
@@ -1674,6 +1676,21 @@ the whole story.
 | `branding.logoAlt` | `STS_BRANDING_LOGO_ALT` | *(empty)* | yes | What a screen reader reads in place of the logo. Required while the realm has a logo (`STS-AUTHN-0548`). At most 160 characters. |
 | `branding.logoLinkUrl` | `STS_BRANDING_LOGO_LINK_URL` | *(empty)* | yes | Where the logo leads, an absolute https URL (`STS-AUTHN-0551` otherwise). Empty, the default, the logo is not a link. |
 | `branding.logoMaxBytes` | `STS_BRANDING_LOGO_MAX_BYTES` | `262144` | yes — this process, not one realm | The largest logo an upload may carry, for every realm (1024–2097152). A larger one is refused (`STS-AUTHN-0546`). |
+
+### Profile photos
+
+What a person may set on the portal, and what is copied from a federation
+partner. [The user portal](user-facing-pages.md#the-user-portal) describes the
+card, and each of these applies per realm.
+
+| Appconfig key | Environment variable | Default | Change while running? | What it does |
+|---|---|---|---|---|
+| `profilePhoto.selfService` | `STS_PROFILE_PHOTO_SELF_SERVICE` | `true` | yes | Whether a person may set and replace their own profile photo on the user portal. Off, the portal offers no upload and the operation is refused (`STS-PORTAL-0634`); a person may still remove the photo they have. |
+| `profilePhoto.cacheFederated` | `STS_PROFILE_PHOTO_CACHE_FEDERATED` | `true` | yes | Whether a picture address a federation partner sends is fetched after the sign-in and kept here, so that the picture claim names this realm's copy. Off, or where the copy fails, the claim carries the partner's address. The fetch follows the federation outbound policy and no redirect. |
+| `profilePhoto.maxFileBytes` | `STS_PROFILE_PHOTO_MAX_FILE_BYTES` | `5242880` | yes | The largest file the portal lets a person choose, 5 MiB by default. The browser crops and scales it before it is sent, so this is not what is kept: `profilePhoto.maxStoredBytes` is. |
+| `profilePhoto.maxStoredBytes` | `STS_PROFILE_PHOTO_MAX_STORED_BYTES` | `1048576` | yes | The largest image this realm keeps, from a person or a federation partner. A larger one is refused (`STS-PORTAL-0631`). 1 MiB by default and 3 MiB at most: the image travels base64-encoded in a JSON request. |
+| `profilePhoto.minPixels` | `STS_PROFILE_PHOTO_MIN_PIXELS` | `250` | yes | The shortest side a photo a person sets may have. A smaller one is refused (`STS-PORTAL-0632`). It does not apply to a partner's copy, which is often smaller. |
+| `profilePhoto.maxPixels` | `STS_PROFILE_PHOTO_MAX_PIXELS` | `4096` | yes | The longest side a kept photo may have, because every browser showing it has to decode it. A larger one is refused (`STS-PORTAL-0632`). |
 
 ### OAuth 2.0 / OIDC
 
@@ -1944,6 +1961,7 @@ what its api may dial.
 | `federation.maxResponseBytes` | `STS_FEDERATION_MAX_RESPONSE_BYTES` | `262144` | yes | The cap on a partner's token response, UserInfo document or JWKS. |
 | `federation.jwtAlgorithms` | `STS_FEDERATION_JWT_ALGORITHMS` | `RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512` | yes | The algorithms a partner's ID Token or JWT access token may use. It NARROWS the family the partner's key admits and cannot add `none` or an HMAC. |
 | `federation.spNameIdFormat` | `STS_FEDERATION_SP_NAMEID_FORMAT` | `urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified` | yes | The `<md:NameIDFormat>` in `/federation/metadata/{id}`. |
+| `federation.atprotoPlcDirectory` | `STS_FEDERATION_ATPROTO_PLC_DIRECTORY` | `https://plc.directory` | yes | Where a Bluesky sign-in looks up the did:plc it was given, to check that the person's data server trusts the issuer that named them. A Bluesky relationship is the only reader. |
 | `federation.encryptionKeyGraceS` | `STS_FEDERATION_ENCRYPTION_KEY_GRACE_S` | `86400` | yes | How long a federation relationship's encryption key still decrypts after a rotation replaced it (#168); `0` ends it at the rotation. |
 
 ### SAML

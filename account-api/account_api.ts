@@ -63,6 +63,7 @@ import PageLocale = require('../common/page_locale');
 import version = require('../common/version');
 import mode = require('../common/mode');
 import AccountApiSpec = require('./account_api_spec');
+import ProfilePhoto = require('../common/profile_photo');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -551,7 +552,9 @@ class AccountApi {
           return self.json(res, 200, {
             user: { username: who.username, sub: who.sub,
                     name: String((who.session.user || {}).name || ''),
-                    email: String((who.session.user || {}).email || '') },
+                    email: String((who.session.user || {}).email || ''),
+                    // This realm's copy only (#719): the frame's picture.
+                    photo: ProfilePhoto.pathFor(who.username) },
             realm: { id: realms.currentId(), prefix: realms.currentPrefix() },
             client: who.clientId, expiresAt: who.expiresAt,
             mode: mode.current(),

@@ -4289,3 +4289,13 @@ policy kind follows are `common/policy_selection.ts`'s (3cx).
   HOLDERS of the attribute (the store's asked-names index in a window,
   `passkeyScanAsync()` with a row shape of its own), at most
   `POLICY_HOLDER_READ`, and says when it stopped first; never the realm.
+
+## `stsProfilePhoto`: A RECORD ON THE ENTRY, AND NOT THE IMAGE (#719, 2026-11-05)
+
+One JSON value: the id of the person's row in `profilePhoto.images`, who put it
+there, a partner's address and when it was fetched, or `declined`. Withheld from
+reads because the id is the capability the public address is made of. Written
+only through `writeProfilePhoto()`, which sets `pictureUrl` in the same act so a
+claim never names a photo the record does not. `noteAccountChange()` removes the
+row when the entry is deleted. `common/CLAUDE.md` (3db) argues the rest.
+

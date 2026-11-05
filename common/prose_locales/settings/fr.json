@@ -95,6 +95,26 @@
     "en": "4369282d9208f4aa",
     "text": "Croire X-Forwarded-Proto et X-Forwarded-Host — ce que définit un proxy inverse qui termine TLS pour indiquer ce que le CLIENT a utilisé. ACTIVEZ-LE lorsque quelque chose se trouve devant ce service, sinon les métadonnées publieront des URL http:// à des clients qui l’ont atteint en https, et chaque preuve DPoP sera refusée pour avoir nommé le véritable point de terminaison. Laissez-le DÉSACTIVÉ lorsque rien ne s’y trouve : sans proxy, ce sont des en-têtes ordinaires que n’importe quel client peut définir, et les croire permet à un appelant de choisir ce que ce service pense être son propre émetteur et ses propres points de terminaison. Surveillance → Connexion TLS montre ce qu’une requête portait réellement et ce qui en a été cru. NOTEZ que ce service ne lit jamais un certificat client depuis un en-tête (X-Client-Cert et apparentés), dans aucun des deux modes — un certificat transmis est un certificat que n’importe qui peut falsifier."
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "Adresses des nœuds CDN"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "Les adresses ou plages CIDR depuis lesquelles se connecte un CDN placé devant ce service, séparées par des virgules. Les nœuds d'un CDN servent tous ses clients ; une requête provenant de l'une de ces plages est donc refusée si elle ne porte pas global.edgeSecret dans son en-tête X-Origin-Verify. VIDE, la valeur par défaut, n'exige rien de personne. Une valeur qui n'est ni une adresse ni une plage CIDR est ignorée et journalisée."
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "Secret d'origine du CDN"
+  },
+  "global.edgeSecret|description": {
+    "en": "eb67106afc0cc7f0",
+    "text": "Ce que la distribution CDN de ce déploiement envoie dans X-Origin-Verify, et qui la distingue de la distribution d'un autre client sur les mêmes nœuds. L'en-tête est supprimé une fois lu. Vide alors que global.edgeProxies est défini, il refuse toute requête provenant de ces plages."
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "lu une seule fois au démarrage"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "Adresses des proxys de confiance"
@@ -862,6 +882,54 @@
   "branding.logoMaxBytes|description": {
     "en": "37f4c903152cd219",
     "text": "Le plus grand logo qu’un téléversement peut porter, pour chaque domaine. Un logo plus grand est refusé (STS-AUTHN-0546). Le logo est conservé dans le stockage et répliqué vers chaque processus ; il reste donc petit : 256 Kio par défaut, 2 Mio au plus."
+  },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "Les personnes peuvent définir leur propre photo"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "Indique si une personne peut définir et remplacer sa propre photo de profil sur le portail utilisateur. Désactivé, le portail ne propose pas d'envoi et l'opération est refusée (STS-PORTAL-0634) ; une personne peut toujours retirer la photo qu'elle a."
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "Copier la photo d'un partenaire de fédération"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "Indique si une adresse d'image envoyée par un partenaire de fédération est récupérée après la connexion et conservée ici, afin que le claim picture nomme la copie de ce domaine. Désactivé, ou si la copie échoue, le claim porte l'adresse du partenaire. La récupération suit la politique sortante de fédération et aucune redirection."
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "Plus grand fichier qu'une personne peut choisir (octets)"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "Le plus grand fichier que le portail permet de choisir, 5 Mio par défaut. Le navigateur le recadre et le redimensionne avant l'envoi, ce n'est donc pas ce qui est conservé : c'est profilePhoto.maxStoredBytes."
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "Plus grande photo conservée (octets)"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "La plus grande image que ce domaine conserve, d'une personne ou d'un partenaire de fédération. Une plus grande est refusée (STS-PORTAL-0631). 1 Mio par défaut et 3 Mio au plus : l'image voyage encodée en base64 dans une requête JSON."
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "Plus petit côté de la photo d'une personne (pixels)"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "Le plus petit côté que peut avoir une photo définie par une personne. Une plus petite est refusée (STS-PORTAL-0632). Cela ne s'applique pas à la copie d'un partenaire, souvent plus petite."
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "Plus grand côté d'une photo (pixels)"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "Le plus grand côté que peut avoir une photo conservée, car chaque navigateur qui l'affiche doit la décoder. Une plus grande est refusée (STS-PORTAL-0632)."
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -4578,6 +4646,14 @@
   "federation.spNameIdFormat|description": {
     "en": "f24b1c4bc1251e30",
     "text": "Le <md:NameIDFormat> publié dans /federation/metadata/{id}, qui est le format dans lequel un partenaire configuré à partir de ce document envoie un sujet. La valeur par défaut est le littéral que ce service a toujours publié."
+  },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "Annuaire PLC pour les connexions Bluesky"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Où une connexion Bluesky recherche le did:plc reçu, pour vérifier que le serveur de données de la personne fait confiance à l'émetteur qui l'a nommée. Une relation Bluesky est le seul lecteur."
   },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",

@@ -5399,6 +5399,51 @@ function hasMember(blob, member) {
                                            : !!value;
 }
 
+// ---------------------------------------------------------------------------
+// AN OFFER OF THIS SET KEEPS WHAT THE HOLDER ALREADY HAS (2026-11-05).
+//
+// The store's rule for two offers of one generation is a union of members
+// (`decideKeys()`, below), and a confirmed publish or a next-key mint skipped
+// it, because each is adopted whole. So a worker that lost the row before the
+// groups were written published the row as it found it, 1ms after a sibling
+// published the groups, and the request pool replaced the held set with one
+// that had none and told every process. The sibling that made them dropped its
+// cached set too, nothing asked again, and the single-node run of
+// tests/protocol/sts_signer_groups.js served a JWKS without them for three
+// minutes.
+//
+// Only a member the offer LACKS is filled, and only for the same birth
+// certificate: a different certificate is another set, whose members are not
+// this one's to carry.
+// ---------------------------------------------------------------------------
+/**
+ * Fills in the members an offered blob lacks from the held copy of the same set.
+ *
+ * @param offered - the blob being adopted
+ * @param held - the blob held now, or null
+ * @returns `offered` itself when nothing is missing, otherwise a joined copy
+ */
+function withHeldMembers(offered, held) {
+  log.debug("Entering withHeldMembers().");
+  if (!offered || !held || offered.certB64 !== held.certB64) {
+    log.debug("Leaving withHeldMembers(). Not the same set.");
+    return offered;
+  }
+  const missing = KEY_SET_MEMBERS.filter(function (member) {
+    return !hasMember(offered, member) && hasMember(held, member);
+  });
+  if (!missing.length) {
+    log.debug("Leaving withHeldMembers(). Nothing is missing.");
+    return offered;
+  }
+  const joined = Object.assign({}, offered);
+  missing.forEach(function (member) {
+    joined[member] = held[member];
+  });
+  log.debug("Leaving withHeldMembers(). " + missing.length + " filled.");
+  return joined;
+}
+
 function sameKeySet(a, b) {
   log.debug("Entering sameKeySet().");
   if (!a || !b || a.certB64 !== b.certB64 ||
@@ -5432,7 +5477,8 @@ function decideKeys(stored, offered) {
   // another set with a larger integer, and it loses.
   if (supersedes(offered, stored)) {
     log.debug("Leaving decideKeys(). A newer generation of this set.");
-    return { outcome: 'won', blob: offered, write: true };
+    return { outcome: 'won', blob: withHeldMembers(offered, stored),
+             write: true };
   }
   if (generationOf(offered) > generationOf(stored)) {
     log.debug("Leaving decideKeys(). A higher generation of another set.");
@@ -6164,6 +6210,7 @@ module.exports = {
   xmlKeyHeldFor: xmlKeyHeldFor,
   bbsKeyHeldFor: bbsKeyHeldFor,
   signerGroupsHeldFor: signerGroupsHeldFor,
+  withHeldMembers: withHeldMembers,
   joinSignerGroups: joinSignerGroups,
   serialiseSignerGroups: serialiseSignerGroups,
   deserialiseSignerGroups: deserialiseSignerGroups,

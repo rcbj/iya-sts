@@ -779,6 +779,18 @@ zone), `picture` (`pictureUrl`) and `profile` (`profileUrl`). In development
 mode a value the entry lacks is invented, as for the rest; in product mode
 it is absent. [The LDAP schema](ldap-schema.md) lists them.
 
+**A person with a photo here is answered this realm's own address in
+`picture`**, at `/web/photo/{id}`: one they set on the
+[user portal](user-facing-pages.md#the-user-portal), or a copy of a
+[federation partner's](federation.md#what-a-federated-sign-in-writes). A
+relying party fetches it with no credential. The address changes when the photo
+does, so fetch it from the latest token or UserInfo response rather than
+keeping it. The realm's own limits are under
+[Profile photos](configuration.md#profile-photos). The same address can go into
+a SAML assertion: add a custom attribute on the set's
+[claims page](admin-console.md) with `pictureUrl` as its directory attribute. No
+assertion carries it unless you add that row.
+
 **The Identity Assurance Claims Registration's claims** can be asked for by
 name in a `claims` request, and are listed in `claims_supported`:
 

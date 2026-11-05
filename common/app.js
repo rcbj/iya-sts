@@ -425,6 +425,26 @@ function enterListener(req, res, next) {
 
 app.use(enterListener);
 
+// A CDN EDGE WITHOUT THIS DEPLOYMENT'S SECRET (#1336, common/client_address.js)
+// is answered here, in the front process and before dispatch, so it costs no
+// worker and reaches nothing. Below the realm middleware, which nothing may be
+// registered above. Above the security headers, so it sets its own policy.
+app.use(function refuseForeignEdge(req, res, next) {
+  log.debug("Entering refuseForeignEdge().");
+  if (!require('./client_address').edgeRefused(req)) {
+    log.debug("Leaving refuseForeignEdge().");
+    return next();
+  }
+  require('./error_codes').mark(res, 'STS-CORE-0165');
+  res.status(403).type('text/plain').set({
+    'Cache-Control': 'no-store',
+    'Content-Security-Policy':
+      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+  });
+  log.debug("Leaving refuseForeignEdge().");
+  return res.send('Forbidden\n');
+});
+
 // ---------------------------------------------------------------------------
 // THE AMBIENT REQUEST, for the one thing a signer needs a request for and
 // cannot be handed one: the ORIGIN of the `x5u` address a signed token carries

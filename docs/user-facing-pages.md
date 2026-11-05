@@ -108,6 +108,25 @@ password reset, address verification). The Overview has a **Language and
 region** card: it sets the person's own `preferredLanguage`, or removes it
 to follow the browser. Error text stays English.
 
+The Overview's **Profile photo** card shows the person's photo and lets them
+choose a new one: a JPEG or PNG file of at most 5 MB whose shorter side is at
+least 250 pixels. The browser crops it to a centered square and scales it to at
+most 720 pixels, and shows the result as a preview before anything is sent, so
+**Save photo** keeps what the person looked at. **Remove photo** removes it.
+The photo is drawn beside the person's name on the portal and in the user menus
+of the [admin console](admin-console.md) and the [reports application](reporting.md).
+
+A photo copied from a [federation partner](federation.md#what-a-federated-sign-in-writes)
+says so on the card. A photo of the person's own replaces it. Removing it stays
+removed: the next sign-in through that partner does not bring it back. Metadata
+in the file, such as where a phone took the picture, is not kept.
+
+**The photo's address needs no credential**, because an application that
+receives the `picture` claim fetches it with none. The address is random, says
+nothing about whose photo it is, and changes with the photo. It stops answering
+when the photo is removed or the account is disabled or deleted. Anybody given
+the address can see the photo.
+
 The Overview's **More about you** card lists the realm's
 [custom attributes](policies.md#the-attribute-policy) that the administrator has
 chosen to show on the portal, with the person's own values. Each one the

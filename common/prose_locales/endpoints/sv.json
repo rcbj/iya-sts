@@ -447,6 +447,10 @@
     "en": "2ce72d622f586a26",
     "text": "En domäns inloggningslogotyp"
   },
+  "endpoints.route./web/photo/:id.name": {
+    "en": "f2cc426998480c9c",
+    "text": "En persons profilfoto"
+  },
   "endpoints.route./web/branding/preview.name": {
     "en": "54aca7174dc0a2b0",
     "text": "En förhandsvisning av inloggningsutseendet"
@@ -578,6 +582,10 @@
   "endpoints.route./report-api/signals.name": {
     "en": "fa5ff98584c701fb",
     "text": "Rapportapplikationens inkorg för Shared Signals"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "Det som rapportprogrammets användarmeny ritar"
   },
   "endpoints.route./report-api/announcements.name": {
     "en": "3adb83b8075c6a3a",
@@ -1610,6 +1618,10 @@
   "endpoints.route./federation/metadata/:id.name": {
     "en": "1bd56e73b838da2d",
     "text": "Den här tjänstens EGNA SAML-metadata, per partner"
+  },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "Klientmetadata för en Bluesky-relation (#746)"
   },
   "endpoints.route./federation/jwks/:id.name": {
     "en": "56f010e78f399989",

@@ -1453,7 +1453,7 @@ screen, per realm, and decided six questions on it (D1–D6, on the ticket).
   declaration, replicated by the change log, a global store in cells
   (`persistence/tiers.js`), not sealed because a logo is public — and served
   at `/web/branding/logo` with the type its bytes are, `nosniff`, a
-  sandboxing CSP and an ETag. **Under `/web` on purpose**: the sign-in pages,
+  sandboxing CSP through `app.contentSecurityPolicy()` (#1337) and an ETag. **Under `/web` on purpose**: the sign-in pages,
   the front door and the portal draw it, and they may be on different
   listeners; everything under `/web` answers on every one
   (`hosted_applications.js`). No third-party origin ever joins `img-src`.
@@ -12082,6 +12082,14 @@ Network Load Balancer with TLS passthrough and
 `proxy_protocol_v2.enabled`. The file's header argues every point; the ones a
 maintainer of a listener has to know:
 
+* **A CDN'S EDGES ARE A SECOND LIST, BECAUSE THEY ARE A SECOND QUESTION (#1336).**
+  `global.edgeProxies` does not ask who may say what the client's address is. It
+  asks who must prove they are this deployment's own CDN, since its edges serve
+  all its customers. A request from those ranges without `global.edgeSecret` in
+  `X-Origin-Verify` is refused (`STS-CORE-0165`) in the front process, before
+  dispatch, and the header comes off the request either way, so Monitoring -> TLS
+  connection cannot show it to the caller. Empty asks nothing. Ranges with no
+  secret refuse every edge. `tests/edge_secret.js`, `deploy/aws/CLAUDE.md`.
 * **One list, `global.trustedProxies`**, not a second: the same question one
   layer down. `client_address.isTrustedProxy()` answers it and, unlike
   `peerIsTrustedProxy()`, an EMPTY list trusts nobody — so v2 with no usable
@@ -14991,3 +14999,38 @@ file's header is the argument; what a maintainer must not undo:
   `installInstance` throws. `tests/audit_export.js` therefore requires it
   only inside a child.
 
+## 3db. `profile_photo.ts`: A PERSON'S PHOTO, KEPT OFF THE ENTRY (#719, 2026-11-05)
+
+**`pictureUrl` and the `picture` claim were already there (#1292), and a
+partner's `picture` already landed on them.** #719 added the image. While a
+person has one, `pictureUrl` holds its address, and every reader of the
+attribute (the claim, a SAML set's row, `/admin/users`) follows without being
+changed. The module's header carries the design; what is here is what a change
+to it could undo.
+
+* **THE IMAGE IS NOT AN ATTRIBUTE, AND `jpegPhoto` IS NOT ITS HOME.** Every token
+  reads the entry and every read opens its sealed body, so an image on it taxes
+  everything else. The row is in `profilePhoto.images`, on demand and cell-tier.
+  **Its cache is bounded by COUNT (200 rows), so its worst case is rows times
+  `profilePhoto.maxStoredBytes`.** Raise either with that sum in mind; that is
+  why what is kept is smaller than the file a person may choose.
+* **THE SERVER STRIPS, EVEN THOUGH THE BROWSER ALREADY DID.** The browser's canvas
+  drops metadata from what the portal sends. A partner's copy and a direct call
+  to `/account-api/photo` have no browser in the way, and the address is public.
+  There is no image library here: `strippedJpeg()` and `strippedPng()` walk
+  segments and keep what is listed. WebP is refused rather than kept uncleaned.
+  **So nothing here decodes pixels**, and an image that decodes badly is the
+  viewer's to fail on. The `sandbox` policy and `nosniff` are what stand between
+  that and anything else.
+* **`applyFederatedAttributes()` SKIPS `pictureurl` WHILE THE RECORD EXISTS**,
+  declined included. Without it `fedUpdateUserAttributes` would put the partner's
+  address back on every sign-in, and the claim would flip between the two.
+* **THE MENUS TAKE `pathFor()`, NEVER `pictureUrl`.** That attribute can name
+  anywhere, and no surface's `img-src` admits anywhere. A person with only a
+  partner's address (the copy failed) has no picture in a menu and still has the
+  claim.
+* **Moving between cells mints a new address** (`movingIn()`), because the id's tag
+  names the cell. A token issued before the move names an address that stops
+  answering once the old entry goes.
+* **Not built, and nobody asked:** an administrator removing a person's photo.
+  Disabling the account hides it. SCIM's `photos` is not mapped.

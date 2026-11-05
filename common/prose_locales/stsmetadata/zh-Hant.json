@@ -1219,6 +1219,10 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717)。透過 /admin-api/branding/logo 為此領域上傳的 PNG、JPEG 或 WebP 標誌，從此來源提供，使登入頁面的 img-src 'self' 接受它，且沒有第三方得知誰在登入；nosniff、沙箱化、其摘要的 ETag。領域沒有標誌時為 404。"
   },
+  "stsmetadata.endpoints./web/photo/:id.what": {
+    "en": "32d1ba774784074d",
+    "text": "本身為 NON-SPEC（#719），也是 OpenID Connect Core 5.1 的 picture 宣告為在此擁有相片的人所指向的內容。即在入口網站設定的 JPEG 或 PNG，或聯合夥伴的副本，位於隨相片變化的隨機位址；無需認證，因為信賴方取得時不帶任何認證。nosniff、沙箱化，帶 ETag。已停用或已刪除的人傳回 404。"
+  },
   "stsmetadata.endpoints./web/branding/preview.what": {
     "en": "a2af93aaf34bbbe3",
     "text": "NON-SPEC (#717)。以待定顏色和版面配置繪製的此領域登入卡片範例（查詢中的 accent、page、card、text、layout，每一項都依設定的方式檢查），供主控台在儲存前於新分頁中開啟。其中任何內容都不會讓任何人登入。"
@@ -1366,6 +1370,10 @@
   "stsmetadata.endpoints./report-api/signals.what": {
     "en": "f00e66637d8d4146",
     "text": "非規範。報表應用程式作為此服務自身傳送方的接收方 (#1042) 所收到的內容：報表管理員可看到領域中的每個訊號，其他人只能看到與自己有關的訊號。與 /report-api 其餘部分使用同一權杖。"
+  },
+  "stsmetadata.endpoints./report-api/me.what": {
+    "en": "868625e0bbe4414a",
+    "text": "NON-SPEC (#719)。已登入使用者在本領域的個人資料相片路徑，沒有相片時為空。與 /report-api 其餘部分使用相同權杖。"
   },
   "stsmetadata.endpoints./report-api/announcements.what": {
     "en": "0f75f226eeb86f05",
@@ -2694,6 +2702,10 @@
   "stsmetadata.endpoints./federation/metadata/:id.what": {
     "en": "bbe97109d1d3a58e",
     "text": "是 SPSSODescriptor 而非 IDPSSODescriptor——這是本服務作為服務提供者的那一半。依關係提供，因為本服務對每個合作夥伴的自稱都不同。刻意「不簽署」，而且它是此處唯一不簽署的中繼資料文件：/saml2/metadata 會簽署，是因為設定對本服務之信任的服務提供者能從檢查文件作者中獲益，而這裡告訴合作夥伴要將東西送往何處的，正是簽章所會使用的那把金鑰。對於不是 SAML 的關係它會回傳 404，而 /saml2/metadata 不會因任何情況回傳 404——因為那一個會為任何要求的 entityID 產生文件，而這一個描述的是一個要嘛存在、要嘛不存在的安排。自 #168 起，SAML 2.0 關係的中繼資料帶有 KeyDescriptor use=\"encryption\" 及其接受的 EncryptionMethod，WS-Federation 關係也有一份：帶有 fed:ApplicationServiceType RoleDescriptor（WS-Federation 1.2 section 3.1）、其 PassiveRequestorEndpoint 與其加密金鑰的 EntityDescriptor。"
+  },
+  "stsmetadata.endpoints./federation/atproto/client/:id.what": {
+    "en": "ec1fd8df6b7f7ded",
+    "text": "在本服務目錄中為 NON-SPEC：AT Protocol 的 OAuth 設定檔沒有註冊步驟，因此這個公開 JSON 文件的位址就是用戶端識別碼，由 Bluesky 的伺服器取得。它不包含任何金鑰，無法使用的關係傳回 404。"
   },
   "stsmetadata.endpoints./federation/jwks/:id.what": {
     "en": "ffaafc6508d21968",

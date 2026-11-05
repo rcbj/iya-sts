@@ -1208,6 +1208,13 @@ const CODES = [
       'zero, and it did not — or STS_RELEASE was neither true nor false. ' +
       'Nothing is written and the image build fails.',
     spec: 'none — the image build exits non-zero' },
+  { code: 'STS-CORE-0165',
+    summary: 'A request arrived from an address in global.edgeProxies without ' +
+      'global.edgeSecret in its X-Origin-Verify header: another customer\'s ' +
+      'CDN distribution pointed at this load balancer, or a distribution or ' +
+      'node holding an out-of-date secret. Refused before anything else is ' +
+      'decided about it.',
+    spec: 'none — HTTP 403, with no reason given' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -13150,6 +13157,68 @@ const CODES = [
   { code: 'STS-FED-0218',
     summary: 'A Request Object was asked for at an address that names none: ' +
       'never made, already fetched once, or expired (#930).',
+    spec: 'HTTP 404' },
+  { code: 'STS-FED-0219',
+    summary: 'A federation partner\'s profile photo was not copied: the ' +
+      'address was refused by the outbound policy, redirected, too large or ' +
+      'did not answer. The picture claim keeps the partner\'s address and ' +
+      'the next sign-in tries again (#719).',
+    spec: 'Logged; the sign-in is unaffected' },
+  { code: 'STS-FED-0220',
+    summary: 'A federation partner\'s profile photo was not copied in ' +
+      'product mode, because global.publicBaseUrl is not set and its address ' +
+      'here would be built on a Host header (#719).',
+    spec: 'Logged; the sign-in is unaffected' },
+  { code: 'STS-FED-0221',
+    summary: 'A federation partner\'s profile photo was fetched and not ' +
+      'kept: it is not a readable JPEG or PNG, or its sides are out of range ' +
+      '(#719).',
+    spec: 'Logged; the sign-in is unaffected' },
+  { code: 'STS-FED-0224',
+    summary: 'A Steam sign-in came back with no OpenID 2.0 assertion: the ' +
+      'mode was not id_res, usually a person cancelling on its page (#746).',
+    spec: 'HTTP 400 page' },
+  { code: 'STS-FED-0225',
+    summary: 'A Steam assertion was refused before the provider was asked: ' +
+      'another return address or endpoint, a required field missing or ' +
+      'unsigned, or a claimed identifier that is not a SteamID on Steam\'s ' +
+      'host (OpenID Authentication 2.0 section 11, #746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0226',
+    summary: 'Steam did not confirm a Steam assertion: check_authentication ' +
+      'failed or did not answer is_valid:true (#746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0227',
+    summary: 'A Steam assertion\'s nonce was already used, or the replay ' +
+      'history could not prove it unused (OpenID Authentication 2.0 section ' +
+      '11.3, #746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0228',
+    summary: 'The Steam Web API gave no summary of a person, so their entry ' +
+      'has no name or picture from it. The sign-in is unaffected (#746).',
+    spec: 'Logged' },
+  { code: 'STS-FED-0229',
+    summary: 'A DiscourseConnect answer was refused: not signed with the ' +
+      'shared secret, for another sign-in\'s nonce, or naming nobody (#746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0230',
+    summary: 'A Bluesky sign-in could not start: the issuer\'s metadata could ' +
+      'not be read or named another issuer, or it refused the pushed ' +
+      'authorization request (#746).',
+    spec: 'HTTP 502 page' },
+  { code: 'STS-FED-0231',
+    summary: 'A Bluesky answer was refused: it named another issuer or no ' +
+      'code, or the code could not be redeemed for a DPoP token with the ' +
+      'atproto scope and a subject (#746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0232',
+    summary: 'A Bluesky answer\'s subject was not believed: not a did:plc, no ' +
+      'data server in its document, or a data server that does not name this ' +
+      'issuer (#746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0233',
+    summary: 'GET /federation/atproto/client/{id} named no usable Bluesky ' +
+      'relationship (#746).',
     spec: 'HTTP 404' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
@@ -25293,6 +25362,36 @@ const CODES = [
       'with a code of its own (a required value taken away, STS-LDAP-0164), ' +
       'that code is recorded instead (#700).',
     spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0630',
+    summary: 'A profile photo was refused: its bytes are not a JPEG or PNG ' +
+      'file that can be read to its end (#719).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0631',
+    summary: 'A profile photo was refused: it is larger than ' +
+      'profilePhoto.maxStoredBytes (#719).',
+    spec: 'HTTP 413 JSON' },
+  { code: 'STS-PORTAL-0632',
+    summary: 'A profile photo was refused: a side is shorter than ' +
+      'profilePhoto.minPixels or longer than profilePhoto.maxPixels (#719).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-PORTAL-0633',
+    summary: 'A profile photo could not be recorded or removed: the person ' +
+      'has no directory entry in this realm, or the directory did not take ' +
+      'it (#719).',
+    spec: 'HTTP 404 JSON, or a log line where a deletion could not remove it' },
+  { code: 'STS-PORTAL-0634',
+    summary: 'POST /account-api/photo in a realm whose ' +
+      'profilePhoto.selfService is off (#719).',
+    spec: 'HTTP 403 JSON' },
+  { code: 'STS-PORTAL-0635',
+    summary: 'A profile photo was not saved in product mode: its address ' +
+      'would be built on a Host header, because global.publicBaseUrl is not ' +
+      'set (#719).',
+    spec: 'HTTP 409 JSON' },
+  { code: 'STS-PORTAL-0636',
+    summary: 'GET /web/photo/{id} answered 404: no such photo, its person ' +
+      'was deleted, or their account is disabled (#719).',
+    spec: 'HTTP 404' },
   { code: 'STS-ACCOUNT-0001',
     summary: 'A request to /account-api presented no access token.',
     spec: 'RFC 6750 section 3.1 (401, WWW-Authenticate: DPoP)' },

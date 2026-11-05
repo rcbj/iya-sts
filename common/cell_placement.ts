@@ -140,6 +140,11 @@ const ROWS: Row[] = [
   { prefix: '/users', strategy: 'artifact', segment: 2,
     why: 'a person\'s DID document is served where its id was minted ' +
          '(#1291)' },
+  // A PERSON'S PROFILE PHOTO (#719), the row above's argument: the image is
+  // cell-tier, the id random and stamped, and a relying party carries no
+  // affinity cookie. More specific than `/web`, whose files are in every cell.
+  { prefix: '/web/photo', strategy: 'artifact', segment: 3,
+    why: 'a person\'s photo is served where its id was minted (#719)' },
   { prefix: '/applications', strategy: 'local',
     why: 'an application\'s DID document is drawn from its entry, and ' +
          'ou=applications is the global tier\'s' },
@@ -330,6 +335,9 @@ const ROWS: Row[] = [
     why: 'a partner\'s browser flow, served where the browser is pinned' },
   { prefix: '/federation/metadata', strategy: 'local',
     why: 'a relationship\'s metadata is the global tier\'s' },
+  { prefix: '/federation/atproto/client', strategy: 'local',
+    why: 'a Bluesky relationship\'s client metadata is drawn from its entry, ' +
+         'and federation relationships are the global tier\'s (#746)' },
   { prefix: '/federation/jwks', strategy: 'local',
     why: 'a relationship\'s keys are the global tier\'s' },
   // THE FEDERATION PAGES' SCRIPT (#580): the same file in every cell.

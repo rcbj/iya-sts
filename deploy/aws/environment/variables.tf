@@ -316,6 +316,36 @@ variable "tags" {
   }
 }
 
+variable "cloudfront_enabled" {
+  description = <<-EOT
+    A CloudFront distribution in front of the load balancer (cloudfront.tf):
+    public_hostname goes to it, and direct_hostname stays on the load balancer
+    for mutual TLS, Kerberos, LDAP, SPIFFE and the plain-HTTP revocation
+    listener. Needs public_hostname and direct_hostname, in a single-cell
+    environment, and a foundation re-applied by an administrator.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "direct_hostname" {
+  description = "The name that reaches the load balancer itself where cloudfront_enabled is on, e.g. `direct.test-idp.iyasec.io`. The node's certificate names it too (deploy/aws/certificate)."
+  type        = string
+  default     = ""
+}
+
+variable "cloudfront_log_bucket" {
+  description = "The S3 bucket CloudFront's standard logs go to; empty for none. Foundation's `cloudfront_log_buckets` must list it."
+  type        = string
+  default     = ""
+}
+
+variable "cloudfront_log_prefix" {
+  description = "The prefix of this distribution's logs in cloudfront_log_bucket."
+  type        = string
+  default     = ""
+}
+
 variable "public_hostname" {
   description = <<-EOT
     The name clients use, e.g. `test-idp.iyasec.io`. EMPTY (the default) keeps

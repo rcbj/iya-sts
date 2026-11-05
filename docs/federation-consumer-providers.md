@@ -40,7 +40,7 @@ covers:
 
 ## Supported providers
 
-16 provider profiles, plus 2 generic profiles for a provider outside the
+39 provider profiles, plus 2 generic profiles for a provider outside the
 catalogue. **None has yet been run against its live provider.** Doing so needs
 an application registered at each provider, with its credentials.
 
@@ -72,6 +72,29 @@ The *Tested* column says how each profile is exercised by
 | Facebook (`facebook`) | OAuth 2.0, Graph API `/me` | the app-scoped `id` | `email`, never verified | Profile only |
 | Amazon (`amazon`) | OAuth 2.0, `/user/profile` | `user_id` | `email`, never verified | Profile only |
 | Spotify (`spotify`) | OAuth 2.0, `/v1/me` | `id` | `email`, never verified | Profile only |
+| GitLab.com (`gitlab`) | OpenID Connect | the ID Token's `sub` | UserInfo's `email`, verified where `email_verified` is true | Sign-in |
+| GitLab, self-managed (`gitlab-self-managed`) | OpenID Connect, your instance's own addresses | the ID Token's `sub` | as above, on your instance's word | Creation only |
+| Bitbucket (`bitbucket`) | OAuth 2.0 | `/2.0/user`'s `uuid`, never a username | the `is_primary` address on `/2.0/user/emails`, verified where `is_confirmed` is true | Sign-in |
+| Patreon (`patreon`) | OAuth 2.0, APIv2 `/identity` | `data.id` | `data.attributes.email`, verified where `is_email_verified` is true | Sign-in |
+| Roblox (`roblox`) | OpenID Connect, ES256 | the ID Token's `sub` | none | Sign-in |
+| Battle.net (`battlenet`) | OpenID Connect | the ID Token's `sub`, never the BattleTag, which can be changed | none | Sign-in |
+| Epic Games (`epic`) | OpenID Connect (Epic Account Services) | the ID Token's `sub` | none | Sign-in |
+| PayPal (`paypal`) | OAuth 2.0, identity API, no payment scope | `sub` | `email`, verified where `email_verified` is true | Sign-in |
+| Dropbox (`dropbox`) | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true | Sign-in |
+| Box (`box`) | OAuth 2.0, `/2.0/users/me` | `id` | `login`, never verified | Sign-in |
+| Steam (`steam`) | OpenID 2.0, no client id or secret | the SteamID in the claimed identifier | none: Steam offers no address | Sign-in |
+| Codeberg (`codeberg`) | OpenID Connect (Forgejo) | the ID Token's `sub` | UserInfo's `email`, verified where `email_verified` is true | Sign-in |
+| A Gitea or Forgejo instance (`gitea`) | OpenID Connect, your instance's own addresses | the ID Token's `sub` | as above, on your instance's word | Sign-in |
+| Hugging Face (`huggingface`) | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true | Sign-in |
+| Asana (`asana`) | OpenID Connect | the ID Token's `sub` | `email`, never verified | Sign-in |
+| Replit (`replit`) | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true | Sign-in |
+| Atlassian (`atlassian`) | OAuth 2.0 (three-legged), `/me` | `account_id` | `email`, verified where `email_verified` is true | Sign-in |
+| A Mastodon instance (`mastodon`) | OAuth 2.0, `/oauth/userinfo`, version 4.4 or later | `sub`, a URL naming the account | none | Sign-in |
+| SourceForge (`sourceforge`) | OAuth 2.0 (Apache Allura) | `username` | none read | Sign-in |
+| Stack Overflow (`stackoverflow`) | OAuth 2.0, the token on the query | `account_id`, the same across the network | none | Sign-in |
+| OSChina (`oschina`) | OAuth 2.0, the token on the query | `id` | `email`, never verified | Sign-in |
+| A Discourse instance (`discourse`) | DiscourseConnect, a shared secret | `external_id` | `email`, never verified | Sign-in |
+| Bluesky (`bluesky`) | The AT Protocol's OAuth profile: PAR, DPoP, no registration | the DID, once its data server names the issuer | none read | Sign-in |
 | Another OpenID Connect provider (`generic-oidc`) | OpenID Connect | the ID Token's `sub` | `email`, verified where `email_verified` is true | Sign-in, over HTTP |
 | Another OAuth 2.0 provider (`generic-oauth2`) | OAuth 2.0 | `sub`, `id` or `user_id` | `email`, verified where `email_verified` is true | Profile only |
 
@@ -183,6 +206,29 @@ directions rather than click paths. In every case:
 
 | Provider | Where | What it needs besides the redirect URI |
 |---|---|---|
+| GitLab.com | User settings → Applications | The redirect URI, and the `openid`, `profile` and `email` scopes. |
+| GitLab, self-managed | The same, on your instance | As above. Set the issuer to the instance's address, and the four endpoints under it. |
+| Bitbucket | Workspace settings → OAuth consumers | The callback URL, and the Account and Email permissions. |
+| Patreon | Clients & API Keys on the Patreon developer portal | The redirect URI. |
+| Roblox | Creator Dashboard → OAuth 2.0 apps | The `openid` and `profile` scopes. The account registering the app must be ID verified. |
+| Battle.net | Blizzard Developer Portal → API Access | The redirect URL. |
+| Epic Games | Epic Developer Portal → your product → Epic Account Services | A client with a redirect URL, and whatever brand review Epic asks for. |
+| PayPal | PayPal Developer Dashboard → your app → Log in with PayPal | Turn the feature on, set the return URL, and choose the fields the app may read. |
+| Dropbox | Dropbox App Console → your app | The redirect URI, and the `openid`, `email` and `profile` scopes. |
+| Box | Box Developer Console → a custom app using user authentication | The redirect URI. Its scopes are set on the app. |
+| Codeberg | Settings → Applications → OAuth2 applications | The redirect URI. |
+| Gitea or Forgejo | The same, on your instance | As above. Set the issuer to the instance's address, and the four endpoints under it. |
+| Hugging Face | Settings → Connected Applications → Create App | The redirect URI, and the `openid`, `profile` and `email` scopes. |
+| Asana | Developer console → your app → OAuth | The redirect URL, and the OpenID Connect scopes. |
+| Replit | Whether Replit issues a client to an application it does not host could not be established | |
+| Atlassian | Developer console → your app | Add **User Identity API** under Permissions, and the callback URL under Authorization. |
+| Mastodon | Nothing in a console: `POST /api/v1/apps` on the instance, with the `profile` scope and the redirect URI | A relationship per instance, whose client that call answers. |
+| SourceForge | Account settings → OAuth | The redirect URI. Check the user endpoint's address at the first sign-in. |
+| Stack Overflow | Stack Apps → Register an application | The OAuth domain, and put the application's key on `fedUserinfoUrl` as `&key=`. |
+| OSChina | Its OpenAPI application management page | The callback address. |
+| Discourse | The instance's settings: **enable discourse connect provider** and **discourse connect provider secrets** | Your domain and a secret, which also goes in `fedClientSecret`. |
+| Bluesky | Nothing to register | See [Signing in with Bluesky](#signing-in-with-bluesky). |
+| Steam | Nothing to register | See [Signing in with Steam](#signing-in-with-steam). |
 | Google | Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application) | The OAuth consent screen configured. |
 | Apple | Apple Developer → Certificates, Identifiers & Profiles: an App ID with Sign in with Apple, a **Services ID** (the client ID), and a **key** with Sign in with Apple enabled | The Services ID's return URL. The team id, the key id and the key's `.p8` file go into iya-sts (see [Sign in with Apple](#sign-in-with-apple)). Needs an Apple Developer Program membership. |
 | Microsoft (`microsoft`) | Microsoft Entra admin center → App registrations → New registration | Supported account types: **personal Microsoft accounts only**. A client secret under Certificates & secrets. |
@@ -199,6 +245,41 @@ directions rather than click paths. In every case:
 | Spotify | Spotify Developer Dashboard → your app → Settings | The redirect URI. |
 | X | X Developer Portal → your project's app → User authentication settings | OAuth 2.0, type *Web App* (confidential client), the callback URL. An address needs an elevated access tier. |
 | TikTok | TikTok for Developers → your app → Login Kit | The redirect URI. The client key is the client ID. App review is required. |
+
+### Signing in with Steam
+
+Steam uses OpenID 2.0, which is older than OAuth and works differently:
+
+* **There is nothing to register**, and no client ID or secret. Create the
+  relationship with `fedProvider` set to `steam`.
+* **Steam gives no email address**, ever. A person's account here has the
+  SteamID as its identifier and no address, so anything your realm requires of
+  every person has to come from the details form.
+* **A name and picture need a Steam Web API key.** Put one in `fedClientSecret`.
+  Without a key, a person signs in with neither.
+
+Steam's documentation names `https://steamcommunity.com/openid/` as the endpoint,
+and its discovery document there names `/openid/login`, which is what the profile
+uses. Each assertion is checked with Steam before it is believed, its nonce is
+accepted once, and its claimed identifier must be a SteamID on Steam's own host.
+
+### Signing in with Bluesky
+
+Create the relationship with `fedProvider` set to `bluesky`. There is no client
+to register: the address of a document this service serves,
+`/federation/atproto/client/{id}`, is the client, and Bluesky's server fetches it.
+
+* **iya-sts has to be reachable at a public https address**, or Bluesky cannot
+  read that document.
+* **Only accounts of the `bsky.social` issuer whose DID is a `did:plc`** can sign
+  in. An account on its own authorization server, or with a `did:web`, is refused.
+* **No email address is read**, and a Bluesky account cannot be connected to an
+  existing one from the portal.
+
+Anybody can run an authorization server in this protocol, so the DID in its
+answer is checked before it is believed: the DID's document names the person's
+data server, and that server has to name this issuer. `federation.atprotoPlcDirectory`
+is where the document is read.
 
 ### Sign in with Apple
 
@@ -385,7 +466,7 @@ endpoint, described [above](#sign-in-with-apple).
 ## Limits and what is not verified
 
 * **No profile has been run against its live provider.** Each one is built
-  from the provider's published documentation. Six are exercised against
+  from the provider's published documentation. Twenty-eight are exercised against
   servers that behave as the documentation describes. Providers change their
   endpoints, scopes and review rules, so the first live sign-in through each
   is the real test.
@@ -451,6 +532,59 @@ endpoints and review requirements.
 | Spotify | OAuth 2.0, `/v1/me` | `id` | `email`, editable by the user, with no verification statement | The documentation frames it as authorization for its Web API rather than as sign-in. | **Built** (profile; the address is unverified) |
 | Sentry | OAuth 2.0 for integrations | to be established | to be established | Its OAuth exists to authorize an integration's API calls. Whether it supports signing a person in is not established. | Not yet feasible |
 | Netflix | none published | — | — | Netflix publishes no interface for signing a person in to a third party. | **Not feasible** |
+
+### The global providers of #746's first tier
+
+**Read in November 2026.** Where a provider publishes a discovery document, its
+endpoints were read from there. The same caution applies: each row is checked
+again when its profile is first used live.
+
+| Platform | Protocol | Identifier | Email | Restrictions and notes | State |
+|---|---|---|---|---|---|
+| GitLab.com | OpenID Connect | `sub` | UserInfo's `email` with `email_verified` | Its ID Token carries little beyond the subject, so the profile reads UserInfo. | **Built**; sign-in tested against a provider-shaped server |
+| GitLab, self-managed | OpenID Connect | `sub` | as GitLab.com | Each instance is its own issuer and vouches for its own addresses. | **Built**; creation tested |
+| Bitbucket | OAuth 2.0, no discovery document | `uuid` | `is_primary` on `/2.0/user/emails` | Requests go to `api.bitbucket.org` with a Bearer token. | **Built**; sign-in tested against a provider-shaped server |
+| Patreon | OAuth 2.0, no discovery document | `data.id` | `email` with `is_email_verified` | APIv2 answers only the fields a request names. | **Built**; sign-in tested against a provider-shaped server |
+| Roblox | OpenID Connect, ES256 | `sub` | none read | Its issuer ends in a slash. The registering account must be ID verified, and a person must be 13 or older. | **Built**; sign-in tested against a provider-shaped server |
+| Battle.net | OpenID Connect | `sub` | none | China has its own host, `oauth.battlenet.com.cn`, which the profile does not cover. | **Built**; sign-in tested against a provider-shaped server |
+| Epic Games | OpenID Connect | `sub` | none read | Needs Epic Account Services set up for the application. Its scope names could not be confirmed from a published list. | **Built**; sign-in tested against a provider-shaped server |
+| PayPal | OAuth 2.0 here, though PayPal publishes OpenID Connect | `sub` | `email` with `email_verified` | Its discovery document offers HS256 and claims little, while its identity API documents the person. No payment scope is asked for. | **Built**; sign-in tested against a provider-shaped server |
+| Dropbox | OpenID Connect | `sub` | `email` with `email_verified` | The code flow only. Its UserInfo takes POST alone, so the profile reads the ID Token. | **Built**; sign-in tested against a provider-shaped server |
+| Box | OAuth 2.0, no discovery document | `id` | `login`, with no verification statement | An app's scopes are set on the app. | **Built**; sign-in tested against a provider-shaped server |
+| Steam | OpenID 2.0 | SteamID | none exists | No client or secret. A name and picture need a Web API key. | **Built**; sign-in tested against a provider-shaped server |
+| NAVER Z / ZEPETO | none found | — | — | The ticket labels it "Global, Korea" and asks to verify its login API. No published interface for signing a person in to a third party was found. | Not built |
+
+### Tier 2 of #746
+
+**Read in November 2026.** "Nothing found" below means no published way to sign a
+person in to a third party turned up, which is weaker than a provider saying it
+offers none.
+
+| Platform | Protocol | Identifier | Email | Restrictions and notes | State |
+|---|---|---|---|---|---|
+| Codeberg | OpenID Connect (Forgejo) | `sub` | `email` with `email_verified` | | **Built**; sign-in tested against a provider-shaped server |
+| Gitea | OpenID Connect, per instance | `sub` | as Codeberg | Forgejo instances take the same profile. An instance vouches for its own addresses. | **Built**; sign-in tested against a provider-shaped server |
+| Hugging Face | OpenID Connect | `sub` | `email` with `email_verified` | | **Built**; sign-in tested against a provider-shaped server |
+| Asana | OpenID Connect | `sub` | `email`, with no verification statement | | **Built**; sign-in tested against a provider-shaped server |
+| Replit | OpenID Connect | `sub` | `email` with `email_verified` | From its discovery document alone. Whether it issues a client to an application it does not host could not be established. | **Built**; unconfirmed that it can be used |
+| Atlassian | OAuth 2.0 (three-legged) | `account_id` | `email` with `email_verified` | Needs `audience=api.atlassian.com`, and the User Identity API added to the app. | **Built**; sign-in tested against a provider-shaped server |
+| Mastodon | OAuth 2.0, per instance | `sub` | none | `/oauth/userinfo` needs version 4.4 or later. A client per instance, from its `POST /api/v1/apps`. | **Built**; sign-in tested against a provider-shaped server |
+| SourceForge | OAuth 2.0 (Apache Allura) | `username` | none read | Its documentation refuses automated reading. Sources disagree on the user endpoint's address, so check it first. | **Built**; the user endpoint unconfirmed |
+| Stack Overflow | OAuth 2.0, token on the query | `account_id` | none | The API needs an application key beside the token, and compresses every answer. | **Built**; sign-in tested against a provider-shaped server |
+| OSChina | OAuth 2.0, token on the query | `id` | `email`, with no verification statement | Endpoints from its OpenAPI pages, which are old. Registering a new application today was not tested. | **Built**; sign-in tested against a provider-shaped server |
+| Discourse | DiscourseConnect, per instance | `external_id` | `email`, unverified here | An HMAC-signed payload each way, with no endpoint dialled. | **Built**; sign-in tested against a provider-shaped server |
+| Bluesky | The AT Protocol's OAuth profile | DID | none read | See [Signing in with Bluesky](#signing-in-with-bluesky). | **Built**; sign-in tested against a provider-shaped server |
+| Gogs | none found | — | — | It documents access tokens for its API, and no OAuth 2.0 provider. Use the Gitea profile for Gitea or Forgejo. | Not built |
+| Coding.net | none found | — | — | Its OpenAPI documentation could not be read, and no current sign-in interface was found. | Not built |
+| CSDN | closed | — | — | An open-source library's README, quoting CSDN's support, says its authorization platform is closed to new applications. Not confirmed by CSDN itself. | Not built |
+| SegmentFault | none found | — | — | | Not built |
+| Glitch | the service has ended | — | — | Project hosting and public profiles ended on 2025-07-08, and glitch.com now redirects to its blog. | Not built |
+| Hashnode | none found | — | — | | Not built |
+| DEV Community | none | — | — | Forem's API uses per-person API keys. | Not built |
+| Kaggle | none found | — | — | It documents API tokens. | Not built |
+| npm | none found | — | — | It documents access tokens. | Not built |
+| PyPI | none found | — | — | It documents no way to sign a person in elsewhere. | Not built |
+| Docker Hub | none found | — | — | `login.docker.com` publishes OpenID Connect, but no way for a third party to get a client was found, and its API documents access tokens. `generic-oidc` would work if Docker issued one. | Not built |
 
 ## Related
 

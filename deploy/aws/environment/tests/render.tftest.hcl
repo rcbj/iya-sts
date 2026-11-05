@@ -44,6 +44,9 @@ mock_provider "aws" {
     defaults = { ids = [] }
   }
 }
+mock_provider "aws" {
+  alias = "us_east_1"
+}
 override_data {
   target = data.terraform_remote_state.global
   values = { outputs = {
@@ -408,5 +411,75 @@ run "kek_secret_in_a_multi_cloud_environment_plans" {
   assert {
     condition     = local.node_environment.STS_KEYS_KEK_PROVIDER == "aws" && length(data.aws_kms_key.kek) == 0
     error_message = jsonencode(local.kek_environment)
+  }
+}
+
+# CLOUDFRONT (cloudfront.tf): the BREACH decision and the fixed forwarded headers
+# are what would fail quietly, so they are what this holds.
+run "testidp_behind_cloudfront" {
+  command = plan
+  variables {
+    environment           = "testidp"
+    public_hostname       = "test-idp.iyasec.io"
+    public_zone_name      = "iyasec.io"
+    cloudfront_enabled    = true
+    direct_hostname       = "direct.test-idp.iyasec.io"
+    cloudfront_log_bucket = "iyasec-logs"
+    cloudfront_log_prefix = "test-idp/"
+  }
+  override_data {
+    target = data.terraform_remote_state.certificate[0]
+    values = { outputs = {
+      certificate_arn = "arn:aws:acm:us-west-2:111122223333:certificate/c",
+      public_hostname = "test-idp.iyasec.io"
+    } }
+  }
+  assert {
+    condition     = aws_cloudfront_distribution.main[0].price_class == "PriceClass_All"
+    error_message = "Every edge location was asked for."
+  }
+  assert {
+    condition     = aws_cloudfront_distribution.main[0].default_cache_behavior[0].compress == false
+    error_message = "An API or protocol answer must not be compressed at the edge (BREACH)."
+  }
+  assert {
+    condition     = length(aws_cloudfront_distribution.main[0].ordered_cache_behavior) == 4 && alltrue([for b in aws_cloudfront_distribution.main[0].ordered_cache_behavior : b.compress])
+    error_message = "Every static path compresses."
+  }
+  assert {
+    condition     = nonsensitive(toset(flatten([for o in aws_cloudfront_distribution.main[0].origin : [for h in o.custom_header : h.name]]))) == toset(["X-Forwarded-Host", "X-Forwarded-Proto", "X-Origin-Verify"])
+    error_message = "A viewer's X-Forwarded-Host and -Proto must be overwritten."
+  }
+  assert {
+    condition     = aws_route53_record.public[0].type == "A" && aws_route53_record.direct[0].type == "CNAME"
+    error_message = "The public name goes to CloudFront; the direct name stays on the load balancer."
+  }
+  assert {
+    condition     = local.node_environment.STS_TRUST_PROXY == "true" && strcontains(local.node_environment.STS_TRUSTED_PROXIES, "192.0.2.0/24")
+    error_message = "The edges must be the trusted peers, or a caller can forge its address."
+  }
+  assert {
+    condition     = strcontains(local.pki_public_url, "direct.test-idp.iyasec.io")
+    error_message = "The plain-HTTP revocation listener cannot be reached through CloudFront."
+  }
+}
+
+run "no_cloudfront_by_default" {
+  command = plan
+  variables {
+    environment      = "dev"
+    public_hostname  = "test-idp.iyasec.io"
+    public_zone_name = "iyasec.io"
+  }
+  override_data {
+    target = data.terraform_remote_state.certificate[0]
+    values = { outputs = {
+      certificate_arn = "arn:aws:acm:us-west-2:111122223333:certificate/c",
+      public_hostname = "test-idp.iyasec.io"
+    } }
+  }
+  assert {
+    condition     = length(aws_cloudfront_distribution.main) == 0 && aws_route53_record.public[0].type == "CNAME" && local.node_environment.STS_TRUST_PROXY == "false"
+    error_message = "Nothing changes without cloudfront_enabled."
   }
 }

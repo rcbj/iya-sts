@@ -1124,6 +1124,26 @@ const SETTINGS = [
                  'a forwarded certificate is a certificate anybody can ' +
                  'forge.' },
 
+  // Added 2026-11-05 (#1336): `common/client_address.js` argues both.
+  { key: 'global.edgeProxies', group: 'Global', label: 'CDN edge addresses',
+    env: 'STS_EDGE_PROXIES', type: 'csv', dflt: '', runtime: true,
+    description: 'The addresses or CIDR ranges a CDN in front of this ' +
+                 'service connects from, comma-separated. A CDN\'s edges ' +
+                 'serve all of its customers, so a request from one of ' +
+                 'these ranges is refused unless it carries ' +
+                 'global.edgeSecret in its X-Origin-Verify header. EMPTY, ' +
+                 'the default, asks nothing of anybody. A value that is not ' +
+                 'an address or a CIDR range is ignored and logged.' },
+
+  { key: 'global.edgeSecret', group: 'Global', label: 'CDN origin secret',
+    env: 'STS_EDGE_SECRET', type: 'string', dflt: '', runtime: false,
+    secret: true, restartReason: 'read once at startup',
+    description: 'What this deployment\'s own CDN distribution sends in ' +
+                 'X-Origin-Verify, which tells it from another customer\'s ' +
+                 'distribution at the same edges. The header is removed ' +
+                 'once read. Empty with global.edgeProxies set refuses ' +
+                 'every request from those ranges.' },
+
   // Added 2026-09-14 (#46 section 8). `global.trustProxy` alone believed a
   // forwarded header from anybody who could reach a node, including past the
   // load balancer; `common/client_address.js` argues the boundary.
@@ -2384,6 +2404,61 @@ const SETTINGS = [
                  'A larger one is refused (STS-AUTHN-0546). The logo is ' +
                  'kept in the store and replicated to every process, so it ' +
                  'is kept small: 256 KiB by default, 2 MiB at most.' },
+
+  // A PERSON'S PROFILE PHOTO (#719): `common/profile_photo.ts`.
+  { key: 'profilePhoto.selfService', group: 'Profile photos',
+    label: 'People may set their own photo',
+    env: 'STS_PROFILE_PHOTO_SELF_SERVICE', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a person may set and replace their own profile ' +
+                 'photo on the user portal. Off, the portal offers no ' +
+                 'upload and the operation is refused (STS-PORTAL-0634); ' +
+                 'a person may still remove the photo they have.' },
+
+  { key: 'profilePhoto.cacheFederated', group: 'Profile photos',
+    label: 'Copy a federation partner\'s photo',
+    env: 'STS_PROFILE_PHOTO_CACHE_FEDERATED', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether a picture address a federation partner sends is ' +
+                 'fetched after the sign-in and kept here, so that the ' +
+                 'picture claim names this realm\'s copy. Off, or where the ' +
+                 'copy fails, the claim carries the partner\'s address. The ' +
+                 'fetch follows the federation outbound policy and no ' +
+                 'redirect.' },
+
+  { key: 'profilePhoto.maxFileBytes', group: 'Profile photos',
+    label: 'Largest file a person may choose (bytes)',
+    env: 'STS_PROFILE_PHOTO_MAX_FILE_BYTES', type: 'int', dflt: 5242880,
+    min: 1024, max: 20971520, runtime: true,
+    description: 'The largest file the portal lets a person choose, 5 MiB ' +
+                 'by default. The browser crops and scales it before it is ' +
+                 'sent, so this is not what is kept: ' +
+                 'profilePhoto.maxStoredBytes is.' },
+
+  { key: 'profilePhoto.maxStoredBytes', group: 'Profile photos',
+    label: 'Largest photo kept (bytes)',
+    env: 'STS_PROFILE_PHOTO_MAX_STORED_BYTES', type: 'int', dflt: 1048576,
+    min: 1024, max: 3145728, runtime: true,
+    description: 'The largest image this realm keeps, from a person or a ' +
+                 'federation partner. A larger one is refused ' +
+                 '(STS-PORTAL-0631). 1 MiB by default and 3 MiB at most: ' +
+                 'the image travels base64-encoded in a JSON request.' },
+
+  { key: 'profilePhoto.minPixels', group: 'Profile photos',
+    label: 'Shortest side of a person\'s photo (pixels)',
+    env: 'STS_PROFILE_PHOTO_MIN_PIXELS', type: 'int', dflt: 250,
+    min: 16, max: 4096, runtime: true,
+    description: 'The shortest side a photo a person sets may have. A ' +
+                 'smaller one is refused (STS-PORTAL-0632). It does not ' +
+                 'apply to a partner\'s copy, which is often smaller.' },
+
+  { key: 'profilePhoto.maxPixels', group: 'Profile photos',
+    label: 'Longest side of a photo (pixels)',
+    env: 'STS_PROFILE_PHOTO_MAX_PIXELS', type: 'int', dflt: 4096,
+    min: 64, max: 16384, runtime: true,
+    description: 'The longest side a kept photo may have, because every ' +
+                 'browser showing it has to decode it. A larger one is ' +
+                 'refused (STS-PORTAL-0632).' },
 
   { key: 'authn.maxBrowserAccounts', group: 'Web security',
     label: 'Most accounts one browser remembers',
@@ -9465,6 +9540,14 @@ const SETTINGS = [
                  'default is the literal this service has always published.' },
 
   // --- Federation: the partner's encrypted assertion (#168) ---------------
+  { key: 'federation.atprotoPlcDirectory', group: 'Federation',
+    label: 'PLC directory for Bluesky sign-ins',
+    env: 'STS_FEDERATION_ATPROTO_PLC_DIRECTORY', type: 'string',
+    dflt: 'https://plc.directory', runtime: true,
+    description: 'Where a Bluesky sign-in looks up the did:plc it was given, ' +
+                 'to check that the person\'s data server trusts the issuer ' +
+                 'that named them. A Bluesky relationship is the only reader.' },
+
   { key: 'federation.encryptionKeyGraceS', group: 'Federation',
     label: 'Previous encryption key kept for (seconds)',
     env: 'STS_FEDERATION_ENCRYPTION_KEY_GRACE_S', type: 'int', dflt: 86400,

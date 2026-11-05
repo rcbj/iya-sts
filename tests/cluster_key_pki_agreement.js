@@ -528,6 +528,37 @@ async function lineageSection(t, kek) {
   t.check(strangerAt >= 0 && confirmedAt > strangerAt,
           'receivePublishedKeys refuses a stranger generation before a ' +
           'confirmed publish is adopted');
+
+  // A CONFIRMED OFFER KEEPS WHAT THE SET HAS GAINED (2026-11-05): a worker
+  // that read the row before the groups were written, adopted whole, took them
+  // from every process (sts_signer_groups, single-node).
+  const rows = [{ group: 'tokens', slot: 's1', alg: 'RS256', kind: 'classical',
+                  publicJwk: { kid: 'sts-g-tokens-1' } }];
+  const bare = keySet('groups-set');
+  const grown = Object.assign({}, bare, { signerGroups: rows });
+  const filled = a.withHeldMembers(bare, grown);
+  t.equal(JSON.stringify(filled.signerGroups), JSON.stringify(rows),
+          'a confirmed offer of the same set keeps the held signer groups');
+  t.equal(bare.signerGroups, undefined, 'and the offer itself is not changed');
+  t.check(a.withHeldMembers(grown, bare) === grown,
+          'an offer that lacks nothing is adopted as it came');
+  const otherSet = keySet('groups-other');
+  t.check(a.withHeldMembers(otherSet, grown) === otherSet,
+          'another set takes nothing from the held one');
+  t.check(pool.indexOf('keystore.withHeldMembers(published.blob, heldBlob)') > 0,
+          'receivePublishedKeys fills a confirmed offer before adopting it');
+
+  store.rows.set('joined', sealedRows.sealRowIn(store, kek, 'joined',
+    'signing-keys', JSON.stringify(grown)));
+  const next = await startNode(store, { adopted: [], published: [] });
+  next.replaceKeySet('joined', Object.assign({}, bare, {
+    generations: { generation: 1, parentCerts: [bare.certB64], standby: [] }
+  }), 'a next key minted from a view without the groups');
+  await next.settleAll();
+  const row = opened(kek, store.rows.get('joined'));
+  t.equal(next.generationOf(row), 1, 'the next-key mint wins the row');
+  t.equal(JSON.stringify(row.signerGroups), JSON.stringify(rows),
+          'and the row keeps the signer groups it held');
   log.debug("Leaving lineageSection().");
 }
 

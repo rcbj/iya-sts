@@ -206,6 +206,16 @@ class OpenApi {
               }
             })
         },
+        '/report-api/me': {
+          get: operation('What the user menu draws',
+            'The path of the signed-in person\'s own profile photo on this ' +
+            'realm (#719), empty where they have none. It answers only ' +
+            'about the token\'s person.', {
+              responses: {
+                '200': answered('`photo`.', { type: 'object' })
+              }
+            })
+        },
         '/report-api/announcements': {
           get: operation('Announcements for everybody signed in',
             'What an administrator broadcast to this application (#1086) ' +

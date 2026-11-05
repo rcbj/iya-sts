@@ -265,6 +265,9 @@ class ProtocolStack {
     // paths collide with nothing, and requiring it adds the write rules that
     // hold its colours to WCAG 2.2 AA before any setting is restored.
     this.register(app, require('./branding'), 'common/branding');
+    // `/web/photo/{id}` (#719), the logo's reason: a library whose one path is
+    // under `/web`, reaching the directory lazily.
+    this.register(app, require('./profile_photo'), 'common/profile_photo');
 
     // The authentication service: the sign-in screen every protocol here sends
     // a person to, and the session store it fills. FIRST of the modules that

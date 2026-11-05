@@ -3000,11 +3000,17 @@ function receivePublishedKeys(entry, published) {
     return;
   }
   if (published.confirmed || newer) {
-    keystore.adoptShared(realmId, published.blob);
+    // What this set has gained since the worker read the row stays in it, and
+    // the worker is told, because a broadcast skips the publisher.
+    const kept = keystore.withHeldMembers(published.blob, heldBlob);
+    keystore.adoptShared(realmId, kept);
     log.info('request_pool: the "' + realmId + '" realm\'s key set was ' +
              'confirmed by the store through worker ' + (entry && entry.pid) +
              '; every process here now uses it.');
-    broadcastKeys(realmId, published.blob, entry);
+    broadcastKeys(realmId, kept, entry);
+    if (kept !== published.blob) {
+      sendKeys(entry, realmId);
+    }
     log.debug("Leaving receivePublishedKeys().");
     return;
   }

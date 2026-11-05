@@ -384,6 +384,9 @@ const CELL_MINTED = [
   // A person's published DIDs' index (#1291): a random id to the person it
   // belongs to — somebody's, beside their entry in this cell.
   'did.personDids',
+  // A person's profile photo (#719): their image, beside their entry in this
+  // cell, and reached by an id stamped with the cell that minted it.
+  'profilePhoto.images',
   // An administrator's enrolment for somebody (#945). Keyed by both
   // names, so it cannot share pendingKeys, and it is this cell's
   // ceremony in the same way: the begin and the finish may be two nodes

@@ -156,6 +156,7 @@
 // ---------------------------------------------------------------------------
 
 import zlib = require('zlib');
+import AtprotoClient = require('./atproto_client');
 import jwt = require('jsonwebtoken');
 import xmldom = require('@xmldom/xmldom');
 // One signer and one verifier for the whole service since 2026-08-27.
@@ -290,6 +291,16 @@ interface RouteRegistrar {
 const BASE_PATH = federation.PATHS.base;
 const LOGIN_PATH = federation.PATHS.login;
 const ACS_PATH = federation.PATHS.acs;
+
+// OpenID Authentication 2.0 (#746). A SteamID is seventeen digits, and Steam's
+// documentation writes this address both ways round, so both are read.
+const OPENID2_NS = 'http://specs.openid.net/auth/2.0';
+const STEAM_CLAIMED_ID =
+  /^https?:\/\/steamcommunity\.com\/openid\/id\/([0-9]{17})$/;
+const STEAM_NONCE_KEEP_MS = 24 * 60 * 60 * 1000;
+
+// The most a compressed profile may open to (`queryTokenProfile()`, #746).
+const PROFILE_OPENED_MAX = 1024 * 1024;
 const METADATA_PATH = federation.PATHS.metadata;
 const LINK_PATH = federation.PATHS.link;
 // The inter-cell operation that asks whether a resident carries a partner's
@@ -663,6 +674,9 @@ class FederationSp {
     });
     // GET /federation/jwks/{id} — an OpenID Connect relationship's
     // encryption key (#168).
+    app.get(federation.PATHS.atprotoClient + '/:id', (req, res) => {
+      return this.atprotoClientEndpoint(req, res);
+    });
     app.get(federation.PATHS.jwks + '/:id', (req, res) => {
       return this.jwksEndpoint(req, res);
     });
@@ -1698,6 +1712,30 @@ class FederationSp {
 
   // Steps 2 to 5 of completeSignIn(), once the subject is known to be decided
   // HERE.
+  // THE PARTNER'S PHOTO (#719): started once the sign-in has a session, and
+  // never awaited, so no sign-in waits on a partner's image host or fails with
+  // it. Only where this sign-in's attributes were the partner's to write,
+  // which is the rule `applyFederatedAttributes()` follows for `pictureUrl`
+  // itself. `common/profile_photo.ts` and `federation/CLAUDE.md` argue it.
+  private copyPartnerPhoto(req, record, username, session, decision,
+                           detail): void {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.copyPartnerPhoto().");
+    const fed = (detail && detail.federation) || {};
+    const attributes = fed.attributes || {};
+    const name = Object.keys(attributes).filter(function (one) {
+      return one.toLowerCase() === 'pictureurl';
+    })[0];
+    const source = name ? String([].concat(attributes[name])[0] || '') : '';
+    const mayWrite = (decision && decision.create === true) ||
+                     fed.updateAttributes !== false;
+    if (session && source && mayWrite) {
+      require('../common/profile_photo')
+        .noteFederated(req, username, source, record.fedId);
+    }
+    log.debug("Leaving FederationSp.copyPartnerPhoto().");
+  }
+
   private decideAndFinish(req, res, record, result, mapped) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.decideAndFinish(). id=" + record.fedId);
@@ -2933,6 +2971,9 @@ class FederationSp {
         !federation.signsIn(record) || !federation.isUsable(record) ||
         federation.categoryOf(record) !== 'consumer' ||
         (record.fedProtocol !== 'oidc' && record.fedProtocol !== 'oauth2') ||
+        // BLUESKY'S REQUEST IS A DIAL (#746), and this door answers an address
+        // at once, with no dial in it.
+        consumerProviders.adapts(record, 'atproto-oauth') ||
         String(record.fedTrustAnchor || '').trim()) {
       log.debug("Leaving FederationSp.beginConnect(). Not connectable.");
       return { ok: false, code: 'STS-FED-0184',
@@ -4026,6 +4067,7 @@ class FederationSp {
     }
     const session = authn.startSession(res, username, amr,
                                        result.acr || '', via, said);
+    this.copyPartnerPhoto(req, record, username, session, decision, detail);
     // -------------------------------------------------------------------------
     // THE ISSUANCE POLICY CAN REFUSE THE SESSION (2026-09-06), and a null is
     // how `startSession()` says so — it never throws, because two of its
@@ -4621,11 +4663,458 @@ class FederationSp {
   private authorizationRequestUrl(base, record, context) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.authorizationRequestUrl().");
+    if (consumerProviders.adapts(record, 'steam-openid2')) {
+      log.debug("Leaving FederationSp.authorizationRequestUrl(). OpenID 2.0.");
+      return this.steamRequestUrl(base, record, context);
+    }
+    if (consumerProviders.adapts(record, 'discourse-connect')) {
+      log.debug("Leaving FederationSp.authorizationRequestUrl(). Discourse.");
+      return this.discourseRequestUrl(base, record, context);
+    }
     const params = this.authorizationParams(base, record, context);
     const joiner = String(record.fedSsoUrl).indexOf('?') === -1 ? '?' : '&';
     const url = String(record.fedSsoUrl) + joiner + params.toString();
     log.debug("Leaving FederationSp.authorizationRequestUrl().");
     return url;
+  }
+
+  // ---------------------------------------------------------------------------
+  // DISCOURSE: DISCOURSECONNECT (#746), the `discourse-connect` adapter.
+  //
+  // No dial at all: a nonce and a return address, base64, under an HMAC of the
+  // shared secret, and an answer of the same shape. The signature is checked
+  // first, in constant time, and nothing in the payload is read before it. The
+  // nonce is this sign-in's own, and the context it is held in is single-use.
+  // ---------------------------------------------------------------------------
+  private discourseRequestUrl(base, record, context) {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.discourseRequestUrl().");
+    const payload = Buffer.from(new URLSearchParams({
+      nonce: String(context.nonce),
+      return_sso_url: this.acsUrl(base, record) + '?state=' +
+                      encodeURIComponent(String(context.handle))
+    }).toString(), 'utf8').toString('base64');
+    const signature = stsCrypto.hmacSha256(
+      Buffer.from(String(federation.clientSecretOf(record)), 'utf8'),
+      Buffer.from(payload, 'utf8')).toString('hex');
+    log.debug("Leaving FederationSp.discourseRequestUrl().");
+    return String(record.fedSsoUrl) + '?sso=' + encodeURIComponent(payload) +
+           '&sig=' + signature;
+  }
+
+  private consumeDiscourseAnswer(req, res, record, context, params) {
+    const { federation, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.consumeDiscourseAnswer().");
+    const payload = String(params.sso || '');
+    const expected = stsCrypto.hmacSha256(
+      Buffer.from(String(federation.clientSecretOf(record)), 'utf8'),
+      Buffer.from(payload, 'utf8')).toString('hex');
+    const signed = !!payload && stsCrypto.constantTimeEquals(
+      expected, String(params.sig || '').toLowerCase());
+    const said: any = signed ? Object.fromEntries(new URLSearchParams(
+      Buffer.from(payload, 'base64').toString('utf8')).entries()) : {};
+    if (!signed || said.nonce !== String(context.nonce) || !said.external_id) {
+      errorCodes.mark(res, 'STS-FED-0229');
+      log.debug("Leaving FederationSp.consumeDiscourseAnswer(). Refused.");
+      return this.refuse(res, record, 401, 'The answer was refused',
+                         'The answer from Discourse was not signed with the ' +
+                         'shared secret, was for another sign-in, or names ' +
+                         'nobody.');
+    }
+    const reading = this.consumerReading(record, { token: said }, {},
+      String(said.external_id), this.federatedAmr([]), '');
+    log.debug("Leaving FederationSp.consumeDiscourseAnswer().");
+    return this.completeSignIn(req, res, record, {
+      subject: reading.subject,
+      issuer: String(record.fedPeer || ''),
+      bag: reading.bag, amr: reading.amr, acr: reading.acr,
+      // An HMAC: a shared secret, and no key anybody could revoke.
+      signer: FederationSp.signerOf('none'),
+      returnTo: this.fromContext(context).returnTo,
+      connect: this.fromContext(context).connect,
+      application: this.fromContext(context).application,
+      authnPending: this.fromContext(context).authnPending
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // THE PROVIDERS THAT TAKE THE TOKEN ON THE QUERY (#746, `query-access-token`):
+  // Stack Exchange's API and OSChina's, neither of which reads a bearer header.
+  // So this address holds a credential, and what it answers has the shape of
+  // `fetchJson()`'s with the query taken off: its `url` and `why` reach a page.
+  // Stack Exchange compresses every answer whatever it was asked, and what it
+  // opens to is capped as a dial's body is.
+  // ---------------------------------------------------------------------------
+  private async queryTokenProfile(record, accessToken) {
+    const { fedHttp, log } = this.deps;
+    log.debug("Entering FederationSp.queryTokenProfile().");
+    const address = String(record.fedUserinfoUrl || '').trim();
+    const shown = address.split('?')[0];
+    const failed = function (why: string): any {
+      log.debug("Leaving FederationSp.queryTokenProfile(). " + why);
+      return { ok: false, json: null, url: shown, why: why,
+               errorCode: 'STS-FED-0056' };
+    };
+    const asked = await fedHttp.fetchPublished(address +
+      (address.indexOf('?') >= 0 ? '&' : '?') + 'access_token=' +
+      encodeURIComponent(String(accessToken)), { accept: 'application/json' });
+    if (!asked.ok) {
+      return failed('it answered ' + asked.status);
+    }
+    let json = null;
+    try {
+      const body = asked.body;
+      const opened = body[0] === 0x1f && body[1] === 0x8b
+        ? zlib.gunzipSync(body, { maxOutputLength: PROFILE_OPENED_MAX }) : body;
+      json = JSON.parse(String(opened));
+    } catch (e) {
+      log.debug("Caught in FederationSp.queryTokenProfile(): " +
+                ((e && e.name) || 'an error'));
+      return failed('its answer could not be read');
+    }
+    log.debug("Leaving FederationSp.queryTokenProfile().");
+    return { ok: true, json: json, url: shown, why: '', errorCode: '' };
+  }
+
+  // ---------------------------------------------------------------------------
+  // BLUESKY (#746, `atproto-oauth`): `atproto_client.ts` holds the protocol, and
+  // these two are where it meets the flow. The authorization request is a POST
+  // made before the browser goes anywhere, so this answers the redirect itself.
+  // ---------------------------------------------------------------------------
+  private atprotoClientId(base, record) {
+    const { federation, log } = this.deps;
+    log.debug("Entering FederationSp.atprotoClientId().");
+    log.debug("Leaving FederationSp.atprotoClientId().");
+    return base + federation.PATHS.atprotoClient + '/' +
+           encodeURIComponent(record.fedId);
+  }
+
+  private async atprotoRedirect(req, res, record, context) {
+    const { fedHttp, errorCodes, log, baseUrlOf } = this.deps;
+    log.debug("Entering FederationSp.atprotoRedirect().");
+    const base = baseUrlOf(req);
+    const issuer = String(record.fedPeer);
+    const dial = (url, options) => {
+      return fedHttp.fetchPublished(url, options);
+    };
+    const refused = () => {
+      errorCodes.mark(res, 'STS-FED-0230');
+      log.debug("Leaving FederationSp.atprotoRedirect(). Refused.");
+      return this.refuse(res, record, 502, 'Bluesky would not start the ' +
+                         'sign-in', 'Its server metadata could not be read, ' +
+                         'or it refused the pushed authorization request. Its ' +
+                         'client metadata has to be reachable at this ' +
+                         'service\'s public https address.');
+    };
+    const server = await AtprotoClient.serverMetadata(dial, issuer);
+    if (!server) {
+      return refused();
+    }
+    const clientId = this.atprotoClientId(base, record);
+    const pushed = await AtprotoClient.postWithDpop(dial,
+      String(server.pushed_authorization_request_endpoint), {
+        client_id: clientId, response_type: 'code',
+        redirect_uri: this.acsUrl(base, record),
+        scope: AtprotoClient.SCOPE, state: String(context.handle),
+        code_challenge: String(context.pkceChallenge),
+        code_challenge_method: 'S256'
+      }, context.atproto);
+    if (!pushed.ok || !pushed.json || !pushed.json.request_uri) {
+      return refused();
+    }
+    res.redirect(302, String(server.authorization_endpoint) + '?' +
+      new URLSearchParams({ client_id: clientId,
+                            request_uri: String(pushed.json.request_uri) })
+        .toString());
+    log.debug("Leaving FederationSp.atprotoRedirect().");
+    return undefined;
+  }
+
+  private async consumeAtprotoAnswer(req, res, record, context, params) {
+    const { fedHttp, config, errorCodes, log, baseUrlOf } = this.deps;
+    log.debug("Entering FederationSp.consumeAtprotoAnswer().");
+    const issuer = String(record.fedPeer);
+    const dial = (url, options) => {
+      return fedHttp.fetchPublished(url, options);
+    };
+    const refused = (code: string, why: string) => {
+      // error-code: none — the caller's own, one of the two named below
+      errorCodes.mark(res, code);
+      log.debug("Leaving FederationSp.consumeAtprotoAnswer(). " + why);
+      return this.refuse(res, record, 401, 'The sign-in was refused',
+                         'Bluesky\'s answer was refused: ' + why + '.');
+    };
+    // RFC 9207, which the profile requires: the answer names who gave it.
+    const server = String(params.iss || '') === issuer && params.code
+      ? await AtprotoClient.serverMetadata(dial, issuer) : null;
+    if (!server) {
+      return refused('STS-FED-0231', 'it names another issuer, or no code');
+    }
+    const base = baseUrlOf(req);
+    const tokens = await AtprotoClient.postWithDpop(dial,
+      String(server.token_endpoint), {
+        grant_type: 'authorization_code', code: String(params.code),
+        redirect_uri: this.acsUrl(base, record),
+        client_id: this.atprotoClientId(base, record),
+        code_verifier: String(context.pkceVerifier)
+      }, context.atproto);
+    const answer = tokens.json || {};
+    const scopes = String(answer.scope || '').split(' ');
+    if (!tokens.ok || !answer.sub || scopes.indexOf('atproto') < 0 ||
+        String(answer.token_type || '').toLowerCase() !== 'dpop') {
+      return refused('STS-FED-0231', 'the code could not be redeemed');
+    }
+    const problem = await AtprotoClient.subjectProblem(dial, String(answer.sub),
+      issuer, String(config.value('federation.atprotoPlcDirectory')));
+    if (problem) {
+      return refused('STS-FED-0232', problem);
+    }
+    // The access token goes no further: a person's profile is public, and its
+    // failure costs a name and never the sign-in.
+    const address = String(record.fedUserinfoUrl || '').trim();
+    const profile = address
+      ? await dial(address + '?actor=' + encodeURIComponent(String(answer.sub)),
+                   { accept: 'application/json' }) : null;
+    const reading = this.consumerReading(record,
+      { token: { sub: String(answer.sub) },
+        userinfo: profile && profile.ok ? AtprotoClient.jsonOf(profile) : null },
+      {}, String(answer.sub), this.federatedAmr([]), '');
+    log.debug("Leaving FederationSp.consumeAtprotoAnswer().");
+    return this.completeSignIn(req, res, record, {
+      subject: reading.subject, issuer: issuer,
+      bag: reading.bag, amr: reading.amr, acr: reading.acr,
+      signer: FederationSp.signerOf('none'),
+      returnTo: this.fromContext(context).returnTo,
+      connect: this.fromContext(context).connect,
+      application: this.fromContext(context).application,
+      authnPending: this.fromContext(context).authnPending
+    });
+  }
+
+  // GET /federation/atproto/client/{id}: the public document that is the
+  // client, and nothing for a relationship that is not a Bluesky one.
+  private atprotoClientEndpoint(req, res) {
+    const { federation, errorCodes, baseUrlOf, log } = this.deps;
+    log.debug("Entering FederationSp.atprotoClientEndpoint().");
+    const record = federation.get(String(req.params.id || ''));
+    if (!record || !consumerProviders.adapts(record, 'atproto-oauth') ||
+        !federation.isUsable(record)) {
+      errorCodes.mark(res, 'STS-FED-0233');
+      res.status(404).type('text/plain').set('Cache-Control', 'no-store')
+         .send('There is no such client.');
+      log.debug("Leaving FederationSp.atprotoClientEndpoint(). None.");
+      return;
+    }
+    const base = baseUrlOf(req);
+    res.status(200).set('Cache-Control', 'no-store').json(
+      AtprotoClient.clientMetadata(this.atprotoClientId(base, record),
+                                   this.acsUrl(base, record),
+                                   String(record.fedName || record.fedId)));
+    log.debug("Leaving FederationSp.atprotoClientEndpoint().");
+  }
+
+  // ---------------------------------------------------------------------------
+  // STEAM: OPENID 2.0 (#746), the `steam-openid2` adapter.
+  //
+  // There is no client and no token. A person is sent to the OP Endpoint with
+  // `checkid_setup` and comes back with a signed assertion on the query, which
+  // this service cannot verify itself in stateless mode and asks the OP about:
+  // `check_authentication`, OpenID Authentication 2.0 section 11.4.2. What is
+  // this service's to check first is section 11: that the assertion is for the
+  // return address it asked for (11.1), from the endpoint it asked (11.2), not
+  // seen before (11.3), and with the fields that matter covered by the
+  // signature (11.4), since a field outside the signature is the browser's to
+  // write. **The claimed identifier is held to one shape**, Steam's, on Steam's
+  // host: the SteamID in it is what a person's account hangs on.
+  //
+  // The state on the return address is the same single-use, browser-bound
+  // context an OAuth relationship's `state` is, so everything after it is the
+  // funnel every other relationship goes through.
+  // ---------------------------------------------------------------------------
+  private steamRequestUrl(base, record, context) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.steamRequestUrl().");
+    const identifierSelect = 'http://specs.openid.net/auth/2.0/' +
+                             'identifier_select';
+    const params = new URLSearchParams();
+    params.set('openid.ns', OPENID2_NS);
+    params.set('openid.mode', 'checkid_setup');
+    params.set('openid.return_to', this.steamReturnTo(base, record, context));
+    params.set('openid.realm', new URL(base).origin + '/');
+    params.set('openid.identity', identifierSelect);
+    params.set('openid.claimed_id', identifierSelect);
+    log.debug("Leaving FederationSp.steamRequestUrl().");
+    return String(record.fedSsoUrl) + '?' + params.toString();
+  }
+
+  private steamReturnTo(base, record, context) {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.steamReturnTo().");
+    log.debug("Leaving FederationSp.steamReturnTo().");
+    return this.acsUrl(base, record) + '?state=' +
+           encodeURIComponent(String(context.handle));
+  }
+
+  /**
+   * Says what is wrong with an OpenID 2.0 assertion before the OP is asked
+   * about it, or '' with nothing wrong. A pure reading of the request.
+   *
+   * @param fields - the `openid.*` parameters
+   * @param returnTo - the return address this sign-in asked for
+   * @param endpoint - the OP Endpoint this relationship names
+   * @returns the problem, or ''
+   */
+  static steamAssertionProblem(fields: any, returnTo: string,
+                               endpoint: string): string {
+    const { log } = helpers;
+    log.debug("Entering FederationSp.steamAssertionProblem().");
+    const refused = function (why: string): string {
+      log.debug("Leaving FederationSp.steamAssertionProblem(). " + why);
+      return why;
+    };
+    if (fields['openid.ns'] !== OPENID2_NS) {
+      return refused('it is not an OpenID 2.0 response');
+    }
+    if (fields['openid.return_to'] !== returnTo) {
+      return refused('it is for another return address');
+    }
+    if (fields['openid.op_endpoint'] !== endpoint) {
+      return refused('it names another endpoint');
+    }
+    if (!fields['openid.response_nonce'] || !fields['openid.assoc_handle'] ||
+        !fields['openid.sig']) {
+      return refused('it lacks a field the specification requires');
+    }
+    const signed = String(fields['openid.signed'] || '').split(',');
+    const uncovered = ['op_endpoint', 'return_to', 'response_nonce',
+                       'assoc_handle', 'claimed_id', 'identity']
+      .filter(function (one: string): boolean {
+        return signed.indexOf(one) < 0;
+      });
+    if (uncovered.length) {
+      return refused('its signature does not cover ' + uncovered.join(', '));
+    }
+    const claimed = String(fields['openid.claimed_id'] || '');
+    if (claimed !== fields['openid.identity'] ||
+        !STEAM_CLAIMED_ID.test(claimed)) {
+      return refused('its claimed identifier is not a SteamID on Steam\'s ' +
+                     'host');
+    }
+    log.debug("Leaving FederationSp.steamAssertionProblem().");
+    return '';
+  }
+
+  private async consumeSteamAssertion(req, res, record, context, params) {
+    const {
+      fedHttp, errorCodes, log, baseUrlOf, federation
+    } = this.deps;
+    log.debug("Entering FederationSp.consumeSteamAssertion().");
+    const fields: any = {};
+    Object.keys(params).forEach(function (name) {
+      if (name.indexOf('openid.') === 0 && typeof params[name] === 'string') {
+        fields[name] = params[name];
+      }
+    });
+    if (fields['openid.mode'] !== 'id_res') {
+      errorCodes.mark(res, 'STS-FED-0224');
+      log.debug("Leaving FederationSp.consumeSteamAssertion(). Not an " +
+                "assertion.");
+      return this.refuse(res, record, 400, 'The sign-in was not completed',
+        'Steam did not answer with an assertion. Somebody may have cancelled ' +
+        'on its page.');
+    }
+    const problem = FederationSp.steamAssertionProblem(fields,
+      this.steamReturnTo(baseUrlOf(req), record, context),
+      String(record.fedTokenUrl || ''));
+    if (problem) {
+      errorCodes.mark(res, 'STS-FED-0225');
+      log.debug("Leaving FederationSp.consumeSteamAssertion(). " + problem);
+      return this.refuse(res, record, 401, 'The assertion was refused',
+                         'The assertion was refused: ' + problem + '.');
+    }
+    // SECTION 11.4.2: the OP says whether it signed this. The same parameters,
+    // with the mode changed, and an answer that is Key-Value form.
+    const body = new URLSearchParams(fields);
+    body.set('openid.mode', 'check_authentication');
+    const asked = await fedHttp.fetchPublished(String(record.fedTokenUrl), {
+      method: 'POST', body: body.toString(),
+      contentType: 'application/x-www-form-urlencoded', accept: 'text/plain' });
+    const valid = asked.ok && String(asked.body).split('\n')
+      .some(function (line: string): boolean {
+        return line.trim() === 'is_valid:true';
+      });
+    if (!valid) {
+      errorCodes.mark(res, 'STS-FED-0226');
+      log.debug("Leaving FederationSp.consumeSteamAssertion(). Not valid.");
+      return this.refuse(res, record, 401, 'The assertion did not verify',
+                         'Steam did not confirm that it signed this ' +
+                         'assertion.');
+    }
+    // SECTION 11.3: an OP's nonce is accepted once. The time at its front says
+    // when it was made, and the history need keep it no longer than this.
+    const claimed = await usedAssertions.claim({ format: 'openid2',
+      use: 'steam-assertion', issuer: String(record.fedPeer),
+      identifier: fields['openid.response_nonce'], request: req,
+      expiresAt: Date.now() + STEAM_NONCE_KEEP_MS });
+    if (!claimed.ok) {
+      errorCodes.mark(res, 'STS-FED-0227');
+      log.debug("Leaving FederationSp.consumeSteamAssertion(). Replay.");
+      return this.refuse(res, record, 401, 'The assertion was refused',
+                         'This assertion was already used, or could not be ' +
+                         'proved unused.');
+    }
+    const steamid = String(STEAM_CLAIMED_ID.exec(
+      fields['openid.claimed_id'])[1]);
+    const summary = await this.steamSummary(record, steamid, federation);
+    const reading = this.consumerReading(record,
+      { token: { steamid: steamid }, userinfo: summary }, {},
+      steamid, this.federatedAmr([]), '');
+    log.debug("Leaving FederationSp.consumeSteamAssertion().");
+    return this.completeSignIn(req, res, record, {
+      subject: reading.subject,
+      issuer: String(record.fedPeer || ''),
+      bag: reading.bag, amr: reading.amr, acr: reading.acr,
+      // The OP vouched for the signature, and this service checked none.
+      signer: FederationSp.signerOf('none'),
+      returnTo: this.fromContext(context).returnTo,
+      connect: this.fromContext(context).connect,
+      application: this.fromContext(context).application,
+      authnPending: this.fromContext(context).authnPending
+    });
+  }
+
+  // A PERSON'S NAME AND PICTURE (#746), only where an administrator gave a
+  // Steam Web API key. A failure costs them and never the sign-in: the
+  // SteamID already names the person. The key is on this URL because that is
+  // how Steam takes it, so neither the URL nor a reason that could quote one
+  // is logged.
+  private async steamSummary(record, steamid, federation) {
+    const { fedHttp, errorCodes, log } = this.deps;
+    log.debug("Entering FederationSp.steamSummary().");
+    const key = String(federation.clientSecretOf(record) || '');
+    const base = String(record.fedUserinfoUrl || '').trim();
+    if (!key || !base) {
+      log.debug("Leaving FederationSp.steamSummary(). No key.");
+      return null;
+    }
+    const asked = await fedHttp.fetchPublished(base + '?key=' +
+      encodeURIComponent(key) + '&steamids=' + encodeURIComponent(steamid),
+    { accept: 'application/json' });
+    let out = null;
+    try {
+      out = asked.ok ? JSON.parse(String(asked.body)) : null;
+    } catch (e) {
+      log.debug("Caught in FederationSp.steamSummary(): " +
+                ((e && e.name) || 'a parse error'));
+      out = null;
+    }
+    if (!out) {
+      log.info(errorCodes.tag('STS-FED-0228') + 'federation: ' + record.fedId +
+               ': the Steam Web API gave no summary (status ' + asked.status +
+               '), so this person has no name or picture from it.');
+    }
+    log.debug("Leaving FederationSp.steamSummary().");
+    return out;
   }
 
   // The authorization request's parameters, for the query or — for an OP
@@ -5051,6 +5540,20 @@ class FederationSp {
     }
 
     // OIDC and OAuth 2.0.
+    if (consumerProviders.adapts(record, 'atproto-oauth')) {
+      contextRecord.atproto = AtprotoClient.newKey();
+      const held = this.heldContext(this.putContext(contextRecord));
+      log.debug("Leaving the federation login endpoint. A pushed request.");
+      return this.atprotoRedirect(req, res, record, held).catch((e) => {
+        log.error(errorCodes.tag('STS-FED-0042') + 'federation: the Bluesky ' +
+                  'sign-in through ' + record.fedId + ' threw: ' +
+                  ((e && e.message) || e));
+        errorCodes.mark(res, 'STS-FED-0042');
+        return this.refuse(res, record, 500, 'This service failed while ' +
+                           'starting the sign-in', 'The request could not be ' +
+                           'made.');
+      });
+    }
     const handle = this.putContext(contextRecord);
     const stored = this.heldContext(handle);
     let url = '';
@@ -7126,6 +7629,40 @@ class FederationSp {
             'response without one did not come from a flow it started.');
     }
 
+    // DISCOURSE AND BLUESKY (#746), each with an answer of its own.
+    if (consumerProviders.adapts(record, 'discourse-connect')) {
+      log.debug("Leaving FederationSp.consumeOauthResponse(). Discourse.");
+      return this.consumeDiscourseAnswer(req, res, record, context, params);
+    }
+    if (consumerProviders.adapts(record, 'atproto-oauth')) {
+      log.debug("Leaving FederationSp.consumeOauthResponse(). Bluesky.");
+      return this.consumeAtprotoAnswer(req, res, record, context, params)
+        .catch((e) => {
+          log.error(errorCodes.tag('STS-FED-0042') + 'federation: the Bluesky ' +
+                    'answer for ' + record.fedId + ' threw: ' +
+                    ((e && e.message) || e));
+          errorCodes.mark(res, 'STS-FED-0042');
+          return this.refuse(res, record, 500, 'This service failed while ' +
+                             'finishing the sign-in', 'The answer could not ' +
+                             'be checked.');
+        });
+    }
+
+    // STEAM (#746): an OpenID 2.0 assertion, with no code to redeem.
+    if (consumerProviders.adapts(record, 'steam-openid2')) {
+      log.debug("Leaving FederationSp.consumeOauthResponse(). OpenID 2.0.");
+      return this.consumeSteamAssertion(req, res, record, context, params)
+        .catch((e) => {
+          log.error(errorCodes.tag('STS-FED-0042') + 'federation: the Steam ' +
+                    'assertion for ' + record.fedId + ' threw: ' +
+                    ((e && e.message) || e));
+          errorCodes.mark(res, 'STS-FED-0042');
+          return this.refuse(res, record, 500, 'This service failed while ' +
+                             'finishing the sign-in', 'The assertion could ' +
+                             'not be checked.');
+        });
+    }
+
     // A PARTNER READ FROM ITS DISCOVERY DOCUMENT (#930): the endpoints the
     // sign-in was started with, never what the document says by now.
     if (context.discovered && federation.discovers(record)) {
@@ -7944,9 +8481,12 @@ class FederationSp {
         'for a profile names nobody.');
     }
     log.debug("Leaving FederationSp.finishOauth2().");
-    return fedHttp.fetchJson(record, 'fedUserinfoUrl',
-                             { method: 'GET', bearer: accessToken })
-                  .then((answer) => {
+    const asked: Promise<any> =
+      consumerProviders.adapts(record, 'query-access-token')
+        ? this.queryTokenProfile(record, accessToken)
+        : fedHttp.fetchJson(record, 'fedUserinfoUrl',
+                            { method: 'GET', bearer: accessToken });
+    return asked.then((answer) => {
       if (!answer.ok || !answer.json) {
         log.debug("Leaving FederationSp.finishOauth2(). The userinfo call " +
                   'failed.');

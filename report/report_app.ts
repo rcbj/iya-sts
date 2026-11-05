@@ -209,6 +209,8 @@ const REPORT_STYLE = [
   '.sub { color: #5b6070; }',
   // The account menu overlays the page. The panel is out of flow, so
   // opening the <details> does not grow the flex bar.
+  '.menuphoto{width:20px;height:20px;border-radius:50%;object-fit:cover;' +
+  'vertical-align:middle;margin-right:6px}',
   '.usermenu{position:relative;margin-left:auto}',
   // Its box — border, padding, background — is the top bar's rule above,
   // so it matches the selects beside it.

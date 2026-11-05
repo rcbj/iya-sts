@@ -1113,6 +1113,17 @@ function reportServeGroups(req: any, res: any): void {
 // administrator broadcast to this application, as its receiver kept it.
 // Everybody signed in to it sees the same announcements — they are about
 // nobody — so there is no narrowing by person here.
+// WHAT THE USER MENU DRAWS (#719): the reader's own photo. This application
+// signs in with no directory view of its own, so this is the one thing it asks
+// about the person, and it answers only about the token's.
+function reportServeMe(res: any, who: any): void {
+  log.debug("Entering reportServeMe().");
+  reportJson(res, 200, { photo: who && who.kind === 'user'
+    ? require('../common/profile_photo').pathFor(String(who.username || ''))
+    : '' });
+  log.debug("Leaving reportServeMe().");
+}
+
 function reportServeAnnouncements(req: any, res: any): void {
   log.debug("Entering reportServeAnnouncements().");
   const since = Number(((req && req.query) || {}).since || 0) || 0;
@@ -1789,6 +1800,8 @@ async function reportRoute(req: any, res: any, who: any): Promise<void> {
     await reportServeSignals(req, res, who);
   } else if (a === 'announcements' && !b && method === 'GET') {
     reportServeAnnouncements(req, res);
+  } else if (a === 'me' && !b && method === 'GET') {
+    reportServeMe(res, who);
   } else if (a === 'schedules' && !b && method === 'GET') {
     reportServeSchedules(req, res, who);
   } else if (a === 'queries' && !b && method === 'POST') {
@@ -1915,6 +1928,9 @@ class ReportApi {
       reportAnswer(req, res);
     });
     app.get(BASE + '/openapi.json', function (req: any, res: any): void {
+      reportAnswer(req, res);
+    });
+    app.get(BASE + '/me', function (req: any, res: any): void {
       reportAnswer(req, res);
     });
     app.get(BASE + '/catalog', function (req: any, res: any): void {

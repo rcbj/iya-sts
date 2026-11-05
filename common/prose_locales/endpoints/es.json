@@ -447,6 +447,10 @@
     "en": "2ce72d622f586a26",
     "text": "El logotipo de inicio de sesión de un dominio"
   },
+  "endpoints.route./web/photo/:id.name": {
+    "en": "f2cc426998480c9c",
+    "text": "La foto de perfil de una persona"
+  },
   "endpoints.route./web/branding/preview.name": {
     "en": "54aca7174dc0a2b0",
     "text": "Una vista previa de la apariencia de inicio de sesión"
@@ -578,6 +582,10 @@
   "endpoints.route./report-api/signals.name": {
     "en": "fa5ff98584c701fb",
     "text": "La bandeja de Shared Signals de la aplicación de informes"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "Lo que dibuja el menú de usuario de la aplicación de informes"
   },
   "endpoints.route./report-api/announcements.name": {
     "en": "3adb83b8075c6a3a",
@@ -1610,6 +1618,10 @@
   "endpoints.route./federation/metadata/:id.name": {
     "en": "1bd56e73b838da2d",
     "text": "Los metadatos SAML PROPIOS de este servicio, por socio"
+  },
+  "endpoints.route./federation/atproto/client/:id.name": {
+    "en": "eb2fd5ea6de7cf28",
+    "text": "Metadatos de cliente de una relación de Bluesky (#746)"
   },
   "endpoints.route./federation/jwks/:id.name": {
     "en": "56f010e78f399989",

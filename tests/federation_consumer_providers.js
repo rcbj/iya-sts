@@ -112,7 +112,28 @@ function childMain() {
     // endpoint was sent, for the client-authentication checks.
     const people = {};
     const seen = { discord: [], github: [], google: [], x: [], tiktok: [],
-                   twitch: [], apple: [] };
+                   twitch: [], apple: [], gitlab: [], bitbucket: [],
+                   patreon: [], roblox: [], battlenet: [], epic: [],
+                   paypal: [], dropbox: [], box: [], codeberg: [],
+                   huggingface: [], asana: [], atlassian: [], replit: [],
+                   mastodon: [], sourceforge: [], stackoverflow: [],
+                   oschina: [], gitea: [] };
+    // Discourse and Bluesky (#746): the secret one shares, and what a Bluesky
+    // server was sent and says.
+    const DISCOURSE_SECRET = 'shared-discourse-secret';
+    const discourse = { fields: null, forge: false, nonce: '' };
+    const atp = { did: 'did:plc:' + 'abcdefghijklmnopqrstuvwx', issuer: '',
+                  serverTrusted: true, par: [], token: [], sub: '',
+                  dpopNonce: 'server-nonce', codes: {} };
+    // Steam (#746): the assertion the next sign-in comes back with, what its
+    // endpoint was asked, and whether it confirms what it is asked about.
+    const steam = { params: null, asked: [], confirms: true, seenLogin: null,
+                    nonce: 0, summaryKey: '' };
+    // Roblox signs with ES256, unlike the others here.
+    const robloxKey = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
+    const robloxJwk = Object.assign(robloxKey.publicKey.export({ format: 'jwk' }),
+                                    { kid: 'fake-roblox-1', alg: 'ES256',
+                                      use: 'sig' });
     // Sign in with Apple's developer key (the .p8), which signs the client
     // secret this service mints.
     const appleKey = crypto.generateKeyPairSync('ec', { namedCurve: 'P-256' });
@@ -136,6 +157,165 @@ function childMain() {
           res.writeHead(status, { 'content-type': 'application/json' });
           res.end(JSON.stringify(value));
         };
+        // STEAM (#746): OpenID 2.0 at one endpoint, GET to sign in and POST to
+        // check, and neither carries a bearer token.
+        if (who === 'steam' && what === 'login' && req.method === 'GET') {
+          steam.seenLogin = Object.fromEntries(url.searchParams.entries());
+          steam.nonce += 1;
+          const back = url.searchParams.get('openid.return_to');
+          const id = 'https://steamcommunity.com/openid/id/76561197960435530';
+          const signedNames = 'signed,op_endpoint,claimed_id,identity,' +
+                              'return_to,response_nonce,assoc_handle';
+          const fields = Object.assign({
+            'openid.ns': 'http://specs.openid.net/auth/2.0',
+            'openid.mode': 'id_res',
+            'openid.op_endpoint': pbase + '/steam/login',
+            'openid.claimed_id': id, 'openid.identity': id,
+            'openid.return_to': back,
+            'openid.response_nonce': '2026-11-05T00:00:00Z' + steam.nonce,
+            'openid.assoc_handle': 'handle', 'openid.signed': signedNames,
+            'openid.sig': 'c2lnbmF0dXJl' }, steam.params || {});
+          if (steam.replay) {
+            fields['openid.response_nonce'] = steam.replay;
+          }
+          const target = new URL(back);
+          Object.keys(fields).forEach(function (name) {
+            target.searchParams.set(name, fields[name]);
+          });
+          res.writeHead(302, { location: target.toString() });
+          res.end();
+          return;
+        }
+        if (who === 'steam' && what === 'login') {
+          steam.asked.push(Object.fromEntries(
+            new URLSearchParams(body).entries()));
+          res.writeHead(200, { 'content-type': 'text/plain' });
+          res.end('ns:http://specs.openid.net/auth/2.0\nis_valid:' +
+                  (steam.confirms ? 'true' : 'false') + '\n');
+          return;
+        }
+        if (who === 'steam' && what === 'summary') {
+          steam.summaryKey = url.searchParams.get('key');
+          json(200, { response: { players: [{
+            steamid: url.searchParams.get('steamids'),
+            personaname: 'Gabe', profileurl: 'https://steamcommunity.com/id/g/',
+            avatarfull: 'https://avatars.example/g.jpg' }] } });
+          return;
+        }
+        // DISCOURSE (#746): a signed payload out, a signed payload back.
+        if (who === 'discourse' && what === 'session/sso_provider') {
+          const sent = url.searchParams.get('sso') || '';
+          const expected = crypto.createHmac('sha256', DISCOURSE_SECRET)
+            .update(sent).digest('hex');
+          const opened = new URLSearchParams(
+            Buffer.from(sent, 'base64').toString('utf8'));
+          if (expected !== url.searchParams.get('sig')) {
+            json(403, { error: 'bad signature' });
+            return;
+          }
+          discourse.nonce = opened.get('nonce');
+          const payload = Buffer.from(new URLSearchParams(Object.assign({
+            nonce: opened.get('nonce'), external_id: '321',
+            username: 'dee', name: 'Dee Course', email: 'dee@example.com'
+          }, discourse.fields || {})).toString()).toString('base64');
+          const back = new URL(opened.get('return_sso_url'));
+          back.searchParams.set('sso', payload);
+          back.searchParams.set('sig', crypto.createHmac('sha256',
+            discourse.forge ? 'not-the-secret' : DISCOURSE_SECRET)
+            .update(payload).digest('hex'));
+          res.writeHead(302, { location: back.toString() });
+          res.end();
+          return;
+        }
+        // BLUESKY (#746): RFC 8414, PAR and DPoP with a server nonce, then the
+        // public directory, data server and profile.
+        const atpOwn = pbase + '/atp';
+        if (who === 'atp' && what === '.well-known/oauth-authorization-server') {
+          json(200, { issuer: atp.issuer || atpOwn,
+            pushed_authorization_request_endpoint: atpOwn + '/par',
+            authorization_endpoint: atpOwn + '/authz',
+            token_endpoint: atpOwn + '/tok' });
+          return;
+        }
+        if (who === 'atp' && (what === 'par' || what === 'tok')) {
+          const form = Object.fromEntries(new URLSearchParams(body).entries());
+          const proof = String(req.headers.dpop || '');
+          const header = proof ? JSON.parse(Buffer.from(proof.split('.')[0],
+            'base64url').toString()) : {};
+          let claims = null;
+          try {
+            claims = jwt.verify(proof, crypto.createPublicKey({
+              key: header.jwk, format: 'jwk' }), { algorithms: ['ES256'] });
+          } catch (e) {
+            claims = null;
+          }
+          (what === 'par' ? atp.par : atp.token).push({ form: form,
+            header: header, claims: claims });
+          if (!claims || header.typ !== 'dpop+jwt' || claims.htm !== 'POST' ||
+              claims.htu !== atpOwn + '/' + what) {
+            json(400, { error: 'invalid_dpop_proof' });
+            return;
+          }
+          if (claims.nonce !== atp.dpopNonce) {
+            res.writeHead(400, { 'content-type': 'application/json',
+                                 'dpop-nonce': atp.dpopNonce });
+            res.end(JSON.stringify({ error: 'use_dpop_nonce' }));
+            return;
+          }
+          if (what === 'par') {
+            atp.codes['urn:par:1'] = form;
+            json(201, { request_uri: 'urn:par:1', expires_in: 60 });
+            return;
+          }
+          const digest = crypto.createHash('sha256')
+            .update(String(form.code_verifier)).digest('base64url');
+          if (digest !== atp.codes['urn:par:1'].code_challenge) {
+            json(400, { error: 'invalid_grant' });
+            return;
+          }
+          json(200, { access_token: 'atp-at', token_type: 'DPoP',
+                      scope: 'atproto', sub: atp.sub || atp.did });
+          return;
+        }
+        if (who === 'atp' && what === 'authz') {
+          const held = atp.codes[url.searchParams.get('request_uri')];
+          const back = new URL(held.redirect_uri);
+          back.searchParams.set('code', 'atp-code');
+          back.searchParams.set('state', held.state);
+          back.searchParams.set('iss', atp.answerIss || atpOwn);
+          res.writeHead(302, { location: back.toString() });
+          res.end();
+          return;
+        }
+        if (who === 'plc') {
+          json(200, { id: parts.slice(1).join('/'), service: [{
+            id: '#atproto_pds', type: 'AtprotoPersonalDataServer',
+            serviceEndpoint: pbase + '/pds' }] });
+          return;
+        }
+        if (who === 'pds') {
+          json(200, { authorization_servers:
+            [atp.serverTrusted ? atpOwn : 'https://elsewhere.example'] });
+          return;
+        }
+        if (who === 'atp' && what === 'profile') {
+          json(200, { did: url.searchParams.get('actor'),
+                      handle: 'blue.example', displayName: 'Blue Sky',
+                      avatar: 'https://b.example/a.jpg' });
+          return;
+        }
+        // THE TOKEN ON THE QUERY (#746), compressed as Stack Exchange's always
+        // is, and a bearer header not read.
+        if ((who === 'stackoverflow' || who === 'oschina') && what === 'me') {
+          const granted = codes['at:' + url.searchParams.get('access_token')];
+          const answer = JSON.stringify(granted ? granted.person.profile
+                                                : { error: 'no token' });
+          res.writeHead(granted ? 200 : 401,
+                        { 'content-type': 'application/json' });
+          res.end(who === 'stackoverflow'
+            ? require('zlib').gzipSync(answer) : answer);
+          return;
+        }
         if (what === 'authorize' && who === 'apple') {
           // FORM POST (Apple requires it for a name or an address): what
           // the browser would POST back, answered as data for the test.
@@ -213,6 +393,22 @@ function childMain() {
             signing.privateKey, { algorithm: 'RS256', expiresIn: 300,
                                   keyid: 'fake-google-1' });
           }
+          if (['gitlab', 'battlenet', 'epic', 'dropbox', 'codeberg', 'gitea',
+               'huggingface', 'asana', 'replit'].indexOf(who) >= 0) {
+            answer.id_token = jwt.sign(Object.assign({
+              iss: pbase + '/' + who, aud: grant.clientId,
+              nonce: grant.nonce }, grant.person.claims),
+            signing.privateKey, { algorithm: 'RS256', expiresIn: 300,
+                                  keyid: 'fake-google-1' });
+          }
+          if (who === 'roblox') {
+            // Roblox's issuer ends in a slash, and it signs with ES256.
+            answer.id_token = jwt.sign(Object.assign({
+              iss: pbase + '/roblox/', aud: grant.clientId,
+              nonce: grant.nonce }, grant.person.claims),
+            robloxKey.privateKey, { algorithm: 'ES256', expiresIn: 300,
+                                    keyid: 'fake-roblox-1' });
+          }
           if (who === 'google') {
             answer.id_token = jwt.sign(Object.assign({
               iss: grant.person.iss || googleIssuer, aud: grant.clientId,
@@ -224,7 +420,7 @@ function childMain() {
           return;
         }
         if (what === 'jwks') {
-          json(200, { keys: [googleJwk] });
+          json(200, { keys: [googleJwk, robloxJwk] });
           return;
         }
         const bearer = String(req.headers.authorization || '')
@@ -235,7 +431,9 @@ function childMain() {
           return;
         }
         if (what === 'users/@me' || what === 'user' ||
-            what === '2/users/me' || what === 'v2/user/info') {
+            what === '2/users/me' || what === 'v2/user/info' ||
+            what === 'userinfo' || what === 'identity' ||
+            what === 'users/me' || what === 'me' || what === 'rest/user') {
           json(200, grant.person.profile);
           return;
         }
@@ -1564,6 +1762,504 @@ function childMain() {
            }),
            'N13. with another way in, the disconnect is made',
            JSON.stringify(nowAllowed));
+    }
+
+    // ===== O. #746's GLOBAL PROVIDERS =======================================
+    // Each one's shape against a server that behaves as its documentation
+    // says. None of this is the provider itself: docs/federation-consumer-
+    // providers.md says which have met a live one, and the answer is none.
+    // After the sections above, because this many sign-ins from one address
+    // raise its risk, which K's connecting an account would be refused for.
+    const GLOBAL = {
+      gitlab: { oidc: true, info: 'userinfo' },
+      bitbucket: { info: 'user', emails: 'user/emails' },
+      patreon: { info: 'identity' },
+      roblox: { oidc: true, peer: '/roblox/' },
+      battlenet: { oidc: true, info: 'userinfo' },
+      epic: { oidc: true, info: 'userinfo' },
+      paypal: { info: 'userinfo' },
+      dropbox: { oidc: true },
+      box: { info: 'users/me' }
+    };
+    const pointGlobal = inSp(function () {
+      const out = [];
+      Object.keys(GLOBAL).forEach(function (who) {
+        const row = GLOBAL[who];
+        out.push(federation.create({ fedId: 'cp-' + who, fedProvider: who }));
+        const set = function (field, value) {
+          out.push(federation.update('cp-' + who, { field: field,
+                                                    value: value }));
+        };
+        set('fedSsoUrl', pbase + '/' + who + '/authorize');
+        set('fedTokenUrl', pbase + '/' + who + '/token');
+        if (row.oidc) {
+          set('fedJwksUri', pbase + '/' + who + '/jwks');
+          set('fedPeer', pbase + (row.peer || '/' + who));
+        }
+        if (row.info) {
+          set('fedUserinfoUrl', pbase + '/' + who + '/' + row.info);
+        }
+        if (row.emails) {
+          set('fedEmailsUrl', pbase + '/' + who + '/' + row.emails);
+        }
+        set('fedClientId', 'client-' + who);
+        set('fedClientSecret', 'secret-' + who);
+        set('fedEnabled', 'TRUE');
+      });
+      return out;
+    });
+    note(pointGlobal.every(function (one) { return one.ok; }),
+         'O1. a relationship is made from each global provider\'s profile',
+         JSON.stringify(pointGlobal.filter(function (one) {
+           return !one.ok;
+         }).map(function (one) { return one.errors; })));
+    const entryFor = function (rel, subject) {
+      return entryOf(inSp(function () {
+        return links.provisionedName(rel, subject);
+      }));
+    };
+    const authHeader = function (who) {
+      return (seen[who][seen[who].length - 1] || {}).authorization || '';
+    };
+
+    people.gitlab = { claims: { sub: '4242' },
+      profile: { sub: '4242', name: 'Gil Lab', nickname: 'gil',
+                 preferred_username: 'gil', email: 'gil@example.com',
+                 email_verified: true,
+                 picture: 'https://gitlab.example/a.png' } };
+    const glr = await signIn('cp-gitlab');
+    const gle = entryFor('cp-gitlab', '4242');
+    note(glr.status === 200 && attr(gle, 'cn')[0] === 'Gil Lab' &&
+         attr(gle, 'mail')[0] === 'gil@example.com' &&
+         attr(gle, 'stsMailVerified')[0] === 'gil@example.com' &&
+         attr(gle, 'pictureUrl')[0] === 'https://gitlab.example/a.png' &&
+         /^Basic /.test(authHeader('gitlab')),
+         'O2. GitLab: the ID Token names the person, UserInfo describes them, ' +
+         'and an address it says is verified counts as verified',
+         glr.status + ' ' + JSON.stringify(gle && gle.attributes));
+    people.gitlab = { claims: { sub: '4243' },
+      profile: { sub: '4243', name: 'Ann Other', email: 'ann@example.com',
+                 email_verified: false } };
+    await signIn('cp-gitlab');
+    const gle2 = entryFor('cp-gitlab', '4243');
+    note(attr(gle2, 'mail')[0] === 'ann@example.com' &&
+         !attr(gle2, 'stsMailVerified').length,
+         'O3. and one it does not is written and stays unverified',
+         JSON.stringify(gle2 && gle2.attributes.stsmailverified));
+
+    const self = inSp(function () {
+      return federation.create({ fedId: 'cp-gl-self',
+                                 fedProvider: 'gitlab-self-managed' });
+    });
+    note(self.ok && !(self.relationship || {}).fedSsoUrl &&
+         !(self.relationship || {}).fedPeer,
+         'O4. a self-managed GitLab gets no gitlab.com address by default',
+         JSON.stringify(self.errors || (self.relationship || {}).fedPeer));
+
+    people.bitbucket = { profile: { uuid: '{b-uuid}', display_name: 'Bit Bucket',
+                                    nickname: 'bb', links: { avatar: {
+                                      href: 'https://bb.example/a.png' } } },
+      emails: { values: [
+        { email: 'other@example.com', is_primary: false, is_confirmed: true },
+        { email: 'bb@example.com', is_primary: true, is_confirmed: true }] } };
+    const bbr = await signIn('cp-bitbucket');
+    const bbe = entryFor('cp-bitbucket', '{b-uuid}');
+    note(bbr.status === 200 && attr(bbe, 'mail')[0] === 'bb@example.com' &&
+         attr(bbe, 'stsMailVerified')[0] === 'bb@example.com' &&
+         attr(bbe, 'pictureUrl')[0] === 'https://bb.example/a.png',
+         'O5. Bitbucket: the uuid names the person, and the is_primary address ' +
+         'in values[] is the one taken', bbr.status + ' ' +
+         JSON.stringify(bbe && bbe.attributes.mail));
+
+    people.patreon = { profile: { data: { id: '998', type: 'user', attributes: {
+      full_name: 'Pat Reon', first_name: 'Pat', last_name: 'Reon',
+      vanity: 'patr', email: 'pat@example.com', is_email_verified: true,
+      image_url: 'https://p.example/a.png' } } } };
+    const par = await signIn('cp-patreon');
+    const pae = entryFor('cp-patreon', '998');
+    note(par.status === 200 && attr(pae, 'cn')[0] === 'Pat Reon' &&
+         attr(pae, 'stsMailVerified')[0] === 'pat@example.com',
+         'O6. Patreon: a nested answer, and its own verification statement',
+         par.status + ' ' + JSON.stringify(pae && pae.attributes.cn));
+    const paAsked = inSp(function () {
+      return federation.get('cp-patreon').fedScope;
+    });
+    note(paAsked === 'identity identity[email]',
+         'O7. and its bracketed scope survives being stored', paAsked);
+
+    people.roblox = { claims: { sub: '7777', name: 'Rob Lox',
+                                nickname: 'rob', preferred_username: 'roblox1',
+                                picture: 'https://r.example/a.png' } };
+    const ror = await signIn('cp-roblox');
+    const roe = entryFor('cp-roblox', '7777');
+    note(ror.status === 200 && attr(roe, 'cn')[0] === 'Rob Lox' &&
+         attr(roe, 'federationAttribute').indexOf('mail') < 0,
+         'O8. Roblox: an ES256 ID Token, an issuer ending in a slash, no address',
+         ror.status + ' ' + ror.text.slice(0, 240));
+
+    people.battlenet = { claims: { sub: '1234' },
+      profile: { sub: '1234', id: 1234, battletag: 'Tag#1234' } };
+    const bnr = await signIn('cp-battlenet');
+    note(bnr.status === 200 && !!entryFor('cp-battlenet', '1234'),
+         'O9. Battle.net: the ID Token\'s sub, not the changeable BattleTag',
+         bnr.status + ' ' + bnr.text.slice(0, 200));
+
+    people.epic = { claims: { sub: 'epic-acct' },
+      profile: { sub: 'epic-acct', preferred_username: 'epicname' } };
+    const epr = await signIn('cp-epic');
+    note(epr.status === 200 && !!entryFor('cp-epic', 'epic-acct'),
+         'O10. Epic Games: the ID Token\'s sub', epr.status);
+
+    people.paypal = { profile: { sub: 'pp-sub', name: 'Pay Pal',
+                                 given_name: 'Pay', family_name: 'Pal',
+                                 email: 'pp@example.com',
+                                 email_verified: true } };
+    const ppr = await signIn('cp-paypal');
+    const ppe = entryFor('cp-paypal', 'pp-sub');
+    const ppAsked = inSp(function () {
+      return String(federation.get('cp-paypal').fedScope);
+    });
+    note(ppr.status === 200 && attr(ppe, 'cn')[0] === 'Pay Pal' &&
+         /^Basic /.test(authHeader('paypal')) &&
+         !/payment|sendmoney|checkout/i.test(ppAsked),
+         'O11. PayPal: its identity API names the person, and no payment ' +
+         'scope is asked for', ppr.status + ' ' + ppAsked);
+
+    people.dropbox = { claims: { sub: 'dbid:abc', given_name: 'Drop',
+                                 family_name: 'Box', email: 'd@example.com',
+                                 email_verified: true } };
+    const dbr = await signIn('cp-dropbox');
+    const dbe = entryFor('cp-dropbox', 'dbid:abc');
+    note(dbr.status === 200 && attr(dbe, 'mail')[0] === 'd@example.com' &&
+         attr(dbe, 'stsMailVerified')[0] === 'd@example.com',
+         'O12. Dropbox: everything from the ID Token, with no UserInfo call',
+         dbr.status + ' ' + dbr.text.slice(0, 200));
+
+    people.box = { profile: { id: '11446498', name: 'Bo X',
+                              login: 'box@example.com',
+                              avatar_url: 'https://b.example/a' } };
+    const bxr = await signIn('cp-box');
+    const bxe = entryFor('cp-box', '11446498');
+    const bxForm = (seen.box[seen.box.length - 1] || { form: {} }).form;
+    note(bxr.status === 200 && attr(bxe, 'mail')[0] === 'box@example.com' &&
+         !attr(bxe, 'stsMailVerified').length &&
+         bxForm.client_secret === 'secret-box',
+         'O13. Box: its login is the address, unverified, and the secret ' +
+         'goes in the body', bxr.status + ' ' + JSON.stringify(bxForm));
+
+    // ----- STEAM: OPENID 2.0 -----------------------------------------------
+    const pointSteam = inSp(function () {
+      const out = [federation.create({ fedId: 'cp-steam',
+                                       fedProvider: 'steam' })];
+      const set = function (field, value) {
+        out.push(federation.update('cp-steam', { field: field, value: value }));
+      };
+      set('fedSsoUrl', pbase + '/steam/login');
+      set('fedTokenUrl', pbase + '/steam/login');
+      set('fedUserinfoUrl', pbase + '/steam/summary');
+      set('fedEnabled', 'TRUE');
+      return out;
+    });
+    note(pointSteam.every(function (one) { return one.ok; }),
+         'O14. a Steam relationship needs no client id or secret of anybody\'s',
+         JSON.stringify(pointSteam.map(function (one) { return one.errors; })));
+    const STEAM_ID = '76561197960435530';
+    const noKey = await signIn('cp-steam');
+    const stNoKey = entryFor('cp-steam', STEAM_ID);
+    const firstCheck = steam.asked[steam.asked.length - 1] || {};
+    note(noKey.status === 200 && !!stNoKey &&
+         attr(stNoKey, 'federationAttribute').indexOf('mail') < 0 &&
+         !steam.summaryKey,
+         'O15. Steam signs a person in as their SteamID, with no key and no ' +
+         'summary call', noKey.status + ' ' + noKey.text.slice(0, 240));
+    note(steam.seenLogin['openid.mode'] === 'checkid_setup' &&
+         !steam.seenLogin.client_id && !steam.seenLogin.code_challenge &&
+         /\?state=/.test(steam.seenLogin['openid.return_to']),
+         'O16. what it sends is OpenID 2.0, with the sign-in\'s state on the ' +
+         'return address and nothing of OAuth', JSON.stringify(steam.seenLogin));
+    note(firstCheck['openid.mode'] === 'check_authentication' &&
+         firstCheck['openid.sig'] === 'c2lnbmF0dXJl',
+         'O17. and it asks the endpoint about the same assertion',
+         JSON.stringify(firstCheck));
+    inSp(function () {
+      return federation.update('cp-steam', { field: 'fedClientSecret',
+                                             value: 'steam-web-api-key' });
+    });
+    const withKey = await signIn('cp-steam');
+    const stKey = entryFor('cp-steam', STEAM_ID);
+    note(withKey.status === 200 && steam.summaryKey === 'steam-web-api-key' &&
+         attr(stKey, 'cn')[0] === 'Gabe',
+         'O18. with a Web API key the summary gives a name',
+         withKey.status + ' ' + JSON.stringify(stKey && stKey.attributes.cn));
+    const refusedWith = async function (over) {
+      steam.params = over;
+      const asked = steam.asked.length;
+      const answer = await signIn('cp-steam');
+      steam.params = null;
+      return { status: answer.status, dialled: steam.asked.length > asked,
+               text: answer.text };
+    };
+    const claimedElsewhere = 'https://steamcommunity.com.evil.example/openid/' +
+                             'id/76561197960435530';
+    const cases = [
+      ['a claimed identifier on another host',
+       { 'openid.claimed_id': claimedElsewhere,
+         'openid.identity': claimedElsewhere }],
+      ['an identity that differs from the claimed identifier',
+       { 'openid.identity': 'https://steamcommunity.com/openid/id/' +
+                            '76561197960435531' }],
+      ['another endpoint', { 'openid.op_endpoint': 'https://evil.example/op' }],
+      ['a claimed identifier outside the signature',
+       { 'openid.signed': 'signed,op_endpoint,return_to,response_nonce,' +
+                          'assoc_handle,identity' }],
+      ['no nonce', { 'openid.response_nonce': '' }]
+    ];
+    for (let i = 0; i < cases.length; i += 1) {
+      const got = await refusedWith(cases[i][1]);
+      note(got.status === 401 && !got.dialled,
+           'O19. ' + cases[i][0] + ' is refused before the endpoint is asked',
+           got.status + ' dialled=' + got.dialled);
+    }
+    const cancelled = await refusedWith({ 'openid.mode': 'cancel' });
+    note(cancelled.status === 400 && !cancelled.dialled,
+         'O20. a person cancelling at Steam is not an assertion',
+         String(cancelled.status));
+    steam.confirms = false;
+    const unconfirmed = await refusedWith(null);
+    steam.confirms = true;
+    note(unconfirmed.status === 401 && unconfirmed.dialled,
+         'O21. an assertion the endpoint will not confirm is refused',
+         String(unconfirmed.status));
+    steam.replay = 'replayed-nonce-' + process.pid + '-' + Date.now();
+    const once = await refusedWith(null);
+    const twice = await refusedWith(null);
+    delete steam.replay;
+    note(once.status === 200 && twice.status === 401,
+         'O22. a nonce is accepted once',
+         once.status + ' then ' + twice.status);
+
+    // ===== P. #746's TIER 2 ==================================================
+    // A block of its own, so its many short names collide with nothing above.
+    {
+    const TIER2 = {
+      codeberg: { oidc: true, info: 'userinfo' },
+      gitea: { oidc: true, info: 'userinfo' },
+      huggingface: { oidc: true, info: 'userinfo' },
+      asana: { oidc: true, info: 'userinfo' },
+      replit: { oidc: true, info: 'userinfo' },
+      atlassian: { info: 'me' },
+      mastodon: { info: 'userinfo' },
+      sourceforge: { info: 'rest/user' },
+      stackoverflow: { info: 'me?site=stackoverflow&key=k' },
+      oschina: { info: 'me?dataType=json' }
+    };
+    const pointTier2 = inSp(function () {
+      const out = [];
+      Object.keys(TIER2).forEach(function (who) {
+        const row = TIER2[who];
+        out.push(federation.create({ fedId: 'cp-' + who, fedProvider: who }));
+        const set = function (field, value) {
+          out.push(federation.update('cp-' + who, { field: field,
+                                                    value: value }));
+        };
+        set('fedSsoUrl', pbase + '/' + who + '/authorize');
+        set('fedTokenUrl', pbase + '/' + who + '/token');
+        if (row.oidc) {
+          set('fedJwksUri', pbase + '/' + who + '/jwks');
+        }
+        set('fedPeer', pbase + '/' + who);
+        set('fedUserinfoUrl', pbase + '/' + who + '/' + row.info);
+        set('fedClientId', 'client-' + who);
+        set('fedClientSecret', 'secret-' + who);
+        set('fedEnabled', 'TRUE');
+      });
+      return out;
+    });
+    note(pointTier2.every(function (one) { return one.ok; }),
+         'P1. a relationship is made from each Tier 2 profile',
+         JSON.stringify(pointTier2.filter(function (one) {
+           return !one.ok;
+         }).map(function (one) { return one.errors; })));
+    const namedFrom = async function (who, subject, person, field, want) {
+      people[who] = person;
+      const got = await signIn('cp-' + who);
+      const entry = entryFor('cp-' + who, subject);
+      return { ok: got.status === 200 && attr(entry, field)[0] === want,
+               detail: got.status + ' ' + JSON.stringify(
+                 entry && entry.attributes[field.toLowerCase()]),
+               entry: entry };
+    };
+    const forge = await namedFrom('codeberg', '99', { claims: { sub: '99' },
+      profile: { sub: '99', name: 'Code Berg', email: 'c@example.com',
+                 email_verified: true } }, 'stsMailVerified', 'c@example.com');
+    note(forge.ok, 'P2. Codeberg: Forgejo\'s ID Token and UserInfo', forge.detail);
+    const instance = await namedFrom('gitea', '7', { claims: { sub: '7' },
+      profile: { sub: '7', name: 'Gi Tea' } }, 'cn', 'Gi Tea');
+    note(instance.ok, 'P3. a Gitea instance, at the addresses it was given',
+         instance.detail);
+    const hf = await namedFrom('huggingface', 'hf1', { claims: { sub: 'hf1' },
+      profile: { sub: 'hf1', name: 'Hug Face', email: 'h@example.com',
+                 email_verified: true } }, 'stsMailVerified', 'h@example.com');
+    note(hf.ok, 'P4. Hugging Face', hf.detail);
+    const as = await namedFrom('asana', 'a1', { claims: { sub: 'a1' },
+      profile: { sub: 'a1', name: 'As Ana', email: 'a@example.com',
+                 email_verified: true } }, 'mail', 'a@example.com');
+    note(as.ok && !attr(as.entry, 'stsMailVerified').length,
+         'P5. Asana: an address, which its profile does not call verified',
+         as.detail);
+    const rp = await namedFrom('replit', 'r1', { claims: { sub: 'r1' },
+      profile: { sub: 'r1', name: 'Rep Lit' } }, 'cn', 'Rep Lit');
+    note(rp.ok, 'P6. Replit', rp.detail);
+    const at = await namedFrom('atlassian', 'acct-1', { profile: {
+      account_id: 'acct-1', name: 'At Lassian', email: 'at@example.com',
+      email_verified: true } }, 'stsMailVerified', 'at@example.com');
+    note(at.ok, 'P7. Atlassian: the account_id from /me', at.detail);
+    const defaults = inSp(function () {
+      return federation.create({ fedId: 'cp-atl-defaults',
+                                 fedProvider: 'atlassian' });
+    });
+    note(JSON.stringify((defaults.relationship || {}).fedAuthorizeParams)
+      .indexOf('audience=api.atlassian.com') >= 0,
+         'P8. and its authorization request carries the audience it requires',
+         JSON.stringify((defaults.relationship || {}).fedAuthorizeParams));
+    const ms = await namedFrom('mastodon', 'https://m.example/@me',
+      { profile: { sub: 'https://m.example/@me', name: 'Mast Odon',
+                   preferred_username: 'me' } }, 'cn', 'Mast Odon');
+    note(ms.ok, 'P9. a Mastodon instance: the account URL names the person',
+         ms.detail);
+    const sf = await namedFrom('sourceforge', 'sfuser', { profile: {
+      username: 'sfuser', name: 'Source Forge' } }, 'cn', 'Source Forge');
+    note(sf.ok, 'P10. SourceForge', sf.detail);
+    const so = await namedFrom('stackoverflow', '12345', { profile: { items: [{
+      account_id: 12345, display_name: 'Stack Over',
+      link: 'https://stackoverflow.com/u/1' }] } }, 'cn', 'Stack Over');
+    note(so.ok, 'P11. Stack Overflow: the token on the query, the answer ' +
+         'compressed and nested', so.detail);
+    const osc = await namedFrom('oschina', '555', { profile: { id: 555,
+      name: 'O S', email: 'o@example.com' } }, 'cn', 'O S');
+    note(osc.ok, 'P12. OSChina: the token on the query', osc.detail);
+    people.stackoverflow = { profile: { items: [] } };
+    const named = await signIn('cp-stackoverflow');
+    note(named.status === 502,
+         'P13. an answer with no person in it names nobody', String(named.status));
+
+    // ----- DISCOURSE --------------------------------------------------------
+    const pointDiscourse = inSp(function () {
+      const out = [federation.create({ fedId: 'cp-discourse',
+                                       fedProvider: 'discourse' })];
+      const set = function (field, value) {
+        out.push(federation.update('cp-discourse', { field: field,
+                                                     value: value }));
+      };
+      set('fedSsoUrl', pbase + '/discourse/session/sso_provider');
+      set('fedPeer', pbase + '/discourse');
+      set('fedClientSecret', DISCOURSE_SECRET);
+      set('fedEnabled', 'TRUE');
+      return out;
+    });
+    note(pointDiscourse.every(function (one) { return one.ok; }),
+         'P14. a Discourse relationship needs no token endpoint',
+         JSON.stringify(pointDiscourse.map(function (one) {
+           return one.errors;
+         })));
+    const dc = await signIn('cp-discourse');
+    const dce = entryFor('cp-discourse', '321');
+    note(dc.status === 200 && attr(dce, 'cn')[0] === 'Dee Course' &&
+         attr(dce, 'mail')[0] === 'dee@example.com' &&
+         !attr(dce, 'stsMailVerified').length,
+         'P15. Discourse signs a person in over a signed payload, and its ' +
+         'address stays unverified', dc.status + ' ' +
+         JSON.stringify(dce && dce.attributes.cn));
+    discourse.forge = true;
+    const forged = await signIn('cp-discourse');
+    discourse.forge = false;
+    note(forged.status === 401, 'P16. an answer signed with another secret is ' +
+         'refused', String(forged.status));
+    discourse.fields = { nonce: 'another-sign-ins-nonce' };
+    const stale = await signIn('cp-discourse');
+    discourse.fields = null;
+    note(stale.status === 401, 'P17. an answer for another nonce is refused',
+         String(stale.status));
+
+    // ----- BLUESKY ----------------------------------------------------------
+    config.setOverride('federation.atprotoPlcDirectory', pbase + '/plc');
+    const pointAtp = inSp(function () {
+      const out = [federation.create({ fedId: 'cp-bluesky',
+                                       fedProvider: 'bluesky' })];
+      const set = function (field, value) {
+        out.push(federation.update('cp-bluesky', { field: field,
+                                                   value: value }));
+      };
+      set('fedPeer', pbase + '/atp');
+      set('fedUserinfoUrl', pbase + '/atp/profile');
+      set('fedEnabled', 'TRUE');
+      return out;
+    });
+    note(pointAtp.every(function (one) { return one.ok; }),
+         'P18. a Bluesky relationship needs no client of anybody\'s',
+         JSON.stringify(pointAtp.map(function (one) { return one.errors; })));
+    const metadata = await request('GET',
+      '/realm/' + SP + '/federation/atproto/client/cp-bluesky');
+    const clientDoc = JSON.parse(metadata.text);
+    note(metadata.status === 200 &&
+         clientDoc.client_id === base + '/realm/' + SP +
+                                 '/federation/atproto/client/cp-bluesky' &&
+         clientDoc.dpop_bound_access_tokens === true &&
+         clientDoc.token_endpoint_auth_method === 'none',
+         'P19. its client id is the address of the document it serves',
+         metadata.text.slice(0, 240));
+    const notBlue = await request('GET',
+      '/realm/' + SP + '/federation/atproto/client/cp-discourse');
+    note(notBlue.status === 404, 'P20. and another relationship has no such ' +
+         'document', String(notBlue.status));
+    const bl = await signIn('cp-bluesky');
+    const ble = entryFor('cp-bluesky', atp.did);
+    note(bl.status === 200 && attr(ble, 'cn')[0] === 'Blue Sky' &&
+         attr(ble, 'federationAttribute').indexOf('mail') < 0,
+         'P21. Bluesky signs a person in as their DID, with a public profile',
+         bl.status + ' ' + bl.text.replace(/<style[\s\S]*?<\/style>/g, '')
+           .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300));
+    const parFirst = atp.par[0] || {};
+    const parLast = atp.par[atp.par.length - 1] || { form: {}, claims: {} };
+    const keyOf = function (row) {
+      return JSON.stringify((row.header || {}).jwk);
+    };
+    note(atp.par.length === 2 && !(parFirst.claims || {}).nonce &&
+         (parLast.claims || {}).nonce === atp.dpopNonce,
+         'P22. a server\'s DPoP nonce is answered once',
+         JSON.stringify(atp.par.map(function (r) {
+           return (r.claims || {}).nonce || '';
+         })));
+    note(parLast.form.code_challenge_method === 'S256' &&
+         parLast.form.client_id === clientDoc.client_id &&
+         !/"d"/.test(keyOf(parLast)),
+         'P23. the push carries PKCE and the client id, and no proof carries ' +
+         'the private half', JSON.stringify(parLast.form));
+    const tokLast = atp.token[atp.token.length - 1] || {};
+    note(keyOf(tokLast) === keyOf(parLast),
+         'P24. the token request proves the same key as the push');
+    atp.serverTrusted = false;
+    const untrusted = await signIn('cp-bluesky');
+    atp.serverTrusted = true;
+    note(untrusted.status === 401,
+         'P25. a DID whose data server does not name this issuer is refused: ' +
+         'an authorization server cannot name just anybody',
+         String(untrusted.status));
+    atp.sub = 'did:web:evil.example';
+    const webDid = await signIn('cp-bluesky');
+    atp.sub = '';
+    note(webDid.status === 401, 'P26. a did:web is refused',
+         String(webDid.status));
+    atp.answerIss = 'https://elsewhere.example';
+    const mixUp = await signIn('cp-bluesky');
+    delete atp.answerIss;
+    note(mixUp.status === 401, 'P27. an answer naming another issuer is refused',
+         String(mixUp.status));
+    atp.issuer = 'https://elsewhere.example';
+    const wrongDoc = await signIn('cp-bluesky');
+    atp.issuer = '';
+    note(wrongDoc.status === 502, 'P28. metadata naming another issuer starts ' +
+         'nothing', String(wrongDoc.status));
     }
 
     // ===== B. THE REALM SWITCH ==============================================

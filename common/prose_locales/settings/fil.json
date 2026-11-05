@@ -95,6 +95,26 @@
     "en": "4369282d9208f4aa",
     "text": "Paniwalaan ang X-Forwarded-Proto at X-Forwarded-Host — na siyang itinatakda ng isang TLS-terminating reverse proxy para sabihin kung ano ang ginamit ng CLIENT. I-ON ito kapag may nasa harap ng serbisyong ito, kung hindi ay maglalathala ang metadata ng mga http:// URL sa mga client na umabot dito sa https at tatanggihan ang bawat DPoP proof dahil pinangangalanan nito ang tunay na endpoint. Iwanan itong OFF kapag wala: kung walang proxy, ordinaryong header lang ang mga iyon na kayang itakda ng sinumang client, at ang paniniwala sa mga iyon ay hinahayaan ang isang caller na pumili kung ano ang akala ng serbisyong ito na sarili nitong issuer at mga endpoint. Ipinapakita ng Monitoring → TLS connection kung ano talaga ang dala ng isang request at kung ano ang pinaniwalaan dito. TANDAAN na hindi kailanman nagbabasa ang serbisyong ito ng client certificate mula sa isang header (X-Client-Cert at mga kamag-anak nito) sa alinmang mode — ang forwarded na certificate ay certificate na kayang pekein ng kahit sino."
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "Mga address ng CDN edge"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "Ang mga address o CIDR range na pinagkokonektahan ng CDN na nasa harap ng serbisyong ito, pinaghihiwalay ng kuwit. Pinagsisilbihan ng mga edge ng CDN ang lahat ng customer nito, kaya tinatanggihan ang request mula sa isa sa mga range na ito maliban kung may dala itong global.edgeSecret sa X-Origin-Verify header nito. Kapag WALANG laman, ang default, walang hinihingi kaninuman. Ang value na hindi address o CIDR range ay binabalewala at itinatala sa log."
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "Origin secret ng CDN"
+  },
+  "global.edgeSecret|description": {
+    "en": "eb67106afc0cc7f0",
+    "text": "Ang ipinapadala ng sariling CDN distribution ng deployment na ito sa X-Origin-Verify, na siyang nagpapakilala rito mula sa distribution ng ibang customer sa parehong mga edge. Inaalis ang header kapag nabasa na. Kapag walang laman habang nakatakda ang global.edgeProxies, tinatanggihan ang bawat request mula sa mga range na iyon."
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "binabasa nang isang beses sa startup"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "Mga address ng pinagkakatiwalaang proxy"
@@ -862,6 +882,54 @@
   "branding.logoMaxBytes|description": {
     "en": "37f4c903152cd219",
     "text": "Ang pinakamalaking logo na maaaring dalhin ng isang upload, para sa bawat realm. Tinatanggihan ang mas malaki (STS-AUTHN-0546). Iniimbak ang logo sa store at nire-replicate sa bawat proseso, kaya pinananatili itong maliit: 256 KiB bilang default, 2 MiB ang pinakamarami."
+  },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "Maaaring magtakda ang mga tao ng sariling larawan"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "Kung maaaring magtakda at magpalit ang isang tao ng sariling larawan sa profile sa user portal. Kapag naka-off, walang upload sa portal at tinatanggihan ang operasyon (STS-PORTAL-0634); maaari pa ring alisin ng tao ang larawang mayroon siya."
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "Kopyahin ang larawan ng federation partner"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "Kung kukunin pagkatapos ng sign-in at itatago rito ang address ng larawang ipinadala ng federation partner, upang ang kopya ng realm na ito ang pangalanan ng picture claim. Kapag naka-off, o kapag pumalya ang pagkopya, dala ng claim ang address ng partner. Sinusunod ng pagkuha ang outbound policy ng federation at walang redirect."
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "Pinakamalaking file na mapipili ng tao (bytes)"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "Ang pinakamalaking file na pinapayagan ng portal na piliin, 5 MiB bilang default. Kino-crop at sini-scale ito ng browser bago ipadala, kaya hindi ito ang itinatago: ang profilePhoto.maxStoredBytes ang sukatan niyon."
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "Pinakamalaking larawang itinatago (bytes)"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "Ang pinakamalaking larawang itinatago ng realm na ito, mula sa tao o federation partner. Tinatanggihan ang mas malaki (STS-PORTAL-0631). 1 MiB bilang default at 3 MiB sa pinakamarami: naglalakbay ang larawan na naka-base64 sa isang JSON request."
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "Pinakamaikling gilid ng larawan ng tao (pixel)"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "Ang pinakamaikling gilid na maaaring taglayin ng larawang itinakda ng tao. Tinatanggihan ang mas maliit (STS-PORTAL-0632). Hindi ito nalalapat sa kopya mula sa partner, na madalas na mas maliit."
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "Pinakamahabang gilid ng larawan (pixel)"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "Ang pinakamahabang gilid na maaaring taglayin ng itinatagong larawan, dahil kailangan itong i-decode ng bawat browser na nagpapakita nito. Tinatanggihan ang mas malaki (STS-PORTAL-0632)."
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -4578,6 +4646,14 @@
   "federation.spNameIdFormat|description": {
     "en": "f24b1c4bc1251e30",
     "text": "Ang <md:NameIDFormat> na inilalathala sa /federation/metadata/{id}, na siyang format na ipinapadala ng subject ng partner na naka-configure mula sa document na iyon. Ang default ay ang literal na palaging inilalathala ng serbisyong ito."
+  },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "PLC directory para sa mga sign-in ng Bluesky"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Kung saan hinahanap ng Bluesky sign-in ang natanggap na did:plc, upang tiyakin na pinagkakatiwalaan ng data server ng tao ang issuer na nagpangalan sa kanya. Ang Bluesky relationship lang ang bumabasa nito."
   },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",

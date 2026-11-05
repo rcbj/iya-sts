@@ -95,6 +95,26 @@
     "en": "4369282d9208f4aa",
     "text": "Tro på X-Forwarded-Proto och X-Forwarded-Host — det som en TLS-terminerande omvänd proxy sätter för att ange vad KLIENTEN använde. Slå PÅ den när något står framför tjänsten, annars publicerar metadata http://-URL:er till klienter som nådde den över https, och varje DPoP-bevis vägras för att det namnger den verkliga slutpunkten. Låt den vara AV när inget står framför: utan proxy är det vanliga huvuden som vilken klient som helst kan sätta, och att tro på dem låter en anropare välja vad tjänsten tror att dess egen utfärdare och slutpunkter är. Övervakning → TLS-anslutning visar vad en begäran faktiskt bar och vad som trotts om den. OBSERVERA att tjänsten aldrig läser ett klientcertifikat ur ett huvud (X-Client-Cert och dess släktingar) i något läge — ett vidarebefordrat certifikat är ett certifikat som vem som helst kan förfalska."
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "CDN-noders adresser"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "De adresser eller CIDR-intervall som ett CDN framför den här tjänsten ansluter från, kommaseparerade. Ett CDN:s noder betjänar alla dess kunder, så en begäran från något av dessa intervall nekas om den inte bär global.edgeSecret i sitt X-Origin-Verify-huvud. TOMT, standardvärdet, kräver ingenting av någon. Ett värde som inte är en adress eller ett CIDR-intervall ignoreras och loggas."
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "CDN:ets ursprungshemlighet"
+  },
+  "global.edgeSecret|description": {
+    "en": "eb67106afc0cc7f0",
+    "text": "Det som den här driftsättningens egen CDN-distribution skickar i X-Origin-Verify, vilket skiljer den från en annan kunds distribution på samma noder. Huvudet tas bort när det har lästs. Tomt med global.edgeProxies angivet nekas varje begäran från de intervallen."
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "läses en gång vid start"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "Betrodda proxyadresser"
@@ -862,6 +882,54 @@
   "branding.logoMaxBytes|description": {
     "en": "37f4c903152cd219",
     "text": "Den största logotyp en uppladdning får bära, för varje sfär. En större avvisas (STS-AUTHN-0546). Logotypen förvaras i lagret och replikeras till varje process, så den hålls liten: 256 KiB som standard, högst 2 MiB."
+  },
+  "profilePhoto.selfService|label": {
+    "en": "d36838f95ec35035",
+    "text": "Personer får ange sitt eget foto"
+  },
+  "profilePhoto.selfService|description": {
+    "en": "032d275dc8424287",
+    "text": "Om en person får ange och ersätta sitt eget profilfoto på användarportalen. Av: portalen erbjuder ingen uppladdning och åtgärden avvisas (STS-PORTAL-0634); en person kan ändå ta bort det foto den har."
+  },
+  "profilePhoto.cacheFederated|label": {
+    "en": "07d92163b235712d",
+    "text": "Kopiera en federationspartners foto"
+  },
+  "profilePhoto.cacheFederated|description": {
+    "en": "5bf7e6891c236397",
+    "text": "Om en bildadress som en federationspartner skickar hämtas efter inloggningen och sparas här, så att picture-anspråket namnger denna sfärs kopia. Av, eller om kopieringen misslyckas, bär anspråket partnerns adress. Hämtningen följer federationens utgående policy och ingen omdirigering."
+  },
+  "profilePhoto.maxFileBytes|label": {
+    "en": "dd5c652d97fd5c6d",
+    "text": "Största fil en person får välja (byte)"
+  },
+  "profilePhoto.maxFileBytes|description": {
+    "en": "9f215511713710b2",
+    "text": "Den största fil som portalen låter en person välja, 5 MiB som standard. Webbläsaren beskär och skalar den innan den skickas, så det här är inte vad som sparas: det är profilePhoto.maxStoredBytes."
+  },
+  "profilePhoto.maxStoredBytes|label": {
+    "en": "fedee045fb1c726b",
+    "text": "Största foto som sparas (byte)"
+  },
+  "profilePhoto.maxStoredBytes|description": {
+    "en": "b6d35736acde67d3",
+    "text": "Den största bild som denna sfär sparar, från en person eller en federationspartner. En större avvisas (STS-PORTAL-0631). 1 MiB som standard och högst 3 MiB: bilden skickas base64-kodad i en JSON-begäran."
+  },
+  "profilePhoto.minPixels|label": {
+    "en": "efe4aa6e3e57a477",
+    "text": "Kortaste sida på en persons foto (pixlar)"
+  },
+  "profilePhoto.minPixels|description": {
+    "en": "76bf802508023d2c",
+    "text": "Den kortaste sida ett foto som en person anger får ha. Ett mindre avvisas (STS-PORTAL-0632). Det gäller inte en partners kopia, som ofta är mindre."
+  },
+  "profilePhoto.maxPixels|label": {
+    "en": "042b44513df27ff3",
+    "text": "Längsta sida på ett foto (pixlar)"
+  },
+  "profilePhoto.maxPixels|description": {
+    "en": "eaea16053ed45ccd",
+    "text": "Den längsta sida ett sparat foto får ha, eftersom varje webbläsare som visar det måste avkoda det. Ett större avvisas (STS-PORTAL-0632)."
   },
   "authn.maxBrowserAccounts|label": {
     "en": "19115cee7c688f64",
@@ -4578,6 +4646,14 @@
   "federation.spNameIdFormat|description": {
     "en": "f24b1c4bc1251e30",
     "text": "Det <md:NameIDFormat> som publiceras i /federation/metadata/{id}, vilket är det format som en partner som konfigurerats från det dokumentet skickar ett subjekt i. Standardvärdet är den literal som den här tjänsten alltid har publicerat."
+  },
+  "federation.atprotoPlcDirectory|label": {
+    "en": "1a2e3f086824ae79",
+    "text": "PLC-katalog för Bluesky-inloggningar"
+  },
+  "federation.atprotoPlcDirectory|description": {
+    "en": "4c5e2a73f83a47af",
+    "text": "Var en Bluesky-inloggning slår upp den did:plc den fick, för att kontrollera att personens dataserver litar på utfärdaren som namngav personen. En Bluesky-relation är den enda läsaren."
   },
   "federation.encryptionKeyGraceS|label": {
     "en": "6d78d29404131e2b",

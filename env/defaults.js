@@ -56,6 +56,8 @@ var config = {
     port: 8081,                    // HTTP port; restart to apply
     domain: "example.com",         // Domain; restart to apply
     trustProxy: false,             // Trust forwarded headers
+    edgeProxies: "",               // CDN edge addresses
+    edgeSecret: "",                // CDN origin secret; restart to apply
     trustedProxies: "",            // Trusted proxy addresses
     proxyProtocol: "off",          // PROXY protocol on the TCP listeners; restart to apply
     proxyProtocolTimeoutMs: 30000, // PROXY protocol header timeout (ms)
@@ -216,6 +218,16 @@ var config = {
     logoAlt: "",            // Logo alternative text
     logoLinkUrl: "",        // Logo link
     logoMaxBytes: 262144    // Largest logo (bytes)
+  },
+
+  // --- Profile photos --------------------------------------------------
+  profilePhoto: {
+    selfService: true,       // People may set their own photo
+    cacheFederated: true,    // Copy a federation partner's photo
+    maxFileBytes: 5242880,   // Largest file a person may choose (bytes)
+    maxStoredBytes: 1048576, // Largest photo kept (bytes)
+    minPixels: 250,          // Shortest side of a person's photo (pixels)
+    maxPixels: 4096          // Longest side of a photo (pixels)
   },
 
   // --- Web security ----------------------------------------------------
@@ -716,6 +728,7 @@ var config = {
     maxResponseBytes: 262144,                                                // Largest back-channel response (bytes)
     jwtAlgorithms: "RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512",  // Algorithms accepted on a partner's JWT
     spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified", // NameIDFormat in this service's SP metadata
+    atprotoPlcDirectory: "https://plc.directory",                            // PLC directory for Bluesky sign-ins
     encryptionKeyGraceS: 86400                                               // Previous encryption key kept for (seconds)
   },
 

@@ -267,6 +267,22 @@
     "en": "335d6e9891f39e35",
     "text": "federation.releaseIndexTtlMs ({{ms}} ms) après sa construction, ou immédiatement lorsqu’une relation de fédération est écrite par l’intermédiaire de ce service."
   },
+  "caches.store.global.edge-proxies.title": {
+    "en": "a4ddab7d49a3428d",
+    "text": "Plages des nœuds CDN"
+  },
+  "caches.store.global.edge-proxies.description": {
+    "en": "404fd94a38171235",
+    "text": "global.edgeProxies, analysé dans une BlockList, afin qu'une requête n'analyse pas de nouveau le paramètre pour décider si elle provient d'un nœud CDN qui doit porter le secret de ce déploiement."
+  },
+  "caches.store.global.edge-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "Structurelle : une seule copie analysée du paramètre."
+  },
+  "caches.store.global.edge-proxies.lifetime": {
+    "en": "dd55f37fe33ed31f",
+    "text": "Jusqu'à ce que le texte de global.edgeProxies change."
+  },
   "caches.store.global.trusted-proxies.title": {
     "en": "9c82ac7525550c6d",
     "text": "Plages de proxys de confiance"

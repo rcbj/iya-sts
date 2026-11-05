@@ -983,7 +983,9 @@ class WebShell {
     const html = '<details class="usermenu">' +
       '<summary title="' +
       kit.esc(t.text('console.shell.menu.title', { user: gate.username })) +
-      '">' + kit.esc(gate.username) + '</summary>' +
+      '">' + (gate.photo
+        ? '<img class="menuphoto" alt="" src="' + kit.esc(gate.photo) + '">'
+        : '') + kit.esc(gate.username) + '</summary>' +
       '<div class="usermenupanel">' +
       '<p class="usermenuwho">' +
       t.html('console.shell.menu.who', { user: gate.username }) + '</p>' +

@@ -1219,6 +1219,10 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717). PNG-, JPEG- eller WebP-logotypen som laddats upp för den här domänen via /admin-api/branding/logo, serverad från detta ursprung så att inloggningssidornas img-src 'self' tillåter den och ingen tredje part får veta vem som loggar in; nosniff, sandlådad, en ETag av dess sammandrag. 404 där domänen inte har någon."
   },
+  "stsmetadata.endpoints./web/photo/:id.what": {
+    "en": "32d1ba774784074d",
+    "text": "NON-SPEC i sig (#719), och det som OpenID Connect Core 5.1:s picture-anspråk namnger för en person med ett foto här. Den JPEG eller PNG som angetts på portalen eller en federationspartners kopia, på en slumpmässig adress som ändras med fotot; utan autentiseringsuppgift, eftersom en förlitande part hämtar den utan någon. nosniff, i sandlåda, med en ETag. 404 för en inaktiverad eller borttagen person."
+  },
   "stsmetadata.endpoints./web/branding/preview.what": {
     "en": "a2af93aaf34bbbe3",
     "text": "NON-SPEC (#717). Ett exempel på den här domänens inloggningskort ritat med väntande färger och en layout (accent, page, card, text, layout i frågan, var och en kontrollerad som inställningarna skulle göra), för konsolen att öppna i en ny flik innan något sparas. Ingenting på den loggar in någon."
@@ -1366,6 +1370,10 @@
   "stsmetadata.endpoints./report-api/signals.what": {
     "en": "f00e66637d8d4146",
     "text": "UTANFÖR SPECIFIKATION. Vad rapportapplikationen, en mottagare av tjänstens egen sändare (#1042), har tagit emot: varje signal i sfären för en rapportadministratör, och för alla andra bara signalerna om dem själva. Bakom samma token som resten av /report-api."
+  },
+  "stsmetadata.endpoints./report-api/me.what": {
+    "en": "868625e0bbe4414a",
+    "text": "NON-SPEC (#719). Sökvägen till den inloggade personens eget profilfoto i denna sfär, tom om personen inget har. Bakom samma token som resten av /report-api."
   },
   "stsmetadata.endpoints./report-api/announcements.what": {
     "en": "0f75f226eeb86f05",
@@ -2694,6 +2702,10 @@
   "stsmetadata.endpoints./federation/metadata/:id.what": {
     "en": "bbe97109d1d3a58e",
     "text": "En SPSSODescriptor snarare än en IDPSSODescriptor — detta är den halva av den här tjänsten som är en tjänsteleverantör. Per relation, eftersom den här tjänsten kallar sig något annat för varje partner. OSIGNERAT, avsiktligt, och det är det enda metadatadokumentet här som är det: /saml2/metadata är signerat eftersom en tjänsteleverantör som konfigurerar sitt förtroende för den här tjänsten vinner på att kontrollera vem som skrev dokumentet, och här får partnern veta vart den ska skicka saker med just den nyckel som en signatur skulle göras med. Det ger 404 för en relation som inte är SAML, där /saml2/metadata ger 404 för ingenting — eftersom det skapar ett dokument för vilket entityID som helst som efterfrågas och detta beskriver ett arrangemang som antingen finns eller inte finns. Sedan #168 bär en SAML 2.0-relations dokument KeyDescriptor use=\"encryption\" med de EncryptionMethods den godtar, och en WS-Federation-relation får också ett: en EntityDescriptor med en fed:ApplicationServiceType RoleDescriptor (WS-Federation 1.2 avsnitt 3.1), dess PassiveRequestorEndpoint och dess krypteringsnyckel."
+  },
+  "stsmetadata.endpoints./federation/atproto/client/:id.what": {
+    "en": "ec1fd8df6b7f7ded",
+    "text": "NON-SPEC i den här tjänstens katalog: AT Protocols OAuth-profil saknar registrering, så adressen till detta offentliga JSON-dokument är klient-id:t, och Blueskys server hämtar det. Det innehåller ingen nyckel, och en relation som inte kan användas svarar 404."
   },
   "stsmetadata.endpoints./federation/jwks/:id.what": {
     "en": "ffaafc6508d21968",
