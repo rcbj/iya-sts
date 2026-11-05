@@ -527,6 +527,80 @@ function childMain() {
          'e4. an implicit request with no nonce is told it has none',
          noNonce.status + ' ' + noNonceAt.slice(0, 400));
 
+    // --- e5-e8. ONE ERROR PAGE (#1326) -------------------------------------
+    // The error in the box, the background collapsed, a way back to the
+    // portal, the language chooser, and the diagnostics with an incident ID
+    // that IS the seq of the request's audit row.
+    const audit = require(ROOT + '/common/audit');
+    const catalog = function (ns, tag) {
+      return JSON.parse(fs.readFileSync(path.join(ROOT, 'common', 'locales',
+                                                  ns, tag + '.json'),
+                                        'utf8'));
+    };
+    const incidentOf = function (text) {
+      const m = /<dt>[^<]*<\/dt><dd><code>(\d+)<\/code><\/dd>/
+        .exec(String(text).slice(String(text).indexOf('class="diagnostics"')));
+      return m ? Number(m[1]) : 0;
+    };
+    const shaped = function (text) {
+      const body = String(text);
+      const box = body.indexOf('<div class="warn" role="alert">');
+      const more = body.indexOf('<details class="prose">');
+      const portal = body.indexOf('href="/portal"');
+      const diag = body.indexOf('<section class="diagnostics"');
+      return box > 0 && more > box && portal > more && diag > portal &&
+        /<form class="language-chooser"/.test(body) &&
+        !/<script/i.test(body);
+    };
+    const e5 = await authorize({ redirect_uri: WRONG, state: 'st-e5',
+                                 nonce: 'n-e5' }, HTML);
+    const e5Id = incidentOf(e5.text);
+    const e5Row = audit.localEvents().filter(function (row) {
+      return row.seq === e5Id;
+    })[0];
+    note(e5.status === 400 && shaped(e5.text) && e5Id > 0 && e5Row &&
+           e5Row.target === '/oauth2/authorize' && !!e5Row.errorCode &&
+           /<code>st-e5<\/code>/.test(e5.text) &&
+           /<code>n-e5<\/code>/.test(e5.text) &&
+           /<code>rl-rp<\/code>/.test(e5.text),
+         'e5. the refusal page: the box, then the background collapsed, the ' +
+         'portal, the diagnostics with the state, nonce and client, and an ' +
+         'incident ID that is the seq of the request\'s own audit row',
+         e5Id + ' ' + JSON.stringify(e5Row || null).slice(0, 200));
+    const seqs = audit.localEvents().map(function (row) {
+      return Number(row.seq);
+    });
+    note(seqs.every(function (n, i) {
+      return i === 0 || n > seqs[i - 1];
+    }), 'e5b. and the ring\'s numbers still rise in the order the rows were ' +
+        'written, which the audit export\'s cursor relies on',
+         seqs.slice(-8).join(','));
+    const frPages = catalog('oauthPages', 'fr');
+    const frFrame = catalog('errorPages', 'fr');
+    const e6 = await authorize({ redirect_uri: WRONG, ui_locales: 'fr' },
+                               HTML);
+    note(e6.status === 400 && /<html lang="fr"/.test(e6.text) &&
+           e6.text.indexOf(frPages['authorizeError.title']
+             .replace(/'/g, '&#39;')) > 0 &&
+           e6.text.indexOf(frFrame.diagnostics) > 0 &&
+           e6.text.indexOf(frFrame.portal) > 0,
+         'e6. ui_locales=fr: the refusal page in French, frame and message',
+         e6.text.slice(0, 300));
+    idToken = await signIn('rl-alice');
+    const e8Tampered = idToken.slice(0, -4) + (idToken.slice(-4) === 'AAAA'
+      ? 'BBBB' : 'AAAA');
+    const e8 = await logout({ id_token_hint: e8Tampered, ui_locales: 'fr',
+                              state: 'st-e8' });
+    note(e8.status === 400 && await alive() && shaped(e8.text) &&
+           incidentOf(e8.text) > 0 &&
+           e8.text.indexOf(frPages['logoutRefused.refusedTitle']
+             .replace(/'/g, '&#39;')) > 0 &&
+           /<code>st-e8<\/code>/.test(e8.text) &&
+           /<code>rl-alice<\/code>/.test(e8.text),
+         'e8. a refused sign-out: the same page, in French, the state and ' +
+         'the person signed in among the diagnostics, the session alive',
+         e8.status + ' ' + e8.text.slice(0, 400));
+
     // --- f. the second sign-in's notice (#1302) ------------------------------
     // The authorization endpoint's reason rides the pending sign-in into
     // `/authn-api`'s view, and the screen draws one line for it.

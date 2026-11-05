@@ -1,0 +1,21 @@
+{
+  "time": "Hora (UTC)",
+  "incident": "ID de incidente",
+  "noIncident": "ninguno registrado",
+  "background": "¿Por qué veo esta página?",
+  "startOver": "Cierre esta pestaña y vuelva a empezar desde la aplicación que estaba usando. Si vuelve a ocurrir, envíe los diagnósticos de abajo a quien administre esa aplicación.",
+  "portal": "Ir a su cuenta",
+  "diagnostics": "Diagnósticos",
+  "application": "Aplicación (client_id)",
+  "applicationName": "Nombre de la aplicación",
+  "redirectUri": "redirect_uri solicitado",
+  "postLogoutRedirectUri": "post_logout_redirect_uri solicitado",
+  "state": "state",
+  "nonce": "nonce",
+  "responseType": "response_type",
+  "responseMode": "response_mode",
+  "signedInAs": "Sesión iniciada como",
+  "error": "error",
+  "errorDescription": "error_description",
+  "detail": "Detalle"
+}

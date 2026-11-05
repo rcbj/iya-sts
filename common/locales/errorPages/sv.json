@@ -1,0 +1,21 @@
+{
+  "time": "Tid (UTC)",
+  "incident": "Incident-ID",
+  "noIncident": "inget registrerat",
+  "background": "Varför visas den här sidan?",
+  "startOver": "Stäng den här fliken och börja om från programmet du använde. Om det händer igen, skicka diagnostiken nedan till den som driver programmet.",
+  "portal": "Gå till ditt konto",
+  "diagnostics": "Diagnostik",
+  "application": "Program (client_id)",
+  "applicationName": "Programmets namn",
+  "redirectUri": "Begärd redirect_uri",
+  "postLogoutRedirectUri": "Begärd post_logout_redirect_uri",
+  "state": "state",
+  "nonce": "nonce",
+  "responseType": "response_type",
+  "responseMode": "response_mode",
+  "signedInAs": "Inloggad som",
+  "error": "error",
+  "errorDescription": "error_description",
+  "detail": "Detalj"
+}

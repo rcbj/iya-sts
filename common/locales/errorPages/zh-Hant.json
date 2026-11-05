@@ -1,0 +1,21 @@
+{
+  "time": "時間（UTC）",
+  "incident": "事件 ID",
+  "noIncident": "未記錄",
+  "background": "為什麼會顯示此頁面？",
+  "startOver": "請關閉此分頁，然後從您正在使用的應用程式重新開始。如果再次發生，請將下方的診斷資訊傳送給該應用程式的管理員。",
+  "portal": "前往您的帳戶",
+  "diagnostics": "診斷資訊",
+  "application": "應用程式（client_id）",
+  "applicationName": "應用程式名稱",
+  "redirectUri": "要求的 redirect_uri",
+  "postLogoutRedirectUri": "要求的 post_logout_redirect_uri",
+  "state": "state",
+  "nonce": "nonce",
+  "responseType": "response_type",
+  "responseMode": "response_mode",
+  "signedInAs": "目前登入身分",
+  "error": "error",
+  "errorDescription": "error_description",
+  "detail": "詳細資訊"
+}

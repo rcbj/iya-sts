@@ -1893,8 +1893,9 @@ function checkRedirectUri(opts) {
       }
     }
     log.debug("Leaving checkRedirectUri(). Not one of the client's own.");
+    // `registered` (#1326): the error page names them in its own language.
     return { ok: false, errorCode: 'STS-OAUTH-0569', error: 'invalid_request',
-             requirement: 'redirect-exact-match',
+             requirement: 'redirect-exact-match', registered: own,
              description: 'OIDC Core section 3.1.2.1: "' + presentedUri +
                           '" ' + notAmong(own, 'redirect URI',
                                           'registered for this client') +
@@ -1957,6 +1958,7 @@ function checkRedirectUri(opts) {
     log.debug("Leaving checkRedirectUri(). No registered URI matches.");
     return { ok: false, errorCode: 'STS-OAUTH-0122', error: 'invalid_request',
              requirement: 'redirect-exact-match',
+             registered: registered.list,
              description: 'RFC 9700 section 2.1: "' + presented + '" ' +
                           notAmong(registered.list, 'redirect URI',
                                    registered.source) +
