@@ -267,6 +267,22 @@
     "en": "335d6e9891f39e35",
     "text": "构建后 federation.releaseIndexTtlMs（{{ms}} 毫秒），或者在通过本服务写入联合关系时立即失效。"
   },
+  "caches.store.global.edge-proxies.title": {
+    "en": "a4ddab7d49a3428d",
+    "text": "CDN 边缘节点范围"
+  },
+  "caches.store.global.edge-proxies.description": {
+    "en": "404fd94a38171235",
+    "text": "global.edgeProxies，解析为 BlockList，这样请求就无需为判断是否来自必须携带本部署密钥的 CDN 边缘节点而重新解析该设置。"
+  },
+  "caches.store.global.edge-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "结构性：该设置的一份解析副本。"
+  },
+  "caches.store.global.edge-proxies.lifetime": {
+    "en": "dd55f37fe33ed31f",
+    "text": "直到 global.edgeProxies 的文本发生变化。"
+  },
   "caches.store.global.trusted-proxies.title": {
     "en": "9c82ac7525550c6d",
     "text": "受信任的代理地址范围"

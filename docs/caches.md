@@ -234,6 +234,7 @@ store of one entry:
 | Cache | Holds | How long |
 |---|---|---|
 | Trusted proxy ranges | `global.trustedProxies`, parsed | until the setting's text changes |
+| CDN edge ranges | `global.edgeProxies`, parsed | until the setting's text changes |
 | Version stamp | the build record read from `version.json` | for the life of the process |
 | Observation-store declarations | whether each persisted store is a tally the read barrier does not wait for | for the life of the process; one flag per declared store |
 

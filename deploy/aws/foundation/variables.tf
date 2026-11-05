@@ -101,6 +101,12 @@ variable "ci_user_name" {
   default     = "git_user6"
 }
 
+variable "cloudfront_log_buckets" {
+  description = "The S3 buckets an environment's CloudFront distribution may log to (environment/cloudfront.tf)."
+  type        = list(string)
+  default     = ["iyasec-logs"]
+}
+
 variable "public_dns" {
   description = <<-EOT
     The public Route53 zones an environment may write in, and the record names

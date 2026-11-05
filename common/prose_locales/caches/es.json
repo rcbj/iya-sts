@@ -267,6 +267,22 @@
     "en": "335d6e9891f39e35",
     "text": "federation.releaseIndexTtlMs ({{ms}} ms) después de construirse, o de inmediato cuando se escribe una relación de federación a través de este servicio."
   },
+  "caches.store.global.edge-proxies.title": {
+    "en": "a4ddab7d49a3428d",
+    "text": "Rangos de los nodos de la CDN"
+  },
+  "caches.store.global.edge-proxies.description": {
+    "en": "404fd94a38171235",
+    "text": "global.edgeProxies, analizado en una BlockList, para que una solicitud no vuelva a analizar el ajuste al decidir si procede de un nodo de la CDN que debe llevar el secreto de este despliegue."
+  },
+  "caches.store.global.edge-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "Estructural: una copia analizada del ajuste."
+  },
+  "caches.store.global.edge-proxies.lifetime": {
+    "en": "dd55f37fe33ed31f",
+    "text": "Hasta que cambie el texto de global.edgeProxies."
+  },
   "caches.store.global.trusted-proxies.title": {
     "en": "9c82ac7525550c6d",
     "text": "Rangos de proxies de confianza"

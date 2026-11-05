@@ -46,7 +46,7 @@ resource "aws_lb" "main" {
   load_balancer_type               = "network"
   internal                         = false
   subnets                          = aws_subnet.public[*].id
-  security_groups                  = [aws_security_group.nlb.id]
+  security_groups                  = concat([aws_security_group.nlb.id], aws_security_group.nlb_cloudfront[*].id)
   enable_cross_zone_load_balancing = true
   enable_deletion_protection       = false
 

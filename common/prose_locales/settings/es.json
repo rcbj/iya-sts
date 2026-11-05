@@ -95,6 +95,26 @@
     "en": "4369282d9208f4aa",
     "text": "Creer X-Forwarded-Proto y X-Forwarded-Host — que es lo que define un proxy inverso que termina TLS para indicar lo que usó el CLIENTE. ACTÍVELO cuando haya algo delante de este servicio, o los metadatos publicarán URL http:// a clientes que llegaron por https y se rechazará cada prueba DPoP por nombrar el endpoint real. DÉJELO DESACTIVADO cuando no haya nada: sin proxy, son encabezados corrientes que cualquier cliente puede definir, y creerlos permite a un llamante elegir lo que este servicio cree que son su propio emisor y sus endpoints. Monitorización → Conexión TLS muestra lo que una solicitud llevaba realmente y lo que se creyó de ello. TENGA EN CUENTA que este servicio nunca lee un certificado de cliente de un encabezado (X-Client-Cert y sus parientes) en ningún modo — un certificado reenviado es un certificado que cualquiera puede falsificar."
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "Direcciones de los nodos de la CDN"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "Las direcciones o rangos CIDR desde los que se conecta una CDN situada delante de este servicio, separados por comas. Los nodos de una CDN atienden a todos sus clientes, así que una solicitud desde uno de estos rangos se rechaza si no lleva global.edgeSecret en su cabecera X-Origin-Verify. VACÍO, el valor predeterminado, no exige nada a nadie. Un valor que no sea una dirección ni un rango CIDR se ignora y se registra."
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "Secreto de origen de la CDN"
+  },
+  "global.edgeSecret|description": {
+    "en": "eb67106afc0cc7f0",
+    "text": "Lo que la distribución de CDN de este despliegue envía en X-Origin-Verify, y que la distingue de la distribución de otro cliente en los mismos nodos. La cabecera se elimina una vez leída. Vacío con global.edgeProxies definido, rechaza toda solicitud desde esos rangos."
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "se lee una sola vez al arrancar"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "Direcciones de proxy de confianza"

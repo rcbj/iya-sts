@@ -267,6 +267,22 @@
     "en": "335d6e9891f39e35",
     "text": "federation.releaseIndexTtlMs ({{ms}} ms) efter att det byggdes, eller omedelbart när en federationsrelation skrivs via den här tjänsten."
   },
+  "caches.store.global.edge-proxies.title": {
+    "en": "a4ddab7d49a3428d",
+    "text": "CDN-noders intervall"
+  },
+  "caches.store.global.edge-proxies.description": {
+    "en": "404fd94a38171235",
+    "text": "global.edgeProxies, tolkat till en BlockList, så att en begäran inte tolkar om inställningen för att avgöra om den kom från en CDN-nod som måste bära den här driftsättningens hemlighet."
+  },
+  "caches.store.global.edge-proxies.bound": {
+    "en": "f2a4143574ccc474",
+    "text": "Strukturell: en tolkad kopia av inställningen."
+  },
+  "caches.store.global.edge-proxies.lifetime": {
+    "en": "dd55f37fe33ed31f",
+    "text": "Tills texten i global.edgeProxies ändras."
+  },
   "caches.store.global.trusted-proxies.title": {
     "en": "9c82ac7525550c6d",
     "text": "Betrodda proxyintervall"

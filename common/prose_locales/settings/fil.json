@@ -95,6 +95,26 @@
     "en": "4369282d9208f4aa",
     "text": "Paniwalaan ang X-Forwarded-Proto at X-Forwarded-Host — na siyang itinatakda ng isang TLS-terminating reverse proxy para sabihin kung ano ang ginamit ng CLIENT. I-ON ito kapag may nasa harap ng serbisyong ito, kung hindi ay maglalathala ang metadata ng mga http:// URL sa mga client na umabot dito sa https at tatanggihan ang bawat DPoP proof dahil pinangangalanan nito ang tunay na endpoint. Iwanan itong OFF kapag wala: kung walang proxy, ordinaryong header lang ang mga iyon na kayang itakda ng sinumang client, at ang paniniwala sa mga iyon ay hinahayaan ang isang caller na pumili kung ano ang akala ng serbisyong ito na sarili nitong issuer at mga endpoint. Ipinapakita ng Monitoring → TLS connection kung ano talaga ang dala ng isang request at kung ano ang pinaniwalaan dito. TANDAAN na hindi kailanman nagbabasa ang serbisyong ito ng client certificate mula sa isang header (X-Client-Cert at mga kamag-anak nito) sa alinmang mode — ang forwarded na certificate ay certificate na kayang pekein ng kahit sino."
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "Mga address ng CDN edge"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "Ang mga address o CIDR range na pinagkokonektahan ng CDN na nasa harap ng serbisyong ito, pinaghihiwalay ng kuwit. Pinagsisilbihan ng mga edge ng CDN ang lahat ng customer nito, kaya tinatanggihan ang request mula sa isa sa mga range na ito maliban kung may dala itong global.edgeSecret sa X-Origin-Verify header nito. Kapag WALANG laman, ang default, walang hinihingi kaninuman. Ang value na hindi address o CIDR range ay binabalewala at itinatala sa log."
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "Origin secret ng CDN"
+  },
+  "global.edgeSecret|description": {
+    "en": "eb67106afc0cc7f0",
+    "text": "Ang ipinapadala ng sariling CDN distribution ng deployment na ito sa X-Origin-Verify, na siyang nagpapakilala rito mula sa distribution ng ibang customer sa parehong mga edge. Inaalis ang header kapag nabasa na. Kapag walang laman habang nakatakda ang global.edgeProxies, tinatanggihan ang bawat request mula sa mga range na iyon."
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "binabasa nang isang beses sa startup"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "Mga address ng pinagkakatiwalaang proxy"

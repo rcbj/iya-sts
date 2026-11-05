@@ -95,6 +95,26 @@
     "en": "4369282d9208f4aa",
     "text": "Tro på X-Forwarded-Proto och X-Forwarded-Host — det som en TLS-terminerande omvänd proxy sätter för att ange vad KLIENTEN använde. Slå PÅ den när något står framför tjänsten, annars publicerar metadata http://-URL:er till klienter som nådde den över https, och varje DPoP-bevis vägras för att det namnger den verkliga slutpunkten. Låt den vara AV när inget står framför: utan proxy är det vanliga huvuden som vilken klient som helst kan sätta, och att tro på dem låter en anropare välja vad tjänsten tror att dess egen utfärdare och slutpunkter är. Övervakning → TLS-anslutning visar vad en begäran faktiskt bar och vad som trotts om den. OBSERVERA att tjänsten aldrig läser ett klientcertifikat ur ett huvud (X-Client-Cert och dess släktingar) i något läge — ett vidarebefordrat certifikat är ett certifikat som vem som helst kan förfalska."
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "CDN-noders adresser"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "De adresser eller CIDR-intervall som ett CDN framför den här tjänsten ansluter från, kommaseparerade. Ett CDN:s noder betjänar alla dess kunder, så en begäran från något av dessa intervall nekas om den inte bär global.edgeSecret i sitt X-Origin-Verify-huvud. TOMT, standardvärdet, kräver ingenting av någon. Ett värde som inte är en adress eller ett CIDR-intervall ignoreras och loggas."
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "CDN:ets ursprungshemlighet"
+  },
+  "global.edgeSecret|description": {
+    "en": "eb67106afc0cc7f0",
+    "text": "Det som den här driftsättningens egen CDN-distribution skickar i X-Origin-Verify, vilket skiljer den från en annan kunds distribution på samma noder. Huvudet tas bort när det har lästs. Tomt med global.edgeProxies angivet nekas varje begäran från de intervallen."
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "läses en gång vid start"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "Betrodda proxyadresser"

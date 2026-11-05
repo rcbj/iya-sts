@@ -223,6 +223,8 @@ locals {
       bootstrap-admin-password = lookup(local.carried, "bootstrap-admin-password", random_password.bootstrap_admin[0].result)
       krb5-krbtgt-password     = random_password.krb5_krbtgt[0].result
       krb5-service-password    = lookup(local.carried, "krb5-service-password", random_password.krb5_service[0].result)
+      } : {}, local.cloudfront ? {
+      cloudfront-edge-secret = random_password.edge_secret[0].result
   } : {})
 
   # THE SECRETS EVERY CELL SHARES, by name: this stack's own in a single-cell

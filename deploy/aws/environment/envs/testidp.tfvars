@@ -64,6 +64,14 @@
 public_hostname  = "test-idp.iyasec.io"
 public_zone_name = "iyasec.io"
 
+# CLOUDFRONT IN FRONT OF THE LOAD BALANCER (rcbj, 2026-11-05). A browser reaches
+# test-idp.iyasec.io through it; a client certificate, Kerberos, LDAP, SPIFFE
+# and the revocation listener use direct_hostname (environment/cloudfront.tf).
+cloudfront_enabled    = true
+direct_hostname       = "direct.test-idp.iyasec.io"
+cloudfront_log_bucket = "iyasec-logs"
+cloudfront_log_prefix = "test-idp/"
+
 # The service's own names under iyasec.io rather than the example domains the
 # settings default to (2026-09-18): the default realm's DNS domain (which roots
 # the directory at dc=iyasec,dc=io — it was LDAP_BASE_DN until global.domain

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5216** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5217** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 20
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 96
+* [Service core (`STS-CORE`)](#sts-core) — 97
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 105
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
@@ -253,6 +253,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0162` | realms.maxCount was set or cleared while a trust realm other than the default was ambient (#368). The limit is process-wide and only a service administrator in the default realm may change it. The other realms.* settings stay settable process-wide from inside a realm. | the caller's refusal (errors on a console or /admin-api reply) |
 | `STS-CORE-0163` | Another process claimed a trust realm's signer-group keys (keys.signerModel hybrid-groups) and they did not arrive within the wait, so this process made them itself; the cluster may hold two sets until one is replaced. | none — logged; group signatures go on |
 | `STS-CORE-0164` | The build stamp (common/version.js --stamp, or xacml-pep --stamp) was refused: STS_RELEASE=true marks a release build, which must name its BUILD_NUMBER as a non-negative integer with no leading zero, and it did not — or STS_RELEASE was neither true nor false. Nothing is written and the image build fails. | none — the image build exits non-zero |
+| `STS-CORE-0165` | A request arrived from an address in global.edgeProxies without global.edgeSecret in its X-Origin-Verify header: another customer's CDN distribution pointed at this load balancer, or a distribution or node holding an out-of-date secret. Refused before anything else is decided about it. | none — HTTP 403, with no reason given |
 
 ## STS-WORKER
 

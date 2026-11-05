@@ -730,6 +730,59 @@ listed record names in them — the validation record is `_<random>.<name>`,
 hence the wildcard). Route53 requests carry us-east-1, so the region fence
 exempts `route53:*`.
 
+## CloudFront in front of the load balancer: `testidp` (#1336, 2026-11-05)
+
+**rcbj's decision: `cloudfront_enabled` puts a distribution in every edge
+location in front of the NLB.** A browser far from us-west-2 lost its connection
+for up to a minute, about one fetch in six, across all three NLB addresses,
+crawling like TCP retransmission backoff (#1333). An edge ends that connection
+near the browser. `environment/cloudfront.tf`'s header argues each decision; this
+is what a reader of the deployment needs.
+
+| Name | Goes to | Carries |
+|---|---|---|
+| `public_hostname` (`test-idp.iyasec.io`) | CloudFront, an A alias | HTTPS for browsers and OAuth clients; still the issuer |
+| `direct_hostname` (`direct.test-idp.iyasec.io`) | the NLB, a CNAME | mutual TLS, certificate sign-in, Kerberos on 88, LDAP, SPIFFE, the plain-HTTP revocation listener |
+
+Inside the VPC both names still resolve to the NLB's private addresses, so a node
+dialling its own public name never meets the WAF or an edge.
+
+**WHAT CHANGED FOR A CALLER.**
+* CloudFront ends TLS, so **no client certificate reaches a node through it**.
+  `GET /tls/sign-in` and RFC 8705 at the public name stop working until a client
+  can be sent to the direct name; the session cookie is host-only and
+  `mtls_endpoint_aliases` is not published (the follow-up on #1336).
+* **The revocation addresses in NEW certificates name the direct host**
+  (`pki_public_url`, `PKI_DISTRIBUTION_LDAP_HOST`). A certificate issued before
+  this names the public host, which now redirects port 80 to HTTPS. Revocation is
+  not consulted on these clusters (#371).
+* CloudFront's own limits apply: a URL of at most 8,192 bytes, which a large
+  `request` parameter can pass, and 60 seconds to an origin's first byte.
+
+**THREE THINGS THAT WOULD FAIL QUIETLY**, each held by
+`environment/tests/render.tftest.hcl` or `tests/edge_secret.js`:
+* **The default behaviour does not compress** (the BREACH decision, 2026-10-05).
+* **`X-Forwarded-Host` and `-Proto` are the distribution's**, overwriting a
+  viewer's copy. `STS_TRUST_PROXY` has to be on for the client's address, and
+  would otherwise let a caller choose the `htu` its DPoP proof is checked against.
+* **The origin secret.** The origin-facing prefix list admits every CloudFront
+  customer, so another account's distribution could reach the NLB without meeting
+  this WAF. `global.edgeProxies` and `global.edgeSecret` refuse it
+  (`STS-CORE-0165`, `common/client_address.js`). The secret is in Secrets Manager
+  and, as a custom header, in the distribution's configuration: anybody who can
+  read that distribution can read it.
+
+**WHAT IT COSTS.** Adding the direct name replaces the node's exportable
+certificate, one billed issuance. The CloudFront certificate is free and stays in
+this stack. Standard logs go to `iyasec-logs` under `test-idp/` and hold query
+strings, so an authorization code (single use, short lived) can appear in them;
+cookies are not logged. IPv6 is off, because the allowlist is IPv4.
+
+**`foundation/` must be re-applied by an administrator first**: it grants
+`cloudfront:*`-scoped actions, WAF, and ACM in us-east-1 (`deploy_cloudfront`,
+and `region_fence`'s second statement). A cache policy cannot be scoped, so the
+deployer may edit any custom cache policy in the account.
+
 ## Sizing a node: every process is a whole copy (#340, 2026-09-29)
 
 **A node runs 1 + `workers_request_count` + `workers_surface_count` node

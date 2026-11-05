@@ -1208,6 +1208,13 @@ const CODES = [
       'zero, and it did not — or STS_RELEASE was neither true nor false. ' +
       'Nothing is written and the image build fails.',
     spec: 'none — the image build exits non-zero' },
+  { code: 'STS-CORE-0165',
+    summary: 'A request arrived from an address in global.edgeProxies without ' +
+      'global.edgeSecret in its X-Origin-Verify header: another customer\'s ' +
+      'CDN distribution pointed at this load balancer, or a distribution or ' +
+      'node holding an out-of-date secret. Refused before anything else is ' +
+      'decided about it.',
+    spec: 'none — HTTP 403, with no reason given' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +

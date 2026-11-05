@@ -95,6 +95,26 @@
     "en": "4369282d9208f4aa",
     "text": "相信 X-Forwarded-Proto 和 X-Forwarded-Host——终止 TLS 的反向代理会设置它们，以说明客户端实际使用的是什么。当本服务前面有其他组件时请开启，否则元数据会向通过 https 访问的客户端发布 http:// URL，并且每个 DPoP 证明都会因指向真实端点而被拒绝。前面没有任何组件时请保持关闭：没有代理时，这些只是任何客户端都能设置的普通标头，相信它们就等于让调用方决定本服务认为自己的颁发者和端点是什么。监控 → TLS 连接显示请求实际携带了什么，以及其中哪些被采信。请注意，在任何模式下，本服务都绝不会从标头（X-Client-Cert 及类似标头）中读取客户端证书——转发而来的证书是任何人都能伪造的证书。"
   },
+  "global.edgeProxies|label": {
+    "en": "591313440f888675",
+    "text": "CDN 边缘节点地址"
+  },
+  "global.edgeProxies|description": {
+    "en": "f95b93dcda970661",
+    "text": "位于本服务前端的 CDN 用于连接的地址或 CIDR 范围，以逗号分隔。CDN 的边缘节点为其所有客户服务，因此来自这些范围的请求，除非在 X-Origin-Verify 标头中携带 global.edgeSecret，否则会被拒绝。留空（默认值）时不对任何人提出要求。既不是地址也不是 CIDR 范围的值会被忽略并记录到日志。"
+  },
+  "global.edgeSecret|label": {
+    "en": "15f5a4cfe4173076",
+    "text": "CDN 源站密钥"
+  },
+  "global.edgeSecret|description": {
+    "en": "eb67106afc0cc7f0",
+    "text": "本部署自身的 CDN 分发在 X-Origin-Verify 中发送的内容，用于将其与同一边缘节点上其他客户的分发区分开来。该标头在读取后即被移除。设置了 global.edgeProxies 而此项为空时，来自这些范围的所有请求都会被拒绝。"
+  },
+  "global.edgeSecret|restartReason": {
+    "en": "d51b3caaa6125e92",
+    "text": "启动时读取一次"
+  },
   "global.trustedProxies|label": {
     "en": "70bd6770dd98fadc",
     "text": "受信任的代理地址"
