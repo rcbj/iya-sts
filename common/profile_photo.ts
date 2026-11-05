@@ -76,8 +76,8 @@ const log = helpers.log;
 
 type Json = any;
 
-// The route, `<rid>` being the row's key.
-const ROUTE = '/web/photo/:rid';
+// The route, its id being the row's key.
+const ROUTE = '/web/photo/:id';
 const PATH_PREFIX = '/web/photo/';
 
 // Who put the photo there.
@@ -113,6 +113,13 @@ const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47,
 // The bound is low because the rows are the largest in the process.
 const images = realms.map({ persist: 'profilePhoto.images',
                             onDemand: { maxEntries: 200 } });
+
+// An image needs nothing, and is sandboxed if it is ever opened as a document.
+// Through `app.contentSecurityPolicy()` (root CLAUDE.md): a header set by hand
+// without `frame-ancestors` is replaced at the flush by the base policy, which
+// is what the first version of this did, with nothing failing in-process.
+const SERVED_POLICY = Object.freeze({ 'style-src': null, 'img-src': null,
+                                      sandbox: '' });
 
 // The partner addresses being dialled now, per process, so a burst of
 // sign-ins by one person dials once. Not a store: it means nothing past the
@@ -795,7 +802,7 @@ class ProfilePhoto {
     log.debug("Entering ProfilePhoto.registerRoutes().");
     app.get(ROUTE, function (req: Json, res: Json): void {
       log.debug("Entering GET " + ROUTE + ".");
-      const row = ProfilePhoto.servable(String(req.params.rid || ''));
+      const row = ProfilePhoto.servable(String(req.params.id || ''));
       if (!row) {
         errorCodes.mark(res, 'STS-PORTAL-0636');
         res.status(404).type('text/plain').set('Cache-Control', 'no-store')
@@ -808,7 +815,8 @@ class ProfilePhoto {
       // keeps what this costs a browser to a revalidation.
       res.set('ETag', etag)
          .set('X-Content-Type-Options', 'nosniff')
-         .set('Content-Security-Policy', "default-src 'none'; sandbox")
+         .set('Content-Security-Policy',
+              require('./app').contentSecurityPolicy(SERVED_POLICY))
          .set('Cross-Origin-Resource-Policy', 'cross-origin')
          .set('Cache-Control', 'public, max-age=300');
       if (req.headers && req.headers['if-none-match'] === etag) {

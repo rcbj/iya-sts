@@ -447,7 +447,7 @@
     "en": "2ce72d622f586a26",
     "text": "域的登录徽标"
   },
-  "endpoints.route./web/photo/{id}.name": {
+  "endpoints.route./web/photo/:id.name": {
     "en": "f2cc426998480c9c",
     "text": "个人的个人资料照片"
   },
@@ -582,6 +582,10 @@
   "endpoints.route./report-api/signals.name": {
     "en": "fa5ff98584c701fb",
     "text": "报表应用程序的 Shared Signals 收件箱"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "报表应用的用户菜单绘制的内容"
   },
   "endpoints.route./report-api/announcements.name": {
     "en": "3adb83b8075c6a3a",

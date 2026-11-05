@@ -1219,7 +1219,7 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717). Le logo PNG, JPEG ou WebP téléversé pour ce domaine via /admin-api/branding/logo, servi depuis cette origine afin que l’img-src 'self' des pages de connexion l’admette et qu’aucun tiers n’apprenne qui se connecte ; nosniff, en bac à sable, un ETag de son condensé. 404 là où le domaine n’en a pas."
   },
-  "stsmetadata.endpoints./web/photo/{id}.what": {
+  "stsmetadata.endpoints./web/photo/:id.what": {
     "en": "32d1ba774784074d",
     "text": "NON-SPEC en soi (#719), et ce que nomme le claim picture d'OpenID Connect Core 5.1 pour une personne ayant une photo ici. Le JPEG ou PNG défini sur le portail ou la copie d'un partenaire de fédération, à une adresse aléatoire qui change avec la photo ; sans identifiant, car une partie de confiance la récupère sans aucun. nosniff, en sandbox, avec un ETag. 404 pour une personne désactivée ou supprimée."
   },
@@ -1370,6 +1370,10 @@
   "stsmetadata.endpoints./report-api/signals.what": {
     "en": "f00e66637d8d4146",
     "text": "HORS SPÉCIFICATION. Ce qu’a reçu l’application de rapports, récepteur du propre émetteur de ce service (#1042) : chaque signal du domaine pour un administrateur des rapports, seulement les signaux qui le concernent pour quiconque d’autre. Derrière le même jeton que le reste de /report-api."
+  },
+  "stsmetadata.endpoints./report-api/me.what": {
+    "en": "868625e0bbe4414a",
+    "text": "NON-SPEC (#719). Le chemin de la photo de profil de la personne connectée dans ce domaine, vide si elle n'en a pas. Derrière le même jeton que le reste de /report-api."
   },
   "stsmetadata.endpoints./report-api/announcements.what": {
     "en": "0f75f226eeb86f05",

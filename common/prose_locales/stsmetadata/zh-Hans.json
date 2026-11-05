@@ -1219,7 +1219,7 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717)。通过 /admin-api/branding/logo 为此域上传的 PNG、JPEG 或 WebP 徽标，从此源提供，使登录页面的 img-src 'self' 接受它，且没有第三方得知谁在登录；nosniff、沙盒化、其摘要的 ETag。域没有徽标时为 404。"
   },
-  "stsmetadata.endpoints./web/photo/{id}.what": {
+  "stsmetadata.endpoints./web/photo/:id.what": {
     "en": "32d1ba774784074d",
     "text": "本身为 NON-SPEC（#719），也是 OpenID Connect Core 5.1 的 picture 声明为在此拥有照片的人所指向的内容。即在门户设置的 JPEG 或 PNG，或联合伙伴的副本，位于随照片变化的随机地址；无需凭据，因为依赖方获取时不带任何凭据。nosniff、沙盒化，带 ETag。已禁用或已删除的人返回 404。"
   },
@@ -1370,6 +1370,10 @@
   "stsmetadata.endpoints./report-api/signals.what": {
     "en": "f00e66637d8d4146",
     "text": "非规范。报表应用程序作为此服务自身发送方的接收方 (#1042) 所收到的内容：报表管理员可看到领域中的每个信号，其他人只能看到与自己有关的信号。与 /report-api 其余部分使用同一令牌。"
+  },
+  "stsmetadata.endpoints./report-api/me.what": {
+    "en": "868625e0bbe4414a",
+    "text": "NON-SPEC (#719)。已登录用户在本领域的个人资料照片路径，没有照片时为空。与 /report-api 的其余部分使用同一令牌。"
   },
   "stsmetadata.endpoints./report-api/announcements.what": {
     "en": "0f75f226eeb86f05",

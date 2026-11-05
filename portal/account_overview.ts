@@ -561,7 +561,7 @@ class AccountOverview {
     }
     const t = ctx.translatorFor(caller.username);
     log.debug("Leaving AccountOverview.setPhoto().");
-    return ctx.json(res, 200, { ok: true, go: ctx.PORTAL,
+    return ctx.json(res, 200, { ok: true, go: ctx.PORTAL, photo: done.path,
                                 message: t.text('portal.done.photo') });
   }
 
@@ -580,7 +580,7 @@ class AccountOverview {
     ProfilePhoto.removeOwn(caller.username);
     const t = ctx.translatorFor(caller.username);
     log.debug("Leaving AccountOverview.removePhoto().");
-    return ctx.json(res, 200, { ok: true, go: ctx.PORTAL,
+    return ctx.json(res, 200, { ok: true, go: ctx.PORTAL, photo: '',
                                 message: t.text('portal.done.photoRemoved') });
   }
 

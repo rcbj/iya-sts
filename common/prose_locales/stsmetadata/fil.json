@@ -1219,7 +1219,7 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717). Ang PNG, JPEG o WebP na logo na in-upload para sa realm na ito sa pamamagitan ng /admin-api/branding/logo, inihahatid mula sa origin na ito upang tanggapin ito ng img-src 'self' ng mga pahina ng pag-sign in at walang ikatlong partido ang makaalam kung sino ang nagsa-sign in; nosniff, naka-sandbox, isang ETag ng digest nito. 404 kung walang logo ang realm."
   },
-  "stsmetadata.endpoints./web/photo/{id}.what": {
+  "stsmetadata.endpoints./web/photo/:id.what": {
     "en": "32d1ba774784074d",
     "text": "NON-SPEC sa sarili nito (#719), at ang pinangangalanan ng picture claim ng OpenID Connect Core 5.1 para sa taong may larawan dito. Ang JPEG o PNG na itinakda sa portal o ang kopya mula sa federation partner, sa random na address na nagbabago kasama ng larawan; walang credential, dahil kinukuha ito ng relying party nang wala nito. nosniff, naka-sandbox, may ETag. 404 para sa taong naka-disable o nabura."
   },
@@ -1370,6 +1370,10 @@
   "stsmetadata.endpoints./report-api/signals.what": {
     "en": "f00e66637d8d4146",
     "text": "HINDI MULA SA SPEC. Ang natanggap ng application ng mga ulat, isang receiver ng sariling transmitter ng serbisyong ito (#1042): bawat signal sa realm para sa isang report administrator, at para sa iba ang mga signal lamang tungkol sa kanila. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
+  },
+  "stsmetadata.endpoints./report-api/me.what": {
+    "en": "868625e0bbe4414a",
+    "text": "NON-SPEC (#719). Ang path ng sariling larawan sa profile ng naka-sign in na tao sa realm na ito, walang laman kung wala siya nito. Nasa likod ng parehong token gaya ng iba pang bahagi ng /report-api."
   },
   "stsmetadata.endpoints./report-api/announcements.what": {
     "en": "0f75f226eeb86f05",

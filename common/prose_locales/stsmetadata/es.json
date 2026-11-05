@@ -1219,7 +1219,7 @@
     "en": "83a680ab27412042",
     "text": "NON-SPEC (#717). El logotipo PNG, JPEG o WebP subido para este dominio mediante /admin-api/branding/logo, servido desde este origen para que el img-src 'self' de las páginas de inicio de sesión lo admita y ningún tercero sepa quién inicia sesión; nosniff, aislado, un ETag de su resumen. 404 donde el dominio no tiene ninguno."
   },
-  "stsmetadata.endpoints./web/photo/{id}.what": {
+  "stsmetadata.endpoints./web/photo/:id.what": {
     "en": "32d1ba774784074d",
     "text": "NON-SPEC en sí mismo (#719), y lo que nombra el claim picture de OpenID Connect Core 5.1 para una persona con una foto aquí. El JPEG o PNG que estableció en el portal o la copia de un socio de federación, en una dirección aleatoria que cambia con la foto; sin credencial, porque una parte de confianza la obtiene sin ninguna. nosniff, en sandbox, con ETag. 404 para una persona deshabilitada o eliminada."
   },
@@ -1370,6 +1370,10 @@
   "stsmetadata.endpoints./report-api/signals.what": {
     "en": "f00e66637d8d4146",
     "text": "FUERA DE ESPECIFICACIÓN. Lo que ha recibido la aplicación de informes, receptora del propio transmisor de este servicio (#1042): todas las señales del dominio para un administrador de informes y, para cualquier otro, solo las señales sobre sí mismo. Detrás del mismo token que el resto de /report-api."
+  },
+  "stsmetadata.endpoints./report-api/me.what": {
+    "en": "868625e0bbe4414a",
+    "text": "NON-SPEC (#719). La ruta de la foto de perfil propia de la persona que inició sesión en este reino, vacía si no tiene ninguna. Tras el mismo token que el resto de /report-api."
   },
   "stsmetadata.endpoints./report-api/announcements.what": {
     "en": "0f75f226eeb86f05",

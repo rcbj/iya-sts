@@ -949,6 +949,13 @@ class PortalRuntime extends SpaClient {
     if (!answer) {
       return;
     }
+    // THE FRAME'S PHOTO (#719). `me` is read once per sign-in, so a photo saved
+    // or removed would not show beside the name until a reload; the operation
+    // says what it now is. Reading `me` again would start its listeners again.
+    if (answer.json && typeof answer.json.photo === 'string' && this.me &&
+        this.me.user) {
+      this.me.user.photo = answer.json.photo;
+    }
     await this.answered(path, answer);
   }
 

@@ -447,7 +447,7 @@
     "en": "2ce72d622f586a26",
     "text": "Ang logo ng pag-sign in ng isang realm"
   },
-  "endpoints.route./web/photo/{id}.name": {
+  "endpoints.route./web/photo/:id.name": {
     "en": "f2cc426998480c9c",
     "text": "Larawan sa profile ng isang tao"
   },
@@ -582,6 +582,10 @@
   "endpoints.route./report-api/signals.name": {
     "en": "fa5ff98584c701fb",
     "text": "Ang inbox ng Shared Signals ng application ng mga ulat"
+  },
+  "endpoints.route./report-api/me.name": {
+    "en": "11a93e2c9b06a26c",
+    "text": "Ang iginuguhit ng user menu ng reports application"
   },
   "endpoints.route./report-api/announcements.name": {
     "en": "3adb83b8075c6a3a",
