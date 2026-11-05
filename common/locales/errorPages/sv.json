@@ -17,5 +17,22 @@
   "signedInAs": "Inloggad som",
   "error": "error",
   "errorDescription": "error_description",
-  "detail": "Detalj"
+  "detail": "Detalj",
+  "entityId": "Tjänsteleverantör (entity ID)",
+  "relyingParty": "Förlitande part",
+  "acsUrl": "URL för assertion consumer service",
+  "relayState": "RelayState",
+  "binding": "Bindning (binding)",
+  "wa": "wa",
+  "wtrealm": "wtrealm",
+  "wreply": "wreply",
+  "wctx": "wctx",
+  "relationship": "Federationsrelation",
+  "partner": "Partner",
+  "target": "TARGET",
+  "providerId": "providerId",
+  "principal": "Kerberos-principal",
+  "outcome": "Utfall",
+  "summary": "Sammanfattning",
+  "path": "Adress"
 }

@@ -17,5 +17,22 @@
   "signedInAs": "Signed in as",
   "error": "error",
   "errorDescription": "error_description",
-  "detail": "Detail"
+  "detail": "Detail",
+  "entityId": "Service provider (entity ID)",
+  "relyingParty": "Relying party",
+  "acsUrl": "Assertion consumer service URL",
+  "relayState": "RelayState",
+  "binding": "Binding",
+  "wa": "wa",
+  "wtrealm": "wtrealm",
+  "wreply": "wreply",
+  "wctx": "wctx",
+  "relationship": "Federation relationship",
+  "partner": "Partner",
+  "target": "TARGET",
+  "providerId": "providerId",
+  "principal": "Kerberos principal",
+  "outcome": "Outcome",
+  "summary": "Summary",
+  "path": "Address"
 }

@@ -750,6 +750,27 @@ function childMain() {
            one[0] + ', and ends nothing', r.status + ' ' +
            JSON.stringify(marks.slice(since)));
     }
+    // THE REFUSAL IS THE SHARED ERROR PAGE (#1327): the sentence for the
+    // code in the page's language, "no session was ended" below it, the
+    // background collapsed, the way to the portal, and the diagnostics with
+    // an incident ID and the English detail as data.
+    const shown = await request('GET', refusals[0][1].url.replace(base, ''),
+      { headers: { 'accept-language': 'fr' } });
+    note(shown.status === 403 &&
+         /<html lang="fr"/.test(shown.text) &&
+         shown.text.indexOf('La déconnexion du partenaire a été refusée') >
+           0 &&
+         shown.text.indexOf('n’est pas signé, et cette relation') > 0 &&
+         shown.text.indexOf('Aucune session n’a été fermée ici.') > 0 &&
+         /<details class="prose">[\s\S]*fedLastError/.test(shown.text) &&
+         /href="[^"]*\/portal"/.test(shown.text) &&
+         /section class="diagnostics"/.test(shown.text) &&
+         /<dd><code>\d+<\/code><\/dd>/.test(shown.text) &&
+         shown.text.indexOf('The LogoutRequest is not signed') > 0 &&
+         shown.text.indexOf('federation/CLAUDE.md') < 0,
+         '5c-ii. a refused sign-out is the shared error page, in French ' +
+         'for a browser that asks for it, with its incident ID',
+         shown.status + ' ' + shown.text.slice(0, 600));
     since = marks.length;
     const unknown = await request('GET', logoutRequestUrl({
       sessionIndex: 'idx-nobody', key: partnerKey }).url.replace(base, ''));

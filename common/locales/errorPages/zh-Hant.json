@@ -17,5 +17,22 @@
   "signedInAs": "目前登入身分",
   "error": "error",
   "errorDescription": "error_description",
-  "detail": "詳細資訊"
+  "detail": "詳細資訊",
+  "entityId": "服務提供者（entity ID）",
+  "relyingParty": "信賴方",
+  "acsUrl": "斷言取用服務 URL",
+  "relayState": "RelayState",
+  "binding": "繫結（binding）",
+  "wa": "wa",
+  "wtrealm": "wtrealm",
+  "wreply": "wreply",
+  "wctx": "wctx",
+  "relationship": "同盟關係",
+  "partner": "合作夥伴",
+  "target": "TARGET",
+  "providerId": "providerId",
+  "principal": "Kerberos 主體",
+  "outcome": "結果",
+  "summary": "摘要",
+  "path": "位址"
 }

@@ -1222,6 +1222,31 @@ it is converted.
 So what #580 converts is all in this directory: three pages of
 `federation_sp.ts`'s own flows. The rest of the section says how.
 
+**THE ASSERTION CONSUMER SERVICE'S REFUSALS ARE `common/error_page.ts`'s
+PAGE SINCE #1327** (still server-drawn, never the shell): `refuse()` off the
+surface, and `consume()`'s two 404s, draw through `refusalPage()` — the
+sentence for the code marked (`federationErrors.refusal.<code>`, else
+`federationErrors.refusal.general`), the "refuses rather than accepts" note
+collapsed, the portal, and the diagnostics (relationship, partner,
+RelayState / state / wctx, who is signed in, the English `what` and `why`).
+`refuse()`'s sixth argument is DATA since then, `{ error, rows }`: a value
+the partner sent (a SAML StatusCode, an OAuth `error`) for the box, and
+diagnostics rows (the attributes it sent, the configured certificate's
+prefix). Status, error code, `fedLastError` and the audit row are as they
+were; the page gains `Cache-Control: no-store` and loses the console and
+`federation/CLAUDE.md` pointers. The metadata and key-set 404s stay
+English: a program fetches those documents. `tests/federation_pages.js` 4a–4c.
+
+**A partner's sign-out refused in a browser is the same page (#1327)**:
+`federation_slo.ts`'s `refuse()` and `relationshipFor()`'s two 404s draw it
+in the person's language, the sentence chosen by the code marked
+(`federationSloErrors.refusal.<code>`, then a general one), "no session was
+ended" kept below the box, the English `what` and `why` among the
+diagnostics. The back channel's JSON (`refuseJson()`) is unchanged; the two
+200 outcome pages ("Signed out here, and not at the partner", "Nothing to
+sign out") are outcomes, not refusals, and stay as they were.
+`tests/federation_signout.js` 5c-ii.
+
 ### Each is the shell, carrying its view (`federation_pages.ts`)
 
 **A page that only SAYS something has nothing to fetch**: the landing page's

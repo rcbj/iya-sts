@@ -1,0 +1,15 @@
+{
+  "title": "無法開始此次登入",
+  "refusal.STS-LAUNCH-0001": "此信任領域中沒有應用程式 <code>{app}</code>，因此沒有可供您登入的對象。",
+  "refusal.STS-LAUNCH-0002": "<code>{protocol}</code> 不是可以開始登入的通訊協定。此處的連結可開始 saml2、saml11、wsfed 或 oidc 登入。",
+  "refusal.STS-LAUNCH-0003": "此應用程式不使用 <code>{protocol}</code> 登入。",
+  "refusal.STS-LAUNCH-0004": "此應用程式可以透過多種通訊協定啟動，而連結沒有說明使用哪一種。",
+  "refusal.STS-LAUNCH-0005": "無法從此處啟動此應用程式。請在應用程式本身開始登入。",
+  "refusal.STS-LAUNCH-0006": "此應用程式沒有註冊可將您傳送過去的位址，因此在此處開始的登入無處可去。",
+  "refusal.STS-LAUNCH-0007": "連結指定的傳送位址沒有為此應用程式註冊，因此已被拒絕。",
+  "refusal.general": "無法開始此次登入。",
+  "background": "此連結在本身分識別提供者為某個應用程式開始登入（由身分識別提供者發起的登入）。尚未向任何應用程式傳送任何內容，因此問題在此處回報。",
+  "application": "應用程式",
+  "protocol": "protocol",
+  "target": "target"
+}
