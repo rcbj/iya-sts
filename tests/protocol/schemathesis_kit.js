@@ -84,11 +84,17 @@ const AUTH_KINDS = ["none", "authn", "dpop-portal", "dpop-console",
   "dpop-report"];
 
 // ---------------------------------------------------------------------------
-// THE CHECKS. Built-in Schemathesis checks run against the schema'd APIs;
-// against the synthesized protocol doc only `not_a_server_error` is meaningful
-// (there are no response schemas). The custom checks live in
-// tests/schemathesis/sts_checks.py and encode this service's own invariants;
-// they run on every surface.
+// THE CHECKS. The gate asserts THIS SERVICE'S FOUR INVARIANTS and nothing else
+// (rcbj, 2026-11-04): the built-in `not_a_server_error` (no uncaught 5xx — the
+// fault boundary holds) and the three custom checks below (no leaked error
+// code, frame-ancestors kept, no outbound fetch). It does NOT assert strict
+// OpenAPI conformance — this is a mock identity service, so "schema-valid
+// request rejected" is overwhelmingly product-mode gating doing its job, and a
+// 400 for an undeclared method or an accepted schema-violating body is not a
+// robustness defect we are hunting. So every surface runs exactly the four
+// checks (the run enables them BY NAME rather than `--checks all`, which turns
+// on the conformance checks too). `BUILTIN_CHECKS` is the catalogue a surface
+// MAY name; today every surface names only `not_a_server_error`.
 // ---------------------------------------------------------------------------
 const BUILTIN_CHECKS = [
   "not_a_server_error",
@@ -97,6 +103,11 @@ const BUILTIN_CHECKS = [
   "response_schema_conformance",
   "response_headers_conformance"
 ];
+
+// The built-in checks every surface actually enables: the no-server-error
+// invariant alone. The others above are left for a surface that ever needs
+// one; naming them would reintroduce the conformance noise this gate excludes.
+const INVARIANT_BUILTIN = ["not_a_server_error"];
 
 const CUSTOM_CHECKS = [
   // Every refusal records an operator error code and NEVER sends it; a code in
@@ -122,20 +133,20 @@ const CUSTOM_CHECKS = [
 const SURFACES = [
   { key: "account-api", title: "Account API (portal/user)",
     kind: "openapi", schemaPath: "/account-api/openapi.json",
-    schemaAuth: "none", auth: "dpop-portal", checks: BUILTIN_CHECKS },
+    schemaAuth: "none", auth: "dpop-portal", checks: INVARIANT_BUILTIN },
   { key: "authn-api", title: "Sign-in API",
     kind: "openapi", schemaPath: "/authn-api/openapi.json",
-    schemaAuth: "none", auth: "authn", checks: BUILTIN_CHECKS },
+    schemaAuth: "none", auth: "authn", checks: INVARIANT_BUILTIN },
   { key: "admin-api", title: "Management API",
     kind: "openapi", schemaPath: "/admin-api/openapi.json",
-    schemaAuth: "dpop-console", auth: "dpop-console", checks: BUILTIN_CHECKS },
+    schemaAuth: "dpop-console", auth: "dpop-console", checks: INVARIANT_BUILTIN },
   { key: "report-api", title: "Reporting API",
     kind: "openapi", schemaPath: "/report-api/openapi.json",
-    schemaAuth: "dpop-report", auth: "dpop-report", checks: BUILTIN_CHECKS },
+    schemaAuth: "dpop-report", auth: "dpop-report", checks: INVARIANT_BUILTIN },
   { key: "protocol", title: "Protocol endpoints (synthesized)",
     kind: "synthesized", schemaPath: "/admin-api/sts-metadata",
     schemaAuth: "dpop-console", auth: "per-op",
-    checks: ["not_a_server_error"] }
+    checks: INVARIANT_BUILTIN }
 ];
 
 // ---------------------------------------------------------------------------
@@ -532,14 +543,15 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
       schemaLocation = "http://127.0.0.1:" + port + surface.schemaPath;
     }
     const base = "http://127.0.0.1:" + port;
-    const args = ["run", schemaLocation, "--url", base, "--checks", "all",
-      "-n", String(MAX_EXAMPLES)];
-    const excludeChecks = BUILTIN_CHECKS.filter(function (check) {
-      return surface.checks.indexOf(check) < 0;
-    });
-    if (excludeChecks.length) {
-      args.push("--exclude-checks", excludeChecks.join(","));
-    }
+    // Enable EXACTLY the four invariant checks by name — the surface's built-in
+    // (not_a_server_error) and the three custom ones from the hooks file.
+    // `--checks all` would also turn on the strict OpenAPI-conformance checks
+    // (undeclared-method, schema-valid-rejected, schema-violating-accepted),
+    // which this gate does not assert (rcbj, 2026-11-04); naming the checks is
+    // how the scope stays the four invariants.
+    const enabledChecks = surface.checks.concat(CUSTOM_CHECKS);
+    const args = ["run", schemaLocation, "--url", base,
+      "--checks", enabledChecks.join(","), "-n", String(MAX_EXAMPLES)];
     exclusionsFor(surface.key).forEach(function (one) {
       args.push("--exclude-operation-id", one.match);
     });
@@ -552,10 +564,20 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
         maxBuffer: 64 * 1024 * 1024 });
     const code = run.status;
     const status = code === 0 ? "pass" : (code === 1 ? "fail" : "error");
+    // A null status means the binary could not be spawned (ENOENT, EACCES) or
+    // was killed by a signal; `run.error` names which, so carry it.
+    const spawnError = run.error
+      ? ("\nspawn error: " + ((run.error && run.error.message) || run.error))
+      : "";
     log.debug("Leaving runSurface(). " + status + " (" + code + ")");
+    // The scope is the four invariants, so a failing run prints only the real
+    // findings (a 5xx, a leaked error code, a dropped frame-ancestors clause).
+    // Keep a generous slice so each finding's endpoint and the custom check's
+    // message — which names the leaked code — survive into the host log.
     return { surface: surface.key, realm: provisioned.realmPrefix,
       code: code, status: status,
-      output: ((run.stdout || "") + (run.stderr || "")).slice(-4000) };
+      output: (((run.stdout || "") + (run.stderr || "")).slice(-40000)) +
+        spawnError };
   } finally {
     proxy.kill();
   }
