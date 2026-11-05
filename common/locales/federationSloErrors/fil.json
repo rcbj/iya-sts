@@ -28,5 +28,14 @@
   "refusal.STS-FED-0137": "Naka-encrypt ang bahagi ng sign-out message, at walang key ang relationship na ito na makakapag-decrypt nito.",
   "refusal.STS-FED-0138": "Hindi ma-decrypt ang naka-encrypt na bahagi ng sign-out message (ang EncryptedID nito), o wala itong NameID.",
   "refusal.STS-FED-0139": "Naka-encrypt ang bahagi ng sign-out message gamit ang algorithm na hindi tinatanggap ng relationship na ito.",
-  "refusal.STS-AUTHN-0338": "Hindi mabasa ng serbisyong ito ang mga sign-on session sa ngayon, kaya hindi nito matukoy kung ano ang isa-sign out. Subukang muli maya-maya."
+  "refusal.STS-AUTHN-0338": "Hindi mabasa ng serbisyong ito ang mga sign-on session sa ngayon, kaya hindi nito matukoy kung ano ang isa-sign out. Subukang muli maya-maya.",
+  "outcome.partnerRefused.title": "Naka-sign out dito",
+  "outcome.partnerRefused.heading": "Naka-sign out dito, at hindi sa partner",
+  "outcome.partnerRefused.lead": "Natapos na ang session dito. Sumagot ang {partner} ng <code>{status}</code>, kaya maaaring naka-sign in ka pa roon.",
+  "outcome.partnerRefused.leadMessage": "Natapos na ang session dito. Sumagot ang {partner} ng <code>{status}</code>: {message}. Maaaring naka-sign in ka pa roon.",
+  "outcome.partnerRefused.noStatus": "(walang status)",
+  "outcome.nothing.title": "Walang isa-sign out",
+  "outcome.nothing.lead": "Walang session ang browser na ito na sinimulan dito ng {partner}.",
+  "outcome.nothing.frameLead": "Walang session dito na sinimulan ng session na iyon ng partner.",
+  "outcome.nothing.frameLeadUnreachable": "Walang session dito na naaabot ng serbisyong ito na sinimulan ng session na iyon ng partner."
 }

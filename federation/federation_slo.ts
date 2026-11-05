@@ -1542,14 +1542,31 @@ class FederationSlo {
                   message: message, request: inResponseTo }
       });
       log.debug("Leaving FederationSlo.samlLogoutResponse(). Not success.");
+      // AN OUTCOME, NOT A REFUSAL, so not the error page — but translated
+      // since #1327 (rcbj), every word a person reads, with the language
+      // chooser. The partner's name, its StatusCode and its StatusMessage
+      // are data, shown as sent. The chooser returns to the realm's front
+      // door, not to this request: the partner's answer is spent, and asking
+      // again would be refused as unsolicited.
+      const t = PageLocale.translatorFor(req, {
+        application: record.fedId,
+        username: String(context.username || '') });
+      const prefix = realms.currentPrefix();
+      const named = { partner: record.fedName || record.fedId,
+                      status: status || t.text(
+                        'federationSloErrors.outcome.partnerRefused.noStatus'),
+                      message: message };
       res.status(200).type('html').set('Cache-Control', 'no-store')
-         .send(this.page('Signed out here',
-           '<h1>Signed out here, and not at the partner</h1><p>The session ' +
-           'here had already ended. ' + xmlEscape(record.fedName ||
-           record.fedId) + ' answered <code>' + xmlEscape(status ||
-           '(no status)') + '</code>' +
-           (message ? ': ' + xmlEscape(message) : '') + ', so you may still ' +
-           'be signed in there.</p>'));
+         .send(this.page(
+           t.text('federationSloErrors.outcome.partnerRefused.title'),
+           PageLocale.chooser(t, prefix, prefix + '/') +
+           '<h1>' +
+           t.html('federationSloErrors.outcome.partnerRefused.heading') +
+           '</h1><p>' + (message
+             ? t.html(
+               'federationSloErrors.outcome.partnerRefused.leadMessage', named)
+             : t.html('federationSloErrors.outcome.partnerRefused.lead',
+                      named)) + '</p>', t));
       return undefined;
     }
     audit.audit({
@@ -1625,11 +1642,17 @@ class FederationSlo {
                          'no federated session in this browser');
       errorCodes.mark(res, 'STS-FED-0122');
       log.debug("Leaving FederationSlo.wsfedConfirmation(). Nothing here.");
+      // AN OUTCOME, NOT A REFUSAL (#1327, rcbj): translated, with the
+      // language chooser returning to this same GET (drawing it again ends
+      // nothing), the partner's name as data.
+      const t = PageLocale.translatorFor(req, {
+        application: record.fedId, username: this.signedInAs(req) });
       res.status(200).type('html').set('Cache-Control', 'no-store')
-         .send(this.page('Nothing to sign out',
-           '<h1>Nothing to sign out</h1><p>This browser holds no session ' +
-           'that ' + xmlEscape(record.fedName || record.fedId) + ' signed ' +
-           'in here.</p>'));
+         .send(this.page(t.text('federationSloErrors.outcome.nothing.title'),
+           ErrorPage.chooser(t, req) +
+           '<h1>' + t.html('federationSloErrors.outcome.nothing.title') +
+           '</h1><p>' + t.html('federationSloErrors.outcome.nothing.lead',
+             { partner: record.fedName || record.fedId }) + '</p>', t));
       return undefined;
     }
     const handle = fedSp.putContext({ kind: 'wsfed-signout',
@@ -1995,7 +2018,7 @@ class FederationSlo {
   // iframe; section 3's session-required variant is the only one accepted.
   // =========================================================================
   private frontchannelEndpoint(req, res) {
-    const { errorCodes, log, xmlEscape, app, baseUrlOf } = this.deps;
+    const { errorCodes, log, app, baseUrlOf } = this.deps;
     log.debug("Entering FederationSlo.frontchannelEndpoint().");
     const record = this.relationshipFor(req, res, false);
     if (!record) {
@@ -2065,19 +2088,17 @@ class FederationSlo {
     }
     let body;
     let overrides = {};
-    // In the person's language (#539) where something was signed out; the
-    // "Nothing to sign out" page carries an error code and stays English,
-    // so it is drawn without a translator. No language chooser: the page is
-    // in a frame the partner loaded, and nobody reads it.
+    // In the person's language (#539), and since #1327 the "Nothing to sign
+    // out" outcome too, though it carries an error code. No language
+    // chooser: the page is in a frame the partner loaded, and nobody reads
+    // it.
     const t = PageLocale.forPage({});
-    let translated = false;
     if (sessions.length) {
       const ended = this.endSessions(sessions, record, 'Front-Channel Logout',
                                      baseUrlOf(req), true);
       overrides = ended.fanOut.policy;
       body = '<h1>' + t.html('handoff.common.signedOut') + '</h1><ul>' +
              ended.summary + '</ul>' + ended.fanOut.html;
-      translated = true;
     }
     const self = this;
     log.debug("Leaving FederationSlo.frontchannelEndpoint().");
@@ -2086,27 +2107,23 @@ class FederationSlo {
       if (!body && peers.ended) {
         body = '<h1>' + t.html('handoff.common.signedOut') + '</h1><p>' +
                t.html('handoff.federation.slo.frontchannelEnded') + '</p>';
-        translated = true;
       } else if (!body) {
         self.recordNoMatch(record, 'Front-Channel Logout', 'sid ' + sid);
         errorCodes.mark(res, peers.failed ? 'STS-CELL-0122'
                                           : 'STS-FED-0122');
-        body = '<h1>Nothing to sign out</h1><p>No session here was ' +
-               'started by that partner session' +
-               (peers.failed ? ' that this service could reach' : '') +
-               '.</p>';
+        body = '<h1>' + t.html('federationSloErrors.outcome.nothing.title') +
+               '</h1><p>' + (peers.failed
+                 ? t.html(
+                   'federationSloErrors.outcome.nothing.frameLeadUnreachable')
+                 : t.html('federationSloErrors.outcome.nothing.frameLead')) +
+               '</p>';
       }
       const partner = record.fedName || record.fedId;
       res.status(200).type('html')
-         .send(framed(translated
-           ? self.page(t.text('handoff.federation.slo.title'), body +
-               '<p class="note">' +
-               t.html('handoff.federation.slo.frontchannelNote',
-                      { partner: partner }) + '</p>', t)
-           : self.page('Signed out', body + '<p class="note">' +
-               xmlEscape(partner) + ' loaded this page ' +
-               'in a frame to end the session it signed you in to here.</p>'),
-           overrides));
+         .send(framed(self.page(t.text('handoff.federation.slo.title'),
+           body + '<p class="note">' +
+           t.html('handoff.federation.slo.frontchannelNote',
+                  { partner: partner }) + '</p>', t), overrides));
       return undefined;
     });
   }

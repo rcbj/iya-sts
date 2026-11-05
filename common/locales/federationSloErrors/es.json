@@ -28,5 +28,14 @@
   "refusal.STS-FED-0137": "Parte del mensaje de cierre de sesión está cifrada, y esta relación no tiene ninguna clave que pueda descifrarla.",
   "refusal.STS-FED-0138": "No se pudo descifrar una parte cifrada del mensaje de cierre de sesión (su EncryptedID), o no contenía un NameID.",
   "refusal.STS-FED-0139": "Parte del mensaje de cierre de sesión está cifrada con un algoritmo que esta relación no acepta.",
-  "refusal.STS-AUTHN-0338": "Este servicio no pudo leer las sesiones en este momento, así que no pudo saber qué cerrar. Vuelva a intentarlo en un momento."
+  "refusal.STS-AUTHN-0338": "Este servicio no pudo leer las sesiones en este momento, así que no pudo saber qué cerrar. Vuelva a intentarlo en un momento.",
+  "outcome.partnerRefused.title": "Sesión cerrada aquí",
+  "outcome.partnerRefused.heading": "Sesión cerrada aquí, pero no en el socio",
+  "outcome.partnerRefused.lead": "La sesión aquí ya había terminado. {partner} respondió <code>{status}</code>, así que puede que siga con la sesión iniciada allí.",
+  "outcome.partnerRefused.leadMessage": "La sesión aquí ya había terminado. {partner} respondió <code>{status}</code>: {message}. Puede que siga con la sesión iniciada allí.",
+  "outcome.partnerRefused.noStatus": "(sin estado)",
+  "outcome.nothing.title": "No hay nada que cerrar",
+  "outcome.nothing.lead": "Este navegador no tiene ninguna sesión que {partner} haya iniciado aquí.",
+  "outcome.nothing.frameLead": "Ninguna sesión de aquí la inició esa sesión del socio.",
+  "outcome.nothing.frameLeadUnreachable": "Ninguna sesión de aquí que este servicio pudiera alcanzar la inició esa sesión del socio."
 }
