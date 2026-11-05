@@ -432,6 +432,9 @@ import IssuerNames = require('../common/issuer_names');
 import i18n = require('../common/i18n');
 // The language of the pages drawn here for a browser (#539). A library.
 import PageLocale = require('../common/page_locale');
+// The one error page (#1326). A library: it requires `audit`, `realms` and
+// the page's language, none of which requires this module.
+import ErrorPage = require('../common/error_page');
 // A library: what an RFC 8707 resource may name in product (#505). It reaches
 // the registry, the access-token profile and the management API lazily, at
 // request time, so this require closes no cycle.
@@ -9937,7 +9940,7 @@ class OAuth2Server {
   // (OpenID Connect Core 1.0 section 3.1.2.1, RP-Initiated Logout 1.0
   // section 2), then the person, the chooser's cookie, the browser and the
   // client's locale policy — `common/page_locale.ts`'s order. The error
-  // pages are not drawn with it: every refusal stays English.
+  // pages are drawn with it too since #1326 (`common/error_page.ts`).
   private pageTranslator(req: Req, application: string, uiLocales: string,
                          username: string):
                          ReturnType<typeof PageLocale.forPage> {
@@ -10085,43 +10088,122 @@ class OAuth2Server {
   // saying when. Its description carries the RFC 9700 warning. The form_post
   // variant never gets one: a POST cannot be made by markup alone.
   // ---------------------------------------------------------------------------
+  // THE MESSAGE IN THE BOX, IN THE PAGE'S LANGUAGE (#1326). The refusal's
+  // own sentence where `oauthPages` has one — keyed by the error code the
+  // refusal marked (`oauthPages.refusal.STS-OAUTH-NNNN`), or by a key the
+  // refusal names itself where one code covers two cases — and otherwise
+  // the protocol error's general sentence (`oauthPages.oauthError.<error>`),
+  // so nothing is drawn in English. The English description is still on the
+  // page, in the diagnostics, as the `error_description` an application
+  // receives: a value, not prose.
+  //
+  // The parameters a sentence may name are the request's own values, plus
+  // what the refusal added (`pageText.params`: the registered URIs, a
+  // section number).
   /**
-   * The top of the authorization endpoint's error page, shared by the
-   * redirect interstitial and the refusal page: the document's head, the
-   * heading, and the error with its description.
+   * The translated sentence for an authorization refusal.
    *
+   * @param t - the page's translator
+   * @param code - the error code marked on the response
    * @param error - the OAuth error value
-   * @param description - its description
-   * @param extraHead - markup for the head (a meta refresh), or ''
-   * @returns the markup, up to the end of the error box
+   * @param q - the request's parameters
+   * @param pageText - `{ key, params }` the refusal named, or undefined
+   * @returns the sentence as HTML
    */
-  private errorPageTop(error: string, description: string,
-                       extraHead: string): string {
-    const { log, xmlEscape } = this.deps;
-    log.debug("Entering OAuth2Server.errorPageTop().");
-    log.debug("Leaving OAuth2Server.errorPageTop().");
-    return '<!doctype html><html lang="en"><head><meta ' +
-      'charset="utf-8">' + extraHead +
-      '<title>This request could not be completed</title>' +
-      '<style>body{font-family:system-ui,sans-serif;margin:2rem;' +
-      'max-width:46rem;color:#222}code{font-family:ui-monospace,Menlo,' +
-      'monospace;font-size:.85rem;background:#f4f4f8;padding:.1rem .25rem;' +
-      'border-radius:3px;word-break:break-all}' +
-      '.sub{color:#666;font-size:.92rem}' +
-      '.warn{background:#fff8e1;border:1px solid #ffe082;padding:.7rem ' +
-      '.9rem;border-radius:4px;margin:1rem ' +
-      '0}dt{font-weight:600;margin-top:.7rem}dd{margin:.15rem 0 0 ' +
-      '0}' +
-      // THE form_post CONTINUE IS A BUTTON DRAWN AS A LINK (2026-11-04): it
-      // has to be a form, since the error goes to the client as a POST, but
-      // the same page for a query or fragment response carries a link, and
-      // the OpenID Foundation's reviewers see both side by side.
-      'button.as-link{background:none;border:0;padding:0;font:inherit;' +
-      'color:#00e;color:LinkText;text-decoration:underline;cursor:pointer}' +
-      '</style></head><body><h1>This request could not be completed</h1>' +
-      '<div ' +
-      'class="warn"><strong>' + xmlEscape(error) + '</strong><br>' +
-      xmlEscape(description) + '</div>';
+  private refusalMessage(t: ReturnType<typeof PageLocale.forPage>,
+                         code: string, error: string, q: Json,
+                         pageText: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.refusalMessage(). " + code);
+    const query = q || {};
+    const named = pageText || {};
+    const params: Json = Object.assign({
+      uri: String(query.redirect_uri || ''),
+      type: String(query.response_type || ''),
+      mode: String(query.response_mode || ''),
+      method: String(query.code_challenge_method || ''),
+      client: String(query.client_id || ''),
+      requestUri: String(query.request_uri || ''),
+      prompt: String(query.prompt || ''),
+      tenant: String(query.tenant || '')
+    }, named.params || {});
+    const candidates = [named.key ? 'oauthPages.refusal.' + named.key : '',
+                        code ? 'oauthPages.refusal.' + code : '',
+                        'oauthPages.oauthError.' + String(error || ''),
+                        'oauthPages.oauthError.other'];
+    for (let i = 0; i < candidates.length; i++) {
+      if (candidates[i] && t.has(candidates[i])) {
+        log.debug("Leaving OAuth2Server.refusalMessage(). " + candidates[i]);
+        return t.html(candidates[i], params);
+      }
+    }
+    log.debug("Leaving OAuth2Server.refusalMessage(). No sentence.");
+    return '';
+  }
+
+  /**
+   * The diagnostics an authorization error page shows (#1326): the request's
+   * values and the error as an application would receive it.
+   *
+   * @param req - the request
+   * @param t - the page's translator
+   * @param q - the request's parameters
+   * @param error - the OAuth error value
+   * @param description - the English error_description
+   * @returns the rows for `ErrorPage`
+   */
+  private authorizationDiagnostics(req: Req,
+                                   t: ReturnType<typeof PageLocale.forPage>,
+                                   q: Json, error: string,
+                                   description: string): Json[] {
+    const { log, applications, sessionOf, oauth21 } = this.deps;
+    log.debug("Entering OAuth2Server.authorizationDiagnostics().");
+    const query = q || {};
+    let name = '';
+    try {
+      const client = query.client_id
+        ? applications.clientConfigOf(String(query.client_id)) : null;
+      name = String((client && client.declared && client.client_name) || '');
+    } catch (e) {
+      // A registry that cannot be read leaves the name out; the client_id
+      // is still shown.
+      log.debug("Caught in OAuth2Server.authorizationDiagnostics(): " +
+                ((e && e.message) || e));
+    }
+    const session = sessionOf(req);
+    const out = [
+      { label: t.text('errorPages.application'), value: query.client_id },
+      { label: t.text('errorPages.applicationName'), value: name },
+      { label: t.text('errorPages.redirectUri'), value: query.redirect_uri },
+      { label: t.text('errorPages.responseType'),
+        value: query.response_type },
+      { label: t.text('errorPages.responseMode'),
+        value: query.response_mode },
+      { label: t.text('errorPages.state'), value: query.state },
+      { label: t.text('errorPages.nonce'), value: query.nonce },
+      { label: t.text('errorPages.signedInAs'),
+        value: session && session.user && session.user.username },
+      { label: t.text('errorPages.error'), value: error },
+      { label: t.text('errorPages.errorDescription'),
+        value: oauth21.sanitizeDescription(description) }
+    ];
+    log.debug("Leaving OAuth2Server.authorizationDiagnostics().");
+    return out;
+  }
+
+  // The translator for an authorization error page: the request's
+  // `ui_locales` (OIDC Core section 3.1.2.1), its client, the person.
+  private authorizationTranslator(req: Req, q: Json):
+    ReturnType<typeof PageLocale.forPage> {
+    const { log, sessionOf } = this.deps;
+    log.debug("Entering OAuth2Server.authorizationTranslator().");
+    const query = q || {};
+    const session = sessionOf(req);
+    const t = this.pageTranslator(req, String(query.client_id || ''),
+      String(query.ui_locales || ''),
+      String((session && session.user && session.user.username) || ''));
+    log.debug("Leaving OAuth2Server.authorizationTranslator().");
+    return t;
   }
 
   // A BROWSER IS A GET WHOSE Accept NAMES text/html (2026-11-04). A client
@@ -10144,84 +10226,120 @@ class OAuth2Server {
   }
 
   /**
-   * Sends a refusal that is never redirected as the error page a person
-   * reads, with the status and the error and description the JSON body
-   * would have carried (RFC 6749 section 4.1.2.1: the server SHOULD inform
-   * the resource owner).
+   * Answers a refusal of an authorization request that is never redirected:
+   * the shared error page for a browser (#1326), the JSON a client library
+   * gets otherwise, with the same status, error and description.
    *
+   * @param req - the request
+   * @param res - the response, its error code already marked
+   * @param status - the HTTP status
+   * @param error - the OAuth error value
+   * @param description - its English description
+   * @returns undefined
+   */
+  refuseAuthorization(req: Req, res: Res, status: number, error: string,
+                      description: string): Json {
+    const { log } = this.deps;
+    log.debug("Entering OAuth2Server.refuseAuthorization(). " + error);
+    if (this.isBrowserRequest(req)) {
+      log.debug("Leaving OAuth2Server.refuseAuthorization(). A page.");
+      // error-code: none — the caller marks its own condition first
+      return this.sendRefusalPage(req, res, status, error, description);
+    }
+    log.debug("Leaving OAuth2Server.refuseAuthorization(). JSON.");
+    // error-code: none — the caller marks its own condition first
+    return this.oauthError(res, status, error, description);
+  }
+
+  /**
+   * Sends a refusal that is never redirected as the error page a person
+   * reads (#1326's shared page), with the status the JSON body would have
+   * carried (RFC 6749 section 4.1.2.1: the server SHOULD inform the resource
+   * owner, and MUST NOT redirect).
+   *
+   * @param req - the request
    * @param res - the response
    * @param status - the HTTP status
    * @param error - the OAuth error value
-   * @param description - its description
+   * @param description - its English description
+   * @param pageText - `{ key, params }` the refusal named, or undefined
    */
-  sendRefusalPage(res: Res, status: number, error: string,
-                  description: string): void {
-    const { log, oauth21 } = this.deps;
+  sendRefusalPage(req: Req, res: Res, status: number, error: string,
+                  description: string, pageText?: Json): void {
+    const { log, errorCodes } = this.deps;
     log.debug("Entering OAuth2Server.sendRefusalPage(). error=" + error);
-    const html = this.errorPageTop(error,
-      oauth21.sanitizeDescription(description), '') +
-      '<p class="sub">Nothing has been sent anywhere: this request names ' +
-      'no address this service may return you to, so the error is reported ' +
-      'here instead (RFC 6749 section 4.1.2.1). The application that sent ' +
-      'you here needs correcting.</p></body></html>';
-    // error-code: none — every caller marks its own condition before this
-    res.status(status).type('text/html').set('Cache-Control', 'no-store')
-       .send(html);
+    const q = req.query || {};
+    const t = this.authorizationTranslator(req, q);
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: status,
+      title: t.text('oauthPages.authorizeError.title'),
+      error: error,
+      message: this.refusalMessage(t, errorCodes.codeOf(res), error, q,
+                                   pageText),
+      background: t.html('oauthPages.authorizeError.notSent'),
+      diagnostics: this.authorizationDiagnostics(req, t, q, error,
+                                                 description)
+    });
     log.debug("Leaving OAuth2Server.sendRefusalPage().");
   }
 
   /**
    * Sends the page shown instead of a redirect a person must decide on: the
-   * error, and a plain link to the client.
+   * error, and a plain link (or, for form_post, a button) to the client.
    *
+   * @param req - the request
    * @param res - the response
    * @param info - `error`, `description`, `why`, `clientId`, `redirectUri`,
-   *   `state`, `target` and `form`
+   *   `state`, `target`, `form`, `q` and `pageText`
    */
-  sendRedirectInterstitial(res: Res, info: Json): Json {
-    const { log, xmlEscape, config } = this.deps;
+  sendRedirectInterstitial(req: Req, res: Res, info: Json): Json {
+    const { log, xmlEscape, config, errorCodes } = this.deps;
     log.debug("Entering OAuth2Server.sendRedirectInterstitial(). error=" +
               info.error);
+    const q = info.q || req.query || {};
+    const t = this.authorizationTranslator(req, q);
     const after = info.form ? 0 :
       Math.max(0, Number(config.value('oauth2.errorPageAutoRedirectS')) || 0);
-    const html = this.errorPageTop(info.error, info.description,
-      after > 0
+    const label = t.html('oauthPages.authorizeError.continue',
+                         { uri: String(info.redirectUri || '') });
+    // The person's choice: the link carries the same parameters the redirect
+    // would have, and a form_post request gets a button that POSTs them (#126)
+    // drawn as the link it stands for.
+    const action = info.form
+      ? '<form method="post" action="' + xmlEscape(info.redirectUri) +
+        '">' + Object.keys(info.form).map(function (name: string): string {
+          return '<input type="hidden" name="' + xmlEscape(name) +
+                 '" value="' + xmlEscape(String(info.form[name])) + '">';
+        }).join('') + '<p><button type="submit" class="as-link">' + label +
+        '</button></p></form>'
+      : '<p><a href="' + xmlEscape(info.target) + '">' + label + '</a></p>';
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: 400,
+      title: t.text('oauthPages.authorizeError.title'),
+      error: info.error,
+      message: this.refusalMessage(t, errorCodes.codeOf(res), info.error, q,
+                                   info.pageText),
+      after: action +
+        (after > 0
+          ? '<p class="sub">' + t.html('oauthPages.authorizeError.auto',
+                                       { seconds: after }) + '</p>'
+          : '') +
+        '<p class="sub">' + t.html('oauthPages.authorizeError.continueNote') +
+        '</p>',
+      background: info.requirement === 'authenticate-before-redirect'
+        ? t.html('oauthPages.authorizeError.authenticateFirst')
+        : t.html('oauthPages.authorizeError.notSent'),
+      diagnostics: this.authorizationDiagnostics(req, t, q, info.error,
+                                                 info.description),
+      extraHead: after > 0
         ? '<meta http-equiv="refresh" content="' + after + ';url=' +
           xmlEscape(info.target) + '">'
-        : '') +
-      '<p class="sub">' + xmlEscape(info.why) + '</p>' +
-      '<dl>' +
-      '<dt>The application that sent you here</dt><dd><code>' +
-      xmlEscape(info.clientId || '(it named none)') + '</code></dd>' +
-      '<dt>Where it wants you sent next</dt><dd><code>' +
-      xmlEscape(info.redirectUri) +
-      '</code></dd>' +
-      (info.state !== undefined && info.state !== ''
-        ? '<dt>The state it chose</dt><dd><code>' +
-          xmlEscape(String(info.state)) + '</code></dd>'
-        : '') +
-      '</dl>' +
-      (info.form
-        ? '<form method="post" action="' + xmlEscape(info.redirectUri) +
-          '">' + Object.keys(info.form).map(function (name: string): string {
-            return '<input type="hidden" name="' + xmlEscape(name) +
-                   '" value="' + xmlEscape(String(info.form[name])) + '">';
-          }).join('') + '<p><button type="submit" class="as-link">' +
-          'Continue to ' +
-          xmlEscape(info.redirectUri) + '</button></p></form>'
-        : '<p><a href="' + xmlEscape(info.target) + '">Continue to ' +
-          xmlEscape(info.redirectUri) + '</a></p>') +
-      (after > 0
-        ? '<p class="sub">You will be sent there automatically in ' + after +
-          ' second' + (after === 1 ? '' : 's') + '.</p>'
-        : '') +
-      '<p class="sub">Nothing has been ' +
-      'sent anywhere yet. Following that link delivers the error above to ' +
-      'the application, which is what would have happened automatically if ' +
-      'you were signed in here.</p></body></html>';
-    // error-code: none — every caller of fail() marks its own condition before this is reached
-    res.status(400).type('text/html').set('Cache-Control', 'no-store')
-       .send(html);
+        : ''
+    });
     log.debug("Leaving OAuth2Server.sendRedirectInterstitial().");
   }
 
@@ -10596,8 +10714,8 @@ class OAuth2Server {
           errorCodes.mark(res, String(got.code || 'STS-OIDFED-0052'));
           log.debug("Leaving OAuth2Server.authorizeEndpoint(). Automatic " +
                     "registration refused.");
-          return self.oauthError(res, got.status || 400, got.error,
-                                 got.description);
+          return self.refuseAuthorization(req, res, got.status || 400,
+                                          got.error, got.description);
         }
         log.debug("Leaving OAuth2Server.authorizeEndpoint(). Registered " +
                   "through the federation.");
@@ -10608,8 +10726,8 @@ class OAuth2Server {
                   (e && e.stack ? e.stack : e));
         if (!res.headersSent) {
           errorCodes.mark(res, 'STS-OIDFED-0050');
-          self.oauthError(res, 500, 'server_error',
-                          String((e && e.message) || e));
+          self.refuseAuthorization(req, res, 500, 'server_error',
+                                   String((e && e.message) || e));
         }
       });
       return undefined;
@@ -10654,7 +10772,9 @@ class OAuth2Server {
         log.debug("Leaving OAuth2Server.authorizeWithClient(). The request " +
                   "object is refused.");
         errorCodes.mark(res, errorCodes.codeOf(result) || 'STS-OAUTH-0340');
-        return self.oauthError(res, 400, result.error, result.description);
+        // A browser sees the shared error page (#1326).
+        return self.refuseAuthorization(req, res, 400, result.error,
+                                        result.description);
       }
       if (result.used) {
         req.stsJar = { outer: outer, source: result.source, alg: result.alg,
@@ -10674,8 +10794,8 @@ class OAuth2Server {
                 (e && e.stack ? e.stack : e));
       if (!res.headersSent) {
         errorCodes.mark(res, 'STS-OAUTH-0373');
-        self.oauthError(res, 500, 'server_error',
-                        String((e && e.message) || e));
+        self.refuseAuthorization(req, res, 500, 'server_error',
+                                 String((e && e.message) || e));
       }
     });
     log.debug("Leaving OAuth2Server.authorizeWithClient(). Resolving a " +
@@ -10862,20 +10982,23 @@ class OAuth2Server {
     const self = this;
     log.debug("Entering OAuth2Server.vetAuthorizationRequest().");
     const opts = options || {};
-    const refuse = function (code, error, description) {
+    // `pageText` (#1326) is `{ key, params }` for the error page's sentence,
+    // where the code alone does not choose it or it names a value the
+    // request does not carry; see `refusalMessage()`.
+    const refuse = function (code, error, description, pageText?) {
       log.debug("Entering refuse(). " + code);
       log.debug("Leaving refuse().");
       return { ok: false, redirect: false, status: 400, error: error,
-               description: description, code: code };
+               description: description, code: code, pageText: pageText };
     };
     // A REFUSAL ABOUT THE redirect_uri ITSELF is one a person's browser
     // lands on, since there is nowhere trusted to send it (RFC 6749 section
     // 4.1.2.1: the server SHOULD inform the resource owner and MUST NOT
     // redirect). `page` lets the endpoint answer a browser with the error
     // page rather than raw JSON (2026-11-04); status and values are the same.
-    const refuseOnPage = function (code, error, description) {
+    const refuseOnPage = function (code, error, description, pageText?) {
       log.debug("Entering refuseOnPage(). " + code);
-      const out: Json = refuse(code, error, description);
+      const out: Json = refuse(code, error, description, pageText);
       out.page = true;
       log.debug("Leaving refuseOnPage().");
       return out;
@@ -11012,7 +11135,9 @@ class OAuth2Server {
         q.redirect_uri === undefined
           ? 'This authorization request has no redirect_uri, and one is ' +
             'required: without it there is nowhere to send the response.'
-          : 'A valid absolute redirect_uri is required.');
+          : 'A valid absolute redirect_uri is required.',
+        q.redirect_uri === undefined ? undefined
+          : { key: 'STS-OAUTH-0160-empty' });
     }
 
     // --- RFC 9700 section 2.1, and it has to be FIRST
@@ -11067,7 +11192,9 @@ class OAuth2Server {
                 "), so nothing " +
                 "is redirected anywhere.");
       return refuseOnPage(redirectCheck.errorCode || 'STS-OAUTH-0158',
-                          redirectCheck.error, redirectCheck.description);
+                          redirectCheck.error, redirectCheck.description,
+                          { params: { registered: (redirectCheck.registered ||
+                                                   []).join(', ') } });
     }
     if (redirectCheck.how) {
       log.debug("The redirect_uri was accepted by " + redirectCheck.how + ".");
@@ -11096,12 +11223,12 @@ class OAuth2Server {
 
     // From here a refusal may be REPORTED TO THE CLIENT — the address is known
     // — and the caller decides how (`fail()` at the authorization endpoint).
-    const redirectable = function (code, error, description) {
+    const redirectable = function (code, error, description, pageText?) {
       log.debug("Entering redirectable(). " + code);
       log.debug("Leaving redirectable().");
       return { ok: false, redirect: true, error: error,
                description: description, code: code, q: q,
-               redirectUri: redirectUri };
+               redirectUri: redirectUri, pageText: pageText };
     };
 
     // RFC 6749 section 4.1.2.1, cited by section 4.11.2: an invalid combination
@@ -11167,7 +11294,8 @@ class OAuth2Server {
         namedType
           ? 'response_type "' + namedType + '" is not supported.'
           : 'This request names no response_type, and every authorization ' +
-            'request must name one (RFC 6749 section 3.1.1).');
+            'request must name one (RFC 6749 section 3.1.1).',
+        namedType ? { key: 'STS-OAUTH-0162-unsupported' } : undefined);
     }
     // WHAT THIS AUTHORIZATION SERVER SAYS IT DOES. `response_types_supported`
     // in the document a client read is the list this endpoint answers — the
@@ -11422,7 +11550,9 @@ class OAuth2Server {
         (implicit ? '3.2.2.1, the implicit flow'
                   : '3.3.2.1, the hybrid flow') +
         '): it is what the client checks the ID Token against to detect a ' +
-        'replay.');
+        'replay.',
+        { key: implicit ? 'STS-OAUTH-0562-implicit'
+                        : 'STS-OAUTH-0562-hybrid' });
     }
     if (implicit) {
       let parsedRedirect: Json = null;
@@ -11678,7 +11808,10 @@ class OAuth2Server {
     const parts = String(hint).split('.');
     if (parts.length === 5) {
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Encrypted.");
-      return { ok: false, why: 'the id_token_hint is encrypted (a JWE), and ' +
+      // Each verdict names its `reason` (#1326), the key of the error page's
+      // sentence in the page's language; `why` stays the English detail.
+      return { ok: false, reason: 'encrypted',
+               why: 'the id_token_hint is encrypted (a JWE), and ' +
                'this service reads only the signed ID Token it issued — send ' +
                'that, as section 3.1.2.1 has the client do.' };
     }
@@ -11690,7 +11823,8 @@ class OAuth2Server {
       log.debug("Caught in OAuth2Server.verifyIdTokenHint(): " +
                 ((e && e.message) || e));
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Unreadable.");
-      return { ok: false, why: 'the id_token_hint is not a JWT.' };
+      return { ok: false, reason: 'notJwt',
+               why: 'the id_token_hint is not a JWT.' };
     }
     const alg = String((header && header.alg) || '');
     // AN UNSIGNED HINT IS SAID TO BE ONE (2026-11-04). The OpenID
@@ -11701,7 +11835,9 @@ class OAuth2Server {
     // unsigned one is refused for being unsigned.
     if (!alg || alg.toLowerCase() === 'none') {
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Unsigned.");
-      return { ok: false, why: 'the id_token_hint is unsigned (alg ' +
+      return { ok: false, reason: 'unsigned',
+               params: { alg: alg || 'none' },
+               why: 'the id_token_hint is unsigned (alg ' +
                (alg || 'missing') + '), and every ID Token this service ' +
                'issues is signed, so it is not one this service issued.' };
     }
@@ -11720,7 +11856,9 @@ class OAuth2Server {
         const held: Json[] = clientConfig.client_secrets || [];
         if (!held.length) {
           log.debug("Leaving OAuth2Server.verifyIdTokenHint(). No secret.");
-          return { ok: false, why: 'the id_token_hint is signed with ' + alg +
+          return { ok: false, reason: 'noSecret',
+                   params: { alg: alg, client: String(clientId || '') },
+                   why: 'the id_token_hint is signed with ' + alg +
                    ' and client "' + clientId + '" has no client_secret to ' +
                    'verify it with.' };
         }
@@ -11747,7 +11885,9 @@ class OAuth2Server {
         })[0];
         if (!entry) {
           log.debug("Leaving OAuth2Server.verifyIdTokenHint(). No such key.");
-          return { ok: false, why: header.kid
+          return { ok: false, reason: header.kid ? 'unknownKey' : 'noKid',
+                   params: { alg: alg, kid: String(header.kid || '') },
+                   why: header.kid
             ? 'the id_token_hint names key "' + header.kid + '" for ' + alg +
               ', and this service holds no such key.'
             : 'the id_token_hint is signed with ' + alg + ' and names no ' +
@@ -11764,7 +11904,8 @@ class OAuth2Server {
                 "verify.");
       // The cause's own full stop is dropped, so the page does not end in
       // two of them.
-      return { ok: false, why: 'the id_token_hint did not verify as an ID ' +
+      return { ok: false, reason: 'signature',
+               why: 'the id_token_hint did not verify as an ID ' +
                'Token this service issued: ' +
                String((e && e.message) || e).replace(/\.+$/, '') + '.' };
     }
@@ -11773,14 +11914,19 @@ class OAuth2Server {
     const audiences = [].concat(claims.aud || []).map(String);
     if (String(claims.iss || '') !== issuer) {
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Another issuer.");
-      return { ok: false, why: (claims.iss
+      return { ok: false, reason: claims.iss ? 'issuer' : 'noIssuer',
+               params: { iss: String(claims.iss || ''), issuer: issuer },
+               why: (claims.iss
         ? 'the id_token_hint was issued by "' + claims.iss + '"'
         : 'the id_token_hint names no issuer (no iss)') +
                ', and this authorization server is "' + issuer + '".' };
     }
     if (audiences.indexOf(String(clientId)) < 0) {
       log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Another client.");
-      return { ok: false, why: 'the id_token_hint was issued to ' +
+      return { ok: false, reason: 'audience',
+               params: { aud: [].concat(claims.aud || []).join(', '),
+                         client: String(clientId || '') },
+               why: 'the id_token_hint was issued to ' +
                JSON.stringify(claims.aud) + ', not to client "' + clientId +
                '".' };
     }
@@ -11812,7 +11958,8 @@ class OAuth2Server {
       log.debug("Leaving the authorization endpoint. " + policy.description);
       errorCodes.mark(res, errorCodes.codeOf(policy) || 'STS-OAUTH-0419');
       log.debug("Leaving OAuth2Server.authorizeRequest().");
-      return self.oauthError(res, 400, policy.error, policy.description);
+      return self.refuseAuthorization(req, res, 400, policy.error,
+                                      policy.description);
     }
 
     // The request-level checks, in `vetAuthorizationRequest()` so that the PAR
@@ -11827,11 +11974,15 @@ class OAuth2Server {
                 vetted.code + ").");
       errorCodes.mark(res, vetted.code);
       log.debug("Leaving OAuth2Server.authorizeRequest().");
-      if (vetted.page && self.isBrowserRequest(req)) {
+      // A BROWSER IS SHOWN EVERY REFUSAL THAT IS NOT REDIRECTED (#1326),
+      // not only those about the redirect_uri: whatever it is, a person
+      // landed here and there is nowhere to send them. The status and the
+      // values are those of the JSON a client library gets.
+      if (self.isBrowserRequest(req)) {
         // error-code: none — the code is vetAuthorizationRequest()'s,
         // marked above
-        return self.sendRefusalPage(res, vetted.status, vetted.error,
-                                    vetted.description);
+        return self.sendRefusalPage(req, res, vetted.status, vetted.error,
+                                    vetted.description, vetted.pageText);
       }
       // error-code: none — the code is vetAuthorizationRequest()'s, marked
       // above
@@ -11841,7 +11992,7 @@ class OAuth2Server {
     const q = vetted.q;
     const redirectUri = vetted.redirectUri;
 
-    const fail = function (error, description) {
+    const fail = function (error, description, pageText?) {
       log.debug("Entering fail().");
       // RFC 9700 section 4.11.2: an authorization server must authenticate the
       // user BEFORE redirecting them. With nobody signed in, an error
@@ -11864,6 +12015,7 @@ class OAuth2Server {
         const shown: Json = {
           error: error, description: description, redirectUri: redirectUri,
           clientId: q.client_id, state: q.state, why: policy.why,
+          requirement: policy.requirement, q: q, pageText: pageText,
           // The link the person can choose. It carries the same parameters the
           // redirect would have — including the RFC 9207 iss — because the
           // point is to make the redirect a DECISION rather than to change it.
@@ -11906,7 +12058,7 @@ class OAuth2Server {
                               String(q.response_mode))
             .then(function (target: Json): Json {
               // form_post.jwt (#126): the JWT as a form field, POSTed.
-              return self.sendRedirectInterstitial(res,
+              return self.sendRedirectInterstitial(req, res,
                 Object.assign(shown, { target: target.url },
                               target.formPost
                                 ? { form: { response: target.response } }
@@ -11918,7 +12070,7 @@ class OAuth2Server {
                               String((e && e.message) || e));
             });
         }
-        return self.sendRedirectInterstitial(res, shown);
+        return self.sendRedirectInterstitial(req, res, shown);
       }
       log.debug("Leaving the authorization endpoint. Reporting " + error + " " +
           "to the client" +
@@ -11943,7 +12095,7 @@ class OAuth2Server {
       log.debug("Leaving OAuth2Server.authorizeRequest().");
       // error-code: none — the code is vetAuthorizationRequest()'s, marked
       // above
-      return fail(vetted.error, vetted.description);
+      return fail(vetted.error, vetted.description, vetted.pageText);
     }
     // An id_token_hint that did not verify (#118) — see withIdTokenHint().
     const idTokenHint = req.stsIdTokenHint || null;
@@ -12636,6 +12788,8 @@ class OAuth2Server {
       '.25rem;border-radius:3px;word-break:break-all}' +
       // The language chooser, a collapsed row (#1289).
       'details.language-row{float:right;margin:0 0 .5rem 1rem}' +
+      // The shared error ending (#1326), drawn where a return was refused.
+      ErrorPage.FOOTER_CSS +
       PageLocale.ROW_CSS + '</style></head><body>' +
       inner + '</body></html>';
   }
@@ -12682,8 +12836,8 @@ class OAuth2Server {
   // A sign-out answer that is a PAGE for the person (#124, gap 8): a refusal
   // was a JSON `oauthError` shown to a browser. `status` 400 for a refusal.
   // A page that is not a refusal passes its translator and the language
-  // chooser (#539), drawn above the heading; a refusal passes neither and
-  // stays English.
+  // chooser (#539), drawn above the heading. A refusal is drawn by
+  // `logoutRefusal()` since #1326, translated, and does not come here.
   private logoutAnswer(res: Res, status: number, title: string,
                        body: string,
                        t?: ReturnType<typeof PageLocale.forPage>,
@@ -12695,6 +12849,53 @@ class OAuth2Server {
                              '</h1>' + body, '', t, title));
     log.debug("Leaving OAuth2Server.logoutAnswer().");
     return undefined;
+  }
+
+  // A SIGN-OUT REFUSAL IS THE SHARED ERROR PAGE (#1326): the reason in the
+  // box in the page's language — RP-Initiated Logout 1.0 section 2's
+  // `ui_locales`, the client, the person — that nothing was done, the
+  // section collapsed, the way back, and the diagnostics. Until then a
+  // refusal was English and ended with nowhere to go.
+  /**
+   * Sends a refused sign-out as the shared error page.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param info - `status`, `title` and `message` (keys under
+   *   `oauthPages.logoutRefused.`), `params`, `background` (a key or ''),
+   *   `after` (a key), `clientId`, `q` (the request's parameters, where they
+   *   could be read) and `detail` (the English detail)
+   */
+  private logoutRefusal(req: Req, res: Res, info: Json): void {
+    const { log, sessionOf } = this.deps;
+    log.debug("Entering OAuth2Server.logoutRefusal(). " + info.message);
+    const q = info.q || {};
+    const session = sessionOf(req);
+    const username = String((session && session.user &&
+                             session.user.username) || '');
+    const t = this.pageTranslator(req, String(info.clientId || ''),
+                                  String(q.ui_locales || ''), username);
+    const key = function (name: string): string {
+      return 'oauthPages.logoutRefused.' + name;
+    };
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: info.status,
+      title: t.text(key(info.title)),
+      message: t.html(key(info.message), info.params || {}),
+      after: '<p>' + t.html(key(info.after || 'nothingDone')) + '</p>',
+      background: info.background ? t.html(key(info.background)) : '',
+      diagnostics: [
+        { label: t.text('errorPages.application'), value: info.clientId },
+        { label: t.text('errorPages.postLogoutRedirectUri'),
+          value: q.post_logout_redirect_uri },
+        { label: t.text('errorPages.state'), value: q.state },
+        { label: t.text('errorPages.signedInAs'), value: username },
+        { label: t.text('errorPages.detail'), value: info.detail }
+      ]
+    });
+    log.debug("Leaving OAuth2Server.logoutRefusal().");
   }
 
   // The value the confirmation form carries (#124): a digest of the session's
@@ -12779,7 +12980,7 @@ class OAuth2Server {
   //
   // `ui_locales` is honoured since #539 (section 2's "End-User's preferred
   // languages and scripts for the user interface"): the confirmation and
-  // signed-out pages are drawn in it; a refusal stays English.
+  // signed-out pages are drawn in it, and since #1326 a refusal too.
   // ---------------------------------------------------------------------------
   private logoutEndpoint(req: Req, res: Res): Json {
     const { log, validation, errorCodes, xmlEscape } = this.deps;
@@ -12791,11 +12992,9 @@ class OAuth2Server {
       if (type !== 'application/x-www-form-urlencoded') {
         errorCodes.mark(res, 'STS-OAUTH-0604');
         log.debug("Leaving the logout endpoint. A POST that is not a form.");
-        return self.logoutAnswer(res, 400, 'This sign-out request could not ' +
-          'be read', '<p>A sign-out sent with POST is a form ' +
-          '(application/x-www-form-urlencoded, RP-Initiated Logout 1.0 ' +
-          'section 2). This one was <code>' + xmlEscape(type || '(none)') +
-          '</code>. You are still signed in.</p>');
+        return self.logoutRefusal(req, res, { status: 400,
+          title: 'unreadableTitle', message: 'notForm',
+          params: { type: type || '(none)' } });
       }
       const raw = typeof req.body === 'string' ? req.body
         : (Buffer.isBuffer(req.body) ? req.body.toString('utf8') : '');
@@ -12813,17 +13012,18 @@ class OAuth2Server {
       log.debug("Leaving the logout endpoint. The request is malformed: " +
                 asked.code + " on \"" + asked.field + "\".");
       errorCodes.mark(res, 'STS-OAUTH-0171');
-      return self.logoutAnswer(res, 400, 'This sign-out request could not ' +
-        'be read', '<p>' + xmlEscape(asked.detail) + '</p><p>Nothing has ' +
-        'been done: you are still signed in.</p>');
+      return self.logoutRefusal(req, res, { status: 400,
+        title: 'unreadableTitle', message: 'malformed',
+        detail: asked.detail });
     }
     self.logoutRequest(req, res, asked.value).catch(function (e: Json) {
       log.error(errorCodes.tag('STS-OAUTH-0605') + 'the logout endpoint ' +
                 'failed: ' + ((e && e.stack) || e));
       if (!res.headersSent) {
         errorCodes.mark(res, 'STS-OAUTH-0605');
-        self.logoutAnswer(res, 500, 'The sign-out failed', '<p>' +
-          xmlEscape(String((e && e.message) || e)) + '</p>');
+        self.logoutRefusal(req, res, { status: 500, title: 'failedTitle',
+          message: 'failed', after: 'mayNotHaveFinished',
+          q: req.query, detail: String((e && e.message) || e) });
       }
     });
     log.debug("Leaving the logout endpoint. Handed on.");
@@ -12845,10 +13045,10 @@ class OAuth2Server {
       if (!verdict.ok) {
         errorCodes.mark(res, 'STS-OAUTH-0602');
         log.debug("Leaving OAuth2Server.logoutRequest(). The hint.");
-        return self.logoutAnswer(res, 400, 'This sign-out request was ' +
-          'refused', '<p>RP-Initiated Logout 1.0 section 2: ' +
-          xmlEscape(verdict.why) + '</p><p>Nothing has been done: you are ' +
-          'still signed in.</p>');
+        return self.logoutRefusal(req, res, { status: 400,
+          title: 'refusedTitle', message: 'hint.' + verdict.reason,
+          params: verdict.params, background: 'hintBackground',
+          clientId: hintClient, q: q, detail: verdict.why });
       }
       hinted = verdict.claims;
       clientId = hintClient;
@@ -12858,6 +13058,8 @@ class OAuth2Server {
     let returnTo = '';
     let refusedNote = '';
     let unregistered: { uri: string, registered: string } | null = null;
+    // Its English description, for the page's diagnostics (#1326).
+    let refusedDetail = '';
     const target = q.post_logout_redirect_uri;
     // A REQUEST THAT NAMES NO CLIENT IS NOT RETURNED ANYWHERE, in every mode
     // (#187). RP-Initiated Logout 1.0 section 2: without an id_token_hint
@@ -12899,6 +13101,7 @@ class OAuth2Server {
         if (Array.isArray(check.registered)) {
           unregistered = { uri: String(target),
                            registered: check.registered.join(', ') };
+          refusedDetail = String(check.description || '');
         } else {
           refusedNote = '<p class="sub">You were not returned to <code>' +
             xmlEscape(String(target)) + '</code>: ' +
@@ -12985,8 +13188,15 @@ class OAuth2Server {
     // The session the request resolved to, where the browser holds several
     // (#561); `endSession()` ignores it with the setting off.
     const ended = endSession(req, res, several && session ? session.id : '');
+    // WHAT THE PAGE'S ENDING SHOWS where the return was refused (#1326).
+    const partly = unregistered ? {
+      clientId: clientId, uri: unregistered.uri, state: q.state,
+      username: String((session && session.user &&
+                        session.user.username) || ''),
+      detail: refusedDetail
+    } : null;
     return self.logoutFinish(req, res, ended, backchannelMark, returnTo,
-                             refusedNote, t, frontDoor, !!unregistered);
+                             refusedNote, t, frontDoor, partly);
   }
 
   // WHY THE PAGE ASKS, named for the case at hand (#1301). The page used to
@@ -13128,7 +13338,7 @@ class OAuth2Server {
                        backchannelMark: Json, returnTo: string,
                        refusedNote: string,
                        t: ReturnType<typeof PageLocale.forPage>,
-                       chooser: string, partlyRefused?: boolean): Json {
+                       chooser: string, partly?: Json): Json {
     const { log, xmlEscape, frontchannel, backchannel, config } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.logoutFinish().");
@@ -13138,8 +13348,22 @@ class OAuth2Server {
     // oidcc-rp-initiated-logout-bad-post-logout-redirect-uri reads the
     // heading first, and a success heading over the warning box read as a
     // success page. The green banner below still says the session ended.
+    const partlyRefused = !!partly;
     const titleKey = partlyRefused ? 'oauthPages.signedOut.partlyRefused'
       : 'oauthPages.signedOut.title';
+    // AND IT ENDS AS EVERY ERROR PAGE DOES (#1326): the start-over note, the
+    // portal and the diagnostics with the incident ID. Reserved here and sent
+    // below in the same synchronous run, as `audit.reserveIncident()` asks.
+    const ending = partly
+      ? ErrorPage.footer(t, [
+          { label: t.text('errorPages.application'), value: partly.clientId },
+          { label: t.text('errorPages.postLogoutRedirectUri'),
+            value: partly.uri },
+          { label: t.text('errorPages.state'), value: partly.state },
+          { label: t.text('errorPages.signedInAs'), value: partly.username },
+          { label: t.text('errorPages.detail'), value: partly.detail }
+        ], this.deps.audit.reserveIncident(res), new Date())
+      : '';
     const backchannelRows = session
       ? backchannel.deliveriesFor([session.id], backchannelMark) : [];
     const notifications = frontchannel.enabled()
@@ -13168,7 +13392,7 @@ class OAuth2Server {
           : t.html('oauthPages.signedOut.frontNone')) +
         '</div>' +
         frontchannel.render(notifications) +
-        backchannel.render(backchannelRows) +
+        backchannel.render(backchannelRows) + ending +
         (checked
           ? '<h2>' + t.html('oauthPages.signedOut.returnHeading') +
             '</h2><p><a href="' +
@@ -13212,7 +13436,7 @@ class OAuth2Server {
                  { username: session.user.username })
         : t.html('oauthPages.signedOut.none')) + '</div>' +
       backchannel.render(backchannel.deliveriesFor(
-        session ? [session.id] : [], backchannelMark)), t, chooser);
+        session ? [session.id] : [], backchannelMark)) + ending, t, chooser);
   }
 
   // ---------------------------------------------------------------------------

@@ -1778,6 +1778,85 @@ const nums = realms.obj(function () {
 let dropped = 0;
 
 // ---------------------------------------------------------------------------
+// AN INCIDENT ID IS THE seq OF THE ROW THE REQUEST WILL BE RECORDED AS
+// (#1326, rcbj, 2026-11-05). An error page prints it so that a person can
+// hand an operator one number, and the operator finds the row on the audit
+// page by it. The row is written by `recordHttp()` when the response ends,
+// after the page is drawn, so the number is RESERVED while drawing and
+// carried to the row on the response under a Symbol (`error_codes.js`'s
+// arrangement for the error code, and for its reasons).
+//
+// **THE RESERVATION AND THE ROW MUST BE ONE SYNCHRONOUS RUN.** `seq` rises
+// within each process, and `audit_export.ts`'s cursor relies on it: a row
+// pushed after another row with a higher number would be skipped as already
+// sent. A page reserves its number immediately before `res.send()`, and
+// `app.js`'s call log records the row inside `res.end()` in the same tick, so
+// no other row of this process can be numbered in between. Do not reserve and
+// then await anything.
+//
+// **USED ONCE.** `recordHttp()` takes the number off the response, so the
+// second row a refused commit writes for the same response (#351) is numbered
+// as usual rather than sharing it.
+// ---------------------------------------------------------------------------
+const INCIDENT = Symbol.for('iya-sts.auditIncident');
+
+// The next number this realm's rows are given, wherever it comes from.
+function nextSeq() {
+  log.debug("Entering nextSeq().");
+  const seq = seqAllocator.next('audit', function () {
+    nums.seq++;
+    return nums.seq;
+  });
+  log.debug("Leaving nextSeq().");
+  return seq;
+}
+
+/**
+ * Reserves the `seq` the response's audit row will carry, and returns it: the
+ * incident ID an error page prints. Calling it again returns the same number.
+ * Must be followed, in the same synchronous run, by the response being sent.
+ *
+ * @param res - the response the page is about to be sent on
+ * @returns the reserved number, or 0 where none could be reserved
+ */
+function reserveIncident(res) {
+  log.debug("Entering reserveIncident().");
+  if (!res || typeof res !== 'object') {
+    log.debug("Leaving reserveIncident(). No response.");
+    return 0;
+  }
+  if (res[INCIDENT]) {
+    log.debug("Leaving reserveIncident(). Already reserved.");
+    return res[INCIDENT];
+  }
+  try {
+    const seq = Number(nextSeq());
+    Object.defineProperty(res, INCIDENT, { value: seq, writable: true,
+                                           configurable: true,
+                                           enumerable: false });
+    log.debug("Leaving reserveIncident(). " + seq);
+    return seq;
+  } catch (e) {
+    // A page that cannot number its incident still draws: the row is then
+    // numbered as usual, and the page says it has no incident ID.
+    log.debug("Caught in reserveIncident(): " + ((e && e.message) || e));
+    log.debug("Leaving reserveIncident(). None.");
+    return 0;
+  }
+}
+
+// The reserved number, taken off the response so it is used once; 0 for none.
+function takeIncident(res) {
+  log.debug("Entering takeIncident().");
+  const seq = (res && typeof res === 'object' && res[INCIDENT]) || 0;
+  if (seq) {
+    res[INCIDENT] = 0;
+  }
+  log.debug("Leaving takeIncident().");
+  return seq;
+}
+
+// ---------------------------------------------------------------------------
 // WHO, for an HTTP event — and why it arrives through a slot.
 //
 // The interesting column on an admin row is the person who was signed in when
@@ -2075,10 +2154,9 @@ function record(event) {
     // UNIQUE ACROSS EVERY PROCESS OF THE SERVICE (#465): a number from this
     // process's block leased from the store, or this realm's own counter
     // where there is one writer. See common/seq_allocator.ts.
-    seq: seqAllocator.next('audit', function () {
-      nums.seq++;
-      return nums.seq;
-    }),
+    // OR THE NUMBER AN ERROR PAGE RESERVED FOR IT (#1326), see
+    // `reserveIncident()`.
+    seq: (Number.isInteger(info.seq) && info.seq > 0) ? info.seq : nextSeq(),
     // WHICH PROCESS RECORDED IT (#465) — its stable origin in the store, or
     // '' with no shared store — the tie-break merged() sorts on.
     origin: processOrigin(),
@@ -2447,6 +2525,8 @@ function recordHttp(req, res, detail) {
     ? actionOf(req) : '';
   const statusOutcome = outcomeOfStatus(res.statusCode);
   const row = audit({
+    // The incident ID an error page printed, if one did (#1326).
+    seq: takeIncident(res) || undefined,
     action: action,
     outcome: (marked && statusOutcome === 'success') ? 'refused' :
               statusOutcome,
@@ -3029,6 +3109,7 @@ module.exports = {
   audit: audit,
   record: audit,
   recordHttp: recordHttp,
+  reserveIncident: reserveIncident,
   quietWhenOk: quietWhenOk,
   recordDirectory: recordDirectory,
   failure: failure,
