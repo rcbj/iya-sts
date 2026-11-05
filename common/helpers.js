@@ -6600,8 +6600,12 @@ function parseBody(req) {
       log.debug("Leaving parseBody(). Parsed a JSON body.");
       return parsed;
     } catch (e) {
-      log.error(errorCodes.tag('STS-CORE-0026') + 'the request body is not ' +
-                                                  'JSON: ' + e.message);
+      // A CALLER'S MISTAKE, NOT THE OPERATOR'S (2026-11-05): the endpoint
+      // answers it as an empty body, usually a correct 400, so it is logged at
+      // info. At error, a fuzz run logged it 4807 times as if the service had
+      // failed.
+      log.info(errorCodes.tag('STS-CORE-0026') + 'the request body is not ' +
+                                                 'JSON: ' + e.message);
       log.debug("Leaving parseBody(). Nothing could be parsed.");
       return {};
     }
