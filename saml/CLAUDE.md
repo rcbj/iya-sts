@@ -45,6 +45,24 @@ And the spellings differ almost everywhere the two overlap: `AssertionID` not
 `AudienceRestriction`, and a signature that goes LAST in an assertion and FIRST
 in a response.
 
+**BOTH PROFILES' ERROR PAGES ARE `common/error_page.ts`'s SINCE #1327**
+(rcbj's design on #1326). Each `samlError()` keeps its signature, its status
+and its callers' codes, and draws the shared page: the sentence in the yellow
+box in the page's language, chosen by the code the caller marked
+(`samlErrors.refusal.<code>`, a caller's `pageKey`, then
+`samlErrors.refusal.general`), why it is a page and not a Response collapsed
+(`samlErrors.background.saml2` / `saml11`, plus a case's own key — `paos`,
+`authnFailed`, `noAuthnContext`, `policy`), the start-over note and the
+portal, and the Diagnostics: the service provider or `providerId`, the ACS URL
+or `shire`, the binding or profile, `RelayState` or `TARGET`, who is signed
+in, and the caller's English title and detail AS DATA. No error value sits in
+the box: these pages send no protocol error, and the STS code is never shown.
+**A new refusal code here owes a `samlErrors.refusal.<code>` sentence in all
+seven base catalogs**; without one the general sentence is drawn, which says
+less. The text/plain 404 of `refusedUnregistered()` (a scoped path for an
+unregistered service provider, shared with metadata) is not a page and is
+unchanged. `tests/saml_initiation.js` A2b and C1b hold the shape.
+
 What IS shared is shared deliberately and is exactly three things: the
 application registry, the session, and `slugOf()` — which `saml11_sso.ts`
 requires FROM `saml2_sso.ts` rather than reimplementing, because the slug is a

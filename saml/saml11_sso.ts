@@ -269,8 +269,13 @@ import listenerKeys = require('./listener_keys');
 import returnAddress = require('./return_address');
 import personAttributes = require('./person_attributes');
 // THE LANGUAGE A PAGE IS DRAWN IN (#539): a library and a leaf, so it moves
-// no route and closes no cycle. Only the Browser/POST hand-off page uses it.
+// no route and closes no cycle. The Browser/POST hand-off page uses it, and
+// since #1327 the refusals.
 import PageLocale = require('../common/page_locale');
+// THE ONE ERROR PAGE (#1326, #1327): `samlError()` draws it. A library that
+// requires `audit`, `realms` and the page's language, none of which requires
+// this module, so it closes no cycle and moves no route.
+import ErrorPage = require('../common/error_page');
 // The description page's shell and script (#584).
 import DescriptionPages = require('../common/description_pages');
 // THE CLUSTER CLAIM (2026-09-14, #46), which an artifact is spent through so
@@ -1079,29 +1084,81 @@ class Saml11Sso {
   // would be a document it never asked for, carrying a status about a request
   // it never sent. WS-Federation reaches the same conclusion from the same
   // starting point, and says so in wsfedError().
+  //
+  // **THE PAGE IS `common/error_page.ts`'s SINCE #1327** (rcbj's design on
+  // #1326): the sentence in the box in the page's language, chosen by the
+  // error code the caller marked (`samlErrors.refusal.<code>`, or a
+  // `pageKey` the caller names), else a general one; why it is a page and
+  // not a Response collapsed below it, with the case's own explanation
+  // (`background`, a key under `samlErrors.background.`) after it; the way
+  // back; and the diagnostics. The caller's English `title` and `detail` are
+  // shown there AS DATA, beside the relying party, the shire, the TARGET and
+  // the profile where the caller or the request knows them. The status is
+  // the caller's, unchanged, and no protocol error is in the box: this
+  // profile has none to send, and the STS code is an operator's name.
+  //
+  // `diag` is `{ rp, acs, target, profile, pageKey }`, each optional.
   // error-code: none — the helper's definition (a method now), not a call
-  private samlError(res, status, title, detail, extra?) {
-    const { log, xmlEscape } = this.deps;
+  private samlError(res, status, title, detail, background?, diag?) {
+    const { log, errorCodes, sessionOf } = this.deps;
     // error-code: none — the helper's own debug line; each caller marks its code
     log.debug("Entering Saml11Sso.samlError(). status=" + status + ", title=" +
               title);
-    const inner = '<h1>' + xmlEscape(title) + '</h1>' +
-      '<p class="sub">SAML 1.1 inter-site transfer service at <code>' +
-      SSO_PATH +
-      '</code></p><div ' +
-      'class="err">' + xmlEscape(detail) + '</div>' + (extra || '') +
-      '<div class="meta"><div>This is a page rather than a <code>&lt;' +
-      'samlp:Response&gt;</code>, and unlike the SAML 2.0 profile that is ' +
-      'not because the destination is unknown — it is because SAML 1.1\'s ' +
-      'browser profiles have NO REQUEST MESSAGE. The browser arrived here ' +
-      'unsolicited, so there is nothing to answer and no <code>' +
-      'InResponseTo</code> to name. A failure delivered to the relying party ' +
-      'would be a document it never asked for.</div><div>The request is ' +
-      'logged in full at debug level.</div></div>';
-    res.status(status)
-       .type('text/html')
-       .set('Cache-Control', 'no-store')
-       .send(this.page(title, inner));
+    const req: any = res.req || { headers: {}, query: {} };
+    const known = diag || {};
+    let params: any = {};
+    try {
+      params = this.paramsOf(req);
+    } catch (e) {
+      // A body that cannot be read leaves the request's own values out of
+      // the diagnostics; the page still says what was wrong.
+      log.debug("Caught in Saml11Sso.samlError(): " +
+                ((e && e.message) || e));
+    }
+    let username = '';
+    try {
+      const session: any = sessionOf(req);
+      username = String((session && session.user &&
+                         session.user.username) || '');
+    } catch (e) {
+      // No session is readable here: the page names nobody signed in.
+      log.debug("Caught in Saml11Sso.samlError(): " +
+                ((e && e.message) || e));
+    }
+    const rp = String(known.rp || params.providerId || '');
+    const t = PageLocale.translatorFor(req, { application: rp,
+                                              username: username });
+    const code = String(errorCodes.codeOf(res) || '');
+    ErrorPage.send(res, {
+      t: t,
+      chooser: ErrorPage.chooser(t, req),
+      status: status,
+      title: status === 503 ? t.text('samlErrors.title.busy')
+                            : t.text('samlErrors.title.signIn'),
+      message: ErrorPage.sentence(t, [
+        known.pageKey ? 'samlErrors.refusal.' + known.pageKey : '',
+        code ? 'samlErrors.refusal.' + code : '',
+        'samlErrors.refusal.general']),
+      // Why a page: the profile's reason always, and the case's own after it.
+      background: '<p>' + t.html('samlErrors.background.saml11') + '</p>' +
+        (background
+          ? '<p>' + ErrorPage.sentence(t,
+              ['samlErrors.background.' + background]) + '</p>'
+          : ''),
+      diagnostics: [
+        { label: t.text('errorPages.providerId'), value: rp },
+        { label: t.text('errorPages.acsUrl'),
+          value: known.acs || params.shire },
+        { label: t.text('errorPages.target'),
+          value: known.target !== undefined
+            ? known.target : (params.TARGET || params.target) },
+        { label: t.text('errorPages.binding'),
+          value: known.profile || params.profile },
+        { label: t.text('errorPages.signedInAs'), value: username },
+        { label: t.text('errorPages.summary'), value: title },
+        { label: t.text('errorPages.detail'), value: detail }
+      ]
+    });
     // error-code: none — the helper's own debug line; each caller marks its code
     log.debug("Leaving Saml11Sso.samlError().");
   }
@@ -1574,7 +1631,7 @@ class Saml11Sso {
       'This service is holding as many unresolved SAML 1.1 artifacts as it ' +
       'is configured to (saml11.maxArtifacts), so it cannot issue another ' +
       'one until some are resolved or expire. Nothing was sent to the ' +
-      'relying party. Try again shortly.');
+      'relying party. Try again shortly.', undefined, { rp: rpId });
     log.debug("Leaving Saml11Sso.refuseFullArtifactStore().");
   }
 
@@ -1857,7 +1914,8 @@ class Saml11Sso {
         'exactly two browser profiles: "post" (Browser/POST, section 4.2) ' +
         'and "artifact" (Browser/Artifact, section 4.1). The parameter is ' +
         'non-spec — nothing in SAML 1.1 lets a relying party choose — and it ' +
-        'exists so both can be exercised by hand.');
+        'exists so both can be exercised by hand.', undefined,
+        { target: carried.TARGET, profile: wanted.error });
     }
 
 
@@ -1908,7 +1966,8 @@ class Saml11Sso {
           'product mode this identity provider answers only a relying ' +
           'party registered ahead of time (the console, /admin-api, RFC ' +
           '7591 or an LDAP add under ou=applications); one that was only ' +
-          'seen is not registered.');
+          'seen is not registered.', undefined,
+          { rp: early.id, acs: carried.shire, target: carried.TARGET });
       }
       // Which of the entry's addresses count is
       // `applications.returnAddressesOf()`'s to say (2026-09-12): one a
@@ -1935,7 +1994,8 @@ class Saml11Sso {
         log.debug("Leaving Saml11Sso.interSiteTransfer().");
         return this.samlError(res, 400, 'That assertion consumer is not ' +
                                         'registered',
-                              where.why);
+                              where.why, undefined,
+          { rp: early.id, acs: carried.shire, target: carried.TARGET });
       }
       acsUrl = String(where.url);
     }
@@ -1952,7 +2012,8 @@ class Saml11Sso {
         'samlAssertionConsumerService registered, so there is no address ' +
         'to deliver the response to. Send a shire, or register one on the ' +
         'relying party\'s entry (the console, POST ' +
-        '/admin-api/applications/add, or an ldapmodify).');
+        '/admin-api/applications/add, or an ldapmodify).', undefined,
+        { target: carried.TARGET });
     }
     if (!/^https?:\/\//i.test(acsUrl)) {
       log.debug("Leaving Saml11Sso.interSiteTransfer(). The assertion " +
@@ -1965,7 +2026,8 @@ class Saml11Sso {
         'POST ' +
         'or as an artifact on a redirect, and a relative value addresses ' +
         'this service instead — which looks exactly like a relying party ' +
-        'that ignored the response.');
+        'that ignored the response.', undefined,
+        { acs: acsUrl, target: carried.TARGET });
     }
 
     const who = this.relyingPartyFor(carried, scoped, acsUrl);
@@ -1980,7 +2042,9 @@ class Saml11Sso {
         'audience from the providerId parameter, from the {rp} path segment, ' +
         'or — failing both — from the origin of the TARGET. This request ' +
         'carried none of the three, and an assertion with no audience ' +
-        'restriction is one any relying party would be entitled to accept.');
+        'restriction is one any relying party would be entitled to accept.',
+        undefined,
+        { acs: acsUrl, target: carried.TARGET });
     }
     const rpId = who.id;
     const providerId = this.providerId();
@@ -2033,7 +2097,8 @@ class Saml11Sso {
             'saml11IdpInitiatedSso on its entry), so a link carrying only ' +
             'a TARGET is not answered for it. Start the sign-in from the ' +
             'relying party, or turn identity-provider-initiated sign-in on ' +
-            'for it.');
+            'for it.', undefined,
+        { rp: rpId, acs: acsUrl, target: carried.TARGET });
     }
 
     // THE RELYING PARTY, recorded now that the request has been understood and
@@ -2147,11 +2212,9 @@ class Saml11Sso {
       log.debug("Leaving Saml11Sso.interSiteTransfer().");
       return this.samlError(res, 400, 'The sign-in did not complete',
         String(params.authn_error_description || params.authn_error),
-        '<p>The SAML 2.0 profile answers this with a <code>&lt;' +
-        'samlp:Response&gt;</code> carrying <code>AuthnFailed</code>, ' +
-        'delivered to the service provider. This one cannot: there is no ' +
-        'request to answer and no <code>InResponseTo</code> to name, so the ' +
-        'report is this page.</p>');
+        // The SAML 2.0 profile answers this with AuthnFailed delivered to
+        // the service provider; this one cannot, and the page says so.
+        'authnFailed', { rp: carried.providerId, target: carried.TARGET });
     }
 
     // AN EAP CLASS THE NON-SPEC PARAMETER ASKED FOR (#736), still unmet
@@ -2173,11 +2236,9 @@ class Saml11Sso {
           'The sign-in does not meet the requested class',
           'authnContextClassRef asked for ' + askedUris.join(' ') +
           ', and the session does not earn it.',
-          '<p>SAML 1.1 has no <code>RequestedAuthnContext</code>. The ' +
-          'non-spec <code>authnContextClassRef</code> parameter names an ' +
-          'EAP class, and this sign-in did not earn it. The SAML 2.0 ' +
-          'profile answers the same fact with ' +
-          '<code>NoAuthnContext</code>.</p>');
+          // SAML 1.1 has no RequestedAuthnContext; said on the page.
+          'noAuthnContext', { rp: rpId, acs: acsUrl,
+                              target: carried.TARGET });
       }
       const again = held || { id: randomId(18), params: carried };
       again.expires = Date.now() + this.requestTtlMs();
@@ -2348,15 +2409,12 @@ class Saml11Sso {
                                                : 'STS-SAML-0102')
           : (stepUp && tripped ? 'STS-SAML-0115' : 'STS-SAML-0032')));
       log.debug("Leaving Saml11Sso.interSiteTransfer().");
+      // The SAML 2.0 profile answers this with RequestDenied delivered to
+      // the service provider; this one cannot, and the page says so. The
+      // console's /admin/roles link is not drawn for the person (#1327): it
+      // is an operator's page, and the diagnostics are what they forward.
       return this.samlError(res, 403, 'Refused by policy', roleAnswer.why,
-        '<p>The person is signed in. The XACML issuance policy would not let ' +
-        'this relying party have an assertion for them &mdash; the roles it ' +
-        'requires are on its application entry, and who holds a role is on ' +
-        '<a href="/admin/roles">/admin/roles</a>.</p><p>The SAML 2.0 profile ' +
-        'answers this with a <code>&lt;samlp:Response&gt;</code> carrying ' +
-        '<code>RequestDenied</code>, delivered to the service provider. This ' +
-        'one cannot, for the reason a cancellation cannot be reported ' +
-        'either: there is no request to answer.</p>');
+        'policy', { rp: rpId, acs: acsUrl, target: carried.TARGET });
     }
 
     pendingFlows.delete(String(params.fid || ''));
