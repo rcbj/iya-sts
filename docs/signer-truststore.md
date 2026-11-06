@@ -76,6 +76,32 @@ entry goes in that realm's store.
 An entry that stops being admissible where it sits (an anchor expires) stays, is
 flagged on the page, and is reported by the daily audit. You remove it.
 
+## Accepting one certificate by name
+
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), outbound TLS refuses a server
+presenting a self-signed leaf. To accept one such certificate, tick *Accept this one
+self-signed server certificate* on the *Signer truststore* tab, or:
+
+```bash
+curl -X POST https://sts.example/admin-api/pki/trust/add \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"certificates": "-----BEGIN CERTIFICATE-----\n...", "kind": "accepted"}'
+```
+
+This is one certificate, byte for byte, in that realm, for outbound TLS only. It
+vouches for nothing else. It must still be in date, of an acceptable strength, and
+fit server authentication where it states a usage, and revocation is asked as for
+any other peer. Replacing the server's certificate means accepting the new one.
+Removing the row takes the acceptance back.
+
+Only a self-signed leaf can be accepted this way (`STS-PKI-0267`). A self-signed CA
+goes in as an anchor, because trusting it trusts everything it signs.
+
+A certificate you configured as a dialer's own CA is already accepted, byte for
+byte, so nothing is owed for the OpenBao and postgres certificates the shipped
+`docker-compose.yml` generates and delivers: `keys.vaultCaCert` and the database's
+CA file name them.
+
 ## The file
 
 `pki.signerTrustAnchorsFile` names a PEM bundle read when the process starts,

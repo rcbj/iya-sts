@@ -4183,7 +4183,10 @@ function vaultRequest(target, method, path, body) {
       text ? { 'Content-Type': 'application/json',
                'Content-Length': Buffer.byteLength(text) } : {}),
     timeout: 10000
-  }, OutboundTls.verifiedOptions(target.caCertificates || null));
+  }, OutboundTls.verifiedOptions(target.caCertificates || null),
+  // The store's row of the outbound gate (#1360): like the database, the secret
+  // store is dialled before anything else can answer.
+  { stsOutboundVariant: 'store' });
   log.debug("Leaving vaultRequest(). Sent.");
   return new Promise(function (resolve, reject) {
     const req = https.request(url, options, function (res) {
