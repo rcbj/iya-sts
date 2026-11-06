@@ -662,7 +662,8 @@ class SoftwareStatement {
     const usedX5c = usedKey && usedKey.jwk && Array.isArray(usedKey.jwk.x5c)
       ? usedKey.jwk.x5c : [];
     if (usedX5c.length) {
-      const keyChain = await pki.verifySignerChain(undefined, {
+      const keyChain = await require('../common/certificate_trust')
+        .signerChain('jose-signer', {
         certificate: usedX5c[0], chain: usedX5c.slice(1), key: usedKey.jwk,
         source: 'the key "' + (usedKey.kid || '(no kid)') + '" in ' +
                 usedKey.source + ' for "' + iss + '"'

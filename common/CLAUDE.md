@@ -8952,6 +8952,19 @@ two `certificateMatches` terms that always passed were removed rather than made
 AuthZEN's `mtls+bearer`, which asks for a verified certificate by name, and
 `certificateVerified` at the token endpoint, read `.verified`.
 
+**PHASE 3: A SIGNER, AND A DOOR THAT CANNOT WAIT.** `signerChain()` is what the RFC
+7523 and 7522 verifiers call in place of `pki.verifySignerChain()`, with its answer's
+shape, so those sites changed one line. A SAML request's signature and a WS-Security
+token are answered inside handlers that hand back a value, so the plan's `assess()`
+could not be awaited there without rewriting `singleSignOnChecked()` and
+`singleLogout()`. **`pinnedSync()` is what they call instead**: fields, the pin rule
+and one hop through the signer truststore are decided now, and revocation is read from
+`pinVerdicts`, a cache on `/admin/caches` filled by the first ask. So a non-self-signed
+signer naming a list is refused ONCE, on the request that starts the fetch, because a
+check nobody made is a refusal. A self-signed one, and one naming no list, costs nothing.
+A partner's signer goes through it too, from `signerStillAccepted()`, for one code
+path. `reachesHeld()` is the plan's "AIA is followed, but the result must chain".
+
 **THE COUNTERS ARE NOT ON `/admin/caches`**: not a cache, one row per realm and
 purpose, bounded by construction, and per process, which the page says. **`pki.pins.
 audit`** is a cluster job per realm, logging and mailing only what CHANGED against

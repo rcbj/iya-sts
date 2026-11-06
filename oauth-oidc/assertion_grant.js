@@ -1131,7 +1131,8 @@ async function verify(opts) {
   const usedX5c = usedKey && usedKey.source !== 'x5c' && usedKey.jwk &&
                   Array.isArray(usedKey.jwk.x5c) ? usedKey.jwk.x5c : [];
   if (usedX5c.length) {
-    keyChain = await pki.verifySignerChain(undefined, {
+    keyChain = await require('../common/certificate_trust')
+        .signerChain('jose-signer', {
       certificate: usedX5c[0], chain: usedX5c.slice(1), key: usedKey.jwk,
       source: 'the key "' + (usedKey.kid || '(no kid)') + '" in ' +
               usedKey.source + ' for "' + iss + '"'

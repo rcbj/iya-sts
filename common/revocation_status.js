@@ -4831,6 +4831,20 @@ async function issuersFetchedFor(leaf, offered) {
     fetched.push(found);
     current = found;
   }
+  // AN ADDRESS IN THE LEAF DECIDES NOTHING, under paranoid PKI mode (#1360): what
+  // it led to is believed only if the path reaches this realm's Root or its
+  // signer truststore. Off, it is what it always was, trust on first use. Lazily:
+  // the door requires this module.
+  const trust = require('./certificate_trust');
+  if (fetched.length && trust.applies('saml-signer') &&
+      !(await trust.reachesHeld(x509Of(leaf).raw, fetched.map(function (one) {
+        return one.raw;
+      })))) {
+    log.debug('Leaving issuersFetchedFor(). Reaches nothing held.');
+    return { certs: [], named: named,
+             problems: problems.concat(['what its Authority Information ' +
+               'Access led to reaches no anchor this realm holds']) };
+  }
   log.debug('Leaving issuersFetchedFor(). ' + fetched.length + ' fetched.');
   return { certs: fetched, problems: problems, named: named };
 }

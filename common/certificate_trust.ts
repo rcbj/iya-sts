@@ -59,6 +59,7 @@ import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import audit = require('./audit');
 import stsCrypto = require('./crypto');
+import cacheRegistry = require('./cache_registry');
 import pki = require('./pki');
 import revocationStatus = require('./revocation_status');
 import signerTruststore = require('./signer_truststore');
@@ -476,6 +477,42 @@ realms.onRemove(function (id: string) {
   counts.delete(id);
 });
 
+// WHAT WAS LAST FETCHED ABOUT A PINNED CERTIFICATE, for the doors that cannot
+// wait (`pinnedSync()`). Keyed by fingerprint, so it is about a certificate and
+// not a realm, and the policy is applied when the answer was fetched: the
+// lifetime is short for that reason.
+const MAX_PIN_VERDICTS = 1024;
+const PIN_VERDICT_MS = 300000;
+const pinVerdicts = new Map<string, Json>();
+const pinVerdictCount = cacheRegistry.register({
+  name: 'pki.pinned-verdicts',
+  title: 'Revocation of pinned certificates',
+  description: 'What was last fetched about a pinned certificate, for the ' +
+    'doors that answer in one tick under paranoid PKI mode. Keyed by the ' +
+    'certificate\'s fingerprint.',
+  owner: 'common/certificate_trust.ts', scope: 'process', kind: 'cache',
+  bound: 'Enforced: 1024 entries, the oldest write dropped and fetched again ' +
+         'when next needed.',
+  maxEntries: function (): number {
+    return MAX_PIN_VERDICTS;
+  },
+  lifetime: function (): string {
+    return '5 minutes';
+  },
+  eject: cacheRegistry.mapEjector(pinVerdicts, function (row: Json, key: string,
+                                                         nowMs: number) {
+    return !row || row.until <= nowMs;
+  }),
+  entries: function (): Json[] {
+    return Array.from(pinVerdicts.entries()).map(function (pair: Json) {
+      return { realm: '', key: cacheRegistry.clipKey(pair[0]),
+               validUntil: new Date(pair[1].until).toISOString(),
+               valid: pair[1].until > Date.now(),
+               basis: pair[1].verdict.status };
+    });
+  }
+});
+
 /**
  * The one door every X.509 validation goes through, and the settings of
  * paranoid PKI mode.
@@ -652,9 +689,12 @@ class CertificateTrust {
   // Every spelling of a certificate as DER, or null.
   private static derOf(cert: Json): Buffer | null {
     try {
+      // A string with no armour is an `x5c` member: base64 DER.
+      const text = Buffer.isBuffer(cert) || cert instanceof Uint8Array ? '' :
+        String(cert);
       return stsCrypto.parseCertificate(
-        Buffer.isBuffer(cert) || cert instanceof Uint8Array ?
-          cert : String(cert)).raw;
+        Buffer.isBuffer(cert) || cert instanceof Uint8Array ? cert :
+          (/-----BEGIN/.test(text) ? text : Buffer.from(text, 'base64'))).raw;
     } catch (e) {
       helpers.log.debug("Caught in CertificateTrust.derOf(): " +
                         ((e && e.message) || e));
@@ -1367,6 +1407,289 @@ class CertificateTrust {
     });
     helpers.log.debug("Leaving CertificateTrust.assessPeer(). " + answer.ok);
     return answer;
+  }
+
+  /**
+   * A registered key's certificate chain, at the use: what the RFC 7523 and RFC
+   * 7522 verifiers call in place of `pki.verifySignerChain()`, with its answer's
+   * shape. Not in force it IS that function. In force: an incomplete chain is
+   * completed from the signer truststore before it is refused, the leaf's fields
+   * are asked, and a self-signed `x5c[0]` is held to the purpose's rule, which
+   * closes the asymmetry with the upload door. Revocation stays where the sites
+   * already ask it, `registeredKeyVerdictFor()`.
+   *
+   * @param id - the purpose: `jose-signer` or `saml-signer`
+   * @param material - `{ certificate, chain, key, source, index }`
+   * @param options - `{ realmId }`
+   * @returns a promise of `verifySignerChain()`'s answer
+   */
+  static async signerChain(id: string, material: Json,
+                           options?: Json): Promise<Json> {
+    helpers.log.debug("Entering CertificateTrust.signerChain(). " + id);
+    const opts = options || {};
+    const purpose = CertificateTrust.purpose(id);
+    const answer = await pki.verifySignerChain(opts.realmId, material);
+    if (!CertificateTrust.applies(id, opts.realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.signerChain(). The baseline.");
+      return answer;
+    }
+    const refuse = function (code: string, why: string): Json {
+      helpers.log.debug("Entering refuse(). " + code);
+      const verdict = CertificateTrust.blank(id, true);
+      verdict.checks.path = 'failed';
+      CertificateTrust.compose(purpose, verdict, { path: code }, { path: why },
+                               opts.realmId || realms.currentId(), false);
+      helpers.log.debug("Leaving refuse().");
+      return errorCodes.mark({ ok: false, why: why, path: answer.path || [] },
+                             code);
+    };
+    const certs = CertificateTrust.certificatesOf(
+      { leaf: material.certificate, chain: [].concat(material.chain || [])
+        .filter(Boolean) });
+    if (!certs) {
+      helpers.log.debug("Leaving CertificateTrust.signerChain(). Unreadable.");
+      return answer.ok ? refuse('STS-PKI-0238',
+                                'its certificate is not X.509') : answer;
+    }
+    let result = answer;
+    if (!answer.ok) {
+      const built = await pki.verifyPathToAnchors(certs.leaf, certs.chain,
+        'signer-truststore', { realmId: opts.realmId, purpose: id });
+      if (!built.ok) {
+        helpers.log.debug("Leaving CertificateTrust.signerChain(). No path.");
+        return answer;
+      }
+      result = { ok: true, anchor: 'signer-truststore',
+                 links: answer.links || [], path: answer.path || [],
+                 chain: built.chain.map(function (step: Json) {
+                   return step.pem;
+                 }) };
+    } else if (answer.anchor === 'pinned' && purpose.selfSigned === 'refuse') {
+      helpers.log.debug("Leaving CertificateTrust.signerChain(). Self-signed.");
+      return refuse(purpose.code, 'a self-signed certificate is not accepted ' +
+                    'for ' + id + ': register the authority that issued it, ' +
+                    'or add it to the signer truststore');
+    }
+    const field = stsCrypto.certificateFieldProblem(certs.leaf,
+      Object.assign({}, purpose.leaf, { role: 'leaf',
+                                        mayBeCa: answer.anchor === 'pinned' }));
+    if (field) {
+      helpers.log.debug("Leaving CertificateTrust.signerChain(). A field.");
+      return refuse(field.code, field.why);
+    }
+    helpers.log.debug("Leaving CertificateTrust.signerChain().");
+    return result;
+  }
+
+  /**
+   * A pinned certificate at a door that cannot wait: a SAML request's signature
+   * and a WS-Security token are answered in one tick, inside handlers that hand
+   * back a value. Fields, the pin rule, and one hop through the signer truststore
+   * are decided here. **REVOCATION IS READ FROM WHAT WAS LAST FETCHED**, and a
+   * certificate nothing has been fetched about starts that fetch and is refused
+   * this once, since a check nobody made is a refusal; `pki.pins.audit` and the
+   * first request both fill it. A certificate that names no list and no responder
+   * has nothing to fetch, and the register answers for it now.
+   *
+   * @param id - the purpose
+   * @param cert - PEM or DER
+   * @param options - `{ realmId, now, registered (a pin) }`
+   * @returns `{ ok, code, why }`; `ok` when paranoid does not apply
+   */
+  static pinnedSync(id: string, cert: Json, options?: Json): Json {
+    helpers.log.debug("Entering CertificateTrust.pinnedSync(). " + id);
+    const opts = options || {};
+    const realmId = opts.realmId || realms.currentId();
+    if (!CertificateTrust.applies(id, realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.pinnedSync(). Not in force.");
+      return { ok: true, code: '', why: '' };
+    }
+    const purpose = CertificateTrust.purpose(id);
+    const verdict = CertificateTrust.blank(id, true);
+    const codes: Json = {};
+    const whys: Json = {};
+    const done = function (): Json {
+      helpers.log.debug("Entering done().");
+      CHECK_ORDER.forEach(function (check) {
+        if (verdict.checks[check] === 'not-asked' && check !== 'revocation' &&
+            check !== 'name-match') {
+          verdict.checks[check] = 'passed';
+        }
+      });
+      CertificateTrust.compose(purpose, verdict, codes, whys, realmId, false);
+      helpers.log.debug("Leaving done().");
+      return { ok: verdict.ok, code: verdict.code, why: verdict.why };
+    };
+    const der = CertificateTrust.derOf(cert);
+    if (!der) {
+      verdict.checks.path = 'failed';
+      codes.path = 'STS-PKI-0238';
+      whys.path = 'it is not an X.509 certificate';
+      helpers.log.debug("Leaving CertificateTrust.pinnedSync(). Unreadable.");
+      return done();
+    }
+    const facts = stsCrypto.certificateFacts(der);
+    let selfSigned = false;
+    if (facts.selfIssued) {
+      try {
+        selfSigned = stsCrypto.parseCertificate(der)
+          .verify(stsCrypto.parseCertificate(der).publicKey);
+      } catch (e) {
+        // A key node cannot read: the name is what is left to go on, and the
+        // signature that brought this here was verified with that key.
+        helpers.log.debug("Caught in CertificateTrust.pinnedSync(): " +
+                          ((e && e.message) || e));
+        selfSigned = true;
+      }
+    }
+    CertificateTrust.fieldChecks(verdict, der,
+      CertificateTrust.ruleOf(purpose, opts.variant), opts, selfSigned)
+      .forEach(function (one: Json) {
+        codes[one.check] = codes[one.check] || one.code;
+        whys[one.check] = whys[one.check] || one.why;
+      });
+    let issuers: Buffer[] = [];
+    if (selfSigned) {
+      if (purpose.selfSigned !== 'allow-by-spec') {
+        verdict.checks['self-signed-allowed'] = 'failed';
+        codes['self-signed-allowed'] = purpose.code;
+        whys['self-signed-allowed'] = 'a self-signed certificate is not ' +
+          'accepted for ' + id;
+        helpers.log.debug("Leaving CertificateTrust.pinnedSync(). Self-signed.");
+        return done();
+      }
+      verdict.checks.path = 'exempt-by-spec';
+    } else {
+      const held = signerTruststore.anchorsFor(realmId, id);
+      issuers = held.anchors.concat(held.intermediates);
+      const direct = pki.verifyIssuedDirectly(der, issuers.map(function (one) {
+        return { raw: one };
+      }), { now: opts.now });
+      if (!direct.ok) {
+        verdict.checks.path = 'failed';
+        codes.path = purpose.code;
+        whys.path = 'it chains to nothing in this realm\'s signer truststore: ' +
+                    direct.reason;
+        helpers.log.debug("Leaving CertificateTrust.pinnedSync(). No path.");
+        return done();
+      }
+    }
+    CertificateTrust.pinRevocation(verdict, der, facts, issuers, codes, whys);
+    helpers.log.debug("Leaving CertificateTrust.pinnedSync().");
+    return done();
+  }
+
+  // What was last fetched about a pin, or the fetch begun.
+  private static pinRevocation(verdict: TrustVerdict, der: Buffer, facts: Json,
+                               issuers: Buffer[], codes: Json,
+                               whys: Json): void {
+    const input = { leaf: der, chain: issuers, verified: true };
+    const local = revocationStatus.localVerdictFor(input);
+    if (local.refused) {
+      CertificateTrust.readRevocation(verdict, local, codes, whys);
+      return;
+    }
+    const parsed = stsCrypto.parseCertificate(der);
+    const names = revocationStatus.distributionPointsOf(parsed).fetchable.length ||
+                  revocationStatus.ocspRespondersOf(parsed).fetchable.length;
+    if (!names) {
+      verdict.checks.revocation = 'passed';
+      verdict.revocation = local;
+      return;
+    }
+    const key = facts.fingerprint256;
+    const held = pinVerdicts.get(key);
+    if (held && held.until > Date.now()) {
+      pinVerdictCount.hit();
+      CertificateTrust.readRevocation(verdict, held.verdict, codes, whys);
+      return;
+    }
+    pinVerdictCount.miss();
+    cacheRegistry.makeRoom(pinVerdicts, MAX_PIN_VERDICTS,
+                           { counter: pinVerdictCount });
+    pinVerdicts.set(key, { until: Date.now() + PIN_VERDICT_MS,
+      verdict: { status: 'unknown', refused: true, why: 'its revocation is ' +
+                 'being established: ask again in a moment' } });
+    revocationStatus.verdictFor(input, {}).then(function (answer: Json) {
+      pinVerdicts.set(key, { until: Date.now() + PIN_VERDICT_MS,
+                             verdict: answer });
+    }, function (e: Json) {
+      helpers.log.debug("Caught in CertificateTrust.pinRevocation(): " +
+                        ((e && e.message) || e));
+      pinVerdicts.delete(key);
+    });
+    verdict.checks.revocation = 'not-asked';
+    whys.revocation = 'its revocation is being established: ask again in a ' +
+                      'moment';
+  }
+
+  /**
+   * Whether what a leaf's own Authority Information Access led to reaches an
+   * anchor this realm holds, so an address in a certificate decides nothing.
+   *
+   * @param leaf - the leaf's DER
+   * @param issuers - what was fetched, as DER
+   * @returns a promise of true or false
+   */
+  static async reachesHeld(leaf: Buffer, issuers: Buffer[]): Promise<boolean> {
+    helpers.log.debug("Entering CertificateTrust.reachesHeld().");
+    const held = await pki.verifyPathToAnchors(leaf, issuers,
+      'signer-truststore', { purpose: 'saml-signer' });
+    const ours = held.ok ? held :
+      await pki.verifyPathToAnchors(leaf, issuers, 'realm', {});
+    helpers.log.debug("Leaving CertificateTrust.reachesHeld(). " + ours.ok);
+    return !!ours.ok;
+  }
+
+  /**
+   * A JWK that carries an `x5c` is held as `jose-signer` would hold its leaf; a
+   * bare one is left alone, which OpenID Federation 1.1 section 3 defines.
+   *
+   * @param jwk - the key that verified
+   * @param options - as `pinnedSync()`
+   * @returns `{ ok, code, why }`
+   */
+  static bareKey(jwk: Json, options?: Json): Json {
+    helpers.log.debug("Entering CertificateTrust.bareKey().");
+    const x5c = jwk && Array.isArray(jwk.x5c) ? jwk.x5c : [];
+    if (!x5c.length) {
+      helpers.log.debug("Leaving CertificateTrust.bareKey(). Bare.");
+      return { ok: true, code: '', why: '' };
+    }
+    helpers.log.debug("Leaving CertificateTrust.bareKey().");
+    return CertificateTrust.pinnedSync('jose-bare-key',
+      Buffer.from(String(x5c[0]), 'base64'), options);
+  }
+
+  /**
+   * A certificate at the door it is registered through, under paranoid PKI mode:
+   * its fields only. A write is not a use, so its chain and revocation are asked
+   * at the use, and something that will expire next year is written today.
+   *
+   * @param id - the purpose it will be used for
+   * @param cert - PEM or DER
+   * @param options - `{ realmId, now }`
+   * @returns null, or `{ code, why }`
+   */
+  static registrationProblem(id: string, cert: Json, options?: Json): Json {
+    helpers.log.debug("Entering CertificateTrust.registrationProblem().");
+    const opts = options || {};
+    if (!CertificateTrust.applies(id, opts.realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.registrationProblem(). Off.");
+      return null;
+    }
+    const der = CertificateTrust.derOf(cert);
+    if (!der) {
+      helpers.log.debug("Leaving CertificateTrust.registrationProblem(). Bad.");
+      return { code: 'STS-PKI-0238', why: 'it is not an X.509 certificate' };
+    }
+    const purpose = CertificateTrust.purpose(id);
+    const facts = stsCrypto.certificateFacts(der);
+    const problem = stsCrypto.certificateFieldProblem(der,
+      Object.assign({}, purpose.leaf, { role: 'leaf', now: opts.now,
+                                        mayBeCa: facts.selfIssued }));
+    helpers.log.debug("Leaving CertificateTrust.registrationProblem().");
+    return problem ? { code: problem.code, why: problem.why } : null;
   }
 
   /**

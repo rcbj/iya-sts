@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5302** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5303** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -65,7 +65,7 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 429
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 747
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
 * [Federation (`STS-FED`)](#sts-fed) — 211
@@ -2591,6 +2591,7 @@ Raised from: saml/.
 | `STS-SAML-0115` | A SAML 1.1 flow came back from its one trip to the sign-in screen and the issuance policy still asked for a step-up on the session's risk; it is not sent round again. #711. | HTTP 403 page |
 | `STS-SAML-0116` | A SAML 2.0 AuthnRequest named only the EAP phishing-resistant class URIs (phr, or only phrh) and the session still had not earned the class after the one trip to the sign-in screen. NoAuthnContext, not a second trip. A list that also names some other class is not this refusal. #736. | Responder / NoAuthnContext |
 | `STS-SAML-0117` | A SAML 1.1 sign-in carried the non-spec authnContextClassRef parameter naming only an EAP phishing-resistant class, and the session still had not earned it after the one trip to the sign-in screen. A page, because this profile has no status to carry. #736. | HTTP 403 page |
+| `STS-SAML-0118` | A service provider's metadata reaches no trust anchor, so it was not consumed, under paranoid PKI mode (#1360). | the caller's refusal, or the refresh's recorded failure |
 
 ## STS-WSTRUST
 

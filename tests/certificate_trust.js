@@ -26,7 +26,7 @@
 //   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
 //   * `anchorsFor()` ignoring `purposes`                     — 1 red (D)
 //   * `ruleOf()` ignoring the variant                        — 4 red (B, E, G)
-// ===========================================================================
+MUT// ===========================================================================
 
 delete process.env.CONFIG_FILE;
 
@@ -473,6 +473,69 @@ async function run(t, double, crls) {
     { anchors: [root.pem], anchorSources: ['caller'] });
   t.check(unasked.ok && unasked.checks['name-match'] === 'not-asked',
           'K. no name expected is the one not-asked that passes', unasked.why);
+  // L. THE DOORS SIGNERS CALL (Phase 3).
+  t.log.info('L. signers');
+  const expiredSelf = await kit.mint({ cn: 'expired sp',
+    notBefore: now - 3 * kit.DAY, notAfter: now - kit.DAY });
+  const goodSelf = await kit.mint({ cn: 'good sp' });
+  const pinned = trust.pinnedSync('saml-signer', goodSelf.pem);
+  t.check(pinned.ok, 'L. a self-signed SP certificate is accepted by spec',
+          pinned.why);
+  const pinnedOld = trust.pinnedSync('saml-signer', expiredSelf.pem);
+  t.check(!pinnedOld.ok && pinnedOld.code === 'STS-KEYS-0168',
+          'L. and held to its validity', pinnedOld.code);
+  const wssSelf = trust.pinnedSync('wss-x509-token', goodSelf.pem);
+  t.check(!wssSelf.ok && wssSelf.code === 'STS-PKI-0246',
+          'L. a use case that refuses self-signed refuses it', wssSelf.code);
+  const stranger2 = await kit.mint({ cn: 'stranger issued', issuer: root });
+  const unheld = trust.pinnedSync('saml-signer', stranger2.pem);
+  t.check(!unheld.ok && unheld.code === 'STS-PKI-0244',
+          'L. a CA-issued signer reaching nothing held is refused',
+          unheld.code + ' ' + unheld.why);
+  await signers.add(REALM, root.pem, {});
+  const nowHeld = trust.pinnedSync('saml-signer', stranger2.pem);
+  t.check(nowHeld.ok, 'L. and accepted once its CA is in the store',
+          nowHeld.why);
+  const listedPin = await kit.mint({ cn: 'listed pin', issuer: root,
+                                     crls: [crls.base + '/pin.crl'] });
+  crls.routes['/pin.crl'] = await kit.crlOf(root, [listedPin.serialHex]);
+  const firstAsk = trust.pinnedSync('saml-signer', listedPin.pem);
+  t.check(!firstAsk.ok, 'L. a list not yet read is a check nobody made',
+          firstAsk.why);
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 800);
+  });
+  const secondAsk = trust.pinnedSync('saml-signer', listedPin.pem);
+  t.check(!secondAsk.ok && secondAsk.code === 'STS-PKI-0118',
+          'L. and once read, it is revoked', secondAsk.code);
+  const bareOk = trust.bareKey({ kty: 'EC' });
+  t.check(bareOk.ok, 'L. a bare JWK is left alone (OpenID Federation 1.1)', '');
+  const carried = trust.bareKey({ kty: 'EC', x5c: [pemDer(expiredSelf.pem)
+    .toString('base64')] });
+  t.check(!carried.ok, 'L. a JWK carrying an x5c is held to it', carried.why);
+  t.check(trust.registrationProblem('saml-signer', expiredSelf.pem) !== null,
+          'L. the registration door asks the fields', '');
+  t.equal(trust.registrationProblem('saml-signer', goodSelf.pem), null,
+          'L. and takes a good certificate');
+  const chainOf = await trust.signerChain('jose-signer',
+    { certificate: pemDer(goodSelf.pem).toString('base64'), chain: [] });
+  t.check(!chainOf.ok && /self-signed/.test(chainOf.why),
+          'L. a self-signed x5c[0] is refused for a JOSE signer', chainOf.why);
+  const inStore = await kit.mint({ cn: 'jose leaf', issuer: root });
+  const viaStore = await trust.signerChain('jose-signer',
+    { certificate: inStore.pem, chain: [] });
+  t.check(viaStore.ok && viaStore.anchor === 'signer-truststore',
+          'L. a chain with no registered root completes from the store',
+          viaStore.why);
+  await withSettings({ 'pki.paranoid': 'off' }, async () => {
+    t.check(trust.pinnedSync('saml-signer', expiredSelf.pem).ok,
+            'L. out of force, nothing is asked', '');
+    const baseline = await trust.signerChain('jose-signer',
+      { certificate: pemDer(goodSelf.pem).toString('base64'), chain: [] });
+    t.check(baseline.ok && baseline.anchor === 'pinned',
+            'L. and a self-signed x5c[0] is the pin it was', baseline.why);
+  });
+  double.rows(REALM).clear();
   log.debug("Leaving run().");
 }
 

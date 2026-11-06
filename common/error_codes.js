@@ -11906,6 +11906,10 @@ const CODES = [
       'screen. A page, because this profile has no status to carry. #736.',
     spec: 'HTTP 403 page' },
   // ===== WSTRUST ===========================================================
+  { code: 'STS-SAML-0118',
+    summary: 'A service provider\'s metadata reaches no trust anchor, so it was ' +
+      'not consumed, under paranoid PKI mode (#1360).',
+    spec: 'the caller\'s refusal, or the refresh\'s recorded failure' },
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
       'empty), so no operation could be read from it.',

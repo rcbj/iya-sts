@@ -1251,6 +1251,19 @@ class SpMetadata {
                  '. Nothing on the entry was changed.'] };
       }
       signature = 'verified';
+    } else if (require('../common/certificate_trust').applies('saml-signer')) {
+      // ANCHORED OR NOT CONSUMED, under paranoid PKI mode (#1360). A document
+      // nothing vouches for is trust on first use, and what it carries is the
+      // certificates every later signature from this provider is checked with.
+      this.refreshRefused('STS-SAML-0118', identifier, 'no trust anchor is ' +
+                          'configured, so nothing vouches for the document',
+                          family);
+      log.debug("Leaving SpMetadata.consume(). No anchor.");
+      return { ok: false, errors: ['Under paranoid PKI mode a service ' +
+               'provider\'s metadata must be signed by a trust anchor, and ' +
+               'none is configured: set samlSpMetadataSigningCertificate on ' +
+               'the entry or saml2.metadataTrustAnchors, or switch off ' +
+               'pki.paranoidSamlSigner. Nothing on the entry was changed.'] };
     }
 
     // The encryption certificate. One marked use="encryption" that cannot be

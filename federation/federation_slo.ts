@@ -1102,7 +1102,8 @@ class FederationSlo {
       binding: req.method === 'POST' ? 'post' : 'redirect',
       rawQuery: this.rawQueryOf(req), params: params, xml: xml,
       rootLocalName: rootName, messageField: field,
-      fields: { samlSigningCertificate: record.fedSigningCertificate }
+      fields: { samlSigningCertificate: record.fedSigningCertificate },
+      purpose: 'federation-partner'
     });
     if (assessment.outcome === 'failed') {
       errorCodes.mark(res, 'STS-FED-0116');

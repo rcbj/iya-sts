@@ -1759,6 +1759,22 @@ class WsTrust {
                      'issued; a certificate stored on an entry is carried ' +
                      'in a wsse:BinarySecurityToken');
     }
+    // A stored outside leaf chains to the signer truststore under paranoid PKI
+    // mode, and one this realm issued is answered by the gate below (#1360).
+    const trust = require('../common/certificate_trust');
+    if (trust.applies('wss-x509-token')) {
+      const issuedHere = gates.signingIdentityOf(certificate);
+      if (!(issuedHere && issuedHere.issuedHere)) {
+        const held = trust.pinnedSync('wss-x509-token',
+          Buffer.from(String(certificate).replace(/-----[^-]+-----/g, '')
+            .replace(/\s+/g, ''), 'base64'));
+        if (!held.ok) {
+          log.debug("Leaving WsTrust.messageSignature(). Paranoid: " +
+                    held.code);
+          return refused(held.code, held.why);
+        }
+      }
+    }
     const identity = gates.signingIdentityOf(certificate);
     const verifies = mode.verifiesCredentials();
     if (!verifies) {

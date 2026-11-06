@@ -5691,6 +5691,14 @@ async function registerCertificate(realmId, opts) {
            identifier + '" in the "' + id + '" realm for ' + purpose.label +
            '. subject=' + record.subject + ', issuer=' + record.issuer +
            ', kid=' + record.kid + ', expires ' + record.notAfter + '.');
+  // One rule at the upload door and the use door, under paranoid PKI mode
+  // (#1360): the same fields, before it is written down.
+  const paranoid = require('./certificate_trust')
+    .registrationProblem('jose-signer', given[0]);
+  if (paranoid) {
+    log.debug('Leaving registerCertificate(). Paranoid: ' + paranoid.code);
+    return uploadRefusal(paranoid.code, paranoid.why);
+  }
   log.debug('Leaving registerCertificate(). ' + source);
   return { ok: true, registered: record };
 }

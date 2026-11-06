@@ -604,7 +604,8 @@ async function verifyAssertion(opts) {
   // cannot disagree about what a registered certificate is worth.
   if (usedEntry && usedEntry.jwk && Array.isArray(usedEntry.jwk.x5c) &&
       usedEntry.jwk.x5c.length) {
-    const keyChain = await pki.verifySignerChain(undefined, {
+    const keyChain = await require('../common/certificate_trust')
+        .signerChain('jose-signer', {
       certificate: usedEntry.jwk.x5c[0], chain: usedEntry.jwk.x5c.slice(1),
       key: usedEntry.jwk,
       source: 'the key "' + (usedEntry.kid || '(no kid)') +

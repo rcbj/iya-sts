@@ -1957,7 +1957,7 @@ class OidcRelyingParty {
     }
     let verdict: any = null;
     try {
-      verdict = await pki.verifySignerChain(undefined, {
+      verdict = await require('./certificate_trust').signerChain('jose-signer', {
         certificate: held.certificatePem, chain: held.chainPem,
         source: 'the key the ' + surface.label + ' holds'
       });

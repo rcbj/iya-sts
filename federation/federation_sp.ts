@@ -155,6 +155,7 @@
 // routes (rule 1).
 // ---------------------------------------------------------------------------
 
+import certificateTrust = require('../common/certificate_trust');
 import zlib = require('zlib');
 import AtprotoClient = require('./atproto_client');
 import jwt = require('jsonwebtoken');
@@ -1180,6 +1181,25 @@ class FederationSp {
       });
     log.debug("Leaving FederationSp.signerStillAccepted(). The verdict is " +
               'pending.');
+    // WHAT THE SIGNER IS, under paranoid PKI mode (#1360), beside what the
+    // revocation says: in date, may sign, and when it is not self-signed, chains
+    // to the realm's signer truststore. A partner's self-signed certificate
+    // registered on the relationship stays acceptable, SAML Metadata's rule.
+    const held = unsigned ? { ok: true, code: '', why: '' } :
+      (jwk ? certificateTrust.bareKey(jwk)
+           : certificateTrust.pinnedSync('federation-partner',
+                                         this.certPemOf(record)));
+    if (!held.ok) {
+      log.warn('federation: ' + record.fedId + ': the signer is refused: ' +
+               held.why);
+      // error-code: none — the door's verdict names the code
+      errorCodes.mark(res, held.code);
+      return Promise.resolve(this.refuse(res, record, 401,
+        'The partner\'s signing certificate may no longer be used',
+        held.why + ' The signature verified against it: replace ' +
+        (jwk ? 'the key' : 'fedSigningCertificate') + ', or switch off the ' +
+        'row on /admin/pki/trust.'));
+    }
     return checked.then((verdict) => {
       if (verdict.refused) {
         log.warn('federation: ' + record.fedId + ': the configured signing ' +
