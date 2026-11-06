@@ -1196,7 +1196,12 @@ const STS_METADATA: Json = closed({
     id: str(),
     label: OPT_STR,
     description: OPT_STR,
-    overrides: mapOf(SETTING_VALUE, 'The settings this server overrides.'),
+    // Its metadata members, not settings: RFC 8414 members can be objects
+    // (`mtls_endpoint_aliases`), and `setMember()` takes any JSON on purpose.
+    overrides: mapOf(Kit.freeForm(
+      'An RFC 8414 metadata member\'s value as the operator chose to publish ' +
+      'it: any JSON, deliberately, including what no specification defines.'),
+    'The metadata members this server overrides.'),
     removed: STRINGS,
     changedAt: str(),
     memberCount: int(),

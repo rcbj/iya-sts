@@ -4393,9 +4393,8 @@ Scope: `admin:read`.
 | `namedServers[].id` | string |  |  |
 | `namedServers[].label` | string, or null |  |  |
 | `namedServers[].memberCount` | integer |  |  |
-| `namedServers[].overrides` | map |  | The settings this server overrides. |
-| `namedServers[].overrides.{key}` | list, or string, or number, or boolean, or null |  |  |
-| `namedServers[].overrides.{key}[]` | string, or number, or boolean |  |  |
+| `namedServers[].overrides` | map |  | The metadata members this server overrides. |
+| `namedServers[].overrides.{key}` | any JSON |  | An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines. An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines. |
 | `namedServers[].removed` | list |  |  |
 | `namedServers[].removed[]` | string |  |  |
 | `namedServers[].seen` | integer |  |  |
