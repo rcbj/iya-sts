@@ -582,7 +582,15 @@ and the metadata no longer advertises it. No MAC, MD5, HSS/LMS or XMSS signature
 verified. A service provider's metadata URL is never fetched while a request is
 being answered.
 
-Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a service provider's signing certificate is held to its validity, keyUsage and revocation, and when it is not self-signed, to a chain to the realm's [signer truststore](signer-truststore.md). A self-signed one registered on the application stays acceptable. Metadata no trust anchor vouches for is not consumed. See the `saml-signer` row of the [use cases](pki-use-cases.md).
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a service provider's signing certificate is held to its validity, keyUsage and revocation, whoever issued it.
+
+An administrator's act names the trust anchor: setting a signing certificate on the application by hand, giving a metadata document when creating or updating it, or asking for its metadata to be fetched. A document given that way is accepted unsigned, and its first signing certificate becomes `samlSpMetadataSigningCertificate`. After that:
+
+* A document fetched in the background (the refresher, or a lookup a request started) must verify against that anchor. It cannot replace the anchor, whether it is unsigned or signed by something new.
+* With no anchor at all, a background fetch is refused (`STS-SAML-0118`). A sighting or a request never creates an anchor.
+* A document an administrator gives must verify too, once an anchor is set. To replace the anchor, set `samlSpMetadataSigningCertificate` on the application.
+
+See the `saml-signer` row of the [use cases](pki-use-cases.md).
 
 ## Development and product mode
 

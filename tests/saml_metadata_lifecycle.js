@@ -859,6 +859,122 @@ async function run(t) {
             'still looked up and consumed');
 
     // -----------------------------------------------------------------------
+    t.log.info('F1c. #1360: an administrator\'s act names the trust anchor');
+    // -----------------------------------------------------------------------
+    const requestSignature = require('../saml/request_signature');
+    const anchorOf = function (id) {
+      log.debug("Entering anchorOf().");
+      log.debug("Leaving anchorOf().");
+      return String([].concat(fieldsOf(id).samlSpMetadataSigningCertificate ||
+                              [])[0] || '').replace(/\s+/g, '');
+    };
+    const signersOf = function (id) {
+      log.debug("Entering signersOf().");
+      log.debug("Leaving signersOf().");
+      return [].concat(fieldsOf(id).samlSigningCertificate || [])
+        .map(function (one) {
+          return String(one).replace(/-----[^-]+-----/g, '')
+            .replace(/\s+/g, '');
+        });
+    };
+    const signedRequest = function (id, key) {
+      log.debug("Entering signedRequest().");
+      log.debug("Leaving signedRequest().");
+      return requestSignature.assess({
+        binding: 'post', rootLocalName: 'AuthnRequest',
+        xml: kit.signEnveloped(stsCrypto, authnRequest(id, '_n' + key.name),
+                               key),
+        fields: fieldsOf(id) });
+    };
+    await kit.withSettings(config, { 'pki.paranoid': 'on' }, async function () {
+      // A document an administrator gives, unsigned, at update.
+      const named = newSp('named', { samlSpMetadataUrl: base + '/md/named' });
+      const given = spMetadata.upload(named, entity(named,
+        { signing: anchor.cert.b64 }));
+      t.check(given.ok && anchorOf(named) === anchor.cert.b64,
+              'an administrator\'s unsigned document is accepted, and its ' +
+              'signing certificate becomes the anchor',
+              JSON.stringify(given.errors || anchorOf(named)));
+      t.equal(signedRequest(named, anchor).outcome, 'verified',
+              'and that anchor verifies a request signature');
+      t.check(signedRequest(named, stranger).outcome !== 'verified',
+              'and another key\'s does not', '');
+      // What is fetched later answers to it.
+      const fetchedBy = function (key) {
+        log.debug("Entering fetchedBy().");
+        const xml = entity(named, { signing: stranger.cert.b64,
+                                    acs: 'https://named-new.test/acs' });
+        served['/md/named'] = { status: 200,
+          body: key ? kit.signEnveloped(stsCrypto, xml, key) : xml };
+        log.debug("Leaving fetchedBy().");
+        return spMetadata.refresh(named, { quiet: true });
+      };
+      const unsignedFetch = await fetchedBy(null);
+      const foreignFetch = await fetchedBy(stranger);
+      t.check(!unsignedFetch.ok && !foreignFetch.ok &&
+              anchorOf(named) === anchor.cert.b64 &&
+              signersOf(named).indexOf(stranger.cert.b64) < 0,
+              'a later unsigned or foreign-signed fetch replaces nothing',
+              JSON.stringify([unsignedFetch.errors, foreignFetch.errors]));
+      const rotated = await fetchedBy(anchor);
+      t.check(rotated.ok && anchorOf(named) === anchor.cert.b64 &&
+              signersOf(named).indexOf(stranger.cert.b64) >= 0,
+              'one signed by the anchor may rotate the signing keys, and the ' +
+              'anchor stays', JSON.stringify(rotated.errors));
+      const stale = spMetadata.upload(named, entity(named));
+      t.check(!stale.ok && anchorOf(named) === anchor.cert.b64,
+              'an administrator\'s document answers to an anchor already set',
+              JSON.stringify(stale.errors));
+
+      // By hand: the certificate is the anchor before any explicit one exists.
+      const byHand = newSp('by-hand', {
+        samlSpMetadataUrl: base + '/md/by-hand' });
+      const set = applications.updateApplication(byHand, {
+        attribute: 'samlSigningCertificate', mode: 'add',
+        value: anchor.cert.b64 });
+      t.check(set.ok, 'a signing certificate is set by hand',
+              JSON.stringify(set.errors || ''));
+      t.equal(signedRequest(byHand, anchor).outcome, 'verified',
+              'and it verifies a request signature');
+      const handXml = entity(byHand, { signing: stranger.cert.b64 });
+      served['/md/by-hand'] = { status: 200, body: handXml };
+      const unsignedHand = await spMetadata.refresh(byHand, { quiet: true });
+      t.check(!unsignedHand.ok && !anchorOf(byHand) &&
+              signersOf(byHand).indexOf(stranger.cert.b64) < 0,
+              'a background fetch answers to it too',
+              JSON.stringify(unsignedHand.errors));
+      served['/md/by-hand'] = { status: 200,
+                                body: kit.signEnveloped(stsCrypto, handXml,
+                                                        anchor) };
+      const signedHand = await spMetadata.refresh(byHand, { quiet: true });
+      t.check(signedHand.ok && anchorOf(byHand) === anchor.cert.b64,
+              'and rotating the keys pins the anchor it answered to',
+              JSON.stringify(signedHand.errors));
+
+      // Nobody named anything.
+      const quiet = newSp('nobody', { samlSpMetadataUrl: base + '/md/nobody' });
+      served['/md/nobody'] = { status: 200, body: entity(quiet,
+        { signing: stranger.cert.b64 }) };
+      const unasked = await spMetadata.refresh(quiet, { quiet: true });
+      t.check(!unasked.ok && !anchorOf(quiet) && !signersOf(quiet).length,
+              'a background fetch with no anchor names none and writes nothing',
+              JSON.stringify(unasked.errors));
+      const looked = newSp('looked-up');
+      served['/mdq/entities/' + looked] = { status: 200, body: entity(looked,
+        { signing: stranger.cert.b64 }) };
+      const lookup = await spMetadata.mdqImport(looked,
+        { quiet: true, origin: 'request' });
+      t.check(!lookup.ok && !anchorOf(looked) && !signersOf(looked).length,
+              'nor does a lookup a request started',
+              JSON.stringify(lookup.errors));
+      // The first fetch an administrator asks for is that administrator's act.
+      const asked = await spMetadata.refresh(quiet, { actor: 'an operator' });
+      t.check(asked.ok && anchorOf(quiet) === stranger.cert.b64,
+              'but an administrator asking for that fetch is the act that does',
+              JSON.stringify(asked.errors));
+    });
+
+    // -----------------------------------------------------------------------
     t.log.info('F2. #112: an operator\'s MDQ import');
     // -----------------------------------------------------------------------
     const opName = unknown('operator');
@@ -877,28 +993,18 @@ async function run(t) {
           JSON.stringify(viaAction.errors)) && !applications.get(opName),
                 'and so is the console/API action',
                 JSON.stringify(viaAction.errors));
-        // PARANOID PKI MODE WINS OVER THIS SETTING, and the refusal says so.
-        const stillRefused = await kit.withSettings(config,
-          { 'saml2.mdqImportWithoutAnchors': true },
-          function () {
-            return probe.mdqImport(opName, { origin: 'operator' });
-          });
-        t.check(!stillRefused.ok &&
-                /does not lift this/.test(JSON.stringify(stillRefused.errors)),
-                'with that setting ON, paranoid PKI mode still refuses, and ' +
-                'says that the setting does not lift it',
-                JSON.stringify(stillRefused.errors));
+        // An administrator's import: the setting lets it through, and paranoid
+        // PKI mode takes it as that administrator's act (rcbj, #1360).
         const allowed = await kit.withSettings(config,
-          { 'saml2.mdqImportWithoutAnchors': true,
-            'pki.paranoidSamlSigner': false },
+          { 'saml2.mdqImportWithoutAnchors': true },
           function () {
             return probe.mdqImport(opName, { origin: 'operator' });
           });
         t.check(allowed.ok && allowed.created &&
                 /WITHOUT a signature check/.test(
                   (allowed.warnings || []).join(' ') + allowed.message),
-                'with pki.paranoidSamlSigner off as well it is imported, ' +
-                'and the reply WARNS that nothing was verified',
+                'with that setting ON it is imported, and the reply WARNS ' +
+                'that nothing was verified',
                 JSON.stringify(allowed.errors || allowed.warnings));
         const signedOp = unknown('operator-signed');
         served['/mdq/entities/' + signedOp].body = kit.signEnveloped(
