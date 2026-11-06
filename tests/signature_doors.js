@@ -229,6 +229,23 @@ module.exports = {
       return stsCrypto.verifyX509Signature(crl.tbsView, crl.signatureValue,
         ca.cert.subjectPublicKeyInfo, crl.signatureAlgorithm);
     };
+    // An ML-DSA Intermediate under an RSA Root: what its certificate was signed
+    // with is its parent's, and says nothing about what it signs.
+    const underRsa = { cert: pqCa.cert, tier: Object.assign({}, pqCa.tier,
+      { signatureAlg: 'sha256-rsa' }) };
+    t.check(await crlVerifies(await signedCrl(underRsa), underRsa),
+      'a post-quantum authority under a classical parent signs with its key');
+    const underPq = { cert: ecCa.cert, tier: Object.assign({}, ecCa.tier,
+      { signatureAlg: 'ml-dsa-65' }) };
+    t.check(await crlVerifies(await signedCrl(underPq), underPq),
+      'and a classical authority under a post-quantum parent with its own');
+    const unnamed = keyMaterial.keyAlgIds().filter(function (id) {
+      const desc = keyMaterial.keyAlg(id);
+      return desc.kind === 'pqc' && desc.family !== 'ML-KEM' &&
+        !x509Engine.sigAlg(id);
+    });
+    t.check(unnamed.length === 0,
+      'every post-quantum signing key names its one signature row: ' + unnamed);
     const pqCrl = await signedCrl(pqCa);
     t.check(pqCrl.signatureAlgorithm.algorithmId ===
       '2.16.840.1.101.3.4.3.18' && pqCrl.signature.algorithmId ===

@@ -1493,6 +1493,14 @@ class AdminApi {
     return this.claimForCreate(what).then(function (held) {
       if (!held.ok) {
         errorCodes.mark(res, held.code);
+        if (held.reason === 'store') {
+          // The create-claims store could not be asked (STS-LDAP-0093, fail
+          // closed), which is transient — the coordination store is
+          // momentarily unreachable — so the 503 carries Retry-After, as
+          // `answerDirectoryFailure()` does. A handled 503 without it reads as
+          // an uncaught server error (#1356: groups/create under fuzzing).
+          res.setHeader('Retry-After', '5');
+        }
         self.sendJson(res, held.reason === 'store' ? 503 : 409,
                       { ok: false,
                         errors: [createClaims.refusalMessage(held)] });

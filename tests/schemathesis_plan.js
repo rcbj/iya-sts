@@ -22,6 +22,9 @@
 // the fuzzer itself is not run here.
 // ===========================================================================
 
+const childProcess = require("child_process");
+const fs = require("fs");
+const path = require("path");
 const kit = require("./protocol/schemathesis_kit");
 
 // The four custom checks the plan must name, each this service's own
@@ -40,8 +43,117 @@ const EXPECTED_AUTH = {
   "protocol": "per-op"
 };
 
+// What tests/schemathesis/code_members.py says of each case, by plain python3:
+// the file imports no schemathesis, so this needs no fuzzing virtual
+// environment.
+function leakedBy(cases) {
+  const log = require("bunyan").createLogger({
+    name: "schemathesis_plan", level: process.env.STS_LOG_LEVEL || "info" });
+  log.debug("Entering leakedBy().");
+  const answer = childProcess.spawnSync("python3", [path.join(__dirname,
+    "schemathesis", "code_members.py")], { input: cases.map(function (one) {
+    return JSON.stringify(one);
+  }).join("\n") + "\n", encoding: "utf8" });
+  if (answer.status !== 0) {
+    log.debug("Leaving leakedBy(). It failed.");
+    throw new Error("code_members.py failed: " + answer.stderr);
+  }
+  log.debug("Leaving leakedBy().");
+  return answer.stdout.trim().split("\n").map(function (line) {
+    return JSON.parse(line).length;
+  });
+}
+
+// (#1357) Where an answer may name an error code. Each case that must fail
+// is the allowed one with a single thing changed.
+function codeMemberSection(t) {
+  t.log.debug("Entering codeMemberSection().");
+  const CODE = "refused (STS-PKI-0188)";
+  const settings = JSON.stringify({ settings: { groups: [{ settings: [{
+    description: CODE }] }] } });
+  const cases = [
+    ["help text in the settings block, on any /admin-api read", 0,
+     { method: "GET", path: "/admin-api/saml2", status: 200, body: settings }],
+    ["and in an act's answer", 0,
+     { method: "POST", path: "/admin-api/saml-assertions/defaults",
+       status: 200, body: settings }],
+    ["a route's own help text", 0,
+     { method: "GET", path: "/admin-api/oauth2", status: 200,
+       body: JSON.stringify({ notes: [CODE] }) }],
+    ["a recorded failure on a read that draws them", 0,
+     { method: "GET", path: "/admin-api/audit", status: 200,
+       body: JSON.stringify({ rows: [{ errorCode: "STS-HTTP-0011" }] }) }],
+    ["the account API's document as the console holds it", 0,
+     { method: "GET", path: "/admin-api/account-api", status: 200,
+       body: JSON.stringify({ document: { paths: { "/account-api/a": {
+         get: { description: CODE } } } } }) }],
+    ["an answer naming no code", 0,
+     { method: "GET", path: "/admin-api/oauth2", status: 200, body: "{}" }],
+    ["the same text in a refusal", 1,
+     { method: "GET", path: "/admin-api/saml2", status: 400, body: settings }],
+    ["the same text on another API", 1,
+     { method: "GET", path: "/account-api/x", status: 200, body: settings }],
+    ["a route's help text on a route it does not belong to", 1,
+     { method: "GET", path: "/admin-api/saml2", status: 200,
+       body: JSON.stringify({ notes: [CODE] }) }],
+    ["a code in a member nobody listed", 1,
+     { method: "GET", path: "/admin-api/saml2", status: 200,
+       body: JSON.stringify({ errorCode: "STS-HTTP-0011" }) }],
+    ["a description outside the listed members", 1,
+     { method: "GET", path: "/admin-api/saml2", status: 200,
+       body: JSON.stringify({ reason: { description: CODE } }) }],
+    ["a code after help text naming one, which reading the first would miss",
+     1,
+     { method: "GET", path: "/admin-api/saml2", status: 200,
+       body: JSON.stringify({ settings: { groups: [{ settings: [{
+         description: CODE }] }] }, errorCode: "STS-HTTP-0011" }) }],
+    ["a code in a member's name", 1,
+     { method: "GET", path: "/admin-api/saml2", status: 200,
+       body: JSON.stringify({ "STS-HTTP-0011": 1 }) }],
+    ["an act on a read that draws recorded failures", 1,
+     { method: "POST", path: "/admin-api/audit", status: 200,
+       body: JSON.stringify({ errorCode: "STS-HTTP-0011" }) }],
+    ["an answer that is not JSON", 1,
+     { method: "GET", path: "/admin-api/saml2", status: 200,
+       body: "<p>" + CODE + "</p>" }]
+  ];
+  const answers = leakedBy(cases.map(function (one) {
+    return one[2];
+  }));
+  cases.forEach(function (one, at) {
+    t.check((answers[at] > 0) === (one[1] > 0),
+      (one[1] ? "refused: " : "allowed: ") + one[0], String(answers[at]));
+  });
+
+  // The diagnostic reads are the ones the response-model test names: a row
+  // of either table with no route here fails a fuzz run, and a route with no
+  // row is an exception nothing else knows about.
+  const source = fs.readFileSync(path.join(__dirname,
+    "openapi_response_models.js"), "utf8");
+  const table = function (name) {
+    const at = source.indexOf("const " + name + " = {");
+    return source.slice(at, source.indexOf("\n};", at));
+  };
+  const named = new Set();
+  (table("DRAWN_CODE_OPERATIONS").match(/^ {2}(get[A-Za-z]+):/gm) || [])
+    .forEach(function (one) {
+      named.add(one.trim().replace(":", ""));
+    });
+  (table("DRAWN_PLAIN_CODES").match(/^ {2}'(get[A-Za-z]+) /gm) || [])
+    .forEach(function (one) {
+      named.add(one.trim().replace("'", ""));
+    });
+  const listed = childProcess.spawnSync("python3", [path.join(__dirname,
+    "schemathesis", "code_members.py"), "--diagnostic-operations"],
+  { encoding: "utf8" });
+  t.equal(JSON.parse(listed.stdout).join(","), Array.from(named).sort()
+    .join(","), "the diagnostic reads are the response-model test's rows");
+  t.log.debug("Leaving codeMemberSection().");
+}
+
 function run(t) {
   t.log.debug("Entering run().");
+  codeMemberSection(t);
 
   // The plan is internally well-formed.
   const problems = kit.validate();
