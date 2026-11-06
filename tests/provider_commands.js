@@ -415,6 +415,26 @@ async function body(t) {
   t.check(row && row.learned.roles.length === 3 && validate(report),
           '9c. the real report, with roles in it, meets the model it is held to',
           JSON.stringify(validate.errors || []).slice(0, 600));
+  // A row stored before `lastAccessFrom()` was asked at the write, which only
+  // the private writer can still make: it holds what a relying party wrote.
+  c.noteAccount('cmd-app', 'stored-bad-row', 'cmd-alice', 'active', 'audit',
+                { lastAccess: { at: 1 } });
+  c.noteAccount('cmd-app', 'stored-good-row', 'cmd-alice', 'active', 'audit',
+                { lastAccess: 1700000000 });
+  const stored = c.report();
+  const accountOf = function (sub) {
+    return stored.accounts.filter(function (one) {
+      return one.sub === sub;
+    })[0];
+  };
+  t.check(accountOf('stored-bad-row') &&
+          !('lastAccess' in accountOf('stored-bad-row')),
+          '9d. a stored last_access that is not a time is left out of the row');
+  t.equal(accountOf('stored-good-row').lastAccess, 1700000000,
+          '9e. and one that is a time is reported');
+  t.check(validate(stored), '9f. the report with such a row, and with a row ' +
+          'that has no lastAccess, meets the model',
+          JSON.stringify(validate.errors || []).slice(0, 600));
   log.debug("Leaving body().");
 }
 
