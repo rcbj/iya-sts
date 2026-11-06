@@ -266,13 +266,13 @@ function crlServer() {
   });
 }
 
-async // Product mode as #174 wrote it. Paranoid PKI mode, on there by default, has the
+// Product mode as #174 wrote it. Paranoid PKI mode, on there by default, has the
 // sharper rule: where a certificate names no source there is no check to perform
 // (rcbj, #1360), which `tests/certificate_trust.js` holds.
 const PRODUCT_NOT_PARANOID = { 'global.mode': 'product',
                                'pki.paranoid': 'off' };
 
-function withSettings(pairs, fn) {
+async function withSettings(pairs, fn) {
   log.debug("Entering withSettings().");
   const config = require('../common/config');
   const keys = Object.keys(pairs);
