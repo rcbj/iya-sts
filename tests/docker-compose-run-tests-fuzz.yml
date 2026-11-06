@@ -51,3 +51,12 @@ services:
     environment:
       - STS_OAUTH2_DPOP_IAT_SKEW_S=30
       - STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE=200000
+      # SIGN-IN RISK SCORING OFF AT THE PROCESS LEVEL (#1299, rcbj: "just
+      # disable risk scoring for the data fuzzing test"). The fuzz realms set
+      # risk.assessSignIns=false as an override, but a cell's own fuzzing can
+      # call config/reset-all (now excluded) or config/reset and clear the
+      # override, after which risk scoring came back on mid-cell and logged the
+      # fuzz person out. A process default holds for the WHOLE run whatever a
+      # realm override does, exactly as the DPoP floor above does — the fuzz
+      # person is not a real user and its risk is test noise. Literal, so BARE.
+      - STS_RISK_ASSESS_SIGN_INS=false
