@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5302** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5305** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 164
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 167
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 252
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -759,8 +759,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0162` | A WS-Security signature is canonicalized, or a Reference transformed, with something other than exclusive XML canonicalization alone (Basic Security Profile R5404, R5412) (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
 | `STS-KEYS-0163` | A WS-Security signature does not cover the SOAP Body or the wsu:Timestamp of its security header by their wsu:Id (#521). | the caller's: wst:AuthenticationBadElements (STS-WSTRUST-0040) |
 | `STS-KEYS-0164` | A WS-Security signature's KeyInfo names its certificate in no form of the X.509 Token Profile 1.1 this service reads (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
-| `STS-KEYS-0165` | An EdDSA signature through helpers.signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.eddsaSigning is off — a client registered for EdDSA while it was on, or a setting naming EdDSA — and was refused rather than made with a key the realm does not publish (#1292). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
-| `STS-KEYS-0166` | A signature through helpers.signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.signingAlgorithms does not list its algorithm — a client registered for it before the list was set, or a setting naming it — and was refused (#1348). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
+| `STS-KEYS-0165` | An EdDSA signature through helpers.signJwt() or signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.eddsaSigning is off — a client registered for EdDSA while it was on, or a setting naming EdDSA — and was refused rather than made with a key the realm does not publish (#1292). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
+| `STS-KEYS-0166` | A signature through helpers.signJwt() or signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.signingAlgorithms does not list its algorithm — a client registered for it before the list was set, or a setting naming it — and was refused (#1348). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
 | `STS-KEYS-0167` | keys.signingAlgorithms was not changed: a list that is not empty must include RS256, which OpenID Connect Discovery requires and which is the default for ID Tokens and access tokens (#1348). | none: an operator's write, refused with its reason |
 | `STS-KEYS-0168` | A certificate is past its notAfter, under a use case that asks its validity. | none — recorded on the refusal the use case makes (#1360) |
 | `STS-KEYS-0169` | A certificate is before its notBefore, under a use case that asks its validity. | none — recorded on the refusal the use case makes (#1360) |
@@ -770,6 +770,9 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0173` | A certificate is signed with a broken hash (MD2, MD5, or SHA-1 where it is not allowed). | none — recorded on the refusal the use case makes (#1360) |
 | `STS-KEYS-0174` | A certificate holds a key too weak to rely on: a short or ROCA-affected RSA modulus, or a curve this service does not rely on. | none — recorded on the refusal the use case makes (#1360) |
 | `STS-KEYS-0175` | A certificate carries a critical extension nothing here reads. | none — recorded on the refusal the use case makes (#1360) |
+| `STS-KEYS-0176` | An HTTP message signature in a post-quantum algorithm was presented to a realm whose keys.postQuantumSigning is off, and was refused before its signature was checked. | the caller's refusal: RFC 9421 section 3.2 leaves what an application accepts to it (#1368) |
+| `STS-KEYS-0177` | An HTTP message signature in a post-quantum algorithm was asked for in a realm whose keys.postQuantumSigning is off, and was not made. | none — a setting names an algorithm the realm no longer signs with (#1368) |
+| `STS-KEYS-0178` | A setting chooses a signing algorithm the realm may not use, so its signature was made with RS256 instead. Logged once per realm. | none — the setting should name an algorithm the realm signs with (#1368) |
 
 ## STS-PKI
 
