@@ -574,6 +574,65 @@ async function provision(serviceBase, profile, say) {
     password: FUZZ_PASSWORD, label: profile.label };
 }
 
+// Re-assert the realm's known state before every cell (#1299, "start from a
+// known state"): a cell's own fuzzing changes the realm, and the next cell
+// starts from whatever it left. The 2026-11-06 run showed two: the admin-api
+// cell changed the fuzz person's password, so report-api's sign-in answered
+// STS-AUTHN-0054 (a password that does not match); and the DPoP replay cap was
+// back at its 10000 default (STS-CORE-0097 / STS-OAUTH-0554), filling under the
+// proof volume and refusing every proof. So before each cell, with a fresh
+// token already in hand, this re-asserts the DPoP replay headroom and window
+// (FUZZ_DPOP), the fuzz person's password, and the console and configured
+// roles, through the runtime doors — idempotent, and the process-env default on
+// the fuzz stack's `sts` service is the fallback for a reset WITHIN a cell.
+// Resolves { ok, why }; the caller FAILS THE CELL LOUDLY when it is not ok.
+async function reassertRealm(serviceBase, provisioned, say) {
+  log.debug("Entering reassertRealm(). " + provisioned.realmPrefix);
+  const prefix = provisioned.realmPrefix;
+  const dpop = await adminCall(serviceBase, prefix, "POST",
+    "/admin-api/config/set-many", FUZZ_DPOP);
+  if (dpop.status !== 200) {
+    log.debug("Leaving reassertRealm(). set-many " + dpop.status);
+    return { ok: false, why: "config/set-many in " + prefix + " answered " +
+      dpop.status + " " + JSON.stringify(dpop.json).slice(0, 200) };
+  }
+  const password = await adminCall(serviceBase, prefix, "POST",
+    "/admin-api/users/set-password",
+    { user: FUZZ_USER, password: FUZZ_PASSWORD });
+  if (password.status !== 200) {
+    log.debug("Leaving reassertRealm(). set-password " + password.status);
+    return { ok: false, why: "users/set-password in " + prefix +
+      " answered " + password.status + " " +
+      JSON.stringify(password.json).slice(0, 200) };
+  }
+  for (let i = 0; i < FUZZ_CONSOLE_ROLES.length; i++) {
+    const granted = await adminCall(serviceBase, prefix, "POST",
+      "/admin-api/rbac/grant",
+      { username: FUZZ_USER, role: FUZZ_CONSOLE_ROLES[i] });
+    if (granted.status !== 200) {
+      log.debug("Leaving reassertRealm(). grant " + granted.status);
+      return { ok: false, why: "granting " + FUZZ_CONSOLE_ROLES[i] + " in " +
+        prefix + " answered " + granted.status + " " +
+        JSON.stringify(granted.json).slice(0, 200) };
+    }
+  }
+  for (let i = 0; i < FUZZ_CONFIGURED_ROLES.length; i++) {
+    const member = await adminCall(serviceBase, prefix, "POST",
+      "/admin-api/roles/add-member",
+      { role: FUZZ_CONFIGURED_ROLES[i], kind: "user", member: FUZZ_USER });
+    if (member.status !== 200) {
+      log.debug("Leaving reassertRealm(). add-member " + member.status);
+      return { ok: false, why: "adding " + FUZZ_USER + " to " +
+        FUZZ_CONFIGURED_ROLES[i] + " in " + prefix + " answered " +
+        member.status + " " + JSON.stringify(member.json).slice(0, 200) };
+    }
+  }
+  say("[schemathesis] re-asserted " + prefix + ": DPoP headroom, the fuzz " +
+    "person's password and its roles");
+  log.debug("Leaving reassertRealm(). ok");
+  return { ok: true, why: "" };
+}
+
 // A free loopback TCP port.
 function freePort() {
   log.debug("Entering freePort().");
@@ -749,6 +808,19 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
   // an hour, so a realm's third cell otherwise fuzzes with an expired token
   // and console_signin's /admin-api account-ensure answers 401 (#1299).
   await freshAdminToken(serviceBase, say);
+  // Re-assert the realm's known state before the cell, and FAIL THE CELL
+  // LOUDLY if it cannot be done (#1299): a previous cell's fuzzing can change
+  // the fuzz person's password or the realm's DPoP settings, and the next cell
+  // starts from whatever it left.
+  const reasserted = await reassertRealm(serviceBase, provisioned, say);
+  if (!reasserted.ok) {
+    log.debug("Leaving runSurface(). re-assert failed");
+    return { surface: surface.key, realm: provisioned.realmPrefix,
+      code: null, status: "error", findings: [],
+      output: "could not re-assert the realm's known state before the " +
+        surface.key + " cell (#1299, start from a known state): " +
+        reasserted.why };
+  }
   const port = await freePort();
   const proxyEnv = Object.assign({}, process.env, {
     STS_SCHEMA_PROXY_PORT: String(port),
