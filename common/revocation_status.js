@@ -4438,6 +4438,24 @@ function namesSource(cert) {
   return named;
 }
 
+/**
+ * Whether anything a verdict would have to fetch names a source. A certificate
+ * this service issued answers from its register and an anchor from nothing, so
+ * neither counts.
+ *
+ * @param input - `{ leaf, chain, verified }`, as `verdictFor()` takes it
+ * @returns whether a fetch could say anything about this path
+ */
+function pathNamesSource(input) {
+  log.debug('Entering pathNamesSource().');
+  const path = walk(input);
+  const named = !path.readable || path.links.some(function (link) {
+    return link.source === 'crl' && namesSource(link.cert);
+  });
+  log.debug('Leaving pathNamesSource(). ' + named);
+  return named;
+}
+
 async function resolveForeign(link, verified, opts) {
   log.debug('Entering resolveForeign(). depth=' + link.depth);
   if (!link.issuerCert && paranoidInForce() && !namesSource(link.cert)) {
@@ -5728,6 +5746,7 @@ module.exports = {
   decide: decide,
   fromSocket: fromSocket,
   namesSource: namesSource,
+  pathNamesSource: pathNamesSource,
   rememberHold: rememberHold,
   rememberedHold: rememberedHold,
   awaitResumedChain: awaitResumedChain,

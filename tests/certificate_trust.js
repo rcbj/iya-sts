@@ -30,6 +30,8 @@
 //   * paranoid not lifting the distribution-point requirement — 1 red
 //   * a link with no issuer refused though it names nothing   — 1 red
 //   * every link with no issuer passing, naming or not        — 2 red
+//   * a pin asking only its own extensions, not the path      — 2 red (L)
+//   * a pin always asking, naming or not                     — 2 red (L)
 //   * `fieldChecks()` not marking a failure                  — 53 red
 //   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
 //   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
@@ -522,6 +524,30 @@ async function run(t, double, crls) {
   const secondAsk = trust.pinnedSync('saml-signer', listedPin.pem);
   t.check(!secondAsk.ok && secondAsk.code === 'STS-PKI-0118',
           'L. and once read, it is revoked', secondAsk.code);
+  // Nothing is looked up for a pin naming nothing, unless a CA above it does.
+  const crossKeysForPins = require('../common/crypto_impl/key_material');
+  const quietCa = await kit.mint({ cn: 'pin ca naming nothing', ca: true,
+    issuer: root, pair: await crossKeysForPins.generateKeyPair('rsa-2048') });
+  const quietPin = await kit.mint({ cn: 'pin naming nothing', issuer: quietCa });
+  await signers.add(REALM, quietCa.pem, {});
+  const noSource = trust.pinnedSync('saml-signer', quietPin.pem);
+  t.check(noSource.ok,
+          'L. a pin whose path names no source has no check to perform',
+          noSource.why);
+  const loudCa = await kit.mint({ cn: 'pin ca naming a list', ca: true,
+    issuer: root, crls: [crls.base + '/pin-ca.crl'],
+    pair: await crossKeysForPins.generateKeyPair('rsa-2048') });
+  crls.routes['/pin-ca.crl'] = await kit.crlOf(root, [loudCa.serialHex]);
+  const underLoud = await kit.mint({ cn: 'pin under it', issuer: loudCa });
+  await signers.add(REALM, loudCa.pem, {});
+  t.check(!trust.pinnedSync('saml-signer', underLoud.pem).ok,
+          'L. a CA above the pin naming one is asked', '');
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 800);
+  });
+  const caAnswered = trust.pinnedSync('saml-signer', underLoud.pem);
+  t.check(!caAnswered.ok && caAnswered.code === 'STS-PKI-0118',
+          'L. and its answer about that CA holds', caAnswered.code);
   const bareOk = trust.bareKey({ kty: 'EC' });
   t.check(bareOk.ok, 'L. a bare JWK is left alone (OpenID Federation 1.1)', '');
   const carried = trust.bareKey({ kty: 'EC', x5c: [pemDer(expiredSelf.pem)

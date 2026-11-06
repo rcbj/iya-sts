@@ -1832,10 +1832,9 @@ class CertificateTrust {
       helpers.log.debug("Leaving CertificateTrust.pinRevocation().");
       return;
     }
-    const parsed = stsCrypto.parseCertificate(der);
-    const names = revocationStatus.distributionPointsOf(parsed).fetchable.length ||
-                  revocationStatus.ocspRespondersOf(parsed).fetchable.length;
-    if (!names) {
+    // Nothing on the path names a source, so there is no check to perform
+    // (rcbj, #1360). A CA above the pin may name one, and is asked.
+    if (!revocationStatus.pathNamesSource(input)) {
       verdict.checks.revocation = 'passed';
       verdict.revocation = local;
       helpers.log.debug("Leaving CertificateTrust.pinRevocation().");
