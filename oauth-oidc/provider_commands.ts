@@ -1755,9 +1755,15 @@ class ProviderCommands {
     const accountRows: Json[] = [];
     accounts.forEach(function (row: Json) {
       if (row && (!o.clientId || row.clientId === o.clientId)) {
-        accountRows.push(Object.assign({}, row, {
+        const shown = Object.assign({}, row, {
           updatedAt: row.updatedAt ? new Date(row.updatedAt).toISOString()
-                                   : '' }));
+                                   : '' });
+        // Through the same door as `roles`: a row stored earlier is as the
+        // relying party wrote it, and one bad row must not refuse the report.
+        if (ProviderCommands.lastAccessFrom(row.lastAccess) === null) {
+          delete shown.lastAccess;
+        }
+        accountRows.push(shown);
       }
     });
     accountRows.sort(function (a, b) {
