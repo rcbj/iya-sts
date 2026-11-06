@@ -14,8 +14,8 @@
 // finds its models together, with its own views above them.
 //
 // **A POST ANSWERS IN `account-api/CLAUDE.md`'s MEMBERS** (*What an answer
-// is*): `message`, `view`, `go`, `errors` with `ok: false`, `stepUp`, `location`,
-// `files`. `act()` below is that shape, with the view each operation draws.
+// is*): `message`, `view`, `go`, `errors` with `ok: false`, `stepUp`,
+// `location`, `files`. `act()` below is that shape, with the view each operation draws.
 //
 // **EVERY REFUSAL THAT CARRIES MORE THAN `{ ok, errors }` IS NAMED, STATUS BY
 // STATUS.** `ctx.refuse(res, status, code, errors, extra)` answers
@@ -431,8 +431,8 @@ const UMA_PERMISSION: Json = Kit.closed({
 const SHARED_PAGING: Json = Kit.closed({ page: INT, pages: INT, total: INT });
 
 // `code` IS HERE BECAUSE `act()` CAN SEND IT, and reported on #1353 as a
-// defect: `view()` answers `{ ok: false, code }` where the owner's document will
-// not parse, and a refusal embeds that view whole.
+// defect: `view()` answers `{ ok: false, code }` where the owner's document
+// will not parse, and a refusal embeds that view whole.
 const SHARED_VIEW: Json = Kit.closed({
   ok: BOOL, enabled: BOOL, code: STR,
   resources: Kit.listOf(Kit.closed({
@@ -784,7 +784,9 @@ const SELF_ISSUED_VIEW: Json = Kit.closed({
 
 Object.assign(operations, {
   getSelfIssued: answers(SELF_ISSUED_VIEW),
-  removeSelfIssued: answers(act(),
+  // A DID this realm hosts is deactivated through `didAct()`, whose answer
+  // carries the page's `view`; any other subject answers the message alone.
+  removeSelfIssued: answers(act({ view: SELF_ISSUED_VIEW }),
     refusedOn({ view: SELF_ISSUED_VIEW }, '400')),
   getSelfIssuedDidDocument: answers(Kit.closed({
     ok: BOOL, subject: STR,
