@@ -1673,7 +1673,7 @@ class CertificateTrust {
     const codes: Json = {};
     const whys: Json = {};
     const der = CertificateTrust.derOf(cert);
-    if (!der) {
+    if (!der || !CertificateTrust.readable(der)) {
       verdict.checks.path = 'failed';
       codes.path = 'STS-PKI-0238';
       whys.path = 'it is not an X.509 certificate';
