@@ -116,6 +116,7 @@ const pkiMerge = require('./pki_merge');
 // The debugger's own PKI code, byte-identical. DO NOT EDIT THEM HERE — see
 // `common/crypto_impl/CLAUDE.md`.
 const x509 = require('./crypto_impl/x509');
+const algorithmRegistry = require('./crypto_impl/algorithm_registry');
 const keyMaterial = require('./crypto_impl/key_material');
 // The X.509 binding of the post-quantum algorithms, and the algorithm table it
 // rests on — for ONE thing: writing the SubjectPublicKeyInfo of a
@@ -6336,8 +6337,14 @@ function jwsAlgFor(keyDesc, sigAlgId) {
     log.debug('Leaving jwsAlgFor(). RSA.');
     return (sig.pss ? 'PS' : 'RS') + digit;
   }
-  log.debug('Leaving jwsAlgFor(). No JWS algorithm for that key.');
-  return null;
+  // A POST-QUANTUM KEY HAS THE ONE ALGORITHM, where JOSE has a name for it
+  // (#1368). `null` for a parameter set it has none for, and for a KEM, which
+  // signs nothing. Until then every leaf under a post-quantum authority was
+  // `null`, and `/admin-api/pki/issue` could not answer at all.
+  const row = sig.kind === 'pqc'
+    ? algorithmRegistry.bySpelling('x509', sigAlgId) : null;
+  log.debug('Leaving jwsAlgFor(). ' + ((row && row.jose) || 'None') + '.');
+  return (row && row.jose) || null;
 }
 
 

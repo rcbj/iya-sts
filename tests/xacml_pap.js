@@ -452,6 +452,18 @@ function checkEdits(t) {
   t.check(!stale.ok && /not there any more/.test(stale.why),
           'a path that no longer resolves is refused rather than guessing',
           stale.why);
+
+  // An empty path points `set-expression-apply` (and its five siblings) at the
+  // document itself, which has no parent to write an expression into. A fuzzed
+  // `path: ""` made that dereference null and the action's catch answered 500
+  // (#1356). It is a refusal now, not a crash, and the document is untouched.
+  const rootExpr = editor.applyEdit(policy, '', 'set-expression-apply',
+                                    { functionId: F1 + 'string-equal' });
+  t.check(!rootExpr.ok && /is the policy itself/.test(rootExpr.why),
+          'an expression edit at the document root is refused, not a crash',
+          rootExpr.why);
+  t.equal(validate.problemsIn(policy).length, 0,
+          'the refused root-expression edit left the policy type-checking');
   log.debug("Leaving checkEdits().");
 }
 
