@@ -10989,6 +10989,70 @@ async function coseSign1VerifyAsync(coseAlg, key, protectedBytes, payload,
   return ok;
 }
 
+// ---------------------------------------------------------------------------
+// A SIGNATURE ON AN X.509 STRUCTURE (#1368): a foreign CRL or OCSP response. A
+// classical one goes where it always went, the engine's `verifyWithPublicKey()`,
+// which handles RSA, RSASSA-PSS and ECDSA by the AlgorithmIdentifier. The engine
+// has no post-quantum algorithm, so a post-quantum list answered "not signed by
+// this certificate" for every signer it was tried against.
+//
+// `pki.acceptedSignatureAlgorithms` is asked first, before any key is used.
+// ---------------------------------------------------------------------------
+/**
+ * Verifies the signature on a CRL's or OCSP response's TBS bytes.
+ *
+ * @param tbs - the signed bytes
+ * @param signatureValue - the signature, as an asn1js BIT STRING
+ * @param publicKeyInfo - the signer's pkijs PublicKeyInfo
+ * @param signatureAlgorithm - the pkijs AlgorithmIdentifier
+ * @returns a promise of whether it verifies; throws what the engine throws for
+ *   a key it cannot use with the algorithm, which callers read as "not this key"
+ */
+async function verifyX509Signature(tbs, signatureValue, publicKeyInfo,
+                                   signatureAlgorithm) {
+  log.debug("Entering verifyX509Signature().");
+  const oid = String(signatureAlgorithm.algorithmId);
+  const unaccepted = signaturePolicy.acceptX509Cause(oid);
+  if (unaccepted) {
+    log.warn(errorCodes.tag(unaccepted.code) + unaccepted.message);
+    log.debug("Leaving verifyX509Signature(). Not accepted here.");
+    return false;
+  }
+  const entry = pqcX509.algForOid(oid);
+  if (entry && entry.use !== 'kem') {
+    const read = pqcX509.decodeSpki(new Uint8Array(
+      publicKeyInfo.toSchema().toBER(false)));
+    if (!read || read.alg !== entry.id) {
+      log.debug("Leaving verifyX509Signature(). The wrong key for " + entry.id);
+      return false;
+    }
+    const ok = !!(await pqcX509.verify(entry.id,
+      new Uint8Array(signatureValue.valueBlock.valueHexView),
+      new Uint8Array(tbs), read.pub));
+    log.debug("Leaving verifyX509Signature(). " + entry.id + " " + ok);
+    return ok;
+  }
+  const pkijs = require('pkijs');
+  const verified = await pkijs.getCrypto(true).verifyWithPublicKey(tbs,
+    signatureValue, publicKeyInfo, signatureAlgorithm);
+  log.debug("Leaving verifyX509Signature(). " + verified);
+  return verified;
+}
+
+/**
+ * Whether a certificate's signature verifies under a public key. OpenSSL
+ * answers, and throws for a key of the wrong type; callers read that as no.
+ *
+ * @param certificate - an X509Certificate
+ * @param publicKey - the candidate issuer's public key
+ * @returns true when it verifies
+ */
+function certificateSignedWith(certificate, publicKey) {
+  log.debug("Entering certificateSignedWith().");
+  log.debug("Leaving certificateSignedWith().");
+  return certificate.verify(publicKey);
+}
+
 // The COSE entry for an identifier, or null.
 /**
  * Returns the COSE entry for an algorithm identifier.
@@ -17864,6 +17928,8 @@ module.exports = {
   hmac: hmac,
   parseCertificate: parseCertificate,
   decodeJws: decodeJws,
+  verifyX509Signature: verifyX509Signature,
+  certificateSignedWith: certificateSignedWith,
   signaturePolicy: signaturePolicy,
   bbs: bbs,
   signRawSignatureAsync: signRawSignatureAsync,

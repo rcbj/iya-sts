@@ -140,7 +140,7 @@ function childMain() {
          JSON.stringify(shape),
          'the JWK Set holds the keys it held before phase 5');
 
-    // ---- SAML: the one deliberate exception. --------------------------------
+    // ---- SAML: the one deliberate exception. ------------------------------
     const saml = await get('/saml2/metadata');
     const signing = saml.text.match(/<alg:SigningMethod /g) || [];
     note(signing.length > 3 && /<alg:DigestMethod /.test(saml.text),
@@ -171,7 +171,7 @@ function childMain() {
          'the setting turns them off');
     config.clearOverride('saml2.publishAlgorithmSupport');
 
-    // ---- A classical list. ----------------------------------------------------
+    // ---- A classical list. ------------------------------------------------
     config.setOverride('keys.signingAlgorithms', 'PS256,RS256');
     let doc = await json('/.well-known/openid-configuration');
     note(JSON.stringify(doc.id_token_signing_alg_values_supported) ===
@@ -184,7 +184,7 @@ function childMain() {
     }), 'the JWK Set carries the keys of that list and no others');
     config.clearOverride('keys.signingAlgorithms');
 
-    // ---- A post-quantum-first list. --------------------------------------------
+    // ---- A post-quantum-first list. ---------------------------------------
     config.setOverride('keys.signingAlgorithms', 'ML-DSA-65,RS256');
     doc = await json('/.well-known/openid-configuration');
     note(doc.id_token_signing_alg_values_supported[0] === 'ML-DSA-65',
@@ -192,7 +192,7 @@ function childMain() {
          doc.id_token_signing_alg_values_supported);
     config.clearOverride('keys.signingAlgorithms');
 
-    // ---- keys.pqcOnly. -----------------------------------------------------------
+    // ---- keys.pqcOnly. ----------------------------------------------------
     config.setOverride('keys.pqcOnly', true);
     doc = await json('/.well-known/openid-configuration');
     const idToken = doc.id_token_signing_alg_values_supported;
@@ -214,7 +214,7 @@ function childMain() {
     }), 'and keeps the RSA key RS256 ID Tokens verify with');
     config.clearOverride('keys.pqcOnly');
 
-    // ---- An accept list, with the sign list left to what it covers. ------------
+    // ---- An accept list, with the sign list left to what it covers. -------
     config.setOverride('keys.acceptedSigningAlgorithms', 'RS256,ES256');
     doc = await json('/.well-known/openid-configuration');
     note(JSON.stringify(doc.request_object_signing_alg_values_supported.filter(
@@ -225,7 +225,62 @@ function childMain() {
     doc.request_object_signing_alg_values_supported);
     config.clearOverride('keys.acceptedSigningAlgorithms');
 
-    // ---- The describer, and /crypto/metadata. ----------------------------------
+    // ---- A post-quantum attester: advertised only where one is configured. 
+    const keyMaterial = require(ROOT_DIR + '/common/crypto_impl/key_material');
+    const x509 = require(ROOT_DIR + '/common/crypto_impl/x509');
+    const stsCrypto = require(ROOT_DIR + '/common/crypto');
+    const issuer = require(ROOT_DIR + '/oid4vc/vc_issuer');
+    const attesterPair = await keyMaterial.generateKeyPair('ml-dsa-65');
+    const attester = await x509.issueCertificate({
+      subject: [{ name: 'CN', value: 'post-quantum attester' }],
+      subjectPublicKey: attesterPair.publicPem, signatureAlg: 'ml-dsa-65',
+      issuerPrivateKey: attesterPair.privatePem,
+      notBefore: new Date(0).toISOString(),
+      notAfter: new Date(4102444800000).toISOString()
+    });
+    const pqAlgs = function (meta) {
+      const out = [];
+      Object.keys(meta.credential_configurations_supported)
+        .forEach(function (id) {
+          const types = meta.credential_configurations_supported[id]
+            .proof_types_supported || {};
+          ((types.attestation || {}).proof_signing_alg_values_supported || [])
+            .forEach(function (alg) {
+              if (/^ML-DSA/.test(alg)) {
+                out.push(alg);
+              }
+            });
+        });
+      return out;
+    };
+    note(pqAlgs(await json('/.well-known/openid-credential-issuer'))
+      .length === 0,
+    'no post-quantum attestation is advertised with no such attester');
+    config.setOverride('oid4vci.keyAttestationTrustedCertificates',
+                       attester.pem);
+    note(pqAlgs(await json('/.well-known/openid-credential-issuer'))
+      .indexOf('ML-DSA-65') >= 0,
+    'and ML-DSA-65 is once an attester holds that key');
+    const attesterRaw = require(ROOT_DIR + '/common/crypto_impl/pqc_x509')
+      .decodePkcs8(new Uint8Array(Buffer.from(attesterPair.privatePem
+        .replace(/-----[^-]+-----|\s/g, ''), 'base64')));
+    const now = Math.floor(Date.now() / 1000);
+    const token = stsCrypto.signJws({ iat: now, exp: now + 300,
+      attested_keys: [{ kty: 'EC', crv: 'P-256', x: 'AA', y: 'AA' }] },
+    Buffer.from(attesterRaw.priv), { algorithm: 'ML-DSA-65',
+      header: { typ: 'key-attestation+jwt' } });
+    let attestationError = '';
+    try {
+      issuer.verifyKeyAttestation(token, {});
+    } catch (e) {
+      attestationError = e.message;
+    }
+    note(!/does not verify|this issuer accepts/.test(attestationError),
+         'and an attestation it signed gets past the signature',
+         attestationError);
+    config.clearOverride('oid4vci.keyAttestationTrustedCertificates');
+
+    // ---- The describer, and /crypto/metadata. -----------------------------
     const metadata = await json('/crypto/metadata');
     ['cose', 'dataIntegrity', 'x509', 'httpsig'].forEach(function (name) {
       note(Array.isArray(metadata.algorithms[name].accepted) &&
