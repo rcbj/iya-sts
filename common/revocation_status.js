@@ -641,7 +641,13 @@ function rememberChain(raw, chain) {
   presentedChains.delete(key);
   cacheRegistry.makeRoom(presentedChains, PRESENTED_CHAIN_ENTRIES,
                          { counter: presentedCount });
-  presentedChains.set(key, { chain: encoded, until: now + life });
+  // WHAT THE HOLD SAID RIDES ON THE SAME ROW (#1360). Writing the chain without
+  // it told every later resumption that nothing was known of this handshake.
+  const row = { chain: encoded, until: now + life };
+  if (held && typeof held.held === 'boolean') {
+    row.held = held.held;
+  }
+  presentedChains.set(key, row);
   log.debug("Leaving rememberChain().");
 }
 
@@ -659,9 +665,11 @@ function rememberHold(raw, ok) {
   log.debug("Entering rememberHold().");
   const key = leafKey(raw);
   const held = presentedChains.get(key);
-  if (!held || held.held !== !!ok) {
-    const row = held ? Object.assign({}, held) :
-      { chain: [], until: Date.now() + presentedChainLifetimeMs() };
+  const life = presentedChainLifetimeMs();
+  const now = Date.now();
+  if (!held || held.held !== !!ok || Number(held.until) - now <= life / 2) {
+    const row = held ? Object.assign({}, held) : { chain: [] };
+    row.until = now + life;
     row.held = !!ok;
     if (!held) {
       cacheRegistry.makeRoom(presentedChains, PRESENTED_CHAIN_ENTRIES,
@@ -691,7 +699,8 @@ function rememberedHold(raw) {
 // so no Entering/Leaving pair — one would drown the log.
 function heldChain(key) {
   const found = presentedChains.get(key);
-  if (!found || !Array.isArray(found.chain) ||
+  // An empty chain is a row the hold wrote and no chain has reached yet.
+  if (!found || !Array.isArray(found.chain) || !found.chain.length ||
       !(Number(found.until) > Date.now())) {
     return null;
   }
@@ -737,26 +746,74 @@ function rememberedChain(raw) {
  */
 async function awaitResumedChain(socket) {
   log.debug("Entering awaitResumedChain().");
+  const arrived = await waitForResumedRow(socket);
+  settleResumedHold(socket);
+  log.debug("Leaving awaitResumedChain(). " + arrived);
+  return arrived;
+}
+
+// A RESUMED SESSION WHOSE HOLD IS NOT KNOWN HERE YET (#1360). The hold ran on
+// whichever node saw the full handshake and its verdict is on its way in the
+// same row as the chain, so the hold cannot answer inside the handshake that
+// resumes. It leaves the socket marked, this settles it before any request is
+// answered, and what nothing established after the wait is demoted.
+function settleResumedHold(socket) {
+  log.debug("Entering settleResumedHold().");
+  if (!socket || !socket.stsResumedHoldPending) {
+    log.debug("Leaving settleResumedHold(). Nothing pending.");
+    return;
+  }
+  socket.stsResumedHoldPending = false;
+  let held = null;
+  try {
+    held = rememberedHold(socket.getPeerCertificate().raw);
+  } catch (e) {
+    log.debug("Caught in settleResumedHold(): " + ((e && e.message) || e));
+  }
+  if (held !== true) {
+    const why = held === false
+      ? 'its full handshake was refused, and this session resumes it'
+      : 'this session resumes a handshake no record of which reached this ' +
+        'process';
+    socket.authorized = false;
+    socket.authorizationError = 'ERR_STS_PATH_RULES: ' + why;
+    log.warn(errorCodes.tag('STS-TLS-0058') + 'tls: a resumed client ' +
+             'certificate is treated as unverified: ' + why + '.');
+  }
+  log.debug("Leaving settleResumedHold(). " + held);
+}
+
+async function waitForResumedRow(socket) {
+  log.debug("Entering waitForResumedRow().");
   if (!socket || typeof socket.isSessionReused !== 'function' ||
       socket.authorized !== true || !socket.isSessionReused()) {
-    log.debug("Leaving awaitResumedChain(). Nothing to wait for.");
+    log.debug("Leaving waitForResumedRow(). Nothing to wait for.");
     return true;
   }
   let peer = null;
   try {
     peer = socket.getPeerCertificate(true);
   } catch (e) {
-    log.debug("Caught in awaitResumedChain(): " + ((e && e.message) || e));
+    log.debug("Caught in waitForResumedRow(): " + ((e && e.message) || e));
   }
+  // Node completes a leaf's issuer from the listener's own anchors, so a chain
+  // here says nothing of a verdict the hold is still waiting for.
   if (!peer || !peer.raw || !peer.raw.length ||
-      (peer.issuerCertificate && peer.issuerCertificate.raw &&
+      (!socket.stsResumedHoldPending && peer.issuerCertificate &&
+       peer.issuerCertificate.raw &&
        !peer.issuerCertificate.raw.equals(peer.raw))) {
-    log.debug("Leaving awaitResumedChain(). No certificate, or a chain.");
+    log.debug("Leaving waitForResumedRow(). No certificate, or a chain.");
     return true;
   }
   const key = leafKey(peer.raw);
-  if (heldChain(key)) {
-    log.debug("Leaving awaitResumedChain(). Held.");
+  const here = function () {
+    // A HOT PATH: one lookup per pull while waiting, so no Entering/Leaving
+    // pair. The chain alone will not do while the hold's verdict is awaited.
+    return !!heldChain(key) && (!socket.stsResumedHoldPending ||
+                                rememberedHold(peer.raw) !== null);
+  };
+  if (here()) {
+    log.debug("Leaving waitForResumedRow(). Held.");
     return true;
   }
   const budget = Number(config.value('tls.resumedChainWaitMs'));
@@ -767,7 +824,7 @@ async function awaitResumedChain(socket) {
   try {
     persistence = require('../persistence/persistence');
   } catch (e) {
-    log.debug("Caught in awaitResumedChain(): " + ((e && e.message) || e));
+    log.debug("Caught in waitForResumedRow(): " + ((e && e.message) || e));
   }
   while (Date.now() < deadline) {
     const left = deadline - Date.now();
@@ -780,13 +837,13 @@ async function awaitResumedChain(socket) {
         })
       ]);
     } catch (e) {
-      log.debug("Caught in awaitResumedChain(): " + ((e && e.message) || e));
+      log.debug("Caught in waitForResumedRow(): " + ((e && e.message) || e));
     }
-    if (heldChain(key)) {
+    if (here()) {
       log.info('revocation: a resumed TLS session\'s client-certificate ' +
                'chain arrived from another node after ' +
                (Date.now() - started) + 'ms.');
-      log.debug("Leaving awaitResumedChain(). Arrived.");
+      log.debug("Leaving waitForResumedRow(). Arrived.");
       return true;
     }
     await new Promise(function (resolve) {
@@ -800,7 +857,7 @@ async function awaitResumedChain(socket) {
              'it within ' + waitMs + 'ms (tls.resumedChainWaitMs); the ' +
              'request goes on with the leaf alone.');
   }
-  log.debug("Leaving awaitResumedChain(). Ran out.");
+  log.debug("Leaving waitForResumedRow(). Ran out.");
   return false;
 }
 

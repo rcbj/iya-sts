@@ -17463,8 +17463,9 @@ const CODES = [
     spec: 'none (logged)' },
   { code: 'STS-TLS-0058',
     summary: 'A resumed TLS session\'s client certificate was demoted under ' +
-      'paranoid PKI mode: its full handshake was refused, or this process has ' +
-      'no record of it. The next full handshake settles it (#1360).',
+      'paranoid PKI mode: its full handshake was refused, or no record of it ' +
+      'reached this process within tls.resumedChainWaitMs. The next full ' +
+      'handshake settles it (#1360).',
     spec: 'none (logged): the certificate is treated as unverified' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
