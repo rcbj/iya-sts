@@ -902,17 +902,13 @@ async function metadata(w) {
     const r = await hop(null, w.rb + p);
     await validate(w.mode + " " + what + " (HTTP " + r.status + ")",
                    r.status === 200 ? r.body : "", p);
-    // The Algorithm Support profile's elements (#1368): the SAML documents
-    // carry them, so the validation above has something of theirs to check, and
-    // the WS-Federation view carries none (`saml2_sso.ts` argues why).
-    const wanted = !/FederationMetadata/.test(p);
-    await check(w.mode + " " + what + (wanted ? " carries" : " does not " +
-                "carry") + " the Algorithm Support elements",
+    // The Algorithm Support profile's elements (#1368): every view carries
+    // them, so the validation above always has something of theirs to check.
+    await check(w.mode + " " + what + " carries the Algorithm Support elements",
                 async function () {
-      const found = /<alg:SigningMethod /.test(r.body) &&
-                    /<alg:DigestMethod /.test(r.body);
-      if (found !== wanted || (!wanted && r.body.indexOf(NS_ALG) >= 0)) {
-        throw new Error("found: " + found);
+      if (!/<alg:SigningMethod /.test(r.body) ||
+          !/<alg:DigestMethod /.test(r.body)) {
+        throw new Error("they are missing");
       }
     });
   }
