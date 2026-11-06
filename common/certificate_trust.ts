@@ -842,14 +842,14 @@ class CertificateTrust {
   private static compose(purpose: Purpose, verdict: TrustVerdict,
                          codes: Json, whys: Json, realmId: string,
                          quiet: boolean): TrustVerdict {
+    // What FAILED is named before what nobody asked: a check not asked is
+    // usually only not asked because an earlier one ended the walk.
     const failed = CHECK_ORDER.filter(function (check) {
-      const status = verdict.checks[check];
-      if (status === 'failed') {
-        return true;
-      }
-      return status === 'not-asked' && verdict.inForce &&
+      return verdict.checks[check] === 'failed';
+    }).concat(CHECK_ORDER.filter(function (check) {
+      return verdict.checks[check] === 'not-asked' && verdict.inForce &&
              check !== 'name-match';
-    });
+    }));
     verdict.ok = failed.length === 0;
     if (!verdict.ok) {
       const first = failed[0];
@@ -881,8 +881,10 @@ class CertificateTrust {
       if (verdict.inForce) {
         audit.failure(verdict.code, {
           action: 'service.failure', protocol: purpose.id, channel: 'internal',
+          // error-code: none — `verdict.code` is this row's code
           summary: verdict.why, outcome: 'refused',
-          detail: { purpose: purpose.id, checks: verdict.checks }
+          // One member per check: a row's values are short scalars.
+          detail: Object.assign({ purpose: purpose.id }, verdict.checks)
         });
       }
     }
@@ -1091,8 +1093,9 @@ class CertificateTrust {
         const named = RULE_CHECKS[built.check] || 'path';
         verdict.checks.path = 'failed';
         verdict.checks[named] = 'failed';
-        codes[named] = RULE_CODES[built.check] || purpose.code;
-        whys[named] = built.reason;
+        // The leaf's own field failing says it better, if it did.
+        codes[named] = codes[named] || RULE_CODES[built.check] || purpose.code;
+        whys[named] = whys[named] || built.reason;
         codes.path = codes.path || RULE_CODES[built.check] || purpose.code;
         whys.path = whys.path || built.reason;
         verdict.checks['name-constraints'] = named === 'name-constraints' ?

@@ -472,6 +472,7 @@ class SignerTruststore {
     for (let i = 0; i < blocks.length; i++) {
       const seen = await this.admit(blocks[i], this.fileRows, '');
       if (seen.refused) {
+        // error-code: none — the admission rule's own code is on this line
         log.error(errorCodes.tag(seen.refused.code) +
                   'pki.signerTrustAnchorsFile: left out: ' + seen.refused.why);
         continue;
