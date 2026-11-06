@@ -384,6 +384,27 @@ says whether an object is closed and why.
 A call made with an owner's token is recorded in the audit log as made "as an
 owner".
 
+## Every answer matches the document
+
+Every operation in `GET /admin-api/openapi.json` declares a response model for
+each status it answers, and no model admits a member it does not declare. **The
+service checks each answer against its model before sending it, always**: there
+is no setting. A generated client can rely on this: a member it does not know
+cannot arrive. The `/account-api`, `/authn-api` and `/report-api` documents make
+the same promise.
+
+An object whose keys are data, such as a directory entry's attribute names, is
+declared as a map with typed values. A value whose shape is not this service's to
+state is marked `x-free-form`, with the reason.
+
+A federation act's `relationship` carries no credential and no directory entry:
+`GET /admin-api/federation?relationship=` says whether each credential is set.
+
+An answer that would not match is not sent. The caller gets a `500` with
+`{ "error": "server_error" }`, and the operator gets `STS-API-0139` in the log,
+naming the operation, the status and the member. That is a defect in the
+service, not in the request, so please report it.
+
 ## Who a call is recorded as
 
 Every call is written to the audit log, and the row names **the subject of the
@@ -863,8 +884,8 @@ them on the console or with `POST /admin-api/config/set`.
   lines with no dependency, where `swagger-ui-dist` would add about 11.7 MB
   and an install-time telemetry package, in an image built where there may be
   no network beyond the registry. It does what was needed — read the
-  document, fill a form, show the response — plus the equivalent `curl` line
-  beside each operation, which is what an operator actually copies. It is one
+  document, show what each operation can answer, fill a form, show the
+  response — plus the equivalent `curl` line beside each operation, which is what an operator actually copies. It is one
   of the few pages allowed a script, and it loads the script as a file
   (`script-src 'self'`), never inline.
 * **The document declares the credential.** It carries `security`, two

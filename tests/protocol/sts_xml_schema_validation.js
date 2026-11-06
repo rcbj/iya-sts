@@ -1222,9 +1222,9 @@ function rst(o) {
     ? "<wsse:Security xmlns:wsse=\"" + NS.wsse + "\"><wsse:UsernameToken>" +
       "<wsse:Username>" + o.username + "</wsse:Username><wsse:Password>" +
       o.password + "</wsse:Password></wsse:UsernameToken>" +
-      // The certificate `?encrypt=1` encrypts to: the endpoint takes the
-      // first X509Certificate in the request (a WS-Security signature's
-      // KeyInfo in a real client).
+      // The certificate `?encrypt=1` encrypts to: the endpoint takes one from
+      // the requester's own Security header, outside any assertion (a
+      // WS-Security signature's KeyInfo in a real client, #747).
       (o.recipientCertB64 ? "<ds:X509Data xmlns:ds=\"http://www.w3.org/" +
         "2000/09/xmldsig#\"><ds:X509Certificate>" + o.recipientCertB64 +
         "</ds:X509Certificate></ds:X509Data>" : "") + "</wsse:Security>"

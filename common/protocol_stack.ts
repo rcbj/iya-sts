@@ -2225,6 +2225,8 @@ class ProtocolStack {
     require('../sts_metadata');
     this.build('sts_metadata', require('../sts_metadata'), 'StsMetadata');
     this.register(app, require('../sts_metadata'), 'sts_metadata');
+    // After every route, or a later route would not reach it (#1353).
+    require('./response_models').answerExceptions(app);
     // NO `build()` OF THIS FILE (2026-09-17, #36 follow-up). There was one
     // here — R2's build list was recorded from the order modules FINISHED
     // loading, and this file finishes last — and it was the one line in the

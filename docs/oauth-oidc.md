@@ -1323,6 +1323,50 @@ operator configures (`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`,
 there with the setting off. Turn it on to sign with EdDSA and publish the
 keys as `oauth2.eddsaCurve` says.
 
+#### Limiting a realm to named signing algorithms
+
+**`keys.signingAlgorithms`** (Key material, per realm, **empty by default**)
+names the JWS algorithms the realm signs with and publishes keys for. Empty
+leaves every algorithm the realm otherwise has. A list must include `RS256`,
+which OpenID Connect Discovery requires and which is the default for ID Tokens
+and access tokens; anything else is refused (`STS-KEYS-0167`). With a list:
+
+* `/oauth2/jwks` carries no signing key for an unlisted algorithm (standby,
+  pinned and signer-group keys included). One RSA key serves every `RS` and
+  `PS` algorithm, so the RSA key stays.
+* An unlisted algorithm is not in `id_token_signing_alg_values_supported`,
+  `userinfo_signing_alg_values_supported`,
+  `introspection_signing_alg_values_supported` or
+  `authorization_signing_alg_values_supported`, and a client cannot register
+  it for those responses or be given it on the console or `/admin-api`.
+* A client registered for an unlisted algorithm before the list was set is
+  refused the response it would need signed (`STS-KEYS-0166`), and so is an
+  SSF, WS-Trust or Provider Commands token whose algorithm is unlisted.
+* An unlisted `oauth2.accessTokenSigningAlg`, or a named authorization
+  server's own, signs with RS256 instead.
+
+`keys.postQuantumSigning` and `keys.eddsaSigning` still apply: listing an
+algorithm does not turn its family on. Under FAPI 1.0 Advanced, list `PS256`
+as well.
+
+What the realm **accepts** from clients is unaffected (client assertions, DPoP
+proofs, request objects, wallet proofs), and a UserInfo response can still be
+plain JSON. `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` and
+`oid4vci.credentialSigningAlgorithm` still sign with what they name, so name a
+listed algorithm there.
+
+#### Naming a published key's certificates by URL
+
+**`keys.jwksCertificateUrl`** (Key material, per realm, **off by default**)
+makes `/oauth2/jwks` name each key's certificate chain with `x5u` (RFC 7517
+section 4.6) instead of carrying it in `x5c`. The address is
+`/pki/chain/{scope}/{sha256}.pem`, the same document a token's `x5u` header
+names. It makes the JWK Set much smaller, and a client that wants the chain
+fetches it over TLS, so check that your clients do not read `x5c` from the JWK
+Set before you turn it on. A key whose chain that address cannot serve keeps
+its `x5c`. A token's own header is unaffected: each use case's setting decides
+that.
+
 ### Custom claims — `/admin/claims`
 
 **Protocols → OAuth2 / OIDC → Custom claims** says what to add to every access

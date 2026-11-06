@@ -264,11 +264,10 @@ whose `wtrealm` is not a registered relying party is **a 404 page,
   after the realm had been looked at; this says what is wrong.
 * **Development is unchanged**: any `wtrealm`, the realm's one issuer, and
   `seen()` files it.
-* **An entry an LDAP add made is not registered either**: the add writes no
-  `appRegisteredBy` (the registry writes it, for the console, `/admin-api`,
-  RFC 7591, an OpenID Federation and the seeds), so #494's definition reads
-  it as one that turned up. Whether an LDAP add should count is open on
-  #496; until it is decided, register through the console or `/admin-api`.
+* **An entry an LDAP add made IS registered, since #504**:
+  `stampLdapRegistration()` writes `appRegisteredBy: ldap:<the bound DN>` on an
+  add under `ou=applications`, unless the add already says who. A modify of an
+  entry that only turned up does not register it.
 
 `tests/unregistered_applications.js` (U7) holds it in both modes.
 

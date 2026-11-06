@@ -28,7 +28,10 @@
 // the stored body under the lock; an index filed, refiled and removed; the
 // fence refusing a flush before it writes; the expiry purge bounded per
 // call; a value too long for its MariaDB column refused; and two drivers
-// flushing overlapping keys concurrently, every flush committed.
+// flushing overlapping keys concurrently, every flush committed; and a flush
+// longer than one statement should carry (one Global logout of a person
+// holding 3789 tokens made 8894 rows, and PostgreSQL refused the lock's list
+// with "stack depth limit exceeded" on every retry), written and removed whole.
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -170,6 +173,145 @@ const SESSION_NAMES = [
   ['session.livePage', ['r', 1, '', '', '', -1, 10, 0]]
 ];
 
+// The named parameters of a flush of `n` plain rows, each indexed and a
+// session, and of `n` deletes of the same kinds.
+function longNamed(n) {
+  log.debug("Entering longNamed().");
+  const named = { origin: 'o' };
+  ['up_h', 'up_r', 'up_k', 'up_body', 'up_expires', 'up_sealed', 'plain_h',
+   'plain_r', 'plain_k', 'del_h', 'del_r', 'del_k', 'ses_realm', 'ses_key',
+   'ses_expires', 'ses_last_seen', 'ses_started', 'ses_subject',
+   'ses_username', 'ses_chosen', 'ses_authenticated', 'ses_kind',
+   'ses_rp_surface', 'ses_parent', 'ses_backs_console', 'ses_credential',
+   'ses_partner', 'sesdel_realm', 'sesdel_key', 'ixup_h', 'ixup_r', 'ixup_k',
+   'ixgone_h', 'ixgone_r', 'ixgone_k', 'ixnew_h', 'ixnew_r', 'ixnew_i',
+   'ixnew_k', 'ixnew_s'].forEach(function (name) {
+    named[name] = [];
+  });
+  for (let i = 0; i < n; i++) {
+    const key = 'k' + String(i).padStart(6, '0');
+    const gone = 'g' + String(i).padStart(6, '0');
+    named.up_h.push('authn.sessions');
+    named.up_r.push('d');
+    named.up_k.push(key);
+    named.up_body.push('b');
+    named.up_expires.push(null);
+    named.up_sealed.push('');
+    named.plain_h.push('authn.sessions');
+    named.plain_r.push('d');
+    named.plain_k.push(key);
+    named.del_h.push('authn.sessions');
+    named.del_r.push('d');
+    named.del_k.push(gone);
+    named.ses_realm.push('d');
+    named.ses_key.push(key);
+    named.ses_expires.push(null);
+    named.ses_last_seen.push(1);
+    named.ses_started.push(1);
+    named.ses_subject.push('s');
+    named.ses_username.push('u');
+    named.ses_chosen.push(true);
+    named.ses_authenticated.push(true);
+    named.ses_kind.push('sign-on');
+    named.ses_rp_surface.push('');
+    named.ses_parent.push('');
+    named.ses_backs_console.push(false);
+    named.ses_credential.push('');
+    named.ses_partner.push('');
+    named.sesdel_realm.push('d');
+    named.sesdel_key.push(gone);
+    named.ixup_h.push('authn.sessions');
+    named.ixup_r.push('d');
+    named.ixup_k.push(key);
+    named.ixgone_h.push('authn.sessions');
+    named.ixgone_r.push('d');
+    named.ixgone_k.push(gone);
+    ['i1', 'i2'].forEach(function (indexKey) {
+      named.ixnew_h.push('authn.sessions');
+      named.ixnew_r.push('d');
+      named.ixnew_i.push(indexKey);
+      named.ixnew_k.push(key);
+      named.ixnew_s.push(null);
+    });
+  }
+  log.debug("Leaving longNamed().");
+  return named;
+}
+
+// A FLUSH LONGER THAN ONE STATEMENT, on both engines' text: no statement holds
+// more than a bounded number of parameters, each list is covered exactly once,
+// and the lock's chunks keep the lock order.
+async function longFlushChecks(t) {
+  log.debug("Entering longFlushChecks().");
+  const N = 1300;
+  const LIMIT = 500;
+  const engines = ['mariadb', 'postgres'];
+  for (const engine of engines) {
+    const runner = recorder();
+    const ops = opsOver(sqlDialect.create(engine), runner);
+    const named = longNamed(N);
+    const touched = [];
+    named.del_k.concat(named.up_k).sort().forEach(function (key) {
+      touched.push({ handle: 'authn.sessions', realm: 'd', key: key });
+    });
+    await ops.flush(runner, touched, function () {
+      return { resolved: {}, named: named };
+    });
+    const called = function (name) {
+      return runner.sent.filter(function (one) {
+        return one.text.indexOf('sts:minted.flush.' + name + ' ') >= 0;
+      });
+    };
+    const lockKeys = [];
+    called('lock').forEach(function (one) {
+      for (let i = 2; i < one.values.length; i += 3) {
+        lockKeys.push(one.values[i]);
+      }
+    });
+    const inOrder = lockKeys.every(function (key, i) {
+      return key === touched[i].key;
+    });
+    t.check(lockKeys.length === touched.length && inOrder &&
+            called('lock').length === Math.ceil(touched.length / LIMIT),
+            'A10 (' + engine + '). a long flush\'s lock is several ' +
+            'statements, every key once, in the one lock order',
+            called('lock').length + ' statement(s), ' + lockKeys.length +
+            ' key(s)');
+    const expected = { upsert: [N, 6], delete: [N, 3], sessions: [N, 15],
+                       sessionsGone: [N, 2], indexFile: [2 * N, 5] };
+    const wrong = [];
+    Object.keys(expected).forEach(function (name) {
+      const rows = expected[name][0];
+      const statements = called(name);
+      if (statements.length !== Math.ceil(rows / LIMIT)) {
+        wrong.push(name + ': ' + statements.length + ' statement(s)');
+      }
+      if (statements.some(function (one) {
+        return one.values.length > LIMIT * (expected[name][1] + 12);
+      })) {
+        wrong.push(name + ': too many parameters');
+      }
+    });
+    t.check(wrong.length === 0,
+            'A11 (' + engine + '). each write of a long flush is cut to ' +
+            LIMIT + ' rows a statement', wrong.join('; '));
+    const clears = called('indexClear');
+    const kept = clears.reduce(function (sum, one) {
+      return sum + one.values.length;
+    }, 0);
+    // Every clear row's three values and each filed row's four, once: a
+    // statement carrying the whole filed list would multiply this. A chunk
+    // with nothing filed (only removed bodies) holds Knex's empty NOT IN,
+    // `1 = ?`, one value more; those are chunks 4 to 6 of 6 here.
+    t.check(clears.length === Math.ceil(2 * N / LIMIT) &&
+            kept === 3 * 2 * N + 4 * 2 * N + 3,
+            'A12 (' + engine + '). the index clear keeps only the filed ' +
+            'rows of each statement\'s own bodies',
+            clears.length + ' statement(s), ' + kept + ' parameter(s)');
+  }
+  log.debug("Leaving longFlushChecks().");
+}
+
 async function staticChecks(t) {
   log.debug("Entering staticChecks().");
   t.log.info('=== A. compiled for MariaDB, none of PostgreSQL ===');
@@ -255,6 +397,7 @@ async function staticChecks(t) {
       .test(one.text);
   }), 'A9. on PostgreSQL a new key is INSERT … ON CONFLICT DO NOTHING ' +
           '(the portable mode)', String(pgRunner.sent.length));
+  await longFlushChecks(t);
   log.debug("Leaving staticChecks().");
 }
 
@@ -711,6 +854,29 @@ async function contracts(t, label, url, engine, sql) {
     const purged = await a.purgeMinted(future);
     t.check(purged > 0, label + '16. purgeMinted removes every row written ' +
             'before the instant', String(purged));
+    // ---- a flush far longer than one statement ------------------------
+    const LONG = 9000;
+    const longRows = [];
+    for (let i = 0; i < LONG; i++) {
+      longRows.push({ handle: 'test.plain', realm: 'r2', key: 'long-' + i,
+                      keySealed: '', body: 'b' + i, expiresAt: null,
+                      tombstone: false, lookups: ['ix1', 'ix2'], sortAt: i });
+    }
+    await a.saveMinted(longRows, []);
+    const longWritten = await sql('SELECT count(*) AS n FROM sts_minted ' +
+                                  'WHERE realm = \'r2\'');
+    await a.saveMinted([], longRows.map(function (row) {
+      return { handle: row.handle, realm: row.realm, key: row.key,
+               keySealed: '', tombstone: false };
+    }));
+    const longLeft = await sql('SELECT count(*) AS n FROM sts_minted ' +
+                               'WHERE realm = \'r2\'');
+    t.check(Number(longWritten.rows[0].n) === LONG &&
+            Number(longLeft.rows[0].n) === 0,
+            label + '17. A FLUSH OF ' + LONG + ' ROWS COMMITS, AND ONE ' +
+            'REMOVING THEM (the lock\'s list once failed every retry)',
+            longWritten.rows[0].n + ' written, ' + longLeft.rows[0].n +
+            ' left');
   } finally {
     minted.reset();
     await a.close();

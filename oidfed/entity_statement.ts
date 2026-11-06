@@ -120,6 +120,9 @@ interface Signer {
  * against, and the signature `common/crypto.js`'s. Which JWK Set to trust is
  * always the caller's decision. A library of static methods.
  */
+// ECMA-262's limit on a time value.
+const MAX_DATE_MS = 8.64e15;
+
 class EntityStatement {
   /**
    * The `typ` of each federation JWT this service makes or reads, by name.
@@ -405,11 +408,28 @@ class EntityStatement {
       problem = '';
     } else if (!Number.isFinite(claims.exp)) {
       problem = 'exp is missing or not a number';
+    } else if (Math.abs(claims.exp * 1000) > MAX_DATE_MS) {
+      // A finite number no Date can hold: said here, or the sentence below
+      // and every view of a resolution throw on it (#1353).
+      problem = 'exp is outside the range of a time';
     } else if (claims.exp <= nowSec - skewSec) {
       problem = 'it expired at ' + new Date(claims.exp * 1000).toISOString();
     }
     log.debug("Leaving EntityStatement.timeProblem(). " + (problem || 'fine'));
     return problem;
+  }
+
+  /**
+   * A time in milliseconds as ISO 8601, or null where it is not after the epoch
+   * or is one no Date can hold. `toISOString()` throws on those, and these
+   * values are written by whoever signed a statement or a mark (#1353).
+   *
+   * @param ms - the time
+   * @returns the text, or null
+   */
+  static isoOf(ms: Json): string | null {
+    const at = Number(ms);
+    return at > 0 && at <= MAX_DATE_MS ? new Date(at).toISOString() : null;
   }
 
   // The syntax of a `metadata` claim (5, 3.2): an object of objects, keyed

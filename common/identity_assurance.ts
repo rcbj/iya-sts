@@ -527,10 +527,21 @@ class IdentityAssurance {
       log.debug("Leaving IdentityAssurance.list(). Damaged.");
       return [];
     }
+    // The members a record has, as text: an LDAP client can write this value,
+    // and it is on the person's page (#1353). `verification` and `claims` are
+    // the specification's own shapes and stay as they are.
     const records = parsed.filter(function (one: Json) {
       return IdentityAssurance.isObject(one) &&
              IdentityAssurance.isObject(one.verification) &&
              IdentityAssurance.isObject(one.claims);
+    }).map(function (one: Json) {
+      const kept: Json = { verification: one.verification, claims: one.claims };
+      ['id', 'recorded', 'source', 'by'].forEach(function (name: string) {
+        if (typeof one[name] === 'string') {
+          kept[name] = one[name];
+        }
+      });
+      return kept;
     });
     log.debug("Leaving IdentityAssurance.list(). " + records.length + ".");
     return records;

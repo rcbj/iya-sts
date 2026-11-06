@@ -1088,9 +1088,10 @@ class Logout {
           log.debug("Entering wsfed-rp.collect().");
           const rows = [];
           ctx.sessions.forEach((session) => {
-            wsfed.cleanupTargetsFor(session).forEach((target) => {
+            // A realm can declare several addresses (#747), each a row.
+            wsfed.cleanupTargetsFor(session).forEach((target, at) => {
               rows.push(this.row('wsfed-rp', 'realm', session.id + '|' +
-                                 target.realm, {
+                                 target.realm + (at ? '|' + at : ''), {
                 label: target.realm,
                 detail: target.url ? 'cleanup goes to ' + target.url
                                    : 'this realm supplied no wreply, so ' +

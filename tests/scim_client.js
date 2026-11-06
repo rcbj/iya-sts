@@ -480,7 +480,7 @@ async function drain(times) {
 function codeOf(x) {
   log.debug('Entering codeOf().');
   log.debug('Leaving codeOf().');
-  return x && (x.code || errorCodes.codeOf(x));
+  return x && !x.code && errorCodes.codeOf(x);
 }
 
 function userNamed(name) {

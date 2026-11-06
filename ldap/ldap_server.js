@@ -17115,7 +17115,8 @@ function readPersonFlags(key) {
            consoleClaimedAt: one('stsConsoleClaimedAt'),
            mfaRequired: one('stsMfaRequired').toUpperCase() === 'TRUE',
            passwordResetToken: one('stsPasswordResetToken'),
-           passwordResetExpires: Number(one('stsPasswordResetExpires') || 0),
+           // `abc` over LDAP is NaN, which JSON says as null (#1353).
+           passwordResetExpires: Number(one('stsPasswordResetExpires')) || 0,
            passwordResetSource: one('stsPasswordResetSource'),
            recoveryPending: one('stsRecoveryPending'),
            accountLockedTime: one('pwdAccountLockedTime'),

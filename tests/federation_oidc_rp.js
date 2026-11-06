@@ -351,6 +351,7 @@ function childMain() {
       { action: 'check-partner', id: CODE });
     note(checked.ok && checked.keys === 1 && checked.readable === 1 &&
          checked.discovered === false &&
+         !('errorCode' in checked) &&
          checked.endpoints.jwks_uri === opBase + 'jwks',
          '1k. check-partner reads the partner\'s key set and reports it',
          JSON.stringify(checked));

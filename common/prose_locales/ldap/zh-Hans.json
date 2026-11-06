@@ -736,8 +736,8 @@
     "text": "AuthZEN 访问请求回调（#1180）：此客户端作为 AuthZEN PEP 可指定为访问请求 callback.endpoint 的 https URL——每个值一个，须完全匹配。指定其他任何 URL 的请求都会被拒绝；本服务绝不会仅凭请求中的 URL 就向其发起回调。由管理员设置，绝不由调用方设置。"
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
-    "en": "847d2fc846138cb9",
-    "text": "RFC 9470 第 3 节：此应用作为资源服务器，对访问令牌背后的身份验证所要求的 acr 值——以空格分隔，最优先的在前。acr 一个都不满足的令牌会收到 401 insufficient_user_authentication 质询，并以这些值作为 acr_values。级别 0 < 1 < mfa 是有序的；hwk、phr 和 phrh 由密码加安全密钥满足；任何其他值只能由完全相同的 acr 满足。为空表示不作要求。"
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 第 3 节：此应用作为资源服务器，对访问令牌背后的身份验证所要求的 acr 值——以空格分隔，最优先的在前。acr 一个都不满足的令牌会收到 401 insufficient_user_authentication 质询，并以这些值作为 acr_values。级别 0 < 1 < mfa 是有序的；hwk 由密码加安全密钥满足；phr 和 phrh 只能由其所指的抗钓鱼身份验证满足 (#723)；任何其他值只能由完全相同的 acr 满足。为空表示不作要求。"
   },
   "applications.schema.attributes.oauthStepUpMaxAge.what": {
     "en": "fdd12480b52b8006",
@@ -1260,8 +1260,8 @@
     "text": "TRUE 或 FALSE：此依赖方自己的 wsignin1.0 是否得到应答，覆盖 wsfed.spInitiatedSso。wsignin1.0 是一个未签名的 URL，因此 FALSE 关上的是门，而不能证明是谁开的门。"
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
-    "en": "493ac4121c2076ca",
-    "text": "为此应用发送 wsignoutcleanup1.0 通知的地址——WS-Federation 的注销 URI，此表直到 2026-08-30 才有这一项。它是声明的，而非观察得到的，这使它成为 samlSingleLogoutService 而非 wsfedReplyUrl 的同类：清理是在会话结束时发送的，而那时本可能携带 wreply 的请求早已结束。\n\n**注销目前尚未读取它**，这一点明确说明而非暗示。`cleanupTargetsFor()` 根据 `session.wsfedRealms` 构建其列表，后者记录每个登录响应实际发往的 wreply——因此本服务今天通知的是它观察到的地址，而此属性是操作员声明的地址。它们是两个不同的事实，而后者才是设置应用的人能够预先说明的。把它接入为未带 wreply 登录的领域的后备地址是显而易见的下一步，但这里刻意没有这样做：此变更添加的是字段和存储，而改变清理的去向是对协议行为的改变。"
+    "en": "677e7babd8d711d3",
+    "text": "为此应用发送 wsignoutcleanup1.0 通知的地址——WS-Federation 的注销 URI，此表直到 2026-08-30 才有这一项。它是声明的，而非观察得到的，这使它成为 samlSingleLogoutService 而非 wsfedReplyUrl 的同类：清理是在会话结束时发送的，而那时本可能携带 wreply 的请求早已结束。\n\n**声明的地址优先于观察到的地址** (#747)。对于会话已登录的领域，`cleanupTargetsFor()` 会通知此处的每个值；只有此处为空时，才使用登录响应所发往的 wreply，它由 `session.wsfedRealms` 记录。"
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",

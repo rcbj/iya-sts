@@ -223,7 +223,7 @@ async function prepare(plan) {
                   // HAIP: a credential and a status list token carry their
                   // certificate chain in x5c (the verifier holds only a
                   // trust anchor), which this realm's setting chooses
-                  // (x5u is the default).
+                  // (x5c is the default, and is named here so that this job does not depend on it).
                   ["oid4vci.credentialCertificateHeader", "x5c"]);
   }
   const realm = await oidf.makeRealm(root, id, "Conformance " + plan.name,

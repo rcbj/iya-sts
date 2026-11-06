@@ -458,6 +458,9 @@ stsModeTimeout()
   case "$1" in
     cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
     cluster-portable) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
+    # The whole suite on the second engine: it was stopped at job 948 of 1067
+    # by the 3000 s a mode with no bound of its own gets, nothing wedged (#677).
+    mariadb) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
     single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-4800}" ;;
     fuzz)     echo "${STS_FUZZ_MODE_TIMEOUT:-21600}" ;;
     *)       echo "${STS_BASE_MODE_TIMEOUT:-3000}" ;;

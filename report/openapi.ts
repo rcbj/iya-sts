@@ -15,6 +15,28 @@
 // document points at rather than copying, so a new field does not have to
 // be written twice. It does not describe an offset or a second source:
 // both are refused.
+//
+// EVERY ANSWER IS HELD TO THIS DOCUMENT (#1353, `common/response_models.ts`):
+// an answer with a member a schema does not declare, or at a media type its
+// status does not declare, is not sent and the caller gets a 500. So every
+// object here is closed, every operation has a `default` (the `Error` every
+// refusal in `report_api.ts` is, through `reportSend()`), and a report's own
+// answer declares each of its three media types.
+//
+// **IT STAYS OPENAPI 3.0.3**, which `tests/report_query.js` pins, so a nullable
+// value is `nullable: true`, and two things follow from how the validator reads
+// that. An enumerated nullable value has to list null itself, since `enum` is
+// asked apart from `type`. And `nullable` cannot stand beside a `$ref`, so a
+// schema that may be null where it is used says so itself: `Filter` and
+// `ParameterBag`.
+//
+// **KEYS THAT ARE DATA ARE A TYPED MAP**: a result row's (the fields the query
+// selected) and a parameter bag's (the names the filter uses). What a field
+// holds is the catalog's four types, a list arrives joined into one string
+// (`rows.ts`), and `QueryDocument` is a response member too: a job and a
+// definition answer the stored document, which `Query.document()` already held
+// to these keys. Its `source` is not an enumeration, unlike `Source.id`: a
+// definition that outlives a source in a later release must still be readable.
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
@@ -22,6 +44,27 @@ import bunyan = require('bunyan');
 const log = bunyan.createLogger({ name: 'sts-report-openapi' });
 
 const ERROR = { $ref: '#/components/schemas/Error' };
+
+// Not this API's vocabulary: see `OpenApiDocument` below.
+const OPENAPI_REASON = 'The operations and components of an OpenAPI document ' +
+  'are that specification\'s vocabulary, not this API\'s, and this document ' +
+  'describes itself with them.';
+
+// What a filter compares with, what a parameter holds, and what a report's cell
+// holds: one of the catalog's four types (a timestamp is a string or a number),
+// null, or a short list of those, which `in`'s value and its parameter are.
+const VALUE = {
+  description: 'A string, a number, a boolean, null, or a list of those.',
+  anyOf: [
+    { type: 'string', nullable: true },
+    { type: 'number' },
+    { type: 'boolean' },
+    { type: 'array', items: {
+      anyOf: [{ type: 'string', nullable: true }, { type: 'number' },
+              { type: 'boolean' }]
+    } }
+  ]
+};
 
 function jsonBody(schema: any): any {
   log.debug("Entering jsonBody().");
@@ -51,6 +94,24 @@ function refused(description: string): any {
   return response;
 }
 
+// A report's own body, in whichever format the query asked for: `executor.ts`'s
+// `mediaOf()`. JSON is held to `QueryResult`; the other two are bytes.
+function report(description: string, binary: any): any {
+  log.debug("Entering report().");
+  const response = {
+    description: description,
+    content: {
+      'application/json': {
+        schema: { $ref: '#/components/schemas/QueryResult' }
+      },
+      'text/csv': { schema: { type: 'string' } },
+      'application/pdf': { schema: binary }
+    }
+  };
+  log.debug("Leaving report().");
+  return response;
+}
+
 function operation(summary: string, description: string,
                    extras: any): any {
   log.debug("Entering operation().");
@@ -61,7 +122,9 @@ function operation(summary: string, description: string,
     responses: {
       '401': refused('invalid_token or invalid_dpop_proof. The code is ' +
         'recorded and is not in the body.'),
-      '403': refused('forbidden or insufficient_scope.')
+      '403': refused('forbidden or insufficient_scope.'),
+      default: refused('Any other refusal or failure: unavailable, and a ' +
+        'rate limit on a token that keeps failing, among them.')
     }
   };
   const keys = Object.keys(extras || {});
@@ -147,7 +210,7 @@ class OpenApi {
             'The description of the released routes.', {
               responses: {
                 '200': answered('This OpenAPI document.',
-                  { type: 'object' })
+                  { $ref: '#/components/schemas/OpenApiDocument' })
               }
             })
         },
@@ -186,7 +249,8 @@ class OpenApi {
         '/report-api/signals': {
           get: operation('This application\'s Shared Signals inbox',
             'The CAEP and RISC events this application\'s own stream ' +
-            'delivered in this realm, newest first, twenty a page by default (#1042). ' +
+            'delivered in this realm, newest first, twenty a page by default ' +
+            '(#1042). ' +
             'report:admin sees every one (`scope` realm); anybody else ' +
             'sees only the events about themselves (`scope` own), and an ' +
             'application sees none. Each row says what this application ' +
@@ -202,7 +266,7 @@ class OpenApi {
               ],
               responses: {
                 '200': answered('One page of the inbox.',
-                  { type: 'object' })
+                  { $ref: '#/components/schemas/SignalPage' })
               }
             })
         },
@@ -212,7 +276,8 @@ class OpenApi {
             'realm (#719), empty where they have none. It answers only ' +
             'about the token\'s person.', {
               responses: {
-                '200': answered('`photo`.', { type: 'object' })
+                '200': answered('`photo`.',
+                  { $ref: '#/components/schemas/Me' })
               }
             })
         },
@@ -229,7 +294,7 @@ class OpenApi {
               ],
               responses: {
                 '200': answered('`now`, `everyMs` and `announcements`.',
-                  { type: 'object' })
+                  { $ref: '#/components/schemas/AnnouncementPage' })
               }
             })
         },
@@ -292,9 +357,9 @@ class OpenApi {
               requestBody: jsonBody(
                 { $ref: '#/components/schemas/QueryDocument' }),
               responses: {
-                '200': answered('The JSON, CSV or PDF body. JSON is an ' +
+                '200': report('The JSON, CSV or PDF body. JSON is an ' +
                   'object with rows and truncated false. CSV is RFC 4180. ' +
-                  'PDF is PDF 1.4.', { type: 'string' }),
+                  'PDF is PDF 1.4.', { type: 'string', format: 'binary' }),
                 '202': answered('A job was queued.',
                   { $ref: '#/components/schemas/JobEnvelope' }),
                 '400': refused('invalid_query, unknown_source is 404, ' +
@@ -365,7 +430,7 @@ class OpenApi {
               parameters: [idParameter('id', 'The definition id.')],
               responses: {
                 '200': answered('Deleted.',
-                  { type: 'object' }),
+                  { $ref: '#/components/schemas/Deleted' }),
                 '404': refused('not_found.')
               }
             })
@@ -482,7 +547,7 @@ class OpenApi {
             'Past artifact retention the result is gone.', {
               parameters: [idParameter('id', 'The job id.')],
               responses: {
-                '200': answered('The artifact. JSON, CSV or PDF.',
+                '200': report('The artifact. JSON, CSV or PDF.',
                   { type: 'string', format: 'binary' }),
                 '404': refused('job_not_found.'),
                 '409': refused('job_not_ready.'),
@@ -504,19 +569,42 @@ class OpenApi {
         schemas: {
           Error: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               error: { type: 'string' },
               error_description: { type: 'string' }
             }
           },
+          OpenApiDocument: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              openapi: { type: 'string' },
+              info: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  title: { type: 'string' },
+                  version: { type: 'string' },
+                  description: { type: 'string' }
+                }
+              },
+              paths: { 'x-free-form': OPENAPI_REASON,
+                       description: OPENAPI_REASON },
+              components: { 'x-free-form': OPENAPI_REASON,
+                            description: OPENAPI_REASON }
+            }
+          },
           Index: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               service: { type: 'string', example: 'report' },
               catalog: { type: 'string' },
               realms: { type: 'string' },
               version: {
                 type: 'object',
+                additionalProperties: false,
                 properties: {
                   version: { type: 'string' },
                   stamped: { type: 'boolean' },
@@ -527,6 +615,7 @@ class OpenApi {
           },
           Realm: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               id: { type: 'string' },
               name: { type: 'string' },
@@ -537,17 +626,85 @@ class OpenApi {
           },
           Realms: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               current: { $ref: '#/components/schemas/Realm' },
               realms: { type: 'array', nullable: true,
                 items: { $ref: '#/components/schemas/Realm' } }
             }
           },
+          Me: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              photo: { type: 'string',
+                description: 'The path of the person\'s own photo, or empty.' }
+            }
+          },
+          AnnouncementPage: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              now: { type: 'number',
+                description: 'This service\'s clock, in milliseconds: the ' +
+                  '`since` of the next ask.' },
+              everyMs: { type: 'number', nullable: true },
+              announcements: { type: 'array', items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  id: { type: 'string' },
+                  at: { type: 'string' },
+                  message: { type: 'string' }
+                }
+              } }
+            }
+          },
+          SignalPage: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              scope: { type: 'string', enum: ['realm', 'own'] },
+              receiving: { type: 'boolean' },
+              why: { type: 'array', items: { type: 'string' },
+                description: 'Why nothing can arrive, where nothing can.' },
+              total: { type: 'integer' },
+              page: { type: 'integer' },
+              pages: { type: 'integer' },
+              per: { type: 'integer' },
+              rows: { type: 'array', items: {
+                type: 'object',
+                additionalProperties: false,
+                properties: {
+                  at: { type: 'string' },
+                  name: { type: 'string' },
+                  vocabulary: { type: 'string' },
+                  type: { type: 'string' },
+                  subject: { type: 'string' },
+                  verified: { type: 'boolean' },
+                  reactions: { type: 'array', items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                      failed: { type: 'boolean' },
+                      skipped: { type: 'string',
+                        description: 'Why nothing was done, or empty.' },
+                      observed: { type: 'boolean' },
+                      ended: { type: 'number' },
+                      revoked: { type: 'number' }
+                    }
+                  } }
+                }
+              } }
+            }
+          },
           Schedule: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               definition: {
                 type: 'object',
+                additionalProperties: false,
                 properties: {
                   id: { type: 'string' },
                   name: { type: 'string' },
@@ -558,7 +715,9 @@ class OpenApi {
                   notify: { type: 'boolean' },
                   nextRunAt: { type: 'string', nullable: true },
                   lastSlotAt: { type: 'string', nullable: true },
-                  failures: { type: 'array', items: { type: 'object',
+                  failures: { type: 'array', items: {
+                    type: 'object',
+                    additionalProperties: false,
                     properties: { at: { type: 'string', nullable: true },
                       description: { type: 'string' } } } }
                 }
@@ -574,6 +733,7 @@ class OpenApi {
           },
           SchedulePage: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               scope: { type: 'string', enum: ['mine', 'realm'] },
               owner: { type: 'string', nullable: true },
@@ -587,6 +747,7 @@ class OpenApi {
           },
           Group: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               dn: { type: 'string' },
               name: { type: 'string', description: 'The cn.' },
@@ -596,6 +757,7 @@ class OpenApi {
           },
           GroupPage: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               q: { type: 'string' },
               page: { type: 'integer' },
@@ -608,6 +770,7 @@ class OpenApi {
           },
           Field: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               id: { type: 'string' },
               type: { type: 'string',
@@ -637,6 +800,7 @@ class OpenApi {
           },
           Source: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               id: { type: 'string', enum: names },
               anchored: { type: 'boolean',
@@ -659,16 +823,17 @@ class OpenApi {
                   'point. Data, not a stored definition: nobody owns one ' +
                   'and nothing runs it until somebody does.',
                 items: { type: 'object',
+                  additionalProperties: false,
                   properties: {
                     id: { type: 'string' },
                     name: { type: 'string' },
-                    document: { type: 'object',
-                                additionalProperties: true }
+                    document: { $ref: '#/components/schemas/QueryDocument' }
                   } } }
             }
           },
           Catalog: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               sources: { type: 'array',
                 items: { $ref: '#/components/schemas/Source' } }
@@ -676,34 +841,46 @@ class OpenApi {
           },
           SourceEnvelope: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               source: { $ref: '#/components/schemas/Source' }
             }
           },
           Filter: {
             type: 'object',
+            nullable: true,
+            additionalProperties: false,
             description: 'A comparison, or and, or, or not. A comparison ' +
               'names field and either value or param, not both. in takes ' +
               'an array. isNull names only the field. The form offers ' +
-              'three comparisons and does not offer in; the API does.',
+              'three comparisons and does not offer in; the API does. ' +
+              'Null is no filter.',
             properties: {
               op: { type: 'string' },
               field: { type: 'string' },
-              value: {},
+              value: VALUE,
               param: { type: 'string' },
-              args: { type: 'array' },
-              arg: { type: 'object' }
+              args: { type: 'array',
+                items: { $ref: '#/components/schemas/Filter' } },
+              arg: { $ref: '#/components/schemas/Filter' }
             }
           },
           QueryDocument: {
             type: 'object',
-            required: ['source', 'select'],
+            additionalProperties: false,
+            required: ['source'],
             properties: {
-              source: { type: 'string', enum: names,
-                description: 'One source. An array is invalid_query.' },
-              select: { type: 'array', items: { type: 'string' } },
+              source: { type: 'string',
+                description: 'One source, by its id in the catalog: ' +
+                  names.join(', ') + '. An array is invalid_query.' },
+              select: { type: 'array', nullable: true,
+                description: 'The fields. A count may name none, as three ' +
+                  'presets do.',
+                items: { type: 'string' } },
               where: { $ref: '#/components/schemas/Filter' },
-              orderBy: { type: 'array', items: { type: 'object',
+              orderBy: { type: 'array', nullable: true, items: {
+                type: 'object',
+                additionalProperties: false,
                 properties: {
                   field: { type: 'string' },
                   dir: { type: 'string', enum: ['asc', 'desc'] }
@@ -711,25 +888,47 @@ class OpenApi {
               limit: { type: 'integer', minimum: 1 },
               format: { type: 'string', enum: ['json', 'csv', 'pdf'] },
               mode: { type: 'string', enum: ['auto', 'sync', 'async'] },
-              locale: { type: 'string', maxLength: 35,
+              locale: { type: 'string', nullable: true, maxLength: 35,
                 description: 'A language tag. Omitted means the PDF ' +
                   'chrome is English. The page sends the signed-in user\'s ' +
                   'language. Filipino and Swedish are drawn. Chinese is ' +
                   'named on an English page because the PDF font is WinAnsi.'
               },
-              aggregate: { type: 'string', enum: ['count'] },
-              groupBy: { type: 'array', items: { type: 'string' } }
+              aggregate: { type: 'string', nullable: true,
+                enum: ['count', null] },
+              groupBy: { type: 'array', nullable: true,
+                items: { type: 'string' } }
+            }
+          },
+          QueryResult: {
+            type: 'object',
+            additionalProperties: false,
+            description: 'A report as JSON: `Formats.jsonParts()`.',
+            properties: {
+              source: { type: 'string' },
+              fields: { type: 'array', items: { type: 'string' } },
+              rows: { type: 'array', items: {
+                type: 'object',
+                nullable: true,
+                description: 'One row: a field\'s id to what it holds. The ' +
+                  'keys are the fields the query selected, and `count` ' +
+                  'where it counted.',
+                additionalProperties: VALUE
+              } },
+              truncated: { type: 'boolean' }
             }
           },
           ParameterBag: {
             type: 'object',
-            additionalProperties: true,
+            nullable: true,
+            additionalProperties: VALUE,
             description: 'Parameter name to the value the filter uses. ' +
               'A string, a number, a boolean, null, or a short array of ' +
-              'those. Not a nested object.'
+              'those. Not a nested object. Null where a definition has none.'
           },
           DefinitionWrite: {
             type: 'object',
+            additionalProperties: false,
             required: ['name', 'document'],
             properties: {
               name: { type: 'string', maxLength: 120 },
@@ -745,6 +944,7 @@ class OpenApi {
           },
           Definition: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               id: { type: 'string' },
               name: { type: 'string' },
@@ -766,22 +966,34 @@ class OpenApi {
                   'taken (queued, or skipped with a note), or null.' },
               notify: { type: 'boolean' },
               editable: { type: 'boolean' },
-              createdAt: { type: 'string', format: 'date-time' },
-              modifiedAt: { type: 'string', format: 'date-time' },
+              createdAt: { type: 'string', format: 'date-time',
+                           nullable: true },
+              modifiedAt: { type: 'string', format: 'date-time',
+                            nullable: true },
               document: { $ref: '#/components/schemas/QueryDocument' },
               parameters: { $ref: '#/components/schemas/ParameterBag' },
               groups: { type: 'array', items: { type: 'string' } },
-              failures: { type: 'array', items: { type: 'object' } }
+              failures: { type: 'array', items: {
+                type: 'object',
+                additionalProperties: false,
+                description: 'A run a schedule skipped: `reportNoteFailure()`.',
+                properties: {
+                  at: { type: 'number',
+                    description: 'When, in milliseconds.' },
+                  description: { type: 'string' }
+                } } }
             }
           },
           DefinitionEnvelope: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               definition: { $ref: '#/components/schemas/Definition' }
             }
           },
           DefinitionList: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               definitions: { type: 'array',
                 items: { $ref: '#/components/schemas/Definition' } },
@@ -791,8 +1003,16 @@ class OpenApi {
               total: { type: 'integer' }
             }
           },
+          Deleted: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              deleted: { type: 'string', description: 'The definition\'s id.' }
+            }
+          },
           ShareWrite: {
             type: 'object',
+            additionalProperties: false,
             required: ['groups'],
             properties: {
               groups: { type: 'array', items: { type: 'string' } }
@@ -800,12 +1020,13 @@ class OpenApi {
           },
           Job: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               id: { type: 'string' },
               status: { type: 'string', enum: ['queued', 'running',
                 'completed', 'failed', 'cancelled', 'expired'] },
               format: { type: 'string' },
-              submittedAt: { type: 'string' },
+              submittedAt: { type: 'string', nullable: true },
               completedAt: { type: 'string', nullable: true },
               byteSize: { type: 'integer', nullable: true },
               error: { type: 'string', nullable: true,
@@ -818,7 +1039,7 @@ class OpenApi {
               fields: { type: 'array', items: { type: 'string' } },
               queuedBecause: { type: 'string', nullable: true,
                 enum: ['every-person', 'asked', 'limit', 'source', 'run',
-                  'schedule'],
+                  'schedule', null],
                 description: 'Why this query is a job: every-person (an ' +
                   'auto-mode query whose filter the directory cannot ' +
                   'answer from an index, so it has to read every person), ' +
@@ -831,12 +1052,14 @@ class OpenApi {
           },
           JobEnvelope: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               job: { $ref: '#/components/schemas/Job' }
             }
           },
           JobList: {
             type: 'object',
+            additionalProperties: false,
             properties: {
               jobs: { type: 'array',
                 items: { $ref: '#/components/schemas/Job' } },

@@ -26,6 +26,7 @@
     - { title: Accepted tokens, url: /accepted-tokens.html }
     - { title: Token samples, url: /token-samples.html }
     - { title: Error codes, url: /error-codes.html }
+    - { title: OpenAPI reference, url: /openapi/ }
     - { title: API reference (generated from the source), url: /api/ }
 
 - section: OAuth 2.0 and OpenID Connect

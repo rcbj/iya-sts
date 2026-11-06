@@ -268,7 +268,11 @@ on PostgreSQL. **The minted flush is a transaction there, not
 counted at COMMIT), then every existing row locked FOR UPDATE in (handle,
 realm, key) order and its body read, the merges made under that lock (so no
 compare-and-set), the tombstone rule judged on the locked row, the writes in
-key order, the side tables and change rows only for bodies written. A key new
+key order, the side tables and change rows only for bodies written. **Every
+list in it is cut to `KEYS_PER_STATEMENT` rows a statement, inside that one
+transaction**: a journal has no size, and a key list of 8894 rows was refused
+("stack depth limit exceeded") on every retry, a wedge `MINTED_FLUSH`'s arrays
+cannot have. A key new
 at the lock is "insert or nothing", and one another flush took meanwhile is
 locked and judged. `retryableConflict()` reads `dialect.isRetryable()`, so an
 InnoDB deadlock is run again. A value longer than its MariaDB column is

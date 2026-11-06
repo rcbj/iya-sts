@@ -825,6 +825,13 @@ class Krb5Trusts {
     if (input.generate === true) {
       const keys: Record<string, string> = {};
       enctypes.forEach(function (etype: number): void {
+        if (!Number.isInteger(etype) || !kcrypto.isSupportedEtype(etype)) {
+          // validate() has already recorded STS-KRB-0220 for this enctype and
+          // the request will refuse; skip it here rather than let etypeById()
+          // throw on a NaN (a fuzzed `enctypes: ["x"]`) into the fault
+          // boundary, which the invariant counts as an uncaught 5xx.
+          return;
+        }
         const profile = kcrypto.etypeById(etype);
         keys[String(etype)] = Buffer.from(
           kcrypto.randomBytes(profile.keyBytes)).toString('base64');
@@ -837,6 +844,12 @@ class Krb5Trusts {
       const keys: Record<string, string> = {};
       let wrong = '';
       enctypes.forEach(function (etype: number): void {
+        if (!Number.isInteger(etype) || !kcrypto.isSupportedEtype(etype)) {
+          // See the generate branch above: validate() already refused this
+          // enctype, so skip it rather than throw a NaN into the fault
+          // boundary.
+          return;
+        }
         const value = input.keys[String(etype)];
         const bytes = typeof value === 'string' ?
           Buffer.from(value, 'base64') : null;

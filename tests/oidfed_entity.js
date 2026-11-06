@@ -72,6 +72,18 @@ function inRealm(id, fn) {
 
 async function run(t) {
   log.debug("Entering run().");
+  // A TIME NO DATE CAN HOLD (#1353): finite, so it passes `Number.isFinite`,
+  // and `toISOString()` throws on it. A partner signs these.
+  [10000000000000, -1e300].forEach(function (exp) {
+    t.equal(EntityStatement.timeProblem({ iat: 1, exp: exp }, 100, 0),
+            'exp is outside the range of a time',
+            'an exp of ' + exp + ' is said, not thrown');
+  });
+  t.equal(EntityStatement.isoOf(8.64e15 + 1), null,
+          'and no view of one throws');
+  t.equal(EntityStatement.timeProblem({ iat: 1, exp: 50 }, 100, 0).indexOf(
+    'it expired at '), 0, 'an ordinary expired statement reads as it did');
+  log.debug("Entering run().");
   realms.create({ id: REALM, name: 'OpenID Federation test' });
   try {
     await body(t);

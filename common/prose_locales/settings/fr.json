@@ -1527,6 +1527,22 @@
     "en": "d14784fabbda974e",
     "text": "Indique si ce domaine signe avec EdDSA (RFC 8037, Ed25519 et Ed448) les objets JOSE dont un client a choisi l’algorithme, et publie ses clés de signature kty OKP. **Désactivé par défaut**, car la suite de conformité OpenID ne sait pas analyser une clé OKP dans un JWKS, et c’est elle que la certification OpenID Connect exécute. Désactivé : aucune clé de signature OKP dans `/oauth2/jwks` (clés en attente, épinglées et de groupe de signataires comprises) ; EdDSA ne figure pas dans `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` ni `authorization_signing_alg_values_supported` ; un client ne peut ni enregistrer ni se voir attribuer EdDSA pour une réponse ID Token, UserInfo, d’introspection ou JARM ; et une telle signature encore demandée — par un client enregistré pendant que ce réglage était activé, ou par un algorithme SSF, WS-Trust ou Provider Commands réglé sur EdDSA — est refusée plutôt que produite avec une clé que personne ne peut récupérer. **Inchangé :** l’EdDSA avec lequel un client signe (assertions client, preuves DPoP, objets de requête, preuves de portefeuille) est toujours accepté et annoncé comme accepté ; un algorithme de jeton d’accès, de fédération ou de justificatif configuré par un opérateur (`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`, l’algorithme de justificatif d’OpenID4VCI) signe toujours, donc n’y configurez pas EdDSA lorsque ce réglage est désactivé ; le document DID, COSE, les signatures XML, DKIM et TLS ne relèvent pas de la publication JWKS JOSE. Activé : EdDSA est signé et publié comme l’indique `oauth2.eddsaCurve`."
   },
+  "keys.signingAlgorithms|label": {
+    "en": "23087da9ac3a37f0",
+    "text": "Algorithmes de signature utilisés par ce domaine"
+  },
+  "keys.signingAlgorithms|description": {
+    "en": "6ca0d3f207d8dcd4",
+    "text": "Les algorithmes JWS avec lesquels ce domaine signe et pour lesquels il publie des clés. **Vide, la valeur par défaut, conserve tous les algorithmes dont le domaine dispose par ailleurs.** Une liste doit inclure RS256 : OpenID Connect Discovery l'exige dans `id_token_signing_alg_values_supported`, et c'est la valeur par défaut des jetons d'identité et des jetons d'accès. Avec une liste : `/oauth2/jwks` ne contient aucune clé de signature d'un algorithme non listé (clés de réserve, épinglées et de groupes de signataires comprises ; une clé RSA sert à tous les algorithmes RS et PS, elle reste donc) ; un algorithme non listé ne figure pas dans les listes de signature des jetons d'identité, d'UserInfo, de l'introspection ou de JARM du document de découverte ; un client ne peut ni l'enregistrer ni se le voir attribuer pour ces réponses ; une signature encore demandée avec lui est refusée plutôt que faite avec une clé que personne ne peut récupérer ; et un `oauth2.accessTokenSigningAlg` non listé signe avec RS256 à la place. Listez aussi PS256 pour FAPI 1.0 Advanced. `keys.postQuantumSigning` et `keys.eddsaSigning` s'appliquent toujours : lister un algorithme n'active pas sa famille. **Sans changement :** ce que ce domaine accepte des clients (assertions client, preuves DPoP, objets de requête, preuves de portefeuille) ; une réponse UserInfo en JSON simple ; les clés de chiffrement ; COSE, les signatures XML, DKIM et TLS ; et les algorithmes que configurent `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` et l'algorithme de justificatif d'OpenID4VCI, indiquez donc là un algorithme listé."
+  },
+  "keys.jwksCertificateUrl|label": {
+    "en": "b910ac23ecc20134",
+    "text": "Nommer par URL les certificats d’une clé publiée"
+  },
+  "keys.jwksCertificateUrl|description": {
+    "en": "83d67129453bea8c",
+    "text": "Indique si `/oauth2/jwks` nomme la chaîne de certificats de chaque clé avec `x5u` (RFC 7517 section 4.6) au lieu de l’inclure dans `x5c`. **Désactivé par défaut.** Activé : une clé publie l’adresse de sa chaîne à `/pki/chain/{scope}/{sha256}.pem`, ce qui réduit fortement le jeu de clés JWK ; un client qui veut la chaîne la récupère via TLS. Une clé dont cette adresse ne peut pas servir la chaîne conserve son `x5c`. **Sans changement :** l’en-tête `x5c` ou `x5u` d’un jeton, que décide le réglage propre à chaque cas d’usage."
+  },
   "keys.kidFormat|label": {
     "en": "67642fcf21c7ca50",
     "text": "Format du kid des jetons signés"
@@ -3396,8 +3412,8 @@
     "text": "Certificats et clés conservés par le stockage de l’atelier, par domaine"
   },
   "pki.maxStoredObjects|description": {
-    "en": "3057876f05b58063",
-    "text": "Nombre d’objets que le volet Certificate & Key Configuration de /admin/pki peut conserver dans un domaine. **UN STOCKAGE PLEIN REFUSE LE SUIVANT** ; auparavant il supprimait le plus ancien, et le plus ancien porte une clé privée que quelqu’un a choisi de conserver. Supprimez ce qui n’est plus utile, ou augmentez cette valeur."
+    "en": "d78b7992e9302874",
+    "text": "Nombre d’objets que l’Atelier de certificats de /admin/pki peut conserver dans un domaine. **UN STOCKAGE PLEIN REFUSE LE SUIVANT** ; auparavant il supprimait le plus ancien, et le plus ancien porte une clé privée que quelqu’un a choisi de conserver. Supprimez ce qui n’est plus utile, ou augmentez cette valeur."
   },
   "pki.personSelfServicePerIdentity|label": {
     "en": "16d37c1faeb2ce0c",
@@ -5436,8 +5452,8 @@
     "text": "Différé : prêt après (ms)"
   },
   "oid4vci.deferredReadyMs|description": {
-    "en": "ddc34c16902c4571",
-    "text": "Durée pendant laquelle un justificatif différé reste issuance_pending avant d’être prêt. Assez longue pour qu’un portefeuille doive interroger et assez courte pour qu’un test n’expire pas."
+    "en": "2456e341de78a860",
+    "text": "Le temps qu’une attestation différée met à être prête. Jusque-là, le point de terminaison différé répond 202 avec le même transaction_id et un interval. Assez long pour qu’un portefeuille doive interroger, et assez court pour qu’un test n’expire pas."
   },
   "oid4vci.deferredIntervalS|label": {
     "en": "b4633676d2065b89",

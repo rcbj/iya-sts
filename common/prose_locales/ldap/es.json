@@ -736,8 +736,8 @@
     "text": "CALLBACK DE SOLICITUD DE ACCESO AUTHZEN (#1180): una URL https que este cliente, como PEP de AuthZEN, puede nombrar como callback.endpoint de una solicitud de acceso — una por valor, comparada exactamente. Una solicitud que nombre cualquier otra se rechaza; este servicio nunca llama a una URL de callback tomada solo de una solicitud. La define un administrador, nunca el llamador."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
-    "en": "847d2fc846138cb9",
-    "text": "RFC 9470 sección 3: los valores acr que esta aplicación, como servidor de recursos, exige de la autenticación que respalda un token de acceso — separados por espacios, el preferido primero. Un token cuyo acr no cumple ninguno recibe el desafío 401 insufficient_user_authentication con estos como acr_values. Los niveles 0 < 1 < mfa están ordenados; hwk, phr y phrh se cumplen con una contraseña más una llave de seguridad; cualquier otro valor, solo con ese acr exacto. VACÍO no exige nada."
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 sección 3: los valores acr que esta aplicación, como servidor de recursos, exige de la autenticación que respalda un token de acceso — separados por espacios, el preferido primero. Un token cuyo acr no cumple ninguno recibe el desafío 401 insufficient_user_authentication con estos como acr_values. Los niveles 0 < 1 < mfa están ordenados; hwk se cumple con una contraseña más una llave de seguridad; phr y phrh, solo con la autenticación resistente al phishing que nombran (#723); cualquier otro valor, solo con ese acr exacto. VACÍO no exige nada."
   },
   "applications.schema.attributes.oauthStepUpMaxAge.what": {
     "en": "fdd12480b52b8006",
@@ -1260,8 +1260,8 @@
     "text": "TRUE o FALSE: si se responde al wsignin1.0 propio de esta parte que confía, anulando wsfed.spInitiatedSso. Un wsignin1.0 es una URL sin firmar, así que FALSE cierra la puerta en lugar de demostrar quién la abrió."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
-    "en": "493ac4121c2076ca",
-    "text": "ADONDE SE ENVÍA UN PING wsignoutcleanup1.0 para esta aplicación — el URI de cierre de sesión de WS-Federation, y el que esta tabla no tenía hasta el 2026-08-30. DECLARADO, no observado, lo que lo hace hermano de samlSingleLogoutService y no de wsfedReplyUrl: una limpieza se envía cuando termina una SESIÓN, y para entonces la solicitud que habría llevado un wreply ha terminado hace mucho.\n\n**EL CIERRE DE SESIÓN TODAVÍA NO LO LEE**, y eso se dice en lugar de darse a entender. `cleanupTargetsFor()` construye su lista a partir de `session.wsfedRealms`, que registra el wreply al que realmente fue cada respuesta de inicio de sesión — así que lo que este servicio contacta hoy es lo que OBSERVÓ, y este atributo es lo que un operador DECLARÓ. Son dos hechos distintos y el segundo es el que una persona que configura una aplicación puede indicar por adelantado. Conectarlo como respaldo para un dominio en el que se inició sesión sin wreply es el siguiente paso obvio y deliberadamente no se da aquí: este cambio añade el campo y el almacenamiento, y cambiar adónde va una limpieza es un cambio en lo que hace el protocolo."
+    "en": "677e7babd8d711d3",
+    "text": "ADONDE SE ENVÍA UN PING wsignoutcleanup1.0 para esta aplicación — el URI de cierre de sesión de WS-Federation, y el que esta tabla no tenía hasta el 2026-08-30. DECLARADO, no observado, lo que lo hace hermano de samlSingleLogoutService y no de wsfedReplyUrl: una limpieza se envía cuando termina una SESIÓN, y para entonces la solicitud que habría llevado un wreply ha terminado hace mucho.\n\n**UNA DIRECCIÓN DECLARADA TIENE PRIORIDAD SOBRE UNA OBSERVADA** (#747). `cleanupTargetsFor()` notifica cada valor de aquí para un dominio en el que inició sesión la sesión, y el wreply al que fue la respuesta de inicio de sesión, que registra `session.wsfedRealms`, solo si esto está vacío."
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",

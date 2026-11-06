@@ -198,8 +198,10 @@ async function didSettings(realm) {
 async function publishAtB(realm) {
   log.debug("Entering publishAtB().");
   await didSettings(realm);
+  // CELL B'S ADDRESS IS A TEST'S OWN (#98 section 9) AND NOBODY REGISTERED IT:
+  // the client's redirect URI and the token's resource are the public name's.
   const portal = await portalSignin.signInToThePortal(realm.b, PERSON, null,
-    { password: PASSWORD });
+    { password: PASSWORD, publicBase: realm.a });
   const made = await portal.act("/portal/self-issued/dids",
                                 { action: "publish" });
   const mine = (await publishedAt(realm.b))[0] || {};
@@ -434,14 +436,28 @@ async function test() {
         "naming the jurisdiction", function () {
           assert.strictEqual(refused.status, 400, refused.raw.slice(0, 300));
           assert.ok(refused.body && refused.body.ok === false, refused.raw);
-          assert.strictEqual(refused.body.code, "STS-CELL-0045",
-                             refused.raw.slice(0, 300));
+          assert.ok(!("code" in refused.body), refused.raw.slice(0, 300));
           assert.ok(new RegExp("jurisdiction \"" + cells.jurisdictions.b +
                                "\"").test(String(refused.body.why ||
                                                   (refused.body.errors ||
                                                    []).join(" "))),
                     refused.raw.slice(0, 300));
         });
+  // WHERE THE CODE IS RECORDED (#1355): the audit row, written as the
+  // response finishes, so the read after it may need a moment.
+  let recorded = 0;
+  for (let i = 0; i < 20 && !recorded; i += 1) {
+    await new Promise(function (done) {
+      setTimeout(done, 150);
+    });
+    const rows = await kit.api(realm.a, "GET",
+                               "/audit?per=50&code=STS-CELL-0045");
+    recorded = ((rows.body && (rows.body.rows || rows.body.events)) ||
+                []).length;
+  }
+  check("the refused move is recorded under its code", function () {
+    assert.ok(recorded > 0, "no audit row carries STS-CELL-0045");
+  });
   const stays = await holds(realm.a, PERSON);
   const notMoved = await holds(realm.b, PERSON);
   check("and they stay at cell A", function () {

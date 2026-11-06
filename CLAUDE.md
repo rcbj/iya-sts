@@ -609,7 +609,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3bs | The per-scope `issue-scope` verdict (#304) | `xacml/CLAUDE.md`, `common/CLAUDE.md` |
 | 3bq | `role_permissions.ts` (#302, #303): a scope requested, a role authorizing it | `common/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3w | `pki.js`: the CA hierarchy and path checks | `common/CLAUDE.md` |
-| 3aa | `pki_authoring.js`: the Certificate & Key Configuration pane as a model | `common/CLAUDE.md` |
+| 3aa | `pki_authoring.js`: the Certificate Workbench as a model | `common/CLAUDE.md` |
 | 3x | `assertion_grant.js`: RFC 7521 and RFC 7523 | `oauth-oidc/CLAUDE.md` |
 | 3ab | `person_assertions.js`: a person as an RFC 7523 issuer | `common/CLAUDE.md` |
 | 3ac | `password_policy.js`: the password policy and its generator | `common/CLAUDE.md` |
@@ -693,6 +693,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3cx | `policy_selection.ts` (#1235): what a named policy covers names it — the application, the group, the person — and one ranking by precedence for every policy kind; the recipe a kind follows | `common/CLAUDE.md`, `ldap/CLAUDE.md`, `admin-core/CLAUDE.md` |
 | 3cz | `fga_gate.ts`, `fga_pep.ts` (#564 P3, P4): fine-grained authorization at the authorization, PAR and token endpoints, the token exchange's bound, and AuthZEN deciding against an enforcing application's own policy | `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md`, `authzen/CLAUDE.md` |
 | 3da | `audit_export.ts` (#641): this process delivers its own audit ring to operator-configured destinations, at-least-once | `common/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
+| 3dc | `response_models.ts`, `response_model_kit.ts` (#1353): every answer of a published API held to a closed model, always | `common/CLAUDE.md` |
 | 3db | `profile_photo.ts` (#719): a person's photo, kept off the entry, set on the portal or copied from a partner | `common/CLAUDE.md`, `federation/CLAUDE.md`, `ldap/CLAUDE.md`, `portal/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
@@ -895,6 +896,14 @@ belong (rule 1): requiring it registers nothing, so without that line its
 routes do not exist, and the drift check below reports every description of
 them as a path that is not registered.
 
+**A new operation on `/admin-api`, `/account-api`, `/authn-api` or `/report-api`
+also owes a closed response model, and a new member of an answer owes a line in
+it in the same commit** (#1353): every answer is validated against its model,
+always, and one that does not match is a 500 (`common/CLAUDE.md` 3dc;
+`tests/openapi_response_models.js`). **Either one also owes
+`tests/tools/regenerate-openapi-pages.sh`** (`docs/openapi/`, the public
+reference); `tests/openapi_pages.js` fails otherwise.
+
 **So adding a protocol family costs four things**: an entry in `ENDPOINTS`, a
 card in `sts_metadata.ts`'s `PROTOCOLS`, a row in
 `admin-ui/crypto_metadata.ts`'s `FAMILIES` — the second metadata page,
@@ -946,6 +955,13 @@ the ONE table in `common/error_codes.js`; `docs/error-codes.md` is generated fro
 it. **The code is an operator's name and is RECORDED, NEVER SENT** — it goes on
 the audit row and at the front of a log line, never in a response, and it
 changes no specification's error.
+
+**The one exception is rcbj's decision of 2026-11-06 (#1355): a code may be shown
+on an administrator's console page that draws it for someone diagnosing a recorded
+failure — the audit log, and the rows `tests/openapi_response_models.js`'s
+`DRAWN_CODE_OPERATIONS` and `DRAWN_PLAIN_CODES` name, each with its page — and
+nowhere else**: not `/account-api`, `/authn-api` or `/report-api`, not an act's
+answer, and not an `/admin-api` member no page draws.
 
 **A new failure is not finished until it has a code**, and that is enforced:
 a row in the table, a `mark()` / `errorCode:` / `tag()` where the failure is

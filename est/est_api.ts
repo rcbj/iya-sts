@@ -308,7 +308,7 @@ class EstApi {
             requestBody: {
               type: 'object',
               properties: {
-                serialHex: { type: 'string', minLength: 1, maxLength: 80,
+                serial: { type: 'string', minLength: 1, maxLength: 80,
                              description:
                                'The serial, from GET /admin-api/est.' },
                 reason: { type: 'string',
@@ -319,8 +319,8 @@ class EstApi {
                           description: 'The RFC 5280 section 5.3.1 reason; ' +
                                        'unspecified when omitted.' }
               },
-              required: ['serialHex'],
-              examples: [{ serialHex: '00', reason: 'keyCompromise' }],
+              required: ['serial'],
+              examples: [{ serial: '00', reason: 'keyCompromise' }],
               additionalProperties: false
             },
             responseDescription: 'The serial, the entry and the reason.' },

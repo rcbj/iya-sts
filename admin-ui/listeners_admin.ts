@@ -338,7 +338,7 @@ class ListenersAdmin {
         certificateSource: one.certificateFile ? 'file' : 'issued',
         tls: one.tls,
         state: here ? here.state : VIEW_PROSE.notBound,
-        why: here ? here.why : '', code: here ? here.code : '',
+        why: here ? here.why : '',
         certificate: here ? here.certificate : null,
         policy: self.described(tlsServer().policyFor('custom', one.id)),
         http: tlsServer().httpPolicyFor('custom', one.id)

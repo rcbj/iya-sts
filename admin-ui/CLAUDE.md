@@ -8,7 +8,7 @@ say; the rest are listed after the table and argued in their own sections.
 | `admin.ts` | Every page, every form, the shell they are drawn in, and the GATE in front of all of them. The largest file in the repository, because every page's HTML and every page's JSON view are built in the same function — deliberately, for the reason `../mgmt-api/CLAUDE.md` gives. |
 | `admin_rbac.ts` | **Who may use it.** Two roles, held as two ordinary groups in the embedded directory. A library (rule 3): it registers nothing. |
 | `delegation_map.ts` | **The delegation picture**, at `/admin/delegation/map` — and, since 2026-08-26, one person's whole picture at `/admin/delegation/user`, which is the same renderer over a graph carrying two more kinds of line. Layout with `@dagrejs/dagre`, every shape its own SVG. A library (rule 3): it registers nothing, requires nothing in this service but `helpers.js`, and is HANDED what each box is. |
-| `pki_admin.ts` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate & Key Configuration pane**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.ts`. It draws its own page (like `crypto_metadata.ts`) and is required at **18a**, which is why it needs no slot. |
+| `pki_admin.ts` | **The certificate authority**, at `/admin/pki` — Root, Intermediate and Issuing per trust realm, the signing key pairs it issues to applications and (since 2026-09-11) to PEOPLE, and since 2026-09-10 **the Certificate Workbench**: the parent project's *PKI / X.509* workflow as one form of a hundred and fifteen fields, over `common/pki_authoring.ts`. It draws its own page (like `crypto_metadata.ts`) and is required at **18a**, which is why it needs no slot. |
 | `crypto_metadata.ts` | **The crypto report**, at `/admin/crypto-metadata` — what this service does when it signs, verifies, encrypts or decrypts, for every identity service it advertises. It draws its own page (like `../sts_metadata.ts`, not like everything else here) and fills `setCryptoReporter()` so `/admin-api/crypto` can mirror it. See the section below. |
 | `federation_diagram.ts` | **The federation picture**, at `/admin/federation/map`. The SECOND drawing in this console and a SEPARATE renderer — see the section below, where the case for not reusing the one above it is made. A library on the same terms, and the only thing it takes from this service beyond `helpers.js` is `delegation_map.ts`'s palette, hexagon and text metric. |
 | `geo_map.ts` | **The geolocation picture** (#255), for `/admin/geolocation`: the world, a continent or a country as a server-drawn SVG in the Equal Earth projection over Natural Earth's outlines (`natural_earth/countries.json`), countries filled on a five-step scale, cities as circles. The THIRD drawing and a THIRD renderer, and it uses no dagre — see *`/admin/geolocation` is the third drawing* below. A library on `federation_diagram.ts`'s terms: `helpers.js`, and `delegation_map.ts`'s palette and text metric. |
@@ -20,6 +20,16 @@ The others: `admin_scope.ts` (what a realm administrator may not reach, 8d),
 `database_admin.ts` (`/admin/database`), `encryption_admin.ts`
 (`/admin/encryption`) and `secrets_admin.ts` (`/admin/secrets`).
 
+
+**THE CONSOLE'S STARTUP (#1333, 2026-11-05).** Measured through CloudFront, the
+console took about 5 s from `/admin/callback` to its first page, because it asked
+six things one after another, one of them `GET /admin-api/console` at 1.36 MB.
+So `ensureShell()` asks the shell, `/admin-api/me` and the form table together,
+and asks for the shell with `catalogs=files`: the catalogs (over a megabyte, the
+same for everybody, no secret) come from `/web/locales/console-all/<tag>.json?v=<build>`,
+compressed and cached at the edge, where an API answer could be neither (BREACH).
+A file that cannot be had falls back to the plain `GET /admin-api/console`, which
+still carries them, so a page is never drawn in bare keys.
 ## A DESIGN CONSTRAINT: NO PAGE MAKES A READER SCROLL FOR A SECTION (rcbj, 2026-10-02)
 
 > "The user shouldn't have to scroll through multiple pages of settings to

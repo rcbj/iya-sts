@@ -6641,8 +6641,8 @@ class AdminActions {
       parts.push('Already held: ' + names(peps.held) + '.');
     }
     (peps.failed || []).forEach(function (one: any) {
-      parts.push('Not granted: ' + String(one.name || '?') + ' (' +
-                 String(one.code || '') + ') — ' + String(one.why || ''));
+      parts.push('Not granted: ' + String(one.name || '?') + ' — ' +
+                 String(one.why || ''));
     });
     if (!parts.length) {
       parts.push('No remote PEP holds REMOTE_PEPS in this realm (group "' +
@@ -11026,11 +11026,19 @@ class AdminActions {
       const blank = rawTtl === undefined || rawTtl === null ||
                     String(rawTtl).trim() === '';
       const ttl = blank ? 0 : Number(rawTtl);
-      if (!blank && !(Number.isFinite(ttl) && ttl > 0)) {
+      // The upper bound keeps now + ttl inside the range a Date can hold
+      // (ECMAScript dates run to 8.64e12 seconds past the epoch), so the ISO
+      // expiry built below cannot throw RangeError on a fuzzed ttl such as
+      // 1e308. It is the representable limit, not a policy ceiling, and it is
+      // measured from now: 8.64e12 alone still overflowed once added to it.
+      const latestTtl = 8640000000000 - Math.ceil(Date.now() / 1000);
+      if (!blank && !(Number.isSafeInteger(ttl) && ttl > 0 &&
+                      ttl <= latestTtl)) {
         log.debug("Leaving AdminActions.spiffeAgentsAction(). Bad ttl.");
         return this.refused('STS-ADMIN-0858', { ok: false,
-          errors: ['ttl must be a positive number of seconds. Omit it to ' +
-                   'use spiffe.joinTokenTtl.'] });
+          errors: ['ttl must be a whole positive number of seconds within ' +
+                   'the representable range. Omit it to use ' +
+                   'spiffe.joinTokenTtl.'] });
       }
       // Loaded here, at request time. This module is built at step 18 and
       // the SPIFFE family at step 23; a require at the top of the file
@@ -11196,7 +11204,10 @@ class AdminActions {
         return this.refusedBy(checked.errorCode || 'STS-FED-0209', {
           ok: false, errors: [String(checked.why || 'the check failed')] });
       }
-      return Object.assign({ ok: true, errors: [] }, checked);
+      // `errorCode` is `checkPartner()`'s to this layer and never sent (#1355).
+      const answer = Object.assign({ ok: true, errors: [] }, checked);
+      delete answer.errorCode;
+      return answer;
     }
 
     // THE PARTNER REGISTERED AGAIN (#930): an OpenID Connect relationship
@@ -11316,7 +11327,8 @@ class AdminActions {
       const result = federation.update(id, {
         field: String(body.field || ''),
         value: String(body.value == null ? '' : body.value),
-        mode: action === 'remove-value' ? 'remove' : 'add'
+        mode: action === 'remove-value' ? 'remove' : 'add',
+        valueOfList: action !== 'set'
       });
       log.debug("Leaving AdminActions.federationAction(). " + action + " " +
                 (result.ok ? 'ok' : 'refused') + ".");

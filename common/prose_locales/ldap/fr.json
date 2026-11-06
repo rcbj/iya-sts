@@ -736,8 +736,8 @@
     "text": "RAPPEL (CALLBACK) D’UNE DEMANDE D’ACCÈS AUTHZEN (#1180) : une URL https que ce client, en tant que PEP AuthZEN, peut nommer comme callback.endpoint d’une demande d’accès — une par valeur, comparée exactement. Une demande qui en nomme une autre est refusée ; ce service n’appelle jamais une URL de rappel tirée d’une seule demande. Défini par un administrateur, jamais par l’appelant."
   },
   "applications.schema.attributes.oauthStepUpAcrValues.what": {
-    "en": "847d2fc846138cb9",
-    "text": "RFC 9470 section 3 : les valeurs acr que cette application, en tant que serveur de ressources, exige de l’authentification sous-jacente à un jeton d’accès — séparées par des espaces, la préférée en premier. Un jeton dont l’acr ne satisfait aucune d’elles reçoit un défi 401 insufficient_user_authentication avec celles-ci comme acr_values. Les niveaux 0 < 1 < mfa sont ordonnés ; hwk, phr et phrh sont satisfaits par un mot de passe accompagné d’une clé de sécurité ; toute autre valeur uniquement par cet acr exact. VIDE n’exige rien."
+    "en": "9255177cf4802d85",
+    "text": "RFC 9470 section 3 : les valeurs acr que cette application, en tant que serveur de ressources, exige de l’authentification sous-jacente à un jeton d’accès — séparées par des espaces, la préférée en premier. Un jeton dont l’acr ne satisfait aucune d’elles reçoit un défi 401 insufficient_user_authentication avec celles-ci comme acr_values. Les niveaux 0 < 1 < mfa sont ordonnés ; hwk est satisfait par un mot de passe accompagné d’une clé de sécurité ; phr et phrh uniquement par l’authentification résistante à l’hameçonnage qu’ils nomment (#723) ; toute autre valeur uniquement par cet acr exact. VIDE n’exige rien."
   },
   "applications.schema.attributes.oauthStepUpMaxAge.what": {
     "en": "fdd12480b52b8006",
@@ -1260,8 +1260,8 @@
     "text": "TRUE ou FALSE : le wsignin1.0 propre à cette partie de confiance reçoit-il une réponse, en remplaçant wsfed.spInitiatedSso. Un wsignin1.0 est une URL non signée ; FALSE ferme donc la porte plutôt que de prouver qui l’a ouverte."
   },
   "applications.schema.attributes.wsfedSignOutUri.what": {
-    "en": "493ac4121c2076ca",
-    "text": "L’ENDROIT OÙ EST ENVOYÉ UN PING wsignoutcleanup1.0 pour cette application — l’URI de déconnexion de WS-Federation, celle que ce tableau n’avait pas jusqu’au 2026-08-30. DÉCLARÉE, non observée, ce qui en fait le pendant de samlSingleLogoutService plutôt que de wsfedReplyUrl : un nettoyage est envoyé lorsqu’une SESSION se termine, et à ce moment-là la requête qui aurait porté un wreply est terminée depuis longtemps.\n\n**ELLE N’EST PAS ENCORE LUE PAR LA DÉCONNEXION**, et cela est énoncé plutôt que sous-entendu. `cleanupTargetsFor()` construit sa liste à partir de `session.wsfedRealms`, qui enregistre le wreply vers lequel chaque réponse de connexion est réellement allée — ce que ce service interroge aujourd’hui est donc ce qu’il a OBSERVÉ, et cet attribut est ce qu’un opérateur a DÉCLARÉ. Ce sont deux faits différents, et le second est celui qu’une personne qui configure une application peut énoncer à l’avance. L’intégrer comme repli pour un wtrealm auquel on s’est connecté sans wreply est l’étape suivante évidente et n’est délibérément pas franchie ici : cette modification ajoute le champ et le stockage, et changer la destination d’un nettoyage est un changement de ce que fait le protocole."
+    "en": "677e7babd8d711d3",
+    "text": "L’ENDROIT OÙ EST ENVOYÉ UN PING wsignoutcleanup1.0 pour cette application — l’URI de déconnexion de WS-Federation, celle que ce tableau n’avait pas jusqu’au 2026-08-30. DÉCLARÉE, non observée, ce qui en fait le pendant de samlSingleLogoutService plutôt que de wsfedReplyUrl : un nettoyage est envoyé lorsqu’une SESSION se termine, et à ce moment-là la requête qui aurait porté un wreply est terminée depuis longtemps.\n\n**UNE ADRESSE DÉCLARÉE PRIME SUR UNE ADRESSE OBSERVÉE** (#747). `cleanupTargetsFor()` notifie chaque valeur d’ici pour un domaine auquel la session s’est connectée, et le wreply auquel est allée la réponse de connexion, que `session.wsfedRealms` enregistre, seulement si ceci est vide."
   },
   "applications.schema.attributes.wstrustAppliesTo.what": {
     "en": "9a8d1ca262be725c",

@@ -311,7 +311,10 @@ async function run(t) {
           'every buildSpec() call site was found',
           callSites.length + ' call(s)');
   const handRolled = callSites.filter(function (site) {
-    return site.source.indexOf('specOptions(') < 0;
+    // `responseChecks.install()`'s is the one call that publishes nothing: it
+    // reads only the response models, whichever way the gate stands (#1353).
+    return site.source.indexOf('specOptions(') < 0 &&
+      site.source.indexOf('reads only the response models') < 0;
   });
   t.check(handRolled.length === 0,
           'and every one of them takes its options from ' +

@@ -149,6 +149,7 @@ async function run(t) {
   log.debug("Entering run().");
   const config = require('../common/config');
   const errorCodes = require('../common/error_codes');
+  const audit = require('../common/audit');
   const stsCrypto = require('../common/crypto');
   const app = require('../common/app');
   require('../ldap/ldap_server');
@@ -732,6 +733,16 @@ async function run(t) {
         return row.entityId === name;
       })[0] || null;
     };
+    // The code a refusal was recorded under, which is on its audit row and not
+    // in the list the API answers (#1355).
+    const auditedCode = function (name) {
+      log.debug("Entering auditedCode().");
+      const row = audit.list().filter(function (one) {
+        return one.action === 'saml2.metadata.mdq' && one.target === name;
+      })[0];
+      log.debug("Leaving auditedCode().");
+      return row ? row.errorCode : '';
+    };
     const unknown = function (label) {
       log.debug("Entering unknown().");
       const name = 'https://' + label + '-' + stamp + '.md.test/saml';
@@ -755,7 +766,7 @@ async function run(t) {
     t.equal(askedFor(bare), 0,
             'PRODUCT, no trust anchor: the MDQ responder is NEVER ASKED');
     t.check(!applications.get(bare), 'and nothing is registered');
-    t.check(refusedRow(bare) && refusedRow(bare).errorCode ===
+    t.check(refusedRow(bare) && auditedCode(bare) ===
             'STS-SAML-0080',
             'the entityID is listed as refused, STS-SAML-0080',
             JSON.stringify(refusedRow(bare)));
@@ -784,7 +795,7 @@ async function run(t) {
                 'PRODUCT with a realm anchor: the responder IS asked');
         t.check(!applications.get(unsignedName),
                 'an UNSIGNED answer registers nothing');
-        t.equal((refusedRow(unsignedName) || {}).errorCode,
+        t.equal(auditedCode(unsignedName),
                 'STS-SAML-0081', 'and it is listed, STS-SAML-0081');
 
         const strangerName = unknown('prod-stranger');
@@ -794,7 +805,7 @@ async function run(t) {
                  authnRequest(strangerName, '_p3'));
         await settle(strangerName, 1);
         t.check(!applications.get(strangerName) &&
-                (refusedRow(strangerName) || {}).errorCode ===
+                auditedCode(strangerName) ===
                 'STS-SAML-0081',
                 'an answer signed by ANOTHER key registers nothing, ' +
                 'STS-SAML-0081');
@@ -913,9 +924,13 @@ async function run(t) {
       '/admin/saml2', {}, '')).json;
     t.check(relisted.mdqRefused.length >= 1 &&
             relisted.mdqRefused[0].entityId === viaModule &&
-            relisted.mdqRefused[0].errorCode === 'STS-SAML-0080',
-            'the newest refusal is FIRST',
+            !('errorCode' in relisted.mdqRefused[0]),
+            'the newest refusal is FIRST, and the answer carries no code',
             JSON.stringify(relisted.mdqRefused.slice(0, 2)));
+    t.check(audit.list().some(function (row) {
+      return row.action === 'saml2.metadata.mdq' &&
+             row.target === viaModule && row.errorCode === 'STS-SAML-0080';
+    }), 'its code is on the audit row');
     // The page as the static console draws it (#446): GET /admin-api/saml2
     // drawn by its renderer.
     const drawn = (await require('./tools/console_page.js')

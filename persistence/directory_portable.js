@@ -1122,34 +1122,24 @@ function create(deps) {
   }
 
   /**
-   * How many values each data key in `ids` seals: one statement a key over
-   * every sealed table (LIKE, as PostgreSQL's), and the directory's counts.
+   * How many values each data key in `ids` seals: the one pass of
+   * `sealedValueCounts()`, whatever the number of keys, and the directory's
+   * counts. A statement per key read the whole store once per key, about 3 s a
+   * key at 182 MB of minted rows, and with 84 keys the re-encryption pass ran
+   * past sts_data_keys' ten minutes; on PostgreSQL that job takes under three
+   * (#677).
+   * It is a count of VALUES, as `countAllSealed()`'s is; zero means the same.
    *
-   * @param ids - the data key ids
+   * @param ids - the data keys
    * @returns `{ <id>: n }`
    */
   async function countSealed(ids) {
     log.debug("Entering countSealed(). " + ids.length);
-    const tables = sealedTables();
-    const out = {};
-    for (const id of ids) {
-      const like = deps.sealedLike(id);
-      const parts = tables.map(function (one) {
-        return '(SELECT COUNT(*) FROM ' + one.table + ' WHERE ' +
-               (one.where ? one.where + ' AND ' : '') + columnOf(one) +
-               ' LIKE ? ESCAPE \'\\\\\')';
-      });
-      const r = await maintenance('the data-key count', function () {
-        return send(pool, 'countSealed', 'SELECT CAST(' + parts.join(' + ') +
-          ' AS SIGNED) AS n', tables.map(function () {
-            return like;
-          }));
-      });
-      out[id] = Number((dialect.rowsOf(r)[0] || {}).n) || 0;
-    }
+    const values = await sealedValueCounts();
     const inDirectory = await directoryDekCounts(new Set(ids));
+    const out = {};
     ids.forEach(function (id) {
-      out[id] += Number(inDirectory[id]) || 0;
+      out[id] = (Number(values[id]) || 0) + (Number(inDirectory[id]) || 0);
     });
     log.debug("Leaving countSealed().");
     return out;
@@ -1195,6 +1185,23 @@ function create(deps) {
    */
   async function countAllSealed() {
     log.debug("Entering countAllSealed().");
+    const out = await sealedValueCounts();
+    const inDirectory = await directoryDekCounts(null);
+    Object.keys(inDirectory).forEach(function (id) {
+      out[id] = (out[id] || 0) + inDirectory[id];
+    });
+    log.debug("Leaving countAllSealed().");
+    return out;
+  }
+
+  /**
+   * One pass over every sealed table outside the directory, a page at a time:
+   * how many values each data key seals, read out of the values themselves.
+   *
+   * @returns `{ <id>: n }`, with no member for a key that seals nothing
+   */
+  async function sealedValueCounts() {
+    log.debug("Entering sealedValueCounts().");
     const out = {};
     for (const one of sealedTables()) {
       const keyList = one.keys.map(function (k) {
@@ -1207,7 +1214,7 @@ function create(deps) {
           .concat(one.where ? [one.where] : [],
                   cursor.text ? [cursor.text] : []);
         const r = await maintenance('the data-key count', function () {
-          return send(pool, 'countAllSealed', 'SELECT ' + keyList + ', ' +
+          return send(pool, 'sealedValueCounts', 'SELECT ' + keyList + ', ' +
             columnOf(one) + ' AS v FROM ' + one.table + ' WHERE ' +
             where.join(' AND ') + ' ORDER BY ' + keyList + ' LIMIT ?',
             /** @type {Array<string | number>} */ (['%$aes%$2$%'])
@@ -1232,11 +1239,7 @@ function create(deps) {
         });
       }
     }
-    const inDirectory = await directoryDekCounts(null);
-    Object.keys(inDirectory).forEach(function (id) {
-      out[id] = (out[id] || 0) + inDirectory[id];
-    });
-    log.debug("Leaving countAllSealed().");
+    log.debug("Leaving sealedValueCounts().");
     return out;
   }
 
@@ -1269,7 +1272,15 @@ function create(deps) {
         return send(pool, name, text, values);
       });
     };
-    for (const id of ids) {
+    // ONLY A KEY THAT SEALS SOMETHING IS LOOKED FOR, table by table: a retired
+    // key usually seals nothing, and each lookup below reads the whole table.
+    // A value written under one after this pass is the next pass's, and no key
+    // is destroyed on anything but a count taken after this re-seal.
+    const held = await sealedValueCounts();
+    const holding = ids.filter(function (id) {
+      return held[id];
+    });
+    for (const id of holding) {
       const like = deps.sealedLike(id);
       const minted = dialect.rowsOf(await ask('reseal.minted', 'SELECT ' +
         'handle, realm, `key`, body FROM sts_minted WHERE body LIKE ? ESCAPE ' +

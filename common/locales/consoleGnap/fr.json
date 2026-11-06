@@ -30,7 +30,7 @@
   "jwtEncrypted": "Imbriqué dans un JWE : pour la <code>gnapJweKey</code> du serveur de ressources, ou pour ce serveur d’autorisation (à introspecter)",
   "macaroon": "HMAC-SHA256 sous une clé racine par serveur de ressources, conservée scellée dans <code>gnapMacaroonKey</code> sur son entrée",
   "biscuit": "Clé racine Ed25519 <code>{key}</code>",
-  "zcap": "Délégation Ed25519Signature2020 de <code>{controller}</code>",
+  "zcap": "Délégation {suite} de <code>{controller}</code>",
   "grants": "Autorisations",
   "grantCount": "{n} autorisation(s)",
   "thGrant": "Autorisation",

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5237** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5244** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -57,7 +57,7 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 154
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 156
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 214
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 117
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 208
+* [Federation (`STS-FED`)](#sts-fed) — 211
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 254
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 163
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 258
-* [Management API (`STS-API`)](#sts-api) — 88
+* [Management API (`STS-API`)](#sts-api) — 90
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
@@ -759,6 +759,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0163` | A WS-Security signature does not cover the SOAP Body or the wsu:Timestamp of its security header by their wsu:Id (#521). | the caller's: wst:AuthenticationBadElements (STS-WSTRUST-0040) |
 | `STS-KEYS-0164` | A WS-Security signature's KeyInfo names its certificate in no form of the X.509 Token Profile 1.1 this service reads (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
 | `STS-KEYS-0165` | An EdDSA signature through helpers.signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.eddsaSigning is off — a client registered for EdDSA while it was on, or a setting naming EdDSA — and was refused rather than made with a key the realm does not publish (#1292). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
+| `STS-KEYS-0166` | A signature through helpers.signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.signingAlgorithms does not list its algorithm — a client registered for it before the list was set, or a setting naming it — and was refused (#1348). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
+| `STS-KEYS-0167` | keys.signingAlgorithms was not changed: a list that is not empty must include RS256, which OpenID Connect Discovery requires and which is the default for ID Tokens and access tokens (#1348). | none: an operator's write, refused with its reason |
 
 ## STS-PKI
 
@@ -957,7 +959,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0200` | A certificate authority build named an alternative key algorithm (pki.alternativeKeyAlgorithm, or altKeyAlg on the form) that is not a pure post-quantum signature algorithm this service generates, nor "none" (#68). | console: the page's error list; /admin-api: HTTP 400 { ok: false, errors } |
 | `STS-PKI-0201` | A certificate carries an ITU-T X.509 clause 9.8 alternative signature that does not verify under its issuer's alternative key (any path: this realm's own, an uploaded chain, a registered root), or — on a path to this realm's own hierarchy — cannot be checked (#68). | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
 | `STS-PKI-0202` | A certificate on a path to this realm's own hierarchy carries no alternative signature although its issuer holds an alternative (post-quantum) key — a hybrid path presented as classical, the downgrade #68 refuses. | the verifier's refusal: whatever the certificate was presented for is refused as an untrusted certificate |
-| `STS-PKI-0203` | A Certificate & Key Configuration pane field that takes a closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, pki_ks_format) held a value outside it (#86). | HTTP 400 page or { ok: false, errors } |
+| `STS-PKI-0203` | A Certificate Workbench field that takes a closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, pki_ks_format) held a value outside it (#86). | HTTP 400 page or { ok: false, errors } |
 | `STS-PKI-0204` | The OpenID4VP Verifier's certificate was refused its name or its key: a DNS name a certificate cannot carry, a wildcard (the certificate names one host), or no signing key (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at POST /admin-api/verifications/start |
 | `STS-PKI-0205` | A realm already holds the most OpenID4VP Verifier certificates it keeps (one per DNS name, sixteen), so none was issued for another name — set oid4vp.x509DnsName or pin global.publicBaseUrl (#230). | the Verifier's refusal: STS-VC-0112, HTTP 500 at POST /admin-api/verifications/start |
 | `STS-PKI-0206` | A key pair was not pinned in a slot that certifies a key the realm signs with: a pinned key does not sign, and the pin would have replaced that key's published certificate (#245). | console / /admin-api refusal (HTTP 400) |
@@ -2876,6 +2878,9 @@ Raised from: federation/.
 | `STS-FED-0231` | A Bluesky answer was refused: it named another issuer or no code, or the code could not be redeemed for a DPoP token with the atproto scope and a subject (#746). | HTTP 401 page |
 | `STS-FED-0232` | A Bluesky answer's subject was not believed: not a did:plc, no data server in its document, or a data server that does not name this issuer (#746). | HTTP 401 page |
 | `STS-FED-0233` | GET /federation/atproto/client/{id} named no usable Bluesky relationship (#746). | HTTP 404 |
+| `STS-FED-0234` | federation/add-value or federation/remove-value named a field that holds one value, so there is no list to change (#747). | HTTP 400 JSON |
+| `STS-FED-0235` | A held Discourse answer returned from its step after the relationship's shared secret was replaced (#746). | HTTP 401 page |
+| `STS-FED-0236` | A held Bluesky answer returned from its step and its subject was no longer believed: the DID's data server no longer names this issuer, or could not be asked (#746). | HTTP 401 page |
 
 ## STS-OIDFED
 
@@ -5484,6 +5489,8 @@ Raised from: mgmt-api/.
 | `STS-API-0136` | A management API users action that answers later (a by-value did:web enrolment, which fetches the DID document) failed inside this service; the log says why (#693). | HTTP 500 |
 | `STS-API-0137` | An /admin-api access token issued to a client that declares tls_client_auth, self_signed_tls_client_auth or tls_client_certificate_bound_access_tokens carries no cnf x5t#S256 (RFC 8705): such a client's tokens are accepted only certificate-bound. | invalid_token (HTTP 401) |
 | `STS-API-0138` | A management API write that only a Security Administrator may make — a Directory → Policies policy saved, reset or acted on, a policy named on an application, group or person, the Security Administrator's role granted or revoked by any door, or the account of a person who holds it acted on — was asked with a token that does not carry admin:security or whose subject does not hold SECURITY_ADMIN. Admin Write does not reach these. | HTTP 403 |
+| `STS-API-0139` | An answer of an API this service publishes an OpenAPI document for (the management, account, sign-in or report API) did not match the model its operation declares for that status, so it was not sent and the caller was answered 500. A member no model declares, a value of the wrong type, a status or media type the operation does not declare, or an operation the document does not have. The log line names the operation, the status and where in the body; it is a defect in the model or in the handler, never in the request. | HTTP 500 |
+| `STS-API-0140` | A handler of an API this service publishes an OpenAPI document for threw and nothing caught it. The caller was answered 500 in JSON, the sentence a refused answer gets, rather than an HTML page. The log line names the path and the message once per distinct failure. | HTTP 500 |
 
 ## STS-PORTAL
 

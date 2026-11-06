@@ -3824,6 +3824,66 @@ const SETTINGS = [
                  'document, COSE, XML signatures, DKIM and TLS are not ' +
                  'JOSE JWKS publication. On: EdDSA is signed and published ' +
                  'as `oauth2.eddsaCurve` says.' },
+  // ONE REALM'S SIGNING ALGORITHMS, NAMED ONE BY ONE (#1348, 2026-11-05, rcbj:
+  // the OpenID Connect certification configuration has only RS256 enabled).
+  // The two switches above remove a whole family; this names individual
+  // algorithms, and both switches still win over it. `common/helpers.js`'s
+  // `signingAlgAllowlist()` is the one reader, and `common/CLAUDE.md` (*A
+  // REALM'S SIGNING ALGORITHMS, NAMED ONE BY ONE*) says where each piece is.
+  // `csvValues` repeats `stsCrypto.JWS_SIGNING_ALGS` because this file
+  // requires nothing of this service; `tests/signing_algorithm_allowlist.js`
+  // fails if the two differ.
+  { key: 'keys.signingAlgorithms', group: 'Key material',
+    label: 'Signing algorithms this realm uses',
+    path: 'keys.signingAlgorithms', env: 'STS_KEYS_SIGNING_ALGORITHMS',
+    type: 'csv', dflt: '', runtime: true,
+    csvValues: ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'PS256',
+                'PS384', 'PS512', 'ES256', 'ES384', 'ES512', 'ES256K',
+                'EdDSA', 'ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87',
+                'SLH-DSA-SHA2-128s', 'SLH-DSA-SHAKE-128s', 'ML-DSA-44-ES256',
+                'ML-DSA-65-ES256', 'ML-DSA-87-ES384', 'ML-DSA-44-Ed25519',
+                'ML-DSA-65-Ed25519', 'ML-DSA-87-Ed448'],
+    description: 'The JWS algorithms this realm signs with and publishes ' +
+                 'keys for. **Empty, the default, leaves every algorithm ' +
+                 'the realm otherwise has.** A list must include RS256: ' +
+                 'OpenID Connect Discovery requires it in ' +
+                 '`id_token_signing_alg_values_supported`, and it is the ' +
+                 'default for ID Tokens and access tokens. With a list: ' +
+                 'no signing key for an unlisted algorithm is in ' +
+                 '`/oauth2/jwks` (standby, pinned and signer-group keys ' +
+                 'included; an RSA key serves every RS and PS algorithm, ' +
+                 'so it stays); an unlisted algorithm is not in the ID ' +
+                 'Token, UserInfo, introspection or JARM signing lists of ' +
+                 'discovery; a client may not register or be given one for ' +
+                 'those responses; a signature still asked for with one is ' +
+                 'refused rather than made with a key nobody can fetch; ' +
+                 'and an unlisted `oauth2.accessTokenSigningAlg` signs with ' +
+                 'RS256 instead. List PS256 too for FAPI 1.0 Advanced. ' +
+                 '`keys.postQuantumSigning` and `keys.eddsaSigning` still ' +
+                 'apply: listing an algorithm does not turn its family on. ' +
+                 '**Not changed:** what this realm accepts from clients ' +
+                 '(client assertions, DPoP proofs, request objects, wallet ' +
+                 'proofs); a plain JSON UserInfo response; encryption keys; ' +
+                 'COSE, XML signatures, DKIM and TLS; and the algorithms ' +
+                 '`oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` ' +
+                 'and OpenID4VCI\'s credential algorithm configure, so name ' +
+                 'a listed one there.' },
+  // A JWK'S CERTIFICATE CHAIN AS AN ADDRESS (#1351, 2026-11-05, rcbj). What
+  // `common/jose_certificate_header.js` already does for a token's header,
+  // for the JWK Set. `withCertificateUrls()` there is the one reader.
+  { key: 'keys.jwksCertificateUrl', group: 'Key material',
+    label: 'Name a published key\'s certificates by URL',
+    path: 'keys.jwksCertificateUrl', env: 'STS_KEYS_JWKS_CERTIFICATE_URL',
+    type: 'bool', dflt: false, runtime: true,
+    description: 'Whether `/oauth2/jwks` names each key\'s certificate chain ' +
+                 'with `x5u` (RFC 7517 section 4.6) instead of carrying it ' +
+                 'in `x5c`. **Off by default.** On: a key publishes the ' +
+                 'address of its chain at `/pki/chain/{scope}/{sha256}.pem`, ' +
+                 'which makes the JWK Set much smaller; a client that wants ' +
+                 'the chain fetches it over TLS. A key whose chain that ' +
+                 'address cannot serve keeps its `x5c`. **Not changed:** the ' +
+                 '`x5c` or `x5u` header of a token, which each use case\'s ' +
+                 'own setting decides.' },
   { key: 'keys.kidFormat', group: 'Key material',
     label: 'Signed token kid format',
     path: 'keys.kidFormat', env: 'STS_KEYS_KID_FORMAT', type: 'enum',
@@ -7359,7 +7419,7 @@ const SETTINGS = [
     label: 'Certificates and keys the workbench store keeps, per realm',
     env: 'STS_PKI_MAX_STORED_OBJECTS', type: 'int', dflt: 200,
     min: 1, max: 100000, runtime: true,
-    description: 'How many objects the Certificate & Key Configuration pane ' +
+    description: 'How many objects the Certificate Workbench ' +
                  'on /admin/pki may keep in one realm. **A FULL STORE ' +
                  'REFUSES THE NEXT ONE**; it used to discard the oldest, and ' +
                  'the oldest carries a private key somebody chose to keep. ' +
@@ -9798,8 +9858,8 @@ const SETTINGS = [
 
   // --- SAML 2.0 encryption -------------------------------------------------
   // Four rows in the `SAML 2.0 assertions` group, so they are drawn on
-  // /admin/saml-assertions with the rest of what goes into a document and can
-  // be answered per application. Encryption is exactly the kind of thing two
+  // /admin/saml2's assertions tab with the rest of what goes into a document
+  // and can be answered per application. Encryption is exactly the kind of thing two
   // service providers in one estate disagree about: one is a modern library
   // that wants GCM, the next is an appliance that speaks aes128-cbc and rsa-1_5
   // and nothing else.
@@ -10488,7 +10548,7 @@ const SETTINGS = [
   // the page that says so. `wsfed.entityId` beside it, this service's own
   // name, was the other group until #523 retired it.
   //
-  // IT IS DRAWN ON /admin/saml-assertions rather than on /admin/wsfed, and that
+  // IT IS DRAWN ON /admin/saml2 rather than on /admin/wsfed, and that
   // is not filing it under the wrong protocol: a WS-Federation sign-in response
   // CARRIES A SAML 1.1 ASSERTION, built by the same buildSaml11Assertion() the
   // SAML 1.1 profiles use, so this row and `saml11.assertionLifetimeMin` decide
@@ -11105,9 +11165,10 @@ const SETTINGS = [
   { key: 'oid4vci.deferredReadyMs', group: 'OID4VCI',
     label: 'Deferred: ready after (ms)', env: 'OID4VCI_DEFERRED_READY_MS',
     type: 'int', dflt: 4000, runtime: true,
-    description: 'How long a deferred credential stays issuance_pending ' +
-                 'before it is ready. Long enough that a wallet has to poll ' +
-                 'and short enough that a test does not time out.' },
+    description: 'How long a deferred credential takes to become ready. ' +
+                 'Until then the deferred endpoint answers 202 with the same ' +
+                 'transaction_id and an interval. Long enough that a wallet ' +
+                 'has to poll and short enough that a test does not time out.' },
 
   { key: 'oid4vci.deferredIntervalS', group: 'OID4VCI',
     label: 'Deferred: poll interval (s)', env: 'OID4VCI_DEFERRED_INTERVAL_S',

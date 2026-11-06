@@ -2438,12 +2438,15 @@ class Oidfed {
       if (!read.ok || read.header.typ !== TYP.TRUST_MARK ||
           read.claims.sub !== self2 ||
           typeof read.claims.trust_mark_type !== 'string' ||
-          !EntityStatement.isEntityId(read.claims.iss)) {
+          !EntityStatement.isEntityId(read.claims.iss) ||
+          (read.claims.exp !== undefined &&
+           EntityStatement.isoOf(Number(read.claims.exp) * 1000) === null)) {
         this.audited(ctx, 'oidfed.held-mark-added', '', 'refused',
                      'STS-OIDFED-0048');
         return this.refused('STS-OIDFED-0048', 'a Trust Mark this realm ' +
                             'carries is a trust-mark+jwt issued TO it (sub ' +
-                            '= ' + self2 + ').');
+                            '= ' + self2 + '), and its exp, if it has one, ' +
+                            'is a time.');
       }
       store.put(KINDS.HELD_MARK, jwt, read.claims.iss, { jwt: jwt,
         type: read.claims.trust_mark_type, sub: read.claims.sub,
@@ -2615,7 +2618,7 @@ class Oidfed {
     this.deps.log.debug("Leaving Oidfed.resolutionView().");
     return {
       subject: r.subject, anchor: r.anchor,
-      expiresAt: new Date(Number(r.exp) * 1000).toISOString(),
+      expiresAt: EntityStatement.isoOf(Number(r.exp) * 1000) || '',
       chain: r.chain.map(function (c: Json): Json {
         return { iss: c.iss, sub: c.sub, exp: c.exp };
       }),
@@ -2715,7 +2718,7 @@ class Oidfed {
     const iso = function (ms: Json): string | null {
       log.debug("Entering iso().");
       log.debug("Leaving iso().");
-      return Number(ms) > 0 ? new Date(Number(ms)).toISOString() : null;
+      return EntityStatement.isoOf(ms);
     };
     const cached: Json[] = [];
     resolutions.forEach(function (v: Json): void {

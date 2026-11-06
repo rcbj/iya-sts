@@ -651,6 +651,9 @@ class Scheduler {
   private readonly notInWorkers = new Set<string>();
   private readonly heldSince = new Map<string, Json>();
   private readonly deferredMs = new Map<string, number>();
+  // A global job's run another cell holds the claim of: its runId, and the
+  // instant that claim cannot outlast. See `attempt()`.
+  private readonly claimedByAnotherCell = new Map<string, number>();
   private readonly delegated = new Map<string, Json>();
 
   /**
@@ -1851,6 +1854,9 @@ class Scheduler {
       if (self.inFlight.has(one.row.runId)) {
         return;
       }
+      if (Number(self.claimedByAnotherCell.get(one.row.runId)) > at) {
+        return;
+      }
       // THE CAP FIRST, THEN THE HOLD (#408). A run waiting for the cap is
       // not asked about load, so the instant it was first held is kept: were
       // the hold asked first, a run whose bound had just been reached but
@@ -1880,6 +1886,12 @@ class Scheduler {
     Array.from(this.deferredMs.keys()).forEach(function (runId: string) {
       if (!seen.has(runId) && !self.inFlight.has(runId)) {
         self.deferredMs.delete(runId);
+      }
+    });
+    Array.from(this.claimedByAnotherCell.keys()).forEach(function (
+      runId: string): void {
+      if (!seen.has(runId)) {
+        self.claimedByAnotherCell.delete(runId);
       }
     });
     this.abandonOrphans(at);
@@ -2047,11 +2059,25 @@ class Scheduler {
     // Held while the claim is being asked, so the next tick does not ask too.
     this.inFlight.set(row.runId, { fence: 0, realm: realmId,
                                    timedOut: false, asking: true });
-    claims.claim({ scope: this.runScopeOf(job), value: row.runId,
+    const scope = this.runScopeOf(job);
+    claims.claim({ scope: scope, value: row.runId,
                    realm: realmId,
                    ttlMs: timeoutMs + 1000 }).then(function (answer: Json) {
       if (!answer.ok) {
         self.inFlight.delete(row.runId);
+        // THE CELL THAT LOSES A GLOBAL JOB'S CLAIM NEVER SEES THE RUN END
+        // (#98, 2026-11-06). The winner writes the run's row in its OWN
+        // database, so here it stays due, the oldest due of everything, and
+        // first in every tick's line: cell B asked 413 times for one job's
+        // claim, each ask holding a place under scheduler.maxConcurrentRuns
+        // (2 by default), and scim-client.deliver never had a turn in 150 s.
+        // The claim cannot be won before its lifetime ends, so it is not
+        // asked for until then. A cluster job's row is shared within the
+        // cell, so its scope is left as it was.
+        if (answer.reason === 'used' && scope !== RUN_SCOPE) {
+          self.claimedByAnotherCell.set(row.runId,
+                                        self.nowMs() + timeoutMs + 1000);
+        }
         if (answer.reason === 'store') {
           log.warn(errorCodes.tag('STS-SCHED-0008') + 'scheduler: the ' +
                    'claim store could not be asked about run ' + row.runId +

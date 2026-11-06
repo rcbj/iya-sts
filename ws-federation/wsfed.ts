@@ -2029,15 +2029,28 @@ class WsFederation {
     const { log } = this.deps;
     log.debug("Entering WsFederation.cleanupTargetsFor().");
     const realms = (session && session.wsfedRealms) || {};
-    const out = Object.keys(realms).map((realm) => {
-      const wreply = String(realms[realm] || '');
-      return {
-        realm: realm,
-        wreply: wreply,
-        url: wreply ?
-             wreply + (wreply.indexOf('?') >= 0 ? '&' : '?') +
-             'wa=wsignoutcleanup1.0' : ''
-      };
+    const { applications } = this.deps;
+    const out = [];
+    Object.keys(realms).forEach((realm) => {
+      // WHAT AN ADMINISTRATOR DECLARED OUTRANKS WHAT WAS OBSERVED (#747): the
+      // application's `wsfedSignOutUri`, every value of it, where it has one.
+      // A wreply is where the sign-in response went, which need not be where
+      // the application wants its cleanup, and it is what a request supplied.
+      const entry: any = applications.get(realm);
+      const declared = [].concat((entry && entry.fields &&
+                                  entry.fields.wsfedSignOutUri) || [])
+        .map(String).filter(Boolean);
+      const addresses = declared.length ? declared
+                                        : [String(realms[realm] || '')];
+      addresses.forEach((address) => {
+        out.push({
+          realm: realm,
+          wreply: address,
+          url: address ?
+               address + (address.indexOf('?') >= 0 ? '&' : '?') +
+               'wa=wsignoutcleanup1.0' : ''
+        });
+      });
     });
     log.debug("Leaving WsFederation.cleanupTargetsFor(). " + out.length +
               " relying part" +
@@ -2147,8 +2160,6 @@ class WsFederation {
     const session = endedAll[0] || null;
     const targets = this.cleanupTargetsFor(session);
     const names = targets.map((one) => { return one.realm; });
-    const realms = {};
-    targets.forEach((one) => { realms[one.realm] = one.wreply; });
     // In the person's language (#539): the relying party's, where the
     // request names one, and the person's. No language chooser: the GET that
     // drew it ENDED the session, and drawing it again would say there was
@@ -2188,15 +2199,15 @@ class WsFederation {
     } else if (names.length) {
       inner += '<h2>' + t.html('handoff.wsfed.cleanupSent',
                                { n: names.length }) + '</h2><ul>' +
-        names.map((r) => {
-          return '<li><code>' + xmlEscape(r) + '</code><br>' +
-            '<a href="' + xmlEscape(cleanupUrl(realms[r])) + '" ' +
+        targets.map((one) => {
+          return '<li><code>' + xmlEscape(one.realm) + '</code><br>' +
+            '<a href="' + xmlEscape(cleanupUrl(one.wreply)) + '" ' +
                 'target="_blank" rel="noopener noreferrer">' +
-            xmlEscape(cleanupUrl(realms[r])) + '</a></li>';
+            xmlEscape(cleanupUrl(one.wreply)) + '</a></li>';
         }).join('') + '</ul>' +
-        names.map((r) => {
-          return '<img src="' + xmlEscape(cleanupUrl(realms[r])) + '" alt="" ' +
-              'width="1" height="1">';
+        targets.map((one) => {
+          return '<img src="' + xmlEscape(cleanupUrl(one.wreply)) +
+              '" alt="" width="1" height="1">';
         }).join('') +
         '<p class="sub">' + t.html('handoff.wsfed.pingNote') + '</p>';
     } else {

@@ -216,14 +216,23 @@ async function after(base, stopped) {
          ran.nodeName + ': ' + JSON.stringify(ran));
   }
   log.info('  ✓ 2. a run queued now is run once, on ' + ran.nodeName + '.');
+  // THE SLOTS ARE LOOKED FOR AMONG THAT JOB'S RUNS ALONE (2026-11-05), as the
+  // takeover below is: the unfiltered newest 500 scroll past a thirty-second
+  // job by the end of a full run, and this check then reported "every one of
+  // 0 slots" and passed having looked at nothing. No slot at all now fails.
   const json = await report(base);
+  const expiry = await report(base, 'authn.session-expiry');
   const bySlot = {};
-  (json.runs || []).forEach(function (r) {
+  (expiry.runs || []).forEach(function (r) {
     if (r.jobId === 'authn.session-expiry' && r.state === 'succeeded' &&
         r.trigger === 'schedule') {
       bySlot[r.dueAt] = (bySlot[r.dueAt] || 0) + 1;
     }
   });
+  if (!Object.keys(bySlot).length) {
+    fail('no succeeded scheduled run of authn.session-expiry was reported, ' +
+         'so nothing shows the crash cost it nothing.');
+  }
   const doubles = Object.keys(bySlot).filter(function (k) {
     return bySlot[k] > 1;
   });

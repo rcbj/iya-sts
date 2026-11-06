@@ -602,11 +602,10 @@ behind `mode.issuesToUnregisteredApplications()` (the
   are not asked.
 * **Development is unchanged**: a token for any AppliesTo or none, under the
   shared name, and `seen()` files the AppliesTo.
-* **An entry an LDAP add made is not registered either**: the add writes no
-  `appRegisteredBy` (the registry writes it, for the console, `/admin-api`,
-  RFC 7591, an OpenID Federation and the seeds), so #494's definition reads
-  it as one that turned up. Whether an LDAP add should count is open on
-  #496; until it is decided, register through the console or `/admin-api`.
+* **An entry an LDAP add made IS registered, since #504**:
+  `stampLdapRegistration()` writes `appRegisteredBy: ldap:<the bound DN>` on an
+  add under `ou=applications`, unless the add already says who. A modify of an
+  entry that only turned up does not register it.
 
 `tests/unregistered_applications.js` holds it in both modes, with the
 nothing-recorded checks; `tests/wstrust_fault_codes.js` holds both faults.

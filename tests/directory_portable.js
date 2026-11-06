@@ -439,6 +439,23 @@ async function staticChecks(t) {
   }, { limit: 5 });
   await store.lib.loadRows();
   await store.lib.readRow('default', USERS);
+  // THE COUNT'S COST DOES NOT GROW WITH THE KEYS: 84 keys, a whole-store read
+  // each, ran the re-encryption pass past ten minutes on a real run (#677).
+  const scansFor = async function (ids) {
+    const before = runner.sent.length;
+    await store.lib.countSealed(ids);
+    return runner.sent.slice(before).filter(function (one) {
+      return /LIKE/.test(one.text);
+    }).length;
+  };
+  const scansOfOne = await scansFor(['dek-test-0001']);
+  const scansOfMany = await scansFor(Array.from({ length: 84 },
+    function (_, i) {
+      return 'dek-test-' + i;
+    }));
+  t.check(scansOfOne > 0 && scansOfMany === scansOfOne,
+          'A2b. a count of 84 data keys reads the sealed tables as often as ' +
+          'a count of one', scansOfOne + ' and ' + scansOfMany);
   const statements = runner.sent.map(function (one) {
     return one.text;
   });

@@ -132,6 +132,7 @@ import app = require('../common/app');
 // The error-code registry, a leaf. A refusal here is MARKED on the response for
 // the call log and never written into the JSON a caller receives.
 import errorCodes = require('../common/error_codes');
+import ResponseModelKit = require('../common/response_model_kit');
 // THE CONSOLE'S LANGUAGE (#539 phase 5): the catalogs and the negotiation,
 // and the hosted surfaces' table for the console's own client id — and the
 // prose a view carries, in the caller's language (#543). Libraries.
@@ -365,6 +366,8 @@ import xacmlModel = require('../xacml/xacml_model');
 // ES default exports.
 import AjvModule = require('ajv');
 import addFormatsModule = require('ajv-formats');
+import responseChecks = require('../common/response_models');
+import ResponseModelTable = require('./response_models');
 
 const Ajv: any = AjvModule;
 const addFormats: any = addFormatsModule;
@@ -1299,6 +1302,29 @@ class AdminApi {
    * @param status - the HTTP status
    * @param body - the reply
    */
+  // What a federation act may say of a relationship (#1354): the record without
+  // its credentials and without the entry holding them. A write answered both
+  // in clear while the read has always masked them, and a caller's client log
+  // is where such an answer ends up. FED_RECORD no longer declares them, so an
+  // answer that carried one again would be refused rather than sent.
+  federationAnswer(result) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.federationAnswer().");
+    if (!result || !result.relationship) {
+      log.debug("Leaving AdminApi.federationAnswer(). No record.");
+      return result;
+    }
+    const shown = Object.assign({}, result.relationship);
+    delete shown.entry;
+    federation.SCHEMA.attributes.forEach(function (field) {
+      if (field.sensitive) {
+        delete shown[field.name];
+      }
+    });
+    log.debug("Leaving AdminApi.federationAnswer().");
+    return Object.assign({}, result, { relationship: shown });
+  }
+
   sendJson(res, status, body) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.sendJson(). status=" + status);
@@ -1342,6 +1368,11 @@ class AdminApi {
     // response a test builds by hand has no `vary()`, and needs none.
     if (typeof res.vary === 'function') {
       res.vary('Accept-Language');
+    }
+    // AN ACT'S ANSWER CARRIES NO ERROR CODE (#1355), though it may hand back a
+    // row the page's GET carries one on: only that page draws it.
+    if (res.req && res.req.method === 'POST') {
+      body = ResponseModelKit.stripCodes(body);
     }
     res.status(status).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(body, null, 2));
@@ -2531,11 +2562,11 @@ class AdminApi {
       { path: '/kerberos', console: '/admin/kerberos', tag: 'Kerberos',
         operationId: 'getKerberosSettings',
         summary: 'The KDC\'s own settings',
-        description: 'The nineteen `krb5.*` settings: the realm, the two raw ' +
+        description: 'The `krb5.*` settings: the realm, the two raw ' +
                      'ports, the clock skew and the deliberate clock OFFSET, ' +
                      'the one password every user account shares, the names ' +
-                     'that stay unknown, the long-term keys behind krbtgt ' +
-                     'and the inter-realm trust, `s2kparams`, and the two ' +
+                     'that stay unknown, the long-term keys behind krbtgt, ' +
+                     '`s2kparams`, and the two ' +
                      'that decide whether a ticket presented at ' +
                      '/authn/spnego may start a browser session.\n\nMOST OF ' +
                      'THEM ARE RESTART-ONLY, and one fact is why: the ' +
@@ -2708,6 +2739,7 @@ class AdminApi {
                      'assertion\'s Issuer alike.\n\n' +
                      'WS-Trust here issues a JWT when the request\'s ' +
                      'TokenType is `urn:ietf:params:oauth:token-type:jwt` ' +
+                     'a SAML 1.1 assertion when it names SAML 1.1 (#487), ' +
                      'and a SAML 2.0 assertion for any other TokenType, ' +
                      'built by the same builder the SAML 2.0 profile uses; ' +
                      'what that assertion CONTAINS is `GET ' +
@@ -3605,7 +3637,8 @@ class AdminApi {
             .then(function (result) {
               if (!result.ok) {
                 // The refusal's own code, from cell_rehome.ts.
-                errorCodes.mark(res, result.code || 'STS-CELL-0192');
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-CELL-0192');
                 self.sendJson(res, 400, result);
                 log.debug("Leaving the management API rehome endpoint. " +
                           "Refused.");
@@ -3735,7 +3768,8 @@ class AdminApi {
                 'the management API at /admin-api/broadcast'
           }).then(function (result) {
             if (!result.ok) {
-              errorCodes.mark(res, result.code || 'STS-SSF-0153');
+              errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                   'STS-SSF-0153');
             }
             self.sendJson(res, result.ok ? 200 : 400, result);
             log.debug("Leaving the management API broadcast action.");
@@ -6596,7 +6630,15 @@ class AdminApi {
                      'caller may see and every page\'s label, a realm\'s ' +
                      'removal in progress, what this process runs as, what ' +
                      'is persisted, and the build. The static console ' +
-                     'fetches it once after sign-in.',
+                     'fetches it once after sign-in. With catalogs=files, ' +
+                     'the language member names the static catalog files ' +
+                     'rather than carrying the catalogs.',
+        parameters: [
+          { name: 'catalogs', in: 'query', required: false,
+            description: 'files: name the static catalog files instead of ' +
+                         'carrying the catalogs.',
+            schema: { type: 'string', enum: ['files'] } }
+        ],
         mirrors: 'GET /admin',
         responseDescription: 'The shell answer.',
         handler: function (req, res) {
@@ -6610,7 +6652,8 @@ class AdminApi {
           // console's catalogs along its chain, for the browser's translator.
           self.sendJson(res, 200, Object.assign(
             admin.shellJson(req, gate, gate),
-            { locale: self.consoleLocale(req, res) }));
+            { locale: self.consoleLocale(req, res,
+              req.query && req.query.catalogs === 'files') }));
           log.debug("Leaving the management API console shell endpoint.");
         } },
 
@@ -13736,7 +13779,8 @@ class AdminApi {
                 errorCodes.mark(res, errorCodes.codeOf(result) ||
                                      'STS-API-0046');
               }
-              self.sendJson(res, result.ok ? 200 : 400, result);
+              self.sendJson(res, result.ok ? 200 : 400,
+                            self.federationAnswer(result));
               log.debug("Leaving the management API federation action " +
                         "endpoint.");
             }, function (e) {
@@ -13898,10 +13942,11 @@ class AdminApi {
 
           { action: 'add-value', operationId: 'addFederationValue',
             summary: 'Add a value to a multi-valued field',
-            description: 'Two fields take values: `fedAttributeMap` on a ' +
-                         'service-provider-side relationship, and ' +
-                         '`fedRelease` on an identity-provider-side ' +
-                         'one.\n\n**`fedAttributeMap`** is written ' +
+            description: 'Any multi-valued field: the relationship\'s own ' +
+                         '`editable` table marks them, and this operation\'s ' +
+                         '`field` lists them. A field holding one value is ' +
+                         'refused rather than assigned (#747). Two have rules ' +
+                         'of their own.\n\n**`fedAttributeMap`** is written ' +
                          '`<incoming name>=<LDAP attribute>` and is split at ' +
                          'the FIRST equals sign — which matters, because an ' +
                          'incoming name can be a URL and a URL can hold one. ' +
@@ -20172,13 +20217,13 @@ class AdminApi {
                          'Only `credential-compromise` has a REQUIRED ' +
                          'member, `credential_type`, which RISC defines by ' +
                          'reference to CAEP\'s `credential-change` — the two ' +
-                         'lists are the same list.\n\nTEN OF THE FOURTEEN ' +
-                         'ARE ONLY EVER PRODUCED THIS WAY. No breach corpus ' +
-                         'is searched by this service and no recovery flow ' +
-                         'runs in it. The other four fire on their own when ' +
-                         'the DIRECTORY changes and `risc.autoEmit` is on — ' +
-                         'a person deleted, `active` going false or true, a ' +
-                         'mail address or telephone number moving.\n\nFOUR ' +
+                         'lists are the same list.\n\nEVERY ONE OF THE FOURTEEN ' +
+                         'HAS SOMETHING HERE THAT SENDS IT when it happens ' +
+                         '(`docs/shared-signals.md` lists each, #164), where ' +
+                         '`risc.autoEmit` is on and `risc.autoEmitTypes` ' +
+                         'names it, which by default is all but the ' +
+                         'deprecated `sessions-revoked`. This sends any of ' +
+                         'them by hand, whatever that is.\n\nFOUR ' +
                          'OF THEM CHANGE REAL STATE WHEN THEY ' +
                          'GO. RISC section 2.8 defines each ' +
                          'opt-out event as "the account is in this state" ' +
@@ -25473,17 +25518,19 @@ class AdminApi {
         actions: [
           { action: 'rotate', operationId: 'rotateSpiffeAuthority',
             summary: 'Rotate the X.509 authority, the JWT authority, or both',
-            description: 'A new authority is PREPENDED — everything is ' +
-                         'signed with it from that moment — and the old one ' +
-                         'stays in the published bundle, so SVIDs already in ' +
-                         'the field go on verifying. That is what a bundle ' +
-                         'is FOR, and dropping the old one is the difference ' +
-                         'between a rotation and an outage.\n\nThe bundle ' +
-                         '`spiffe_sequence` changes, which is how a consumer ' +
-                         'that polls the bundle endpoint knows to refetch. ' +
-                         'At most four authorities are retained; past that ' +
-                         'the oldest is dropped and anything it signed stops ' +
-                         'verifying at that moment.\n\nThis is also the ONLY ' +
+            description: 'ROTATION IS TWO DIFFERENT ACTS. Under the service ' +
+                         'Root, which is the usual case, it re-issues the ' +
+                         'SPIFFE Issuing CA and leaves the anchor alone: the ' +
+                         'X.509 bundle does not change, and SVIDs already in ' +
+                         'the field go on verifying because their chain still ' +
+                         'reaches the same Root.\n\nOn the self-signed ' +
+                         'fallback, and for the JWT authority, a new ' +
+                         'authority is PREPENDED — everything is signed with ' +
+                         'it from that moment — and the old one stays in the ' +
+                         'published bundle, whose `spiffe_sequence` changes. ' +
+                         'Past `spiffe.retainedAuthorities` the oldest is ' +
+                         'dropped, and anything it signed stops verifying at ' +
+                         'that moment.\n\nThis is also the ONLY ' +
                          'way to add an authority to this trust domain. The ' +
                          'SPIRE Server API\'s AppendBundle and ' +
                          'PublishJWTAuthority are refused, because they ' +
@@ -27260,14 +27307,16 @@ class AdminApi {
    * @param res - the response, whose `locals.apiCaller` names the caller
    * @returns the console's language data
    */
-  consoleLocale(req, res) {
+  consoleLocale(req, res, asFiles = false) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.consoleLocale().");
     const caller = (res && res.locals && res.locals.apiCaller) || null;
-    const out = PageLocale.consoleData(req, {
+    const page = {
       application: String(oidcRp.SURFACES.admin.clientId),
       username: caller && caller.kind === 'person' ? String(caller.name) : ''
-    });
+    };
+    const out = asFiles ? PageLocale.consoleLanguage(req, page)
+      : PageLocale.consoleData(req, page);
     log.debug("Leaving AdminApi.consoleLocale(). " + out.negotiated.locale);
     return out;
   }
@@ -27498,6 +27547,15 @@ class AdminApi {
             rolePermissions } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.registerGate().");
+    // EVERY ANSWER IS HELD TO ITS MODEL (#1353), a gate's refusal
+    // included, so this comes before the gate. Both documents, because this
+    // one prefix serves the management operations and the console's own; asked
+    // for the paths alone, so the options a request would supply do not matter.
+    responseChecks.install(app as any, BASE, function () {
+      return spec.buildSpec(ROUTES, { authRequired: true,
+        // reads only the response models: publishes nothing, so no gate state.
+      });
+    }, ResponseModelTable.ERROR);
     app.use(BASE, function (req, res, next) {
       if (self.tokenRequired()) {
         // THE ONE OPERATION THAT IS NOT AN ADMINISTRATOR'S (#164 phase 3):

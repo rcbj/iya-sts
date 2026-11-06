@@ -437,7 +437,7 @@ class UmaConsole {
       stage: 'token', dryRun: true });
     const layers = (verdict.layers || [verdict]).map(function (v: Json) {
       return { layer: String(v.layer || ''), outcome: String(v.outcome),
-               code: String(v.code || ''), policy: String(v.policy || ''),
+               policy: String(v.policy || ''),
                decision: String(v.decision || ''),
                missing: [].concat(v.missing || []).map(String),
                approval: !!v.approval, why: String(v.why || '') };

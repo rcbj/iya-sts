@@ -238,14 +238,15 @@ in `wreq` instead.
 ### Signing out
 
 `wsignout1.0` ends the session — the same one OAuth and SAML read, so they are
-signed out too — and loads each relying party's `wreply` with
+signed out too — and loads each relying party's `wsfedSignOutUri`, or with none
+set the `wreply` its sign-in went to, with
 `wa=wsignoutcleanup1.0` as a one-pixel image, printing the same URLs as links so
 a failed cleanup can be seen. With a `wreply` on the request, the page offers a
 **link** back rather than redirecting, because a redirect would abandon the
 cleanups. The cleanup images are what front-channel logout is, so that one
 response widens `img-src` to `*`: a cleanup ping is by definition a third-party
-origin, and the URLs are ones the relying parties themselves supplied as
-`wreply`. `wsignoutcleanup1.0` arriving here ends the session and sends no
+origin, and the URLs are ones an administrator declared or the relying parties
+themselves supplied as `wreply`. `wsignoutcleanup1.0` arriving here ends the session and sends no
 cleanups of its own, which would loop between two identity providers. The
 protocol-independent `/logout` sends the same cleanups; see
 [Signing out](signing-out.md).

@@ -456,7 +456,15 @@ async function run(cells, provider) {
                   async function () {
                     return JSON.stringify(memberIds()) ===
                            JSON.stringify(both);
-                  });
+                  }).catch(function (e) {
+    // What each cell actually sent is the only way to tell this failure's
+    // causes apart: the provider saw it, and a counter does not say.
+    log.info("the group the provider holds: " + JSON.stringify(groupHeld()));
+    log.info("wanted " + JSON.stringify(both) + " from alice at " + addrA +
+             " and bob at " + addrB);
+    log.info("the provider's requests: " + JSON.stringify(sp.requests));
+    throw e;
+  });
   check("a group with members in both cells holds every member", function () {
     assert.deepStrictEqual(memberIds(), both);
   });
@@ -538,8 +546,26 @@ async function run(cells, provider) {
     assert.strictEqual(off.length, 0, JSON.stringify(off).slice(0, 400));
     assert.notStrictEqual(userBy(uuids.bob).body.active, false);
   });
+  // THE NEW CELL PUTS THEM BACK AFTER ITS PUT, SO THIS IS WAITED FOR; and then
+  // held, because the old cell taking its share out late would drop them again.
+  await kit.until("bob is in the group after the move", WAIT_MS,
+                  async function () {
+                    return memberIds().indexOf(bobId) >= 0;
+                  }).catch(function (e) {
+    log.info("the group after the move: " + JSON.stringify(groupHeld()));
+    log.info("the provider's requests since the move: " +
+             JSON.stringify(sp.requests.slice(before)));
+    throw e;
+  });
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 20000);
+  });
   check("and they stay in the group", function () {
-    assert.ok(memberIds().indexOf(bobId) >= 0, JSON.stringify(memberIds()));
+    assert.ok(memberIds().indexOf(bobId) >= 0, JSON.stringify({
+      members: memberIds(), since: sp.requests.slice(before).filter(
+        function (r) {
+          return r.method === "PATCH";
+        }) }).slice(0, 1200));
   });
 
   log.info("=== 6. deleting a group needs both cells ===");

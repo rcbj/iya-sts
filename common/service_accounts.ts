@@ -309,6 +309,19 @@ function ownersGivenOf(body: Record<string, any>): string[] | null {
  * that rotation. `isServiceAccount()` is the one predicate every door asks.
  */
 class ServiceAccounts {
+  // These attributes can be written over LDAP in development mode. `Infinity`
+  // passes `|| 0` and JSON says it as null; a time no Date can hold makes
+  // `toISOString()` throw. Either took out the realm's whole list (#1353).
+  private static countFrom(value: unknown): number {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  private static timeFrom(value: unknown): number {
+    const n = Number(value);
+    return Number.isFinite(n) && Math.abs(n) <= 8.64e15 ? n : 0;
+  }
+
   /**
    * The auxiliary object class.
    */
@@ -532,12 +545,12 @@ class ServiceAccounts {
       destination: value('stsSecretDestination'),
       secretName: value('stsSecretName'),
       rotatedAt: value('stsPasswordRotatedAt'),
-      previousPasswordExpires: Number(value('stsPreviousPasswordExpires')) ||
-                               0,
+      previousPasswordExpires:
+        ServiceAccounts.timeFrom(value('stsPreviousPasswordExpires')),
       rotation: {
-        failures: Number(value('stsRotationFailures')) || 0,
+        failures: ServiceAccounts.countFrom(value('stsRotationFailures')),
         lastError: value('stsRotationLastError'),
-        lastAttempt: Number(value('stsRotationLastAttempt')) || 0
+        lastAttempt: ServiceAccounts.timeFrom(value('stsRotationLastAttempt'))
       },
       ownerProtected: value('stsOwnerProtected').toUpperCase() === 'TRUE',
       policy: value('stsServiceAccountPolicy').trim().toLowerCase()

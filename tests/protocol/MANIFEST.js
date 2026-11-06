@@ -1399,6 +1399,10 @@ const JOBS = [
   // `local: true`.
   { file: 'sts_provider_commands.js',    browser: false,
     testPeer: true },
+  // WHAT SOMEBODY OUTSIDE THIS SERVICE WRITES DOES NOT TAKE A PAGE DOWN
+  // (#1353), and a federation act's answer names no credential (#1354).
+  // `local: true`.
+  { file: 'sts_outside_values.js',       browser: false },
   // A FEDERATION PARTNER'S SHARED SIGNALS (#153, 2026-09-26; #373 and #374,
   // 2026-10-01): one realm's transmitter as the partner, another realm
   // receiving through federation relationships by poll and push, blocking

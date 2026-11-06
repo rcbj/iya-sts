@@ -3476,6 +3476,20 @@ const CODES = [
       'made with a key the realm does not publish (#1292).',
     spec: 'the caller\'s: the response that needed the signature fails as ' +
       'it does for an algorithm this realm holds no key for' },
+  { code: 'STS-KEYS-0166',
+    summary: 'A signature through helpers.signJwtAs() (an ID Token, ' +
+      'UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or ' +
+      'Provider Commands token) was asked of a realm whose ' +
+      'keys.signingAlgorithms does not list its algorithm — a client ' +
+      'registered for it before the list was set, or a setting naming it — ' +
+      'and was refused (#1348).',
+    spec: 'the caller\'s: the response that needed the signature fails as ' +
+      'it does for an algorithm this realm holds no key for' },
+  { code: 'STS-KEYS-0167',
+    summary: 'keys.signingAlgorithms was not changed: a list that is not ' +
+      'empty must include RS256, which OpenID Connect Discovery requires ' +
+      'and which is the default for ID Tokens and access tokens (#1348).',
+    spec: 'none: an operator\'s write, refused with its reason' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -4449,7 +4463,7 @@ const CODES = [
     spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
       'for is refused as an untrusted certificate' },
   { code: 'STS-PKI-0203',
-    summary: 'A Certificate & Key Configuration pane field that takes a ' +
+    summary: 'A Certificate Workbench field that takes a ' +
       'closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, ' +
       'pki_ks_format) held a value outside it (#86).',
     spec: 'HTTP 400 page or { ok: false, errors }' },
@@ -13220,6 +13234,19 @@ const CODES = [
     summary: 'GET /federation/atproto/client/{id} named no usable Bluesky ' +
       'relationship (#746).',
     spec: 'HTTP 404' },
+  { code: 'STS-FED-0234',
+    summary: 'federation/add-value or federation/remove-value named a field ' +
+      'that holds one value, so there is no list to change (#747).',
+    spec: 'HTTP 400 JSON' },
+  { code: 'STS-FED-0235',
+    summary: 'A held Discourse answer returned from its step after the ' +
+      'relationship\'s shared secret was replaced (#746).',
+    spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0236',
+    summary: 'A held Bluesky answer returned from its step and its subject ' +
+      'was no longer believed: the DID\'s data server no longer names this ' +
+      'issuer, or could not be asked (#746).',
+    spec: 'HTTP 401 page' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -24822,6 +24849,22 @@ const CODES = [
       'not carry admin:security or whose subject does not hold ' +
       'SECURITY_ADMIN. Admin Write does not reach these.',
     spec: 'HTTP 403' },
+  { code: 'STS-API-0139',
+    summary: 'An answer of an API this service publishes an OpenAPI document ' +
+      'for (the management, account, sign-in or report API) did not match ' +
+      'the model its operation declares for that status, so it was not sent ' +
+      'and the caller was answered 500. A member no model declares, a value ' +
+      'of the wrong type, a status or media type the operation does not ' +
+      'declare, or an operation the document does not have. The log line ' +
+      'names the operation, the status and where in the body; it is a defect ' +
+      'in the model or in the handler, never in the request.',
+    spec: 'HTTP 500' },
+  { code: 'STS-API-0140',
+    summary: 'A handler of an API this service publishes an OpenAPI document ' +
+      'for threw and nothing caught it. The caller was answered 500 in JSON, ' +
+      'the sentence a refused answer gets, rather than an HTML page. The log ' +
+      'line names the path and the message once per distinct failure.',
+    spec: 'HTTP 500' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

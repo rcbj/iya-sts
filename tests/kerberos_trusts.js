@@ -256,6 +256,35 @@ function storeSection(t) {
   });
   t.check(!trusts.get('X.TEST'), 'A6. and nothing refused was written');
 
+  // FUZZ REGRESSION (#1346): a non-numeric enctype (`["x"]`, whose Number is
+  // NaN) reaches keySide()'s GENERATE and KEYS branches, where etypeById(NaN)
+  // threw into the fault boundary -- an uncaught 500 at /admin-api, which the
+  // Schemathesis gate (#1299) found. validate() records STS-KRB-0220 and the
+  // add is now REFUSED, not thrown, on both branches. A5's rows never caught
+  // it: each gave a password side, which returns before keySide's etype loop.
+  [['A6a', 'generate on', { generate: true }],
+   ['A6b', 'keys given',
+    { keys: { '18': Buffer.alloc(32).toString('base64') } }]
+  ].forEach(function (row) {
+    let answer = null;
+    let threw = false;
+    try {
+      answer = trusts.add({ partnerRealm: 'FUZZ-ETYPE.TEST',
+                            enctypes: ['x'], incoming: row[2] });
+    } catch (e) {
+      threw = true;
+      log.debug("Caught in the #1346 enctype regression: " +
+                ((e && e.message) || e));
+    }
+    t.check(!threw && !!answer && !answer.ok &&
+            codesOf(answer).indexOf('STS-KRB-0220') !== -1,
+            row[0] + '. a non-numeric enctype (' + row[1] + ') is refused, ' +
+            'not thrown (STS-KRB-0220)',
+            threw ? 'THREW' : JSON.stringify((answer || {}).errors || answer));
+  });
+  t.check(!trusts.get('FUZZ-ETYPE.TEST'),
+          'A6c. and nothing the regression refused was written');
+
   const made = trusts.add({ partnerRealm: 'GEN.TEST', incoming:
                             { generate: true, kvno: 3 },
                             outgoing: null, attributes: [] });

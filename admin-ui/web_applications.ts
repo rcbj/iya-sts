@@ -1345,7 +1345,10 @@ class ApplicationsPage {
         // declared for `did`.
         { id: 'tab-credentials',
           label: t.text('consoleApplications.a2.tabCredentials'),
-          html: forFamilies(OAUTH,
+          // WS-TRUST AUTHENTICATES WITH THESE TOO (#519, #521, #747): a client
+          // secret and a message-signing certificate, which a WS-Trust-only
+          // application had no tab to reach.
+          html: forFamilies(OAUTH.concat(['wstrust']),
             ApplicationsPage.applicationCredentialsSection(ctx, json,
               carryBack)) +
             forFamilies(['did'], '<h3 id="credentials-did">' +
@@ -4285,11 +4288,10 @@ class ApplicationsPage {
       '</p><p>' + t.html('consoleApplications.fga.p2') + '</p>',
       t.text('consoleApplications.fga.label'));
     // WHY IT CANNOT BE DECIDED WITH, in the view's own sentence (English,
-    // as every refusal is), with its code. "No policy" is not a fault —
+    // as every refusal is). "No policy" is not a fault —
     // the Create button below is its answer — so it is not warned about.
     const fault = !fga.usable && fga.failure !== 'no-policy'
-      ? kit.warn('<code>' + kit.esc(fga.code) + '</code> ' +
-                 kit.esc(fga.why) + (fga.enforced
+      ? kit.warn(kit.esc(fga.why) + (fga.enforced
                    ? ' ' + t.html('consoleApplications.fga.faultEnforced')
                    : ''),
                  t.text('consoleApplications.fga.faultLabel'))

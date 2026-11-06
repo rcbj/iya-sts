@@ -3458,7 +3458,8 @@ function isEddsaJwsAlg(alg) {
 
 /**
  * The JWS algorithms of `base` this realm signs a client's response with:
- * `offeredJwsAlgs()`, less EdDSA while `keys.eddsaSigning` is off.
+ * `offeredJwsAlgs()`, less EdDSA while `keys.eddsaSigning` is off, and only
+ * what `keys.signingAlgorithms` lists when it lists anything.
  *
  * @param base - the list to narrow; `JWS_SIGNING_ALGS` by default
  * @returns the narrowed list, a new array
@@ -3466,7 +3467,7 @@ function isEddsaJwsAlg(alg) {
 function signableJwsAlgs(base) {
   log.debug("Entering signableJwsAlgs().");
   const on = eddsaSigningOn();
-  const out = offeredJwsAlgs(base).filter(function (alg) {
+  const out = listedSigningAlgs(offeredJwsAlgs(base)).filter(function (alg) {
     return on || !isEddsaJwsAlg(alg);
   });
   log.debug("Leaving signableJwsAlgs(). " + out.length);
@@ -3562,6 +3563,200 @@ function eddsaSignatureRefusal(alg) {
     ': keys.eddsaSigning is off, so it publishes no EdDSA key to verify ' +
     'the signature with.'), 'STS-KEYS-0165');
 }
+
+// ---------------------------------------------------------------------------
+// ONE REALM'S SIGNING ALGORITHMS, NAMED ONE BY ONE (#1348, 2026-11-05, rcbj):
+// `keys.signingAlgorithms`, EMPTY BY DEFAULT, which changes nothing. It is the
+// EdDSA switch above applied to any algorithm, at the same places:
+//
+//   signingAlgAllowlist()            the list, or null when it is empty;
+//   signingAlgListed(alg)            whether the list admits an algorithm;
+//   listedSigningAlgs(list)          a list of algorithms, narrowed;
+//   withoutUnlistedSigningAlgs(doc)  the `OWN_SIGNING_ALG_MEMBERS` of a
+//                                    metadata document, narrowed as it leaves;
+//   withoutUnlistedSigningKeys(jwks) a JWK Set's keys, narrowed, for
+//                                    `/oauth2/jwks`;
+//   unlistedSignatureRefusal(alg)    `signJwtAs()` and its asynchronous twin
+//                                    refuse (STS-KEYS-0166).
+//
+// **`none` IS NOT A SIGNING ALGORITHM, SO THE LIST DOES NOT GOVERN IT.** It is
+// on `userinfo_signing_alg_values_supported` because a UserInfo response may
+// be plain JSON, which Core section 5.3.2 makes the default.
+// ---------------------------------------------------------------------------
+/**
+ * The ambient realm's `keys.signingAlgorithms`. **RS256 is always in it**: the
+ * write rule below refuses a list without it, and a value an appconfig file or
+ * the environment delivers reaches no write rule.
+ *
+ * @returns the list, a new array, or null when the realm names none
+ */
+function signingAlgAllowlist() {
+  log.debug("Entering signingAlgAllowlist().");
+  const raw = config.value('keys.signingAlgorithms');
+  const list = (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).trim();
+    })
+    .filter(function (one) {
+      return one.length > 0;
+    });
+  if (!list.length) {
+    log.debug("Leaving signingAlgAllowlist(). None.");
+    return null;
+  }
+  if (list.indexOf('RS256') < 0) {
+    list.push('RS256');
+  }
+  log.debug("Leaving signingAlgAllowlist(). " + list.length);
+  return list;
+}
+
+/**
+ * Tells whether `keys.signingAlgorithms` admits an algorithm.
+ *
+ * @param alg - a JOSE algorithm name
+ * @returns true when the realm names no list, the list holds it, or it is
+ * `none`, which signs nothing
+ */
+function signingAlgListed(alg) {
+  log.debug("Entering signingAlgListed(). alg=" + alg);
+  const list = signingAlgAllowlist();
+  const listed = !list || alg === 'none' || list.indexOf(String(alg)) >= 0;
+  log.debug("Leaving signingAlgListed(). " + listed);
+  return listed;
+}
+
+/**
+ * A list of algorithms narrowed to what `keys.signingAlgorithms` admits.
+ *
+ * @param base - the list to narrow
+ * @returns the narrowed list, a new array
+ */
+function listedSigningAlgs(base) {
+  log.debug("Entering listedSigningAlgs().");
+  const list = signingAlgAllowlist();
+  const out = (base || []).filter(function (alg) {
+    return !list || alg === 'none' || list.indexOf(alg) >= 0;
+  });
+  log.debug("Leaving listedSigningAlgs(). " + out.length);
+  return out;
+}
+
+/**
+ * Narrows the members of a metadata document that list what this realm signs
+ * (`OWN_SIGNING_ALG_MEMBERS`) to what `keys.signingAlgorithms` admits.
+ * Top-level members only, replaced rather than edited, so a module's constant list is
+ * never changed.
+ *
+ * @param doc - the document
+ * @returns the same document
+ */
+function withoutUnlistedSigningAlgs(doc) {
+  log.debug("Entering withoutUnlistedSigningAlgs().");
+  if (!doc || typeof doc !== 'object' || !signingAlgAllowlist()) {
+    log.debug("Leaving withoutUnlistedSigningAlgs(). Unchanged.");
+    return doc;
+  }
+  OWN_SIGNING_ALG_MEMBERS.forEach(function (name) {
+    if (Array.isArray(doc[name])) {
+      doc[name] = listedSigningAlgs(doc[name]);
+    }
+  });
+  log.debug("Leaving withoutUnlistedSigningAlgs(). Narrowed.");
+  return doc;
+}
+
+// The algorithm an EC or OKP signing key serves when it names none: its curve
+// decides. RSA is not here, because one RSA key serves every RS and PS
+// algorithm and the list always holds RS256.
+const ALG_OF_CURVE = { 'P-256': ['ES256'], 'P-384': ['ES384'],
+  'P-521': ['ES512'], secp256k1: ['ES256K'],
+  Ed25519: ['EdDSA', 'Ed25519'], Ed448: ['EdDSA', 'Ed448'] };
+
+/**
+ * A JWK Set's keys without a signing key for an algorithm
+ * `keys.signingAlgorithms` does not admit. A key marked `use: "enc"` stays.
+ *
+ * @param keys - the public JWKs
+ * @returns the keys to publish
+ */
+function withoutUnlistedSigningKeys(keys) {
+  log.debug("Entering withoutUnlistedSigningKeys().");
+  const list = signingAlgAllowlist();
+  if (!list) {
+    log.debug("Leaving withoutUnlistedSigningKeys(). Unchanged.");
+    return keys;
+  }
+  const out = (keys || []).filter(function (jwk) {
+    if (!jwk || jwk.use === 'enc') {
+      return true;
+    }
+    if (jwk.alg) {
+      return list.indexOf(jwk.alg) >= 0;
+    }
+    const served = Object.prototype.hasOwnProperty.call(ALG_OF_CURVE, jwk.crv)
+      ? ALG_OF_CURVE[jwk.crv] : null;
+    return !served || served.some(function (alg) {
+      return list.indexOf(alg) >= 0;
+    });
+  });
+  log.debug("Leaving withoutUnlistedSigningKeys(). " + out.length + " of " +
+            (keys || []).length + ".");
+  return out;
+}
+
+// Said once per realm, as `eddsaSignatureRefusal()` is, because the cause is a
+// registration made before the list was set, not the request.
+const unlistedSignaturesRefusedSaid = new Set();
+
+/**
+ * The refusal of a signature with an algorithm `keys.signingAlgorithms` does
+ * not admit, or null.
+ *
+ * @param alg - the JWS algorithm
+ * @returns an Error marked STS-KEYS-0166, or null
+ */
+function unlistedSignatureRefusal(alg) {
+  log.debug("Entering unlistedSignatureRefusal(). alg=" + alg);
+  if (signingAlgListed(alg)) {
+    log.debug("Leaving unlistedSignatureRefusal(). Allowed.");
+    return null;
+  }
+  const realmId = String(realms.currentId());
+  if (!unlistedSignaturesRefusedSaid.has(realmId)) {
+    unlistedSignaturesRefusedSaid.add(realmId);
+    log.warn(errorCodes.tag('STS-KEYS-0166') + 'helpers: the "' + realmId +
+             '" realm was asked for an ' + alg + ' signature, which ' +
+             'keys.signingAlgorithms does not list, and refused it; a client ' +
+             'or a setting still names it.');
+  }
+  log.debug("Leaving unlistedSignatureRefusal(). Refused.");
+  return errorCodes.mark(new Error('this realm does not sign with ' + alg +
+    ': keys.signingAlgorithms does not list it.'), 'STS-KEYS-0166');
+}
+
+/**
+ * The write rule of `keys.signingAlgorithms`: a list must include RS256.
+ *
+ * @param key - the setting being written
+ * @param parsed - its value, parsed
+ * @returns `{ problem, code }`, or null
+ */
+function signingAlgorithmsWriteRule(key, parsed) {
+  log.debug("Entering signingAlgorithmsWriteRule(). " + key);
+  if (key !== 'keys.signingAlgorithms' || !Array.isArray(parsed) ||
+      !parsed.length || parsed.indexOf('RS256') >= 0) {
+    log.debug("Leaving signingAlgorithmsWriteRule().");
+    return null;
+  }
+  log.debug("Leaving signingAlgorithmsWriteRule(). No RS256.");
+  return { code: 'STS-KEYS-0167',
+           problem: '"keys.signingAlgorithms" must include RS256, or be ' +
+                    'empty: OpenID Connect Discovery requires RS256 in ' +
+                    'id_token_signing_alg_values_supported, and it is the ' +
+                    'default for ID Tokens and access tokens.' };
+}
+config.addWriteRule(signingAlgorithmsWriteRule);
 
 // ---------------------------------------------------------------------------
 // THE REQUEST OBJECT ENCRYPTION KEYS FOR A KEY SET, BACKFILLED WHERE THE SET WAS
@@ -6597,6 +6792,18 @@ function parseBody(req) {
   if (/json/i.test(type)) {
     try {
       const parsed = JSON.parse(raw || '{}');
+      // A JSON body of the literal `null`, or a primitive, is valid JSON but
+      // not the plain object every caller of parseBody() reads — body.x and
+      // body[name]. `null.protocol` is a TypeError the fault boundary turns
+      // into a 500 (a fuzzer sends `null`); a primitive reads as undefined but
+      // is still not a body. Treat either as an empty body, which the handlers'
+      // own validation refuses with a 4xx and a recorded error code, exactly as
+      // they do {}. An ARRAY is left as it was, the one non-object a caller may
+      // legitimately send.
+      if (parsed === null || typeof parsed !== 'object') {
+        log.debug("Leaving parseBody(). A null or primitive JSON body; empty.");
+        return {};
+      }
       log.debug("Leaving parseBody(). Parsed a JSON body.");
       return parsed;
     } catch (e) {
@@ -8086,6 +8293,13 @@ function signJwtAs(payload, alg, secret, opts) {
   log.debug("Entering signJwtAs().");
   const options = opts || {};
   log.debug("Entering signJwtAs(). alg=" + alg);
+  // Ahead of the HMAC branch below: an HMAC signature uses no published key,
+  // but the list says what this realm signs with, HS256 included (#1348).
+  const unlisted = unlistedSignatureRefusal(alg);
+  if (unlisted) {
+    log.debug("Leaving signJwtAs(). Not in keys.signingAlgorithms.");
+    throw unlisted;
+  }
   const spec = stsCrypto.JWS_ALGS[alg];
   if (spec && spec.family === 'hmac') {
     if (!secret) {
@@ -8144,6 +8358,12 @@ function signJwtAsAsync(payload, alg, secret, opts) {
   log.debug("Entering signJwtAsAsync().");
   const options = opts || {};
   log.debug("Entering signJwtAsAsync(). alg=" + alg);
+  // See signJwtAs() (#1348, keys.signingAlgorithms).
+  const unlisted = unlistedSignatureRefusal(alg);
+  if (unlisted) {
+    log.debug("Leaving signJwtAsAsync(). Not in keys.signingAlgorithms.");
+    return Promise.reject(unlisted);
+  }
   const spec = stsCrypto.JWS_ALGS[alg];
   if (spec && spec.family === 'hmac') {
     try {
@@ -9172,6 +9392,11 @@ module.exports = {
   signableJwsAlgs: signableJwsAlgs,
   withoutEddsaSigningAlgs: withoutEddsaSigningAlgs,
   withoutEddsaSigningKeys: withoutEddsaSigningKeys,
+  signingAlgAllowlist: signingAlgAllowlist,
+  signingAlgListed: signingAlgListed,
+  listedSigningAlgs: listedSigningAlgs,
+  withoutUnlistedSigningAlgs: withoutUnlistedSigningAlgs,
+  withoutUnlistedSigningKeys: withoutUnlistedSigningKeys,
   browserDeviceKeysFor: browserDeviceKeysFor,
   vcApiKeysFor: vcApiKeysFor,
   vcApiKeyFor: vcApiKeyFor,

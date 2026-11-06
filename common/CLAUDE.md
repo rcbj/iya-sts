@@ -722,6 +722,45 @@ them by default would refuse conforming clients for nothing.
 
 `tests/oidcc_conformance_defaults.js` section E holds it.
 
+## A REALM'S SIGNING ALGORITHMS, NAMED ONE BY ONE (#1348, 2026-11-05)
+
+**`keys.signingAlgorithms`, EMPTY BY DEFAULT.** rcbj: the OpenID Connect
+certification configuration has only RS256 enabled. It is the EdDSA switch
+above applied to any algorithm, at the same places, and both switches still win
+over it.
+
+* **One reader, in `helpers.js`**: `signingAlgAllowlist()` (the ambient realm,
+  per call). **RS256 is always in it**: `signingAlgorithmsWriteRule()` refuses a
+  list without it (`STS-KEYS-0167`), and the reader adds it for a value from an
+  appconfig file or the environment, which reaches no write rule. That is what
+  makes "use RS256 instead" safe in `accessTokenAlg()` and what keeps an RSA key
+  in the JWKS whatever else the list says.
+* **What is published and advertised**: `withoutUnlistedSigningKeys()` filters
+  `/oauth2/jwks`'s finished list and `withoutUnlistedSigningAlgs()` narrows
+  `OWN_SIGNING_ALG_MEMBERS`, after the EdDSA filters.
+* **What a client may choose**: `signableJwsAlgs()` applies the list, so the
+  console's choices and the registration checks follow.
+* **What is refused**: `signJwtAs()` and `signJwtAsAsync()`
+  (`unlistedSignatureRefusal()`, `STS-KEYS-0166`, logged once per realm), AHEAD
+  of the HMAC branch, because the list governs HS256 too. `accessTokenAlg()`
+  replaces rather than refuses, as it does for FAPI. **`signJwt()` and
+  `signingKeyFor()` are NOT refused**, for the EdDSA switch's reason, and
+  `signing_rotation.ts` reads a key's kid through the latter.
+* **`none` is not governed**: a UserInfo response may be plain JSON.
+* **It does not shrink the generations.** An RS256-only realm still publishes
+  every live generation of its RSA key.
+
+`tests/signing_algorithm_allowlist.js` holds it.
+
+## A JWK'S CERTIFICATE CHAIN AS AN ADDRESS (#1351, 2026-11-05)
+
+**`keys.jwksCertificateUrl`, OFF BY DEFAULT.** `withCertificateUrls()` in
+`jose_certificate_header.js` filters `/oauth2/jwks`'s finished list, replacing
+`x5c` with `x5u` from `chainUrlFor()`. **A key keeps its `x5c` where
+`chainPemFor()` would not serve the address**, because a dead link loses the
+chain and an inline one only costs bytes. `tests/signing_algorithm_allowlist.js`
+section E holds it.
+
 ## `crypto.js` SECTION 4a: POST-QUANTUM AND HPKE KEY ESTABLISHMENT (#82, 2026-09-27)
 
 **JWE had RSA-OAEP and ECDH-ES only, so every encrypted token this service
@@ -4065,6 +4104,8 @@ with `Cannot find module` naming a file the operator never mentioned.
    nothing else; a code is an operator's name for the condition. The table's
    `spec` column records what the client IS told, so the documentation page can
    say it without anybody reading the handler.
+   **An administrator's console page may still draw a code for someone
+   diagnosing a recorded failure** (rcbj, 2026-11-06, #1355; the root file).
 
    **`audit.js` CHANGED IN THREE WAYS FOR IT, AND EACH IS A RULE.**
    * A row with `errorCode` and no `outcome` is a REFUSAL, not a success — a
@@ -9099,7 +9140,7 @@ mutants caught.
 
 ## 3aa. `pki_authoring.ts`: the pane, and the two things it is NOT
 
-Added 2026-09-10 with `/admin/pki`'s Certificate & Key Configuration pane — the
+Added 2026-09-10 with `/admin/pki`'s Certificate Workbench — the
 parent project's *PKI / X.509* workflow drawn by a server for a console with no
 script on it — drawn as ONE FORM of a hundred and fifteen fields, where that
 page has event handlers. `admin-ui/CLAUDE.md` argues
@@ -15034,3 +15075,45 @@ to it could undo.
   answering once the old entry goes.
 * **Not built, and nobody asked:** an administrator removing a person's photo.
   Disabling the account hides it. SCIM's `photos` is not mapped.
+
+## 3dc. `response_models.ts`, `response_model_kit.ts` (#1353): every answer is held to its model
+
+**A VALUE WRITTEN OUTSIDE THIS SERVICE IS HELD WHERE IT ARRIVES AND WHERE IT IS
+READ (2026-11-06).** A closed model means a value somebody else wrote, kept and
+shown later can break a page, and one row can break a whole list. An audit
+reproduced that for a forged presentation's verdict, an unverified token's `sub`,
+a device key's JWK, a partner's `cacheDuration` and Trust Mark `exp`, and four
+attributes an LDAP client can write; `tests/protocol/sts_outside_values.js` is
+that reproduction, kept. The model does not loosen for such a value: the value is
+narrowed to what the member is, at the write and again at the read, because a row
+already stored is still there. A time is the case to watch: `toISOString()`
+throws on a finite number no Date can hold, which `Number.isFinite` passes.
+**An exception no handler caught on a published API answers JSON**,
+`answerExceptions()`, `STS-API-0140`, registered after every route by
+`protocol_stack.ts`, because Express reaches an error handler only after the route
+that threw.
+
+**rcbj's decision, 2026-11-05: every operation of the four published APIs
+(`/admin-api`, `/account-api`, `/authn-api`, `/report-api`) has a response model
+for every status, no model admits a member it does not declare, and every
+response is validated against it, always.** There is no setting, in either mode.
+
+* **ONE DOOR.** Each API calls `install()` first under its prefix (the management
+  API before its gate), which wraps `res.send`, so a gate's refusal meets the same
+  check as a handler's answer, and no sender can forget.
+* **A VIOLATION IS NOT SENT.** The caller gets a 500 `server_error` saying nothing
+  of the shape; the operator gets `STS-API-0139` once per distinct failure, naming
+  the operation, the status and where, with key names and never a value.
+* **THE MODELS ARE IN ONE FILE PER FAMILY**, keyed by operationId
+  (`mgmt-api/response_models_*.ts`, `account-api/account_response_models.ts`,
+  `authn/authn_response_models.ts`), and in `report/openapi.ts` itself. A new
+  operation owes a model; `tests/openapi_response_models.js` fails otherwise, at
+  any depth. **A new member of an answer owes a line in its model in the same
+  commit**, or that answer becomes a 500.
+* **THREE SHAPES AND ONLY THREE**: `closed()`, `mapOf()` where keys are data, and
+  `freeForm('why')`, the argued exception, printed by that test.
+* **NO MEMBER IS `required` UNLESS EVERY BRANCH SENDS IT**: the management API
+  removes members after a view built them (an owner's projection, the console's
+  own members).
+
+`tests/tools/openapi_inventory.js` prints the state of every operation and status.
