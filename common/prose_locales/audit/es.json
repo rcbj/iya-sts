@@ -775,6 +775,10 @@
     "en": "feb59a61d26db396",
     "text": "Se agregó o quitó un ancla de confianza para certificados de cliente"
   },
+  "audit.actions.admin.pki.trust.change.label": {
+    "en": "ab34b1a9778d5c8e",
+    "text": "Se cambió el almacén de confianza de firmantes o un ajuste de PKI paranoico"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "Se derivaron las claves Kerberos de una persona a partir de su contraseña"

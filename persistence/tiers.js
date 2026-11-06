@@ -295,6 +295,10 @@ const GLOBAL_MINTED = {
   // A realm's sign-in logo (#717): configuration every cell's sign-in
   // pages draw, as the mail templates are.
   'branding.assets': 'a realm\'s sign-in logo',
+  // What the daily audit of a realm's pinned certificates last found (#1360):
+  // the certificates are configuration every cell relies on alike.
+  'pki.pins.lastAudit': 'what a realm\'s pinned certificate audit last ' +
+    'found',
   'mail.templates': 'a realm\'s wording of its messages',
   'oauth2.commandIssuer': 'the issuer a realm\'s provider commands use',
   'oauth2.commandMetadata': 'what each client says it supports',

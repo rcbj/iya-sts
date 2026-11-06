@@ -372,6 +372,9 @@ const credentials = require('../common/credentials');
 // and the one that deletes a person note what changed through it, and its
 // directory slot is filled below with this module's three questions.
 const passkeyReport = require('../common/passkey_report');
+// The signer truststore (#1360), whose directory slot this module fills. A
+// library over `pki`, `realms` and `config`: a require moves no route.
+const signerTruststore = require('../common/signer_truststore');
 // The device register (#164), for `/admin/ldap/devices`: its schema and what
 // its entries mean. A library built before this module and loaded by it
 // already through `credentials`' neighbours — a cache hit, which moves no
@@ -961,6 +964,15 @@ function trustAnchorDn(fingerprint) {
   log.debug("Entering trustAnchorDn().");
   log.debug("Leaving trustAnchorDn().");
   return 'cn=' + escapeDnValue(String(fingerprint)) + ',' + trustAnchorsDn();
+}
+
+// THE SIGNER TRUSTSTORE'S CONTAINER (#1360), in EVERY realm: a signature has a
+// realm where a handshake has not. `common/signer_truststore.ts` owns what an
+// entry is; this is where one is written down.
+function signerTrustAnchorsDn() {
+  log.debug("Entering signerTrustAnchorsDn().");
+  log.debug("Leaving signerTrustAnchorsDn().");
+  return 'ou=signerTrustAnchors,' + baseDn();
 }
 
 // ou=passwordPolicies is the PASSWORD POLICY register (2026-09-12). A container
@@ -3697,6 +3709,9 @@ const OWN_NAMES = [
   // `trustAnchorsDn()`.
   'stsTrustAnchor', 'stsTrustAnchorCertificate', 'stsTrustAnchorFingerprint',
   'stsTrustAnchorAddedBy',
+  // The signer truststore's two more (#1360); the three above are reused.
+  'stsSignerTrustAnchor', 'stsSignerTrustAnchorKind',
+  'stsSignerTrustAnchorPurpose',
 
   // AND A FIFTH SINCE 2026-09-10: the RECOVERY CODES. It belongs with the four
   // above and it is the SECOND of them that can be read back and used — a set
@@ -5499,6 +5514,7 @@ function seed() {
         'tls/tls_server.js owns what an anchor is.'
     }, { origin: 'seed' });
   }
+  putSignerTrustAnchorsContainer();
   putEntry(spiffeDn(), {
     objectClass: ['top', 'organizationalUnit'],
     ou: 'spiffe',
@@ -14700,6 +14716,15 @@ if (typeof passkeyReport.setDirectory === 'function') {
            'offers no setDirectory(), so Monitoring → Passkeys counts ' +
            'nothing.');
 }
+
+// THE SIGNER TRUSTSTORE'S SLOT (#1360, rule 3e): `passkey_report`'s reason. A
+// require of this module from the store's place in the order would drag the
+// `/admin/ldap/*` routes forward. Validated whole there.
+signerTruststore.setDirectory({
+  list: inRealmNamed(signerAnchorRows),
+  put: inRealmNamed(writeSignerAnchor),
+  remove: inRealmNamed(deleteSignerAnchor)
+});
 
 if (typeof credentials.setDirectory === 'function') {
   credentials.setDirectory({
@@ -24819,6 +24844,97 @@ function deleteTrustAnchor(fingerprint) {
   log.debug('Leaving deleteTrustAnchor(). ' + (gone ? 'Removed.' : 'It was ' +
       'not stored.'));
   return gone;
+}
+
+// The signer truststore's container, seeded with a realm's tree. A realm built
+// before #1360 has none, so a first write makes it too.
+function putSignerTrustAnchorsContainer() {
+  log.debug("Entering putSignerTrustAnchorsContainer().");
+  putEntry(signerTrustAnchorsDn(), {
+    objectClass: ['top', 'organizationalUnit'],
+    ou: 'signerTrustAnchors',
+    description: 'The SIGNER TRUSTSTORE: the certificate authorities, and ' +
+      'the intermediates under them, a third party\'s certificate may chain ' +
+      'to when it is relied on for anything but a TLS handshake. One ' +
+      'stsSignerTrustAnchor entry per certificate added at /admin/pki/trust ' +
+      'or POST /admin-api/pki/trust/add. An entry here decides whose ' +
+      'signature this realm believes, so writing one is an administrative ' +
+      'act. common/signer_truststore.ts owns what an entry is.'
+  }, { origin: 'seed' });
+  log.debug("Leaving putSignerTrustAnchorsContainer().");
+}
+
+function signerAnchorRows() {
+  log.debug("Entering signerAnchorRows().");
+  const rows = entriesUnder(signerTrustAnchorsDn()).map(function (stored) {
+    const a = stored.attributes;
+    return {
+      fingerprint: (a.ststrustanchorfingerprint || [])[0] || '',
+      pem: (a.ststrustanchorcertificate || [])[0] || '',
+      kind: (a.stssignertrustanchorkind || [])[0] || 'anchor',
+      purposes: (a.stssignertrustanchorpurpose || []).slice(),
+      addedBy: (a.ststrustanchoraddedby || [])[0] || '',
+      addedAt: stored.createdAt || '',
+      source: 'runtime'
+    };
+  }).filter(function (row) {
+    return !!row.pem;
+  });
+  log.debug("Leaving signerAnchorRows(). " + rows.length + ".");
+  return rows;
+}
+
+function writeSignerAnchor(row) {
+  log.debug("Entering writeSignerAnchor().");
+  const dn = 'cn=' + escapeDnValue(String(row.fingerprint)) + ',' +
+             signerTrustAnchorsDn();
+  if (!entries.get(normalizeDn(dn)) && cappedEntries() >= maxEntries()) {
+    log.debug("Leaving writeSignerAnchor(). The directory is full.");
+    return false;
+  }
+  if (!entries.get(normalizeDn(signerTrustAnchorsDn()))) {
+    putSignerTrustAnchorsContainer();
+  }
+  const attributes = {
+    objectClass: ['top', 'stsSignerTrustAnchor'],
+    cn: String(row.fingerprint),
+    stsTrustAnchorFingerprint: String(row.fingerprint),
+    stsTrustAnchorCertificate: String(row.pem),
+    stsTrustAnchorAddedBy: String(row.addedBy || ''),
+    stsSignerTrustAnchorKind: String(row.kind)
+  };
+  if ((row.purposes || []).length) {
+    attributes.stsSignerTrustAnchorPurpose = row.purposes.map(String);
+  }
+  putEntry(dn, attributes, { origin: 'truststore' });
+  log.debug("Leaving writeSignerAnchor().");
+  return true;
+}
+
+function deleteSignerAnchor(fingerprint) {
+  log.debug("Entering deleteSignerAnchor().");
+  const dn = 'cn=' + escapeDnValue(String(fingerprint)) + ',' +
+             signerTrustAnchorsDn();
+  const gone = entries.delete(normalizeDn(dn));
+  if (gone) {
+    touchDirectory(dn);
+  }
+  log.debug("Leaving deleteSignerAnchor(). " + gone);
+  return gone;
+}
+
+// One of the three above, in the realm named: the store's slot takes a realm
+// id because the door's caller may be in a different one.
+function inRealmNamed(fn) {
+  log.debug("Entering inRealmNamed().");
+  log.debug("Leaving inRealmNamed().");
+  return function (realmId) {
+    const realm = realms.get(realmId);
+    const args = Array.prototype.slice.call(arguments, 1);
+    return realm ? realms.run(realm, function () {
+      return fn.apply(null, args);
+    }) : (fn === signerAnchorRows ? [] : false);
+  };
 }
 
 // Whether a directory KEY names an entry in the truststore container of the

@@ -775,6 +775,10 @@
     "en": "feb59a61d26db396",
     "text": "Une ancre de confiance de certificat client a été ajoutée ou retirée"
   },
+  "audit.actions.admin.pki.trust.change.label": {
+    "en": "ab34b1a9778d5c8e",
+    "text": "Le magasin de confiance des signataires ou un réglage de PKI paranoïaque a été modifié"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "Les clés Kerberos d’une personne ont été dérivées de son mot de passe"

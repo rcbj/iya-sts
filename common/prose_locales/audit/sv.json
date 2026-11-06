@@ -775,6 +775,10 @@
     "en": "feb59a61d26db396",
     "text": "Ett förtroendeankare för klientcertifikat lades till eller togs bort"
   },
+  "audit.actions.admin.pki.trust.change.label": {
+    "en": "ab34b1a9778d5c8e",
+    "text": "Signerarnas förtroendelager eller en inställning för paranoid PKI ändrades"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "En persons Kerberos-nycklar härleddes från deras lösenord"

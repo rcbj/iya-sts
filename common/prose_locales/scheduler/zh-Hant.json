@@ -375,6 +375,14 @@
     "en": "98370fb755b4ba95",
     "text": "在以單元方式部署的服務中，以相同的批次從全域層的資料庫中刪除早於 persistence.mintedRetention 的已結束產生資料列的墓碑；其執行在全域層中認領，因此每個時段只有一個單元執行。在只有一個資料庫的服務中關閉，由另一項清理涵蓋。"
   },
+  "sched.jobs.pki.pins.audit.title": {
+    "en": "3ccb80617905a1db",
+    "text": "已釘選憑證稽核"
+  },
+  "sched.jobs.pki.pins.audit.describe": {
+    "en": "e5cc243756f71f7e",
+    "text": "將此領域每一張已釘選的憑證與每一筆簽署者信任存放區項目，依偏執 PKI 模式的檢查進行審查，保存 /admin/pki/trust 所繪製的結果，並記錄與寄送變更內容的郵件。"
+  },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",
     "text": "登入後活動郵件"

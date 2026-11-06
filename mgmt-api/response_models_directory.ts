@@ -659,7 +659,7 @@ const KERBEROS_TRUST_ACTION: Json = Kit.action({
 const TRUST_ANCHOR: Json = Kit.closed({
   subject: NULL_STR, issuer: NULL_STR, serial: NULL_STR, notBefore: NULL_STR,
   notAfter: NULL_STR, fingerprint256: STR, ca: BOOL, readable: BOOL,
-  source: STR, persisted: BOOL, addedAt: STR, pem: STR
+  source: STR, persisted: BOOL, addedAt: STR, pem: STR, unadmittable: STR
 });
 
 const TRUSTSTORE: Json = Kit.closed({

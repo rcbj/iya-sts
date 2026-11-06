@@ -53,6 +53,7 @@ dc=example,dc=com                       domain, dcObject
 ├── ou=oidfed                           stsOidfedEntry              (#132)
 ├── ou=claimproviders                   stsClaimProvider            (#147)
 ├── ou=trustAnchors                     stsTrustAnchor              (default realm only)
+├── ou=signerTrustAnchors               stsSignerTrustAnchor        (#1360)
 └── ou=crl                              cRLDistributionPoint        (created on first CRL)
 ```
 
@@ -479,6 +480,14 @@ certificates: `stsTrustAnchor`, `stsTrustAnchorCertificate`,
 `stsTrustAnchorFingerprint`, `stsTrustAnchorAddedBy`. A certificate is public,
 so none of these is sealed. An entry here decides whose client certificate
 becomes an identity. See [TLS](tls.md).
+
+`ou=signerTrustAnchors` exists in every realm, with one
+`objectClass: top, stsSignerTrustAnchor` entry per certificate of that realm's
+[signer truststore](signer-truststore.md): `stsTrustAnchorCertificate`,
+`stsTrustAnchorFingerprint`, `stsTrustAnchorAddedBy`, `stsSignerTrustAnchorKind`
+(`anchor` or `intermediate`) and, where it is restricted,
+`stsSignerTrustAnchorPurpose` (multi-valued). An entry here decides whose signature
+the realm believes.
 
 `ou=crl` holds `objectClass: top, cRLDistributionPoint` entries (`cn=<caId>`, `certificateRevocationList;binary`) once a CRL is published. They are a cache of the register, readable anonymously ([PKI](pki.md)).
 

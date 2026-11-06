@@ -1390,6 +1390,14 @@ class ProtocolStack {
     // module does not.
     this.build('common/audit_export', require('./audit_export'),
                'AuditExport');
+    // 18j-viii. THE VALIDATION DOOR AND THE SIGNER TRUSTSTORE (#1360): libraries
+    // with no route. Before `ldap/ldap_server` (21), whose require fills the
+    // store's directory slot through its facades (a facade asked before this
+    // line would build a default instance the root could then not install),
+    // and after the scheduler, for the door's one job.
+    this.build('common/signer_truststore', require('./signer_truststore'),
+               'SignerTruststore');
+    require('./certificate_trust').install();
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');

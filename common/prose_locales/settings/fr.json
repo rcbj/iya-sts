@@ -3623,6 +3623,218 @@
     "en": "f292a8cf26b697f2",
     "text": "Nombre de certificats émis via ACME, EST ou SCEP qu’une entrée de personne ou d’application peut porter simultanément. Un certificat expiré est retiré de l’entrée avant ce décompte ; au-delà, une requête est refusée (STS-ENROLL-0040) plutôt que d’oublier un certificat plus ancien, car un certificat que quelqu’un utilise encore ne doit pas disparaître de l’entrée qui dit à qui il appartient."
   },
+  "pki.paranoid|label": {
+    "en": "69d9666085a31d95",
+    "text": "Mode PKI paranoïaque"
+  },
+  "pki.paranoid|description": {
+    "en": "168070ad5991fba4",
+    "text": "Mode PKI paranoïaque (#1360) : indique si chaque certificat X.509 auquel ce service se fie — lors d’une négociation TLS dans un sens comme dans l’autre, sous une signature, comme destinataire de chiffrement, dans une attestation, dans un message CMS — est soumis à l’ensemble des contrôles par la porte de validation unique (common/certificate_trust.ts) : un chemin vers une ancre que ce service connaît, la validité à l’instant présent, la révocation, et les basicConstraints, keyUsage et extendedKeyUsage que son cas d’usage demande, un contrôle que le cas d’usage n’a jamais exécuté comptant comme un refus. **`auto` est activé en mode produit et désactivé en développement** (mode.enforcesParanoidPki()) ; `on` et `off` le forcent dans l’un et l’autre mode. Tant qu’il est en vigueur, chaque ligne `pki.paranoid<UseCase>` ci-dessous est consultée ; tant qu’il ne l’est pas, chaque cas d’usage se comporte exactement comme avant #1360. Le réglage principal forcé à off en mode produit est journalisé une fois (STS-PKI-0239) et affiché en rouge sur /admin/pki/trust ; rien ne refuse l’écriture."
+  },
+  "pki.paranoidTlsClient|label": {
+    "en": "c0010750fb1dedac",
+    "text": "Paranoïaque : un certificat client lors d’une négociation TLS"
+  },
+  "pki.paranoidTlsClient|description": {
+    "en": "e6a7e7e97a2f4251",
+    "text": "Cas d’usage `tls-client` : un certificat client présenté au port principal, à un écouteur personnalisé, à LDAPS, à l’écouteur du débogueur, aux sockets gRPC de SPIFFE ou au canal inter-cellules, et chaque consommateur de socket.authorized. Le mode paranoïaque soumet CHAQUE écouteur aux règles de chemin (pas seulement le port principal et les écouteurs personnalisés), exige extendedKeyUsage clientAuth et keyUsage digitalSignature ou keyAgreement de chaque certificat terminal, consulte la révocation sur chaque écouteur, reporte un verdict dégradé à travers la reprise de session TLS, et échoue en mode FERMÉ lorsque le contrôle lève une erreur. Ancres : le magasin de confiance des certificats clients et la racine du service. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidTlsClientSelfSigned|label": {
+    "en": "1fffd43ed19648a8",
+    "text": "Paranoïaque : un certificat client TLS auto-signé qu’un client a enregistré"
+  },
+  "pki.paranoidTlsClientSelfSigned|description": {
+    "en": "976e7f91b601714f",
+    "text": "Cas d’usage `tls-client-self-signed` : self_signed_tls_client_auth de la RFC 8705 section 2.2 et une clé GNAP prouvée par un certificat épinglé (RFC 9635 section 7.3.2). Les deux spécifications définissent la méthode comme l’ÉGALITÉ du certificat, donc aucune chaîne n’est demandée (exempté par la spécification) ; le mode paranoïaque ajoute la fenêtre de validité, keyUsage digitalSignature ou keyAgreement, et la révocation du registre. C’est le seul cas d’usage où un certificat terminal auto-signé est accepté lors d’une négociation TLS. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidOutboundTls|label": {
+    "en": "806774c88eae0cf1",
+    "text": "Paranoïaque : le certificat serveur d’une requête sortante"
+  },
+  "pki.paranoidOutboundTls|description": {
+    "en": "ad7a2574ae96644e",
+    "text": "Cas d’usage `tls-server-outbound` : chaque adresse que ce service contacte — canaux secondaires de fédération, push SSF et GNAP, signal du PEP XACML, provisionnement SCIM, courriel, base de données, magasin de secrets, SDK cloud, CRL et OCSP en https, LDAPS. Le mode paranoïaque ajoute la révocation du certificat du pair (agrafage OCSP d’abord, puis OCSP ou CRL), conditionnant la négociation avant l’écriture de tout corps de requête, extendedKeyUsage serverAuth, les règles de chemin et la vérification d’hôte de la RFC 9525 dans chaque processus, ainsi que le magasin de confiance des signataires à côté du fichier d’AC de chaque famille. Exempté par la spécification : une récupération de CRL ou d’OCSP en http simple n’a aucun certificat à contrôler (RFC 5280 section 4.2.1.13). Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidJoseSigner|label": {
+    "en": "6712f80a7d8d0d37",
+    "text": "Paranoïaque : la chaîne de certificats d’un signataire JOSE"
+  },
+  "pki.paranoidJoseSigner|description": {
+    "en": "a361abe6b62ec518",
+    "text": "Cas d’usage `jose-signer` : le x5c d’une assertion RFC 7523, private_key_jwt, un objet de requête JAR, une déclaration logicielle et le x5c d’une JWK enregistrée. Le mode paranoïaque complète une chaîne enregistrée incomplète à partir du magasin de confiance des signataires avant de la refuser, exige keyUsage digitalSignature du certificat terminal, et soumet un x5c[0] auto-signé collé dans une JWK à la règle de la porte de téléversement (aucun certificat terminal auto-signé nu). Ancres : l’AC du domaine, la racine enregistrée, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidSamlSigner|label": {
+    "en": "f542d60aa4055a78",
+    "text": "Paranoïaque : le certificat d’un signataire SAML"
+  },
+  "pki.paranoidSamlSigner|description": {
+    "en": "9185c29a838854a8",
+    "text": "Cas d’usage `saml-signer` : le certificat derrière une assertion RFC 7522, une AuthnRequest ou une LogoutRequest signée d’un fournisseur de services, l’appelant d’artefact SOAP et une signature de métadonnées de SP. Le mode paranoïaque ajoute la validité à chaque usage, une chaîne vers le magasin de confiance des signataires lorsque le certificat n’est pas auto-signé, la révocation, keyUsage digitalSignature, et REFUSE des métadonnées de SP qui n’atteignent aucune ancre (acceptées à la première utilisation auparavant). Un certificat auto-signé enregistré sur l’application est accepté par la spécification (SAML Metadata section 2.4.1.1) et listé à l’inventaire comme auto-signé. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidFederationPartner|label": {
+    "en": "1153fde809c347ea",
+    "text": "Paranoïaque : le certificat de signature d’un partenaire de fédération"
+  },
+  "pki.paranoidFederationPartner|description": {
+    "en": "c7dd276f9a86e888",
+    "text": "Cas d’usage `federation-partner` : la signature SAML ou WS-Federation d’un partenaire, le x5c d’une JWK de partenaire et un signataire de déconnexion fédérée. Le mode paranoïaque ajoute la validité à chaque usage, une chaîne vers le magasin de confiance des signataires lorsque le certificat n’est pas auto-signé, la révocation pour la déconnexion comme pour la connexion, et des contrôles de champs à la porte d’enregistrement. Un certificat auto-signé enregistré sur la relation est accepté par la spécification, comme celui d’un signataire SAML. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidWsSecurityToken|label": {
+    "en": "fdf207fb5b68e7c1",
+    "text": "Paranoïaque : un jeton X.509 WS-Security"
+  },
+  "pki.paranoidWsSecurityToken|description": {
+    "en": "d1b001f7c3cf7dad",
+    "text": "Cas d’usage `wss-x509-token` : le signataire du profil de jeton X.509 WS-Security d’une requête WS-Trust. Le mode paranoïaque exige qu’un certificat terminal externe stocké remonte au magasin de confiance des signataires et prend l’émetteur OCSP ou CRL dans le chemin du magasin de confiance, jamais dans le seul Authority Information Access du certificat terminal. Ancres : l’AC du domaine, le certificat terminal stocké, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidJoseBareKey|label": {
+    "en": "ae8a99b03823519c",
+    "text": "Paranoïaque : une JWK nue qui porte un x5c"
+  },
+  "pki.paranoidJoseBareKey|description": {
+    "en": "d55aaf11968d0119",
+    "text": "Cas d’usage `jose-bare-key` : clés d’entité OpenID Federation, clés d’émetteur SSF, clés de fournisseur de revendications et clés GNAP `cert`. Une JWK qui PORTE un x5c est validée comme un signataire JOSE en mode paranoïaque ; une JWK nue est laissée telle quelle, car OpenID Federation 1.1 section 3 définit les clés d’entité comme des JWK nues (exempté par la spécification lorsqu’aucun x5c n’est présent). Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidEncryptionRecipient|label": {
+    "en": "1fec5dc0c124d4d7",
+    "text": "Paranoïaque : le certificat d’un destinataire de chiffrement"
+  },
+  "pki.paranoidEncryptionRecipient|description": {
+    "en": "22e7d1dcaf21b830",
+    "text": "Cas d’usage `encryption-recipient` : le certificat pour lequel une assertion SAML est chiffrée et le x5c d’un destinataire JWE. Le mode paranoïaque ajoute la validité, keyUsage keyEncipherment ou keyAgreement et la révocation, et ne chiffre jamais pour un certificat simplement OBSERVÉ dans une requête (le développement le faisait, avant #1360, hors mode paranoïaque). Un certificat auto-signé enregistré sur l’application est accepté par la spécification. Une JWK nue sans x5c est exemptée (la RFC 7517 section 4.7 rend x5c facultatif). Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidClientAttestation|label": {
+    "en": "f9781b19e7a5faa5",
+    "text": "Paranoïaque : une chaîne d’authentification client par attestation"
+  },
+  "pki.paranoidClientAttestation|description": {
+    "en": "3272afd18d05a5d0",
+    "text": "Cas d’usage `client-attestation` : le certificat de l’attestateur derrière l’authentification client OAuth par attestation. Le mode paranoïaque ajoute la révocation et keyUsage digitalSignature sur le certificat terminal. Ancres : oauth2.clientAttestationTrustAnchors et le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidWebauthnAttestation|label": {
+    "en": "56518cdbf25aba42",
+    "text": "Paranoïaque : une chaîne d’attestation WebAuthn"
+  },
+  "pki.paranoidWebauthnAttestation|description": {
+    "en": "a1da1a7091f590f6",
+    "text": "Cas d’usage `webauthn-attestation` : la déclaration d’attestation d’une clé d’accès aux formats packed, tpm, android-key, android-safetynet et apple. Le mode paranoïaque rend explicites, par la porte, extendedKeyUsage et keyUsage de chaque format (l’EKU 2.23.133.8.3 de l’AIK TPM est exigé pour tpm) ; la révocation était déjà demandée. La validité est évaluée à l’instant présent, comme avant — un certificat d’attestation expiré rend la déclaration non fiable (rcbj, 2026-11-06). Ancres : webauthn.attestationTrustAnchors, les racines du FIDO Metadata Service, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidDeviceAttestation|label": {
+    "en": "eb8ad90daa8e84e6",
+    "text": "Paranoïaque : une chaîne d’attestation d’appareil"
+  },
+  "pki.paranoidDeviceAttestation|description": {
+    "en": "1e8781ffffcd5976",
+    "text": "Cas d’usage `device-attestation` : attestation de clé Android, Apple App Attest et attestation TPM d’un appareil enregistré. Le mode paranoïaque ajoute OCSP ou CRL pour les chaînes Apple et TPM lorsque la chaîne en désigne, et l’extendedKeyUsage que demande chaque format. Ancres : les réglages devices.*TrustAnchors, les racines fournies, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeSvid|label": {
+    "en": "78e43611bf44d5cf",
+    "text": "Paranoïaque : un X509-SVID présenté à la SPIRE Server API ou à la Broker API"
+  },
+  "pki.paranoidSpiffeSvid|description": {
+    "en": "9df64672b57d6dfa",
+    "text": "Cas d’usage `spiffe-svid` : le X509-SVID que présente un appelant de la SPIRE Server API ou de la Broker API, et un SVID fédéré. Le mode paranoïaque fait du SHOULD d’extendedKeyUsage de la section 4.3 de la spécification X509-SVID un MUST et contrôle les champs du certificat d’autorité d’un bundle fédéré lors de son enregistrement et de son utilisation. Exempté par la spécification : la Workload API NE DOIT PAS authentifier et reste intacte, et la révocation d’un SVID fédéré n’est pas consultée, car l’autorité fédérée ne publie rien que ce service puisse contacter. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeAttestation|label": {
+    "en": "02cc79ee469c2d68",
+    "text": "Paranoïaque : le certificat d’un attestateur de nœud SPIFFE"
+  },
+  "pki.paranoidSpiffeAttestation|description": {
+    "en": "589e499a7857c323",
+    "text": "Cas d’usage `spiffe-attestation` : les attestateurs x509pop, TPM DevID, Azure IMDS, AWS instance identity et sigstore. Le mode paranoïaque ajoute la révocation lorsque la chaîne en désigne, les keyUsage et extendedKeyUsage que demande chaque attestateur, la validité du certificat épinglé d’AWS, et exige que l’intermédiaire Azure AIA remonte à une ancre avant d’être utilisé. Exempté par la spécification : sigstore évalue la validité au notBefore du certificat (règle de la spécification du client Sigstore) ; les omissions de SCT et de Rekor restent des réglages distincts. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidPkinit|label": {
+    "en": "075d91f34c26d707",
+    "text": "Paranoïaque : un certificat client PKINIT"
+  },
+  "pki.paranoidPkinit|description": {
+    "en": "4cd0d308a974fcbd",
+    "text": "Cas d’usage `pkinit` : le certificat client d’une AS-REQ RFC 4556. Le contrôle était déjà complet (chemin vers les AC d’identité du domaine, validité avec krb5.clockSkew, id-pkinit-KPClientAuth ou l’EKU de carte à puce Microsoft, révocation) ; le mode paranoïaque en fait un appel unique de la porte, de sorte que c’est le même code que pour tout autre cas d’usage. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidEnrollmentCredential|label": {
+    "en": "ce5c0d1996e12403",
+    "text": "Paranoïaque : un certificat présenté pour s’inscrire ou se renouveler"
+  },
+  "pki.paranoidEnrollmentCredential|description": {
+    "en": "e581316f80e4f785",
+    "text": "Cas d’usage `enrollment-credential` : le certificat client que présente une requête EST et le signataire d’un renouvellement SCEP. Déjà complet pour EST ; le mode paranoïaque donne la fenêtre de validité au signataire PKCSReq auto-signé de SCEP. Exempté par la spécification : la RFC 8894 section 2.3 définit le signataire PKCSReq comme auto-signé, donc aucune chaîne ne lui est demandée. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidVcKeyAttestation|label": {
+    "en": "c9da12bd29969033",
+    "text": "Paranoïaque : une chaîne d’attestation de clé OpenID4VCI"
+  },
+  "pki.paranoidVcKeyAttestation|description": {
+    "en": "65f64443cb54f4c6",
+    "text": "Cas d’usage `vc-key-attestation` : le x5c de l’attestation de clé d’un portefeuille au point de terminaison d’identifiants OpenID4VCI. Le mode paranoïaque construit un vrai chemin avec intermédiaires (un seul saut auparavant), consulte la révocation et exige keyUsage digitalSignature du certificat terminal. Ancres : oidc4vci.keyAttestationTrustedCertificates et le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidVcIssuer|label": {
+    "en": "bf59999c71087b0a",
+    "text": "Paranoïaque : le certificat d’un émetteur d’identifiants ou d’un signataire de liste d’état"
+  },
+  "pki.paranoidVcIssuer|description": {
+    "en": "4497f64a995a4cbf",
+    "text": "Cas d’usage `vc-issuer` : la chaîne IACA vers DS d’un mdoc, un signataire de liste d’état CWT, un certificat d’émetteur de confiance OpenID4VP et le signataire d’une liste d’état étrangère. Le mode paranoïaque exige l’EKU de signataire de document ISO 18013-5 1.0.18013.5.1.2 et le profil DS (keyUsage digitalSignature, une validité de DS contenue dans celle de son IACA), la révocation pour le signataire de liste d’état, et la validité et une chaîne pour un certificat d’émetteur de confiance qui n’est pas auto-signé. Un certificat d’émetteur de confiance configuré est accepté auto-signé par la spécification, la validité et la révocation restant demandées. Ancres : oid4vp.mdocTrustAnchors, oid4vp.trustedIssuerCertificates, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidCellPeer|label": {
+    "en": "29ff42feacbce3f9",
+    "text": "Paranoïaque : l’autre cellule sur le canal inter-cellules"
+  },
+  "pki.paranoidCellPeer|description": {
+    "en": "4dbdc1d9a7d0f4c4",
+    "text": "Cas d’usage `cell-peer` : le certificat que présente l’autre cellule sur le canal inter-cellules, dans les deux sens. Le mode paranoïaque ajoute la révocation à partir du registre, extendedKeyUsage clientAuth et serverAuth (l’AC de ce service émet les deux), et les règles de chemin. Ancre : la racine du service. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidCaImport|label": {
+    "en": "db5c10402103e4d7",
+    "text": "Paranoïaque : une AC ou une paire de clés importée par un opérateur"
+  },
+  "pki.paranoidCaImport|description": {
+    "en": "d87040a5e24c74ae",
+    "text": "Cas d’usage `ca-import` : l’import, par /admin/pki, de la racine ou de l’AC émettrice d’un opérateur et d’une paire de clés épinglée. Le mode paranoïaque exige qu’une AC émettrice importée remonte à la racine du service et vérifie cA, keyCertSign, la validité et pathLen ; un certificat terminal épinglé voit ses champs contrôlés. Une racine importée reste son propre point d’ancrage. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidAnchorAdmission|label": {
+    "en": "7d8bf2554b7ae476",
+    "text": "Paranoïaque : l’admission dans un magasin de confiance"
+  },
+  "pki.paranoidAnchorAdmission|description": {
+    "en": "169bc8829426f512",
+    "text": "Cas d’usage `anchor-admission` : ce qu’acceptent /admin/tls/trust, le magasin de confiance des signataires, tls.trustAnchorsFile et pki.signerTrustAnchorsFile. Une ancre est une AC auto-signée dans sa validité dont l’auto-signature se vérifie (cA, et keyCertSign lorsque keyUsage est présent) ; un intermédiaire est une AC qui remonte à une ancre déjà détenue ; un certificat terminal est refusé par les deux magasins de confiance — un certificat terminal à épingler va sur l’entrée ou la relation qui l’utilise. Avant #1360, le magasin de confiance des clients acceptait tout ce qu’OpenSSL pouvait analyser. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidRevocationSigner|label": {
+    "en": "05be41dc43e60403",
+    "text": "Paranoïaque : un répondeur OCSP ou un signataire de CRL"
+  },
+  "pki.paranoidRevocationSigner|description": {
+    "en": "02ce618736381ac9",
+    "text": "Cas d’usage `revocation-signer` : le certificat du répondeur OCSP délégué et le signataire de CRL dans common/revocation_status.js. Déjà complet (id-kp-OCSPSigning, cRLSign) ; le mode paranoïaque passe par la porte pour que les contrôles soient le même code. Exempté par la spécification : un répondeur portant id-pkix-ocsp-nocheck n’est pas lui-même contrôlé en révocation (RFC 6960 section 4.2.2.2.1). Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.paranoidFidoMds|label": {
+    "en": "49e3f63a1962f092",
+    "text": "Paranoïaque : le signataire du BLOB du FIDO Metadata Service"
+  },
+  "pki.paranoidFidoMds|description": {
+    "en": "03950106a2822b70",
+    "text": "Cas d’usage `fido-mds` : le signataire d’un BLOB FIDO MDS3 importé. Déjà complet ; le mode paranoïaque passe par la porte pour que les contrôles soient le même code. Le contournement audité overrideSignature de l’administrateur est inchangé. Ancres : risk.mdsTrustAnchors, la racine GlobalSign Root R3, le magasin de confiance des signataires. Désactivée, ce cas d’usage seul se comporte comme avant #1360, tandis que toutes les autres lignes et le réglage principal restent intacts ; désactivée en mode produit, elle est journalisée une fois (STS-PKI-0239) et affichée en rouge sur /admin/pki/trust."
+  },
+  "pki.signerTrustAnchorsFile|label": {
+    "en": "9d4fabbc6c6918f1",
+    "text": "Magasin de confiance des signataires : un fichier PEM d’ancres et d’intermédiaires"
+  },
+  "pki.signerTrustAnchorsFile|description": {
+    "en": "32ac16c13b12ea05",
+    "text": "Un bundle PEM chargé dans le magasin de confiance des signataires du domaine PAR DÉFAUT au démarrage du processus : les autorités de certification, et les intermédiaires placés sous elles, auxquelles le certificat de signature, de chiffrement ou d’attestation d’un tiers peut remonter lorsqu’il n’est pas celui de ce service (common/signer_truststore.ts). Chaque bloc passe par la règle d’admission : une AC auto-signée est une ancre, toute autre AC un intermédiaire, et un certificat terminal est refusé nommément. Nommé mais illisible, ou sans aucun certificat, c’est FATAL (STS-PKI-0237), comme pour tls.trustAnchorsFile. Les ancres ajoutées en cours d’exécution par /admin/pki/trust sont conservées dans l’annuaire à côté. Vide par défaut."
+  },
+  "pki.signerTrustAnchorsFile|restartReason": {
+    "en": "736eb74db8a5c84f",
+    "text": "le fichier est lu une seule fois, avant toute validation"
+  },
+  "pki.pinnedCertificateWarningDays|label": {
+    "en": "bc1a8dace838ed5f",
+    "text": "Avertissement d’expiration d’un certificat épinglé (jours)"
+  },
+  "pki.pinnedCertificateWarningDays|description": {
+    "en": "7ce39ba31b8cb865",
+    "text": "Combien de temps avant le notAfter d’un certificat épinglé l’inventaire de /admin/pki/trust le marque `expiring` et la tâche quotidienne pki.pins.audit le journalise (STS-PKI-0263, une fois par changement d’état). Un certificat épinglé est un certificat enregistré sur une entrée d’application, une relation, un réglage, le x5c d’une JWK, un bundle fédéré ou la table des ancres cloud ; un certificat expiré, révoqué ou dont la chaîne manque relève de STS-PKI-0264."
+  },
   "acme.enabled|label": {
     "en": "4e21aa7b001c95d8",
     "text": "Exécuter le serveur ACME"
@@ -3660,8 +3872,8 @@
     "text": "Taille maximale du corps de requête (octets)"
   },
   "acme.maxRequestBytes|description": {
-    "en": "1e75b2f8a06b2682",
-    "text": "Un JWS aplati plus grand est refusé (HTTP 413) avant d’être analysé. Une finalisation portant une CSR post-quantique est la plus grande requête légitime ; les signatures SLH-DSA font des dizaines de kilo-octets."
+    "en": "64645666fe96987c",
+    "text": "Une JWS aplatie plus grande que cette valeur est refusée (HTTP 413) avant d’être analysée. Une finalisation portant une CSR post-quantique est la plus grande requête légitime ; les signatures de SLH-DSA font des dizaines de kilo-octets."
   },
   "acme.attemptsPerIdentity|label": {
     "en": "0357e08b72306dd7",

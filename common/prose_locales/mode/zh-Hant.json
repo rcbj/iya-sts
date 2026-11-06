@@ -935,6 +935,18 @@
     "en": "68f6ce868376fbc6",
     "text": "在硬性失敗下「拒絕」（pki.revocationRequireDistributionPoint=auto，STS-PKI-0190）：由 CA 簽發——而非自我簽署——且未指名發布點也未指名回應程式的憑證永遠無法撤銷，因此其下被竊的金鑰在到期之前都有效。帶有 RFC 9608 noRevAvail 的憑證會被接受，因為其簽發者已宣告不存在撤銷資訊（第 4 節略過此檢查）。將此設定設為 off 會接受其餘的憑證，並發出警告。"
   },
+  "mode.requirements.paranoid-pki.what": {
+    "en": "36fb0f39456c2c43",
+    "text": "所依賴的每一張 X.509 憑證都透過同一道門接受完整檢查（路徑、有效期、撤銷、用途欄位）"
+  },
+  "mode.requirements.paranoid-pki.development": {
+    "en": "584ecba221940147",
+    "text": "關閉（pki.paranoid=auto）：每個使用情境的行為與 #1360 之前相同 — 已釘選的憑證不檢查有效期，對外部對等端、證明者或夥伴的簽署者不查詢撤銷，且只有在某處以手動方式要求時才檢查 extendedKeyUsage。將 pki.paranoid=on 即可在此演練這些檢查。"
+  },
+  "mode.requirements.paranoid-pki.product": {
+    "en": "1ddc02b9b0701d2a",
+    "text": "開啟（pki.paranoid=auto）：common/certificate_trust.ts 要求每一張憑證 — 無論是任一方向的 TLS 交握、簽章之下、作為加密收件者，或在證明中 — 都必須具備通往本服務已知信任錨（用戶端或簽署者信任存放區、領域的 CA、某個系列自己的設定）的路徑、此刻有效、未被撤銷，並符合其使用情境所要求的 basicConstraints、keyUsage 與 extendedKeyUsage；使用情境從未執行的檢查視為拒絕。每個使用情境有一列 pki.paranoid<UseCase>，關閉時會恢復該使用情境先前的行為，並在 /admin/pki/trust 上以紅色顯示（STS-PKI-0239）。"
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "以相互 TLS 證明的 GNAP 金鑰，是受信任授權單位簽發給用戶端的憑證"

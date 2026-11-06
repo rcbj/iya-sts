@@ -1349,6 +1349,13 @@ const SECTIONS = [
                '2026-09-16.' },
       // Beside the certificate it configures, and UNGROUPED: a `TLS` heading
       // over `TLS / mutual TLS` would say the label twice.
+      // #1360: beside the PKI page and the client truststore it links to.
+      { path: '/admin/pki/trust', label: 'PKI trust',
+        blurb: 'What this realm relies on in <strong>somebody else\'s ' +
+               'certificates</strong>: paranoid PKI mode and every use case ' +
+               'it holds to the full checks, the signer truststore, and an ' +
+               'inventory of every pinned certificate with its validity and ' +
+               'chain status.' },
       { path: '/admin/tls/trust', label: 'Client-certificate truststore',
         blurb: 'Every anchor the main port verifies a client ' +
                'certificate against (LDAPS 636 asks for none) — which, since ' +

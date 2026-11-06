@@ -921,6 +921,10 @@ const ACTIONS = [
   // every truststore change is one of these.)
   { action: 'admin.truststore.change', category: 'admin',
     label: 'A client-certificate trust anchor was added or removed' },
+  // #1360. A signer anchor decides whose signature this realm believes, and a
+  // paranoid row decides what it asks of a certificate, so both are recorded.
+  { action: 'admin.pki.trust.change', category: 'admin',
+    label: 'The signer truststore or a paranoid PKI setting was changed' },
 
   // STORED KERBEROS KEYS (2026-09-12). A person's keys DERIVED from a password
   // that was just set or verified is an `authentication` row, for the portal

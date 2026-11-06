@@ -935,6 +935,18 @@
     "en": "68f6ce868376fbc6",
     "text": "RECHAZADO con hard-fail (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190): un certificado emitido por una CA — no autofirmado — que no nombra ningún punto de distribución ni ningún respondedor nunca puede revocarse, así que una clave robada bajo él es válida hasta que caduque. Uno que lleva noRevAvail de RFC 9608 se acepta, porque su emisor declaró que no existe información de revocación (la sección 4 omite la comprobación). Poner el ajuste en off acepta el resto, con una advertencia."
   },
+  "mode.requirements.paranoid-pki.what": {
+    "en": "36fb0f39456c2c43",
+    "text": "Todo certificado X.509 en el que se confía se somete a las comprobaciones completas (ruta, validez, revocación, campos de uso) a través de una sola puerta"
+  },
+  "mode.requirements.paranoid-pki.development": {
+    "en": "584ecba221940147",
+    "text": "DESACTIVADO (pki.paranoid=auto): cada caso de uso se comporta como antes de #1360 — un certificado fijado no se comprueba en su validez, no se consulta la revocación para un par saliente, un atestador o el firmante de un socio, y extendedKeyUsage se pide solo donde un sitio lo pide a mano. Establezca pki.paranoid=on para ejercitar aquí las comprobaciones."
+  },
+  "mode.requirements.paranoid-pki.product": {
+    "en": "1ddc02b9b0701d2a",
+    "text": "ACTIVADO (pki.paranoid=auto): common/certificate_trust.ts somete todo certificado — en un protocolo de enlace TLS en cualquiera de los dos sentidos, bajo una firma, como destinatario de cifrado, en una atestación — a una ruta hasta un ancla que este servicio conoce (el almacén de confianza de clientes o de firmantes, la CA del dominio, un ajuste propio de una familia), a la validez en este momento, a la revocación, y a los basicConstraints, keyUsage y extendedKeyUsage que pide su caso de uso; una comprobación que el caso de uso nunca hizo es un rechazo. Una fila pki.paranoid<UseCase> por caso de uso restablece el comportamiento anterior de ese caso de uso cuando está desactivada, y se dibuja en rojo en /admin/pki/trust (STS-PKI-0239)."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "Una clave GNAP probada por TLS mutuo es un certificado que una autoridad de confianza emitió al cliente"

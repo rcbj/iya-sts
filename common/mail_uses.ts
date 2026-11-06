@@ -911,6 +911,32 @@ class MailUses {
   // another node inside `mail.dedupWindowS` queues it once.
   // -------------------------------------------------------------------------
   /**
+   * Tells the realm's administrators that a certificate it relies on changed
+   * state (#1360). The audit calls this on a change only.
+   *
+   * @param facts - `{ changes, dedupKey }`
+   * @returns what the channel answered, or null when it could not send
+   */
+  pkiPinStatus(facts: Json): Json {
+    const { log, mail } = this.deps;
+    log.debug("Entering MailUses.pkiPinStatus().");
+    let out: Json = null;
+    try {
+      out = mail.send({
+        toAdministrators: true, template: 'pki-pin-status',
+        values: { changes: String(facts.changes || '') },
+        dedupKey: String(facts.dedupKey || ''),
+        via: 'the pinned certificate audit', actor: 'the service'
+      });
+    } catch (e) {
+      log.debug("Caught in MailUses.pkiPinStatus(): " +
+                ((e && e.message) || e));
+    }
+    log.debug("Leaving MailUses.pkiPinStatus().");
+    return out;
+  }
+
+  /**
    * Mails a person a started post-login activity's reminder to sign in.
    *
    * @param username - the person
@@ -1168,5 +1194,6 @@ export = {
   addressChanged: slot.forward('addressChanged'),
   accessRequested: slot.forward('accessRequested'),
   authzenAccessRequested: slot.forward('authzenAccessRequested'),
-  postLoginReminder: slot.forward('postLoginReminder')
+  postLoginReminder: slot.forward('postLoginReminder'),
+  pkiPinStatus: slot.forward('pkiPinStatus')
 };

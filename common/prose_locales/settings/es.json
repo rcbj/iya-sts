@@ -3623,6 +3623,218 @@
     "en": "f292a8cf26b697f2",
     "text": "Cuántos certificados emitidos por ACME, EST o SCEP puede llevar a la vez una entrada de persona o de aplicación. Un certificado caducado se elimina de la entrada antes de contar; por encima, una solicitud se rechaza (STS-ENROLL-0040) en lugar de olvidar un certificado anterior, porque un certificado que alguien sigue usando no debe desaparecer de la entrada que dice a quién pertenece."
   },
+  "pki.paranoid|label": {
+    "en": "69d9666085a31d95",
+    "text": "PKI paranoico"
+  },
+  "pki.paranoid|description": {
+    "en": "168070ad5991fba4",
+    "text": "Modo PKI paranoico (#1360): indica si todo certificado X.509 en el que confía este servicio — en un protocolo de enlace TLS en cualquiera de los dos sentidos, bajo una firma, como destinatario de cifrado, en una atestación, en un mensaje CMS — se somete al conjunto completo de comprobaciones a través de la única puerta de validación (common/certificate_trust.ts): una ruta hasta un ancla que este servicio conoce, la validez en este momento, la revocación, y los basicConstraints, keyUsage y extendedKeyUsage que pide su caso de uso, de modo que una comprobación que el caso de uso nunca hizo cuenta como un rechazo. **`auto` está activado en modo de producto y desactivado en desarrollo** (mode.enforcesParanoidPki()); `on` y `off` lo fuerzan en cualquiera de los dos modos. Mientras está en vigor se consulta cada fila `pki.paranoid<UseCase>` de abajo; mientras no lo está, cada caso de uso se comporta exactamente como antes de #1360. Si el maestro se fuerza a desactivado en producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust; nada rechaza la escritura."
+  },
+  "pki.paranoidTlsClient|label": {
+    "en": "c0010750fb1dedac",
+    "text": "Paranoico: un certificado de cliente en un protocolo de enlace TLS"
+  },
+  "pki.paranoidTlsClient|description": {
+    "en": "e6a7e7e97a2f4251",
+    "text": "Caso de uso `tls-client`: un certificado de cliente presentado al puerto principal, a un puerto de escucha personalizado, a LDAPS, al puerto de escucha del depurador, a los sockets gRPC de SPIFFE o al canal entre celdas, y todo consumidor de socket.authorized. Paranoico somete a TODOS los puertos de escucha a las reglas de ruta (no solo al puerto principal y a los personalizados), pide extendedKeyUsage clientAuth y keyUsage digitalSignature o keyAgreement a cada hoja, consulta la revocación en todos los puertos de escucha, arrastra un veredicto rebajado a través de la reanudación de TLS y FALLA CERRADO cuando la comprobación lanza una excepción. Anclas: el almacén de confianza de certificados de cliente y la Raíz del servicio. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidTlsClientSelfSigned|label": {
+    "en": "1fffd43ed19648a8",
+    "text": "Paranoico: un certificado de cliente TLS autofirmado que un cliente registró"
+  },
+  "pki.paranoidTlsClientSelfSigned|description": {
+    "en": "976e7f91b601714f",
+    "text": "Caso de uso `tls-client-self-signed`: RFC 8705 sección 2.2 self_signed_tls_client_auth y una clave GNAP probada con un certificado fijado (RFC 9635 sección 7.3.2). Ambas especificaciones definen el método como IGUALDAD de certificado, así que no se pide cadena (exento por la especificación); paranoico añade la ventana de validez, keyUsage digitalSignature o keyAgreement, y la revocación del registro. Es el único caso de uso en el que se acepta una hoja autofirmada en un protocolo de enlace TLS. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidOutboundTls|label": {
+    "en": "806774c88eae0cf1",
+    "text": "Paranoico: el certificado de servidor de una solicitud saliente"
+  },
+  "pki.paranoidOutboundTls|description": {
+    "en": "ad7a2574ae96644e",
+    "text": "Caso de uso `tls-server-outbound`: toda dirección que este servicio marca — canales secundarios de federación, push de SSF y GNAP, el aviso al PEP de XACML, el aprovisionamiento SCIM, el correo, la base de datos, el almacén de secretos, los SDK de nube, CRL y OCSP sobre https, LDAPS. Paranoico añade la revocación del certificado del par (primero el grapado OCSP, luego OCSP o CRL) condicionando el protocolo de enlace antes de que se escriba ningún cuerpo de solicitud, extendedKeyUsage serverAuth, las reglas de ruta y la comprobación de host de RFC 9525 en cada proceso, y el almacén de confianza de firmantes junto al archivo de CA de cada familia. Exento por la especificación: una obtención de CRL u OCSP sobre http simple no tiene certificado que comprobar (RFC 5280 sección 4.2.1.13). Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidJoseSigner|label": {
+    "en": "6712f80a7d8d0d37",
+    "text": "Paranoico: la cadena de certificados de un firmante JOSE"
+  },
+  "pki.paranoidJoseSigner|description": {
+    "en": "a361abe6b62ec518",
+    "text": "Caso de uso `jose-signer`: el x5c detrás de una aserción RFC 7523, private_key_jwt, un objeto de solicitud JAR, una declaración de software y el x5c de un JWK registrado. Paranoico completa una cadena registrada incompleta desde el almacén de confianza de firmantes antes de rechazarla, pide keyUsage digitalSignature a la hoja, y somete un x5c[0] autofirmado pegado en un JWK a la regla de la puerta de carga (ninguna hoja autofirmada suelta). Anclas: la CA del dominio, la raíz registrada, el almacén de confianza de firmantes. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidSamlSigner|label": {
+    "en": "f542d60aa4055a78",
+    "text": "Paranoico: el certificado de un firmante SAML"
+  },
+  "pki.paranoidSamlSigner|description": {
+    "en": "9185c29a838854a8",
+    "text": "Caso de uso `saml-signer`: el certificado detrás de una aserción RFC 7522, una AuthnRequest o LogoutRequest firmada de un proveedor de servicio, quien llama al artefacto SOAP y una firma de metadatos de SP. Paranoico añade validez en cada uso, una cadena hasta el almacén de confianza de firmantes cuando el certificado no es autofirmado, revocación, keyUsage digitalSignature, y RECHAZA metadatos de SP que no alcanzan ningún ancla (antes se aceptaban en el primer uso). Un certificado autofirmado registrado en la aplicación se acepta por especificación (SAML Metadata sección 2.4.1.1) y se lista en el inventario como autofirmado. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidFederationPartner|label": {
+    "en": "1153fde809c347ea",
+    "text": "Paranoico: el certificado de firma de un socio de federación"
+  },
+  "pki.paranoidFederationPartner|description": {
+    "en": "c7dd276f9a86e888",
+    "text": "Caso de uso `federation-partner`: la firma SAML o WS-Federation de un socio, el x5c de un JWK de socio y un firmante de cierre de sesión federado. Paranoico añade validez en cada uso, una cadena hasta el almacén de confianza de firmantes cuando el certificado no es autofirmado, revocación tanto en el cierre como en el inicio de sesión, y comprobaciones de campos en la puerta de registro. Un certificado autofirmado registrado en la relación se acepta por especificación, como el de un firmante SAML. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidWsSecurityToken|label": {
+    "en": "fdf207fb5b68e7c1",
+    "text": "Paranoico: un token X.509 de WS-Security"
+  },
+  "pki.paranoidWsSecurityToken|description": {
+    "en": "d1b001f7c3cf7dad",
+    "text": "Caso de uso `wss-x509-token`: el firmante del X.509 Token Profile de WS-Security de una solicitud WS-Trust. Paranoico exige que una hoja externa almacenada encadene al almacén de confianza de firmantes y toma el emisor de OCSP o CRL de la ruta del almacén de confianza, nunca solo del Authority Information Access de la propia hoja. Anclas: la CA del dominio, la hoja almacenada, el almacén de confianza de firmantes. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidJoseBareKey|label": {
+    "en": "ae8a99b03823519c",
+    "text": "Paranoico: un JWK suelto que lleva un x5c"
+  },
+  "pki.paranoidJoseBareKey|description": {
+    "en": "d55aaf11968d0119",
+    "text": "Caso de uso `jose-bare-key`: claves de entidad de OpenID Federation, claves de transmisor SSF, claves de proveedores de reclamaciones y claves `cert` de GNAP. Un JWK que LLEVA un x5c se valida como firmante JOSE bajo paranoico; un JWK suelto se deja como está, porque OpenID Federation 1.1 sección 3 define las claves de entidad como JWK sueltos (exento por la especificación cuando no hay x5c). Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidEncryptionRecipient|label": {
+    "en": "1fec5dc0c124d4d7",
+    "text": "Paranoico: el certificado de un destinatario de cifrado"
+  },
+  "pki.paranoidEncryptionRecipient|description": {
+    "en": "22e7d1dcaf21b830",
+    "text": "Caso de uso `encryption-recipient`: el certificado al que se cifra una aserción SAML y el x5c de un destinatario JWE. Paranoico añade validez, keyUsage keyEncipherment o keyAgreement y revocación, y nunca cifra para un certificado meramente OBSERVADO en una solicitud (el desarrollo lo hacía, antes de #1360, fuera de paranoico). Un certificado autofirmado registrado en la aplicación se acepta por especificación. Un JWK suelto sin x5c está exento (RFC 7517 sección 4.7 hace opcional x5c). Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidClientAttestation|label": {
+    "en": "f9781b19e7a5faa5",
+    "text": "Paranoico: una cadena de autenticación de cliente basada en atestación"
+  },
+  "pki.paranoidClientAttestation|description": {
+    "en": "3272afd18d05a5d0",
+    "text": "Caso de uso `client-attestation`: el certificado del atestador detrás de la autenticación de cliente basada en atestación de OAuth. Paranoico añade revocación y keyUsage digitalSignature en la hoja. Anclas: oauth2.clientAttestationTrustAnchors y el almacén de confianza de firmantes. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidWebauthnAttestation|label": {
+    "en": "56518cdbf25aba42",
+    "text": "Paranoico: una cadena de atestación WebAuthn"
+  },
+  "pki.paranoidWebauthnAttestation|description": {
+    "en": "a1da1a7091f590f6",
+    "text": "Caso de uso `webauthn-attestation`: la declaración de atestación de una passkey en los formatos packed, tpm, android-key, android-safetynet y apple. Paranoico hace explícitos, a través de la puerta, el extendedKeyUsage y el keyUsage de cada formato (el EKU de AIK de TPM 2.23.133.8.3 se exige para tpm); la revocación ya se pedía. La validez se evalúa en este momento, como antes — un certificado de atestación caducado deja la declaración sin confianza (rcbj, 2026-11-06). Anclas: webauthn.attestationTrustAnchors, las raíces del FIDO Metadata Service, el almacén de confianza de firmantes. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidDeviceAttestation|label": {
+    "en": "eb8ad90daa8e84e6",
+    "text": "Paranoico: una cadena de atestación de dispositivo"
+  },
+  "pki.paranoidDeviceAttestation|description": {
+    "en": "1e8781ffffcd5976",
+    "text": "Caso de uso `device-attestation`: atestación de claves de Android, Apple App Attest y atestación TPM de un dispositivo registrado. Paranoico añade OCSP o CRL para las cadenas de Apple y TPM donde la cadena nombra alguno, y el extendedKeyUsage que pide cada formato. Anclas: los ajustes devices.*TrustAnchors, las raíces incluidas, el almacén de confianza de firmantes. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeSvid|label": {
+    "en": "78e43611bf44d5cf",
+    "text": "Paranoico: un X509-SVID presentado a la SPIRE Server API o a la Broker API"
+  },
+  "pki.paranoidSpiffeSvid|description": {
+    "en": "9df64672b57d6dfa",
+    "text": "Caso de uso `spiffe-svid`: el X509-SVID que presenta quien llama a la SPIRE Server API o a la Broker API, y un SVID federado. Paranoico convierte el SHOULD de extendedKeyUsage de la sección 4.3 de la especificación X509-SVID en un MUST y comprueba los campos del certificado de autoridad de un paquete federado cuando se registra y cuando se usa. Exento por la especificación: la Workload API NO DEBE autenticar y no se toca, y la revocación de un SVID federado no se consulta porque la autoridad federada no publica nada que este servicio pueda marcar. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeAttestation|label": {
+    "en": "02cc79ee469c2d68",
+    "text": "Paranoico: el certificado de un atestador de nodos SPIFFE"
+  },
+  "pki.paranoidSpiffeAttestation|description": {
+    "en": "589e499a7857c323",
+    "text": "Caso de uso `spiffe-attestation`: los atestadores x509pop, TPM DevID, Azure IMDS, identidad de instancia de AWS y sigstore. Paranoico añade revocación donde la cadena nombra alguna, el keyUsage y extendedKeyUsage que pide cada atestador, la validez del certificado fijado de AWS, y exige que el intermedio AIA de Azure encadene antes de usarse. Exento por la especificación: sigstore evalúa la validez en el notBefore del certificado (la regla de la especificación del cliente Sigstore); los saltos de SCT y Rekor siguen siendo ajustes propios. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidPkinit|label": {
+    "en": "075d91f34c26d707",
+    "text": "Paranoico: un certificado de cliente PKINIT"
+  },
+  "pki.paranoidPkinit|description": {
+    "en": "4cd0d308a974fcbd",
+    "text": "Caso de uso `pkinit`: el certificado de cliente en un AS-REQ de RFC 4556. La comprobación ya era completa (ruta hasta las CA de identidad del dominio, validez con krb5.clockSkew, id-pkinit-KPClientAuth o el EKU de tarjeta inteligente de Microsoft, revocación); paranoico la convierte en una llamada de la puerta, de modo que es el mismo código que el de cualquier otro caso de uso. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidEnrollmentCredential|label": {
+    "en": "ce5c0d1996e12403",
+    "text": "Paranoico: un certificado presentado para inscribirse o renovar"
+  },
+  "pki.paranoidEnrollmentCredential|description": {
+    "en": "e581316f80e4f785",
+    "text": "Caso de uso `enrollment-credential`: el certificado de cliente que presenta una solicitud EST y el firmante de una renovación SCEP. Ya completo para EST; paranoico da la ventana de validez al firmante PKCSReq autofirmado de SCEP. Exento por la especificación: RFC 8894 sección 2.3 define al firmante PKCSReq como autofirmado, así que no se le pide cadena. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidVcKeyAttestation|label": {
+    "en": "c9da12bd29969033",
+    "text": "Paranoico: una cadena de atestación de clave OpenID4VCI"
+  },
+  "pki.paranoidVcKeyAttestation|description": {
+    "en": "65f64443cb54f4c6",
+    "text": "Caso de uso `vc-key-attestation`: el x5c de la atestación de clave de una cartera en el punto de conexión de credenciales de OpenID4VCI. Paranoico construye una ruta real con intermedios (antes, un solo salto), consulta la revocación y pide keyUsage digitalSignature a la hoja. Anclas: oidc4vci.keyAttestationTrustedCertificates y el almacén de confianza de firmantes. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidVcIssuer|label": {
+    "en": "bf59999c71087b0a",
+    "text": "Paranoico: el certificado de un emisor de credenciales o de un firmante de lista de estado"
+  },
+  "pki.paranoidVcIssuer|description": {
+    "en": "4497f64a995a4cbf",
+    "text": "Caso de uso `vc-issuer`: una cadena IACA-a-DS de un mdoc, un firmante de lista de estado CWT, un certificado de emisor de confianza de OpenID4VP y el firmante de una lista de estado ajena. Paranoico pide el EKU de firmante de documentos de ISO 18013-5 1.0.18013.5.1.2 y el perfil DS (keyUsage digitalSignature, una validez de DS dentro de la de su IACA), revocación para el firmante de la lista de estado, y validez y una cadena para un certificado de emisor de confianza que no es autofirmado. Un certificado de emisor de confianza configurado se acepta autofirmado por especificación, pidiéndole aún validez y revocación. Anclas: oid4vp.mdocTrustAnchors, oid4vp.trustedIssuerCertificates, el almacén de confianza de firmantes. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidCellPeer|label": {
+    "en": "29ff42feacbce3f9",
+    "text": "Paranoico: la otra celda en el canal entre celdas"
+  },
+  "pki.paranoidCellPeer|description": {
+    "en": "4dbdc1d9a7d0f4c4",
+    "text": "Caso de uso `cell-peer`: el certificado que presenta la otra celda en el canal entre celdas, en ambos sentidos. Paranoico añade revocación desde el registro, extendedKeyUsage clientAuth y serverAuth (la CA propia de este servicio emite ambos) y las reglas de ruta. Ancla: la Raíz del servicio. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidCaImport|label": {
+    "en": "db5c10402103e4d7",
+    "text": "Paranoico: una CA o un par de claves que importa un operador"
+  },
+  "pki.paranoidCaImport|description": {
+    "en": "d87040a5e24c74ae",
+    "text": "Caso de uso `ca-import`: la importación en /admin/pki de una CA Raíz o Emisora de un operador y de un par de claves fijado. Paranoico exige que una CA Emisora importada encadene a la Raíz del servicio y comprueba cA, keyCertSign, validez y pathLen; una hoja fijada se comprueba campo a campo. Una Raíz importada sigue siendo su propia ancla. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidAnchorAdmission|label": {
+    "en": "7d8bf2554b7ae476",
+    "text": "Paranoico: la admisión a un almacén de confianza"
+  },
+  "pki.paranoidAnchorAdmission|description": {
+    "en": "169bc8829426f512",
+    "text": "Caso de uso `anchor-admission`: lo que aceptan /admin/tls/trust, el almacén de confianza de firmantes, tls.trustAnchorsFile y pki.signerTrustAnchorsFile. Un ancla es una CA autofirmada dentro de su validez cuya autofirma se verifica (cA, y keyCertSign donde hay keyUsage); un intermedio es una CA que encadena a un ancla ya conservada; una hoja se rechaza en ambos almacenes de confianza — una hoja que se quiere fijar va en la entrada o relación que la usa. Antes de #1360 el almacén de confianza de clientes aceptaba cualquier cosa que OpenSSL pudiera analizar. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidRevocationSigner|label": {
+    "en": "05be41dc43e60403",
+    "text": "Paranoico: un respondedor OCSP o firmante de CRL"
+  },
+  "pki.paranoidRevocationSigner|description": {
+    "en": "02ce618736381ac9",
+    "text": "Caso de uso `revocation-signer`: el certificado delegado del respondedor OCSP y el firmante de CRL dentro de common/revocation_status.js. Ya completo (id-kp-OCSPSigning, cRLSign); paranoico consulta la puerta para que las comprobaciones sean el mismo código. Exento por la especificación: un respondedor que lleva id-pkix-ocsp-nocheck no se comprueba él mismo por revocación (RFC 6960 sección 4.2.2.2.1). Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.paranoidFidoMds|label": {
+    "en": "49e3f63a1962f092",
+    "text": "Paranoico: el firmante del BLOB del FIDO Metadata Service"
+  },
+  "pki.paranoidFidoMds|description": {
+    "en": "03950106a2822b70",
+    "text": "Caso de uso `fido-mds`: el firmante de un BLOB FIDO MDS3 importado. Ya completo; paranoico consulta la puerta para que las comprobaciones sean el mismo código. La omisión auditada overrideSignature del administrador no cambia. Anclas: risk.mdsTrustAnchors, la GlobalSign Root R3, el almacén de confianza de firmantes. Con la fila desactivada, este caso de uso por sí solo se comporta como antes de #1360, sin tocar las demás filas ni el maestro; desactivada en modo de producto, se registra una vez (STS-PKI-0239) y se dibuja en rojo en /admin/pki/trust."
+  },
+  "pki.signerTrustAnchorsFile|label": {
+    "en": "9d4fabbc6c6918f1",
+    "text": "Almacén de confianza de firmantes: un archivo PEM de anclas e intermedios"
+  },
+  "pki.signerTrustAnchorsFile|description": {
+    "en": "32ac16c13b12ea05",
+    "text": "Un paquete PEM que se carga en el almacén de confianza de firmantes del dominio PREDETERMINADO al iniciar el proceso: las autoridades de certificación, y los intermedios bajo ellas, a las que puede encadenar el certificado de firma, cifrado o atestación de un tercero cuando no es de este servicio (common/signer_truststore.ts). Cada bloque pasa por la regla de admisión: una CA autofirmada es un ancla, otra CA un intermedio, y una hoja se rechaza por su nombre. Si se nombra y no se puede leer, o no contiene ningún certificado, es FATAL (STS-PKI-0237), como tls.trustAnchorsFile. Las anclas añadidas en tiempo de ejecución mediante /admin/pki/trust se guardan en el directorio junto a ellas. Vacío por defecto."
+  },
+  "pki.signerTrustAnchorsFile|restartReason": {
+    "en": "736eb74db8a5c84f",
+    "text": "el archivo se lee una sola vez, antes de que nada valide"
+  },
+  "pki.pinnedCertificateWarningDays|label": {
+    "en": "bc1a8dace838ed5f",
+    "text": "Aviso de caducidad de certificado fijado (días)"
+  },
+  "pki.pinnedCertificateWarningDays|description": {
+    "en": "7ce39ba31b8cb865",
+    "text": "Con cuánta antelación al notAfter de un certificado fijado el inventario de /admin/pki/trust lo marca como `expiring` y el trabajo diario pki.pins.audit lo registra (STS-PKI-0263, una vez por cambio de estado). Un certificado fijado es uno registrado en una entrada de aplicación, una relación, un ajuste, el x5c de un JWK, un paquete federado o la tabla de anclas de nube; uno caducado, revocado o sin cadena es STS-PKI-0264."
+  },
   "acme.enabled|label": {
     "en": "4e21aa7b001c95d8",
     "text": "Ejecutar el servidor ACME"
@@ -3660,8 +3872,8 @@
     "text": "Tamaño máximo del cuerpo de la solicitud (bytes)"
   },
   "acme.maxRequestBytes|description": {
-    "en": "1e75b2f8a06b2682",
-    "text": "Un JWS aplanado mayor que esto se rechaza (HTTP 413) antes de analizarse. Un finalize con una CSR poscuántica es la solicitud legítima más grande; las firmas de SLH-DSA ocupan decenas de kilobytes."
+    "en": "64645666fe96987c",
+    "text": "Se rechaza (HTTP 413) un JWS aplanado mayor que esto antes de analizarlo. Un finalize que lleva una CSR poscuántica es la solicitud legítima más grande; las firmas de SLH-DSA son de decenas de kilobytes."
   },
   "acme.attemptsPerIdentity|label": {
     "en": "0357e08b72306dd7",

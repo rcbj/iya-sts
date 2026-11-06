@@ -935,6 +935,18 @@
     "en": "68f6ce868376fbc6",
     "text": "VÄGRAS under hard-fail (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190): ett certifikat utfärdat av en CA — inte självsignerat — som inte namnger någon distributionspunkt och ingen responder kan aldrig återkallas, så en stulen nyckel under det är giltig tills det löper ut. Ett som bär RFC 9608 noRevAvail accepteras, eftersom dess utfärdare deklarerade att ingen återkallelseinformation finns (avsnitt 4 hoppar över kontrollen). Att sätta inställningen till av accepterar resten, med en varning."
   },
+  "mode.requirements.paranoid-pki.what": {
+    "en": "36fb0f39456c2c43",
+    "text": "Varje X.509-certifikat som förlitas på underkastas de fulla kontrollerna (kedja, giltighet, återkallelse, användningsfält) genom en enda dörr"
+  },
+  "mode.requirements.paranoid-pki.development": {
+    "en": "584ecba221940147",
+    "text": "AV (pki.paranoid=auto): varje användningsfall beter sig som före #1360 — ett fäst certifikat giltighetskontrolleras inte, återkallelse konsulteras inte för en utgående motpart, en intygsgivare eller en parts signerare, och extendedKeyUsage frågas bara där ett ställe frågar efter den för hand. Sätt pki.paranoid=on för att pröva kontrollerna här."
+  },
+  "mode.requirements.paranoid-pki.product": {
+    "en": "1ddc02b9b0701d2a",
+    "text": "PÅ (pki.paranoid=auto): common/certificate_trust.ts underkastar varje certifikat — vid en TLS-handskakning i någondera riktningen, under en signatur, som krypteringsmottagare, i ett intyg — en kedja till ett ankare som den här tjänsten fått veta om (förtroendelagret för klienter eller signerare, sfärens CA, en familjs egen inställning), giltighet vid nu, återkallelse, samt de basicConstraints, keyUsage och extendedKeyUsage som dess användningsfall frågar efter; en kontroll som användningsfallet aldrig körde är ett avslag. En pki.paranoid<UseCase>-rad per användningsfall återställer det användningsfallets tidigare beteende när den är av, och ritas röd på /admin/pki/trust (STS-PKI-0239)."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "En GNAP-nyckel bevisad med ömsesidig TLS är ett certifikat som en betrodd utfärdare utfärdat till klienten"

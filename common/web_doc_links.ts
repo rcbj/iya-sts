@@ -139,6 +139,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/passkey-report':
     'admin-console.html#passkeys--adminpasskey-report',
   '/admin/pki': 'pki.html',
+  '/admin/pki/trust': 'signer-truststore.html',
   '/admin/policies': 'policies.html',
   '/admin/rbac': 'admin-console.html#who-may-use-the-console',
   '/admin/realms': 'trust-realms.html',

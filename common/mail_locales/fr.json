@@ -75,6 +75,11 @@
       "text": "Un accès d’urgence a été accordé immédiatement, sans approbateur, à une demande qui vous désigne, {{username}}, comme l’un de ses approbateurs : {{subject}} peut {{action}} {{resource}} dans l’application {{application}}, par l’intermédiaire de {{requester}}, pour une courte durée.\n\nLa justification fournie : {{justification}}\n\nLa politique autorise l’accès d’urgence à cette ressource. Examinez-le et révoquez-le s’il n’était pas justifié :\n\n{{link}}\n",
       "html": "<p>Un accès d’urgence a été accordé immédiatement, sans approbateur, à une demande qui vous désigne, <strong>{{username}}</strong>, comme l’un de ses approbateurs : <strong>{{subject}}</strong> peut <strong>{{action}}</strong> <strong>{{resource}}</strong> dans l’application <strong>{{application}}</strong>, par l’intermédiaire de {{requester}}, pour une courte durée.</p><p>La justification fournie : {{justification}}</p><p>La politique autorise l’accès d’urgence à cette ressource. <a href=\"{{link}}\">Examinez-le</a> et révoquez-le s’il n’était pas justifié.</p>"
     },
+    "pki-pin-status": {
+      "subject": "{{service}} : un certificat auquel ce domaine se fie a changé d’état",
+      "text": "L’audit quotidien des certificats auxquels ce domaine se fie a constaté ces changements :\n\n{{changes}}\n\nLa page Confiance PKI de la console d’administration les montre tous. Vous recevez ce message parce que vous détenez Admin Write dans ce domaine.\n",
+      "html": "<p>L’audit quotidien des certificats auxquels ce domaine se fie a constaté ces changements :</p><p>{{changes}}</p><p>La page Confiance PKI de la console d’administration les montre tous. Vous recevez ce message parce que vous détenez Admin Write dans ce domaine.</p>"
+    },
     "administrator-alert": {
       "subject": "{{service}} : {{act}} pour {{username}}",
       "text": "Ce service, et non une personne, a effectué une action sur le compte {{username}} le {{when}} : {{act}}.\n\n{{why}}\n\nVous recevez ce message parce que vous détenez Admin Write dans ce domaine.\n",

@@ -375,6 +375,14 @@
     "en": "98370fb755b4ba95",
     "text": "Dans un service déployé en cellules, supprime de la base de données du niveau global les pierres tombales des lignes créées terminées plus anciennes que persistence.mintedRetention, par les mêmes lots ; son exécution est réclamée dans le niveau global, de sorte qu’une seule cellule exécute chaque créneau. Désactivé dans un service à une seule base de données, où l’autre balayage le couvre."
   },
+  "sched.jobs.pki.pins.audit.title": {
+    "en": "3ccb80617905a1db",
+    "text": "Audit des certificats épinglés"
+  },
+  "sched.jobs.pki.pins.audit.describe": {
+    "en": "e5cc243756f71f7e",
+    "text": "Soumet chaque certificat épinglé et chaque entrée du magasin de confiance des signataires du domaine aux contrôles du mode PKI paranoïaque, conserve le résultat que dessine /admin/pki/trust, et journalise et envoie par courriel ce qui a changé."
+  },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",
     "text": "Courrier des activités après connexion"

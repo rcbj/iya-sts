@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5244** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5298** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -57,8 +57,8 @@ is an ordinary outcome.
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 156
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 214
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 164
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 252
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 82
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 152
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 55
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 57
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 52
@@ -91,8 +91,8 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 258
-* [Management API (`STS-API`)](#sts-api) — 90
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 263
+* [Management API (`STS-API`)](#sts-api) — 91
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
@@ -761,6 +761,14 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0165` | An EdDSA signature through helpers.signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.eddsaSigning is off — a client registered for EdDSA while it was on, or a setting naming EdDSA — and was refused rather than made with a key the realm does not publish (#1292). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
 | `STS-KEYS-0166` | A signature through helpers.signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.signingAlgorithms does not list its algorithm — a client registered for it before the list was set, or a setting naming it — and was refused (#1348). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
 | `STS-KEYS-0167` | keys.signingAlgorithms was not changed: a list that is not empty must include RS256, which OpenID Connect Discovery requires and which is the default for ID Tokens and access tokens (#1348). | none: an operator's write, refused with its reason |
+| `STS-KEYS-0168` | A certificate is past its notAfter, under a use case that asks its validity. | none — recorded on the refusal the use case makes (#1360) |
+| `STS-KEYS-0169` | A certificate is before its notBefore, under a use case that asks its validity. | none — recorded on the refusal the use case makes (#1360) |
+| `STS-KEYS-0170` | A certificate's basicConstraints does not fit the role it was asked to play: not a CA where one is required, or a CA used as an end entity. | none — recorded on the refusal the use case makes (#1360) |
+| `STS-KEYS-0171` | A certificate's keyUsage does not permit what its use case asks. | none — recorded on the refusal the use case makes (#1360) |
+| `STS-KEYS-0172` | A certificate's extendedKeyUsage does not name what its use case asks, or is absent where the use case's specification requires it. | none — recorded on the refusal the use case makes (#1360) |
+| `STS-KEYS-0173` | A certificate is signed with a broken hash (MD2, MD5, or SHA-1 where it is not allowed). | none — recorded on the refusal the use case makes (#1360) |
+| `STS-KEYS-0174` | A certificate holds a key too weak to rely on: a short or ROCA-affected RSA modulus, or a curve this service does not rely on. | none — recorded on the refusal the use case makes (#1360) |
+| `STS-KEYS-0175` | A certificate carries a critical extension nothing here reads. | none — recorded on the refusal the use case makes (#1360) |
 
 ## STS-PKI
 
@@ -984,6 +992,44 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0225` | A signing key pair was asked for with a label that is not a short name (at most 40 letters, digits, spaces, dots, dashes, underscores and brackets) (#1290). | the caller's refusal: /account-api/signing-key HTTP 400, a console refusal banner, /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0226` | A realm's signing keys were made before its certificate authority branch, and the branch could not be built or adopted when they were to be certified, so they stay uncertified and a token whose use case asks for x5c or x5u carries none. | none — the keys still sign; the header is left off |
 | `STS-PKI-0227` | A token whose use case asks for x5c or x5u was signed with a key this realm has not certified, after the issuer read the store and asked for the certificate, so it carries no x5c or x5u (an OpenID4VCI credential a wallet cannot verify offline). | none — the token is issued without the header |
+| `STS-PKI-0228` | A certificate offered to a truststore as an anchor is not self-signed, or its self-signature does not verify. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0229` | A certificate offered to a truststore is not a certificate authority where the role asks one. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0230` | A CA offered to a truststore states a keyUsage without keyCertSign. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0231` | A certificate offered to a truststore is outside its validity window. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0232` | A certificate offered to a truststore holds a weak key or signature, or a critical extension nothing reads. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0233` | An intermediate offered to a truststore chains to no anchor held there. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0234` | A leaf was offered to a truststore: a leaf to pin goes on the entry or relationship that uses it. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0235` | The signer truststore has no directory: the slot was offered part of what it needs, or nothing filled it in this process. | none (logged), and an add is refused |
+| `STS-PKI-0236` | The signer truststore is full: 32 anchors or 64 intermediates per realm, or the directory itself. | the caller's refusal: /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0237` | pki.signerTrustAnchorsFile names a file that cannot be read or holds no certificate; the process does not start. | none — the process exits |
+| `STS-PKI-0238` | What was handed to the validation door or a truststore is not an X.509 certificate. | the use case's refusal, or /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0239` | A paranoid PKI row, or the master, is off in product mode. Logged once per process per setting; nothing refuses it, and /admin/pki/trust draws it red. | none (logged) |
+| `STS-PKI-0240` | Refused under paranoid PKI mode for tls-client: a client certificate at a TLS handshake; nothing established what the use case needs, or the use case itself refused (a self- signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0241` | Refused under paranoid PKI mode for tls-client-self-signed: a registered self-signed client certificate; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0242` | Refused under paranoid PKI mode for tls-server-outbound: the server certificate of an outbound request; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0243` | Refused under paranoid PKI mode for jose-signer: a JOSE signer's chain; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0244` | Refused under paranoid PKI mode for saml-signer: a SAML signer's certificate; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0245` | Refused under paranoid PKI mode for federation-partner: a federation partner's certificate; nothing established what the use case needs, or the use case itself refused (a self- signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0246` | Refused under paranoid PKI mode for wss-x509-token: a WS- Security X.509 token; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0247` | Refused under paranoid PKI mode for jose-bare-key: a JWK carrying an x5c; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0248` | Refused under paranoid PKI mode for encryption-recipient: an encryption recipient's certificate; nothing established what the use case needs, or the use case itself refused (a self- signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0249` | Refused under paranoid PKI mode for client-attestation: an attestation-based client authentication chain; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0250` | Refused under paranoid PKI mode for webauthn-attestation: a WebAuthn attestation chain; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0251` | Refused under paranoid PKI mode for device-attestation: a device attestation chain; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0252` | Refused under paranoid PKI mode for spiffe-svid: an X509-SVID; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0253` | Refused under paranoid PKI mode for spiffe-attestation: a SPIFFE node attestor's certificate; nothing established what the use case needs, or the use case itself refused (a self- signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0254` | Refused under paranoid PKI mode for pkinit: a PKINIT client certificate; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0255` | Refused under paranoid PKI mode for enrollment-credential: an enrollment credential; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0256` | Refused under paranoid PKI mode for vc-key-attestation: an OpenID4VCI key attestation chain; nothing established what the use case needs, or the use case itself refused (a self- signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0257` | Refused under paranoid PKI mode for vc-issuer: a credential issuer's or status-list signer's certificate; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0258` | Refused under paranoid PKI mode for cell-peer: the other cell at the inter-cell channel; nothing established what the use case needs, or the use case itself refused (a self- signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0259` | Refused under paranoid PKI mode for ca-import: a CA or key pair an operator imports; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0260` | Refused under paranoid PKI mode for anchor-admission: admission to a truststore; nothing established what the use case needs, or the use case itself refused (a self-signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0261` | Refused under paranoid PKI mode for revocation-signer: an OCSP responder or CRL signer; nothing established what the use case needs, or the use case itself refused (a self- signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0262` | Refused under paranoid PKI mode for fido-mds: the FIDO Metadata Service BLOB signer; nothing established what the use case needs, or the use case itself refused (a self- signed leaf, an anchor source out of reach). | the use case's refusal (#1360) |
+| `STS-PKI-0263` | pki.pins.audit: a pinned certificate is expiring within pki.pinnedCertificateWarningDays. Logged once per change of state. | none (logged) |
+| `STS-PKI-0264` | pki.pins.audit: a pinned certificate or truststore entry is expired, revoked or chain-missing. Logged once per change of state. | none (logged) |
+| `STS-PKI-0265` | A pin source threw while listing its certificates, so the inventory is missing its rows. | none (logged) |
 
 ## STS-ENROLL
 
@@ -3800,6 +3846,8 @@ Raised from: tls/.
 | `STS-TLS-0053` | A TLS 1.2 session was resumed by session ticket and this node has no record of the server name it was made under (#507): the record aged out or was evicted, the ticket was sealed under the cluster's shared key by a node whose row has not replicated here yet, or the hello's name could not be read. The connection is closed, because a name nobody compared is not vouched for (RFC 6066 section 3). | logged; the connection is closed; the client's next connection is a full handshake |
 | `STS-TLS-0054` | GET /tls/sign-in started no session for a verified client certificate from an outside certificate authority that is not stored in userCertificate on any entry of the realm; an outside certificate names only the entry it is stored on, never its common name or subject (#1061). | HTTP 200, session.started false |
 | `STS-TLS-0055` | GET /tls/sign-in started no session for a verified client certificate from an outside certificate authority that is stored in userCertificate on more than one entry of the realm, so it names nobody (#1061). | HTTP 200, session.started false |
+| `STS-TLS-0056` | A stored client-truststore anchor is one the admission rule now refuses. It is kept, reported as unadmittable on /admin/tls/trust and logged once at restore; an operator removes it (#1360). | none (logged) |
+| `STS-TLS-0057` | A block of tls.trustAnchorsFile is one the admission rule refuses under paranoid PKI mode, and was left out of the truststore (#1360). | none (logged) |
 
 ## STS-VC
 
@@ -5392,6 +5440,11 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0907` | Setting or clearing the policy a group names of one kind was refused by the directory (#1235); the refusal carries the directory's own code. | HTTP 400 (API) or a refusal on the group's page |
 | `STS-ADMIN-0908` | set-pseudonyms was given a body that does not name exactly one of add, remove or cancelPending, or that names no person (#644). | HTTP 400 (API) or a refusal on the person's page |
 | `STS-ADMIN-0909` | set-pseudonyms named nobody in this realm, or the directory refused the value. The directory's own STS-LDAP code is recorded on its log (#644). | HTTP 400 (API) or a refusal on the person's page |
+| `STS-ADMIN-0910` | /admin-api/pki/trust was asked for an action it does not have (#1360). | HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0911` | A signer truststore add was refused whole: nothing in it was admitted. The refusal of each certificate is its own code (#1360). | HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0912` | A signer truststore remove named nothing this realm holds, or an entry that comes from pki.signerTrustAnchorsFile (#1360). | HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0913` | set-row named something that is not a paranoid PKI setting (#1360). | HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0914` | set-row was refused by the settings write path, or a use case an add named is not one this service has (#1360). | HTTP 400 with {ok:false, errors} |
 
 ## STS-API
 
@@ -5491,6 +5544,7 @@ Raised from: mgmt-api/.
 | `STS-API-0138` | A management API write that only a Security Administrator may make — a Directory → Policies policy saved, reset or acted on, a policy named on an application, group or person, the Security Administrator's role granted or revoked by any door, or the account of a person who holds it acted on — was asked with a token that does not carry admin:security or whose subject does not hold SECURITY_ADMIN. Admin Write does not reach these. | HTTP 403 |
 | `STS-API-0139` | An answer of an API this service publishes an OpenAPI document for (the management, account, sign-in or report API) did not match the model its operation declares for that status, so it was not sent and the caller was answered 500. A member no model declares, a value of the wrong type, a status or media type the operation does not declare, or an operation the document does not have. The log line names the operation, the status and where in the body; it is a defect in the model or in the handler, never in the request. | HTTP 500 |
 | `STS-API-0140` | A handler of an API this service publishes an OpenAPI document for threw and nothing caught it. The caller was answered 500 in JSON, the sentence a refused answer gets, rather than an HTML page. The log line names the path and the message once per distinct failure. | HTTP 500 |
+| `STS-API-0141` | An action of /admin-api/pki/trust threw rather than answering (#1360). | HTTP 500 with {ok:false, errors} |
 
 ## STS-PORTAL
 

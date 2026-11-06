@@ -375,6 +375,14 @@
     "en": "98370fb755b4ba95",
     "text": "En un servicio desplegado en celdas, elimina de la base de datos del nivel global las lápidas de filas acuñadas terminadas con más antigüedad que persistence.mintedRetention, en los mismos lotes; su ejecución se reclama en el nivel global, de modo que una sola celda ejecuta cada intervalo. Desactivado en un servicio con una sola base de datos, donde el otro barrido lo cubre."
   },
+  "sched.jobs.pki.pins.audit.title": {
+    "en": "3ccb80617905a1db",
+    "text": "Auditoría de certificados fijados"
+  },
+  "sched.jobs.pki.pins.audit.describe": {
+    "en": "e5cc243756f71f7e",
+    "text": "Somete cada certificado fijado y cada entrada del almacén de confianza de firmantes del dominio a las comprobaciones del modo PKI paranoico, conserva el resultado que dibuja /admin/pki/trust, y registra y envía por correo lo que cambió."
+  },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",
     "text": "Correo de actividades posteriores al inicio de sesión"

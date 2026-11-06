@@ -3623,6 +3623,218 @@
     "en": "f292a8cf26b697f2",
     "text": "一个个人或应用条目可同时携带多少个通过 ACME、EST 或 SCEP 签发的证书。计数之前会先从条目中删除已过期的证书；超出后请求会被拒绝（STS-ENROLL-0040），而不是遗忘较旧的证书，因为某人仍在使用的证书不能从说明其归属的条目中消失。"
   },
+  "pki.paranoid|label": {
+    "en": "69d9666085a31d95",
+    "text": "偏执 PKI 模式"
+  },
+  "pki.paranoid|description": {
+    "en": "168070ad5991fba4",
+    "text": "偏执 PKI 模式（#1360）：本服务所依赖的每一份 X.509 证书——无论是任一方向的 TLS 握手、签名之下、作为加密接收方、在证明中，还是在 CMS 消息中——是否都通过唯一的验证入口（common/certificate_trust.ts）接受完整检查：存在通往本服务已知锚点的路径、当前时间有效、未被吊销，以及其用例所要求的 basicConstraints、keyUsage 和 extendedKeyUsage；用例从未运行的检查视为拒绝。**`auto` 在产品模式下开启，在开发模式下关闭**（mode.enforcesParanoidPki()）；`on` 和 `off` 在任一模式下强制设定。生效期间，会参考下面每一个 `pki.paranoid<UseCase>` 行；不生效时，每个用例的行为与 #1360 之前完全相同。在产品模式下将总开关强制关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示；写入本身不会被拒绝。"
+  },
+  "pki.paranoidTlsClient|label": {
+    "en": "c0010750fb1dedac",
+    "text": "偏执：TLS 握手时的客户端证书"
+  },
+  "pki.paranoidTlsClient|description": {
+    "en": "e6a7e7e97a2f4251",
+    "text": "用例 `tls-client`：出示给主端口、自定义监听器、LDAPS、调试器监听器、SPIFFE 的 gRPC 套接字或单元间通道的客户端证书，以及 socket.authorized 的每一个使用者。偏执模式要求每个监听器（不只是主端口和自定义监听器）都遵守路径规则，对每个叶证书要求 extendedKeyUsage clientAuth 以及 keyUsage digitalSignature 或 keyAgreement，在每个监听器上查询吊销状态，在 TLS 恢复时延续已降级的结论，并在检查抛出异常时以拒绝（fail CLOSED）处理。锚点：客户端证书信任库和服务根证书。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidTlsClientSelfSigned|label": {
+    "en": "1fffd43ed19648a8",
+    "text": "偏执：客户端注册的自签名 TLS 客户端证书"
+  },
+  "pki.paranoidTlsClientSelfSigned|description": {
+    "en": "976e7f91b601714f",
+    "text": "用例 `tls-client-self-signed`：RFC 8705 第 2.2 节的 self_signed_tls_client_auth，以及由固定证书证明的 GNAP 密钥（RFC 9635 第 7.3.2 节）。两份规范都把该方法定义为证书相等，因此不要求证书链（规范豁免）；偏执模式增加有效期窗口、keyUsage digitalSignature 或 keyAgreement，以及登记簿中的吊销状态。这是 TLS 握手时唯一接受自签名叶证书的用例。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidOutboundTls|label": {
+    "en": "806774c88eae0cf1",
+    "text": "偏执：出站请求的服务器证书"
+  },
+  "pki.paranoidOutboundTls|description": {
+    "en": "ad7a2574ae96644e",
+    "text": "用例 `tls-server-outbound`：本服务拨出的每一个地址——联合后端通道、SSF 和 GNAP 推送、XACML PEP 提示、SCIM 供应、邮件、数据库、密钥存储、云 SDK、通过 https 的 CRL 和 OCSP、LDAPS。偏执模式增加对端证书的吊销检查（先 OCSP 装订，再 OCSP 或 CRL），在写入任何请求体之前对握手设卡，要求 extendedKeyUsage serverAuth，在每个进程中执行路径规则和 RFC 9525 主机检查，并在每个协议族的 CA 文件之外加入签名者信任库。规范豁免：通过明文 http 获取 CRL 或 OCSP 时没有证书可检查（RFC 5280 第 4.2.1.13 节）。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidJoseSigner|label": {
+    "en": "6712f80a7d8d0d37",
+    "text": "偏执：JOSE 签名者的证书链"
+  },
+  "pki.paranoidJoseSigner|description": {
+    "en": "a361abe6b62ec518",
+    "text": "用例 `jose-signer`：RFC 7523 断言、private_key_jwt、JAR 请求对象、软件声明以及已注册 JWK 的 x5c 背后的 x5c。偏执模式在拒绝不完整的已注册证书链之前，先用签名者信任库补全它，要求叶证书具备 keyUsage digitalSignature，并使粘贴进 JWK 的自签名 x5c[0] 遵守上传入口的规则（不允许单独的自签名叶证书）。锚点：领域的 CA、已注册的根证书、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidSamlSigner|label": {
+    "en": "f542d60aa4055a78",
+    "text": "偏执：SAML 签名者的证书"
+  },
+  "pki.paranoidSamlSigner|description": {
+    "en": "9185c29a838854a8",
+    "text": "用例 `saml-signer`：RFC 7522 断言、服务提供方已签名的 AuthnRequest 或 LogoutRequest、SOAP artifact 调用方以及 SP 元数据签名背后的证书。偏执模式增加每次使用时的有效期检查、证书不是自签名时通往签名者信任库的证书链、吊销检查和 keyUsage digitalSignature，并拒绝无法到达任何锚点的 SP 元数据（此前首次使用时即被接受）。注册在应用程序上的自签名证书按规范被接受（SAML Metadata 第 2.4.1.1 节），并在清单中列为自签名。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidFederationPartner|label": {
+    "en": "1153fde809c347ea",
+    "text": "偏执：联合合作伙伴的签名证书"
+  },
+  "pki.paranoidFederationPartner|description": {
+    "en": "c7dd276f9a86e888",
+    "text": "用例 `federation-partner`：合作伙伴的 SAML 或 WS-Federation 签名、合作伙伴 JWK 的 x5c 以及联合注销签名者。偏执模式增加每次使用时的有效期检查、证书不是自签名时通往签名者信任库的证书链、注销和登录同样适用的吊销检查，以及注册入口处的字段检查。注册在关系上的自签名证书按规范被接受，与 SAML 签名者的情形相同。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidWsSecurityToken|label": {
+    "en": "fdf207fb5b68e7c1",
+    "text": "偏执：WS-Security X.509 令牌"
+  },
+  "pki.paranoidWsSecurityToken|description": {
+    "en": "d1b001f7c3cf7dad",
+    "text": "用例 `wss-x509-token`：WS-Trust 请求的 WS-Security X.509 Token Profile 签名者。偏执模式要求已存储的外部叶证书必须链接到签名者信任库，并且 OCSP 或 CRL 的颁发者取自信任库的路径，绝不仅取自叶证书自身的 Authority Information Access。锚点：领域的 CA、已存储的叶证书、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidJoseBareKey|label": {
+    "en": "ae8a99b03823519c",
+    "text": "偏执：携带 x5c 的裸 JWK"
+  },
+  "pki.paranoidJoseBareKey|description": {
+    "en": "d55aaf11968d0119",
+    "text": "用例 `jose-bare-key`：OpenID Federation 实体密钥、SSF 发送方密钥、声明提供方密钥以及 GNAP `cert` 密钥。携带 x5c 的 JWK 在偏执模式下会被当作 JOSE 签名者来验证；裸 JWK 则不受影响，因为 OpenID Federation 1.1 第 3 节把实体密钥定义为裸 JWK（没有 x5c 时按规范豁免）。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidEncryptionRecipient|label": {
+    "en": "1fec5dc0c124d4d7",
+    "text": "偏执：加密接收方的证书"
+  },
+  "pki.paranoidEncryptionRecipient|description": {
+    "en": "22e7d1dcaf21b830",
+    "text": "用例 `encryption-recipient`：SAML 断言所加密到的证书以及 JWE 接收方的 x5c。偏执模式增加有效期、keyUsage keyEncipherment 或 keyAgreement 和吊销检查，并且绝不向仅仅在请求中观察到的证书加密（#1360 之前，开发模式在偏执模式之外会这样做）。注册在应用程序上的自签名证书按规范被接受。没有 x5c 的裸 JWK 被豁免（RFC 7517 第 4.7 节使 x5c 成为可选）。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidClientAttestation|label": {
+    "en": "f9781b19e7a5faa5",
+    "text": "偏执：基于证明的客户端认证证书链"
+  },
+  "pki.paranoidClientAttestation|description": {
+    "en": "3272afd18d05a5d0",
+    "text": "用例 `client-attestation`：OAuth 基于证明的客户端认证背后的证明方证书。偏执模式对叶证书增加吊销检查和 keyUsage digitalSignature。锚点：oauth2.clientAttestationTrustAnchors 和签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidWebauthnAttestation|label": {
+    "en": "56518cdbf25aba42",
+    "text": "偏执：WebAuthn 证明证书链"
+  },
+  "pki.paranoidWebauthnAttestation|description": {
+    "en": "a1da1a7091f590f6",
+    "text": "用例 `webauthn-attestation`：通行密钥的 packed、tpm、android-key、android-safetynet 和 apple 格式的证明声明。偏执模式通过入口使每种格式的 extendedKeyUsage 和 keyUsage 变得明确（tpm 要求 TPM AIK EKU 2.23.133.8.3）；吊销检查原本就已要求。有效期仍按当前时间评估——过期的证明证书会使该声明变为不受信任（rcbj，2026-11-06）。锚点：webauthn.attestationTrustAnchors、FIDO Metadata Service 根证书、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidDeviceAttestation|label": {
+    "en": "eb8ad90daa8e84e6",
+    "text": "偏执：设备证明证书链"
+  },
+  "pki.paranoidDeviceAttestation|description": {
+    "en": "1e8781ffffcd5976",
+    "text": "用例 `device-attestation`：已注册设备的 Android 密钥证明、Apple App Attest 和 TPM 证明。偏执模式在 Apple 和 TPM 证书链指明吊销来源时增加 OCSP 或 CRL 检查，并要求每种格式所要求的 extendedKeyUsage。锚点：devices.*TrustAnchors 设置、随附的根证书、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidSpiffeSvid|label": {
+    "en": "78e43611bf44d5cf",
+    "text": "偏执：出示给 SPIRE Server 或 Broker API 的 X509-SVID"
+  },
+  "pki.paranoidSpiffeSvid|description": {
+    "en": "9df64672b57d6dfa",
+    "text": "用例 `spiffe-svid`：SPIRE Server API 或 Broker API 的调用方所出示的 X509-SVID，以及联合的 SVID。偏执模式把 X509-SVID 规范第 4.3 节中关于 extendedKeyUsage 的 SHOULD 提升为 MUST，并在联合捆绑包的颁发机构证书注册时和使用时对其做字段检查。规范豁免：Workload API 规定 MUST NOT 认证，因此不受影响；联合 SVID 的吊销状态不被查询，因为联合颁发机构不发布本服务可以访问的任何内容。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidSpiffeAttestation|label": {
+    "en": "02cc79ee469c2d68",
+    "text": "偏执：SPIFFE 节点证明方的证书"
+  },
+  "pki.paranoidSpiffeAttestation|description": {
+    "en": "589e499a7857c323",
+    "text": "用例 `spiffe-attestation`：x509pop、TPM DevID、Azure IMDS、AWS 实例身份和 sigstore 证明方。偏执模式在证书链指明吊销来源时增加吊销检查，要求每个证明方所要求的 keyUsage 和 extendedKeyUsage，检查 AWS 固定证书的有效期，并要求 Azure AIA 中间证书在使用前先链接成功。规范豁免：sigstore 在证书的 notBefore 时间评估有效期（Sigstore 客户端规范的规则）；对 SCT 和 Rekor 的跳过仍是各自独立的设置。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidPkinit|label": {
+    "en": "075d91f34c26d707",
+    "text": "偏执：PKINIT 客户端证书"
+  },
+  "pki.paranoidPkinit|description": {
+    "en": "4cd0d308a974fcbd",
+    "text": "用例 `pkinit`：RFC 4556 AS-REQ 中的客户端证书。该检查原本就已完整（通往领域身份 CA 的路径、以 krb5.clockSkew 计的有效期、id-pkinit-KPClientAuth 或 Microsoft 智能卡 EKU、吊销）；偏执模式让它成为对入口的一次调用，因而与其他每个用例是同一份代码。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidEnrollmentCredential|label": {
+    "en": "ce5c0d1996e12403",
+    "text": "偏执：出示用于注册或续期的证书"
+  },
+  "pki.paranoidEnrollmentCredential|description": {
+    "en": "e581316f80e4f785",
+    "text": "用例 `enrollment-credential`：EST 请求出示的客户端证书以及 SCEP 续期的签名者。EST 原本就已完整；偏执模式为 SCEP 自签名的 PKCSReq 签名者加入有效期窗口。规范豁免：RFC 8894 第 2.3 节把 PKCSReq 签名者定义为自签名，因此不对它要求证书链。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidVcKeyAttestation|label": {
+    "en": "c9da12bd29969033",
+    "text": "偏执：OpenID4VCI 密钥证明证书链"
+  },
+  "pki.paranoidVcKeyAttestation|description": {
+    "en": "65f64443cb54f4c6",
+    "text": "用例 `vc-key-attestation`：钱包在 OpenID4VCI 凭证端点处的密钥证明的 x5c。偏执模式构建包含中间证书的真实路径（此前只有一跳），查询吊销状态，并要求叶证书具备 keyUsage digitalSignature。锚点：oidc4vci.keyAttestationTrustedCertificates 和签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidVcIssuer|label": {
+    "en": "bf59999c71087b0a",
+    "text": "偏执：凭证颁发者或状态列表签名者的证书"
+  },
+  "pki.paranoidVcIssuer|description": {
+    "en": "4497f64a995a4cbf",
+    "text": "用例 `vc-issuer`：mdoc 的 IACA 到 DS 的证书链、CWT 状态列表签名者、OpenID4VP 受信任颁发者证书以及外来状态列表的签名者。偏执模式要求 ISO 18013-5 文档签名者 EKU 1.0.18013.5.1.2 和 DS 配置文件（keyUsage digitalSignature，DS 的有效期位于其 IACA 的有效期之内），对状态列表签名者检查吊销，并对非自签名的受信任颁发者证书检查有效期和证书链。已配置的受信任颁发者证书按规范可以是自签名的，但仍要检查有效期和吊销。锚点：oid4vp.mdocTrustAnchors、oid4vp.trustedIssuerCertificates、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidCellPeer|label": {
+    "en": "29ff42feacbce3f9",
+    "text": "偏执：单元间通道上的另一个单元"
+  },
+  "pki.paranoidCellPeer|description": {
+    "en": "4dbdc1d9a7d0f4c4",
+    "text": "用例 `cell-peer`：另一个单元在单元间通道上出示的证书，双向均适用。偏执模式增加来自登记簿的吊销检查、extendedKeyUsage clientAuth 和 serverAuth（两者均由本服务自己的 CA 颁发）以及路径规则。锚点：服务根证书。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidCaImport|label": {
+    "en": "db5c10402103e4d7",
+    "text": "偏执：运维人员导入的 CA 或密钥对"
+  },
+  "pki.paranoidCaImport|description": {
+    "en": "d87040a5e24c74ae",
+    "text": "用例 `ca-import`：/admin/pki 对运维人员的根 CA 或颁发 CA 以及固定密钥对的导入。偏执模式要求导入的颁发 CA 必须链接到服务根证书，并检查 cA、keyCertSign、有效期和 pathLen；固定的叶证书会做字段检查。导入的根证书仍然是自我锚定的。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidAnchorAdmission|label": {
+    "en": "7d8bf2554b7ae476",
+    "text": "偏执：信任库的准入"
+  },
+  "pki.paranoidAnchorAdmission|description": {
+    "en": "169bc8829426f512",
+    "text": "用例 `anchor-admission`：/admin/tls/trust、签名者信任库、tls.trustAnchorsFile 和 pki.signerTrustAnchorsFile 所接受的内容。锚点是有效期内的自签名 CA，且其自签名可验证（cA，keyUsage 存在时还要有 keyCertSign）；中间证书是链接到已持有锚点的 CA；叶证书在两个信任库中都会被拒绝——要固定的叶证书应放在使用它的条目或关系上。#1360 之前，客户端信任库接受 OpenSSL 能解析的任何内容。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidRevocationSigner|label": {
+    "en": "05be41dc43e60403",
+    "text": "偏执：OCSP 响应方或 CRL 签名者"
+  },
+  "pki.paranoidRevocationSigner|description": {
+    "en": "02ce618736381ac9",
+    "text": "用例 `revocation-signer`：common/revocation_status.js 中的委托 OCSP 响应方证书和 CRL 签名者。原本就已完整（id-kp-OCSPSigning、cRLSign）；偏执模式改为经由入口检查，使这些检查成为同一份代码。规范豁免：携带 id-pkix-ocsp-nocheck 的响应方本身不检查吊销状态（RFC 6960 第 4.2.2.2.1 节）。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.paranoidFidoMds|label": {
+    "en": "49e3f63a1962f092",
+    "text": "偏执：FIDO Metadata Service BLOB 签名者"
+  },
+  "pki.paranoidFidoMds|description": {
+    "en": "03950106a2822b70",
+    "text": "用例 `fido-mds`：已导入的 FIDO MDS3 BLOB 的签名者。原本就已完整；偏执模式改为经由入口检查，使这些检查成为同一份代码。管理员经审计的 overrideSignature 绕过保持不变。锚点：risk.mdsTrustAnchors、GlobalSign Root R3、签名者信任库。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+  },
+  "pki.signerTrustAnchorsFile|label": {
+    "en": "9d4fabbc6c6918f1",
+    "text": "签名者信任库：包含锚点和中间证书的 PEM 文件"
+  },
+  "pki.signerTrustAnchorsFile|description": {
+    "en": "32ac16c13b12ea05",
+    "text": "进程启动时加载到默认领域签名者信任库中的 PEM 捆绑包：当第三方的签名、加密或证明证书不是本服务自己的证书时，它可以链接到的证书颁发机构及其下的中间证书（common/signer_truststore.ts）。每个块都要经过准入规则：自签名的 CA 是锚点，其他 CA 是中间证书，叶证书会被点名拒绝。如果指定了文件但无法读取，或其中没有证书，则为致命错误（STS-PKI-0237），与 tls.trustAnchorsFile 相同。在运行时通过 /admin/pki/trust 添加的锚点保存在其旁边的目录中。默认为空。"
+  },
+  "pki.signerTrustAnchorsFile|restartReason": {
+    "en": "736eb74db8a5c84f",
+    "text": "该文件只读取一次，在任何验证之前"
+  },
+  "pki.pinnedCertificateWarningDays|label": {
+    "en": "bc1a8dace838ed5f",
+    "text": "固定证书到期警告（天）"
+  },
+  "pki.pinnedCertificateWarningDays|description": {
+    "en": "7ce39ba31b8cb865",
+    "text": "在固定证书的 notAfter 之前多久，/admin/pki/trust 清单将其标记为 `expiring`，且每日的 pki.pins.audit 作业将其记入日志（STS-PKI-0263，每次状态变化一次）。固定证书是指注册在应用程序条目、关系、设置、JWK 的 x5c、联合捆绑包或云锚点表上的证书；已过期、已吊销或缺少证书链的证书为 STS-PKI-0264。"
+  },
   "acme.enabled|label": {
     "en": "4e21aa7b001c95d8",
     "text": "运行 ACME 服务器"
@@ -3660,7 +3872,7 @@
     "text": "最大请求体（字节）"
   },
   "acme.maxRequestBytes|description": {
-    "en": "1e75b2f8a06b2682",
+    "en": "64645666fe96987c",
     "text": "大于此值的扁平化 JWS 会在解析之前被拒绝（HTTP 413）。携带后量子 CSR 的 finalize 是最大的合法请求；SLH-DSA 的签名有数十千字节。"
   },
   "acme.attemptsPerIdentity|label": {

@@ -775,6 +775,14 @@
     "en": "bc458d477b4de7d9",
     "text": "Certifikatutfärdaren som den här sfären har"
   },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "Paranoid PKI-läge, signerarnas förtroendelager och vad som är fäst"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "Ändra signerarnas förtroendelager, en paranoid-rad eller kontrollera de fästa certifikaten igen"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "Bygg en hierarki, utfärda ett nyckelpar, skapa ett certifikat"

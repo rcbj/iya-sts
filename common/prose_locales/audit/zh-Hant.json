@@ -775,6 +775,10 @@
     "en": "feb59a61d26db396",
     "text": "用戶端憑證信任錨點被新增或移除"
   },
+  "audit.actions.admin.pki.trust.change.label": {
+    "en": "ab34b1a9778d5c8e",
+    "text": "簽署者信任存放區或某個偏執 PKI 設定已變更"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "某人的 Kerberos 金鑰由其密碼衍生"

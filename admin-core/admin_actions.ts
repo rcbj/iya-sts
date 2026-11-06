@@ -924,6 +924,11 @@ const SIGNALS_CONSOLE_ACTIONS = ['clear'];
 const TRUSTSTORE_ACTIONS = ['add', 'remove'];
 
 /**
+ * The actions `pkiTrustAction()` answers (#1360).
+ */
+const PKI_TRUST_ACTIONS = ['add', 'remove', 'recheck', 'set-row'];
+
+/**
  * The actions `spiffeEntriesAction()` answers.
  */
 const SPIFFE_ENTRY_ACTIONS = ['create', 'update', 'delete'];
@@ -10638,6 +10643,130 @@ class AdminActions {
   }
 
   /**
+   * Answers the controls on `/admin/pki/trust` (#1360). Resolves rather than
+   * returning: admission verifies a self-signature with the engine, and a
+   * recheck walks revocation.
+   *
+   * @param body - `{ action, certificates, kind, purposes, fingerprint,
+   *   setting, value }`
+   * @param context - `{ actor, via }`
+   * @returns a promise of the answer
+   */
+  async pkiTrustAction(body, context) {
+    const { log, auditLog, config } = this.deps;
+    log.debug("Entering AdminActions.pkiTrustAction().");
+    const asked = body || {};
+    const action = String(asked.action || '');
+    const actor = String((context || {}).actor || '');
+    const via = String((context || {}).via || 'console');
+    if (PKI_TRUST_ACTIONS.indexOf(action) < 0) {
+      log.debug("Leaving AdminActions.pkiTrustAction(). Unknown action.");
+      return this.refused('STS-ADMIN-0910', { ok: false, errors: [
+        'Unknown action "' + action + '". The four are: ' +
+        PKI_TRUST_ACTIONS.join(', ') + '.'] });
+    }
+    const trust = require('../common/certificate_trust');
+    const signers = require('../common/signer_truststore');
+    const realmId = realms.currentId();
+    const record = function (summary, detail) {
+      log.debug("Entering record().");
+      auditLog.audit({ action: 'admin.pki.trust.change', actor: actor,
+                       protocol: 'PKI', channel: 'http', target: realmId,
+                       summary: summary + ' through the ' + via,
+                       detail: Object.assign({ via: via }, detail) });
+      log.debug("Leaving record().");
+    };
+    if (action === 'add') {
+      const purposes = [].concat(asked.purposes || []).map(String);
+      const unknown = purposes.filter(function (one) {
+        return !trust.PURPOSES.some(function (row) {
+          return row.id === one;
+        });
+      });
+      if (unknown.length) {
+        log.debug("Leaving AdminActions.pkiTrustAction(). A bad use case.");
+        return this.refused('STS-ADMIN-0914', { ok: false, errors: [
+          'This service has no use case named ' + unknown.join(', ') + '.'] });
+      }
+      const raw = Array.isArray(asked.certificates)
+        ? asked.certificates.join('\n') : String(asked.certificates || '');
+      const result = await signers.add(realmId, raw, {
+        kind: asked.kind ? String(asked.kind) : '', purposes: purposes,
+        addedBy: actor });
+      const refusals = result.refused.map(function (one) {
+        return one.why;
+      });
+      if (!result.added.length && !result.duplicates) {
+        log.debug("Leaving AdminActions.pkiTrustAction(). add refused.");
+        return this.refused(errorCodes.codeOf(result) || 'STS-ADMIN-0911',
+                            { ok: false, errors: refusals });
+      }
+      if (result.added.length) {
+        record('The signer truststore was given ' + result.added.length +
+               ' certificate(s)', {
+          action: 'add',
+          fingerprints: result.added.map(function (one) {
+            return one.fingerprint256;
+          })
+        });
+      }
+      log.debug("Leaving AdminActions.pkiTrustAction(). added.");
+      return { ok: true, added: result.added, duplicates: result.duplicates,
+               refused: result.refused.map(function (one) {
+                 return { subject: one.subject, why: one.why };
+               }),
+               message: 'Added ' + result.added.length + ', ' +
+                 result.duplicates + ' already held' +
+                 (refusals.length ? '; refused: ' + refusals.join('; ') : '') +
+                 '.' };
+    }
+    if (action === 'remove') {
+      const gone = signers.remove(realmId, String(asked.fingerprint || ''));
+      if (!gone.removed) {
+        log.debug("Leaving AdminActions.pkiTrustAction(). remove refused.");
+        return this.refused('STS-ADMIN-0912',
+                            { ok: false, errors: [gone.why] });
+      }
+      record('A signer truststore entry was removed',
+             { action: 'remove', fingerprint: String(asked.fingerprint) });
+      log.debug("Leaving AdminActions.pkiTrustAction(). removed.");
+      return { ok: true, message: 'Removed.' };
+    }
+    if (action === 'recheck') {
+      const found = await trust.auditRealm(realmId);
+      log.debug("Leaving AdminActions.pkiTrustAction(). rechecked.");
+      return { ok: true, pins: found.pins, truststore: found.truststore,
+               changes: found.changes,
+               message: 'Rechecked ' + found.pins + ' pinned certificate(s) ' +
+                 'and ' + found.truststore + ' truststore entr' +
+                 (found.truststore === 1 ? 'y' : 'ies') + '; ' + found.changes +
+                 ' changed.' };
+    }
+    const setting = String(asked.setting || '');
+    if (setting !== 'pki.paranoid' && !trust.PURPOSES.some(function (row) {
+      return row.setting === setting;
+    })) {
+      log.debug("Leaving AdminActions.pkiTrustAction(). Not a paranoid row.");
+      return this.refused('STS-ADMIN-0913', { ok: false, errors: [
+        '"' + setting + '" is not a paranoid PKI setting.'] });
+    }
+    // THE ORDINARY WRITE: its checks, its persistence, and the write rule that
+    // logs a check turned off in product.
+    const written = config.setOverride(setting, asked.value);
+    if (!written.ok) {
+      log.debug("Leaving AdminActions.pkiTrustAction(). The write refused.");
+      return this.refusedBy('STS-ADMIN-0914', written);
+    }
+    record('The setting ' + setting + ' was changed',
+           { action: 'set-row', setting: setting,
+             value: String(asked.value) });
+    log.debug("Leaving AdminActions.pkiTrustAction(). set-row.");
+    return { ok: true, setting: setting,
+             message: setting + ' was changed.' +
+               this.overrideDurability([setting]) };
+  }
+
+  /**
    * Adds an anchor to the client-certificate truststore, or removes one; an add
    * is persisted where a store is installed, and the result says which.
    *
@@ -11985,6 +12114,8 @@ export = {
   setTruststore: slot.forward('setTruststore'),
   TRUSTSTORE_ACTIONS: TRUSTSTORE_ACTIONS,
   truststoreAction: slot.forward('truststoreAction'),
+  pkiTrustAction: slot.forward('pkiTrustAction'),
+  PKI_TRUST_ACTIONS: PKI_TRUST_ACTIONS,
   KERBEROS_PRINCIPAL_ACTIONS: KERBEROS_PRINCIPAL_ACTIONS,
   kerberosPrincipalsAction: slot.forward('kerberosPrincipalsAction'),
   KERBEROS_TRUST_ACTIONS: KERBEROS_TRUST_ACTIONS,

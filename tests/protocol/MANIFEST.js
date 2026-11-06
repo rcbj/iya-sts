@@ -1257,6 +1257,12 @@ const JOBS = [
   // Recount now queued on the scheduler. `local: true`: this repository's
   // console and management API.
   { file: 'sts_passkey_report.js',       browser: false },
+  // PARANOID PKI MODE (#1360). `local: true`: this repository's settings and
+  // console. The settings job writes the default realm's master for a moment
+  // to prove the one row a request can reach at the client truststore, which
+  // every listener reads, so it is `exclusive`.
+  { file: 'sts_paranoid_pki_settings.js', browser: false, exclusive: true },
+  { file: 'sts_paranoid_pki_console.js', browser: true },
   // DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123): the
   // console page's shell, the five operations in the document and the gate,
   // the view and its group chooser, the refusals (a missing group 0530),

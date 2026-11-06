@@ -775,6 +775,14 @@
     "en": "bc458d477b4de7d9",
     "text": "本领域持有的证书颁发机构"
   },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "偏执 PKI 模式、签名者信任库及已固定的证书"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "更改签名者信任库、某一偏执行，或重新检查固定证书"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "构建层次结构、签发密钥对、编写证书"

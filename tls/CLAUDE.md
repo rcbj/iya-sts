@@ -1331,6 +1331,24 @@ the layer, the pin and the product refusal, the last three in a child process, a
 the add and the remove as a REAL HANDSHAKE on a registered listener; `sts_admin_api_operations`
 and `sts_admin_console` drive both doors over HTTP with a CA they mint and remove.
 
+## THE ADMISSION RULE, UNDER PARANOID PKI MODE (#1360, 2026-11-06)
+
+Before #1360 this store took anything OpenSSL could parse, so a self-signed LEAF
+became an anchor for itself. With `anchor-admission` applying (the mode ASKED IN
+THE DEFAULT REALM, as `truststoreOpenToAnybody()` asks it, because these anchors are
+every listener's), `addAnchors()`'s strict path and the file's loader hold each
+block to `pki.anchorProblemSync()`. **The rule is the signer truststore's, and the
+synchronous door exists for this store**: `truststoreAction()` answers in the same
+tick, and the file is read at require. An intermediate is allowed too, since
+OpenSSL builds through one, and it may chain to the service Root.
+
+**A STORED ANCHOR THE RULE NOW REFUSES IS KEPT AND REPORTED** (`STS-TLS-0056`, the
+row's `unadmittable`), because taking a working deployment's anchor away silently
+is worse than an operator reading a red row. **A BLOCK OF THE FILE IT REFUSES IS
+LEFT OUT, NOT FATAL** (`STS-TLS-0057`): an expired CA in the file must not stop the
+service, and an anchor left out trusts less rather than more. `common/CLAUDE.md`
+(3dd) argues the mode.
+
 ## THE PROTOCOL POLICY, AND THE BIND ADDRESS
 
 **`protocolOptions()` is where `tls.minVersion`, `tls.ciphers` — and since #212

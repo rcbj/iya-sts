@@ -3623,6 +3623,218 @@
     "en": "f292a8cf26b697f2",
     "text": "Hur många certifikat utfärdade över ACME, EST eller SCEP som en person- eller applikationspost får bära samtidigt. Ett utgånget certifikat tas bort från posten innan detta räknas; därutöver avvisas en begäran (STS-ENROLL-0040) i stället för att ett äldre certifikat glöms, eftersom ett certifikat som någon fortfarande använder inte får försvinna från den post som säger vem det tillhör."
   },
+  "pki.paranoid|label": {
+    "en": "69d9666085a31d95",
+    "text": "Paranoid PKI-läge"
+  },
+  "pki.paranoid|description": {
+    "en": "168070ad5991fba4",
+    "text": "Paranoid PKI-läge (#1360): om varje X.509-certifikat som den här tjänsten förlitar sig på — vid en TLS-handskakning i någondera riktningen, under en signatur, som krypteringsmottagare, i ett intyg, i ett CMS-meddelande — underkastas den fulla uppsättningen kontroller genom den enda valideringsdörren (common/certificate_trust.ts): en kedja till ett ankare som den här tjänsten fått veta om, giltighet vid nu, återkallelse, samt de basicConstraints, keyUsage och extendedKeyUsage som dess användningsfall frågar efter, där en kontroll som användningsfallet aldrig körde räknas som ett avslag. **`auto` är på i produktionsläge och av i utvecklingsläge** (mode.enforcesParanoidPki()); `on` och `off` tvingar det i vilket läge som helst. Så länge det gäller beaktas varje `pki.paranoid<UseCase>`-rad nedan; när det inte gäller beter sig varje användningsfall exakt som före #1360. Tvingas huvudinställningen av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust; ingenting avvisar skrivningen."
+  },
+  "pki.paranoidTlsClient|label": {
+    "en": "c0010750fb1dedac",
+    "text": "Paranoid: ett klientcertifikat vid en TLS-handskakning"
+  },
+  "pki.paranoidTlsClient|description": {
+    "en": "e6a7e7e97a2f4251",
+    "text": "Användningsfall `tls-client`: ett klientcertifikat som visas upp för huvudporten, en anpassad lyssnare, LDAPS, felsökarens lyssnare, SPIFFE:s gRPC-uttag eller kanalen mellan celler, och varje konsument av socket.authorized. Paranoid underkastar VARJE lyssnare kedjereglerna (inte bara huvudporten och anpassade lyssnare), frågar efter extendedKeyUsage clientAuth och keyUsage digitalSignature eller keyAgreement hos varje lövcertifikat, konsulterar återkallelse på varje lyssnare, för en nedgraderad dom vidare över TLS-återupptagning och STÄNGER vid fel när kontrollen kastar. Ankare: förtroendelagret för klientcertifikat och tjänstens Root. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidTlsClientSelfSigned|label": {
+    "en": "1fffd43ed19648a8",
+    "text": "Paranoid: ett självsignerat TLS-klientcertifikat som en klient registrerat"
+  },
+  "pki.paranoidTlsClientSelfSigned|description": {
+    "en": "976e7f91b601714f",
+    "text": "Användningsfall `tls-client-self-signed`: RFC 8705 avsnitt 2.2 self_signed_tls_client_auth och en GNAP-nyckel bevisad med ett fäst certifikat (RFC 9635 avsnitt 7.3.2). Båda specifikationerna definierar metoden som certifikatsLIKHET, så ingen kedja efterfrågas (undantaget enligt specifikationen); paranoid lägger till giltighetsfönstret, keyUsage digitalSignature eller keyAgreement, och registrets återkallelse. Det enda användningsfall där ett självsignerat lövcertifikat godtas vid en TLS-handskakning. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidOutboundTls|label": {
+    "en": "806774c88eae0cf1",
+    "text": "Paranoid: serverns certifikat vid en utgående förfrågan"
+  },
+  "pki.paranoidOutboundTls|description": {
+    "en": "ad7a2574ae96644e",
+    "text": "Användningsfall `tls-server-outbound`: varje adress som den här tjänsten ringer upp — federationens bakkanaler, SSF- och GNAP-push, XACML PEP-knuffen, SCIM-provisionering, e-post, databasen, hemlighetslagret, molnens SDK:er, CRL och OCSP över https, LDAPS. Paranoid lägger till återkallelse av motpartens certifikat (OCSP-häftning först, därefter OCSP eller CRL) som grind på handskakningen innan någon förfrågans innehåll skrivs, extendedKeyUsage serverAuth, kedjereglerna och RFC 9525-värdkontrollen i varje process, samt förtroendelagret för signerare vid sidan av varje familjs CA-fil. Undantaget enligt specifikationen: en CRL- eller OCSP-hämtning över vanlig http har inget certifikat att kontrollera (RFC 5280 avsnitt 4.2.1.13). Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidJoseSigner|label": {
+    "en": "6712f80a7d8d0d37",
+    "text": "Paranoid: en JOSE-signerares certifikatkedja"
+  },
+  "pki.paranoidJoseSigner|description": {
+    "en": "a361abe6b62ec518",
+    "text": "Användningsfall `jose-signer`: x5c bakom ett RFC 7523-intyg, private_key_jwt, ett JAR-förfrågansobjekt, ett programvaruutlåtande och x5c i en registrerad JWK. Paranoid kompletterar en ofullständig registrerad kedja från förtroendelagret för signerare innan den avvisas, frågar efter keyUsage digitalSignature hos lövcertifikatet, och underkastar ett självsignerat x5c[0] inklistrat i en JWK uppladdningsdörrens regel (inget naket självsignerat lövcertifikat). Ankare: sfärens CA, den registrerade roten, förtroendelagret för signerare. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidSamlSigner|label": {
+    "en": "f542d60aa4055a78",
+    "text": "Paranoid: en SAML-signerares certifikat"
+  },
+  "pki.paranoidSamlSigner|description": {
+    "en": "9185c29a838854a8",
+    "text": "Användningsfall `saml-signer`: certifikatet bakom ett RFC 7522-intyg, en tjänsteleverantörs signerade AuthnRequest eller LogoutRequest, SOAP-artefaktanroparen och en signatur på SP-metadata. Paranoid lägger till giltighet vid varje användning, en kedja till förtroendelagret för signerare när certifikatet inte är självsignerat, återkallelse, keyUsage digitalSignature, och AVVISAR SP-metadata som inte når något ankare (tidigare godtagen vid första användning). Ett självsignerat certifikat registrerat på applikationen godtas enligt specifikationen (SAML Metadata avsnitt 2.4.1.1) och listas i inventariet som självsignerat. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidFederationPartner|label": {
+    "en": "1153fde809c347ea",
+    "text": "Paranoid: en federationspartners signeringscertifikat"
+  },
+  "pki.paranoidFederationPartner|description": {
+    "en": "c7dd276f9a86e888",
+    "text": "Användningsfall `federation-partner`: en parts SAML- eller WS-Federation-signatur, x5c i en parts JWK och en federerad utloggnings signerare. Paranoid lägger till giltighet vid varje användning, en kedja till förtroendelagret för signerare när certifikatet inte är självsignerat, återkallelse både vid utloggning och inloggning, samt fältkontroller vid registreringsdörren. Ett självsignerat certifikat registrerat på relationen godtas enligt specifikationen, liksom en SAML-signerares. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidWsSecurityToken|label": {
+    "en": "fdf207fb5b68e7c1",
+    "text": "Paranoid: en WS-Security X.509-token"
+  },
+  "pki.paranoidWsSecurityToken|description": {
+    "en": "d1b001f7c3cf7dad",
+    "text": "Användningsfall `wss-x509-token`: signeraren enligt WS-Security X.509 Token Profile i en WS-Trust-förfrågan. Paranoid kräver att ett lagrat externt lövcertifikat kedjar till förtroendelagret för signerare och hämtar OCSP- eller CRL-utfärdaren från förtroendelagrets kedja, aldrig enbart från lövcertifikatets egen Authority Information Access. Ankare: sfärens CA, det lagrade lövcertifikatet, förtroendelagret för signerare. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidJoseBareKey|label": {
+    "en": "ae8a99b03823519c",
+    "text": "Paranoid: en naken JWK som bär ett x5c"
+  },
+  "pki.paranoidJoseBareKey|description": {
+    "en": "d55aaf11968d0119",
+    "text": "Användningsfall `jose-bare-key`: OpenID Federation-entitetsnycklar, SSF-sändarnycklar, nycklar hos anspråksleverantörer och GNAP-`cert`-nycklar. En JWK som BÄR ett x5c valideras som en JOSE-signerare under paranoid; en naken JWK lämnas ifred, eftersom OpenID Federation 1.1 avsnitt 3 definierar entitetsnycklar som nakna JWK:er (undantaget enligt specifikationen när inget x5c finns). Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidEncryptionRecipient|label": {
+    "en": "1fec5dc0c124d4d7",
+    "text": "Paranoid: en krypteringsmottagares certifikat"
+  },
+  "pki.paranoidEncryptionRecipient|description": {
+    "en": "22e7d1dcaf21b830",
+    "text": "Användningsfall `encryption-recipient`: certifikatet som ett SAML-intyg krypteras till och x5c hos en JWE-mottagare. Paranoid lägger till giltighet, keyUsage keyEncipherment eller keyAgreement samt återkallelse, och krypterar aldrig till ett certifikat som bara OBSERVERATS på en förfrågan (utvecklingsläget gjorde det före #1360, utanför paranoid). Ett självsignerat certifikat registrerat på applikationen godtas enligt specifikationen. En naken JWK utan x5c är undantagen (RFC 7517 avsnitt 4.7 gör x5c valfritt). Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidClientAttestation|label": {
+    "en": "f9781b19e7a5faa5",
+    "text": "Paranoid: en kedja för intygsbaserad klientautentisering"
+  },
+  "pki.paranoidClientAttestation|description": {
+    "en": "3272afd18d05a5d0",
+    "text": "Användningsfall `client-attestation`: intygsgivarens certifikat bakom OAuth-intygsbaserad klientautentisering. Paranoid lägger till återkallelse och keyUsage digitalSignature hos lövcertifikatet. Ankare: oauth2.clientAttestationTrustAnchors och förtroendelagret för signerare. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidWebauthnAttestation|label": {
+    "en": "56518cdbf25aba42",
+    "text": "Paranoid: en WebAuthn-intygskedja"
+  },
+  "pki.paranoidWebauthnAttestation|description": {
+    "en": "a1da1a7091f590f6",
+    "text": "Användningsfall `webauthn-attestation`: en passnyckels intygsutlåtande i formaten packed, tpm, android-key, android-safetynet och apple. Paranoid gör varje formats extendedKeyUsage och keyUsage uttryckliga genom dörren (TPM AIK EKU 2.23.133.8.3 krävs för tpm); återkallelse efterfrågades redan. Giltighet utvärderas vid nu, som förut — ett utgånget intygscertifikat gör utlåtandet ej betrott (rcbj, 2026-11-06). Ankare: webauthn.attestationTrustAnchors, rötterna i FIDO Metadata Service, förtroendelagret för signerare. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidDeviceAttestation|label": {
+    "en": "eb8ad90daa8e84e6",
+    "text": "Paranoid: en kedja för enhetsintyg"
+  },
+  "pki.paranoidDeviceAttestation|description": {
+    "en": "1e8781ffffcd5976",
+    "text": "Användningsfall `device-attestation`: Android-nyckelintyg, Apple App Attest och TPM-intyg för en registrerad enhet. Paranoid lägger till OCSP eller CRL för Apple- och TPM-kedjorna där kedjan namnger någon, samt den extendedKeyUsage som varje format frågar efter. Ankare: inställningarna devices.*TrustAnchors, de medföljande rötterna, förtroendelagret för signerare. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeSvid|label": {
+    "en": "78e43611bf44d5cf",
+    "text": "Paranoid: en X509-SVID som visas upp för SPIRE Server- eller Broker-API:et"
+  },
+  "pki.paranoidSpiffeSvid|description": {
+    "en": "9df64672b57d6dfa",
+    "text": "Användningsfall `spiffe-svid`: den X509-SVID som en anropare av SPIRE Server-API:et eller Broker-API:et visar upp, och en federerad SVID. Paranoid gör X509-SVID-specifikationens avsnitt 4.3 extendedKeyUsage-SHOULD till ett MUST och fältkontrollerar en federerad bundles auktoritetscertifikat när det registreras och när det används. Undantaget enligt specifikationen: Workload API MUST NOT autentisera och berörs inte, och en federerad SVID:s återkallelse konsulteras inte eftersom den federerade auktoriteten inte publicerar något som den här tjänsten får ringa upp. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeAttestation|label": {
+    "en": "02cc79ee469c2d68",
+    "text": "Paranoid: en SPIFFE-nodintygsgivares certifikat"
+  },
+  "pki.paranoidSpiffeAttestation|description": {
+    "en": "589e499a7857c323",
+    "text": "Användningsfall `spiffe-attestation`: intygsgivarna x509pop, TPM DevID, Azure IMDS, AWS instance identity och sigstore. Paranoid lägger till återkallelse där kedjan namnger någon, den keyUsage och extendedKeyUsage som varje intygsgivare frågar efter, giltighet hos AWS:s fästa certifikat, och kräver att Azure AIA-mellancertifikatet kedjar innan det används. Undantaget enligt specifikationen: sigstore utvärderar giltighet vid certifikatets notBefore (Sigstore-klientspecifikationens regel); SCT- och Rekor-hoppen förblir sina egna inställningar. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidPkinit|label": {
+    "en": "075d91f34c26d707",
+    "text": "Paranoid: ett PKINIT-klientcertifikat"
+  },
+  "pki.paranoidPkinit|description": {
+    "en": "4cd0d308a974fcbd",
+    "text": "Användningsfall `pkinit`: klientcertifikatet i en RFC 4556 AS-REQ. Kontrollen var redan full (kedja till sfärens identitets-CA:er, giltighet med krb5.clockSkew, id-pkinit-KPClientAuth eller Microsofts EKU för smartkort, återkallelse); paranoid gör den till ett enda anrop av dörren, så den är samma kod som för varje annat användningsfall. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidEnrollmentCredential|label": {
+    "en": "ce5c0d1996e12403",
+    "text": "Paranoid: ett certifikat som visas upp för registrering eller förnyelse"
+  },
+  "pki.paranoidEnrollmentCredential|description": {
+    "en": "e581316f80e4f785",
+    "text": "Användningsfall `enrollment-credential`: klientcertifikatet som en EST-förfrågan visar upp och signeraren av en SCEP-förnyelse. Redan full för EST; paranoid ger SCEP:s självsignerade PKCSReq-signerare giltighetsfönstret. Undantaget enligt specifikationen: RFC 8894 avsnitt 2.3 definierar PKCSReq-signeraren som självsignerad, så ingen kedja efterfrågas av den. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidVcKeyAttestation|label": {
+    "en": "c9da12bd29969033",
+    "text": "Paranoid: en OpenID4VCI-kedja för nyckelintyg"
+  },
+  "pki.paranoidVcKeyAttestation|description": {
+    "en": "65f64443cb54f4c6",
+    "text": "Användningsfall `vc-key-attestation`: x5c i en plånboks nyckelintyg vid OpenID4VCI:s uppgiftsändpunkt. Paranoid bygger en riktig kedja med mellancertifikat (ett steg förut), konsulterar återkallelse och frågar efter keyUsage digitalSignature hos lövcertifikatet. Ankare: oidc4vci.keyAttestationTrustedCertificates och förtroendelagret för signerare. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidVcIssuer|label": {
+    "en": "bf59999c71087b0a",
+    "text": "Paranoid: en uppgiftsutfärdares eller statuslistesignerares certifikat"
+  },
+  "pki.paranoidVcIssuer|description": {
+    "en": "4497f64a995a4cbf",
+    "text": "Användningsfall `vc-issuer`: en mdoc:s kedja från IACA till DS, en CWT-statuslistesignerare, ett betrott utfärdarcertifikat i OpenID4VP och en främmande statuslistas signerare. Paranoid frågar efter ISO 18013-5-dokumentsignerarens EKU 1.0.18013.5.1.2 och DS-profilen (keyUsage digitalSignature, en DS-giltighet inom sin IACA:s), återkallelse för statuslistesigneraren, samt giltighet och en kedja för ett betrott utfärdarcertifikat som inte är självsignerat. Ett konfigurerat betrott utfärdarcertifikat godtas självsignerat enligt specifikationen, med giltighet och återkallelse fortfarande efterfrågade. Ankare: oid4vp.mdocTrustAnchors, oid4vp.trustedIssuerCertificates, förtroendelagret för signerare. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidCellPeer|label": {
+    "en": "29ff42feacbce3f9",
+    "text": "Paranoid: den andra cellen vid kanalen mellan celler"
+  },
+  "pki.paranoidCellPeer|description": {
+    "en": "4dbdc1d9a7d0f4c4",
+    "text": "Användningsfall `cell-peer`: certifikatet som den andra cellen visar upp på kanalen mellan celler, i båda riktningarna. Paranoid lägger till återkallelse från registret, extendedKeyUsage clientAuth och serverAuth (den här tjänstens egen CA utfärdar båda), samt kedjereglerna. Ankare: tjänstens Root. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidCaImport|label": {
+    "en": "db5c10402103e4d7",
+    "text": "Paranoid: en CA eller ett nyckelpar som en operatör importerar"
+  },
+  "pki.paranoidCaImport|description": {
+    "en": "d87040a5e24c74ae",
+    "text": "Användningsfall `ca-import`: /admin/pki:s import av en operatörs Root- eller Issuing-CA och ett fäst nyckelpar. Paranoid kräver att en importerad Issuing-CA kedjar till tjänstens Root och kontrollerar cA, keyCertSign, giltighet och pathLen; ett fäst lövcertifikat fältkontrolleras. En importerad Root förblir självförankrande. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidAnchorAdmission|label": {
+    "en": "7d8bf2554b7ae476",
+    "text": "Paranoid: inträde i ett förtroendelager"
+  },
+  "pki.paranoidAnchorAdmission|description": {
+    "en": "169bc8829426f512",
+    "text": "Användningsfall `anchor-admission`: det som /admin/tls/trust, förtroendelagret för signerare, tls.trustAnchorsFile och pki.signerTrustAnchorsFile tar emot. Ett ankare är en självsignerad CA inom giltighetstiden vars självsignatur verifieras (cA, och keyCertSign där keyUsage finns); ett mellancertifikat är en CA som kedjar till ett ankare som redan finns; ett lövcertifikat avvisas från båda förtroendelagren — ett lövcertifikat att fästa läggs på den post eller relation som använder det. Före #1360 tog förtroendelagret för klienter emot allt som OpenSSL kunde tolka. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidRevocationSigner|label": {
+    "en": "05be41dc43e60403",
+    "text": "Paranoid: en OCSP-svarare eller CRL-signerare"
+  },
+  "pki.paranoidRevocationSigner|description": {
+    "en": "02ce618736381ac9",
+    "text": "Användningsfall `revocation-signer`: det delegerade OCSP-svararcertifikatet och CRL-signeraren i common/revocation_status.js. Redan full (id-kp-OCSPSigning, cRLSign); paranoid frågar dörren så att kontrollerna är samma kod. Undantaget enligt specifikationen: en svarare som bär id-pkix-ocsp-nocheck kontrolleras inte själv för återkallelse (RFC 6960 avsnitt 4.2.2.2.1). Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.paranoidFidoMds|label": {
+    "en": "49e3f63a1962f092",
+    "text": "Paranoid: signeraren av FIDO Metadata Service-BLOB"
+  },
+  "pki.paranoidFidoMds|description": {
+    "en": "03950106a2822b70",
+    "text": "Användningsfall `fido-mds`: signeraren av en importerad FIDO MDS3-BLOB. Redan full; paranoid frågar dörren så att kontrollerna är samma kod. Administratörens reviderade förbikoppling overrideSignature är oförändrad. Ankare: risk.mdsTrustAnchors, GlobalSign Root R3, förtroendelagret för signerare. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+  },
+  "pki.signerTrustAnchorsFile|label": {
+    "en": "9d4fabbc6c6918f1",
+    "text": "Förtroendelager för signerare: en PEM-fil med ankare och mellancertifikat"
+  },
+  "pki.signerTrustAnchorsFile|description": {
+    "en": "32ac16c13b12ea05",
+    "text": "En PEM-bunt som läses in i STANDARDSFÄRENS förtroendelager för signerare när processen startar: de certifikatutfärdare, och mellancertifikaten under dem, som en tredje parts signerings-, krypterings- eller intygscertifikat får kedja till när det inte är den här tjänstens eget (common/signer_truststore.ts). Varje block går genom inträdesregeln: en självsignerad CA är ett ankare, en annan CA ett mellancertifikat, och ett lövcertifikat avvisas vid namn. Är den angiven men oläslig, eller innehåller inget certifikat, är det FATALT (STS-PKI-0237), liksom för tls.trustAnchorsFile. Ankare som läggs till under körning via /admin/pki/trust sparas i katalogen bredvid dem. Tom som standard."
+  },
+  "pki.signerTrustAnchorsFile|restartReason": {
+    "en": "736eb74db8a5c84f",
+    "text": "filen läses en gång, innan något validerar"
+  },
+  "pki.pinnedCertificateWarningDays|label": {
+    "en": "bc1a8dace838ed5f",
+    "text": "Varning för utgång av fäst certifikat (dagar)"
+  },
+  "pki.pinnedCertificateWarningDays|description": {
+    "en": "7ce39ba31b8cb865",
+    "text": "Hur långt före ett fäst certifikats notAfter som inventariet på /admin/pki/trust markerar det `expiring` och det dagliga jobbet pki.pins.audit loggar det (STS-PKI-0263, en gång per tillståndsändring). Ett fäst certifikat är ett som registrerats på en applikationspost, en relation, en inställning, ett x5c i en JWK, en federerad bundle eller molnankartabellen; ett utgånget, återkallat eller kedjesaknande är STS-PKI-0264."
+  },
   "acme.enabled|label": {
     "en": "4e21aa7b001c95d8",
     "text": "Kör ACME-servern"
@@ -3660,8 +3872,8 @@
     "text": "Största begärandetext (byte)"
   },
   "acme.maxRequestBytes|description": {
-    "en": "1e75b2f8a06b2682",
-    "text": "En plattad JWS som är större än så här avvisas (HTTP 413) innan den tolkas. En finalize med en postkvant-CSR är den största legitima begäran; SLH-DSA:s signaturer är tiotals kilobyte."
+    "en": "64645666fe96987c",
+    "text": "En tillplattad JWS som är större än så här avvisas (HTTP 413) innan den tolkas. En finalize som bär en postkvantum-CSR är den största legitima förfrågan; SLH-DSA:s signaturer är tiotals kilobyte."
   },
   "acme.attemptsPerIdentity|label": {
     "en": "0357e08b72306dd7",

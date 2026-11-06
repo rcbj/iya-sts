@@ -8889,6 +8889,60 @@ hand-over still holds; what changed is the storage and the lifecycle.
   TLS card's rule (`labelProblem()`, `STS-PKI-0225`); a handle the person holds
   nothing under is `STS-PKI-0224`.
 
+## 3dd. `certificate_trust.ts`, `signer_truststore.ts`, `crypto.js` SECTION 18: PARANOID PKI MODE (#1360, 2026-11-06)
+
+**Every X.509 certificate this service relies on goes through one door with a
+purpose, and the door answers one verdict.** rcbj's decision, after the audit of
+2026-11-06 (82 sites, on #1360) found pinned certificates never validity-checked,
+revocation skipped for outbound peers and attestors, EKU never a path rule, and
+anchor admission checking nothing. **ON IN PRODUCT, OFF IN DEVELOPMENT**: rcbj's
+second decision that day, `mode.enforcesParanoidPki()`.
+
+**THE SPLIT IS THE LEAF RULE'S.** `crypto.js` may require nothing that reads a
+store or dials, and a chain needs anchors and a revocation answer needs a network,
+so: section 18 is what one certificate's bytes decide (pure; the mode is not
+asked, because a caller reaching it has decided the checks apply); `pki.js` is the
+path builder and the admission rule, `anchorProblem()`; the door composes them with
+revocation, the table and the settings. A DN is compared by the door, because
+`certificate_subject.js` requires `crypto.js`.
+
+**A ROW OFF IS THE BASELINE, AND THE BASELINE IS THE DOOR'S.** Each purpose names
+one (`none`, `peer-chain`, `signer-chain`, `caller-path`, `direct`, `realm-leaf`):
+the central functions its site called before #1360. A site therefore has one code
+path, and "off restores today's behaviour" is true by construction.
+
+**THE RULE UNDER PARANOID: A CHECK NOBODY MADE IS A REFUSAL.** `not-asked` fails a
+verdict in force, `name-match` excepted. What a use case does not ask at all, since
+no specification asks it, PASSES rather than being `not-asked`; the plan's table
+gives a JOSE signer no EKU, and reading that as `not-asked` would refuse every one.
+So `pki.revocationCheck=off` under paranoid refuses, on purpose: the way out is the
+row, which is red on the page.
+
+**A LEAF ACCEPTED SELF-SIGNED MAY CARRY cA=TRUE**, `verifySignerChain()`'s `pinned`
+argument of 2026-09-13: every `openssl req -x509` certificate does, and a method
+defined as certificate equality has no chain for the flag to mean anything in. The
+table's `mayBeCa: false` is about a leaf on a chain.
+
+**WHAT EACH PHASE OWES.** Phase 0 wires one row, `anchor-admission`, at the client
+truststore; every other site still calls what it called, and
+`tests/certificate_trust_callers.js` lists each such call and only shrinks. A site
+moved to the door takes its row out of that list, moves its row's `phase` on the
+page, and extends `tests/protocol/sts_paranoid_pki_settings.js`'s proof.
+
+**THE SIGNER TRUSTSTORE IS THE DIRECTORY'S**, per realm, in
+`ou=signerTrustAnchors`, through a slot `ldap/ldap_server.js` fills (rule 3e,
+`passkey_report`'s reason), with a realm id on each call because the door's caller
+may be in another realm. **ITS ADMISSION HAS NO OFF SWITCH**: it has no earlier
+behaviour to restore. Every read asks the directory, whose `entriesUnder()` caches
+the listing until something is written there, so a validation walks no realm.
+
+**THE COUNTERS ARE NOT ON `/admin/caches`**: not a cache, one row per realm and
+purpose, bounded by construction, and per process, which the page says. **`pki.pins.
+audit`** is a cluster job per realm, logging and mailing only what CHANGED against
+`pki.pins.lastAudit`, so a restart does not re-announce anything. An owner of a pin
+registers a source with `registerPinSource()`: a registry a library fills, not a
+slot, since no require would move a route. Phase 6 registers them.
+
 ## 3ad. `revocation_status.js`: REVOCATION, CONSULTED (2026-09-12)
 
 `pki_revocation.js` PUBLISHES; this CONSULTS. Until it existed a client

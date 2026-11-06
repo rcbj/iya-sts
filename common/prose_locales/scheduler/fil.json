@@ -375,6 +375,14 @@
     "en": "98370fb755b4ba95",
     "text": "Sa isang serbisyong naka-deploy bilang mga cell, binubura mula sa database ng global tier ang mga tombstone ng mga natapos na minted row na mas matanda kaysa sa persistence.mintedRetention, sa parehong mga batch; kine-claim ang run nito sa global tier, kaya iisang cell lang ang nagpapatakbo ng bawat slot. Naka-off sa serbisyong may iisang database, kung saan sakop ito ng isa pang pagwalis."
   },
+  "sched.jobs.pki.pins.audit.title": {
+    "en": "3ccb80617905a1db",
+    "text": "Audit ng mga naka-pin na certificate"
+  },
+  "sched.jobs.pki.pins.audit.describe": {
+    "en": "e5cc243756f71f7e",
+    "text": "Isinasailalim ang bawat naka-pin na certificate at bawat entry ng signer truststore ng realm sa mga pagsusuri ng paranoid PKI mode, iniingatan ang resultang iginuguhit ng /admin/pki/trust, at nilolog at ime-mail ang nagbago."
+  },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",
     "text": "Mail ng aktibidad pagkatapos mag-sign in"
