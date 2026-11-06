@@ -578,7 +578,9 @@ const KERBEROS_PERSON_KEYTAB: Json = {
   kvno: NUM, etypes: INT_LIST, keytabKvnos: INT_LIST, source: STR,
   keytabFilename: STR, keytab: STR,
   passwordSet: BOOL, generated: BOOL,
-  signedOut: Kit.closed({ ended: BOOL, terminated: NUM, message: NULL_STR })
+  signedOut: Kit.closed({ ended: BOOL, terminated: NUM, message: NULL_STR }),
+  // A refused password, `credentials.preparePassword()`'s words for why.
+  reason: STR, problems: STR_LIST
 };
 
 const NAMED_ENCTYPE: Json = Kit.closed({ id: INT, name: NULL_STR });
@@ -1299,7 +1301,7 @@ const ATTRIBUTE_SOURCES: Json = Kit.closed({
 
 const ATTRIBUTE_SOURCE_ACTION: Json = Kit.action({
   source: Kit.closed(ATTRIBUTE_SOURCE_MEMBERS),
-  key: STR, found: BOOL,
+  key: STR, found: BOOL, why: STR,
   row: Kit.nullable(Kit.mapOf(Kit.freeForm(
     'A value of the operator\'s own SQL table, as its driver read it.'),
                               'The row, by the operator\'s column names.')),
