@@ -397,6 +397,9 @@ An object whose keys are data, such as a directory entry's attribute names, is
 declared as a map with typed values. A value whose shape is not this service's to
 state is marked `x-free-form`, with the reason.
 
+A federation act's `relationship` carries no credential and no directory entry:
+`GET /admin-api/federation?relationship=` says whether each credential is set.
+
 An answer that would not match is not sent. The caller gets a `500` with
 `{ "error": "server_error" }`, and the operator gets `STS-API-0139` in the log,
 naming the operation, the status and the member. That is a defect in the

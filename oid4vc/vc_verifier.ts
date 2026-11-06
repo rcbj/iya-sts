@@ -525,6 +525,34 @@ const OID4VC_QUERY = validation.z.looseObject({
  */
 class VcVerifier {
   /**
+   * A presented claim as text, or ''. What a presentation says is the
+   * presenter's until its signature is checked, and a verdict shows it either
+   * way (#1353).
+   *
+   * @param value - the claim
+   * @returns its text
+   */
+  static claimText(value: unknown): string {
+    if (typeof value === 'string') {
+      return value;
+    }
+    return typeof value === 'number' || typeof value === 'boolean'
+      ? String(value) : '';
+  }
+
+  /**
+   * The names of disclosed claims that are names at all.
+   *
+   * @param names - what a presentation disclosed
+   * @returns the strings among them
+   */
+  static claimNames(names: unknown): string[] {
+    return (Array.isArray(names) ? names : []).filter(function (one: unknown) {
+      return typeof one === 'string';
+    });
+  }
+
+  /**
    * The default lifetime of a presentation request, in milliseconds
    * (`oid4vp.presentationRequestTtlS`).
    */
@@ -3365,7 +3393,7 @@ class VcVerifier {
     }
     const vc = vcPayload.vc || {};
     const subject = vc.credentialSubject || {};
-    result.sub = vcPayload.sub || subject.id || '';
+    result.sub = VcVerifier.claimText(vcPayload.sub || subject.id);
 
     let issuerSignatureOk = false;
     try {
@@ -3585,8 +3613,10 @@ class VcVerifier {
                 "credential.");
       return result;
     }
-    result.vct = payload.vct || '';
-    result.sub = payload.sub || '';
+    // Copied ahead of the signature check, and the verdict keeps them either
+    // way: anyone holding the request's `state` writes these (#1353).
+    result.vct = VcVerifier.claimText(payload.vct);
+    result.sub = VcVerifier.claimText(payload.sub);
     result.credentialJwt = issuerJwt;
     result.credentialClaims = payload;
     this.vpCheck(checks, 'Media type (typ)',
@@ -3684,7 +3714,8 @@ class VcVerifier {
                   'signed: ' + digest);
         return;
       }
-      if (Array.isArray(arr) && arr.length === 3) {
+      if (Array.isArray(arr) && arr.length === 3 &&
+          typeof arr[1] === 'string') {
         result.claims[arr[1]] = arr[2];
         result.disclosed.push(arr[1]);
       }
@@ -5264,11 +5295,11 @@ class VcVerifier {
           at: new Date().toISOString(),
           checks: verified.checks,
           claims: verified.claims,
-          disclosed: verified.disclosed,
-          extraDisclosed: verified.extraDisclosed || [],
+          disclosed: VcVerifier.claimNames(verified.disclosed),
+          extraDisclosed: VcVerifier.claimNames(verified.extraDisclosed),
           requested: record.requested || [],
-          vct: verified.vct,
-          sub: verified.sub,
+          vct: VcVerifier.claimText(verified.vct),
+          sub: VcVerifier.claimText(verified.sub),
           // Its digest, never the presentation (#614).
           presentationDigest: VcVerifier.presentationDigestOf(
             answer.presentation)

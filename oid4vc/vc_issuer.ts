@@ -3965,7 +3965,10 @@ class VcIssuer {
       }
 
       record.event = event;
-      record.description = body.event_description || '';
+      // A string in OpenID4VCI 1.0 section 11.1, and shown to an administrator
+      // as one (#1353).
+      record.description = typeof body.event_description === 'string'
+        ? body.event_description : '';
       record.notifiedAt = new Date().toISOString();
       // THROUGH THE STORE, so the notification is not a fact only this process
       // knows: `notificationIds` is `realms.map({persist})` and its journal

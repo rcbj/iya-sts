@@ -267,6 +267,81 @@ function validatorCases(t) {
   log.debug("Leaving validatorCases().");
 }
 
+// THE LOG LINE SAYS THE MEMBER THAT WAS WRONG, whichever branch of a union it
+// is in (#1353: `getUsers` said dozens of the other branch's members), and an
+// exception no handler caught answers as the API answers, never an HTML page.
+function unionsAndExceptions(t) {
+  log.debug("Entering unionsAndExceptions().");
+  const { ResponseModels } = require('../common/response_models');
+  const logged = [];
+  const marked = [];
+  const models = new ResponseModels({
+    log: { debug: function () {},
+           error: function (line) {
+             logged.push(line);
+           } },
+    mark: function (res, code) {
+      marked.push(code);
+    },
+    tag: function (code) {
+      return '[' + code + '] ';
+    }
+  });
+  const closed = function (properties) {
+    return { type: 'object', additionalProperties: false,
+             properties: properties };
+  };
+  const LIST = closed({ a: { type: 'string' }, b: { type: 'string' },
+                        c: { type: 'string' } });
+  const DETAIL = closed({ who: closed({ dn: { type: 'string' } }) });
+  const doc = { components: { schemas: {} }, paths: { '/api/u': { get: {
+    operationId: 'getU', responses: { 200: { description: 'd', content: {
+      'application/json': { schema: { anyOf: [LIST, DETAIL] } } } } }
+  } } } };
+  const installed = models.installed(function () {
+    return doc;
+  });
+  const problem = models.problemOf(installed,
+    { method: 'GET', baseUrl: '/api', path: '/u' },
+    { statusCode: 200, get: function () {
+      return 'application/json';
+    } }, JSON.stringify({ who: { dn: 'x', rogue: 1 } }));
+  t.check(problem && problem.where.indexOf('/who additionalProperties ' +
+          '"rogue"') === 0, 'the member that was wrong is said first: ' +
+          (problem && problem.where));
+  const uses = [];
+  models.install({ use: function () {} }, '/api', function () {
+    return doc;
+  });
+  models.answerExceptions({ use: function (prefix, fn) {
+    uses.push([prefix, fn]);
+  } });
+  t.equal(uses.length, 1, 'one handler per published API');
+  t.equal(uses[0][1].length, 4, 'and express reads four arguments as an ' +
+          'error handler');
+  const response = fakeResponse('text/html');
+  response.statusCode = 200;
+  uses[0][1](new RangeError('Invalid time value'),
+             { method: 'GET', baseUrl: '/api', path: '/u' }, response,
+             function () {
+               t.check(false, 'a thrown exception does not pass on');
+             });
+  t.equal(response.statusCode, 500, 'a throw is a 500');
+  t.equal(JSON.parse(response.sent).error, 'server_error', 'in JSON');
+  t.check(marked.indexOf('STS-API-0140') >= 0 && logged.some(function (line) {
+    return line.indexOf('Invalid time value') >= 0;
+  }), 'with its code, and the operator told what it was');
+  let passed = null;
+  models.answerExceptions({ use: function (prefix, fn) {
+    fn({ status: 400 }, {}, fakeResponse('text/html'), function (err) {
+      passed = err;
+    });
+  } });
+  t.check(passed && passed.status === 400,
+          'a status below 500 is somebody else\'s');
+  log.debug("Leaving unionsAndExceptions().");
+}
+
 // IN A CHILD: the operation tables are complete only with the whole stack loaded,
 // which runs load-time effects this runner's other files must not inherit.
 function buildDocuments(out) {
@@ -478,6 +553,7 @@ function nothingAnswersRoundTheDoor(t) {
 async function run(t) {
   log.debug("Entering run().");
   validatorCases(t);
+  unionsAndExceptions(t);
   sharingKeepsWhatModelsSay(t);
   nothingAnswersRoundTheDoor(t);
   ruleOverDocuments(t);

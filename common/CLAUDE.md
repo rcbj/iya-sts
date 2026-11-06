@@ -15076,6 +15076,21 @@ to it could undo.
 
 ## 3dc. `response_models.ts`, `response_model_kit.ts` (#1353): every answer is held to its model
 
+**A VALUE WRITTEN OUTSIDE THIS SERVICE IS HELD WHERE IT ARRIVES AND WHERE IT IS
+READ (2026-11-06).** A closed model means a value somebody else wrote, kept and
+shown later can break a page, and one row can break a whole list. An audit
+reproduced that for a forged presentation's verdict, an unverified token's `sub`,
+a device key's JWK, a partner's `cacheDuration` and Trust Mark `exp`, and four
+attributes an LDAP client can write; `tests/protocol/sts_outside_values.js` is
+that reproduction, kept. The model does not loosen for such a value: the value is
+narrowed to what the member is, at the write and again at the read, because a row
+already stored is still there. A time is the case to watch: `toISOString()`
+throws on a finite number no Date can hold, which `Number.isFinite` passes.
+**An exception no handler caught on a published API answers JSON**,
+`answerExceptions()`, `STS-API-0140`, registered after every route by
+`protocol_stack.ts`, because Express reaches an error handler only after the route
+that threw.
+
 **rcbj's decision, 2026-11-05: every operation of the four published APIs
 (`/admin-api`, `/account-api`, `/authn-api`, `/report-api`) has a response model
 for every status, no model admits a member it does not declare, and every

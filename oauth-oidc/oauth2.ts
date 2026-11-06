@@ -18210,6 +18210,11 @@ class OAuth2Server {
                   "it without verifying.");
         try {
           subject = jsonFromB64u(subjectJws.split('.')[1]) || {};
+          // RFC 7519 section 4.1.2: `sub` is a StringOrURI. Anything else is
+          // no subject, and this server does not mint a token about it.
+          if (typeof subject.sub !== 'string') {
+            delete subject.sub;
+          }
         } catch (e2) {
           log.error(errorCodes.tag('STS-OAUTH-0225') + 'the subject_token ' +
                                                        'could not be read at ' +

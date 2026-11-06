@@ -667,7 +667,8 @@ const USER_PAGE = Kit.closed({
   delegation: Kit.closed({
     found: BOOL, person: BOOL, username: STR, dn: STR, sub: STR,
     notDelegated: BOOL, mayAct: STR, delegate: Kit.nullable(Kit.oneOf(
-      STR, Kit.closed({ dn: STR, name: STR, kind: STR, present: BOOL }))),
+      STR, Kit.closed({ dn: STR, name: STR, kind: STR, present: BOOL,
+                         sub: STR }))),
     semantics: STRS, defaultSemantics: STR,
     groups: Kit.listOf(Kit.closed({ dn: STR, cn: STR }))
   }),

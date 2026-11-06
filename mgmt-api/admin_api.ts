@@ -1301,6 +1301,29 @@ class AdminApi {
    * @param status - the HTTP status
    * @param body - the reply
    */
+  // What a federation act may say of a relationship (#1354): the record without
+  // its credentials and without the entry holding them. A write answered both
+  // in clear while the read has always masked them, and a caller's client log
+  // is where such an answer ends up. FED_RECORD no longer declares them, so an
+  // answer that carried one again would be refused rather than sent.
+  federationAnswer(result) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.federationAnswer().");
+    if (!result || !result.relationship) {
+      log.debug("Leaving AdminApi.federationAnswer(). No record.");
+      return result;
+    }
+    const shown = Object.assign({}, result.relationship);
+    delete shown.entry;
+    federation.SCHEMA.attributes.forEach(function (field) {
+      if (field.sensitive) {
+        delete shown[field.name];
+      }
+    });
+    log.debug("Leaving AdminApi.federationAnswer().");
+    return Object.assign({}, result, { relationship: shown });
+  }
+
   sendJson(res, status, body) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.sendJson(). status=" + status);
@@ -13748,7 +13771,8 @@ class AdminApi {
                 errorCodes.mark(res, errorCodes.codeOf(result) ||
                                      'STS-API-0046');
               }
-              self.sendJson(res, result.ok ? 200 : 400, result);
+              self.sendJson(res, result.ok ? 200 : 400,
+                            self.federationAnswer(result));
               log.debug("Leaving the management API federation action " +
                         "endpoint.");
             }, function (e) {
