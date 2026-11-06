@@ -316,6 +316,7 @@ holds is the table above; what each module is for is that directory's
 | `common/passkey_report.ts` | `setDirectory` (the holder scan, a group population, the people count), filled by `ldap/ldap_server.js` (#942) | `common/CLAUDE.md` (3cs) |
 | `common/applications.js` | `setFgaLifecycle` (an application's fine-grained policy created and retired with it), filled by `xacml/fga_policies.ts` at 23c (#564) | `common/CLAUDE.md` |
 | `common/fga_gate.ts` | `setDecider` (one RFC 9396 detail of an application that enforces fine-grained authorization; EMPTY REFUSES), filled by `xacml/fga_pep.ts` at 23c (#564 P3) | `common/CLAUDE.md`, `xacml/CLAUDE.md` |
+| `common/signer_truststore.ts` | `setDirectory` (a realm's signer truststore entries listed, written and removed), filled by `ldap/ldap_server.js` (#1360) | `common/CLAUDE.md` (3dd) |
 | `authzen/authzen_admin.ts` | `setDirectory` (an entry located, a group's members, a person's `stsAuthzenApplication` written), filled by `ldap/ldap_server.js` (#563) | `authzen/CLAUDE.md` |
 
    **`setTruststore()` is the one slot not filled by the module that owns what
@@ -537,6 +538,7 @@ preference; this table says what the constraint is and the named file says why.
 | 18j-v | `common/passkey_clients` | After the report (18j-iv), for its reason (#1112): a library whose build registers a scheduler job. The ceremony module and the credential store require it at load and reach its facades only at a ceremony. | `common/CLAUDE.md` 3ch |
 | 18j-vi | `common/post_login_activities` | Beside the passkey report, after the scheduler (#1111): a library that registers its job when built, and no route. Reaches `ldap/ldap_server` (21), the mail uses and the post-login module LAZILY. | `common/CLAUDE.md` (3ct) |
 | 18j-vii | `common/audit_export` | After the scheduler, before the directory (21): a library, no route, per-process job `audit.export`. Its own `AuditExport.defaultDeps`; `realms`, `audit`, `config`, `error_codes`, `version`, `keystore`, `mode`, `outbound_tls`. | `common/CLAUDE.md` (3da) |
+| 18j-viii | `common/signer_truststore`, then `common/certificate_trust` | After the scheduler, whose one job the door registers, and before `ldap/ldap_server` (21), whose require fills the store's slot through its facades (#1360). Libraries, no route; a site that calls the door requires it wherever it stands, which moves nothing. | `common/CLAUDE.md` (3dd) |
 | 18j-ii | `admin-ui/geo_map`, then `admin-ui/geolocation_admin` | 18a's placement and reason (#255), after the risk libraries whose assessments it counts. | `admin-ui/CLAUDE.md` |
 | 18k | `admin-ui/mode_admin` | 18a's placement and 18a's reason (#181). | `admin-ui/CLAUDE.md` |
 | 18k-iii | `admin-ui/listeners_admin` | 18a's placement and reason (#423); `tls/tls_server` (20) and `tls/listeners` are reached lazily. Its paths are in `NEVER_DISPATCHED`. | `tls/CLAUDE.md` |
@@ -694,6 +696,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3cz | `fga_gate.ts`, `fga_pep.ts` (#564 P3, P4): fine-grained authorization at the authorization, PAR and token endpoints, the token exchange's bound, and AuthZEN deciding against an enforcing application's own policy | `xacml/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `common/CLAUDE.md`, `authzen/CLAUDE.md` |
 | 3da | `audit_export.ts` (#641): this process delivers its own audit ring to operator-configured destinations, at-least-once | `common/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `admin-ui/CLAUDE.md` |
 | 3dc | `response_models.ts`, `response_model_kit.ts` (#1353): every answer of a published API held to a closed model, always | `common/CLAUDE.md` |
+| 3dd | `certificate_trust.ts`, `signer_truststore.ts`, `crypto.js` section 18 (#1360): one validation door, paranoid PKI mode | `common/CLAUDE.md`, `tls/CLAUDE.md` |
 | 3db | `profile_photo.ts` (#719): a person's photo, kept off the entry, set on the portal or copied from a partner | `common/CLAUDE.md`, `federation/CLAUDE.md`, `ldap/CLAUDE.md`, `portal/CLAUDE.md` |
 | 3k | SPIFFE's six modules | `spiffe/CLAUDE.md` |
 | 4 | `wsfed.ts` after `authn.js` | `ws-federation/CLAUDE.md` |
@@ -1183,6 +1186,7 @@ the file the row names.
 | Let an authenticator app be a FIRST factor | `common/CLAUDE.md` |
 | ~~Issue a set of recovery codes on request~~ — reversed 2026-09-11 | `common/CLAUDE.md`, `portal/CLAUDE.md` |
 | Offer a self-service reset of a second factor | `admin-ui/CLAUDE.md` |
+| Run paranoid PKI mode in development, by default: `pki.paranoid=auto` is on in product and off there (#1360) | `common/CLAUDE.md` (3dd) |
 | Require a compliant registered device, **by default in either mode** (#164) | `xacml/CLAUDE.md`, `common/CLAUDE.md` |
 | ~~Decide who may delegate to whom IN THE ACT~~ — reversed 2026-09-23 (#108), in policy since #186 | `common/CLAUDE.md` (3az), `kerberos/CLAUDE.md`, `oauth-oidc/CLAUDE.md`, `ws-trust/CLAUDE.md` |
 | ~~Give every trust realm a certificate authority of its own~~ — reversed 2026-09-11 | `common/CLAUDE.md`, `docs/pki.md` |

@@ -458,6 +458,15 @@ The console page needs Admin Write to change anything, and the API needs an
 reaches the others through the directory; with request workers, both doors are
 answered by the front process, which is the one that holds the listener.
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product
+mode, the gated doors and the file also hold each block to the admission rule of
+the [signer truststore](signer-truststore.md#adding-a-certificate): a self-signed
+CA is an anchor, another CA must chain to something held, and a leaf is refused.
+An anchor already stored that the rule now refuses is kept, flagged on the page and
+logged once (`STS-TLS-0056`). A block of the file it refuses is left out
+(`STS-TLS-0057`). This truststore is for TLS handshakes; for everything else see
+the [signer truststore](signer-truststore.md).
+
 **Why it starts empty.** The certificate authority whose clients it verifies is
 often generated in somebody's *browser* minutes before the connection, and
 exists nowhere else, so no configuration file could hold it and no image could

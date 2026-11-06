@@ -899,6 +899,82 @@ holds all of this to [C2SP x509-limbo](https://github.com/C2SP/x509-limbo),
 `tests/nist_pkits.js`. An https CRL distribution point or OCSP responder is
 verified too, against node's store and `pki.revocationHttpsCaFile`.
 
+## Certificate validation: what is checked, and where
+
+Every certificate this service relies on is validated for one
+[use case](pki-use-cases.md), through one door. While
+[paranoid PKI mode](#paranoid-pki-mode) applies to that use case, these are the
+checks. A check its specification exempts is listed on that use case's row and
+nowhere else.
+
+| Check | What it asks | Code when it refuses |
+|---|---|---|
+| **A path to an anchor** | Links to an anchor the use case may reach: the [signer truststore](signer-truststore.md), the [client-certificate truststore](tls.md#the-client-truststore), this service's own Root, a family's own setting, or the root registered with the certificate. The rules of [How a certificate path is checked](#how-a-certificate-path-is-checked) apply | the use case's own, `STS-PKI-0240` to `0262` |
+| **Validity** | Inside `notBefore` and `notAfter` at the moment of use | `STS-KEYS-0168`, `STS-KEYS-0169` |
+| **Revocation** | Revoked, or unknown under hard-fail, by this service's own register, or the OCSP responder and CRL the certificate names. The issuer comes from the path, so an address in the certificate does not decide who answers. `pki.revocationCheck` is the policy, and `off` under paranoid is a check nobody made, so it refuses | `STS-PKI-0118`, `STS-PKI-0119` and narrower |
+| **basicConstraints** | A CA is not used as an end entity, and an end entity not as a CA | `STS-KEYS-0170` |
+| **keyUsage** | The bit the use case needs, where the extension is present. Absent permits everything (RFC 5280 section 4.2.1.3) | `STS-KEYS-0171` |
+| **extendedKeyUsage** | Where present, it names what the use case asks. Absent is refused only where the specification requires it | `STS-KEYS-0172` |
+| **Name constraints** | Every name in the certificate against every constraint above it | `STS-PKI-0194` |
+| **Signature and key** | No MD2, MD5 or SHA-1 signature; RSA of 2048 bits or more with no ROCA fingerprint; a curve this service relies on | `STS-KEYS-0173`, `STS-KEYS-0174` |
+| **Critical extensions** | None that nothing here reads | `STS-KEYS-0175` |
+| **A name**, where the caller expects one | The subjectAltName (never the common name, RFC 9525), or the subject DN | the use case's own |
+
+**A pinned certificate is still a certificate.** One registered on an application
+entry, a relationship, a setting or a JWK is held to validity, its use case's
+fields, and revocation, and, when it is not self-signed, a path. A self-signed one
+is accepted only where the use case's specification defines the method that way,
+such as RFC 8705's `self_signed_tls_client_auth`, and only as the one registered.
+Validity is exempt nowhere except the Sigstore client specification's rule that a
+certificate is evaluated at its own `notBefore`.
+
+## Paranoid PKI mode
+
+`pki.paranoid` is the master, and each [use case](pki-use-cases.md) has a row of
+its own beneath it.
+
+| `pki.paranoid` | In product mode | In development mode |
+|---|---|---|
+| `auto`, the default | **on** | **off** |
+| `on` | on | on |
+| `off` | off | off |
+
+While the master is in force, each `pki.paranoid<UseCase>` row, on by default,
+decides its own use case. **A row off, or every row while the master is not in
+force, restores exactly the behaviour that use case had before this mode existed,
+and nothing else changes.** There is no third state, and development mode with
+`auto` is that earlier behaviour, whole.
+
+The rows are per realm and change at runtime, through
+[`/admin/pki/trust`](signer-truststore.md) or `POST /admin-api/config/set`. There
+is no switch for one application, relationship or key: a partner that cannot meet a
+check is a reason to switch that row off for the realm and see it red on the page.
+
+Nothing refuses a row switched off in product. It is logged once per process with
+`STS-PKI-0239` and drawn red on the page, because you may have a reason and that is
+where the reason is visible.
+
+**The rollout is by phase.** Every row exists from the first phase, and a row
+governs a use case once its sites are wired. The last column of the
+[use cases](pki-use-cases.md) says which phase holds that use case's sites to it.
+
+### What the page shows
+
+Protocols → PKI trust has four tabs:
+
+* **Paranoid PKI**: the master, and for each use case whether it is on, what it
+  covers, what it adds, what its specification exempts, and how many this process
+  has assessed and refused.
+* **Signer truststore**: [this realm's anchors and intermediates](signer-truststore.md).
+* **Pinned certificates**: every certificate the realm relies on because somebody
+  registered it, with where it is pinned, what it chains to, and a status of
+  `valid`, `expiring`, `expired`, `not-yet-valid`, `revoked`, `chain-missing`,
+  `self-signed` or `thumbprint-only`. The daily `pki.pins.audit` job writes it, and
+  **Recheck now** does so on demand. The job logs what changed (`STS-PKI-0263`,
+  `STS-PKI-0264`) and mails the realm's Admin Write holders on a change, never per
+  run. `pki.pinnedCertificateWarningDays` is the horizon of `expiring`.
+* **Client-certificate truststore**: a link to the page that one has.
+
 ## A signed token names its certificate chain
 
 Every JWT this service signs with a certified key can carry the chain of that
@@ -1533,8 +1609,8 @@ touch the store**, which is the same rule the two buttons follow.
 
 ## Configuration
 
-Forty-two `pki.*` settings, in four groups. Two are restart-only
-(`pki.autoBuild` and `pki.httpPort`); the rest take effect at runtime.
+The `pki.*` settings, in five groups. Three are restart-only (`pki.autoBuild`,
+`pki.httpPort` and `pki.signerTrustAnchorsFile`); the rest take effect at runtime.
 
 ### The hierarchy
 
@@ -1603,6 +1679,15 @@ is checked — see
 | `pki.revocationLdapCaFile` | `STS_PKI_REVOCATION_LDAP_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates an `ldaps` directory's certificate may chain to, beside node's own CA store. |
 | `pki.revocationHttpsCaFile` | `STS_PKI_REVOCATION_HTTPS_CA_FILE` | *(empty)* | yes | A PEM file of CA certificates an https CRL distribution point's or OCSP responder's certificate may chain to, beside node's own CA store (#201). |
 | `pki.revocationLdapDirectory` | `STS_PKI_REVOCATION_LDAP_DIRECTORY` | *(empty)* | yes | The directory (scheme, host, port) a distribution point named relative to its CRL issuer is looked up in; without it such a name is not dialled. |
+
+### Paranoid PKI mode
+
+| Setting | Environment variable | Default | Runtime? | What it does |
+|---|---|---|---|---|
+| `pki.paranoid` | `STS_PKI_PARANOID` | `auto` | yes | [Paranoid PKI mode](#paranoid-pki-mode): `auto` is on in product and off in development; `on` and `off` force it. |
+| `pki.paranoid<UseCase>` | `STS_PKI_PARANOID_<USE_CASE>` | `true` | yes | One per [use case](pki-use-cases.md). Off, that use case behaves as it did before this mode existed. |
+| `pki.signerTrustAnchorsFile` | `STS_PKI_SIGNER_TRUST_ANCHORS_FILE` | *(empty)* | restart | A PEM bundle read into the default realm's [signer truststore](signer-truststore.md) at start; fatal when named and unusable. |
+| `pki.pinnedCertificateWarningDays` | `STS_PKI_PINNED_CERTIFICATE_WARNING_DAYS` | `30` | yes | How far ahead of `notAfter` a pinned certificate is marked `expiring`. |
 
 ### Self-service and limits
 
