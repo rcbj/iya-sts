@@ -426,6 +426,180 @@ class SignaturePolicy {
   }
 
   // -------------------------------------------------------------------------
+  // WHAT IS PUBLISHED (phase 5). Every list a document carries narrows here, so
+  // what a realm says it does cannot differ from what the gates above do.
+  // **WITH NOTHING CONFIGURED THESE RETURN THE DOCUMENT UNTOUCHED**, which is
+  // what keeps the certified discovery output byte for byte what it was;
+  // `tests/signature_policy_metadata.js` holds that against output captured
+  // before this code existed.
+  // -------------------------------------------------------------------------
+  /**
+   * @returns whether anything but the family switches narrows a JOSE list
+   */
+  private static joseNarrowed(): boolean {
+    return SignaturePolicy.pqcOnly() || !!SignaturePolicy.signIds('jose');
+  }
+
+  /**
+   * Narrows, in place, the top-level members that say what this realm SIGNS,
+   * into a configured list's order. `id_token_signing_alg_values_supported`
+   * keeps RS256 under `keys.pqcOnly`, which OpenID Connect Discovery requires.
+   *
+   * @param doc - the metadata document
+   * @param members - the names of the members that list what it signs
+   * @returns the same document
+   */
+  static narrowOwnMembers(doc: any, members: string[]): any {
+    log.debug("Entering SignaturePolicy.narrowOwnMembers().");
+    if (!doc || typeof doc !== 'object' || !SignaturePolicy.joseNarrowed()) {
+      log.debug("Leaving SignaturePolicy.narrowOwnMembers(). Unchanged.");
+      return doc;
+    }
+    const ids = SignaturePolicy.signIds('jose');
+    members.forEach(function (name: string) {
+      if (!Array.isArray(doc[name])) {
+        return;
+      }
+      const context = { idToken:
+        name === 'id_token_signing_alg_values_supported' };
+      const kept = doc[name].filter(function (alg: string) {
+        return SignaturePolicy.signCause('jose', alg, context) === null;
+      });
+      doc[name] = ids ? kept.slice().sort(function (a: string, b: string) {
+        const rank = function (one: string): number {
+          const at = ids.indexOf(one);
+          return at < 0 ? ids.length : at;
+        };
+        return rank(a) - rank(b);
+      }) : kept;
+    });
+    log.debug("Leaving SignaturePolicy.narrowOwnMembers().");
+    return doc;
+  }
+
+  /**
+   * Narrows, in place and at any depth, the lists that say what this realm
+   * ACCEPTS to the accept lists. A number in a list is a COSE identifier
+   * (OpenID4VP's `mso_mdoc`). Members in `except`, which list what it signs,
+   * are the caller's.
+   *
+   * @param doc - the metadata document
+   * @param except - member names to leave alone
+   * @returns the same document
+   */
+  static narrowAcceptedLists(doc: any, except: string[]): any {
+    log.debug("Entering SignaturePolicy.narrowAcceptedLists().");
+    const jose = SignaturePolicy.parsed(config.value(LISTS.jose.accept));
+    const cose = SignaturePolicy.parsed(config.value(LISTS.cose.accept));
+    if (!doc || typeof doc !== 'object' || (!jose.length && !cose.length)) {
+      log.debug("Leaving SignaturePolicy.narrowAcceptedLists(). Unchanged.");
+      return doc;
+    }
+    const member = /(?:^|_)alg_values(?:_supported)?$/;
+    const walk = function (node: any): void {
+      if (!node || typeof node !== 'object') {
+        return;
+      }
+      Object.keys(node).forEach(function (name: string) {
+        const value = node[name];
+        if (Array.isArray(value) && member.test(name) &&
+            except.indexOf(name) < 0 && !/encryption/.test(name)) {
+          node[name] = value.filter(function (alg: unknown) {
+            return alg === 'none' ||
+              SignaturePolicy.acceptCause(
+                typeof alg === 'number' ? 'cose' : 'jose', String(alg)) === null;
+          });
+        } else if (value && typeof value === 'object') {
+          walk(value);
+        }
+      });
+    };
+    walk(doc);
+    log.debug("Leaving SignaturePolicy.narrowAcceptedLists().");
+    return doc;
+  }
+
+  /**
+   * Whether a JWK Set still publishes a signing key under `keys.pqcOnly`: the
+   * post-quantum ones, and the RSA key RS256 ID Tokens verify with.
+   *
+   * @param jwk - the key
+   * @returns true when it stays
+   */
+  static publishedUnderPqcOnly(jwk: any): boolean {
+    return !SignaturePolicy.pqcOnly() || !jwk || jwk.use === 'enc' ||
+      jwk.kty === 'AKP' || jwk.kty === 'RSA';
+  }
+
+  /**
+   * The rows `saml.signatureAlgorithms`, or else what this realm verifies, in
+   * order, with the chosen algorithm first; and the digests. What the SAML V2.0
+   * Metadata Profile for Algorithm Support publishes. Never a weak or an HMAC
+   * method, which is a Kerberos session key's and no certificate's.
+   *
+   * @param chosen - the URI this realm signs with now
+   * @param digests - every digest method's URI to its row
+   * @returns `{ signing, digests }`, URIs
+   */
+  static xmlAlgorithmSupport(chosen: string, digests: Record<string, any>): any {
+    log.debug("Entering SignaturePolicy.xmlAlgorithmSupport().");
+    const signing = SignaturePolicy.effective('xml', 'sign')
+      .concat(SignaturePolicy.effective('xml', 'accept'))
+      .filter(function (uri: string, at: number, all: string[]) {
+        const row = algorithmRegistry.bySpelling('xml', uri);
+        return all.indexOf(uri) === at && row && row.xml === uri &&
+          !row.weak && row.family !== 'hmac' &&
+          SignaturePolicy.acceptCause('xml', uri) === null;
+      });
+    const ordered = [chosen].concat(signing.filter(function (uri: string) {
+      return uri !== chosen;
+    }));
+    const usable = Object.keys(digests).filter(function (uri: string) {
+      return !digests[uri].weak &&
+        SignaturePolicy.acceptXmlDigestCause(digests[uri].label) === null;
+    });
+    log.debug("Leaving SignaturePolicy.xmlAlgorithmSupport().");
+    return { signing: ordered, digests: usable };
+  }
+
+  /**
+   * Every surface's rows and each row's state, in preference order: what the
+   * console draws and `/crypto/metadata` publishes.
+   *
+   * @returns surface to `{ signList, acceptList, rows }`
+   */
+  static describe(): any {
+    log.debug("Entering SignaturePolicy.describe().");
+    const out: any = { pqcOnly: SignaturePolicy.pqcOnly(), surfaces: {} };
+    Object.keys(LISTS).forEach(function (surface: string) {
+      const lists = LISTS[surface];
+      const name = surface as Surface;
+      out.surfaces[surface] = {
+        signSetting: lists.sign || '',
+        acceptSetting: lists.accept || '',
+        rows: algorithmRegistry.on(surface).map(function (row: any) {
+          const spelled = String(row[surface]);
+          const refused = lists.sign
+            ? SignaturePolicy.signCause(name, spelled) : null;
+          const unaccepted = surface === 'x509'
+            ? (row.oid && SignaturePolicy.acceptX509Cause(row.oid, row.hash)) ||
+              null
+            : SignaturePolicy.acceptCause(name, spelled);
+          return {
+            id: row.id, spelling: spelled, pqc: row.pqc || '', weak: row.weak,
+            signs: !!lists.sign && refused === null,
+            signRefusal: refused ? refused.message : '',
+            accepts: unaccepted === null,
+            acceptRefusal: unaccepted ? unaccepted.message : ''
+          };
+        })
+      };
+    });
+    log.debug("Leaving SignaturePolicy.describe().");
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
   // THE WRITE RULE, asked of every door that writes a setting.
   // -------------------------------------------------------------------------
   private static problem(code: string, message: string): any {

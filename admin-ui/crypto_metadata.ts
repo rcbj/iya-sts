@@ -2958,7 +2958,10 @@ class CryptoMetadata {
           log.debug("Entering algorithms().");
           log.debug("Leaving algorithms().");
           return [
-            ['Credential signing', ['RS256', bbs2023.CRYPTOSUITE]],
+            // What the realm signs credentials with now, not a literal (#1368).
+            ['Credential signing', [String(
+              config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'),
+              bbs2023.CRYPTOSUITE]],
             ['Wallet proof of possession', stsCrypto.JWS_ASYMMETRIC_ALGS],
             ['Disclosure digest', ['sha-256']]
           ];
@@ -3711,8 +3714,11 @@ class CryptoMetadata {
                  // STANDARDS for why that is load-bearing rather than a taste.
                  usedHere: spec.exclusive && !spec.comments };
       }),
-      cose: Object.keys(webauthn.COSE_ALGS).map(function (id) {
-        return { coseAlg: Number(id), jose: webauthn.COSE_ALGS[id] };
+      // The table the COSE door and passkeys verify with (#1368). It was
+      // WebAuthn's, drawn as though passkeys were all COSE was.
+      cose: Object.keys(stsCrypto.COSE_SIGNATURE_ALGS).map(function (id) {
+        return { coseAlg: Number(id),
+                 jose: stsCrypto.COSE_SIGNATURE_ALGS[id].name };
       }),
       other: [
         { name: bbs2023.CRYPTOSUITE,
@@ -4107,6 +4113,9 @@ class CryptoMetadata {
       realm: realms.currentId(),
       generatedAt: new Date().toISOString(),
       oneModule: SENTENCES.oneModule,
+      // Which algorithm, on which surface, and why not: the same answer the
+      // signers and verifiers act on (#1368).
+      signaturePolicy: self.deps.stsCrypto.signaturePolicy.describe(),
       drift: self.driftReport(),
       keys: self.keyMaterial(),
       families: self.families.map(function (row) {

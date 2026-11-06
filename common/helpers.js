@@ -3625,16 +3625,46 @@ const ALG_OF_CURVE = { 'P-256': ['ES256'], 'P-384': ['ES384'],
  * @param keys - the public JWKs
  * @returns the keys to publish
  */
+// What a passkey ceremony offers, as a list of names.
+function webauthnAlgorithmsOffered() {
+  log.debug("Entering webauthnAlgorithmsOffered().");
+  const raw = config.value('webauthn.algorithms');
+  log.debug("Leaving webauthnAlgorithmsOffered().");
+  return (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).trim();
+    }).filter(Boolean);
+}
+
+// EVERY LIST A DOCUMENT CARRIES, IN ONE CALL (#1368, phase 5): a publisher asks
+// this and cannot miss one of the switches. With nothing configured the output
+// is what each of them already answered.
+function narrowSigningAlgs(doc) {
+  log.debug("Entering narrowSigningAlgs().");
+  withoutPqSigningAlgs(doc);
+  withoutEddsaSigningAlgs(doc);
+  withoutUnlistedSigningAlgs(doc);
+  signaturePolicy.narrowOwnMembers(doc, OWN_SIGNING_ALG_MEMBERS);
+  signaturePolicy.narrowAcceptedLists(doc, OWN_SIGNING_ALG_MEMBERS);
+  log.debug("Leaving narrowSigningAlgs().");
+  return doc;
+}
+
 function withoutUnlistedSigningKeys(keys) {
   log.debug("Entering withoutUnlistedSigningKeys().");
   const list = signingAlgAllowlist();
   if (!list) {
     log.debug("Leaving withoutUnlistedSigningKeys(). Unchanged.");
-    return keys;
+    // keys.pqcOnly leaves no list to read, and still narrows what is published.
+    return signaturePolicy.pqcOnly()
+      ? (keys || []).filter(signaturePolicy.publishedUnderPqcOnly) : keys;
   }
   const out = (keys || []).filter(function (jwk) {
     if (!jwk || jwk.use === 'enc') {
       return true;
+    }
+    if (!signaturePolicy.publishedUnderPqcOnly(jwk)) {
+      return false;
     }
     if (jwk.alg) {
       return list.indexOf(jwk.alg) >= 0;
@@ -9406,6 +9436,8 @@ module.exports = {
   curveKeyFrom: curveKeyFrom,
   listedSigningAlgs: listedSigningAlgs,
   withoutUnlistedSigningAlgs: withoutUnlistedSigningAlgs,
+  narrowSigningAlgs: narrowSigningAlgs,
+  webauthnAlgorithmsOffered: webauthnAlgorithmsOffered,
   withoutUnlistedSigningKeys: withoutUnlistedSigningKeys,
   browserDeviceKeysFor: browserDeviceKeysFor,
   vcApiKeysFor: vcApiKeysFor,

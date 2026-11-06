@@ -797,6 +797,13 @@ class Oidfed {
     // federation's OWN keys and statements are `oidfed.signingAlg`'s and are
     // not touched (the setting's description says so).
     helpers.withoutPqSigningAlgs(out);
+    // The documents inside were narrowed where they were built; this holds what
+    // the federation adds to the same accept list (#1368).
+    cryptoLib.signaturePolicy.narrowAcceptedLists(out,
+      ['id_token_signing_alg_values_supported',
+       'userinfo_signing_alg_values_supported',
+       'introspection_signing_alg_values_supported',
+       'authorization_signing_alg_values_supported']);
     log.debug("Leaving Oidfed.protocolMetadata(). " +
               Object.keys(out).join(', '));
     return out;

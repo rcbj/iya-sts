@@ -10321,6 +10321,19 @@ const SETTINGS = [
                  'watch a service provider refuse a stale assertion, which ' +
                  'is the check most of them get wrong.' },
 
+  // THE ONE DELIBERATE EXCEPTION TO "THE DEFAULTS REPRODUCE TODAY" IN #1368 (rcbj's
+  // decision): metadata says what is configured, and this profile exists for it.
+  { key: 'saml2.publishAlgorithmSupport', group: 'SAML 2.0 assertions',
+    label: 'Publish algorithm support in metadata',
+    env: 'STS_SAML2_PUBLISH_ALGORITHM_SUPPORT', type: 'bool', dflt: true,
+    runtime: true,
+    description: 'Whether IdP metadata carries `<alg:SigningMethod>` and ' +
+                 '`<alg:DigestMethod>` (SAML V2.0 Metadata Profile for ' +
+                 'Algorithm Support 1.0), listing the XML signature methods ' +
+                 'and digests this realm uses and accepts, the chosen ' +
+                 'algorithm first. **On by default.** A consumer that does ' +
+                 'not know the profile ignores them, as SAML metadata ' +
+                 'section 2.3.1 requires.' },
   { key: 'saml2.signAssertion', group: 'SAML 2.0 assertions', label: 'Sign ' +
       'the assertion',
     env: 'STS_SAML2_SIGN_ASSERTION', type: 'bool', dflt: true, runtime: true,
