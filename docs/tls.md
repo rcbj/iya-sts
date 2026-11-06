@@ -477,6 +477,12 @@ handshake. See the `tls-client` row of the [use cases](pki-use-cases.md). A regi
 `self_signed_tls_client_auth` certificate is held to its validity and keyUsage too,
 while equality stays the method (`tls-client-self-signed`).
 
+**The hold at a handshake follows the default realm.** A TLS handshake has no
+realm in it, so `pki.paranoid` and `pki.paranoidTlsClient` are read from the default
+realm, whichever realm's path the request later names. Setting either in another
+realm changes nothing at a handshake. The use cases decided on a request, such as
+`tls-client-self-signed`, do follow the realm of that request.
+
 **Why it starts empty.** The certificate authority whose clients it verifies is
 often generated in somebody's *browser* minutes before the connection, and
 exists nowhere else, so no configuration file could hold it and no image could

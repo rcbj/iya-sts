@@ -8946,6 +8946,10 @@ port's is `annotateRequest()`, which was already there; LDAPS pauses the stream
 until `holdConnectionsOn()` has the verdict; the debugger's first middleware waits on
 `settledRequest()`. A worker needs nothing new: the front process demotes
 `socket.authorized`, and that flag is what `request_pool.peerOf()` already forwards.
+**THE HOLD READS THE DEFAULT REALM'S SETTINGS**: a handshake has no realm in it
+(the root file's *Trust realms*, item 5), so a realm's own `pki.paranoid` and
+`pki.paranoidTlsClient` decide nothing there, in either direction.
+
 **A RESUMED SESSION GETS ITS FULL HANDSHAKE'S VERDICT, ON ANY NODE.** Node hands
 a resumed connection the leaf alone, so the verdict rides beside the chain on the
 replicated `tls.presentedChains` row, written together at the full handshake's

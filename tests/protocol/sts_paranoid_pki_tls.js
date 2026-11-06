@@ -9,8 +9,8 @@
 // PARANOID PKI MODE AT THE CLIENT-CERTIFICATE SIDE OF TLS (#1360, Phase 1).
 //
 // `local: true`, and `exclusive`: the hold is asked in the DEFAULT realm, because
-// a handshake has no realm in it, so its section writes the default realm's
-// master for a moment, and it adds a CA to the process's truststore. Both are put
+// a handshake has no realm in it, so a realm's own master and row decide nothing
+// there. Its section writes the default realm's master for a moment, and it adds a CA to the process's truststore. Both are put
 // back in a `finally`. What it asserts is what the service does: the token
 // endpoint's answer, what `GET /admin-api/tls-connection` reports of the
 // connection it was asked over, and the door's own count of refusals.
@@ -26,6 +26,7 @@ const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const credentials = require("../tools/pep-credential.js");
 const kit = require("../tools/trust_kit.js");
+const facts = require("./service_facts.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -235,12 +236,16 @@ async function theMainPortHolds() {
                             { certificates: root.pem });
   assert.strictEqual(posted.status, 200, posted.raw.slice(0, 300));
   credentials.confirmAnchor(root.pem);
+  const product = await facts.isProduct(base + "/admin-api");
   try {
-    const off = await seen(caLeaf);
+    const before = await seen(caLeaf);
     await send("POST", "/admin-api/config/set",
                { key: "pki.paranoid", value: "on" });
     const onGood = await seen(good);
     const onCa = await seen(caLeaf);
+    // A handshake has no realm in it, so a realm's own row decides nothing here.
+    await setRow(realmApi(), "pki.paranoidTlsClient", false);
+    const realmRowOff = await seen(caLeaf);
     await setRow("/admin-api", "pki.paranoidTlsClient", false);
     const rowOff = await seen(caLeaf);
     const verified = function (view) {
@@ -248,10 +253,10 @@ async function theMainPortHolds() {
       log.debug("Leaving verified().");
       return view.clientCertificate && view.clientCertificate.verified;
     };
-    check("master off in development, it verifies as it did", function () {
-      if (!off.product) {
-        assert.strictEqual(verified(off), true, JSON.stringify(off).slice(0, 400));
-      }
+    check("by default, a CA presented as a client is unverified in product " +
+          "and verifies in development", function () {
+      assert.strictEqual(verified(before), !product,
+                         JSON.stringify(before).slice(0, 400));
     });
     check("master on, a good client verifies", function () {
       assert.strictEqual(verified(onGood), true,
@@ -262,7 +267,11 @@ async function theMainPortHolds() {
       assert.strictEqual(verified(onCa), false,
                          JSON.stringify(onCa).slice(0, 400));
     });
-    check("with the row off it verifies again", function () {
+    check("a realm's own row off changes nothing at a handshake", function () {
+      assert.strictEqual(verified(realmRowOff), false,
+                         JSON.stringify(realmRowOff).slice(0, 400));
+    });
+    check("with the default realm's row off it verifies again", function () {
       assert.strictEqual(verified(rowOff), true,
                          JSON.stringify(rowOff).slice(0, 400));
     });
