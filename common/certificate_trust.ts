@@ -210,9 +210,9 @@ const PURPOSES: Purpose[] = [
     title: 'A federation partner\'s signing certificate',
     covers: 'A partner\'s SAML or WS-Federation signature, a partner JWK\'s ' +
       'x5c and a federated logout signer.',
-    adds: 'Validity at every use; a chain to the signer truststore when the ' +
-      'certificate is not self-signed; revocation on logout and sign-in alike; ' +
-      'field checks when the certificate is registered.',
+    adds: 'Validity at every use; revocation on logout and sign-in alike; ' +
+      'field checks when the certificate is registered. Registering it names ' +
+      'it, so it needs no chain.',
     sites: ['federation/federation_sp.ts', 'federation/federation_slo.ts',
             'federation/federation.ts'],
     anchors: ['registered-root', 'signer-truststore', 'pinned'],
