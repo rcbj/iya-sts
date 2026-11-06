@@ -1675,6 +1675,18 @@ async function everyPageIsDrawn(driver, pages) {
       assert.ok(page.title && page.title.length > 0,
         "and it should have a title; it has " + JSON.stringify(page.title));
     });
+    if (path === "/admin/api-explorer") {
+      // WHAT AN OPERATION ANSWERS IS ON THE PAGE (#1353): the document has
+      // carried the models all along, and only the page can show they are read.
+      const head = await driver.wait(until.elementLocated(By.css(".ophead")),
+                                     30000);
+      await clickInView(driver, head);
+      const rows = await driver.wait(until.elementsLocated(
+        By.css(".responses table.model tr")), 10000);
+      check("the explorer shows an operation's response model", function () {
+        assert.ok(rows.length > 1, "it drew " + rows.length + " row(s).");
+      });
+    }
     const scripted = SCRIPTED_PAGES[path];
     // EVERY PAGE IS THE SAME DOCUMENT SINCE #446, under one policy: the
     // console's script from this origin and nothing inline, its calls to

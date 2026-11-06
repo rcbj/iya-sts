@@ -35,6 +35,13 @@ they come from is the second copy that is wrong within a week. The page is
 committed, so it still reads in the repository and on the site with no build
 step here; what the generator replaces is the typing, not the file.
 
+**AND `openapi/` IS THE SECOND (rcbj, 2026-11-06).** Each published API's OpenAPI
+document as pages to read, written by `tests/tools/regenerate-openapi-pages.sh`
+and held by `tests/openapi_pages.js`. It is a copy of what the service publishes,
+which the rule above refuses; rcbj asked for it because a reader of this site
+has no running service to ask, and generating it removes the reason for the rule.
+A changed operation or model owes a regeneration in the same commit.
+
 Adding a page: write the markdown, add it to the right section of
 `_data/navigation.yml` so it appears in the sidebar, and link it from
 `index.md`. A console or portal screen that page explains gets its row in

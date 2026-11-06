@@ -264,7 +264,6 @@ const CEREMONY_MEMBERS: Json = {
 
 // A reason this step's ceremony cannot run, told before it does.
 const CEREMONY_REFUSAL: Json = Kit.nullable(Kit.closed({
-  code: Kit.str(),
   why: Kit.str()
 }));
 

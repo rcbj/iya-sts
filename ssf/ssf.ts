@@ -3766,8 +3766,8 @@ class SharedSignals {
     }
     if (errors.length) {
       log.debug('Leaving SharedSignals.broadcastAnnouncement(). Refused.');
-      return { ok: false, code: 'STS-SSF-0153', errors: errors, sent: 0,
-               streams: 0, realms: [] };
+      return errorCodes.mark({ ok: false, errors: errors, sent: 0,
+                               streams: 0, realms: [] }, 'STS-SSF-0153');
     }
     const uri = events.ANNOUNCEMENT;
     const targets = a.everyRealm ? realms.list() : [realms.current()];
@@ -3849,7 +3849,6 @@ class SharedSignals {
       }
     }
     if (!outcome.sent) {
-      outcome.code = 'STS-SSF-0154';
       log.warn(errorCodes.tag('STS-SSF-0154') + 'ssf: an announcement ' +
                'reached no stream: ' + outcome.why);
     }

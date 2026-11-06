@@ -1068,7 +1068,7 @@ const UMA: Json = Kit.closed({
     editable: BOOL, resources: Kit.listOf(UMA_RESOURCE_ROW),
     // `UmaOwnerPolicy.view()`, both branches.
     document: Kit.closed({
-      ok: BOOL, code: STR, why: STR, stored: BOOL,
+      ok: BOOL, why: STR, stored: BOOL,
       version: Kit.oneOf(STR, NUM), rules: INT, shares: Kit.listOf(UMA_SHARE),
       custom: Kit.listOf(Kit.closed({ id: STR, description: STR, alfa: STR })),
       alfaEditing: BOOL, alfa: STR

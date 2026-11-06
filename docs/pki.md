@@ -1433,6 +1433,12 @@ realm's keystore row, sealed under the same key-encryption key — so there is o
 answer to *where does this service keep a private key*. It inherits the mode:
 product keeps it, development loses it with the process.
 
+**A private key this service keeps does not come back when a certificate is
+issued**: the private key box is empty afterwards, and the answer's `object` says
+`hasPrivateKey`. *Use this key pair* puts it back in the box, and export writes it
+out. A key you told the service not to keep stays in the box, which is the only
+copy there is.
+
 Select a row to export it or to load its key pair back into the form.
 *Use this key pair* ticks **reuse the key pair below** itself, because a pair
 loaded into the boxes and then silently replaced by a fresh one at the next

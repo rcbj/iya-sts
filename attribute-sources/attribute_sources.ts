@@ -1138,16 +1138,23 @@ class AttributeSources {
          (only || 'the on-demand sources') + ': ' +
          (result.changed.join(', ') || 'nothing changed'));
     log.debug("Leaving AttributeSources.refreshPersonAct().");
-    return { ok: result.failures.length === 0, changed: result.changed,
-             failures: result.failures,
-             errors: result.failures.map(function (one) {
-               return one.source + ': ' + one.why;
-             }),
-             message: username + ' was read: ' +
-                      (result.changed.length ? result.changed.join(', ') +
-                        ' changed' : 'nothing changed') +
-                      (result.failures.length ? '; ' + result.failures.length +
-                        ' source(s) failed' : '') + '.' };
+    const answer: Json = {
+      ok: result.failures.length === 0, changed: result.changed,
+      // Each failure's code was logged where it happened; the first is the
+      // mark the handler records, and none is answered (#1355).
+      failures: result.failures.map(function (one) {
+        return { source: one.source, why: one.why };
+      }),
+      errors: result.failures.map(function (one) {
+        return one.source + ': ' + one.why;
+      }),
+      message: username + ' was read: ' +
+               (result.changed.length ? result.changed.join(', ') +
+                 ' changed' : 'nothing changed') +
+               (result.failures.length ? '; ' + result.failures.length +
+                 ' source(s) failed' : '') + '.' };
+    return result.failures.length
+      ? errorCodes.mark(answer, result.failures[0].code) : answer;
   }
 }
 

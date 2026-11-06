@@ -317,6 +317,31 @@ const COUNT_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six',
  * field and every computation on the server.
  */
 class PkiAdmin {
+  // WHAT AN ISSUE ANSWERS OF THE PRIVATE KEY (#1359, rcbj's decision). A key
+  // this service KEPT does not come back with the certificate: the object's
+  // `hasPrivateKey` says it exists, `use-key` puts it back in the form's boxes
+  // and `export-keys` writes it out, each because somebody asked. An answer is
+  // what ends up in a client's log. A key it did NOT keep stays in the draft,
+  // because the form is the only copy there is and the page says so.
+  private static issuedAnswer(issued: Json): Json {
+    const object = Object.assign({}, issued.object);
+    const kept = !!object.privateKeyPem;
+    delete object.privateKeyPem;
+    delete object.altPrivateKeyPem;
+    object.hasPrivateKey = kept;
+    if (!kept) {
+      return Object.assign({}, issued, { object: object });
+    }
+    return Object.assign({}, issued, {
+      object: object,
+      draft: Object.assign({}, issued.draft, { pki_private_key: '',
+                                               pki_alt_private_key: '' }),
+      why: issued.why + ' Its private key is kept in this service and is not ' +
+           'in this answer: "use-key" puts it back in the key boxes, and ' +
+           '"export-keys" writes it out.'
+    });
+  }
+
   // The table the comments here call PURPOSE_WRITES — see
   // `purposeWritesTable()`.
   private readonly purposeWrites: Record<string, any>;
@@ -2417,7 +2442,7 @@ class PkiAdmin {
       }
       log.debug('Leaving PkiAdmin.pkiAction(). Issued ' + issued.object.id +
                 '.');
-      return issued;
+      return PkiAdmin.issuedAnswer(issued);
     }
 
     if (action === 'use-key') {

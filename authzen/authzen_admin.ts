@@ -485,7 +485,7 @@ class AuthzenAdmin {
    * @returns `{ group, authzenGroup, total, truncated, granted, held,
    *   failed }`; each holder is `{ name, kind, dn }`, a granted one with
    *   `member` and `scope` saying what was added, a failed one with `why`
-   *   and `code`
+   *   (its code, STS-FGA-0025, is on the audit row and never answered)
    */
   grantRemotePeps(application: string, who?: any): any {
     const self = this;
@@ -503,8 +503,7 @@ class AuthzenAdmin {
                        granted: [], held: [], failed: [] };
     const fail = function (holder: any, why: string): void {
       log.debug("Entering fail().");
-      out.failed.push(Object.assign({}, holder,
-                                    { why: why, code: 'STS-FGA-0025' }));
+      out.failed.push(Object.assign({}, holder, { why: why }));
       self.auditGrant(id, holder, by, why);
       log.debug("Leaving fail().");
     };

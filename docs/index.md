@@ -58,6 +58,8 @@ administrator ·
 [Audit export destinations](audit-export.md): where this process sends its
 audit events, with an example for syslog, a file, a webhook, Splunk HEC and
 LogRhythm ·
+[OpenAPI reference](openapi/): every operation of each API this service
+publishes, its parameters and its answers ·
 [Management API](management-api.md): `/admin-api`, every console control
 reachable by a machine with an OAuth 2.0 access token ·
 [Delegation and impersonation](delegation.md): who may obtain a token about

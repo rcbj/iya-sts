@@ -330,7 +330,7 @@ const FEDERATION_RELATIONSHIP_LIST = Kit.closed({
 });
 
 const FED_CHECK_PARTNER = Kit.action({
-  errorCode: STR, why: STR, issuer: STR,
+  why: STR, issuer: STR,
   endpoints: Kit.closed({ authorization_endpoint: STR, token_endpoint: STR,
                           userinfo_endpoint: STR, jwks_uri: STR }),
   discovered: BOOL, keys: INT, readable: INT
@@ -425,8 +425,8 @@ const PKI_KEY_ALGORITHM = Kit.closed({
 // names include one per X.509 key usage, EKU and Netscape bit from the crypto
 // engine's tables, so the keys are read from those tables and are data here.
 const PKI_DRAFT = Kit.mapOf(Kit.nullable(Kit.oneOf(STR, BOOL)));
-// `describeObject()`; and the raw record `issue()` answers with, which adds the
-// three key members below it.
+// `describeObject()`; and the record an issue answers with, which adds the
+// public keys. Neither private key: `PkiAdmin.issuedAnswer()` (#1359).
 const PKI_OBJECT = Kit.closed({
   id: STR, ca: BOOL, profile: STR, profileLabel: STR, subject: STR,
   issuerSubject: STR, issuerId: NSTR, selfSigned: BOOL, serialHex: STR,
@@ -434,8 +434,7 @@ const PKI_OBJECT = Kit.closed({
   pqMode: STR, altKeyAlg: NSTR, altSigned: BOOL, notBefore: STR, notAfter: STR,
   expired: BOOL, thumbprint: STR, createdAt: WHEN, hasPrivateKey: BOOL,
   hasCsr: BOOL, certificatePem: STR, csrPem: STR, pqc: PQC,
-  privateKeyPem: STR, publicKeyPem: STR, altPrivateKeyPem: NSTR,
-  altPublicKeyPem: NSTR
+  publicKeyPem: STR, altPublicKeyPem: NSTR
 });
 const PKI_WORKBENCH = Kit.closed({
   fields: STRS,
@@ -1476,9 +1475,8 @@ Object.assign(operations, {
     everyRealm: BOOL, realmCount: INT, maxChars: NUM, pollMs: NUM, keepS: NUM,
     ready: BOOL, why: STR
   }) },
-  // `code` is an error code in an answer: see the report on #1353.
   sendBroadcast: { '200': Kit.action({
-    code: STR, why: STR, sent: INT, streams: INT,
+    why: STR, sent: INT, streams: INT,
     realms: Kit.listOf(Kit.closed({ realm: STR, sent: INT, streams: INT,
                                     skipped: STRS }))
   }) },

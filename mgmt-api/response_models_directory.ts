@@ -1243,8 +1243,8 @@ const SCIM_MONITOR: Json = Kit.closed({
 });
 
 // `ScimClients.act()`: `actHere()`'s answer; with `cell` and `reachable` over
-// it for an act that named a cell, and `code` where another cell answered it;
-// and one row per cell for an act that named none.
+// it for an act that named a cell; and one row per cell for an act that named
+// none.
 const SCIM_CLIENT_ACTION: Json = Kit.action(Object.assign({
   client: Kit.nullable(SCIM_CLIENT_ROW),
   certificate: Kit.closed({
@@ -1256,7 +1256,7 @@ const SCIM_CLIENT_ACTION: Json = Kit.action(Object.assign({
   cells: Kit.listOf(Kit.closed({
     cell: STR, reachable: BOOL, ok: BOOL, message: STR, count: NUM
   })),
-  cell: STR, reachable: BOOL, code: STR
+  cell: STR, reachable: BOOL
 }, SCIM_RECONCILE));
 
 // ---------------------------------------------------------------------------
@@ -1307,7 +1307,7 @@ const ATTRIBUTE_SOURCE_ACTION: Json = Kit.action({
                               'The row, by the operator\'s column names.')),
   runId: Kit.oneOf(NUM, STR),
   changed: STR_LIST,
-  failures: Kit.listOf(Kit.closed({ source: STR, code: STR, why: STR }))
+  failures: Kit.listOf(Kit.closed({ source: STR, why: STR }))
 });
 
 // `SecretDestinations.rowOf()`.
@@ -1368,12 +1368,8 @@ const POST_LOGIN_ACTIVITIES: Json = Kit.closed({
   }, STARTED_ACTIVITY_MEMBERS)))
 });
 
-// `errorCode` on a refusal is what the handler reads its mark from, and it is
-// also sent; declared because an answer that fails its model is not sent at
-// all (reported on #1353 rather than changed from here).
 const POST_LOGIN_ACTION: Json = Kit.action({
-  started: Kit.closed(STARTED_ACTIVITY_MEMBERS),
-  errorCode: STR
+  started: Kit.closed(STARTED_ACTIVITY_MEMBERS)
 });
 
 // ---------------------------------------------------------------------------

@@ -496,8 +496,7 @@ class FgaPolicies {
                'grant the realm\'s remote PEPs: ' + why);
       log.debug("Leaving FgaPolicies.grantPeps(). It threw.");
       return { group: '', authzenGroup: '', granted: [], held: [],
-               failed: [{ name: '', kind: 'unknown', dn: '', why: why,
-                          code: 'STS-FGA-0025' }] };
+               failed: [{ name: '', kind: 'unknown', dn: '', why: why }] };
     }
   }
 
@@ -872,11 +871,11 @@ class FgaPolicies {
    * Describes an application's fine-grained authorization for its page.
    *
    * @param identifier - the application's identifier
-   * @returns `{ known, enforced, reference, policy, usable, failure, code,
+   * @returns `{ known, enforced, reference, policy, usable, failure,
    *   why, types, unreadable, template }`
    */
   state(identifier: string): Record<string, any> {
-    const { log, store, applications, map, errorCodes } = this.deps;
+    const { log, store, applications, map } = this.deps;
     const id = String(identifier);
     log.debug("Entering FgaPolicies.state(). identifier=" + id);
     const held = applications.fgaStateOf(id);
@@ -884,7 +883,7 @@ class FgaPolicies {
       log.debug("Leaving FgaPolicies.state(). Unknown application.");
       return { known: false, enforced: false, reference: '', policy: null,
                usable: false, failure: 'unknown-application',
-               code: 'STS-FGA-0009', why: '', types: [], unreadable: [],
+               why: '', types: [], unreadable: [],
                template: TEMPLATE };
     }
     const row = held.policy ? store.read(held.policy) : null;
@@ -920,7 +919,6 @@ class FgaPolicies {
       known: true, enforced: held.enforced, reference: held.policy,
       policy: policy, usable: !!resolved.ok,
       failure: resolved.ok ? '' : String(resolved.failure || ''),
-      code: resolved.ok ? '' : errorCodes.codeOf(resolved),
       why: resolved.ok ? '' : String(resolved.why || ''),
       types: types, unreadable: unreadable, template: TEMPLATE,
       peps: this.pepsOf(id),
