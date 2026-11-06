@@ -22,6 +22,7 @@
 //    M: encryption recipients. N: the path helpers of Phase 5.
 //
 // MUTATION RECORD, each applied to a scratch build, seen red and put back:
+//   * `readable()` not asked at either door                  — red each
 //   * `fieldChecks()` not marking a failure                  — 53 red
 //   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
 //   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
@@ -52,6 +53,7 @@ const config = require('../common/config');
 const audit = require('../common/audit');
 const trust = require('../common/certificate_trust');
 const stsCrypto = require('../common/crypto');
+const cryptoForDoor = require('../common/crypto');
 const signers = require('../common/signer_truststore');
 const kit = require('./tools/trust_kit');
 
@@ -795,6 +797,31 @@ async function run(t, double, crls) {
   t.check(!/its signer is refused/.test(JSON.stringify(stillGood)),
           'N. and only in force', JSON.stringify(stillGood).slice(0, 300));
   double.rows(REALM).clear();
+  // UNREADABLE (x509-limbo found one): node reads it and the field checks cannot.
+  // The second parser is a double, since what is under test is that the door
+  // answers a verdict; which bytes split the two parsers is not this file's.
+  t.log.info('unreadable by the field checks');
+  const unreadableRoot = await kit.mint({ cn: 'unreadable root', ca: true });
+  const unreadableLeaf = await kit.mint({ cn: 'unreadable',
+                                          issuer: unreadableRoot });
+  const realFacts = cryptoForDoor.certificateFacts;
+  cryptoForDoor.certificateFacts = function () {
+    throw new Error('a double: the second parser refuses it');
+  };
+  try {
+    const asked = await trust.assess('device-attestation',
+      { leaf: unreadableLeaf.pem }, { anchors: [unreadableRoot.pem] });
+    t.check(!asked.ok && asked.code === 'STS-PKI-0238',
+            'a certificate the field checks cannot read is a verdict, not a ' +
+            'throw', asked.code);
+    const askedSync = trust.assessSync('spiffe-svid',
+      { leaf: unreadableLeaf.pem },
+      { anchors: [{ raw: pemDer(unreadableRoot.pem) }] });
+    t.check(!askedSync.ok && askedSync.code === 'STS-PKI-0238',
+            'and the same at the door that cannot wait', askedSync.code);
+  } finally {
+    cryptoForDoor.certificateFacts = realFacts;
+  }
   log.debug("Leaving run().");
 }
 
