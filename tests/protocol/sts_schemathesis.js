@@ -87,12 +87,11 @@ async function test() {
     log.debug("Leaving test(). Skipped.");
     return;
   }
-  const base = serviceBase();
-  log.info("[schemathesis] driving " + base + " in the three realm profiles");
-  const results = await kit.run(base, { say: function (message) {
-    log.info(message);
-  } });
-  results.forEach(function (one) {
+  // Printed as soon as EACH cell ends, through kit.run's onResult, so a crash
+  // of a later cell keeps what the finished ones found (#1299). The kit also
+  // echoes each Schemathesis run's own output live, so a failing case appears
+  // in this log as it happens; this adds the structured per-cell summary.
+  function printCell(one) {
     const where = one.surface + " @ " + one.realm;
     if (one.status === "pass") {
       log.info("  PASS " + where);
@@ -112,7 +111,12 @@ async function test() {
                   finding.route + " -> " + finding.detail);
       });
     }
-  });
+  }
+  const base = serviceBase();
+  log.info("[schemathesis] driving " + base + " in the three realm profiles");
+  const results = await kit.run(base, {
+    say: function (message) { log.info(message); },
+    onResult: printCell });
   const bad = results.filter(function (one) {
     return one.status !== "pass";
   });
