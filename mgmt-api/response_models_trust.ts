@@ -14,16 +14,16 @@
 // `admin_api_spec.ts`. `common/response_model_kit.ts` says how a model is
 // written and `mgmt-api/response_models.ts` how these are applied.
 //
-// **A VIEW THAT MIRRORS A PROTOCOLS PAGE IS ONE `closed()`, NEVER A `oneOf()`.**
-// `ResponseModels.apply()` adds `protocolEndpoints` to a model that has
-// `properties`, and a union has none: a list and a detail written as a union
-// would refuse the member `sendJson()` adds. So those views' models are the
-// union of their members in one object, and only `required` is left out.
+// **A VIEW THAT MIRRORS A PROTOCOLS PAGE IS ONE `closed()`, NEVER A
+// `oneOf()`.** `ResponseModels.apply()` adds `protocolEndpoints` to a model
+// that has `properties`, and a union has none: a list and a detail written as
+// a union would refuse the member `sendJson()` adds. So those views' models are
+// the union of their members in one object, and only `required` is left out.
 //
-// **WHAT A PARTNER SENT IS NOT THIS SERVICE'S TO TYPE.** `PARTNER_VALUE` and the
-// other free-form uses below are each a value a foreign document carried and
-// this service keeps or relays as it arrived, and a strict type there would turn
-// one partner's odd document into a 500 on an operator's own page.
+// **WHAT A PARTNER SENT IS NOT THIS SERVICE'S TO TYPE.** `PARTNER_VALUE` and
+// the other free-form uses below are each a value a foreign document carried
+// and this service keeps or relays as it arrived, and a strict type there would
+// turn one partner's odd document into a 500 on an operator's own page.
 // ---------------------------------------------------------------------------
 
 import Kit = require('../common/response_model_kit');
@@ -61,7 +61,8 @@ const SETTING_ROW = Kit.closed({
   key: STR, group: STR, label: STR, description: STR, type: STR,
   enumValues: Kit.listOf(SCALAR), csvValues: Kit.listOf(SCALAR), ordered: BOOL,
   csvValueNotes: Kit.mapOf(STR),
-  selectAll: Kit.closed({ onlyWhileOn: SELECT_RULE, aloneWhileOn: SELECT_RULE }),
+  selectAll: Kit.closed({ onlyWhileOn: SELECT_RULE,
+                          aloneWhileOn: SELECT_RULE }),
   min: NUM, max: NUM, step: NUM,
   value: SETTING_VALUE, text: NSTR, source: STR, editable: BOOL,
   restartReason: STR, editRefusal: STR, env: Kit.oneOrMany(STR),
@@ -148,7 +149,7 @@ const FED_RECORD = Kit.closed(Object.assign({}, FED_ATTRIBUTES, {
 }));
 const FED_READINESS = Kit.closed({ ready: BOOL, missing: STRS });
 const FED_ACTION = Kit.action({
-  relationship: FED_RECORD, readiness: FED_READINESS, kid: STR
+  relationship: Kit.nullable(FED_RECORD), readiness: FED_READINESS, kid: STR
 });
 const FED_SCHEMA_ROW = Kit.closed({
   name: STR, kind: STR, role: STR, from: STR, what: STR, standard: BOOL,
@@ -222,12 +223,14 @@ const FED_SIGNALS = Kit.closed({
   streamDelivery: STR, streamAud: STRS, pollEndpoint: STR, pushEndpoint: STR,
   pushEndpointSet: BOOL, state: STR, streamStatus: STR, verifiedAt: STR,
   lastPollAt: STR, lastPollResult: STR, lastError: STR,
-  counts: Kit.closed({ received: INT, verified: INT, refused: INT, acted: INT }),
+  counts: Kit.closed({ received: INT, verified: INT, refused: INT,
+                       acted: INT }),
   blocks: Kit.listOf(FED_BLOCK)
 });
 const FED_REACTION = Kit.closed({
   event: STR, reaction: STR, done: BOOL, skipped: STR, observed: BOOL, why: STR,
-  ended: INT
+  ended: INT, revoked: INT, gnapGrants: INT, oauthGrants: INT, tokens: INT,
+  codes: INT
 });
 const FED_ARRIVAL = Kit.closed({
   relationship: STR, jti: STR, via: STR, receivedAt: STR, verified: BOOL,
@@ -379,8 +382,9 @@ const PKI_CHAIN = Kit.nullable(Kit.closed({
   tiers: Kit.listOf(CA_TIER)
 }));
 const PKI_CERTIFIED = Kit.closed({
-  slot: STR, useCase: STR, label: NSTR, alg: STR, keyAlg: STR, signatureAlg: STR,
-  subject: STR, serialHex: STR, notBefore: STR, notAfter: STR, expired: BOOL,
+  slot: STR, useCase: STR, label: NSTR, alg: STR, keyAlg: STR,
+  signatureAlg: STR, subject: STR, serialHex: STR, notBefore: STR,
+  notAfter: STR, expired: BOOL,
   thumbprint: STR, pinned: BOOL, certificatePem: STR, chainPem: STRS,
   createdAt: WHEN, pqc: PQC
 });
@@ -510,7 +514,8 @@ const PKI_VIEW = Kit.closed({
   })),
   persons: Kit.listOf(Kit.closed({ username: STR, jwt: PERSON_PROFILE,
                                    saml: PERSON_PROFILE })),
-  personSigningKeyMax: NUM, personRevocationReasons: STRS, personsStorable: BOOL,
+  personSigningKeyMax: NUM, personRevocationReasons: STRS,
+  personsStorable: BOOL,
   personAttributes: STRS, personIssuerAttribute: STR,
   subjectKinds: Kit.listOf(ID_LABEL),
   purposes: Kit.listOf(Kit.closed({ id: STR, label: STR, what: STR,
@@ -687,7 +692,8 @@ const SPIFFE_AGENT = Kit.closed({
 });
 const SPIFFE_BINDING = Kit.closed({
   address: STR, listening: BOOL, error: STR, port: INT, tls: BOOL, socket: BOOL,
-  attested: BOOL, peerCredentials: BOOL, authentication: STR, realm: STR
+  attested: BOOL, peerCredentials: BOOL, restricted: BOOL, authentication: STR,
+  realm: STR
 });
 const SPIFFE_FEDERATED = Kit.closed({
   trustDomain: STR, trustDomainId: STR, x509Keys: INT, jwtKeys: INT, keys: INT,
@@ -828,7 +834,8 @@ const ENROLL_REFUSED_PROFILES = Kit.listOf(Kit.closed({ id: STR, why: STR }));
 const NAME_COUNT = Kit.listOf(Kit.closed({ name: STR, count: NUM }));
 const ENROLL_RECENT = Kit.listOf(Kit.closed({
   at: STR, operation: STR, outcome: NSTR, status: NINT, profile: NSTR,
-  principal: NSTR, target: NSTR, errorCode: NSTR, failInfo: NSTR, serialHex: NSTR
+  principal: NSTR, target: NSTR, errorCode: NSTR, failInfo: NSTR,
+  serialHex: NSTR
 }));
 // What a monitor's counters began, on this process.
 const MONITOR_SINCE = WHEN;
@@ -925,7 +932,8 @@ const EST_VIEW = Kit.closed({
   }),
   authentication: Kit.closed({
     basic: BOOL, certificate: BOOL, serverKeyGeneration: BOOL,
-    credentials: Kit.listOf(Kit.closed({ kind: STR, what: STR, managedAt: STR }))
+    credentials: Kit.listOf(Kit.closed({ kind: STR, what: STR,
+                                         managedAt: STR }))
   }),
   profiles: Kit.listOf(Kit.closed({
     id: STR, needs: NSTR, allowed: BOOL, isDefault: BOOL,
@@ -938,14 +946,17 @@ const EST_VIEW = Kit.closed({
   csrAttributes: Kit.closed({
     signatureAlgorithms: Kit.listOf(Kit.closed({ oid: STR, name: STR }))
   }),
-  mode: Kit.closed({ current: STR, development: STR, product: STR, where: STR }),
+  mode: Kit.closed({ current: STR, development: STR, product: STR,
+                     where: STR }),
   actions: STRS, settings: SETTINGS, monitor: STR,
   protocolEndpoints: Kit.listOf(ENDPOINT_ROW)
 });
 const EST_MONITOR = Kit.closed({
   page: STR, title: STR, since: MONITOR_SINCE, processes: INT,
-  totals: Kit.closed({ requests: INT, issued: INT, refused: INT, revoked: INT }),
-  certificates: Kit.closed({ held: INT, valid: INT, revoked: INT, expired: INT }),
+  totals: Kit.closed({ requests: INT, issued: INT, refused: INT,
+                       revoked: INT }),
+  certificates: Kit.closed({ held: INT, valid: INT, revoked: INT,
+                             expired: INT }),
   operations: NAME_COUNT, profiles: NAME_COUNT, principals: NAME_COUNT,
   errorCodes: NAME_COUNT, statuses: NAME_COUNT, lastAt: WHEN, paging: PAGING,
   recent: ENROLL_RECENT
@@ -970,8 +981,8 @@ const SCEP_VIEW = Kit.closed({
     replyKeyTransport: STR, replyCipher: STR
   }),
   authority: Kit.nullable(Kit.closed({
-    subject: STR, serialHex: STR, keyAlg: STR, signatureAlg: STR, notBefore: STR,
-    notAfter: STR, thumbprint: STR, certificatePem: STR,
+    subject: STR, serialHex: STR, keyAlg: STR, signatureAlg: STR,
+    notBefore: STR, notAfter: STR, thumbprint: STR, certificatePem: STR,
     intermediate: Kit.nullable(SUBJECT_UNTIL), root: Kit.nullable(SUBJECT_UNTIL)
   })),
   hierarchyBuilt: BOOL, authorityNote: STR, ra: SCEP_RA,
@@ -1116,8 +1127,8 @@ const GNAP_SERVER = Kit.closed({
   actions: STRS, settings: SETTINGS
 });
 // A counter row: one number per event of `gnap_monitor.ts`'s EVENTS, with
-// `lastAt`, `lastEvent`, `formats` and `errors` beside them; the counters' names
-// are that table's, and a new event is a row there and no change here.
+// `lastAt`, `lastEvent`, `formats` and `errors` beside them; the counters'
+// names are that table's, and a new event is a row there and no change here.
 const GNAP_COUNTERS = Kit.mapOf(Kit.oneOf(NUM, STR, { type: 'null' },
                                           Kit.mapOf(NUM)));
 const GNAP_MONITOR = Kit.closed({
@@ -1151,8 +1162,8 @@ const SUBJECT_IDENTIFIER = Kit.freeForm(
   'section 3.3 lets a receiver add its own.');
 const SET_CLAIMS = Kit.freeForm(
   'A Security Event Token\'s claims. An event\'s members are each event ' +
-  'type\'s, and the claims are what was signed, so a model of them here would ' +
-  'be a second list of every event type.');
+  'type\'s, and the claims are what was signed, so a model of them here ' +
+  'would be a second list of every event type.');
 const SET_SUMMARY = Kit.nullable(Kit.closed({
   jti: STR, iat: NUM, issuer: STR, audience: Kit.oneOrMany(STR), types: STRS,
   name: STR, subject: STR
@@ -1166,10 +1177,11 @@ const TRANSMIT_REPORT = Kit.closed({
 const STREAM_LOG_ROW = Kit.closed({ at: STR, kind: STR, text: STR });
 const EVENT_MEMBER = Kit.closed({
   name: STR, required: Kit.oneOf(BOOL, STR, { type: 'null' }), what: STR,
-  type: STR, values: STRS
+  type: NSTR, values: STRS
 });
 const SSF_EVENT_TYPE = Kit.closed({
-  uri: STR, name: STR, short: STR, family: STR, subject: Kit.oneOf(BOOL, STR),
+  uri: STR, name: STR, short: STR, family: STR,
+  subject: Kit.oneOf(BOOL, STR, { type: 'null' }),
   what: STR, offered: BOOL, members: Kit.listOf(EVENT_MEMBER), required: STRS,
   subjectFormats: STRS, deprecated: STR
 });
@@ -1256,7 +1268,6 @@ const SSF = Kit.closed({
   streamFilter: NSTR, paging: Kit.closed({ streams: PAGING }), note: STR,
   protocolEndpoints: Kit.listOf(ENDPOINT_ROW)
 });
-const CAUSE_COUNTS = COUNTS;
 const SSF_DEAD_LETTERS = Kit.closed({
   installed: BOOL, enabled: BOOL, note: STR, realm: STR, generatedAt: STR,
   pushDelivery: BOOL,
@@ -1272,7 +1283,7 @@ const SSF_DEAD_LETTERS = Kit.closed({
   timeline: Kit.closed({
     bucketS: NUM, windowS: NUM, from: STR, to: STR,
     buckets: Kit.listOf(Kit.closed({ start: STR, startMs: NUM, total: INT,
-                                     counts: CAUSE_COUNTS })),
+                                     counts: COUNTS })),
     peak: INT, olderThanWindow: INT
   }),
   byCode: Kit.listOf(Kit.closed({ errorCode: STR, count: INT, cause: STR,
@@ -1281,7 +1292,7 @@ const SSF_DEAD_LETTERS = Kit.closed({
   byEventType: Kit.listOf(Kit.closed({ type: STR, name: STR, count: INT })),
   streams: Kit.listOf(Kit.closed({
     stream_id: STR, aud: Kit.nullable(Kit.oneOrMany(STR)), endpoint_url: STR,
-    status: STR, state: STR, held: INT, causes: CAUSE_COUNTS, oldestAt: STR,
+    status: STR, state: STR, held: INT, causes: COUNTS, oldestAt: STR,
     newestAt: STR, deadLetteredEver: NUM, deadSince: STR, failingSince: STR,
     nextProbeAt: STR, deadReason: STR, lastPushError: STR, lastPushAt: WHEN
   })),
@@ -1339,8 +1350,9 @@ const CAEP_SESSION = Kit.closed({
   assurance: Kit.closed({ namespace: STR, level: STR, previousLevel: STR }),
   compliance: NSTR,
   risk: Kit.closed({ level: STR, previousLevel: STR, reason: STR }),
-  claims: Kit.freeForm('The claims a `token-claims-change` event said changed: ' +
-                       'whichever a person configured or an emitter named.'),
+  claims: Kit.freeForm('The claims a `token-claims-change` event said ' +
+                       'changed: whichever a person configured or an ' +
+                       'emitter named.'),
   credentials: Kit.listOf(Kit.closed({ at: STR, credentialType: STR,
                                        changeType: STR, friendlyName: STR })),
   counts: COUNTS, total: INT, events: Kit.listOf(VOCABULARY_EVENT),
@@ -1416,12 +1428,13 @@ const SIGNALS = Kit.closed({
     why: STRS
   })),
   received: Kit.listOf(Kit.closed({
-    jti: STR, at: WHEN, tokenDigest: STR, surface: NSTR, stream: NSTR, name: STR,
-    types: STRS, vocabulary: STR, issuer: STR, audience: STR, audienceOk: BOOL,
+    jti: STR, at: WHEN, tokenDigest: STR, surface: NSTR, stream: NSTR,
+    name: STR, types: STRS, vocabulary: STR, issuer: STR, audience: STR,
+    audienceOk: BOOL,
     subject: STR,
-    payload: Kit.freeForm('An event\'s body as this receiver took it in: each ' +
-                          'event type has its own members, and a refused ' +
-                          'delivery is held here too.'),
+    payload: Kit.freeForm('An event\'s body as this receiver took it in: ' +
+                          'each event type has its own members, and a ' +
+                          'refused delivery is held here too.'),
     verified: BOOL, verificationNote: NSTR,
     reactions: Kit.listOf(Kit.closed({
       event: STR, reaction: STR, skipped: STR, observed: BOOL, ended: INT,
@@ -1505,8 +1518,8 @@ const OIDFED_VIEW = Kit.closed({
   entityId: STR, role: STR, configurationUrl: STR,
   endpoints: Kit.closed({
     configuration: STR, fetch: STR, list: STR, resolve: STR, trustMark: STR,
-    trustMarkStatus: STR, trustMarkList: STR, historicalKeys: STR, register: STR,
-    extendedList: STR, collection: STR, subordinateEvents: STR
+    trustMarkStatus: STR, trustMarkList: STR, historicalKeys: STR,
+    register: STR, extendedList: STR, collection: STR, subordinateEvents: STR
   }),
   authorityHints: STRS, realmsAreSubordinates: BOOL, signingAlg: STR,
   keys: Kit.listOf(Kit.closed({
@@ -1538,7 +1551,8 @@ const OIDFED_VIEW = Kit.closed({
   trustAnchors: Kit.listOf(Kit.closed({ entityId: STR, localRealm: NSTR,
                                         kids: Kit.listOf(NSTR) })),
   markTypes: Kit.listOf(OIDFED_MARK_TYPE),
-  markPolicies: Kit.listOf(Kit.closed({ type: STR, issuers: STRS, owner: NSTR })),
+  markPolicies: Kit.listOf(Kit.closed({ type: STR, issuers: STRS,
+                                        owner: NSTR })),
   issuedMarks: Kit.listOf(Kit.closed({
     id: STR, type: STR, sub: STR, issuedAt: NSTR, expiresAt: NSTR, status: STR,
     revokedReason: NSTR
