@@ -315,7 +315,12 @@ const GNAP_RIGHTS: Json = Kit.listOf(Kit.freeForm(
 const GNAP_GRANTS: Json = Kit.closed({
   user: STR, total: INT,
   rows: Kit.listOf(Kit.closed({
-    id: STR, state: STR, finalization: NSTR, client: NSTR, clientName: NSTR,
+    id: STR, state: STR,
+    // `GnapGrants.finalize()`'s record, or null while the grant is not final.
+    finalization: Kit.nullable(Kit.closed({
+      reason: STR, at: Kit.num(), note: STR
+    })),
+    client: NSTR, clientName: NSTR,
     authorizationServer: NSTR, createdAt: WHEN, updatedAt: WHEN,
     grantExpiresAt: WHEN, approvedBy: STR, rights: GNAP_RIGHTS,
     rightsAre: STR, subjectReleasedAt: WHEN, derivedFrom: NSTR,

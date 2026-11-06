@@ -279,7 +279,21 @@ function buildDocuments(out) {
   const authnApi = require('../authn/authn_api');
   const OpenApi = require('../report/openapi');
   const Catalog = require('../report/catalog');
+  // What a finished GNAP grant really holds, from the code that writes it, so
+  // that the check below cannot agree with a model by way of a hand-typed copy.
+  const { GnapGrants } = require('../gnap/gnap_grants');
+  const finalized = { id: 'g', delivered: true, client: { identifier: 'c' } };
+  GnapGrants.prototype.finalize.call({ deps: {
+    log: log,
+    nowSec: function () {
+      return 1;
+    },
+    audit: { audit: function () {} },
+    store: { dropContinuation: function () {},
+             saveGrant: function () {} }
+  } }, finalized, 'a note', 'issued');
   fs.writeFileSync(out, JSON.stringify({
+    finalization: finalized.finalization,
     admin: spec.buildSpec(adminApi.ROUTES, { authRequired: true }),
     account: AccountApiSpec.document(accountApi.operations(), {}),
     authn: authnApi.document({}),
@@ -308,9 +322,48 @@ function documents() {
   return docs;
 }
 
+// The portal's `finalization` was modelled as a string, while every grant that
+// has one holds an object: a person with a finished grant got a 500 on their
+// grants page. Each model of a grant holds what `finalize()` writes, and null.
+function aFinishedGrantMeetsEveryModel(t, docs) {
+  log.debug("Entering aFinishedGrantMeetsEveryModel().");
+  const Ajv = require('ajv');
+  const ajv = new Ajv({ strict: false, allErrors: true });
+  const sites = [];
+  const walk = function (node, seen) {
+    if (!node || typeof node !== 'object' || seen.has(node)) {
+      return;
+    }
+    seen.add(node);
+    if (node.properties && node.properties.finalization) {
+      sites.push(node.properties.finalization);
+    }
+    Object.keys(node).forEach(function (k) {
+      walk(node[k], seen);
+    });
+  };
+  ['admin', 'account'].forEach(function (api) {
+    const before = sites.length;
+    const doc = docs[api];
+    walk({ paths: doc.paths, components: doc.components }, new Set());
+    t.check(sites.length > before, api + ' models a grant\'s finalization');
+    sites.slice(before).forEach(function (schema) {
+      const validate = ajv.compile({ allOf: [schema],
+                                     components: doc.components });
+      t.check(validate(docs.finalization),
+              api + ': a finalized grant\'s record meets its model');
+      t.check(validate(null), api + ': so does a grant not yet final');
+      t.check(!validate('issued'), api + ': a bare string does not');
+    });
+  });
+  log.debug("Leaving aFinishedGrantMeetsEveryModel().");
+}
+
 function ruleOverDocuments(t) {
   log.debug("Entering ruleOverDocuments().");
   const docs = documents();
+  aFinishedGrantMeetsEveryModel(t, docs);
+  delete docs.finalization;
   let total = 0;
   Object.keys(docs).forEach(function (api) {
     const rows = rowsOf(api, docs[api]);
