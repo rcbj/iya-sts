@@ -80,7 +80,8 @@ const SETTINGS = Kit.nullable(Kit.closed({
     configFile: NSTR, defaultsFile: NSTR, persistsAppconfig: BOOL,
     persistsRealms: BOOL, persistenceMode: STR, inRealm: BOOL, realmId: STR
   }),
-  sharedWith: Kit.mapOf(STRS)
+  sharedWith: Kit.mapOf(Kit.listOf(Kit.closed({
+    path: Kit.str(), label: Kit.str() })))
 }));
 
 // A row of `protocolEndpoints`, which `sendJson()` adds to a GET mirroring a

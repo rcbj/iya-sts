@@ -190,12 +190,19 @@ class ResponseModelKit {
       };
     });
     // A refusal of an action carries what its success does (the management
-    // API's `{ ok, errors, ... }`), unless the operation says otherwise.
-    if (own['200'] && !own['400'] && operation.responses['400']) {
+    // API's `{ ok, errors, ... }`), unless the operation says otherwise. Only
+    // a model that HAS `ok` is such an answer: a read's 400 is `error`, below,
+    // and giving it a list view's model would refuse every refusal it sends.
+    const answersOk = own['200'] && own['200'].properties &&
+      own['200'].properties.ok;
+    if (answersOk && !own['400'] && operation.responses['400']) {
       operation.responses['400'] = {
         description: operation.responses['400'].description,
         content: ResponseModelKit.contentOf(own['200'])
       };
+    }
+    if (own['200'] && !answersOk && !own['400'] && operation.responses['400']) {
+      delete operation.responses['400'].content;
     }
     Object.keys(operation.responses).forEach(function (status) {
       if (Number(status) >= 300 && !operation.responses[status].content) {
