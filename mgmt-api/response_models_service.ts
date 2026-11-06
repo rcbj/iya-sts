@@ -466,52 +466,12 @@ const CLUSTER_SELF: Json = closed({
 });
 
 // `cells_admin.ts`'s `clusterSummaryHere()`, as another cell answers it.
-const PEER_CLUSTER_SUMMARY: Json = closed({
-  cell: str(),
-  jurisdiction: OPT_STR,
-  at: num(),
-  clustered: bool(),
-  mode: str(),
-  members: closed({
-    live: listOf(closed({
-      name: str(),
-      mode: str(),
-      version: str(),
-      startedAt: num(),
-      heartbeatAt: num(),
-      expiresAt: num(),
-      uptimeMs: num(),
-      workers: int(),
-      lastStallMs: num(),
-      agrees: OPT_BOOL,
-      leases: STRINGS
-    })),
-    restarts: RESTARTS,
-    gone: listOf(closed({
-      name: str(),
-      version: str(),
-      endedAt: num(),
-      how: str(),
-      earlierLives: int()
-    }))
-  }),
-  leases: listOf(closed({ name: str(), holder: str(), expiresAt: num() })),
-  pools: listOf(closed({
-    name: OPT_STR,
-    state: OPT_STR,
-    pools: listOf(closed({
-      id: str(),
-      title: OPT_STR,
-      state: OPT_STR,
-      currentWorkers: int(),
-      busyWorkers: int(),
-      freeWorkers: int(),
-      crashed: int(),
-      failedStarts: int()
-    }))
-  })),
-  poolsError: str()
-});
+// Another cell's own answer, relayed. A cell may be on another build while a
+// fleet is upgraded, and one member this build has not heard of would otherwise
+// take down this cell's whole cluster page (#1353).
+const PEER_CLUSTER_SUMMARY: Json = Kit.freeForm(
+  'Another cell\'s own cluster summary, relayed: that cell may run another ' +
+  'build, so this one does not narrow it.');
 
 const CLUSTER_STATUS: Json = closed({
   self: CLUSTER_SELF,
