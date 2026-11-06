@@ -1796,6 +1796,30 @@ function reportPoisonDrop(drop) {
   log.debug("Leaving reportPoisonDrop().");
 }
 
+// The post-commit bookkeeping for a committed (sub-)batch of upserts and
+// deletes: the driver's merge outcomes, the committed lookup keys, the session
+// window's unpin, and the written/deleted counters. Shared by the ordinary
+// success path and the bisect (#1347): a bisect commits the good rows in
+// several transactions, and each committed slice owes exactly this — the same
+// settling the one whole-batch commit owed. It never throws the flush (a window
+// that cannot unpin is logged and the rows stay committed).
+function applyCommitted(ups, dels, result) {
+  log.debug("Entering applyCommitted(). " + ups.length + "+" + dels.length);
+  settleDecided(result);
+  noteCommittedLookups(ups, dels, result);
+  try {
+    const sessionWindow = sessionWindowIfOn();
+    if (sessionWindow) {
+      sessionWindow.onCommitted(ups);
+    }
+  } catch (e) {
+    log.debug("Caught in applyCommitted(): " + ((e && e.message) || e));
+  }
+  rowsWritten += ups.length;
+  rowsDeleted += dels.length;
+  log.debug("Leaving applyCommitted().");
+}
+
 /**
  * Writes every journalled key to the store, sealed; deletes what is gone.
  *
@@ -2039,6 +2063,139 @@ function flush() {
   }
 
   log.debug("Leaving flush().");
+
+  // RE-JOURNAL A SET OF ROWS AND REPORT THE FAILURE (the non-permanent path,
+  // #351). The keys go back so the next flush retries them; the key that goes
+  // back is the JOURNAL's, not `storedKey()`'s (2026-09-12). Shared by the
+  // whole-batch non-permanent failure and the bisect's non-permanent stop.
+  const reJournalAndReport = function (rowsToRequeue, err) {
+    log.debug("Entering reJournalAndReport(). " + rowsToRequeue.length);
+    requeuing = true;
+    try {
+      rowsToRequeue.forEach(function (row) {
+        note(row.handle, row.realm, row.journalKey);
+      });
+    } finally {
+      requeuing = false;
+    }
+    failures++;
+    lastError = err.message;
+    failedWrite = true;
+    log.error(errorCodes.tag('STS-STORE-0021') +
+              'persistence: minted state could not be written: ' + err.message +
+              '. It is retried shortly (persistence.js, ' +
+              'retryAfterFailure()); a request whose rows were in it is ' +
+              'answered 503 in postgres mode (#351).');
+    log.debug("Leaving reJournalAndReport().");
+    return { written: false, error: err.message };
+  };
+
+  // ISOLATE A PERMANENT DATA ERROR BY BISECTING, COMMITTING THE REST (#1347,
+  // rcbj's decision — "we can't have lost revoked certificates"; supersedes the
+  // earlier "drop the whole batch"). The whole-batch commit has already failed
+  // permanently and committed nothing (one transaction). We split the batch and
+  // flush the parts in SEPARATE transactions, down to single rows: a part that
+  // commits is done (its change rows and merges are the driver's, per slice); a
+  // SINGLE row that still fails permanently IS the poison — it is dropped and a
+  // STS-STORE-0092 post-mortem names only it. A non-permanent failure during
+  // the split (deadlock, unique race, store away) re-journals what is
+  // unfinished, as the normal path does. Every path ends with the poison gone
+  // and the rest committed or re-journalled; it is bounded by the batch size,
+  // and each slice's own `saveMinted()` sorts its locks by (handle, realm, key)
+  // so two transactions — slices included — cannot deadlock on an existing row.
+  // A revocation is an UPSERT in this batch (admin_stats.revokedJtis and the
+  // rest), so dropping the whole batch would have lost it; the bisect keeps it.
+  // `any[]`, because an upsert tag `{ up }` and a delete tag `{ del }` are
+  // two shapes and `concat()` has no overload for the mix; the rows are `any`.
+  const tagged = /** @type {any[]} */ (upserts.map(function (u) {
+    return { up: u };
+  })).concat(deletes.map(function (d) { return { del: d }; }));
+  const committed = { ups: 0, dels: 0 };
+  const droppedList = [];
+  // Flush one slice; on a permanent failure, split it further. Resolves to
+  // `{ done: true }` or `{ done: false, err, unfinished: [tagged rows] }`.
+  const commitSlice = function (slice) {
+    log.debug("Entering commitSlice(). " + slice.length);
+    const ups = slice.filter(function (r) { return r.up; })
+      .map(function (r) { return r.up; });
+    const dels = slice.filter(function (r) { return r.del; })
+      .map(function (r) { return r.del; });
+    return Promise.resolve(driver.saveMinted(ups, dels)).then(function (result) {
+      applyCommitted(ups, dels, result);
+      committed.ups += ups.length;
+      committed.dels += dels.length;
+      log.debug("Leaving commitSlice(). Committed.");
+      return { done: true };
+    }, function (err) {
+      if (!sqlDialect.isPermanentDataError(err)) {
+        log.debug("Leaving commitSlice(). Non-permanent, re-journal.");
+        return { done: false, err: err, unfinished: slice };
+      }
+      return isolateSlice(slice, err);
+    });
+  };
+  // A slice known to fail as a whole permanently: one row is the poison, more
+  // than one splits in half (the committed half first, so its rows are done
+  // before the other half is tried).
+  const isolateSlice = function (slice, err) {
+    log.debug("Entering isolateSlice(). " + slice.length);
+    if (slice.length <= 1) {
+      const ups = slice.filter(function (r) { return r.up; })
+        .map(function (r) { return r.up; });
+      const dels = slice.filter(function (r) { return r.del; })
+        .map(function (r) { return r.del; });
+      const dropped = recordPoisonDrop(ups, dels, err);
+      droppedList.push(dropped);
+      log.error(errorCodes.tag('STS-STORE-0092') +
+                'persistence: one minted row was DROPPED because the commit ' +
+                'failed with a permanent data error that can never commit: ' +
+                err.message + '. The realm keeps flushing and every other row ' +
+                'committed; a post-mortem audit row was written (store: ' +
+                dropped.handles.join(', ') + '; realm: ' +
+                dropped.realms.join(', ') + '). #1347.');
+      reportPoisonDrop(dropped);
+      log.debug("Leaving isolateSlice(). Dropped the poison row.");
+      return Promise.resolve({ done: true });
+    }
+    const mid = Math.floor(slice.length / 2);
+    return commitSlice(slice.slice(0, mid)).then(function (left) {
+      if (!left.done) {
+        // The committed-left rows are done; the right half is untried. Both the
+        // left's unfinished and the whole right half go back on the journal.
+        log.debug("Leaving isolateSlice(). Non-permanent in the left half.");
+        return { done: false, err: left.err,
+                 unfinished: left.unfinished.concat(slice.slice(mid)) };
+      }
+      return commitSlice(slice.slice(mid));
+    });
+  };
+  // The whole batch already failed permanently, so begin by splitting it.
+  const isolatePermanent = function (err) {
+    log.debug("Entering isolatePermanent(). " + tagged.length);
+    return isolateSlice(tagged, err).then(function (outcome) {
+      committedAt = Math.max(committedAt, takenAt);
+      if (!outcome.done) {
+        const plain = outcome.unfinished.map(function (r) {
+          return r.up || r.del;
+        });
+        log.debug("Leaving isolatePermanent(). A non-permanent error stopped " +
+                  "the split; re-journalling the unfinished rows.");
+        return reJournalAndReport(plain, outcome.err);
+      }
+      ensureTombstoneJob();
+      writes++;
+      lastWriteAt = new Date().toISOString();
+      failedWrite = false;
+      lastError = droppedList.length
+        ? droppedList[droppedList.length - 1].message : '';
+      log.debug("Leaving isolatePermanent(). " + committed.ups + " written, " +
+                committed.dels + " removed, " + droppedList.length +
+                " poison row(s) dropped.");
+      return { written: true, upserts: committed.ups, deletes: committed.dels,
+               permanent: true, poisonDropped: droppedList };
+    });
+  };
+
   // THE DATA-KEY ROWS LAND FIRST (#391): a row sealed under a data encryption
   // key made during this flush must not reach another process before the key
   // does.
@@ -2057,22 +2214,9 @@ function flush() {
       rows: upserts.length + deletes.length,
       total: doneAt - flushStartedAt });
     committedAt = Math.max(committedAt, takenAt);
-    settleDecided(result);
-    noteCommittedLookups(upserts, deletes, result);
-    try {
-      const sessionWindow = sessionWindowIfOn();
-      if (sessionWindow) {
-        sessionWindow.onCommitted(upserts);
-      }
-    } catch (e) {
-      // The rows are committed. A window that cannot unpin must not make
-      // the flush look failed, or the keys would be written again.
-      log.debug("Caught in flush(): " + ((e && e.message) || e));
-    }
+    applyCommitted(upserts, deletes, result);
     ensureTombstoneJob();
     writes++;
-    rowsWritten += upserts.length;
-    rowsDeleted += deletes.length;
     lastWriteAt = new Date().toISOString();
     lastError = '';
     failedWrite = false;
@@ -2081,44 +2225,24 @@ function flush() {
               (unsealable ? ', ' + unsealable + ' unsealable' : '') + '.');
     return { written: true, upserts: upserts.length, deletes: deletes.length };
   }).catch(function (err) {
-    // A PERMANENT DATA ERROR IS DROPPED, NOT RE-JOURNALLED (#1347, rcbj's
-    // decision). A value a column can never hold — a bigint expiry past
-    // 9.22e18 (SQLSTATE 22003, or "9.22e+21" as 22P02 once String() goes
-    // exponential), a string past its column, MariaDB's strict-mode refusals —
-    // fails the WHOLE flush transaction, and the re-journal below would then
-    // retry it for ever: one poison row wedged every later write in its realm,
-    // which is what the #1299 gate hit 25,445 times. So the batch's keys are
-    // NOT put back; the next flush carries fresh changes and the realm keeps
-    // flushing. The in-memory copy stays (a key is re-read and written the next
-    // time it is journalled, by when expiryOf()/sortAtFor() have capped the
-    // value), and ENOUGH to post-mortem is kept: a bounded ring here and a
-    // post-mortem audit row through the installed auditor. rcbj: "retain enough
-    // audit information to reliably do post-mortem analysis with the audit log.
-    // Beyond that, I don't believe we need to keep anything." No bisect — the
-    // good rows batched with the poison are dropped too, and a client whose
-    // request wrote one is answered 503 (written: false) and recovers on its
-    // own retry, which now commits. The classifier is NARROW (SQLSTATE class
-    // 22 / the MariaDB data errnos): a deadlock (40001/40P01) or a unique race
-    // (23505) is NOT permanent and falls through to the re-journal below.
+    // A PERMANENT DATA ERROR IS ISOLATED BY A BISECT, NOT DROPPED WHOLE
+    // (#1347, rcbj — "we can't have lost revoked certificates"). A value a
+    // column can never hold — a bigint expiry past 9.22e18 (SQLSTATE 22003, or
+    // "9.22e+21" as 22P02 once String() goes exponential), a string past its
+    // column, MariaDB's strict-mode refusals — fails the WHOLE flush
+    // transaction, and the re-journal below would retry it for ever: one poison
+    // row wedged every later write in its realm, which the #1299 gate hit
+    // 25,445 times. The earlier fix dropped the whole batch, but a revocation
+    // (admin_stats.revokedJtis, revokedArtifacts, access_token_status.invalid,
+    // vc_status.entries, gnap.biscuitRevocations) is an UPSERT in that batch,
+    // so dropping it whole lost revocations. So `isolatePermanent()` bisects:
+    // it commits every row it can and drops ONLY the row that fails by itself,
+    // writing the STS-STORE-0092 post-mortem for that one. No good row is lost.
+    // The classifier is NARROW (SQLSTATE class 22 / the MariaDB data errnos): a
+    // deadlock (40001/40P01) or a unique race (23505) is NOT permanent and
+    // falls through to the re-journal below.
     if (sqlDialect.isPermanentDataError(err)) {
-      const dropped = recordPoisonDrop(upserts, deletes, err);
-      failures++;
-      lastError = err.message;
-      // NOT a wedged write: the realm is not in a failed-write state, so
-      // `failing()` is false and no 503 backlog forms for later writes.
-      failedWrite = false;
-      log.error(errorCodes.tag('STS-STORE-0092') +
-                'persistence: a minted batch of ' + dropped.rows + ' row(s) ' +
-                'was DROPPED because the commit failed with a permanent data ' +
-                'error that can never commit: ' + err.message + '. The ' +
-                'realm keeps flushing; a post-mortem audit row was written ' +
-                '(stores: ' + dropped.handles.join(', ') + '; realms: ' +
-                dropped.realms.join(', ') + '). #1347.');
-      reportPoisonDrop(dropped);
-      log.debug('Leaving flush(). A permanent data error dropped ' +
-                dropped.rows + ' row(s).');
-      return { written: false, error: err.message, permanent: true,
-               poisonDropped: dropped };
+      return isolatePermanent(err);
     }
     // NOT rethrown, for the reason `persistence.js` argues at length: the
     // service keeps answering out of memory, and a database outage must not
@@ -2131,40 +2255,12 @@ function flush() {
     // which is what anybody would want.
     //
     // **THE KEY THAT GOES BACK IS THE JOURNAL'S, NOT THE ROW'S (2026-09-12).**
-    // This re-noted `row.key`, which is `storedKey()`'s answer — and for a
-    // `merge: 'own'` store that is the key base64url-encoded with the origin
-    // appended. The next flush then read the store under that name, found
-    // nothing, and wrote a delete keyed `storedKey()` of IT: the key grew by a
-    // third plus the origin on every consecutive failure. A dispatched stack
-    // whose workers deadlocked on this table for forty minutes grew those keys
-    // until PostgreSQL refused them (`index row size 3880 exceeds btree version
-    // 4 maximum 2704`), which made every later flush fail by construction, and
-    // then kept growing them: one worker reached 5.6 GB and spent every sample
-    // of an 8-second CPU profile hashing keys in `note()`, with its commit
-    // announcements — and so the read barrier — stalled behind it. The SCIM
-    // bulk load was the job that timed out.
-    requeuing = true;
-    try {
-      upserts.forEach(function (row) {
-        note(row.handle, row.realm, row.journalKey);
-      });
-      deletes.forEach(function (row) {
-        note(row.handle, row.realm, row.journalKey);
-      });
-    } finally {
-      requeuing = false;
-    }
-    failures++;
-    lastError = err.message;
-    failedWrite = true;
-    log.error(errorCodes.tag('STS-STORE-0021') +
-              'persistence: minted state could not be written: ' + err.message +
-              '. It is retried shortly (persistence.js, ' +
-              'retryAfterFailure()); ' +
-              'a request whose rows were in it is answered 503 in postgres ' +
-              'mode (#351).');
-    log.debug('Leaving flush(). It failed.');
-    return { written: false, error: err.message };
+    // Re-noting `storedKey()`'s answer — the key base64url-encoded with the
+    // origin for a `merge: 'own'` store — grew the key by a third plus the
+    // origin on every consecutive failure, past the btree limit and on into
+    // gigabytes (the dispatched stack that deadlocked for forty minutes). Each
+    // row carries `journalKey` and `reJournalAndReport()` notes that.
+    return reJournalAndReport(upserts.concat(deletes), err);
   });
   // CLEARED BEFORE THE RESULT IS HANDED ON, so that a caller waiting on this
   // promise finds nothing in flight when it re-enters. Cleared on either path:
