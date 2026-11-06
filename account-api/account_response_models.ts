@@ -13,9 +13,9 @@
 // THE ORDER IS `account_api.ts`'s `PROVIDERS`, so that a reader of one provider
 // finds its models together, with its own views above them.
 //
-// **A POST ANSWERS IN `account-api/CLAUDE.md`'s MEMBERS** (*What an answer is*):
-// `message`, `view`, `go`, `errors` with `ok: false`, `stepUp`, `location`,
-// `files`. `ACT` below is that shape, with the view each operation draws.
+// **A POST ANSWERS IN `account-api/CLAUDE.md`'s MEMBERS** (*What an answer
+// is*): `message`, `view`, `go`, `errors` with `ok: false`, `stepUp`, `location`,
+// `files`. `act()` below is that shape, with the view each operation draws.
 //
 // **EVERY REFUSAL THAT CARRIES MORE THAN `{ ok, errors }` IS NAMED, STATUS BY
 // STATUS.** `ctx.refuse(res, status, code, errors, extra)` answers
@@ -72,7 +72,8 @@ function act(extra?: Json): Json {
  * @returns the model
  */
 function refusal(extra: Json): Json {
-  return Kit.closed(Object.assign({ ok: BOOL, errors: STRS, error: STR }, extra),
+  return Kit.closed(Object.assign({ ok: BOOL, errors: STRS, error: STR },
+                                  extra),
                     { required: ['ok', 'errors'] });
 }
 
@@ -109,10 +110,11 @@ function refusedOn(extra: Json, ...statuses: string[]): Models {
 
 // `{ page, pages, per, total }`, this API's own paging; `shared` leaves `per`
 // out.
-const PAGING: Json = Kit.closed({ page: INT, pages: INT, per: INT, total: INT });
+const PAGING: Json = Kit.closed({
+  page: INT, pages: INT, per: INT, total: INT
+});
 
-// `AdminViews.pagingJson()`, which GNAP's and a few others' lists share with the
-// console.
+// `AdminViews.pagingJson()`, which GNAP's list shares with the console.
 const ADMIN_PAGING: Json = Kit.closed({
   page: INT, pages: INT, perPage: INT, firstRow: INT, lastRow: INT, total: INT,
   param: NSTR, noun: NSTR
@@ -237,7 +239,7 @@ const APPLICATIONS: Json = Kit.closed({
   truncated: BOOL, limit: NUM
 });
 
-// `account_overview.ts`'s `signalsView()`: a Shared Signals event as it arrived.
+// `account_overview.ts`'s `signalsView()`: a Shared Signals event as it came.
 const SECURITY_ACTIVITY: Json = Kit.closed({
   incomplete: BOOL,
   rows: Kit.listOf(Kit.closed({
@@ -305,9 +307,9 @@ Object.assign(operations, {
 // `portal/portal_gnap.ts`, over `gnap_console.ts`'s `personGrantsView()`.
 // ---------------------------------------------------------------------------
 const GNAP_RIGHTS: Json = Kit.listOf(Kit.freeForm(
-  'An RFC 9635 section 8 access right as the client asked for it: a reference ' +
-  'string, or an object whose members the client and the resource server ' +
-  'define.'));
+  'An RFC 9635 section 8 access right as the client asked for it: a ' +
+  'reference string, or an object whose members the client and the resource ' +
+  'server define.'));
 
 const GNAP_GRANTS: Json = Kit.closed({
   user: STR, total: INT,
@@ -347,7 +349,9 @@ const EMAIL_VIEW: Json = Kit.closed({
 });
 
 // A link checked, or spent.
-const LINK_CHECKED: Json = Kit.closed({ address: STR, username: STR, token: STR });
+const LINK_CHECKED: Json = Kit.closed({
+  address: STR, username: STR, token: STR
+});
 
 const LINK_SPENT: Json = act({
   view: Kit.closed({ verified: BOOL, address: STR, username: STR })
@@ -426,9 +430,9 @@ const UMA_PERMISSION: Json = Kit.closed({
 
 const SHARED_PAGING: Json = Kit.closed({ page: INT, pages: INT, total: INT });
 
-// `code` IS HERE BECAUSE `act()` CAN SEND IT, and reported on #1353 as a defect:
-// `view()` answers `{ ok: false, code }` where the owner's document will not
-// parse, and a refusal embeds that view whole.
+// `code` IS HERE BECAUSE `act()` CAN SEND IT, and reported on #1353 as a
+// defect: `view()` answers `{ ok: false, code }` where the owner's document will
+// not parse, and a refusal embeds that view whole.
 const SHARED_VIEW: Json = Kit.closed({
   ok: BOOL, enabled: BOOL, code: STR,
   resources: Kit.listOf(Kit.closed({
@@ -726,7 +730,8 @@ Object.assign(operations, {
   setDelegate: answers(act(), refusedOn({ view: DELEGATE_VIEW }, '400')),
   findDelegateCandidates: answers(Kit.closed({
     query: STR,
-    people: Kit.listOf(Kit.closed({ uid: STR, cn: STR, dn: STR }), 'At most ten.'),
+    people: Kit.listOf(Kit.closed({ uid: STR, cn: STR, dn: STR }),
+                       'At most ten.'),
     more: BOOL
   }))
 });
@@ -779,17 +784,328 @@ const SELF_ISSUED_VIEW: Json = Kit.closed({
 
 Object.assign(operations, {
   getSelfIssued: answers(SELF_ISSUED_VIEW),
-  removeSelfIssued: answers(act(), refusedOn({ view: SELF_ISSUED_VIEW }, '400')),
+  removeSelfIssued: answers(act(),
+    refusedOn({ view: SELF_ISSUED_VIEW }, '400')),
   getSelfIssuedDidDocument: answers(Kit.closed({
     ok: BOOL, subject: STR,
-    document: Kit.nullable(Kit.freeForm(
-      'A DID document as the DID\'s method resolved it (W3C DID Core): its ' +
-      'verification methods and services are the DID controller\'s to state.'))
+    // Free-form takes null too, which `Kit.nullable()`'s `oneOf` would refuse
+    // as matching both of its arms.
+    document: Kit.freeForm(
+      'A DID document as the DID\'s method resolved it (W3C DID Core), or ' +
+      'null: its verification methods and services are the DID controller\'s ' +
+      'to state.')
   })),
   actOnPublishedDid: answers(act({ view: SELF_ISSUED_VIEW }),
     refusedOn({ view: SELF_ISSUED_VIEW }, '400'))
 });
 
-//@@NEXT@@
+// ---------------------------------------------------------------------------
+// `portal/portal_wallet.ts`.
+// ---------------------------------------------------------------------------
+const CREDENTIAL_COPY: Json = Kit.closed({
+  id: STR, position: INT, of: INT, issuedAt: STR, expiresAt: STR, status: STR,
+  removable: BOOL, removedAt: STR, walletEvent: NSTR, walletEventAt: STR,
+  keyThumbprint: NSTR, holderDid: NSTR,
+  statusIndex: { type: ['string', 'number', 'null'] }
+});
+
+// `vc_offers.ts`'s `buildCredentialOffer()`: OpenID4VCI 1.0 section 4.1.1, with
+// the one grant this service puts in it.
+const CREDENTIAL_OFFER: Json = Kit.closed({
+  credential_issuer: STR, credential_configuration_ids: STRS,
+  grants: Kit.closed({
+    'urn:ietf:params:oauth:grant-type:pre-authorized_code': Kit.closed({
+      'pre-authorized_code': STR,
+      tx_code: Kit.closed({ input_mode: STR, length: INT, description: STR })
+    }),
+    authorization_code: Kit.closed({ issuer_state: STR })
+  })
+});
+
+const OFFER: Json = Kit.closed({
+  configurationId: STR, signingAlg: STR, mode: STR,
+  credentialOffer: CREDENTIAL_OFFER, txCode: NSTR, expiresAt: STR,
+  byValue: Kit.closed({ offerUri: STR, walletUrl: STR }),
+  byReference: Kit.nullable(Kit.closed({
+    credentialOfferUri: STR, offerUri: STR, walletUrl: STR
+  }))
+});
+
+const WALLET_VIEW: Json = Kit.closed({
+  configurations: Kit.listOf(Kit.closed({
+    id: STR, format: STR, name: STR, issuerDid: BOOL,
+    signingAlgs: Kit.listOf(Kit.closed({ alg: STR, what: STR, spec: STR })),
+    defaultSigningAlg: STR
+  })),
+  modes: STRS, lifetimeSeconds: NUM, wallet: NSTR, batchSize: NUM,
+  issued: Kit.listOf(Kit.closed({
+    id: STR, configurationId: NSTR, name: STR, format: NSTR, issuedAt: STR,
+    expiresAt: STR, status: STR,
+    counts: Kit.mapOf(INT, 'How many copies are in each status.'),
+    removable: BOOL, removedAt: STR, walletEvent: NSTR, walletEventAt: STR,
+    copies: Kit.listOf(CREDENTIAL_COPY)
+  })),
+  paging: PAGING,
+  // Beside the list after a POST, so the code never reaches a URL.
+  offer: OFFER
+});
+
+Object.assign(operations, {
+  getOfferableCredentials: answers(WALLET_VIEW),
+  createCredentialOffer: answers(act({ offer: OFFER, view: WALLET_VIEW }),
+    refusedOn({ view: WALLET_VIEW }, '400', '403')),
+  removeIssuedCredential: answers(
+    act({ scope: STR, removed: INT, view: WALLET_VIEW }),
+    refusedOn({ view: WALLET_VIEW }, '400'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/portal_devices.ts`, over `common/devices.ts`.
+// ---------------------------------------------------------------------------
+const DEVICES_VIEW: Json = Kit.closed({
+  devices: Kit.listOf(Kit.closed({
+    id: STR, label: STR, applications: STRS, nativeSso: BOOL, sessionLive: BOOL,
+    keys: Kit.listOf(Kit.closed({ kind: STR, level: STR })),
+    attestation: STR, enrolment: STR, lastUsed: WHEN
+  })),
+  platforms: STRS,
+  proof: Kit.nullable(Kit.closed({ challenge: STR, expiresAt: WHEN })),
+  audience: STR, proofTyp: STR,
+  linking: Kit.nullable(Kit.closed({
+    challenge: STR, rpId: STR, user: STR, allow: STR,
+    options: Kit.closed({
+      rpId: STR, userVerification: STR, timeout: NUM, hints: STRS
+    })
+  })),
+  link: Kit.closed({
+    enrolled: INT,
+    keys: Kit.listOf(Kit.closed({ credentialId: STR, name: STR,
+                                  trusted: BOOL })),
+    roaming: STRS
+  }),
+  remember: BOOL
+});
+
+// `attestation_revocation.ts`'s `verdictOf()`, on a downgraded key.
+const ATTESTATION_VERDICT: Json = Kit.closed({
+  status: STR, reason: STR, serial: STR, listVersion: STR, checkedAt: STR,
+  chainSerials: STRS, why: STR
+});
+
+// `DeviceKey` in `common/devices.ts`, one value of `stsDeviceKey`.
+const DEVICE_KEY: Json = Kit.closed({
+  id: STR, kind: STR, thumbprint: STR, label: STR, added: STR, addedBy: STR,
+  proof: STR,
+  attestation: Kit.closed({
+    level: STR, format: STR, summary: STR, verifiedAt: STR, chainSerials: STRS,
+    revocation: ATTESTATION_VERDICT,
+    freshness: Kit.closed({ status: STR, detail: STR })
+  }),
+  // By `kind`: an X.509 certificate's facts, a public JWK, or a passkey's name.
+  material: Kit.closed({
+    certificate: STR, subject: STR, issuer: STR, serial: STR, notAfter: STR,
+    jwk: Kit.freeForm('A public JWK as the device presented it (RFC 7517): ' +
+                      'its members depend on its key type.'),
+    credentialId: STR, aaguid: STR, attachment: STR
+  })
+});
+
+const DEVICE_CHANGE: Json = Kit.nullable(Kit.closed({
+  status: STR, previous: STR, at: STR, source: STR, actor: STR, reason: STR
+}));
+
+const DEVICE_RISK_CHANGE: Json = Kit.nullable(Kit.closed({
+  level: STR, previous: STR, at: STR, source: STR, actor: STR, reason: STR,
+  beforeCompromise: STR
+}));
+
+// `Devices.view()`.
+const DEVICE: Json = Kit.closed({
+  id: STR, dn: STR, owner: STR, ownerKind: STR, label: STR, applications: STRS,
+  keys: Kit.listOf(DEVICE_KEY), keyKinds: STRS,
+  attestation: Kit.closed({
+    level: STR, format: STR, summary: STR, keyId: STR
+  }),
+  compliance: STR, complianceChange: DEVICE_CHANGE, status: STR,
+  statusChange: DEVICE_CHANGE, riskLevel: STR, riskChange: DEVICE_RISK_CHANGE,
+  platform: STR, model: STR, os: STR,
+  enrolment: Kit.closed({ method: STR, at: STR, actor: STR }), nativeSso: BOOL,
+  rememberedBrowser: Kit.nullable(Kit.closed({
+    generation: NUM, issuedAt: STR, browser: STR, secondFactorAt: STR
+  })),
+  sessionLive: BOOL, lastUsed: STR, created: STR
+});
+
+// A key proved: 201, which `operation.responses['200']` also has to name or the
+// document would keep the builder's bare object there.
+const DEVICE_PROVED: Json = Kit.closed({
+  ok: BOOL, device: Kit.nullable(DEVICE), key: Kit.nullable(DEVICE_KEY)
+});
+
+Object.assign(operations, {
+  getDevices: answers(DEVICES_VIEW),
+  actOnDevices: answers(act(), refusedOn({ view: DEVICES_VIEW }, '400')),
+  deviceChallenge: answers(Kit.closed({
+    ok: BOOL, challenge: STR, audience: STR, typ: STR, expires_at: WHEN,
+    proof_endpoint: STR
+  })),
+  deviceProof: answers(DEVICE_PROVED, { '201': DEVICE_PROVED })
+});
+
+// ---------------------------------------------------------------------------
+// `portal/portal_ciba.ts`.
+// ---------------------------------------------------------------------------
+// What a sign-in again asks for. `maxAge` only where a connection wants a
+// recent one (`portal_connected_accounts.ts`).
+const STEP_UP: Json = Kit.closed({ acrValues: STR, prompt: STR, maxAge: NUM });
+
+const SIGN_IN_REQUESTS_VIEW: Json = Kit.closed({
+  enabled: BOOL,
+  requests: Kit.listOf(Kit.closed({
+    id: STR, clientName: NSTR, bindingMessage: STR,
+    requestContext: Kit.nullable(Kit.listOf(Kit.closed({
+      name: STR, value: STR
+    }))),
+    scope: NSTR, acrValues: STRS, expiresAt: WHEN
+  })),
+  hasCode: BOOL,
+  gnap: Kit.listOf(Kit.closed({
+    id: STR, display: NSTR, client: NSTR, declared: BOOL, requestedBy: STR,
+    acr: STRS, subject: BOOL, expiresAt: WHEN,
+    rights: Kit.listOf(Kit.closed({
+      field: STR, limitsHtml: STR, reference: STR, type: STR, parts: STR
+    }))
+  })),
+  // `?stepup=` and `?gnapstepup=` answer this alone.
+  stepUp: STEP_UP
+});
+
+Object.assign(operations, {
+  getSignInRequests: answers(SIGN_IN_REQUESTS_VIEW),
+  answerSignInRequest: answers(act(),
+    refusedOn({ stepUp: STEP_UP }, '403'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/portal_access_requests.ts`, over `authzen_access_request.ts`.
+// ---------------------------------------------------------------------------
+const AUTHZEN_MEMBER: Json = Kit.freeForm(
+  'An AuthZEN Authorization API 1.0 member as the PEP sent it: its ' +
+  '`properties` and its context are the caller\'s to define.');
+
+const ACCESS_REQUESTS_VIEW: Json = Kit.closed({
+  enabled: BOOL,
+  rows: Kit.listOf(Kit.closed({
+    id: STR, status: STR, requester: NSTR,
+    client: Kit.nullable(Kit.closed({ id: STR, name: STR })),
+    application: NSTR, subject: AUTHZEN_MEMBER, action: AUTHZEN_MEMBER,
+    resource: AUTHZEN_MEMBER, context: AUTHZEN_MEMBER, emergency: BOOL,
+    justification: STR, createdAt: WHEN, expiresAt: WHEN, finishedAt: WHEN,
+    decidedBy: STR,
+    approval: Kit.nullable(Kit.closed({
+      id: STR, approvedAt: WHEN, approvedUntil: WHEN, approver: NSTR,
+      revoked: BOOL
+    })),
+    approvers: Kit.closed({ roles: STRS, groups: STRS, owners: BOOL })
+  }))
+});
+
+Object.assign(operations, {
+  getAccessRequests: answers(ACCESS_REQUESTS_VIEW),
+  decideAccessRequest: answers(act(),
+    refusedOn({ view: ACCESS_REQUESTS_VIEW }, '400'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/portal_device.ts`.
+// ---------------------------------------------------------------------------
+const DEVICE_REQUEST_VIEW: Json = Kit.closed({
+  enabled: BOOL, typed: STR,
+  record: Kit.nullable(Kit.closed({
+    userCode: STR, clientId: STR, clientName: STR, scope: STR, expiresAt: WHEN
+  }))
+});
+
+Object.assign(operations, {
+  getDeviceRequest: answers(DEVICE_REQUEST_VIEW,
+    refusedOn({ view: DEVICE_REQUEST_VIEW }, '404', '429')),
+  answerDeviceRequest: answers(act(),
+    refusedOn({ view: DEVICE_REQUEST_VIEW }, '400', '429'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/portal_claim_sources.ts`.
+// ---------------------------------------------------------------------------
+const CLAIM_SOURCES_VIEW: Json = Kit.closed({
+  providers: Kit.listOf(Kit.closed({
+    id: STR, name: NSTR, issuer: NSTR, claims: STRS, delivery: NSTR,
+    link: Kit.nullable(Kit.closed({ linkedAt: WHEN, stale: BOOL }))
+  })),
+  paging: PAGING, linked: INT, notice: STR, problem: STR
+});
+
+Object.assign(operations, {
+  getClaimSources: answers(CLAIM_SOURCES_VIEW),
+  linkClaimSource: answers(act({ location: STR }),
+    refusedOn({ view: CLAIM_SOURCES_VIEW }, '400'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/portal_connected_accounts.ts`.
+// ---------------------------------------------------------------------------
+const CONNECTED_ACCOUNTS_VIEW: Json = Kit.closed({
+  providers: Kit.listOf(Kit.closed({
+    id: STR, name: NSTR, provider: NSTR, providerLabel: NSTR, connected: BOOL
+  })),
+  connected: INT, notice: STR, problem: STR
+});
+
+// `{ ok: false, stepUp }` IS A 200 here: the connection is not refused, the
+// browser is sent to sign in again and comes back.
+Object.assign(operations, {
+  getConnectedAccounts: answers(CONNECTED_ACCOUNTS_VIEW),
+  connectAccount: answers(act({ location: STR, stepUp: STEP_UP }),
+    refusedOn({ view: CONNECTED_ACCOUNTS_VIEW }, '400', '403', '409'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/account_activation.ts`: nobody is signed in, and the link's step
+// decides which of these a view carries (`setupView()`, `keyView()`,
+// `refusedView()`, `finish()`, `afterKey()`).
+// ---------------------------------------------------------------------------
+const PASSWORD_RULES: Json = Kit.closed({ enforced: BOOL, rules: STRS });
+
+const ACTIVATION_VIEW: Json = Kit.closed({
+  step: STR, user: STR, token: STR, base: STR, rules: PASSWORD_RULES,
+  webauthnEnabled: BOOL, passkeyOffered: BOOL, passkeyAlone: BOOL, kinds: STRS,
+  lanes: STRS, totpOffered: BOOL, title: STR, refused: STR, passkey: BOOL,
+  secondStep: BOOL, wantsTotp: BOOL, pending: PENDING_ENROLMENT,
+  enrolment: Kit.closed({
+    grouped: STR, issuer: STR, qr: STR, algorithm: STR, digits: NUM, period: NUM
+  }),
+  warning: STR, password: BOOL, withTotp: BOOL, signIn: STR
+});
+
+Object.assign(operations, {
+  getActivation: answers(ACTIVATION_VIEW,
+    refusedOn({ view: ACTIVATION_VIEW }, '400', '429')),
+  activate: answers(act({ view: ACTIVATION_VIEW }),
+    refusedOn({ view: ACTIVATION_VIEW }, '400', '429'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/account_reset.ts`.
+// ---------------------------------------------------------------------------
+const RESET_VIEW: Json = Kit.closed({
+  username: STR, token: STR, base: STR, rules: PASSWORD_RULES, refused: STR,
+  tooMany: BOOL, done: BOOL, signIn: STR
+});
+
+Object.assign(operations, {
+  getPasswordReset: answers(RESET_VIEW,
+    refusedOn({ view: RESET_VIEW }, '400', '403', '429')),
+  spendPasswordReset: answers(act({ view: RESET_VIEW }),
+    refusedOn({ view: RESET_VIEW }, '400', '403', '429', '500'))
+});
 
 export = { ERROR: ERROR, operations: operations };
