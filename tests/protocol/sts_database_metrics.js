@@ -163,8 +163,12 @@ async function test() {
   log.info("=== C. the columns are the SERVER's ===");
 
   const probes = view.body.probes;
+  // MARIADB'S OWN PROBES (#677): twelve from `persistence/metrics_mariadb.js`,
+  // under the names the page reads where a concept is shared, and with no
+  // `sizes`, `columns` or `constraints`, which are PostgreSQL's catalog views.
+  const mariadb = view.body.mode === "mariadb";
   check("every probe ran", function () {
-    assert.ok(Object.keys(probes).length >= 15,
+    assert.ok(Object.keys(probes).length >= (mariadb ? 12 : 15),
       Object.keys(probes).length + " probe(s)");
   });
 
@@ -179,7 +183,7 @@ async function test() {
         "make", function () {
           const db = probes.database;
           assert.ok(db && db.ok, JSON.stringify(db).slice(0, 200));
-          assert.ok(db.row && Object.keys(db.row).length >= 15,
+          assert.ok(db.row && Object.keys(db.row).length >= (mariadb ? 10 : 15),
             "only " + Object.keys(db.row || {}).length + " columns");
         });
   check("and the two counters every version of that view has ARE there, " +
@@ -232,24 +236,26 @@ async function test() {
           const names = tables.rows.map(function (one) { return one.relname; });
           assert.ok(names.indexOf("sts_ldap_entries") >= 0, names.join(", "));
         });
-  check("and their sizes, with the planner's row estimate NORMALISED: " +
-        "reltuples is -1 for a table that has never been analysed, which is " +
-        "every table in a database this service has just built, and a page " +
-        "that printed it would report minus one row", function () {
-          const sizes = probes.sizes;
-          assert.ok(sizes && sizes.ok);
-          sizes.rows.forEach(function (row) {
-            assert.ok(row.estimated_rows === null ||
-                      Number(row.estimated_rows) >= 0,
-              row.relname + " estimated_rows=" + row.estimated_rows);
+  if (!mariadb) {
+    check("and their sizes, with the planner's row estimate NORMALISED: " +
+          "reltuples is -1 for a table that has never been analysed, which " +
+          "is every table in a database this service has just built, and a " +
+          "page that printed it would report minus one row", function () {
+            const sizes = probes.sizes;
+            assert.ok(sizes && sizes.ok);
+            sizes.rows.forEach(function (row) {
+              assert.ok(row.estimated_rows === null ||
+                        Number(row.estimated_rows) >= 0,
+                row.relname + " estimated_rows=" + row.estimated_rows);
+            });
           });
-        });
-  check("the columns and the constraints are there too, which is the " +
-        "'stats about the schema' half", function () {
-          assert.ok(probes.columns.ok && probes.columns.rows.length >= 20);
-          assert.ok(probes.constraints.ok &&
-                    probes.constraints.rows.length >= 5);
-        });
+    check("the columns and the constraints are there too, which is the " +
+          "'stats about the schema' half", function () {
+            assert.ok(probes.columns.ok && probes.columns.rows.length >= 20);
+            assert.ok(probes.constraints.ok &&
+                      probes.constraints.rows.length >= 5);
+          });
+  }
 
   // **THE ONE ASSERTION ON THIS PAGE THAT IS NOT A MEASUREMENT.**
   // `tests/postgres_schema.js` compares the driver's declared objects against
