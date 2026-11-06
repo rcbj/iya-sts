@@ -1215,6 +1215,11 @@ const CODES = [
       'node holding an out-of-date secret. Refused before anything else is ' +
       'decided about it.',
     spec: 'none — HTTP 403, with no reason given' },
+  { code: 'STS-CORE-0166',
+    summary: 'GET /favicon.ico found no common/favicon.ico in this image: ' +
+      'the file was left out of the build. The browser shows no icon; nothing ' +
+      'else is affected.',
+    spec: 'none — HTTP 404' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -1905,6 +1910,15 @@ const CODES = [
     summary: 'The store was refused at open: the change log\'s sequence is ' +
       'not dense (an increment above one or a cache above one), so every ' +
       'reader would wait for numbers no transaction will commit.',
+    spec: '' },
+  { code: 'STS-STORE-0092',
+    summary: 'One minted row was DROPPED after a flush bisect isolated it as ' +
+      'the row whose commit fails with a permanent data error (a value a ' +
+      'column can never hold — an out-of-range bigint expiry, a value too ' +
+      'long, a MariaDB strict-mode refusal) that would wedge the realm\'s ' +
+      'every later write if re-journalled; every other row in the batch ' +
+      'committed, the realm keeps flushing, and a post-mortem audit row ' +
+      'records what was dropped.',
     spec: '' },
   { code: 'STS-STORE-0100',
     summary: 'A value was refused on MariaDB because it is longer than its ' +
@@ -3468,8 +3482,8 @@ const CODES = [
       'form of the X.509 Token Profile 1.1 this service reads (#521).',
     spec: 'the caller\'s: the signed request is refused (STS-WSTRUST-0040)' },
   { code: 'STS-KEYS-0165',
-    summary: 'An EdDSA signature through helpers.signJwtAs() (an ID ' +
-      'Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust ' +
+    summary: 'An EdDSA signature through helpers.signJwt() or signJwtAs() ' +
+      '(an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust ' +
       'or Provider Commands token) was asked of a realm whose ' +
       'keys.eddsaSigning is off — a client registered for EdDSA while it ' +
       'was on, or a setting naming EdDSA — and was refused rather than ' +
@@ -3477,7 +3491,8 @@ const CODES = [
     spec: 'the caller\'s: the response that needed the signature fails as ' +
       'it does for an algorithm this realm holds no key for' },
   { code: 'STS-KEYS-0166',
-    summary: 'A signature through helpers.signJwtAs() (an ID Token, ' +
+    summary: 'A signature through helpers.signJwt() or signJwtAs() (an ID ' +
+      'Token, ' +
       'UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or ' +
       'Provider Commands token) was asked of a realm whose ' +
       'keys.signingAlgorithms does not list its algorithm — a client ' +
@@ -3525,6 +3540,22 @@ const CODES = [
     summary: 'A certificate carries a critical extension nothing here ' +
       'reads.',
     spec: 'none — recorded on the refusal the use case makes (#1360)' },
+  { code: 'STS-KEYS-0176',
+    summary: 'An HTTP message signature in a post-quantum algorithm was ' +
+      'presented to a realm whose keys.postQuantumSigning is off, and was ' +
+      'refused before its signature was checked.',
+    spec: 'the caller\'s refusal: RFC 9421 section 3.2 leaves what an ' +
+      'application accepts to it (#1368)' },
+  { code: 'STS-KEYS-0177',
+    summary: 'An HTTP message signature in a post-quantum algorithm was asked ' +
+      'for in a realm whose keys.postQuantumSigning is off, and was not made.',
+    spec: 'none — a setting names an algorithm the realm no longer signs ' +
+      'with (#1368)' },
+  { code: 'STS-KEYS-0178',
+    summary: 'A setting chooses a signing algorithm the realm may not use, so ' +
+      'its signature was made with RS256 instead. Logged once per realm.',
+    spec: 'none — the setting should name an algorithm the realm signs with ' +
+      '(#1368)' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -17447,8 +17478,9 @@ const CODES = [
     spec: 'none (logged)' },
   { code: 'STS-TLS-0058',
     summary: 'A resumed TLS session\'s client certificate was demoted under ' +
-      'paranoid PKI mode: its full handshake was refused, or this process has ' +
-      'no record of it. The next full handshake settles it (#1360).',
+      'paranoid PKI mode: its full handshake was refused, or no record of it ' +
+      'reached this process within tls.resumedChainWaitMs. The next full ' +
+      'handshake settles it (#1360).',
     spec: 'none (logged): the certificate is treated as unverified' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +

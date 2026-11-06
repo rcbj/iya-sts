@@ -1524,8 +1524,8 @@
     "text": "EdDSA 簽章"
   },
   "keys.eddsaSigning|description": {
-    "en": "d14784fabbda974e",
-    "text": "此領域是否以 EdDSA（RFC 8037，Ed25519 與 Ed448）為用戶端選擇演算法的 JOSE 物件簽章，並發布其 kty OKP 簽章金鑰。**預設關閉**，因為 OpenID 一致性測試套件無法剖析 JWKS 中的 OKP 金鑰，而 OpenID Connect 認證執行的正是該套件。關閉時：`/oauth2/jwks` 中沒有 OKP 簽章金鑰（包括備用、固定與簽署者群組金鑰）；EdDSA 不在 `id_token_signing_alg_values_supported`、`userinfo_signing_alg_values_supported`、`introspection_signing_alg_values_supported` 或 `authorization_signing_alg_values_supported` 中；用戶端不能為 ID Token、UserInfo、內省或 JARM 回應註冊或被指定 EdDSA；仍被要求的此類簽章——由在此設定開啟時註冊的用戶端，或由設為 EdDSA 的 SSF、WS-Trust 或 Provider Commands 演算法——會被拒絕，而不是以無人能取得的金鑰產生。**不變：**用戶端用來簽章的 EdDSA（用戶端斷言、DPoP 證明、請求物件、錢包證明）仍被接受並宣告為接受；營運者設定的存取權杖、聯盟或憑證演算法（`oauth2.accessTokenSigningAlg`、`oidfed.signingAlg`、OpenID4VCI 的憑證演算法）仍會簽章，因此在此設定關閉時不要在那裡設定 EdDSA；DID 文件、COSE、XML 簽章、DKIM 與 TLS 不屬於 JOSE JWKS 發布。開啟時：依 `oauth2.eddsaCurve` 的設定簽章並發布 EdDSA。"
+    "en": "af67bc9dff3a0e7d",
+    "text": "此領域是否以 EdDSA（RFC 8037，Ed25519 與 Ed448）為用戶端選擇演算法的 JOSE 物件簽章，並發布其 kty OKP 簽章金鑰。**預設關閉**，因為 OpenID 一致性測試套件無法剖析 JWKS 中的 OKP 金鑰，而 OpenID Connect 認證執行的正是該套件。關閉時：`/oauth2/jwks` 中沒有 OKP 簽章金鑰（包括備用、固定與簽署者群組金鑰）；EdDSA 不在 `id_token_signing_alg_values_supported`、`userinfo_signing_alg_values_supported`、`introspection_signing_alg_values_supported` 或 `authorization_signing_alg_values_supported` 中；用戶端不能為 ID Token、UserInfo、內省或 JARM 回應註冊或被指定 EdDSA；仍被要求的此類簽章——由在此設定開啟時註冊的用戶端，或由設為 EdDSA 的 SSF、WS-Trust 或 Provider Commands 演算法——會被拒絕，而不是以無人能取得的金鑰產生。**不變：**用戶端用來簽章的 EdDSA（用戶端斷言、DPoP 證明、請求物件、錢包證明）仍被接受並宣告為接受；金鑰隨 `x5c` 或 DID 文件傳遞的簽章；營運者設定的聯盟或憑證演算法（`oidfed.signingAlg`、OpenID4VCI 的憑證演算法）仍會簽章，因此在此設定關閉時不要在那裡設定 EdDSA；DID 文件、COSE、XML 簽章、DKIM 與 TLS 不屬於 JOSE JWKS 發布。設為 EdDSA 的 `oauth2.accessTokenSigningAlg` 改用 RS256 簽章。開啟時：依 `oauth2.eddsaCurve` 的設定簽章並發布 EdDSA。"
   },
   "keys.signingAlgorithms|label": {
     "en": "23087da9ac3a37f0",

@@ -316,7 +316,7 @@ async function theBrowserLogIsClean(driver) {
   }).map(function (entry) {
     return entry.message;
   }).filter(function (message) {
-    // The browser's own favicon request; this service serves none.
+    // The browser's own favicon request, which another origin may not serve.
     return message.indexOf("/favicon.ico") < 0;
   }).filter(function (message) {
     // A conditional passkey request answered with nobody choosing is

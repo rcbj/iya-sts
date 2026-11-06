@@ -15,6 +15,8 @@
 // drawn with the sign-in screen's card, which a static page links as a
 // stylesheet rather than carrying inline. So this module serves:
 //
+//   GET /favicon.ico                        the service's icon
+//                                           (`faviconFile()`).
 //   GET /web/card.css                       `WebCardCss`: the card, and the
 //                                           chooser's rules
 //   GET /web/locales/catalogs.json          the catalog index: which
@@ -79,6 +81,7 @@ interface PublicAssetsDeps {
  * The paths this module answers.
  */
 const PATHS = {
+  favicon: '/favicon.ico',
   card: '/web/card.css',
   index: '/web/locales/catalogs.json',
   catalog: '/web/locales/:ns/:file'
@@ -99,6 +102,8 @@ class PublicAssets {
    * The paths this module answers.
    */
   static readonly PATHS = PATHS;
+  // The icon's bytes, read at its first request (`faviconFile()`).
+  private favicon: Json = null;
 
   /**
    * Builds the module over its dependencies.
@@ -214,7 +219,22 @@ class PublicAssets {
   }
 
   /**
-   * Registers the three routes; `common/protocol_stack.ts` calls it.
+   * The service's icon, read once. It is the square mark of `docs/logo.png` at
+   * 16, 24, 32, 48 and 64 pixels, with the logo's off-white made transparent.
+   *
+   * @returns `ShellDocument.readFile()`'s `{ raw, built }`
+   */
+  private faviconFile(): Json {
+    this.deps.log.debug("Entering PublicAssets.faviconFile().");
+    if (!this.favicon) {
+      this.favicon = ShellDocument.readFile(__dirname, 'favicon.ico', '');
+    }
+    this.deps.log.debug("Leaving PublicAssets.faviconFile().");
+    return this.favicon;
+  }
+
+  /**
+   * Registers the four routes; `common/protocol_stack.ts` calls it.
    *
    * @param app - the shared express app
    * @returns nothing
@@ -223,6 +243,24 @@ class PublicAssets {
     const { log, errorCodes } = this.deps;
     const self = this;
     log.debug("Entering PublicAssets.registerRoutes().");
+    // THE ADDRESS A BROWSER ASKS BY ITSELF, on every origin and for every page,
+    // so /admin, /portal, /report and the sign-in screens all have it with no
+    // change to a shell (`tests/web_foundation.js` holds a shell's bytes). It
+    // is not versioned, so it is kept for a day rather than for good.
+    app.get(PATHS.favicon, function (req: Json, res: Json) {
+      log.debug("Entering GET " + PATHS.favicon + ".");
+      const file = self.faviconFile();
+      if (!file.built) {
+        errorCodes.mark(res, 'STS-CORE-0166');
+        res.status(404).type('text/plain').set('Cache-Control', 'no-store')
+           .send('There is no icon.');
+        log.debug("Leaving GET " + PATHS.favicon + ". Not in this image.");
+        return;
+      }
+      res.status(200).type('image/x-icon')
+         .set('Cache-Control', 'public, max-age=86400').send(file.raw);
+      log.debug("Leaving GET " + PATHS.favicon + ".");
+    });
     app.get(PATHS.card, function (req: Json, res: Json) {
       log.debug("Entering GET " + PATHS.card + ".");
       res.status(200).type('text/css')

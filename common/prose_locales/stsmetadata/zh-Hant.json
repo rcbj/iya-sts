@@ -3942,5 +3942,9 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一個參數"
+  },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC。瀏覽器在每個頁面上自行請求的圖示：標誌的方形標記（common/favicon.ico）。在每個接聽程式上提供；快取一天。"
   }
 }

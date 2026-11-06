@@ -1524,8 +1524,8 @@
     "text": "EdDSA 签名"
   },
   "keys.eddsaSigning|description": {
-    "en": "d14784fabbda974e",
-    "text": "此领域是否用 EdDSA（RFC 8037，Ed25519 和 Ed448）为客户端选择算法的 JOSE 对象签名，并发布其 kty OKP 签名密钥。**默认关闭**，因为 OpenID 一致性测试套件无法解析 JWKS 中的 OKP 密钥，而 OpenID Connect 认证运行的正是该套件。关闭时：`/oauth2/jwks` 中没有 OKP 签名密钥（包括备用、固定和签名者组密钥）；EdDSA 不在 `id_token_signing_alg_values_supported`、`userinfo_signing_alg_values_supported`、`introspection_signing_alg_values_supported` 或 `authorization_signing_alg_values_supported` 中；客户端不能为 ID 令牌、UserInfo、内省或 JARM 响应注册或被指定 EdDSA；仍被请求的此类签名——由在此设置开启时注册的客户端，或由设为 EdDSA 的 SSF、WS-Trust 或 Provider Commands 算法——会被拒绝，而不是用无人能获取的密钥生成。**不变：**客户端用来签名的 EdDSA（客户端断言、DPoP 证明、请求对象、钱包证明）仍被接受并被宣告为接受；运营者配置的访问令牌、联合或凭证算法（`oauth2.accessTokenSigningAlg`、`oidfed.signingAlg`、OpenID4VCI 的凭证算法）仍会签名，因此在此设置关闭时不要在那里配置 EdDSA；DID 文档、COSE、XML 签名、DKIM 和 TLS 不属于 JOSE JWKS 发布。开启时：按 `oauth2.eddsaCurve` 的设定签名并发布 EdDSA。"
+    "en": "af67bc9dff3a0e7d",
+    "text": "此领域是否用 EdDSA（RFC 8037，Ed25519 和 Ed448）为客户端选择算法的 JOSE 对象签名，并发布其 kty OKP 签名密钥。**默认关闭**，因为 OpenID 一致性测试套件无法解析 JWKS 中的 OKP 密钥，而 OpenID Connect 认证运行的正是该套件。关闭时：`/oauth2/jwks` 中没有 OKP 签名密钥（包括备用、固定和签名者组密钥）；EdDSA 不在 `id_token_signing_alg_values_supported`、`userinfo_signing_alg_values_supported`、`introspection_signing_alg_values_supported` 或 `authorization_signing_alg_values_supported` 中；客户端不能为 ID 令牌、UserInfo、内省或 JARM 响应注册或被指定 EdDSA；仍被请求的此类签名——由在此设置开启时注册的客户端，或由设为 EdDSA 的 SSF、WS-Trust 或 Provider Commands 算法——会被拒绝，而不是用无人能获取的密钥生成。**不变：**客户端用来签名的 EdDSA（客户端断言、DPoP 证明、请求对象、钱包证明）仍被接受并被宣告为接受；密钥随 `x5c` 或 DID 文档传递的签名；运营者配置的联合或凭证算法（`oidfed.signingAlg`、OpenID4VCI 的凭证算法）仍会签名，因此在此设置关闭时不要在那里配置 EdDSA；DID 文档、COSE、XML 签名、DKIM 和 TLS 不属于 JOSE JWKS 发布。设为 EdDSA 的 `oauth2.accessTokenSigningAlg` 改用 RS256 签名。开启时：按 `oauth2.eddsaCurve` 的设定签名并发布 EdDSA。"
   },
   "keys.signingAlgorithms|label": {
     "en": "23087da9ac3a37f0",
