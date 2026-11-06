@@ -54,13 +54,28 @@ const log = bunyan.createLogger({ name: "schemathesis_kit",
 // per-realm runtime rows (common/mode.js, common/config.js), set with
 // `admin:write`.
 // ---------------------------------------------------------------------------
+// Every fuzz realm needs headroom on the DPoP replay cache. The fuzzer signs
+// DPoP proofs far faster than the default 600s window (2 x oauth2.dpopIatSkewS)
+// lets them expire, and a full history REFUSES the next proof (STS-OAUTH-0554)
+// rather than forgetting a live one — which left admin-api @ fuzz-21 at ~41k
+// 401s (the handlers barely fuzzed) and the synthesized protocol-doc fetch,
+// which runs on the last surface after the cache is full, empty (#1299). The
+// SHORT window is the real fix: on the dedicated stack the proxy signs a fresh
+// proof per request and delivers it over loopback with synced clocks, so 30s
+// is ample and the live count stays tiny (rate x 60s). The large ceiling is
+// then headroom the run never fills, not resident memory it holds.
+const FUZZ_DPOP = Object.freeze({
+  "oauth2.dpopIatSkewS": 30,
+  "oauth2.dpopReplayCacheSize": 200000
+});
+
 const PROFILES = [
   { key: "base", realm: "fuzz-base", label: "product baseline",
-    settings: {} },
+    settings: Object.assign({}, FUZZ_DPOP) },
   { key: "rfc9700", realm: "fuzz-9700", label: "RFC 9700",
-    settings: { "oauth2.rfc9700": true } },
+    settings: Object.assign({ "oauth2.rfc9700": true }, FUZZ_DPOP) },
   { key: "oauth21", realm: "fuzz-21", label: "OAuth 2.1",
-    settings: { "oauth2.oauth21": true } }
+    settings: Object.assign({ "oauth2.oauth21": true }, FUZZ_DPOP) }
 ];
 
 // ---------------------------------------------------------------------------
@@ -358,6 +373,45 @@ async function adminCall(serviceBase, realmPrefix, method, apiPath, body) {
   return { status: response.status, json: json };
 }
 
+// The protocol endpoints from `/admin-api/sts-metadata`, read with a
+// DPoP-BOUND CONSOLE TOKEN rather than the plain-Bearer launcher token
+// adminCall() carries (#1299). An OAuth-2.1 realm requires a sender-
+// constrained token at /admin-api, so the plain Bearer is refused there and
+// the synthesized doc came back empty ("schema defines no API operations");
+// the openapi surfaces already read their schema THROUGH the proxy, which
+// attaches dpop-console, and this gives the synthesized surface the same.
+// console_signin's wrapper signs a fresh proof per request and retries a
+// use_dpop_nonce challenge, as the proxy does — and with the fuzz realms'
+// raised DPoP replay-cache headroom (FUZZ_DPOP) the proof is not refused as a
+// cache-full STS-OAUTH-0554 the way it was once the admin-api surface before
+// it had filled the realm's history. The fuzz person already exists with the
+// console roles (provision() granted them). Resolves { ok, json, why }.
+async function metadataAnswer(serviceBase, provisioned, say) {
+  log.debug("Entering metadataAnswer(). " + provisioned.realmPrefix);
+  let answer = null;
+  try {
+    const wrapper = await require("./console_signin").signInToTheConsole(
+      serviceBase + provisioned.realmPrefix, provisioned.user, say,
+      { password: provisioned.password });
+    answer = await wrapper.api("GET", "/admin-api/sts-metadata");
+  } catch (e) {
+    log.debug("Caught in metadataAnswer(): " + ((e && e.message) || e));
+    return { ok: false, json: null,
+      why: "the console sign-in or the sts-metadata fetch threw: " +
+        ((e && e.message) || e) };
+  }
+  if (!answer || answer.status !== 200 || !answer.json) {
+    log.debug("Leaving metadataAnswer(). " +
+      (answer ? answer.status : "no answer"));
+    return { ok: false, json: null,
+      why: "GET /admin-api/sts-metadata answered " +
+        (answer ? answer.status + " " +
+          String(answer.text || "").slice(0, 200) : "nothing") };
+  }
+  log.debug("Leaving metadataAnswer(). ok");
+  return { ok: true, json: answer.json, why: "" };
+}
+
 // Creates the profile's realm (with its mode overrides), a fuzz person, their
 // password and the four roles the gated surfaces need. Cross-realm admin-token
 // behaviour is confirmed at the end-to-end run. Resolves the sign-in facts.
@@ -571,9 +625,16 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     }
     let schemaLocation;
     if (surface.kind === "synthesized") {
-      const metadata = await adminCall(serviceBase, provisioned.realmPrefix,
-        "GET", surface.schemaPath, null);
-      const doc = synthesizeProtocolDoc(extractRows(metadata.json));
+      const meta = await metadataAnswer(serviceBase, provisioned, say);
+      if (!meta.ok) {
+        log.debug("Leaving runSurface(). sts-metadata unreadable");
+        return { surface: surface.key, realm: provisioned.realmPrefix,
+          code: null, status: "error", findings: [],
+          output: "could not read /admin-api/sts-metadata with a DPoP-bound " +
+            "console token (the synthesized protocol doc needs it): " +
+            meta.why };
+      }
+      const doc = synthesizeProtocolDoc(extractRows(meta.json));
       schemaLocation = path.join(workDir, "protocol" +
         provisioned.realmPrefix.replace(/[^A-Za-z0-9]+/g, "_") + ".json");
       fs.writeFileSync(schemaLocation, JSON.stringify(doc));
