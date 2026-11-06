@@ -1461,8 +1461,10 @@ const ACCESS_TYPE_ACTION = appAction({
 const FGA_ACTION = appAction({
   policy: STR, enforced: BOOL, created: BOOL, failure: STR,
   peps: Kit.closed({
-    group: STR, authzenGroup: STR, granted: Kit.listOf(PEP_HOLDER),
-    held: Kit.listOf(PEP_HOLDER), failed: Kit.listOf(PEP_HOLDER)
+    group: STR, authzenGroup: STR, total: INT, truncated: BOOL, unlocated: INT,
+    holders: Kit.listOf(PEP_HOLDER),
+    granted: Kit.listOf(PEP_HOLDER), held: Kit.listOf(PEP_HOLDER),
+    failed: Kit.listOf(PEP_HOLDER)
   })
 });
 

@@ -286,7 +286,11 @@ const XACML_EDITOR: Json = Kit.closed(Object.assign({}, NO_XACML, {
 const XACML_DECISION: Json = Kit.closed(Object.assign({}, NO_XACML, {
   asked: BOOL, subject: STR, action: STR, resource: NSTR, decision: STR,
   status: XACML_STATUS, obligations: STRS, advice: STRS,
-  applicablePolicies: STRS, enforcement: XACML_ENFORCEMENT,
+  // XACML's PolicyIdentifierList, each policy named with its version.
+  applicablePolicies: Kit.listOf(Kit.oneOf(Kit.str(), Kit.closed({
+    kind: Kit.str(), id: Kit.str(), version: Kit.str()
+  }))),
+  enforcement: XACML_ENFORCEMENT,
   enforcements: Kit.listOf(XACML_ENFORCEMENT),
   protocolEndpoints: PROTOCOL_ENDPOINTS
 }));
