@@ -7419,7 +7419,7 @@ const SETTINGS = [
     label: 'Certificates and keys the workbench store keeps, per realm',
     env: 'STS_PKI_MAX_STORED_OBJECTS', type: 'int', dflt: 200,
     min: 1, max: 100000, runtime: true,
-    description: 'How many objects the Certificate & Key Configuration pane ' +
+    description: 'How many objects the Certificate Workbench ' +
                  'on /admin/pki may keep in one realm. **A FULL STORE ' +
                  'REFUSES THE NEXT ONE**; it used to discard the oldest, and ' +
                  'the oldest carries a private key somebody chose to keep. ' +

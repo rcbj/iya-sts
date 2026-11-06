@@ -852,7 +852,7 @@
   "pki.issuingLifetimeYears|label": "Issuing CA lifetime (years, 0 = the profile's)",
   "pki.issuingLifetimeYears|description": "How long each Issuing CA is good for when the build names no lifetime. Zero is the `issuing-ca` profile's five years. Clamped to its Intermediate's expiry.",
   "pki.maxStoredObjects|label": "Certificates and keys the workbench store keeps, per realm",
-  "pki.maxStoredObjects|description": "How many objects the Certificate & Key Configuration pane on /admin/pki may keep in one realm. **A FULL STORE REFUSES THE NEXT ONE**; it used to discard the oldest, and the oldest carries a private key somebody chose to keep. Delete what is no longer wanted, or raise this.",
+  "pki.maxStoredObjects|description": "How many objects the Certificate Workbench on /admin/pki may keep in one realm. **A FULL STORE REFUSES THE NEXT ONE**; it used to discard the oldest, and the oldest carries a private key somebody chose to keep. Delete what is no longer wanted, or raise this.",
   "pki.personSelfServicePerIdentity|label": "Self-issued key pairs one person may ask for per window",
   "pki.personSelfServicePerIdentity|description": "How many times one person may press Generate on /portal/signing-key in a security.rateLimitWindowS window. Generating a key pair is hundreds of milliseconds of CPU on the thread every protocol here is answered on, which is why it is limited at all.",
   "pki.personSelfServicePerAddress|label": "Self-issued key pairs one address may ask for per window",

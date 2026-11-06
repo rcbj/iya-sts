@@ -609,7 +609,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3bs | The per-scope `issue-scope` verdict (#304) | `xacml/CLAUDE.md`, `common/CLAUDE.md` |
 | 3bq | `role_permissions.ts` (#302, #303): a scope requested, a role authorizing it | `common/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3w | `pki.js`: the CA hierarchy and path checks | `common/CLAUDE.md` |
-| 3aa | `pki_authoring.js`: the Certificate & Key Configuration pane as a model | `common/CLAUDE.md` |
+| 3aa | `pki_authoring.js`: the Certificate Workbench as a model | `common/CLAUDE.md` |
 | 3x | `assertion_grant.js`: RFC 7521 and RFC 7523 | `oauth-oidc/CLAUDE.md` |
 | 3ab | `person_assertions.js`: a person as an RFC 7523 issuer | `common/CLAUDE.md` |
 | 3ac | `password_policy.js`: the password policy and its generator | `common/CLAUDE.md` |

@@ -7978,7 +7978,7 @@ function roomForObject(realmId, objectId) {
 
 /**
  * Lists the objects in a realm's object store (what `/admin/pki`'s
- * Certificate & Key Configuration pane issues into).
+ * Certificate Workbench issues into).
  *
  * @param realmId - the realm
  * @returns a copy of the list
