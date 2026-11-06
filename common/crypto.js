@@ -101,6 +101,7 @@ const bunyan = require('bunyan');
 const config = require('./config');
 // Every signature algorithm, once (#1368): the tables below are views of it.
 const algorithmRegistry = require('./crypto_impl/algorithm_registry');
+const LazyModule = require('./lazy_module');
 const pqJose = require('./pq_jose');
 
 const xmldom = require('@xmldom/xmldom');
@@ -3921,6 +3922,39 @@ function hmacKeyProblem(spec, key) {
   return '';
 }
 
+/**
+ * Reads a compact JWS WITHOUT verifying it, for the places that must look at a
+ * token before choosing how to treat it. Strict base64url, as the verifier's,
+ * so a token this reads and the verifier refuses cannot exist. Nothing read
+ * here is evidence of anything.
+ *
+ * @param token - the compact JWS
+ * @param options - `complete: true` for the header and signature as well
+ * @returns the claims, or `{ header, payload, signature }`; null where it is
+ *   not a compact JWS with JSON in it
+ */
+function decodeJws(token, options) {
+  log.debug('Entering decodeJws().');
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3) {
+    log.debug('Leaving decodeJws(). Not three parts.');
+    return null;
+  }
+  try {
+    const header = JSON.parse(strictBase64url(parts[0], 'JWS protected header')
+      .toString('utf8'));
+    const payload = JSON.parse(strictBase64url(parts[1], 'JWS payload')
+      .toString('utf8'));
+    log.debug('Leaving decodeJws().');
+    return options && options.complete
+      ? { header: header, payload: payload, signature: parts[2] } : payload;
+  } catch (e) {
+    log.debug('Caught in decodeJws(): ' + ((e && e.message) || e));
+    log.debug('Leaving decodeJws(). Not readable.');
+    return null;
+  }
+}
+
 function prepareVerification(token, key, options) {
   log.debug('Entering prepareVerification().');
   const parts = String(token || '').split('.');
@@ -3993,6 +4027,14 @@ function prepareVerification(token, key, options) {
 }
 
 // An AKP public key as bytes: a JWK's `pub`, its base64url text, or bytes.
+// The private half's form as `pqPublicBytes()` reads the public half's.
+function pqPrivateBytes(key) {
+  log.debug('Entering pqPrivateBytes().');
+  log.debug('Leaving pqPrivateBytes().');
+  return (key && key.priv) ? Buffer.from(key.priv, 'base64url')
+    : Buffer.from(key);
+}
+
 function pqPublicBytes(key) {
   log.debug('Entering pqPublicBytes().');
   log.debug('Leaving pqPublicBytes().');
@@ -9876,6 +9918,15 @@ function verifySecretAsync(plaintext, stored) {
 // ===========================================================================
 const pqcX509 = require('./crypto_impl/pqc_x509');
 
+// THE BBS SUITE, AT FIRST USE (#348, #1368). It requires `jsonld` at its top,
+// and the two are resident memory in every request worker that never makes a
+// BBS key (`common/lazy_module.ts` argues it). This is the one door to it; a
+// feature module asks `stsCrypto.bbs`.
+/** @type {typeof import('./crypto_impl/bbs2023.js')} */
+const bbs = LazyModule.of('common/crypto_impl/bbs2023.js', function () {
+  return require('./crypto_impl/bbs2023.js');
+}, log);
+
 // The families `verifyRawSignature()` understands.
 /** The families `verifyRawSignature()` understands. */
 const RAW_SIGNATURE_FAMILIES = algorithmRegistry.RAW_SIGNATURE_FAMILIES;
@@ -9961,6 +10012,14 @@ async function verifyRawSignature(scheme, key, data, signature) {
     return false;
   }
   try {
+    // The algorithm named and the key's raw bytes, for a caller that holds them
+    // (a Data Integrity proof's AKP key), not an SPKI to read both from.
+    if (s.family === 'pq' && s.alg) {
+      const named = !!(await pqJose.verifyAsync(s.alg, pqPublicBytes(key),
+                                                message, sig));
+      log.debug("Leaving verifyRawSignature(). " + s.alg + " " + named);
+      return named;
+    }
     if (s.family === 'pq') {
       const described = key && key.spki ? key : publicKeyFromSpki(key);
       if (described.kind !== 'pq') {
@@ -10034,6 +10093,12 @@ function signRawSignature(scheme, privateKey, data) {
   const s = scheme || {};
   log.debug("Entering signRawSignature(). " + s.family + "/" +
             (s.hash || ''));
+  if (s.family === 'pq') {
+    const pq = Buffer.from(pqJose.sign(s.alg, pqPrivateBytes(privateKey),
+                                       Buffer.from(data || [])));
+    log.debug("Leaving signRawSignature(). " + s.alg);
+    return pq;
+  }
   const key = privateKey && privateKey.type === 'private' ? privateKey
     : nodeCrypto.createPrivateKey(privateKey && privateKey.kty
         ? { key: privateKey, format: 'jwk' } : privateKey);
@@ -10053,6 +10118,28 @@ function signRawSignature(scheme, privateKey, data) {
   log.debug("Leaving signRawSignature(). Refused.");
   throw new Error('signRawSignature: a ' + (type || 'unknown') + ' key ' +
                   'does not sign ' + String(s.family || 'nothing') + '.');
+}
+
+/**
+ * `signRawSignature()`, with a post-quantum signature made on libuv's thread
+ * pool, where one takes long enough to hold every other request.
+ *
+ * @param scheme - as `signRawSignature()`'s
+ * @param privateKey - the signing key
+ * @param data - the octets to sign
+ * @returns a promise of the signature
+ */
+async function signRawSignatureAsync(scheme, privateKey, data) {
+  const s = scheme || {};
+  log.debug("Entering signRawSignatureAsync(). " + s.family);
+  if (s.family !== 'pq') {
+    log.debug("Leaving signRawSignatureAsync(). In process.");
+    return signRawSignature(s, privateKey, data);
+  }
+  const out = Buffer.from(await pqJose.signAsync(s.alg,
+    pqPrivateBytes(privateKey), Buffer.from(data || [])));
+  log.debug("Leaving signRawSignatureAsync(). " + s.alg);
+  return out;
 }
 
 // HMAC-SHA-256 of `data` under `key` — ecdsa-sd-2023's blank node labels
@@ -10675,6 +10762,180 @@ function sessionStateHash(clientId, origin, browserState, salt) {
 
 /** The COSE signature algorithms WebAuthn verifies, by identifier. */
 const COSE_SIGNATURE_ALGS = algorithmRegistry.coseTable();
+
+// ---------------------------------------------------------------------------
+// COSE_Sign1, THE ONE DOOR (#1368). RFC 9052 section 4.4's Sig_structure,
+// signed and checked. A status-list CWT, a `vc+cose` credential and an mdoc's
+// IssuerAuth and DeviceAuth come through here; the CBOR container around the
+// signature stays with their codec, which has the rest of the format to read.
+//
+// WEBAUTHN DOES NOT: a passkey signs authenticatorData, which is no
+// Sig_structure, and WebAuthn keeps its own two lists, so it asks
+// `verifyCoseSignature()`.
+//
+// An ECDSA signature here is IEEE P1363 (RFC 9053 section 2.1), never DER.
+// ---------------------------------------------------------------------------
+// A CBOR head (RFC 8949 section 3), shortest form.
+function cborHead(major, length) {
+  log.debug("Entering cborHead().");
+  const top = major << 5;
+  let out;
+  if (length < 24) {
+    out = Buffer.from([top | length]);
+  } else if (length < 256) {
+    out = Buffer.from([top | 24, length]);
+  } else if (length < 65536) {
+    out = Buffer.alloc(3);
+    out[0] = top | 25;
+    out.writeUInt16BE(length, 1);
+  } else {
+    out = Buffer.alloc(5);
+    out[0] = top | 26;
+    out.writeUInt32BE(length, 1);
+  }
+  log.debug("Leaving cborHead().");
+  return out;
+}
+
+// [ "Signature1", protected, external_aad, payload ].
+function coseSigStructure(protectedBytes, external, payload) {
+  log.debug("Entering coseSigStructure().");
+  const bstr = function (bytes) {
+    const b = Buffer.from(bytes || []);
+    return Buffer.concat([cborHead(2, b.length), b]);
+  };
+  const context = Buffer.from('Signature1', 'ascii');
+  const out = Buffer.concat([cborHead(4, 4), cborHead(3, context.length),
+    context, bstr(protectedBytes), bstr(external), bstr(payload)]);
+  log.debug("Leaving coseSigStructure().");
+  return out;
+}
+
+// What node signs a COSE row with, for every family but the post-quantum one.
+function coseSignParams(spec, key) {
+  log.debug("Entering coseSignParams().");
+  const keyObject = (key && key.type === 'private') ? key
+    : privateKeyFrom((key && key.kty) ? { key: key, format: 'jwk' } : key);
+  const params = { key: keyObject };
+  if (spec.family === 'rsa-pss') {
+    params.padding = nodeCrypto.constants.RSA_PKCS1_PSS_PADDING;
+    params.saltLength = spec.saltLength;
+  }
+  if (spec.family === 'ecdsa') {
+    params.dsaEncoding = 'ieee-p1363';
+  }
+  log.debug("Leaving coseSignParams().");
+  return params;
+}
+
+// The row to sign with, or a refusal: a broken algorithm is never signed with.
+function coseSpecToSign(coseAlg) {
+  log.debug("Entering coseSpecToSign(). alg=" + coseAlg);
+  const spec = coseSignatureAlg(coseAlg);
+  if (!spec || spec.insecure) {
+    log.debug("Leaving coseSpecToSign(). Refused.");
+    // error-code: none — a programming error; callers name a listed algorithm
+    throw new Error('COSE: this service does not sign with algorithm ' +
+                    String(coseAlg) + '.');
+  }
+  log.debug("Leaving coseSpecToSign().");
+  return spec;
+}
+
+/**
+ * Signs a COSE_Sign1's Sig_structure.
+ *
+ * @param coseAlg - the COSE algorithm identifier
+ * @param key - the private key: a KeyObject, PEM or JWK, or for a post-quantum
+ *   algorithm its bytes or `{ priv }`
+ * @param protectedBytes - the encoded protected header
+ * @param payload - the payload
+ * @param options - `external`, the external additional authenticated data
+ * @returns the signature
+ */
+function coseSign1Sign(coseAlg, key, protectedBytes, payload, options) {
+  log.debug("Entering coseSign1Sign(). alg=" + coseAlg);
+  const spec = coseSpecToSign(coseAlg);
+  const toBeSigned = coseSigStructure(protectedBytes,
+                                      options && options.external, payload);
+  const signature = spec.family === 'pq'
+    ? Buffer.from(pqJose.sign(spec.name, pqPrivateBytes(key), toBeSigned))
+    : signBytes(spec.hash, toBeSigned, coseSignParams(spec, key));
+  log.debug("Leaving coseSign1Sign().");
+  return signature;
+}
+
+/**
+ * `coseSign1Sign()`, with a post-quantum signature made on libuv's thread pool.
+ *
+ * @param coseAlg - as `coseSign1Sign()`'s
+ * @param key - as `coseSign1Sign()`'s
+ * @param protectedBytes - as `coseSign1Sign()`'s
+ * @param payload - as `coseSign1Sign()`'s
+ * @param options - as `coseSign1Sign()`'s
+ * @returns a promise of the signature
+ */
+async function coseSign1SignAsync(coseAlg, key, protectedBytes, payload,
+                                  options) {
+  log.debug("Entering coseSign1SignAsync(). alg=" + coseAlg);
+  const spec = coseSpecToSign(coseAlg);
+  if (spec.family !== 'pq') {
+    log.debug("Leaving coseSign1SignAsync(). In process.");
+    return coseSign1Sign(coseAlg, key, protectedBytes, payload, options);
+  }
+  const out = Buffer.from(await pqJose.signAsync(spec.name, pqPrivateBytes(key),
+    coseSigStructure(protectedBytes, options && options.external, payload)));
+  log.debug("Leaving coseSign1SignAsync().");
+  return out;
+}
+
+/**
+ * Checks a COSE_Sign1's signature over its Sig_structure.
+ *
+ * @param coseAlg - the COSE algorithm identifier
+ * @param key - the public key, in any form `verifyCoseSignature()` reads
+ * @param protectedBytes - the encoded protected header
+ * @param payload - the payload
+ * @param signature - the signature
+ * @param options - `external`, the external additional authenticated data
+ * @returns true when it verifies
+ */
+function coseSign1Verify(coseAlg, key, protectedBytes, payload, signature,
+                         options) {
+  log.debug("Entering coseSign1Verify(). alg=" + coseAlg);
+  const ok = verifyCoseSignature(coseAlg, key,
+    coseSigStructure(protectedBytes, options && options.external, payload),
+    signature, { ecdsaEncoding: 'ieee-p1363' });
+  log.debug("Leaving coseSign1Verify(). " + ok);
+  return ok;
+}
+
+/**
+ * `coseSign1Verify()`, with a post-quantum check made on libuv's thread pool.
+ *
+ * @param coseAlg - as `coseSign1Verify()`'s
+ * @param key - as `coseSign1Verify()`'s
+ * @param protectedBytes - as `coseSign1Verify()`'s
+ * @param payload - as `coseSign1Verify()`'s
+ * @param signature - as `coseSign1Verify()`'s
+ * @param options - as `coseSign1Verify()`'s
+ * @returns a promise of whether it verifies
+ */
+async function coseSign1VerifyAsync(coseAlg, key, protectedBytes, payload,
+                                    signature, options) {
+  log.debug("Entering coseSign1VerifyAsync(). alg=" + coseAlg);
+  const spec = coseSignatureAlg(coseAlg);
+  if (!spec || spec.family !== 'pq' || (key && key.spki !== undefined)) {
+    log.debug("Leaving coseSign1VerifyAsync(). In process.");
+    return coseSign1Verify(coseAlg, key, protectedBytes, payload, signature,
+                           options);
+  }
+  const ok = !!(await pqJose.verifyAsync(spec.name, pqPublicBytes(key),
+    coseSigStructure(protectedBytes, options && options.external, payload),
+    Buffer.from(signature || [])));
+  log.debug("Leaving coseSign1VerifyAsync(). " + ok);
+  return ok;
+}
 
 // The COSE entry for an identifier, or null.
 /**
@@ -14575,6 +14836,19 @@ function hmac(algorithm, key, data, encoding) {
  * @returns the X509Certificate
  * @throws Error when the input is not a certificate
  */
+/**
+ * The RSA public key of a certificate, as the `n` and `e` of a JWK.
+ *
+ * @param certPem - a PEM certificate holding an RSA key
+ * @returns `{ n, e }`, each base64url
+ */
+function rsaPublicJwkOf(certPem) {
+  log.debug('Entering rsaPublicJwkOf().');
+  const jwk = publicKeyOf(certPem).export({ format: 'jwk' });
+  log.debug('Leaving rsaPublicJwkOf().');
+  return { n: jwk.n, e: jwk.e };
+}
+
 function parseCertificate(input) {
   if (input instanceof nodeCrypto.X509Certificate) {
     return input;
@@ -17525,6 +17799,14 @@ module.exports = {
   HMAC_DIGESTS: HMAC_DIGESTS,
   hmac: hmac,
   parseCertificate: parseCertificate,
+  decodeJws: decodeJws,
+  bbs: bbs,
+  signRawSignatureAsync: signRawSignatureAsync,
+  coseSign1Sign: coseSign1Sign,
+  coseSign1SignAsync: coseSign1SignAsync,
+  coseSign1Verify: coseSign1Verify,
+  coseSign1VerifyAsync: coseSign1VerifyAsync,
+  rsaPublicJwkOf: rsaPublicJwkOf,
   isParsedCertificate: isParsedCertificate,
   privateKeyFrom: privateKeyFrom,
   isKeyObject: isKeyObject,

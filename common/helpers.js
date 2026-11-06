@@ -57,17 +57,7 @@ require('./config_file').resolveConfigFile();
 // It is BELOW this module in the dependency graph and requires nothing from
 // here, which is what keeps the graph a tree (rule 3).
 const config = require('./config');
-const forge = require('node-forge');
-const jwt = require('jsonwebtoken');
 const bunyan = require("bunyan");
-// THE VENDORED BBS SUITE IS REQUIRED AT FIRST USE (#348), through
-// `bbs2023Suite()` below: it requires `jsonld` at its top, and the two are
-// resident memory in every request worker that never makes a BBS key. By
-// hand rather than through `common/lazy_module.ts`, because this file was in
-// the parent project's Kerberos COPY closure and a new require here would
-// have owed the parent a line (until #1280; it is owed nothing now).
-/** @type {typeof import('./crypto_impl/bbs2023.js') | null} */
-let bbs2023Loaded = null;
 // ---------------------------------------------------------------------------
 // THE ONE PLACE THIS SERVICE SIGNS, VERIFIES, ENCRYPTS AND DECRYPTS, since
 // 2026-08-27. It is a LEAF — it requires npm packages, the vendored XML signer
@@ -135,21 +125,8 @@ const log = bunyan.createLogger({ name: 'sts',
  */
 function bbs2023Suite() {
   log.debug("Entering bbs2023Suite().");
-  if (!bbs2023Loaded) {
-    try {
-      bbs2023Loaded = require('./crypto_impl/bbs2023.js');
-    } catch (e) {
-      // Thrown on to the caller, as the top-level require's failure was
-      // thrown at start; logged first, because it now happens mid-request.
-      log.error(errorCodes.tag('STS-CORE-0140') + 'helpers: ' +
-                'common/crypto_impl/bbs2023.js, required at first use, did ' +
-                'not load: ' + ((e && e.message) || e));
-      log.debug("Leaving bbs2023Suite(). Threw.");
-      throw e;
-    }
-  }
   log.debug("Leaving bbs2023Suite().");
-  return bbs2023Loaded;
+  return stsCrypto.bbs;
 }
 
 // Registering it is what makes global.logLevel a setting rather than a claim:
@@ -1112,11 +1089,7 @@ function curveKeyFrom(spec, pair) {
     publicJwk: Object.assign({ use: 'sig', alg: spec.alg }, publicJwk,
       { kid: 'sts-' +
         (spec.curve || spec.alg).toLowerCase() + '-' +
-        forge.md.sha256.create()
-                       .update(material)
-                       .digest()
-                       .toHex()
-                       .slice(0, 8) })
+        stsCrypto.sha256Hex(Buffer.from(material)).slice(0, 8) })
   };
 }
 
@@ -1131,8 +1104,7 @@ function pqKeyFrom(alg, pair) {
     privateKey: pair.priv,
     publicJwk: pqJose.akpPublicJwk(alg, pair.pub,
       'sts-' + alg.toLowerCase() + '-' +
-      forge.md.sha256.create().update(material).digest().toHex()
-        .slice(0, 8))
+      stsCrypto.sha256Hex(Buffer.from(material)).slice(0, 8))
   };
 }
 
@@ -1239,7 +1211,7 @@ function kidOf(certB64) {
   log.debug("Entering kidOf().");
   log.debug("Leaving kidOf().");
   return 'sts-' +
-    forge.md.sha256.create().update(certB64).digest().toHex().slice(0, 12);
+    stsCrypto.sha256Hex(Buffer.from(certB64)).slice(0, 12);
 }
 
 // A key set this process can use directly, built from what a SIBLING PROCESS
@@ -7323,8 +7295,7 @@ function groupKidOf(groupId, slot, material) {
   log.debug("Entering groupKidOf().");
   log.debug("Leaving groupKidOf().");
   return 'sts-g-' + groupId + '-' + String(slot).toLowerCase() + '-' +
-         forge.md.sha256.create().update(material).digest().toHex()
-           .slice(0, 8);
+         stsCrypto.sha256Hex(Buffer.from(material)).slice(0, 8);
 }
 
 // One classical member: `{ group, slot, alg, kind, pairedSlot, privateKey,

@@ -105,20 +105,15 @@ import net = require('net');
 // config.js and error_codes.js and nothing else here, so it cannot join a
 // cycle and it registers no route, so its position is not a position at all.
 import realms = require('../common/realms');
-import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
-import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
 // at its top, and together they are resident memory in every request worker
 // that never issues or verifies a BBS credential. `common/lazy_module.ts`
 // argues it; `common/helpers.js` defers the same file by hand.
 type Bbs2023 = typeof import('../common/crypto_impl/bbs2023.js');
-const bbs2023: Bbs2023 = LazyModule.of('common/crypto_impl/bbs2023.js',
-  function () {
-    return require('../common/crypto_impl/bbs2023.js') as Bbs2023;
-  }, helpers.log);
+const bbs2023: Bbs2023 = stsCrypto.bbs;
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 // THE MODE (2026-09-12), for one question: may a response go to an address the
@@ -177,7 +172,6 @@ const { VCI_JWT_TYPES, VCI_VCT } = vcConfigs;
 
 // `jsonwebtoken` was required here and is no longer called; the import is
 // kept with the others it was listed beside.
-void jwt;
 
 // The parts of a `realms.map()` store this module uses.
 interface Store {
