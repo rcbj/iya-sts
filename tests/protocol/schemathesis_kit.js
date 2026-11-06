@@ -654,6 +654,62 @@ async function reassertRealm(serviceBase, provisioned, say) {
   return { ok: true, why: "" };
 }
 
+// The two DPoP settings' values in force in a realm, walked out of a
+// `GET /admin-api/config` answer (groups[].settings[] with key and value),
+// wherever the document nests them. Null for a key the answer did not carry.
+function dpopSettingsOf(json) {
+  log.debug("Entering dpopSettingsOf().");
+  const found = { "oauth2.dpopReplayCacheSize": null,
+    "oauth2.dpopIatSkewS": null };
+  function walk(node) {
+    if (!node || typeof node !== "object") {
+      return;
+    }
+    if (typeof node.key === "string" &&
+        Object.prototype.hasOwnProperty.call(found, node.key) &&
+        found[node.key] === null) {
+      found[node.key] = node.value;
+    }
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+    } else {
+      Object.keys(node).forEach(function (name) {
+        walk(node[name]);
+      });
+    }
+  }
+  walk(json);
+  log.debug("Leaving dpopSettingsOf().");
+  return found;
+}
+
+// Reads the two DPoP settings back at a cell's end and logs them (#1299). A
+// value other than FUZZ_DPOP's means the cell's own fuzzing reset the setting
+// mid-cell. Best-effort: a read that fails is logged and nothing else.
+async function logDpopSettings(serviceBase, provisioned, surfaceKey, say) {
+  log.debug("Entering logDpopSettings().");
+  try {
+    const after = await adminCall(serviceBase, provisioned.realmPrefix, "GET",
+      "/admin-api/config");
+    if (after.status !== 200) {
+      say("[schemathesis] " + surfaceKey + " @ " + provisioned.realmPrefix +
+        " ended; could not read the DPoP settings back (" + after.status + ")");
+      log.debug("Leaving logDpopSettings(). " + after.status);
+      return;
+    }
+    const seen = dpopSettingsOf(after.json);
+    say("[schemathesis] " + surfaceKey + " @ " + provisioned.realmPrefix +
+      " ended; DPoP settings in force: oauth2.dpopReplayCacheSize=" +
+      seen["oauth2.dpopReplayCacheSize"] + " (wanted " +
+      FUZZ_DPOP["oauth2.dpopReplayCacheSize"] + "), oauth2.dpopIatSkewS=" +
+      seen["oauth2.dpopIatSkewS"] + " (wanted " +
+      FUZZ_DPOP["oauth2.dpopIatSkewS"] + ")");
+  } catch (e) {
+    log.debug("Caught in logDpopSettings(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving logDpopSettings().");
+}
+
 // A free loopback TCP port.
 function freePort() {
   log.debug("Entering freePort().");
@@ -922,6 +978,12 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     say("[schemathesis] " + surface.key + " @ " + provisioned.realmPrefix +
       ": " + SCHEMATHESIS_BIN + " " + args.join(" "));
     const run = await runSchemathesis(SCHEMATHESIS_BIN, args, runEnv, workDir);
+    // Read the two DPoP settings back now the cell has run, and log them: the
+    // re-assert set them at the cell's START, so a value here that is not
+    // FUZZ_DPOP's is the cell's own fuzzing having reset them mid-cell (#1299),
+    // which is the remaining explanation for a replay cache that filled. A
+    // diagnostic only; it changes nothing and never fails the cell.
+    await logDpopSettings(serviceBase, provisioned, surface.key, say);
     const code = run.status;
     const status = code === 0 ? "pass" : (code === 1 ? "fail" : "error");
     // A null status means the binary could not be spawned (ENOENT, EACCES) or
