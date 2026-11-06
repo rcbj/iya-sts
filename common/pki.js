@@ -3550,6 +3550,14 @@ function nameBytesOf(name) {
  * @param one - an entry with `der`, as `certificateFromDer()` makes it
  * @returns the certificate's path facts
  */
+// RSASSA-PSS's hash by OID, the part of the algorithm its own OID does not name.
+const PATH_PSS_HASHES = {
+  '1.3.14.3.2.26': 'sha1',
+  '2.16.840.1.101.3.4.2.1': 'sha256',
+  '2.16.840.1.101.3.4.2.2': 'sha384',
+  '2.16.840.1.101.3.4.2.3': 'sha512'
+};
+
 function pathFactsOf(one) {
   log.debug("Entering pathFactsOf().");
   if (one.pathFacts) {
@@ -3601,6 +3609,7 @@ function pathFactsOf(one) {
                       '2.1.1 forbids specifiedCurve and implicitCurve)');
     }
     const signedWith = pk.signatureAlgorithm.algorithmId;
+    facts.signatureOid = signedWith;
     if (PATH_MD_SIGNATURES.indexOf(signedWith) >= 0) {
       facts.weakSignature = 'md';
     } else if (PATH_SHA1_SIGNATURES.indexOf(signedWith) >= 0) {
@@ -3616,6 +3625,7 @@ function pathFactsOf(one) {
         hash = PATH_SHA1;
       }
       facts.weakSignature = hash === PATH_SHA1 ? 'sha1' : '';
+      facts.signatureHash = PATH_PSS_HASHES[hash] || '';
     }
     facts.notBefore = pk.notBefore.value.getTime();
     facts.notAfter = pk.notAfter.value.getTime();
@@ -4225,6 +4235,8 @@ function describePathName(name) {
 //   unusable        the certificate cannot be held to the rules (see
 //                   `pathFactsOf()`)
 //   critical        a critical extension nothing here implements
+//   unaccepted-signature  a certificate signed with an algorithm
+//                   `pki.acceptedSignatureAlgorithms` does not list (#1368)
 //   weak-signature  a certificate signed with MD2, MD5 or (unless
 //                   `opts.allowSha1`) SHA-1
 //   malformed       a rule of RFC 5280 section 4 a relying party can and
@@ -4244,7 +4256,8 @@ function describePathName(name) {
  * Holds a certificate path to this module's path rules and reports the first
  * certificate, from the leaf, that breaks one.
  *
- * `check` is one of unusable, critical, weak-signature, malformed, not-ca,
+ * `check` is one of unusable, critical, weak-signature, unaccepted-signature,
+ * malformed, not-ca,
  * key-cert-sign, path-len, name-constraints or policy.
  * @param path - entries with `der`, leaf first and anchor last
  * @param opts - `allowCritical` (extensions the caller evaluates itself),
@@ -4280,6 +4293,16 @@ function pathRuleProblem(path, opts) {
       return refuse('critical', i, 'carries a critical extension this ' +
                     'service does not implement (' + unknown.join(', ') +
                     '), which RFC 5280 section 4.2 says must be refused');
+    }
+    // THE X.509 ACCEPT CHOKEPOINT (#1368). Above the weak-hash rule's reach:
+    // a list is the realm's own statement, at every certificate but the anchor.
+    if (i < path.length - 1 && facts.signatureOid) {
+      const unaccepted = stsCrypto.signaturePolicy.acceptX509Cause(
+        facts.signatureOid, facts.signatureHash);
+      if (unaccepted) {
+        log.debug("Leaving pathRuleProblem(). Not accepted at " + i + ".");
+        return refuse('unaccepted-signature', i, unaccepted.message);
+      }
     }
     if (i < path.length - 1 && facts.weakSignature &&
         (facts.weakSignature === 'md' || !options.allowSha1)) {
@@ -4515,6 +4538,7 @@ function authorityCode(problem, issuerCode) {
   const codes = { 'name-constraints': 'STS-PKI-0194',
                   critical: 'STS-PKI-0195', malformed: 'STS-PKI-0196',
                   unusable: 'STS-PKI-0196', 'weak-signature': 'STS-PKI-0197',
+                  'unaccepted-signature': 'STS-KEYS-0185',
                   policy: 'STS-PKI-0199' };
   const code = codes[problem.check] || issuerCode;
   log.debug("Leaving authorityCode(). " + code);
@@ -14088,6 +14112,7 @@ async function verifyEmbeddedScts(leafDer, issuerDer, logs) {
  * @namespace
  */
 module.exports = {
+  authorityCode: authorityCode,
   // --- the console prose (#543) ---
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,

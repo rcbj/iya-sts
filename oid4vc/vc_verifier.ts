@@ -3066,6 +3066,15 @@ class VcVerifier {
     this.vpCheck(checks, 'Proof options', true, 'canonicalized to the ' +
                  'header the base proof was bound to.');
 
+    // bbs-2023 is a Data Integrity suite like any other (#1368), and is refused
+    // before any key operation.
+    const unaccepted = stsCrypto.signaturePolicy.acceptCause('di', 'bbs-2023');
+    if (unaccepted) {
+      log.warn(errorCodes.tag(unaccepted.code) + unaccepted.message);
+      this.vpCheck(checks, 'Cryptosuite', false, unaccepted.message);
+      log.debug("Leaving VcVerifier.verifyLdpVc(). Not accepted here.");
+      return result;
+    }
     let ok = false;
     for (let g = 0; g < generations.length && !ok; g++) {
       ok = await bbs2023.verifyDerived(generations[g].publicKey, proofBytes,

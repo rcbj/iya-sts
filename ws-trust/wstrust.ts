@@ -469,7 +469,8 @@ class WsTrust {
     } = this.deps;
     const self = this;
     log.debug("Entering WsTrust.buildJwt().");
-    const alg = String(config.value('wstrust.jwtAlgorithm') || 'RS256');
+    const alg = helpers.usableSigningAlg(
+      String(config.value('wstrust.jwtAlgorithm') || 'RS256'));
     const now = Math.floor(Date.now() / 1000);
     // THE REALM'S OAUTH ISSUER (#480, rcbj): the identifier
     // /.well-known/oauth-authorization-server publishes, in every mode, so

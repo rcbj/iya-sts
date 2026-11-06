@@ -963,15 +963,17 @@ class AccessTokenStatus {
                                          headerKid: string }> {
     const { log, STS, signingKeyForAsync, publishedKidFor } = this.deps;
     log.debug("Entering AccessTokenStatus.signerAsync().");
-    const signer = await signingKeyForAsync('RS256', 'access-token');
+    // RS256, unless `keys.pqcOnly` has the realm sign post-quantum (#1368).
+    const alg = stsCrypto.signaturePolicy.underPqcOnly('RS256');
+    const signer = await signingKeyForAsync(alg, 'access-token');
     if (signer.kid === STS.kid) {
       log.debug("Leaving AccessTokenStatus.signerAsync(). The realm key.");
       return { alg: 'RS256', key: STS.privateKey, kid: STS.kid,
                headerKid: publishedKidFor(STS.kid) };
     }
-    log.debug("Leaving AccessTokenStatus.signerAsync(). A pinned or group " +
-              "key.");
-    return { alg: 'RS256', key: signer.key, kid: signer.kid,
+    log.debug("Leaving AccessTokenStatus.signerAsync(). A pinned, group or " +
+              "post-quantum key.");
+    return { alg: alg, key: signer.key, kid: signer.kid,
              headerKid: publishedKidFor(signer.kid) };
   }
 

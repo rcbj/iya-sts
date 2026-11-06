@@ -764,12 +764,25 @@ function byName(realm, parentKey, name) {
   const rdn = name && typeof name === 'object'
     ? String(name.rdn || '')
     : String(name == null ? '' : name).trim().toLowerCase();
+  const key = keyed(name, 'name', true);
+  // A NUL byte in a looked-up name can match no stored entry — PostgreSQL text
+  // holds no NUL, so neither `rdn_value` nor a `name_keys` digest ever does —
+  // and binding one makes the driver throw, which reached the request as an
+  // uncaught 500 under fuzzing (#1356, `byKeys`'s NUL read a second way: the
+  // RDN carries it even where the key is a digest). The right answer for a
+  // name that cannot exist is no row, so a statement matching nothing is
+  // returned. This is not a refusal and carries no error code.
+  if (rdn.indexOf('\u0000') >= 0 || key.indexOf('\u0000') >= 0) {
+    log.debug("Leaving byName(). A NUL in the name.");
+    return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE false',
+             values: [] };
+  }
   log.debug("Leaving byName().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND parent_key = $2 AND (name_keys @> $3::jsonb ' +
                  'OR rdn_value = $4) ORDER BY dn_key LIMIT 2',
            values: [String(realm), String(parentKey),
-                    JSON.stringify([keyed(name, 'name', true)]), rdn] };
+                    JSON.stringify([key]), rdn] };
 }
 
 /**

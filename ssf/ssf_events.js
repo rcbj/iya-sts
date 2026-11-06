@@ -1878,7 +1878,8 @@ function buildSet(options) {
  */
 function signingAlgorithm() {
   log.debug('Entering signingAlgorithm().');
-  const alg = String(config.value('ssf.signingAlgorithm') || 'RS256');
+  const alg = require('../common/helpers').usableSigningAlg(
+    String(config.value('ssf.signingAlgorithm') || 'RS256'));
   log.debug('Leaving signingAlgorithm(). ' + alg);
   return alg;
 }

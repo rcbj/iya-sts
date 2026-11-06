@@ -1516,16 +1516,16 @@
     "text": "Signature post-quantique"
   },
   "keys.postQuantumSigning|description": {
-    "en": "68ffd5da182ec911",
-    "text": "Indique si ce domaine signe, publie et vérifie les algorithmes JWS post-quantiques et composites (ML-DSA, SLH-DSA et les ML-DSA composites). **Activé par défaut.** Désactivé : aucune clé de signature post-quantique ne figure dans `/oauth2/jwks` ni dans le document DID (clés en attente, épinglées et de groupe de signataires comprises) ; aucun algorithme post-quantique ne figure dans une liste `*_alg_values_supported` ou `*_alg_values` des documents de découverte, du serveur d’autorisation, d’OpenID Federation, d’OpenID4VCI et d’OpenID4VP ; un JWS signé avec l’un d’eux est refusé partout où ce domaine en vérifie un ; un client ne peut pas en enregistrer un ; et une signature qui en exigerait encore un — pour un client enregistré pendant que ce paramètre était activé, ou une signature de message HTTP — est refusée plutôt que faite avec une clé que personne ne peut récupérer. Il existe pour les clients et les suites de tests dont les bibliothèques JOSE ne savent pas lire une clé AKP ou ne connaissent pas ces algorithmes, la suite de conformité OpenID parmi elles. **Inchangés :** COSE (clés d’accès), les signatures XML, TLS, les algorithmes de certificat, les clés de chiffrement ML-KEM (`keys.encryptionKemAlgs`), la clé alternative ML-DSA qu’un certificat `hybrid-groups` porte dans `x5c` (les clés ML-DSA nues sont retirées, les certificats ne sont pas réémis), et `oidfed.signingAlg` : un domaine qui nomme une clé de fédération ML-DSA continue d’en signer ses déclarations mais refuse une déclaration ML-DSA qu’on lui demande de vérifier, alors gardez ce paramètre classique ici."
+    "en": "0a6b412c599e2c7d",
+    "text": "Indique si ce domaine signe, publie et vérifie les algorithmes JWS post-quantiques et composites (ML-DSA, SLH-DSA et les ML-DSA composites). **Activé par défaut.** Désactivé : aucune clé de signature post-quantique ne figure dans `/oauth2/jwks` ni dans le document DID (clés en attente, épinglées et de groupe de signataires comprises) ; aucun algorithme post-quantique ne figure dans une liste `*_alg_values_supported` ou `*_alg_values` des documents de découverte, du serveur d’autorisation, d’OpenID Federation, d’OpenID4VCI et d’OpenID4VP ; un JWS signé avec l’un d’eux est refusé partout où ce domaine en vérifie un ; un client ne peut pas en enregistrer un ; et une signature qui en exigerait encore un — pour un client enregistré pendant que ce paramètre était activé, ou une signature de message HTTP — est refusée plutôt que faite avec une clé que personne ne peut récupérer. Il existe pour les clients et les suites de tests dont les bibliothèques JOSE ne savent pas lire une clé AKP ou ne connaissent pas ces algorithmes, la suite de conformité OpenID parmi elles. **Inchangés :** COSE (clés d’accès), les signatures XML, TLS, les algorithmes de certificat, les clés de chiffrement ML-KEM (`keys.encryptionKemAlgs`), la clé alternative ML-DSA qu’un certificat `hybrid-groups` porte dans `x5c` (les clés ML-DSA nues sont retirées, les certificats ne sont pas réémis). Un `oidfed.signingAlg` nommant ML-DSA signe avec la valeur par défaut du domaine à la place."
   },
   "keys.eddsaSigning|label": {
     "en": "743f659a7fcaa776",
     "text": "Signature EdDSA"
   },
   "keys.eddsaSigning|description": {
-    "en": "af67bc9dff3a0e7d",
-    "text": "Indique si ce domaine signe avec EdDSA (RFC 8037, Ed25519 et Ed448) les objets JOSE dont un client a choisi l’algorithme, et publie ses clés de signature kty OKP. **Désactivé par défaut**, car la suite de conformité OpenID ne sait pas analyser une clé OKP dans un JWKS, et c’est elle que la certification OpenID Connect exécute. Désactivé : aucune clé de signature OKP dans `/oauth2/jwks` (clés en attente, épinglées et de groupe de signataires comprises) ; EdDSA ne figure pas dans `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` ni `authorization_signing_alg_values_supported` ; un client ne peut ni enregistrer ni se voir attribuer EdDSA pour une réponse ID Token, UserInfo, d’introspection ou JARM ; et une telle signature encore demandée — par un client enregistré pendant que ce réglage était activé, ou par un algorithme SSF, WS-Trust ou Provider Commands réglé sur EdDSA — est refusée plutôt que produite avec une clé que personne ne peut récupérer. **Inchangé :** l’EdDSA avec lequel un client signe (assertions client, preuves DPoP, objets de requête, preuves de portefeuille) est toujours accepté et annoncé comme accepté ; une signature dont la clé voyage dans un `x5c` ou un document DID ; un algorithme de fédération ou de justificatif configuré par un opérateur (`oidfed.signingAlg`, l’algorithme de justificatif d’OpenID4VCI) signe toujours, donc n’y configurez pas EdDSA lorsque ce réglage est désactivé ; le document DID, COSE, les signatures XML, DKIM et TLS ne relèvent pas de la publication JWKS JOSE. Un `oauth2.accessTokenSigningAlg` réglé sur EdDSA signe avec RS256 à la place. Activé : EdDSA est signé et publié comme l’indique `oauth2.eddsaCurve`."
+    "en": "78d3ca6aec2ee4f6",
+    "text": "Indique si ce domaine signe avec EdDSA (RFC 8037, Ed25519 et Ed448) les objets JOSE dont un client a choisi l’algorithme, et publie ses clés de signature kty OKP. **Désactivé par défaut**, car la suite de conformité OpenID ne sait pas analyser une clé OKP dans un JWKS, et c’est elle que la certification OpenID Connect exécute. Désactivé : aucune clé de signature OKP dans `/oauth2/jwks` (clés en attente, épinglées et de groupe de signataires comprises) ; EdDSA ne figure pas dans `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` ni `authorization_signing_alg_values_supported` ; un client ne peut ni enregistrer ni se voir attribuer EdDSA pour une réponse ID Token, UserInfo, d’introspection ou JARM ; et une telle signature encore demandée — par un client enregistré pendant que ce réglage était activé, ou par un algorithme SSF, WS-Trust ou Provider Commands réglé sur EdDSA — est refusée plutôt que produite avec une clé que personne ne peut récupérer. **Inchangé :** l’EdDSA avec lequel un client signe (assertions client, preuves DPoP, objets de requête, preuves de portefeuille) est toujours accepté et annoncé comme accepté ; une signature dont la clé voyage dans un `x5c` ou un document DID ; l’algorithme de justificatif d’OpenID4VCI configuré par un opérateur signe toujours, donc n’y configurez pas EdDSA lorsque ce réglage est désactivé ; le document DID, COSE, les signatures XML, DKIM et TLS ne relèvent pas de la publication JWKS JOSE. Un `oauth2.accessTokenSigningAlg` ou `oidfed.signingAlg` réglé sur EdDSA signe avec la valeur par défaut du domaine à la place. Activé : EdDSA est signé et publié comme l’indique `oauth2.eddsaCurve`."
   },
   "keys.signingAlgorithms|label": {
     "en": "23087da9ac3a37f0",
@@ -1534,6 +1534,94 @@
   "keys.signingAlgorithms|description": {
     "en": "6ca0d3f207d8dcd4",
     "text": "Les algorithmes JWS avec lesquels ce domaine signe et pour lesquels il publie des clés. **Vide, la valeur par défaut, conserve tous les algorithmes dont le domaine dispose par ailleurs.** Une liste doit inclure RS256 : OpenID Connect Discovery l'exige dans `id_token_signing_alg_values_supported`, et c'est la valeur par défaut des jetons d'identité et des jetons d'accès. Avec une liste : `/oauth2/jwks` ne contient aucune clé de signature d'un algorithme non listé (clés de réserve, épinglées et de groupes de signataires comprises ; une clé RSA sert à tous les algorithmes RS et PS, elle reste donc) ; un algorithme non listé ne figure pas dans les listes de signature des jetons d'identité, d'UserInfo, de l'introspection ou de JARM du document de découverte ; un client ne peut ni l'enregistrer ni se le voir attribuer pour ces réponses ; une signature encore demandée avec lui est refusée plutôt que faite avec une clé que personne ne peut récupérer ; et un `oauth2.accessTokenSigningAlg` non listé signe avec RS256 à la place. Listez aussi PS256 pour FAPI 1.0 Advanced. `keys.postQuantumSigning` et `keys.eddsaSigning` s'appliquent toujours : lister un algorithme n'active pas sa famille. **Sans changement :** ce que ce domaine accepte des clients (assertions client, preuves DPoP, objets de requête, preuves de portefeuille) ; une réponse UserInfo en JSON simple ; les clés de chiffrement ; COSE, les signatures XML, DKIM et TLS ; et les algorithmes que configurent `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` et l'algorithme de justificatif d'OpenID4VCI, indiquez donc là un algorithme listé."
+  },
+  "keys.pqcOnly|label": {
+    "en": "d27c2ce62f5e2d05",
+    "text": "Signer uniquement en post-quantique"
+  },
+  "keys.pqcOnly|description": {
+    "en": "6bfa6be713279597",
+    "text": "Indique si ce domaine signe UNIQUEMENT avec des algorithmes post-quantiques, en JOSE, COSE, XML et Data Integrity. **Désactivé par défaut.** Activé : chaque liste de signature se réduit à ses algorithmes post-quantiques, ou à tous s’il n’en nomme aucun, et une signature avec un algorithme classique est refusée. Ce que ce domaine ACCEPTE ne change pas. **RS256 reste pour les ID Tokens**, car OpenID Connect Discovery l’exige, et n’est utilisé que pour un client qui l’a enregistré ou qui n’a enregistré aucun algorithme. Les algorithmes de certificat et DKIM ne changent pas. Il ne peut pas être activé tant que `keys.postQuantumSigning` est désactivé, et un client ou une partie de confiance qui ne peut pas vérifier ML-DSA ne pourra pas lire ce que signe ce domaine."
+  },
+  "keys.acceptedSigningAlgorithms|label": {
+    "en": "13c74bb1ab9ae1ae",
+    "text": "Algorithmes JWS acceptés"
+  },
+  "keys.acceptedSigningAlgorithms|description": {
+    "en": "c09dd7c2c5ff488b",
+    "text": "Les algorithmes JWS que ce domaine accepte de quiconque : assertions client, preuves DPoP, objets de requête, preuves de portefeuille, déclarations de fédération, ses propres jetons. **Vide, la valeur par défaut, accepte tout ce que chaque cas d’usage accepte par ailleurs.** Une signature avec un algorithme non listé est refusée avant toute opération sur une clé. Une liste doit inclure tout ce que liste `keys.signingAlgorithms`, et RS256 si celle-ci est vide, sinon le domaine refuse ses propres jetons. Les lignes HS sont celles qu’utilise `client_secret_jwt` ; ne les retirez que si aucun client ne s’en sert."
+  },
+  "cose.algorithms|label": {
+    "en": "fe94cc0994dab40b",
+    "text": "Algorithmes COSE de signature"
+  },
+  "cose.algorithms|description": {
+    "en": "fb657d7568044786",
+    "text": "Les algorithmes COSE avec lesquels ce domaine signe les CWT de listes d’état et les justificatifs `vc+cose`, dans l’ordre. **Vide, la valeur par défaut, laisse ce que fait aujourd’hui chaque cas d’usage.** Les clés d’accès ne sont pas régies ici : voir `webauthn.algorithms`."
+  },
+  "cose.acceptedAlgorithms|label": {
+    "en": "de35db5c8aac8926",
+    "text": "Algorithmes COSE acceptés"
+  },
+  "cose.acceptedAlgorithms|description": {
+    "en": "3c809e701d0ecee5",
+    "text": "Les algorithmes COSE que ce domaine accepte dans IssuerAuth et DeviceAuth d’un mdoc, un CWT de liste d’état et un justificatif `vc+cose`. **Vide, la valeur par défaut, accepte ce que chacun accepte déjà**, qu’une spécification peut restreindre davantage : un mdoc n’admet jamais RSA. Les clés d’accès ne sont pas régies ici."
+  },
+  "saml.signatureAlgorithms|label": {
+    "en": "fd4f436bdda0de4a",
+    "text": "Algorithmes XML de signature"
+  },
+  "saml.signatureAlgorithms|description": {
+    "en": "01cb8501b8f096c8",
+    "text": "Les algorithmes de signature XML avec lesquels ce domaine peut signer, dans l’ordre. **Vide, la valeur par défaut, laisse `saml.signatureAlgorithm` libre.** `saml.signatureAlgorithm` reste l’algorithme choisi et doit figurer dans la liste. Un algorithme pour lequel ce domaine n’a pas de clé XML se rabat sur le premier de la liste pour lequel il en a une."
+  },
+  "saml.acceptedSignatureAlgorithms|label": {
+    "en": "a190f155d61e54ca",
+    "text": "Algorithmes XML acceptés"
+  },
+  "saml.acceptedSignatureAlgorithms|description": {
+    "en": "2bf9046fd2019c80",
+    "text": "Les SignatureMethod XML que ce domaine accepte, sur les requêtes et métadonnées de SP, les assertions RFC 7522, les assertions de partenaires et WS-Security. **Vide, la valeur par défaut, accepte tout ce qu’il vérifie par ailleurs.** `saml.allowSha1Signatures` décide toujours de SHA-1, et une méthode SHA-1 listée est refusée tant qu’il est désactivé."
+  },
+  "saml.acceptedDigestAlgorithms|label": {
+    "en": "4c713f76e897330c",
+    "text": "Condensats XML acceptés"
+  },
+  "saml.acceptedDigestAlgorithms|description": {
+    "en": "0e9213b8012dea7a",
+    "text": "Les DigestMethod XML que ce domaine accepte. **Vide, la valeur par défaut, accepte tous ceux qu’il calcule.** `saml.allowSha1Signatures` décide toujours de SHA-1."
+  },
+  "vc.cryptosuites|label": {
+    "en": "75a59ba059432f82",
+    "text": "Suites Data Integrity de signature"
+  },
+  "vc.cryptosuites|description": {
+    "en": "3be8a2fb2911c2b3",
+    "text": "Les suites cryptographiques W3C Data Integrity avec lesquelles ce domaine signe, dans l’ordre : émission par VC API, la liste d’état Bitstring, zcap et bbs-2023. **Vide, la valeur par défaut, laisse ce que fait aujourd’hui chaque cas d’usage.**"
+  },
+  "vc.acceptedCryptosuites|label": {
+    "en": "962cf7c5a55dd594",
+    "text": "Suites Data Integrity acceptées"
+  },
+  "vc.acceptedCryptosuites|description": {
+    "en": "3148c6ff243294cb",
+    "text": "Les suites cryptographiques W3C Data Integrity que ce domaine accepte : preuves de détenteur, vérification par VC API, zcap et preuves dérivées bbs-2023. **Vide, la valeur par défaut, accepte ce que chacun accepte déjà.**"
+  },
+  "pki.acceptedSignatureAlgorithms|label": {
+    "en": "86ec8af66a70814d",
+    "text": "Signatures de certificat acceptées"
+  },
+  "pki.acceptedSignatureAlgorithms|description": {
+    "en": "9a8e168d927bb934",
+    "text": "Les algorithmes de signature que ce domaine accepte sur un certificat d’un chemin qu’il valide, en nommant la ligne et non l’OID. **Vide, la valeur par défaut, accepte tout ce que la validation de chemin accepte par ailleurs**, ce que SHA-1 et MD5 ne sont pas. En lister trop peu refuse la hiérarchie de ce domaine lui-même, incluez donc ce avec quoi `pki.signatureAlgorithm` émet."
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|label": {
+    "en": "0e6e6b8920059b86",
+    "text": "Algorithmes de signature HTTP acceptés"
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|description": {
+    "en": "595341df5d9412f0",
+    "text": "Les algorithmes HTTP Message Signatures (RFC 9421) que ce domaine accepte, des clients OAuth comme des clients GNAP. **Vide, la valeur par défaut, accepte tous ceux qu’il vérifie.** Une signature avec un algorithme non listé est refusée avant toute opération sur une clé."
   },
   "keys.jwksCertificateUrl|label": {
     "en": "b910ac23ecc20134",
@@ -4954,6 +5042,14 @@
   "saml2.assertionLifetimeMin|description": {
     "en": "a243fee8db63660f",
     "text": "Durée de validité d’une assertion émise : elle devient à la fois Conditions/NotOnOrAfter et le SubjectConfirmationData/NotOnOrAfter bearer. Réglez-la à 1 pour observer un fournisseur de services refuser une assertion périmée, contrôle que la plupart d’entre eux réalisent mal."
+  },
+  "saml2.publishAlgorithmSupport|label": {
+    "en": "fae70314b5ff4257",
+    "text": "Publier la prise en charge des algorithmes dans les métadonnées"
+  },
+  "saml2.publishAlgorithmSupport|description": {
+    "en": "38900a41645aeba6",
+    "text": "Indique si les métadonnées de l’IdP portent `<alg:SigningMethod>` et `<alg:DigestMethod>` (SAML V2.0 Metadata Profile for Algorithm Support 1.0), listant les méthodes de signature XML et les condensats que ce domaine peut vérifier, par ordre de préférence. **Activé par défaut.** Un consommateur qui ne connaît pas le profil les ignore, comme l’exige la section 2.3.1 des métadonnées SAML."
   },
   "saml2.signAssertion|label": {
     "en": "762a7ca973d4ab92",

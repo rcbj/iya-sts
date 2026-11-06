@@ -484,7 +484,20 @@ function byKeys(ask, realm, keys) {
  */
 function namedRows(ask, name, realm, parentKey, names, limit) {
   log.debug("Entering namedRows(). " + name);
-  const list = Array.isArray(names) ? names : [];
+  const asked = Array.isArray(names) ? names : [];
+  // A NUL byte in a name matches no stored entry — the key table and
+  // `rdn_value` hold no NUL — and sending one makes the driver throw; drop it
+  // rather than ask (#1356, `byKeys`'s NUL read a second way, by RDN as well
+  // as by key). The right answer for a name that cannot exist is no row, so a
+  // dropped name narrows the list and an all-dropped list answers none. Not a
+  // refusal, no error code; see directory_queries.js's byName.
+  const list = asked.filter(function (one) {
+    const rdn = one && typeof one === 'object'
+      ? String(one.rdn || '')
+      : String(one == null ? '' : one).trim().toLowerCase();
+    return rdn.indexOf('\u0000') < 0 &&
+      keyOf(one, 'name', true).indexOf('\u0000') < 0;
+  });
   if (!list.length) {
     log.debug("Leaving namedRows(). None.");
     return Promise.resolve([]);

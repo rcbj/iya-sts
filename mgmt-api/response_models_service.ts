@@ -3091,7 +3091,30 @@ const METRICS: Json = closed({
 // ---------------------------------------------------------------------------
 const PQ_SURFACE: Json = closed({ surface: str(), state: str(), how: str() });
 
+const SIGNATURE_SURFACE: Json = closed({
+  signSetting: str('The setting holding what this surface signs with.'),
+  acceptSetting: str('The setting holding what this surface accepts.'),
+  rows: listOf(closed({
+    id: str('The algorithm.'),
+    spelling: str('Its name on this surface.'),
+    pqc: str('pq or composite, or empty for a classical algorithm.'),
+    weak: bool(),
+    signs: bool('Whether this realm signs with it now.'),
+    signRefusal: str('Why not, or empty.'),
+    accepts: bool('Whether this realm accepts it now.'),
+    acceptRefusal: str('Why not, or empty.')
+  }))
+});
+
 const CRYPTO_METADATA: Json = closed({
+  signaturePolicy: closed({
+    pqcOnly: bool(),
+    surfaces: closed({
+      jose: SIGNATURE_SURFACE, httpsig: SIGNATURE_SURFACE,
+      cose: SIGNATURE_SURFACE, xml: SIGNATURE_SURFACE,
+      di: SIGNATURE_SURFACE, x509: SIGNATURE_SURFACE
+    })
+  }),
   issuer: str('This service as the request reached it.'),
   realm: str('The trust realm the key material below belongs to. The ' +
              'ALGORITHM tables are process-wide; the SIGNING KEYS are per ' +
