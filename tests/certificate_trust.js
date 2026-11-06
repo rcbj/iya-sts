@@ -26,7 +26,11 @@
 //   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
 //   * `anchorsFor()` ignoring `purposes`                     — 1 red (D)
 //   * `ruleOf()` ignoring the variant                        — 4 red (B, E, G)
-MUT// ===========================================================================
+//   * a self-signed x5c[0] left the pin it was under paranoid — 1 red (L)
+//   * a chain not completed from the signer truststore       — 1 red (L)
+//   * the pinned certificate's fetched verdict never read    — 1 red (L)
+//   * a JWK's x5c not held                                   — 1 red (L)
+// ===========================================================================
 
 delete process.env.CONFIG_FILE;
 

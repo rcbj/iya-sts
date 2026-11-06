@@ -251,6 +251,8 @@ through `/admin-api/pki/upload-certificate` with `target=person`. The rule above
 holds for an uploaded key exactly as for an issued one. [PKI](pki.md) has the
 section.
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a registered key's `x5c` is completed from the realm's [signer truststore](signer-truststore.md) when its chain stops short, its leaf's keyUsage is asked, and a self-signed `x5c[0]` is refused. See the `jose-signer` row of the [use cases](pki-use-cases.md).
+
 ## The one thing that is not permissive
 
 Almost everything in this service is a turnstile. This is not, and the reason is

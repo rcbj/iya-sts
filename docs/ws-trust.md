@@ -487,6 +487,8 @@ to validate is not a fault: it answers `wst:Status` `invalid`. The fault never
 says whether a username or a password was wrong. Each refusal's error code is
 in [Error codes](error-codes.md).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a certificate stored on an entry must chain to the realm's [signer truststore](signer-truststore.md). See the `wss-x509-token` row of the [use cases](pki-use-cases.md).
+
 ## Development and product mode
 
 | | Development | Product |
