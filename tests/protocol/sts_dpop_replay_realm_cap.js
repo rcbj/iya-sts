@@ -299,16 +299,33 @@ async function test() {
   log.debug("Leaving test().");
 }
 
-const program = new Command();
-program
-  .name("sts_dpop_replay_realm_cap")
-  .description("oauth2.dpopReplayCacheSize is a per-realm cap, consulted at " +
-    "the DPoP replay check in a dispatched worker (STS-OAUTH-0554).")
-  .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
-    "needs no browser)"))
-  .parse(process.argv);
+// The detection pieces are exported so tests/dpop_replay_realm_cap_detection.js
+// can drive them against a stubbed server with no stack (#1299, iya-sts-60's
+// mutation guard): a job whose isReplayFull() never recognised a refusal would
+// pass vacuously, and that test goes red when no refusal is ever seen.
+module.exports = {
+  isReplayFull: isReplayFull,
+  makeProof: makeProof,
+  newEcKey: newEcKey,
+  sendProof: sendProof,
+  fillUntilFull: fillUntilFull
+};
 
-test().catch(function (e) {
-  log.error(e.stack || e.message);
-  process.exit(1);
-});
+// Only when run as a script (run-report.js spawns it as a child process, so
+// require.main is this module there); a require from the in-process test does
+// not parse argv or run the HTTP test.
+if (require.main === module) {
+  const program = new Command();
+  program
+    .name("sts_dpop_replay_realm_cap")
+    .description("oauth2.dpopReplayCacheSize is a per-realm cap, consulted " +
+      "at the DPoP replay check in a dispatched worker (STS-OAUTH-0554).")
+    .addOption(new Option("-u, --url <url>", "base url (unused: this test " +
+      "needs no browser)"))
+    .parse(process.argv);
+
+  test().catch(function (e) {
+    log.error(e.stack || e.message);
+    process.exit(1);
+  });
+}
