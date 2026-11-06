@@ -243,5 +243,13 @@
   "passwordHint": "required for PKCS#12; encrypts the private half of the rest",
   "downloadKey": "Download",
   "publicOnly": "<strong>The PUBLIC half only.</strong> RFC 9964 defines the public members of an AKP key and the private seed handling is still moving, so there is no interoperable private encoding to hand over. A file no library reads would be worse than saying so.",
-  "passwordNote": "<strong>A password is REQUIRED for PKCS#12 and optional for the other three</strong>, where it encrypts the private half (PKCS#8 for PEM and DER, PBES2 as a .jwe for JWK). Leave it empty and the private key comes out in the clear, which is usually what you want in development and is never what you want anywhere else."
+  "passwordNote": "<strong>A password is REQUIRED for PKCS#12 and optional for the other three</strong>, where it encrypts the private half (PKCS#8 for PEM and DER, PBES2 as a .jwe for JWK). Leave it empty and the private key comes out in the clear, which is usually what you want in development and is never what you want anywhere else.",
+  "algorithmsHeading": "Algorithms, by surface",
+  "algorithmsLead": "Every signature algorithm on each surface, whether this realm signs with it and accepts it now, and why not. It is the answer the signers and verifiers act on.",
+  "algorithmsSettings": "Set the lists on the settings page.",
+  "tocAlgorithms": "the algorithms",
+  "thAlgName": "Algorithm",
+  "thAlgSigns": "Signs",
+  "thAlgAccepts": "Accepts",
+  "thAlgWhyNot": "Why not"
 }

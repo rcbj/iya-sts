@@ -243,5 +243,13 @@
   "passwordHint": "PKCS#12 必填；其他格式用於加密私密部分",
   "downloadKey": "下載",
   "publicOnly": "<strong>僅公開部分。</strong>RFC 9964 定義了 AKP 金鑰的公開成員，而私密種子的處理仍在變化，因此沒有可交出的互通私密編碼。一個沒有任何程式庫能讀取的檔案，比直說更糟。",
-  "passwordNote": "<strong>PKCS#12 必須設定密碼，其他三種可選</strong>，密碼用於加密私密部分（PEM 與 DER 使用 PKCS#8，JWK 以 PBES2 產生 .jwe）。留空則私密金鑰以明文匯出，這通常正是您在開發中的期望，在其他任何地方都絕不應如此。"
+  "passwordNote": "<strong>PKCS#12 必須設定密碼，其他三種可選</strong>，密碼用於加密私密部分（PEM 與 DER 使用 PKCS#8，JWK 以 PBES2 產生 .jwe）。留空則私密金鑰以明文匯出，這通常正是您在開發中的期望，在其他任何地方都絕不應如此。",
+  "algorithmsHeading": "依介面劃分的演算法",
+  "algorithmsLead": "每個介面上的每種簽章演算法、此領域目前是否以它簽章並接受它，以及不接受的原因。這正是簽章方與驗證方依據的答案。",
+  "algorithmsSettings": "在設定頁面設定這些清單。",
+  "tocAlgorithms": "演算法",
+  "thAlgName": "演算法",
+  "thAlgSigns": "簽章",
+  "thAlgAccepts": "接受",
+  "thAlgWhyNot": "原因"
 }

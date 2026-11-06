@@ -1895,27 +1895,12 @@ class CertEnrollment {
   }
 
   async proofOfPossession(csr, spkiPem, desc) {
-    const { stsCrypto, log, x509 } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering CertEnrollment.proofOfPossession(). kind=" + desc.kind);
     try {
-      const tbs = csr.tbsView ? Buffer.from(csr.tbsView)
-        : Buffer.from(csr.encodeTBS().toBER(false));
-      const signature = Buffer.from(csr.signatureValue.valueBlock.valueHexView);
-      const sig = x509.sigAlgForOid(csr.signatureAlgorithm.algorithmId);
-      if (sig && sig.kind === 'pqc') {
-        const ok = await x509.verifyBytes(sig, spkiPem, signature, tbs);
-        log.debug("Leaving CertEnrollment.proofOfPossession(). pqc=" + ok);
-        return !!ok;
-      }
-      if (desc.kind === 'okp') {
-        const key = stsCrypto.publicKeyOf(spkiPem);
-        const ok = stsCrypto.signatureValid(null, tbs, key, signature);
-        log.debug("Leaving CertEnrollment.proofOfPossession(). Ed25519=" + ok);
-        return !!ok;
-      }
-      const ok = await csr.verify();
-      log.debug("Leaving CertEnrollment.proofOfPossession(). pkijs=" + ok);
-      return !!ok;
+      const ok = await pki.csrProofOfPossession(csr, spkiPem, desc);
+      log.debug("Leaving CertEnrollment.proofOfPossession(). " + ok);
+      return ok;
     } catch (e) {
       log.debug("Caught in CertEnrollment.proofOfPossession(): " +
                 ((e && e.message) || e));

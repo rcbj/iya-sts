@@ -3556,6 +3556,72 @@ const CODES = [
       'its signature was made with RS256 instead. Logged once per realm.',
     spec: 'none — the setting should name an algorithm the realm signs with ' +
       '(#1368)' },
+  { code: 'STS-KEYS-0179',
+    summary: 'A JWS in an algorithm keys.acceptedSigningAlgorithms does not ' +
+      'list was refused before any key operation.',
+    spec: 'the caller\'s refusal, as for a JWS whose algorithm it does not ' +
+      'accept (#1368)' },
+  { code: 'STS-KEYS-0180',
+    summary: 'An HTTP message signature in an algorithm ' +
+      'oauth2.httpSignatureAcceptedAlgorithms does not list was refused ' +
+      'before any key operation.',
+    spec: 'the caller\'s refusal (#1368)' },
+  { code: 'STS-KEYS-0181',
+    summary: 'A COSE_Sign1 in an algorithm cose.acceptedAlgorithms does not ' +
+      'list was refused before any key operation.',
+    spec: 'the caller\'s refusal (#1368)' },
+  { code: 'STS-KEYS-0182',
+    summary: 'An XML signature in a SignatureMethod ' +
+      'saml.acceptedSignatureAlgorithms does not list was refused.',
+    spec: 'the caller\'s refusal, as for a method it does not verify (#1368)' },
+  { code: 'STS-KEYS-0183',
+    summary: 'An XML signature with a DigestMethod ' +
+      'saml.acceptedDigestAlgorithms does not list was refused.',
+    spec: 'the caller\'s refusal, as for a digest it does not compute (#1368)' },
+  { code: 'STS-KEYS-0184',
+    summary: 'A Data Integrity proof in a cryptosuite vc.acceptedCryptosuites ' +
+      'does not list was refused before any key operation.',
+    spec: 'the caller\'s refusal (#1368)' },
+  { code: 'STS-KEYS-0185',
+    summary: 'A certificate in a path is signed with an algorithm ' +
+      'pki.acceptedSignatureAlgorithms does not list.',
+    spec: 'the caller\'s refusal of the path (#1368)' },
+  { code: 'STS-KEYS-0186',
+    summary: 'A COSE_Sign1 was asked for in an algorithm cose.algorithms does ' +
+      'not list, and was not made.',
+    spec: 'none — a setting or caller names an algorithm the realm does not ' +
+      'sign with (#1368)' },
+  { code: 'STS-KEYS-0187',
+    summary: 'An XML signature was asked for in a method ' +
+      'saml.signatureAlgorithms does not list, and was not made.',
+    spec: 'none — a caller names a method the realm does not sign with (#1368)' },
+  { code: 'STS-KEYS-0188',
+    summary: 'A Data Integrity proof was asked for in a cryptosuite ' +
+      'vc.cryptosuites does not list, and was not made.',
+    spec: 'none — a caller names a suite the realm does not sign with (#1368)' },
+  { code: 'STS-KEYS-0189',
+    summary: 'A write to an algorithm list names one algorithm twice.',
+    spec: 'none — a write refused at the console or the API (#1368)' },
+  { code: 'STS-KEYS-0190',
+    summary: 'A write to an accept list leaves out what the realm signs with, ' +
+      'so it would refuse its own signatures.',
+    spec: 'none — a write refused at the console or the API (#1368)' },
+  { code: 'STS-KEYS-0191',
+    summary: 'A signature in a classical algorithm was asked of a realm whose ' +
+      'keys.pqcOnly is on, and was not made.',
+    spec: 'none — a client or setting names a classical algorithm (#1368)' },
+  { code: 'STS-KEYS-0192',
+    summary: 'A write names the one algorithm a use case signs with, outside ' +
+      'the list that governs it.',
+    spec: 'none — a write refused at the console or the API (#1368)' },
+  { code: 'STS-KEYS-0193',
+    summary: 'A write would leave keys.pqcOnly on with ' +
+      'keys.postQuantumSigning off, when nothing could sign.',
+    spec: 'none — a write refused at the console or the API (#1368)' },
+  { code: 'STS-KEYS-0194',
+    summary: 'A write to tls.signatureAlgorithms names a signature algorithm ' +
+      'this service has no row for.',
+    spec: 'none — a write refused at the console or the API (#1368)' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +

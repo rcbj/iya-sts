@@ -390,7 +390,8 @@ const PROTOCOL_TABS: Record<string, string[]> = {
                           'specifications'],
   '/admin/keys': ['rotation', 'keys', 'settings'],
   '/admin/crypto-metadata': ['families', 'material', 'hashing', 'signatures',
-                             'encryption', 'post-quantum', 'standards']
+                             'algorithms', 'encryption', 'post-quantum',
+                             'standards']
 };
 
 /**

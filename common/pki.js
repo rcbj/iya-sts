@@ -3550,6 +3550,14 @@ function nameBytesOf(name) {
  * @param one - an entry with `der`, as `certificateFromDer()` makes it
  * @returns the certificate's path facts
  */
+// RSASSA-PSS's hash by OID, the part of the algorithm its own OID does not name.
+const PATH_PSS_HASHES = {
+  '1.3.14.3.2.26': 'sha1',
+  '2.16.840.1.101.3.4.2.1': 'sha256',
+  '2.16.840.1.101.3.4.2.2': 'sha384',
+  '2.16.840.1.101.3.4.2.3': 'sha512'
+};
+
 function pathFactsOf(one) {
   log.debug("Entering pathFactsOf().");
   if (one.pathFacts) {
@@ -3601,6 +3609,7 @@ function pathFactsOf(one) {
                       '2.1.1 forbids specifiedCurve and implicitCurve)');
     }
     const signedWith = pk.signatureAlgorithm.algorithmId;
+    facts.signatureOid = signedWith;
     if (PATH_MD_SIGNATURES.indexOf(signedWith) >= 0) {
       facts.weakSignature = 'md';
     } else if (PATH_SHA1_SIGNATURES.indexOf(signedWith) >= 0) {
@@ -3616,6 +3625,7 @@ function pathFactsOf(one) {
         hash = PATH_SHA1;
       }
       facts.weakSignature = hash === PATH_SHA1 ? 'sha1' : '';
+      facts.signatureHash = PATH_PSS_HASHES[hash] || '';
     }
     facts.notBefore = pk.notBefore.value.getTime();
     facts.notAfter = pk.notAfter.value.getTime();
@@ -4225,6 +4235,8 @@ function describePathName(name) {
 //   unusable        the certificate cannot be held to the rules (see
 //                   `pathFactsOf()`)
 //   critical        a critical extension nothing here implements
+//   unaccepted-signature  a certificate signed with an algorithm
+//                   `pki.acceptedSignatureAlgorithms` does not list (#1368)
 //   weak-signature  a certificate signed with MD2, MD5 or (unless
 //                   `opts.allowSha1`) SHA-1
 //   malformed       a rule of RFC 5280 section 4 a relying party can and
@@ -4244,7 +4256,8 @@ function describePathName(name) {
  * Holds a certificate path to this module's path rules and reports the first
  * certificate, from the leaf, that breaks one.
  *
- * `check` is one of unusable, critical, weak-signature, malformed, not-ca,
+ * `check` is one of unusable, critical, weak-signature, unaccepted-signature,
+ * malformed, not-ca,
  * key-cert-sign, path-len, name-constraints or policy.
  * @param path - entries with `der`, leaf first and anchor last
  * @param opts - `allowCritical` (extensions the caller evaluates itself),
@@ -4280,6 +4293,16 @@ function pathRuleProblem(path, opts) {
       return refuse('critical', i, 'carries a critical extension this ' +
                     'service does not implement (' + unknown.join(', ') +
                     '), which RFC 5280 section 4.2 says must be refused');
+    }
+    // THE X.509 ACCEPT CHOKEPOINT (#1368). Above the weak-hash rule's reach:
+    // a list is the realm's own statement, at every certificate but the anchor.
+    if (i < path.length - 1 && facts.signatureOid) {
+      const unaccepted = stsCrypto.signaturePolicy.acceptX509Cause(
+        facts.signatureOid, facts.signatureHash);
+      if (unaccepted) {
+        log.debug("Leaving pathRuleProblem(). Not accepted at " + i + ".");
+        return refuse('unaccepted-signature', i, unaccepted.message);
+      }
     }
     if (i < path.length - 1 && facts.weakSignature &&
         (facts.weakSignature === 'md' || !options.allowSha1)) {
@@ -4515,6 +4538,7 @@ function authorityCode(problem, issuerCode) {
   const codes = { 'name-constraints': 'STS-PKI-0194',
                   critical: 'STS-PKI-0195', malformed: 'STS-PKI-0196',
                   unusable: 'STS-PKI-0196', 'weak-signature': 'STS-PKI-0197',
+                  'unaccepted-signature': 'STS-KEYS-0185',
                   policy: 'STS-PKI-0199' };
   const code = codes[problem.check] || issuerCode;
   log.debug("Leaving authorityCode(). " + code);
@@ -14076,7 +14100,81 @@ async function verifyEmbeddedScts(leafDer, issuerDer, logs) {
  * paths, and holds the object store `/admin/pki` issues into.
  * @namespace
  */
+// ---------------------------------------------------------------------------
+// THE X.509 ENGINE'S DOORS, for what lives outside this file (#1368).
+// tests/crypto_centralised.js holds everything else to them.
+// ---------------------------------------------------------------------------
+/**
+ * Checks each link of a chain, leaf first.
+ *
+ * @param pems - the certificates, leaf first
+ * @returns a promise of the links, each with `signatureValid`
+ */
+function verifyChain(pems) {
+  log.debug("Entering verifyChain().");
+  log.debug("Leaving verifyChain().");
+  return x509.verifyChain(pems);
+}
+
+/**
+ * Issues a certificate for a hierarchy this file does not hold, such as the
+ * SPIFFE fallback authority: self-signed where `spec` names `issuerPrivateKey`,
+ * else under `spec.issuer`.
+ *
+ * @param spec - what `x509.issueCertificate()` takes
+ * @returns a promise of the issued certificate
+ */
+function issueOutsideHierarchy(spec) {
+  log.debug("Entering issueOutsideHierarchy().");
+  log.debug("Leaving issueOutsideHierarchy().");
+  return x509.issueCertificate(spec);
+}
+
+/**
+ * A CSR's proof of possession: whether it verifies under the key it asks to
+ * certify. The one rule for every key family, held to
+ * `pki.acceptedSignatureAlgorithms` before any key is used.
+ *
+ * @param csr - the parsed pkijs request
+ * @param spkiPem - the public key it asks to certify
+ * @param desc - that key's description
+ * @returns a promise of whether it is proven
+ */
+async function csrProofOfPossession(csr, spkiPem, desc) {
+  log.debug("Entering csrProofOfPossession(). kind=" + desc.kind);
+  const oid = csr.signatureAlgorithm.algorithmId;
+  const unaccepted = stsCrypto.signaturePolicy.acceptX509Cause(oid);
+  if (unaccepted) {
+    log.warn(errorCodes.tag(unaccepted.code) + unaccepted.message);
+    log.debug("Leaving csrProofOfPossession(). Not accepted here.");
+    return false;
+  }
+  const tbs = csr.tbsView ? Buffer.from(csr.tbsView)
+    : Buffer.from(csr.encodeTBS().toBER(false));
+  const signature = Buffer.from(csr.signatureValue.valueBlock.valueHexView);
+  const sig = x509.sigAlgForOid(oid);
+  if (sig && sig.kind === 'pqc') {
+    const ok = await x509.verifyBytes(sig, spkiPem, signature, tbs);
+    log.debug("Leaving csrProofOfPossession(). pqc=" + ok);
+    return !!ok;
+  }
+  if (desc.kind === 'okp') {
+    const ok = stsCrypto.signatureValid(null, tbs,
+                                        stsCrypto.publicKeyOf(spkiPem),
+                                        signature);
+    log.debug("Leaving csrProofOfPossession(). Ed25519=" + ok);
+    return !!ok;
+  }
+  const ok = await csr.verify();
+  log.debug("Leaving csrProofOfPossession(). pkijs=" + ok);
+  return !!ok;
+}
+
 module.exports = {
+  verifyChain: verifyChain,
+  issueOutsideHierarchy: issueOutsideHierarchy,
+  csrProofOfPossession: csrProofOfPossession,
+  authorityCode: authorityCode,
   // --- the console prose (#543) ---
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,

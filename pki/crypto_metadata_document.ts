@@ -358,10 +358,41 @@ class CryptoMetadataDocument {
             return row.uri;
           }),
         default: xmlDefault
-      }
+      },
+      // Every other surface, as the policy answers it (#1368). The JOSE and XML
+      // sections above keep their shape for what already reads them.
+      cose: this.surfaceSummary('cose'),
+      dataIntegrity: this.surfaceSummary('di'),
+      x509: this.surfaceSummary('x509'),
+      httpsig: this.surfaceSummary('httpsig'),
+      webauthn: { offered: helpers.webauthnAlgorithmsOffered() },
+      tls: { signatureAlgorithms: String(
+        config.value('tls.signatureAlgorithms') || '').split(':') }
     };
     log.debug("Leaving CryptoMetadataDocument.algorithms().");
     return out;
+  }
+
+  // One surface's lists, in their spellings: what it signs and accepts now.
+  private surfaceSummary(surface: string): Json {
+    const { log, stsCrypto } = this.deps;
+    log.debug("Entering CryptoMetadataDocument.surfaceSummary(). " + surface);
+    const policy = stsCrypto.signaturePolicy;
+    const row = policy.describe().surfaces[surface];
+    const spellings = function (keep: (one: Json) => boolean): string[] {
+      return row.rows.filter(keep).map(function (one: Json): string {
+        return one.spelling;
+      });
+    };
+    log.debug("Leaving CryptoMetadataDocument.surfaceSummary().");
+    return {
+      signing: spellings(function (one: Json): boolean {
+        return one.signs;
+      }),
+      accepted: spellings(function (one: Json): boolean {
+        return one.accepts;
+      })
+    };
   }
 
   // The rotation policy the realm runs (#42).

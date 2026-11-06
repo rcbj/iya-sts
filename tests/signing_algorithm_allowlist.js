@@ -178,7 +178,15 @@ function childMain() {
     note(/^eyJ/.test(String(helpers.signJwtAs({ sub: 'saa' }, 'RS256', null,
                                               {}))),
          'C6. RS256 still signs');
+    // A value that reached the store BEFORE the list, because since #1368 a write
+    // outside the list is refused (STS-KEYS-0192). It is replaced where it is read.
+    const listBefore = config.value(KEY);
+    note(/./.test(String(config.checkOverride('oauth2.accessTokenSigningAlg',
+                                              'ES256'))),
+         'C6a. writing an unlisted access-token algorithm is refused');
+    config.clearOverride(KEY);
     config.setOverride('oauth2.accessTokenSigningAlg', 'ES256');
+    config.setOverride(KEY, listBefore);
     const tokenAlg = async function () {
       const token = await oauth2.accessTokenAsync('https://sts.test',
         { client_id: 'saa-client', username: 'saa-person', scope: 'openid' });
