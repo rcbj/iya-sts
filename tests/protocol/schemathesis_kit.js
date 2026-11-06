@@ -571,8 +571,16 @@ async function provision(serviceBase, profile, say) {
   say("[schemathesis] provisioned realm " + profile.realm + " (" +
     profile.label + ")");
   log.debug("Leaving provision().");
+  // `settings` is the profile's FULL set — the mode flag (oauth2.rfc9700 /
+  // oauth2.oauth21) AND the DPoP headroom — so reassertRealm() can put ALL of
+  // it back before each cell, not just the DPoP rows (#1299). A cell that flips
+  // oauth2.rfc9700 or oauth2.oauth21 off through config/set would otherwise make
+  // the rest of that run a different profile while still reporting under its
+  // name; those two are realmRuntime, so the same realm-scoped config door the
+  // fuzzer reaches them through is the one that restores them.
   return { realmPrefix: realmPrefix, user: FUZZ_USER,
-    password: FUZZ_PASSWORD, label: profile.label };
+    password: FUZZ_PASSWORD, label: profile.label,
+    settings: profile.settings };
 }
 
 // Re-assert the realm's known state before every cell (#1299, "start from a
@@ -582,10 +590,14 @@ async function provision(serviceBase, profile, say) {
 // STS-AUTHN-0054 (a password that does not match); and the DPoP replay cap was
 // back at its 10000 default (STS-CORE-0097 / STS-OAUTH-0554), filling under the
 // proof volume and refusing every proof. So before each cell, with a fresh
-// token already in hand, this re-asserts the DPoP replay headroom and window
-// (FUZZ_DPOP), the fuzz person's password, and the console and configured
+// token already in hand, this re-asserts the profile's WHOLE settings object
+// (the mode flag oauth2.rfc9700 / oauth2.oauth21 AND the DPoP replay headroom
+// and window), the fuzz person's password, and the console and configured
 // roles, through the runtime doors — idempotent, and the process-env default on
-// the fuzz stack's `sts` service is the fallback for a reset WITHIN a cell.
+// the fuzz stack's `sts` service is the fallback for a reset WITHIN a cell. The
+// mode flag is widened in (#1299): a cell that flipped it off would otherwise
+// run the rest of this profile as the baseline while still reporting under the
+// stricter name.
 // Resolves { ok, why }; the caller FAILS THE CELL LOUDLY when it is not ok.
 // A random, policy-compliant password: a fixed stem guarantees an upper, a
 // lower, a digit and a symbol, and the random middle keeps it out of the
@@ -599,12 +611,21 @@ function freshFuzzPassword() {
 async function reassertRealm(serviceBase, provisioned, say) {
   log.debug("Entering reassertRealm(). " + provisioned.realmPrefix);
   const prefix = provisioned.realmPrefix;
-  const dpop = await adminCall(serviceBase, prefix, "POST",
-    "/admin-api/config/set-many", FUZZ_DPOP);
-  if (dpop.status !== 200) {
-    log.debug("Leaving reassertRealm(). set-many " + dpop.status);
+  // The profile's WHOLE settings object, not just the DPoP rows (#1299): the
+  // mode flag (oauth2.rfc9700 / oauth2.oauth21) too, so a cell that flipped it
+  // off through config/set cannot leave the rest of the run a different profile
+  // under this profile's name. Both mode flags are realmRuntime, so the same
+  // realm-scoped config/set-many door the fuzzer reaches them through accepts
+  // them here (config.setOverride passes the ambient-realm argument;
+  // common/config.js, `realmRuntime`). Falls back to FUZZ_DPOP for an in-process
+  // caller that provisioned before `settings` was carried.
+  const settings = provisioned.settings || FUZZ_DPOP;
+  const applied = await adminCall(serviceBase, prefix, "POST",
+    "/admin-api/config/set-many", settings);
+  if (applied.status !== 200) {
+    log.debug("Leaving reassertRealm(). set-many " + applied.status);
     return { ok: false, why: "config/set-many in " + prefix + " answered " +
-      dpop.status + " " + JSON.stringify(dpop.json).slice(0, 200) };
+      applied.status + " " + JSON.stringify(applied.json).slice(0, 200) };
   }
   // A FRESH password every re-assert, never a constant: the realm's password
   // policy refuses the current password and the five before it
