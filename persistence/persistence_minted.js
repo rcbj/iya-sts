@@ -141,6 +141,11 @@ const requestPhases = require('../common/request_phases');
 // refusals below. NOT audit.js, which requires persistence_replication.js.
 const errorCodes = require('../common/error_codes');
 const cacheRegistry = require('../common/cache_registry');
+// A LEAF (bunyan only): classifies a commit failure. The flush catch asks it
+// whether an error is a PERMANENT data error (a value a column can never hold),
+// which is dropped rather than re-journalled for ever (#1347). Engine-agnostic,
+// so this file asks it directly rather than through the driver.
+const sqlDialect = require('./sql_dialect');
 // The table of what active-active mode depends on (#46). A LEAF: bunyan and
 // config. `sessions.no-resurrection` is provided below, at require time.
 const capabilities = require('../cluster/cluster_capabilities');
@@ -548,6 +553,23 @@ let unsupportedReason = '';
 // Whether flush() has said, once, that a product-mode realm's minted state is
 // being dropped by a development process with no key. See flush().
 let realmOnlyKeylessWarned = false;
+// #1347: how many minted rows this process has DROPPED because the commit
+// failed with a PERMANENT data error (a value a column can never hold), and a
+// bounded ring of what was dropped, for /admin/persistence to show. A permanent
+// error can never commit, so re-journalling it wedges the realm's every later
+// write; the row is dropped instead, and this is the record of it beside the
+// post-mortem audit the hook below writes.
+let droppedPoison = 0;
+const POISON_DROP_HISTORY = 20;
+const poisonDrops = [];
+// Writes the post-mortem audit row for a dropped poison batch. persistence_minted
+// MUST NOT require common/audit.js — audit.js requires persistence_replication,
+// which this file is required by, so the require would close a cycle — so the
+// auditor is INSTALLED, by persistence.js beside setScheduler(), with a function
+// that requires audit lazily at call time (audit.js reaches persistence the same
+// way). Null until installed, and a process with no auditor still drops and
+// logs; only the audit row is missed.
+let poisonAuditor = null;
 
 // ---------------------------------------------------------------------------
 // THE SETTINGS. Read per call like the rest of this service.
@@ -854,6 +876,20 @@ function setScheduler(fn) {
   scheduler = typeof fn === 'function' ? fn : null;
   flushAsked = false;
   log.debug("Leaving setScheduler().");
+}
+
+// `persistence.js` hands its poison-drop auditor here beside setScheduler(),
+// once a driver is open — in every process, front and request worker, because
+// setDriver() runs in both. See the note by `poisonAuditor`.
+/**
+ * Installs the function flush() calls to write the post-mortem audit row for a
+ * batch dropped on a permanent data error (#1347).
+ * @param fn - `persistence.js`'s `auditPoisonDrop()`; anything else clears it
+ */
+function setPoisonAuditor(fn) {
+  log.debug("Entering setPoisonAuditor().");
+  poisonAuditor = typeof fn === 'function' ? fn : null;
+  log.debug("Leaving setPoisonAuditor().");
 }
 
 // The inverse of `storedKey()`. A `replace` store's key is itself; an `own`
@@ -1697,6 +1733,69 @@ function dirty() {
 // `tests/minted_persistence.js` section 5b holds it with a store that commits
 // when told to.
 // ---------------------------------------------------------------------------
+// #1347: builds the post-mortem descriptor for a batch dropped on a permanent
+// data error, records it in the bounded ring `/admin/persistence` shows, and
+// returns it. It carries ENOUGH to post-mortem and no credential: the error's
+// SQLSTATE/errno and message (which names the offending VALUE, e.g. the
+// out-of-range bigint, not a secret), the row count, and the per-store counts
+// by handle and realm — never a journal key, which for several stores IS the
+// credential (a session id, an artifact handle).
+function recordPoisonDrop(upserts, deletes, err) {
+  log.debug("Entering recordPoisonDrop().");
+  const rows = upserts.concat(deletes);
+  const counts = {};
+  const handles = new Set();
+  const realmIds = new Set();
+  rows.forEach(function (row) {
+    const handle = String((row && row.handle) || '');
+    const realmId = String((row && row.realm) || '');
+    handles.add(handle);
+    realmIds.add(realmId);
+    const slot = handle + '\u0000' + realmId;
+    counts[slot] = (counts[slot] || 0) + 1;
+  });
+  const stores = Object.keys(counts).map(function (slot) {
+    const parts = slot.split('\u0000');
+    return { handle: parts[0], realm: parts[1], rows: counts[slot] };
+  });
+  const drop = {
+    at: new Date().toISOString(),
+    code: String((err && (err.code || err.errno)) || ''),
+    message: (err && err.message) || String(err),
+    rows: rows.length,
+    upserts: upserts.length,
+    deletes: deletes.length,
+    handles: Array.from(handles),
+    realms: Array.from(realmIds),
+    stores: stores
+  };
+  droppedPoison += rows.length;
+  poisonDrops.push(drop);
+  while (poisonDrops.length > POISON_DROP_HISTORY) {
+    poisonDrops.shift();
+  }
+  log.debug("Leaving recordPoisonDrop(). " + drop.rows + " row(s).");
+  return drop;
+}
+
+// Hands a drop to the installed auditor (persistence.js's, which requires
+// audit.js lazily). An auditor that throws must not turn a handled drop into a
+// thrown flush or a re-journalled wedge, so it is caught and swallowed with a
+// debug line — the drop is already recorded and logged.
+function reportPoisonDrop(drop) {
+  log.debug("Entering reportPoisonDrop().");
+  if (!poisonAuditor) {
+    log.debug("Leaving reportPoisonDrop(). No auditor installed.");
+    return;
+  }
+  try {
+    poisonAuditor(drop);
+  } catch (e) {
+    log.debug("Caught in reportPoisonDrop(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving reportPoisonDrop().");
+}
+
 /**
  * Writes every journalled key to the store, sealed; deletes what is gone.
  *
@@ -1982,6 +2081,45 @@ function flush() {
               (unsealable ? ', ' + unsealable + ' unsealable' : '') + '.');
     return { written: true, upserts: upserts.length, deletes: deletes.length };
   }).catch(function (err) {
+    // A PERMANENT DATA ERROR IS DROPPED, NOT RE-JOURNALLED (#1347, rcbj's
+    // decision). A value a column can never hold — a bigint expiry past
+    // 9.22e18 (SQLSTATE 22003, or "9.22e+21" as 22P02 once String() goes
+    // exponential), a string past its column, MariaDB's strict-mode refusals —
+    // fails the WHOLE flush transaction, and the re-journal below would then
+    // retry it for ever: one poison row wedged every later write in its realm,
+    // which is what the #1299 gate hit 25,445 times. So the batch's keys are
+    // NOT put back; the next flush carries fresh changes and the realm keeps
+    // flushing. The in-memory copy stays (a key is re-read and written the next
+    // time it is journalled, by when expiryOf()/sortAtFor() have capped the
+    // value), and ENOUGH to post-mortem is kept: a bounded ring here and a
+    // post-mortem audit row through the installed auditor. rcbj: "retain enough
+    // audit information to reliably do post-mortem analysis with the audit log.
+    // Beyond that, I don't believe we need to keep anything." No bisect — the
+    // good rows batched with the poison are dropped too, and a client whose
+    // request wrote one is answered 503 (written: false) and recovers on its
+    // own retry, which now commits. The classifier is NARROW (SQLSTATE class
+    // 22 / the MariaDB data errnos): a deadlock (40001/40P01) or a unique race
+    // (23505) is NOT permanent and falls through to the re-journal below.
+    if (sqlDialect.isPermanentDataError(err)) {
+      const dropped = recordPoisonDrop(upserts, deletes, err);
+      failures++;
+      lastError = err.message;
+      // NOT a wedged write: the realm is not in a failed-write state, so
+      // `failing()` is false and no 503 backlog forms for later writes.
+      failedWrite = false;
+      log.error(errorCodes.tag('STS-STORE-0092') +
+                'persistence: a minted batch of ' + dropped.rows + ' row(s) ' +
+                'was DROPPED because the commit failed with a permanent data ' +
+                'error that can never commit: ' + err.message + '. The ' +
+                'realm keeps flushing; a post-mortem audit row was written ' +
+                '(stores: ' + dropped.handles.join(', ') + '; realms: ' +
+                dropped.realms.join(', ') + '). #1347.');
+      reportPoisonDrop(dropped);
+      log.debug('Leaving flush(). A permanent data error dropped ' +
+                dropped.rows + ' row(s).');
+      return { written: false, error: err.message, permanent: true,
+               poisonDropped: dropped };
+    }
     // NOT rethrown, for the reason `persistence.js` argues at length: the
     // service keeps answering out of memory, and a database outage must not
     // take down seventeen protocol families that do not need a database.
@@ -4413,7 +4551,13 @@ function status() {
     restoredAt: restoredAt,
     restored: restoredRows,
     droppedUnreadable: droppedUnreadable,
-    droppedUnknown: droppedUnknown
+    droppedUnknown: droppedUnknown,
+    droppedPoison: droppedPoison,
+    poisonDrops: poisonDrops.map(function (drop) {
+      return { at: drop.at, code: drop.code, message: drop.message,
+               rows: drop.rows, handles: drop.handles.slice(0),
+               realms: drop.realms.slice(0) };
+    })
   };
 }
 
@@ -4465,6 +4609,9 @@ function reset() {
   restoredRows = 0;
   droppedUnreadable = 0;
   droppedUnknown = 0;
+  droppedPoison = 0;
+  poisonDrops.length = 0;
+  poisonAuditor = null;
   unsupportedReason = '';
   realmOnlyKeylessWarned = false;
   expiryHookFailed.clear();
@@ -4708,6 +4855,7 @@ module.exports = {
   setDriver: setDriver,
   lendsNoBridge: lendsNoBridge,
   setScheduler: setScheduler,
+  setPoisonAuditor: setPoisonAuditor,
   applyChange: applyChange,
   prefetch: prefetch,
   endPrefetch: endPrefetch,

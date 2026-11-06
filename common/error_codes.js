@@ -1906,6 +1906,14 @@ const CODES = [
       'not dense (an increment above one or a cache above one), so every ' +
       'reader would wait for numbers no transaction will commit.',
     spec: '' },
+  { code: 'STS-STORE-0092',
+    summary: 'A minted flush batch was DROPPED, not retried, because the ' +
+      'commit failed with a permanent data error (a value a column can never ' +
+      'hold — an out-of-range bigint expiry, a value too long, a MariaDB ' +
+      'strict-mode refusal) that would wedge the realm\'s every later write ' +
+      'if re-journalled; the realm keeps flushing and a post-mortem audit ' +
+      'row records what was dropped.',
+    spec: '' },
   { code: 'STS-STORE-0100',
     summary: 'A value was refused on MariaDB because it is longer than its ' +
       'keyed column; it is never truncated, which would make it another ' +

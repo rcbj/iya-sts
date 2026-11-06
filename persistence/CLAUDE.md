@@ -1133,6 +1133,47 @@ pin the three. **What to look for next time**: `STS-STORE-0021` repeating on one
 pid while `STS-WORKER-0007` barrier timeouts pile up — the flush is failing, not
 slow.
 
+### A PERMANENT DATA ERROR IS DROPPED, NOT RE-JOURNALLED (#1347, 2026-11-06)
+
+**The paragraph above re-journals every failed batch — and for a value a column
+can never hold, that is the wedge, not the fix.** The #1299 Schemathesis gate
+fed a `ttl` of `9.22e21` into `sts_minted.expires_at` (a bigint); the commit
+failed permanently (`22003`, or `22P02` once `String()` goes exponential), the
+keys went back on the journal, and every later write of that realm failed the
+same way — `STS-STORE-0066` fired 25,445 times in 77 minutes. rcbj's decision:
+**retain enough to post-mortem, and drop the rest.** So `flush()`'s catch asks
+`sql_dialect.isPermanentDataError(err)` FIRST — SQLSTATE class 22, or MariaDB's
+strict-mode data errnos (1264, 1690, 1406, 1292, 1366) — and on a match it does
+NOT re-journal: the batch's keys are dropped, `STS-STORE-0092` is logged, a
+bounded ring (`status().poisonDrops`, `droppedPoison`) records it, and a
+post-mortem audit row is written. The realm keeps flushing. A deadlock (`40P01`)
+or a serialization failure is NOT permanent and re-journals as above; a unique
+race (`23505`) is not either.
+
+* **No bisect.** A good row batched with the poison is dropped too; a client
+  whose request wrote one is answered 503 and recovers on its own retry, which
+  now commits (the in-memory copy is unchanged, and `expiryOf()`/`sortAtFor()`
+  cap the one known column to null — *A FAILED WRITE IS LOGGED*, the expiry
+  guard). Dropping the batch over isolating the poison is rcbj's call.
+* **The audit row is written by `persistence.js`, not here.** `persistence_minted.js`
+  cannot require `common/audit.js` — audit requires `persistence_replication.js`,
+  which requires this module, so the require closes a cycle — so the drop is
+  carried out on the flush result and through a `setPoisonAuditor()` hook
+  `persistence.js` fills beside `setScheduler()` (in every process, front and
+  worker), whose `auditPoisonDrop()` requires audit LAZILY and writes one
+  `error` row per affected realm, naming the SQLSTATE, the message (the
+  offending VALUE, never a credential) and the stores dropped.
+* **The door has a backstop (#1347 step 4).** `mgmt-api/admin_api.ts`'s
+  `structureOnly()` bounds every request integer to ±`Number.MAX_SAFE_INTEGER`
+  in the ajv copy, so a fuzzed magnitude is refused at `/admin-api` before it
+  reaches a handler.
+
+`tests/minted_persistence.js` section 5c, `tests/sql_dialect.js` section F and
+`tests/admin_api_lazy_validators.js` section 4 pin it. **What to look for next
+time**: `STS-STORE-0092` with a store name and a SQLSTATE, and the audit log's
+`persistence.minted-drop` row — a realm dropped a write it can never commit, and
+kept going.
+
 ### ONE MINTED FLUSH AT A TIME PER PROCESS, OR THE OLDER VALUE CAN WIN (2026-09-13)
 
 **A flush READS a value when it takes the journal and WRITES it when its
