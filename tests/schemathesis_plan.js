@@ -76,8 +76,20 @@ function run(t) {
   const base = kit.PROFILES.find(function (one) {
     return one.key === "base";
   });
-  t.equal(base && Object.keys(base.settings).length, 0,
-    "the baseline profile overrides no setting");
+  // The baseline profile turns NO mode switch on (that is what makes it the
+  // baseline); the only overrides it carries are the DPoP replay-cache
+  // headroom every fuzz realm needs (#1299 — see FUZZ_DPOP), so that the
+  // fuzzer's proof volume does not fill the realm's history and get every
+  // later proof refused (STS-OAUTH-0554).
+  t.check(base && base.settings["oauth2.rfc9700"] === undefined &&
+    base.settings["oauth2.oauth21"] === undefined,
+    "the baseline profile turns no mode switch on");
+  kit.PROFILES.forEach(function (one) {
+    t.check(Number(one.settings["oauth2.dpopReplayCacheSize"]) > 10000 &&
+      Number(one.settings["oauth2.dpopIatSkewS"]) < 300,
+      "the " + one.key + " profile raises the DPoP replay-cache headroom " +
+      "and shortens the proof window, so fuzz-volume proofs are not refused");
+  });
 
   // Five surfaces: the four OpenAPI'd APIs plus the synthesized protocol doc.
   t.equal(kit.SURFACES.length, 5, "there are five surfaces");
