@@ -2988,7 +2988,7 @@ Scope: `admin:write`.
 | `jwks.keys[].x5t#S256` | string |  |  |
 | `jwks.keys[].x5u` | string |  |  |
 | `jwks.keys[].y` | string |  |  |
-| `jwsAlg` | string |  |  |
+| `jwsAlg` | string, or null |  |  |
 | `kid` | string |  |  |
 | `label` | string |  |  |
 | `message` | string |  |  |
@@ -3142,7 +3142,7 @@ Scope: `admin:write`.
 | `jwks.keys[].x5t#S256` | string |  |  |
 | `jwks.keys[].x5u` | string |  |  |
 | `jwks.keys[].y` | string |  |  |
-| `jwsAlg` | string |  |  |
+| `jwsAlg` | string, or null |  |  |
 | `kid` | string |  |  |
 | `label` | string |  |  |
 | `message` | string |  |  |
@@ -6007,7 +6007,7 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `handle` | string |  |  |
 | `issuer` | string |  |  |
-| `jwsAlg` | string |  |  |
+| `jwsAlg` | string, or null |  |  |
 | `kid` | string |  |  |
 | `label` | string |  |  |
 | `message` | string |  |  |
@@ -6143,7 +6143,7 @@ Scope: `admin:write`.
 | `errors[]` | string |  |  |
 | `handle` | string |  |  |
 | `issuer` | string |  |  |
-| `jwsAlg` | string |  |  |
+| `jwsAlg` | string, or null |  |  |
 | `kid` | string |  |  |
 | `label` | string |  |  |
 | `message` | string |  |  |
