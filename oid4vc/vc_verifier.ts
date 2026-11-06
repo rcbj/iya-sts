@@ -743,6 +743,7 @@ class VcVerifier {
     const held = require('../common/certificate_trust')
       .pinnedSync('vc-issuer', pem);
     if (!held.ok) {
+      // error-code: none — `held.code` is the door's name for what failed
       log.error(errorCodes.tag(held.code) +
                 'oid4vp.trustedIssuerCertificates: certificate ' + (i + 1) +
                 ' is ignored: ' + held.why);
