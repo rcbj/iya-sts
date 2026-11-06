@@ -309,8 +309,16 @@ class Oidfed {
   // read inside that realm, whose prefix `baseUrlOf()` then adds.
   private requestIn(req: Req): Req {
     this.deps.log.debug("Entering Oidfed.requestIn().");
-    const out = Object.create(req || {});
-    out.url = PATHS.configuration;
+    // DEFINED, NOT ASSIGNED, and it matters: on an HTTP/2 request `url` is an
+    // accessor on the prototype whose setter writes shared state, so
+    // `out.url = ...` here rewrote the ORIGINAL request's URL for everything
+    // after it (#1353: `GET /admin-api/oidfed` from a browser was judged as
+    // `GET /.well-known/openid-federation`). HTTP/1.1's is a plain member, which
+    // is why no client but a browser ever showed it.
+    const out = Object.create(req || {}, {
+      url: { value: PATHS.configuration, writable: true, configurable: true,
+             enumerable: true }
+    });
     out.originalUrl = PATHS.configuration;
     out.params = {};
     out.query = {};

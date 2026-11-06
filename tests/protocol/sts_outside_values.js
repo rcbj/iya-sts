@@ -23,6 +23,7 @@
 
 const assert = require("assert");
 const crypto = require("crypto");
+const http2 = require("http2");
 const zlib = require("zlib");
 const ldap = require("ldapjs");
 const { Command, Option } = require("commander");
@@ -456,6 +457,55 @@ async function aNamedServersMetadata() {
   });
 }
 
+// One request over HTTP/2, as a browser sends it. `fetch` here speaks HTTP/1.1,
+// which is why every job but the console's missed what this section holds.
+function overHttp2(url) {
+  log.debug("Entering overHttp2(). " + url);
+  return new Promise(function (resolve, reject) {
+    const at = new URL(url);
+    const session = http2.connect(at.origin);
+    session.on("error", reject);
+    session.on("connect", function () {
+      const protocol = session.alpnProtocol;
+      const stream = session.request({
+        ":path": at.pathname + at.search, accept: "application/json",
+        authorization: "Bearer " + (process.env.STS_ADMIN_API_TOKEN || "") });
+      let status = 0;
+      let text = "";
+      stream.on("response", function (headers) {
+        status = headers[":status"];
+      });
+      stream.setEncoding("utf8");
+      stream.on("data", function (chunk) {
+        text += chunk;
+      });
+      stream.on("end", function () {
+        session.close();
+        log.debug("Leaving overHttp2(). " + protocol + " " + status);
+        resolve({ protocol: protocol, status: status, text: text });
+      });
+      stream.on("error", reject);
+      stream.end();
+    });
+  });
+}
+
+async function theFederationPageOverHttp2() {
+  log.info("=== 11. the OpenID Federation page over HTTP/2 ===");
+  // Every realm made above is one this page walks, which is what reached the
+  // forged request and, through HTTP/2's `url` accessor, rewrote the real one.
+  const answer = await overHttp2(root + "/admin-api/oidfed");
+  if (answer.protocol !== "h2") {
+    log.info("  this service did not offer HTTP/2 (" + answer.protocol +
+             "); nothing to hold here");
+    return;
+  }
+  check("it answers, as it does over HTTP/1.1: " + answer.status, function () {
+    assert.strictEqual(answer.status, 200, answer.text.slice(0, 300));
+    assert.ok(JSON.parse(answer.text).entityId);
+  });
+}
+
 async function test() {
   log.debug("Entering test().");
   await aDelegate();
@@ -468,6 +518,7 @@ async function test() {
   await ldapWrites();
   await aFederationAnswer();
   await aNamedServersMetadata();
+  await theFederationPageOverHttp2();
   log.info(checks + " checks passed.");
   log.debug("Leaving test().");
 }
