@@ -2773,7 +2773,8 @@ the schemas ARE the official machine check, and until this job nothing here
 validated a single emitted document against them.
 
 * **Fetched when the tests image is built, never vendored.**
-  `tests/xml-schemas/SCHEMAS` names thirty-one files (SAML 2.0 and 1.1,
+  `tests/xml-schemas/SCHEMAS` names thirty-three files (SAML 2.0 and 1.1,
+  the Algorithm Support metadata profile,
   WS-Trust 2004/04, 2005/02, 1.3 and 1.4, WS-Security 1.0/1.1, WS-Federation
   1.2 and WS-Authorization, WS-SecurityPolicy, WS-Policy, WS-Addressing in
   three vintages, SOAP 1.1 and 1.2, MEX, XML Signature 1.0/1.1, XML

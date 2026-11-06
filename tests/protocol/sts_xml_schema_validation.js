@@ -150,6 +150,7 @@ const BINDING = {
   simpleSign: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST-SimpleSign"
 };
 const SIG_ALG = "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256";
+const NS_ALG = "urn:oasis:names:tc:SAML:metadata:algsupport";
 
 let checks = 0;
 const failures = [];
@@ -901,6 +902,19 @@ async function metadata(w) {
     const r = await hop(null, w.rb + p);
     await validate(w.mode + " " + what + " (HTTP " + r.status + ")",
                    r.status === 200 ? r.body : "", p);
+    // The Algorithm Support profile's elements (#1368): the SAML documents
+    // carry them, so the validation above has something of theirs to check, and
+    // the WS-Federation view carries none (`saml2_sso.ts` argues why).
+    const wanted = !/FederationMetadata/.test(p);
+    await check(w.mode + " " + what + (wanted ? " carries" : " does not " +
+                "carry") + " the Algorithm Support elements",
+                async function () {
+      const found = /<alg:SigningMethod /.test(r.body) &&
+                    /<alg:DigestMethod /.test(r.body);
+      if (found !== wanted || (!wanted && r.body.indexOf(NS_ALG) >= 0)) {
+        throw new Error("found: " + found);
+      }
+    });
   }
   log.debug("Leaving metadata().");
 }
@@ -1599,6 +1613,43 @@ async function selfTest() {
     }
     if (!coverageProblems(doc).length) {
       throw new Error("coverage found nothing");
+    }
+  });
+  // THE ALGORITHM SUPPORT PROFILE'S OWN SCHEMA IS LOADED (#1368). md:Extensions
+  // holds it through a lax wildcard, so without that schema an invalid element
+  // passes xmllint unexamined.
+  const algDoc = function (attributes) {
+    log.debug("Entering algDoc().");
+    log.debug("Leaving algDoc().");
+    return "<md:EntityDescriptor xmlns:md=\"urn:oasis:names:tc:SAML:2.0:" +
+      "metadata\" entityID=\"urn:xsd:self-test\"><md:Extensions>" +
+      "<alg:SigningMethod xmlns:alg=\"" + NS_ALG + "\"" + attributes + "/>" +
+      "</md:Extensions><md:IDPSSODescriptor protocolSupportEnumeration=\"" +
+      "urn:oasis:names:tc:SAML:2.0:protocol\"><md:SingleSignOnService " +
+      "Binding=\"urn:xsd:self-test\" Location=\"https://example.net/\"/>" +
+      "</md:IDPSSODescriptor></md:EntityDescriptor>";
+  };
+  await check("an alg:SigningMethod with no Algorithm is refused by xmllint",
+              async function () {
+    const r = xmllint(algDoc(""));
+    if (r.ok || !/Algorithm/.test(r.errors.join(" "))) {
+      throw new Error("accepted, or refused for another reason: " +
+                      r.errors.join(" | "));
+    }
+  });
+  await check("as is one with a MinKeySize of zero", async function () {
+    const r = xmllint(algDoc(" Algorithm=\"urn:a\" MinKeySize=\"0\""));
+    if (r.ok || !/MinKeySize/.test(r.errors.join(" "))) {
+      throw new Error("accepted, or refused for another reason: " +
+                      r.errors.join(" | "));
+    }
+  });
+  await check("the same element with an Algorithm is accepted (the control)",
+              async function () {
+    const doc = algDoc(" Algorithm=\"urn:a\"");
+    const r = xmllint(doc);
+    if (!r.ok || coverageProblems(doc).length) {
+      throw new Error(r.errors.concat(coverageProblems(doc)).join(" | "));
     }
   });
   log.debug("Leaving selfTest().");

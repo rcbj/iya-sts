@@ -38,6 +38,10 @@ saml-schema-metadata-2.0.xsd               204bc7991055dbb889307abbd2ff580227538
 # The SAML V2.0 Condition for Delegation Restriction (#186): WS-Trust's ActAs
 # names the requester in it.
 sstc-saml-delegation.xsd                   350a3b09c1988bc27e4702bb4fea3d8cd0da2694f5c4514338b2a980965fa3a7  https://docs.oasis-open.org/security/saml/Post2.0/sstc-saml-delegation.xsd
+# The SAML V2.0 Metadata Profile for Algorithm Support 1.0 (#1368): what the
+# identity provider's md:Extensions says it can verify. This is the address
+# the profile's own [AlgSup-XSD] reference gives.
+sstc-saml-metadata-algsupport-v1.0.xsd     224dcd650f7e623fdf8c3e5164711d79d61efe8bdb48a11d49152b5391bd1cba  https://docs.oasis-open.org/security/saml/Post2.0/sstc-saml-metadata-algsupport-v1.0.xsd
 
 # --- OASIS SAML 1.1 (published by document number; the name in the URL is
 #     ignored by the server, which is why 3408 is the ASSERTION schema) -------
