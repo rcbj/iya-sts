@@ -956,6 +956,13 @@ it. **The code is an operator's name and is RECORDED, NEVER SENT** — it goes o
 the audit row and at the front of a log line, never in a response, and it
 changes no specification's error.
 
+**The one exception is rcbj's decision of 2026-11-06 (#1355): a code may be shown
+on an administrator's console page that draws it for someone diagnosing a recorded
+failure — the audit log, and the rows `tests/openapi_response_models.js`'s
+`DRAWN_CODE_OPERATIONS` and `DRAWN_PLAIN_CODES` name, each with its page — and
+nowhere else**: not `/account-api`, `/authn-api` or `/report-api`, not an act's
+answer, and not an `/admin-api` member no page draws.
+
 **A new failure is not finished until it has a code**, and that is enforced:
 a row in the table, a `mark()` / `errorCode:` / `tag()` where the failure is
 detected, and `node common/error_codes.js --docs`. `tests/error_codes.js` fails

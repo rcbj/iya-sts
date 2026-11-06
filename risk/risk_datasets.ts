@@ -2627,8 +2627,13 @@ class RiskDatasets {
         provider: active ? active.provider : entry.provider || '',
         attribution: active ? active.attribution : '',
         attributionUrl: active ? active.attributionUrl : '',
+        // `refusal` is what the page draws. The code stays on the stored
+        // version and its audit row, and leaves the answer here (#1355).
         versions: versions.map(function (v: Json): Json {
-          return Object.assign({}, v, { reloadable: self.reloadable(id, v) });
+          const shown = Object.assign({}, v,
+                                      { reloadable: self.reloadable(id, v) });
+          delete shown.errorCode;
+          return shown;
         })
       });
     }

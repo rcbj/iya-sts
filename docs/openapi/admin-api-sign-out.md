@@ -276,7 +276,6 @@ Scope: `admin:write`.
 | `result.backchannel[].attempts` | number |  |  |
 | `result.backchannel[].clientId` | string |  |  |
 | `result.backchannel[].encrypted` | string |  |  |
-| `result.backchannel[].errorCode` | string, or null |  |  |
 | `result.backchannel[].finishedAt` | string |  |  |
 | `result.backchannel[].generation` | number |  |  |
 | `result.backchannel[].holder` | string |  |  |
@@ -362,7 +361,6 @@ Scope: `admin:write`.
 | `result.backchannel[].attempts` | number |  |  |
 | `result.backchannel[].clientId` | string |  |  |
 | `result.backchannel[].encrypted` | string |  |  |
-| `result.backchannel[].errorCode` | string, or null |  |  |
 | `result.backchannel[].finishedAt` | string |  |  |
 | `result.backchannel[].generation` | number |  |  |
 | `result.backchannel[].holder` | string |  |  |
@@ -472,7 +470,6 @@ Scope: `admin:write`.
 | `result.backchannel[].attempts` | number |  |  |
 | `result.backchannel[].clientId` | string |  |  |
 | `result.backchannel[].encrypted` | string |  |  |
-| `result.backchannel[].errorCode` | string, or null |  |  |
 | `result.backchannel[].finishedAt` | string |  |  |
 | `result.backchannel[].generation` | number |  |  |
 | `result.backchannel[].holder` | string |  |  |
@@ -558,7 +555,6 @@ Scope: `admin:write`.
 | `result.backchannel[].attempts` | number |  |  |
 | `result.backchannel[].clientId` | string |  |  |
 | `result.backchannel[].encrypted` | string |  |  |
-| `result.backchannel[].errorCode` | string, or null |  |  |
 | `result.backchannel[].finishedAt` | string |  |  |
 | `result.backchannel[].generation` | number |  |  |
 | `result.backchannel[].holder` | string |  |  |
@@ -730,7 +726,6 @@ Scope: `admin:write`.
 | `delivery.attempts` | number |  |  |
 | `delivery.clientId` | string |  |  |
 | `delivery.encrypted` | string |  |  |
-| `delivery.errorCode` | string, or null |  |  |
 | `delivery.finishedAt` | string |  |  |
 | `delivery.generation` | number |  |  |
 | `delivery.holder` | string |  |  |
@@ -764,7 +759,6 @@ Scope: `admin:write`.
 | `delivery.attempts` | number |  |  |
 | `delivery.clientId` | string |  |  |
 | `delivery.encrypted` | string |  |  |
-| `delivery.errorCode` | string, or null |  |  |
 | `delivery.finishedAt` | string |  |  |
 | `delivery.generation` | number |  |  |
 | `delivery.holder` | string |  |  |

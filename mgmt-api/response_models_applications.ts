@@ -722,7 +722,7 @@ const COMMAND_DELIVERY = Kit.closed({
 const COMMAND_RUN = Kit.closed({
   id: STR, clientId: STR, command: STR, uri: STR, state: STR, events: NUM,
   accounts: NUM, totalAccounts: NULL_NUM, resumes: NUM, lastEventId: STR,
-  errors: STRS, why: STR, errorCode: STR, actor: STR, startedAt: STR,
+  errors: STRS, why: STR, actor: STR, startedAt: STR,
   finishedAt: STR
 });
 
@@ -755,7 +755,9 @@ const PROVIDER_COMMANDS = Kit.closed({
   })
 });
 
-const COMMAND_ACTION = Kit.action({ row: COMMAND_DELIVERY, run: COMMAND_RUN });
+const COMMAND_ACTION = Kit.action({
+  row: Kit.withoutCodes(COMMAND_DELIVERY), run: COMMAND_RUN
+});
 
 // ---------------------------------------------------------------------------
 // ONE APPLICATION: `view()` in `common/applications.js`. An entry's attribute

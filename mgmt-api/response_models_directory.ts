@@ -981,7 +981,7 @@ const SAML2_SERVICE_PROVIDERS: Json = Kit.closed(Object.assign({
   artifactsAwaitingResolution: NUM,
   requestsHeldForSignIn: NUM,
   mdqRefused: Kit.listOf(Kit.closed({
-    entityId: STR, errorCode: NULL_STR, why: STR, firstAt: NULL_STR,
+    entityId: STR, why: STR, firstAt: NULL_STR,
     lastAt: NULL_STR, count: NUM
   })),
   mdqRefusedPaging: RAW_PAGING,
@@ -1246,7 +1246,7 @@ const SCIM_MONITOR: Json = Kit.closed({
 // it for an act that named a cell; and one row per cell for an act that named
 // none.
 const SCIM_CLIENT_ACTION: Json = Kit.action(Object.assign({
-  client: Kit.nullable(SCIM_CLIENT_ROW),
+  client: Kit.withoutCodes(Kit.nullable(SCIM_CLIENT_ROW)),
   certificate: Kit.closed({
     subject: NULL_STR, serial: NULL_STR, notAfter: NULL_STR, rootPem: NULL_STR
   }),

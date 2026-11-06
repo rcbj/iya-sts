@@ -4104,6 +4104,8 @@ with `Cannot find module` naming a file the operator never mentioned.
    nothing else; a code is an operator's name for the condition. The table's
    `spec` column records what the client IS told, so the documentation page can
    say it without anybody reading the handler.
+   **An administrator's console page may still draw a code for someone
+   diagnosing a recorded failure** (rcbj, 2026-11-06, #1355; the root file).
 
    **`audit.js` CHANGED IN THREE WAYS FOR IT, AND EACH IS A RULE.**
    * A row with `errorCode` and no `outcome` is a REFUSAL, not a success — a

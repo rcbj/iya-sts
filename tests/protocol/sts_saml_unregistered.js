@@ -396,7 +396,12 @@ async function requestStartedLookup(mdq) {
       return one.entityId === prodName;
     })[0];
     assert.ok(row, JSON.stringify(view.body.mdqRefused).slice(0, 400));
-    assert.strictEqual(row.errorCode, "STS-SAML-0080");
+    assert.ok(!("errorCode" in row), JSON.stringify(row));
+    // The code is an operator's, on the audit row and not in this answer.
+    const audited = await api(PROD, "GET", "/audit?code=STS-SAML-0080");
+    assert.ok((audited.body.events || []).some(function (one) {
+      return one.target === prodName;
+    }), audited.text.slice(0, 400));
   });
   log.debug("Leaving requestStartedLookup().");
 }

@@ -2176,9 +2176,7 @@ const SCHEMAS = {
         type: 'array',
         description: 'On the list reply. The entityIDs a request asked the ' +
                      'Metadata Query responder to register and product ' +
-                     'mode refused (#112) — `entityId`, `errorCode` ' +
-                     '(STS-SAML-0080: no trust anchor, nothing fetched; ' +
-                     'STS-SAML-0081: the answer did not verify), `why`, ' +
+                     'mode refused (#112) — `entityId`, `why`, ' +
                      '`count`, `firstAt`, `lastAt` — newest first. This ' +
                      'process\'s record since it started.',
         items: openObject('One refused entityID.', {})

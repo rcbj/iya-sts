@@ -162,6 +162,45 @@ class ResponseModelKit {
     }, extra || {}), { required: ['ok'] });
   }
 
+  // WHAT AN ACT'S ANSWER CARRIES OF A ROW (#1355): the row a page reads back,
+  // less the code. A code may be sent only to the page that draws it, and no
+  // page draws an act's answer: it reads the row again from its own GET.
+  static withoutCodes(model: Json): Json {
+    if (!model || typeof model !== 'object') {
+      return model;
+    }
+    if (Array.isArray(model)) {
+      return model.map(ResponseModelKit.withoutCodes);
+    }
+    const out: Json = {};
+    Object.keys(model).forEach(function (key: string): void {
+      out[key] = ResponseModelKit.withoutCodes(model[key]);
+    });
+    if (out.properties && typeof out.properties === 'object') {
+      delete out.properties.errorCode;
+    }
+    return out;
+  }
+
+  // The answer `withoutCodes()` models: the same value with every `errorCode`
+  // gone, at any depth. A mark on it is not carried, so this is the last thing
+  // done to a body.
+  static stripCodes(body: any): any {
+    if (!body || typeof body !== 'object') {
+      return body;
+    }
+    if (Array.isArray(body)) {
+      return body.map(ResponseModelKit.stripCodes);
+    }
+    const out: Json = {};
+    Object.keys(body).forEach(function (key: string): void {
+      if (key !== 'errorCode') {
+        out[key] = ResponseModelKit.stripCodes(body[key]);
+      }
+    });
+    return out;
+  }
+
   // A status's model, as an OpenAPI `content`. `media()` carries its own; an
   // operation answering JSON as well lists the model under `schema` beside it.
   static contentOf(model: Json): Json {
