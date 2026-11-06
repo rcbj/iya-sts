@@ -985,15 +985,29 @@ function signingParamsFor(tier) {
 // with the engine certificates are signed with: the algorithm named with no
 // parameters (RFC 9881 section 3 forbids them), the TBS encoded, its bytes
 // signed.
+//
+// **THE TIER'S OWN KEY DECIDES, AND NOT `tier.signatureAlg`.** That is the
+// signature ON the tier's certificate, made by its PARENT: an ML-DSA
+// Intermediate under a classical Root carries the Root's algorithm and can sign
+// only ML-DSA, and a classical tier under a post-quantum parent is the same
+// mistake the other way round. A post-quantum key has exactly one algorithm,
+// whose id is the key's.
+function postQuantumSigAlgOf(tier) {
+  log.debug("Entering postQuantumSigAlgOf().");
+  const sig = x509.sigAlg(tier.keyAlg);
+  log.debug("Leaving postQuantumSigAlgOf().");
+  return sig && sig.kind === 'pqc' ? sig : null;
+}
+
 function isPostQuantumTier(tier) {
   log.debug("Entering isPostQuantumTier().");
   log.debug("Leaving isPostQuantumTier().");
-  return (x509.sigAlg(tier.signatureAlg) || {}).kind === 'pqc';
+  return postQuantumSigAlgOf(tier) !== null;
 }
 
 async function postQuantumSignature(tier, tbs) {
   log.debug("Entering postQuantumSignature().");
-  const sig = x509.sigAlg(tier.signatureAlg);
+  const sig = postQuantumSigAlgOf(tier);
   const value = await x509.signBytes(sig, tier.privateKeyPem, null, tbs);
   log.debug("Leaving postQuantumSignature().");
   return { algorithm: new pkijs.AlgorithmIdentifier({
@@ -1007,7 +1021,7 @@ async function signCrl(crl, tier) {
   if (isPostQuantumTier(tier)) {
     // The TBS names the algorithm, so it is named before the bytes are made.
     const algorithm = new pkijs.AlgorithmIdentifier({
-      algorithmId: x509.sigAlg(tier.signatureAlg).oid });
+      algorithmId: postQuantumSigAlgOf(tier).oid });
     crl.signature = algorithm;
     crl.signatureAlgorithm = algorithm;
     crl.tbsView = new Uint8Array(crl.encodeTBS().toBER());

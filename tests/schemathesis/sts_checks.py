@@ -14,7 +14,8 @@
 #   no_error_code_leak      every refusal records an operator error code
 #                           STS-<SUBSYSTEM>-<NNNN> and NEVER sends it (root
 #                           CLAUDE.md, Every failure has an error code); a code
-#                           in a response body is the leak.
+#                           in a response body is the leak, outside the
+#                           exceptions code_members.py lists (#1355, #1357).
 #   frame_ancestors_present frame-ancestors is the one CSP clause a page may
 #                           not drop (RFC 9700 4.14); every HTML response must
 #                           still carry it.
@@ -32,8 +33,14 @@
 import json
 import os
 import re
+import sys
 
 import schemathesis
+
+# Beside this file; the CLI loads this file by path, so its directory is not on
+# the import path.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import code_members  # noqa: E402
 
 # STS-<SUBSYSTEM>-<NNNN>: an uppercase subsystem and four digits. The audit and
 # log form; it must never appear in a response body.
@@ -170,14 +177,26 @@ def no_uncaught_server_error(ctx, response, case):
 
 @schemathesis.check
 def no_error_code_leak(ctx, response, case):
-    """No STS error code is ever sent to a client."""
-    match = _ERROR_CODE.search(_body_bytes(response))
-    if match is not None:
-        code = match.group(0).decode("ascii", "replace")
-        _record_finding("error_code_leak", case, response, code)
+    """No STS error code is sent to a client, outside code_members.py's
+    exceptions. Every code in the answer is read and recorded, where the first
+    alone was, because help text early in an answer hid what came after it."""
+    route = _route(case).split(" ", 1)
+    method = route[0]
+    path = route[1] if len(route) > 1 else ""
+    status = getattr(response, "status_code", None)
+    try:
+        status = int(status)
+    except (TypeError, ValueError):
+        status = None
+    body = _body_bytes(response).decode("utf-8", "replace")
+    found = code_members.leaked(method, path, status, body)
+    if found:
+        detail = ", ".join(sorted({code + " at " + member
+                                   for member, code in found}))
+        _record_finding("error_code_leak", case, response, detail)
         raise AssertionError(
             "response body leaks the operator error code "
-            + code
+            + detail
             + " (it is recorded, never sent)"
         )
 
