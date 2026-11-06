@@ -32,6 +32,7 @@
 //   * a link with no issuer refused though it names nothing   — 1 red
 //   * every link with no issuer passing, naming or not        — 2 red
 //   * a pin asking only its own extensions, not the path      — 2 red (L)
+//   * `named` ignored at the path, or at the self-signed rule — 1 red (L)
 //   * a pin always asking, naming or not                     — 2 red (L)
 //   * `fieldChecks()` not marking a failure                  — 53 red
 //   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
@@ -564,6 +565,19 @@ async function run(t, double, crls) {
   const caAnswered = trust.pinnedSync('saml-signer', underLoud.pem);
   t.check(!caAnswered.ok && caAnswered.code === 'STS-PKI-0118',
           'L. and its answer about that CA holds', caAnswered.code);
+  // NAMED: an administrator's act stored it, so it needs no path (rcbj).
+  const namedPin = await kit.mint({ cn: 'named pin', issuer: await kit.mint(
+    { cn: 'a ca nobody holds', ca: true,
+      pair: await crossKeysForPins.generateKeyPair('rsa-2048') }) });
+  t.check(!trust.pinnedSync('saml-signer', namedPin.pem).ok &&
+          trust.pinnedSync('saml-signer', namedPin.pem, { named: true }).ok,
+          'L. a certificate named by an administrator needs no path', '');
+  t.check(trust.pinnedSync('wss-x509-token', goodSelf.pem,
+                           { named: true }).ok,
+          'L. nor is a self-signed one refused for being that', '');
+  t.check(!trust.pinnedSync('saml-signer', expiredSelf.pem,
+                            { named: true }).ok,
+          'L. and its validity still counts', '');
   const bareOk = trust.bareKey({ kty: 'EC' });
   t.check(bareOk.ok, 'L. a bare JWK is left alone (OpenID Federation 1.1)', '');
   const carried = trust.bareKey({ kty: 'EC', x5c: [pemDer(expiredSelf.pem)

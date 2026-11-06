@@ -2002,8 +2002,12 @@ class CertificateTrust {
         whys[one.check] = whys[one.check] || one.why;
       });
     let issuers: Buffer[] = [];
+    // NAMED (rcbj, #1360): an administrator's act stored this very certificate
+    // on the entry the signature is checked for, so it is its own trust anchor.
+    // Its fields and its revocation still count; a path and the self-signed
+    // refusal ask who vouches for it, and that has been answered.
     if (selfSigned) {
-      if (purpose.selfSigned !== 'allow-by-spec') {
+      if (!opts.named && purpose.selfSigned !== 'allow-by-spec') {
         verdict.checks['self-signed-allowed'] = 'failed';
         codes['self-signed-allowed'] = purpose.code;
         whys['self-signed-allowed'] = 'a self-signed certificate is not ' +
@@ -2015,9 +2019,10 @@ class CertificateTrust {
     } else {
       const held = signerTruststore.anchorsFor(realmId, id);
       issuers = held.anchors.concat(held.intermediates);
-      const direct = pki.verifyIssuedDirectly(der, issuers.map(function (one) {
-        return { raw: one };
-      }), { now: opts.now });
+      const direct = opts.named ? { ok: true, reason: '' } :
+        pki.verifyIssuedDirectly(der, issuers.map(function (one) {
+          return { raw: one };
+        }), { now: opts.now });
       if (!direct.ok) {
         verdict.checks.path = 'failed';
         codes.path = purpose.code;

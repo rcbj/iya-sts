@@ -1231,7 +1231,23 @@ class SpMetadata {
     // `saml2.metadataTrustAnchors` (a federation operator's keys). With any
     // anchor configured the document MUST verify against one of them; with
     // none a signature is recorded and not believed.
-    const anchors = this.trustAnchorsFor(fields);
+    //
+    // UNDER PARANOID PKI MODE AN ADMINISTRATOR'S ACT NAMES THE ANCHOR (rcbj,
+    // #1360). Setting a signing certificate by hand, or giving a document at
+    // create or update or asking for its fetch, establishes it. A fetch nobody
+    // asked for (`this.quiet`: the refresher, a lookup a request started) names
+    // nothing: it verifies against what is held, a certificate set by hand
+    // included, and otherwise is refused, or whoever answers for the URL could
+    // choose the key. Replacing an anchor is an administrator setting the field.
+    const paranoid =
+      require('../common/certificate_trust').applies('saml-signer');
+    let anchors = this.trustAnchorsFor(fields);
+    let handSet = false;
+    if (paranoid && !anchors.length && this.quiet) {
+      anchors = this.handSetSigners(fields);
+      handSet = anchors.length > 0;
+    }
+    let pinAnchor = '';
     let signature = parsed.signed ? 'signed-not-verified' : 'unsigned';
     if (anchors.length) {
       const verdict = this.verifyAgainst(String(xml), parsed, anchors);
@@ -1247,20 +1263,20 @@ class SpMetadata {
                  '. Nothing on the entry was changed.'] };
       }
       signature = 'verified';
-    } else if (require('../common/certificate_trust').applies('saml-signer')) {
-      // ANCHORED OR NOT CONSUMED, under paranoid PKI mode (#1360). A document
-      // nothing vouches for is trust on first use, and what it carries is the
-      // certificates every later signature from this provider is checked with.
+      // The document may now rotate the signing keys, and the anchor it was
+      // held to stays where an administrator put it.
+      pinAnchor = handSet ? String(verdict.anchor) : '';
+    } else if (paranoid && this.quiet) {
       this.refreshRefused('STS-SAML-0118', identifier, 'no trust anchor is ' +
-                          'configured, so nothing vouches for the document',
-                          family);
+                          'configured, so nothing vouches for a document ' +
+                          'nobody asked for', family);
       log.debug("Leaving SpMetadata.consume(). No anchor.");
-      return { ok: false, errors: ['Under paranoid PKI mode a service ' +
-               'provider\'s metadata must be signed by a trust anchor, and ' +
-               'none is configured: set samlSpMetadataSigningCertificate on ' +
-               'the entry or saml2.metadataTrustAnchors, or switch off ' +
-               'pki.paranoidSamlSigner. saml2.mdqImportWithoutAnchors does ' +
-               'not lift this. Nothing on the entry was changed.'] };
+      return { ok: false, errors: ['Under paranoid PKI mode metadata fetched ' +
+               'in the background must be signed by a trust anchor, and none ' +
+               'is configured: an administrator gives the document, asks for ' +
+               'the fetch, or sets samlSpMetadataSigningCertificate on the ' +
+               'entry or saml2.metadataTrustAnchors. Nothing on the entry was ' +
+               'changed.'] };
     }
 
     // The encryption certificate. One marked use="encryption" that cannot be
@@ -1334,6 +1350,13 @@ class SpMetadata {
     if (signing.length) {
       replacements.samlSigningCertificate = signing;
     }
+    // Where this administrator's document had nothing to answer to, its first
+    // signing key is the anchor from here on.
+    const named = paranoid && !this.quiet && !anchors.length && signing.length
+      ? String(signing[0]) : '';
+    if (named || pinAnchor) {
+      replacements.samlSpMetadataSigningCertificate = named || pinAnchor;
+    }
     // Likewise the encryption certificate: replaced when the document names
     // one, left alone when it does not.
     if (parsed.certificate) {
@@ -1398,6 +1421,8 @@ class SpMetadata {
                    'an assertion is encrypted to'
                  : '') +
                '. The document\'s own signature: ' + signature + '.' +
+               (named ? ' Its first signing certificate is now this ' +
+                        'application\'s trust anchor.' : '') +
                (skipped.length ? ' Not registered: ' + skipped.join('; ') +
                                  '.' : '')
     };
@@ -1444,6 +1469,20 @@ class SpMetadata {
    * @param fields - the application entry's fields
    * @returns the anchors, leaving out any this service cannot verify with
    */
+  private handSetSigners(fields: any): string[] {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.handSetSigners().");
+    const held = this.valuesOf(fields && fields.samlSigningCertificate)
+      .map(function (value: any): string {
+        return String(value || '').replace(/-----[^-]+-----/g, '')
+          .replace(/\s+/g, '');
+      }).filter(function (value: string): boolean {
+        return !!value;
+      });
+    log.debug("Leaving SpMetadata.handSetSigners(). " + held.length);
+    return held;
+  }
+
   trustAnchorsFor(fields?) {
     const { stsCrypto } = this.deps;
     const { log } = this.deps.helpers;
@@ -1529,7 +1568,7 @@ class SpMetadata {
         { element: element, certPem: this.toPem(anchors[i]) });
       if (verdict.ok) {
         log.debug("Leaving SpMetadata.verifyAgainst(). Anchor " + (i + 1));
-        return { ok: true, why: '', weak: !!verdict.weak };
+        return { ok: true, why: '', weak: !!verdict.weak, anchor: anchors[i] };
       }
       why = verdict.why;
     }
