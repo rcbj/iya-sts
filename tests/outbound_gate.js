@@ -290,7 +290,8 @@ async function child() {
   const wrongEku = await kit.mint(Object.assign({ cn: 'client eku server',
     eku: ['emailProtection'], crls: [crls.base + '/g.crl'] }, profile));
   crls.routes['/g.crl'] = await kit.crlOf(root, [revoked.serialHex]);
-  const noList = await kit.mint(Object.assign({ cn: 'no list server',
+  const noList = await kit.mint(Object.assign({ cn: 'dead list server',
+    crls: ['http://127.0.0.1:1/dead.crl'],
     eku: ['serverAuth'] }, profile));
   const servers = {
     revoked: await serverOf(revoked, root), good: await serverOf(good, root),
@@ -362,7 +363,8 @@ async function child() {
   });
   results.signerBeside = outbound.verifiedOptions(null).ca.length >
                          tls.rootCertificates.length;
-  // H. The store's row: unknown is not refused, under hard-fail.
+  // H. The store's row: a source named and unreachable is not refused, under
+  // hard-fail, for the database alone.
   config.setOverride('pki.revocationCheck', 'hard-fail');
   config.setOverride('pki.revocationRequireDistributionPoint', 'on');
   results.noListRefused = await drive('https', 'noList');
@@ -389,6 +391,38 @@ async function child() {
       resolve(false);
     });
     req.end('x');
+  });
+  // H2. A SESSION A CLIENT KEPT: undici and https's agents resume on their own,
+  // and a resumed client sees no peer certificate. The gate asks for a full
+  // handshake instead, so the second connection to a host is held as the first.
+  config.clearOverride('pki.revocationRequireDistributionPoint');
+  config.setOverride('pki.revocationCheck', 'soft-fail');
+  const kept = await new Promise(function (resolve) {
+    const first = tls.connect({ host: 'localhost', port: servers.good.port,
+      ca: ca, servername: 'localhost', maxVersion: 'TLSv1.2',
+      ALPNProtocols: ['http/1.1'] }, function () {
+      const session = first.getSession();
+      first.destroy();
+      resolve(session);
+    });
+    first.on('error', function () {
+      resolve(null);
+    });
+  });
+  results.keptSession = !!kept;
+  results.resumedHeld = await new Promise(function (resolve) {
+    const second = tls.connect({ host: 'localhost', port: servers.good.port,
+      ca: ca, servername: 'localhost', maxVersion: 'TLSv1.2', session: kept,
+      ALPNProtocols: ['http/1.1'] }, function () {
+      const peer = second.getPeerCertificate();
+      const out = { reached: true, reused: second.isSessionReused(),
+                    raw: !!peer.raw };
+      second.destroy();
+      resolve(out);
+    });
+    second.on('error', function (e) {
+      resolve({ reached: false, why: String(e.message) });
+    });
   });
   // I. THE CERTIFICATES THE SHIPPED STACK GENERATES (the product stack's first
   // dial, refused until a dialer's own `ca` counted as naming the server): each
@@ -536,6 +570,11 @@ module.exports = {
             'H. under hard-fail a certificate naming no list is refused');
     t.equal(r.noListStore, true, 'H. the store\'s row takes it');
     t.equal(r.revokedStore, false, 'H. and still refuses what is revoked');
+    t.equal(r.keptSession, true, 'H2. a client kept a session');
+    t.check(r.resumedHeld.reached && !r.resumedHeld.reused && r.resumedHeld.raw,
+            'H2. offering it again is a full handshake, held, and reached: a ' +
+            'resumed client would have no certificate to hold',
+            JSON.stringify(r.resumedHeld));
     t.check(r.generatedBao.reached,
             'I. the certificate openbao/generate-tls.js makes is reached, by ' +
             'the dialer configured with it, under hard-fail',

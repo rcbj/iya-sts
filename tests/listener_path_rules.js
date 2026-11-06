@@ -299,7 +299,8 @@ async function child() {
   const olderAnchor = await kit.mint({ cn: 'client older root', ca: true,
     pair: await keyMaterial.generateKeyPair('rsa-2048') });
   const crossCopy = await kit.mint({ cn: 'client cross root', ca: true,
-                                     issuer: olderAnchor, pair: crossPair });
+                                     issuer: olderAnchor, pair: crossPair,
+                                     crls: ['http://127.0.0.1:1/older.crl'] });
   const crossClient = await kit.mint({ cn: 'cross client', issuer: crossAnchor,
     eku: ['clientAuth'], crls: [crls.base + '/h.crl'] });
   crls.routes['/h.crl'] = await kit.crlOf(crossAnchor, []);

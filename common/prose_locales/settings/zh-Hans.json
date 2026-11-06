@@ -3716,8 +3716,8 @@
     "text": "偏执 PKI 模式"
   },
   "pki.paranoid|description": {
-    "en": "168070ad5991fba4",
-    "text": "偏执 PKI 模式（#1360）：本服务所依赖的每一份 X.509 证书——无论是任一方向的 TLS 握手、签名之下、作为加密接收方、在证明中，还是在 CMS 消息中——是否都通过唯一的验证入口（common/certificate_trust.ts）接受完整检查：存在通往本服务已知锚点的路径、当前时间有效、未被吊销，以及其用例所要求的 basicConstraints、keyUsage 和 extendedKeyUsage；用例从未运行的检查视为拒绝。**`auto` 在产品模式下开启，在开发模式下关闭**（mode.enforcesParanoidPki()）；`on` 和 `off` 在任一模式下强制设定。生效期间，会参考下面每一个 `pki.paranoid<UseCase>` 行；不生效时，每个用例的行为与 #1360 之前完全相同。在产品模式下将总开关强制关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示；写入本身不会被拒绝。"
+    "en": "96d8d3c8d4989451",
+    "text": "偏执 PKI 模式（#1360）：本服务所依赖的每一份 X.509 证书——无论是任一方向的 TLS 握手、签名之下、作为加密接收方、在证明中，还是在 CMS 消息中——是否都通过唯一的验证入口（common/certificate_trust.ts）接受完整检查：存在通往本服务已知锚点的路径、当前时间有效、未被吊销，以及其用例所要求的 basicConstraints、keyUsage 和 extendedKeyUsage；用例从未运行的检查视为拒绝。**`auto` 在产品模式下开启，在开发模式下关闭**（mode.enforcesParanoidPki()）；`on` 和 `off` 在任一模式下强制设定。生效期间，会参考下面每一个 `pki.paranoid<UseCase>` 行；不生效时，每个用例的行为与 #1360 之前完全相同。在产品模式下将总开关强制关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示；写入本身不会被拒绝。 如果证书本身及其上级 CA 都未指明 CRL 分发点和 OCSP 响应方，则无需执行吊销检查：已指明的来源会被强制执行，而本服务签发的证书始终会查询其自身的登记簿。"
   },
   "pki.paranoidTlsClient|label": {
     "en": "c0010750fb1dedac",
@@ -5224,8 +5224,8 @@
     "text": "允许在没有信任锚的情况下进行 MDQ 导入（产品模式）"
   },
   "saml2.mdqImportWithoutAnchors|description": {
-    "en": "f8d9fc6d9c76e4b7",
-    "text": "仅限产品模式：当领域没有 saml2.metadataTrustAnchors 时，管理员的“从 MDQ 导入”（SAML 2.0 页面，POST /admin-api/saml2/mdq-import）是否可以注册服务提供方。关闭（默认值）：会被拒绝（STS-SAML-0084）。警告：打开时，响应方所答复的文档会在没有任何签名检查的情况下被导入——其签名证书会成为验证该服务提供方请求的依据，其端点会成为断言的发送目标——因此任何能够代表响应方主机应答的人（其运营方，或位于通往它的路径上的任何人）都可以决定这些内容。只有管理员对 entityID 和响应方的选择能代替签名。最好设置一个信任锚。由请求触发的查找从不受此设置覆盖：无论此处如何设置，它都需要信任锚。无论此处如何设置，开发模式都可以在没有信任锚的情况下导入。 在偏执 PKI 模式下，这不会解除该要求：在同时关闭 pki.paranoidSamlSigner 之前，导入都会被拒绝。"
+    "en": "084296c20a8eb042",
+    "text": "仅限产品模式：当领域没有 saml2.metadataTrustAnchors 时，管理员的“从 MDQ 导入”（SAML 2.0 页面，POST /admin-api/saml2/mdq-import）是否可以注册服务提供方。关闭（默认值）：会被拒绝（STS-SAML-0084）。警告：打开时，响应方所答复的文档会在没有任何签名检查的情况下被导入——其签名证书会成为验证该服务提供方请求的依据，其端点会成为断言的发送目标——因此任何能够代表响应方主机应答的人（其运营方，或位于通往它的路径上的任何人）都可以决定这些内容。只有管理员对 entityID 和响应方的选择能代替签名。最好设置一个信任锚。由请求触发的查找从不受此设置覆盖：无论此处如何设置，它都需要信任锚。无论此处如何设置，开发模式都可以在没有信任锚的情况下导入。 在偏执 PKI 模式下，由此放行的导入会将文档的第一个签名证书设为该应用程序的信任锚，之后的获取必须据此验证。"
   },
   "saml11.assertionLifetimeMin|label": {
     "en": "92ee206f116fd412",
