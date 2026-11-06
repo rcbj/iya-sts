@@ -650,6 +650,397 @@ Object.assign(operations, {
   releasePkiCertificateHold: { '200': PKI_ACTION }
 });
 
+// ---------------------------------------------------------------------------
+// SPIFFE. `admin-core/admin_views.ts`'s `spiffe*Json()`, over
+// `spiffe/spiffe_ca.ts`, `spiffe_registry.ts`, `spiffe_auth.ts` and
+// `spiffe_server.ts`.
+//
+// **WRITTEN AS A ONE-MEMBER UNION, WHICH IS DELIBERATE.** These operations (and
+// ACME's, EST's and SCEP's reads) mirror `/admin/cert-issuance`, whose
+// `protocolEndpoints` holds SPIFFE's socket rows, each carrying `listening`.
+// `admin_api_spec.ts`'s `PROTOCOL_ENDPOINT_ROWS` does not declare that member,
+// and `ResponseModels.apply()` writes it over a model that has `properties`,
+// which would refuse every such answer once a SPIFFE socket is bound. A union
+// has no `properties`, so `ENDPOINT_ROW`, above, is what is held to.
+// ---------------------------------------------------------------------------
+const SPIFFE_SELECTOR = Kit.closed({ type: STR, value: STR });
+// An entry's attribute names are data: a directory entry carries what an
+// `ldapmodify` gave it, beside the schema's.
+const LDAP_ATTRIBUTES = Kit.mapOf(STRS);
+const SPIFFE_ENTRY = Kit.closed({
+  id: STR, dn: STR, spiffeId: STR, parentId: STR,
+  selectors: Kit.listOf(SPIFFE_SELECTOR), x509SvidTtl: NUM, jwtSvidTtl: NUM,
+  dnsNames: STRS, federatesWith: STRS, hint: STR, admin: BOOL, downstream: BOOL,
+  storeSvid: BOOL, expiresAt: NUM, revisionNumber: NUM, origin: STR,
+  svidsIssued: NUM, lastSvidAt: STR, createdAt: WHEN, modifiedAt: WHEN,
+  attributes: LDAP_ATTRIBUTES, expired: BOOL, selectorTexts: STRS
+});
+const SPIFFE_AGENT = Kit.closed({
+  id: STR, dn: STR, attestationType: STR,
+  selectors: Kit.listOf(SPIFFE_SELECTOR), banned: BOOL, canReattest: BOOL,
+  svidHash: STR, expiresAt: NUM, firstSeen: STR, lastSeen: STR,
+  attestations: NUM, attributes: LDAP_ATTRIBUTES, selectorTexts: STRS
+});
+const SPIFFE_BINDING = Kit.closed({
+  address: STR, listening: BOOL, error: STR, port: INT, tls: BOOL, socket: BOOL,
+  attested: BOOL, peerCredentials: BOOL, authentication: STR, realm: STR
+});
+const SPIFFE_FEDERATED = Kit.closed({
+  trustDomain: STR, trustDomainId: STR, x509Keys: INT, jwtKeys: INT, keys: INT,
+  sequence: NUM, refreshHint: NUM, bundleEndpointUrl: NSTR,
+  bundleEndpointProfile: NSTR, endpointSpiffeId: NSTR, createdAt: WHEN,
+  updatedAt: WHEN
+});
+const SPIFFE_VIEW = Kit.closed({
+  enabled: BOOL, ready: BOOL, error: STR, trustDomain: STR, trustDomainId: STR,
+  serverId: STR,
+  bundle: Kit.closed({ path: STR, sequence: NUM, refreshHint: NUM }),
+  authorities: Kit.closed({
+    source: STR, realm: STR,
+    x509: Kit.listOf(Kit.closed({
+      id: STR, active: BOOL, source: STR, keyType: STR, subject: STR,
+      serialHex: STR, notBefore: STR, notAfter: STR, certificatePem: STR,
+      createdAt: WHEN
+    })),
+    jwt: Kit.listOf(Kit.closed({ id: STR, active: BOOL, keyType: STR, alg: NSTR,
+                                 jwk: Kit.nullable(JWK), createdAt: WHEN })),
+    trustAnchors: Kit.listOf(Kit.closed({
+      id: STR, source: STR, subject: STR, notBefore: STR, notAfter: STR,
+      certificatePem: STR
+    })),
+    chainSubjects: STRS,
+    root: Kit.nullable(Kit.closed({ subject: NSTR, notAfter: NSTR,
+                                    certificatePem: NSTR })),
+    maxRetained: NUM
+  }),
+  listeners: Kit.closed({ workloadApi: Kit.listOf(SPIFFE_BINDING),
+                          serverApi: Kit.listOf(SPIFFE_BINDING),
+                          brokerApi: Kit.listOf(SPIFFE_BINDING) }),
+  workloadAttestation: Kit.nullable(Kit.closed({
+    tcp: Kit.closed({
+      port: INT, host: STR, served: BOOL, declared: BOOL, state: STR, why: STR,
+      listening: BOOL, attested: BOOL
+    }),
+    nativeModule: BOOL, problem: NSTR, unattestedSocketServed: BOOL,
+    attestors: Kit.listOf(Kit.closed({ type: STR, enabled: BOOL,
+                                       verifies: STR })),
+    unknownConfigured: STRS,
+    connections: Kit.listOf(Kit.closed({
+      tag: STR, pid: NUM, uid: NUM, gid: NUM, visible: BOOL, pidfdSource: STR,
+      selectors: INT, error: NSTR, note: NSTR
+    }))
+  })),
+  federated: Kit.listOf(SPIFFE_FEDERATED),
+  counts: Kit.closed({ entries: INT, agents: INT, maxEntries: NUM,
+                       maxAgents: NUM, maxFederatedBundles: NUM }),
+  keyTypes: Kit.listOf(Kit.closed({ id: STR, label: STR, kind: STR,
+                                    jwtAlg: NSTR, what: STR })),
+  authentication: Kit.closed({
+    what: STR, bootstrapping: STR, identityNote: STR, credentialStatusNote: STR,
+    enforced: BOOL, trustLocalSocket: BOOL, adminIds: STRS,
+    attestWorkloads: BOOL, acceptAssertedSelectors: BOOL,
+    assertedSelectorHeader: STR, entities: Kit.listOf(ID_LABEL),
+    policy: Kit.listOf(Kit.closed({ method: STR, allow: STRS }))
+  }),
+  settings: Kit.listOf(Kit.closed({ key: STR, value: NSTR })),
+  authorityState: Kit.closed({
+    x509Authorities: Kit.listOf(Kit.closed({
+      id: STR, active: BOOL, notAfter: STR, subject: STR, createdAt: WHEN,
+      keyType: STR
+    })),
+    jwtAuthorities: Kit.listOf(Kit.closed({
+      id: STR, active: BOOL, notAfter: NSTR, alg: NSTR, createdAt: WHEN
+    })),
+    federated: Kit.listOf(SPIFFE_FEDERATED)
+  }),
+  serverApiAuthenticated: BOOL, settingsForms: SETTINGS,
+  protocolEndpoints: Kit.listOf(ENDPOINT_ROW)
+});
+const SPIFFE_ENTRIES_VIEW = Kit.closed({
+  // The list.
+  total: INT, matched: INT, filter: Kit.closed({ q: STR, origin: STR }),
+  origins: STRS, paging: PAGING, max: NUM, container: STR,
+  serverApiAuthenticated: BOOL, trustDomain: STR,
+  entries: Kit.listOf(SPIFFE_ENTRY),
+  // One of them, by `entry`.
+  found: BOOL, id: STR, error: STR, entry: SPIFFE_ENTRY, editable: STRS,
+  defaults: Kit.closed({ x509SvidTtl: NSTR, jwtSvidTtl: NSTR }),
+  protocolEndpoints: Kit.listOf(ENDPOINT_ROW)
+});
+const SPIFFE_BROKERS_VIEW = Kit.closed({
+  total: INT, matched: INT, filter: Kit.closed({ q: STR }), paging: PAGING,
+  trustDomain: STR, setting: STR, port: NSTR, referenceTypes: STRS,
+  listeners: Kit.listOf(SPIFFE_BINDING),
+  brokers: Kit.listOf(Kit.closed({ id: STR, referenceTypes: STRS,
+                                   problem: NSTR })),
+  protocolEndpoints: Kit.listOf(ENDPOINT_ROW)
+});
+const SPIFFE_AGENTS_VIEW = Kit.closed({
+  // The list.
+  total: INT, matched: INT, filter: Kit.closed({ q: STR }), max: NUM,
+  container: STR, paging: PAGING, serverApiAuthenticated: BOOL,
+  agents: Kit.listOf(SPIFFE_AGENT),
+  // One of them, by `agent`.
+  found: BOOL, id: STR, error: STR, agent: SPIFFE_AGENT,
+  protocolEndpoints: Kit.listOf(ENDPOINT_ROW)
+});
+const SPIFFE_ENTRY_ACTION = Kit.action({ id: STR, entry: SPIFFE_ENTRY });
+const SPIFFE_AGENT_ACTION = Kit.action({ id: STR, agent: SPIFFE_AGENT });
+
+Object.assign(operations, {
+  getSpiffe: { '200': Kit.oneOf(SPIFFE_VIEW) },
+  getSpiffeEntries: { '200': Kit.oneOf(SPIFFE_ENTRIES_VIEW), '400': REFUSED },
+  getSpiffeBrokers: { '200': Kit.oneOf(SPIFFE_BROKERS_VIEW) },
+  getSpiffeAgents: { '200': Kit.oneOf(SPIFFE_AGENTS_VIEW) },
+  rotateSpiffeAuthority: { '200': Kit.action() },
+  setSpiffeFederatedBundle: { '200': Kit.action() },
+  removeSpiffeFederatedBundle: { '200': Kit.action() },
+  createSpiffeEntry: { '200': SPIFFE_ENTRY_ACTION },
+  updateSpiffeEntry: { '200': SPIFFE_ENTRY_ACTION },
+  deleteSpiffeEntry: { '200': SPIFFE_ENTRY_ACTION },
+  setSpiffeBroker: { '200': Kit.action({ id: STR, referenceTypes: STRS }) },
+  removeSpiffeBroker: { '200': Kit.action({ id: STR }) },
+  banSpiffeAgent: { '200': SPIFFE_AGENT_ACTION },
+  unbanSpiffeAgent: { '200': SPIFFE_AGENT_ACTION },
+  deleteSpiffeAgent: { '200': SPIFFE_AGENT_ACTION },
+  createSpiffeJoinToken: { '200': Kit.action({
+    token: STR, expiresAt: WHEN, agentSpiffeId: STR
+  }) }
+});
+
+// ---------------------------------------------------------------------------
+// ACME, EST AND SCEP: `acme/acme_console.ts`, `est/est_console.ts` and
+// `scep/scep_console.ts` over `common/cert_enrollment.ts` and
+// `common/enrollment_monitor.ts`. Each read mirrors `/admin/cert-issuance`, and
+// the one-member union is SPIFFE's reason, above. Its monitor does not.
+// ---------------------------------------------------------------------------
+const ENROLL_ENTRY = Kit.closed({ kind: STR, id: STR });
+const ENROLL_REVOKED = Kit.nullable(Kit.closed({ at: WHEN, reason: STR,
+                                                 by: STR }));
+const ENROLL_HOST_NAMES = Kit.listOf(Kit.closed({
+  entry: ENROLL_ENTRY, entryUri: STR, hostNames: STRS
+}));
+const ENROLL_REFUSED_PROFILES = Kit.listOf(Kit.closed({ id: STR, why: STR }));
+const NAME_COUNT = Kit.listOf(Kit.closed({ name: STR, count: NUM }));
+const ENROLL_RECENT = Kit.listOf(Kit.closed({
+  at: STR, operation: STR, outcome: NSTR, status: NINT, profile: NSTR,
+  principal: NSTR, target: NSTR, errorCode: NSTR, failInfo: NSTR, serialHex: NSTR
+}));
+// What a monitor's counters began, on this process.
+const MONITOR_SINCE = WHEN;
+const ENROLL_CERTIFICATE = Kit.closed({
+  serialHex: STR, entry: ENROLL_ENTRY, entryUri: STR, profile: NSTR,
+  subject: NSTR, names: STRS, keyAlg: STR, keySource: NSTR, via: NSTR,
+  status: STR, notBefore: STR, notAfter: STR, issuedAt: WHEN,
+  requestedBy: Kit.nullable(Kit.closed({ kind: STR, id: STR, admin: BOOL })),
+  replaces: NSTR, revoked: ENROLL_REVOKED, thumbprint: NSTR,
+  account: NSTR
+});
+const ENROLL_CERTIFICATES = Kit.closed({
+  paging: PAGING, rows: Kit.listOf(ENROLL_CERTIFICATE)
+});
+// `core.refuse()`'s `{ ok, status, errors, why }` travels unchanged through
+// EST's console.
+const ENROLL_ACTION_FIELDS = { status: INT, why: STR };
+const ENROLL_HOST_ACTION = Kit.action(Object.assign({
+  hostNames: STRS, entryUri: STR, entry: ENROLL_ENTRY, unchanged: BOOL
+}, ENROLL_ACTION_FIELDS));
+const ENROLL_REVOKE_ACTION = Kit.action(Object.assign({
+  serialHex: STR, entry: ENROLL_ENTRY, entryUri: STR, family: STR, reason: STR
+}, ENROLL_ACTION_FIELDS));
+
+const ACME_VIEW = Kit.closed({
+  page: STR, title: STR, enabled: BOOL, specifications: STRS, directory: STR,
+  endpoints: Kit.closed({
+    directory: STR, newNonce: STR, newAccount: STR, newOrder: STR, account: STR,
+    orders: STR, order: STR, finalize: STR, authorization: STR, challenge: STR,
+    certificate: STR, revokeCert: STR, keyChange: STR, renewalInfo: STR
+  }),
+  challengeType: STR, identifierTypes: STRS,
+  authority: Kit.closed({
+    present: BOOL, note: STR, subject: STR, serialHex: STR, keyAlg: STR,
+    signatureAlg: STR, notBefore: STR, notAfter: STR, thumbprint: STR,
+    intermediate: NSTR, root: NSTR
+  }),
+  profiles: Kit.listOf(Kit.closed({ id: STR, description: STR, needs: NSTR,
+                                    allowed: BOOL, isDefault: BOOL })),
+  refusedProfiles: ENROLL_REFUSED_PROFILES,
+  mode: Kit.closed({ current: STR, what: STR, development: STR, product: STR,
+                     inForce: STR }),
+  eabLifetimeS: NUM,
+  eabKeys: Kit.closed({
+    paging: PAGING,
+    rows: Kit.listOf(Kit.closed({
+      kid: STR, entry: ENROLL_ENTRY, entryUri: STR, status: STR,
+      createdAt: WHEN, expiresAt: WHEN, createdBy: STR, boundAt: WHEN,
+      boundAccount: NSTR
+    }))
+  }),
+  accounts: Kit.closed({
+    paging: PAGING,
+    rows: Kit.listOf(Kit.closed({
+      id: STR, status: STR, entry: Kit.nullable(ENROLL_ENTRY), entryUri: NSTR,
+      eabKid: NSTR, thumbprint: STR, contact: STRS, orders: INT,
+      createdAt: WHEN, deactivatedAt: WHEN
+    }))
+  }),
+  certificates: ENROLL_CERTIFICATES,
+  hostNames: Kit.closed({ paging: PAGING, rows: ENROLL_HOST_NAMES }),
+  revocationReasons: STRS, actions: STRS, settings: SETTINGS,
+  protocolEndpoints: Kit.listOf(ENDPOINT_ROW)
+});
+const ACME_MONITOR = Kit.closed({
+  page: STR, title: STR, since: MONITOR_SINCE, realm: STR, processes: INT,
+  totals: Kit.closed({ requests: INT, issued: INT, refused: INT, revoked: INT,
+                       accountsBound: INT, accounts: INT,
+                       certificatesHeld: INT }),
+  operations: NAME_COUNT, profiles: NAME_COUNT, principals: NAME_COUNT,
+  errorCodes: NAME_COUNT, statuses: NAME_COUNT, lastAt: WHEN, paging: PAGING,
+  recent: ENROLL_RECENT
+});
+const ACME_ACCOUNT_ROW = Kit.closed({
+  id: STR, status: STR, entry: Kit.nullable(ENROLL_ENTRY), entryUri: NSTR,
+  eabKid: NSTR, thumbprint: STR, contact: STRS, orders: INT, createdAt: WHEN,
+  deactivatedAt: WHEN
+});
+
+const EST_VIEW = Kit.closed({
+  page: STR, title: STR, enabled: BOOL, specifications: STRS,
+  endpoints: Kit.listOf(Kit.closed({
+    operation: STR, method: STR, section: STR, what: STR, url: STR,
+    labelFormUrl: NSTR
+  })),
+  labelForm: Kit.nullable(Kit.closed({ base: STR, note: STR })),
+  hierarchy: Kit.closed({
+    built: BOOL, note: STR,
+    authority: Kit.nullable(Kit.closed({
+      subject: STR, serialHex: STR, keyAlg: STR, notBefore: STR, notAfter: STR,
+      thumbprint: STR, certificatePem: STR
+    })),
+    chainPem: STRS
+  }),
+  authentication: Kit.closed({
+    basic: BOOL, certificate: BOOL, serverKeyGeneration: BOOL,
+    credentials: Kit.listOf(Kit.closed({ kind: STR, what: STR, managedAt: STR }))
+  }),
+  profiles: Kit.listOf(Kit.closed({
+    id: STR, needs: NSTR, allowed: BOOL, isDefault: BOOL,
+    // One URL per EST operation, by the operation's name.
+    urls: Kit.mapOf(STR)
+  })),
+  defaultProfile: NSTR, refusedProfiles: ENROLL_REFUSED_PROFILES,
+  hostNames: ENROLL_HOST_NAMES, certificates: ENROLL_CERTIFICATES,
+  keyAlgorithms: STRS, revocationReasons: STRS,
+  csrAttributes: Kit.closed({
+    signatureAlgorithms: Kit.listOf(Kit.closed({ oid: STR, name: STR }))
+  }),
+  mode: Kit.closed({ current: STR, development: STR, product: STR, where: STR }),
+  actions: STRS, settings: SETTINGS, monitor: STR,
+  protocolEndpoints: Kit.listOf(ENDPOINT_ROW)
+});
+const EST_MONITOR = Kit.closed({
+  page: STR, title: STR, since: MONITOR_SINCE, processes: INT,
+  totals: Kit.closed({ requests: INT, issued: INT, refused: INT, revoked: INT }),
+  certificates: Kit.closed({ held: INT, valid: INT, revoked: INT, expired: INT }),
+  operations: NAME_COUNT, profiles: NAME_COUNT, principals: NAME_COUNT,
+  errorCodes: NAME_COUNT, statuses: NAME_COUNT, lastAt: WHEN, paging: PAGING,
+  recent: ENROLL_RECENT
+});
+
+const SCEP_RA = Kit.closed({
+  present: BOOL, status: STR, subject: STR, serialHex: STR, keyAlgorithm: STR,
+  wantedKeyAlgorithm: STR, notBefore: STR, notAfter: STR, thumbprint: STR,
+  certificatePem: STR
+});
+const SUBJECT_UNTIL = Kit.closed({ subject: STR, notAfter: STR });
+const SCEP_VIEW = Kit.closed({
+  page: STR, title: STR, realm: STR, enabled: BOOL, specifications: STRS,
+  endpoints: Kit.closed({ scep: STR, cgi: STR, getCaCaps: STR, getCaCert: STR,
+                          pkiOperation: STR }),
+  capabilities: STRS, operations: STRS,
+  // RFC 8894 section 3.2.1.2's messageType numbers, keyed by the number.
+  messageTypes: Kit.mapOf(STR),
+  algorithms: Kit.closed({
+    digests: STRS, signatures: STRS, ciphers: STRS, keyTransports: STRS,
+    refusedDigests: STRS, refusedCiphers: STRS, replySignature: STR,
+    replyKeyTransport: STR, replyCipher: STR
+  }),
+  authority: Kit.nullable(Kit.closed({
+    subject: STR, serialHex: STR, keyAlg: STR, signatureAlg: STR, notBefore: STR,
+    notAfter: STR, thumbprint: STR, certificatePem: STR,
+    intermediate: Kit.nullable(SUBJECT_UNTIL), root: Kit.nullable(SUBJECT_UNTIL)
+  })),
+  hierarchyBuilt: BOOL, authorityNote: STR, ra: SCEP_RA,
+  profiles: Kit.listOf(Kit.closed({ id: STR, allowed: BOOL, needs: STR,
+                                    keys: STR, url: STR })),
+  refusedProfiles: ENROLL_REFUSED_PROFILES, defaultProfile: NSTR,
+  challenges: Kit.closed({
+    paging: PAGING,
+    rows: Kit.listOf(Kit.closed({
+      id: STR, entry: ENROLL_ENTRY, entryUri: STR, profile: STR, status: STR,
+      createdAt: WHEN, expiresAt: WHEN, createdBy: STR, usedAt: WHEN, url: STR
+    }))
+  }),
+  hostNames: ENROLL_HOST_NAMES, certificates: ENROLL_CERTIFICATES,
+  exceptions: Kit.listOf(Kit.closed({ what: STR, why: STR })),
+  mode: Kit.closed({
+    mode: STR,
+    requirement: Kit.nullable(Kit.closed({
+      id: STR, what: STR, development: STR, product: STR, where: STR
+    })),
+    scep: STR
+  }),
+  revokeReasons: STRS, actions: STRS, settings: SETTINGS,
+  protocolEndpoints: Kit.listOf(ENDPOINT_ROW)
+});
+const SCEP_MONITOR = Kit.closed({
+  page: STR, title: STR, realm: STR, since: MONITOR_SINCE, processes: INT,
+  totals: Kit.closed({ requests: INT, issued: INT, refused: INT, revoked: INT,
+                       challengesCreated: INT }),
+  // Counted per name, where ACME's and EST's are tables of the same counts.
+  operations: COUNTS, profiles: COUNTS, principals: COUNTS, errorCodes: COUNTS,
+  statuses: COUNTS, failInfo: COUNTS, issuedCertificates: INT, lastAt: WHEN,
+  paging: PAGING, recent: ENROLL_RECENT
+});
+
+Object.assign(operations, {
+  getAcme: { '200': Kit.oneOf(ACME_VIEW) },
+  getAcmeMonitor: { '200': ACME_MONITOR },
+  createAcmeEab: { '200': Kit.action({
+    kid: STR, hmacKey: STR, alg: STR, expiresAt: WHEN, target: ENROLL_ENTRY,
+    targetUri: STR, directory: STR, certbot: STR
+  }) },
+  deleteAcmeEab: { '200': Kit.action({ kid: STR }) },
+  deactivateAcmeAccount: { '200': Kit.action({ account: ACME_ACCOUNT_ROW }) },
+  revokeAcmeCertificate: { '200': Kit.action({ serialHex: STR, reason: STR }) },
+  addAcmeHostName: { '200': Kit.action({ hostNames: STRS, entryUri: STR }) },
+  removeAcmeHostName: { '200': Kit.action({ hostNames: STRS, entryUri: STR }) },
+
+  getEst: { '200': Kit.oneOf(EST_VIEW) },
+  getEstMonitor: { '200': EST_MONITOR },
+  issueEstServerKey: { '200': Kit.action(Object.assign({
+    target: ENROLL_ENTRY, keyAlg: STR, record: ENROLL_CERTIFICATE,
+    certificatePem: STR, chainPem: STRS, privateKeyPem: STR
+  }, ENROLL_ACTION_FIELDS)) },
+  revokeEstCertificate: { '200': ENROLL_REVOKE_ACTION },
+  addEstHostName: { '200': ENROLL_HOST_ACTION },
+  removeEstHostName: { '200': ENROLL_HOST_ACTION },
+
+  getScep: { '200': Kit.oneOf(SCEP_VIEW) },
+  getScepMonitor: { '200': SCEP_MONITOR },
+  createScepChallenge: { '200': Kit.action({
+    id: STR, challenge: STR, profile: STR, expiresAt: WHEN,
+    target: ENROLL_ENTRY, entryUri: STR, url: STR, plainUrl: STR, hint: STR
+  }) },
+  deleteScepChallenge: { '200': Kit.action({ id: STR, entryUri: STR }) },
+  reissueScepRa: { '200': Kit.action({ ra: SCEP_RA }) },
+  revokeScepCertificate: { '200': Kit.action({
+    serialHex: STR, entryUri: STR, reason: STR
+  }) },
+  addScepHostName: { '200': Kit.action({ entryUri: STR, hostNames: STRS }) },
+  removeScepHostName: { '200': Kit.action({ entryUri: STR, hostNames: STRS }) }
+});
+
 //@@NEXT@@
 
 export = { components, operations };
