@@ -192,6 +192,73 @@ function forwardOnce(method, url, headers, body) {
   });
 }
 
+// WHAT KILLED THE TOKEN (#1299, iya-sts-60's diagnostic). On the FIRST
+// invalid_token of this cell, read the truth with the run's SERVICE token
+// (STS_ADMIN_API_TOKEN, in the proxy's env) and log it at ERROR with a
+// distinctive phrase — no behaviour change, it just reports. The admin-api gate
+// (mgmt-api/admin_api.ts) answers STS-API-0122 for isRevoked(jti) OR
+// isDisabled(person), and the earlier exp check rules out expiry — so
+// pwdAccountLockedTime present means the account was DISABLED, absent means the
+// jti was REVOKED (cross-reference the service log for a revoke naming it).
+let diagnosed = false;
+
+function decodeJwtPayload(token) {
+  log.debug("Entering decodeJwtPayload().");
+  try {
+    const part = String(token).split(".")[1] || "";
+    const out = JSON.parse(Buffer.from(part, "base64url").toString("utf8"));
+    log.debug("Leaving decodeJwtPayload().");
+    return out;
+  } catch (e) {
+    log.debug("Leaving decodeJwtPayload(). " + ((e && e.message) || e));
+    return {};
+  }
+}
+
+async function diagnoseFirstInvalid() {
+  log.debug("Entering diagnoseFirstInvalid().");
+  if (diagnosed) {
+    log.debug("Leaving diagnoseFirstInvalid(). already done");
+    return;
+  }
+  diagnosed = true;
+  const admin = process.env.STS_ADMIN_API_TOKEN || "";
+  const claims = decodeJwtPayload(currentToken());
+  const sub = String(claims.sub || "");
+  const subUuid = (/urn:uuid:([0-9a-fA-F-]{8,})/.exec(sub) || [])[1] || "";
+  let usersStatus = 0;
+  let locked = "absent";
+  let subNamesEntry = false;
+  try {
+    const r = await fetch(REALM_BASE + "/admin-api/users?user=" +
+      encodeURIComponent(USER), { headers: {
+        authorization: "Bearer " + admin, accept: "application/json" } });
+    usersStatus = r.status;
+    const flat = await r.text();
+    // The account-disabled mark is pwdAccountLockedTime on the entry, which the
+    // directory holds as an array; PRESENT with a value means disabled.
+    const lock = /"pwdAccountLockedTime"\s*:\s*(\[[^\]]*\]|"[^"]*"|[^,}\s]+)/i
+      .exec(flat);
+    if (lock && !/^(\[\]|""|null)$/.test(lock[1].replace(/\s/g, ""))) {
+      locked = "present " + lock[1].slice(0, 40);
+    }
+    // The subject is urn:uuid:<entryUUID>; the entry names it if its uuid is in
+    // the entry this read returned.
+    subNamesEntry = subUuid !== "" && flat.indexOf(subUuid) >= 0;
+  } catch (e) {
+    log.debug("Caught reading users in diagnoseFirstInvalid(): " +
+      ((e && e.message) || e));
+  }
+  log.error("[schemathesis] FIRST-INVALID-TOKEN DIAGNOSTIC (" + SURFACE +
+    " @ " + (REALM_PREFIX || "(default)") + "): users read " + usersStatus +
+    "; pwdAccountLockedTime=" + locked + "; token.sub=" + sub +
+    "; the entry names that sub=" + subNamesEntry +
+    "; jti=" + (claims.jti || "?") + "; exp=" + (claims.exp || "?") +
+    " -- a 0122 with pwdAccountLockedTime ABSENT is isRevoked(jti) (grep the " +
+    "service log for a revoke naming that jti); PRESENT is isDisabled(person).");
+  log.debug("Leaving diagnoseFirstInvalid().");
+}
+
 // A fetch-shaped Response wrapper so session.key.keepNonce() can read the
 // DPoP-Nonce from a forwardOnce() answer.
 function nonceCarrier(answer) {
@@ -275,6 +342,7 @@ async function forward(req, url, body) {
     if (/use_dpop_nonce/.test(answer.challenge)) {
       session.key.keepNonce(nonceCarrier(answer));
     } else if (/invalid_token/.test(answer.challenge)) {
+      await diagnoseFirstInvalid();
       const resigned = await resignInIfDue("invalid_token on " + SURFACE);
       if (!resigned) {
         break;
