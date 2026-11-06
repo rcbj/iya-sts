@@ -157,7 +157,6 @@
 
 import zlib = require('zlib');
 import AtprotoClient = require('./atproto_client');
-import jwt = require('jsonwebtoken');
 import xmldom = require('@xmldom/xmldom');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');

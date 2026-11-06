@@ -1890,5 +1890,9 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "Un événement de test envoyé à une destination d’export d’audit"
+  },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "Une ligne frappée qui ne pouvait jamais être validée a été abandonnée"
   }
 }

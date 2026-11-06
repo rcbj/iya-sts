@@ -105,7 +105,6 @@
 // a plain one, so every process in this service sees the same bundles and no
 // realm sees another's.
 import realms = require('../common/realms');
-import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import pkijs = require('pkijs');
@@ -168,7 +167,6 @@ const PROCESS_TRUST_DOMAIN =
 // one and a test can build one with stubs.
 interface SpiffeCaDeps {
   realms: typeof realms;
-  jwt: typeof jwt;
   stsCrypto: typeof stsCrypto;
   pkijs: typeof pkijs;
   log: typeof log;
@@ -289,7 +287,6 @@ class SpiffeCa {
     helpers.log.debug("Leaving SpiffeCa.defaultDeps().");
     return {
       realms: realms,
-      jwt: jwt,
       stsCrypto: stsCrypto,
       pkijs: pkijs,
       log: log,
@@ -2466,7 +2463,7 @@ class SpiffeCa {
    *   reason, errorCode }`
    */
   async validateJwtSvid(token, audience, options?) {
-    const { log, jwt, spiffeId, stsCrypto } = this.deps;
+    const { log, spiffeId, stsCrypto } = this.deps;
     const self = this;
     log.debug('Entering SpiffeCa.validateJwtSvid().');
     // THE REALM WHOSE BUNDLE IS BEING ASKED. It has an option now for the same
@@ -2490,7 +2487,7 @@ class SpiffeCa {
     }
     let unverified;
     try {
-      unverified = jwt.decode(text, { complete: true });
+      unverified = stsCrypto.decodeJws(text, { complete: true });
     } catch (e) {
       log.debug("Caught in SpiffeCa.validateJwtSvid(): " +
                 ((e && e.message) || e));
