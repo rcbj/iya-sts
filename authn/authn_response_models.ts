@@ -58,7 +58,8 @@ const STRINGS: Json = Kit.listOf(Kit.str());
 class Models {
   // SEVERAL DOCUMENTS IN ONE PLACE (a step's page is `mfaView()`'s or the
   // emailed factor's, a sign-out's view an inventory, a result or a refusal)
-  // ARE ONE CLOSED OBJECT HOLDING EVERY ONE'S MEMBERS, not an `anyOf`: what is being
+  // ARE ONE CLOSED OBJECT HOLDING EVERY ONE'S MEMBERS, not an `anyOf`: what is
+  // being
   // guarded is a member nobody declared, and an `anyOf`'s failure names every
   // arm's complaint about every member, where this names the member. An
   // enumerated member takes each document's values.
