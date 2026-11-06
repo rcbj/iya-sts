@@ -514,7 +514,8 @@ const ATTRIBUTE_EDITOR = Kit.nullable(Kit.closed({
   attributes: Kit.listOf(Kit.closed({
     name: STR, label: STR, schema: STR, note: STR, simple: BOOL, must: BOOL,
     format: STR, custom: BOOL, values: STRS, required: BOOL, why: STR,
-    example: STR, editable: BOOL, group: STR, multi: BOOL
+    example: STR, editable: BOOL, group: STR, multi: BOOL,
+    choices: STRS
   })),
   withheld: Kit.listOf(Kit.closed({ name: STR, label: STR, kind: STR,
                                     why: STR })),
