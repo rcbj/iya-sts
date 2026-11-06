@@ -194,6 +194,13 @@ class ResponseModels {
   private wrap(installed: Installed, req: Json, res: Json): void {
     const self = this;
     const send = res.send;
+    // THE REQUEST AS IT ARRIVED, read now and not at the send: a handler can
+    // change `req.url` on the way (a sign-in ticket removed from the query, or
+    // through an accessor on HTTP/2), and the answer is still to what was asked.
+    const arrived = {
+      method: req.method, baseUrl: '',
+      path: String(req.baseUrl || '') + String(req.path || '')
+    };
     res.send = function (body: Json) {
       // Express's `send(object)` calls `json()`, which calls `send(string)`.
       // Only the last of those is the answer, so an object goes round again.
@@ -202,7 +209,7 @@ class ResponseModels {
         return send.call(this, body);
       }
       res.send = send;
-      const problem = self.problemOf(installed, req, res, body);
+      const problem = self.problemOf(installed, arrived, res, body);
       if (!problem) {
         return send.call(this, body);
       }

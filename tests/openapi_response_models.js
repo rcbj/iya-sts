@@ -339,6 +339,19 @@ function unionsAndExceptions(t) {
   } });
   t.check(passed && passed.status === 400,
           'a status below 500 is somebody else\'s');
+  // The answer is to what was asked, whatever the request says by the send.
+  const app = fakeApp();
+  models.install(app, '/api', function () {
+    return doc;
+  });
+  const forged = { method: 'GET', baseUrl: '/api', path: '/u' };
+  const asked = fakeResponse('application/json');
+  app.middleware(forged, asked, function () {});
+  forged.baseUrl = '';
+  forged.path = '/.well-known/openid-federation';
+  asked.send(JSON.stringify({ a: 'x' }));
+  t.equal(asked.statusCode, 200, 'an answer is judged by the path it was ' +
+          'asked on, not by one the request was changed to: ' + asked.sent);
   log.debug("Leaving unionsAndExceptions().");
 }
 
