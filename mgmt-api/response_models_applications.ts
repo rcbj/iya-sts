@@ -316,8 +316,7 @@ const CREDENTIAL_LINEAGE = Kit.closed({
   truncated: BOOL, acts: Kit.listOf(DELEGATION_ACT), graph: GRAPH,
   maxGenerations: INT,
   drawing: Kit.closed({ width: NUM, height: NUM, failed: NULL_STR }),
-  looks: Kit.mapOf(NODE_LOOK, 'How each node of the graph is drawn,
-  by its id.'),
+  looks: Kit.mapOf(NODE_LOOK, 'How each node of the graph is drawn.'),
   label: STR, svg: STR, subjectKey: STR,
   facts: Kit.closed({
     users: Kit.mapOf(BOOL, 'Who in the answer has a user page.'),
