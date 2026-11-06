@@ -182,6 +182,14 @@ class ResponseModelKit {
     return out;
   }
 
+  // An answer as its door sends it: an act's carries no `errorCode` at any
+  // depth, though it may hand back a row the page's GET carries one on. Every
+  // door answering such a row calls this; a closed model refuses it otherwise.
+  static actAnswer(res: any, body: any): any {
+    return res && res.req && res.req.method === 'POST'
+      ? ResponseModelKit.stripCodes(body) : body;
+  }
+
   // The answer `withoutCodes()` models: the same value with every `errorCode`
   // gone, at any depth. A mark on it is not carried, so this is the last thing
   // done to a body.
