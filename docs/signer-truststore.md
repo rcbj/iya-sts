@@ -79,11 +79,8 @@ flagged on the page, and is reported by the daily audit. You remove it.
 ## Accepting one certificate by name
 
 Under [paranoid PKI mode](pki.md#paranoid-pki-mode), outbound TLS refuses a server
-that presents a self-signed leaf, or whose chain from a private CA names no
-revocation list, since hard-fail then has nothing to ask. **This reaches a deployment
-that worked before**: a federation partner, a remote PEP or any other peer on a
-private CA with no list is refused until you do one of the things below, and the
-log line (`STS-PKI-0242`) names the certificate and points here.
+that presents a self-signed leaf. The log line (`STS-PKI-0242`) names the certificate
+and points here.
 
 To accept one such certificate, tick *Accept this one server certificate by name* on
 the *Signer truststore* tab, or:
@@ -96,15 +93,13 @@ curl -X POST https://sts.example/admin-api/pki/trust/add \
 
 This is one certificate, byte for byte, in that realm, for outbound TLS only. It
 vouches for nothing else. It must still be in date, of an acceptable strength, and
-fit server authentication where it states a usage. A revocation list or responder its
-chain names is still asked, and a chain naming none passes. Renewing the server's
-certificate means accepting the new one. Removing the row takes the acceptance back.
+fit server authentication where it states a usage. A revocation source it names is
+still asked. Renewing the server's certificate means accepting the new one. Removing
+the row takes the acceptance back.
 
 A certificate authority cannot be accepted this way (`STS-PKI-0267`): it goes in as
-an anchor, because trusting it trusts everything it signs. A private CA that many
-servers share is better served by publishing a CRL, since a list it names is asked
-and its leaves then need no row. `pki.paranoidOutboundTls` off goes back to the
-earlier behaviour for every outbound request in the realm.
+an anchor, because trusting it trusts everything it signs. `pki.paranoidOutboundTls`
+off goes back to the earlier behaviour for every outbound request in the realm.
 
 A certificate you configured as a dialer's own CA is already accepted, byte for
 byte, so nothing is owed for the OpenBao and postgres certificates the shipped

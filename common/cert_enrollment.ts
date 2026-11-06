@@ -1117,8 +1117,11 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.authenticatePresentedCertificate().");
     const opts = options || {};
+    // A site that does not ask for clientAuth is SCEP's renewal, whose signer
+    // is held to the variant its codec already asked.
     const verified = await CertificateTrust.realmLeaf('enrollment-credential',
-      realms.currentId(), pem, []);
+      realms.currentId(), pem, [],
+      opts.clientAuth === false ? { variant: 'scep' } : undefined);
     if (!verified.ok) {
       log.debug("Leaving CertEnrollment.authenticatePresentedCertificate(). " +
                 "Path refused.");

@@ -28,8 +28,11 @@
 //   * the certificates below the anchor dropped from the walk — 1 red
 //   * a server accepted without being named                   — 2 red
 //   * a truststore anchor counting as a dialer's pin          — 1 red
-//   * a named certificate's list not asked                    — see the run
-//   * a named certificate naming no list still refused        — see the run
+//   * paranoid not lifting the distribution-point requirement — 1 red
+//   * a link with no issuer refused though it names nothing   — 1 red
+//   * every link with no issuer passing, naming or not        — 2 red
+//   * a pin asking only its own extensions, not the path      — 2 red (L)
+//   * a pin always asking, naming or not                     — 2 red (L)
 //   * `fieldChecks()` not marking a failure                  — 53 red
 //   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
 //   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
@@ -41,7 +44,7 @@
 //   * a JWK's x5c not held                                   — 1 red (L)
 //   * `path()` always the baseline                           — 9 red (N)
 //   * a site's anchor entries not read as DER                — 11 red (N)
-//   * `where-named` ignored                                  — 1 red (N)
+//   * SCEP's variant asking for clientAuth again             — 2 red (N)
 //   * `siteAsksRevocation` ignored                           — 1 red (N)
 //   * and honoured with the check switched off               — 1 red (N)
 //   * `direct()` assessing an authority that signed nothing  — 1 red (N)
@@ -52,7 +55,6 @@
 //   * a certificate naming no list still `not-asked`         — 1 red (N)
 //   * a CRL's signer not held                                — 1 red (N)
 //   * the path's own word for a refusal lost                 — 2 red (N)
-//   * client attestation's row back to `required`            — 1 red (N)
 //   * `anchorsAvailable()` ignoring the signer truststore    — 1 red (N)
 // ===========================================================================
 
@@ -538,6 +540,30 @@ async function run(t, double, crls) {
   const secondAsk = trust.pinnedSync('saml-signer', listedPin.pem);
   t.check(!secondAsk.ok && secondAsk.code === 'STS-PKI-0118',
           'L. and once read, it is revoked', secondAsk.code);
+  // Nothing is looked up for a pin naming nothing, unless a CA above it does.
+  const crossKeysForPins = require('../common/crypto_impl/key_material');
+  const quietCa = await kit.mint({ cn: 'pin ca naming nothing', ca: true,
+    issuer: root, pair: await crossKeysForPins.generateKeyPair('rsa-2048') });
+  const quietPin = await kit.mint({ cn: 'pin naming nothing', issuer: quietCa });
+  await signers.add(REALM, quietCa.pem, {});
+  const noSource = trust.pinnedSync('saml-signer', quietPin.pem);
+  t.check(noSource.ok,
+          'L. a pin whose path names no source has no check to perform',
+          noSource.why);
+  const loudCa = await kit.mint({ cn: 'pin ca naming a list', ca: true,
+    issuer: root, crls: [crls.base + '/pin-ca.crl'],
+    pair: await crossKeysForPins.generateKeyPair('rsa-2048') });
+  crls.routes['/pin-ca.crl'] = await kit.crlOf(root, [loudCa.serialHex]);
+  const underLoud = await kit.mint({ cn: 'pin under it', issuer: loudCa });
+  await signers.add(REALM, loudCa.pem, {});
+  t.check(!trust.pinnedSync('saml-signer', underLoud.pem).ok,
+          'L. a CA above the pin naming one is asked', '');
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 800);
+  });
+  const caAnswered = trust.pinnedSync('saml-signer', underLoud.pem);
+  t.check(!caAnswered.ok && caAnswered.code === 'STS-PKI-0118',
+          'L. and its answer about that CA holds', caAnswered.code);
   const bareOk = trust.bareKey({ kty: 'EC' });
   t.check(bareOk.ok, 'L. a bare JWK is left alone (OpenID Federation 1.1)', '');
   const carried = trust.bareKey({ kty: 'EC', x5c: [pemDer(expiredSelf.pem)
@@ -688,17 +714,22 @@ async function run(t, double, crls) {
   const nRevoked = await nPath('device-attestation', listedLeaf, []);
   t.check(!nRevoked.ok && nRevoked.code === 'STS-PKI-0118',
           'N. revocation is asked', nRevoked.code + ' ' + nRevoked.reason);
-  await withSettings({ 'pki.revocationCheck': 'hard-fail',
-                       'pki.revocationRequireDistributionPoint': 'on' },
-                     async () => {
+  await withSettings({ 'pki.revocationCheck': 'hard-fail' }, async () => {
     const noneNamed = await nPath('device-attestation', nLeaf, [nMiddle]);
     t.check(noneNamed.ok, 'N. under hard-fail, a hardware chain naming ' +
             'nothing is not refused for it', noneNamed.reason);
     t.check((await nPath('client-attestation', nLeaf, [nMiddle])).ok &&
-            (await nPath('vc-key-attestation', nLeaf, [nMiddle])).ok,
-            'N. nor an attester\'s or a wallet provider\'s', '');
-    t.check(!(await nPath('vc-issuer', nLeaf, [nMiddle])).ok,
-            'N. where a use case does not say so, it is', '');
+            (await nPath('vc-key-attestation', nLeaf, [nMiddle])).ok &&
+            (await nPath('vc-issuer', nLeaf, [nMiddle])).ok,
+            'N. and no use case is treated differently', '');
+  });
+  await withSettings({ 'pki.revocationCheck': 'hard-fail',
+                       'pki.revocationRequireDistributionPoint': 'on' },
+                     async () => {
+    t.check(!(await nPath('device-attestation', nLeaf, [nMiddle])).ok &&
+            !(await nPath('vc-issuer', nLeaf, [nMiddle])).ok,
+            'N. an operator who set the requirement `on` refuses it everywhere',
+            '');
   });
   const asksItself = await nPath('device-attestation', listedLeaf, [],
                                  { siteAsksRevocation: true });
@@ -758,6 +789,18 @@ async function run(t, double, crls) {
             'N. the realm\'s own leaf is held to the fields as well', held.why);
     t.check((await trust.realmLeaf('enrollment-credential', REALM, svid.pem,
                                    [])).ok, 'N. and passes them', '');
+    // SCEP's renewal: signed by the certificate being renewed, whatever its EKU.
+    const serverCert = await kit.mint({ cn: 'n scep server', issuer: nRoot,
+      eku: [stsCrypto.EKU.serverAuth] });
+    t.check(!(await trust.realmLeaf('enrollment-credential', REALM,
+                                    serverCert.pem, [])).ok,
+            'N. a server certificate is no EST client', '');
+    const scepHeld = await trust.realmLeaf('enrollment-credential', REALM,
+      serverCert.pem, [], { variant: 'scep' });
+    t.check(scepHeld.ok, 'N. and may renew itself over SCEP', scepHeld.why);
+    const scepSigner = trust.assessSync('enrollment-credential',
+      { leaf: serverCert.pem, pinned: true }, { variant: 'scep' });
+    t.check(scepSigner.ok, 'N. at the signature as well', scepSigner.why);
     await withSettings({ 'pki.paranoid': 'off' }, async () => {
       t.check((await trust.realmLeaf('enrollment-credential', REALM, nLeaf.pem,
                                      [])).ok,
@@ -828,8 +871,10 @@ async function run(t, double, crls) {
                                      pair: crossPair });
   const olderRoot = await kit.mint({ cn: 'older root', ca: true,
     pair: await crossKeys.generateKeyPair('rsa-2048') });
+  // It names a list, as GTS Root R4 does, or there would be nothing to ask.
   const crossCopy = await kit.mint({ cn: 'cross root', ca: true,
-                                     issuer: olderRoot, pair: crossPair });
+                                     issuer: olderRoot, pair: crossPair,
+                                     crls: ['http://127.0.0.1:1/older.crl'] });
   const crossCrls = await kit.crlServer();
   const crossLeaf = await kit.mint({ cn: 'cross leaf', issuer: crossRoot,
     usages: ['digitalSignature', 'keyEncipherment'], eku: ['serverAuth'],
@@ -930,45 +975,90 @@ async function run(t, double, crls) {
     signers.anchorsFor(REALM).intermediates).some(function (der) {
     return der.equals(pemDer(appliance.pem));
   }), 'it is no step on anybody\'s path', '');
-  // A private CA's leaf that names no list: refused by hard-fail, until named.
+  // NO SOURCE NAMED, NO CHECK TO PERFORM (rcbj). A private CA's leaf naming no
+  // list passes under hard-fail; one naming a list that says revoked, or that
+  // cannot be reached, does not; and a CA's own source is asked.
   const privateCa = await kit.mint({ cn: 'a private ca', ca: true,
     pair: await crossKeys.generateKeyPair('rsa-2048') });
-  const privateLeaf = await kit.mint({ cn: 'a partner on it', issuer: privateCa,
-    usages: ['digitalSignature', 'keyEncipherment'], eku: ['serverAuth'] });
-  const privatePeer = peerOf(privateLeaf, peerOf(privateCa));
+  const serverLeaf = { usages: ['digitalSignature', 'keyEncipherment'],
+                       eku: ['serverAuth'] };
+  const privateLeaf = await kit.mint(Object.assign({ cn: 'a partner on it',
+                                                     issuer: privateCa },
+                                                   serverLeaf));
   await signers.add(REALM, privateCa.pem, {});
+  const lists = await kit.crlServer();
+  await withSettings({ 'pki.revocationCheck': 'hard-fail' }, async () => {
+    const silent = await trust.assessPeer('tls-server-outbound',
+      peerOf(privateLeaf, peerOf(privateCa)), { realmId: REALM });
+    t.check(silent.ok, 'no source named anywhere: no check, and it passes',
+            String(silent.why));
+    const noIssuer = await trust.assessPeer('tls-server-outbound',
+      peerOf(privateLeaf), { realmId: REALM });
+    t.check(noIssuer.ok, 'and with its issuer not presented either',
+            String(noIssuer.why));
+    const revokedOne = await kit.mint(Object.assign({ cn: 'names and revoked',
+      issuer: privateCa, crls: [lists.base + '/nr.crl'] }, serverLeaf));
+    lists.routes['/nr.crl'] = await kit.crlOf(privateCa,
+                                              [revokedOne.serialHex]);
+    const namedRevoked = await trust.assessPeer('tls-server-outbound',
+      peerOf(revokedOne, peerOf(privateCa)), { realmId: REALM });
+    t.check(!namedRevoked.ok && namedRevoked.code === 'STS-PKI-0118',
+            'a source named that says revoked is refused',
+            namedRevoked.code + ' ' + namedRevoked.why);
+    const deadOne = await kit.mint(Object.assign({ cn: 'names a dead list',
+      issuer: privateCa, crls: ['http://127.0.0.1:1/dead.crl'] }, serverLeaf));
+    const namedDead = await trust.assessPeer('tls-server-outbound',
+      peerOf(deadOne, peerOf(privateCa)), { realmId: REALM });
+    t.check(!namedDead.ok && namedDead.checks.revocation === 'failed',
+            'a source named that cannot be reached is refused under hard-fail',
+            String(namedDead.why));
+    // A CA naming a source is asked, and the leaf naming none gets no lookup.
+    const middle = await kit.mint({ cn: 'a ca naming a list', ca: true,
+      issuer: privateCa, crls: [lists.base + '/mid.crl'],
+      pair: await crossKeys.generateKeyPair('rsa-2048') });
+    const under = await kit.mint(Object.assign({ cn: 'names nothing itself',
+                                                 issuer: middle }, serverLeaf));
+    lists.routes['/mid.crl'] = await kit.crlOf(privateCa, []);
+    const fine = await trust.assessPeer('tls-server-outbound',
+      peerOf(under, peerOf(middle, peerOf(privateCa))), { realmId: REALM });
+    t.check(fine.ok,
+            'a leaf naming nothing under a CA whose list clears it passes',
+            String(fine.why));
+    const middleRevoked = await kit.mint({ cn: 'a ca that is revoked', ca: true,
+      issuer: privateCa, crls: [lists.base + '/mid3.crl'],
+      pair: await crossKeys.generateKeyPair('rsa-2048') });
+    lists.routes['/mid3.crl'] = await kit.crlOf(privateCa,
+                                                [middleRevoked.serialHex]);
+    const underRevoked = await kit.mint(Object.assign({ cn: 'under it',
+      issuer: middleRevoked }, serverLeaf));
+    const caRevoked = await trust.assessPeer('tls-server-outbound',
+      peerOf(underRevoked, peerOf(middleRevoked, peerOf(privateCa))),
+      { realmId: REALM });
+    t.check(!caRevoked.ok && caRevoked.code === 'STS-PKI-0118',
+            'and is refused when that CA is revoked',
+            caRevoked.code + ' ' + caRevoked.why);
+  });
   await withSettings({ 'pki.revocationCheck': 'hard-fail',
                        'pki.revocationRequireDistributionPoint': 'on' },
     async () => {
-      const silent = await trust.assessPeer('tls-server-outbound', privatePeer,
-                                            { realmId: REALM });
-      t.check(!silent.ok && silent.code === 'STS-PKI-0190',
-              'a private CA naming no list is refused under hard-fail',
-              silent.code + ' ' + silent.why);
-      const partner = await signers.add(REALM, privateLeaf.pem,
-                                        { kind: 'accepted' });
-      t.equal(partner.added.length, 1, 'its leaf can be accepted by name');
-      const passes = await trust.assessPeer('tls-server-outbound', privatePeer,
-                                            { realmId: REALM });
-      t.check(passes.ok, 'and then it passes', passes.why);
-      signers.remove(REALM, partner.added[0].fingerprint256);
-      const listRoot = await kit.mint({ cn: 'a ca with a list', ca: true,
-        pair: await crossKeys.generateKeyPair('rsa-2048') });
-      await signers.add(REALM, listRoot.pem, {});
-      const lists = await kit.crlServer();
-      const listedRevoked = await kit.mint({ cn: 'named and revoked',
-        issuer: listRoot, usages: ['digitalSignature', 'keyEncipherment'],
-        eku: ['serverAuth'], crls: [lists.base + '/nr.crl'] });
-      lists.routes['/nr.crl'] = await kit.crlOf(listRoot,
-                                                [listedRevoked.serialHex]);
-      await signers.add(REALM, listedRevoked.pem, { kind: 'accepted' });
-      const stillRevoked = await trust.assessPeer('tls-server-outbound',
-        peerOf(listedRevoked, peerOf(listRoot)), { realmId: REALM });
-      t.check(!stillRevoked.ok && stillRevoked.code === 'STS-PKI-0118',
-              'and naming a certificate does not excuse a revocation',
-              stillRevoked.code + ' ' + stillRevoked.why);
-      await lists.close();
+      t.check(!(await trust.assessPeer('tls-server-outbound',
+        peerOf(privateLeaf, peerOf(privateCa)), { realmId: REALM })).ok,
+        'an operator who set the requirement `on` still gets it', '');
     });
+  // Development mode never asks for a distribution point, so the requirement
+  // being lifted is visible only in product: `auto` asks for one there unless
+  // paranoid is in force, which has a sharper rule of its own.
+  const requires = async function (pairs) {
+    return await withSettings(
+      Object.assign({ 'global.mode': 'product' }, pairs),
+      async () => require('../common/revocation_status')
+        .policy().requireDistributionPoint);
+  };
+  t.equal(await requires({ 'pki.paranoid': 'on' }), false,
+          'in product, paranoid in force lifts `auto`\'s requirement');
+  t.equal(await requires({ 'pki.paranoid': 'off' }), true,
+          'in product without it, `auto` still asks for a source');
+  await lists.close();
   const acceptedRoot = await signers.add(REALM,
     (await kit.mint({ cn: 'a ca offered by name', ca: true })).pem,
     { kind: 'accepted' });

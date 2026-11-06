@@ -63,7 +63,7 @@ export interface Purpose {
   leaf: LeafRule;
   selfSigned: 'refuse' | 'allow-by-spec';
   validity: 'now' | 'not-before-by-spec';
-  revocation: 'required' | 'where-named' | 'exempt-by-spec';
+  revocation: 'required' | 'exempt-by-spec';
   exemptions: Array<{ check: CheckId; spec: string }>;
   variants?: Record<string, PurposeVariant>;
   baseline: 'none' | 'peer-chain' | 'signer-chain' | 'caller-path' |

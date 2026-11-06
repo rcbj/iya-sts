@@ -1636,7 +1636,7 @@ parameters. Each realm publishes an RSA and an EC key with `use: enc` for
 encrypting to it, and the symmetric algorithms are keyed from the client
 secret. A request object's `jti` is accepted once.
 
-Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the server hosting a `request_uri` is held to the same checks as any other server this service dials. A client hosting one on a self-signed certificate, or on a private CA that names no revocation list, is refused, so its sign-in fails until that certificate is [accepted by name](signer-truststore.md#accepting-one-certificate-by-name). The same applies to a client's `jwks_uri` and `sector_identifier_uri`.
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the server hosting a `request_uri` is held to the same checks as any other server this service dials. A client hosting one on a self-signed certificate is refused until that certificate is [accepted by name](signer-truststore.md#accepting-one-certificate-by-name). A private CA named in `federation.outboundCaFile` is reached as before. The same applies to a client's `jwks_uri` and `sector_identifier_uri`.
 
 The query's `client_id` must be present and identical to the object's;
 anything else in the query is ignored, and the redirect URI, PKCE and RFC 9700
@@ -2341,7 +2341,7 @@ on [What is not checked](what-is-not-checked.md).
 | Signing keys | new on every start | persisted, sealed, and rotated with an overlap |
 | `/logout?username=` | honoured (`logout.anyUser`) | ignored |
 
-Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the certificate behind attestation-based client authentication must also permit digitalSignature, and is asked about revocation where its chain names a list. A root in this realm's [signer truststore](signer-truststore.md) can stand in for `oauth2.clientAttestationTrustAnchors`. `pki.paranoidClientAttestation` turns this row off.
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the certificate behind attestation-based client authentication must also permit digitalSignature, and is asked about revocation where its chain names a source. A root in this realm's [signer truststore](signer-truststore.md) can stand in for `oauth2.clientAttestationTrustAnchors`. `pki.paranoidClientAttestation` turns this row off.
 
 ## Configuration
 

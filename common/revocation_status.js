@@ -347,6 +347,19 @@ const MAX_DEPTH = 8;
 // THE POLICY IN FORCE, read per call and never cached — it is runtime and per
 // realm, exactly like every other setting here.
 // ---------------------------------------------------------------------------
+// Lazily: the door requires this module.
+function paranoidInForce() {
+  log.debug('Entering paranoidInForce().');
+  let inForce = false;
+  try {
+    inForce = !!require('./certificate_trust').inForce().inForce;
+  } catch (e) {
+    log.debug('Caught in paranoidInForce(): ' + ((e && e.message) || e));
+  }
+  log.debug('Leaving paranoidInForce(). ' + inForce);
+  return inForce;
+}
+
 /**
  * Reads the revocation policy in force, per call and never cached.
  *
@@ -371,8 +384,13 @@ function policy() {
   if (['auto', 'on', 'off'].indexOf(requireConfigured) < 0) {
     requireConfigured = 'auto';
   }
+  // UNDER PARANOID PKI MODE, A CERTIFICATE NAMING NO SOURCE HAS NO CHECK TO
+  // PERFORM (rcbj, #1360): "if there is no CRL / OCSP information, then there
+  // is no check to perform". A source named is the promise, and stays enforced.
+  // `on` is an operator asking for more, and still refuses.
   const requireDistributionPoint = requireConfigured === 'on' ||
-    (requireConfigured === 'auto' && mode.refusesUnrevocableCertificates());
+    (requireConfigured === 'auto' && mode.refusesUnrevocableCertificates() &&
+     !paranoidInForce());
   log.debug('Leaving policy(). ' + effective);
   return {
     configured: configured,
@@ -4419,8 +4437,58 @@ function noRevAvailOf(cert) {
   return { conflicts: conflicts };
 }
 
+/**
+ * Whether a certificate names anywhere its revocation could be asked: a CRL
+ * distribution point or an OCSP responder, of any scheme.
+ *
+ * @param cert - the certificate, as `x509Of()` reads it
+ * @returns whether it names a source
+ */
+function namesSource(cert) {
+  log.debug('Entering namesSource().');
+  const read = x509Of(cert);
+  if (!read) {
+    log.debug('Leaving namesSource(). Unreadable.');
+    return true;
+  }
+  const points = distributionPointsOf(read);
+  const responders = ocspRespondersOf(read);
+  const named = !!(points.fetchable.length || points.other.length ||
+                   responders.fetchable.length ||
+                   (responders.other || []).length);
+  log.debug('Leaving namesSource(). ' + named);
+  return named;
+}
+
+/**
+ * Whether anything a verdict would have to fetch names a source. A certificate
+ * this service issued answers from its register and an anchor from nothing, so
+ * neither counts.
+ *
+ * @param input - `{ leaf, chain, verified }`, as `verdictFor()` takes it
+ * @returns whether a fetch could say anything about this path
+ */
+function pathNamesSource(input) {
+  log.debug('Entering pathNamesSource().');
+  const path = walk(input);
+  const named = !path.readable || path.links.some(function (link) {
+    return link.source === 'crl' && namesSource(link.cert);
+  });
+  log.debug('Leaving pathNamesSource(). ' + named);
+  return named;
+}
+
 async function resolveForeign(link, verified, opts) {
   log.debug('Entering resolveForeign(). depth=' + link.depth);
+  if (!link.issuerCert && paranoidInForce() && !namesSource(link.cert)) {
+    // Its issuer is missing, and it names nothing anybody could have asked.
+    link.unknownKind = 'no-distribution-point';
+    link.refusable = policy().requireDistributionPoint;
+    link.why = 'it names no CRL distribution point and no OCSP responder, so ' +
+               'there is no check to perform';
+    log.debug('Leaving resolveForeign(). Nothing named.');
+    return;
+  }
   if (!link.issuerCert) {
     link.unknownKind = 'issuer-not-presented';
     link.refusable = true;
@@ -5699,6 +5767,8 @@ module.exports = {
   CODE_REGISTERED: CODE_REGISTERED,
   decide: decide,
   fromSocket: fromSocket,
+  namesSource: namesSource,
+  pathNamesSource: pathNamesSource,
   rememberHold: rememberHold,
   rememberedHold: rememberedHold,
   awaitResumedChain: awaitResumedChain,

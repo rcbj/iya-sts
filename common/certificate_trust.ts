@@ -30,7 +30,9 @@
 // all, because no specification asks it of that use case (an extendedKeyUsage
 // of a JOSE signer), passes rather than being `not-asked`: the rule is about a
 // check the use case needs and could not make. So `pki.revocationCheck=off`
-// under paranoid refuses, and the way out is the row, drawn red on the page.
+// under paranoid refuses a certificate naming a source, and the way out is the
+// row, drawn red on the page. A certificate naming no source has no check to
+// perform (rcbj): see `nothingToAsk()`.
 //
 // **AN EXEMPTION IS WRITTEN INTO THE TABLE, NEVER AT A CALL SITE**, with the
 // specification that makes it. No entry, relationship or JWK may exempt one
@@ -168,10 +170,9 @@ const PURPOSES: Purpose[] = [
                          'this dialer\'s own CA, still held to its window ' +
                          'and fields' }],
     // THE STORE, NOT A SPECIFICATION, AND THE ONE WEAKENING IN THIS TABLE: the
-    // database and the secret store are dialled before anything else can
-    // answer, and their certificates commonly name no list, so a status that
-    // could not be established would stop the service starting. A certificate
-    // revoked is still refused. rcbj may overrule this on #1360.
+    // database is dialled before anything else can answer, so a source it names
+    // being unreachable would stop the service starting. A certificate revoked
+    // is still refused. rcbj kept this on #1360.
     variants: { store: { softRevocation: true } },
     baseline: 'peer-chain', code: 'STS-PKI-0242', phase: 2 },
   { id: 'jose-signer', setting: 'pki.paranoidJoseSigner',
@@ -273,7 +274,7 @@ const PURPOSES: Purpose[] = [
     sites: ['oauth-oidc/client_attestation.ts attesterKeys'],
     anchors: ['caller', 'signer-truststore'],
     leaf: leaf(SIGNS),
-    selfSigned: 'refuse', validity: 'now', revocation: 'where-named',
+    selfSigned: 'refuse', validity: 'now', revocation: 'required',
     exemptions: [], baseline: 'caller-path', code: 'STS-PKI-0249', phase: 5 },
   { id: 'webauthn-attestation', setting: 'pki.paranoidWebauthnAttestation',
     title: 'A WebAuthn attestation chain',
@@ -297,7 +298,7 @@ const PURPOSES: Purpose[] = [
     sites: ['common/device_attestation.ts chainOf'],
     anchors: ['caller', 'signer-truststore'],
     leaf: leaf(SIGNS),
-    selfSigned: 'refuse', validity: 'now', revocation: 'where-named',
+    selfSigned: 'refuse', validity: 'now', revocation: 'required',
     exemptions: [],
     variants: { tpm: { leaf: { eku: { oids: [EKU.tcgAik], required: true } } } },
     baseline: 'caller-path', code: 'STS-PKI-0251', phase: 5 },
@@ -334,7 +335,7 @@ const PURPOSES: Purpose[] = [
             'spiffe/spiffe_attestor_aws_iid.ts', 'spiffe/spiffe_sigstore.ts'],
     anchors: ['caller', 'signer-truststore', 'pinned'],
     leaf: leaf(SIGNS),
-    selfSigned: 'refuse', validity: 'now', revocation: 'where-named',
+    selfSigned: 'refuse', validity: 'now', revocation: 'required',
     exemptions: [{ check: 'validity',
                    spec: 'The Sigstore client specification evaluates a ' +
                          'certificate at its notBefore' }],
@@ -371,8 +372,9 @@ const PURPOSES: Purpose[] = [
                    spec: 'RFC 8894 section 2.3: the PKCSReq signer is ' +
                          'self-signed by definition' }],
     variants: {
-      scep: { selfSigned: 'allow-by-spec',
-              leaf: { eku: { oids: [EKU.clientAuth], required: false } } }
+      // A renewal is signed by the certificate being renewed, whatever it was
+      // issued for: a TLS server's or a code signer's EKU is no refusal here.
+      scep: { selfSigned: 'allow-by-spec', leaf: { eku: null } }
     },
     baseline: 'realm-leaf', code: 'STS-PKI-0255', phase: 5 },
   { id: 'vc-key-attestation', setting: 'pki.paranoidVcKeyAttestation',
@@ -383,7 +385,7 @@ const PURPOSES: Purpose[] = [
     sites: ['oid4vc/vc_issuer.ts verifyKeyAttestation'],
     anchors: ['caller', 'signer-truststore'],
     leaf: leaf(SIGNS),
-    selfSigned: 'refuse', validity: 'now', revocation: 'where-named',
+    selfSigned: 'refuse', validity: 'now', revocation: 'required',
     exemptions: [], baseline: 'direct', code: 'STS-PKI-0256', phase: 5 },
   { id: 'vc-issuer', setting: 'pki.paranoidVcIssuer',
     title: 'A credential issuer\'s or status-list signer\'s certificate',
@@ -1281,17 +1283,10 @@ class CertificateTrust {
       helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
       return;
     }
-    // A HARDWARE VENDOR'S CHAIN USUALLY NAMES NOTHING, and hard-fail would
-    // refuse every real one. Where a chain does name a list, it is asked.
-    if (rule.revocation === 'where-named' &&
-        !chain.some(CertificateTrust.namesRevocation)) {
-      verdict.checks.revocation = 'passed';
-      helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
-      return;
-    }
     const answer = await revocationStatus.verdictFor(
       { leaf: certs.leaf, chain: chain.slice(1), verified: true }, {});
     CertificateTrust.readRevocation(verdict, answer, codes, whys);
+    CertificateTrust.nothingToAsk(verdict, [certs.leaf].concat(chain.slice(1)));
     helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
   }
 
@@ -1395,10 +1390,7 @@ class CertificateTrust {
             revocationStatus.localVerdictFor(
               { leaf: certs.leaf, chain: chain, verified: true }),
             codes, whys);
-          if (answer.checks.revocation === 'not-asked' &&
-              !CertificateTrust.namesRevocation(certs.leaf)) {
-            answer.checks.revocation = 'passed';
-          }
+          CertificateTrust.nothingToAsk(answer, [certs.leaf].concat(chain));
         }
       }
       return CertificateTrust.compose(purpose, answer, codes, whys, realmId,
@@ -1559,6 +1551,20 @@ class CertificateTrust {
     return CertificateTrust.cutAtAnchor(chain, held);
   }
 
+  // NO SOURCE NAMED, NO CHECK TO PERFORM (rcbj, #1360). The walk has already
+  // been asked, so a certificate this service issued met its own register
+  // whatever it names. This covers the one case the walk leaves `not-asked`:
+  // a door that
+  // cannot wait, or `pki.revocationCheck=off`, about a chain naming nothing.
+  private static nothingToAsk(verdict: TrustVerdict, chain: Buffer[]): void {
+    helpers.log.debug("Entering CertificateTrust.nothingToAsk().");
+    if (verdict.checks.revocation === 'not-asked' &&
+        !chain.some(revocationStatus.namesSource)) {
+      verdict.checks.revocation = 'passed';
+    }
+    helpers.log.debug("Leaving CertificateTrust.nothingToAsk().");
+  }
+
   // A SERVER'S CERTIFICATE ACCEPTED CASE BY CASE (rcbj, #1360), which is not a
   // softer rule: it is this one certificate, byte for byte, and it is still
   // held to its window and its fields. Either the operator accepted it in the
@@ -1649,22 +1655,14 @@ class CertificateTrust {
             chain: CertificateTrust.endingAtAnchor(certs.chain, realmId),
             verified: true },
           { stapled: opts.staple || undefined });
-        // SOMEBODY NAMED THIS CERTIFICATE, so a chain that names no list has
-        // nothing left to ask, which is what a private CA's often does. A list
-        // it does name is asked, and a revocation there is believed.
-        const namesNone = CertificateTrust.acceptedByName(id, certs.leaf,
-          { realmId: realmId, pinnedTo: opts.pinnedTo }) &&
-          ![certs.leaf].concat(certs.chain)
-            .some(CertificateTrust.namesRevocation);
-        if (namesNone) {
-          verdict.checks.revocation = 'passed';
-          verdict.revocation = fetched;
-        } else if (rule.softRevocation && fetched.refused &&
+        if (rule.softRevocation && fetched.refused &&
             fetched.status !== 'revoked') {
           verdict.checks.revocation = 'passed';
           verdict.revocation = fetched;
         } else {
           CertificateTrust.readRevocation(verdict, fetched, codes, whys);
+          CertificateTrust.nothingToAsk(verdict,
+                                        [certs.leaf].concat(certs.chain));
         }
       }
       return CertificateTrust.compose(purpose, verdict, codes, whys, realmId,
@@ -2036,14 +2034,6 @@ class CertificateTrust {
 
   // Does it name a list or a responder? One that names neither has nothing a
   // fetch could ask, so a door that cannot wait is not refusing to wait.
-  private static namesRevocation(der: Buffer): boolean {
-    helpers.log.debug("Entering CertificateTrust.namesRevocation().");
-    const parsed = stsCrypto.parseCertificate(der);
-    helpers.log.debug("Leaving CertificateTrust.namesRevocation().");
-    return !!(revocationStatus.distributionPointsOf(parsed).fetchable.length ||
-              revocationStatus.ocspRespondersOf(parsed).fetchable.length);
-  }
-
   // What was last fetched about a pin, or the fetch begun.
   private static pinRevocation(verdict: TrustVerdict, der: Buffer, facts: Json,
                                issuers: Buffer[], codes: Json,
@@ -2056,7 +2046,9 @@ class CertificateTrust {
       helpers.log.debug("Leaving CertificateTrust.pinRevocation().");
       return;
     }
-    if (!CertificateTrust.namesRevocation(der)) {
+    // Nothing on the path names a source, so there is no check to perform
+    // (rcbj, #1360). A CA above the pin may name one, and is asked.
+    if (!revocationStatus.pathNamesSource(input)) {
       verdict.checks.revocation = 'passed';
       verdict.revocation = local;
       helpers.log.debug("Leaving CertificateTrust.pinRevocation().");
