@@ -272,12 +272,19 @@ class CertificatePins {
   /**
    * The cloud providers' certificates this service ships, once per certificate:
    * they are pinned by the image, so the realm never wrote them down, and an
-   * expired one is still something its operator needs to hear.
+   * expired one is still something its operator needs to hear. The image is
+   * the same for every realm, so only the default realm lists them, and a
+   * realm's audit does not repeat eighty-odd assessments.
    *
+   * @param realmId - the realm the audit is asking about
    * @returns the rows
    */
-  static fromCloudAnchors(): PinnedSource[] {
+  static fromCloudAnchors(realmId: string): PinnedSource[] {
     helpers.log.debug("Entering CertificatePins.fromCloudAnchors().");
+    if (realmId !== 'default') {
+      helpers.log.debug("Leaving CertificatePins.fromCloudAnchors(). Not here.");
+      return [];
+    }
     const table = require('./pki_cloud_anchors.json');
     const seen = new Set<string>();
     const rows: PinnedSource[] = [];

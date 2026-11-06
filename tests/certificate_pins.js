@@ -60,7 +60,8 @@ function childMain() {
   const out = {
     settings: pins.fromSettings(), applications: pins.fromApplications(),
     federation: pins.fromFederation(), gnap: pins.fromGnapClients(),
-    cloud: pins.fromCloudAnchors(),
+    cloud: pins.fromCloudAnchors('default'),
+    cloudElsewhere: pins.fromCloudAnchors('another'),
     table: require(root + '/common/pki_cloud_anchors.json').azureRoots.length
   };
   process.stdout.write('\nRESULT' + JSON.stringify(out));
@@ -126,6 +127,8 @@ async function run(t) {
   t.check(out.gnap.length === 2 && !!out.gnap[0].pem &&
           out.gnap[1].thumbprint === 'def',
           'a GNAP client lists its certificate, or the thumbprint it gave', '');
+  t.equal(out.cloudElsewhere.length, 0,
+          'and only by the default realm: the image is the same for all');
   const distinct = new Set(out.cloud.map(function (row) {
     return row.pem;
   }));
