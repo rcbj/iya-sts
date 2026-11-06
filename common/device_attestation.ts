@@ -250,7 +250,8 @@ class DeviceAttestation {
                         variant?: string): Promise<Json> {
     const { log, pki } = this.deps;
     log.debug("Entering DeviceAttestation.chainOf().");
-    if (!anchors.anchors.length) {
+    if (!CertificateTrust.anchorsAvailable('device-attestation',
+                                           anchors.anchors)) {
       log.debug("Leaving DeviceAttestation.chainOf(). No anchor.");
       return { ok: false, why: 'no trust anchor is configured for it' };
     }

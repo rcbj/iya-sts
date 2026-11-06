@@ -359,7 +359,7 @@ class VcMdoc {
     }
     const anchors = pki.certificateBundle(String(anchorsPem || ''))
       .certificates;
-    if (!anchors.length) {
+    if (!this.deps.certificateTrust().anchorsAvailable('vc-issuer', anchors)) {
       log.debug("Leaving VcMdoc.chainToAnchors(). No anchors.");
       return { ok: false, reason: 'oid4vp.mdocTrustAnchors names no ' +
                'certificate, so no mdoc issuer is trusted' };

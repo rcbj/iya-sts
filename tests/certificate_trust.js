@@ -45,6 +45,8 @@
 //   * a certificate naming no list still `not-asked`         — 1 red (N)
 //   * a CRL's signer not held                                — 1 red (N)
 //   * the path's own word for a refusal lost                 — 2 red (N)
+//   * client attestation's row back to `required`            — 1 red (N)
+//   * `anchorsAvailable()` ignoring the signer truststore    — 1 red (N)
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -665,6 +667,14 @@ async function run(t, double, crls) {
           nViaStore.reason);
   t.check(!(await nPath('pkinit', nStoreLeaf, [])).ok,
           'N. and one that does not, does not', '');
+  t.check(trust.anchorsAvailable('webauthn-attestation', []) &&
+          !trust.anchorsAvailable('pkinit', []),
+          'N. so with no configured anchors the store is still something to ' +
+          'reach, for the use case that may', '');
+  await withSettings({ 'pki.paranoid': 'off' }, async () => {
+    t.check(!trust.anchorsAvailable('webauthn-attestation', []),
+            'N. and out of force it is not', '');
+  });
   const listedLeaf = await kit.mint({ cn: 'n listed', issuer: nRoot,
                                       crls: [crls.base + '/n.crl'] });
   crls.routes['/n.crl'] = await kit.crlOf(nRoot, [listedLeaf.serialHex]);
@@ -677,7 +687,10 @@ async function run(t, double, crls) {
     const noneNamed = await nPath('device-attestation', nLeaf, [nMiddle]);
     t.check(noneNamed.ok, 'N. under hard-fail, a hardware chain naming ' +
             'nothing is not refused for it', noneNamed.reason);
-    t.check(!(await nPath('client-attestation', nLeaf, [nMiddle])).ok,
+    t.check((await nPath('client-attestation', nLeaf, [nMiddle])).ok &&
+            (await nPath('vc-key-attestation', nLeaf, [nMiddle])).ok,
+            'N. nor an attester\'s or a wallet provider\'s', '');
+    t.check(!(await nPath('vc-issuer', nLeaf, [nMiddle])).ok,
             'N. where a use case does not say so, it is', '');
   });
   const asksItself = await nPath('device-attestation', listedLeaf, [],

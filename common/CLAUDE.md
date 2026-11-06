@@ -8993,8 +8993,11 @@ answer what `verifyPathToAnchors()`, `verifyIssuedDirectly()` and `verifyLeaf()`
 answer, so each site's error wording and code stand, and out of force each IS
 that call. `fields()` is for a certificate something else already decided to
 trust: a delegated responder, a CRL signer, AWS's pin, a federated authority.
-**`revocation: 'where-named'`** is the device and SPIFFE attestors' row: hardware
-vendors' chains name nothing, and hard-fail would refuse every real one.
+**`revocation: 'where-named'`** is the device and SPIFFE attestors' row, and client
+and OpenID4VCI key attestation's by rcbj's decision: hardware vendors' and wallet
+providers' chains usually name nothing, and hard-fail would refuse every real one.
+mdoc stays strict. **`anchorsAvailable()`** lets a site with no configured anchors
+reach the signer truststore where its row may, also rcbj's decision.
 **`siteAsksRevocation`** is for WebAuthn, PKINIT and FIDO MDS, which ask next with
 their own codes, and in MDS's case an override that a positive revocation must
 still beat: a refusal from the door would have let that override load a revoked

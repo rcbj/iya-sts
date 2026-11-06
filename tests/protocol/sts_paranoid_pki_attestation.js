@@ -11,7 +11,8 @@
 // `local: true`. In a realm of its own, with the master forced on, a federated
 // SPIFFE bundle's authority is held to its fields when it is accepted: a leaf
 // and an expired CA are refused at `/admin-api/spiffe/federation-set`, a good
-// CA is taken, and with the row off the expired one is taken too.
+// CA is taken, and with the row off the expired one is taken too. A FIDO MDS
+// BLOB whose signer may not sign is refused, and loaded with its row off.
 //
 // The rest of Phase 5 needs a wallet, an agent or an authenticator, and each is
 // driven beside its own coverage: `sts_webauthn_attestation.js` section 1b over
@@ -22,6 +23,7 @@
 
 const assert = require("assert");
 const https = require("https");
+const nodeCrypto = require("crypto");
 const { Command, Option } = require("commander");
 const kit = require("../tools/trust_kit.js");
 
@@ -157,6 +159,73 @@ async function aFederatedAuthority() {
   log.debug("Leaving aFederatedAuthority().");
 }
 
+// A BLOB: an RS256 JWS over a small payload, with the chain in x5c.
+function blobOf(signer, root) {
+  log.debug("Entering blobOf().");
+  const der = function (pem) {
+    log.debug("Entering der().");
+    log.debug("Leaving der().");
+    return pem.replace(/-----[^-]+-----|\s+/g, "");
+  };
+  const b64u = function (o) {
+    log.debug("Entering b64u().");
+    log.debug("Leaving b64u().");
+    return Buffer.from(JSON.stringify(o)).toString("base64url");
+  };
+  const head = b64u({ alg: "RS256", typ: "JWT",
+                      x5c: [der(signer.pem), der(root.pem)] });
+  const body = b64u({ legalHeader: "A synthetic BLOB for a test.", no: 1,
+    nextUpdate: new Date(Date.now() + 30 * kit.DAY).toISOString().slice(0, 10),
+    entries: [{ aaguid: "66666666-7777-4888-9999-aaaaaaaaaaaa",
+                metadataStatement: { description: "Synthetic",
+                                     protocolFamily: "fido2" },
+                statusReports: [{ status: "FIDO_CERTIFIED_L1",
+                                  effectiveDate: "2022-01-01" }] }] });
+  const signature = nodeCrypto.sign("sha256", Buffer.from(head + "." + body),
+                                    signer.key).toString("base64url");
+  log.debug("Leaving blobOf().");
+  return head + "." + body + "." + signature;
+}
+
+async function aFidoSigner() {
+  log.debug("Entering aFidoSigner().");
+  log.info("=== b. the FIDO MDS BLOB's signer ===");
+  const root = await kit.mint({ cn: "fido root " + STAMP, ca: true });
+  const signer = await kit.mint({ cn: "fido signer " + STAMP, issuer: root,
+                                  usages: ["keyEncipherment"] });
+  await send("POST", api() + "/config/set",
+             { key: "risk.mdsTrustAnchors", value: root.pem });
+  await send("POST", api() + "/config/set",
+             { key: "pki.revocationCheck", value: "soft-fail" });
+  // A contract the operator accepts, which this realm's job accepts for itself.
+  const terms = await send("POST", api() + "/risk/accept-terms",
+                           { provider: "fido-mds3" });
+  assert.strictEqual(terms.status, 200, terms.raw.slice(0, 300));
+  const load = function (version) {
+    log.debug("Entering load().");
+    log.debug("Leaving load().");
+    return send("POST", api() + "/risk/import",
+                { dataset: "fido.mds3", format: "fido-mds3-jwt",
+                  content: blobOf(signer, root), version: version });
+  };
+  const refused = await load("paranoid-" + STAMP + "-a");
+  check("in force, a BLOB whose signer's keyUsage forbids signing is refused",
+        function () {
+    assert.ok(/does not permit digitalSignature/.test(refused.raw),
+              refused.status + " " + refused.raw.slice(0, 400));
+    assert.ok(!/STS-/.test(refused.raw), "an error code left the service");
+  });
+  await setRow("pki.paranoidFidoMds", false);
+  const loaded = await load("paranoid-" + STAMP + "-b");
+  check("with the row off the same BLOB is loaded", function () {
+    assert.strictEqual(loaded.status, 200, loaded.raw.slice(0, 400));
+    assert.ok(!/does not verify/.test(loaded.raw), loaded.raw.slice(0, 400));
+  });
+  await send("POST", api() + "/risk/delete",
+             { dataset: "fido.mds3", version: "paranoid-" + STAMP + "-b" });
+  log.debug("Leaving aFidoSigner().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Paranoid PKI at a federated authority, " + base);
@@ -164,7 +233,8 @@ async function test() {
     id: REALM, domain: REALM + ".example.net", name: REALM });
   assert.strictEqual(made.status, 200, made.raw.slice(0, 300));
   await aFederatedAuthority();
-  assert.ok(checks >= 4, "only " + checks + " checks ran; a section has " +
+  await aFidoSigner();
+  assert.ok(checks >= 6, "only " + checks + " checks ran; a section has " +
                                           "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

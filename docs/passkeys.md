@@ -1875,7 +1875,7 @@ registering a passkey). See *Account recovery* under
 See also [Authentication → Development and product mode](authentication.md#development-and-product-mode)
 and [What is not checked](what-is-not-checked.md).
 
-Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the certificate behind a trusted attestation statement must be in date, permit digitalSignature, and carry the TPM AIK extendedKeyUsage for a `tpm` statement. A root in this realm's [signer truststore](signer-truststore.md) can stand beside `webauthn.attestationTrustAnchors`. An expired attestation certificate makes the statement untrusted. `pki.paranoidWebauthnAttestation` turns this row off.
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the certificate behind a trusted attestation statement must be in date, permit digitalSignature, and carry the TPM AIK extendedKeyUsage for a `tpm` statement. A root in this realm's [signer truststore](signer-truststore.md) can stand beside `webauthn.attestationTrustAnchors`, or in place of it. An expired attestation certificate makes the statement untrusted. `pki.paranoidWebauthnAttestation` turns this row off.
 
 ## Settings
 

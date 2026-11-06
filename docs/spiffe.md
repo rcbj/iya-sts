@@ -715,7 +715,7 @@ method table, node attestation, workload attestation where the native module is
 present, and automatic authority rotation. See
 [what is not checked](what-is-not-checked.md).
 
-Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a presented SVID must carry the extendedKeyUsage X509-SVID section 4.3 recommends. A federated authority must be an in-date certificate authority when it is accepted, and a federated SVID is exempt from revocation because its authority publishes nothing this service may dial. A node attestor's certificate is held to its fields, and to revocation where its chain names a list. AWS's pinned certificates are asked only for their validity window, and Sigstore's certificate is read at its notBefore, as that specification says. `pki.paranoidSpiffeSvid` and `pki.paranoidSpiffeAttestation` turn these rows off.
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a presented SVID must carry the extendedKeyUsage X509-SVID section 4.3 recommends. A federated authority must be an in-date certificate authority when it is accepted, and a federated SVID is exempt from revocation because its authority publishes nothing this service may dial. A node attestor's certificate is held to its fields, and to revocation where its chain names a list. AWS's pinned certificates are asked only for their validity window, and an RSA-1024 signature from a region this service has no certificate for is refused, because the fallback certificate expired on 2024-06-05 and AWS publishes per-region certificates only, and Sigstore's certificate is read at its notBefore, as that specification says. `pki.paranoidSpiffeSvid` and `pki.paranoidSpiffeAttestation` turn these rows off.
 
 ## Configuration
 

@@ -1606,7 +1606,8 @@ class WebauthnAttestation {
     const anchors = configured.concat(fromMds);
     const leaf = statement.trustPath[0];
     const rest = statement.trustPath.slice(1);
-    const path = anchors.length
+    const path = CertificateTrust.anchorsAvailable('webauthn-attestation',
+                                                   anchors)
       ? await CertificateTrust.path('webauthn-attestation', leaf, rest, anchors,
         { now: this.deps.now(), siteAsksRevocation: true,
           variant: statement.format === 'tpm' ? 'tpm' : undefined })
