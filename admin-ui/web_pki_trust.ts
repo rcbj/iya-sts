@@ -167,7 +167,9 @@ class PkiTrustPage {
         '<textarea name="certificates" rows="8" ' +
         'placeholder="-----BEGIN CERTIFICATE-----"></textarea>' +
         '<p>' + t.html('consolePkiTrust.addPurposes') + '</p><p>' +
-        purposeBoxes + '</p><div class="formrow"><button type="submit">' +
+        purposeBoxes + '</p><p><label class="sub"><input type="checkbox" ' +
+        'name="kind" value="accepted"> ' + t.html('consolePkiTrust.addAccept') +
+        '</label></p><div class="formrow"><button type="submit">' +
         t.html('consolePkiTrust.addButton') + '</button></div></form>'
       : kit.note(t.html('consolePkiTrust.needsWrite'));
     const pinsNav = kit.pageNavPair(PAGE, kit.pageParamsOf(context.query),

@@ -8946,6 +8946,13 @@ port's is `annotateRequest()`, which was already there; LDAPS pauses the stream
 until `holdConnectionsOn()` has the verdict; the debugger's first middleware waits on
 `settledRequest()`. A worker needs nothing new: the front process demotes
 `socket.authorized`, and that flag is what `request_pool.peerOf()` already forwards.
+**A SERVER'S SELF-SIGNED CERTIFICATE IS ACCEPTED CASE BY CASE (rcbj).** Row kind
+`accepted` in the signer truststore, or the same bytes as the dialer's own `ca`
+(`acceptedByName()`), which is what keeps a new install self-contained: the shipped
+OpenBao and postgres pairs are self-signed leaves, and refusing them stopped the
+service starting in product mode, which no memory-mode probe could show. A public
+root or a truststore anchor in `ca` does not count, since nobody named this server.
+
 **A RESUMED SESSION GETS ITS FULL HANDSHAKE'S VERDICT, ON ANY NODE.** Node hands
 a resumed connection the leaf alone, so the verdict rides beside the chain on the
 replicated `tls.presentedChains` row, written together at the full handshake's

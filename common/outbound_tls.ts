@@ -485,7 +485,7 @@ class OutboundTls {
         return true;
       }
       trust.assessPeer('tls-server-outbound', socket.getPeerCertificate(true),
-        { realmId: realmId, staple: staple,
+        { realmId: realmId, staple: staple, pinnedTo: options.ca,
           variant: options.stsOutboundVariant }).then(function (verdict: any) {
         if (socket.destroyed) {
           return;

@@ -212,6 +212,42 @@ async function test() {
       assert.strictEqual(wrongEku.asked, 0);
     });
 
+    log.info("=== b2. one certificate accepted by name ===");
+    const self = await kit.mint({ cn: "self-signed " + STAMP,
+      usages: profile.usages, san: profile.san, eku: ["serverAuth"] });
+    const appliance = await listener(self, { pem: "" });
+    const unnamed = await load(appliance);
+    check("a self-signed server nobody named is refused, and asked nothing",
+          function () {
+      assert.strictEqual(unnamed.status, 400, unnamed.raw.slice(0, 300));
+      assert.strictEqual(appliance.asked, 0);
+    });
+    const accepted = await send("POST", api() + "/pki/trust/add",
+                                { certificates: self.pem, kind: "accepted" });
+    check("the operator accepts it by name", function () {
+      assert.strictEqual(accepted.status, 200, accepted.raw.slice(0, 300));
+    });
+    const reachedNamed = await load(appliance);
+    check("and that server, and only that one, is reached", function () {
+      assert.strictEqual(reachedNamed.status, 200,
+                         reachedNamed.raw.slice(0, 400));
+      assert.strictEqual(appliance.asked, 1);
+    });
+    const taken = await send("GET", api() + "/pki/trust");
+    const row = ((taken.json.truststore || {}).entries || [])
+      .filter(function (one) {
+        return one.kind === "accepted";
+      })[0];
+    const removed = await send("POST", api() + "/pki/trust/remove",
+                               { fingerprint: row.fingerprint256 });
+    assert.strictEqual(removed.status, 200, removed.raw.slice(0, 300));
+    const again = await load(appliance);
+    check("removing the row takes it back", function () {
+      assert.strictEqual(again.status, 400, again.raw.slice(0, 300));
+      assert.strictEqual(appliance.asked, 1);
+    });
+    appliance.server.close();
+
     log.info("=== c. the row, and the master ===");
     await setRow("pki.paranoidOutboundTls", false);
     const offNoStore = await load(revoked);
@@ -232,7 +268,7 @@ async function test() {
     });
     crls.close();
   }
-  assert.ok(checks >= 6, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 10, "only " + checks + " checks ran; a section has " +
                                           "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
