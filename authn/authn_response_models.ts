@@ -20,7 +20,7 @@
 //     `logout/logout.ts`'s or `oid4vc/vc_signin.ts`'s;
 //   * an act's answer is one of the shapes `authn.ts` lists under *What the
 //     sign-in screen's acts answer*, and a refusal of one carries the same
-//     members at whichever status it was refused with, so `act()` below names
+//     members at whichever status it was refused with, so `Models.act()` names
 //     one model for every status an act can refuse at. `refuse()` in
 //     `authn_api.ts` adds `error` and `error_description` to `ok` and `errors`,
 //     and a refusal may come from there as well as from the module that owns
@@ -33,8 +33,8 @@
 // **A GEOFENCE REFUSES IN PLAIN TEXT** (`CellPlacement.servePermitted()`): a
 // person homed in another cell who may not be served from here gets a 403 as
 // `text/plain` from the first-factor acts, so those declare both media types
-// (`withGeofence()`). The validator refuses a media type a status does not
-// declare, and this is the one non-JSON answer this API has.
+// (`Models.withGeofence()`). The validator refuses a media type a status does
+// not declare, and this is the one non-JSON answer this API has.
 //
 // **WHAT IS NOT MODELLED AS A CLOSED OBJECT, AND WHY** — two places, each with
 // its reason in `x-free-form`: the inner paths of this API's own OpenAPI
@@ -53,24 +53,68 @@ type Json = any;
 
 const STRINGS: Json = Kit.listOf(Kit.str());
 
-// SEVERAL DOCUMENTS IN ONE PLACE (a step's page is `mfaView()`'s or the emailed
-// factor's, a sign-out's view an inventory, a result or a refusal) ARE ONE
-// CLOSED OBJECT HOLDING EVERY ONE'S MEMBERS, not an `anyOf`: what is being
-// guarded is a member nobody declared, and an `anyOf`'s failure names every
-// arm's complaint about every member, where this names the member. An
-// enumerated member takes each document's values.
-function unionOf(...models: Json[]): Json {
-  const members: Json = {};
-  models.forEach(function (model: Json): void {
-    Object.keys(model.properties).forEach(function (name: string): void {
-      const had = members[name];
-      const next = model.properties[name];
-      members[name] = had && had.enum && next.enum
-        ? Object.assign({}, had, { enum: had.enum.concat(next.enum) })
-        : had || next;
+// How a model is listed: helpers, on the code style's rule, each run only while
+// this table is built (see the header for why none logs).
+class Models {
+  // SEVERAL DOCUMENTS IN ONE PLACE (a step's page is `mfaView()`'s or the
+  // emailed factor's, a sign-out's view an inventory, a result or a refusal)
+  // ARE ONE CLOSED OBJECT HOLDING EVERY ONE'S MEMBERS, not an `anyOf`: what is being
+  // guarded is a member nobody declared, and an `anyOf`'s failure names every
+  // arm's complaint about every member, where this names the member. An
+  // enumerated member takes each document's values.
+  static unionOf(...models: Json[]): Json {
+    const members: Json = {};
+    models.forEach(function (model: Json): void {
+      Object.keys(model.properties).forEach(function (name: string): void {
+        const had = members[name];
+        const next = model.properties[name];
+        members[name] = had && had.enum && next.enum
+          ? Object.assign({}, had, { enum: had.enum.concat(next.enum) })
+          : had || next;
+      });
     });
-  });
-  return Kit.closed(members);
+    return Kit.closed(members);
+  }
+
+  // A view: its answer, and a refusal of the request. `extra` for a view that
+  // has refusals of its own.
+  static view(answer: Json, extra?: Json): Json {
+    return Object.assign({ 200: answer, 400: ERROR }, extra || {});
+  }
+
+  // An act: every status it can refuse at carries the same members as its
+  // success, because the same functions answer them. 415 and the other binding
+  // refusals are `refuse()`'s, which that model holds too.
+  static act(answer: Json, also?: string[]): Json {
+    const out: Json = {};
+    ['200', '400', '403', '415', '429'].concat(also || [])
+      .forEach(function (status: string): void {
+        out[status] = answer;
+      });
+    return out;
+  }
+
+  // The acts through `screenAct()` and `certificateSignIn()`, which may meet
+  // `servePermitted()`: see the header.
+  static withGeofence(models: Json): Json {
+    return Object.assign({}, models, {
+      403: Object.assign(Kit.media('text/plain'), { schema: models['403'] })
+    });
+  }
+
+  static envelope(viewModel: Json, extra?: Json): Json {
+    return Kit.closed(Object.assign({}, VIEW_ENVELOPE, { view: viewModel },
+                                    extra || {}));
+  }
+
+  static walletView(answer: Json): Json {
+    const out: Json = {};
+    ['200', '400', '401', '403', '404', '409', '410', '500', '503']
+      .forEach(function (status: string): void {
+        out[status] = answer;
+      });
+    return out;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -212,7 +256,7 @@ const CEREMONY_MEMBERS: Json = {
   }),
   allow: STRINGS,
   exclude: STRINGS,
-  options: unionOf(CREATION_OPTIONS, REQUEST_OPTIONS),
+  options: Models.unionOf(CREATION_OPTIONS, REQUEST_OPTIONS),
   fallback: CEREMONY_FALLBACK
 };
 
@@ -580,7 +624,8 @@ const LOGOUT_ACT: Json = Kit.closed(Object.assign({}, REFUSAL_MEMBERS, {
     action: Kit.str(),
     fields: Kit.closed({ result: Kit.str() })
   }),
-  view: unionOf(LOGOUT_RESULT_VIEW, LOGOUT_REFUSED_VIEW, LOGOUT_ACCOUNTS_VIEW)
+  view: Models.unionOf(LOGOUT_RESULT_VIEW, LOGOUT_REFUSED_VIEW,
+                       LOGOUT_ACCOUNTS_VIEW)
 }));
 
 // ---------------------------------------------------------------------------
@@ -686,44 +731,21 @@ const CONSENT_VIEW: Json = Kit.closed({
 });
 
 // ---------------------------------------------------------------------------
-// HOW AN OPERATION'S MODELS ARE LISTED.
+// THE ACTS, BY WHAT THEY ANSWER.
 // ---------------------------------------------------------------------------
 
-// A view: its answer, and a refusal of the request. `extra` for a view that
-// has refusals of its own.
-function view(answer: Json, extra?: Json): Json {
-  return Object.assign({ 200: answer, 400: ERROR }, extra || {});
-}
 
-// An act: every status it can refuse at carries the same members as its
-// success, because the same functions answer them. 415 and the other binding
-// refusals are `refuse()`'s, which that model holds too.
-function act(answer: Json, also?: string[]): Json {
-  const out: Json = {};
-  ['200', '400', '403', '415', '429'].concat(also || [])
-    .forEach(function (status: string): void {
-      out[status] = answer;
-    });
-  return out;
-}
 
-// The acts through `screenAct()` and `certificateSignIn()`, which may meet
-// `servePermitted()`: see the header.
-function withGeofence(models: Json): Json {
-  return Object.assign({}, models, {
-    403: Object.assign(Kit.media('text/plain'), { schema: models['403'] })
-  });
-}
 
-const NEXT_ACT: Json = act(NEXT);
-const SCREEN_ACT: Json = withGeofence(NEXT_ACT);
+const NEXT_ACT: Json = Models.act(NEXT);
+const SCREEN_ACT: Json = Models.withGeofence(NEXT_ACT);
 // `accountsRefused()`, and the 503 of a set that could not be read.
-const ACCOUNTS_ACT: Json = act(NEXT, ['409', '503']);
+const ACCOUNTS_ACT: Json = Models.act(NEXT, ['409', '503']);
 // `refuse()` at the wallet's door, with `answerDcApi()`'s statuses (400 and
 // 403) and a claim store's 503 among them.
-const WALLET_ACTS: Json = act(WALLET_ACT, ['401', '404', '409', '410', '500',
-                                           '503']);
-const LOGOUT_ACTS: Json = act(LOGOUT_ACT, ['401', '409']);
+const WALLET_ACTS: Json = Models.act(WALLET_ACT, ['401', '404', '409', '410',
+                                                  '500', '503']);
+const LOGOUT_ACTS: Json = Models.act(LOGOUT_ACT, ['401', '409']);
 
 // The members every view's envelope has beside the view.
 const VIEW_ENVELOPE: Json = {
@@ -733,15 +755,11 @@ const VIEW_ENVELOPE: Json = {
   preferredLanguage: PREFERRED_LANGUAGE
 };
 
-function envelope(viewModel: Json, extra?: Json): Json {
-  return Kit.closed(Object.assign({}, VIEW_ENVELOPE, { view: viewModel },
-                                  extra || {}));
-}
 
 // A step's page: `mfaStep()`. A refused emailed-factor page is a whole answer
 // with its `end` view and `errors`, and a refused second-factor page
 // `refuse()`'s, both at 400.
-const STEP_VIEW: Json = envelope(unionOf(MFA_VIEW, EMAIL_VIEW),
+const STEP_VIEW: Json = Models.envelope(Models.unionOf(MFA_VIEW, EMAIL_VIEW),
                                  { errors: STRINGS, error: Kit.str(),
                                    error_description: Kit.str() });
 
@@ -752,28 +770,21 @@ const WALLET_VIEW_REFUSALS: Json = {
 
 // `startView()`, `waitView()` and what `admitted()`, `startable()`, `closed()`
 // refuse them with.
-const WALLET_START: Json = envelope(
-  unionOf(WALLET_START_VIEW, WALLET_REFUSED_VIEW), WALLET_VIEW_REFUSALS);
-const WALLET_WAIT: Json = envelope(
-  unionOf(WALLET_WAIT_VIEW, WALLET_REFUSED_VIEW), WALLET_VIEW_REFUSALS);
+const WALLET_START: Json = Models.envelope(
+  Models.unionOf(WALLET_START_VIEW, WALLET_REFUSED_VIEW), WALLET_VIEW_REFUSALS);
+const WALLET_WAIT: Json = Models.envelope(
+  Models.unionOf(WALLET_WAIT_VIEW, WALLET_REFUSED_VIEW), WALLET_VIEW_REFUSALS);
 
-function walletView(answer: Json): Json {
-  const out: Json = {};
-  ['200', '400', '401', '403', '404', '409', '410', '500', '503']
-    .forEach(function (status: string): void {
-      out[status] = answer;
-    });
-  return out;
-}
 
 // `signOutView()`: the inventory, the account step where the browser holds
 // several, or `subjectRefusal()`.
-const SIGN_OUT_VIEW: Json = envelope(
-  unionOf(LOGOUT_INVENTORY_VIEW, LOGOUT_ACCOUNTS_VIEW, LOGOUT_REFUSED_VIEW),
+const SIGN_OUT_VIEW: Json = Models.envelope(
+  Models.unionOf(LOGOUT_INVENTORY_VIEW, LOGOUT_ACCOUNTS_VIEW,
+                 LOGOUT_REFUSED_VIEW),
   { errors: STRINGS, error: Kit.str(), error_description: Kit.str() });
 
 // `signOutAccountsView()`, or `accountsOff()`.
-const SIGN_OUT_ACCOUNTS: Json = envelope(LOGOUT_ACCOUNTS_VIEW,
+const SIGN_OUT_ACCOUNTS: Json = Models.envelope(LOGOUT_ACCOUNTS_VIEW,
   { errors: STRINGS, error: Kit.str(), error_description: Kit.str() });
 
 const OPERATION_INDEX: Json = Kit.closed({
@@ -808,13 +819,13 @@ const OPENAPI_DOCUMENT: Json = Kit.closed({
 });
 
 const operations: Record<string, Record<string, Json>> = {
-  getIndex: view(OPERATION_INDEX),
-  getOpenApi: view(OPENAPI_DOCUMENT),
+  getIndex: Models.view(OPERATION_INDEX),
+  getOpenApi: Models.view(OPENAPI_DOCUMENT),
 
   // --- the screen -----------------------------------------------------------
-  getScreen: view(envelope(SCREEN_VIEW)),
+  getScreen: Models.view(Models.envelope(SCREEN_VIEW)),
   // `go` where fewer than two partners are left: the screen, instead.
-  getPartners: view(envelope(SELECT_IDP_VIEW, { go: Kit.str() })),
+  getPartners: Models.view(Models.envelope(SELECT_IDP_VIEW, { go: Kit.str() })),
   signInWithPassword: SCREEN_ACT,
   cancelSignIn: SCREEN_ACT,
   continueAnonymously: SCREEN_ACT,
@@ -822,7 +833,7 @@ const operations: Record<string, Record<string, Json>> = {
   signInByEmail: SCREEN_ACT,
   signInWithPasskey: SCREEN_ACT,
   // `AuthnApi.passkeyOptions()`, and `refuse()` before it.
-  passkeyOptions: act(Kit.closed(Object.assign({}, REFUSAL_MEMBERS, {
+  passkeyOptions: Models.act(Kit.closed(Object.assign({}, REFUSAL_MEMBERS, {
     next: Kit.strEnum(['refused']),
     challenge: Kit.str(),
     rpId: Kit.str(),
@@ -830,7 +841,7 @@ const operations: Record<string, Record<string, Json>> = {
   }))),
 
   // --- the forced password change -------------------------------------------
-  getPasswordChange: view(envelope(PASSWORD_CHANGE_VIEW)),
+  getPasswordChange: Models.view(Models.envelope(PASSWORD_CHANGE_VIEW)),
   changePassword: NEXT_ACT,
   startOverFromPasswordChange: NEXT_ACT,
 
@@ -840,7 +851,7 @@ const operations: Record<string, Record<string, Json>> = {
   spendRecoveryCode: NEXT_ACT,
   checkFactorPassword: NEXT_ACT,
   // `mfaWebauthnOptions()`: `facts.ceremony`, or `stepRefused()`.
-  passkeyStepOptions: act(Kit.closed(Object.assign({}, REFUSAL_MEMBERS,
+  passkeyStepOptions: Models.act(Kit.closed(Object.assign({}, REFUSAL_MEMBERS,
     CEREMONY_MEMBERS, { next: Kit.strEnum(['refused']) }))),
   finishPasskeyStep: NEXT_ACT,
   beginAppEnrolment: NEXT_ACT,
@@ -855,9 +866,9 @@ const operations: Record<string, Record<string, Json>> = {
   startOver: NEXT_ACT,
 
   // --- the wallet -----------------------------------------------------------
-  getWalletStart: walletView(WALLET_START),
+  getWalletStart: Models.walletView(WALLET_START),
   startWalletSignIn: WALLET_ACTS,
-  getWalletWait: walletView(WALLET_WAIT),
+  getWalletWait: Models.walletView(WALLET_WAIT),
   walletStatus: WALLET_ACTS,
   answerWalletDcApi: WALLET_ACTS,
 
@@ -869,12 +880,12 @@ const operations: Record<string, Record<string, Json>> = {
   chooseSignOutAccount: LOGOUT_ACTS,
 
   // --- several accounts in one browser --------------------------------------
-  getAccountChoice: view(envelope(ACCOUNTS_VIEW), { 503: ERROR }),
+  getAccountChoice: Models.view(Models.envelope(ACCOUNTS_VIEW), { 503: ERROR }),
   selectAccount: ACCOUNTS_ACT,
   useAnotherAccount: ACCOUNTS_ACT,
   forgetAccount: ACCOUNTS_ACT,
   // `browserAccounts()`, with `anotherAccount` where the setting is on.
-  getAccounts: view(Kit.closed({
+  getAccounts: Models.view(Kit.closed({
     ok: Kit.bool(),
     enabled: Kit.bool(),
     accounts: Kit.listOf(ACCOUNT_ROW),
@@ -884,7 +895,7 @@ const operations: Record<string, Record<string, Json>> = {
   })),
 
   // --- the consent screen ---------------------------------------------------
-  getConsent: view(envelope(CONSENT_VIEW)),
+  getConsent: Models.view(Models.envelope(CONSENT_VIEW)),
   answerConsent: NEXT_ACT
 };
 
