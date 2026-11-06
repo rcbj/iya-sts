@@ -289,7 +289,10 @@ const FEDERATION_RELATIONSHIP_LIST = Kit.closed({
     assertionConsumerService: STR, login: STR, metadata: NSTR, jwks: NSTR,
     initiateLogin: NSTR
   }, FED_SIGN_OUT)),
-  fields: Kit.closed(FED_ATTRIBUTES),
+  // The sensitive attributes read `(set — not returned)` or empty, the one
+  // multi-valued one among them (`fedEncryptionKey`) included.
+  fields: Kit.closed(Object.assign({}, FED_ATTRIBUTES,
+                                   { fedEncryptionKey: STR })),
   editable: Kit.listOf(FED_SCHEMA_ROW),
   unmappedAttributes: Kit.listOf(Kit.closed({ name: STR, refused: STR,
                                               first: STR, last: STR })),
@@ -571,16 +574,15 @@ const DESCRIBED_CERTIFICATE = Kit.closed({
   })
 });
 const APPEARANCE = Kit.closed({ label: STR, where: STR });
-const CERTIFICATE_LIST = Kit.closed({
+// The list, or with `certificate` one of them; `realm` is in both.
+const CERTIFICATES = Kit.closed({
   realm: STR, total: INT, matched: INT, page: INT, pages: INT, perPage: INT,
   firstRow: INT, lastRow: INT,
   certificates: Kit.listOf(Kit.closed({
     fingerprint: STR, subject: STR, issuer: STR, notAfter: STR,
     selfIssued: BOOL, appearances: Kit.listOf(APPEARANCE)
-  }))
-});
-const CERTIFICATE_DETAIL = Kit.closed({
-  ok: BOOL, realm: STR, appearances: Kit.listOf(APPEARANCE), pqc: PQC,
+  })),
+  ok: BOOL, appearances: Kit.listOf(APPEARANCE), pqc: PQC,
   fingerprint: STR, certificate: DESCRIBED_CERTIFICATE,
   chain: Kit.listOf(Kit.closed({
     position: INT, fingerprint: STR, subject: STR, issuer: STR, role: STR,
@@ -590,9 +592,11 @@ const CERTIFICATE_DETAIL = Kit.closed({
   chainStatus: STR, chainReason: NSTR, chainTrusted: BOOL
 });
 
-// `pkiAction()`. Every refusal there carries `why` beside `errors`, and
-// `issue-certificate`'s carries `draft` as well.
-const PKI_REASON_FIELDS = { why: STR, draft: PKI_DRAFT };
+// `pkiAction()`. Every refusal there carries `why` beside `errors`,
+// `issue-certificate`'s carries `draft` as well, and the management API adds
+// `workbench` to any answer holding a `draft`.
+const PKI_REASON_FIELDS = { why: STR, draft: PKI_DRAFT,
+                            workbench: PKI_WORKBENCH };
 const PKI_ACTION = Kit.action(PKI_REASON_FIELDS);
 const PKI_ISSUE_FIELDS = {
   purpose: STR, attributes: STRS, kid: STR, thumbprint: STR, notAfter: STR,
@@ -606,7 +610,7 @@ const PKI_REVOCATION_CHECK = Kit.nullable(Kit.closed({ status: STR,
 
 Object.assign(operations, {
   getPki: { '200': PKI_VIEW, '400': REFUSED },
-  getCertificates: { '200': Kit.oneOf(CERTIFICATE_LIST, CERTIFICATE_DETAIL) },
+  getCertificates: { '200': CERTIFICATES, '400': REFUSED },
   buildPkiChain: { '200': Kit.action(Object.assign({ chain: PKI_CHAIN },
                                                    PKI_REASON_FIELDS)) },
   issuePkiKeyPair: { '200': Kit.action(Object.assign({
@@ -1039,6 +1043,572 @@ Object.assign(operations, {
   }) },
   addScepHostName: { '200': Kit.action({ entryUri: STR, hostNames: STRS }) },
   removeScepHostName: { '200': Kit.action({ entryUri: STR, hostNames: STRS }) }
+});
+
+// ---------------------------------------------------------------------------
+// GNAP. `gnap/gnap_console.ts` over `gnap_grants.ts`, `gnap_tokens.ts` and
+// `gnap_monitor.ts`.
+// ---------------------------------------------------------------------------
+const GNAP_RIGHT = Kit.freeForm(
+  'An RFC 9635 section 8 access right as a resource server registered it: ' +
+  'a string reference, or an object whose members are that API\'s own.');
+// RFC 9635 section 9's discovery document. An authorization server's overrides
+// are written over the defaults, so a member may be whatever an administrator
+// gave it (`authorization_servers.ts`'s `capabilitiesOf()`).
+const GNAP_CAPABILITY = Kit.oneOf(STRS, STR, BOOL, { type: 'null' });
+const GNAP_CAPABILITIES = Kit.closed({
+  grant_request_endpoint: STR,
+  interaction_start_modes_supported: GNAP_CAPABILITY,
+  interaction_finish_methods_supported: GNAP_CAPABILITY,
+  key_proofs_supported: GNAP_CAPABILITY,
+  sub_id_formats_supported: GNAP_CAPABILITY,
+  assertion_formats_supported: GNAP_CAPABILITY,
+  key_rotation_supported: GNAP_CAPABILITY,
+  token_formats_supported: GNAP_CAPABILITY
+});
+const GNAP_GRANT_ROW = Kit.closed({
+  id: STR, state: STR, authorizationServer: NSTR, grantEndpoint: NSTR,
+  client: NSTR, proof: NSTR, resourceOwner: NSTR, decision: NSTR,
+  interaction: Kit.nullable(Kit.closed({
+    modes: STRS, finish: NSTR, started: WHEN, expiresAt: WHEN
+  })),
+  tokens: INT, derivedFrom: NSTR, createdAt: WHEN, updatedAt: WHEN,
+  finalization: Kit.nullable(Kit.closed({ reason: STR, at: WHEN, note: NSTR })),
+  grantExpiresAt: WHEN,
+  history: Kit.listOf(Kit.closed({ at: WHEN, state: STR, note: NSTR }))
+});
+const GNAP_SERVER = Kit.closed({
+  page: STR, title: STR, enabled: BOOL, specifications: STRS,
+  endpoints: Kit.closed({
+    grant: STR, discovery: STR, rsDiscovery: STR, continuation: STR,
+    tokenManagement: STR, introspection: STR, resourceRegistration: STR,
+    userCode: STR, keys: STR, zcapController: STR, accessTokenStatusList: STR,
+    biscuitRevocations: STR
+  }),
+  capabilities: GNAP_CAPABILITIES,
+  authorizationServers: Kit.listOf(Kit.closed({
+    id: STR, label: STR, capabilities: GNAP_CAPABILITIES
+  })),
+  authorizationServersPaging: PAGING, tokenFormats: STRS,
+  verificationMaterial: Kit.closed({
+    jwt: Kit.closed({ jwks_uri: STR, alg: STR, kid: STR, typ: STR,
+                      status_list_aggregation_endpoint: STR }),
+    biscuit: Kit.closed({ algorithm: STR, root_public_key: STR,
+                          revocation_endpoint: STR, jwk: JWK,
+                          root_public_keys: STRS }),
+    zcap: Kit.closed({ controller: STR, cryptosuite: STR }),
+    macaroon: Kit.closed({ root_key: STR }),
+    'jwt-encrypted': Kit.closed({ authorization_server: STR,
+                                  resource_server: STR })
+  }),
+  grants: Kit.closed({
+    state: NSTR, states: STRS, paging: PAGING,
+    rows: Kit.listOf(GNAP_GRANT_ROW)
+  }),
+  resourceSets: Kit.closed({
+    paging: PAGING,
+    rows: Kit.listOf(Kit.closed({
+      reference: STR, resourceServer: STR, access: Kit.listOf(GNAP_RIGHT),
+      tokenFormats: Kit.nullable(STRS), introspectionRequired: BOOL,
+      createdAt: WHEN
+    }))
+  }),
+  actions: STRS, settings: SETTINGS
+});
+// A counter row: one number per event of `gnap_monitor.ts`'s EVENTS, with
+// `lastAt`, `lastEvent`, `formats` and `errors` beside them; the counters' names
+// are that table's, and a new event is a row there and no change here.
+const GNAP_COUNTERS = Kit.mapOf(Kit.oneOf(NUM, STR, { type: 'null' },
+                                          Kit.mapOf(NUM)));
+const GNAP_MONITOR = Kit.closed({
+  page: STR, title: STR, since: WHEN,
+  events: Kit.listOf(Kit.closed({ event: STR, counter: STR, label: STR })),
+  totals: COUNTS, tokensByFormat: COUNTS, applications: INT, paging: PAGING,
+  rows: Kit.listOf(Kit.closed({
+    identifier: STR, name: NSTR, kinds: STRS, role: STR, registered: BOOL,
+    finishUris: STRS, webApplication: BOOL,
+    grantsHeld: Kit.closed({ total: INT, pending: INT, approved: INT,
+                             finalized: INT }),
+    activeTokens: INT, counters: GNAP_COUNTERS, lastAt: WHEN, lastEvent: NSTR
+  }))
+});
+Object.assign(components, { GnapServer: GNAP_SERVER,
+                            GnapMonitor: GNAP_MONITOR });
+Object.assign(operations, {
+  revokeGnapGrant: { '200': Kit.action({ grant: GNAP_GRANT_ROW }) },
+  deleteGnapResourceSet: { '200': Kit.action({ reference: STR }) }
+});
+
+// ---------------------------------------------------------------------------
+// SHARED SIGNALS, CAEP AND RISC. `ssf/ssf.ts`'s three reports and three action
+// handlers, `ssf/ssf_dead_letter_report.ts`, `ssf/ssf_receivers.ts` and
+// `ssf/ssf_transmitters.ts`. A stream's counters and an event's counts are
+// counted per name, so they are maps of numbers.
+// ---------------------------------------------------------------------------
+const SUBJECT_IDENTIFIER = Kit.freeForm(
+  'An RFC 9493 subject identifier, as a stream was given it or a person ' +
+  'named it: the format decides the members, an `aliases` nests, and SSF 1.0 ' +
+  'section 3.3 lets a receiver add its own.');
+const SET_CLAIMS = Kit.freeForm(
+  'A Security Event Token\'s claims. An event\'s members are each event ' +
+  'type\'s, and the claims are what was signed, so a model of them here would ' +
+  'be a second list of every event type.');
+const SET_SUMMARY = Kit.nullable(Kit.closed({
+  jti: STR, iat: NUM, issuer: STR, audience: Kit.oneOrMany(STR), types: STRS,
+  name: STR, subject: STR
+}));
+// `transmit()` and `transmitterVerification()`. **It carries the signed token
+// and its claims**: the report on #1353 says where.
+const TRANSMIT_REPORT = Kit.closed({
+  ok: BOOL, delivered: BOOL, held: BOOL, deadLettered: BOOL, jti: STR,
+  token: STR, claims: SET_CLAIMS, status: NINT, err: NSTR, why: NSTR
+});
+const STREAM_LOG_ROW = Kit.closed({ at: STR, kind: STR, text: STR });
+const EVENT_MEMBER = Kit.closed({
+  name: STR, required: Kit.oneOf(BOOL, STR, { type: 'null' }), what: STR,
+  type: STR, values: STRS
+});
+const SSF_EVENT_TYPE = Kit.closed({
+  uri: STR, name: STR, short: STR, family: STR, subject: Kit.oneOf(BOOL, STR),
+  what: STR, offered: BOOL, members: Kit.listOf(EVENT_MEMBER), required: STRS,
+  subjectFormats: STRS, deprecated: STR
+});
+const PUSH_GATE = Kit.closed({ active: INT, waiting: INT, concurrency: NUM,
+                               backlog: NUM });
+const SUBJECT_EXAMPLE = Kit.closed({
+  format: STR, uri: STR, email: STR, iss: STR, sub: STR, id: STR,
+  phone_number: STR, url: STR, jti: STR, issuer: STR, assertion_id: STR,
+  'ip-addresses': STRS,
+  identifiers: Kit.listOf(Kit.closed({ format: STR, email: STR,
+                                       phone_number: STR }))
+});
+const STREAM_DETAIL = Kit.closed({
+  stream_id: STR, iss: NSTR, aud: Kit.nullable(Kit.oneOrMany(STR)), status: STR,
+  statusReason: NSTR,
+  delivery: Kit.closed({ method: STR, endpoint_url: NSTR }),
+  events_delivered: STRS, events_requested: STRS, format: NSTR,
+  description: NSTR, createdAt: WHEN, updatedAt: WHEN, createdBy: NSTR,
+  internal: BOOL, counters: COUNTS, lastPushError: NSTR, lastPushAt: WHEN,
+  subjects: Kit.listOf(Kit.closed({
+    text: STR, verified: NBOOL, addedAt: WHEN, subject: SUBJECT_IDENTIFIER
+  })),
+  queue: Kit.listOf(Kit.closed({
+    jti: STR, queuedAt: WHEN, deliveredAt: WHEN, summary: SET_SUMMARY
+  })),
+  dead: BOOL, deadSince: STR, deadReason: STR, failingSince: STR,
+  nextProbeAt: STR,
+  deadLetters: Kit.listOf(Kit.closed({
+    jti: STR, queuedAt: WHEN, deadAt: WHEN, reason: NSTR, errorCode: NSTR,
+    status: NINT, signed: BOOL, summary: SET_SUMMARY
+  })),
+  log: Kit.listOf(STREAM_LOG_ROW)
+});
+const SSF = Kit.closed({
+  installed: BOOL, enabled: BOOL, issuer: STR, metadataUrl: STR,
+  metadata: Kit.closed({
+    spec_version: STR, issuer: STR, jwks_uri: STR,
+    delivery_methods_supported: STRS, configuration_endpoint: STR,
+    status_endpoint: STR, add_subject_endpoint: STR,
+    remove_subject_endpoint: STR, verification_endpoint: STR,
+    default_subjects: STR,
+    authorization_schemes: Kit.listOf(Kit.closed({ spec_urn: STR })),
+    critical_subject_members: STRS
+  }),
+  signingAlgorithm: STR,
+  delivery: Kit.listOf(Kit.closed({ method: STR, name: STR, what: STR,
+                                    offered: BOOL })),
+  push: Kit.closed({
+    allowed: BOOL,
+    transport: Kit.closed({ allowHttp: BOOL, skipTlsVerificationSet: BOOL,
+                            skipTlsVerification: BOOL, caFile: STR }),
+    allowedHosts: STRS, retries: NUM, maxResponseBytes: NUM, note: STR
+  }),
+  eventTypes: Kit.listOf(SSF_EVENT_TYPE),
+  subjectFormats: Kit.listOf(Kit.closed({
+    format: STR, members: STRS, what: STR, example: SUBJECT_EXAMPLE
+  })),
+  complexSubjectMembers: Kit.listOf(Kit.closed({ name: STR, what: STR })),
+  criticalSubjectMembers: STRS,
+  authentication: Kit.closed({
+    required: BOOL, realm: STR,
+    scopes: Kit.closed({ read: STR, write: STR, readAlso: STRS, writeAlso: STRS,
+                         writeIncludesRead: BOOL }),
+    refusedPassword: STR, metadataIsOpen: BOOL, passwordVerified: BOOL,
+    schemes: Kit.listOf(Kit.closed({ id: STR, name: STR, spec_urn: STR,
+                                     what: STR, offered: BOOL })),
+    note: STR
+  }),
+  streams: Kit.listOf(Kit.closed({
+    stream_id: STR, status: STR, delivery: STR, events_delivered: STRS,
+    subjects: INT, queued: INT, counters: COUNTS, createdAt: WHEN,
+    lastPushError: NSTR
+  })),
+  endpoints: Kit.listOf(Kit.closed({ method: STR, path: STR, what: STR })),
+  reachableNegatives: Kit.listOf(Kit.closed({ what: STR, answer: STR })),
+  doesNotDo: STRS,
+  streamDetail: Kit.listOf(STREAM_DETAIL),
+  deadLetters: Kit.closed({ retentionS: NUM, maxPerStream: NUM,
+                            deadStreamTimeoutS: NUM, pushes: PUSH_GATE }),
+  settings: SETTINGS, statuses: STRS,
+  streamTotals: Kit.closed({ streams: INT, enabled: INT, delivered: NUM,
+                             failed: NUM, waiting: INT, dead: INT,
+                             deadLetters: INT }),
+  streamFilter: NSTR, paging: Kit.closed({ streams: PAGING }), note: STR,
+  protocolEndpoints: Kit.listOf(ENDPOINT_ROW)
+});
+const CAUSE_COUNTS = COUNTS;
+const SSF_DEAD_LETTERS = Kit.closed({
+  installed: BOOL, enabled: BOOL, note: STR, realm: STR, generatedAt: STR,
+  pushDelivery: BOOL,
+  causes: Kit.listOf(Kit.closed({ id: STR, label: STR, code: STR, what: STR,
+                                  count: INT })),
+  totals: Kit.closed({
+    held: INT, streamsHolding: INT, signed: INT, unsigned: INT,
+    deadStreams: INT, halfOpenStreams: INT, failingStreams: INT,
+    pushStreams: INT, oldestAt: STR, newestAt: STR,
+    oldestAgeS: Kit.nullable(NUM), newestAgeS: Kit.nullable(NUM),
+    deadLetteredEver: NUM
+  }),
+  timeline: Kit.closed({
+    bucketS: NUM, windowS: NUM, from: STR, to: STR,
+    buckets: Kit.listOf(Kit.closed({ start: STR, startMs: NUM, total: INT,
+                                     counts: CAUSE_COUNTS })),
+    peak: INT, olderThanWindow: INT
+  }),
+  byCode: Kit.listOf(Kit.closed({ errorCode: STR, count: INT, cause: STR,
+                                  summary: STR })),
+  byStatus: Kit.listOf(Kit.closed({ status: NUM, count: INT })),
+  byEventType: Kit.listOf(Kit.closed({ type: STR, name: STR, count: INT })),
+  streams: Kit.listOf(Kit.closed({
+    stream_id: STR, aud: Kit.nullable(Kit.oneOrMany(STR)), endpoint_url: STR,
+    status: STR, state: STR, held: INT, causes: CAUSE_COUNTS, oldestAt: STR,
+    newestAt: STR, deadLetteredEver: NUM, deadSince: STR, failingSince: STR,
+    nextProbeAt: STR, deadReason: STR, lastPushError: STR, lastPushAt: WHEN
+  })),
+  letters: Kit.listOf(Kit.closed({
+    stream_id: STR, jti: STR, queuedAt: WHEN, deadAt: WHEN,
+    ageS: Kit.nullable(NUM),
+    cause: STR, reason: STR, errorCode: STR, status: NUM, signed: BOOL,
+    streamKnown: BOOL,
+    event: Kit.nullable(Kit.closed({ name: STR, types: STRS, subject: STR }))
+  })),
+  settings: Kit.closed({
+    retentionS: NUM, maxPerStream: NUM, deadStreamTimeoutS: NUM, sweepS: NUM,
+    pushConcurrency: NUM, pushBacklog: NUM, pushRetries: NUM
+  }),
+  process: Kit.closed({
+    pid: INT, thread: Kit.nullable(Kit.oneOf(INT, STR)), role: STR,
+    pushes: PUSH_GATE,
+    sweeps: Kit.listOf(Kit.closed({
+      at: STR, held: INT, letters: INT, expired: INT, orphaned: INT,
+      trimmed: INT, deadStreams: INT, probes: INT,
+      byCode: Kit.listOf(Kit.closed({ errorCode: STR, count: INT }))
+    })),
+    sinceStart: Kit.closed({ firstSweepAt: STR, sweeps: NUM, letters: NUM,
+                             expired: NUM, orphaned: NUM, trimmed: NUM,
+                             probes: NUM })
+  }),
+  filter: Kit.closed({ q: NSTR, stream: NSTR, cause: NSTR }),
+  matched: INT,
+  paging: Kit.closed({ letters: PAGING, streams: PAGING })
+});
+const SSF_STREAM_ACTION = Kit.action({ report: Kit.nullable(TRANSMIT_REPORT) });
+
+// What both vocabularies say of a stream, and of a receiver.
+const VOCABULARY_STREAM = Kit.closed({
+  stream_id: STR, aud: Kit.nullable(Kit.oneOrMany(STR)), status: STR,
+  delivery: STR, subjects: INT, takes: STRS
+});
+const VOCABULARY_RECEIVER = Kit.closed({
+  identifier: STR, name: NSTR, registered: BOOL, declared: BOOL, dn: STR,
+  endpoints: STRS, streams: STRS, streamCount: INT, enabled: INT,
+  deliveries: STRS, audiences: STRS, takes: STRS, counts: COUNTS, total: INT,
+  sessions: INT, accounts: INT, queued: INT, delivered: INT, failed: INT,
+  acknowledged: INT, receiverErrors: INT, lastPushAt: WHEN, lastPushError: NSTR
+});
+const VOCABULARY_EVENT = Kit.closed({
+  jti: STR, uri: STR, name: STR, at: STR, streamId: STR, warnings: STRS
+});
+const VOCABULARY_STREAM_COUNTS = Kit.closed({ total: INT, taking: INT });
+const VOCABULARY_ACTION = Kit.action({ warnings: STRS,
+                                       reports: Kit.listOf(TRANSMIT_REPORT) });
+
+const CAEP_SESSION = Kit.closed({
+  sessionId: STR, sub: NSTR, username: NSTR, iss: NSTR, protocol: NSTR,
+  establishedAt: WHEN, updatedAt: WHEN, state: NSTR, acr: NSTR, amr: STRS,
+  assurance: Kit.closed({ namespace: STR, level: STR, previousLevel: STR }),
+  compliance: NSTR,
+  risk: Kit.closed({ level: STR, previousLevel: STR, reason: STR }),
+  claims: Kit.freeForm('The claims a `token-claims-change` event said changed: ' +
+                       'whichever a person configured or an emitter named.'),
+  credentials: Kit.listOf(Kit.closed({ at: STR, credentialType: STR,
+                                       changeType: STR, friendlyName: STR })),
+  counts: COUNTS, total: INT, events: Kit.listOf(VOCABULARY_EVENT),
+  streams: STRS, notes: STRS, subject: STR
+});
+const CAEP = Kit.closed({
+  installed: BOOL, enabled: BOOL, note: STR, autoEmit: BOOL, autoEmitActs: STRS,
+  omitEventTimestamp: BOOL,
+  eventTypes: Kit.listOf(SSF_EVENT_TYPE), totals: COUNTS,
+  sessions: Kit.listOf(CAEP_SESSION), tracked: INT, cap: NUM, issuer: STR,
+  ssfEnabled: BOOL, applications: Kit.listOf(VOCABULARY_RECEIVER),
+  streams: Kit.listOf(VOCABULARY_STREAM),
+  catalogue: Kit.listOf(SSF_EVENT_TYPE), settings: SETTINGS,
+  filter: Kit.closed({ sessions: NSTR, applications: NSTR }),
+  paging: Kit.closed({ sessions: PAGING, applications: PAGING, streams: PAGING,
+                       events: PAGING }),
+  shown: Kit.closed({ sessions: Kit.listOf(CAEP_SESSION),
+                      applications: Kit.listOf(VOCABULARY_RECEIVER),
+                      streams: Kit.listOf(VOCABULARY_STREAM) }),
+  matched: Kit.closed({ sessions: INT, applications: INT, streams: INT }),
+  streamCounts: VOCABULARY_STREAM_COUNTS,
+  // One session, by `session`.
+  id: STR, session: Kit.nullable(CAEP_SESSION),
+  events: Kit.listOf(VOCABULARY_EVENT)
+});
+const RISC_ACCOUNT = Kit.closed({
+  accountId: STR, sub: NSTR, username: NSTR, iss: NSTR, dn: NSTR, realm: NSTR,
+  email: NSTR, phone: NSTR, formerIdentifiers: STRS, createdAt: WHEN,
+  updatedAt: WHEN, lifecycle: NSTR, kind: STR, application: STR,
+  serviceAccount: BOOL, optOut: NSTR, optOutApplies: BOOL,
+  credentialStanding: NSTR, credentialChangeRequired: BOOL,
+  recoveryActivated: BOOL,
+  identifierChanges: Kit.listOf(Kit.closed({ at: STR, from: STR, to: STR })),
+  credentials: Kit.listOf(Kit.closed({ at: STR, credentialType: STR,
+                                       discoveredAt: NUM })),
+  counts: COUNTS, total: INT, suppressed: INT,
+  events: Kit.listOf(VOCABULARY_EVENT), streams: STRS, notes: STRS, subject: STR
+});
+const RISC = Kit.closed({
+  installed: BOOL, enabled: BOOL, note: STR, autoEmit: BOOL, autoEmitActs: STRS,
+  honourOptOut: BOOL, googleSubjectType: BOOL, subjectFormat: STR,
+  omitEventTimestamp: BOOL, eventTypes: Kit.listOf(SSF_EVENT_TYPE),
+  optStates: STRS, lifecycleStates: STRS, totals: COUNTS,
+  accounts: Kit.listOf(RISC_ACCOUNT), tracked: INT, cap: NUM, issuer: STR,
+  ssfEnabled: BOOL, applications: Kit.listOf(VOCABULARY_RECEIVER),
+  streams: Kit.listOf(VOCABULARY_STREAM),
+  catalogue: Kit.listOf(SSF_EVENT_TYPE), settings: SETTINGS,
+  filter: Kit.closed({ accounts: NSTR, applications: NSTR }),
+  paging: Kit.closed({ accounts: PAGING, applications: PAGING, streams: PAGING,
+                       events: PAGING }),
+  shown: Kit.closed({ accounts: Kit.listOf(RISC_ACCOUNT),
+                      applications: Kit.listOf(VOCABULARY_RECEIVER),
+                      streams: Kit.listOf(VOCABULARY_STREAM) }),
+  matched: Kit.closed({ accounts: INT, applications: INT, streams: INT }),
+  streamCounts: VOCABULARY_STREAM_COUNTS,
+  // One account, by `account`.
+  id: STR, account: Kit.nullable(RISC_ACCOUNT),
+  events: Kit.listOf(VOCABULARY_EVENT)
+});
+const SIGNALS = Kit.closed({
+  status: Kit.nullable(Kit.closed({
+    id: STR, label: STR, audience: STR, receivePath: STR, inboxPath: STR,
+    sees: STR, realm: STR, enabled: BOOL, ssfEnabled: BOOL,
+    internalReceivers: BOOL, pushDelivery: BOOL, caepEnabled: BOOL,
+    riscEnabled: BOOL, held: INT, max: NUM,
+    stream: Kit.nullable(Kit.closed({
+      stream_id: STR, iss: NSTR, aud: Kit.nullable(Kit.oneOrMany(STR)),
+      status: STR, statusReason: NSTR, delivery: STR, endpoint_url: STR,
+      pollEveryMs: NUM, delivers: INT, requested: INT, caepDelivered: INT,
+      riscDelivered: INT, queued: INT, counters: COUNTS, lastPushAt: WHEN,
+      lastPushError: NSTR
+    })),
+    why: STRS
+  })),
+  received: Kit.listOf(Kit.closed({
+    jti: STR, at: WHEN, tokenDigest: STR, surface: NSTR, stream: NSTR, name: STR,
+    types: STRS, vocabulary: STR, issuer: STR, audience: STR, audienceOk: BOOL,
+    subject: STR,
+    payload: Kit.freeForm('An event\'s body as this receiver took it in: each ' +
+                          'event type has its own members, and a refused ' +
+                          'delivery is held here too.'),
+    verified: BOOL, verificationNote: NSTR,
+    reactions: Kit.listOf(Kit.closed({
+      event: STR, reaction: STR, skipped: STR, observed: BOOL, ended: INT,
+      revoked: INT, failed: BOOL
+    })),
+    contentType: NSTR, correctMediaType: BOOL, problem: STR
+  })),
+  total: INT, filter: Kit.closed({ received: NSTR }),
+  paging: Kit.closed({ received: PAGING })
+});
+const PARTNER_SIGNALS = Kit.closed({
+  relationships: Kit.listOf(FED_SIGNALS), received: Kit.listOf(FED_ARRIVAL),
+  blocks: Kit.listOf(FED_BLOCK),
+  locks: Kit.listOf(Kit.closed({ username: STR, relationship: STR, at: STR })),
+  observeOnly: BOOL,
+  counts: Kit.closed({ received: INT, blocks: INT, locks: INT }),
+  paging: Kit.closed({ received: PAGING, blocks: PAGING, locks: PAGING })
+});
+
+Object.assign(components, {
+  Ssf: SSF, SsfDeadLetters: SSF_DEAD_LETTERS, Caep: CAEP, Risc: RISC,
+  Signals: SIGNALS, CaepApplication: VOCABULARY_RECEIVER
+});
+Object.assign(operations, {
+  getBroadcast: { '200': Kit.closed({
+    realm: STR, surfaces: Kit.listOf(Kit.closed({ id: STR, label: STR })),
+    everyRealm: BOOL, realmCount: INT, maxChars: NUM, pollMs: NUM, keepS: NUM,
+    ready: BOOL, why: STR
+  }) },
+  // `code` is an error code in an answer: see the report on #1353.
+  sendBroadcast: { '200': Kit.action({
+    code: STR, why: STR, sent: INT, streams: INT,
+    realms: Kit.listOf(Kit.closed({ realm: STR, sent: INT, streams: INT,
+                                    skipped: STRS }))
+  }) },
+  getConsoleAnnouncements: { '200': Kit.closed({
+    now: NUM, everyMs: NUM,
+    announcements: Kit.listOf(Kit.closed({ id: STR, at: STR, message: STR }))
+  }) },
+  getSsfDeadLetters: { '400': REFUSED },
+  setSsfStreamStatus: { '200': SSF_STREAM_ACTION },
+  transmitSsfEvent: { '200': SSF_STREAM_ACTION },
+  deleteSsfStream: { '200': Kit.action() },
+  reviveSsfStream: { '200': Kit.action() },
+  verifySsfStream: { '200': SSF_STREAM_ACTION },
+  clearSsfDeadLetters: { '200': Kit.action() },
+  emitCaepEvent: { '200': VOCABULARY_ACTION },
+  resetCaepSession: { '200': Kit.action() },
+  clearCaepSessions: { '200': Kit.action() },
+  emitRiscEvent: { '200': VOCABULARY_ACTION },
+  resetRiscAccount: { '200': Kit.action() },
+  clearRiscAccounts: { '200': Kit.action() },
+  clearSignalsInbox: { '200': Kit.action({ dropped: INT }) },
+  getPartnerSignals: { '200': PARTNER_SIGNALS }
+});
+
+// ---------------------------------------------------------------------------
+// OPENID FEDERATION. `oidfed/oidfed.ts`'s `view()` and `act()`, with
+// `oidfed_admin.ts`'s `pageLists()`.
+//
+// **WHAT A STATEMENT CARRIES IS THAT STATEMENT'S.** An Entity Configuration's
+// metadata is keyed by entity type and each type's members are its own
+// specification's, a resolved one's is a partner's as resolved, and a metadata
+// policy's operators are OpenID Federation 1.1 section 6.1's, extensible by
+// `metadata_policy_crit`. This service types what it adds around them.
+// ---------------------------------------------------------------------------
+const ENTITY_STATEMENT = Kit.freeForm(
+  'This realm\'s Entity Configuration, the claims of a signed statement ' +
+  '(OpenID Federation 1.1 section 3.1): its `metadata` is one document per ' +
+  'entity type, and each is the document that protocol publishes.');
+const STATEMENT_MEMBER = Kit.freeForm(
+  'A JWK Set, a metadata document, a metadata policy or a constraints object ' +
+  'as an administrator gave it or a partner\'s statement carried it ' +
+  '(OpenID Federation 1.1 sections 3, 6): nothing here narrows it further.');
+const OIDFED_EVENT = Kit.closed({ iat: NUM, event: STR, event_description: STR,
+                                  information_uri: STR });
+const OIDFED_MARK_TYPE = Kit.closed({
+  type: STR, lifetimeS: NUM, logoUri: STR, ref: STR, delegation: STR
+});
+const OIDFED_VIEW = Kit.closed({
+  entityId: STR, role: STR, configurationUrl: STR,
+  endpoints: Kit.closed({
+    configuration: STR, fetch: STR, list: STR, resolve: STR, trustMark: STR,
+    trustMarkStatus: STR, trustMarkList: STR, historicalKeys: STR, register: STR,
+    extendedList: STR, collection: STR, subordinateEvents: STR
+  }),
+  authorityHints: STRS, realmsAreSubordinates: BOOL, signingAlg: STR,
+  keys: Kit.listOf(Kit.closed({
+    kid: STR, alg: STR, state: STR, sealed: BOOL, createdAt: NSTR,
+    activatedAt: NSTR, retiredAt: NSTR, publishedUntil: NSTR, revokedAt: NSTR,
+    revokedReason: NSTR, publicJwk: JWK
+  })),
+  subordinates: Kit.listOf(Kit.closed({
+    entityId: STR, localRealm: NSTR, implicit: BOOL, entityTypes: STRS,
+    intermediate: BOOL, metadataPolicy: STATEMENT_MEMBER,
+    constraints: STATEMENT_MEMBER, createdAt: NSTR, updatedAt: NSTR,
+    kids: Kit.listOf(NSTR),
+    suspended: Kit.nullable(Kit.closed({ at: NSTR, reason: NSTR,
+                                         informationUri: NSTR })),
+    events: Kit.listOf(OIDFED_EVENT), eventsTotal: INT
+  })),
+  formerSubordinates: Kit.listOf(Kit.closed({
+    entityId: STR, localRealm: NSTR, events: Kit.listOf(OIDFED_EVENT),
+    eventsTotal: INT
+  })),
+  collection: Kit.closed({
+    crawl: Kit.nullable(Kit.closed({
+      entityId: STR, forThisIdentifier: BOOL, crawledAt: STR, entities: INT,
+      truncated: BOOL,
+      problems: STRS
+    })),
+    crawlEveryS: NUM, jobOff: STR
+  }),
+  trustAnchors: Kit.listOf(Kit.closed({ entityId: STR, localRealm: NSTR,
+                                        kids: Kit.listOf(NSTR) })),
+  markTypes: Kit.listOf(OIDFED_MARK_TYPE),
+  markPolicies: Kit.listOf(Kit.closed({ type: STR, issuers: STRS, owner: NSTR })),
+  issuedMarks: Kit.listOf(Kit.closed({
+    id: STR, type: STR, sub: STR, issuedAt: NSTR, expiresAt: NSTR, status: STR,
+    revokedReason: NSTR
+  })),
+  heldMarks: Kit.listOf(Kit.closed({ id: STR, type: STR, iss: STR,
+                                     expiresAt: NSTR })),
+  resolutions: Kit.listOf(Kit.closed({
+    subject: STR, anchor: STR, expiresAt: STR,
+    chain: Kit.listOf(Kit.closed({ iss: STR, sub: STR, exp: NUM })),
+    metadata: STATEMENT_MEMBER, trustMarks: Kit.listOf(NSTR)
+  })),
+  entityConfiguration: ENTITY_STATEMENT, entityConfigurationProblem: NSTR,
+  statementLifetimeS: NUM, settings: SETTINGS,
+  counts: Kit.closed({ keys: INT, subordinates: INT, formerSubordinates: INT,
+                       trustAnchors: INT, issuedMarks: INT, heldMarks: INT,
+                       markPolicies: INT }),
+  paging: Kit.closed({ keys: PAGING, subordinates: PAGING,
+                       formerSubordinates: PAGING, trustAnchors: PAGING,
+                       issuedMarks: PAGING, heldMarks: PAGING,
+                       markPolicies: PAGING }),
+  protocolEndpoints: Kit.listOf(ENDPOINT_ROW)
+});
+
+Object.assign(operations, {
+  getOidfed: { '200': OIDFED_VIEW },
+  addOidfedSubordinate: { '200': Kit.action({
+    subordinate: Kit.closed({
+      entityId: STR, jwks: STATEMENT_MEMBER, metadata: STATEMENT_MEMBER,
+      metadataPolicy: STATEMENT_MEMBER, metadataPolicyCrit: STRS,
+      constraints: STATEMENT_MEMBER, entityTypes: STRS, intermediate: BOOL,
+      localRealm: NSTR, createdAt: WHEN, updatedAt: WHEN
+    })
+  }) },
+  removeOidfedSubordinate: { '200': Kit.action() },
+  suspendOidfedSubordinate: { '200': Kit.action() },
+  reinstateOidfedSubordinate: { '200': Kit.action() },
+  crawlOidfedCollection: { '200': Kit.action({
+    collection: Kit.closed({
+      crawl: Kit.nullable(Kit.closed({
+        entityId: STR, forThisIdentifier: BOOL, crawledAt: STR, entities: INT,
+        truncated: BOOL,
+        problems: STRS
+      })),
+      crawlEveryS: NUM, jobOff: STR
+    })
+  }) },
+  addOidfedTrustAnchor: { '200': Kit.action() },
+  removeOidfedTrustAnchor: { '200': Kit.action() },
+  addOidfedMarkType: { '200': Kit.action({ markType: OIDFED_MARK_TYPE }) },
+  removeOidfedMarkType: { '200': Kit.action() },
+  setOidfedMarkPolicy: { '200': Kit.action({
+    markPolicy: Kit.closed({
+      type: STR, issuers: STRS,
+      owner: Kit.closed({ sub: STR, jwks: STATEMENT_MEMBER })
+    })
+  }) },
+  removeOidfedMarkPolicy: { '200': Kit.action() },
+  issueOidfedTrustMark: { '200': Kit.action({ trustMark: STR, id: STR }) },
+  revokeOidfedTrustMark: { '200': Kit.action() },
+  addOidfedHeldMark: { '200': Kit.action() },
+  removeOidfedHeldMark: { '200': Kit.action() },
+  resolveOidfedEntity: { '200': Kit.action({
+    resolution: Kit.closed({
+      subject: STR, anchor: STR, expiresAt: STR,
+      chain: Kit.listOf(Kit.closed({ iss: STR, sub: STR, exp: NUM })),
+      metadata: STATEMENT_MEMBER, trustMarks: Kit.listOf(NSTR)
+    })
+  }) },
+  rotateOidfedKey: { '200': Kit.action({ runId: Kit.oneOf(STR, NUM) }) },
+  revokeOidfedKey: { '200': Kit.action() }
 });
 
 //@@NEXT@@
