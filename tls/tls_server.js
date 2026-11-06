@@ -7359,6 +7359,7 @@ module.exports = {
   // #201: the path rules asked of a chain OpenSSL verified; exported for
   // tests/x509_limbo.js, which holds the main port's posture to x509-limbo.
   holdToPathRules: holdToPathRules,
+  anchorCertificates: anchorCertificates,
   holdConnectionsOn: holdConnectionsOn,
   settledRequest: settledRequest
 };

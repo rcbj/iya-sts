@@ -1508,25 +1508,56 @@ class CertificateTrust {
   // below the anchor is still walked.
   private static endingAtAnchor(chain: Buffer[], realmId: string): Buffer[] {
     helpers.log.debug("Entering CertificateTrust.endingAtAnchor().");
-    const bundled = CertificateTrust.bundledAnchors();
-    const held = new Map<string, Buffer>();
+    const anchors = new Map(CertificateTrust.bundledAnchors());
     signerTruststore.anchorsFor(realmId, 'tls-server-outbound').anchors
       .forEach(function (der: Buffer) {
-        held.set(CertificateTrust.anchorIdOf(der), der);
+        anchors.set(CertificateTrust.anchorIdOf(der), der);
       });
+    helpers.log.debug("Leaving CertificateTrust.endingAtAnchor().");
+    return CertificateTrust.cutAtAnchor(chain, anchors);
+  }
+
+  // The chain as far as its first certificate that is one of these anchors.
+  private static cutAtAnchor(chain: Buffer[],
+                             anchors: Map<string, Buffer>): Buffer[] {
+    helpers.log.debug("Entering CertificateTrust.cutAtAnchor().");
     for (let i = 0; i < chain.length; i++) {
       if (!CertificateTrust.readable(chain[i])) {
         continue;
       }
-      const id = CertificateTrust.anchorIdOf(chain[i]);
-      const anchor = held.get(id) || bundled.get(id);
+      const anchor = anchors.get(CertificateTrust.anchorIdOf(chain[i]));
       if (anchor) {
-        helpers.log.debug("Leaving CertificateTrust.endingAtAnchor(). " + i);
+        helpers.log.debug("Leaving CertificateTrust.cutAtAnchor(). " + i);
         return chain.slice(0, i).concat([anchor]);
       }
     }
-    helpers.log.debug("Leaving CertificateTrust.endingAtAnchor(). None.");
+    helpers.log.debug("Leaving CertificateTrust.cutAtAnchor(). None.");
     return chain;
+  }
+
+  /**
+   * The same stop for a client certificate, under paranoid PKI mode: a chain
+   * that OpenSSL verified ends at the listener's own anchor. Only what that
+   * listener trusts counts, so a public root is no anchor here. Out of force
+   * the chain is as presented, which is what the row off owes.
+   *
+   * @param chain - what is above the leaf, as DER
+   * @param anchors - the listener's anchors, as DER
+   * @returns the chain to ask revocation of
+   */
+  static endingAtClientAnchor(chain: Buffer[], anchors: Buffer[]): Buffer[] {
+    helpers.log.debug("Entering CertificateTrust.endingAtClientAnchor().");
+    if (!CertificateTrust.applies('tls-client', realms.DEFAULT_ID)) {
+      helpers.log.debug("Leaving CertificateTrust.endingAtClientAnchor(). " +
+                        "Off.");
+      return chain;
+    }
+    const held = new Map<string, Buffer>();
+    anchors.forEach(function (der: Buffer) {
+      held.set(CertificateTrust.anchorIdOf(der), der);
+    });
+    helpers.log.debug("Leaving CertificateTrust.endingAtClientAnchor().");
+    return CertificateTrust.cutAtAnchor(chain, held);
   }
 
   // A SERVER'S CERTIFICATE ACCEPTED CASE BY CASE (rcbj, #1360), which is not a

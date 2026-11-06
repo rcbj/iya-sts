@@ -3360,8 +3360,23 @@ function fromSocket(socket) {
       });
     }
   }
-  log.debug('Leaving fromSocket(). ' + chain.length + ' above the leaf.');
-  return { leaf: peer.raw, chain: chain, verified: socket.authorized === true };
+  // A CHAIN THAT VERIFIED ENDS AT THE LISTENER'S ANCHOR (#1360), and what lies
+  // above it is nothing anybody relies on: `endingAtClientAnchor()`. Lazily, as
+  // this module is loaded before either. Only a real socket: a worker's chain
+  // was already through here on the front process.
+  let above = chain;
+  if (real && socket.authorized === true && chain.length) {
+    try {
+      above = require('./certificate_trust').endingAtClientAnchor(chain,
+        require('../tls/tls_server').anchorCertificates().map(function (one) {
+          return one.raw;
+        }));
+    } catch (e) {
+      log.debug('Caught in fromSocket(): ' + ((e && e.message) || e));
+    }
+  }
+  log.debug('Leaving fromSocket(). ' + above.length + ' above the leaf.');
+  return { leaf: peer.raw, chain: above, verified: socket.authorized === true };
 }
 
 // ---------------------------------------------------------------------------
