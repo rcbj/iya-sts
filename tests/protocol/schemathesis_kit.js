@@ -210,6 +210,61 @@ const EXCLUSIONS = [
 ];
 
 // ---------------------------------------------------------------------------
+// THE DEFAULT-REALM SERVICE CELL (#1299). The three realm profiles are
+// non-default realms, so each one's admin-api token is a REALM token and the
+// gate refuses every SERVICE-level operation (STS-API-0112) — the ones
+// mirroring admin_scope.ts's SERVICE_PAGES (persistence, cluster, database,
+// encryption, secrets, caches, worker-pools, node-health, debugger, tls,
+// ldap/service, api-explorer) and the service-setting writes, ~86 routes on
+// the 2026-11-06 run, refused in EVERY realm cell. To fuzz those, this one
+// cell runs the admin-api surface against the DEFAULT realm (empty prefix)
+// with a SERVICE admin token (the fuzz person on the default realm's roster,
+// read/write/security). It runs LAST, after every realm cell, so a service op
+// that disrupts the process cannot wedge a realm's cell (rcbj via iya-sts-60).
+//
+// Its exclusions are the admin-api surface's (inherited through exclusionsKey)
+// PLUS these — the service operations that would STOP THE SERVICE or take its
+// STORE, KEYS or TLS away from it. Everything else on those pages is what we
+// want fuzzed, so the list is deliberately short and each entry names what it
+// would take away.
+const SERVICE_EXCLUSIONS = [
+  { match: "rotateKek",
+    reason: "rotates the key-encryption key every sealed secret is wrapped " +
+      "under; re-wrapping the whole store mid-run can leave the service " +
+      "unable to read its own keys" },
+  { match: "reencryptDataKeys",
+    reason: "runs the data re-encryption pass over the whole sealed store — a " +
+      "long operation that races the run's own writes and rewrites the key " +
+      "material everything is read through" },
+  { match: "rotateDataKeys",
+    reason: "rotates the data encryption keys, rewriting the sealed material " +
+      "the store is read through" },
+  { match: "stepDownScheduler",
+    reason: "steps the scheduler leader down; the single-node fuzz stack is " +
+      "the one node leasing the run's own jobs, so losing and reacquiring " +
+      "leadership mid-cell can wedge store coordination" },
+  { match: "setListeners",
+    reason: "reconfigures the listeners; it can rebind or stop the port and " +
+      "TLS the run is talking to" },
+  { match: "setListenerApplications",
+    reason: "moves which application answers on a listener; it can move the " +
+      "console and /admin-api off the main port (tests/CLAUDE.md records the " +
+      "same move breaking a realm-switcher test)" }
+];
+
+// The service cell's surface: the admin-api openapi document, driven against
+// the default realm. `exclusionsKey` inherits the admin-api surface's five
+// run-sabotage exclusions; `serviceExclusions` adds the six above.
+const SERVICE_CELL = Object.freeze({
+  key: "admin-api-service",
+  title: "Management API (service, default realm)",
+  kind: "openapi", schemaPath: "/admin-api/openapi.json",
+  schemaAuth: "dpop-console", auth: "dpop-console",
+  checks: INVARIANT_BUILTIN, exclusionsKey: "admin-api",
+  serviceExclusions: SERVICE_EXCLUSIONS
+});
+
+// ---------------------------------------------------------------------------
 // Accessors the plan test reads. Pure; no stack, no I/O.
 // ---------------------------------------------------------------------------
 
@@ -293,6 +348,33 @@ function validate() {
     if (!one.reason || one.reason.trim().length === 0) {
       problems.push("exclusion " + one.match + " on " + one.surface +
         " carries no reason");
+    }
+  });
+  // The service cell: a known auth kind and the no-5xx invariant like every
+  // surface, an exclusionsKey that names a real surface (so it inherits that
+  // surface's exclusions), and every serviceExclusion carrying a reason — the
+  // same rule the EXCLUSIONS carry, since a service op excluded with no reason
+  // is indistinguishable from one dropped by accident (#1299).
+  if (AUTH_KINDS.indexOf(SERVICE_CELL.auth) < 0) {
+    problems.push("the service cell has an unknown auth kind");
+  }
+  if (SERVICE_CELL.checks.concat(CUSTOM_CHECKS)
+    .indexOf("no_uncaught_server_error") < 0) {
+    problems.push("the service cell omits the no-uncaught-5xx invariant");
+  }
+  if (surfaceKeys.indexOf(SERVICE_CELL.exclusionsKey) < 0) {
+    problems.push("the service cell's exclusionsKey names no surface");
+  }
+  if (!Array.isArray(SERVICE_CELL.serviceExclusions) ||
+      SERVICE_CELL.serviceExclusions.length === 0) {
+    problems.push("the service cell declares no service exclusions");
+  }
+  (SERVICE_CELL.serviceExclusions || []).forEach(function (one) {
+    if (!one.match) {
+      problems.push("a service exclusion matches nothing");
+    }
+    if (!one.reason || one.reason.trim().length === 0) {
+      problems.push("service exclusion " + one.match + " carries no reason");
     }
   });
   log.debug("Leaving validate(). " + problems.length + " problem(s)");
@@ -594,6 +676,31 @@ async function provision(serviceBase, profile, say) {
   return { realmPrefix: realmPrefix, user: FUZZ_USER,
     password: FUZZ_PASSWORD, label: profile.label,
     settings: profile.settings };
+}
+
+// Creates the fuzz person on the DEFAULT realm's roster — a SERVICE admin — for
+// the service cell (#1299). The default realm is the service itself, so there
+// is no realm to create; the per-cell re-assert sets the password, grants
+// read/write/security and the report roles, and enables the account, exactly as
+// for a realm profile, through the empty prefix. `settings` is DPoP headroom
+// only (no mode flag): the default realm is the product baseline. `realmLabel`
+// is what the result shows, since the prefix is empty.
+async function provisionServiceAdmin(serviceBase, say) {
+  log.debug("Entering provisionServiceAdmin().");
+  await freshAdminToken(serviceBase, say);
+  const person = await adminCall(serviceBase, "", "POST",
+    "/admin-api/users/create",
+    { username: FUZZ_USER, attributes: FUZZ_ATTRIBUTES, credential: "none" });
+  if ([200, 201, 409].indexOf(person.status) < 0) {
+    throw new Error("could not create the default-realm service admin: " +
+      person.status + " " + JSON.stringify(person.json).slice(0, 300));
+  }
+  say("[schemathesis] provisioned the default realm's service admin");
+  log.debug("Leaving provisionServiceAdmin().");
+  return { realmPrefix: "", realmLabel: "(default realm, service admin)",
+    user: FUZZ_USER, password: FUZZ_PASSWORD,
+    label: "default realm (service admin)",
+    settings: Object.assign({}, FUZZ_DPOP) };
 }
 
 // Re-assert the realm's known state before every cell (#1299, "start from a
@@ -928,6 +1035,9 @@ function runSchemathesis(bin, args, env, cwd) {
 // own. Resolves { surface, realm, code, status, output }.
 async function runSurface(serviceBase, provisioned, surface, workDir, say) {
   log.debug("Entering runSurface(). " + surface.key);
+  // What a result and the log show for the realm: the default-realm service
+  // cell has an empty prefix, so it carries a readable label instead (#1299).
+  const realmShown = provisioned.realmLabel || provisioned.realmPrefix;
   // A fresh token before every cell, and BEFORE the proxy is spawned so the
   // child inherits it in `process.env`: a cell is ~25 min and the token lasts
   // an hour, so a realm's third cell otherwise fuzzes with an expired token
@@ -1001,17 +1111,21 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     const enabledChecks = surface.checks.concat(CUSTOM_CHECKS);
     const args = ["run", schemaLocation, "--url", base,
       "--checks", enabledChecks.join(","), "-n", String(MAX_EXAMPLES)];
-    exclusionsFor(surface.key).forEach(function (one) {
-      args.push("--exclude-operation-id", one.match);
-    });
+    // The surface's own run-sabotage exclusions (the service cell inherits the
+    // admin-api surface's through exclusionsKey) plus any serviceExclusions it
+    // carries (#1299, the default-realm service cell).
+    exclusionsFor(surface.exclusionsKey || surface.key)
+      .concat(surface.serviceExclusions || []).forEach(function (one) {
+        args.push("--exclude-operation-id", one.match);
+      });
     // Each custom check appends its finding (route, status, code, body
     // snippet) as a JSON line here, so the run emits the authoritative
     // route->code list the per-cell summary omits — the 40000-char output tail
     // below drops the per-failure detail on a large cell (#1347's leak-sink
     // work reads this). A per-(surface, realm) file so cells never collide.
-    const realmSlug = provisioned.realmPrefix.replace(/[^A-Za-z0-9]+/g, "_");
+    const realmSlug = (realmShown || "default").replace(/[^A-Za-z0-9]+/g, "_");
     const findingsPath = path.join(workDir,
-      "findings-" + surface.key + realmSlug + ".jsonl");
+      "findings-" + surface.key + "_" + realmSlug + ".jsonl");
     try {
       fs.rmSync(findingsPath, { force: true });
     } catch (e) {
@@ -1023,7 +1137,7 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
         STS_SCHEMATHESIS_FINDINGS: findingsPath,
         STS_SCHEMA_REALM_PREFIX: provisioned.realmPrefix,
         STS_SCHEMA_SURFACE: surface.key });
-    say("[schemathesis] " + surface.key + " @ " + provisioned.realmPrefix +
+    say("[schemathesis] " + surface.key + " @ " + realmShown +
       ": " + SCHEMATHESIS_BIN + " " + args.join(" "));
     const run = await runSchemathesis(SCHEMATHESIS_BIN, args, runEnv, workDir);
     // Read the two DPoP settings back now the cell has run, and log them: the
@@ -1058,7 +1172,7 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     // findings (a 5xx, a leaked error code, a dropped frame-ancestors clause).
     // Keep a generous slice so each finding's endpoint and the custom check's
     // message — which names the leaked code — survive into the host log.
-    return { surface: surface.key, realm: provisioned.realmPrefix,
+    return { surface: surface.key, realm: realmShown,
       code: code, status: status, findings: findings,
       output: (((run.stdout || "") + (run.stderr || "")).slice(-40000)) +
         spawnError };
@@ -1130,6 +1244,34 @@ async function run(serviceBase, options) {
       record(result);
     }
   }
+  // THE DEFAULT-REALM SERVICE CELL, LAST (#1299): the admin-api surface against
+  // the default realm with a SERVICE admin token, so the ~86 service-level
+  // operations every realm cell's realm token is refused (STS-API-0112) are
+  // fuzzed. Run after every realm cell so a service op that disrupts the
+  // process cannot wedge a realm's cell; a failure here is this cell's error
+  // and ends nothing (the realm cells have all run).
+  try {
+    const serviceAdmin = await provisionServiceAdmin(serviceBase, say);
+    let result;
+    try {
+      result = await runSurface(serviceBase, serviceAdmin, SERVICE_CELL,
+        workDir, say);
+    } catch (e) {
+      log.warn("the service cell threw: " + ((e && e.message) || e));
+      result = { surface: SERVICE_CELL.key,
+        realm: "(default realm, service admin)", code: null, status: "error",
+        findings: [], output: "the service cell threw: " +
+          ((e && e.message) || e) };
+    }
+    record(result);
+  } catch (e) {
+    log.warn("provisioning the service admin failed: " + ((e && e.message) ||
+      e));
+    record({ surface: SERVICE_CELL.key,
+      realm: "(default realm, service admin)", code: null, status: "error",
+      findings: [], output: "provisioning the default-realm service admin " +
+        "failed: " + ((e && e.message) || e) });
+  }
   log.debug("Leaving run(). " + results.length + " result(s)");
   return results;
 }
@@ -1137,6 +1279,8 @@ async function run(serviceBase, options) {
 module.exports = {
   PROFILES: PROFILES,
   SURFACES: SURFACES,
+  SERVICE_CELL: SERVICE_CELL,
+  SERVICE_EXCLUSIONS: SERVICE_EXCLUSIONS,
   AUTH_KINDS: AUTH_KINDS,
   BUILTIN_CHECKS: BUILTIN_CHECKS,
   CUSTOM_CHECKS: CUSTOM_CHECKS,
@@ -1149,6 +1293,7 @@ module.exports = {
   extractRows: extractRows,
   synthesizeProtocolDoc: synthesizeProtocolDoc,
   provision: provision,
+  provisionServiceAdmin: provisionServiceAdmin,
   runSurface: runSurface,
   run: run
 };

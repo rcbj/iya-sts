@@ -358,6 +358,34 @@ function run(t) {
       "exclusion " + one.match + " carries a reason");
   });
 
+  // The default-realm service cell (#1299): it drives the admin-api document
+  // with the console token, inherits the admin-api surface's exclusions, and
+  // adds exactly the six service operations that would stop the service or
+  // take its store, keys or TLS away — each with a reason, like every
+  // exclusion, so a service op excluded by accident is caught.
+  const cell = kit.SERVICE_CELL;
+  t.equal(cell.auth, "dpop-console",
+    "the service cell signs in with the console token");
+  t.equal(cell.schemaPath, "/admin-api/openapi.json",
+    "the service cell fuzzes the admin-api document");
+  t.check(surfaceKeys.indexOf(cell.exclusionsKey) >= 0,
+    "the service cell inherits a known surface's exclusions",
+    cell.exclusionsKey);
+  t.check(cell.checks.concat(kit.CUSTOM_CHECKS)
+    .indexOf("no_uncaught_server_error") >= 0,
+    "the service cell checks for no uncaught server error");
+  const serviceMatches = kit.SERVICE_EXCLUSIONS.map(function (one) {
+    return one.match;
+  }).sort();
+  t.equal(serviceMatches.join(","),
+    ["reencryptDataKeys", "rotateDataKeys", "rotateKek", "setListenerApplications",
+     "setListeners", "stepDownScheduler"].join(","),
+    "the service cell excludes exactly the six store/keys/TLS/service ops");
+  kit.SERVICE_EXCLUSIONS.forEach(function (one) {
+    t.check(!!one.match && !!one.reason && one.reason.trim().length > 0,
+      "service exclusion " + one.match + " carries a reason");
+  });
+
   t.log.debug("Leaving run().");
 }
 
