@@ -1312,6 +1312,1103 @@ const API_INDEX: Json = closed({
 }, { description: 'What this API is, where its document is, and every ' +
                   'operation it offers.' });
 
+// ---------------------------------------------------------------------------
+// RISK: `risk_admin.ts`, over `risk_datasets.ts`, `risk_terms.ts`,
+// `risk_engine.ts` and `risk_store.ts`.
+//
+// **AN ASSESSMENT COMES IN TWO SHAPES**: the memory store hands back what the
+// engine wrote, and the database hands back its columns, so the row's model is
+// their union and neither is required. `datasets` on it is a map of dataset id
+// to the version read, with `stale` and `attributions` beside them in the same
+// object, as the engine writes it.
+// ---------------------------------------------------------------------------
+const ATTRIBUTION: Json = closed({
+  provider: str(),
+  text: str(),
+  url: OPT_STR,
+  licence: OPT_STR,
+  licenceUrl: OPT_STR,
+  modified: str()
+});
+
+const ACCEPTANCE: Json = closed({
+  id: oneOf(str(), num()),
+  provider: str(),
+  termsDigest: str(),
+  termsText: str(),
+  acceptedBy: str(),
+  acceptedVia: str(),
+  deployment: str(),
+  pageDigest: str(),
+  acceptedAt: num()
+});
+
+// `store.listVersions()`: the memory row, or `riskVersionFrom()`'s columns.
+// **`parameters` IS A BAG THIS SERVICE WRITES AS A VERSION PROGRESSES AND KEEPS
+// IN THE DATABASE** (`attributionUrl`, `termsDigest`, `progressRows`, `mdsNo`,
+// `signatureOverride`...), so a row an older build wrote may carry a member this
+// one does not: a map, its values typed, rather than a closed list.
+const DATASET_VERSION: Json = closed({
+  realm: str(),
+  dataset: str(),
+  version: str(),
+  format: str(),
+  provider: str(),
+  licence: OPT_STR,
+  attribution: OPT_STR,
+  source: str(),
+  sourceUri: OPT_STR,
+  sha256: OPT_STR,
+  byteCount: num(),
+  rowCount: num(),
+  parameters: mapOf(SCALAR, 'What was recorded of this version as it loaded.'),
+  verification: OPT_STR,
+  publishedAt: num(),
+  nextUpdateAt: num(),
+  fetchedAt: num(),
+  loadedAt: num(),
+  activatedAt: num(),
+  supersededAt: num(),
+  rowsDeletedAt: num(),
+  state: str(),
+  refusal: OPT_STR,
+  errorCode: OPT_STR,
+  origin: OPT_STR,
+  reloadable: bool()
+});
+
+const RISK_DATASET: Json = closed({
+  dataset: str(),
+  realm: str(),
+  kind: str(),
+  title: str(),
+  what: str(),
+  formats: STRINGS,
+  perRealm: bool(),
+  staleAfterMs: OPT_NUM,
+  state: str(),
+  activeVersion: str(),
+  previousVersion: OPT_STR,
+  publishedAt: num(),
+  rows: num(),
+  provider: OPT_STR,
+  attribution: OPT_STR,
+  attributionUrl: OPT_STR,
+  versions: listOf(DATASET_VERSION)
+});
+
+// `risk_terms.ts`'s `status()`: the provider's row of `PROVIDERS` and what was
+// said of it.
+const RISK_PROVIDER: Json = closed({
+  provider: str(),
+  title: str(),
+  url: OPT_STR,
+  licence: OPT_STR,
+  licenceName: OPT_STR,
+  licenceUrl: OPT_STR,
+  attribution: OPT_STR,
+  terms: OPT_STR,
+  termsUrl: OPT_STR,
+  supported: bool(),
+  noAcceptance: bool(),
+  termsDigest: OPT_STR,
+  needsAcceptance: bool(),
+  accepted: nullable(ACCEPTANCE),
+  changed: bool()
+});
+
+// A hit in a range table: `riskRangeFrom()`'s columns, or what `parseRow()` made
+// of the file's line in the memory store, with `dataset` added.
+const RANGE_HIT: Json = closed({
+  dataset: str(),
+  start: str(),
+  end: str(),
+  locationId: num(),
+  continent: OPT_STR,
+  country: OPT_STR,
+  subdivision: OPT_STR,
+  city: OPT_STR,
+  registeredCountry: OPT_STR,
+  latitude: OPT_NUM,
+  longitude: OPT_NUM,
+  accuracyKm: num(),
+  anonymousProxy: bool(),
+  satellite: bool(),
+  asn: num(),
+  asOrg: OPT_STR,
+  asDomain: OPT_STR,
+  category: OPT_STR,
+  note: OPT_STR
+});
+
+const ADDRESS_LOOKUP: Json = closed({
+  address: str(),
+  prefix: OPT_STR,
+  geo: nullable(RANGE_HIT),
+  asn: nullable(RANGE_HIT),
+  lists: listOf(closed({ dataset: str(), category: OPT_STR })),
+  datasets: mapOf(str(), 'The version of each dataset this was read from.'),
+  stale: STRINGS,
+  attributions: listOf(ATTRIBUTION)
+});
+
+const FIDO_STATEMENT =
+  'The FIDO Alliance\'s MDS3 metadata statement, kept as the BLOB carried it: ' +
+  'its shape is the FIDO Metadata Statement specification\'s, and which of its ' +
+  'optional members a statement has is the vendor\'s.';
+
+const AUTHENTICATOR_LOOKUP: Json = closed({
+  input: str(),
+  keyKind: str(),
+  key: str(),
+  listed: bool(),
+  why: str(),
+  detail: str(),
+  version: str(),
+  stale: bool(),
+  model: nullable(closed({
+    keyKind: str(),
+    key: str(),
+    description: OPT_STR,
+    protocolFamily: OPT_STR,
+    certificationLevel: OPT_STR,
+    latestStatus: OPT_STR,
+    latestStatusAt: num(),
+    compromised: bool(),
+    statusReports: listOf(closed({
+      status: str(),
+      effectiveDate: str(),
+      reason: str(),
+      expires: str(),
+      comment: str()
+    })),
+    metadataStatement: Kit.freeForm(FIDO_STATEMENT)
+  })),
+  attributions: listOf(ATTRIBUTION)
+});
+
+// One line of an assessment's `signals`. The first is always `model`, the rest
+// each one thing that moved the score.
+const RISK_SIGNAL: Json = closed({
+  signal: str(),
+  score: OPT_NUM,
+  factor: num(),
+  factors: nullable(mapOf(num(), 'Per level of the model.')),
+  terms: nullable(closed({
+    users: num(), signIns: num(), userSignIns: num()
+  })),
+  why: str(),
+  what: str(),
+  evidence: OPT_STR,
+  knownContext: bool(),
+  unknown: STRINGS,
+  capped: str(),
+  listsSetAside: STRINGS,
+  device: nullable(closed({
+    id: str(),
+    via: str(),
+    own: bool(),
+    compliance: str(),
+    attestation: str(),
+    status: str()
+  }))
+});
+
+const RISK_ASSESSMENT: Json = closed({
+  realm: str(),
+  id: str(),
+  at: num(),
+  phase: str(),
+  door: str(),
+  subject: OPT_STR,
+  username: OPT_STR,
+  userHref: str(),
+  sessionId: OPT_STR,
+  clientId: OPT_STR,
+  addressPrefix: OPT_STR,
+  asn: num(),
+  asOrg: OPT_STR,
+  country: OPT_STR,
+  subdivision: OPT_STR,
+  city: OPT_STR,
+  latitude: OPT_NUM,
+  longitude: OPT_NUM,
+  accuracyKm: num(),
+  ipLists: STRINGS,
+  uaHash: OPT_STR,
+  uaFamily: OPT_STR,
+  uaOs: OPT_STR,
+  uaPlatform: OPT_STR,
+  bot: OPT_BOOL,
+  ja4: OPT_STR,
+  credentialKind: OPT_STR,
+  credentialHash: OPT_STR,
+  aaguid: OPT_STR,
+  authenticatorCert: OPT_STR,
+  backupEligible: OPT_BOOL,
+  backupState: OPT_BOOL,
+  datasets: mapOf(oneOf(str(), listOf(oneOf(str(), ATTRIBUTION))),
+                  'The version of each dataset read, and `stale` and ' +
+                  '`attributions` beside them.'),
+  signals: listOf(RISK_SIGNAL),
+  score: OPT_NUM,
+  level: str(),
+  decision: OPT_STR,
+  policyId: OPT_STR,
+  errorCode: OPT_STR,
+  feedback: OPT_STR,
+  feedbackAt: num()
+});
+
+const RISK_SUBJECT: Json = closed({
+  subject: str(),
+  username: OPT_STR,
+  userHref: str(),
+  score: OPT_NUM,
+  level: str(),
+  previousLevel: OPT_STR,
+  reason: OPT_STR,
+  lastAssessment: OPT_STR,
+  crossedAt: num(),
+  updatedAt: num(),
+  actions: mapOf(str(), 'Each reaction taken, and the assessment that took it.'),
+  feedback: OPT_STR
+});
+
+const RISK: Json = closed({
+  realm: str(),
+  realmOnly: bool(),
+  store: closed({ mode: str(), database: bool(), why: str() }),
+  directory: str(),
+  datasets: listOf(RISK_DATASET),
+  formats: listOf(closed({ format: str(), provider: str(), what: str() })),
+  providers: listOf(RISK_PROVIDER),
+  acceptances: listOf(ACCEPTANCE),
+  attributions: listOf(ATTRIBUTION),
+  redistribution: str(),
+  lookup: nullable(ADDRESS_LOOKUP),
+  authenticatorLookup: nullable(AUTHENTICATOR_LOOKUP),
+  assessments: closed({ total: int(), rows: listOf(RISK_ASSESSMENT) }),
+  assessmentsPaging: PAGING,
+  subjects: listOf(RISK_SUBJECT),
+  subjectsPaging: PAGING,
+  signals: listOf(closed({ signal: str(), factor: num(), what: str() })),
+  assessmentsInDatabase: bool(),
+  failures: closed({
+    store: closed({ recording: bool(), database: bool(), why: str() }),
+    windowDays: num(),
+    total: int(),
+    offset: int(),
+    limit: int(),
+    rows: listOf(closed({
+      id: oneOf(str(), num()),
+      at: num(),
+      door: str(),
+      subject: OPT_STR,
+      username: OPT_STR,
+      userHref: str(),
+      name: str(),
+      prefix: OPT_STR,
+      asn: num(),
+      errorCode: OPT_STR
+    }))
+  }),
+  failuresPaging: PAGING,
+  settings: SETTINGS_BLOCK
+});
+
+// `RiskStore.metricsOf()`. Every `by*` is a count per value that a row held, and
+// a series point a count per level, so they are maps.
+const COUNTS: Json = mapOf(num());
+
+const RISK_THRESHOLD: Json = closed({
+  current: num(), share: num(), target: num(), suggested: OPT_NUM
+});
+
+const RISK_METRICS: Json = closed({
+  window: str(),
+  windows: STRINGS,
+  realmOnly: bool(),
+  bands: STRINGS,
+  realm: str(),
+  windowMs: num(),
+  since: num(),
+  bucketMs: num(),
+  database: bool(),
+  enforced: bool(),
+  thresholds: closed({ medium: num(), high: num() }),
+  assessments: closed({
+    total: num(),
+    subjects: num(),
+    bots: num(),
+    meanScore: num(),
+    maxScore: num(),
+    byLevel: COUNTS,
+    byDoor: COUNTS,
+    byDecision: COUNTS,
+    byPhase: COUNTS,
+    byCountry: COUNTS,
+    byBand: COUNTS,
+    bySignal: COUNTS,
+    bySignalLevel: mapOf(COUNTS),
+    bySignalFeedback: mapOf(COUNTS),
+    scoreQuantiles: COUNTS,
+    feedback: closed({ confirmed: num(), denied: num() }),
+    series: listOf(COUNTS)
+  }),
+  calibration: closed({
+    assessments: num(),
+    answered: num(),
+    notMeRate: num(),
+    minimums: closed({ assessments: num(), answersPerSignal: num() }),
+    thresholds: closed({ medium: RISK_THRESHOLD, high: RISK_THRESHOLD }),
+    signals: listOf(closed({
+      signal: str(),
+      factor: num(),
+      builtIn: num(),
+      fired: num(),
+      high: num(),
+      answered: num(),
+      notMe: num(),
+      suggested: OPT_NUM,
+      advice: str()
+    })),
+    invalidFactors: STRINGS
+  }),
+  standings: COUNTS,
+  signals: listOf(closed({
+    signal: str(), factor: num(), builtIn: num(), what: str(), fired: num()
+  })),
+  process: closed({
+    since: num(),
+    assessed: num(),
+    failed: num(),
+    durationMs: closed({
+      samples: num(), mean: num(), p50: num(), p95: num(), p99: num(), max: num()
+    }),
+    reactions: closed({ taken: COUNTS, observed: COUNTS, failed: COUNTS }),
+    rescore: closed({ runs: num(), sessions: num(), raised: num() }),
+    breachedPasswords: nullable(closed({
+      enabled: bool(),
+      since: num(),
+      screened: num(),
+      breached: num(),
+      unanswered: num(),
+      fromCache: num()
+    }))
+  })
+});
+
+// What any of the risk actions answers, including a refused import's `dataset`
+// and `version`, and an upload's. `duplicate` is a version already recorded;
+// `serial` and `overridden` are a FIDO BLOB's.
+const RISK_ACTION: Json = action({
+  dataset: OPT_STR,
+  version: OPT_STR,
+  realm: OPT_STR,
+  state: str(),
+  rows: num(),
+  skipped: num(),
+  activated: bool(),
+  sha256: str(),
+  duplicate: bool(),
+  serial: num(),
+  overridden: str(),
+  previous: str(),
+  unloaded: bool(),
+  acceptance: ACCEPTANCE,
+  bytes: num(),
+  kind: str()
+});
+
+// ---------------------------------------------------------------------------
+// GEOLOCATION: `geolocation_admin.ts`'s `geoView()`. `shown()` withholds a count
+// below `risk.geoMinimumCount`, so a count is nullable everywhere.
+// ---------------------------------------------------------------------------
+const GEO_COUNT: Json = closed({
+  people: OPT_NUM,
+  signIns: OPT_NUM,
+  suppressed: bool(),
+  lastAt: num()
+});
+
+const GEOLOCATION: Json = closed({
+  ok: bool(),
+  realm: str(),
+  window: str(),
+  windows: STRINGS,
+  level: str(),
+  continent: nullable(closed({ continent: str(), name: str() })),
+  country: nullable(closed({ iso: str(), name: str() })),
+  minimumCount: num(),
+  database: bool(),
+  since: num(),
+  liveSessions: OPT_NUM,
+  total: GEO_COUNT,
+  world: GEO_COUNT,
+  continents: listOf(closed(Object.assign({
+    continent: str(), name: str()
+  }, GEO_COUNT.properties))),
+  countries: listOf(closed(Object.assign({
+    iso: str(), onMap: bool(), name: str(), continent: OPT_STR
+  }, GEO_COUNT.properties))),
+  unknown: GEO_COUNT,
+  cities: listOf(closed({
+    city: str(),
+    subdivision: OPT_STR,
+    latitude: OPT_NUM,
+    longitude: OPT_NUM,
+    people: num(),
+    signIns: num(),
+    lastAt: num()
+  })),
+  countryOnly: nullable(GEO_COUNT),
+  hidden: closed({ cities: num(), signIns: num() }),
+  datasets: listOf(closed({
+    dataset: str(), title: str(), state: str(), version: str()
+  })),
+  attributions: listOf(ATTRIBUTION),
+  outlines: closed({
+    source: str(),
+    url: str(),
+    upstream: str(),
+    generatedBy: str(),
+    inputSha256: str(),
+    license: str()
+  }),
+  drawing: closed({
+    picture: closed({ svg: str(), width: num(), height: num() }),
+    legend: listOf(closed({ colour: str(), from: num(), to: num() }))
+  }),
+  noDataColour: str()
+});
+
+// ---------------------------------------------------------------------------
+// MAIL: `mail_admin.ts` over `common/mail.ts`.
+// ---------------------------------------------------------------------------
+const MAIL_COUNTS: Json = closed({
+  pending: int(), sent: int(), captured: int(), dead: int()
+});
+
+// `mail.ts`'s `view()`. A captured message's `text` and `html` only when one
+// message is asked for.
+const MAIL_ROW: Json = closed({
+  id: str(),
+  realm: OPT_STR,
+  username: OPT_STR,
+  to: OPT_STR,
+  category: OPT_STR,
+  template: OPT_STR,
+  lang: OPT_STR,
+  subject: OPT_STR,
+  from: OPT_STR,
+  messageId: OPT_STR,
+  via: OPT_STR,
+  actor: OPT_STR,
+  state: str(),
+  transport: OPT_STR,
+  generation: num(),
+  attempts: num(),
+  inFlight: bool(),
+  holder: str(),
+  errorCode: OPT_STR,
+  why: OPT_STR,
+  providerId: str(),
+  bodyKept: bool(),
+  queuedAt: str(),
+  nextAttemptAt: str(),
+  lastAttemptAt: str(),
+  finishedAt: str(),
+  text: OPT_STR,
+  html: OPT_STR
+});
+
+const MAIL: Json = closed({
+  realm: str(),
+  mode: str(),
+  setting: OPT_STR,
+  transport: OPT_STR,
+  available: bool(),
+  from: OPT_STR,
+  linkBase: OPT_STR,
+  linkBasePinned: bool(),
+  relay: nullable(closed({
+    host: OPT_STR,
+    port: SCALAR,
+    tls: SCALAR,
+    auth: SCALAR,
+    dkim: str()
+  })),
+  buildProblem: nullable(closed({ code: str(), why: str(), at: str() })),
+  counts: MAIL_COUNTS,
+  categories: listOf(closed({
+    id: str(), label: str(), what: str(), optional: bool(), reason: str()
+  })),
+  selfServiceReset: bool(),
+  securityNotices: bool(),
+  templates: listOf(closed({
+    id: str(),
+    title: str(),
+    category: str(),
+    values: STRINGS,
+    links: STRINGS,
+    languages: STRINGS,
+    builtInLanguages: STRINGS
+  })),
+  settings: SETTINGS_BLOCK,
+  template: closed({
+    id: str(),
+    title: str(),
+    category: str(),
+    lang: str(),
+    own: bool(),
+    values: STRINGS,
+    links: STRINGS,
+    subject: str(),
+    text: str(),
+    html: str()
+  })
+});
+
+const MAIL_OUTBOX: Json = closed({
+  realm: str(),
+  transport: OPT_STR,
+  counts: MAIL_COUNTS,
+  state: str(),
+  q: str(),
+  rows: listOf(MAIL_ROW),
+  rowsPaging: PAGING,
+  message: nullable(MAIL_ROW)
+});
+
+// `verified` is `startVerification()`'s answer for an address already verified.
+const MAIL_ACTION: Json = action({
+  message_id: str(),
+  verified: bool(),
+  row: MAIL_ROW
+});
+// ---------------------------------------------------------------------------
+// A REFUSAL OF A READ. A GET's row declares only its 200, so what its door says
+// to a query parameter outside a closed set is `default`; this names the same
+// words for the ones that are refused that way.
+// ---------------------------------------------------------------------------
+const REFUSAL: Json = closed({
+  ok: bool(),
+  errors: STRINGS,
+  error: str(),
+  error_description: str(),
+  message: str()
+});
+
+// ---------------------------------------------------------------------------
+// DEVICES: `devices_admin.ts` over `common/devices.ts`. A key's values are stored
+// on its entry as JSON and read back with `JSON.parse`, so `DEVICE_KEY` is what
+// `prepareKey()` writes; `revocation` is `attestation_revocation.ts`'s verdict.
+// ---------------------------------------------------------------------------
+const DEVICE_CHANGE: Json = closed({
+  status: str(),
+  previous: OPT_STR,
+  at: str(),
+  source: str(),
+  actor: str(),
+  reason: str()
+});
+
+const DEVICE_KEY: Json = closed({
+  id: str(),
+  kind: str(),
+  thumbprint: str(),
+  label: str(),
+  added: str(),
+  addedBy: str(),
+  proof: str(),
+  attestation: closed({
+    level: str(),
+    format: str(),
+    summary: str(),
+    verifiedAt: str(),
+    chainSerials: STRINGS,
+    revocation: closed({
+      status: str(),
+      reason: str(),
+      serial: str(),
+      listVersion: str(),
+      checkedAt: oneOf(str(), num()),
+      chainSerials: STRINGS,
+      why: str()
+    }),
+    freshness: closed({ status: str(), detail: str() })
+  }),
+  material: closed({
+    certificate: str(),
+    subject: OPT_STR,
+    issuer: OPT_STR,
+    serial: OPT_STR,
+    notAfter: oneOf(str(), num(), { type: 'null' }),
+    // The public members of whichever key type it is, which are JOSE's.
+    jwk: mapOf(oneOf(str(), listOf(str()), bool(), num()),
+               'A public JWK\'s members.'),
+    credentialId: str(),
+    aaguid: str(),
+    attachment: str()
+  })
+});
+
+const DEVICE: Json = closed({
+  id: str(),
+  dn: str(),
+  owner: str(),
+  ownerKind: str(),
+  label: str(),
+  applications: STRINGS,
+  keys: listOf(DEVICE_KEY),
+  keyKinds: STRINGS,
+  attestation: closed({
+    level: str(), format: str(), summary: str(), keyId: str()
+  }),
+  compliance: str(),
+  complianceChange: nullable(DEVICE_CHANGE),
+  status: str(),
+  statusChange: nullable(DEVICE_CHANGE),
+  riskLevel: str(),
+  riskChange: nullable(closed({
+    level: str(),
+    previous: OPT_STR,
+    at: str(),
+    source: str(),
+    actor: str(),
+    reason: str(),
+    beforeCompromise: str()
+  })),
+  platform: str(),
+  model: str(),
+  os: str(),
+  enrolment: closed({ method: str(), at: str(), actor: str() }),
+  nativeSso: bool(),
+  rememberedBrowser: nullable(closed({
+    generation: num(),
+    issuedAt: str(),
+    browser: str(),
+    secondFactorAt: str()
+  })),
+  sessionLive: bool(),
+  lastUsed: str(),
+  created: str(),
+  ownerName: str(),
+  ownerFound: bool(),
+  applicationNames: STRINGS
+});
+
+const DEVICE_VOCABULARY: Json = closed({
+  ownerKinds: STRINGS,
+  keyKinds: STRINGS,
+  compliance: STRINGS,
+  attestation: STRINGS,
+  statuses: STRINGS,
+  platforms: STRINGS
+});
+
+const DEVICES: Json = closed({
+  found: bool(),
+  id: str(),
+  device: nullable(DEVICE),
+  vocabulary: DEVICE_VOCABULARY,
+  total: int(),
+  matched: int(),
+  filter: mapOf(str(), 'What the list was narrowed by.'),
+  devices: listOf(DEVICE),
+  page: int(),
+  pages: int(),
+  perPage: int(),
+  devicesPaging: PAGING
+});
+
+const DEVICE_ACTION: Json = action({
+  id: str(),
+  device: DEVICE,
+  key: str('The key\'s id.'),
+  previous: str(),
+  status: str(),
+  sessionsEnded: num(),
+  certificatesRevoked: num()
+});
+
+// `mdmFeed()`. A row's refusal is `setCompliance()`'s.
+const DEVICE_COMPLIANCE: Json = action({
+  applied: int(),
+  refused: int(),
+  results: listOf(closed({
+    index: int(),
+    id: str(),
+    ok: bool(),
+    errors: STRINGS,
+    previous: str(),
+    status: str(),
+    changed: bool(),
+    signalled: bool()
+  }))
+});
+
+const DEVICE_COMPLIANCE_COUNTS: Json = mapOf(num());
+
+const DEVICES_MONITOR: Json = closed({
+  counts: closed({
+    total: num(),
+    byOwnerKind: COUNTS,
+    byCompliance: COUNTS,
+    byAttestation: COUNTS,
+    byKeyKind: COUNTS,
+    byEnrolment: COUNTS,
+    byStatus: COUNTS,
+    byRiskLevel: COUNTS,
+    byKeyAttestationFormat: COUNTS,
+    keys: num(),
+    nativeSso: closed({ live: num(), ended: num(), none: num() }),
+    windowed: bool(),
+    counted: num(),
+    complete: bool()
+  }),
+  timeline: closed({
+    days: int(),
+    rows: listOf(closed({
+      day: str(),
+      created: num(),
+      removed: num(),
+      evicted: num(),
+      compliance: DEVICE_COMPLIANCE_COUNTS
+    })),
+    totals: closed({
+      created: num(),
+      removed: num(),
+      evicted: num(),
+      compliance: DEVICE_COMPLIANCE_COUNTS
+    }),
+    since: str()
+  }),
+  activity: closed({
+    scope: str(),
+    recognitions: COUNTS,
+    enrolments: COUNTS,
+    attestationLevels: COUNTS,
+    attestationFormats: COUNTS,
+    attestationRefusals: COUNTS
+  }),
+  complianceSources: STRINGS
+});
+
+const DEVICE_REGISTRATION: Json = closed({
+  enrolment: listOf(closed({ method: str(), built: bool(), what: str() })),
+  recognition: listOf(closed({ kind: str(), built: bool(), what: str() })),
+  ownerKinds: STRINGS,
+  keyKinds: STRINGS,
+  keyProofs: STRINGS,
+  attestationLevels: STRINGS,
+  attestationFormats: STRINGS,
+  complianceStates: STRINGS,
+  complianceSources: STRINGS,
+  mdmFeed: closed({
+    built: bool(),
+    path: str(),
+    scope: str(),
+    role: str(),
+    maxReports: num(),
+    identifiedBy: STRINGS,
+    source: str()
+  }),
+  receivedCaep: closed({ built: bool(), source: str(), via: str() }),
+  signals: closed({ caep: STRINGS, risc: STRINGS, subject: str() }),
+  recordedAt: closed({ signIn: str(), tokenEndpoint: str() }),
+  decisions: closed({
+    riskSignals: STRINGS,
+    expectRegistered: bool(),
+    refuseCompromised: bool(),
+    requireCompliantDevice: bool(),
+    compliantDeviceAttested: bool(),
+    policy: str(),
+    acr: str(),
+    claim: str()
+  }),
+  unattestedKeys: closed({
+    accepted: bool(), predicate: str(), adminKeys: str()
+  }),
+  freshKeyAttestation: closed({
+    required: bool(), predicate: str(), nonce: str(), scep: str()
+  }),
+  trustAnchors: listOf(closed({
+    kind: str(),
+    setting: str(),
+    source: str(),
+    count: OPT_INT,
+    shipped: listOf(closed({
+      subject: str(), notAfter: str(), sha256: str(), used: bool()
+    }))
+  })),
+  challenges: closed({
+    store: str(),
+    perRealm: bool(),
+    persisted: bool(),
+    live: int(),
+    ttlSeconds: num(),
+    max: num(),
+    purposes: STRINGS
+  }),
+  settings: SETTINGS_BLOCK,
+  androidStatus: closed({
+    active: str(),
+    loadedAt: num(),
+    rows: num(),
+    stale: bool(),
+    staleAfterHours: num(),
+    url: str(),
+    required: bool(),
+    job: str(),
+    error: str()
+  })
+});
+
+// ---------------------------------------------------------------------------
+// THE SCHEDULER: `scheduler_admin.ts` over `cluster/scheduler.ts`. `runView()` is
+// the one shape of a run; a run's `params` is what the person who asked for it
+// sent, which is whatever that job reads.
+// ---------------------------------------------------------------------------
+const SCHEDULER_RUN: Json = closed({
+  runId: str(),
+  jobId: OPT_STR,
+  realm: OPT_STR,
+  trigger: str(),
+  state: str(),
+  attempt: int(),
+  fenceAt: num(),
+  node: str(),
+  nodeName: str(),
+  host: str(),
+  pid: OPT_INT,
+  worker: bool(),
+  dueAt: OPT_STR,
+  queuedAt: OPT_STR,
+  queuedAtMs: OPT_NUM,
+  startedAt: OPT_STR,
+  endedAt: OPT_STR,
+  durationMs: OPT_NUM,
+  requestedBy: str(),
+  requestedVia: str(),
+  params: Kit.freeForm('A manual run\'s `params`: the JSON its requester sent, ' +
+                       'whose members are the job\'s own to read, or null.'),
+  takenOver: bool(),
+  abandonedOf: OPT_STR,
+  ranIn: OPT_STR,
+  deferredMs: num(),
+  errorCode: str(),
+  why: str(),
+  result: nullable(str('`summaryOf()`: the job\'s answer as text, 500 ' +
+                       'characters at most.')),
+  nextRunAt: OPT_STR,
+  nextRunInMs: OPT_NUM,
+  stale: bool()
+});
+
+const SCHEDULER_LEADER: Json = closed({
+  clustered: bool(),
+  known: bool(),
+  node: OPT_STR,
+  nodeName: OPT_STR,
+  host: OPT_STR,
+  pid: OPT_INT,
+  since: OPT_STR,
+  token: OPT_NUM,
+  leaseHolder: OPT_STR,
+  leaseAcquiredAt: OPT_STR,
+  leaseExpiresAt: OPT_STR,
+  lastTickAt: OPT_STR,
+  lastTickAgoMs: OPT_NUM,
+  thisProcess: OPT_BOOL,
+  live: OPT_BOOL
+});
+
+const SCHEDULER_JOB: Json = closed({
+  id: str(),
+  title: str(),
+  describe: str(),
+  owner: str(),
+  kind: str(),
+  scope: str(),
+  realm: str(),
+  readOnly: bool(),
+  schedule: closed({
+    text: str(),
+    everyMs: OPT_NUM,
+    setting: OPT_STR,
+    cron: OPT_STR,
+    manualOnly: bool()
+  }),
+  state: str(),
+  offReason: OPT_STR,
+  manual: bool(),
+  timeoutMs: num(),
+  runsOn: str(),
+  onFront: OPT_STR,
+  nice: num(),
+  processes: listOf(SCHEDULER_RUN),
+  lastRun: nullable(SCHEDULER_RUN),
+  running: nullable(SCHEDULER_RUN),
+  queued: listOf(SCHEDULER_RUN),
+  nextRunAt: OPT_STR,
+  nextRunInMs: OPT_NUM,
+  nextRunState: str(),
+  overdueSince: OPT_STR,
+  overdueWhy: OPT_STR
+});
+
+const LEADER_AT_REQUEST: Json = closed({
+  node: OPT_STR, pid: OPT_INT, token: OPT_NUM
+});
+
+const SCHEDULER: Json = closed({
+  generatedAt: str(),
+  nowMs: num(),
+  clock: str(),
+  answeredBy: closed({
+    node: str(), nodeName: str(), host: str(), pid: int()
+  }),
+  leader: SCHEDULER_LEADER,
+  tickS: num(),
+  enabled: bool(),
+  unknownDisabledIds: STRINGS,
+  jobs: listOf(SCHEDULER_JOB),
+  runs: listOf(SCHEDULER_RUN),
+  commands: listOf(closed({
+    id: str(),
+    command: str(),
+    state: str(),
+    requestedBy: str(),
+    queuedAt: OPT_STR,
+    endedAt: OPT_STR,
+    leaderAtRequest: nullable(LEADER_AT_REQUEST),
+    obeyedBy: Kit.nullable(oneOf(str(), closed({
+      node: OPT_STR, pid: OPT_INT, nodeName: OPT_STR, host: OPT_STR
+    })))
+  })),
+  confinedToRealm: OPT_STR,
+  filters: closed({ job: OPT_STR, outcome: OPT_STR }),
+  runsPaging: PAGING,
+  jobsPaging: PAGING,
+  jobIds: STRINGS,
+  settings: SETTINGS_BLOCK,
+  run: str('The run asked for by `?run=`.'),
+  found: bool(),
+  detail: nullable(SCHEDULER_RUN)
+});
+
+const SCHEDULER_ACTION: Json = action({
+  accepted: bool(),
+  runId: str(),
+  alreadyQueued: bool(),
+  run: SCHEDULER_RUN,
+  href: str(),
+  command: str(),
+  leaderAtRequest: nullable(LEADER_AT_REQUEST)
+});
+
+// ---------------------------------------------------------------------------
+// WHAT EVERY NODE SNAPSHOT SAYS: `node_snapshots.ts`'s `read()`, under both the
+// worker pools and node health.
+// ---------------------------------------------------------------------------
+const SNAPSHOT_CLUSTER: Json = closed({
+  clustered: bool(),
+  text: str(),
+  intervalSeconds: num(),
+  staleAfterSeconds: num(),
+  goneRemovedAfterHours: num(),
+  readError: OPT_STR
+});
+
+const NO_NODE: Json = closed({
+  ok: bool(),
+  errors: STRINGS,
+  nodes: listOf(str(), 'The nodes there are.')
+});
+
+const WORKER_POOL: Json = closed({
+  id: str(),
+  title: str(),
+  module: str(),
+  setting: str(),
+  state: str(),
+  stateText: str(),
+  maxWorkers: num(),
+  initialWorkers: num(),
+  currentWorkers: num(),
+  readyWorkers: num(),
+  startingWorkers: num(),
+  busyWorkers: num(),
+  freeWorkers: num(),
+  restarts: closed({
+    forked: num(),
+    replaced: num(),
+    crashed: num(),
+    failedStarts: num(),
+    stopped: num()
+  }),
+  responseTime: closed({
+    answered: num(),
+    averageMs: OPT_NUM,
+    recentAverageMs: OPT_NUM,
+    maxMs: OPT_NUM
+  }),
+  startedAt: OPT_STR,
+  prefixes: STRINGS,
+  workers: listOf(closed({
+    threadId: oneOf(int(), str()),
+    slot: nullable(oneOf(int(), str())),
+    ready: bool(),
+    busy: bool(),
+    inFlight: num(),
+    served: num(),
+    retiring: bool(),
+    upSeconds: OPT_NUM
+  }))
+});
+
+const POOLS_VIEW_MEMBERS: Json = {
+  generatedAt: str(),
+  node: OPT_STR,
+  pid: OPT_INT,
+  mainThread: bool(),
+  scope: str(),
+  scopeText: str(),
+  pools: listOf(WORKER_POOL)
+};
+
+const WORKER_POOLS: Json = closed(Object.assign({}, POOLS_VIEW_MEMBERS, {
+  answeredBy: closed({ node: OPT_STR, pid: int() }),
+  state: str(),
+  cluster: SNAPSHOT_CLUSTER,
+  nodes: listOf(closed({
+    name: str(),
+    self: bool(),
+    state: str(),
+    stateText: str(),
+    ageSeconds: OPT_NUM,
+    takenAt: OPT_STR,
+    view: nullable(closed(POOLS_VIEW_MEMBERS))
+  })),
+  totals: closed({
+    nodes: int(),
+    nodesCounted: int(),
+    pools: listOf(closed({
+      id: str(),
+      title: str(),
+      currentWorkers: num(),
+      busyWorkers: num(),
+      freeWorkers: num(),
+      forked: num(),
+      crashed: num(),
+      failedStarts: num(),
+      nodesOn: num()
+    })),
+    text: str()
+  })
+}));
 //@@MORE-CONSTANTS@@
 
 export = {
@@ -1348,6 +2445,38 @@ export = {
     setSettings: { '200': SET_SETTINGS },
     resetSetting: { '200': SET_SETTING },
     resetAllSettings: { '200': RESET_ALL },
+    getRisk: { '200': RISK },
+    getRiskMetrics: { '200': RISK_METRICS, '400': REFUSAL },
+    getGeolocation: { '200': GEOLOCATION, '400': REFUSAL },
+    uploadRiskDataset: { '200': RISK_ACTION, '202': RISK_ACTION },
+    importRiskDataset: { '200': RISK_ACTION },
+    activateRiskDataset: { '200': RISK_ACTION },
+    reloadRiskDatasetVersion: { '200': RISK_ACTION },
+    rollbackRiskDataset: { '200': RISK_ACTION },
+    acceptRiskProviderTerms: { '200': RISK_ACTION },
+    deleteRiskDatasetVersion: { '200': RISK_ACTION },
+    getMail: { '200': MAIL, '400': REFUSAL },
+    sendMailTestMessage: { '200': MAIL_ACTION },
+    sendMailVerificationLink: { '200': MAIL_ACTION },
+    saveMailTemplate: { '200': MAIL_ACTION },
+    resetMailTemplate: { '200': MAIL_ACTION },
+    getMailOutbox: { '200': MAIL_OUTBOX, '400': REFUSAL },
+    retryMailDeadLetter: { '200': MAIL_ACTION },
+    getDevices: { '200': DEVICES, '400': REFUSAL },
+    createDevice: { '200': DEVICE_ACTION },
+    updateDevice: { '200': DEVICE_ACTION },
+    removeDevice: { '200': DEVICE_ACTION },
+    addDeviceKey: { '200': DEVICE_ACTION },
+    removeDeviceKey: { '200': DEVICE_ACTION },
+    setDeviceCompliance: { '200': DEVICE_ACTION },
+    setDeviceStatus: { '200': DEVICE_ACTION },
+    reportDeviceCompliance: { '200': DEVICE_COMPLIANCE },
+    getDevicesMonitor: { '200': DEVICES_MONITOR },
+    getDeviceRegistration: { '200': DEVICE_REGISTRATION },
+    getScheduler: { '200': SCHEDULER, '400': REFUSAL },
+    runSchedulerJob: { '200': SCHEDULER_ACTION, '202': SCHEDULER_ACTION },
+    stepDownScheduler: { '200': SCHEDULER_ACTION, '202': SCHEDULER_ACTION },
+    getWorkerPools: { '200': WORKER_POOLS, '404': NO_NODE },
     //@@MORE-OPERATIONS@@
   } as Record<string, Record<string, unknown>>
 };
