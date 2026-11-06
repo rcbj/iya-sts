@@ -21,3 +21,18 @@ version: '2.4'
 networks:
   default:
     internal: true
+
+# THE RUNNER'S FUZZ MARKER. `sts_schemathesis.js` (#1299) runs only in this
+# mode and declines in every other, the way the cells jobs read
+# STS_TEST_CELL_*_URL — a marker the cells compose overlay sets on this same
+# `tests` service and tools/modes.sh does not. It is here, on the overlay, and
+# NOT in modes.sh, because modes.sh's own rule is that every mode names every
+# variable (tests/unit_job_environment.js), so a fuzz marker put there would
+# have to be added to all six arms and to the runner's scrub list. Only the
+# `fuzz` mode layers this file, so only the `fuzz` mode's runner sees the
+# marker, and a bare `./run-tests.sh` leaves it unset. A unit job that
+# inherits it reads it for nothing, as it does the cells markers.
+services:
+  tests:
+    environment:
+      - STS_TEST_FUZZ=1

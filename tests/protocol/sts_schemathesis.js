@@ -33,6 +33,7 @@
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const kit = require("./schemathesis_kit.js");
+const expectation = require("./expectation.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -66,6 +67,26 @@ function serviceBase() {
 
 async function test() {
   log.debug("Entering test().");
+  // THE FUZZ JOB RUNS ONLY IN THE `fuzz` MODE, AND NOWHERE ELSE — the same
+  // self-skip the cells jobs take (sts_cells_map.js). It expects a DEDICATED,
+  // network-isolated product stack (run-tests.sh's `fuzz` mode), throws any
+  // input at every surface and runs for over an hour; against the ordinary
+  // suite stack, which answers in no realm of its own and is not isolated,
+  // it must not run at all. The marker is set by the fuzz compose overlay's
+  // `tests` service (tests/docker-compose-run-tests-fuzz.yml), the way the
+  // cells markers arrive — not through tools/modes.sh, whose "every mode
+  // names every variable" rule would force a fuzz marker into every arm. So
+  // a bare `./run-tests.sh`, which does not layer that overlay, leaves it
+  // unset and this job is a skip rather than a 77-minute run against a stack
+  // that is not built for it.
+  if (!process.env.STS_TEST_FUZZ) {
+    expectation.declineToRun(log, "not the fuzz mode: STS_TEST_FUZZ is " +
+      "unset, so this is the ordinary suite stack and not the dedicated, " +
+      "network-isolated product stack this job needs. Run it with " +
+      "`./run-tests.sh --modes=fuzz --only=schemathesis`.");
+    log.debug("Leaving test(). Skipped.");
+    return;
+  }
   const base = serviceBase();
   log.info("[schemathesis] driving " + base + " in the three realm profiles");
   const results = await kit.run(base, { say: function (message) {
