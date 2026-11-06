@@ -16131,10 +16131,15 @@ class Authn {
                       (hardwareRefusal ? hardwareRefusal.why : '') || ''),
       // NO POST-QUANTUM KEY WHERE ONE IS REQUIRED (#718): the refusal the
       // ceremony would end in, said before it runs.
-      postQuantumRefused: pqRefusal ? { code: pqRefusal.code,
-                                        why: pqRefusal.why } : null,
+      // These facts are an answer of `/authn-api`, so each refusal's code is
+      // a MARK and no member (#1355): `mfaWebauthnOptions()` reads it to
+      // record, and the screen needs only the sentence.
+      postQuantumRefused: pqRefusal
+        ? errorCodes.mark({ why: pqRefusal.why }, pqRefusal.code) : null,
       // NO KEY THAT CAN EARN `phrh` (#739), said before the ceremony.
-      hardwareRefused: hardwareRefusal,
+      hardwareRefused: hardwareRefusal
+        ? errorCodes.mark({ why: hardwareRefusal.why }, hardwareRefusal.code)
+        : null,
       // AND WHERE TO GET ONE (#946): the panel's links, drawn in the page's
       // language — the refusal above stays English (#539).
       postQuantumHelp: pqRefusal ? this.postQuantumHelp() : null,
@@ -18567,9 +18572,10 @@ class Authn {
     // would refuse — and recorded as the refusal it is, a session refused.
     if (facts.postQuantumRefused) {
       const refusal = facts.postQuantumRefused;
+      const refusalCode = errorCodes.codeOf(refusal);
       audit.audit({
         action: 'session.refuse', actor: String(found.step.username || ''),
-        errorCode: refusal.code,
+        errorCode: refusalCode,
         protocol: String((found.step.authn && found.step.authn.protocol) ||
                          'OAuth 2.0 / OIDC'), channel: 'http', target: '',
         summary: 'a session for ' + String(found.step.username || '') +
@@ -18581,7 +18587,7 @@ class Authn {
           credential: 'webauthn'
         })
       });
-      errorCodes.mark(res, refusal.code);
+      errorCodes.mark(res, refusalCode);
       this.stepRefused(res, refusal.why);
       log.debug('Leaving Authn.mfaWebauthnOptions(). No post-quantum key.');
       return;
@@ -18590,9 +18596,10 @@ class Authn {
     // armed. A registration would not earn it either.
     if (facts.hardwareRefused) {
       const refusal = facts.hardwareRefused;
+      const refusalCode = errorCodes.codeOf(refusal);
       audit.audit({
         action: 'session.refuse', actor: String(found.step.username || ''),
-        errorCode: refusal.code,
+        errorCode: refusalCode,
         protocol: String((found.step.authn && found.step.authn.protocol) ||
                          'OAuth 2.0 / OIDC'), channel: 'http', target: '',
         summary: 'a session for ' + String(found.step.username || '') +
@@ -18603,7 +18610,7 @@ class Authn {
           credential: 'webauthn'
         })
       });
-      errorCodes.mark(res, refusal.code);
+      errorCodes.mark(res, refusalCode);
       this.stepRefused(res, refusal.why);
       log.debug('Leaving Authn.mfaWebauthnOptions(). No phrh key.');
       return;

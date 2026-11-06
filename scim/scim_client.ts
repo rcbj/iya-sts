@@ -4195,6 +4195,19 @@ class ScimClients {
     return errorCodes.mark({ ok: false, errors: errors }, code);
   }
 
+  // One cell's answer to an act. Another cell's code crossed the channel spelt
+  // out (`code`, `answerAct()`), because a mark does not survive JSON; it is a
+  // mark again here, so that what this act answers never carries it (#1355).
+  private cellResult(cell: string, answer: Json): Json {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering ScimClients.cellResult(). " + cell);
+    const out: Json = Object.assign({ cell: cell, reachable: true }, answer);
+    const code = String(out.code || errorCodes.codeOf(answer) || '');
+    delete out.code;
+    log.debug("Leaving ScimClients.cellResult().");
+    return code ? errorCodes.mark(out, code) : out;
+  }
+
   // A definition from an act's body over the row it changes.
   private definitionFrom(given: Json, before: Json | null): Json {
     const { log } = this.deps;
@@ -4418,14 +4431,13 @@ class ScimClients {
     for (const cell of targets) {
       if (cell === here) {
         const mine = await this.actHere(given, ctx);
-        results.push(Object.assign({ cell: cell, reachable: true }, mine));
+        results.push(this.cellResult(cell, mine));
         continue;
       }
       try {
         const theirs = await channel().call(cell, OP_ACT, {
           realm: realms.currentId(), body: given, actor: actor });
-        results.push(Object.assign({ cell: cell, reachable: true },
-                                   theirs || {}));
+        results.push(this.cellResult(cell, theirs || {}));
       } catch (e) {
         log.warn(errorCodes.tag('STS-SCIMC-0034') + 'scim client: cell "' +
                  cell + '" did not answer ' + OP_ACT + ' (' + action + '): ' +
@@ -4461,7 +4473,7 @@ class ScimClients {
       const first = results.filter(function (one) {
         return one.reachable;
       })[0];
-      return this.refusal(first ? (first.code || errorCodes.codeOf(first) ||
+      return this.refusal(first ? (errorCodes.codeOf(first) ||
                                    'STS-SCIMC-0016')
                                 : 'STS-SCIMC-0034',
                           [out.message]);

@@ -206,7 +206,7 @@ function sectionE(t, k) {
     return /fgag-/.test(String(one.name));
   });
   t.check(failed.length === 2 && failed.every(function (one) {
-    return one.code === 'STS-FGA-0025' && !!one.why;
+    return !('code' in one) && !!one.why;
   }) && failed.some(function (one) {
     return one.name === 'fgag-refused' &&
            /could not be written/.test(one.why) &&
@@ -215,10 +215,11 @@ function sectionE(t, k) {
     return /fgag-ghost/.test(one.name) &&
            /names no person, service account or application/.test(one.why);
   }), 'E6. the refused write and the dangling member are failed, each ' +
-     'with STS-FGA-0025 and why', JSON.stringify(failed));
+     'with why and no code', JSON.stringify(failed));
   t.check(/Granted the remote PEP\(s\)/.test(r.message) &&
           /Already held: fgag-held/.test(r.message) &&
-          /Not granted: fgag-refused \(STS-FGA-0025\)/.test(r.message),
+          /Not granted: fgag-refused — /.test(r.message) &&
+          !/STS-FGA-/.test(r.message),
           'E7. the answer\'s message names who was granted, who held it ' +
           'and who could not be', r && r.message);
 

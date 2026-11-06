@@ -29,6 +29,7 @@
 // family at 23d-ii.
 // ---------------------------------------------------------------------------
 
+import errorCodes = require('../common/error_codes');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
@@ -85,6 +86,7 @@ const SHARE_FORM = vz.object({
 });
 
 interface PortalSharedDeps {
+  errorCodes: typeof errorCodes;
   log: { debug(message: string): void; error(message: string): void };
   subjectForName(name: string): string;
   nameForSubject(sub: string): string;
@@ -118,6 +120,7 @@ class PortalShared {
     helpers.log.debug("Entering PortalShared.defaultDeps().");
     helpers.log.debug("Leaving PortalShared.defaultDeps().");
     return {
+      errorCodes: errorCodes,
       log: helpers.log,
       subjectForName: helpers.subjectForName,
       nameForSubject: helpers.nameForSubject,
@@ -161,21 +164,23 @@ class PortalShared {
    *
    * @param username - the signed-in person
    * @param wanted - the page of resources asked for
-   * @returns the view, or `{ ok: false, code }` where it cannot be drawn
+   * @returns the view, or `{ ok: false }`, marked with its code (#1355: an
+   *   act's refusal embeds this view whole), where it cannot be drawn
    */
   view(username: string, wanted: number): Json {
-    const { log } = this.deps;
+    const { log, errorCodes } = this.deps;
     log.debug("Entering PortalShared.view().");
     const owner = this.deps.subjectForName(String(username));
     if (!owner) {
       log.debug("Leaving PortalShared.view(). No subject.");
-      return { ok: false, code: 'STS-UMA-0310' };
+      return errorCodes.mark({ ok: false }, 'STS-UMA-0310');
     }
     const store = this.deps.loadStore();
     const doc = this.deps.loadOwnerPolicy().view(owner);
     if (!doc.ok) {
-      log.debug("Leaving PortalShared.view(). " + doc.code);
-      return { ok: false, code: doc.code };
+      const unreadable = errorCodes.codeOf(doc);
+      log.debug("Leaving PortalShared.view(). " + unreadable);
+      return errorCodes.mark({ ok: false }, unreadable);
     }
     const resources = store.resourcesOf(owner).map(function (row: Json) {
       return { id: String(row._id), name: String(row.name || ''),
@@ -340,14 +345,15 @@ class PortalShared {
    */
   accountOperations(ctx: AccountContext): AccountOperation[] {
     const self = this;
-    const { log } = this.deps;
+    const { log, errorCodes } = this.deps;
     log.debug("Entering PortalShared.accountOperations().");
     const viewOrRefuse = function (res: Json, view: Json): unknown {
       log.debug("Entering viewOrRefuse().");
       if (!view.ok) {
-        log.debug("Leaving viewOrRefuse(). " + view.code);
+        const code = errorCodes.codeOf(view);
+        log.debug("Leaving viewOrRefuse(). " + code);
         // error-code: none — the view's own code, marked by refuse().
-        return ctx.refuse(res, 500, view.code,
+        return ctx.refuse(res, 500, code,
                           'Your sharing could not be read.');
       }
       log.debug("Leaving viewOrRefuse().");

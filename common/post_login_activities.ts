@@ -564,10 +564,11 @@ class PostLoginActivities {
   }
 
   private refused(code: string, errors: string[]): Json {
-    const { log } = this.deps;
+    const { log, errorCodes } = this.deps;
     log.debug("Entering PostLoginActivities.refused(). " + code);
     log.debug("Leaving PostLoginActivities.refused().");
-    return { ok: false, errorCode: code, errors: errors };
+    // A mark and no member (#1355): the API answers this object whole.
+    return errorCodes.mark({ ok: false, errors: errors }, code);
   }
 
   // The same people, as a duplicate start is judged: the same set of group
@@ -592,7 +593,7 @@ class PostLoginActivities {
    *   or `;`-separated; none for everybody in the realm), `intervalDays`,
    *   `maxMails`, `perRun`
    * @param ctx - `{ actor, via }`: who started it, and through which door
-   * @returns `{ ok, started }`, or `{ ok: false, errorCode, errors }`
+   * @returns `{ ok, started }`, or `{ ok: false, errors }`, marked
    */
   async start(body: Json, ctx: Json): Promise<Json> {
     const { log, started, runs, randomId, now, realms } = this.deps;
@@ -711,7 +712,7 @@ class PostLoginActivities {
    * @param act - `pause`, `resume` or `end`
    * @param id - the started activity
    * @param ctx - `{ actor, via }`
-   * @returns `{ ok, started }`, or `{ ok: false, errorCode, errors }`
+   * @returns `{ ok, started }`, or `{ ok: false, errors }`, marked
    */
   move(act: string, id: string, ctx: Json): Json {
     const { log, started, now, realms } = this.deps;

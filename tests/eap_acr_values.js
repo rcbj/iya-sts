@@ -798,7 +798,7 @@ function hardwareAllow(t) {
             'not armed', JSON.stringify(none.body));
     const drawn = page.webauthn({
       id: 'step', username: name, passwordless: false,
-      webauthn: { mode: 'get', hardwareRefused: { code: 'STS-AUTHN-0459' },
+      webauthn: { mode: 'get', hardwareRefused: { why: 'no key earns it' },
                   problem: 'none of the passkeys held can earn it',
                   challenge: 'c', rpId: 'localhost',
                   userVerification: 'required', algorithms: [] } },

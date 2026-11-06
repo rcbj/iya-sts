@@ -1207,7 +1207,7 @@ const ACCESS_TYPE = Kit.closed({
 
 const PEP_HOLDER = Kit.closed({
   name: STR, kind: STR, dn: STR, member: BOOL, scoped: BOOL, scope: BOOL,
-  why: STR, code: STR
+  why: STR
 });
 
 // `xacml/fga_policies.ts`'s `state()`, with the page's three lists of choices.
@@ -1217,7 +1217,7 @@ const FGA_STATE = Kit.nullable(Kit.closed({
     name: STR, policyId: NULL_STR, version: NULL_STR, enabled: BOOL,
     application: NULL_STR, orphanedAt: NULL_STR, own: BOOL, editor: STR
   })),
-  usable: BOOL, failure: STR, code: STR, why: STR,
+  usable: BOOL, failure: STR, why: STR,
   types: Kit.listOf(Kit.closed({
     type: STR, covered: BOOL, uncovered: STRS, rows: INT, notForPolicy: STRS
   })),
