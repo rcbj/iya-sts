@@ -539,20 +539,25 @@ class CertificateTrust {
    * @throws Error for a purpose the table does not name: a programming error
    */
   static purpose(id: string): Purpose {
+    helpers.log.debug("Entering CertificateTrust.purpose().");
     const row = BY_ID[id];
     if (!row) {
       // error-code: none — a caller naming a purpose the table lacks is a bug
       throw new Error('certificate_trust: no such purpose "' + id + '"');
     }
+    helpers.log.debug("Leaving CertificateTrust.purpose().");
     return row;
   }
 
   // Runs `fn` with the realm named as the ambient one.
   private static inRealm(realmId: string | undefined, fn: () => Json): Json {
+    helpers.log.debug("Entering CertificateTrust.inRealm().");
     if (!realmId || realmId === realms.currentId()) {
+      helpers.log.debug("Leaving CertificateTrust.inRealm().");
       return fn();
     }
     const realm = realms.get(realmId);
+    helpers.log.debug("Leaving CertificateTrust.inRealm().");
     return realm ? realms.run(realm, fn) : fn();
   }
 
@@ -615,6 +620,7 @@ class CertificateTrust {
   // The log line of a check switched off in product: once per process per
   // setting, with nothing refused.
   private static announceIfOff(id: string, realmId?: string): void {
+    helpers.log.debug("Entering CertificateTrust.announceIfOff().");
     CertificateTrust.inRealm(realmId, function () {
       if (!mode.isProduct()) {
         return;
@@ -626,6 +632,7 @@ class CertificateTrust {
         CertificateTrust.announce(CertificateTrust.purpose(id).setting);
       }
     });
+    helpers.log.debug("Leaving CertificateTrust.announceIfOff().");
   }
 
   private static announce(setting: string): void {
@@ -672,7 +679,9 @@ class CertificateTrust {
 
   // What a purpose asks in one of its variants.
   private static ruleOf(purpose: Purpose, variant?: string): Json {
+    helpers.log.debug("Entering CertificateTrust.ruleOf().");
     const v = (variant && purpose.variants && purpose.variants[variant]) || {};
+    helpers.log.debug("Leaving CertificateTrust.ruleOf().");
     return {
       leaf: Object.assign({}, purpose.leaf, v.leaf || {}),
       selfSigned: v.selfSigned || purpose.selfSigned,
@@ -684,33 +693,40 @@ class CertificateTrust {
 
   // A verdict that has decided nothing yet: every check not asked.
   private static blank(id: string, inForce: boolean): TrustVerdict {
+    helpers.log.debug("Entering CertificateTrust.blank().");
     const checks: Json = {};
     CHECK_ORDER.forEach(function (check) {
       checks[check] = 'not-asked';
     });
+    helpers.log.debug("Leaving CertificateTrust.blank().");
     return { ok: false, purpose: id, inForce: inForce, anchor: 'none',
              path: [], revocation: null, checks: checks, code: '', why: '' };
   }
 
   // Every spelling of a certificate as DER, or null.
   private static derOf(cert: Json): Buffer | null {
+    helpers.log.debug("Entering CertificateTrust.derOf().");
     try {
       // A string with no armour is an `x5c` member: base64 DER.
       const text = Buffer.isBuffer(cert) || cert instanceof Uint8Array ? '' :
         String(cert);
+      helpers.log.debug("Leaving CertificateTrust.derOf().");
       return stsCrypto.parseCertificate(
         Buffer.isBuffer(cert) || cert instanceof Uint8Array ? cert :
           (/-----BEGIN/.test(text) ? text : Buffer.from(text, 'base64'))).raw;
     } catch (e) {
       helpers.log.debug("Caught in CertificateTrust.derOf(): " +
                         ((e && e.message) || e));
+      helpers.log.debug("Leaving CertificateTrust.derOf().");
       return null;
     }
+    helpers.log.debug("Leaving CertificateTrust.derOf().");
   }
 
   // The material's leaf and chain, read from whichever member carries them.
   // A peer certificate is `getPeerCertificate(true)`'s linked list.
   private static certificatesOf(material: Json): Json {
+    helpers.log.debug("Entering CertificateTrust.certificatesOf().");
     const m = material || {};
     const chain: Buffer[] = [];
     let leafDer: Buffer | null = null;
@@ -729,8 +745,10 @@ class CertificateTrust {
     }
     const given = (m.chain || []).map(CertificateTrust.derOf);
     if (!leafDer || given.indexOf(null) !== -1) {
+      helpers.log.debug("Leaving CertificateTrust.certificatesOf().");
       return null;
     }
+    helpers.log.debug("Leaving CertificateTrust.certificatesOf().");
     return { leaf: leafDer, chain: chain.concat(given) };
   }
 
@@ -738,33 +756,44 @@ class CertificateTrust {
   // malformed certificates, and a verdict is what the door promises for a bad
   // certificate, never a throw (x509-limbo found one that reached it).
   private static readable(der: Buffer, chain?: Buffer[]): boolean {
+    helpers.log.debug("Entering CertificateTrust.readable().");
     try {
       [der].concat(chain || []).forEach(function (one) {
         stsCrypto.certificateFacts(one);
       });
+      helpers.log.debug("Leaving CertificateTrust.readable().");
       return true;
     } catch (e) {
       helpers.log.debug("Caught in CertificateTrust.readable(): " +
                         ((e && e.message) || e));
+      helpers.log.debug("Leaving CertificateTrust.readable().");
       return false;
     }
+    helpers.log.debug("Leaving CertificateTrust.readable().");
   }
 
   private static pemOf(der: Buffer): string {
+    helpers.log.debug("Entering CertificateTrust.pemOf().");
+    helpers.log.debug("Leaving CertificateTrust.pemOf().");
     return pki.certificateFromDer(der).pem;
   }
 
   private static stepOf(der: Buffer): Json {
+    helpers.log.debug("Entering CertificateTrust.stepOf().");
     const facts = stsCrypto.certificateFacts(der);
+    helpers.log.debug("Leaving CertificateTrust.stepOf().");
     return { der: der, subject: facts.subject,
              fingerprint256: facts.fingerprint256 };
   }
 
   private static async isSelfSigned(der: Buffer): Promise<boolean> {
+    helpers.log.debug("Entering CertificateTrust.isSelfSigned().");
     const entry = pki.certificateFromDer(der);
     if (entry.x509.subject !== entry.x509.issuer) {
+      helpers.log.debug("Leaving CertificateTrust.isSelfSigned().");
       return false;
     }
+    helpers.log.debug("Leaving CertificateTrust.isSelfSigned().");
     return !!(await pki.pathSigned(entry, entry));
   }
 
@@ -864,6 +893,7 @@ class CertificateTrust {
   // case that asks nothing of a field passes it: see the header.
   private static fieldChecks(verdict: TrustVerdict, der: Buffer, rule: Json,
                              opts: Json, mayBeCa: boolean): Json[] {
+    helpers.log.debug("Entering CertificateTrust.fieldChecks().");
     const options: Json = Object.assign({}, rule.leaf, {
       role: opts.fieldRole || 'leaf', now: opts.now, skewMs: opts.skewMs,
       allowSha1: opts.allowSha1, allowCritical: opts.allowCritical,
@@ -884,11 +914,13 @@ class CertificateTrust {
     problems.forEach(function (one: Json) {
       verdict.checks[one.check] = 'failed';
     });
+    helpers.log.debug("Leaving CertificateTrust.fieldChecks().");
     return problems;
   }
 
   // Does this certificate carry the name the caller expected?
   private static nameMatches(der: Buffer, expected: Json): boolean {
+    helpers.log.debug("Entering CertificateTrust.nameMatches().");
     const { dn } = expected;
     const others = Object.assign({}, expected);
     delete others.dn;
@@ -896,14 +928,17 @@ class CertificateTrust {
       return !!others[key];
     });
     if (sanAsked && !stsCrypto.certificateNameMatches(der, others)) {
+      helpers.log.debug("Leaving CertificateTrust.nameMatches().");
       return false;
     }
     if (dn) {
       const parsed = stsCrypto.parseCertificate(der);
+      helpers.log.debug("Leaving CertificateTrust.nameMatches().");
       return certificateSubject.normalDn(String(dn)) ===
              certificateSubject.normalDn(
                certificateSubject.subjectOf(parsed).text);
     }
+    helpers.log.debug("Leaving CertificateTrust.nameMatches().");
     return sanAsked;
   }
 
@@ -911,6 +946,7 @@ class CertificateTrust {
   private static compose(purpose: Purpose, verdict: TrustVerdict,
                          codes: Json, whys: Json, realmId: string,
                          quiet: boolean): TrustVerdict {
+    helpers.log.debug("Entering CertificateTrust.compose().");
     // What FAILED is named before what nobody asked: a check not asked is
     // usually only not asked because an earlier one ended the walk.
     const failed = CHECK_ORDER.filter(function (check) {
@@ -929,11 +965,13 @@ class CertificateTrust {
     if (!quiet) {
       CertificateTrust.count(purpose, verdict, realmId);
     }
+    helpers.log.debug("Leaving CertificateTrust.compose().");
     return verdict;
   }
 
   private static count(purpose: Purpose, verdict: TrustVerdict,
                        realmId: string): void {
+    helpers.log.debug("Entering CertificateTrust.count().");
     let realm = counts.get(realmId);
     if (!realm) {
       realm = {};
@@ -957,6 +995,7 @@ class CertificateTrust {
         });
       }
     }
+    helpers.log.debug("Leaving CertificateTrust.count().");
   }
 
   // THE BASELINE: what the site did before #1360, through the same central
@@ -1092,6 +1131,7 @@ class CertificateTrust {
   private static async assessAdmission(purpose: Purpose, verdict: TrustVerdict,
                                        certs: Json, opts: Json, realmId: string,
                                        quiet: boolean): Promise<TrustVerdict> {
+    helpers.log.debug("Entering CertificateTrust.assessAdmission().");
     const problem = await pki.anchorProblem(certs.leaf, {
       role: opts.role, heldAnchors: opts.heldAnchors, now: opts.now
     });
@@ -1108,6 +1148,7 @@ class CertificateTrust {
       whys.path = problem.why;
     }
     verdict.anchor = 'caller';
+    helpers.log.debug("Leaving CertificateTrust.assessAdmission().");
     return CertificateTrust.compose(purpose, verdict, codes, whys, realmId,
                                     quiet);
   }
@@ -1117,6 +1158,7 @@ class CertificateTrust {
                                      certs: Json, material: Json, opts: Json,
                                      realmId: string,
                                      quiet: boolean): Promise<TrustVerdict> {
+    helpers.log.debug("Entering CertificateTrust.assessInForce().");
     const rule = CertificateTrust.ruleOf(purpose, opts.variant);
     const m = material || {};
     const codes: Json = {};
@@ -1191,6 +1233,7 @@ class CertificateTrust {
     }
     await CertificateTrust.revocationCheck(verdict, rule, chain, certs, codes,
                                            whys, opts);
+    helpers.log.debug("Leaving CertificateTrust.assessInForce().");
     return CertificateTrust.compose(purpose, verdict, codes, whys, realmId,
                                     quiet);
   }
@@ -1201,12 +1244,15 @@ class CertificateTrust {
                                        chain: Buffer[], certs: Json,
                                        codes: Json, whys: Json,
                                        opts: Json): Promise<void> {
+    helpers.log.debug("Entering CertificateTrust.revocationCheck().");
     if (rule.revocation === 'exempt-by-spec') {
       verdict.checks.revocation = 'exempt-by-spec';
+      helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
       return;
     }
     if (verdict.checks.path !== 'passed' &&
         verdict.checks.path !== 'exempt-by-spec') {
+      helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
       return;
     }
     // A SITE THAT ASKS FOR ITSELF, NEXT, on the path this built: its own codes
@@ -1219,6 +1265,7 @@ class CertificateTrust {
       } else {
         verdict.checks.revocation = 'passed';
       }
+      helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
       return;
     }
     // A HARDWARE VENDOR'S CHAIN USUALLY NAMES NOTHING, and hard-fail would
@@ -1226,15 +1273,18 @@ class CertificateTrust {
     if (rule.revocation === 'where-named' &&
         !chain.some(CertificateTrust.namesRevocation)) {
       verdict.checks.revocation = 'passed';
+      helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
       return;
     }
     const answer = await revocationStatus.verdictFor(
       { leaf: certs.leaf, chain: chain.slice(1), verified: true }, {});
     CertificateTrust.readRevocation(verdict, answer, codes, whys);
+    helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
   }
 
   private static readRevocation(verdict: TrustVerdict, answer: Json,
                                 codes: Json, whys: Json): void {
+    helpers.log.debug("Entering CertificateTrust.readRevocation().");
     verdict.revocation = answer;
     if (answer.refused) {
       verdict.checks.revocation = 'failed';
@@ -1254,6 +1304,7 @@ class CertificateTrust {
     } else {
       verdict.checks.revocation = 'passed';
     }
+    helpers.log.debug("Leaving CertificateTrust.readRevocation().");
   }
 
   /**
@@ -1804,7 +1855,9 @@ class CertificateTrust {
   // Does it name a list or a responder? One that names neither has nothing a
   // fetch could ask, so a door that cannot wait is not refusing to wait.
   private static namesRevocation(der: Buffer): boolean {
+    helpers.log.debug("Entering CertificateTrust.namesRevocation().");
     const parsed = stsCrypto.parseCertificate(der);
+    helpers.log.debug("Leaving CertificateTrust.namesRevocation().");
     return !!(revocationStatus.distributionPointsOf(parsed).fetchable.length ||
               revocationStatus.ocspRespondersOf(parsed).fetchable.length);
   }
@@ -1813,15 +1866,18 @@ class CertificateTrust {
   private static pinRevocation(verdict: TrustVerdict, der: Buffer, facts: Json,
                                issuers: Buffer[], codes: Json,
                                whys: Json): void {
+    helpers.log.debug("Entering CertificateTrust.pinRevocation().");
     const input = { leaf: der, chain: issuers, verified: true };
     const local = revocationStatus.localVerdictFor(input);
     if (local.refused) {
       CertificateTrust.readRevocation(verdict, local, codes, whys);
+      helpers.log.debug("Leaving CertificateTrust.pinRevocation().");
       return;
     }
     if (!CertificateTrust.namesRevocation(der)) {
       verdict.checks.revocation = 'passed';
       verdict.revocation = local;
+      helpers.log.debug("Leaving CertificateTrust.pinRevocation().");
       return;
     }
     const key = facts.fingerprint256;
@@ -1829,6 +1885,7 @@ class CertificateTrust {
     if (held && held.until > Date.now()) {
       pinVerdictCount.hit();
       CertificateTrust.readRevocation(verdict, held.verdict, codes, whys);
+      helpers.log.debug("Leaving CertificateTrust.pinRevocation().");
       return;
     }
     pinVerdictCount.miss();
@@ -1848,6 +1905,7 @@ class CertificateTrust {
     verdict.checks.revocation = 'not-asked';
     whys.revocation = 'its revocation is being established: ask again in a ' +
                       'moment';
+    helpers.log.debug("Leaving CertificateTrust.pinRevocation().");
   }
 
   /**
@@ -1990,6 +2048,7 @@ class CertificateTrust {
   private static async pinRow(row: PinnedSource, realmId: string,
                               horizonMs: number,
                               now: number): Promise<PinnedCertificate> {
+    helpers.log.debug("Entering CertificateTrust.pinRow().");
     const out: Json = Object.assign({
       subject: '', notBefore: 0, notAfter: 0, selfSigned: false, chainedTo: '',
       revocation: '', status: 'unreadable', code: '', fingerprint256: ''
@@ -1997,10 +2056,12 @@ class CertificateTrust {
     if (!row.pem) {
       out.status = row.thumbprint ? 'thumbprint-only' : 'unreadable';
       out.fingerprint256 = row.thumbprint || '';
+      helpers.log.debug("Leaving CertificateTrust.pinRow().");
       return out;
     }
     const der = CertificateTrust.derOf(row.pem);
     if (!der || !CertificateTrust.readable(der)) {
+      helpers.log.debug("Leaving CertificateTrust.pinRow().");
       return out;
     }
     const facts = stsCrypto.certificateFacts(der);
@@ -2031,6 +2092,7 @@ class CertificateTrust {
     } else {
       out.status = 'valid';
     }
+    helpers.log.debug("Leaving CertificateTrust.pinRow().");
     return out;
   }
 
