@@ -618,7 +618,8 @@ const PKI_REASON_FIELDS = { why: STR, draft: PKI_DRAFT,
 const PKI_ACTION = Kit.action(PKI_REASON_FIELDS);
 const PKI_ISSUE_FIELDS = {
   purpose: STR, attributes: STRS, kid: STR, thumbprint: STR, notAfter: STR,
-  jwsAlg: STR
+  // Null for a key JOSE has no name for, or a KEM's, which signs nothing.
+  jwsAlg: NSTR
 };
 const PKI_PERSON_FIELDS = {
   target: STR, person: STR, label: STR, handle: STR, serialHex: STR
