@@ -186,6 +186,11 @@ CELLS_COMPOSE_FILE="tests/docker-compose-run-tests-cells.yml"
 # its schema built by a one-shot from mariadb/schema.sql. Only in that mode,
 # which runs only when named (`--modes=mariadb`); its header argues it.
 MARIADB_COMPOSE_FILE="tests/docker-compose-run-tests-mariadb.yml"
+# THE `fuzz` MODE'S LAYER (#1299): the stack's network made `internal` — no
+# egress — so Schemathesis can throw any input at the service without anything
+# leaving the device. Only in that mode, which runs only when named
+# (`--modes=fuzz --only=schemathesis`); its header argues it.
+FUZZ_COMPOSE_FILE="tests/docker-compose-run-tests-fuzz.yml"
 COMPOSE_FILE_ARGS=(-f "${COMPOSE_FILE}")
 # Overridable so that two runs on one machine — a CI agent with two workspaces —
 # do not share a project: compose scopes containers, networks and images by it,
@@ -1859,6 +1864,10 @@ do
   if stsModeIsMariadb "${MODE}";
   then
     COMPOSE_FILE_ARGS+=(-f "${MARIADB_COMPOSE_FILE}")
+  fi
+  if stsModeIsFuzz "${MODE}";
+  then
+    COMPOSE_FILE_ARGS+=(-f "${FUZZ_COMPOSE_FILE}")
   fi
   if stsModeIsCells "${MODE}";
   then

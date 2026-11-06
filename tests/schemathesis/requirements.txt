@@ -1,0 +1,46 @@
+# tests/schemathesis/requirements.txt — Schemathesis and everything it
+# installs (#1299), EACH PINNED TO A VERSION AND A SHA-256.
+#
+# Installed by tests/Dockerfile with `pip install --require-hashes`, into a
+# virtual environment of its own (/opt/schemathesis), at image build time;
+# nothing here is vendored. Schemathesis 4.33.0 is MIT
+# (github.com/schemathesis/schemathesis); the transitive dependencies carry
+# their own licences (REUSE.toml records the fetch).
+#
+# THE HASHES ARE THE ARTIFACTS PIP RESOLVED ON ubuntu:latest's Python — 3.14
+# the day this was pinned — so the NATIVE wheels (jsonschema_rs, markupsafe,
+# pyyaml) are the cp314 manylinux ones. A base image that moves to another
+# Python makes the install fail on those hashes, which is the intended
+# failure: re-pin rather than dropping --require-hashes, by running in the
+# new image
+#   python3 -m venv /v && /v/bin/pip install --dry-run --ignore-installed \
+#     --report /r.json schemathesis==4.33.0
+# and reading name==version + download_info.archive_info.hashes.sha256 out of
+# /r.json (sorted), which is how this list was produced.
+anyio==4.16.0 --hash=sha256:c66ae634e0b8228396b801741beb3294326d4b6102f7bba4041c0dfb58c29026
+certifi==2026.10.23 --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
+charset-normalizer==3.5.2 --hash=sha256:34276fd796040bf0993ab33a369aa572e6979c7aab225a88893667ad8eac8f7a
+click==8.5.0 --hash=sha256:255bc9599cf7748b4b1a446ccc735421bd08a2ae529a8b88597d3de5664ee360
+graphql-core==3.3.1 --hash=sha256:43ebcd0d9a0662a71b1a2f6562ba863d253057ec11cbc45835b2e2683a0a3770
+harfile==0.6.0 --hash=sha256:0f2209d6ec164a2aea7e8fb2b49d9fef5ddeee51b65dbfd28a4167185c34bb30
+hypothesis==6.170.14 --hash=sha256:96f9f8a684c88ad2280129b28bc609adb6b31cd63b1b83b397b86d552391e947
+hypothesis-graphql==0.13.6 --hash=sha256:64e2425a0ed64fcf0610aeb2a23f61e6fa568249c646313f3926e22ed846c269
+idna==3.20 --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
+iniconfig==2.3.1 --hash=sha256:9121e2c1fdb355232495be3194c8dfe87ccc2d5dee45947b78e68f499790d7a7
+jsonschema_rs==0.60.3 --hash=sha256:326ec5b6800552ccd76a1acca131f70511ac013b377230bdd541db3244adc9fa
+markdown-it-py==4.2.0 --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
+markupsafe==3.0.4 --hash=sha256:a8e9f292fcda89b324f2f5c91d13f1424a153e40fc2756f38ee23b15835ff300
+mdurl==0.1.2 --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8
+packaging==26.3 --hash=sha256:d7193f7c8e4e93f444fde0262bf90af30e16fa0ad0ad44cb553c87339b23cd1c
+pluggy==1.7.0 --hash=sha256:7dd7b0d8832ba3cb632c306926ded123429211b83641b35dc5c41ad2d34f9bec
+pygments==2.21.0 --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9
+pyrate-limiter==4.5.1 --hash=sha256:bb8dd2926b0679e4ada6629a865e85daa5599268f930c61a8992dafa8bf3ba0d
+pytest==9.2.0 --hash=sha256:07acdcf88ec174f907dc01af70bf52d49b014bbab03faeeade31c96b18c2e588
+pyyaml==6.0.3 --hash=sha256:c458b6d084f9b935061bc36216e8a69a7e293a2f1e68bf956dcd9e6cbcd143f5
+requests==2.34.2 --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+rich==15.0.0 --hash=sha256:33bd4ef74232fb73fe9279a257718407f169c09b78a87ad3d296f548e27de0bb
+schemathesis==4.33.0 --hash=sha256:74474467b884a00b55d38dfd2abfba6053ce183b35ce05a8fac20547be09fe36
+sortedcontainers==2.4.0 --hash=sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0
+typing_extensions==4.16.0 --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
+urllib3==2.8.0 --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3
+werkzeug==3.1.9 --hash=sha256:6392e50c78460ba618e5b21f08a71f59c99ce99cdc6cf6e3dd7e6ccca8754fab

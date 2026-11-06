@@ -537,6 +537,17 @@ RUN python3 -m venv /opt/scim2-tester \
 ENV STS_SCIM2_TESTER_PYTHON=/opt/scim2-tester/bin/python
 COPY --from=scim2-test-suite /opt/scim2-test-suite /opt/scim2-test-suite
 ENV STS_SCIM2_TEST_SUITE=/opt/scim2-test-suite/scim-compliance
+# SCHEMATHESIS (#1299): the API fuzzer, pinned and hash-checked into a venv of
+# its own, run by tests/protocol/sts_schemathesis.js through the auth proxy in
+# tests/schemathesis/. MIT; fetched from PyPI at build time, never vendored
+# (REUSE.toml records it). python3 and python3-venv are already installed
+# above. The requirements were resolved on this base's Python — re-pin in the
+# new image if it moves (tests/schemathesis/requirements.txt says how).
+COPY tests/schemathesis/requirements.txt /usr/src/schemathesis/requirements.txt
+RUN python3 -m venv /opt/schemathesis \
+    && /opt/schemathesis/bin/pip install --no-cache-dir --require-hashes \
+        -r /usr/src/schemathesis/requirements.txt
+ENV STS_SCHEMATHESIS_DIR=/opt/schemathesis
 # THE KERBEROS INTEROPERABILITY HARNESSES (#204, #205), from the two stages
 # at the top of this file, and the shared libraries they link — the packages
 # each build stage wrote into its prefix's RUNTIME_PACKAGES, so the list is

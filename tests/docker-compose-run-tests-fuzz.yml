@@ -1,0 +1,38 @@
+# SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+# SPDX-License-Identifier: BUSL-1.1
+#
+# tests/docker-compose-run-tests-fuzz.yml — THE `fuzz` MODE'S LAYER (#1299).
+#
+# Layered over docker-compose-run-tests.yml (run-tests.sh, FUZZ_COMPOSE_FILE)
+# ONLY in the `fuzz` mode, which runs only when named
+# (`--modes=fuzz --only=schemathesis`). It makes the stack's one network
+# INTERNAL: no gateway, no route off the host. Schemathesis throws any input
+# at the service, URL-shaped values among them; with the network internal,
+# even a dial the service were tricked into making fails at the network layer,
+# so the run stays on this device. Every container the stack needs — postgres,
+# openbao, the service, the runner — is on this same network, so intra-stack
+# DNS and traffic are unchanged; only egress is gone.
+#
+# `version: '2.4'` matches the base file (the root CLAUDE.md's rule). The base
+# names the network `default` (bridge, with the run's /24); this adds
+# `internal: true` to it, which compose merges onto the base definition.
+version: '2.4'
+
+networks:
+  default:
+    internal: true
+
+# THE RUNNER'S FUZZ MARKER. `sts_schemathesis.js` (#1299) runs only in this
+# mode and declines in every other, the way the cells jobs read
+# STS_TEST_CELL_*_URL — a marker the cells compose overlay sets on this same
+# `tests` service and tools/modes.sh does not. It is here, on the overlay, and
+# NOT in modes.sh, because modes.sh's own rule is that every mode names every
+# variable (tests/unit_job_environment.js), so a fuzz marker put there would
+# have to be added to all six arms and to the runner's scrub list. Only the
+# `fuzz` mode layers this file, so only the `fuzz` mode's runner sees the
+# marker, and a bare `./run-tests.sh` leaves it unset. A unit job that
+# inherits it reads it for nothing, as it does the cells markers.
+services:
+  tests:
+    environment:
+      - STS_TEST_FUZZ=1

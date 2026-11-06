@@ -358,6 +358,34 @@ STS_TEST_BULK_GROUPS=10
 STS_TEST_BULK_MEMBERS_PER_GROUP=100
 EOF
       ;;
+    fuzz)
+      # THE `fuzz` MODE (#1299) — BY NAME ONLY: `--modes=fuzz`, like `cells`,
+      # and NOT in STS_ALL_MODES, so a bare run does not grow by a stack. A
+      # single-node production deployment (every value `single-node` names) on
+      # a NETWORK-ISOLATED stack (tests/docker-compose-run-tests-fuzz.yml, the
+      # `internal` network: no egress), for `sts_schemathesis.js` to throw
+      # malformed inputs at without anything leaving the device. Run it as
+      # `--modes=fuzz --only=schemathesis`.
+      cat <<'EOF'
+STS_MODE=product
+STS_PERSISTENCE_MODE=postgres
+STS_PERSISTENCE_COORDINATE=true
+STS_PERSISTENCE_SQL_DIALECT=native
+STS_WORKERS_REQUEST_COUNT=3
+STS_WORKERS_SURFACE_COUNT=1
+STS_WORKERS_DISPATCH=*
+STS_WORKERS_READ_YOUR_WRITE=true
+STS_KEYS_SOURCE=persisted
+STS_CLUSTER_MODE=off
+STS_PROXY_PROTOCOL=off
+STS_TEST_FRESH_CONNECTIONS=0
+STS_TEST_CLUSTER_NODES=1
+STS_TEST_BULK_LAST=0
+STS_TEST_BULK_USERS=1000
+STS_TEST_BULK_GROUPS=10
+STS_TEST_BULK_MEMBERS_PER_GROUP=100
+EOF
+      ;;
     *)
       echo "modes.sh: there is no \"$1\" mode. There are: ${STS_ALL_MODES[*]}." >&2
       return 1
@@ -377,6 +405,7 @@ stsModeDescription()
     cluster)  echo "a multi-node production deployment: 2 such nodes active-active on one postgres, behind an L4 load balancer, a new connection per request" ;;
     cluster-portable) echo "the cluster mode on the portable coordination statements a second database engine runs (#677): no LISTEN/NOTIFY, lock rows, a one-second poll — by name only (--modes=cluster-portable)" ;;
     cells)    echo "two cells of one service (#98): cella (us) and cellb (ca), product mode, each on its own postgres over a shared global-tier postgres, the inter-cell channel between them — by name only (--modes=cells)" ;;
+    fuzz)     echo "the single-node production deployment on a network-isolated stack (#1299), for Schemathesis to fuzz the four APIs and the protocol surface — by name only (--modes=fuzz --only=schemathesis)" ;;
     *)        echo "unknown" ;;
   esac
 }
@@ -433,6 +462,7 @@ stsModeTimeout()
     # by the 3000 s a mode with no bound of its own gets, nothing wedged (#677).
     mariadb) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
     single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-4800}" ;;
+    fuzz)     echo "${STS_FUZZ_MODE_TIMEOUT:-7200}" ;;
     *)       echo "${STS_BASE_MODE_TIMEOUT:-3000}" ;;
   esac
 }
@@ -480,5 +510,15 @@ stsModeIsCells()
   case "$1" in
     cells) return 0 ;;
     *)     return 1 ;;
+  esac
+}
+
+# Whether a mode runs on the network-isolated fuzzing stack (#1299): which
+# compose layer run-tests.sh adds.
+stsModeIsFuzz()
+{
+  case "$1" in
+    fuzz) return 0 ;;
+    *)    return 1 ;;
   esac
 }
