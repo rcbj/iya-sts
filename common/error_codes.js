@@ -3476,8 +3476,8 @@ const CODES = [
       'form of the X.509 Token Profile 1.1 this service reads (#521).',
     spec: 'the caller\'s: the signed request is refused (STS-WSTRUST-0040)' },
   { code: 'STS-KEYS-0165',
-    summary: 'An EdDSA signature through helpers.signJwtAs() (an ID ' +
-      'Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust ' +
+    summary: 'An EdDSA signature through helpers.signJwt() or signJwtAs() ' +
+      '(an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust ' +
       'or Provider Commands token) was asked of a realm whose ' +
       'keys.eddsaSigning is off — a client registered for EdDSA while it ' +
       'was on, or a setting naming EdDSA — and was refused rather than ' +
@@ -3485,7 +3485,8 @@ const CODES = [
     spec: 'the caller\'s: the response that needed the signature fails as ' +
       'it does for an algorithm this realm holds no key for' },
   { code: 'STS-KEYS-0166',
-    summary: 'A signature through helpers.signJwtAs() (an ID Token, ' +
+    summary: 'A signature through helpers.signJwt() or signJwtAs() (an ID ' +
+      'Token, ' +
       'UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or ' +
       'Provider Commands token) was asked of a realm whose ' +
       'keys.signingAlgorithms does not list its algorithm — a client ' +
@@ -3533,6 +3534,22 @@ const CODES = [
     summary: 'A certificate carries a critical extension nothing here ' +
       'reads.',
     spec: 'none — recorded on the refusal the use case makes (#1360)' },
+  { code: 'STS-KEYS-0176',
+    summary: 'An HTTP message signature in a post-quantum algorithm was ' +
+      'presented to a realm whose keys.postQuantumSigning is off, and was ' +
+      'refused before its signature was checked.',
+    spec: 'the caller\'s refusal: RFC 9421 section 3.2 leaves what an ' +
+      'application accepts to it (#1368)' },
+  { code: 'STS-KEYS-0177',
+    summary: 'An HTTP message signature in a post-quantum algorithm was asked ' +
+      'for in a realm whose keys.postQuantumSigning is off, and was not made.',
+    spec: 'none — a setting names an algorithm the realm no longer signs ' +
+      'with (#1368)' },
+  { code: 'STS-KEYS-0178',
+    summary: 'A setting chooses a signing algorithm the realm may not use, so ' +
+      'its signature was made with RS256 instead. Logged once per realm.',
+    spec: 'none — the setting should name an algorithm the realm signs with ' +
+      '(#1368)' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
