@@ -62,8 +62,8 @@ reader at the top of a long page.
 
 **The sidebar is four small overrides of minima 2.5.1, the version GitHub
 Pages ships**: `_layouts/default.html` (minima's, with the sidebar
-beside the content), `_includes/header.html` (the title only, and the menu
-button a narrow screen needs), `_includes/sidebar.html` and `assets/main.scss`
+beside the content), `_includes/header.html` (the logo, `docs/logo.png`, as the title, and the
+menu button a narrow screen needs), `_includes/sidebar.html` and `assets/main.scss`
 (minima's stylesheet imported, then the layout). No script — the narrow-screen
 menu is a checkbox, as minima's own header was. `header_pages` is gone: it put
 every page across the top, and at twenty-six pages that was not navigation.

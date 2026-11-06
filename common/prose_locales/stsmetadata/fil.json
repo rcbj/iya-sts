@@ -3942,5 +3942,9 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "isang parameter"
+  },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC. Ang icon na kusang hinihingi ng browser sa bawat pahina: ang parisukat na marka ng logo (common/favicon.ico). Sinasagot sa bawat listener; itinatago nang isang araw."
   }
 }

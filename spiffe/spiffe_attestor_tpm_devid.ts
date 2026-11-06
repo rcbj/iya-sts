@@ -208,7 +208,8 @@ class TpmDevidAttestor {
       config.value('spiffe.tpmDevidCaBundle') || '')).certificates;
     const ekRoots = pki.certificateBundle(String(
       config.value('spiffe.tpmEndorsementCaBundle') || '')).certificates;
-    if (!devidRoots.length || !ekRoots.length) {
+    if (!CertificateTrust.anchorsAvailable('spiffe-attestation', devidRoots) ||
+        !CertificateTrust.anchorsAvailable('spiffe-attestation', ekRoots)) {
       log.debug("Leaving TpmDevidAttestor.attest(). Not configured.");
       throw this.refuse(call, 'STS-SPIFFE-0085', status.FAILED_PRECONDITION,
         'tpm_devid is not configured in this realm: ' +

@@ -73,6 +73,7 @@ import stsCrypto = require('../common/crypto');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import codec = require('./vc_status_codec');
+import algorithmRegistry = require('../common/crypto_impl/algorithm_registry');
 import webauthn = require('../authn/webauthn');
 // The wallet compatibility mode (#657), which turns the post-quantum
 // algorithms off inside OpenID4VCI and OpenID4VP; a static utility class.
@@ -84,10 +85,11 @@ const { Tagged } = codec;
 // (IANA "COSE Algorithms"): ECDSA (RFC 9053, and RFC 9864's fully specified
 // forms), EdDSA (RFC 9053, RFC 9864) and ML-DSA (RFC 9964), strongest
 // classical first within each family.
-const COSE_SIGNATURE_IDS = [-7, -9, -35, -51, -36, -52, -8, -19, -53,
-                            -48, -49, -50];
+const COSE_SIGNATURE_IDS: number[] = algorithmRegistry.coseIds('cose.mdoc');
 // The post-quantum ones, offered only while `keys.postQuantumSigning` is on.
-const PQ_IDS = [-48, -49, -50];
+const PQ_IDS: number[] = COSE_SIGNATURE_IDS.filter(function (id: number) {
+  return algorithmRegistry.bySpelling('cose', id).pqc !== null;
+});
 // ISO/IEC 18013-5 section 9.1.2.5: the MSO's digest algorithms.
 const DIGEST_ALGS: Record<string, string> = {
   'SHA-256': 'sha256', 'SHA-384': 'sha384', 'SHA-512': 'sha512'
@@ -357,7 +359,7 @@ class VcMdoc {
     }
     const anchors = pki.certificateBundle(String(anchorsPem || ''))
       .certificates;
-    if (!anchors.length) {
+    if (!this.deps.certificateTrust().anchorsAvailable('vc-issuer', anchors)) {
       log.debug("Leaving VcMdoc.chainToAnchors(). No anchors.");
       return { ok: false, reason: 'oid4vp.mdocTrustAnchors names no ' +
                'certificate, so no mdoc issuer is trusted' };

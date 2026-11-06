@@ -9,14 +9,15 @@ $content-width: 900px;
 
 $sidebar-width: 270px;
 
-.site-header { min-height: 48px; }
+.site-header { min-height: 48px; background: #fbfaf8; }
 .site-header-wrapper {
   max-width: none;
   display: flex;
   align-items: center;
   gap: 12px;
 }
-.site-title { line-height: 48px; float: none; }
+.site-title { line-height: 48px; float: none; display: flex; align-items: center; }
+.site-logo { display: block; height: 48px; width: auto; }
 .site-tagline { color: $grey-color; font-size: $small-font-size; }
 
 .site-body {

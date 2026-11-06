@@ -2487,12 +2487,8 @@ class OAuth2Server {
     let alg = named || (set !== 'default' ? set : '') ||
               fapi.defaultSigningAlg() || 'RS256';
     // Replaced for FAPI's reason just below: the server's own signature, which
-    // nothing a client did asked for (#1348). The list always holds RS256.
-    if (!helpers.signingAlgListed(alg)) {
-      log.debug("OAuth2Server.accessTokenAlg(): keys.signingAlgorithms does " +
-                "not list " + alg + "; RS256 instead.");
-      alg = 'RS256';
-    }
+    // nothing a client did asked for (#1348, #1368). RS256 is always usable.
+    alg = helpers.usableSigningAlg(alg);
     if (!fapi.signingAlgAllowed(alg)) {
       log.debug("OAuth2Server.accessTokenAlg(): " + alg + " is not allowed " +
                 "under the FAPI profile; " + fapi.defaultSigningAlg() +

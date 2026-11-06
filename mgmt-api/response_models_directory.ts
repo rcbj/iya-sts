@@ -300,7 +300,11 @@ const PERSISTENCE_STATUS: Json = Kit.closed({
     pending: NUM, writes: NUM, failures: NUM, rowsWritten: NUM,
     rowsDeleted: NUM, lastWriteAt: MOMENT, lastError: NULL_STR,
     restoredAt: MOMENT, restored: NUM, droppedUnreadable: NUM,
-    droppedUnknown: NUM
+    droppedUnknown: NUM, droppedPoison: NUM,
+    poisonDrops: Kit.listOf(Kit.closed({
+      at: STR, code: STR, message: STR, rows: NUM,
+      handles: Kit.listOf(STR), realms: Kit.listOf(STR)
+    }))
   }),
   usedAssertions: Kit.closed({
     store: NULL_STR, kind: NULL_STR, persistent: BOOL,

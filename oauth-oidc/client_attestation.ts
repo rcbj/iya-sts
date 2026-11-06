@@ -625,14 +625,16 @@ class ClientAttestation {
     log.debug("Entering ClientAttestation.attesterKeys().");
     const anchors = this.anchors();
     const trusted = this.trustedKeys();
-    if (!anchors.length && !trusted.length) {
+    const reachable = CertificateTrust.anchorsAvailable('client-attestation',
+                                                        anchors);
+    if (!reachable && !trusted.length) {
       log.debug("Leaving ClientAttestation.attesterKeys(). Nobody trusted.");
       return this.refuse('STS-OAUTH-0724', 'this realm trusts no client ' +
         'attester: oauth2.clientAttestationTrustAnchors and ' +
         'oauth2.clientAttestationTrustedKeys are both empty, so no Client ' +
         'Attestation can be verified here');
     }
-    if (Array.isArray(header.x5c) && header.x5c.length && anchors.length) {
+    if (Array.isArray(header.x5c) && header.x5c.length && reachable) {
       let ders: Buffer[] = [];
       try {
         ders = header.x5c.map(function (one: unknown) {

@@ -13749,7 +13749,7 @@ async function verifyFidoMdsBlob(token, opts) {
   // certificate's issuer "neither held here nor in the chain that was
   // presented" and hard-fail refused every genuine BLOB (2026-09-26).
   let pathChain = null;
-  if (!anchors.length) {
+  if (!require('./certificate_trust').anchorsAvailable('fido-mds', anchors)) {
     failure = 'no FIDO MDS trust anchor: none is configured ' +
       '(risk.mdsTrustAnchors) and GlobalSign Root CA - R3 is not in this ' +
       'node\'s root store';

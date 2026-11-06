@@ -16,6 +16,10 @@
 //    is demoted, a good one is not.
 //    C: revocation, off a CRL, before the first byte is read. D: resumption: the
 //    demotion carried, and a session nothing remembers demoted.
+//    G: the main port's shape, under hard-fail: a resumed session gets its full
+//    handshake's verdict after a request has written the chain, waits for a
+//    verdict on its way, is refused when a refusal or nothing arrives, and is
+//    refused once revoked or expired since.
 //    E: a throw inside the hold fails closed in force and leaves OpenSSL's verdict
 //    alone out of force. F: the row, and the master.
 //
@@ -29,6 +33,13 @@
 //   * a revoked client not demoted                            — 2 red (C)
 //   * `holdPeer()` not asking the leaf's fields               — 3 red (B, D, F)
 //   * `holdConnectionsOn()` holding out of force too          — 1 red (A)
+//   * the chain's write dropping the verdict (the regression) — 1 red (G)
+//   * a verdict not known here demoted at once                — 1 red (G)
+//   * a verdict not known here never settled                  — 2 red (D, G)
+//   * a verdict that never arrives passing                    — 2 red (D, G)
+//   * a remembered refusal ignored                            — 1 red (G)
+//   * the wait skipped where node completed the issuer        — 1 red (G)
+//   * a row with an empty chain counting as a chain           — 1 red (G)
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -148,6 +159,121 @@ async function child() {
   require('../common/revocation_status').resetCache();
   const forgotten = await ask(good, first.session);
   results.forgotten = forgotten.answer;
+
+  // G. THE MAIN PORT'S SHAPE (the product run's sts_main_port_pooling): the
+  // observer, then a request's wait and its chain, as the middleware and the
+  // sign-in ask them, under hard-fail with an issuer the service does not hold.
+  const answering = tls.createServer({
+    key: serverCert.key, cert: serverCert.pem + root.pem, ca: [root.pem],
+    requestCert: true, rejectUnauthorized: false, maxVersion: 'TLSv1.2'
+  }, function (socket) {
+    socket.once('data', function () {
+      const revocation = require('../common/revocation_status');
+      revocation.awaitResumedChain(socket).then(function () {
+        const input = revocation.fromSocket(socket);
+        return input ? revocation.verdictFor(input) : null;
+      }).then(function (verdict) {
+        socket.write(JSON.stringify({
+          authorized: socket.authorized, resumed: socket.isSessionReused(),
+          error: String(socket.authorizationError || ''),
+          refused: !!(verdict && verdict.refused),
+          why: String((verdict && verdict.why) || '')
+        }) + '\n');
+      });
+    });
+  });
+  tlsServer.observeConnectionsOn(answering, 'a main-port-shaped listener');
+  await new Promise(function (resolve) {
+    answering.listen(0, '127.0.0.1', resolve);
+  });
+  const askMain = function (client, session) {
+    log.debug("Entering askMain().");
+    log.debug("Leaving askMain().");
+    return connect(answering.address().port, client, session);
+  };
+  const revocationG = require('../common/revocation_status');
+  const rawOf = function (one) {
+    log.debug("Entering rawOf().");
+    log.debug("Leaving rawOf().");
+    return new (require('crypto').X509Certificate)(one.pem).raw;
+  };
+  config.setOverride('pki.revocationCheck', 'hard-fail');
+  const waitSet = config.setOverride('tls.resumedChainWaitMs', 2000);
+  if (!waitSet.ok) {
+    throw new Error(waitSet.errors.join(' '));
+  }
+  const listed = await kit.mint({ cn: 'listed client', issuer: root,
+                                  eku: ['clientAuth'],
+                                  crls: [crls.base + '/g.crl'] });
+  crls.routes['/g.crl'] = await kit.crlOf(root, []);
+  const fullG = await askMain(listed);
+  results.gFull = fullG.answer;
+  results.gResumed = [];
+  for (let i = 0; i < 3; i++) {
+    results.gResumed.push((await askMain(listed, fullG.session)).answer);
+  }
+  results.gRemembered = revocationG.rememberedHold(rawOf(listed));
+  // The row arrives from elsewhere while the resumed connection waits for it.
+  revocationG.resetCache();
+  const startedG = Date.now();
+  const waiting = askMain(listed, fullG.session);
+  setTimeout(function () {
+    askMain(listed);
+  }, 300);
+  results.gArrived = (await waiting).answer;
+  results.gWaitedMs = Date.now() - startedG;
+  // A refusal arriving is a refusal, and nothing at all is a refusal.
+  revocationG.resetCache();
+  revocationG.rememberHold(rawOf(listed), false);
+  results.gArrivedRefused = (await askMain(listed, fullG.session)).answer;
+  config.setOverride('tls.resumedChainWaitMs', 300);
+  revocationG.resetCache();
+  results.gNothing = (await askMain(listed, fullG.session)).answer;
+  // The row, driven directly: a chain written later keeps the verdict, and a
+  // row the hold wrote with no chain yet does not count as a chain held.
+  const mockSocket = function (peer) {
+    log.debug("Entering mockSocket().");
+    log.debug("Leaving mockSocket().");
+    return { authorized: true,
+             isSessionReused: function () {
+               return true;
+             },
+             getPeerCertificate: function () {
+               return peer;
+             } };
+  };
+  const listedRaw = rawOf(listed);
+  revocationG.resetCache();
+  revocationG.rememberHold(listedRaw, true);
+  results.gNoChainYet = await revocationG.awaitResumedChain(
+    mockSocket({ raw: listedRaw }));
+  const anchor = { raw: rawOf(root) };
+  anchor.issuerCertificate = anchor;
+  revocationG.fromSocket(mockSocket({ raw: listedRaw,
+                                      issuerCertificate: anchor }));
+  results.gChainKeepsVerdict = revocationG.rememberedHold(listedRaw);
+  // A session that never passed does not start passing.
+  const neverPassed = await askMain(caLeaf);
+  results.gNeverPassed = (await askMain(caLeaf, neverPassed.session)).answer;
+  // Revoked since: the session's verdict stands at the TLS layer, as it did
+  // before #1360, and the request's own check refuses it.
+  const revokedSince = await askMain(listed);
+  crls.routes['/g.crl'] = await kit.crlOf(root, [listed.serialHex]);
+  revocationG.resetCache();
+  await askMain(listed);
+  results.gRevokedSince = (await askMain(listed, revokedSince.session)).answer;
+  // Expired since: the leaf's own window is asked on every connection.
+  const shortLived = await kit.mint({ cn: 'short-lived client', issuer: root,
+    eku: ['clientAuth'], notAfter: Date.now() + 2500 });
+  const shortFirst = await askMain(shortLived);
+  results.gShortFirst = shortFirst.answer;
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 4500);
+  });
+  results.gExpiredSince = (await askMain(shortLived,
+                                         shortFirst.session)).answer;
+  answering.close();
+  config.setOverride('pki.revocationCheck', 'soft-fail');
   const revocationStatus = require('../common/revocation_status');
   const der = Buffer.from(good.pem.replace(/-----[^-]+-----/g, '')
     .replace(/\s+/g, ''), 'base64');
@@ -223,6 +349,39 @@ module.exports = {
             'D. a demoted client stays demoted across a resumption');
     t.equal(r.forgotten.authorized, false,
             'D. a session nothing remembers is demoted');
+    t.equal(r.gFull.authorized, true, 'G. a full handshake verifies');
+    t.check(r.gResumed.every(function (one) {
+      return one.resumed && one.authorized && !one.refused;
+    }), 'G. and every session resuming it is verified and signs in, under ' +
+        'hard-fail with the chain the full handshake showed',
+    JSON.stringify(r.gResumed).slice(0, 400));
+    t.equal(r.gRemembered, true,
+            'G. a request writing the chain leaves the verdict on the row');
+    t.check(r.gArrived.resumed && r.gArrived.authorized &&
+            !r.gArrived.refused && r.gWaitedMs >= 250,
+            'G. a verdict still on its way from another node is waited for',
+            JSON.stringify(r.gArrived) + ' ' + r.gWaitedMs + 'ms');
+    t.check(r.gArrivedRefused.resumed && !r.gArrivedRefused.authorized,
+            'G. a refusal that arrives is a refusal',
+            JSON.stringify(r.gArrivedRefused));
+    t.check(r.gNothing.resumed && !r.gNothing.authorized,
+            'G. and nothing arriving is a refusal', JSON.stringify(r.gNothing));
+    t.equal(r.gNoChainYet, false,
+            'G. a row with a verdict and no chain yet is still waited for');
+    t.equal(r.gChainKeepsVerdict, true,
+            'G. and the chain written later keeps the verdict');
+    t.check(r.gNeverPassed.resumed && !r.gNeverPassed.authorized,
+            'G. a session that never passed does not start passing',
+            JSON.stringify(r.gNeverPassed));
+    t.check(r.gRevokedSince.resumed && r.gRevokedSince.refused,
+            'G. a certificate revoked since is refused by the request\'s check',
+            JSON.stringify(r.gRevokedSince));
+    t.equal(r.gShortFirst.authorized, true,
+            'G. a certificate verifies inside its window');
+    t.check(r.gExpiredSince.resumed && !r.gExpiredSince.authorized &&
+            /expired/.test(r.gExpiredSince.error),
+            'G. and a session of it is refused once the window has closed',
+            JSON.stringify(r.gExpiredSince));
     t.equal(r.rememberedFalse, false, 'D. a demotion is remembered');
     t.equal(r.rememberedTrue, true, 'D. and so is its being settled');
     t.equal(r.rowOff.authorized, true, 'F. the row off restores the baseline');

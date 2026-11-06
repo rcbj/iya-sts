@@ -257,11 +257,11 @@ const PURPOSES: Purpose[] = [
     title: 'An attestation-based client authentication chain',
     covers: 'The attester\'s certificate behind OAuth attestation-based client ' +
       'authentication.',
-    adds: 'Revocation; keyUsage on the leaf.',
+    adds: 'Revocation where the chain names a list; keyUsage on the leaf.',
     sites: ['oauth-oidc/client_attestation.ts attesterKeys'],
     anchors: ['caller', 'signer-truststore'],
     leaf: leaf(SIGNS),
-    selfSigned: 'refuse', validity: 'now', revocation: 'required',
+    selfSigned: 'refuse', validity: 'now', revocation: 'where-named',
     exemptions: [], baseline: 'caller-path', code: 'STS-PKI-0249', phase: 5 },
   { id: 'webauthn-attestation', setting: 'pki.paranoidWebauthnAttestation',
     title: 'A WebAuthn attestation chain',
@@ -366,12 +366,12 @@ const PURPOSES: Purpose[] = [
   { id: 'vc-key-attestation', setting: 'pki.paranoidVcKeyAttestation',
     title: 'An OpenID4VCI key attestation chain',
     covers: 'The x5c of a wallet\'s key attestation at the credential endpoint.',
-    adds: 'A real path with intermediates, not one hop; revocation; keyUsage ' +
-      'on the leaf.',
+    adds: 'A real path with intermediates, not one hop; revocation where the ' +
+      'chain names a list; keyUsage on the leaf.',
     sites: ['oid4vc/vc_issuer.ts verifyKeyAttestation'],
     anchors: ['caller', 'signer-truststore'],
     leaf: leaf(SIGNS),
-    selfSigned: 'refuse', validity: 'now', revocation: 'required',
+    selfSigned: 'refuse', validity: 'now', revocation: 'where-named',
     exemptions: [], baseline: 'direct', code: 'STS-PKI-0256', phase: 5 },
   { id: 'vc-issuer', setting: 'pki.paranoidVcIssuer',
     title: 'A credential issuer\'s or status-list signer\'s certificate',
@@ -1588,6 +1588,30 @@ class CertificateTrust {
     }
     helpers.log.debug("Leaving CertificateTrust.signerChain().");
     return result;
+  }
+
+  /**
+   * Is there anything a site could build a path to? Its own configured anchors,
+   * or under paranoid the realm's signer truststore where its use case may
+   * reach it. A site asks this where it would otherwise refuse for having no
+   * anchor.
+   *
+   * @param id - the purpose
+   * @param anchors - what the site was configured with
+   * @param options - `{ realmId }`
+   * @returns whether a path could be built
+   */
+  static anchorsAvailable(id: string, anchors: Json[],
+                          options?: Json): boolean {
+    helpers.log.debug("Entering CertificateTrust.anchorsAvailable(). " + id);
+    const realmId = (options && options.realmId) || realms.currentId();
+    const available = anchors.length > 0 ||
+      (CertificateTrust.applies(id, realmId) &&
+       CertificateTrust.purpose(id).anchors.indexOf('signer-truststore') >= 0 &&
+       signerTruststore.anchorsFor(realmId, id).anchors.length > 0);
+    helpers.log.debug("Leaving CertificateTrust.anchorsAvailable(). " +
+                      available);
+    return available;
   }
 
   /**

@@ -1317,10 +1317,12 @@ parse an OKP key in a JWK Set. With it off:
 
 EdDSA that a **client** signs with is unaffected: client assertions, DPoP
 proofs, request objects and wallet proofs are still verified, and the lists
-that advertise what the realm accepts still name it. An algorithm an
-operator configures (`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`,
+that advertise what the realm accepts still name it. So is a signature whose
+key travels in an `x5c` or a DID document. A federation or credential algorithm
+an operator configures (`oidfed.signingAlg`,
 `oid4vci.credentialSigningAlgorithm`) still signs, so do not configure EdDSA
-there with the setting off. Turn it on to sign with EdDSA and publish the
+there with the setting off. An `oauth2.accessTokenSigningAlg` of EdDSA signs with
+RS256 instead (`STS-KEYS-0178`, logged once per realm). Turn it on to sign with EdDSA and publish the
 keys as `oauth2.eddsaCurve` says.
 
 #### Limiting a realm to named signing algorithms
@@ -2338,7 +2340,7 @@ on [What is not checked](what-is-not-checked.md).
 | Signing keys | new on every start | persisted, sealed, and rotated with an overlap |
 | `/logout?username=` | honoured (`logout.anyUser`) | ignored |
 
-Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the certificate behind attestation-based client authentication must also permit digitalSignature and is asked about revocation. A chain naming no list is refused as `pki.revocationCheck` says. `pki.paranoidClientAttestation` turns this row off.
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the certificate behind attestation-based client authentication must also permit digitalSignature, and is asked about revocation where its chain names a list. A root in this realm's [signer truststore](signer-truststore.md) can stand in for `oauth2.clientAttestationTrustAnchors`. `pki.paranoidClientAttestation` turns this row off.
 
 ## Configuration
 
