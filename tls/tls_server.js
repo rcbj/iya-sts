@@ -6252,13 +6252,14 @@ function holdToPathRules(socket, label) {
 // A RESUMED SESSION UNDER PARANOID PKI MODE (#1360). Node hands over the leaf
 // alone, so the hold above saw one certificate. What the full handshake's hold
 // concluded is remembered with its chain, and it is the session's verdict: a
-// demoted one is demoted again. One not known here yet may be on its way from the
-// node that saw the handshake, so the socket is marked and
+// demoted one is demoted again. One not known here yet may be on its way from
+// the node that saw the handshake, so the socket is marked and
 // `revocation_status.awaitResumedChain()` settles it before any request is
 // answered; what has not arrived by then is demoted. The leaf's own fields, its
-// window included, are asked on every connection, and revocation by the request's
-// verdict as it always was, so neither is frozen at the full handshake. null when
-// the session is not resumed, the leaf held, or that is still to be settled.
+// window included, are asked on every connection, and revocation by the
+// request's verdict as it always was, so neither is frozen at the full
+// handshake. null when the session is not resumed, the leaf held, or that is
+// still to be settled.
 function resumedProblem(socket, peer) {
   log.debug("Entering resumedProblem().");
   if (typeof socket.isSessionReused !== 'function' ||

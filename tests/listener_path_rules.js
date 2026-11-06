@@ -17,9 +17,9 @@
 //    C: revocation, off a CRL, before the first byte is read. D: resumption: the
 //    demotion carried, and a session nothing remembers demoted.
 //    G: the main port's shape, under hard-fail: a resumed session gets its full
-//    handshake's verdict after a request has written the chain, waits for a verdict
-//    on its way, is refused when a refusal or nothing arrives, and is refused once
-//    revoked or expired since.
+//    handshake's verdict after a request has written the chain, waits for a
+//    verdict on its way, is refused when a refusal or nothing arrives, and is
+//    refused once revoked or expired since.
 //    E: a throw inside the hold fails closed in force and leaves OpenSSL's verdict
 //    alone out of force. F: the row, and the master.
 //
@@ -270,7 +270,8 @@ async function child() {
   await new Promise(function (resolve) {
     setTimeout(resolve, 4500);
   });
-  results.gExpiredSince = (await askMain(shortLived, shortFirst.session)).answer;
+  results.gExpiredSince = (await askMain(shortLived,
+                                         shortFirst.session)).answer;
   answering.close();
   config.setOverride('pki.revocationCheck', 'soft-fail');
   const revocationStatus = require('../common/revocation_status');
@@ -356,8 +357,8 @@ module.exports = {
     JSON.stringify(r.gResumed).slice(0, 400));
     t.equal(r.gRemembered, true,
             'G. a request writing the chain leaves the verdict on the row');
-    t.check(r.gArrived.resumed && r.gArrived.authorized && !r.gArrived.refused &&
-            r.gWaitedMs >= 250,
+    t.check(r.gArrived.resumed && r.gArrived.authorized &&
+            !r.gArrived.refused && r.gWaitedMs >= 250,
             'G. a verdict still on its way from another node is waited for',
             JSON.stringify(r.gArrived) + ' ' + r.gWaitedMs + 'ms');
     t.check(r.gArrivedRefused.resumed && !r.gArrivedRefused.authorized,

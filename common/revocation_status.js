@@ -753,10 +753,10 @@ async function awaitResumedChain(socket) {
 }
 
 // A RESUMED SESSION WHOSE HOLD IS NOT KNOWN HERE YET (#1360). The hold ran on
-// whichever node saw the full handshake and its verdict is on its way in the same
-// row as the chain, so the hold cannot answer inside the handshake that resumes.
-// It leaves the socket marked, this settles it before any request is answered,
-// and what nothing established after the wait is demoted.
+// whichever node saw the full handshake and its verdict is on its way in the
+// same row as the chain, so the hold cannot answer inside the handshake that
+// resumes. It leaves the socket marked, this settles it before any request is
+// answered, and what nothing established after the wait is demoted.
 function settleResumedHold(socket) {
   log.debug("Entering settleResumedHold().");
   if (!socket || !socket.stsResumedHoldPending) {
