@@ -153,6 +153,12 @@ const PURPOSES: Purpose[] = [
     exemptions: [{ check: 'revocation',
                    spec: 'RFC 5280 section 4.2.1.13: a CRL or OCSP fetch over ' +
                          'plain http has no certificate to check' }],
+    // THE STORE, NOT A SPECIFICATION, AND THE ONE WEAKENING IN THIS TABLE: the
+    // database is dialled before anything else can answer, and managed
+    // databases' certificates commonly name no list, so a status that could not
+    // be established would stop the service starting. A certificate revoked is
+    // still refused. rcbj may overrule this on #1360.
+    variants: { store: { softRevocation: true } },
     baseline: 'peer-chain', code: 'STS-PKI-0242', phase: 2 },
   { id: 'jose-signer', setting: 'pki.paranoidJoseSigner',
     title: 'A JOSE signer\'s certificate chain',
@@ -628,7 +634,8 @@ class CertificateTrust {
       leaf: Object.assign({}, purpose.leaf, v.leaf || {}),
       selfSigned: v.selfSigned || purpose.selfSigned,
       validity: v.validity || purpose.validity,
-      revocation: v.revocation || purpose.revocation
+      revocation: v.revocation || purpose.revocation,
+      softRevocation: !!(v as Json).softRevocation
     };
   }
 
@@ -1302,6 +1309,64 @@ class CertificateTrust {
     }
     helpers.log.debug("Leaving CertificateTrust.holdPeer(). Holds.");
     return { ok: true, inForce: true, check: '', code: '', why: '' };
+  }
+
+  /**
+   * What a handshake's peer owes once OpenSSL has verified it, with revocation:
+   * `holdPeer()`, then the fetch a hold cannot wait for. Counted and audited as
+   * `assess()` is. A staple is asked first, and the `store` variant refuses
+   * only what is revoked (see the table).
+   *
+   * @param id - the purpose
+   * @param peer - `getPeerCertificate(true)`
+   * @param options - `{ realmId, now, staple, variant, expectName }`
+   * @returns a promise of `{ ok, inForce, code, why }`
+   */
+  static async assessPeer(id: string, peer: Json,
+                          options?: Json): Promise<Json> {
+    helpers.log.debug("Entering CertificateTrust.assessPeer(). " + id);
+    const opts = options || {};
+    const purpose = CertificateTrust.purpose(id);
+    const realmId = opts.realmId || realms.currentId();
+    const answer = await CertificateTrust.inRealm(realmId, async function () {
+      const verdict = CertificateTrust.blank(id, true);
+      const codes: Json = {};
+      const whys: Json = {};
+      const held = CertificateTrust.holdPeer(id, peer, { realmId: realmId,
+                                                         now: opts.now });
+      if (!held.inForce) {
+        return held;
+      }
+      CHECK_ORDER.forEach(function (check) {
+        verdict.checks[check] = 'passed';
+      });
+      verdict.checks['name-match'] = 'not-asked';
+      verdict.checks.revocation = 'not-asked';
+      if (!held.ok) {
+        const named = RULE_CHECKS[held.check] || held.check;
+        const check = CHECK_ORDER.indexOf(named) === -1 ? 'path' : named;
+        verdict.checks[check] = 'failed';
+        codes[check] = held.code;
+        whys[check] = held.why;
+      } else {
+        const rule = CertificateTrust.ruleOf(purpose, opts.variant);
+        const certs = CertificateTrust.certificatesOf({ peer: peer });
+        const fetched = await revocationStatus.verdictFor(
+          { leaf: certs.leaf, chain: certs.chain, verified: true },
+          { stapled: opts.staple || undefined });
+        if (rule.softRevocation && fetched.refused &&
+            fetched.status !== 'revoked') {
+          verdict.checks.revocation = 'passed';
+          verdict.revocation = fetched;
+        } else {
+          CertificateTrust.readRevocation(verdict, fetched, codes, whys);
+        }
+      }
+      return CertificateTrust.compose(purpose, verdict, codes, whys, realmId,
+                                      false);
+    });
+    helpers.log.debug("Leaving CertificateTrust.assessPeer(). " + answer.ok);
+    return answer;
   }
 
   /**

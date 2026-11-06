@@ -1611,6 +1611,18 @@ function fetchBytes(url, options) {
                                   'dialled, and this is ' + target.protocol });
   }
   const secure = target.protocol === 'https:';
+  // A CA FILE THAT CANNOT BE USED REFUSES THE FETCH under paranoid PKI mode, as
+  // the families' do, rather than falling back to node's store (#1360). Lazily:
+  // the door requires this module.
+  const httpsFile = String(config.value('pki.revocationHttpsCaFile') || '');
+  if (secure && httpsFile && !pemFileOf('pki.revocationHttpsCaFile').pems.length &&
+      require('./certificate_trust').applies('tls-server-outbound')) {
+    log.warn(errorCodes.tag('STS-PKI-0266') + 'revocation: ' + url + ' was not ' +
+             'asked: pki.revocationHttpsCaFile names "' + httpsFile + '", ' +
+             'which cannot be used.');
+    log.debug('Leaving fetchBytes(). The CA file is unusable.');
+    return { ok: false, why: 'pki.revocationHttpsCaFile cannot be used' };
+  }
   const cap = Math.max(1, Number(config.value('pki.revocationMaxCrlBytes')));
   const timeout = Math.max(1,
                            Number(config.value('pki.revocationFetchTimeoutMs')));
@@ -1652,7 +1664,10 @@ function fetchBytes(url, options) {
         // rules (`OutboundTls.verifiedOptions()`) — because an https address
         // is a claim about who answers, and a claim unchecked is none.
         ...outboundTls().verifiedOptions(
-          pemFileOf('pki.revocationHttpsCaFile').pems)
+          pemFileOf('pki.revocationHttpsCaFile').pems),
+        // Not gated by `tls-server-outbound`: this fetch IS what that gate
+        // asks, and gating it would ask for its own answer (#1360).
+        ...(/** @type {any} */ ({ stsOutboundGate: false }))
       }, function (response) {
         const status = response.statusCode || 0;
         if (status >= 300 && status < 400) {
@@ -1943,6 +1958,8 @@ function fetchLdap(url, want) {
       pemFileOf('pki.revocationLdapCaFile').pems)));
     // Node's store even when the file adds nothing: `ca` names the anchors.
     tlsOptions.ca = tlsOptions.ca || tls.rootCertificates.slice(0);
+    // This fetch IS what the outbound gate asks (#1360).
+    tlsOptions.stsOutboundGate = false;
     if (!net.isIP(parsed.host)) {
       tlsOptions.servername = parsed.host;
     }
@@ -3104,8 +3121,28 @@ async function readOcsp(der, target, nonceValue) {
 }
 
 // One responder, answered from the cache or asked. Never rejects.
+// What a staple's answer is said to have come from, where nothing else was named.
+const STAPLED_RESPONDER = 'the stapled OCSP response';
+
 async function ocspFrom(url, target) {
   log.debug('Entering ocspFrom(). url=' + url);
+  // WHAT THE PEER STAPLED (#1360), asked first and believed on exactly what a
+  // fetched answer is: its signature, its signer and its freshness. It is
+  // about this connection, so it is not cached under the responder's address,
+  // and a staple that is no use falls through to asking.
+  if (target.stapled) {
+    const stapled = await readOcsp(target.stapled, target, null);
+    if (stapled.ok) {
+      log.debug('Leaving ocspFrom(). Stapled.');
+      return { ok: true, answer: Object.assign({ url: url }, stapled),
+               fromCache: false, stapled: true };
+    }
+    log.debug('ocspFrom(): the staple was not used: ' + stapled.why);
+    if (url === STAPLED_RESPONDER) {
+      log.debug('Leaving ocspFrom(). A staple, and no responder to ask.');
+      return { ok: false, why: stapled.why };
+    }
+  }
   const key = url + '|' + target.issuerCert.fingerprint256 + '|' +
               target.serial;
   const hit = cached(ocspCache, key);
@@ -4045,6 +4082,10 @@ async function crlRoute(target, inHand, depth) {
 async function ocspRoute(target) {
   log.debug('Entering ocspRoute().');
   const responders = ocspRespondersOf(target.cert);
+  // A staple is an answer whether or not the certificate names a responder.
+  if (target.stapled && !responders.fetchable.length) {
+    responders.fetchable = [STAPLED_RESPONDER];
+  }
   if (!responders.fetchable.length && responders.other.length) {
     // A RESPONDER THE ISSUER NAMED AND THIS SERVICE WILL NOT ASK (#174): RFC
     // 6960 appendix A defines http and nothing else, so an `ldap:` responder
@@ -4335,6 +4376,9 @@ async function resolveForeign(link, verified, opts) {
     return;
   }
   const target = targetOf(link);
+  if (target && opts && opts.stapled && link.depth === 0) {
+    target.stapled = opts.stapled;
+  }
   if (!target) {
     link.unknownKind = 'unreadable';
     link.refusable = true;

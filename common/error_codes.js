@@ -4836,6 +4836,12 @@ const CODES = [
     summary: 'A pin source threw while listing its certificates, so the ' +
       'inventory is missing its rows.',
     spec: 'none (logged)' },
+  { code: 'STS-PKI-0266',
+    summary: 'An https CRL distribution point or OCSP responder was not asked: ' +
+      'pki.revocationHttpsCaFile names a file that cannot be used, under ' +
+      'paranoid PKI mode. Elsewhere it warned and fell back to node\'s store ' +
+      '(#1360).',
+    spec: 'none: the status is unknown, and the policy decides' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

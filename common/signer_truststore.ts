@@ -264,6 +264,28 @@ class SignerTruststore {
     return { anchors: anchors, intermediates: intermediates };
   }
 
+  /**
+   * What a TLS client may add to its `ca` for one use case: the anchors and
+   * intermediates a realm's store holds, as PEM.
+   *
+   * @param realmId - the realm; the ambient one where omitted
+   * @param purpose - the use case
+   * @returns the PEM blocks
+   */
+  pemsFor(realmId?: string, purpose?: string): string[] {
+    this.deps.log.debug("Entering SignerTruststore.pemsFor().");
+    const out = this.rowsOf(this.realmIdOf(realmId))
+      .filter(function (row: Json) {
+        const purposes = row.purposes || [];
+        return !purpose || !purposes.length ||
+               purposes.indexOf(purpose) !== -1;
+      }).map(function (row: Json) {
+        return row.pem;
+      });
+    this.deps.log.debug("Leaving SignerTruststore.pemsFor(). " + out.length);
+    return out;
+  }
+
   // Self-issued first, so an intermediate in the same bundle as its anchor
   // finds it held.
   private blocksOf(text: string): string[] {
@@ -524,6 +546,7 @@ export = {
   installedDirectory: slot.forward('installedDirectory'),
   list: slot.forward('list'),
   anchorsFor: slot.forward('anchorsFor'),
+  pemsFor: slot.forward('pemsFor'),
   add: slot.forward('add'),
   remove: slot.forward('remove'),
   loadFile: slot.forward('loadFile'),

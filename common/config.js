@@ -18763,7 +18763,7 @@ const SETTINGS = [
   { key: 'persistence.databaseTlsRejectUnauthorized', group: 'Persistence',
     label: 'Verify the database certificate',
     env: 'STS_DATABASE_TLS_REJECT_UNAUTHORIZED', type: 'bool', dflt: true,
-    runtime: false,
+    runtime: false, onlyWhile: 'skipsOutboundTlsVerification',
     restartReason: 'the connection pool is opened before the listener binds',
     description: 'Whether the PostgreSQL server\'s certificate must verify ' +
                  'against a trust anchor this process holds, chain and host ' +

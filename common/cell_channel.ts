@@ -803,7 +803,9 @@ class CellChannel {
               ca: [self.rootPem()],
               minVersion: 'TLSv1.3',
               timeout: timeout,
-              agent: false
+              agent: false,
+              // `cell-peer` holds this one, in `peerCellOf()` (#1360).
+              ...({ stsOutboundGate: false } as any)
             }, function (response: any) {
               const answered = self.peerCellOf(response.socket, cellId);
               if (!answered) {

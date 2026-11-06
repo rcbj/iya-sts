@@ -2078,7 +2078,10 @@ function resolveDatabaseUrl() {
 function verifiesDatabaseTls() {
   log.debug("Entering verifiesDatabaseTls().");
   log.debug("Leaving verifiesDatabaseTls().");
-  return !!config.value('persistence.databaseTlsRejectUnauthorized');
+  // In force (#1360): this is a skip like every other, development's alone, so
+  // a product deployment with `false` still stored verifies and says so.
+  return !!require('../common/mode')
+    .valueInForce('persistence.databaseTlsRejectUnauthorized');
 }
 
 // ---------------------------------------------------------------------------
