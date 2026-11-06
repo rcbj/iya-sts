@@ -732,8 +732,6 @@ contents decide whether an assertion is verified.
 
 ## Development and product mode
 
-**A partner on a private CA that names no revocation list is refused in product mode, even with the CA in `federation.outboundCaFile`.** [Accept its certificate by name](signer-truststore.md#accepting-one-certificate-by-name), or have the CA publish a list.
-
 Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a back channel to a partner the certificate of whoever answers is checked before anything is sent: extendedKeyUsage serverAuth and revocation, stapled first, as the `tls-server-outbound` row of the [use cases](pki-use-cases.md) says. A CA in the realm's [signer truststore](signer-truststore.md) is trusted beside the setting that names a CA file.
 
 The refusals above are the same in both modes — federation is not permissive in

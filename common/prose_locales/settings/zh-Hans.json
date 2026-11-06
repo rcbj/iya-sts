@@ -3716,8 +3716,8 @@
     "text": "偏执 PKI 模式"
   },
   "pki.paranoid|description": {
-    "en": "168070ad5991fba4",
-    "text": "偏执 PKI 模式（#1360）：本服务所依赖的每一份 X.509 证书——无论是任一方向的 TLS 握手、签名之下、作为加密接收方、在证明中，还是在 CMS 消息中——是否都通过唯一的验证入口（common/certificate_trust.ts）接受完整检查：存在通往本服务已知锚点的路径、当前时间有效、未被吊销，以及其用例所要求的 basicConstraints、keyUsage 和 extendedKeyUsage；用例从未运行的检查视为拒绝。**`auto` 在产品模式下开启，在开发模式下关闭**（mode.enforcesParanoidPki()）；`on` 和 `off` 在任一模式下强制设定。生效期间，会参考下面每一个 `pki.paranoid<UseCase>` 行；不生效时，每个用例的行为与 #1360 之前完全相同。在产品模式下将总开关强制关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示；写入本身不会被拒绝。"
+    "en": "96d8d3c8d4989451",
+    "text": "偏执 PKI 模式（#1360）：本服务所依赖的每一份 X.509 证书——无论是任一方向的 TLS 握手、签名之下、作为加密接收方、在证明中，还是在 CMS 消息中——是否都通过唯一的验证入口（common/certificate_trust.ts）接受完整检查：存在通往本服务已知锚点的路径、当前时间有效、未被吊销，以及其用例所要求的 basicConstraints、keyUsage 和 extendedKeyUsage；用例从未运行的检查视为拒绝。**`auto` 在产品模式下开启，在开发模式下关闭**（mode.enforcesParanoidPki()）；`on` 和 `off` 在任一模式下强制设定。生效期间，会参考下面每一个 `pki.paranoid<UseCase>` 行；不生效时，每个用例的行为与 #1360 之前完全相同。在产品模式下将总开关强制关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示；写入本身不会被拒绝。 如果证书本身及其上级 CA 都未指明 CRL 分发点和 OCSP 响应方，则无需执行吊销检查：已指明的来源会被强制执行，而本服务签发的证书始终会查询其自身的登记簿。"
   },
   "pki.paranoidTlsClient|label": {
     "en": "c0010750fb1dedac",

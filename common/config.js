@@ -7906,7 +7906,11 @@ const SETTINGS = [
                  'it is not, every use case behaves exactly as it did before ' +
                  '#1360. Forced off in product the master is logged once ' +
                  '(STS-PKI-0239) and drawn red on /admin/pki/trust; nothing ' +
-                 'refuses the write.' },
+                 'refuses the write. A certificate that names no CRL ' +
+                 'distribution point and no OCSP responder, in itself or a ' +
+                 'CA above it, has no revocation check to perform: a source ' +
+                 'that is named is enforced, and a certificate this service ' +
+                 'issued is always asked of its own register.' },
   { key: 'pki.paranoidTlsClient', group: 'PKI',
     label: 'Paranoid: a client certificate at a TLS handshake',
     env: 'STS_PKI_PARANOID_TLS_CLIENT', type: 'bool',
