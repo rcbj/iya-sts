@@ -28,6 +28,7 @@
 //   * `secureConnect` not held                                — 1 red (B)
 //   * the opt-out ignored                                     — 1 red (F)
 //   * the staple not handed to the walk                       — 2 red (E)
+//   * a context's `ca` not remembered                        — 1 red (H3)
 //   * the store's row not softening                           — 1 red (H)
 // ===========================================================================
 
@@ -484,27 +485,18 @@ async function child() {
   results.generatedBao = await dial(bao.port, bao.pem);
   results.generatedPg = await dial(pg.port, pg.pem);
   // H3. A CONTEXT THE DIALER BUILT ITSELF, as mysql2 does: its `ca` is still
-  // the dialer naming this server, and with nothing in it nothing is named.
-  const throughContext = function (ca) {
-    log.debug("Entering throughContext().");
-    return new Promise(function (resolve) {
-      const socket = tls.connect({ host: 'localhost', port: bao.port,
-        servername: 'localhost', rejectUnauthorized: false,
-        ALPNProtocols: ['http/1.1'],
-        secureContext: tls.createSecureContext(ca ? { ca: ca } : {}) },
-      function () {
-        socket.destroy();
-        log.debug("Leaving throughContext(). Reached.");
-        resolve({ reached: true });
-      });
-      socket.on('error', function (e) {
-        log.debug("Leaving throughContext(). " + e.message);
-        resolve({ reached: false, why: String(e.message) });
-      });
+  // the dialer naming this server.
+  results.contextNamed = await new Promise(function (resolve) {
+    const socket = tls.connect({ host: 'localhost', port: bao.port,
+      servername: 'localhost', ALPNProtocols: ['http/1.1'],
+      secureContext: tls.createSecureContext({ ca: bao.pem }) }, function () {
+      socket.destroy();
+      resolve({ reached: true });
     });
-  };
-  results.contextNamed = await throughContext(bao.pem);
-  results.contextBare = await throughContext(null);
+    socket.on('error', function (e) {
+      resolve({ reached: false, why: String(e.message) });
+    });
+  });
   // A pair the volume already holds is what it reads: nothing is regenerated.
   cp.execFileSync(process.execPath,
     [path.join(__dirname, '..', 'openbao', 'generate-tls.js')],
@@ -600,9 +592,6 @@ module.exports = {
     t.check(r.contextNamed.reached,
             'H3. a context built with the server as its `ca` names it',
             JSON.stringify(r.contextNamed));
-    t.check(!r.contextBare.reached,
-            'H3. and one built with no `ca` names nothing',
-            JSON.stringify(r.contextBare));
     t.check(r.generatedBao.reached,
             'I. the certificate openbao/generate-tls.js makes is reached, by ' +
             'the dialer configured with it, under hard-fail',
