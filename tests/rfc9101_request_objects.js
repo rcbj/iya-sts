@@ -829,6 +829,10 @@ function childMain() {
     });
     config.setOverride('federation.outboundCaFile', roCaFile);
     config.setOverride('global.mode', 'product');
+    // This private CA names no revocation list, which paranoid PKI mode refuses
+    // until the certificate is accepted by name (`tests/certificate_trust.js`).
+    // What is held here is the request_uri's fetch.
+    config.setOverride('pki.paranoidOutboundTls', false);
     try {
       r = await byRef(SRO + '/ro/signed');
       note(toSignIn(r) && secureHits['/ro/signed'] === 1,

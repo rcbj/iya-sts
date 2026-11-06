@@ -27,6 +27,8 @@
 //   * the certificates below the anchor dropped from the walk — 1 red
 //   * a server accepted without being named                   — 2 red
 //   * a truststore anchor counting as a dialer's pin          — 1 red
+//   * a named certificate's list not asked                    — see the run
+//   * a named certificate naming no list still refused        — see the run
 //   * `fieldChecks()` not marking a failure                  — 53 red
 //   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
 //   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
@@ -660,6 +662,45 @@ async function run(t, double, crls) {
     signers.anchorsFor(REALM).intermediates).some(function (der) {
     return der.equals(pemDer(appliance.pem));
   }), 'it is no step on anybody\'s path', '');
+  // A private CA's leaf that names no list: refused by hard-fail, until named.
+  const privateCa = await kit.mint({ cn: 'a private ca', ca: true,
+    pair: await crossKeys.generateKeyPair('rsa-2048') });
+  const privateLeaf = await kit.mint({ cn: 'a partner on it', issuer: privateCa,
+    usages: ['digitalSignature', 'keyEncipherment'], eku: ['serverAuth'] });
+  const privatePeer = peerOf(privateLeaf, peerOf(privateCa));
+  await signers.add(REALM, privateCa.pem, {});
+  await withSettings({ 'pki.revocationCheck': 'hard-fail',
+                       'pki.revocationRequireDistributionPoint': 'on' },
+    async () => {
+      const silent = await trust.assessPeer('tls-server-outbound', privatePeer,
+                                            { realmId: REALM });
+      t.check(!silent.ok && silent.code === 'STS-PKI-0190',
+              'a private CA naming no list is refused under hard-fail',
+              silent.code + ' ' + silent.why);
+      const partner = await signers.add(REALM, privateLeaf.pem,
+                                        { kind: 'accepted' });
+      t.equal(partner.added.length, 1, 'its leaf can be accepted by name');
+      const passes = await trust.assessPeer('tls-server-outbound', privatePeer,
+                                            { realmId: REALM });
+      t.check(passes.ok, 'and then it passes', passes.why);
+      signers.remove(REALM, partner.added[0].fingerprint256);
+      const listRoot = await kit.mint({ cn: 'a ca with a list', ca: true,
+        pair: await crossKeys.generateKeyPair('rsa-2048') });
+      await signers.add(REALM, listRoot.pem, {});
+      const lists = await kit.crlServer();
+      const listedRevoked = await kit.mint({ cn: 'named and revoked',
+        issuer: listRoot, usages: ['digitalSignature', 'keyEncipherment'],
+        eku: ['serverAuth'], crls: [lists.base + '/nr.crl'] });
+      lists.routes['/nr.crl'] = await kit.crlOf(listRoot,
+                                                [listedRevoked.serialHex]);
+      await signers.add(REALM, listedRevoked.pem, { kind: 'accepted' });
+      const stillRevoked = await trust.assessPeer('tls-server-outbound',
+        peerOf(listedRevoked, peerOf(listRoot)), { realmId: REALM });
+      t.check(!stillRevoked.ok && stillRevoked.code === 'STS-PKI-0118',
+              'and naming a certificate does not excuse a revocation',
+              stillRevoked.code + ' ' + stillRevoked.why);
+      await lists.close();
+    });
   const acceptedRoot = await signers.add(REALM,
     (await kit.mint({ cn: 'a ca offered by name', ca: true })).pem,
     { kind: 'accepted' });
