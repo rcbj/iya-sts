@@ -5043,6 +5043,14 @@
     "en": "a243fee8db63660f",
     "text": "Hur länge ett utfärdat intyg är giltigt: det blir både Conditions/NotOnOrAfter och bearer-SubjectConfirmationData/NotOnOrAfter. Sätt det till 1 för att se en tjänsteleverantör avvisa ett inaktuellt intyg, vilket är den kontroll som de flesta gör fel."
   },
+  "saml2.publishAlgorithmSupport|label": {
+    "en": "fae70314b5ff4257",
+    "text": "Publicera algoritmstöd i metadata"
+  },
+  "saml2.publishAlgorithmSupport|description": {
+    "en": "38900a41645aeba6",
+    "text": "Om IdP-metadata innehåller `<alg:SigningMethod>` och `<alg:DigestMethod>` (SAML V2.0 Metadata Profile for Algorithm Support 1.0), som listar XML-signaturmetoderna och sammandragen den här sfären kan verifiera, i prioritetsordning. **På som standard.** En konsument som inte känner till profilen ignorerar dem, som avsnitt 2.3.1 i SAML-metadata kräver."
+  },
   "saml2.signAssertion|label": {
     "en": "762a7ca973d4ab92",
     "text": "Signera intyget"

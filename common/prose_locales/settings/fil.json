@@ -5043,6 +5043,14 @@
     "en": "a243fee8db63660f",
     "text": "Gaano katagal valid ang iniisyung assertion: nagiging Conditions/NotOnOrAfter ito at ang bearer SubjectConfirmationData/NotOnOrAfter din. Itakda ito sa 1 para panoorin ang service provider na tumatanggi sa lipas na assertion, na siyang check na mali ang karamihan sa kanila."
   },
+  "saml2.publishAlgorithmSupport|label": {
+    "en": "fae70314b5ff4257",
+    "text": "I-publish ang suporta sa algorithm sa metadata"
+  },
+  "saml2.publishAlgorithmSupport|description": {
+    "en": "38900a41645aeba6",
+    "text": "Kung may `<alg:SigningMethod>` at `<alg:DigestMethod>` ang IdP metadata (SAML V2.0 Metadata Profile for Algorithm Support 1.0), na naglilista ng mga XML signature method at digest na kayang i-verify ng realm na ito, ayon sa pagkakasunod-sunod ng kagustuhan. **Naka-on bilang default.** Binabalewala ang mga ito ng consumer na hindi alam ang profile, gaya ng hinihingi ng seksyon 2.3.1 ng SAML metadata."
+  },
   "saml2.signAssertion|label": {
     "en": "762a7ca973d4ab92",
     "text": "Pirmahan ang assertion"

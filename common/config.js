@@ -10330,8 +10330,8 @@ const SETTINGS = [
     description: 'Whether IdP metadata carries `<alg:SigningMethod>` and ' +
                  '`<alg:DigestMethod>` (SAML V2.0 Metadata Profile for ' +
                  'Algorithm Support 1.0), listing the XML signature methods ' +
-                 'and digests this realm uses and accepts, the chosen ' +
-                 'algorithm first. **On by default.** A consumer that does ' +
+                 'and digests this realm can verify, in order of ' +
+                 'preference. **On by default.** A consumer that does ' +
                  'not know the profile ignores them, as SAML metadata ' +
                  'section 2.3.1 requires.' },
   { key: 'saml2.signAssertion', group: 'SAML 2.0 assertions', label: 'Sign ' +

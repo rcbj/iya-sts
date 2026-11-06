@@ -5043,6 +5043,14 @@
     "en": "a243fee8db63660f",
     "text": "Durée de validité d’une assertion émise : elle devient à la fois Conditions/NotOnOrAfter et le SubjectConfirmationData/NotOnOrAfter bearer. Réglez-la à 1 pour observer un fournisseur de services refuser une assertion périmée, contrôle que la plupart d’entre eux réalisent mal."
   },
+  "saml2.publishAlgorithmSupport|label": {
+    "en": "fae70314b5ff4257",
+    "text": "Publier la prise en charge des algorithmes dans les métadonnées"
+  },
+  "saml2.publishAlgorithmSupport|description": {
+    "en": "38900a41645aeba6",
+    "text": "Indique si les métadonnées de l’IdP portent `<alg:SigningMethod>` et `<alg:DigestMethod>` (SAML V2.0 Metadata Profile for Algorithm Support 1.0), listant les méthodes de signature XML et les condensats que ce domaine peut vérifier, par ordre de préférence. **Activé par défaut.** Un consommateur qui ne connaît pas le profil les ignore, comme l’exige la section 2.3.1 des métadonnées SAML."
+  },
   "saml2.signAssertion|label": {
     "en": "762a7ca973d4ab92",
     "text": "Signer l’assertion"

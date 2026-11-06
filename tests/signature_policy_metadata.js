@@ -151,9 +151,17 @@ function childMain() {
          saml.text.indexOf('<alg:SigningMethod') <
          saml.text.indexOf('</md:Extensions>'),
          'inside md:Extensions, where a consumer may ignore them');
-    note(/<alg:SigningMethod xmlns:alg="[^"]+" Algorithm="[^"]*rsa-sha256"/
+    // The profile's section 2.4: what the entity can VERIFY, in order of
+    // preference. So an accept list narrows it, and the signing list does not.
+    note(/<alg:SigningMethod xmlns:alg="[^"]+" Algorithm="[^"]*ml-dsa-87"/
       .test(saml.text.slice(saml.text.indexOf('<alg:SigningMethod'))
-        .split('/>')[0] + '/>'), 'the chosen algorithm first');
+        .split('/>')[0] + '/>'), 'in order of preference, strongest first');
+    config.setOverride('saml.acceptedSignatureAlgorithms', 'RS256');
+    const narrowed = (await get('/saml2/metadata')).text;
+    note((narrowed.match(/<alg:SigningMethod /g) || []).length === 1 &&
+         /Algorithm="[^"]*rsa-sha256"\/>/.test(narrowed),
+         'an accept list is what it then publishes');
+    config.clearOverride('saml.acceptedSignatureAlgorithms');
     note(!/rsa-sha1"|hmac-|md5/.test(saml.text.slice(
       saml.text.indexOf('<md:Extensions>'),
       saml.text.indexOf('</md:Extensions>'))),

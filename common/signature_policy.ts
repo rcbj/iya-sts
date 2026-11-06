@@ -532,34 +532,34 @@ class SignaturePolicy {
   }
 
   /**
-   * The rows `saml.signatureAlgorithms`, or else what this realm verifies, in
-   * order, with the chosen algorithm first; and the digests. What the SAML V2.0
-   * Metadata Profile for Algorithm Support publishes. Never a weak or an HMAC
-   * method, which is a Kerberos session key's and no certificate's.
+   * What the SAML V2.0 Metadata Profile for Algorithm Support publishes. Its
+   * section 2.4 is "an entity's capability to VERIFY digests and signatures",
+   * each kind "listed in order of preference", so this is the accept list and
+   * NOT what this realm signs with: a peer picks the first it supports to send
+   * here. Preference order, strongest first. Never a weak method, and never an
+   * HMAC, which is a Kerberos session key's and no certificate's.
    *
-   * @param chosen - the URI this realm signs with now
    * @param digests - every digest method's URI to its row
    * @returns `{ signing, digests }`, URIs
    */
-  static xmlAlgorithmSupport(chosen: string, digests: Record<string, any>): any {
+  static xmlAlgorithmSupport(digests: Record<string, any>): any {
     log.debug("Entering SignaturePolicy.xmlAlgorithmSupport().");
-    const signing = SignaturePolicy.effective('xml', 'sign')
-      .concat(SignaturePolicy.effective('xml', 'accept'))
-      .filter(function (uri: string, at: number, all: string[]) {
-        const row = algorithmRegistry.bySpelling('xml', uri);
-        return all.indexOf(uri) === at && row && row.xml === uri &&
-          !row.weak && row.family !== 'hmac' &&
-          SignaturePolicy.acceptCause('xml', uri) === null;
-      });
-    const ordered = [chosen].concat(signing.filter(function (uri: string) {
-      return uri !== chosen;
-    }));
+    const signing = algorithmRegistry.on('xml').filter(function (row: any) {
+      return !row.weak && row.family !== 'hmac' &&
+        SignaturePolicy.acceptCause('xml', row.xml) === null;
+    }).map(function (row: any) {
+      return row.xml;
+    });
+    const rank = ['SHA-512', 'SHA-384', 'SHA-256', 'SHA3-512', 'SHA3-384',
+                  'SHA3-256', 'SHA-224', 'SHA3-224'];
     const usable = Object.keys(digests).filter(function (uri: string) {
       return !digests[uri].weak &&
         SignaturePolicy.acceptXmlDigestCause(digests[uri].label) === null;
+    }).sort(function (a: string, b: string) {
+      return rank.indexOf(digests[a].label) - rank.indexOf(digests[b].label);
     });
     log.debug("Leaving SignaturePolicy.xmlAlgorithmSupport().");
-    return { signing: ordered, digests: usable };
+    return { signing: signing, digests: usable };
   }
 
   /**

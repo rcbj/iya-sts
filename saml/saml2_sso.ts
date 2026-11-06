@@ -649,11 +649,11 @@ class Saml2Sso {
    *
    * @returns the count
    */
-  // WHAT THIS REALM SIGNS AND ACCEPTS, PUBLISHED (#1368): the SAML V2.0 Metadata
-  // Profile for Algorithm Support 1.0, inside md:Extensions, which a consumer
-  // that does not know the profile ignores (SAML metadata section 2.3.1).
+  // WHAT THIS REALM CAN VERIFY, PUBLISHED (#1368): the SAML V2.0 Metadata Profile
+  // for Algorithm Support 1.0, inside md:Extensions, which a consumer that does
+  // not know the profile ignores (SAML metadata section 2.3.1).
   private algorithmSupport(): string {
-    const { config, documentSettings, stsCrypto } = this.deps;
+    const { config, stsCrypto } = this.deps;
     const { log, xmlEscape } = this.deps.helpers;
     log.debug("Entering Saml2Sso.algorithmSupport().");
     if (config.value('saml2.publishAlgorithmSupport') === false) {
@@ -664,8 +664,7 @@ class Saml2Sso {
     stsCrypto.xmlSignatureAlgorithms().digests.forEach(function (row: any) {
       digests[row.uri] = row;
     });
-    const support = stsCrypto.signaturePolicy.xmlAlgorithmSupport(
-      documentSettings.signatureOptions().sigAlg, digests);
+    const support = stsCrypto.signaturePolicy.xmlAlgorithmSupport(digests);
     const element = function (name: string, uri: string): string {
       return '<alg:' + name + ' xmlns:alg="' + NS_ALG + '" Algorithm="' +
         xmlEscape(uri) + '"/>';

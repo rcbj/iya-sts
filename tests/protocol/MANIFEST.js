@@ -334,6 +334,8 @@ const JOBS = [
   // second question: asserted over HTTP, so written here. GNAP's half is
   // `sts_gnap_rs.js` section 8.
   { file: 'sts_access_token_status.js',  browser: false },
+  // #1368: what a realm is configured to sign and accept is what it publishes.
+  { file: 'sts_signature_policy.js',     browser: false, local: true },
   // #107: a key proved by mutual TLS under the pinned and PKI trust models,
   // revocation in both, the binding to an application entry, rotation at the
   // authority, the per-client override and the product default. Presents
