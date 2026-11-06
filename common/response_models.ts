@@ -239,7 +239,20 @@ class ResponseModels {
       return { operation: opName, status: status,
                where: 'the body is not JSON' };
     }
-    const validate = this.validatorFor(installed, content[media]);
+    // A model that will not compile is a problem with this answer, never an
+    // exception: thrown from `res.send`, a handler's catch would put ajv's
+    // sentence about the schema in the caller's answer (the first live run).
+    let validate: Json;
+    try {
+      validate = this.validatorFor(installed, content[media]);
+    } catch (e: Json) {
+      log.debug("Caught in ResponseModels.problemOf(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving ResponseModels.problemOf(). Will not compile.");
+      return { operation: opName, status: status,
+               where: 'the model does not compile: ' +
+                      String((e && e.message) || e) };
+    }
     if (validate(parsed)) {
       log.debug("Leaving ResponseModels.problemOf(). Valid.");
       return null;
@@ -278,7 +291,16 @@ class ResponseModels {
       log.debug("Leaving ResponseModels.undocumentedProblem(). Unparsable.");
       return nothing;
     }
-    const validate = this.validatorFor(installed, installed.refusal);
+    let validate: Json;
+    try {
+      validate = this.validatorFor(installed, installed.refusal);
+    } catch (e: Json) {
+      log.debug("Caught in ResponseModels.undocumentedProblem(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving ResponseModels.undocumentedProblem(). No model.");
+      return { operation: name, status: status,
+               where: 'the refusal model does not compile' };
+    }
     const valid = validate(parsed);
     log.debug("Leaving ResponseModels.undocumentedProblem(). " + valid);
     return valid ? null : { operation: name, status: status,

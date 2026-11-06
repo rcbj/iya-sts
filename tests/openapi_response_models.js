@@ -207,6 +207,10 @@ function validatorCases(t) {
           'a free-form model takes anything, and is the only one that does');
   t.equal(answer('GET', '/thing', 'application/json', 200, '').statusCode, 200,
           'an empty body has nothing to check');
+  // A model that cannot compile is this answer's problem and says nothing.
+  const broken = { 200: json({ type: 'string', enum: ['a', 'a'] }) };
+  doc.paths['/api/broken'] = { get: { operationId: 'getBroken',
+                                      responses: broken } };
   const nothingYet = marked.length;
   t.equal(nothingYet, 0, 'none of those was reported');
 
@@ -248,6 +252,12 @@ function validatorCases(t) {
           'a body that is not JSON on an unrouted path is left alone');
   t.equal(answer('GET', '/thing', 'application/json', 200,
                  '{broken').statusCode, 500, 'unparsable JSON is not sent');
+  const uncompilable = answer('GET', '/broken', 'application/json', 200, '"a"');
+  t.equal(uncompilable.statusCode, 500, 'a model that will not compile is not ' +
+          'answered through');
+  t.check(uncompilable.sent.indexOf('enum') < 0 &&
+          JSON.parse(uncompilable.sent).error === 'server_error',
+          'and the caller hears nothing about the schema');
   const count = models.failureCount();
   t.check(count >= 7, 'every refusal is counted: ' + count);
   log.debug("Leaving validatorCases().");
@@ -327,6 +337,43 @@ function ruleOverDocuments(t) {
             'a refusal looks like: ' + noDefault.slice(0, 20).join(', '));
   });
   t.check(total >= 1500, 'the walk reached the documents: ' + total + ' rows');
+  // EVERY MODEL COMPILES, with the validator's own options: ajv refuses a model
+  // for what it IS (a duplicate in an enum), and that shows only when an answer
+  // reaches it, which for the wallet's wait page was a sign-in.
+  const Ajv = require('ajv');
+  const addFormats = require('ajv-formats');
+  const ajv = new Ajv({ strict: false, allErrors: true, coerceTypes: false,
+                        useDefaults: false });
+  addFormats(ajv);
+  const broken = [];
+  let compiled = 0;
+  Object.keys(docs).forEach(function (api) {
+    const doc = docs[api];
+    Object.keys(doc.paths).forEach(function (p) {
+      Object.keys(doc.paths[p]).forEach(function (m) {
+        const responses = (doc.paths[p][m] || {}).responses || {};
+        Object.keys(responses).forEach(function (status) {
+          const content = responses[status].content || {};
+          Object.keys(content).filter(function (type) {
+            return /json/.test(type);
+          }).forEach(function (type) {
+            try {
+              ajv.compile({ allOf: [content[type].schema],
+                            components: doc.components });
+              compiled += 1;
+            } catch (e) {
+              log.debug("Caught in ruleOverDocuments(): " +
+                        ((e && e.message) || e));
+              broken.push(api + ' ' + m + ' ' + p + ' ' + status + ': ' +
+                          ((e && e.message) || e));
+            }
+          });
+        });
+      });
+    });
+  });
+  t.check(broken.length === 0 && compiled > 1000, 'every model compiles (' +
+          compiled + '): ' + broken.slice(0, 20).join('; '));
   // A free-form model carries its reason, or it is an open model by another
   // name; the list is printed, because the exception is meant to be read.
   const reasons = new Set();

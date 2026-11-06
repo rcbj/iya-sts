@@ -70,7 +70,8 @@ class Models {
         const had = members[name];
         const next = model.properties[name];
         members[name] = had && had.enum && next.enum
-          ? Object.assign({}, had, { enum: had.enum.concat(next.enum) })
+          ? Object.assign({}, had, { enum: Array.from(new Set(
+              had.enum.concat(next.enum))) })
           : had || next;
       });
     });
