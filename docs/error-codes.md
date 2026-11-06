@@ -1052,7 +1052,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0264` | pki.pins.audit: a pinned certificate or truststore entry is expired, revoked or chain-missing. Logged once per change of state. | none (logged) |
 | `STS-PKI-0265` | A pin source threw while listing its certificates, so the inventory is missing its rows. | none (logged) |
 | `STS-PKI-0266` | An https CRL distribution point or OCSP responder was not asked: pki.revocationHttpsCaFile names a file that cannot be used, under paranoid PKI mode. Elsewhere it warned and fell back to node's store (#1360). | none: the status is unknown, and the policy decides |
-| `STS-PKI-0267` | A certificate offered to be accepted by name is not a self-signed leaf (#1360). | none — recorded on the refusal the page or the API makes |
+| `STS-PKI-0267` | A certificate offered to be accepted by name is a certificate authority (#1360). | none — recorded on the refusal the page or the API makes |
 
 ## STS-ENROLL
 

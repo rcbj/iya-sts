@@ -1575,7 +1575,17 @@ class CertificateTrust {
             chain: CertificateTrust.endingAtAnchor(certs.chain, realmId),
             verified: true },
           { stapled: opts.staple || undefined });
-        if (rule.softRevocation && fetched.refused &&
+        // SOMEBODY NAMED THIS CERTIFICATE, so a chain that names no list has
+        // nothing left to ask, which is what a private CA's often does. A list
+        // it does name is asked, and a revocation there is believed.
+        const namesNone = CertificateTrust.acceptedByName(id, certs.leaf,
+          { realmId: realmId, pinnedTo: opts.pinnedTo }) &&
+          ![certs.leaf].concat(certs.chain)
+            .some(CertificateTrust.namesRevocation);
+        if (namesNone) {
+          verdict.checks.revocation = 'passed';
+          verdict.revocation = fetched;
+        } else if (rule.softRevocation && fetched.refused &&
             fetched.status !== 'revoked') {
           verdict.checks.revocation = 'passed';
           verdict.revocation = fetched;
