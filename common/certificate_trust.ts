@@ -119,7 +119,8 @@ const PURPOSES: Purpose[] = [
       'a demoted connection stays demoted across TLS resumption; a failure ' +
       'inside the check refuses.',
     sites: ['tls/tls_server.js holdToPathRules', 'ldap/ldap_server.js',
-            'debugger/debugger_server.ts', 'spiffe/spiffe_server.ts plain bind'],
+            'debugger/debugger_server.ts',
+            'spiffe/spiffe_server.ts plain bind'],
     anchors: ['client-truststore', 'realm'],
     leaf: leaf(TLS_CLIENT_USAGE, [EKU.clientAuth]),
     selfSigned: 'refuse', validity: 'now', revocation: 'required',
