@@ -34,20 +34,15 @@
 // a default at load.
 // ---------------------------------------------------------------------------
 
-import forge = require('node-forge');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
-import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
 // at its top, and together they are resident memory in every request worker
 // that never issues or verifies a BBS credential. `common/lazy_module.ts`
 // argues it; `common/helpers.js` defers the same file by hand.
 type Bbs2023 = typeof import('../common/crypto_impl/bbs2023.js');
-const bbs2023: Bbs2023 = LazyModule.of('common/crypto_impl/bbs2023.js',
-  function () {
-    return require('../common/crypto_impl/bbs2023.js') as Bbs2023;
-  }, helpers.log);
+const bbs2023: Bbs2023 = stsCrypto.bbs;
 import InstanceSlot = require('../common/instance_slot');
 // The identity registry, for ONE call at the generator endpoint below: a DID
 // this service mints is an identity it has created, and this is the funnel the
@@ -606,21 +601,14 @@ class VcDid {
     // The same RSA public key the JWKS publishes, read out of the certificate
     // the same way — one source of truth for what this issuer signs with, so a
     // DID document and a JWKS can never describe different keys.
-    const pub: any = forge.pki.certificateFromPem(STS.certPem).publicKey;
-    const b64uHex = function (hex) {
-      log.debug("Entering b64uHex().");
-      log.debug("Leaving b64uHex().");
-      return Buffer.from(hex.length % 2 ? '0' + hex : hex, 'hex')
-                   .toString('base64')
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-    };
+    const pub = stsCrypto.rsaPublicJwkOf(STS.certPem);
     const methods: any[] = [{
       id: did + '#' + STS.kid,
       type: 'JsonWebKey2020',
       controller: did,
       publicKeyJwk: {
         kty: 'RSA', use: 'sig', alg: 'RS256', kid: STS.kid,
-        n: b64uHex(pub.n.toString(16)), e: b64uHex(pub.e.toString(16))
+        n: pub.n, e: pub.e
       }
     }];
     // THE CREDENTIAL KEY, WHERE IT IS NOT THE RSA ONE (2026-09-12). A realm

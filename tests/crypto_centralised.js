@@ -119,6 +119,29 @@ const NODE_CRYPTO = [
 // for the version they report on the console. The `@digitalbazaar` packages
 // are the zcap and Ed25519 ones; the BBS suite is common/crypto_impl's
 // (bbs2023.js), which is not walked.
+// jsonwebtoken and node-forge, which only common/crypto.js and the engines
+// under it may hold (#1368). Empty, and so it stays.
+const JOSE_LIBRARIES = [
+  /(?:require)\s*\(\s*['"](?:jsonwebtoken|node-forge)['"]\s*\)/
+];
+const LIBRARY_PENDING = {};
+
+// The post-quantum engine's signature calls, the BBS suite, and the X.509
+// engine's (#1368). `PqJose.generate` and the key readers stay open: they sign
+// nothing.
+const PQ_ENGINE_CALLS = [/\bpqJose\.(?:sign|verify|signAsync|verifyAsync)\s*\(/];
+const BBS_SUITE = [/require\(\s*['"][^'"]*crypto_impl\/bbs2023(?:\.js)?['"]\s*\)/];
+const X509_ENGINE_CALLS = [
+  /\bx509\.(?:issueCertificate|signCertificate|verifyChain|verifyBytes)\s*\(/
+];
+// Phase 2's X.509 moves wait on #1360's, which change the same files. This list
+// may only shrink, and #1368 is not finished until it is empty.
+const X509_PENDING = {
+  'common/certificate_details.ts': 'pki.verifyChain() (#1368)',
+  'common/cert_enrollment.ts': 'pki.csrProofOfPossession() (#1368)',
+  'spiffe/spiffe_ca.ts': 'pki.issueSelfSignedAuthority() (#1368)'
+};
+
 const TOKEN_LIBRARIES = [
   new RegExp('(?:require|import)\\s*\\(\\s*[\'"](?:macaroon|' +
     'jsonld-signatures|@digitalbazaar/(?:zcap|zcap-context|' +
@@ -227,6 +250,59 @@ module.exports = {
       'no module but common/crypto.js requires the macaroon, zcap or ' +
       'Biscuit library',
       holders.join(', '));
+
+    // The two libraries (#1368): a feature module reads a token through
+    // `decodeJws()` and a key through `rsaPublicJwkOf()`, and asks for a
+    // digest. The crypto engines under common/crypto_impl are the crypto
+    // module's own.
+    const libraryHolders = files.filter(function (rel) {
+      return rel !== 'common/crypto.js' &&
+        rel.indexOf('common/crypto_impl/') !== 0 &&
+        !Object.prototype.hasOwnProperty.call(LIBRARY_PENDING, rel) &&
+        uses(rel, JOSE_LIBRARIES);
+    });
+    t.check(libraryHolders.length === 0,
+      'no module but common/crypto.js requires jsonwebtoken or node-forge',
+      libraryHolders.join(', '));
+    Object.keys(LIBRARY_PENDING).forEach(function (rel) {
+      t.check(files.indexOf(rel) >= 0 && uses(rel, JOSE_LIBRARIES),
+        'a LIBRARY_PENDING entry still requires one (the list may only ' +
+        'shrink: delete the entry once the file is moved)', rel);
+    });
+
+    // The doors section 2 of #1368 closed. A signature goes through crypto.js:
+    // nobody else calls the post-quantum engine's sign or verify, or holds the
+    // BBS suite. The file it replaced in vc_status_codec.ts cannot come back.
+    const pqCallers = files.filter(function (rel) {
+      return THE_MODULE.indexOf(rel) < 0 && uses(rel, PQ_ENGINE_CALLS);
+    });
+    t.check(pqCallers.length === 0,
+      'no module but crypto.js calls pq_jose.js to sign or verify',
+      pqCallers.join(', '));
+    const bbsHolders = files.filter(function (rel) {
+      return THE_MODULE.indexOf(rel) < 0 && uses(rel, BBS_SUITE);
+    });
+    t.check(bbsHolders.length === 0,
+      'no module but crypto.js requires the BBS suite', bbsHolders.join(', '));
+    const x509Callers = files.filter(function (rel) {
+      return rel !== 'common/crypto.js' && rel !== 'common/pki.js' &&
+        rel !== 'common/pki_revocation.js' &&
+        // The Certificate Workbench's model, part of the PKI layer (rule 3aa).
+        rel !== 'common/pki_authoring.ts' &&
+        // Runs in the secret store's container, which holds no service to load
+        // crypto.js or pki.js from, to mint that store's listener certificate.
+        rel !== 'openbao/generate-tls.js' &&
+        rel.indexOf('common/crypto_impl/') !== 0 &&
+        !Object.prototype.hasOwnProperty.call(X509_PENDING, rel) &&
+        uses(rel, X509_ENGINE_CALLS);
+    });
+    t.check(x509Callers.length === 0,
+      'no module but crypto.js and pki.js calls the X.509 engine to issue or ' +
+      'verify', x509Callers.join(', '));
+    Object.keys(X509_PENDING).forEach(function (rel) {
+      t.check(files.indexOf(rel) >= 0 && uses(rel, X509_ENGINE_CALLS),
+        'an X509_PENDING entry still calls it (the list may only shrink)', rel);
+    });
 
     Object.keys(PENDING).forEach(function (rel) {
       t.check(files.indexOf(rel) >= 0 && uses(rel, NODE_CRYPTO),
