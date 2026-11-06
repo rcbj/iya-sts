@@ -343,11 +343,83 @@ const SCHEMATHESIS_BIN = process.env.STS_SCHEMATHESIS_BIN ||
     ? path.join(process.env.STS_SCHEMATHESIS_DIR, "bin", "schemathesis")
     : "schemathesis");
 
-// The management API's bearer token the launcher minted for this run.
+// The management API's bearer token. The preload (attach-admin-token.js) holds
+// the live one — a job may have minted itself a fresh token and handed it there
+// — so prefer that; `process.env.STS_ADMIN_API_TOKEN` is the launcher's and the
+// fallback for an in-process run with no preload.
 function adminToken() {
   log.debug("Entering adminToken().");
-  log.debug("Leaving adminToken().");
+  if (globalThis.stsAdminApiToken &&
+      typeof globalThis.stsAdminApiToken.get === "function") {
+    const held = globalThis.stsAdminApiToken.get();
+    if (held) {
+      log.debug("Leaving adminToken(). from the preload");
+      return held;
+    }
+  }
+  log.debug("Leaving adminToken(). from the environment");
   return process.env.STS_ADMIN_API_TOKEN || "";
+}
+
+// The client secret this run was handed. The tests container is given
+// `ADMIN_API_CLIENT_SECRET` (docker-compose-run-tests.yml), and a launcher that
+// minted the token itself exports `STS_ADMIN_API_CLIENT_SECRET`; either is the
+// seeded `sts-api-client`'s secret.
+function adminClientSecret() {
+  log.debug("Entering adminClientSecret().");
+  log.debug("Leaving adminClientSecret().");
+  return process.env.STS_ADMIN_API_CLIENT_SECRET ||
+    process.env.ADMIN_API_CLIENT_SECRET || "";
+}
+
+// One warning when no secret is available to re-mint with, so the fallback to
+// the launcher's one-shot token is visible rather than silent.
+let adminMintWarned = false;
+
+// Mints a FRESH `/admin-api` token and installs it everywhere this run reads
+// one, so a long run never provisions or fuzzes with an EXPIRED token (#1299:
+// the launcher's token is minted once at start and the access-token lifetime is
+// an hour, so cells and provisioning 63 minutes in answered 401 invalid_token).
+// Called per provisioning and per cell. It mints DIRECTLY with the secret the
+// kit can read rather than through the preload's refresh(), whose secretFor()
+// reads only `STS_ADMIN_API_CLIENT_SECRET` and so mints nothing in the tests
+// container. Updates the preload's live token (what console_signin's unheadered
+// /admin-api calls carry) AND `process.env.STS_ADMIN_API_TOKEN` (what adminCall
+// reads here and what a proxy child inherits at spawn). On no secret, or a mint
+// that throws, it keeps the token in place: the caller's own 401 says so, and a
+// mint failure must not be reported as whatever was being fuzzed.
+async function freshAdminToken(serviceBase, say) {
+  log.debug("Entering freshAdminToken().");
+  const secret = adminClientSecret();
+  if (!secret) {
+    if (!adminMintWarned) {
+      adminMintWarned = true;
+      (say || function () {})("[schemathesis] WARNING: no client secret " +
+        "(STS_ADMIN_API_CLIENT_SECRET / ADMIN_API_CLIENT_SECRET) to re-mint " +
+        "the /admin-api token; using the launcher's one-shot token, which " +
+        "expires mid-run.");
+    }
+    log.debug("Leaving freshAdminToken(). no secret");
+    return adminToken();
+  }
+  try {
+    const minter = require("../tools/admin-api-token.js");
+    const fresh = await minter.mint(serviceBase, secret);
+    if (fresh) {
+      process.env.STS_ADMIN_API_TOKEN = fresh;
+      if (globalThis.stsAdminApiToken &&
+          typeof globalThis.stsAdminApiToken.set === "function") {
+        globalThis.stsAdminApiToken.set(fresh);
+      }
+    }
+    log.debug("Leaving freshAdminToken(). minted");
+    return adminToken();
+  } catch (e) {
+    log.warn("freshAdminToken() could not mint (keeping the current token): " +
+      ((e && e.message) || e));
+    log.debug("Leaving freshAdminToken(). threw");
+    return adminToken();
+  }
 }
 
 // One `/admin-api` call with the run's admin token; { status, json }.
@@ -449,6 +521,9 @@ async function metadataAnswer(serviceBase, provisioned, say) {
 // behaviour is confirmed at the end-to-end run. Resolves the sign-in facts.
 async function provision(serviceBase, profile, say) {
   log.debug("Entering provision(). " + profile.realm);
+  // A fresh token before provisioning: the launcher's one expires an hour in,
+  // and a late realm's provisioning would otherwise answer 401 (#1299).
+  await freshAdminToken(serviceBase, say);
   const realmPrefix = "/realm/" + profile.realm;
   const made = await adminCall(serviceBase, "", "POST",
     "/admin-api/realms/create",
@@ -669,6 +744,11 @@ function runSchemathesis(bin, args, env, cwd) {
 // own. Resolves { surface, realm, code, status, output }.
 async function runSurface(serviceBase, provisioned, surface, workDir, say) {
   log.debug("Entering runSurface(). " + surface.key);
+  // A fresh token before every cell, and BEFORE the proxy is spawned so the
+  // child inherits it in `process.env`: a cell is ~25 min and the token lasts
+  // an hour, so a realm's third cell otherwise fuzzes with an expired token
+  // and console_signin's /admin-api account-ensure answers 401 (#1299).
+  await freshAdminToken(serviceBase, say);
   const port = await freePort();
   const proxyEnv = Object.assign({}, process.env, {
     STS_SCHEMA_PROXY_PORT: String(port),
@@ -790,8 +870,11 @@ async function run(serviceBase, options) {
   log.debug("Entering run().");
   const opts = options || {};
   const say = typeof opts.say === "function" ? opts.say : function () {};
-  if (!adminToken()) {
-    throw new Error("STS_ADMIN_API_TOKEN is required; the launcher mints it");
+  if (!adminToken() && !adminClientSecret()) {
+    throw new Error("STS_ADMIN_API_TOKEN or a client secret " +
+      "(STS_ADMIN_API_CLIENT_SECRET / ADMIN_API_CLIENT_SECRET) is required; " +
+      "the launcher provides one and the kit re-mints per cell from the " +
+      "secret");
   }
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "sts-schemathesis-"));
   const onResult = typeof opts.onResult === "function"
