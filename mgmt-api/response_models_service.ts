@@ -40,7 +40,18 @@ const listOf = Kit.listOf;
 const mapOf = Kit.mapOf;
 const nullable = Kit.nullable;
 const oneOf = Kit.oneOf;
-const action = Kit.action;
+
+// **AN ACTION'S 400 TAKES ITS 200's MODEL** (`Kit.applyModels()`), and a
+// refusal can come from the gate as `{ error, error_description }` or from a
+// module that says both (`devices.ts`'s `refuse()` sends `error` beside
+// `errors`). So every action here declares those two as well, rather than one
+// of them turning a refusal into a 500.
+const action = function (extra: Json): Json {
+  return Kit.action(Object.assign({
+    error: str(),
+    error_description: str()
+  }, extra));
+};
 
 const STRINGS: Json = listOf(str());
 const OPT_STR: Json = nullable(str());
@@ -48,8 +59,8 @@ const OPT_INT: Json = nullable(int());
 const OPT_NUM: Json = nullable(num());
 const OPT_BOOL: Json = nullable(bool());
 
-// What a setting can hold once `config.js`'s `TYPES` has parsed it: a number for
-// int and port, a boolean for bool, a list for csv, otherwise a string. A
+// What a setting can hold once `config.js`'s `TYPES` has parsed it: a number
+// for int and port, a boolean for bool, a list for csv, otherwise a string. A
 // `dflt` is the table's own literal, or what its function answers, so it is the
 // same set and null.
 const SCALAR: Json = oneOf(str(), num(), bool(), { type: 'null' });
@@ -68,9 +79,10 @@ const PAGING: Json = closed({
 //
 // **`legacyEnv` IS NOT DECLARED, ON PURPOSE**: `describe()` still sends it for
 // a row that has one, and no row has had one since #523, so it never reaches
-// JSON. `tests/protocol/admin_api.js` holds that every documented member appears
-// on a row, so declaring it fails that test; the next row carrying one must put
-// the member back here, in the same change, or every settings answer 500s.
+// JSON. `tests/protocol/admin_api.js` holds that every documented member
+// appears on a row, so declaring it fails that test; the next row carrying one
+// must put the member back here, in the same change, or every settings answer
+// 500s.
 // ---------------------------------------------------------------------------
 const SELECT_ALL_RULE: Json = closed({
   setting: str(),
@@ -180,8 +192,8 @@ const SETTINGS_BLOCK: Json = closed({
                             'in force.'),
   setWith: str('The operation that writes them.'),
   context: SETTINGS_CONTEXT,
-  sharedWith: mapOf(STRINGS, 'A group drawn on another page as well, and ' +
-                             'those pages.')
+  sharedWith: mapOf(listOf(closed({ path: str(), label: OPT_STR })),
+                    'A group drawn on another page as well, and those pages.')
 }, { description: 'The settings this page draws, described: the same rows ' +
                   'GET /config returns, filtered to the ones this page owns.'
 });
@@ -233,7 +245,7 @@ const REPLICATION: Json = closed({
   holes: int(),
   holeRanges: int(),
   holesAbandoned: int(),
-  pollIntervalMs: int(),
+  pollIntervalMs: num(),
   pulls: int(),
   nudges: int(),
   failures: int(),
@@ -555,9 +567,9 @@ const CLUSTER_STATUS: Json = closed({
                   'set does not say.' });
 
 // ---------------------------------------------------------------------------
-// `PageSettings` is what `admin.ts`'s `protocolSettingsJson()` answers for every
-// page in its table, across families. Only the two rows that have a status
-// block carry `status`, and it is one of those two.
+// `PageSettings` is what `admin.ts`'s `protocolSettingsJson()` answers for
+// every page in its table, across families. Only the two rows that have a
+// status block carry `status`, and it is one of those two.
 // ---------------------------------------------------------------------------
 const PAGE_SETTINGS: Json = closed({
   page: str('The console path this mirrors.'),
@@ -598,9 +610,9 @@ const CONFIG: Json = closed({
   settingCount: int(),
   editableCount: int('How many of them POST /config/set will take. The rest ' +
                      'are restart-only and say why in `restartReason`.'),
-  overridden: listOf(str(), 'The keys with a runtime override in force. Empty ' +
-                            'on a freshly started service, and emptied again ' +
-                            'by POST /config/reset-all.'),
+  overridden: listOf(str(), 'The keys with a runtime override in force. ' +
+                            'Empty on a freshly started service, and emptied ' +
+                            'again by POST /config/reset-all.'),
   groups: listOf(SETTING_GROUP, 'In the order `config.js` declares them, ' +
                                 'which is the order the console renders its ' +
                                 'sections.'),
@@ -612,7 +624,8 @@ const CONFIG: Json = closed({
   'WHERE EACH GROUP IS EDITED: every group is drawn on the console page for ' +
   'the protocol it configures, so a caller can send a person to the right ' +
   'page. Every one of those forms posts to the same four actions.'),
-  homeProblems: listOf(str(), 'Empty, and reported rather than left implicit. ' +
+  homeProblems: listOf(str(), 'Empty, and reported rather than left ' +
+                              'implicit. ' +
                               'A sentence here means a setting group exists ' +
                               'that no console page draws.'),
   settings: SETTINGS_BLOCK
@@ -693,7 +706,7 @@ const REALM: Json = closed({
     certificateSource: str(),
     here: nullable(LISTENER_BOUND)
   })),
-  kid: str(),
+  kid: OPT_STR,
   settings: listOf(closed({
     key: str(), value: str(), label: str(), group: str()
   })),
@@ -729,8 +742,8 @@ const REALMS: Json = closed({
 
 // One model per action would say the same thing five times: what any of them
 // adds, including what a refusal from `realms.js` carries. `retiring` is the
-// refusal of a removal already under way; `bootstrap`, `password` and `username`
-// are a created realm's, and the last two only in product mode.
+// refusal of a removal already under way; `bootstrap`, `password` and
+// `username` are a created realm's, and the last two only in product mode.
 const REALM_ACTION: Json = action({
   realm: str(),
   key: str(),
@@ -1287,8 +1300,8 @@ const API_INDEX: Json = closed({
   builtAt: str('When this build was made. Read it with `stamped`.'),
   stamped: bool('True when this version came off a record written at image ' +
                 'build time. False means the process computed its own record ' +
-                'at startup, so `builtAt` and the build number are the moment ' +
-                'it started.'),
+                'at startup, so `builtAt` and the build number are the ' +
+                'moment it started.'),
   openapi: str('Where the document is.'),
   docs: str('Where the explorer is.'),
   console: str('Where the console every operation mirrors is.'),
@@ -1346,8 +1359,8 @@ const ACCEPTANCE: Json = closed({
 // `store.listVersions()`: the memory row, or `riskVersionFrom()`'s columns.
 // **`parameters` IS A BAG THIS SERVICE WRITES AS A VERSION PROGRESSES AND KEEPS
 // IN THE DATABASE** (`attributionUrl`, `termsDigest`, `progressRows`, `mdsNo`,
-// `signatureOverride`...), so a row an older build wrote may carry a member this
-// one does not: a map, its values typed, rather than a closed list.
+// `signatureOverride`...), so a row an older build wrote may carry a member
+// this one does not: a map, its values typed, rather than a closed list.
 const DATASET_VERSION: Json = closed({
   realm: str(),
   dataset: str(),
@@ -1417,8 +1430,8 @@ const RISK_PROVIDER: Json = closed({
   changed: bool()
 });
 
-// A hit in a range table: `riskRangeFrom()`'s columns, or what `parseRow()` made
-// of the file's line in the memory store, with `dataset` added.
+// A hit in a range table: `riskRangeFrom()`'s columns, or what `parseRow()`
+// made of the file's line in the memory store, with `dataset` added.
 const RANGE_HIT: Json = closed({
   dataset: str(),
   start: str(),
@@ -1453,9 +1466,9 @@ const ADDRESS_LOOKUP: Json = closed({
 });
 
 const FIDO_STATEMENT =
-  'The FIDO Alliance\'s MDS3 metadata statement, kept as the BLOB carried it: ' +
-  'its shape is the FIDO Metadata Statement specification\'s, and which of its ' +
-  'optional members a statement has is the vendor\'s.';
+  'The FIDO Alliance\'s MDS3 metadata statement, kept as the BLOB carried ' +
+  'it: its shape is the FIDO Metadata Statement specification\'s, and which ' +
+  'of its optional members a statement has is the vendor\'s.';
 
 const AUTHENTICATOR_LOOKUP: Json = closed({
   input: str(),
@@ -1492,7 +1505,7 @@ const AUTHENTICATOR_LOOKUP: Json = closed({
 const RISK_SIGNAL: Json = closed({
   signal: str(),
   score: OPT_NUM,
-  factor: num(),
+  factor: OPT_NUM,
   factors: nullable(mapOf(num(), 'Per level of the model.')),
   terms: nullable(closed({
     users: num(), signIns: num(), userSignIns: num()
@@ -1571,7 +1584,8 @@ const RISK_SUBJECT: Json = closed({
   lastAssessment: OPT_STR,
   crossedAt: num(),
   updatedAt: num(),
-  actions: mapOf(str(), 'Each reaction taken, and the assessment that took it.'),
+  actions: mapOf(str(), 'Each reaction taken, and the assessment that took ' +
+                        'it.'),
   feedback: OPT_STR
 });
 
@@ -1617,8 +1631,8 @@ const RISK: Json = closed({
   settings: SETTINGS_BLOCK
 });
 
-// `RiskStore.metricsOf()`. Every `by*` is a count per value that a row held, and
-// a series point a count per level, so they are maps.
+// `RiskStore.metricsOf()`. Every `by*` is a count per value that a row held,
+// and a series point a count per level, so they are maps.
 const COUNTS: Json = mapOf(num());
 
 const RISK_THRESHOLD: Json = closed({
@@ -1684,7 +1698,12 @@ const RISK_METRICS: Json = closed({
     assessed: num(),
     failed: num(),
     durationMs: closed({
-      samples: num(), mean: num(), p50: num(), p95: num(), p99: num(), max: num()
+      samples: num(),
+      mean: num(),
+      p50: num(),
+      p95: num(),
+      p99: num(),
+      max: num()
     }),
     reactions: closed({ taken: COUNTS, observed: COUNTS, failed: COUNTS }),
     rescore: closed({ runs: num(), sessions: num(), raised: num() }),
@@ -1722,8 +1741,8 @@ const RISK_ACTION: Json = action({
 });
 
 // ---------------------------------------------------------------------------
-// GEOLOCATION: `geolocation_admin.ts`'s `geoView()`. `shown()` withholds a count
-// below `risk.geoMinimumCount`, so a count is nullable everywhere.
+// GEOLOCATION: `geolocation_admin.ts`'s `geoView()`. `shown()` withholds a
+// count below `risk.geoMinimumCount`, so a count is nullable everywhere.
 // ---------------------------------------------------------------------------
 const GEO_COUNT: Json = closed({
   people: OPT_NUM,
@@ -1901,9 +1920,10 @@ const REFUSAL: Json = closed({
 });
 
 // ---------------------------------------------------------------------------
-// DEVICES: `devices_admin.ts` over `common/devices.ts`. A key's values are stored
-// on its entry as JSON and read back with `JSON.parse`, so `DEVICE_KEY` is what
-// `prepareKey()` writes; `revocation` is `attestation_revocation.ts`'s verdict.
+// DEVICES: `devices_admin.ts` over `common/devices.ts`. A key's values are
+// stored on its entry as JSON and read back with `JSON.parse`, so `DEVICE_KEY`
+// is what `prepareKey()` writes; `revocation` is `attestation_revocation.ts`'s
+// verdict.
 // ---------------------------------------------------------------------------
 const DEVICE_CHANGE: Json = closed({
   status: str(),
@@ -2041,6 +2061,7 @@ const DEVICE_COMPLIANCE: Json = action({
     index: int(),
     id: str(),
     ok: bool(),
+    error: str(),
     errors: STRINGS,
     previous: str(),
     status: str(),
@@ -2096,7 +2117,19 @@ const DEVICES_MONITOR: Json = closed({
   complianceSources: STRINGS
 });
 
+// `sendJson()` adds this to the GET mirroring a Protocols page, and
+// `response_models.ts` declares it again from its own table.
+const PROTOCOL_ENDPOINTS: Json = listOf(closed({
+  name: str(),
+  methods: Kit.oneOrMany(str()),
+  url: str(),
+  route: str(),
+  transport: str(),
+  registered: bool()
+}));
+
 const DEVICE_REGISTRATION: Json = closed({
+  protocolEndpoints: PROTOCOL_ENDPOINTS,
   enrolment: listOf(closed({ method: str(), built: bool(), what: str() })),
   recognition: listOf(closed({ kind: str(), built: bool(), what: str() })),
   ownerKinds: STRINGS,
@@ -2167,9 +2200,9 @@ const DEVICE_REGISTRATION: Json = closed({
 });
 
 // ---------------------------------------------------------------------------
-// THE SCHEDULER: `scheduler_admin.ts` over `cluster/scheduler.ts`. `runView()` is
-// the one shape of a run; a run's `params` is what the person who asked for it
-// sent, which is whatever that job reads.
+// THE SCHEDULER: `scheduler_admin.ts` over `cluster/scheduler.ts`. `runView()`
+// is the one shape of a run; a run's `params` is what the person who asked for
+// it sent, which is whatever that job reads.
 // ---------------------------------------------------------------------------
 const SCHEDULER_RUN: Json = closed({
   runId: str(),
@@ -2192,8 +2225,9 @@ const SCHEDULER_RUN: Json = closed({
   durationMs: OPT_NUM,
   requestedBy: str(),
   requestedVia: str(),
-  params: Kit.freeForm('A manual run\'s `params`: the JSON its requester sent, ' +
-                       'whose members are the job\'s own to read, or null.'),
+  params: Kit.freeForm('A manual run\'s `params`: the JSON its requester ' +
+                       'sent, whose members are the job\'s own to read, or ' +
+                       'null.'),
   takenOver: bool(),
   abandonedOf: OPT_STR,
   ranIn: OPT_STR,
@@ -2409,14 +2443,1359 @@ const WORKER_POOLS: Json = closed(Object.assign({}, POOLS_VIEW_MEMBERS, {
     text: str()
   })
 }));
-//@@MORE-CONSTANTS@@
+// ---------------------------------------------------------------------------
+// NODE HEALTH: `node_health_admin.ts`. A figure this node could not read is
+// null beside a sentence, not a zero, so every figure is nullable, and an
+// `available: false` view has only `unavailableText`. `withEcs()` overlays the
+// ECS endpoint's on what the cgroup said.
+// ---------------------------------------------------------------------------
+const HEALTH_CPU: Json = closed({
+  available: bool(),
+  fromEcs: bool(),
+  cgroupVersion: OPT_INT,
+  source: OPT_STR,
+  unavailableText: OPT_STR,
+  cgroupUnavailableText: OPT_STR,
+  limitVcpus: OPT_NUM,
+  limitSource: OPT_STR,
+  percentOfVcpus: OPT_NUM,
+  limitText: OPT_STR,
+  sampled: OPT_STR,
+  windowSeconds: OPT_NUM,
+  coresUsed: OPT_NUM,
+  utilisationPercent: OPT_NUM,
+  usageSeconds: OPT_NUM,
+  userSeconds: OPT_NUM,
+  systemSeconds: OPT_NUM,
+  throttling: nullable(closed({
+    periods: OPT_NUM,
+    throttledPeriods: OPT_NUM,
+    throttledSeconds: OPT_NUM,
+    throttledPercentOfPeriods: OPT_NUM
+  })),
+  throttlingText: OPT_STR
+});
 
+const HEALTH_MEMORY: Json = closed({
+  available: bool(),
+  fromEcs: bool(),
+  cgroupVersion: OPT_INT,
+  source: OPT_STR,
+  unavailableText: OPT_STR,
+  cgroupUnavailableText: OPT_STR,
+  currentBytes: OPT_NUM,
+  limitBytes: OPT_NUM,
+  limitSource: OPT_STR,
+  limitText: OPT_STR,
+  utilisationPercent: OPT_NUM,
+  peakBytes: OPT_NUM,
+  anonBytes: OPT_NUM,
+  fileBytes: OPT_NUM,
+  kernelBytes: OPT_NUM,
+  statText: OPT_STR,
+  oomKills: OPT_NUM
+});
+
+const HEALTH_PROCESS: Json = closed({
+  pid: nullable(oneOf(int(), str())),
+  threadId: nullable(oneOf(int(), str())),
+  kind: str(),
+  role: str(),
+  source: str(),
+  rssBytes: OPT_NUM,
+  heapUsedBytes: OPT_NUM,
+  heapTotalBytes: OPT_NUM,
+  externalBytes: OPT_NUM,
+  arrayBuffersBytes: OPT_NUM,
+  peakRssBytes: OPT_NUM,
+  cpuUserSeconds: OPT_NUM,
+  cpuSystemSeconds: OPT_NUM,
+  uptimeSeconds: OPT_NUM,
+  processWide: str(),
+  unreadable: OPT_STR,
+  notReported: str()
+});
+
+// What ECS's metadata endpoint said under `Limits`, whose names are its own.
+const HEALTH_MEMBERS: Json = {
+  generatedAt: str(),
+  node: OPT_STR,
+  pid: OPT_INT,
+  scope: str(),
+  scopeText: str(),
+  cgroup: OPT_STR,
+  cgroupVersion: OPT_INT,
+  cpu: HEALTH_CPU,
+  memory: HEALTH_MEMORY,
+  processes: closed({
+    rows: listOf(HEALTH_PROCESS),
+    unanswered: listOf(closed({
+      pid: nullable(oneOf(int(), str())),
+      threadId: nullable(oneOf(int(), str())),
+      role: str(),
+      why: str()
+    })),
+    debuggerNote: OPT_STR,
+    totals: closed({
+      rows: int(),
+      processes: int(),
+      workerThreads: int(),
+      rssBytes: num(),
+      processesWithRss: int(),
+      heapUsedBytes: num(),
+      heapTotalBytes: num(),
+      externalBytes: num(),
+      isolatesWithHeap: int()
+    }),
+    totalsText: str()
+  }),
+  ecs: closed({
+    available: bool(),
+    endpoint: str(),
+    dockerId: OPT_STR,
+    containerLimits: nullable(mapOf(SCALAR,
+                                    'ECS\'s `Limits`, as it said them.')),
+    taskLimits: nullable(closed({ cpuVcpus: SCALAR, memoryMiB: SCALAR })),
+    stats: nullable(closed({
+      read: OPT_STR,
+      memoryUsageBytes: OPT_NUM,
+      memoryLimitBytes: OPT_NUM,
+      memoryLimitUnlimited: bool(),
+      cpuCoresUsed: OPT_NUM,
+      cpuPercentOfTaskLimit: OPT_NUM
+    })),
+    unavailableText: OPT_STR,
+    text: str()
+  }),
+  machine: closed({
+    text: str(),
+    loadavg: listOf(num()),
+    totalmemBytes: num(),
+    freememBytes: num(),
+    cpus: int()
+  })
+};
+
+const NODE_HEALTH: Json = closed(Object.assign({}, HEALTH_MEMBERS, {
+  answeredBy: closed({ node: OPT_STR, pid: int() }),
+  state: str(),
+  cluster: SNAPSHOT_CLUSTER,
+  nodes: listOf(closed({
+    name: str(),
+    self: bool(),
+    state: str(),
+    stateText: str(),
+    ageSeconds: OPT_NUM,
+    takenAt: OPT_STR,
+    view: nullable(closed(HEALTH_MEMBERS))
+  })),
+  totals: closed({
+    nodes: int(),
+    nodesCounted: int(),
+    memoryNodes: int(),
+    memoryUsedBytes: OPT_NUM,
+    memoryLimitBytes: OPT_NUM,
+    memoryPercent: OPT_NUM,
+    cpuNodes: int(),
+    cpuCoresUsed: OPT_NUM,
+    cpuOf: OPT_NUM,
+    cpuPercent: OPT_NUM,
+    processes: int(),
+    workerThreads: int(),
+    rssBytes: num(),
+    heapUsedBytes: num(),
+    text: str()
+  })
+}));
+
+// `collectGarbage()`, whose answer is the same at 200, at 404 (`threadIds`) and
+// at 500, where the one isolate asked for could not collect: a 500 carrying the
+// rows is why this is not the API's plain refusal.
+const COLLECT_GARBAGE: Json = action({
+  generatedAt: str(),
+  node: OPT_STR,
+  pid: int(),
+  target: str(),
+  rows: listOf(closed({
+    kind: str(),
+    pid: int(),
+    threadId: OPT_INT,
+    role: str(),
+    ok: bool(),
+    heapUsedBeforeBytes: OPT_NUM,
+    heapTotalBeforeBytes: OPT_NUM,
+    heapUsedAfterBytes: OPT_NUM,
+    heapTotalAfterBytes: OPT_NUM,
+    freedBytes: OPT_NUM,
+    durationMs: OPT_NUM,
+    error: OPT_STR
+  })),
+  unanswered: listOf(closed({
+    pid: int(), threadId: OPT_INT, role: str(), why: str()
+  })),
+  totals: closed({
+    isolates: int(),
+    collected: int(),
+    failed: int(),
+    unanswered: int(),
+    freedBytes: num(),
+    longestPauseMs: num()
+  }),
+  threadIds: STRINGS
+});
+
+// ---------------------------------------------------------------------------
+// DATABASE: `database_admin.ts` over each driver's `metrics()`. A probe's rows
+// are the database engine's own statistics views.
+// ---------------------------------------------------------------------------
+const DB_PROBE_ROWS =
+  'The rows of a PostgreSQL or MariaDB statistics view, keyed by the ' +
+  'engine\'s own column names and typed by its driver, which vary by engine ' +
+  'and version.';
+
+const DATABASE: Json = closed({
+  what: str(),
+  available: bool(),
+  mode: str(),
+  ok: bool(),
+  why: str(),
+  target: PERSISTENCE_STATUS.properties.database,
+  pool: nullable(closed({
+    total: num(), idle: num(), waiting: num(), max: num()
+  })),
+  tookMs: num(),
+  statementTimeoutMs: num(),
+  statementTimeoutSet: bool(),
+  error: str(),
+  probes: mapOf(closed({
+    ok: bool(),
+    group: str(),
+    what: str(),
+    shape: str(),
+    row: Kit.freeForm(DB_PROBE_ROWS),
+    rows: Kit.freeForm(DB_PROBE_ROWS),
+    count: int(),
+    tookMs: num(),
+    error: str(),
+    code: oneOf(str(), num()),
+    expected: SCALAR
+  }), 'One answer per probe, by its id.'),
+  schema: OPT_STR,
+  derived: closed({
+    cacheHitPercent: OPT_NUM,
+    rollbackPercent: OPT_NUM,
+    deadTuplePercent: OPT_NUM,
+    unusedIndexes: STRINGS,
+    seqScans: num(),
+    idxScans: num(),
+    statsReset: OPT_STR
+  }),
+  schemaExpected: closed({ version: SCALAR }),
+  schemaDrift: closed({
+    declared: STRINGS, present: STRINGS, missing: STRINGS
+  }),
+  failed: STRINGS
+});
+
+// ---------------------------------------------------------------------------
+// SECRETS: `secrets_admin.ts` over `secrets.js`'s `storeReport()`. A probe's
+// `data` is what the secret store's own API answered, scrubbed of values.
+// ---------------------------------------------------------------------------
+const SECRET_PROBE: Json = closed({
+  id: str(),
+  what: str(),
+  ok: bool(),
+  tookMs: num(),
+  status: num(),
+  error: str(),
+  data: Kit.freeForm('What the secret store\'s own API answered to a probe, ' +
+                     'scrubbed of values: its shape is AWS\'s, Google\'s, ' +
+                     'Azure\'s or Vault\'s.')
+});
+
+const SECRETS: Json = closed({
+  what: str(),
+  timeoutMs: num(),
+  providers: listOf(SECRET_PROVIDER),
+  stores: listOf(closed({
+    key: str(),
+    provider: str(),
+    label: str(),
+    where: str(),
+    secrets: STRINGS,
+    probes: listOf(SECRET_PROBE)
+  })),
+  secrets: listOf(closed({
+    secret: str(),
+    configured: bool(),
+    provider: str(),
+    label: str(),
+    known: bool(),
+    where: SECRET_WHERE,
+    shared: bool(),
+    field: str(),
+    settings: closed({
+      provider: OPT_STR, location: OPT_STR, field: OPT_STR
+    }),
+    lastRead: nullable(closed({
+      secret: str(),
+      label: str(),
+      at: str(),
+      provider: str(),
+      tookMs: num(),
+      ok: bool(),
+      error: str()
+    })),
+    store: OPT_STR,
+    probes: listOf(SECRET_PROBE)
+  })),
+  failed: STRINGS,
+  mode: str(),
+  productMode: bool(),
+  persistingKeys: bool(),
+  keySource: str(),
+  kekHeld: bool(),
+  notes: mapOf(closed({
+    heading: str(), what: str(), without: str(), rotating: str()
+  }), 'What each secret is for, by its id.')
+});
+
+// `debugger_server.ts`'s `status()`.
+const DEBUGGER: Json = closed({
+  embedded: bool(),
+  setting: str(),
+  mode: str(),
+  started: bool(),
+  startProblem: OPT_STR,
+  listening: bool(),
+  port: num(),
+  listenError: OPT_STR,
+  scheme: str(),
+  publicBaseUrl: OPT_STR,
+  uiDirectory: OPT_STR,
+  clientId: str(),
+  resource: str(),
+  permission: str(),
+  audience: str(),
+  api: closed({
+    state: str(),
+    pid: OPT_INT,
+    socket: OPT_STR,
+    apiDirectory: OPT_STR,
+    starts: int(),
+    consecutiveFailures: int(),
+    startedAt: OPT_STR,
+    listeningAt: OPT_STR,
+    lastExit: nullable(closed({
+      code: OPT_INT, signal: OPT_STR, at: str(), upSeconds: num()
+    })),
+    lastError: OPT_STR,
+    uiUrl: OPT_STR,
+    allowList: bool(),
+    allowedRanges: STRINGS,
+    allowListProblems: STRINGS,
+    anchorReplacements: int()
+  }),
+  settings: SETTINGS_BLOCK
+});
+
+// ---------------------------------------------------------------------------
+// KEYS: `crypto_metadata.ts`'s `keysJson()`, `signing_rotation.ts`'s
+// `rotationView()`, `signing_history.ts`.
+// ---------------------------------------------------------------------------
+const KEY_ROW: Json = closed({
+  id: str('What POST /admin-api/keys/export takes as `key`.'),
+  label: str(),
+  alg: str(),
+  kty: OPT_STR,
+  crv: str(),
+  bits: num(),
+  kid: str('Empty for the TLS key, which has a fingerprint instead.'),
+  scope: str('`realm` or `process`.'),
+  realm: str(),
+  hasCertificate: bool('Whether a PKCS#12 is possible.'),
+  generated: bool(),
+  certifiedBy: nullable(closed({
+    subject: OPT_STR, issuedBy: OPT_STR, notAfter: OPT_STR, pinned: bool()
+  })),
+  formats: listOf(str(), 'Empty means not exportable.'),
+  usedFor: STRINGS,
+  fingerprint: OPT_STR,
+  subject: OPT_STR,
+  names: STRINGS,
+  notAfter: OPT_STR,
+  pqc: nullable(closed({
+    kind: str(), algorithm: str(), label: str(), family: str(), standard: str()
+  }))
+}, { description: 'One key pair.' });
+
+const KEY_LIST: Json = closed({
+  issuer: str(),
+  realm: str('The signing keys belong to this realm; the TLS key to the ' +
+             'process.'),
+  settings: SETTINGS_BLOCK,
+  regeneratedEveryStart: bool(),
+  residency: closed({
+    persisting: bool(),
+    retention: str(),
+    plaintextTtlS: num(),
+    note: str(),
+    realmsHeld: STRINGS,
+    plaintextHeld: STRINGS
+  }),
+  formats: listOf(str(), 'Every format the exporter knows. What a PARTICULAR ' +
+                         'key offers is its own `formats`.'),
+  verifiesCredentials: bool(),
+  keys: listOf(KEY_ROW),
+  rotation: nullable(closed({
+    scheduled: bool(),
+    offReason: str(),
+    units: listOf(closed({
+      unit: str(),
+      current: OPT_STR,
+      next: nullable(closed({ kid: str(), since: OPT_STR })),
+      retired: listOf(closed({
+        kid: str(), retiredAt: OPT_STR, verifiesUntil: OPT_STR
+      })),
+      lastRotated: OPT_STR,
+      intervalDays: num(),
+      graceDays: num(),
+      credentialSigner: bool()
+    })),
+    refresh: closed({
+      lastRotated: OPT_STR, retired: int(), graceDays: num()
+    })
+  })),
+  warning: str()
+}, { description: 'Every key pair this realm holds, what each is used for, ' +
+                  'and which can be exported.' });
+
+const KEY_HISTORY: Json = closed({
+  realm: str(),
+  unit: str(),
+  units: listOf(closed({
+    unit: str(),
+    useCase: OPT_STR,
+    slot: OPT_STR,
+    alg: OPT_STR,
+    generations: int(),
+    live: int(),
+    dropped: int(),
+    withCertificate: int(),
+    newestAt: num()
+  })),
+  rows: listOf(closed({
+    unit: str(),
+    useCase: OPT_STR,
+    slot: OPT_STR,
+    alg: OPT_STR,
+    crv: str(),
+    kind: OPT_STR,
+    kid: str(),
+    role: OPT_STR,
+    createdAt: OPT_STR,
+    firstSeenAt: OPT_STR,
+    promotedAt: OPT_STR,
+    retiredAt: OPT_STR,
+    verifiesUntil: OPT_STR,
+    droppedAt: OPT_STR,
+    reason: str(),
+    certificate: nullable(closed({
+      serialHex: str(),
+      subject: str(),
+      notBefore: str(),
+      notAfter: str(),
+      thumbprint: str(),
+      keyAlg: str(),
+      signatureAlg: str(),
+      certificatePem: str(),
+      chainPem: STRINGS
+    }))
+  })),
+  total: int(),
+  found: bool(),
+  observed: bool(),
+  paging: nullable(PAGING)
+});
+
+const KEY_HISTORY_REFUSED: Json = closed({
+  ok: bool(),
+  errors: STRINGS,
+  units: listOf(str(), 'The units there are.')
+});
+
+const KEY_EXPORT: Json = action({
+  status: str('One line about what came out.'),
+  publicOnly: bool('True for a post-quantum key, which comes out as its ' +
+                   'public half.'),
+  files: listOf(closed({
+    name: str(),
+    mime: str(),
+    bytes: int(),
+    base64: str()
+  }, { description: 'One file.' }))
+});
+
+const KEY_ROTATION: Json = action({
+  accepted: bool(),
+  runId: str(),
+  emergency: bool(),
+  units: STRINGS,
+  run: str('The address to follow the run at.')
+});
+
+// ---------------------------------------------------------------------------
+// `GET /status`: `admin.ts`'s `consoleJson()`. `dashboardJson()` adds what only
+// the console draws, and the registration loop removes it from this answer.
+// ---------------------------------------------------------------------------
+const STATUS: Json = closed({
+  issuer: str(),
+  startedAt: str(),
+  uptimeMs: num(),
+  calls: int('Endpoint calls served.'),
+  tokensHeld: int(),
+  tokensHeldOnly: bool('True when the token register is read on demand ' +
+                       '(#820): tokensHeld counts the recent tokens this ' +
+                       'process holds, not every token issued.'),
+  tokensRevoked: int(),
+  artifactsHeld: int('Assertions, tickets and credentials: everything that ' +
+                     'is not a JWT.'),
+  signOnSessions: int('Browser sign-on sessions really held.'),
+  usersKnown: int(),
+  usersAuthenticatedHere: int(),
+  pages: listOf(str(), 'The console pages this API mirrors.')
+}, { description: 'What this service is and how much it has done since it ' +
+                  'started.' });
+
+// `meJson()`.
+const ME: Json = closed({
+  tokenRequired: bool('Whether this API requires an access token, in force.'),
+  caller: nullable(closed({
+    kind: str(), name: str(), clientId: OPT_STR
+  })),
+  realm: str('The realm the caller belongs to: the one that issued the token.'),
+  readingRealm: str('The realm this request was read in.'),
+  authority: OPT_STR,
+  scopes: STRINGS,
+  roles: STRINGS,
+  read: bool(),
+  write: bool(),
+  security: bool(),
+  expiresAt: OPT_NUM,
+  photo: str('This person\'s photo on this realm, empty where they have none.'),
+  mode: str(),
+  readGroup: OPT_STR,
+  writeGroup: OPT_STR,
+  console: closed({
+    available: bool(),
+    open: bool(),
+    empty: bool(),
+    windowOpens: bool(),
+    bootstrapPasswordRequired: bool(),
+    bootstrap: nullable(closed({
+      username: str(), seeded: bool(), claimedAt: str(), dn: str()
+    }))
+  }),
+  pages: STRINGS
+});
+
+// ---------------------------------------------------------------------------
+// `GET /metrics`: `admin_stats.js`'s `snapshot()`, with `signOnSessionRows()`.
+// The members at the top are all on every answer, which
+// `tests/protocol/admin_api.js` holds. What is inside a claim is
+// `CLAIM_ENTRY`'s.
+// ---------------------------------------------------------------------------
+const METRICS: Json = closed({
+  startedAt: num('Milliseconds since the epoch.'),
+  startedAtIso: str(),
+  now: num('When this snapshot was taken, in milliseconds, so that every age ' +
+           'in it can be worked out without trusting the caller\'s clock.'),
+  uptimeMs: num(),
+  claims: listOf(closed({
+    id: str(),
+    label: str(),
+    count: int(),
+    claims: listOf(closed({
+      name: str(),
+      value: SETTING_VALUE,
+      nameFormat: str(),
+      namespace: str(),
+      attribute: str(),
+      multi: bool(),
+      type: str()
+    }))
+  }), 'The custom claim sets and how many claims each holds.'),
+  calls: closed({
+    total: int(),
+    paths: int(),
+    pathsHere: int(),
+    pathsElsewhere: int(),
+    byStatusClass: COUNTS,
+    pathsCollapsed: int(),
+    healthProbes: int(),
+    rows: listOf(closed({
+      method: str(),
+      path: str(),
+      matched: bool(),
+      count: num(),
+      totalMs: num(),
+      maxMs: num(),
+      lastAt: num(),
+      lastStatus: OPT_INT,
+      statuses: COUNTS
+    }))
+  }, { description: 'Endpoint calls, in total and per matched route.' }),
+  tokens: closed({
+    held: int(),
+    heldOnly: bool(),
+    forgotten: int(),
+    cap: int(),
+    revoked: int(),
+    byKind: listOf(closed({
+      kind: str(),
+      issued: int(),
+      valid: int(),
+      expired: int(),
+      revoked: int(),
+      notYetValid: int(),
+      noExpiry: int(),
+      bound: int()
+    }))
+  }, { description: 'JWTs by kind, with the state of each.' }),
+  artifacts: closed({
+    held: int(),
+    heldHere: int(),
+    forgotten: int(),
+    cap: int(),
+    byKind: listOf(closed({
+      kind: str(), issued: int(), valid: int(), expired: int(), noExpiry: int()
+    }))
+  }),
+  users: closed({
+    known: int(),
+    cap: int(),
+    heldOnly: bool(),
+    forgotten: int(),
+    authenticatedHere: int(),
+    clients: int(),
+    authentications: int()
+  }),
+  sessions: closed({
+    families: listOf(closed({
+      family: str(), subjects: int(), who: STRINGS
+    })),
+    distinctSubjects: int()
+  }),
+  signOnSessions: closed({
+    held: OPT_INT,
+    active: OPT_INT,
+    windowed: bool(),
+    unread: bool(),
+    rows: listOf(closed({
+      id: str(),
+      username: str(),
+      sub: str(),
+      amr: str(),
+      acr: str(),
+      startedAt: num(),
+      authTime: num(),
+      authentications: int(),
+      expires: num(),
+      expired: bool(),
+      wsfedRealms: STRINGS,
+      deviceBound: closed({
+        bound: bool(),
+        alg: str(),
+        boundAt: num(),
+        refreshes: num(),
+        refreshedAt: num(),
+        fact: str(),
+        reasons: STRINGS
+      }),
+      accountSet: str()
+    }))
+  })
+}, { description: 'Everything counted: endpoint calls by matched route and ' +
+                  'status class, tokens and artifacts by kind, and sessions ' +
+                  'counted BOTH ways.' });
+
+// ---------------------------------------------------------------------------
+// `GET /crypto`: `crypto_metadata.ts`'s `cryptoJson()`. Every list in it is
+// read from the module that performs the algorithm, which is why a value here
+// is never an `enum`.
+// ---------------------------------------------------------------------------
+const PQ_SURFACE: Json = closed({ surface: str(), state: str(), how: str() });
+
+const CRYPTO_METADATA: Json = closed({
+  issuer: str('This service as the request reached it.'),
+  realm: str('The trust realm the key material below belongs to. The ' +
+             'ALGORITHM tables are process-wide; the SIGNING KEYS are per ' +
+             'realm.'),
+  generatedAt: str(),
+  oneModule: str('Where all of this happens.'),
+  drift: closed({
+    checked: bool(),
+    undescribed: STRINGS,
+    stale: STRINGS,
+    envelopes: STRINGS
+  }),
+  keys: closed({
+    realm: str(),
+    regeneratedEveryStart: bool(),
+    signing: closed({
+      kty: str(),
+      bits: int(),
+      alg: str(),
+      kid: str(),
+      certificate: str(),
+      certificateFingerprint: OPT_STR,
+      what: str()
+    }),
+    curveKeys: listOf(closed({
+      alg: str(),
+      kty: str(),
+      crv: str(),
+      kid: OPT_STR,
+      certificateFingerprint: OPT_STR
+    })),
+    postQuantum: closed({
+      algorithms: STRINGS,
+      generated: bool(),
+      keys: listOf(closed({
+        alg: str(), kty: str(), kid: OPT_STR, certificateFingerprint: OPT_STR
+      })),
+      what: str()
+    }),
+    signerGroups: closed({
+      model: str(),
+      keys: listOf(closed({
+        group: str(),
+        slot: str(),
+        alg: str(),
+        kind: OPT_STR,
+        kid: OPT_STR,
+        pairedSlot: OPT_STR,
+        certificateFingerprint: OPT_STR
+      }))
+    }),
+    bbs: closed({ cryptosuite: str(), curve: str(), what: str() }),
+    tls: closed({
+      subject: OPT_STR,
+      names: STRINGS,
+      fingerprint256: OPT_STR,
+      certificates: listOf(closed({
+        algorithm: OPT_STR, certificateFingerprint: OPT_STR
+      })),
+      notAfter: OPT_STR,
+      perRealm: bool(),
+      what: str()
+    }),
+    spiffe: closed({
+      enabled: bool(),
+      ready: bool(),
+      perRealm: bool(),
+      trustDomain: OPT_STR,
+      authoritySource: str(),
+      svidKeyType: str(),
+      authorityKeyType: str(),
+      x509KeyType: str(),
+      jwtKeyType: str(),
+      x509Authorities: int(),
+      authorityFingerprint: OPT_STR,
+      trustAnchors: int(),
+      jwtAuthorities: int()
+    })
+  }),
+  families: listOf(closed({
+    name: str(),
+    signs: str(),
+    verifies: str(),
+    encrypts: str(),
+    decrypts: str(),
+    hashes: str(),
+    keys: str(),
+    whatItDoesNot: str(),
+    envelopes: STRINGS,
+    algorithms: listOf(closed({
+      what: str(),
+      values: listOf(oneOf(str(), num())),
+      how: str()
+    }))
+  })),
+  hashing: closed({
+    jws: STRINGS,
+    xmlDigestMethods: listOf(closed({ uri: str(), label: str() })),
+    scimDigest: listOf(closed({ token: str(), hash: str() })),
+    fixed: listOf(closed({ where: str(), hash: str(), what: str() })),
+    weak: listOf(closed({ hash: str(), where: str(), why: str() }))
+  }),
+  signatures: closed({
+    jws: listOf(closed({
+      alg: str(),
+      family: OPT_STR,
+      kty: str(),
+      crv: str(),
+      hash: str(),
+      asymmetric: bool(),
+      postQuantum: bool(),
+      composite: bool(),
+      dpop: bool()
+    })),
+    xml: listOf(closed({
+      uri: str(),
+      label: str(),
+      family: OPT_STR,
+      hash: OPT_STR,
+      keyKind: OPT_STR,
+      verifiedHere: bool(),
+      signsWith: bool()
+    })),
+    canonicalization: listOf(closed({
+      uri: str(),
+      label: str(),
+      exclusive: OPT_BOOL,
+      comments: OPT_BOOL,
+      usedHere: OPT_BOOL
+    })),
+    cose: listOf(closed({ coseAlg: int(), jose: str() })),
+    other: listOf(closed({ name: str(), what: str() }))
+  }),
+  encryption: closed({
+    jwe: closed({
+      keyManagementOut: STRINGS,
+      keyManagementIn: STRINGS,
+      contentEncryption: listOf(closed({
+        enc: str(),
+        bits: num(),
+        mode: str(),
+        cekBytes: num(),
+        authenticated: bool(),
+        note: OPT_STR
+      }))
+    }),
+    xml: closed({
+      blockCiphers: listOf(closed({
+        name: str(),
+        uri: str(),
+        keyBits: num(),
+        mode: str(),
+        ivBytes: num(),
+        authenticated: bool()
+      })),
+      keyTransports: listOf(closed({
+        name: str(), uri: str(), scheme: str(), safe: bool()
+      })),
+      configured: closed({
+        blockCipher: str(),
+        keyTransport: str(),
+        encryptAssertion: bool(),
+        encryptLogoutNameId: bool()
+      })
+    }),
+    kerberos: closed({
+      performed: listOf(closed({ id: int(), name: str() })),
+      decodeOnly: listOf(closed({ id: int(), name: str() })),
+      preference: listOf(int())
+    }),
+    tls: closed({ what: str(), sockets: STRINGS })
+  }),
+  postQuantum: closed({
+    algorithms: closed({
+      mlDsa: STRINGS,
+      slhDsa: STRINGS,
+      composite: listOf(closed({
+        alg: str(),
+        mlDsa: OPT_STR,
+        traditional: OPT_STR,
+        prehash: OPT_STR,
+        domainSeparator: OPT_STR
+      })),
+      keyType: str(),
+      what: str(),
+      independence: str()
+    }),
+    signatures: listOf(PQ_SURFACE),
+    keyEstablishment: closed({
+      state: str(),
+      surfaces: listOf(PQ_SURFACE),
+      mechanisms: STRINGS,
+      postQuantum: STRINGS,
+      hybrid: STRINGS,
+      drafts: closed({ mlKem: str(), hpke: str(), hybrid: str() }),
+      what: str(),
+      whatWouldClose: str()
+    }),
+    symmetric: closed({ state: str(), strongest: str(), what: str() })
+  }, { description: 'The one to read before quoting this reply: signatures ' +
+                    'and key establishment are reported separately, because ' +
+                    'a signature is checked when it is presented while ' +
+                    'captured ciphertext can be kept and opened later.' }),
+  standards: listOf(closed({
+    key: str(), name: str(), specs: STRINGS, coverage: str(), what: str()
+  }))
+}, { description: 'What this service does when it signs, verifies, encrypts ' +
+                  'or decrypts, for every identity service it advertises. ' +
+                  'Every algorithm list is READ FROM THE MODULE THAT ' +
+                  'PERFORMS THE ALGORITHM, so it cannot claim something this ' +
+                  'service does not do.' });
+
+// ---------------------------------------------------------------------------
+// THE AUDIT LOG: `audit.js`'s `record()` writes one row, and `admin_views.ts`'s
+// `auditView()` answers them. A row's `detail` is whatever the several hundred
+// call sites each record about their own act.
+// ---------------------------------------------------------------------------
+const AUDIT_EVENT: Json = closed({
+  seq: num(),
+  origin: OPT_STR,
+  at: num(),
+  category: str(),
+  action: str(),
+  outcome: str(),
+  errorCode: OPT_STR,
+  actor: str(),
+  actorForm: str(),
+  target: str(),
+  protocol: str(),
+  channel: str(),
+  address: str(),
+  summary: str(),
+  detail: Kit.freeForm('What this one kind of event recorded about its own ' +
+                       'act: several hundred call sites each name their ' +
+                       'members, and values are trimmed by `detailOf()`.')
+});
+
+const AUDIT_LIST: Json = closed({
+  held: int('Events currently in the log.'),
+  recorded: int('Events recorded since this process started.'),
+  dropped: int('Events discarded to stay under the cap.'),
+  maxEvents: num('The cap: `audit.maxEvents`.'),
+  protocolCalls: bool('Whether ordinary protocol endpoint calls are being ' +
+                      'recorded.'),
+  matched: int(),
+  shown: int(),
+  oldestSeq: num(),
+  newestSeq: num(),
+  byCategory: COUNTS,
+  byOutcome: COUNTS,
+  byAction: COUNTS,
+  filter: closed({
+    category: OPT_STR,
+    action: OPT_STR,
+    outcome: OPT_STR,
+    actor: OPT_STR,
+    q: OPT_STR,
+    code: OPT_STR,
+    address: OPT_STR
+  }),
+  page: int(),
+  pages: int(),
+  perPage: int(),
+  firstRow: int(),
+  lastRow: int(),
+  categories: listOf(closed({ category: str(), label: str(), what: str() })),
+  actions: listOf(closed({ action: str(), category: str(), label: str() })),
+  outcomes: STRINGS,
+  events: listOf(AUDIT_EVENT),
+  paging: PAGING,
+  knownActors: mapOf(bool(), 'The actors on this page that are people known ' +
+                             'here.'),
+  settings: nullable(SETTINGS_BLOCK),
+  verifiesCredentials: bool(),
+  persisted: bool()
+}, { description: 'What happened here, newest first, filtered and paged. ' +
+                  'HISTORY where the rest of this API is STATE. Resume by ' +
+                  '`at`, not by `seq` or by `page` (#465).' });
+
+const ERROR_CODES: Json = closed({
+  registered: int(),
+  retired: int(),
+  subsystemCount: int(),
+  matched: int(),
+  shown: int(),
+  auditRowsHeld: int(),
+  auditRowsWithCode: int(),
+  distinctCodesSeen: int(),
+  filter: closed({ subsystem: OPT_STR, q: OPT_STR, seen: OPT_BOOL }),
+  page: int(),
+  pages: int(),
+  perPage: int(),
+  firstRow: int(),
+  lastRow: int(),
+  documentation: str(),
+  neverSentToClients: bool(),
+  subsystems: listOf(closed({
+    id: str(),
+    prefix: str(),
+    label: str(),
+    where: str(),
+    what: str(),
+    codes: int(),
+    seen: int()
+  })),
+  unregisteredSeen: listOf(closed({
+    code: str(), seen: int(), lastSeenAt: num()
+  })),
+  codes: listOf(closed({
+    code: str(),
+    subsystem: str(),
+    summary: str(),
+    spec: str(),
+    retired: bool(),
+    seen: int(),
+    lastSeenAt: num()
+  })),
+  paging: PAGING
+});
+
+// ---------------------------------------------------------------------------
+// PASSKEYS: `common/passkey_report.ts`.
+// ---------------------------------------------------------------------------
+const PASSKEY_FILTER: Json = closed({
+  scope: str(), group: str(), profile: str(), application: str()
+});
+
+const PASSKEY_PROFILE: Json = closed({
+  name: str(),
+  postQuantumRequired: str(),
+  precedence: num(),
+  selectGroups: STRINGS,
+  namedByApplications: STRINGS
+});
+
+const PASSKEY_PERSON: Json = closed({
+  username: str(),
+  dn: str(),
+  kind: str(),
+  passkeys: int(),
+  keys: listOf(closed({
+    algorithm: str(),
+    coseAlg: OPT_INT,
+    postQuantum: bool(),
+    lane: str(),
+    aaguid: OPT_STR,
+    model: OPT_STR
+  }))
+});
+
+const PASSKEY_ALGORITHM: Json = closed({
+  algorithm: str(),
+  coseAlg: OPT_INT,
+  lane: str(),
+  postQuantum: bool(),
+  count: num()
+});
+
+const PASSKEY_REPORT: Json = closed({
+  ok: bool(),
+  realm: str(),
+  generatedAt: str(),
+  filter: PASSKEY_FILTER,
+  profiles: listOf(PASSKEY_PROFILE),
+  lists: STRINGS,
+  kinds: STRINGS,
+  limits: closed({
+    listScan: int(), population: int(), export: int(), perMax: int()
+  }),
+  recount: closed({ job: str(), every: str() }),
+  installed: bool(),
+  counted: nullable(closed({
+    from: str(),
+    at: nullable(oneOf(str(), num())),
+    startedAt: nullable(oneOf(str(), num())),
+    durationMs: OPT_NUM,
+    holders: OPT_NUM,
+    changesSince: OPT_NUM,
+    lastChangeAt: nullable(oneOf(str(), num()))
+  })),
+  population: closed({
+    groups: listOf(closed({
+      asked: str(), dn: OPT_STR, found: bool(), members: num()
+    })),
+    members: num(),
+    read: num(),
+    complete: bool()
+  }),
+  profile: PASSKEY_PROFILE,
+  application: closed({
+    identifier: str(),
+    named: str(),
+    missing: bool(),
+    applies: OPT_STR,
+    groupPolicies: num()
+  }),
+  people: closed({
+    total: OPT_NUM,
+    holding: num(),
+    postQuantumOnly: num(),
+    classicalOnly: num(),
+    both: num(),
+    none: OPT_NUM,
+    withPostQuantum: num()
+  }),
+  keys: closed({
+    total: num(),
+    postQuantum: num(),
+    classical: num(),
+    byLane: COUNTS,
+    byAlgorithm: listOf(PASSKEY_ALGORITHM)
+  }),
+  models: listOf(closed({
+    aaguid: str(),
+    name: str(),
+    total: num(),
+    algorithms: listOf(PASSKEY_ALGORITHM),
+    postQuantum: bool()
+  })),
+  attestation: closed({
+    recorded: bool(), rows: listOf(PASSKEY_ALGORITHM)
+  }),
+  list: closed({
+    list: str(),
+    algorithm: OPT_STR,
+    lane: OPT_STR,
+    aaguid: str(),
+    rows: listOf(PASSKEY_PERSON),
+    paging: closed({
+      page: int(),
+      perPage: int(),
+      param: str(),
+      noun: str(),
+      total: OPT_INT,
+      pages: OPT_INT,
+      firstRow: int(),
+      lastRow: int(),
+      nextFrom: OPT_STR,
+      hasNext: bool(),
+      scanned: num(),
+      complete: bool()
+    })
+  })
+});
+
+const PASSKEY_EXPORT: Json = Object.assign(Kit.media('text/csv'), {
+  schema: closed({
+    realm: str(),
+    list: str(),
+    filter: PASSKEY_FILTER,
+    truncated: bool(),
+    rows: listOf(PASSKEY_PERSON)
+  })
+});
+
+const PASSKEY_EVIDENCE: Json = closed({
+  username: str(),
+  credentialId: str(),
+  evidence: Kit.freeForm('The attestation statement an authenticator sent, ' +
+                         'archived as it was: its members are WebAuthn\'s ' +
+                         'per attestation format.')
+});
+
+const PASSKEY_ACTION: Json = action({
+  action: str(),
+  runId: str(),
+  alreadyQueued: bool()
+});
+
+// ---------------------------------------------------------------------------
+// AUDIT EXPORT: `common/audit_export.ts`. `publicDest()` copies the stored
+// destination without its token and its secret headers, so its members are
+// `prepare()`'s; the ones a request can name a number or a text for take both.
+// ---------------------------------------------------------------------------
+const AUDIT_DESTINATION: Json = closed({
+  id: str(),
+  name: str(),
+  type: str(),
+  enabled: bool(),
+  excludeAttributes: str(),
+  host: str(),
+  port: oneOf(num(), str()),
+  transport: str(),
+  facility: oneOf(num(), str()),
+  appName: str(),
+  path: str(),
+  mode: oneOf(num(), str()),
+  rotateBytes: num(),
+  url: str(),
+  template: str(),
+  contentType: str(),
+  index: str(),
+  source: str(),
+  sourcetype: str(),
+  ack: SCALAR,
+  headers: oneOf(str(), mapOf(str())),
+  headerText: str(),
+  tokenSet: bool(),
+  secretHeaderSet: STRINGS,
+  status: str(),
+  queueDepth: num(),
+  delivered: num(),
+  failedPermanent: num(),
+  droppedGap: num(),
+  retries: num(),
+  lastSuccessAt: num(),
+  lastFailureAt: num(),
+  lastFailure: OPT_STR,
+  lastDisposition: OPT_STR,
+  pausedUntil: num(),
+  failingSince: num(),
+  latencyMs: num(),
+  cursorSeq: num(),
+  primed: bool()
+});
+
+const AUDIT_EXPORT: Json = closed({
+  thisProcess: bool(),
+  enabled: bool(),
+  job: closed({ id: str(), kind: str(), scope: str() }),
+  destinations: listOf(AUDIT_DESTINATION),
+  stats: closed({
+    delivered: num(),
+    awaiting: num(),
+    retrying: num(),
+    permanentlyFailed: num(),
+    dropped: num(),
+    latencyMs: num(),
+    availability: num(),
+    generated: num()
+  }),
+  settings: SETTINGS_BLOCK
+});
+
+const AUDIT_EXPORT_ACTION: Json = action({
+  destination: AUDIT_DESTINATION,
+  diagnostic: closed({ disposition: OPT_STR, test: bool() })
+});
+
+// ---------------------------------------------------------------------------
+// SIGN-IN APPEARANCE: `branding_api.ts` over `common/branding.ts`. A refused
+// logo carries its own `status`, at the 400, 413 or 415 it says.
+// ---------------------------------------------------------------------------
+const LOGO: Json = closed({
+  type: str(),
+  width: num(),
+  height: num(),
+  bytes: num(),
+  sha256: str(),
+  url: str(),
+  updatedAt: str(),
+  updatedBy: str(),
+  src: str()
+});
+
+const BRANDING: Json = closed({
+  layout: str(),
+  layouts: STRINGS,
+  colours: closed({ accent: str(), page: str(), card: str(), text: str() }),
+  derived: closed({
+    onAccent: str(),
+    muted: str(),
+    faint: str(),
+    dim: str(),
+    border: str(),
+    rule: str()
+  }),
+  contrast: closed({
+    text: num(), accent: num(), buttonText: num(), required: num()
+  }),
+  displayName: str(),
+  logoAlt: str(),
+  logoLinkUrl: str(),
+  logoMaxBytes: num(),
+  logo: nullable(LOGO),
+  customised: bool(),
+  preview: str(),
+  realm: str(),
+  previewUrl: str(),
+  settings: SETTINGS_BLOCK
+});
+
+const BRANDING_LOGO_ACTION: Json = action({
+  status: num(),
+  logo: LOGO
+});
+
+const BRANDING_ACTION: Json = action({
+  saved: STRINGS,
+  removed: bool()
+});
+
+// ---------------------------------------------------------------------------
+// THE DELIVERIES: `outbound_delivery.ts`'s `view()` and each kind's
+// `viewExtra()`.
+//
+// **THE INTER-CELL KIND ANSWERS ITS RAW ROWS** (`cell_deliveries.ts`'s `rows()`
+// and `retry()` return the queue's rows, not `view()`), so a time is a number
+// there and text everywhere else, and `body`, `updatedAt`, `fenceAt` and the
+// digests appear. Reported on #1353; the model says what is sent.
+// ---------------------------------------------------------------------------
+const DELIVERY_TIME: Json = oneOf(str(), num());
+
+const DELIVERY_ROW: Json = closed({
+  id: str(),
+  realm: str(),
+  clientId: OPT_STR,
+  uri: OPT_STR,
+  state: str(),
+  generation: num(),
+  attempts: num(),
+  inFlight: oneOf(bool(), num()),
+  holder: str(),
+  status: SCALAR,
+  errorCode: OPT_STR,
+  why: OPT_STR,
+  queuedAt: DELIVERY_TIME,
+  nextAttemptAt: DELIVERY_TIME,
+  lastAttemptAt: DELIVERY_TIME,
+  finishedAt: DELIVERY_TIME,
+  authReqId: OPT_STR,
+  mode: OPT_STR,
+  username: OPT_STR,
+  sessionId: OPT_STR,
+  iss: OPT_STR,
+  sub: OPT_STR,
+  sid: OPT_STR,
+  sessionRequired: bool(),
+  via: OPT_STR,
+  trigger: OPT_STR,
+  encrypted: OPT_STR,
+  command: OPT_STR,
+  accountState: OPT_STR,
+  awaitingCallback: bool(),
+  cell: OPT_STR,
+  op: OPT_STR,
+  updatedAt: num(),
+  fenceAt: num(),
+  tokenDigest: OPT_STR,
+  bodyDigest: OPT_STR,
+  body: Kit.freeForm('What an inter-cell operation carries, which is that ' +
+                     'operation\'s own request.')
+});
+
+const DELIVERIES: Json = closed({
+  kinds: listOf(closed({
+    id: str(),
+    title: str(),
+    page: str(),
+    counts: closed({ pending: int(), sent: int(), dead: int() }),
+    rows: listOf(DELIVERY_ROW),
+    matched: int(),
+    paging: PAGING
+  })),
+  states: STRINGS
+});
+
+const DELIVERY_ACTION: Json = action({ row: DELIVERY_ROW });
 export = {
   components: {
     ApiIndex: API_INDEX,
     Config: CONFIG,
-    PageSettings: PAGE_SETTINGS
-    //@@MORE-COMPONENTS@@
+    PageSettings: PAGE_SETTINGS,
+    Status: STATUS,
+    Metrics: METRICS,
+    KeyList: KEY_LIST,
+    KeyExport: KEY_EXPORT,
+    CryptoMetadata: CRYPTO_METADATA,
+    AuditList: AUDIT_LIST,
   } as Record<string, unknown>,
   operations: {
     getStsMetadata: { '200': STS_METADATA },
@@ -2477,6 +3856,43 @@ export = {
     runSchedulerJob: { '200': SCHEDULER_ACTION, '202': SCHEDULER_ACTION },
     stepDownScheduler: { '200': SCHEDULER_ACTION, '202': SCHEDULER_ACTION },
     getWorkerPools: { '200': WORKER_POOLS, '404': NO_NODE },
-    //@@MORE-OPERATIONS@@
+    getNodeHealth: { '200': NODE_HEALTH, '404': NO_NODE },
+    collectGarbage: { '200': COLLECT_GARBAGE, '404': COLLECT_GARBAGE,
+                      '500': COLLECT_GARBAGE },
+    getDatabase: { '200': DATABASE },
+    getSecrets: { '200': SECRETS },
+    getDebugger: { '200': DEBUGGER },
+    getKeyHistoryCertificate: {
+      '200': Kit.media('application/pem-certificate-chain')
+    },
+    getKeyHistory: { '200': KEY_HISTORY, '400': KEY_HISTORY_REFUSED },
+    exportKey: { '200': { $ref: '#/components/schemas/KeyExport' } },
+    rotateSigningKeys: { '200': KEY_ROTATION, '202': KEY_ROTATION },
+    rotateSigningKeysEmergency: { '200': KEY_ROTATION, '202': KEY_ROTATION },
+    getMe: { '200': ME },
+    getAudit: { '200': { $ref: '#/components/schemas/AuditList' },
+                '400': REFUSAL },
+    getErrorCodes: { '200': ERROR_CODES },
+    getPasskeyReport: { '200': PASSKEY_REPORT, '400': REFUSAL },
+    exportPasskeyReport: { '200': PASSKEY_EXPORT, '400': REFUSAL },
+    exportPasskeyAttestationEvidence: { '200': PASSKEY_EVIDENCE,
+                                        '400': REFUSAL },
+    recountPasskeyReport: { '200': PASSKEY_ACTION },
+    getAuditExport: { '200': AUDIT_EXPORT },
+    addAuditExportDestination: { '200': AUDIT_EXPORT_ACTION },
+    updateAuditExportDestination: { '200': AUDIT_EXPORT_ACTION },
+    removeAuditExportDestination: { '200': AUDIT_EXPORT_ACTION },
+    enableAuditExportDestination: { '200': AUDIT_EXPORT_ACTION },
+    disableAuditExportDestination: { '200': AUDIT_EXPORT_ACTION },
+    testAuditExportDestination: { '200': AUDIT_EXPORT_ACTION },
+    getBranding: { '200': BRANDING },
+    uploadBrandingLogo: { '200': BRANDING_LOGO_ACTION,
+                          '400': BRANDING_LOGO_ACTION,
+                          '413': BRANDING_LOGO_ACTION,
+                          '415': BRANDING_LOGO_ACTION },
+    saveBranding: { '200': BRANDING_ACTION },
+    removeBrandingLogo: { '200': BRANDING_ACTION },
+    getOutboundDeliveries: { '200': DELIVERIES },
+    retryOutboundDelivery: { '200': DELIVERY_ACTION },
   } as Record<string, Record<string, unknown>>
 };
