@@ -242,7 +242,9 @@ const FED_SIGNALS = Kit.closed({
 const FED_REACTION = Kit.closed({
   event: STR, reaction: STR, done: BOOL, skipped: STR, observed: BOOL, why: STR,
   ended: INT, revoked: INT, gnapGrants: INT, oauthGrants: INT, tokens: INT,
-  codes: INT
+  codes: INT,
+  // What a stream-updated said the partner's stream now is (SSF 1.0, 8.1.5).
+  status: STR
 });
 const FED_ARRIVAL = Kit.closed({
   relationship: STR, jti: STR, via: STR, receivedAt: STR, verified: BOOL,

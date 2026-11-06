@@ -532,6 +532,7 @@ Scope: `admin:read`.
 | `signalArrivals[].reactions[].reaction` | string |  |  |
 | `signalArrivals[].reactions[].revoked` | integer |  |  |
 | `signalArrivals[].reactions[].skipped` | string |  |  |
+| `signalArrivals[].reactions[].status` | string |  |  |
 | `signalArrivals[].reactions[].tokens` | integer |  |  |
 | `signalArrivals[].reactions[].why` | string |  |  |
 | `signalArrivals[].receivedAt` | string |  |  |

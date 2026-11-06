@@ -1137,6 +1137,7 @@ Scope: `admin:read`.
 | `received[].reactions[].reaction` | string |  |  |
 | `received[].reactions[].revoked` | integer |  |  |
 | `received[].reactions[].skipped` | string |  |  |
+| `received[].reactions[].status` | string |  |  |
 | `received[].reactions[].tokens` | integer |  |  |
 | `received[].reactions[].why` | string |  |  |
 | `received[].receivedAt` | string |  |  |
