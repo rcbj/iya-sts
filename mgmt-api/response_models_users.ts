@@ -176,8 +176,8 @@ const ATTESTATION = Kit.nullable(Kit.closed({
   }),
   // `common/attestation_revocation.ts`'s verdict on the chain.
   androidRevocation: Kit.closed({
-    status: STR, reason: STR, serial: STR, version: STR, checked: BOOL,
-    hits: Kit.listOf(STR), comment: STR, expires: WHEN
+    status: STR, reason: STR, serial: STR, listVersion: STR, checkedAt: WHEN,
+    chainSerials: STRS, why: STR
   })
 }));
 
@@ -326,9 +326,10 @@ const PUBLISHED_DID = Kit.closed({
   versions: Kit.listOf(Kit.closed({
     versionId: Kit.oneOf(STR, NUM), created: WHEN, change: STR,
     keys: Kit.listOf(Kit.closed({ id: STR, kty: STR, crv: STR, alg: STR })),
+    // `wallet-proof`, `person`, `current-key-proof` and `new-key-proof`.
     authorizedBy: Kit.listOf(Kit.closed({
-      kind: STR, by: STR, at: WHEN, via: STR, key: STR, keyId: STR, kid: STR,
-      did: STR, proof: STR, method: STR, actor: STR, thumbprint: STR
+      kind: STR, subject: STR, actor: STR, at: WHEN, keyThumbprint: STR,
+      versionId: Kit.oneOf(STR, NUM), transaction: STR
     }))
   }))
 });
@@ -349,7 +350,7 @@ const DEVICE_KEY = Kit.closed({
     revocation: Kit.freeForm(
       'What a device attestation\'s revocation consultation said, which ' +
       'differs by attestation format.'),
-    freshness: Kit.closed({ status: STR, why: STR, checkedAt: WHEN, at: WHEN })
+    freshness: Kit.closed({ status: STR, detail: STR })
   }),
   material: Kit.freeForm(
     'A device key\'s public material as its kind carries it: a client\'s ' +
@@ -416,7 +417,7 @@ const DEVICE_BOUND = Kit.nullable(Kit.closed({
 const ISSUED_TOKEN = Kit.closed({
   state: STR, key: STR, jti: STR, kind: STR, typ: STR, revocable: BOOL,
   sub: STR, iss: STR, username: STR,
-  client_id: Kit.oneOrMany(STR), audience: STR, scope: STR,
+  client_id: Kit.oneOrMany(STR), audience: STR, scope: Kit.oneOrMany(STR),
   jkt: STR, x5t: STR, x5tSpki: STR, iat: NUM, nbf: NUM, exp: NUM,
   sessionId: STR, sessionAuthenticated: BOOL, setId: STR, grant: STR,
   grantId: STR, grantRefresh: BOOL, issuedAt: NUM, revoked: BOOL,
@@ -571,8 +572,7 @@ const KERBEROS_STATE = Kit.closed({
     kvno: NNUM, etypes: Kit.listOf(ETYPE), derivedAt: STR, derivedOn: STR,
     sealed: BOOL, current: BOOL,
     retained: Kit.listOf(Kit.closed({
-      kvno: NNUM, etypes: Kit.listOf(ETYPE), retainedAt: WHEN, until: WHEN,
-      expiresAt: WHEN, derivedAt: WHEN, expired: BOOL, live: BOOL
+      kvno: NNUM, etypes: Kit.listOf(ETYPE), retiredAt: STR, expiresAt: STR
     }))
   }))
 });
@@ -601,11 +601,9 @@ const UMA_VIEW = Kit.nullable(Kit.closed({
     owner: STR, ownerKind: STR, createdAt: NUM
   })),
   shares: Kit.listOf(Kit.closed({
-    id: STR, ruleId: STR, resource: Kit.nullable(Kit.oneOf(STR,
-      Kit.closed({ id: STR, name: STR }))),
-    resources: STRS, scopes: STRS, expiresAt: WHEN, description: STR,
+    id: STR, resourceId: STR, scopes: STRS,
     recipient: Kit.closed({ kind: STR, value: STR, label: STR }),
-    condition: STR, conditions: STRS
+    expires: STR, acr: STR, askMe: BOOL
   })),
   held: Kit.listOf(Kit.closed({
     jti: STR, requestingParty: STR, client: STR, resourceServer: STR,
@@ -635,7 +633,8 @@ const USER_PAGE = Kit.closed({
   key: STR, riskAsked: BOOL,
   counts: Kit.closed({ live: NUM, tokens: NUM, valid: NUM, expired: NUM,
                        artifacts: NUM, ended: NUM, sessionless: NUM }),
-  back: STR, params: Kit.mapOf(STR), blocksPerPage: NUM, perPage: NUM,
+  back: STR, params: Kit.mapOf(Kit.oneOrMany(SCALAR)), blocksPerPage: NUM,
+  perPage: NUM,
   maxEventsPerUser: NUM, directoryLoaded: BOOL,
   mfa: Kit.closed({
     storable: BOOL, mech: MECHANISMS,
@@ -770,7 +769,8 @@ const SESSION_ROW = Kit.closed({
 }, { description: 'One live session of any kind.' });
 
 const SESSION_LIST = Kit.closed({
-  installed: BOOL, held: NUM, matched: NUM, shown: NUM, heldByKind: COUNTS,
+  // `note` says why, where `logout/logout.ts` is not in this process.
+  installed: BOOL, note: STR, held: NUM, matched: NUM, shown: NUM, heldByKind: COUNTS,
   filter: Kit.closed({ q: NSTR, protocol: NSTR }), protocols: STRS, at: NUM,
   expiryRules: Kit.mapOf(STR),
   sessions: Kit.listOf({ $ref: '#/components/schemas/SessionRow' }),
@@ -814,9 +814,7 @@ const TERMINATE_RESULT = Kit.closed({
     url: STR, action: STR, fields: Kit.mapOf(STR)
   })),
   backchannel: Kit.listOf(DELIVERY), message: STR,
-  acrossCluster: Kit.listOf(Kit.oneOf(
-    STR, Kit.closed({ node: STR, family: STR, id: STR, ok: BOOL, message: STR,
-                      instructed: NUM, count: NUM })))
+  acrossCluster: Kit.listOf(Kit.closed({ family: STR, at: WHEN, message: STR }))
 });
 
 const FAMILY = {
@@ -955,8 +953,10 @@ const ADMIN_ROLES = Kit.closed({
   candidates: Kit.listOf(CANDIDATE), candidatesPaging: PAGING,
   candidateSearch: Kit.closed({
     q: NSTR, total: NUM, matched: NUM, countCapped: BOOL, countCap: NUM,
-    complete: BOOL, incomplete: Kit.nullable(Kit.oneOf(
-      STR, Kit.mapOf(SCALAR)))
+    complete: BOOL,
+    incomplete: Kit.nullable(Kit.closed({
+      unusable: NUM, short: NUM, capped: BOOL, cap: NUM
+    }))
   }),
   picked: Kit.nullable(Kit.closed({
     asked: STR, candidate: Kit.nullable(CANDIDATE)
@@ -1181,9 +1181,11 @@ const ROLE_OWNERS = Kit.action({
 });
 
 const ACCOUNT_STATE = personAction({
-  disabled: BOOL, changed: BOOL, ended: Kit.nullable(Kit.closed({
-    ended: BOOL, terminated: NUM, message: STR,
-    backchannel: Kit.listOf(DELIVERY)
+  disabled: BOOL, changed: BOOL,
+  // `AccountState.endEverything()`: counts, not the rows `terminate()` said.
+  ended: Kit.nullable(Kit.closed({
+    ended: BOOL, terminated: NUM, skipped: NUM, notifications: NUM,
+    backchannel: Kit.listOf(DELIVERY), message: STR
   }))
 });
 
@@ -1217,7 +1219,7 @@ export = {
     GroupList: GROUP_LIST,
     GroupDetail: GROUP_DETAIL,
     NewUserForm: Kit.closed({
-      directory: BOOL, container: STR,
+      directory: BOOL, container: NSTR, why: STR,
       realm: Kit.closed({ id: STR, name: STR }), mode: STR,
       offersExampleData: BOOL,
       fields: Kit.listOf(Kit.closed({
@@ -1250,18 +1252,18 @@ export = {
 
   operations: {
     getServiceAccounts: read(Kit.closed({
-        policy: Kit.closed({
-          rotationEnabled: BOOL, intervalDays: NUM, overlapMinutes: NUM,
-          alarmFailures: NUM, from: STR
-        }),
-        totals: Kit.closed({
-          accounts: NUM, withDestination: NUM, rotating: NUM, failing: NUM,
-          alarms: NUM
-        }),
-        filter: Kit.closed({ failing: BOOL }),
-        accounts: Kit.listOf(SERVICE_ACCOUNT_VIEW), paging: PAGING,
-        // `?account=`, an owner's read.
-        found: BOOL, account: Kit.nullable(SERVICE_ACCOUNT_FACTS)
+      policy: Kit.closed({
+        rotationEnabled: BOOL, intervalDays: NUM, overlapMinutes: NUM,
+        alarmFailures: NUM, from: STR
+      }),
+      totals: Kit.closed({
+        accounts: NUM, withDestination: NUM, rotating: NUM, failing: NUM,
+        alarms: NUM
+      }),
+      filter: Kit.closed({ failing: BOOL }),
+      accounts: Kit.listOf(SERVICE_ACCOUNT_VIEW), paging: PAGING,
+      // `?account=`, an owner's read.
+      found: BOOL, account: Kit.nullable(SERVICE_ACCOUNT_FACTS)
     })),
     getUsers: read(Kit.oneOf(schemaRef('UserList'), schemaRef('UserDetail'),
                              USER_UNKNOWN)),
@@ -1519,7 +1521,9 @@ export = {
     })),
     setOwnerProtected: {
       '200': Kit.action({
-        changed: BOOL, kind: STR, name: STR, ownerProtected: BOOL
+        changed: BOOL, kind: STR, name: STR, ownerProtected: BOOL,
+        // What a refusal from the module that owns the object may say.
+        why: STR, reason: STR, account: Kit.nullable(SERVICE_ACCOUNT_FACTS)
       })
     }
   } as Record<string, Record<string, unknown>>
