@@ -467,6 +467,16 @@ logged once (`STS-TLS-0056`). A block of the file it refuses is left out
 (`STS-TLS-0057`). This truststore is for TLS handshakes; for everything else see
 the [signer truststore](signer-truststore.md).
 
+Under paranoid PKI mode a client certificate is also held to more than OpenSSL's
+answer on **every** listener (the main port, custom listeners, LDAPS, the debugger and
+the channel between cells): the leaf is not a CA, its keyUsage and extendedKeyUsage
+fit client authentication, revocation is consulted before the connection is read, a
+failure inside the check refuses, and a resumed session keeps what its full handshake
+concluded. A certificate that fails is treated as unverified rather than breaking the
+handshake. See the `tls-client` row of the [use cases](pki-use-cases.md). A registered
+`self_signed_tls_client_auth` certificate is held to its validity and keyUsage too,
+while equality stays the method (`tls-client-self-signed`).
+
 **Why it starts empty.** The certificate authority whose clients it verifies is
 often generated in somebody's *browser* minutes before the connection, and
 exists nowhere else, so no configuration file could hold it and no image could

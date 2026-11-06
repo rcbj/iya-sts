@@ -1603,8 +1603,10 @@ class Dpop {
       proofOk: req.headers['dpop'] !== undefined,
       boundThumbprint: mtls.boundThumbprintOf(claims),
       certificate: !!mtls.peerCertificate(req),
+      // RFC 8705 section 3 binds a token to a certificate, not to a CA, so this
+      // is the match alone: `peerVerified()` answers an object, and the term it
+      // was here could not fail (#1360).
       certificateMatches: !!mtls.boundThumbprintOf(claims) &&
-                          mtls.peerVerified(req) &&
                           mtls.presentedThumbprint(req) ===
                             mtls.boundThumbprintOf(claims),
       mtlsAvailable: mtls.available()

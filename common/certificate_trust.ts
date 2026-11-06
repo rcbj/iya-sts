@@ -1188,10 +1188,25 @@ class CertificateTrust {
         return CertificateTrust.compose(purpose, answer, codes, whys, realmId,
                                         false);
       }
-      const direct = pki.verifyIssuedDirectly(certs.leaf, opts.anchors || [],
-        { now: opts.now, skewMs: opts.skewMs,
-          allowCritical: opts.allowCritical });
-      if (direct.ok) {
+      // A pin (RFC 8705 section 2.2, GNAP pinned) has no path to walk: the
+      // method is equality, which the caller has just established. The
+      // baseline `none` is what those sites asked before: nothing.
+      const rule0 = CertificateTrust.ruleOf(purpose, opts.variant);
+      const pinned = rule0.selfSigned === 'allow-by-spec' &&
+                     (material || {}).pinned === true;
+      if (!inForce && purpose.baseline === 'none') {
+        return CertificateTrust.compose(purpose, answer, codes, whys, realmId,
+                                        false);
+      }
+      const direct: Json = pinned ? { ok: true, chain: [] } :
+        pki.verifyIssuedDirectly(certs.leaf, opts.anchors || [],
+          { now: opts.now, skewMs: opts.skewMs,
+            allowCritical: opts.allowCritical });
+      if (pinned) {
+        answer.checks.path = 'exempt-by-spec';
+        answer.checks['name-constraints'] = 'exempt-by-spec';
+        answer.anchor = 'pinned';
+      } else if (direct.ok) {
         answer.checks.path = 'passed';
         answer.checks['name-constraints'] = 'passed';
         answer.anchor = 'caller';
@@ -1203,7 +1218,7 @@ class CertificateTrust {
       if (inForce) {
         const rule = CertificateTrust.ruleOf(purpose, opts.variant);
         answer.checks['self-signed-allowed'] = 'passed';
-        CertificateTrust.fieldChecks(answer, certs.leaf, rule, opts, false)
+        CertificateTrust.fieldChecks(answer, certs.leaf, rule, opts, pinned)
           .forEach(function (one: Json) {
             codes[one.check] = codes[one.check] || one.code;
             whys[one.check] = whys[one.check] || one.why;
@@ -1225,6 +1240,68 @@ class CertificateTrust {
     });
     log.debug("Leaving CertificateTrust.assessSync(). " + verdict.ok);
     return verdict;
+  }
+
+  /**
+   * THE HOLD ON A HANDSHAKE: what can be decided while OpenSSL's verdict is
+   * being read, before any request on the connection is. OpenSSL built the
+   * path, so this asks the rules of it, and under paranoid the leaf's fields.
+   * Not in force, it is the baseline: the rules alone, which is what
+   * `holdToPathRules()` asked before #1360. Revocation is a fetch, so a
+   * listener asks it apart (`tls_server.js`'s `holdConnectionsOn()`), except
+   * `options.register`, this service's own register, which has no network.
+   *
+   * @param id - the purpose: `tls-client` or `cell-peer`
+   * @param peer - `getPeerCertificate(true)`
+   * @param options - `{ realmId, now, register }`
+   * @returns `{ ok, inForce, check, code, why }`
+   */
+  static holdPeer(id: string, peer: Json, options?: Json): Json {
+    helpers.log.debug("Entering CertificateTrust.holdPeer(). " + id);
+    const opts = options || {};
+    const purpose = CertificateTrust.purpose(id);
+    const inForce = CertificateTrust.applies(id, opts.realmId);
+    const rule = pki.peerChainProblem(peer);
+    if (rule) {
+      helpers.log.debug("Leaving CertificateTrust.holdPeer(). A path rule.");
+      return { ok: false, inForce: inForce, check: rule.check,
+               code: 'STS-PKI-0198', why: rule.why };
+    }
+    if (!inForce) {
+      helpers.log.debug("Leaving CertificateTrust.holdPeer(). The baseline.");
+      return { ok: true, inForce: false, check: '', code: '', why: '' };
+    }
+    const certs = CertificateTrust.certificatesOf({ peer: peer });
+    const field = certs && stsCrypto.certificateFieldProblem(certs.leaf,
+      Object.assign({}, purpose.leaf, { role: 'leaf', now: opts.now }));
+    if (!certs || field) {
+      helpers.log.debug("Leaving CertificateTrust.holdPeer(). A field.");
+      return { ok: false, inForce: true,
+               check: field ? field.check : 'path',
+               code: field ? field.code : 'STS-PKI-0238',
+               why: field ? field.why :
+                 'what was presented is not an X.509 certificate' };
+    }
+    const facts = stsCrypto.certificateFacts(certs.leaf);
+    if (facts.selfIssued && !facts.ca) {
+      helpers.log.debug("Leaving CertificateTrust.holdPeer(). Self-signed.");
+      return { ok: false, inForce: true, check: 'self-signed-allowed',
+               code: purpose.code,
+               why: '"' + facts.subject + '" is a self-signed leaf, which ' +
+                    'is not accepted for ' + id };
+    }
+    if (opts.register) {
+      const answer = revocationStatus.localVerdictFor(
+        { leaf: certs.leaf, chain: certs.chain, verified: true });
+      if (answer.refused) {
+        helpers.log.debug("Leaving CertificateTrust.holdPeer(). Revoked.");
+        return { ok: false, inForce: true, check: 'revocation',
+                 code: revocationStatus.codeOf(answer) ||
+                       revocationStatus.CODE_REVOKED, why: answer.why };
+      }
+    }
+    helpers.log.debug("Leaving CertificateTrust.holdPeer(). Holds.");
+    return { ok: true, inForce: true, check: '', code: '', why: '' };
   }
 
   /**

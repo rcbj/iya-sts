@@ -56,7 +56,7 @@ const ALLOWED = {
   'spiffe/spiffe_attestor_x509pop.ts': { verifyPathToAnchors: 1 },
   'spiffe/spiffe_auth.ts': { verifyIssuedDirectly: 1 },
   'spiffe/spiffe_sigstore.ts': { verifyPathToAnchors: 1 },
-  'tls/tls_server.js': { checkIssued: 4, peerChainProblem: 1 }
+  'tls/tls_server.js': { checkIssued: 4 }
 };
 
 // Every source file: a `.ts`, or a `.js` with no `.ts` beside it (the compiled

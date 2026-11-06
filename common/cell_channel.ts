@@ -381,6 +381,16 @@ class CellChannel {
                            'no certificate') + ')');
     }
     const cert = socket.getPeerCertificate(true);
+    // UNDER PARANOID PKI MODE (#1360): the rules, clientAuth and serverAuth, and
+    // this service's own register, which has no network to wait for. It is the
+    // synchronous door, in both directions of the channel.
+    const trust = require('./certificate_trust');
+    const held = trust.applies('cell-peer') ?
+      trust.holdPeer('cell-peer', cert, { register: true }) : { ok: true };
+    if (!held.ok) {
+      log.debug("Leaving CellChannel.peerCellOf(). Paranoid: " + held.check);
+      return refuse('its certificate is refused for this channel: ' + held.why);
+    }
     const caDer = this.cellCaDer();
     const issuer = cert && cert.issuerCertificate;
     if (!caDer || !issuer || !issuer.raw ||

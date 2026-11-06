@@ -17524,6 +17524,10 @@ if (serverCertificate && serverCertificate.certPem &&
       return { key: serverCertificate.privateKeyPem,
                cert: tlsServer.presentedBundlePem(serverCertificate) };
     }, { kind: 'ldaps' });
+  // Under paranoid PKI mode LDAPS holds a client certificate as the main port
+  // does, with revocation, and the stream waits for the verdict (#1360).
+  tlsServer.holdConnectionsOn(secureServer.server,
+                              'LDAPS (' + LDAPS_PORT + ')');
   // A ticket another node issued resumes here too, in an active-active
   // cluster (tls/session_tickets.ts); outside one this changes nothing.
   sessionTickets.track(secureServer.server, 'LDAPS (' + LDAPS_PORT + ')');

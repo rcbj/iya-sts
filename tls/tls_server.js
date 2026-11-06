@@ -5724,6 +5724,14 @@ function screenCertificateOffer(req) {
     log.debug('Leaving screenCertificateOffer(). Not a person here.');
     return null;
   }
+  // UNDER PARANOID PKI MODE no name is drawn for a certificate revocation has
+  // refused, the verdict `common/app.js` put on the request (#1360).
+  if (req.certificateRevocation && req.certificateRevocation.refused &&
+      require('../common/certificate_trust')
+        .applies('tls-client', realms.DEFAULT_ID)) {
+    log.debug('Leaving screenCertificateOffer(). Refused on revocation.');
+    return null;
+  }
   const peer = certificatePeer(socket, identity);
   log.debug('Leaving screenCertificateOffer(). ' +
             (peer.ok ? 'Offered.' : 'Not offered.'));
@@ -6194,28 +6202,133 @@ function holdToPathRules(socket, label) {
     log.debug('Leaving holdToPathRules(). Nothing verified.');
     return null;
   }
+  const trust = require('../common/certificate_trust');
+  let inForce = false;
   let problem = null;
   try {
-    problem = require('../common/pki')
-      .peerChainProblem(socket.getPeerCertificate(true));
+    inForce = trust.applies('tls-client', realms.DEFAULT_ID);
+    const peer = socket.getPeerCertificate(true);
+    const held = trust.holdPeer('tls-client', peer,
+                                { realmId: realms.DEFAULT_ID });
+    if (!held.ok) {
+      problem = { check: held.check, why: held.why, code: held.code };
+    }
+    if (inForce) {
+      problem = problem || resumedProblem(socket, peer);
+      if (peer && peer.raw && (typeof socket.isSessionReused !== 'function' ||
+                               !socket.isSessionReused())) {
+        revocationStatus.rememberHold(peer.raw, !problem);
+      }
+    }
   } catch (e) {
-    // A defect here must not make an unverified chain look verified, nor a
-    // verified one unverified for a reason nobody can read. OpenSSL's answer
-    // stands and the failure is logged.
+    // Not in force: a defect here must not make an unverified chain look
+    // verified, nor a verified one unverified for a reason nobody can read, so
+    // OpenSSL's answer stands and the failure is logged. Under paranoid PKI
+    // mode it FAILS CLOSED: a check that could not be made is a refusal.
     log.error(errorCodes.tag('STS-PKI-0198') + 'tls: the path rules could ' +
               'not be asked of a client chain on ' + label + ': ' +
               ((e && e.message) || e));
-    problem = null;
+    problem = inForce ? { check: 'path', code: 'STS-PKI-0198',
+                          why: 'the checks could not be made' } : null;
   }
   if (problem) {
     socket.authorized = false;
     socket.authorizationError = 'ERR_STS_PATH_RULES: ' + problem.why;
-    log.warn(errorCodes.tag('STS-PKI-0198') + 'tls: a client certificate ' +
-             'chain on ' + label + ' verified with OpenSSL and breaks RFC ' +
-             '5280, so it is treated as unverified: ' + problem.why + '.');
+    log.warn(errorCodes.tag(problem.code || 'STS-PKI-0198') + 'tls: a client ' +
+             'certificate chain on ' + label + ' verified with OpenSSL and ' +
+             (problem.code === 'STS-PKI-0198' ? 'breaks RFC 5280' :
+              'is refused for its use') + ', so it is treated as unverified: ' +
+             problem.why + '.');
   }
   log.debug('Leaving holdToPathRules().' + (problem ? ' Demoted.' : ''));
   return problem;
+}
+
+// A RESUMED SESSION UNDER PARANOID PKI MODE (#1360). Node hands over the leaf
+// alone, so the hold above saw one certificate. What the full handshake's hold
+// concluded is remembered with its chain: a demoted one is demoted again, and
+// one nothing is remembered of (another node's ticket, a row aged out) is
+// demoted too, because nothing established it; the client's next full handshake
+// settles it. null when the session is not resumed, or the leaf held.
+function resumedProblem(socket, peer) {
+  log.debug("Entering resumedProblem().");
+  if (typeof socket.isSessionReused !== 'function' ||
+      !socket.isSessionReused() || !peer || !peer.raw) {
+    log.debug("Leaving resumedProblem(). Not resumed.");
+    return null;
+  }
+  const held = revocationStatus.rememberedHold(peer.raw);
+  log.debug("Leaving resumedProblem(). " + held);
+  return held === true ? null : {
+    check: 'path', code: 'STS-TLS-0058',
+    why: held === false
+      ? 'its full handshake was refused, and this session resumes it'
+      : 'this session resumes a handshake this process has no record of'
+  };
+}
+
+// THE HOLD ON A LISTENER THAT IS NOT THE MAIN PORT (#1360): LDAPS, the debugger
+// and the channel between cells. In force it asks the rules, the leaf's fields
+// and revocation of every certificate presented, and leaves the record of
+// `observeConnectionsOn()` to the listeners it has always served. Not in force
+// it does nothing at all, which is what these listeners did.
+//
+// **A REVOCATION ANSWER IS A FETCH**, so the connection waits: paused until the
+// verdict for a stream reader, and with `certificateTrustSettled` for a server
+// node's HTTP parser reads past a pause (`settledRequest()` is its door).
+/**
+ * Holds every client certificate on this listener to the checks of paranoid
+ * PKI mode.
+ *
+ * @param server - the TLS listener
+ * @param label - its name, for the log
+ */
+function holdConnectionsOn(server, label) {
+  log.debug("Entering holdConnectionsOn(). " + label);
+  server.on('secureConnection', function (socket) {
+    log.debug("Entering the paranoid hold. " + label);
+    const trust = require('../common/certificate_trust');
+    let inForce = false;
+    try {
+      inForce = trust.applies('tls-client', realms.DEFAULT_ID);
+    } catch (e) {
+      log.debug("Caught in the paranoid hold: " + ((e && e.message) || e));
+    }
+    if (!inForce) {
+      log.debug("Leaving the paranoid hold. Not in force.");
+      return;
+    }
+    holdToPathRules(socket, label);
+    socket.pause();
+    socket.certificateTrustSettled = checkedSocket(socket)
+      .then(function (verdict) {
+        if (verdict && verdict.refused && socket.authorized) {
+          socket.authorized = false;
+          socket.authorizationError = 'ERR_STS_REVOCATION: ' + verdict.why;
+        }
+      }, function (e) {
+        log.debug("Caught in the paranoid hold: " + ((e && e.message) || e));
+        socket.authorized = false;
+        socket.authorizationError = 'ERR_STS_REVOCATION: not established';
+      }).then(function () {
+        socket.resume();
+      });
+    log.debug("Leaving the paranoid hold.");
+  });
+  log.debug("Leaving holdConnectionsOn().");
+}
+
+/**
+ * Waits for a request's connection to be settled by `holdConnectionsOn()`.
+ *
+ * @param req - the request
+ * @returns a promise settled once the socket's verdict is in
+ */
+function settledRequest(req) {
+  log.debug("Entering settledRequest().");
+  const socket = req && req.socket;
+  log.debug("Leaving settledRequest().");
+  return Promise.resolve(socket && socket.certificateTrustSettled);
 }
 
 // ---------------------------------------------------------------------------
@@ -7245,5 +7358,7 @@ module.exports = {
   handshakeFailureOf: handshakeFailureOf,
   // #201: the path rules asked of a chain OpenSSL verified; exported for
   // tests/x509_limbo.js, which holds the main port's posture to x509-limbo.
-  holdToPathRules: holdToPathRules
+  holdToPathRules: holdToPathRules,
+  holdConnectionsOn: holdConnectionsOn,
+  settledRequest: settledRequest
 };

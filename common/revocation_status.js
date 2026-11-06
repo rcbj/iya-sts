@@ -645,6 +645,48 @@ function rememberChain(raw, chain) {
   log.debug("Leaving rememberChain().");
 }
 
+// WHAT THE HOLD SAID OF THIS LEAF (#1360). A resumed session gives node the leaf
+// alone, so the hold cannot walk what the full handshake showed: it reads what
+// that handshake's hold concluded, kept beside the chain, so a demoted
+// certificate stays demoted across a resumption under paranoid PKI mode.
+/**
+ * Remembers what the hold said of a leaf on a full handshake.
+ *
+ * @param raw - the leaf's DER
+ * @param ok - whether it held
+ */
+function rememberHold(raw, ok) {
+  log.debug("Entering rememberHold().");
+  const key = leafKey(raw);
+  const held = presentedChains.get(key);
+  if (!held || held.held !== !!ok) {
+    const row = held ? Object.assign({}, held) :
+      { chain: [], until: Date.now() + presentedChainLifetimeMs() };
+    row.held = !!ok;
+    if (!held) {
+      cacheRegistry.makeRoom(presentedChains, PRESENTED_CHAIN_ENTRIES,
+                             { counter: presentedCount });
+    }
+    presentedChains.set(key, row);
+  }
+  log.debug("Leaving rememberHold().");
+}
+
+/**
+ * What the hold said of a leaf on its full handshake.
+ *
+ * @param raw - the leaf's DER
+ * @returns true, false, or null when nothing is remembered
+ */
+function rememberedHold(raw) {
+  log.debug("Entering rememberedHold().");
+  const held = presentedChains.get(leafKey(raw));
+  const known = held && Number(held.until) > Date.now() &&
+                typeof held.held === 'boolean';
+  log.debug("Leaving rememberedHold().");
+  return known ? held.held : null;
+}
+
 // A HOT PATH: one lookup per resumed connection and per pull while waiting,
 // so no Entering/Leaving pair — one would drown the log.
 function heldChain(key) {
@@ -5504,6 +5546,8 @@ module.exports = {
   CODE_REGISTERED: CODE_REGISTERED,
   decide: decide,
   fromSocket: fromSocket,
+  rememberHold: rememberHold,
+  rememberedHold: rememberedHold,
   awaitResumedChain: awaitResumedChain,
   resumedChainMiddleware: resumedChainMiddleware,
   // The walk itself, for `common/tls_client_certificates.js`, which asks the

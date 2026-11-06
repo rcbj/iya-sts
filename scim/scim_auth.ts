@@ -2623,11 +2623,19 @@ class ScimAuth {
       gate = loadTlsClientCertificates().checkSocket(socket,
                                                      { stored: true });
     } catch (e) {
-      // No certificate authority in this process, so nothing here was issued by
-      // one and there is nothing to refuse.
+      // THE GATE COULD NOT ANSWER, SO THIS IS NOT THE CREDENTIAL (#1360). It
+      // used to fall through to the subject DN below, so a fault in the gate
+      // named whoever the certificate's subject said.
       log.debug("Caught in ScimAuth.attemptClientCertificate(): " +
                 ((e && e.message) || e));
-      gate = null;
+      audit.failure('STS-SCIM-0088', {
+        protocol: 'SCIM', channel: 'http', target: req.originalUrl || req.url,
+        summary: 'the identity gate could not answer about a verified client ' +
+                 'certificate, so it was not taken as a SCIM credential',
+        outcome: 'error'
+      });
+      log.debug("Leaving ScimAuth.attemptClientCertificate(). No gate.");
+      return null;
     }
     // AN OUTSIDE AUTHORITY'S CERTIFICATE NOT STORED ON EXACTLY ONE ENTRY
     // (#1061, rcbj 2026-10-27). It was filed under its subject DN, and any

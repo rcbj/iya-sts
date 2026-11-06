@@ -758,6 +758,18 @@ class GnapProof {
                             ': ' + peer.why);
       }
     }
+    // A PINNED KEY IS STILL A CERTIFICATE (#1360): under paranoid PKI mode it is
+    // within its validity and may sign, whichever way it was named below.
+    if (model !== 'pki') {
+      const held = require('../common/certificate_trust').assessSync(
+        'tls-client-self-signed',
+        { leaf: Buffer.from(certificate.raw), pinned: true });
+      if (!held.ok) {
+        log.debug("Leaving GnapProof.verifyMtls(). Paranoid: " + held.code);
+        return this.refusal(held.code, 'the TLS client certificate that ' +
+                            'proves this key is refused: ' + held.why);
+      }
+    }
     const thumbprint = stsCrypto.certificateThumbprint(certificate.raw);
     if (descriptor.format === 'cert' || descriptor.format === 'cert#S256') {
       if (thumbprint !== descriptor.thumbprint) {

@@ -960,6 +960,17 @@ function verifyCertificate(opts) {
                                           registered
                                         : 'a registered thumbprint') + '.' };
     }
+    // THE EQUALITY IS THE METHOD AND NOT A PASS (#1360): under paranoid PKI mode
+    // the registered certificate is still within its validity, may still sign,
+    // and is not revoked. Off, this asks what it asked before: nothing.
+    const held = require('../common/certificate_trust').assessSync(
+      'tls-client-self-signed', { leaf: Buffer.from(cert.raw), pinned: true });
+    if (!held.ok) {
+      log.debug("Leaving verifyCertificate(). Paranoid: " + held.code);
+      return { ok: false, errorCode: held.code,
+               description: 'RFC 8705 section 2.2: the registered certificate ' +
+                            'is refused: ' + held.why + '.' };
+    }
     log.debug("Leaving verifyCertificate(). The registered certificate.");
     return { ok: true, subject: subjectRfc4514(cert),
              thumbprint: presentedThumbprint,
