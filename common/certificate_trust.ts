@@ -728,6 +728,22 @@ class CertificateTrust {
     return { leaf: leafDer, chain: chain.concat(given) };
   }
 
+  // Can the field checks read it? Node's parser and pkijs disagree about some
+  // malformed certificates, and a verdict is what the door promises for a bad
+  // certificate, never a throw (x509-limbo found one that reached it).
+  private static readable(der: Buffer, chain?: Buffer[]): boolean {
+    try {
+      [der].concat(chain || []).forEach(function (one) {
+        stsCrypto.certificateFacts(one);
+      });
+      return true;
+    } catch (e) {
+      helpers.log.debug("Caught in CertificateTrust.readable(): " +
+                        ((e && e.message) || e));
+      return false;
+    }
+  }
+
   private static pemOf(der: Buffer): string {
     return pki.certificateFromDer(der).pem;
   }
@@ -1048,6 +1064,13 @@ class CertificateTrust {
         return CertificateTrust.baseline(purpose, certs, material, opts,
                                          realmId, quiet);
       }
+      if (!CertificateTrust.readable(certs.leaf, certs.chain)) {
+        blank.checks.path = 'failed';
+        return CertificateTrust.compose(purpose, blank,
+          { path: 'STS-PKI-0238' },
+          { path: 'what was handed to the door cannot be read as X.509' },
+          realmId, quiet);
+      }
       if (id === 'anchor-admission') {
         return CertificateTrust.assessAdmission(purpose, blank, certs, opts,
                                                 realmId, quiet);
@@ -1228,7 +1251,7 @@ class CertificateTrust {
       const codes: Json = {};
       const whys: Json = {};
       const certs = CertificateTrust.certificatesOf(material);
-      if (!certs) {
+      if (!certs || (inForce && !CertificateTrust.readable(certs.leaf))) {
         answer.checks.path = 'failed';
         codes.path = 'STS-PKI-0238';
         whys.path = 'what was handed to the door is not an X.509 certificate';
@@ -1318,7 +1341,8 @@ class CertificateTrust {
       helpers.log.debug("Leaving CertificateTrust.holdPeer(). The baseline.");
       return { ok: true, inForce: false, check: '', code: '', why: '' };
     }
-    const certs = CertificateTrust.certificatesOf({ peer: peer });
+    const read = CertificateTrust.certificatesOf({ peer: peer });
+    const certs = read && CertificateTrust.readable(read.leaf) ? read : null;
     const field = certs && stsCrypto.certificateFieldProblem(certs.leaf,
       Object.assign({}, purpose.leaf, { role: 'leaf', now: opts.now }));
     if (!certs || field) {
@@ -1443,9 +1467,10 @@ class CertificateTrust {
       return errorCodes.mark({ ok: false, why: why, path: answer.path || [] },
                              code);
     };
-    const certs = CertificateTrust.certificatesOf(
+    const read = CertificateTrust.certificatesOf(
       { leaf: material.certificate, chain: [].concat(material.chain || [])
         .filter(Boolean) });
+    const certs = read && CertificateTrust.readable(read.leaf) ? read : null;
     if (!certs) {
       helpers.log.debug("Leaving CertificateTrust.signerChain(). Unreadable.");
       return answer.ok ? refuse('STS-PKI-0238',
@@ -1521,7 +1546,7 @@ class CertificateTrust {
       return { ok: verdict.ok, code: verdict.code, why: verdict.why };
     };
     const der = CertificateTrust.derOf(cert);
-    if (!der) {
+    if (!der || !CertificateTrust.readable(der)) {
       verdict.checks.path = 'failed';
       codes.path = 'STS-PKI-0238';
       whys.path = 'it is not an X.509 certificate';
@@ -1679,7 +1704,7 @@ class CertificateTrust {
       return null;
     }
     const der = CertificateTrust.derOf(cert);
-    if (!der) {
+    if (!der || !CertificateTrust.readable(der)) {
       helpers.log.debug("Leaving CertificateTrust.registrationProblem(). Bad.");
       return { code: 'STS-PKI-0238', why: 'it is not an X.509 certificate' };
     }
@@ -1773,7 +1798,7 @@ class CertificateTrust {
       return out;
     }
     const der = CertificateTrust.derOf(row.pem);
-    if (!der) {
+    if (!der || !CertificateTrust.readable(der)) {
       return out;
     }
     const facts = stsCrypto.certificateFacts(der);
@@ -1970,7 +1995,12 @@ class CertificateTrust {
         'entry of the realm to the checks of paranoid PKI mode, keeps the ' +
         'result /admin/pki/trust draws, and logs and mails what changed.',
       owner: 'common/certificate_trust.ts', kind: 'cluster', scope: 'realm',
-      cron: '0 3 * * *', manual: true, timeoutS: 600,
+      // Daily, in the shape every other daily job has. A new realm's first run
+      // is its next tick, as any job's current slot is.
+      everyMs: function (): number {
+        return DAY_MS;
+      },
+      manual: true, timeoutS: 600,
       run: function (ctx: Json): Promise<Json> {
         return CertificateTrust.auditRealm(ctx.realm);
       }
