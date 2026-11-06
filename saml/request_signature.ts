@@ -592,9 +592,10 @@ class RequestSignature {
       if (verdict.ok) {
         // A SIGNATURE IS WORTH WHAT THE CERTIFICATE IS, under paranoid PKI mode
         // (#1360): the registered certificate is in date, may sign and is not
-        // revoked. A self-signed one stays acceptable, SAML Metadata's rule.
+        // revoked. Registering it on a service provider's entry made it that
+        // provider's trust anchor (rcbj), self-signed or issued by anybody.
         const held = require('../common/certificate_trust').pinnedSync(
-          spec.purpose || 'saml-signer', certPem);
+          spec.purpose || 'saml-signer', certPem, { named: !spec.purpose });
         if (!held.ok) {
           answer.outcome = 'failed';
           answer.errorCode = held.code;

@@ -705,6 +705,7 @@ const SAML_CERTIFICATE_ATTRIBUTES = ['samlSigningCertificate',
  */
 const SAML_METADATA_FIELDS = [
   'samlSpMetadata', 'samlEncryptionCertificate', 'samlSigningCertificate',
+  'samlSpMetadataSigningCertificate',
   'samlAssertionConsumerService', 'samlAcsEndpoint',
   'samlSingleLogoutService', 'samlSloEndpoint', 'samlSpNameIdFormat',
   'samlSpAuthnRequestsSigned', 'samlSpWantAssertionsSigned',

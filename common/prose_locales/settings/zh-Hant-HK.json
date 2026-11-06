@@ -1500,8 +1500,8 @@
     "text": "Metadata Query Protocol 回應程式的基底 URL（draft-young-md-query 及其 SAML 設定檔）。服務提供者的元數據從 <base>/entities/<percent-encoded entityID> 擷取——由 SAML 2.0 頁面上的 Import from MDQ 動作或 POST /admin-api/saml2/mdq-import、由沒有 samlSpMetadataUrl 之項目的重新整理、由背景重新整理程式，以及（永不等待）當要求來自沒有已採用元數據的服務提供者時（該要求「當下」以未知回應；下一個要求會找到註冊）。遵循聯合外送原則：https、federation.outbound、逾時。空白（預設值）：沒有回應程式。在產品模式下，單有回應程式不會註冊任何人：由要求觸發、針對未知 entityID 的查詢只在設定了 saml2.metadataTrustAnchors 時才進行，且只有在回應能對照其中之一通過驗證時才註冊該實體；Import from MDQ 動作也需要信任錨，除非開啟了 saml2.mdqImportWithoutAnchors。已存在的項目在任一模式下都會從回應程式重新整理。"
   },
   "saml2.mdqImportWithoutAnchors|description": {
-    "en": "61eeb6e71a71076d",
-    "text": "僅限產品模式：當領域沒有 saml2.metadataTrustAnchors 時，管理員的 Import from MDQ（SAML 2.0 頁面、POST /admin-api/saml2/mdq-import）是否可以註冊服務提供者。關閉（預設值）：會被拒絕（STS-SAML-0084）。警告：開啟時，回應程式所回應的文件會在「沒有任何簽章檢查」的情況下被採用——其簽署證書會成為驗證該服務提供者要求的依據，其端點會成為斷言的送達位置——因此任何能代替回應程式主機回應的人（其營運者，或位於通往它之路徑上的任何人）都能選擇這些內容。只有管理員對 entityID 與回應程式的選擇能代替簽章。請優先設定信任錨。由「要求」觸發的查詢永遠不受此設定涵蓋：無論此處如何設定，它都需要信任錨。開發模式無論此處如何設定，都會在沒有信任錨的情況下匯入。"
+    "en": "084296c20a8eb042",
+    "text": "僅限產品模式：當領域沒有 saml2.metadataTrustAnchors 時，管理員的 Import from MDQ（SAML 2.0 頁面、POST /admin-api/saml2/mdq-import）是否可以註冊服務提供者。關閉（預設值）：會被拒絕（STS-SAML-0084）。警告：開啟時，回應程式所回應的文件會在「沒有任何簽章檢查」的情況下被採用——其簽署證書會成為驗證該服務提供者要求的依據，其端點會成為斷言的送達位置——因此任何能代替回應程式主機回應的人（其營運者，或位於通往它之路徑上的任何人）都能選擇這些內容。只有管理員對 entityID 與回應程式的選擇能代替簽章。請優先設定信任錨。由「要求」觸發的查詢永遠不受此設定涵蓋：無論此處如何設定，它都需要信任錨。開發模式無論此處如何設定，都會在沒有信任錨的情況下匯入。在偏執 PKI 模式下，由此放行的匯入會將文件的第一個簽署憑證設為該應用程式的信任錨，之後的擷取必須據此驗證。"
   },
   "saml11.defaultProfile|description": {
     "en": "b75b217e5204aad5",

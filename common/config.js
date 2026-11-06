@@ -10742,9 +10742,10 @@ const SETTINGS = [
                  'Prefer setting a trust anchor. A lookup a REQUEST starts ' +
                  'is never covered by this: it needs an anchor whatever this ' +
                  'says. Development imports without an anchor whatever this ' +
-                 'says. Under paranoid PKI mode this does not lift the ' +
-                 'requirement: the import is refused until ' +
-                 'pki.paranoidSamlSigner is off as well.' },
+                 'says. Under paranoid PKI mode an import this lets through ' +
+                 'makes the document\'s first signing certificate the ' +
+                 'application\'s trust anchor, and a later fetch must verify ' +
+                 'against it.' },
 
   // --- SAML 1.1 browser profiles -------------------------------------------
   // A group of its own, for the reason the SAML 2.0 rows above have one and for

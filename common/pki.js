@@ -5719,7 +5719,7 @@ async function registerCertificate(realmId, opts) {
   // One rule at the upload door and the use door, under paranoid PKI mode
   // (#1360): the same fields, before it is written down.
   const paranoid = require('./certificate_trust')
-    .registrationProblem('jose-signer', given[0]);
+    .registrationProblem('jose-signer', leaf.pem);
   if (paranoid) {
     log.debug('Leaving registerCertificate(). Paranoid: ' + paranoid.code);
     return uploadRefusal(paranoid.code, paranoid.why);
