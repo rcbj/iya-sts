@@ -3855,7 +3855,7 @@ Raised from: tls/.
 | `STS-TLS-0055` | GET /tls/sign-in started no session for a verified client certificate from an outside certificate authority that is stored in userCertificate on more than one entry of the realm, so it names nobody (#1061). | HTTP 200, session.started false |
 | `STS-TLS-0056` | A stored client-truststore anchor is one the admission rule now refuses. It is kept, reported as unadmittable on /admin/tls/trust and logged once at restore; an operator removes it (#1360). | none (logged) |
 | `STS-TLS-0057` | A block of tls.trustAnchorsFile is one the admission rule refuses under paranoid PKI mode, and was left out of the truststore (#1360). | none (logged) |
-| `STS-TLS-0058` | A resumed TLS session's client certificate was demoted under paranoid PKI mode: its full handshake was refused, or this process has no record of it. The next full handshake settles it (#1360). | none (logged): the certificate is treated as unverified |
+| `STS-TLS-0058` | A resumed TLS session's client certificate was demoted under paranoid PKI mode: its full handshake was refused, or no record of it reached this process within tls.resumedChainWaitMs. The next full handshake settles it (#1360). | none (logged): the certificate is treated as unverified |
 
 ## STS-VC
 

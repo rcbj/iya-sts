@@ -8946,6 +8946,20 @@ port's is `annotateRequest()`, which was already there; LDAPS pauses the stream
 until `holdConnectionsOn()` has the verdict; the debugger's first middleware waits on
 `settledRequest()`. A worker needs nothing new: the front process demotes
 `socket.authorized`, and that flag is what `request_pool.peerOf()` already forwards.
+**A RESUMED SESSION GETS ITS FULL HANDSHAKE'S VERDICT, ON ANY NODE.** Node hands
+a resumed connection the leaf alone, so the verdict rides beside the chain on the
+replicated `tls.presentedChains` row, written together at the full handshake's
+hold. A row is not there yet on another node, so `resumedProblem()` leaves the
+socket marked and `awaitResumedChain()` settles it before any request is answered,
+bounded by `tls.resumedChainWaitMs`: a refusal or nothing arriving demotes it.
+**The chain's own write once dropped the verdict from the row**, which refused
+every resumption on the main port in product mode while LDAPS and the debugger's
+test stayed green, because only the main port's sign-in wrote the chain later.
+What is not frozen at the full handshake: the leaf's fields, its window included,
+are asked on every connection, and revocation by the request's own verdict (on
+LDAPS and the debugger, by the hold's) as before #1360. The cell channel needs
+none of this: it requires the issuer on the connection and asks the rules itself.
+
 **SPIFFE's gRPC socket is `spiffe-svid`'s (Phase 5)**: it turns `rejectUnauthorized`
 off and `spiffe_auth.ts` verifies what arrived itself, so there is no OpenSSL verdict
 to demote. **RFC 8705 section 3 binds a token to a certificate, not to a CA**, so the
