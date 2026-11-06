@@ -1636,6 +1636,8 @@ parameters. Each realm publishes an RSA and an EC key with `use: enc` for
 encrypting to it, and the symmetric algorithms are keyed from the client
 secret. A request object's `jti` is accepted once.
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the server hosting a `request_uri` is held to the same checks as any other server this service dials. A client hosting one on a self-signed certificate, or on a private CA that names no revocation list, is refused, so its sign-in fails until that certificate is [accepted by name](signer-truststore.md#accepting-one-certificate-by-name). The same applies to a client's `jwks_uri` and `sector_identifier_uri`.
+
 The query's `client_id` must be present and identical to the object's;
 anything else in the query is ignored, and the redirect URI, PKCE and RFC 9700
 checks all run on what was signed.

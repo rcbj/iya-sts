@@ -844,7 +844,10 @@ async function run(t) {
     const existing = newSp('prod-existing');
     served['/mdq/entities/' + existing] = { status: 200,
       body: entity(existing, { acs: 'https://existing.test/acs' }) };
-    await kit.withSettings(config, { 'global.mode': 'product' },
+    // Unanchored, which paranoid PKI mode refuses (the door's own test holds
+    // that): what this asserts is the lookup, so its row is off.
+    await kit.withSettings(config, { 'global.mode': 'product',
+                                     'pki.paranoidSamlSigner': false },
       async function () {
         redirect(probeHandler, '/saml2/sso', authnRequest(existing, '_e0'));
         await settle(existing, 1);
@@ -874,15 +877,27 @@ async function run(t) {
           JSON.stringify(viaAction.errors)) && !applications.get(opName),
                 'and so is the console/API action',
                 JSON.stringify(viaAction.errors));
-        const allowed = await kit.withSettings(config,
+        // PARANOID PKI MODE WINS OVER THIS SETTING, and the refusal says so.
+        const stillRefused = await kit.withSettings(config,
           { 'saml2.mdqImportWithoutAnchors': true },
+          function () {
+            return probe.mdqImport(opName, { origin: 'operator' });
+          });
+        t.check(!stillRefused.ok &&
+                /does not lift this/.test(JSON.stringify(stillRefused.errors)),
+                'with that setting ON, paranoid PKI mode still refuses, and ' +
+                'says that the setting does not lift it',
+                JSON.stringify(stillRefused.errors));
+        const allowed = await kit.withSettings(config,
+          { 'saml2.mdqImportWithoutAnchors': true,
+            'pki.paranoidSamlSigner': false },
           function () {
             return probe.mdqImport(opName, { origin: 'operator' });
           });
         t.check(allowed.ok && allowed.created &&
                 /WITHOUT a signature check/.test(
                   (allowed.warnings || []).join(' ') + allowed.message),
-                'with saml2.mdqImportWithoutAnchors ON it is imported, ' +
+                'with pki.paranoidSamlSigner off as well it is imported, ' +
                 'and the reply WARNS that nothing was verified',
                 JSON.stringify(allowed.errors || allowed.warnings));
         const signedOp = unknown('operator-signed');

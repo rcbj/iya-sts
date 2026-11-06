@@ -339,6 +339,10 @@ function childMain() {
         loadPki: function () {
           return fakePki;
         },
+        // The door answers as this function does out of force, and asks it.
+        signerChain: function (material) {
+          return fakePki.verifySignerChain('', material);
+        },
         clusterClaims: {
           claim: async function () {
             return claimAnswer;

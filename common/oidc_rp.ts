@@ -638,6 +638,10 @@ class OidcRelyingParty {
         return require('../tls/tls_server');
       },
       fapi: fapi,
+      signerChain: function (material: any): Promise<any> {
+        return require('./certificate_trust').signerChain('jose-signer', material);
+      },
+      signerChain: (material: any) => Promise<any>;
       loadPki: function () {
         return require('./pki');
       },
@@ -1957,7 +1961,7 @@ class OidcRelyingParty {
     }
     let verdict: any = null;
     try {
-      verdict = await require('./certificate_trust').signerChain('jose-signer', {
+      verdict = await this.deps.signerChain({
         certificate: held.certificatePem, chain: held.chainPem,
         source: 'the key the ' + surface.label + ' holds'
       });

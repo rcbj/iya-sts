@@ -4940,8 +4940,8 @@ const CODES = [
       '(#1360).',
     spec: 'none: the status is unknown, and the policy decides' },
   { code: 'STS-PKI-0267',
-    summary: 'A certificate offered to be accepted by name is not a ' +
-      'self-signed leaf (#1360).',
+    summary: 'A certificate offered to be accepted by name is a certificate ' +
+      'authority (#1360).',
     spec: 'none — recorded on the refusal the page or the API makes' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',

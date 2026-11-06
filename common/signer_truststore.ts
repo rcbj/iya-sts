@@ -347,18 +347,18 @@ class SignerTruststore {
     }).map(function (row: Json) {
       return pki.pemToDer(row.pem);
     });
-    // ONE CERTIFICATE, ACCEPTED BY NAME (rcbj, #1360): a self-signed leaf a
-    // server presents, such as an appliance's. Only that: a CA is an anchor,
-    // because trusting one trusts everything it signs. In date and of a
-    // strength this deployment takes, like anything else held.
+    // ONE CERTIFICATE, ACCEPTED BY NAME (rcbj, #1360): a leaf a server presents,
+    // self-signed like an appliance's or from a private CA that publishes no
+    // list. Never a CA, because trusting one trusts everything it signs. In
+    // date and of a strength this deployment takes, like anything else held.
     if (kind === 'accepted') {
       const read = crypto.parseCertificate(pem);
       const facts = crypto.certificateFacts(read);
-      if (!facts.selfIssued || facts.ca) {
-        log.debug("Leaving SignerTruststore.admit(). Not a self-signed leaf.");
+      if (facts.ca) {
+        log.debug("Leaving SignerTruststore.admit(). A CA.");
         return { refused: { code: 'STS-PKI-0267', why: '"' + facts.subject +
-          '" is not a self-signed leaf: a certificate authority is added as ' +
-          'an anchor, and one a CA issued is trusted through that CA' } };
+          '" is a certificate authority: it is added as an anchor, since ' +
+          'accepting it by name would trust everything it signs' } };
       }
       const wrong = crypto.certificateFieldProblem(read,
         { role: 'leaf', keyUsage: [] });

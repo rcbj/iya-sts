@@ -37,7 +37,7 @@
   "addHeading": "Ajouter des certificats",
   "addNote": "Collez un ou plusieurs certificats PEM. Une AC auto-signée devient une ancre et toute autre AC un intermédiaire, qui doit remonter à une ancre détenue. Chaque refus est nommé.",
   "addPurposes": "Ne leur faire confiance que pour ces cas d’usage (aucune case cochée signifie tous les cas d’usage) :",
-  "addAccept": "Accepter nommément ce seul certificat de serveur auto-signé, pour le TLS sortant uniquement. Sa validité et ses champs restent contrôlés.",
+  "addAccept": "Accepter nommément ce seul certificat de serveur, pour le TLS sortant uniquement. Sa validité, ses champs et toute liste de révocation qu’il indique restent contrôlés.",
   "addButton": "Leur faire confiance",
   "pins": "Certificats épinglés",
   "pinsNote": "Chaque certificat auquel ce domaine se fie parce que quelqu’un l’a enregistré, soumis aux contrôles quels que soient les réglages ci-dessus. Dernier audit : {when}.",

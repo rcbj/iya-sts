@@ -8952,6 +8952,9 @@ until `holdConnectionsOn()` has the verdict; the debugger's first middleware wai
 OpenBao and postgres pairs are self-signed leaves, and refusing them stopped the
 service starting in product mode, which no memory-mode probe could show. A public
 root or a truststore anchor in `ca` does not count, since nobody named this server.
+A named certificate whose chain names no list passes revocation: a private CA's
+commonly does, and hard-fail otherwise refuses every such partner. A list it names
+is still asked.
 
 **A RESUMED SESSION GETS ITS FULL HANDSHAKE'S VERDICT, ON ANY NODE.** Node hands
 a resumed connection the leaf alone, so the verdict rides beside the chain on the
