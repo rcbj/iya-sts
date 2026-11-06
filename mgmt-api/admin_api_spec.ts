@@ -1300,7 +1300,8 @@ const PROTOCOL_ENDPOINT_ROWS = Kit.listOf(Kit.closed({
   url: Kit.str(),
   route: Kit.str(),
   transport: Kit.str(),
-  registered: Kit.bool()
+  registered: Kit.bool(),
+  listening: Kit.bool()
 }));
 
 const SCHEMAS = {
