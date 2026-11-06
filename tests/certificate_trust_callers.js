@@ -16,7 +16,8 @@
 // Phase 5 emptied it. A new call is not added here: it goes through the door.
 //
 // MUTATION RECORD: a direct `verifyLeaf()` added to `home/home.ts` went red, and
-// a row left behind after its call was removed went red.
+// a row left behind after its call was removed went red; a row's name taken out
+// of `spiffe/spiffe_attestor_x509pop.ts` went red.
 // ===========================================================================
 
 const fs = require('fs');
@@ -133,6 +134,30 @@ module.exports = {
     t.check(stale.length === 0,
             'the list holds nothing the tree no longer does: take these out ' +
             'of ALLOWED or PERMANENT', stale.join('; '));
+    // EVERY ROW'S SITES ASK FOR THAT ROW. A row whose site asks another purpose,
+    // or nothing, is a setting that governs nothing and still reads as a
+    // control. A site may reach it through a helper named for that purpose.
+    const trust = require('../common/certificate_trust');
+    const THROUGH = {
+      'tls-client': /holdConnectionsOn|settledRequest/,
+      'jose-bare-key': /\.bareKey\(/,
+      'anchor-admission': /anchorProblem/
+    };
+    const unwired = [];
+    trust.PURPOSES.forEach(function (purpose) {
+      purpose.sites.forEach(function (site) {
+        const file = site.split(' ')[0];
+        const text = fs.existsSync(path.join(ROOT, file)) ?
+          fs.readFileSync(path.join(ROOT, file), 'utf8') : '';
+        if (text.indexOf("'" + purpose.id + "'") === -1 &&
+            !(THROUGH[purpose.id] && THROUGH[purpose.id].test(text))) {
+          unwired.push(purpose.id + ' at ' + file);
+        }
+      });
+    });
+    t.check(unwired.length === 0,
+            'every site the table names asks for its own row',
+            unwired.join('; '));
     t.check(Object.keys(counted).length >= 1,
             'the scan found the tree it was asked about', '');
   }

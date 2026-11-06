@@ -7,7 +7,7 @@ nav_order: 7
 
 # PKI use cases
 
-Every X.509 certificate this service relies on is validated for one of these use cases. See [Certificate validation](pki.md#certificate-validation-what-is-checked-and-where) for what each check means and [Paranoid PKI mode](pki.md#paranoid-pki-mode) for when they apply. The last column is the phase of the rollout that holds that use case's sites to the row: until then its setting is present and governs nothing.
+Every X.509 certificate this service relies on is validated for one of these use cases. See [Certificate validation](pki.md#certificate-validation-what-is-checked-and-where) for what each check means and [Paranoid PKI mode](pki.md#paranoid-pki-mode) for when they apply. The last column is the phase of the rollout that held that use case's sites to the row; all six are wired.
 
 | Use case | What it covers | Anchors it may reach | What paranoid adds | keyUsage | extendedKeyUsage | Specification exemption | Setting | Phase |
 |---|---|---|---|---|---|---|---|---|

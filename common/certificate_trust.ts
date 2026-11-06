@@ -119,7 +119,7 @@ const PURPOSES: Purpose[] = [
       'a demoted connection stays demoted across TLS resumption; a failure ' +
       'inside the check refuses.',
     sites: ['tls/tls_server.js holdToPathRules', 'ldap/ldap_server.js',
-            'debugger/debugger_server.ts', 'spiffe/spiffe_grpc.ts'],
+            'debugger/debugger_server.ts'],
     anchors: ['client-truststore', 'realm'],
     leaf: leaf(TLS_CLIENT_USAGE, [EKU.clientAuth]),
     selfSigned: 'refuse', validity: 'now', revocation: 'required',
@@ -200,7 +200,8 @@ const PURPOSES: Purpose[] = [
       'certificate is not self-signed; revocation on logout and sign-in alike; ' +
       'field checks when the certificate is registered.',
     sites: ['federation/federation_sp.ts', 'federation/federation_slo.ts',
-            'federation/federation.ts'],
+            'federation/federation.js', 'federation/federation_sp.ts',
+            'federation/federation_slo.ts'],
     anchors: ['registered-root', 'signer-truststore', 'pinned'],
     leaf: leaf(SIGNS),
     selfSigned: 'allow-by-spec', validity: 'now', revocation: 'required',
@@ -214,7 +215,7 @@ const PURPOSES: Purpose[] = [
     adds: 'A stored outside leaf must chain to the signer truststore; the ' +
       'OCSP or CRL issuer comes from that path, never from the leaf\'s own ' +
       'Authority Information Access alone.',
-    sites: ['ws-trust/wstrust.ts', 'common/tls_client_certificates.js'],
+    sites: ['ws-trust/wstrust.ts'],
     anchors: ['realm', 'signer-truststore'],
     leaf: leaf(SIGNS),
     selfSigned: 'refuse', validity: 'now', revocation: 'required',
@@ -225,7 +226,7 @@ const PURPOSES: Purpose[] = [
       'claims-provider keys and GNAP cert keys.',
     adds: 'A JWK that carries an x5c is validated as a JOSE signer; a bare ' +
       'JWK is left alone.',
-    sites: ['oidfed/entity_statement.ts', 'ssf/ssf_transmitters.ts',
+    sites: ['ssf/ssf_transmitters.ts',
             'oauth-oidc/claims_providers.ts', 'gnap/gnap_keys.ts'],
     anchors: ['registered-root', 'signer-truststore'],
     leaf: leaf(SIGNS),
@@ -379,8 +380,8 @@ const PURPOSES: Purpose[] = [
     adds: 'The ISO 18013-5 document-signer EKU and profile; revocation for the ' +
       'status-list signer; validity and a chain for a trusted-issuer ' +
       'certificate that is not self-signed.',
-    sites: ['oid4vc/vc_mdoc.ts chainToAnchors', 'oid4vc/vc_verifier.ts',
-            'oid4vc/vc_status.ts'],
+    sites: ['oid4vc/vc_mdoc.ts chainToAnchors and statusListKey',
+            'oid4vc/vc_verifier.ts trustedIssuerKeys'],
     anchors: ['caller', 'signer-truststore', 'pinned'],
     leaf: leaf(SIGNS),
     selfSigned: 'allow-by-spec', validity: 'now', revocation: 'required',
@@ -455,7 +456,7 @@ const PURPOSES: Purpose[] = [
     covers: 'The signer of an imported FIDO MDS3 BLOB.',
     adds: 'Already full; the door is asked so the checks are the same code. ' +
       'The administrator\'s audited overrideSignature is unchanged.',
-    sites: ['risk/risk_datasets.ts importMds'],
+    sites: ['common/pki.js verifyFidoMdsBlob'],
     anchors: ['caller', 'signer-truststore'],
     leaf: leaf(SIGNS),
     selfSigned: 'refuse', validity: 'now', revocation: 'required',
@@ -2224,9 +2225,8 @@ class CertificateTrust {
       'of these use cases. See [Certificate validation](pki.md#certificate-' +
       'validation-what-is-checked-and-where) for what each check means and ' +
       '[Paranoid PKI mode](pki.md#paranoid-pki-mode) for when they apply. The ' +
-      'last column is the phase of the rollout that holds that use case\'s ' +
-      'sites to the row: until then its setting is present and governs ' +
-      'nothing.\n\n' +
+      'last column is the phase of the rollout that held that use case\'s ' +
+      'sites to the row; all six are wired.\n\n' +
       '| Use case | What it covers | Anchors it may reach | What paranoid ' +
       'adds | keyUsage | extendedKeyUsage | Specification exemption | ' +
       'Setting | Phase |\n|---|---|---|---|---|---|---|---|---|\n' +
