@@ -1582,7 +1582,12 @@ class CertificateTrust {
         'entry of the realm to the checks of paranoid PKI mode, keeps the ' +
         'result /admin/pki/trust draws, and logs and mails what changed.',
       owner: 'common/certificate_trust.ts', kind: 'cluster', scope: 'realm',
-      cron: '0 3 * * *', manual: true, timeoutS: 600,
+      // Daily, in the shape every other daily job has. A new realm's first run
+      // is its next tick, as any job's current slot is.
+      everyMs: function (): number {
+        return DAY_MS;
+      },
+      manual: true, timeoutS: 600,
       run: function (ctx: Json): Promise<Json> {
         return CertificateTrust.auditRealm(ctx.realm);
       }
