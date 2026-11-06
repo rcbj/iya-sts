@@ -71,12 +71,13 @@ class AccountApiPage {
   /**
    * One operation: its row and its details.
    *
+   * @param doc - the OpenAPI document
    * @param method - the HTTP method, lower case
    * @param path - the path
    * @param op - the OpenAPI operation
    * @returns the HTML
    */
-  static operation(method: string, path: string, op: Json): string {
+  static operation(doc: Json, method: string, path: string, op: Json): string {
     const params: Json[] = op.parameters || [];
     const body = op.requestBody && op.requestBody.content &&
       op.requestBody.content['application/json'];
@@ -105,9 +106,52 @@ class AccountApiPage {
               AccountApiPage.schema(body.schema) : '') +
       '<h4>Answers</h4><ul>' +
       Object.keys(op.responses || {}).map(function (status) {
+        const answer = op.responses[status] || {};
+        const json = answer.content && answer.content['application/json'];
         return '<li><code>' + kit.esc(status) + '</code> ' +
-          kit.esc((op.responses[status] || {}).description || '') + '</li>';
+          kit.esc(answer.description || '') +
+          (json && json.schema
+            ? '<details><summary>Its model</summary>' + AccountApiPage.schema(
+                AccountApiPage.expanded(doc, json.schema, [])) + '</details>'
+            : '') + '</li>';
       }).join('') + '</ul></details>';
+  }
+
+  /**
+   * A model with its `$ref`s written out, so that the page shows the members
+   * (#1353). A model holding itself keeps the reference, where it stops.
+   *
+   * @param doc - the OpenAPI document
+   * @param schema - the model
+   * @param trail - the references being written out
+   * @returns the model
+   */
+  static expanded(doc: Json, schema: Json, trail: string[]): Json {
+    if (Array.isArray(schema)) {
+      return schema.map(function (one: Json) {
+        return AccountApiPage.expanded(doc, one, trail);
+      });
+    }
+    if (!schema || typeof schema !== 'object') {
+      return schema;
+    }
+    if (typeof schema.$ref === 'string') {
+      if (trail.indexOf(schema.$ref) >= 0) {
+        return schema;
+      }
+      const target = schema.$ref.split('/').slice(1).reduce(
+        function (at: Json, part: string) {
+          return at && at[part];
+        }, doc);
+      return target ? AccountApiPage.expanded(doc, target,
+                                              trail.concat([schema.$ref]))
+        : schema;
+    }
+    const out: Json = {};
+    Object.keys(schema).forEach(function (key) {
+      out[key] = AccountApiPage.expanded(doc, schema[key], trail);
+    });
+    return out;
   }
 
   /**
@@ -135,7 +179,7 @@ class AccountApiPage {
           order.push(tag);
         }
         (byTag[tag] = byTag[tag] || []).push(
-          AccountApiPage.operation(method, path, op));
+          AccountApiPage.operation(doc, method, path, op));
       });
     });
     // THE DOCUMENT'S LINK IS A PLAIN LINE, not `kit.note()`'s, which folds
