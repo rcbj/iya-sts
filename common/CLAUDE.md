@@ -8952,6 +8952,8 @@ until `holdConnectionsOn()` has the verdict; the debugger's first middleware wai
 OpenBao and postgres pairs are self-signed leaves, and refusing them stopped the
 service starting in product mode, which no memory-mode probe could show. A public
 root or a truststore anchor in `ca` does not count, since nobody named this server.
+**`pinnedSync(..., { named: true })` IS AN ADMINISTRATOR'S ACT (rcbj: "the application signer cert setup, especially from a metadata document should create the trust anchor").** It skips the path and the self-signed refusal and keeps the fields and revocation. A site passes it only for a certificate no request can have put there: `saml/CLAUDE.md` for metadata, and the WS-Security site only for one stored on exactly one entry. `bareKey()` always passes it, because the same key with no `x5c` is accepted, so a path there refuses only the key that says more.
+
 **A CERTIFICATE NAMING NO SOURCE HAS NO CHECK TO PERFORM (rcbj).** Under paranoid
 `policy()` drops the `auto` distribution-point requirement, a link naming nothing
 whose issuer is absent is not refused, and `nothingToAsk()` covers what the walk

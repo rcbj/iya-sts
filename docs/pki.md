@@ -955,6 +955,8 @@ A certificate this service issued is always asked of its own register, whatever 
 names. `pki.revocationRequireDistributionPoint` set to `on` is an operator asking for
 more, and still refuses a certificate naming nothing.
 
+**An administrator's act names a certificate.** Registering a certificate on the entry it is used for makes it that entry's trust anchor, so it needs no chain to anything. That covers an application's signing and encryption certificates, a partner's on a federation relationship, and one stored on exactly one person's entry for WS-Security. A JWK's `x5c` needs no chain either, since the same key with none needs none. In every case the certificate's validity, usage and revocation still count, and a certificate that arrives without an administrator's act is never named this way. [SAML 2.0 Web Browser SSO](saml2-sso.md) says what that means for metadata.
+
 The rows are per realm and change at runtime, through
 [`/admin/pki/trust`](signer-truststore.md) or `POST /admin-api/config/set`. **The
 exception is a client certificate at a TLS handshake**, which has no realm in it: on
