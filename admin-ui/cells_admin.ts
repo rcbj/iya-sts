@@ -445,7 +445,7 @@ class CellsAdmin {
     return answer.ok
       ? { ok: true, message: '"' + username + '" is homed in cell "' +
                              answer.target + '" now.', target: answer.target }
-      : { ok: false, errors: [answer.why], code: answer.code };
+      : errorCodes.mark({ ok: false, errors: [answer.why] }, answer.code);
   }
 
   // -------------------------------------------------------------------------

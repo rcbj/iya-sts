@@ -4288,11 +4288,10 @@ class ApplicationsPage {
       '</p><p>' + t.html('consoleApplications.fga.p2') + '</p>',
       t.text('consoleApplications.fga.label'));
     // WHY IT CANNOT BE DECIDED WITH, in the view's own sentence (English,
-    // as every refusal is), with its code. "No policy" is not a fault —
+    // as every refusal is). "No policy" is not a fault —
     // the Create button below is its answer — so it is not warned about.
     const fault = !fga.usable && fga.failure !== 'no-policy'
-      ? kit.warn('<code>' + kit.esc(fga.code) + '</code> ' +
-                 kit.esc(fga.why) + (fga.enforced
+      ? kit.warn(kit.esc(fga.why) + (fga.enforced
                    ? ' ' + t.html('consoleApplications.fga.faultEnforced')
                    : ''),
                  t.text('consoleApplications.fga.faultLabel'))

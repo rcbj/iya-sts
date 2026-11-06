@@ -1083,12 +1083,8 @@ const CELLS: Json = closed({
   people: CELL_PEOPLE
 });
 
-// `code` is what `cell_rehome.ts` refused with, and it is in the body: the rule
-// is that an error code is never sent, and this is reported on #1353 rather
-// than changed here.
 const REHOME_ACTION: Json = action({
-  target: str(),
-  code: str()
+  target: str()
 });
 
 // ---------------------------------------------------------------------------
@@ -1858,7 +1854,7 @@ const MAIL: Json = closed({
     auth: SCALAR,
     dkim: str()
   })),
-  buildProblem: nullable(closed({ code: str(), why: str(), at: str() })),
+  buildProblem: nullable(closed({ why: str(), at: str() })),
   counts: MAIL_COUNTS,
   categories: listOf(closed({
     id: str(), label: str(), what: str(), optional: bool(), reason: str()

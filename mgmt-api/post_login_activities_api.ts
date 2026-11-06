@@ -209,8 +209,8 @@ class PostLoginActivitiesApi {
           }).then(function (result: Json): void {
             if (!result.ok) {
               // error-code: none — the act's own code, read off the result
-              errorCodes.mark(res, String(result.errorCode ||
-                                          'STS-AUTHN-0491'));
+              errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                   'STS-AUTHN-0491');
             }
             self.sendJson(res, result.ok ? 200 : 400, result);
             log.debug("Leaving the management API post-login activities " +

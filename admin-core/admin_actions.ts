@@ -6641,8 +6641,8 @@ class AdminActions {
       parts.push('Already held: ' + names(peps.held) + '.');
     }
     (peps.failed || []).forEach(function (one: any) {
-      parts.push('Not granted: ' + String(one.name || '?') + ' (' +
-                 String(one.code || '') + ') — ' + String(one.why || ''));
+      parts.push('Not granted: ' + String(one.name || '?') + ' — ' +
+                 String(one.why || ''));
     });
     if (!parts.length) {
       parts.push('No remote PEP holds REMOTE_PEPS in this realm (group "' +
@@ -11204,7 +11204,10 @@ class AdminActions {
         return this.refusedBy(checked.errorCode || 'STS-FED-0209', {
           ok: false, errors: [String(checked.why || 'the check failed')] });
       }
-      return Object.assign({ ok: true, errors: [] }, checked);
+      // `errorCode` is `checkPartner()`'s to this layer and never sent (#1355).
+      const answer = Object.assign({ ok: true, errors: [] }, checked);
+      delete answer.errorCode;
+      return answer;
     }
 
     // THE PARTNER REGISTERED AGAIN (#930): an OpenID Connect relationship

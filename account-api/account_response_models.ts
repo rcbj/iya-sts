@@ -436,11 +436,10 @@ const UMA_PERMISSION: Json = Kit.closed({
 
 const SHARED_PAGING: Json = Kit.closed({ page: INT, pages: INT, total: INT });
 
-// `code` IS HERE BECAUSE `act()` CAN SEND IT, and reported on #1353 as a
-// defect: `view()` answers `{ ok: false, code }` where the owner's document
-// will not parse, and a refusal embeds that view whole.
+// `view()` answers `{ ok: false }` where the owner's document will not parse,
+// and a refusal embeds that view whole; its code is a mark (#1355).
 const SHARED_VIEW: Json = Kit.closed({
-  ok: BOOL, enabled: BOOL, code: STR,
+  ok: BOOL, enabled: BOOL,
   resources: Kit.listOf(Kit.closed({
     id: STR, name: STR, type: STR, resourceServer: STR, scopes: STRS,
     shares: Kit.listOf(UMA_SHARE)

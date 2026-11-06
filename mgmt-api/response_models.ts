@@ -52,10 +52,7 @@ const ERROR: Json = Kit.closed({
   // `why` is the XACML actions' sentence beside `errors`, and `status` what the
   // enrollment families' core says it refused with.
   why: Kit.str(),
-  status: Kit.int(),
-  // A post-login activity's refusal says its code, which the root CLAUDE.md
-  // says no answer does. Declared so that it is not a 500; #1355 removes it.
-  errorCode: Kit.str()
+  status: Kit.int()
 }, { description: 'A refusal or a failure. The sentence is for a person; ' +
                   'no error code is ever in it.' });
 

@@ -3631,7 +3631,8 @@ class AdminApi {
             .then(function (result) {
               if (!result.ok) {
                 // The refusal's own code, from cell_rehome.ts.
-                errorCodes.mark(res, result.code || 'STS-CELL-0192');
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-CELL-0192');
                 self.sendJson(res, 400, result);
                 log.debug("Leaving the management API rehome endpoint. " +
                           "Refused.");
@@ -3761,7 +3762,8 @@ class AdminApi {
                 'the management API at /admin-api/broadcast'
           }).then(function (result) {
             if (!result.ok) {
-              errorCodes.mark(res, result.code || 'STS-SSF-0153');
+              errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                   'STS-SSF-0153');
             }
             self.sendJson(res, result.ok ? 200 : 400, result);
             log.debug("Leaving the management API broadcast action.");

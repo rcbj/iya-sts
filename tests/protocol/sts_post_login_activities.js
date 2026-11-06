@@ -200,11 +200,26 @@ async function test() {
     assert.strictEqual(badActivity.status, 400,
                        badActivity.raw.slice(0, 300));
     assert.strictEqual(badGroup.status, 400, badGroup.raw.slice(0, 300));
-    assert.strictEqual(badGroup.json.errorCode, "STS-AUTHN-0530",
-                       badGroup.raw.slice(0, 300));
+    assert.ok(!("errorCode" in badGroup.json), badGroup.raw.slice(0, 300));
     assert.ok(/pla-nobody-/.test(JSON.stringify(badGroup.json.errors)),
               badGroup.raw.slice(0, 300));
     assert.strictEqual(badAction.status, 400, badAction.raw.slice(0, 300));
+  });
+
+  // WHERE THE CODE IS RECORDED (#1355): the audit row, written as the
+  // response finishes, so the read after it may need a moment.
+  let recorded = 0;
+  for (let i = 0; i < 20 && !recorded; i += 1) {
+    await new Promise(function (done) {
+      setTimeout(done, 150);
+    });
+    const rows = await send("GET",
+                            "/admin-api/audit?per=50&code=STS-AUTHN-0530");
+    recorded = ((rows.json && (rows.json.rows || rows.json.events)) ||
+                []).length;
+  }
+  check("the unknown group's refusal is recorded under its code", function () {
+    assert.ok(recorded > 0, "no audit row carries STS-AUTHN-0530");
   });
 
   log.info("=== d. start, pause, resume, end ===");

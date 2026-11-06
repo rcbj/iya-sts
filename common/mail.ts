@@ -570,7 +570,6 @@ class Mail {
     } catch (e) {
       log.debug("Caught in Mail.transport(): " + ((e && e.message) || e));
       this.buildProblems.set(realmId, { at: Date.now(),
-        code: errorCodes.codeOf(e) || 'STS-MAIL-0004',
         why: String((e && e.message) || e) });
       if (!errorCodes.codeOf(e)) {
         errorCodes.mark(e, 'STS-MAIL-0004');
@@ -2327,7 +2326,7 @@ class Mail {
               ? cfg.dkimAlgorithm + ' d=' + cfg.dkimDomain + ' s=' +
                 cfg.dkimSelector : 'off' }
         : null,
-      buildProblem: problem ? { code: problem.code, why: problem.why,
+      buildProblem: problem ? { why: problem.why,
                                 at: new Date(problem.at).toISOString() }
                             : null,
       counts: this.counts(),

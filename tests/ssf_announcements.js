@@ -97,7 +97,9 @@ function childMain() {
          !none.ok && /at least one application/.test(none.errors[0]) &&
          !unknown.ok && /kiosk/.test(unknown.errors[0]) &&
          [empty, long, none, unknown].every(function (r) {
-           return r.code === 'STS-SSF-0153' && r.sent === 0;
+           return !('code' in r) && r.sent === 0 &&
+                  require(ROOT + '/common/error_codes').codeOf(r) ===
+                    'STS-SSF-0153';
          }),
          'B1. no message, a message too long, no application and an ' +
          'unknown one are refused (STS-SSF-0153) and send nothing',

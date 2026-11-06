@@ -330,7 +330,7 @@ const FEDERATION_RELATIONSHIP_LIST = Kit.closed({
 });
 
 const FED_CHECK_PARTNER = Kit.action({
-  errorCode: STR, why: STR, issuer: STR,
+  why: STR, issuer: STR,
   endpoints: Kit.closed({ authorization_endpoint: STR, token_endpoint: STR,
                           userinfo_endpoint: STR, jwks_uri: STR }),
   discovered: BOOL, keys: INT, readable: INT
@@ -1476,9 +1476,8 @@ Object.assign(operations, {
     everyRealm: BOOL, realmCount: INT, maxChars: NUM, pollMs: NUM, keepS: NUM,
     ready: BOOL, why: STR
   }) },
-  // `code` is an error code in an answer: see the report on #1353.
   sendBroadcast: { '200': Kit.action({
-    code: STR, why: STR, sent: INT, streams: INT,
+    why: STR, sent: INT, streams: INT,
     realms: Kit.listOf(Kit.closed({ realm: STR, sent: INT, streams: INT,
                                     skipped: STRS }))
   }) },
