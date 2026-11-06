@@ -110,6 +110,80 @@ function run(t) {
           tookMs + ' ms — the work the start no longer does); none would ' +
           'be STS-API-0010 at its first request',
           all.failed.join(', ') || 'none failed');
+
+  t.log.info('=== 4. an integer request property is bounded (#1347) ===');
+  // The backstop bounds every request integer to ±Number.MAX_SAFE_INTEGER in
+  // the ajv copy (`structureOnly()`), so a fuzzed or mistaken magnitude — the
+  // 9.22e21 ttl the #1299 gate fed — is refused at the door rather than
+  // reaching a handler that writes it to a bigint column and poisons a flush.
+  // Find any operation with an integer request property that names no tighter
+  // bound of its own and accepts a small value, then show the ceiling holds.
+  const integerField = function (schema) {
+    if (!schema || !schema.properties) {
+      return null;
+    }
+    const names = Object.keys(schema.properties);
+    for (let i = 0; i < names.length; i++) {
+      const prop = schema.properties[names[i]];
+      if (!prop) {
+        continue;
+      }
+      const types = Array.isArray(prop.type) ? prop.type : [prop.type];
+      if (types.indexOf('integer') >= 0 &&
+          typeof prop.maximum !== 'number' &&
+          (typeof prop.minimum !== 'number' || prop.minimum <= 1)) {
+        return names[i];
+      }
+    }
+    return null;
+  };
+  let intTarget = null;
+  for (let i = 0; i < routes.length && !intTarget; i++) {
+    const entry = routes[i];
+    if (entry.method !== 'POST' || !entry.route || entry.handlerOwnsBody) {
+      continue;
+    }
+    if (entry.requestBody &&
+        entry.requestBody.additionalProperties === false) {
+      const field = integerField(entry.requestBody);
+      if (field) {
+        intTarget = { route: entry.route, action: '', field: field };
+        break;
+      }
+    }
+    const actions = entry.actions || [];
+    for (let j = 0; j < actions.length && !intTarget; j++) {
+      const a = actions[j];
+      if (a.requestBody && a.requestBody.additionalProperties === false) {
+        const f = integerField(a.requestBody);
+        if (f) {
+          intTarget = { route: entry.route, action: a.action, field: f };
+        }
+      }
+    }
+  }
+  t.check(!!intTarget,
+          'there is an operation with a bounded integer request property',
+          JSON.stringify(intTarget));
+  if (intTarget) {
+    const askInt = function (value) {
+      const body = {};
+      body[intTarget.field] = value;
+      return adminApi.checkRequestBody({
+        __adminApiRoute: intTarget.route,
+        params: { action: intTarget.action },
+        body: JSON.stringify(body),
+        headers: { 'content-type': 'application/json' } });
+    };
+    t.check(askInt(10).ok === true,
+            'a small integer in ' + intTarget.field + ' is accepted',
+            JSON.stringify(askInt(10)));
+    const over = askInt(Number.MAX_SAFE_INTEGER + 100000);
+    t.check(over.ok === false && (over.errors || []).length > 0,
+            'a value past Number.MAX_SAFE_INTEGER is refused at the door ' +
+            '(the #1347 backstop) — the column it would poison never sees it',
+            JSON.stringify(over));
+  }
   log.debug("Leaving run().");
 }
 

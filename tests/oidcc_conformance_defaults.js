@@ -15,8 +15,8 @@
 //      SIGNING AS A PER-REALM SWITCH*): the row; the four helpers on and off
 //      (no OKP signing key, an OKP `use: "enc"` key kept, only the four
 //      own-signing members narrowed, an accepted list untouched);
-//      `signJwtAs('EdDSA')` refused STS-KEYS-0165 off and signing on, while
-//      `signJwt()`'s configured EdDSA still signs; over HTTP the default
+//      `signJwtAs('EdDSA')` and, since #1368, `signJwt()` refused STS-KEYS-0165
+//      off and signing on; over HTTP the default
 //      realm's JWKS without an OKP signing key and its discovery without
 //      EdDSA in the ID Token list but with it in the client-assertion list,
 //      and a realm that turned it on publishing both; a registration naming
@@ -168,16 +168,22 @@ function childMain() {
     note(asyncRefused && errorCodes.codeOf(asyncRefused) === 'STS-KEYS-0165',
          'E7. and so is signJwtAsAsync(EdDSA)',
          asyncRefused ? asyncRefused.message : 'it signed');
+    // E8, REVERSED ON PURPOSE (#1368): a signature with a key nobody can fetch
+    // helps nobody, so signJwt() answers as signJwtAs() does, and a setting
+    // that still names EdDSA is replaced rather than refused.
     let configured = null;
     try {
       configured = helpers.signJwt({ sub: 'ocd', iat: 1 }, {},
                                    { algorithm: 'EdDSA' });
     } catch (e) {
-      configured = 'threw: ' + e.message;
+      configured = e;
     }
-    note(typeof configured === 'string' && /^eyJ/.test(configured),
-         'E8. an algorithm an operator configures (signJwt) still signs ' +
-         'EdDSA with it off', String(configured).slice(0, 80));
+    note(configured instanceof Error &&
+         errorCodes.codeOf(configured) === 'STS-KEYS-0165',
+         'E8. signJwt(EdDSA) is refused too, with EdDSA signing off',
+         String(configured).slice(0, 80));
+    note(helpers.usableSigningAlg('EdDSA') === 'RS256',
+         'E8b. a setting that names EdDSA signs with RS256 instead');
     config.setOverride('keys.eddsaSigning', true);
     let signed = null;
     try {

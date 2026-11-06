@@ -856,6 +856,29 @@ class AdminApi {
       }
       out[key] = self.structureOnly(node[key]);
     });
+    // #1347 — THE INTEGER BOUNDARY BACKSTOP. Every request integer this API
+    // takes is bounded to ±Number.MAX_SAFE_INTEGER unless its own schema names
+    // a tighter bound, so a fuzzed or mistaken magnitude (a ttl of 9.22e21,
+    // which the Schemathesis gate fed) is refused at the door (400,
+    // STS-API-0009) rather than reaching a handler that writes it to a bigint
+    // column and poisons a flush. No legitimate admin-api integer approaches
+    // that ceiling — the largest is an epoch-millisecond instant, the year
+    // 287396 — and a value beyond it has already lost integer precision. It is
+    // a BACKSTOP, not the fix: `persistence_minted.js`'s expiryOf()/sortAtFor()
+    // cap the one known column and the flush drops any other permanent data
+    // error. It is injected into the ajv copy only, not the published document,
+    // and `type: ['integer','string']` still admits a numeric STRING (the
+    // console form case), which the handler parses — the bound holds the JSON
+    // number, which is what a machine client sends.
+    const types = Array.isArray(out.type) ? out.type : [out.type];
+    if (types.indexOf('integer') >= 0) {
+      if (typeof out.maximum !== 'number') {
+        out.maximum = Number.MAX_SAFE_INTEGER;
+      }
+      if (typeof out.minimum !== 'number') {
+        out.minimum = -Number.MAX_SAFE_INTEGER;
+      }
+    }
     log.debug("Leaving AdminApi.structureOnly().");
     return out;
   }

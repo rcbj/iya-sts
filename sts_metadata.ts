@@ -4842,6 +4842,11 @@ const ENDPOINTS: EndpointEntry[] = [
           'console\'s gate — the same argument every discovery document here ' +
           'rests on.' },
 
+  { path: '/favicon.ico', group: 'Service', name: 'The service\'s icon',
+    specs: [],
+    what: 'NON-SPEC. The icon a browser asks for by itself on every page: ' +
+          'the square mark of the logo (common/favicon.ico). Answered on ' +
+          'every listener; kept for a day.' },
   { path: '/web/card.css', group: 'Service',
     name: 'The public surfaces\' card stylesheet', specs: [],
     what: 'NON-SPEC (#570). The sign-in screen\'s card and the language ' +

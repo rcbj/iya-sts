@@ -7772,9 +7772,9 @@ async function theBrowserConsoleIsClean(driver) {
                       entry.level) === "SEVERE";
       }).map(function (entry) { return String(entry.message); })
       // The browser asks for /favicon.ico on its own, on every origin, and
-      // this service serves none. It is the browser's request rather than the
-      // console's, so it says nothing about what a page loaded — and it would
-      // otherwise be the one permanent entry that made this check useless.
+      // this service serves one but an origin a job visits may not. It is the
+      // browser's request rather than the console's, so it says nothing about
+      // what a page loaded.
       .filter(function (message) {
         return message.indexOf("/favicon.ico") < 0;
       })

@@ -2342,7 +2342,7 @@ class VcVerifier {
     // the Verifier's certificate, and `oid4vp.requestObjectCertificateHeader`
     // would add an `x5u` naming the realm's other certificate for the key.
     const out = signJwt(payload, REQUEST_OBJECT_KIND,
-      { algorithm: signed.algorithm,
+      { algorithm: signed.algorithm, keyNamedElsewhere: true,
         header: Object.assign({ typ: 'oauth-authz-req+jwt' },
                               signed.header) });
     log.debug("Leaving VcVerifier.signX509Request().");
@@ -2382,7 +2382,8 @@ class VcVerifier {
     } : {
       algorithm: algorithm, certificateHeader: 'vp-request-object',
       header: Object.assign({ typ: 'oauth-authz-req+jwt' }, signed.header),
-      kidDid: signed.kidDid || undefined
+      kidDid: signed.kidDid || undefined,
+      keyNamedElsewhere: !!signed.kidDid
     };
     if (!stsCrypto.isPqJwsAlg(algorithm)) {
       // `options` above names the same use case; the x509 prefixes carry

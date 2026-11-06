@@ -62,6 +62,7 @@ import zlib = require('zlib');
 import helpers = require('../common/helpers');
 import stsCrypto = require('../common/crypto');
 import pqJose = require('../common/pq_jose');
+import algorithmRegistry = require('../common/crypto_impl/algorithm_registry');
 import InstanceSlot = require('../common/instance_slot');
 
 // Section 7.1's registered values.
@@ -115,12 +116,8 @@ const CBOR_MAX_DEPTH = 64;
  * COSE algorithm identifiers by JOSE name, the ML-DSA rows from
  * draft-ietf-cose-dilithium.
  */
-const COSE_ALGS: Record<string, number> = {
-  ES256: -7, ES384: -35, ES512: -36, EdDSA: -8, ES256K: -47,
-  PS256: -37, PS384: -38, PS512: -39,
-  RS256: -257, RS384: -258, RS512: -259,
-  'ML-DSA-44': -48, 'ML-DSA-65': -49, 'ML-DSA-87': -50
-};
+const COSE_ALGS: Record<string, number> =
+  algorithmRegistry.coseIdsByName('cose.status');
 const COSE_ALG_NAMES: Record<string, string> = {};
 Object.keys(COSE_ALGS).forEach(function (name) {
   COSE_ALG_NAMES[String(COSE_ALGS[name])] = name;

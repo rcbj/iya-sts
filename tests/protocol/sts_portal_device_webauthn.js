@@ -892,8 +892,8 @@ async function theBrowserLogIsClean(driver) {
   }).map(function (entry) {
     return entry.message;
   }).filter(function (message) {
-    // The browser asks for /favicon.ico on its own and this service serves
-    // none; it is the browser's request rather than the page's.
+    // The browser asks for /favicon.ico on its own and another origin may not
+    // serve one; it is the browser's request rather than the page's.
     return message.indexOf("/favicon.ico") < 0;
   }).filter(function (message) {
     // THE REFUSALS THIS FILE PROVOKES: the forced roaming link is answered
