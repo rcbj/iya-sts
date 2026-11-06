@@ -474,7 +474,8 @@ function signedBy(cert, issuer) {
   }
   try {
     log.debug("Leaving signedBy().");
-    return cert.checkIssued(issuer) && cert.verify(issuer.publicKey);
+    return cert.checkIssued(issuer) &&
+      stsCrypto.certificateSignedWith(cert, issuer.publicKey);
   } catch (e) {
     log.debug("Caught in signedBy(): " + ((e && e.message) || e));
     log.debug("Leaving signedBy().");
@@ -501,7 +502,7 @@ function selfSigned(cert) {
     return false;
   }
   try {
-    const ok = cert.verify(cert.publicKey);
+    const ok = stsCrypto.certificateSignedWith(cert, cert.publicKey);
     log.debug("Leaving selfSigned().");
     return ok;
   } catch (e) {
@@ -2449,7 +2450,7 @@ async function crlSignerOf(crl, signers) {
     }
     let verified = false;
     try {
-      verified = await pkijs.getCrypto(true).verifyWithPublicKey(
+      verified = await stsCrypto.verifyX509Signature(
         crl.tbsView, crl.signatureValue, candidate.subjectPublicKeyInfo,
         crl.signatureAlgorithm);
     } catch (e) {
@@ -2868,7 +2869,7 @@ async function ocspSignatureVerifies(basic, parsedCert) {
   log.debug("Entering ocspSignatureVerifies().");
   try {
     log.debug("Leaving ocspSignatureVerifies().");
-    return await pkijs.getCrypto(true).verifyWithPublicKey(
+    return await stsCrypto.verifyX509Signature(
       basic.tbsResponseData.tbsView, basic.signature,
       parsedCert.subjectPublicKeyInfo, basic.signatureAlgorithm);
   } catch (e) {

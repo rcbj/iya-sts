@@ -14100,7 +14100,80 @@ async function verifyEmbeddedScts(leafDer, issuerDer, logs) {
  * paths, and holds the object store `/admin/pki` issues into.
  * @namespace
  */
+// ---------------------------------------------------------------------------
+// THE X.509 ENGINE'S DOORS, for what lives outside this file (#1368).
+// tests/crypto_centralised.js holds everything else to them.
+// ---------------------------------------------------------------------------
+/**
+ * Checks each link of a chain, leaf first.
+ *
+ * @param pems - the certificates, leaf first
+ * @returns a promise of the links, each with `signatureValid`
+ */
+function verifyChain(pems) {
+  log.debug("Entering verifyChain().");
+  log.debug("Leaving verifyChain().");
+  return x509.verifyChain(pems);
+}
+
+/**
+ * Issues a certificate for a hierarchy this file does not hold, such as the
+ * SPIFFE fallback authority: self-signed where `spec` names `issuerPrivateKey`,
+ * else under `spec.issuer`.
+ *
+ * @param spec - what `x509.issueCertificate()` takes
+ * @returns a promise of the issued certificate
+ */
+function issueOutsideHierarchy(spec) {
+  log.debug("Entering issueOutsideHierarchy().");
+  log.debug("Leaving issueOutsideHierarchy().");
+  return x509.issueCertificate(spec);
+}
+
+/**
+ * A CSR's proof of possession: whether it verifies under the key it asks to
+ * certify. The one rule for every key family, held to
+ * `pki.acceptedSignatureAlgorithms` before any key is used.
+ *
+ * @param csr - the parsed pkijs request
+ * @param spkiPem - the public key it asks to certify
+ * @param desc - that key's description
+ * @returns a promise of whether it is proven
+ */
+async function csrProofOfPossession(csr, spkiPem, desc) {
+  log.debug("Entering csrProofOfPossession(). kind=" + desc.kind);
+  const oid = csr.signatureAlgorithm.algorithmId;
+  const unaccepted = stsCrypto.signaturePolicy.acceptX509Cause(oid);
+  if (unaccepted) {
+    log.warn(errorCodes.tag(unaccepted.code) + unaccepted.message);
+    log.debug("Leaving csrProofOfPossession(). Not accepted here.");
+    return false;
+  }
+  const tbs = csr.tbsView ? Buffer.from(csr.tbsView)
+    : Buffer.from(csr.encodeTBS().toBER(false));
+  const signature = Buffer.from(csr.signatureValue.valueBlock.valueHexView);
+  const sig = x509.sigAlgForOid(oid);
+  if (sig && sig.kind === 'pqc') {
+    const ok = await x509.verifyBytes(sig, spkiPem, signature, tbs);
+    log.debug("Leaving csrProofOfPossession(). pqc=" + ok);
+    return !!ok;
+  }
+  if (desc.kind === 'okp') {
+    const ok = stsCrypto.signatureValid(null, tbs,
+                                        stsCrypto.publicKeyOf(spkiPem),
+                                        signature);
+    log.debug("Leaving csrProofOfPossession(). Ed25519=" + ok);
+    return !!ok;
+  }
+  const ok = await csr.verify();
+  log.debug("Leaving csrProofOfPossession(). pkijs=" + ok);
+  return !!ok;
+}
+
 module.exports = {
+  verifyChain: verifyChain,
+  issueOutsideHierarchy: issueOutsideHierarchy,
+  csrProofOfPossession: csrProofOfPossession,
   authorityCode: authorityCode,
   // --- the console prose (#543) ---
   PROSE_ROUTES: PROSE_ROUTES,

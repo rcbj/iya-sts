@@ -141,9 +141,11 @@ import capabilities = require('../cluster/cluster_capabilities');
 // would be bound to a credential it could never present.
 const LDP_HOLDER_ALGS = ['ES256', 'ES384', 'EdDSA', 'ML-DSA-44'];
 
-// THE ALGORITHMS A KEY ATTESTATION MAY BE SIGNED WITH: its signer is named by
-// a certificate, whose key this service reads into a node KeyObject — every
-// asymmetric algorithm but the post-quantum ones, which it cannot.
+// THE ALGORITHMS A KEY ATTESTATION MAY BE SIGNED WITH: every asymmetric classical
+// one, and a post-quantum one only where a configured attester's certificate
+// holds such a key (`attestationAlgs()`, #1368), so a realm with none advertises
+// exactly what it always did. A post-quantum signer's key comes out of its
+// certificate as an AKP JWK, since node reads no composite key into a KeyObject.
 const ATTESTATION_ALGS = stsCrypto.JWS_ASYMMETRIC_ALGS.filter(function (alg) {
   return stsCrypto.JWS_ALGS[alg].family !== 'pq';
 });
@@ -1185,13 +1187,59 @@ class VcIssuer {
     log.debug("Entering VcIssuer.proofTypesSupported().");
     const jwt: any = { proof_signing_alg_values_supported: algs };
     const attestation: any = { proof_signing_alg_values_supported:
-                                 ATTESTATION_ALGS };
+                                 this.attestationAlgs() };
     if (config.value('oid4vci.keyAttestationRequired') === true) {
       jwt.key_attestations_required = {};
       attestation.key_attestations_required = {};
     }
     log.debug("Leaving VcIssuer.proofTypesSupported().");
     return { jwt: jwt, attestation: attestation };
+  }
+
+  // A certificate's key as a KeyObject, or null for one node cannot read, which
+  // is then tried only as a post-quantum key.
+  private static classicalKeyOf(cert: any): any {
+    helpers.log.debug("Entering VcIssuer.classicalKeyOf().");
+    try {
+      helpers.log.debug("Leaving VcIssuer.classicalKeyOf().");
+      return cert.publicKey;
+    } catch (e) {
+      helpers.log.debug("Caught in VcIssuer.classicalKeyOf(): " +
+                        ((e && (e as Error).message) || e));
+      helpers.log.debug("Leaving VcIssuer.classicalKeyOf(). Unreadable.");
+      return null;
+    }
+  }
+
+  // A certificate's post-quantum key as `{ alg, publicJwk }`, or null for a
+  // classical one.
+  private static postQuantumKeyOf(cert: any): any {
+    helpers.log.debug("Entering VcIssuer.postQuantumKeyOf().");
+    try {
+      helpers.log.debug("Leaving VcIssuer.postQuantumKeyOf().");
+      return pki.pqJwkFromCertificate(cert.toString());
+    } catch (e) {
+      helpers.log.debug("Caught in VcIssuer.postQuantumKeyOf(): " +
+                        ((e && (e as Error).message) || e));
+      helpers.log.debug("Leaving VcIssuer.postQuantumKeyOf(). None.");
+      return null;
+    }
+  }
+
+  // What a key attestation may be signed with in this realm, in the order
+  // metadata lists it: the classical ones, then its attesters' post-quantum ones.
+  private attestationAlgs(): string[] {
+    const { log } = this.deps;
+    log.debug("Entering VcIssuer.attestationAlgs().");
+    const out = ATTESTATION_ALGS.slice();
+    this.attesterKeys().forEach(function (t) {
+      const pq = VcIssuer.postQuantumKeyOf(t.cert);
+      if (pq && pq.alg && out.indexOf(pq.alg) < 0) {
+        out.push(pq.alg);
+      }
+    });
+    log.debug("Leaving VcIssuer.attestationAlgs(). " + out.length);
+    return out;
   }
 
   private attesterKeys(): any[] {
@@ -1251,14 +1299,23 @@ class VcIssuer {
       throw new Error('a key attestation\'s typ must be ' +
                       'key-attestation+jwt, not "' + header.typ + '".');
     }
-    if (ATTESTATION_ALGS.indexOf(header.alg) < 0) {
+    const attestationAlgs = this.attestationAlgs();
+    if (attestationAlgs.indexOf(header.alg) < 0) {
       throw new Error('the key attestation is signed with "' + header.alg +
                       '", and this issuer accepts ' +
-                      ATTESTATION_ALGS.join(', ') + '.');
+                      attestationAlgs.join(', ') + '.');
     }
     const trusted = this.attesterKeys();
     const candidates: any[] = trusted.map(function (t) {
-      return { label: t.label, key: t.cert.publicKey };
+      return { label: t.label, key: VcIssuer.classicalKeyOf(t.cert) };
+    });
+    // A POST-QUANTUM ATTESTER'S KEY, as a step of its own (#1368): an AKP JWK
+    // out of its certificate, as node reads no composite key into a KeyObject.
+    trusted.forEach(function (t) {
+      const pq = VcIssuer.postQuantumKeyOf(t.cert);
+      if (pq) {
+        candidates.push({ label: t.label, key: pq.publicJwk });
+      }
     });
     let last = 'no certificate in oid4vci.keyAttestationTrustedCertificates ' +
                'verifies it';
