@@ -308,8 +308,15 @@ class VcMdoc {
       return 'it is signed with COSE algorithm ' + parts.alg + ', and this ' +
              'Verifier accepts ' + this.coseAlgs().join(', ');
     }
-    const ok = stsCrypto.coseSign1Verify(Number(parts.alg), key,
-      parts.protectedBytes, payload, parts.signature);
+    let ok = false;
+    try {
+      ok = stsCrypto.coseSign1Verify(Number(parts.alg), key,
+        parts.protectedBytes, payload, parts.signature);
+    } catch (e: any) {
+      log.debug("Caught in VcMdoc.coseVerifies(): " + ((e && e.message) || e));
+      log.debug("Leaving VcMdoc.coseVerifies(). Refused by the policy.");
+      return e.message;
+    }
     log.debug("Leaving VcMdoc.coseVerifies(). " + ok);
     return ok ? '' : 'the COSE algorithm ' + parts.alg + ' signature does ' +
                      'not verify';

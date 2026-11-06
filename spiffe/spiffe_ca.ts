@@ -878,7 +878,7 @@ class SpiffeCa {
     const notBefore = new Date();
     const notAfter = new Date(notBefore.getTime() +
                               (ttlSeconds || 86400) * 1000);
-    const issued = await x509.issueCertificate({
+    const issued = await pki.issueOutsideHierarchy({
       // The CA's own name. A SPIFFE trust domain has no naming rules for it —
       // only the SVIDs it signs are constrained — so this says what it is and
       // which trust domain it belongs to, which is what a person reading
@@ -1240,7 +1240,7 @@ class SpiffeCa {
                chainDer: made.issuerChainDer.slice() };
     }
     const type = this.keyTypeById(authority.keyType) || KEY_TYPES[0];
-    const issued = await x509.issueCertificate({
+    const issued = await pki.issueOutsideHierarchy({
       subject: spec.subject,
       subjectPublicKey: spec.publicKeyPem,
       signatureAlg: type.sigAlg,
