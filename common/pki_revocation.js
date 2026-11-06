@@ -2057,8 +2057,8 @@ async function answerOcsp(scopeId, caId, requestDer) {
 // scope's Intermediate. Without those two branches a perfectly valid Issuing CA
 // reports `unknown` at its own parent's responder — which is the most confusing
 // answer available, because the certificate verifies and the responder disowns
-// it. The fourth is the object store, where the Certificate & Key Configuration
-// pane's leaves live rather than in the certificate register, and the fifth
+// it. The fourth is the object store, where the Certificate Workbench's
+// leaves live rather than in the certificate register, and the fifth
 // (2026-09-12) is the issued-serial record — see item 5 below.
 // ---------------------------------------------------------------------------
 /**
@@ -2124,7 +2124,7 @@ function issuedList(scopeId, caId) {
     });
   }
 
-  // 4. And whatever the Certificate & Key Configuration pane issued. Those are
+  // 4. And whatever the Certificate Workbench issued. Those are
   //    in the OBJECT STORE rather than the certificate register, and an
   //    operator who minted one from this authority expects to be able to
   //    revoke it here.

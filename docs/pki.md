@@ -1306,12 +1306,12 @@ encoder cannot produce would be a third entry that is a 500.
 | | |
 |---|---|
 | Key algorithms, for the **hierarchy** | `rsa-2048`, `rsa-3072`, `rsa-4096`, `ec-p256`, `ec-p384`, `ec-p521`, `ed25519` |
-| Key algorithms, on the **pane below** | those seven plus thirty-four post-quantum ones — ML-DSA, SLH-DSA, composite ML-DSA and ML-KEM — narrowed by the cryptographic approach |
+| Key algorithms, on the **[Certificate Workbench](#the-certificate-workbench)** | those seven plus thirty-four post-quantum ones — ML-DSA, SLH-DSA, composite ML-DSA and ML-KEM — narrowed by the cryptographic approach |
 | Signature algorithms | RSASSA-PKCS1-v1_5 and RSASSA-PSS with SHA-256/384/512, ECDSA with SHA-256/384/512, Ed25519 — **and the two SHA-1 ones, marked weak**, because *does my stack refuse a SHA-1 certificate?* is a question a debugger should be able to ask. Nothing defaults to them. Plus the post-quantum ones, where the key is one. |
 
 **The hierarchy is deliberately the shorter list.** What the Issuing CA signs is
 a client assertion somebody else's OAuth library has to verify, and an ML-DSA
-signature is one almost nothing can read yet. The pane below is where a
+signature is one almost nothing can read yet. The Certificate Workbench is where a
 certificate nothing can read is the point.
 
 **Leave the signature algorithm empty unless you mean it.** Empty means "the
@@ -1385,7 +1385,7 @@ can be opened — a certificate from another realm opens under that realm's
 prefix. The same answer is `GET /admin-api/certificates?certificate=<SHA-256>`,
 and `GET /admin-api/certificates` lists every certificate with its fingerprint.
 
-## The Certificate & Key Configuration pane
+## The Certificate Workbench
 
 **Everything above is the hierarchy this service maintains for itself. This is
 the other half of the page: the debugger's *PKI / X.509* workflow, on the
@@ -1504,7 +1504,7 @@ and `subjectAltName` go in, and nothing else.
 
 ### Keys & Certificates
 
-Everything the pane issues is kept **in the same place as the hierarchy** — this
+Everything the workbench issues is kept **in the same place as the hierarchy** — this
 realm's keystore row, sealed under the same key-encryption key — so there is one
 answer to *where does this service keep a private key*. It inherits the mode:
 product keeps it, development loses it with the process.
@@ -1518,7 +1518,7 @@ copy there is.
 Select a row to export it or to load its key pair back into the form.
 *Use this key pair* ticks **reuse the key pair below** itself, because a pair
 loaded into the boxes and then silently replaced by a fresh one at the next
-issue is the most confusing thing this pane could do.
+issue is the most confusing thing this workbench could do.
 
 **Building the hierarchy does not empty this store, and clearing this store does
 not remove the hierarchy.** They are two things in one row, and one button
@@ -1570,7 +1570,7 @@ curl -sk -X POST https://localhost:8081/admin-api/pki/clear -H "$H" \
   -H 'Content-Type: application/json' -d '{}'
 ```
 
-**The pane has eight of its own, and every one of them takes and returns the
+**The workbench has eight of its own, and every one of them takes and returns the
 whole form.** That is not an API shaped by a page: `apply-profile` rewrites
 twenty-two of its hundred and fifteen fields, and a caller reconstructing that
 itself would be a second implementation of what a profile *means*. So the reply
@@ -1635,7 +1635,7 @@ rebuild the hierarchy.
 | `pki.rootLifetimeYears` | `STS_PKI_ROOT_LIFETIME_YEARS` | `0` | yes | A new Root CA's lifetime when the build names none; `0` is the profile's twenty years. |
 | `pki.intermediateLifetimeYears` | `STS_PKI_INTERMEDIATE_LIFETIME_YEARS` | `0` | yes | A new Intermediate CA's lifetime; `0` is the profile's ten years, clamped to the Root's expiry. |
 | `pki.issuingLifetimeYears` | `STS_PKI_ISSUING_LIFETIME_YEARS` | `0` | yes | Each new Issuing CA's lifetime; `0` is the profile's five years, clamped to its Intermediate's expiry. |
-| `pki.maxStoredObjects` | `STS_PKI_MAX_STORED_OBJECTS` | `200` | yes | How many objects the Certificate & Key Configuration pane may keep in one realm; a full store refuses the next one rather than discarding the oldest. |
+| `pki.maxStoredObjects` | `STS_PKI_MAX_STORED_OBJECTS` | `200` | yes | How many objects the Certificate Workbench may keep in one realm; a full store refuses the next one rather than discarding the oldest. |
 | `pki.pinnedSigners` | `STS_PKI_PINNED_SIGNERS` | `false` | yes | **Off by default.** On, a key pinned into a `jose` or `xml` slot is the key this realm signs with for that algorithm. **Warning:** you take over its lifecycle — it is never rotated and ends with its certificate. It cannot be turned off while a pinned key is live or pending (`STS-PKI-0215`): unpin first. See [above](#a-pinned-key-pair-as-the-realms-signer-off-by-default). |
 | `pki.pinnedSignerLeadMinutes` | `STS_PKI_PINNED_SIGNER_LEAD_MINUTES` | `1440` | yes | How long a pinned signing key is published before it signs. `0` signs at once, which a relying party holding a cached JWKS refuses until it fetches again. |
 | `pki.pinnedSignerExpiryWarningDays` | `STS_PKI_PINNED_SIGNER_EXPIRY_WARNING_DAYS` | `30` | yes | How far ahead of a pinned key's certificate expiry `/admin/pki` and the log (`STS-PKI-0212`, `STS-PKI-0213` once expired) warn. |

@@ -611,7 +611,7 @@ in every file, including the ones in the source comments. This is the index.
 | 3bs | The per-scope `issue-scope` verdict (#304) | `xacml/CLAUDE.md`, `common/CLAUDE.md` |
 | 3bq | `role_permissions.ts` (#302, #303): a scope requested, a role authorizing it | `common/CLAUDE.md`, `mgmt-api/CLAUDE.md`, `xacml/CLAUDE.md` |
 | 3w | `pki.js`: the CA hierarchy and path checks | `common/CLAUDE.md` |
-| 3aa | `pki_authoring.js`: the Certificate & Key Configuration pane as a model | `common/CLAUDE.md` |
+| 3aa | `pki_authoring.js`: the Certificate Workbench as a model | `common/CLAUDE.md` |
 | 3x | `assertion_grant.js`: RFC 7521 and RFC 7523 | `oauth-oidc/CLAUDE.md` |
 | 3ab | `person_assertions.js`: a person as an RFC 7523 issuer | `common/CLAUDE.md` |
 | 3ac | `password_policy.js`: the password policy and its generator | `common/CLAUDE.md` |
@@ -958,6 +958,13 @@ the ONE table in `common/error_codes.js`; `docs/error-codes.md` is generated fro
 it. **The code is an operator's name and is RECORDED, NEVER SENT** — it goes on
 the audit row and at the front of a log line, never in a response, and it
 changes no specification's error.
+
+**The one exception is rcbj's decision of 2026-11-06 (#1355): a code may be shown
+on an administrator's console page that draws it for someone diagnosing a recorded
+failure — the audit log, and the rows `tests/openapi_response_models.js`'s
+`DRAWN_CODE_OPERATIONS` and `DRAWN_PLAIN_CODES` name, each with its page — and
+nowhere else**: not `/account-api`, `/authn-api` or `/report-api`, not an act's
+answer, and not an `/admin-api` member no page draws.
 
 **A new failure is not finished until it has a code**, and that is enforced:
 a row in the table, a `mark()` / `errorCode:` / `tag()` where the failure is

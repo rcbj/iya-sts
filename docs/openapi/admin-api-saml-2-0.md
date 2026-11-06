@@ -148,7 +148,6 @@ Scope: `admin:read`.
 | `mdqRefused` | list |  |  |
 | `mdqRefused[].count` | number |  |  |
 | `mdqRefused[].entityId` | string |  |  |
-| `mdqRefused[].errorCode` | string, or null |  |  |
 | `mdqRefused[].firstAt` | string, or null |  |  |
 | `mdqRefused[].lastAt` | string, or null |  |  |
 | `mdqRefused[].why` | string |  |  |

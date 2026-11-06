@@ -733,10 +733,19 @@ function pageSize(limit) {
  */
 function byKeys(realm, keys) {
   log.debug("Entering byKeys().");
+  // A dn_key containing a NUL byte can match no stored key — PostgreSQL text
+  // holds no NUL — and sending one makes the driver throw, which reached the
+  // request as an uncaught 500 under fuzzing (#1356: twelve of the fuzz gate's
+  // uncaught 5xx were one NUL-in-a-key here). Drop it: the right answer for a
+  // key that cannot exist is no row, and `= ANY('{}')` on whatever remains is
+  // empty. This is not a refusal and carries no error code.
+  const safe = (keys || []).map(String).filter(function (key) {
+    return key.indexOf('\u0000') < 0;
+  });
   log.debug("Leaving byKeys().");
   return { text: 'SELECT ' + COLUMNS + ' FROM sts_ldap_entries WHERE ' +
                  'realm = $1 AND dn_key = ANY($2::text[]) ORDER BY dn_key',
-           values: [String(realm), (keys || []).map(String)] };
+           values: [String(realm), safe] };
 }
 
 /**

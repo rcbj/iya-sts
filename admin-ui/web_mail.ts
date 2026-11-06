@@ -83,9 +83,8 @@ class MailPage {
         esc(relay.auth) + ', DKIM ' + esc(relay.dkim) + '</td></tr>' : '') +
       '<tr><th>' + t.html('consoleMail.status.built') + '</th><td>' +
       (problem
-        ? t.html('consoleMail.status.builtNo') + ' — ' + esc(problem.code) +
-          ': ' + esc(problem.why) + ' <small>(' + esc(problem.at) +
-          ')</small>'
+        ? t.html('consoleMail.status.builtNo') + ' — ' + esc(problem.why) +
+          ' <small>(' + esc(problem.at) + ')</small>'
         : t.html('consoleMail.status.builtOk')) + '</td></tr>' +
       '<tr><th>' + t.html('consoleMail.status.from') + '</th><td><code>' +
       esc(json.from) + '</code></td></tr>' +

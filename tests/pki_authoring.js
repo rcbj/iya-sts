@@ -565,7 +565,7 @@ async function run(t) {
 
 module.exports = {
   name: 'pki_authoring',
-  describe: 'The Certificate & Key Configuration pane: the form against the ' +
+  describe: 'The Certificate Workbench: the form against the ' +
             'page that draws it, the six line grammars and what each ' +
             'refuses, the three subject rules a profile change must and must ' +
             'not break, the approach filters, every extension reaching the ' +

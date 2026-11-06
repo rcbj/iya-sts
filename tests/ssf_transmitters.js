@@ -765,6 +765,33 @@ function childMain() {
 
     // --- J. forgetting ------------------------------------------------------
     fedBlocks.block('partner', 'ft-alice', { event: 'test' });
+
+    // EVERY REACTION THIS FILE'S REAL RECEIVER WROTE, AGAINST THE PAGE'S MODEL
+    // (#1353): a stream-updated's `status` was recorded and undeclared, so the
+    // operator's Signals page answered 500 once a partner sent one.
+    {
+      const Ajv = require('ajv');
+      const validateRow = new Ajv({ strict: false, allErrors: true }).compile(
+        require(ROOT + '/mgmt-api/response_models_trust').operations
+          .getPartnerSignals['200'].properties.received.items);
+      const seen = rx.arrivals();
+      const refused = seen.filter(function (row) {
+        return !validateRow(row);
+      });
+      const members = {};
+      seen.forEach(function (row) {
+        (row.reactions || []).forEach(function (one) {
+          Object.keys(one).forEach(function (name) {
+            members[name] = true;
+          });
+        });
+      });
+      note(seen.length > 0 && refused.length === 0 && members.status,
+           'M1. every arrival the real receiver recorded, of every reaction ' +
+           'above, meets the model the Signals page is held to',
+           JSON.stringify(refused.slice(0, 2)) + ' members ' +
+           Object.keys(members).join(','));
+    }
     const forgot = await rx.forget(rel(), { actor: 'tester' });
     note(forgot.blocks === 1 && !fedBlocks.blockOf('partner', 'ft-alice') &&
          rx.stateOf('partner').state === 'new',

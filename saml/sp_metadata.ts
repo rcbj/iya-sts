@@ -1880,8 +1880,10 @@ class SpMetadata {
     const out = [];
     mdqRefusals.forEach(function (row) {
       if (row && row.realm === realmId) {
-        out.push({ entityId: row.entityId, errorCode: row.errorCode,
-                   why: row.why, firstAt: row.firstAt, lastAt: row.lastAt,
+        // No `errorCode`: the console draws `why`, and the code is on the
+        // audit row `recordMdqRefusal()` wrote and its log line (#1355).
+        out.push({ entityId: row.entityId, why: row.why,
+                   firstAt: row.firstAt, lastAt: row.lastAt,
                    count: row.count });
       }
     });

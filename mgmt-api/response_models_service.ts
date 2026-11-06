@@ -630,7 +630,6 @@ const LISTENER_BOUND: Json = closed({
   hostnames: STRINGS,
   state: str(),
   why: OPT_STR,
-  code: OPT_STR,
   boundAt: nullable(oneOf(str(), num())),
   certificate: nullable(LISTENER_CERTIFICATE)
 });
@@ -779,7 +778,6 @@ const LISTENERS: Json = closed({
     tls: mapOf(SETTING_VALUE, 'A listener\'s own TLS values, per setting.'),
     state: str(),
     why: OPT_STR,
-    code: OPT_STR,
     certificate: nullable(LISTENER_CERTIFICATE),
     policy: TLS_POLICY,
     http: HTTP_POLICY
@@ -800,7 +798,10 @@ const LISTENERS: Json = closed({
     cookieDomain: str()
   }),
   rescue: bool(),
-  problem: OPT_STR,
+  // `listener_map.js`'s `problem()`, drawn with its code for the operator who
+  // set what is wrong (#1355's exception). It was modelled as a string, so a
+  // listener setting with a problem answered 500 on the page that reports it.
+  problem: nullable(closed({ code: str(), message: str() })),
   warnings: STRINGS,
   process: TLS_POLICY,
   live: listOf(closed({ label: str(), kind: str(), realm: OPT_STR })),
@@ -1195,7 +1196,12 @@ const STS_METADATA: Json = closed({
     id: str(),
     label: OPT_STR,
     description: OPT_STR,
-    overrides: mapOf(SETTING_VALUE, 'The settings this server overrides.'),
+    // Its metadata members, not settings: RFC 8414 members can be objects
+    // (`mtls_endpoint_aliases`), and `setMember()` takes any JSON on purpose.
+    overrides: mapOf(Kit.freeForm(
+      'An RFC 8414 metadata member\'s value as the operator chose to publish ' +
+      'it: any JSON, deliberately, including what no specification defines.'),
+    'The metadata members this server overrides.'),
     removed: STRINGS,
     changedAt: str(),
     memberCount: int(),
@@ -1341,7 +1347,6 @@ const DATASET_VERSION: Json = closed({
   rowsDeletedAt: num(),
   state: str(),
   refusal: OPT_STR,
-  errorCode: OPT_STR,
   origin: OPT_STR,
   reloadable: bool()
 });
@@ -1524,7 +1529,6 @@ const RISK_ASSESSMENT: Json = closed({
   level: str(),
   decision: OPT_STR,
   policyId: OPT_STR,
-  errorCode: OPT_STR,
   feedback: OPT_STR,
   feedbackAt: num()
 });
@@ -1860,7 +1864,7 @@ const MAIL_OUTBOX: Json = closed({
 const MAIL_ACTION: Json = action({
   message_id: str(),
   verified: bool(),
-  row: MAIL_ROW
+  row: Kit.withoutCodes(MAIL_ROW)
 });
 // ---------------------------------------------------------------------------
 // A REFUSAL OF A READ. A GET's row declares only its 200, so what its door says
@@ -2293,7 +2297,7 @@ const SCHEDULER_ACTION: Json = action({
   accepted: bool(),
   runId: str(),
   alreadyQueued: bool(),
-  run: SCHEDULER_RUN,
+  run: Kit.withoutCodes(SCHEDULER_RUN),
   href: str(),
   command: str(),
   leaderAtRequest: nullable(LEADER_AT_REQUEST)
@@ -3740,7 +3744,9 @@ const DELIVERIES: Json = closed({
   states: STRINGS
 });
 
-const DELIVERY_ACTION: Json = action({ row: DELIVERY_ROW });
+const DELIVERY_ACTION: Json = action({
+  row: Kit.withoutCodes(DELIVERY_ROW)
+});
 export = {
   components: {
     ApiIndex: API_INDEX,

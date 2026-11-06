@@ -3412,8 +3412,8 @@
     "text": "Certifikat och nycklar som arbetsbänkens lager behåller, per sfär"
   },
   "pki.maxStoredObjects|description": {
-    "en": "3057876f05b58063",
-    "text": "Hur många objekt panelen Certifikat- och nyckelkonfiguration på /admin/pki får behålla i en sfär. **ETT FULLT LAGER AVVISAR NÄSTA**; det brukade kasta det äldsta, och det äldsta bär en privat nyckel som någon valde att behålla. Ta bort det som inte längre behövs, eller höj detta."
+    "en": "d78b7992e9302874",
+    "text": "Hur många objekt Certifikatarbetsbänken på /admin/pki får behålla i en sfär. **ETT FULLT LAGER AVVISAR NÄSTA**; det brukade kasta det äldsta, och det äldsta bär en privat nyckel som någon valde att behålla. Ta bort det som inte längre behövs, eller höj detta."
   },
   "pki.personSelfServicePerIdentity|label": {
     "en": "16d37c1faeb2ce0c",

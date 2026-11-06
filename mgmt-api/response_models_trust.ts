@@ -242,7 +242,9 @@ const FED_SIGNALS = Kit.closed({
 const FED_REACTION = Kit.closed({
   event: STR, reaction: STR, done: BOOL, skipped: STR, observed: BOOL, why: STR,
   ended: INT, revoked: INT, gnapGrants: INT, oauthGrants: INT, tokens: INT,
-  codes: INT
+  codes: INT,
+  // What a stream-updated said the partner's stream now is (SSF 1.0, 8.1.5).
+  status: STR
 });
 const FED_ARRIVAL = Kit.closed({
   relationship: STR, jti: STR, via: STR, receivedAt: STR, verified: BOOL,
@@ -1323,8 +1325,7 @@ const SSF_DEAD_LETTERS = Kit.closed({
     pushes: PUSH_GATE,
     sweeps: Kit.listOf(Kit.closed({
       at: STR, held: INT, letters: INT, expired: INT, orphaned: INT,
-      trimmed: INT, deadStreams: INT, probes: INT,
-      byCode: Kit.listOf(Kit.closed({ errorCode: STR, count: INT }))
+      trimmed: INT, deadStreams: INT, probes: INT
     })),
     sinceStart: Kit.closed({ firstSweepAt: STR, sweeps: NUM, letters: NUM,
                              expired: NUM, orphaned: NUM, trimmed: NUM,

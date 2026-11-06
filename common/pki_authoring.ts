@@ -387,7 +387,7 @@ interface PkiAuthoringDeps {
 }
 
 /**
- * The Certificate & Key Configuration pane as a model: an arbitrary
+ * The Certificate Workbench as a model: an arbitrary
  * certificate, with every field and extension exposed, issued from any
  * authority whose private key is here.
  *
@@ -2324,7 +2324,7 @@ const slot = new InstanceSlot<PkiAuthoring>(
 slot.buildNowUnlessDeferred();
 
 /**
- * The Certificate & Key Configuration pane's model, behind `/admin/pki` and
+ * The Certificate Workbench's model, behind `/admin/pki` and
  * `/admin-api`.
  *
  * The functions forward to the instance the composition root installs.

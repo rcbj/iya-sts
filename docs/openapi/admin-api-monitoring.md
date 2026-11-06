@@ -1115,7 +1115,6 @@ Scope: `admin:write`.
 | `row.clientId` | string, or null |  |  |
 | `row.command` | string, or null |  |  |
 | `row.encrypted` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.fenceAt` | number |  |  |
 | `row.finishedAt` | string, or number |  |  |
 | `row.generation` | number |  |  |
@@ -1164,7 +1163,6 @@ Scope: `admin:write`.
 | `row.clientId` | string, or null |  |  |
 | `row.command` | string, or null |  |  |
 | `row.encrypted` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.fenceAt` | number |  |  |
 | `row.finishedAt` | string, or number |  |  |
 | `row.generation` | number |  |  |

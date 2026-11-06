@@ -1584,8 +1584,8 @@
     "text": "add | remove | recheck | set-row — /admin/pki/trust 上的控制項。add 接受 `certificates`（一個或多個 PEM 區塊，各自經過收納規則，並點名每項拒絕），並以 `purposes` 加以限制；remove 接受單一 `fingerprint`；recheck 立即執行稽核；set-row 接受 `pki.paranoid*` 的 `setting` 及其 `value`，透過一般的設定寫入。需要 admin:write。寫入 ou=signerTrustAnchors，因此變更在重新啟動後依然存在。"
   },
   "stsmetadata.endpoints./admin-api/pki/:action.what": {
-    "en": "fabaddc3753d4ad4",
-    "text": "非規格端點。兩個主控台頁面背後的「十二個」動作——/admin/pki 上的 build、clear、issue、revoke，以及 Certificate & Key Configuration 窗格上的 apply-profile、generate-keys、generate-alt-keys、issue-certificate、use-key、remove-object、clear-store、export——透過那些頁面所呼叫的同一個 pkiAction()。**它以解析而非直接傳回的方式回應**：簽發從頭到尾都是 Web Crypto，因此這是此 API 中兩個需要 await 的動作處理常式之一（另一個是 /admin-api/ssf）。`issue` 會「交出私密金鑰一次」，本服務不保留第二份複本；`export` 以 base64 傳回金鑰資料，與 /admin-api/keys/export 相同，理由也相同。**對應用程式而言，`revoke` 不撤銷任何東西**：它將金鑰組從應用程式上移除，使本服務不再「接受」該金鑰所簽署的內容，而憑證仍持續鏈結——回覆中就是這麼說的。`issue` 與 `revoke` 接收 `target`，值為 application（預設）或 person——個人在其 ou=users 項目上以 stsAssertion* 持有多組金鑰組，每組都只能針對本人進行斷言；帶 `handle` 的 `revoke` 會將其中一組列入其簽發機構的 CRL（#1290）。對應 POST /admin/pki、POST /admin/pki/certificate 與 POST /admin/pki/person。"
+    "en": "42a6f7a0abbc65c4",
+    "text": "非規格端點。兩個主控台頁面背後的「十二個」動作——/admin/pki 上的 build、clear、issue、revoke，以及 憑證工作台上的 apply-profile、generate-keys、generate-alt-keys、issue-certificate、use-key、remove-object、clear-store、export——透過那些頁面所呼叫的同一個 pkiAction()。**它以解析而非直接傳回的方式回應**：簽發從頭到尾都是 Web Crypto，因此這是此 API 中兩個需要 await 的動作處理常式之一（另一個是 /admin-api/ssf）。`issue` 會「交出私密金鑰一次」，本服務不保留第二份複本；`export` 以 base64 傳回金鑰資料，與 /admin-api/keys/export 相同，理由也相同。**對應用程式而言，`revoke` 不撤銷任何東西**：它將金鑰組從應用程式上移除，使本服務不再「接受」該金鑰所簽署的內容，而憑證仍持續鏈結——回覆中就是這麼說的。`issue` 與 `revoke` 接收 `target`，值為 application（預設）或 person——個人在其 ou=users 項目上以 stsAssertion* 持有多組金鑰組，每組都只能針對本人進行斷言；帶 `handle` 的 `revoke` 會將其中一組列入其簽發機構的 CRL（#1290）。對應 POST /admin/pki、POST /admin/pki/certificate 與 POST /admin/pki/person。"
   },
   "stsmetadata.endpoints./admin-api/certificates.what": {
     "en": "dab1f4d1b78f518a",

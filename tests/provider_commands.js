@@ -435,6 +435,47 @@ async function body(t) {
   t.check(validate(stored), '9f. the report with such a row, and with a row ' +
           'that has no lastAccess, meets the model',
           JSON.stringify(validate.errors || []).slice(0, 600));
+
+  // AN ACT ANSWERS A ROW WITH NO CODE, AT ANY DEPTH (#1355): this module sends
+  // its own answers, so the strip in AdminApi.sendJson() never reached it, and
+  // POST /admin-api/commands/send-tenant answered 500 for a row that had failed.
+  const sentThrough = function (Api, body) {
+    const answer = {};
+    const res = {
+      req: { method: 'POST' },
+      status: function () {
+        return res;
+      },
+      type: function () {
+        return res;
+      },
+      set: function () {
+        return res;
+      },
+      send: function (text) {
+        answer.text = text;
+      }
+    };
+    const api = Object.create(Api.prototype);
+    api.deps = { log: t.log };
+    api.sendJson(res, 200, body);
+    return JSON.parse(answer.text);
+  };
+  const { ProviderCommandsApi } = require('../oauth-oidc/provider_commands_api');
+  const actModel = require('../mgmt-api/response_models_applications')
+    .operations.sendTenantCommand['200'];
+  const validateAct = new Ajv({ strict: false, allErrors: true })
+    .compile(actModel);
+  const answered = sentThrough(ProviderCommandsApi, { ok: true, row: deadRow });
+  t.check(deadRow.errorCode === 'STS-OAUTH-0771' && validateAct(answered),
+          '9g. the real dead row, as this API sends it, meets the act\'s model',
+          JSON.stringify(validateAct.errors || []).slice(0, 600));
+  const { ScimClientsApi } = require('../mgmt-api/scim_clients_api');
+  const client = sentThrough(ScimClientsApi, { ok: true, client: {
+    id: 'x', deliveries: [{ errorCode: 'STS-SCIM-0001', why: 'y' }] } });
+  t.check(JSON.stringify(client).indexOf('errorCode') < 0 &&
+          client.client.deliveries[0].why === 'y',
+          '9h. and the SCIM clients\' door takes it off a nested row too');
   log.debug("Leaving body().");
 }
 

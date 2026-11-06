@@ -431,7 +431,6 @@ Scope: `admin:read`.
 | `runs[].actor` | string |  |  |
 | `runs[].clientId` | string |  |  |
 | `runs[].command` | string |  |  |
-| `runs[].errorCode` | string |  |  |
 | `runs[].errors` | list |  |  |
 | `runs[].errors[]` | string |  |  |
 | `runs[].events` | number |  |  |
@@ -479,7 +478,6 @@ Scope: `admin:write`.
 | `row.awaitingCallback` | boolean |  |  |
 | `row.clientId` | string |  |  |
 | `row.command` | string |  |  |
-| `row.errorCode` | string |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.generation` | number |  |  |
 | `row.holder` | string |  |  |
@@ -501,7 +499,6 @@ Scope: `admin:write`.
 | `run.actor` | string |  |  |
 | `run.clientId` | string |  |  |
 | `run.command` | string |  |  |
-| `run.errorCode` | string |  |  |
 | `run.errors` | list |  |  |
 | `run.errors[]` | string |  |  |
 | `run.events` | number |  |  |
@@ -529,7 +526,6 @@ Scope: `admin:write`.
 | `row.awaitingCallback` | boolean |  |  |
 | `row.clientId` | string |  |  |
 | `row.command` | string |  |  |
-| `row.errorCode` | string |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.generation` | number |  |  |
 | `row.holder` | string |  |  |
@@ -551,7 +547,6 @@ Scope: `admin:write`.
 | `run.actor` | string |  |  |
 | `run.clientId` | string |  |  |
 | `run.command` | string |  |  |
-| `run.errorCode` | string |  |  |
 | `run.errors` | list |  |  |
 | `run.errors[]` | string |  |  |
 | `run.events` | number |  |  |
@@ -599,7 +594,6 @@ Scope: `admin:write`.
 | `row.awaitingCallback` | boolean |  |  |
 | `row.clientId` | string |  |  |
 | `row.command` | string |  |  |
-| `row.errorCode` | string |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.generation` | number |  |  |
 | `row.holder` | string |  |  |
@@ -621,7 +615,6 @@ Scope: `admin:write`.
 | `run.actor` | string |  |  |
 | `run.clientId` | string |  |  |
 | `run.command` | string |  |  |
-| `run.errorCode` | string |  |  |
 | `run.errors` | list |  |  |
 | `run.errors[]` | string |  |  |
 | `run.events` | number |  |  |
@@ -649,7 +642,6 @@ Scope: `admin:write`.
 | `row.awaitingCallback` | boolean |  |  |
 | `row.clientId` | string |  |  |
 | `row.command` | string |  |  |
-| `row.errorCode` | string |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.generation` | number |  |  |
 | `row.holder` | string |  |  |
@@ -671,7 +663,6 @@ Scope: `admin:write`.
 | `run.actor` | string |  |  |
 | `run.clientId` | string |  |  |
 | `run.command` | string |  |  |
-| `run.errorCode` | string |  |  |
 | `run.errors` | list |  |  |
 | `run.errors[]` | string |  |  |
 | `run.events` | number |  |  |
@@ -718,7 +709,6 @@ Scope: `admin:write`.
 | `row.awaitingCallback` | boolean |  |  |
 | `row.clientId` | string |  |  |
 | `row.command` | string |  |  |
-| `row.errorCode` | string |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.generation` | number |  |  |
 | `row.holder` | string |  |  |
@@ -740,7 +730,6 @@ Scope: `admin:write`.
 | `run.actor` | string |  |  |
 | `run.clientId` | string |  |  |
 | `run.command` | string |  |  |
-| `run.errorCode` | string |  |  |
 | `run.errors` | list |  |  |
 | `run.errors[]` | string |  |  |
 | `run.events` | number |  |  |
@@ -768,7 +757,6 @@ Scope: `admin:write`.
 | `row.awaitingCallback` | boolean |  |  |
 | `row.clientId` | string |  |  |
 | `row.command` | string |  |  |
-| `row.errorCode` | string |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.generation` | number |  |  |
 | `row.holder` | string |  |  |
@@ -790,7 +778,6 @@ Scope: `admin:write`.
 | `run.actor` | string |  |  |
 | `run.clientId` | string |  |  |
 | `run.command` | string |  |  |
-| `run.errorCode` | string |  |  |
 | `run.errors` | list |  |  |
 | `run.errors[]` | string |  |  |
 | `run.events` | number |  |  |

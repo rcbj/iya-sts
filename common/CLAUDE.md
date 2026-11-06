@@ -4104,6 +4104,8 @@ with `Cannot find module` naming a file the operator never mentioned.
    nothing else; a code is an operator's name for the condition. The table's
    `spec` column records what the client IS told, so the documentation page can
    say it without anybody reading the handler.
+   **An administrator's console page may still draw a code for someone
+   diagnosing a recorded failure** (rcbj, 2026-11-06, #1355; the root file).
 
    **`audit.js` CHANGED IN THREE WAYS FOR IT, AND EACH IS A RULE.**
    * A row with `errorCode` and no `outcome` is a REFUSAL, not a success — a
@@ -9208,7 +9210,7 @@ mutants caught.
 
 ## 3aa. `pki_authoring.ts`: the pane, and the two things it is NOT
 
-Added 2026-09-10 with `/admin/pki`'s Certificate & Key Configuration pane — the
+Added 2026-09-10 with `/admin/pki`'s Certificate Workbench — the
 parent project's *PKI / X.509* workflow drawn by a server for a console with no
 script on it — drawn as ONE FORM of a hundred and fifteen fields, where that
 page has event handlers. `admin-ui/CLAUDE.md` argues
