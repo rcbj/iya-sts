@@ -86,8 +86,10 @@ class CertificatePins {
 
   // The first value of an attribute, as a string.
   private static fieldOf(record: Json, name: string): string {
+    helpers.log.debug("Entering CertificatePins.fieldOf().");
     const raw = record && record.fields ? record.fields[name] : undefined;
     const value = Array.isArray(raw) ? raw[0] : raw;
+    helpers.log.debug("Leaving CertificatePins.fieldOf().");
     return value === undefined || value === null ? '' : String(value);
   }
 
