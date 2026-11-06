@@ -637,11 +637,14 @@ what it does not; this is where each piece is and why it is there.
   `JWS_ALGS`, so the ML-KEM JWE algs are never caught). `crypto.js` may not
   require `helpers.js` (rule 3r), so the filters live in `helpers.js` and
   ask it.
-* **Inbound, at the one choke point**: `prepareVerification()` refuses a
-  post-quantum `alg` after the caller's own list and before the signature,
+* **Inbound, at the one choke point** (`common/signature_policy.ts`, #1368):
+  `refuseUnacceptableJws()` is asked by `prepareVerification()` and by
+  `jwsSignatureValid()`, after the caller's own list and before the signature,
   so EVERY JOSE verifier refuses it whatever list it was handed — request
   objects, client assertions, DPoP, key proofs, presentations, federation
-  statements. `STS-KEYS-0157` is MARKED on the Error (`errorCodes.mark()`),
+  statements, and GNAP's `jws` and `jwsd`, which until #1368 were never asked.
+  `httpsigVerifyOne()` asks the same class for an HTTP message signature
+  (`STS-KEYS-0176`). `STS-KEYS-0157` is MARKED on the Error (`errorCodes.mark()`),
   never put in its message: callers copy the message into an
   `error_description`, and a code is never sent.
 * **Outbound, at the one choke point**: `signingKeyFor()` and its twin
@@ -706,17 +709,16 @@ them by default would refuse conforming clients for nothing.
   `jarmMetadataProblem()`, `introspectionResponseProblem()`), which refuse
   with their existing codes. `vc_configs.ts`'s `vciSigningAlgsFor()` drops
   EdDSA from a portal offer's choices unless it is the configured algorithm.
-* **What is refused**: `signJwtAs()` and `signJwtAsAsync()` refuse an EdDSA
-  signature (`eddsaSignatureRefusal()`, `STS-KEYS-0165`, logged once per
-  realm) — every response a client chose the algorithm of goes through them,
-  and so do SSF, WS-Trust and Provider Commands tokens. **`signJwt()`,
-  `signingKeyFor()` and `ownPublicJwkFor()` are NOT refused**: they sign
-  what an operator CONFIGURED (`oauth2.accessTokenSigningAlg`,
-  `oidfed.signingAlg`, the credential algorithm, the Verifier's request
-  object, the DID and status-list signers), and the row says not to
-  configure EdDSA with the switch off rather than this code breaking those
-  surfaces. That is where this switch is weaker than the post-quantum one,
-  on purpose.
+* **What is refused**: `signJwt()`, `signJwtAs()` and their asynchronous twins
+  refuse an EdDSA signature (`signatureRefusal()`, `common/signature_policy.ts`,
+  `STS-KEYS-0165`, logged once per realm); `signJwt()` joined them with #1368,
+  except where the verifying key travels in an `x5c` or a DID document
+  (`keyNamedElsewhere`). `oauth2.accessTokenSigningAlg` is replaced with RS256
+  rather than refused (`usableSigningAlg()`), because nothing a client did asked
+  for it. **`signingKeyFor()` and `ownPublicJwkFor()` are still NOT refused**:
+  they sign what an operator CONFIGURED (`oidfed.signingAlg`, the credential
+  algorithm, the DID and status-list signers), and the row says not to configure
+  EdDSA with the switch off rather than this code breaking those surfaces.
 * **Not changed**: the DID document, COSE, XML signatures (EdDSA there
   too), DKIM's ed25519-sha256, the GNAP Ed25519 key and TLS.
 
@@ -740,12 +742,12 @@ over it.
   `OWN_SIGNING_ALG_MEMBERS`, after the EdDSA filters.
 * **What a client may choose**: `signableJwsAlgs()` applies the list, so the
   console's choices and the registration checks follow.
-* **What is refused**: `signJwtAs()` and `signJwtAsAsync()`
-  (`unlistedSignatureRefusal()`, `STS-KEYS-0166`, logged once per realm), AHEAD
-  of the HMAC branch, because the list governs HS256 too. `accessTokenAlg()`
-  replaces rather than refuses, as it does for FAPI. **`signJwt()` and
-  `signingKeyFor()` are NOT refused**, for the EdDSA switch's reason, and
-  `signing_rotation.ts` reads a key's kid through the latter.
+* **What is refused**: `signJwt()`, `signJwtAs()` and their asynchronous twins
+  (`signatureRefusal()`, `STS-KEYS-0166`, logged once per realm), AHEAD of the
+  HMAC branch, because the list governs HS256 too. `accessTokenAlg()` replaces
+  rather than refuses, as it does for FAPI. **`signingKeyFor()` is NOT
+  refused**, for the EdDSA switch's reason, and `signing_rotation.ts` reads a
+  key's kid through it.
 * **`none` is not governed**: a UserInfo response may be plain JSON.
 * **It does not shrink the generations.** An RS256-only realm still publishes
   every live generation of its RSA key.
@@ -8944,6 +8946,20 @@ port's is `annotateRequest()`, which was already there; LDAPS pauses the stream
 until `holdConnectionsOn()` has the verdict; the debugger's first middleware waits on
 `settledRequest()`. A worker needs nothing new: the front process demotes
 `socket.authorized`, and that flag is what `request_pool.peerOf()` already forwards.
+**A RESUMED SESSION GETS ITS FULL HANDSHAKE'S VERDICT, ON ANY NODE.** Node hands
+a resumed connection the leaf alone, so the verdict rides beside the chain on the
+replicated `tls.presentedChains` row, written together at the full handshake's
+hold. A row is not there yet on another node, so `resumedProblem()` leaves the
+socket marked and `awaitResumedChain()` settles it before any request is answered,
+bounded by `tls.resumedChainWaitMs`: a refusal or nothing arriving demotes it.
+**The chain's own write once dropped the verdict from the row**, which refused
+every resumption on the main port in product mode while LDAPS and the debugger's
+test stayed green, because only the main port's sign-in wrote the chain later.
+What is not frozen at the full handshake: the leaf's fields, its window included,
+are asked on every connection, and revocation by the request's own verdict (on
+LDAPS and the debugger, by the hold's) as before #1360. The cell channel needs
+none of this: it requires the issuer on the connection and asks the rules itself.
+
 **SPIFFE's gRPC socket is `spiffe-svid`'s (Phase 5)**: it turns `rejectUnauthorized`
 off and `spiffe_auth.ts` verifies what arrived itself, so there is no OpenSSL verdict
 to demote. **RFC 8705 section 3 binds a token to a certificate, not to a CA**, so the

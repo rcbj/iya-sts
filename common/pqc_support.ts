@@ -70,6 +70,7 @@ import asn1js = require('asn1js');
 // This service's own JOSE reading of the post-quantum algorithms, for the
 // JOSE composite names the X.509 registry does not use.
 import pqJose = require('./pq_jose');
+import algorithmRegistry = require('./crypto_impl/algorithm_registry');
 // The vendored registry: every post-quantum algorithm by id, name and OID.
 import pqcX509 = require('./crypto_impl/pqc_x509');
 // The JWE key establishment table (#82), for the JOSE KEM names — ML-KEM's
@@ -175,10 +176,18 @@ class PqcSupport {
    */
   static defaultDeps(): PqcSupportDeps {
     log.debug("Entering PqcSupport.defaultDeps().");
+    // WHICH NAMES ARE COMPOSITES IS THE REGISTRY'S (#1368); what each is made
+    // of is the engine's, which it signs with.
+    const joseComposites: PqcSupportDeps['joseComposites'] = {};
+    algorithmRegistry.joseNames(function (row: { kind: string }) {
+      return row.kind === 'composite';
+    }).forEach(function (alg: string) {
+      joseComposites[alg] = pqJose.COMPOSITES[alg];
+    });
     log.debug("Leaving PqcSupport.defaultDeps().");
     return {
       log: log,
-      joseComposites: pqJose.COMPOSITES,
+      joseComposites: joseComposites,
       joseKem: stsCrypto.describeJweKemAlg,
       registry: pqcX509
     };

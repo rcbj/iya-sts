@@ -47,6 +47,8 @@
 // that is no longer kept.
 const log = require('../common/helpers').log;
 const stsCrypto = require('../common/crypto');
+// Every signature algorithm, once (#1368): the table below is a view of it.
+const algorithmRegistry = require('../common/crypto_impl/algorithm_registry');
 
 // --- CBOR, enough of it, decode only -----------------------------------------
 //
@@ -203,23 +205,12 @@ const COSE_CURVES = { 1: 'P-256', 2: 'P-384', 3: 'P-521', 6: 'Ed25519',
  * The COSE algorithm identifiers this relying party accepts, mapped to their
  * JOSE names (ECDSA, EdDSA, RSASSA-PKCS1-v1_5, RSASSA-PSS and ML-DSA).
  */
-const COSE_ALGS = {
-  '-7': 'ES256', '-35': 'ES384', '-36': 'ES512', '-8': 'EdDSA',
-  '-257': 'RS256', '-258': 'RS384', '-259': 'RS512',
-  '-37': 'PS256', '-38': 'PS384', '-39': 'PS512',
-  '-48': 'ML-DSA-44', '-49': 'ML-DSA-65', '-50': 'ML-DSA-87',
-  '-9': 'ESP256', '-51': 'ESP384', '-52': 'ESP512', '-47': 'ES256K',
-  '-19': 'Ed25519', '-53': 'Ed448',
-  // SHA-1. INSECURE (2026-10-01): verified only where the caller passes
-  // `allowInsecure`, which `webauthn.insecureAlgorithms` (development only,
-  // off by default) decides — see `INSECURE_COSE_ALGS` below.
-  '-65535': 'RS1',
-};
+const COSE_ALGS = algorithmRegistry.coseNames();
 /**
  * The COSE algorithms that are broken, accepted only where the caller says
  * so (`allowInsecure`): SHA-1's RS1.
  */
-const INSECURE_COSE_ALGS = [-65535];
+const INSECURE_COSE_ALGS = algorithmRegistry.insecureCoseIds();
 // COSE key type AKP (RFC 9964 section 4) and its `pub` label.
 /**
  * The COSE key type AKP (RFC 9964), which an ML-DSA key has.

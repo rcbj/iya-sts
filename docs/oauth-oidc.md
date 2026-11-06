@@ -1317,10 +1317,12 @@ parse an OKP key in a JWK Set. With it off:
 
 EdDSA that a **client** signs with is unaffected: client assertions, DPoP
 proofs, request objects and wallet proofs are still verified, and the lists
-that advertise what the realm accepts still name it. An algorithm an
-operator configures (`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`,
+that advertise what the realm accepts still name it. So is a signature whose
+key travels in an `x5c` or a DID document. A federation or credential algorithm
+an operator configures (`oidfed.signingAlg`,
 `oid4vci.credentialSigningAlgorithm`) still signs, so do not configure EdDSA
-there with the setting off. Turn it on to sign with EdDSA and publish the
+there with the setting off. An `oauth2.accessTokenSigningAlg` of EdDSA signs with
+RS256 instead (`STS-KEYS-0178`, logged once per realm). Turn it on to sign with EdDSA and publish the
 keys as `oauth2.eddsaCurve` says.
 
 #### Limiting a realm to named signing algorithms

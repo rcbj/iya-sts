@@ -1052,6 +1052,7 @@ Scope: `admin:read`.
 | `persistence.liveness.queries` | number |  |  |
 | `persistence.liveness.viaPool` | number |  |  |
 | `persistence.minted` | object |  |  |
+| `persistence.minted.droppedPoison` | number |  |  |
 | `persistence.minted.droppedUnknown` | number |  |  |
 | `persistence.minted.droppedUnreadable` | number |  |  |
 | `persistence.minted.failures` | number |  |  |
@@ -1064,6 +1065,15 @@ Scope: `admin:read`.
 | `persistence.minted.mode` | string |  |  |
 | `persistence.minted.pending` | number |  |  |
 | `persistence.minted.persisting` | boolean |  |  |
+| `persistence.minted.poisonDrops` | list |  |  |
+| `persistence.minted.poisonDrops[].at` | string |  |  |
+| `persistence.minted.poisonDrops[].code` | string |  |  |
+| `persistence.minted.poisonDrops[].handles` | list |  |  |
+| `persistence.minted.poisonDrops[].handles[]` | string |  |  |
+| `persistence.minted.poisonDrops[].message` | string |  |  |
+| `persistence.minted.poisonDrops[].realms` | list |  |  |
+| `persistence.minted.poisonDrops[].realms[]` | string |  |  |
+| `persistence.minted.poisonDrops[].rows` | number |  |  |
 | `persistence.minted.restored` | number |  |  |
 | `persistence.minted.restoredAt` | number, or string, or null |  |  |
 | `persistence.minted.retentionMs` | number |  |  |

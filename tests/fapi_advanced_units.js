@@ -255,6 +255,8 @@ function childMain() {
     }), 'A. the report lists Advanced\'s rows and Baseline\'s PKCE as relaxed');
 
     // --- B ----------------------------------------------------------------
+    // EdDSA is off by default (#1292), and since #1368 signJwt() answers to it.
+    config.setOverride('keys.eddsaSigning', true);
     ['PS256', 'ES256', 'EdDSA', 'RS256'].forEach(function (alg) {
       const token = helpers.signJwt({ iss: iss, sub: 'b', jti: 'b-' + alg,
         iat: now, exp: now + 60 }, {}, { algorithm: alg });

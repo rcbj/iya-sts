@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5303** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5308** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,13 +51,13 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 20
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 97
+* [Service core (`STS-CORE`)](#sts-core) — 98
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 105
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 106
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 164
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 167
 * [Certificate authority (`STS-PKI`)](#sts-pki) — 253
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
@@ -254,6 +254,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0163` | Another process claimed a trust realm's signer-group keys (keys.signerModel hybrid-groups) and they did not arrive within the wait, so this process made them itself; the cluster may hold two sets until one is replaced. | none — logged; group signatures go on |
 | `STS-CORE-0164` | The build stamp (common/version.js --stamp, or xacml-pep --stamp) was refused: STS_RELEASE=true marks a release build, which must name its BUILD_NUMBER as a non-negative integer with no leading zero, and it did not — or STS_RELEASE was neither true nor false. Nothing is written and the image build fails. | none — the image build exits non-zero |
 | `STS-CORE-0165` | A request arrived from an address in global.edgeProxies without global.edgeSecret in its X-Origin-Verify header: another customer's CDN distribution pointed at this load balancer, or a distribution or node holding an out-of-date secret. Refused before anything else is decided about it. | none — HTTP 403, with no reason given |
+| `STS-CORE-0166` | GET /favicon.ico found no common/favicon.ico in this image: the file was left out of the build. The browser shows no icon; nothing else is affected. | none — HTTP 404 |
 
 ## STS-WORKER
 
@@ -414,6 +415,7 @@ Raised from: persistence/.
 | `STS-STORE-0089` | A replicated minted-row change names its row under a data encryption key this process does not hold, even after reading the data-key rows again, and was skipped (another build's or a removed realm's); said once per key. | — |
 | `STS-STORE-0090` | The change-log sequence jumped by more than a thousand numbers between two rows a pull read (a setval, a sequence restored out of step); the numbers between are asked for as one range rather than one by one. | — |
 | `STS-STORE-0091` | The store was refused at open: the change log's sequence is not dense (an increment above one or a cache above one), so every reader would wait for numbers no transaction will commit. | — |
+| `STS-STORE-0092` | One minted row was DROPPED after a flush bisect isolated it as the row whose commit fails with a permanent data error (a value a column can never hold — an out-of-range bigint expiry, a value too long, a MariaDB strict-mode refusal) that would wedge the realm's every later write if re-journalled; every other row in the batch committed, the realm keeps flushing, and a post-mortem audit row records what was dropped. | — |
 | `STS-STORE-0100` | A value was refused on MariaDB because it is longer than its keyed column; it is never truncated, which would make it another row's key. | — |
 | `STS-STORE-0101` | A realm's registry row was inserted and removed by other writers twice while this write waited for it, and nothing was written. | — |
 | `STS-STORE-0120` | A minted flush on MariaDB was refused: a value it writes is longer than its MariaDB column (sts_minted.key holds 512 characters), and the store refuses it rather than truncate it. | — |
@@ -758,8 +760,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0162` | A WS-Security signature is canonicalized, or a Reference transformed, with something other than exclusive XML canonicalization alone (Basic Security Profile R5404, R5412) (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
 | `STS-KEYS-0163` | A WS-Security signature does not cover the SOAP Body or the wsu:Timestamp of its security header by their wsu:Id (#521). | the caller's: wst:AuthenticationBadElements (STS-WSTRUST-0040) |
 | `STS-KEYS-0164` | A WS-Security signature's KeyInfo names its certificate in no form of the X.509 Token Profile 1.1 this service reads (#521). | the caller's: the signed request is refused (STS-WSTRUST-0040) |
-| `STS-KEYS-0165` | An EdDSA signature through helpers.signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.eddsaSigning is off — a client registered for EdDSA while it was on, or a setting naming EdDSA — and was refused rather than made with a key the realm does not publish (#1292). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
-| `STS-KEYS-0166` | A signature through helpers.signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.signingAlgorithms does not list its algorithm — a client registered for it before the list was set, or a setting naming it — and was refused (#1348). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
+| `STS-KEYS-0165` | An EdDSA signature through helpers.signJwt() or signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.eddsaSigning is off — a client registered for EdDSA while it was on, or a setting naming EdDSA — and was refused rather than made with a key the realm does not publish (#1292). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
+| `STS-KEYS-0166` | A signature through helpers.signJwt() or signJwtAs() (an ID Token, UserInfo, introspection, JARM, Logout Token, SSF, WS-Trust or Provider Commands token) was asked of a realm whose keys.signingAlgorithms does not list its algorithm — a client registered for it before the list was set, or a setting naming it — and was refused (#1348). | the caller's: the response that needed the signature fails as it does for an algorithm this realm holds no key for |
 | `STS-KEYS-0167` | keys.signingAlgorithms was not changed: a list that is not empty must include RS256, which OpenID Connect Discovery requires and which is the default for ID Tokens and access tokens (#1348). | none: an operator's write, refused with its reason |
 | `STS-KEYS-0168` | A certificate is past its notAfter, under a use case that asks its validity. | none — recorded on the refusal the use case makes (#1360) |
 | `STS-KEYS-0169` | A certificate is before its notBefore, under a use case that asks its validity. | none — recorded on the refusal the use case makes (#1360) |
@@ -769,6 +771,9 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0173` | A certificate is signed with a broken hash (MD2, MD5, or SHA-1 where it is not allowed). | none — recorded on the refusal the use case makes (#1360) |
 | `STS-KEYS-0174` | A certificate holds a key too weak to rely on: a short or ROCA-affected RSA modulus, or a curve this service does not rely on. | none — recorded on the refusal the use case makes (#1360) |
 | `STS-KEYS-0175` | A certificate carries a critical extension nothing here reads. | none — recorded on the refusal the use case makes (#1360) |
+| `STS-KEYS-0176` | An HTTP message signature in a post-quantum algorithm was presented to a realm whose keys.postQuantumSigning is off, and was refused before its signature was checked. | the caller's refusal: RFC 9421 section 3.2 leaves what an application accepts to it (#1368) |
+| `STS-KEYS-0177` | An HTTP message signature in a post-quantum algorithm was asked for in a realm whose keys.postQuantumSigning is off, and was not made. | none — a setting names an algorithm the realm no longer signs with (#1368) |
+| `STS-KEYS-0178` | A setting chooses a signing algorithm the realm may not use, so its signature was made with RS256 instead. Logged once per realm. | none — the setting should name an algorithm the realm signs with (#1368) |
 
 ## STS-PKI
 
@@ -3852,7 +3857,7 @@ Raised from: tls/.
 | `STS-TLS-0055` | GET /tls/sign-in started no session for a verified client certificate from an outside certificate authority that is stored in userCertificate on more than one entry of the realm, so it names nobody (#1061). | HTTP 200, session.started false |
 | `STS-TLS-0056` | A stored client-truststore anchor is one the admission rule now refuses. It is kept, reported as unadmittable on /admin/tls/trust and logged once at restore; an operator removes it (#1360). | none (logged) |
 | `STS-TLS-0057` | A block of tls.trustAnchorsFile is one the admission rule refuses under paranoid PKI mode, and was left out of the truststore (#1360). | none (logged) |
-| `STS-TLS-0058` | A resumed TLS session's client certificate was demoted under paranoid PKI mode: its full handshake was refused, or this process has no record of it. The next full handshake settles it (#1360). | none (logged): the certificate is treated as unverified |
+| `STS-TLS-0058` | A resumed TLS session's client certificate was demoted under paranoid PKI mode: its full handshake was refused, or no record of it reached this process within tls.resumedChainWaitMs. The next full handshake settles it (#1360). | none (logged): the certificate is treated as unverified |
 
 ## STS-VC
 

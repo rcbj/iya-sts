@@ -79,6 +79,7 @@ let bbs2023Loaded = null;
 // is below and stays here.
 // ---------------------------------------------------------------------------
 const stsCrypto = require('./crypto');
+const signaturePolicy = require('./signature_policy');
 // THE KEYSTORE. A LEAF (rule 3) requiring `config`, `crypto`, `mode`,
 // `realms`, `secrets` and a few other leaves — and NOT this module, which is
 // what keeps it requirable from here. It answers null for every realm in
@@ -3371,6 +3372,8 @@ function withoutPqSigningKeys(keys) {
 // the log, because the cause is configuration — a client registered for one
 // while it was on, or a configured algorithm — and not the request.
 const pqSignaturesRefusedSaid = new Set();
+// What `signatureRefusal()` and `usableSigningAlg()` have said, per realm.
+const signatureRefusalsSaid = new Set();
 
 function pqSignatureRefusal(alg) {
   log.debug("Entering pqSignatureRefusal(). alg=" + alg);
@@ -3416,7 +3419,7 @@ function pqSignatureRefusal(alg) {
 //                                    signs, narrowed as the document leaves;
 //   withoutEddsaSigningKeys(jwks)    a JWK Set's keys without a kty OKP
 //                                    signing key, for `/oauth2/jwks`;
-//   eddsaSignatureRefusal(alg)       `signJwtAs()` and its asynchronous twin
+//   signatureRefusal(alg)            `signJwt()`, `signJwtAs()` and their twins
 //                                    refuse an EdDSA signature
 //                                    (STS-KEYS-0165), which every response a
 //                                    client chose the algorithm of goes
@@ -3434,7 +3437,7 @@ function pqSignatureRefusal(alg) {
  */
 function eddsaSigningOn() {
   log.debug("Entering eddsaSigningOn().");
-  const on = config.value('keys.eddsaSigning') === true;
+  const on = signaturePolicy.eddsaOn();
   log.debug("Leaving eddsaSigningOn(). " + on);
   return on;
 }
@@ -3535,7 +3538,6 @@ function withoutEddsaSigningKeys(keys) {
 
 // Said once per realm, as `pqSignatureRefusal()` is, because the cause is a
 // registration made while the setting was on, not the request.
-const eddsaSignaturesRefusedSaid = new Set();
 
 /**
  * The refusal of an EdDSA signature a client chose, in a realm with
@@ -3544,25 +3546,6 @@ const eddsaSignaturesRefusedSaid = new Set();
  * @param alg - the JWS algorithm
  * @returns an Error marked STS-KEYS-0165, or null
  */
-function eddsaSignatureRefusal(alg) {
-  log.debug("Entering eddsaSignatureRefusal(). alg=" + alg);
-  if (!isEddsaJwsAlg(alg) || eddsaSigningOn()) {
-    log.debug("Leaving eddsaSignatureRefusal(). Allowed.");
-    return null;
-  }
-  const realmId = String(realms.currentId());
-  if (!eddsaSignaturesRefusedSaid.has(realmId)) {
-    eddsaSignaturesRefusedSaid.add(realmId);
-    log.warn(errorCodes.tag('STS-KEYS-0165') + 'helpers: the "' + realmId +
-             '" realm was asked for an ' + alg + ' signature while ' +
-             'keys.eddsaSigning is off there, and refused it; a client ' +
-             'registered while it was on still names EdDSA.');
-  }
-  log.debug("Leaving eddsaSignatureRefusal(). Refused.");
-  return errorCodes.mark(new Error('this realm does not sign with ' + alg +
-    ': keys.eddsaSigning is off, so it publishes no EdDSA key to verify ' +
-    'the signature with.'), 'STS-KEYS-0165');
-}
 
 // ---------------------------------------------------------------------------
 // ONE REALM'S SIGNING ALGORITHMS, NAMED ONE BY ONE (#1348, 2026-11-05, rcbj):
@@ -3576,7 +3559,7 @@ function eddsaSignatureRefusal(alg) {
 //                                    metadata document, narrowed as it leaves;
 //   withoutUnlistedSigningKeys(jwks) a JWK Set's keys, narrowed, for
 //                                    `/oauth2/jwks`;
-//   unlistedSignatureRefusal(alg)    `signJwtAs()` and its asynchronous twin
+//   signatureRefusal(alg)            `signJwt()`, `signJwtAs()` and their twins
 //                                    refuse (STS-KEYS-0166).
 //
 // **`none` IS NOT A SIGNING ALGORITHM, SO THE LIST DOES NOT GOVERN IT.** It is
@@ -3592,20 +3575,10 @@ function eddsaSignatureRefusal(alg) {
  */
 function signingAlgAllowlist() {
   log.debug("Entering signingAlgAllowlist().");
-  const raw = config.value('keys.signingAlgorithms');
-  const list = (Array.isArray(raw) ? raw : String(raw || '').split(','))
-    .map(function (one) {
-      return String(one).trim();
-    })
-    .filter(function (one) {
-      return one.length > 0;
-    });
-  if (!list.length) {
+  const list = signaturePolicy.joseSignList();
+  if (!list) {
     log.debug("Leaving signingAlgAllowlist(). None.");
     return null;
-  }
-  if (list.indexOf('RS256') < 0) {
-    list.push('RS256');
   }
   log.debug("Leaving signingAlgAllowlist(). " + list.length);
   return list;
@@ -3705,9 +3678,8 @@ function withoutUnlistedSigningKeys(keys) {
   return out;
 }
 
-// Said once per realm, as `eddsaSignatureRefusal()` is, because the cause is a
+// Said once per realm, as `pqSignatureRefusal()` is, because the cause is a
 // registration made before the list was set, not the request.
-const unlistedSignaturesRefusedSaid = new Set();
 
 /**
  * The refusal of a signature with an algorithm `keys.signingAlgorithms` does
@@ -3716,23 +3688,52 @@ const unlistedSignaturesRefusedSaid = new Set();
  * @param alg - the JWS algorithm
  * @returns an Error marked STS-KEYS-0166, or null
  */
-function unlistedSignatureRefusal(alg) {
-  log.debug("Entering unlistedSignatureRefusal(). alg=" + alg);
-  if (signingAlgListed(alg)) {
-    log.debug("Leaving unlistedSignatureRefusal(). Allowed.");
+// `keyNamedElsewhere` is a signature whose verifying key travels in an `x5c` or
+// a DID document rather than in `/oauth2/jwks`, so `keys.eddsaSigning`'s reason,
+// a key nobody can fetch, does not apply to it. The list still does.
+function signatureRefusal(alg, keyNamedElsewhere) {
+  log.debug("Entering signatureRefusal(). alg=" + alg);
+  const cause = signaturePolicy.signCause('jose', alg);
+  if (!cause || (keyNamedElsewhere && cause.code === 'STS-KEYS-0165')) {
+    log.debug("Leaving signatureRefusal(). Allowed.");
     return null;
   }
-  const realmId = String(realms.currentId());
-  if (!unlistedSignaturesRefusedSaid.has(realmId)) {
-    unlistedSignaturesRefusedSaid.add(realmId);
-    log.warn(errorCodes.tag('STS-KEYS-0166') + 'helpers: the "' + realmId +
-             '" realm was asked for an ' + alg + ' signature, which ' +
-             'keys.signingAlgorithms does not list, and refused it; a client ' +
-             'or a setting still names it.');
+  const said = cause.code + ':' + String(realms.currentId());
+  if (!signatureRefusalsSaid.has(said)) {
+    signatureRefusalsSaid.add(said);
+    log.warn(errorCodes.tag(cause.code) + 'helpers: the "' +
+             String(realms.currentId()) + '" realm refused a signature: ' +
+             cause.message + ' A client or a setting still names it.');
   }
-  log.debug("Leaving unlistedSignatureRefusal(). Refused.");
-  return errorCodes.mark(new Error('this realm does not sign with ' + alg +
-    ': keys.signingAlgorithms does not list it.'), 'STS-KEYS-0166');
+  log.debug("Leaving signatureRefusal(). Refused.");
+  return errorCodes.mark(new Error(cause.message), cause.code);
+}
+
+/**
+ * The algorithm a signature this realm chose for itself is made with: the one
+ * asked for where the realm may use it, else RS256, which it always may. For a
+ * setting, where nothing a client did asked for the algorithm. A client's own
+ * choice is refused instead (`signatureRefusal()`).
+ *
+ * @param alg - the algorithm a setting names
+ * @returns the algorithm to sign with
+ */
+function usableSigningAlg(alg) {
+  log.debug("Entering usableSigningAlg(). alg=" + alg);
+  const cause = signaturePolicy.signCause('jose', alg);
+  if (!cause) {
+    log.debug("Leaving usableSigningAlg(). As asked.");
+    return alg;
+  }
+  const said = 'STS-KEYS-0178:' + alg + ':' + String(realms.currentId());
+  if (!signatureRefusalsSaid.has(said)) {
+    signatureRefusalsSaid.add(said);
+    log.warn(errorCodes.tag('STS-KEYS-0178') + 'helpers: the "' +
+             String(realms.currentId()) + '" realm signs with RS256 where a ' +
+             'setting names ' + alg + ': ' + cause.message);
+  }
+  log.debug("Leaving usableSigningAlg(). RS256 instead.");
+  return 'RS256';
 }
 
 /**
@@ -5199,9 +5200,24 @@ function classicalKeysFor(alg) {
 function ownCandidatesFor(alg) {
   log.debug("Entering ownCandidatesFor(). alg=" + alg);
   const spec = stsCrypto.JWS_ALGS[alg];
-  if (!spec || spec.family === 'hmac' || spec.family === 'pq') {
+  if (!spec || spec.family === 'hmac') {
     log.debug("Leaving ownCandidatesFor(). None for this family.");
     return [];
+  }
+  // A POST-QUANTUM TOKEN THIS REALM SIGNED (#1368) verifies against the public
+  // half of its own key, which is what `pqPublicBytes()` reads; it answered
+  // nothing until then, so an ID Token a client asked for in ML-DSA could not
+  // come back as an `id_token_hint`. Only keys already made: a token cannot be
+  // signed by a key that does not exist yet, so this never generates one.
+  if (spec.family === 'pq') {
+    const made = (stsKeysFor().pqKeys || []).filter(function (one) {
+      return one.alg === alg;
+    }).map(function (one) {
+      return { kid: one.publicJwk.kid, certPem: one.publicJwk,
+               role: 'current' };
+    });
+    log.debug("Leaving ownCandidatesFor(). " + made.length + " post-quantum.");
+    return made;
   }
   // THE SIGNER GROUPS' KEYS OF THIS FAMILY (#68), after the per-algorithm
   // ones, so a token a group key signed verifies here — found by its kid.
@@ -8295,10 +8311,10 @@ function signJwtAs(payload, alg, secret, opts) {
   log.debug("Entering signJwtAs(). alg=" + alg);
   // Ahead of the HMAC branch below: an HMAC signature uses no published key,
   // but the list says what this realm signs with, HS256 included (#1348).
-  const unlisted = unlistedSignatureRefusal(alg);
-  if (unlisted) {
-    log.debug("Leaving signJwtAs(). Not in keys.signingAlgorithms.");
-    throw unlisted;
+  const refused = signatureRefusal(alg);
+  if (refused) {
+    log.debug("Leaving signJwtAs(). Refused by the policy.");
+    throw refused;
   }
   const spec = stsCrypto.JWS_ALGS[alg];
   if (spec && spec.family === 'hmac') {
@@ -8314,12 +8330,6 @@ function signJwtAs(payload, alg, secret, opts) {
     // certificate to name.
     return stsCrypto.signJws(payload, secret,
                              { algorithm: alg, header: options.header });
-  }
-  // EdDSA in a realm that publishes no EdDSA key (#1292, keys.eddsaSigning).
-  const eddsaRefused = eddsaSignatureRefusal(alg);
-  if (eddsaRefused) {
-    log.debug("Leaving signJwtAs(). EdDSA signing is off.");
-    throw eddsaRefused;
   }
   const signer = signingKeyFor(alg, options.certificateHeader);
   log.debug("Leaving signJwtAs(). " + alg + ".");
@@ -8358,11 +8368,11 @@ function signJwtAsAsync(payload, alg, secret, opts) {
   log.debug("Entering signJwtAsAsync().");
   const options = opts || {};
   log.debug("Entering signJwtAsAsync(). alg=" + alg);
-  // See signJwtAs() (#1348, keys.signingAlgorithms).
-  const unlisted = unlistedSignatureRefusal(alg);
-  if (unlisted) {
-    log.debug("Leaving signJwtAsAsync(). Not in keys.signingAlgorithms.");
-    return Promise.reject(unlisted);
+  // See signJwtAs().
+  const refused = signatureRefusal(alg);
+  if (refused) {
+    log.debug("Leaving signJwtAsAsync(). Refused by the policy.");
+    return Promise.reject(refused);
   }
   const spec = stsCrypto.JWS_ALGS[alg];
   if (spec && spec.family === 'hmac') {
@@ -8376,12 +8386,6 @@ function signJwtAsAsync(payload, alg, secret, opts) {
       log.debug("Leaving signJwtAsAsync(). Refused.");
       return Promise.reject(e);
     }
-  }
-  // See signJwtAs() (#1292, keys.eddsaSigning).
-  const eddsaRefused = eddsaSignatureRefusal(alg);
-  if (eddsaRefused) {
-    log.debug("Leaving signJwtAsAsync(). EdDSA signing is off.");
-    return Promise.reject(eddsaRefused);
   }
   log.debug("Leaving signJwtAsAsync(). " + alg + ".");
   return signingKeyForAsync(alg, options.certificateHeader)
@@ -8437,6 +8441,13 @@ function signJwtAsAsync(payload, alg, secret, opts) {
 function signJwt(payload, context, opts) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
   const alg = String((opts && opts.algorithm) || 'RS256');
+  // Held to the same answer as signJwtAs() since #1368: a signature this realm
+  // publishes no key for helps nobody.
+  const refused = signatureRefusal(alg, opts && opts.keyNamedElsewhere);
+  if (refused) {
+    log.debug("Leaving signJwt(). Refused by the policy.");
+    throw refused;
+  }
   // The use case's signer-group key where the realm is in that model (#68),
   // else the per-algorithm key.
   // A pinned key first where the realm signs with one (#263).
@@ -8499,6 +8510,12 @@ function signJwt(payload, context, opts) {
 function signJwtAsync(payload, context, opts) {
   log.debug("Entering signJwtAsync(). typ=" + (payload.typ || '(none)'));
   const alg = String((opts && opts.algorithm) || 'RS256');
+  // See signJwt().
+  const refused = signatureRefusal(alg, opts && opts.keyNamedElsewhere);
+  if (refused) {
+    log.debug("Leaving signJwtAsync(). Refused by the policy.");
+    return Promise.reject(refused);
+  }
   // A POST-QUANTUM ALGORITHM IS SIGNED HERE TOO SINCE #657: the key comes
   // from `signingKeyForAsync()`, which makes the realm's post-quantum keys on
   // libuv's thread pool where they are not made yet and refuses one while
@@ -9394,6 +9411,7 @@ module.exports = {
   withoutEddsaSigningKeys: withoutEddsaSigningKeys,
   signingAlgAllowlist: signingAlgAllowlist,
   signingAlgListed: signingAlgListed,
+  usableSigningAlg: usableSigningAlg,
   listedSigningAlgs: listedSigningAlgs,
   withoutUnlistedSigningAlgs: withoutUnlistedSigningAlgs,
   withoutUnlistedSigningKeys: withoutUnlistedSigningKeys,

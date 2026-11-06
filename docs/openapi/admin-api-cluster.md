@@ -231,6 +231,7 @@ Scope: `admin:read`.
 | `status (shape 1).liveness.queries` | integer |  |  |
 | `status (shape 1).liveness.viaPool` | integer |  |  |
 | `status (shape 1).minted` | object |  |  |
+| `status (shape 1).minted.droppedPoison` | integer |  |  |
 | `status (shape 1).minted.droppedUnknown` | integer |  |  |
 | `status (shape 1).minted.droppedUnreadable` | integer |  |  |
 | `status (shape 1).minted.failures` | integer |  |  |
@@ -243,6 +244,15 @@ Scope: `admin:read`.
 | `status (shape 1).minted.mode` | string |  |  |
 | `status (shape 1).minted.pending` | integer |  |  |
 | `status (shape 1).minted.persisting` | boolean |  |  |
+| `status (shape 1).minted.poisonDrops` | list |  |  |
+| `status (shape 1).minted.poisonDrops[].at` | string |  |  |
+| `status (shape 1).minted.poisonDrops[].code` | string |  |  |
+| `status (shape 1).minted.poisonDrops[].handles` | list |  |  |
+| `status (shape 1).minted.poisonDrops[].handles[]` | string |  |  |
+| `status (shape 1).minted.poisonDrops[].message` | string |  |  |
+| `status (shape 1).minted.poisonDrops[].realms` | list |  |  |
+| `status (shape 1).minted.poisonDrops[].realms[]` | string |  |  |
+| `status (shape 1).minted.poisonDrops[].rows` | integer |  |  |
 | `status (shape 1).minted.restored` | integer |  |  |
 | `status (shape 1).minted.restoredAt` | string, or null |  |  |
 | `status (shape 1).minted.retentionMs` | number |  |  |

@@ -99,6 +99,10 @@ const asn1js = require('asn1js');
 const jwt = require('jsonwebtoken');
 const bunyan = require('bunyan');
 const config = require('./config');
+// Every signature algorithm, once (#1368): the tables below are views of it.
+const algorithmRegistry = require('./crypto_impl/algorithm_registry');
+// Which algorithm this realm may sign with or accept (#1368).
+const signaturePolicy = require('./signature_policy');
 const pqJose = require('./pq_jose');
 
 const xmldom = require('@xmldom/xmldom');
@@ -476,152 +480,17 @@ function signXml(xml, opts) {
 // accepted and the verdict still says `weak` (as it does for RIPEMD-160,
 // whose 160-bit output is SHA-1's, and which no setting refuses).
 // ===========================================================================
-const XMLDSIG_MORE = 'http://www.w3.org/2001/04/xmldsig-more#';
 const XMLDSIG_MORE_2007 = 'http://www.w3.org/2007/05/xmldsig-more#';
-const XMLDSIG_MORE_2021 = 'http://www.w3.org/2021/04/xmldsig-more#';
-const XMLDSIG11 = 'http://www.w3.org/2009/xmldsig11#';
 const PSS_PARAMS_NS = XMLDSIG_MORE_2007;
 
+// VIEWS OF THE REGISTRY (#1368). The rows stayed as they were, moved there.
 // uri -> { family, hash, keyTypes, label, weak, sha1 }
-const XML_SIGNATURE_METHODS = {};
+const XML_SIGNATURE_METHODS = algorithmRegistry.xmlSignatureMethods();
 // uri -> why it is not verified
-const XML_SIGNATURE_REFUSED = {};
+const XML_SIGNATURE_REFUSED = algorithmRegistry.xmlSignaturesRefused();
 // uri -> { hash, label, weak, sha1 }
-const XML_DIGEST_METHODS = {};
-const XML_DIGEST_REFUSED = {};
-
-// The node digest names, and the ones that are weak. SHA-1 is the one a
-// setting governs; RIPEMD-160 is recorded as weak and accepted.
-const WEAK_HASHES = ['sha1', 'ripemd160'];
-
-// `sha3-256` -> `SHA3-256`, the spelling the method names use; a digest's
-// own label (`digest` true) spells SHA-1 and SHA-256 with the hyphen.
-function hashLabel(hash, digest) {
-  log.debug("Entering hashLabel().");
-  const upper = String(hash).toUpperCase();
-  log.debug("Leaving hashLabel().");
-  return digest ? upper.replace(/^SHA(\d+)$/, 'SHA-$1')
-    .replace('RIPEMD160', 'RIPEMD-160') : upper;
-}
-
-function addSignatureMethod(uri, family, hash, keyTypes, label) {
-  log.debug("Entering addSignatureMethod().");
-  XML_SIGNATURE_METHODS[uri] = {
-    family: family, hash: hash, keyTypes: keyTypes, label: label,
-    weak: WEAK_HASHES.indexOf(String(hash)) >= 0,
-    sha1: hash === 'sha1'
-  };
-  log.debug("Leaving addSignatureMethod().");
-}
-
-[['sha1', DS_NS + 'rsa-sha1'],
- ['sha224', XMLDSIG_MORE + 'rsa-sha224'],
- // RFC 6931's spelling, which Apache Santuario still uses; the same method.
- ['sha224', XMLDSIG_MORE_2007 + 'rsa-sha224'],
- ['sha256', XMLDSIG_MORE + 'rsa-sha256'],
- ['sha384', XMLDSIG_MORE + 'rsa-sha384'],
- ['sha512', XMLDSIG_MORE + 'rsa-sha512'],
- ['ripemd160', XMLDSIG_MORE + 'rsa-ripemd160']].forEach(function (row) {
-  addSignatureMethod(row[1], 'rsa', row[0], ['rsa'],
-                     'RSA-' + hashLabel(row[0]));
-});
-['sha1', 'sha224', 'sha256', 'sha384', 'sha512', 'sha3-224', 'sha3-256',
- 'sha3-384', 'sha3-512', 'ripemd160'].forEach(function (hash) {
-  addSignatureMethod(XMLDSIG_MORE_2007 + hash + '-rsa-MGF1', 'rsa-pss', hash,
-                     ['rsa', 'rsa-pss'],
-                     'RSASSA-PSS ' + hashLabel(hash) + ' with MGF1');
-});
-addSignatureMethod(XMLDSIG_MORE_2007 + 'rsa-pss', 'rsa-pss', 'sha256',
-                   ['rsa', 'rsa-pss'],
-                   'RSASSA-PSS with parameters (RFC 9231 section 2.3.9)');
-[['sha1', XMLDSIG_MORE + 'ecdsa-sha1'],
- ['sha224', XMLDSIG_MORE + 'ecdsa-sha224'],
- ['sha256', XMLDSIG_MORE + 'ecdsa-sha256'],
- ['sha384', XMLDSIG_MORE + 'ecdsa-sha384'],
- ['sha512', XMLDSIG_MORE + 'ecdsa-sha512'],
- ['sha3-224', XMLDSIG_MORE_2021 + 'ecdsa-sha3-224'],
- ['sha3-256', XMLDSIG_MORE_2021 + 'ecdsa-sha3-256'],
- ['sha3-384', XMLDSIG_MORE_2021 + 'ecdsa-sha3-384'],
- ['sha3-512', XMLDSIG_MORE_2021 + 'ecdsa-sha3-512'],
- ['ripemd160', XMLDSIG_MORE_2007 + 'ecdsa-ripemd160']].forEach(function (row) {
-  addSignatureMethod(row[1], 'ecdsa', row[0], ['ec'],
-                     'ECDSA-' + hashLabel(row[0]));
-});
-addSignatureMethod(XMLDSIG_MORE_2021 + 'eddsa-ed25519', 'eddsa', null,
-                   ['ed25519'], 'EdDSA Ed25519 (RFC 9231)');
-addSignatureMethod(XMLDSIG_MORE_2021 + 'eddsa-ed448', 'eddsa', null,
-                   ['ed448'], 'EdDSA Ed448 (RFC 9231)');
-addSignatureMethod(DS_NS + 'dsa-sha1', 'dsa', 'sha1', ['dsa'], 'DSA-SHA1');
-// THE HMAC METHODS (#658): a WS-Security signature keyed by a Kerberos
-// token's session key (Kerberos Token Profile 1.1 section 3.2). Their key
-// type is `secret`, which no certificate's public key is, so every path that
-// verifies with a certificate refuses one (verifyXmlSignatureValue()); only
-// verifyWsSecurityHmac() checks them, with the key the acceptor established.
-// HMAC-SHA1 is SHA-1 to the algorithm policy, as every SHA-1 method is.
-[['sha1', DS_NS + 'hmac-sha1'],
- ['sha256', XMLDSIG_MORE + 'hmac-sha256'],
- ['sha384', XMLDSIG_MORE + 'hmac-sha384'],
- ['sha512', XMLDSIG_MORE + 'hmac-sha512']].forEach(function (row) {
-  addSignatureMethod(row[1], 'hmac', row[0], ['secret'],
-                     'HMAC-' + hashLabel(row[0]) + ' (a Kerberos token\'s ' +
-                     'session key)');
-});
-addSignatureMethod(XMLDSIG11 + 'dsa-sha256', 'dsa', 'sha256', ['dsa'],
-                   'DSA-SHA256 (XMLDSig 1.1)');
-// The post-quantum rows come from the vendored registry, so the two cannot
-// disagree about an identifier. Only the stateless families: HSS/LMS has a
-// row there and no verifier in node.
-Object.keys(xmldsig.SIG_METHODS).forEach(function (uri) {
-  const spec = xmldsig.SIG_METHODS[uri];
-  if (spec.postQuantum && (spec.family === 'mldsa' ||
-                           spec.family === 'slhdsa')) {
-    addSignatureMethod(uri, 'pq', null, [String(spec.alg).toLowerCase()],
-                       spec.label);
-  }
-});
-
-['rsa-md5', 'hmac-md5'].forEach(function (name) {
-  XML_SIGNATURE_REFUSED[XMLDSIG_MORE + name] = 'MD5 is broken and RFC 9231 ' +
-    'says it MUST NOT be used';
-});
-['md2-rsa-MGF1', 'md5-rsa-MGF1'].forEach(function (name) {
-  XML_SIGNATURE_REFUSED[XMLDSIG_MORE_2007 + name] = 'MD2 and MD5 are broken';
-});
-['rsa-whirlpool', 'ecdsa-whirlpool', 'whirlpool-rsa-MGF1',
- 'ripemd128-rsa-MGF1'].forEach(function (name) {
-  XML_SIGNATURE_REFUSED[XMLDSIG_MORE_2007 + name] = 'Whirlpool and ' +
-    'RIPEMD-128 are not in node\'s OpenSSL default provider';
-});
-['sha1', 'sha224', 'sha256', 'sha384', 'sha512'].forEach(function (hash) {
-  XML_SIGNATURE_REFUSED[XMLDSIG_MORE + 'esign-' + hash] = 'ESIGN has no ' +
-    'implementation in OpenSSL';
-});
-['eddsa-ed25519ph', 'eddsa-ed25519ctx', 'eddsa-ed448ph'].forEach(
-  function (name) {
-    XML_SIGNATURE_REFUSED[XMLDSIG_MORE_2021 + name] = 'node verifies pure ' +
-      'EdDSA only, not the pre-hashed or context variants';
-  });
-XML_SIGNATURE_REFUSED[xmldsig.HSS_LMS_URI] = 'HSS/LMS is a stateful ' +
-  'hash-based scheme and OpenSSL 3.5 (node 24) has no verifier for it';
-
-[['sha1', DS_NS + 'sha1'],
- ['sha224', XMLDSIG_MORE + 'sha224'],
- ['sha256', XENC_NS + 'sha256'],
- ['sha384', XMLDSIG_MORE + 'sha384'],
- ['sha512', XENC_NS + 'sha512'],
- ['sha3-224', XMLDSIG_MORE_2007 + 'sha3-224'],
- ['sha3-256', XMLDSIG_MORE_2007 + 'sha3-256'],
- ['sha3-384', XMLDSIG_MORE_2007 + 'sha3-384'],
- ['sha3-512', XMLDSIG_MORE_2007 + 'sha3-512'],
- ['ripemd160', XENC_NS + 'ripemd160']].forEach(function (row) {
-  XML_DIGEST_METHODS[row[1]] = {
-    hash: row[0], label: hashLabel(row[0], true),
-    weak: WEAK_HASHES.indexOf(row[0]) >= 0, sha1: row[0] === 'sha1'
-  };
-});
-XML_DIGEST_REFUSED[XMLDSIG_MORE + 'md5'] = 'MD5 is broken';
-XML_DIGEST_REFUSED[XMLDSIG_MORE_2007 + 'whirlpool'] = 'Whirlpool is not in ' +
-  'node\'s OpenSSL default provider';
+const XML_DIGEST_METHODS = algorithmRegistry.xmlDigestMethods();
+const XML_DIGEST_REFUSED = algorithmRegistry.xmlDigestsRefused();
 
 // A node hash with the three members of a forge message digest the vendored
 // engine calls: `create()`, `update(binaryString)`, `digest().getBytes()`.
@@ -3335,55 +3204,7 @@ const SIGN_OPTIONS = ['keyid', 'header', 'expiresIn', 'notBefore',
  * The one JWS algorithm table: every algorithm this service signs or
  * verifies, with its family, hash and key type.
  */
-const JWS_ALGS = {
-  HS256: { family: 'hmac', hash: 'sha256' },
-  HS384: { family: 'hmac', hash: 'sha384' },
-  HS512: { family: 'hmac', hash: 'sha512' },
-  RS256: { family: 'rsa', hash: 'sha256', kty: 'RSA' },
-  RS384: { family: 'rsa', hash: 'sha384', kty: 'RSA' },
-  RS512: { family: 'rsa', hash: 'sha512', kty: 'RSA' },
-  PS256: { family: 'rsa', hash: 'sha256', kty: 'RSA',
-           padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
-           saltLength: 32 },
-  PS384: { family: 'rsa', hash: 'sha384', kty: 'RSA',
-           padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
-           saltLength: 48 },
-  PS512: { family: 'rsa', hash: 'sha512', kty: 'RSA',
-           padding: nodeCrypto.constants.RSA_PKCS1_PSS_PADDING,
-           saltLength: 64 },
-  ES256: { family: 'ec', hash: 'sha256', kty: 'EC', crv: 'P-256',
-           namedCurve: 'prime256v1', sigBytes: 64 },
-  ES384: { family: 'ec', hash: 'sha384', kty: 'EC', crv: 'P-384',
-           namedCurve: 'secp384r1', sigBytes: 96 },
-  ES512: { family: 'ec', hash: 'sha512', kty: 'EC', crv: 'P-521',
-           namedCurve: 'secp521r1', sigBytes: 132 },
-  // RFC 8812. `jsonwebtoken` has no ES256K, so this one is signed here.
-  ES256K: { family: 'ec', hash: 'sha256', kty: 'EC', crv: 'secp256k1',
-            namedCurve: 'secp256k1', sigBytes: 64, ownSigner: true },
-  // RFC 8037. `jsonwebtoken` has no EdDSA either. Ed25519 hashes internally,
-  // so there is no digest to name — which is what `crypto.sign(null, ...)`
-  // means.
-  EdDSA: { family: 'okp', hash: null, kty: 'OKP', crv: 'Ed25519',
-           sigBytes: 64, ownSigner: true }
-};
-
-// The post-quantum and composite algorithms join the same table rather than
-// living in one of their own — `common/pq_jose.js` performs them, and this is
-// what makes them ordinary here: `signJws()` routes to it, `verifyCompactJws()`
-// routes to it, and every metadata list that reads JWS_SIGNING_ALGS gained
-// eleven entries without being touched.
-//
-// `kty: 'AKP'` is RFC 9964's key type for all of them, which is also why they
-// are absent from DPoP: RFC 7638 defines a JWK Thumbprint for RSA, EC, OKP and
-// oct and not for AKP, so a DPoP proof signed with one could not be bound to
-// anything. See oauth-oidc/dpop.ts. (RFC 9964 has since defined the
-// AKP members and `THUMBPRINT_MEMBERS` carries them, 2026-09-13; since #150
-// DPoP takes the three JOSE-registered ML-DSA algorithms and refuses the
-// rest by name.)
-pqJose.PQ_ALGS.forEach(function (alg) {
-  JWS_ALGS[alg] = { family: 'pq', hash: null, kty: 'AKP', alg: alg,
-                    ownSigner: true };
-});
+const JWS_ALGS = algorithmRegistry.joseTable(nodeCrypto.constants);
 
 // Every signing algorithm, and the asymmetric ones — the split matters because
 // several specifications say "an asymmetric algorithm, never a MAC and never
@@ -3874,7 +3695,7 @@ function tokenClockSkew() {
  */
 function postQuantumSigningOn() {
   log.debug("Entering postQuantumSigningOn().");
-  const on = config.value('keys.postQuantumSigning') !== false;
+  const on = signaturePolicy.postQuantumOn();
   log.debug("Leaving postQuantumSigningOn(). " + on);
   return on;
 }
@@ -4102,6 +3923,17 @@ function hmacKeyProblem(spec, key) {
   return '';
 }
 
+// THE ONE JOSE ACCEPT CHOKEPOINT (#1368). A hot path: asked per signature, so
+// no Entering/Leaving pair, which would drown the log. The code is marked on
+// the Error, never put in its message: callers copy the message into an
+// `error_description`, and a code is never sent (`error_codes.js`, rule 1).
+function refuseUnacceptableJws(alg) {
+  const cause = signaturePolicy.acceptCause('jose', alg);
+  if (cause) {
+    throw errorCodes.mark(new Error(cause.message), cause.code);
+  }
+}
+
 function prepareVerification(token, key, options) {
   log.debug('Entering prepareVerification().');
   const parts = String(token || '').split('.');
@@ -4135,19 +3967,10 @@ function prepareVerification(token, key, options) {
       allowed.join(', ') + ' ' + (allowed.length === 1 ? 'is' : 'are') +
       ' accepted here.');
   }
-  // A POST-QUANTUM JWS IN A REALM THAT HAS THEM OFF (`keys.postQuantumSigning`,
-  // 2026-10-23) is refused HERE, after the caller's own list and before the
-  // signature: every JOSE verifier in this service comes through this
-  // function, so none of them can accept what the realm no longer publishes
-  // or advertises, whatever list it was handed. The code is marked on the
-  // Error, never put in its message — callers copy the message into an
-  // `error_description`, and a code is never sent (`error_codes.js`, rule 1).
-  if (isPqJwsAlg(header.alg) && !postQuantumSigningOn()) {
-    log.debug('Leaving prepareVerification(). Post-quantum signing is off.');
-    throw errorCodes.mark(new Error('this JWS is signed with "' +
-      header.alg + '", a post-quantum algorithm this realm does not ' +
-      'accept (keys.postQuantumSigning is off).'), 'STS-KEYS-0157');
-  }
+  // After the caller's own list and before the signature: every JOSE verifier
+  // comes through here or through jwsSignatureValid(), so none can accept what
+  // the realm no longer publishes, whatever list it was handed.
+  refuseUnacceptableJws(header.alg);
   const spec = jwsSpec(header.alg);
   const prepared = {
     header: header,
@@ -4220,6 +4043,9 @@ function checkPreparedSignature(prepared, key) {
  */
 function jwsSignatureValid(alg, key, signingInput, signature) {
   log.debug('Entering jwsSignatureValid(). alg=' + alg);
+  // GNAP's `jws` and `jwsd` proofs come through here and not through
+  // prepareVerification(), and until #1368 were never asked.
+  refuseUnacceptableJws(alg);
   const spec = jwsSpec(alg);
   const prepared = {
     header: { alg: alg },
@@ -7709,11 +7535,7 @@ function selfSignedRsaCertificate(opts) {
 // `spiffe/spiffe_ca.ts` records for EC keys, one algorithm generation later.
 // ---------------------------------------------------------------------------
 /** The ML-DSA parameter sets' object identifiers. */
-const ML_DSA_OIDS = {
-  'ml-dsa-44': '2.16.840.1.101.3.4.3.17',
-  'ml-dsa-65': '2.16.840.1.101.3.4.3.18',
-  'ml-dsa-87': '2.16.840.1.101.3.4.3.19'
-};
+const ML_DSA_OIDS = algorithmRegistry.mlDsaOids();
 
 // ---------------------------------------------------------------------------
 // WHETHER THIS RUNTIME CAN DO ANY OF IT, WHICH IS A QUESTION ABOUT THE
@@ -10063,8 +9885,7 @@ const pqcX509 = require('./crypto_impl/pqc_x509');
 
 // The families `verifyRawSignature()` understands.
 /** The families `verifyRawSignature()` understands. */
-const RAW_SIGNATURE_FAMILIES = ['rsa-pkcs1', 'rsa-pss', 'ecdsa', 'eddsa',
-                                'pq'];
+const RAW_SIGNATURE_FAMILIES = algorithmRegistry.RAW_SIGNATURE_FAMILIES;
 
 // The curve sizes an ECDSA r||s signature is padded to.
 const ECDSA_BYTES = { 'prime256v1': 32, 'secp384r1': 48, 'secp521r1': 66 };
@@ -10860,38 +10681,7 @@ function sessionStateHash(clientId, origin, browserState, salt) {
 // ===========================================================================
 
 /** The COSE signature algorithms WebAuthn verifies, by identifier. */
-const COSE_SIGNATURE_ALGS = {
-  '-7': { name: 'ES256', family: 'ecdsa', hash: 'sha256', kty: 'EC' },
-  '-35': { name: 'ES384', family: 'ecdsa', hash: 'sha384', kty: 'EC' },
-  '-36': { name: 'ES512', family: 'ecdsa', hash: 'sha512', kty: 'EC' },
-  '-8': { name: 'EdDSA', family: 'eddsa', hash: null, kty: 'OKP' },
-  '-257': { name: 'RS256', family: 'rsa-pkcs1', hash: 'sha256', kty: 'RSA' },
-  '-258': { name: 'RS384', family: 'rsa-pkcs1', hash: 'sha384', kty: 'RSA' },
-  '-259': { name: 'RS512', family: 'rsa-pkcs1', hash: 'sha512', kty: 'RSA' },
-  '-37': { name: 'PS256', family: 'rsa-pss', hash: 'sha256', kty: 'RSA',
-           saltLength: 32 },
-  '-38': { name: 'PS384', family: 'rsa-pss', hash: 'sha384', kty: 'RSA',
-           saltLength: 48 },
-  '-39': { name: 'PS512', family: 'rsa-pss', hash: 'sha512', kty: 'RSA',
-           saltLength: 64 },
-  '-48': { name: 'ML-DSA-44', family: 'pq', hash: null, kty: 'AKP' },
-  '-49': { name: 'ML-DSA-65', family: 'pq', hash: null, kty: 'AKP' },
-  '-50': { name: 'ML-DSA-87', family: 'pq', hash: null, kty: 'AKP' },
-  '-9': { name: 'ESP256', family: 'ecdsa', hash: 'sha256', kty: 'EC',
-          curve: 'prime256v1' },
-  '-51': { name: 'ESP384', family: 'ecdsa', hash: 'sha384', kty: 'EC',
-           curve: 'secp384r1' },
-  '-52': { name: 'ESP512', family: 'ecdsa', hash: 'sha512', kty: 'EC',
-           curve: 'secp521r1' },
-  '-47': { name: 'ES256K', family: 'ecdsa', hash: 'sha256', kty: 'EC',
-           curve: 'secp256k1' },
-  '-19': { name: 'Ed25519', family: 'eddsa', hash: null, kty: 'OKP',
-           okp: 'ed25519' },
-  '-53': { name: 'Ed448', family: 'eddsa', hash: null, kty: 'OKP',
-           okp: 'ed448' },
-  '-65535': { name: 'RS1', family: 'rsa-pkcs1', hash: 'sha1', kty: 'RSA',
-              insecure: true }
-};
+const COSE_SIGNATURE_ALGS = algorithmRegistry.coseTable();
 
 // The COSE entry for an identifier, or null.
 /**
@@ -12047,7 +11837,7 @@ function sha512Hex(bytes) {
 // has no post-quantum algorithm registered; when one is, it is a row below.
 // ===========================================================================
 /** The DKIM algorithms this service signs with. */
-const DKIM_ALGORITHMS = ['rsa-sha256', 'ed25519-sha256'];
+const DKIM_ALGORITHMS = algorithmRegistry.dkimAlgorithms();
 
 // The headers signed when present, in this order (section 5.4.1's list, less
 // the ones this service never writes). `From` is REQUIRED (section 5.4) and
@@ -12621,22 +12411,7 @@ const PARAM_TYPES = {
 // here. The JWS names of section 3.3.7 are derived from JWS_ALGS just below,
 // so an algorithm added to that table is an HTTP signature algorithm too,
 // with no second list to forget.
-const HTTP_SIGNATURE_ALGORITHMS = {
-  'rsa-pss-sha512': { registry: 'http', kind: 'rsa-pss', hash: 'sha512',
-                      saltLength: 64, spec: 'RFC 9421 section 3.3.1' },
-  'rsa-v1_5-sha256': { registry: 'http', kind: 'rsa-v1_5', hash: 'sha256',
-                       spec: 'RFC 9421 section 3.3.2' },
-  'hmac-sha256': { registry: 'http', kind: 'hmac', hash: 'sha256',
-                   minKeyBytes: 32, spec: 'RFC 9421 section 3.3.3' },
-  'ecdsa-p256-sha256': { registry: 'http', kind: 'ecdsa', hash: 'sha256',
-                         curve: 'prime256v1', coordinateBytes: 32,
-                         spec: 'RFC 9421 section 3.3.4' },
-  'ecdsa-p384-sha384': { registry: 'http', kind: 'ecdsa', hash: 'sha384',
-                         curve: 'secp384r1', coordinateBytes: 48,
-                         spec: 'RFC 9421 section 3.3.5' },
-  'ed25519': { registry: 'http', kind: 'eddsa', curves: ['ed25519'],
-               spec: 'RFC 9421 section 3.3.6' }
-};
+const HTTP_SIGNATURE_ALGORITHMS = algorithmRegistry.httpSignatureAlgorithms();
 
 // Section 3.3.7: "JSON Web Signature (JWS) algorithms". One row per JWS_ALGS
 // row, in the shape the checks below read. The post-quantum and composite
@@ -13909,6 +13684,11 @@ function signHttpMessage(message, options) {
                        ' is not supported; the supported ones are ' +
                        Object.keys(HTTP_SIGNATURE_ALGORITHMS).join(', ') + '.');
   }
+  const unsignable = signaturePolicy.signCause('httpsig', name);
+  if (unsignable) {
+    log.debug("Leaving signHttpMessage(). Not signed here.");
+    return httpsigRefuse(unsignable.code, unsignable.message);
+  }
   if (algParam !== undefined &&
       (entry.registry === 'jws' || algParam !== name)) {
     log.debug("Leaving signHttpMessage(). alg conflict.");
@@ -14455,6 +14235,13 @@ function httpsigVerifyOne(message, parsed, opts, now) {
     return httpsigRefuse('STS-KEYS-0134',
                        'The signature algorithm ' + JSON.stringify(name) +
                        ' is not supported.');
+  }
+  // THE ONE HTTP SIGNATURE ACCEPT CHOKEPOINT (#1368): OAuth's and GNAP's both
+  // come through here. It had no gate until then.
+  const unacceptable = signaturePolicy.acceptCause('httpsig', name);
+  if (unacceptable) {
+    log.debug("Leaving httpsigVerifyOne(). Not accepted here.");
+    return httpsigRefuse(unacceptable.code, unacceptable.message);
   }
   if (Array.isArray(opts.allowedAlgorithms) &&
       opts.allowedAlgorithms.indexOf(name) < 0) {
@@ -16486,22 +16273,7 @@ const PKINIT_REFUSED_DIGESTS = {
  * The CMS signature algorithms PKINIT verifies, by OID, with the key type
  * each needs and the digest an OID names.
  */
-const PKINIT_CMS_SIGNATURES = {
-  '1.2.840.113549.1.1.1': { key: 'rsa', digest: null,
-                            label: 'RSA PKCS #1 v1.5' },
-  '1.2.840.113549.1.1.11': { key: 'rsa', digest: 'sha256',
-                             label: 'sha256WithRSAEncryption' },
-  '1.2.840.113549.1.1.12': { key: 'rsa', digest: 'sha384',
-                             label: 'sha384WithRSAEncryption' },
-  '1.2.840.113549.1.1.13': { key: 'rsa', digest: 'sha512',
-                             label: 'sha512WithRSAEncryption' },
-  '1.2.840.10045.4.3.2': { key: 'ec', digest: 'sha256',
-                           label: 'ecdsa-with-SHA256' },
-  '1.2.840.10045.4.3.3': { key: 'ec', digest: 'sha384',
-                           label: 'ecdsa-with-SHA384' },
-  '1.2.840.10045.4.3.4': { key: 'ec', digest: 'sha512',
-                           label: 'ecdsa-with-SHA512' }
-};
+const PKINIT_CMS_SIGNATURES = algorithmRegistry.cmsSignatures();
 
 // The key-agreement groups, in the order the KDC prefers them — the order
 // TD-DH-PARAMETERS lists. The curves first: P-256 is faster than any MODP
