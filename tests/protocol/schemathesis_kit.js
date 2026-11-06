@@ -70,13 +70,31 @@ const FUZZ_DPOP = Object.freeze({
   "oauth2.dpopReplayCacheSize": 200000
 });
 
+// SIGN-IN RISK SCORING OFF IN THE FUZZ REALMS (#1299, the cb74ce0f8 run). The
+// fuzz person signs in rapidly with no stable device or TLS client, which the
+// risk engine scores HIGH ("device and TLS client changed"); the product
+// risk-response policy then runs risk-end-sessions (a global logout) and
+// risk-credential-compromise, REVOKING the proxy's token — so every admin-api
+// request answered STS-API-0122 (isRevoked), ~50/s, never recovering, because
+// each fresh sign-in re-triggered HIGH and was revoked again. The fuzz person
+// is not a real user and its risk is test noise; risk.assessSignIns=false
+// short-circuits the scoring before any response can fire
+// (risk/risk_engine.ts:1733), and the risk ADMIN endpoints are still fuzzed —
+// only the fuzz person's own sign-in scoring stops. A change of who is asking
+// (a test realm's config), not of the service.
+const FUZZ_RISK = Object.freeze({ "risk.assessSignIns": false });
+
+// What every fuzz realm carries beside its mode flag: the DPoP headroom and the
+// sign-in-risk opt-out.
+const FUZZ_REALM = Object.freeze(Object.assign({}, FUZZ_DPOP, FUZZ_RISK));
+
 const PROFILES = [
   { key: "base", realm: "fuzz-base", label: "product baseline",
-    settings: Object.assign({}, FUZZ_DPOP) },
+    settings: Object.assign({}, FUZZ_REALM) },
   { key: "rfc9700", realm: "fuzz-9700", label: "RFC 9700",
-    settings: Object.assign({ "oauth2.rfc9700": true }, FUZZ_DPOP) },
+    settings: Object.assign({ "oauth2.rfc9700": true }, FUZZ_REALM) },
   { key: "oauth21", realm: "fuzz-21", label: "OAuth 2.1",
-    settings: Object.assign({ "oauth2.oauth21": true }, FUZZ_DPOP) }
+    settings: Object.assign({ "oauth2.oauth21": true }, FUZZ_REALM) }
 ];
 
 // ---------------------------------------------------------------------------
@@ -700,7 +718,7 @@ async function provisionServiceAdmin(serviceBase, say) {
   return { realmPrefix: "", realmLabel: "(default realm, service admin)",
     user: FUZZ_USER, password: FUZZ_PASSWORD,
     label: "default realm (service admin)",
-    settings: Object.assign({}, FUZZ_DPOP) };
+    settings: Object.assign({}, FUZZ_REALM) };
 }
 
 // Re-assert the realm's known state before every cell (#1299, "start from a
