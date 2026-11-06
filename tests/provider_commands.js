@@ -376,6 +376,45 @@ async function body(t) {
           !applications.commandMetadataProblem({
             command_endpoint: 'https://rp.test/c?q=1' }),
           '8a. command_endpoint is https with no fragment; a query is fine');
+
+  t.log.info('=== 9. what a relying party wrote, against the closed model ===');
+  // #1353: the integrator's run found `roles` modelled as scalars while every
+  // role is an object, which refused the whole realm's report. This goes through
+  // the real writer and the real report, with a relying party that also sends
+  // what no role should be, so one partner cannot refuse every client's row.
+  answers.push(json(200, {
+    context: { iss: 'https://sts.test', tenant: 'default' },
+    commands_supported: ['metadata', 'audit'],
+    command_endpoint: ENDPOINT, client_id: 'cmd-app',
+    roles: [{ id: 'reader', display: 'Reader' },
+            { id: 'editor', display: 'Editor', description: 'Changes things',
+              stray: { nested: true } },
+            { id: 'bare' }, 'a string', 7, null, { display: 'no id' },
+            { id: { not: 'a string' }, display: 'odd id' }] }));
+  c.send('cmd-app', 'metadata', '', {});
+  await settle();
+  const said = c.learnedFor('cmd-app').roles;
+  t.equal(JSON.stringify(said), JSON.stringify([
+    { id: 'reader', display: 'Reader' },
+    { id: 'editor', display: 'Editor', description: 'Changes things' },
+    { id: 'bare', display: 'bare' }
+  ]), '9a. a role is kept as section 2.2 defines one, and nothing else is');
+  const P = commandsModule.ProviderCommands;
+  t.check(P.lastAccessFrom(1700000000) === 1700000000 &&
+          P.lastAccessFrom('2026-11-05T00:00:00Z') === '2026-11-05T00:00:00Z' &&
+          P.lastAccessFrom({ at: 1 }) === null && P.lastAccessFrom([1]) === null,
+          '9b. last_access is kept only where it is a time');
+  const Ajv = require('ajv');
+  const model = require('../mgmt-api/response_models_applications')
+    .operations.getProviderCommands['200'];
+  const validate = new Ajv({ strict: false, allErrors: true }).compile(model);
+  const report = c.report();
+  const row = report.clients.filter(function (one) {
+    return one.clientId === 'cmd-app';
+  })[0];
+  t.check(row && row.learned.roles.length === 3 && validate(report),
+          '9c. the real report, with roles in it, meets the model it is held to',
+          JSON.stringify(validate.errors || []).slice(0, 600));
   log.debug("Leaving body().");
 }
 
