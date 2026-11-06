@@ -448,6 +448,11 @@ class OutboundTls {
       }
       if (inForce) {
         options.requestOCSP = true;
+        // A FULL HANDSHAKE, ALWAYS. A client resuming a session it kept gets
+        // nothing from `getPeerCertificate()`, so there is nothing to hold, and
+        // undici and https's agents resume on their own: every later request to
+        // a host would be refused as presenting no certificate.
+        delete options.session;
       }
       const socket = (original as any).apply(tls, args);
       if (inForce) {
@@ -497,9 +502,9 @@ class OutboundTls {
         log.warn(errorCodes.tag(verdict.code || 'STS-PKI-0242') + 'outbound: ' +
                  String(options.servername || options.host || 'a peer') +
                  ' is refused under paranoid PKI mode, before anything was ' +
-                 'sent: ' + verdict.why + ' To trust this one certificate, ' +
-                 'accept it by name in the realm\'s signer truststore: ' +
-                 'kind `accepted` on /admin/pki/trust.');
+                 'sent: ' + verdict.why + ' A self-signed certificate is ' +
+                 'accepted by name in the realm\'s signer truststore: kind ' +
+                 '`accepted` on /admin/pki/trust.');
         socket.destroy(Object.assign(new Error('the certificate of ' +
           String(options.servername || options.host || 'the peer') +
           ' is refused: ' + verdict.why), { code: 'ERR_STS_PEER_REFUSED' }));

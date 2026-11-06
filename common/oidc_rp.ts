@@ -273,6 +273,7 @@ interface OidcRelyingPartyDeps {
   clusterClaims: typeof clusterClaims;
   clusterBarrier: typeof clusterBarrier;
   fapi: typeof fapi;
+  signerChain: (material: any) => Promise<any>;
   http: typeof http;
   https: typeof https;
   // `tls/tls_server.js`, required only when the back channel runs — see the
@@ -639,9 +640,9 @@ class OidcRelyingParty {
       },
       fapi: fapi,
       signerChain: function (material: any): Promise<any> {
-        return require('./certificate_trust').signerChain('jose-signer', material);
+        return require('./certificate_trust')
+          .signerChain('jose-signer', material);
       },
-      signerChain: (material: any) => Promise<any>;
       loadPki: function () {
         return require('./pki');
       },

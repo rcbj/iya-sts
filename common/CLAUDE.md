@@ -8952,9 +8952,12 @@ until `holdConnectionsOn()` has the verdict; the debugger's first middleware wai
 OpenBao and postgres pairs are self-signed leaves, and refusing them stopped the
 service starting in product mode, which no memory-mode probe could show. A public
 root or a truststore anchor in `ca` does not count, since nobody named this server.
-A named certificate whose chain names no list passes revocation: a private CA's
-commonly does, and hard-fail otherwise refuses every such partner. A list it names
-is still asked.
+**A CERTIFICATE NAMING NO SOURCE HAS NO CHECK TO PERFORM (rcbj).** Under paranoid
+`policy()` drops the `auto` distribution-point requirement, a link naming nothing
+whose issuer is absent is not refused, and `nothingToAsk()` covers what the walk
+leaves `not-asked`. The register is still asked first, so a certificate this service
+issued cannot lose its revocation. A leaf naming nothing under a CA naming a source
+gets no lookup of its own: the CA's link is what is asked.
 
 **A RESUMED SESSION GETS ITS FULL HANDSHAKE'S VERDICT, ON ANY NODE.** Node hands
 a resumed connection the leaf alone, so the verdict rides beside the chain on the
