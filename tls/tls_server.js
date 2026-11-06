@@ -1317,7 +1317,8 @@ function splitSuppliedBundle(bundlePem, certFile) {
     }
     try {
       const top = stsCrypto.parseCertificate(topPem);
-      if (top.verify(stsCrypto.parseCertificate(pem).publicKey)) {
+      if (stsCrypto.certificateSignedWith(
+        top, stsCrypto.parseCertificate(pem).publicKey)) {
         anchorPem = pem;
       }
     } catch (e) {
@@ -1346,7 +1347,8 @@ function isSelfSignedPem(pem) {
   log.debug('Entering isSelfSignedPem().');
   try {
     const cert = stsCrypto.parseCertificate(pem);
-    const self = cert.checkIssued(cert) && cert.verify(cert.publicKey);
+    const self = cert.checkIssued(cert) &&
+      stsCrypto.certificateSignedWith(cert, cert.publicKey);
     log.debug('Leaving isSelfSignedPem(). ' + self);
     return self;
   } catch (e) {
@@ -2543,7 +2545,7 @@ function anchorSigns(anchorPem, record) {
     // the two Roots this has to tell apart have identical subjects, so
     // comparing issuer strings — the obvious check, and the one a reader will
     // want to replace this with — passes on exactly the case that is broken.
-    return top.verify(anchor.publicKey);
+    return stsCrypto.certificateSignedWith(top, anchor.publicKey);
   } catch (e) {
     log.warn('tls: a candidate trust anchor could not be checked against the ' +
              'server certificate chain (' + e.message + '), so it is not ' +

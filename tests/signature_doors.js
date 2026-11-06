@@ -183,6 +183,94 @@ module.exports = {
       { family: 'pq', alg: 'ML-DSA-44' }, pq.pub, Buffer.from('other'), made)),
     'and refuses it over other data');
 
+    // ---- A post-quantum CRL and OCSP response: new behaviour. ---------------
+    // Until now these failed with STS-PKI-0063 and 0067 for such an authority.
+    const pkijs = require('pkijs');
+    const keyMaterial = require('../common/crypto_impl/key_material');
+    const x509Engine = require('../common/crypto_impl/x509');
+    const revocation = require('../common/pki_revocation');
+    const authority = async function (keyAlg, signatureAlg) {
+      const pair = await keyMaterial.generateKeyPair(keyAlg);
+      const issued = await x509Engine.issueCertificate({
+        subject: [{ name: 'CN', value: 'doors ' + keyAlg }],
+        subjectPublicKey: pair.publicPem, signatureAlg: signatureAlg,
+        issuerPrivateKey: pair.privatePem,
+        notBefore: new Date(0).toISOString(),
+        notAfter: new Date(4102444800000).toISOString(),
+        extensions: { basicConstraints: { ca: true, critical: true } }
+      });
+      const der = Buffer.from(issued.der);
+      const ab = der.buffer.slice(der.byteOffset, der.byteOffset + der.length);
+      return { tier: { keyAlg: keyAlg, signatureAlg: signatureAlg,
+                       privateKeyPem: pair.privatePem },
+               cert: pkijs.Certificate.fromBER(ab) };
+    };
+    const signedCrl = async function (ca) {
+      const crl = new pkijs.CertificateRevocationList();
+      crl.version = 1;
+      crl.issuer = ca.cert.subject;
+      crl.thisUpdate = new pkijs.Time({ type: 0, value: new Date() });
+      await revocation.signCrl(crl, ca.tier);
+      const der = crl.toSchema(true).toBER(false);
+      return pkijs.CertificateRevocationList.fromBER(der);
+    };
+    const ocspResponse = async function (ca) {
+      const basic = new pkijs.BasicOCSPResponse();
+      basic.tbsResponseData = new pkijs.ResponseData({
+        responderID: ca.cert.subject, producedAt: new Date(), responses: [] });
+      await revocation.signOcspResponse(basic, ca.tier);
+      return basic;
+    };
+    const pqCa = await authority('ml-dsa-65', 'ml-dsa-65');
+    const compositeCa = await authority('mldsa44-ecdsa-p256-sha256',
+                                        'mldsa44-ecdsa-p256-sha256');
+    const ecCa = await authority('ec-p256', 'sha256-ecdsa');
+    const crlVerifies = function (crl, ca) {
+      return stsCrypto.verifyX509Signature(crl.tbsView, crl.signatureValue,
+        ca.cert.subjectPublicKeyInfo, crl.signatureAlgorithm);
+    };
+    const pqCrl = await signedCrl(pqCa);
+    t.check(pqCrl.signatureAlgorithm.algorithmId ===
+      '2.16.840.1.101.3.4.3.18' && pqCrl.signature.algorithmId ===
+      '2.16.840.1.101.3.4.3.18',
+    'an ML-DSA authority signs a CRL, naming its algorithm in both places');
+    t.check(pqCrl.signatureAlgorithm.algorithmParams === undefined,
+      'with no parameters (RFC 9881 section 3)');
+    t.check(await crlVerifies(pqCrl, pqCa),
+      'and the foreign verifier reads it back from its DER');
+    t.check(!(await stsCrypto.verifyX509Signature(pqCrl.tbsView,
+      pqCrl.signatureValue, compositeCa.cert.subjectPublicKeyInfo,
+      pqCrl.signatureAlgorithm)), 'and not under another authority\'s key');
+    const flipped = new Uint8Array(pqCrl.tbsView);
+    flipped[flipped.length - 1] ^= 1;
+    t.check(!(await stsCrypto.verifyX509Signature(flipped,
+      pqCrl.signatureValue, pqCa.cert.subjectPublicKeyInfo,
+      pqCrl.signatureAlgorithm)), 'and not over changed bytes');
+    t.check(await crlVerifies(await signedCrl(compositeCa), compositeCa),
+      'a composite authority signs a CRL that verifies');
+    t.check(await crlVerifies(await signedCrl(ecCa), ecCa),
+      'a classical CRL still signs and verifies through the same doors');
+    const verifyBasic = function (basic, ca) {
+      return stsCrypto.verifyX509Signature(basic.tbsResponseData.tbsView,
+        basic.signature, ca.cert.subjectPublicKeyInfo,
+        basic.signatureAlgorithm);
+    };
+    t.check(await verifyBasic(await ocspResponse(pqCa), pqCa),
+      'an ML-DSA authority signs an OCSP response that verifies');
+    t.check(await verifyBasic(await ocspResponse(ecCa), ecCa),
+      'and a classical one still does');
+    const ecCert = stsCrypto.parseCertificate(
+      Buffer.from(ecCa.cert.toSchema().toBER(false)));
+    t.check(stsCrypto.certificateSignedWith(ecCert, ecCert.publicKey),
+      'certificateSignedWith() answers OpenSSL\'s verdict');
+    const config = require('../common/config');
+    config.setOverride('pki.acceptedSignatureAlgorithms', 'ES256');
+    t.check(!(await crlVerifies(pqCrl, pqCa)),
+      'pki.acceptedSignatureAlgorithms governs a foreign CRL');
+    t.check(await crlVerifies(await signedCrl(ecCa), ecCa),
+      'and leaves what it lists');
+    config.clearOverride('pki.acceptedSignatureAlgorithms');
+
     // ---- The BBS door. ---------------------------------------------------
     t.check(stsCrypto.bbs.CRYPTOSUITE === 'bbs-2023',
       'the BBS suite is reached through crypto.js');

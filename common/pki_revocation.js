@@ -859,6 +859,8 @@ function directoryBaseFor(scopeId) {
  * @namespace
  */
 module.exports = {
+  signCrl: signCrl,
+  signOcspResponse: signOcspResponse,
   REASONS: REASONS,
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,
@@ -975,6 +977,66 @@ function signingParamsFor(tier) {
   }
   log.debug("Leaving signingParamsFor().");
   return { name: 'RSASSA-PKCS1-v1_5', hash: { name: sig.hash || 'SHA-256' } };
+}
+
+// A POST-QUANTUM AUTHORITY'S SIGNATURE (#1368). pkijs's `sign()` goes through
+// Web Crypto, which has no post-quantum algorithm, so a CRL or OCSP response
+// from such an authority failed with a code. This is `sign()`'s own sequence
+// with the engine certificates are signed with: the algorithm named with no
+// parameters (RFC 9881 section 3 forbids them), the TBS encoded, its bytes
+// signed.
+function isPostQuantumTier(tier) {
+  log.debug("Entering isPostQuantumTier().");
+  log.debug("Leaving isPostQuantumTier().");
+  return (x509.sigAlg(tier.signatureAlg) || {}).kind === 'pqc';
+}
+
+async function postQuantumSignature(tier, tbs) {
+  log.debug("Entering postQuantumSignature().");
+  const sig = x509.sigAlg(tier.signatureAlg);
+  const value = await x509.signBytes(sig, tier.privateKeyPem, null, tbs);
+  log.debug("Leaving postQuantumSignature().");
+  return { algorithm: new pkijs.AlgorithmIdentifier({
+             algorithmId: sig.oid }),
+           value: new asn1js.BitString({ valueHex: Uint8Array.from(value)
+             .buffer }) };
+}
+
+async function signCrl(crl, tier) {
+  log.debug("Entering signCrl().");
+  if (isPostQuantumTier(tier)) {
+    // The TBS names the algorithm, so it is named before the bytes are made.
+    const algorithm = new pkijs.AlgorithmIdentifier({
+      algorithmId: x509.sigAlg(tier.signatureAlg).oid });
+    crl.signature = algorithm;
+    crl.signatureAlgorithm = algorithm;
+    crl.tbsView = new Uint8Array(crl.encodeTBS().toBER());
+    crl.signatureValue = (await postQuantumSignature(tier, crl.tbsView)).value;
+    log.debug("Leaving signCrl(). Post-quantum.");
+    return;
+  }
+  const key = await importSigningKey(tier);
+  await crl.sign(key, signingParamsFor(tier).hash
+    ? signingParamsFor(tier).hash.name : undefined);
+  log.debug("Leaving signCrl().");
+}
+
+async function signOcspResponse(basic, tier) {
+  log.debug("Entering signOcspResponse().");
+  if (isPostQuantumTier(tier)) {
+    basic.tbsResponseData.tbsView = new Uint8Array(
+      basic.tbsResponseData.toSchema(true).toBER());
+    const signed = await postQuantumSignature(tier,
+                                              basic.tbsResponseData.tbsView);
+    basic.signatureAlgorithm = signed.algorithm;
+    basic.signature = signed.value;
+    log.debug("Leaving signOcspResponse(). Post-quantum.");
+    return;
+  }
+  const key = await importSigningKey(tier);
+  const params = signingParamsFor(tier);
+  await basic.sign(key, params.hash ? params.hash.name : undefined);
+  log.debug("Leaving signOcspResponse().");
 }
 
 async function importSigningKey(tier) {
@@ -1268,9 +1330,7 @@ async function buildCrl(scopeId, caId) {
   crl.crlExtensions = new pkijs.Extensions({ extensions: extensions });
 
   try {
-    const key = await importSigningKey(tier);
-    await crl.sign(key, signingParamsFor(tier).hash
-      ? signingParamsFor(tier).hash.name : undefined);
+    await signCrl(crl, tier);
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0063') + 'pki_revocation: the "' + caId +
         '" ' +
@@ -2006,9 +2066,7 @@ async function answerOcsp(scopeId, caId, requestDer) {
   // Root and nothing else can verify the signature without a second fetch.
   basic.certs = [issuerCert];
   try {
-    const key = await importSigningKey(tier);
-    const params = signingParamsFor(tier);
-    await basic.sign(key, params.hash ? params.hash.name : undefined);
+    await signOcspResponse(basic, tier);
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0067') + 'pki_revocation: an OCSP ' +
                                                'response from the "' + caId +

@@ -1516,16 +1516,16 @@
     "text": "后量子签名"
   },
   "keys.postQuantumSigning|description": {
-    "en": "68ffd5da182ec911",
-    "text": "此领域是否签名、发布并验证后量子及复合 JWS 算法（ML-DSA、SLH-DSA 以及复合 ML-DSA 算法）。**默认开启。**关闭时：`/oauth2/jwks` 和 DID 文档中没有任何后量子签名密钥（包括备用密钥、固定密钥和签名者组密钥）；发现文档、授权服务器、OpenID Federation、OpenID4VCI 和 OpenID4VP 文档的任何 `*_alg_values_supported` 或 `*_alg_values` 列表中都没有后量子算法；以其中之一签名的 JWS 在此领域验证 JWS 的任何地方都会被拒绝；客户端不能注册其中之一；仍需要其中之一的签名——此项开启期间注册的客户端，或 HTTP 消息签名——会被拒绝，而不是用一个无人能获取的密钥来签名。它是为 JOSE 库无法解析 AKP 密钥或不认识这些算法的客户端和测试套件而设的，OpenID 一致性测试套件即是其一。**不受影响：**COSE（通行密钥）、XML 签名、TLS、证书算法、ML-KEM 加密密钥（`keys.encryptionKemAlgs`）、`hybrid-groups` 证书在 `x5c` 中携带的 ML-DSA 替代密钥（单独的 ML-DSA 密钥被移除，证书不会重新签发），以及 `oidfed.signingAlg`：指定 ML-DSA 联合密钥的领域仍用它签名自己的声明，但会拒绝要求它验证的 ML-DSA 声明，因此在这里请保持该设置为经典算法。"
+    "en": "0a6b412c599e2c7d",
+    "text": "此领域是否签名、发布并验证后量子及复合 JWS 算法（ML-DSA、SLH-DSA 以及复合 ML-DSA 算法）。**默认开启。**关闭时：`/oauth2/jwks` 和 DID 文档中没有任何后量子签名密钥（包括备用密钥、固定密钥和签名者组密钥）；发现文档、授权服务器、OpenID Federation、OpenID4VCI 和 OpenID4VP 文档的任何 `*_alg_values_supported` 或 `*_alg_values` 列表中都没有后量子算法；以其中之一签名的 JWS 在此领域验证 JWS 的任何地方都会被拒绝；客户端不能注册其中之一；仍需要其中之一的签名——此项开启期间注册的客户端，或 HTTP 消息签名——会被拒绝，而不是用一个无人能获取的密钥来签名。它是为 JOSE 库无法解析 AKP 密钥或不认识这些算法的客户端和测试套件而设的，OpenID 一致性测试套件即是其一。**不受影响：**COSE（通行密钥）、XML 签名、TLS、证书算法、ML-KEM 加密密钥（`keys.encryptionKemAlgs`）、`hybrid-groups` 证书在 `x5c` 中携带的 ML-DSA 替代密钥（单独的 ML-DSA 密钥被移除，证书不会重新签发）。指定 ML-DSA 的 `oidfed.signingAlg` 改用此领域的默认算法签名。"
   },
   "keys.eddsaSigning|label": {
     "en": "743f659a7fcaa776",
     "text": "EdDSA 签名"
   },
   "keys.eddsaSigning|description": {
-    "en": "af67bc9dff3a0e7d",
-    "text": "此领域是否用 EdDSA（RFC 8037，Ed25519 和 Ed448）为客户端选择算法的 JOSE 对象签名，并发布其 kty OKP 签名密钥。**默认关闭**，因为 OpenID 一致性测试套件无法解析 JWKS 中的 OKP 密钥，而 OpenID Connect 认证运行的正是该套件。关闭时：`/oauth2/jwks` 中没有 OKP 签名密钥（包括备用、固定和签名者组密钥）；EdDSA 不在 `id_token_signing_alg_values_supported`、`userinfo_signing_alg_values_supported`、`introspection_signing_alg_values_supported` 或 `authorization_signing_alg_values_supported` 中；客户端不能为 ID 令牌、UserInfo、内省或 JARM 响应注册或被指定 EdDSA；仍被请求的此类签名——由在此设置开启时注册的客户端，或由设为 EdDSA 的 SSF、WS-Trust 或 Provider Commands 算法——会被拒绝，而不是用无人能获取的密钥生成。**不变：**客户端用来签名的 EdDSA（客户端断言、DPoP 证明、请求对象、钱包证明）仍被接受并被宣告为接受；密钥随 `x5c` 或 DID 文档传递的签名；运营者配置的联合或凭证算法（`oidfed.signingAlg`、OpenID4VCI 的凭证算法）仍会签名，因此在此设置关闭时不要在那里配置 EdDSA；DID 文档、COSE、XML 签名、DKIM 和 TLS 不属于 JOSE JWKS 发布。设为 EdDSA 的 `oauth2.accessTokenSigningAlg` 改用 RS256 签名。开启时：按 `oauth2.eddsaCurve` 的设定签名并发布 EdDSA。"
+    "en": "78d3ca6aec2ee4f6",
+    "text": "此领域是否用 EdDSA（RFC 8037，Ed25519 和 Ed448）为客户端选择算法的 JOSE 对象签名，并发布其 kty OKP 签名密钥。**默认关闭**，因为 OpenID 一致性测试套件无法解析 JWKS 中的 OKP 密钥，而 OpenID Connect 认证运行的正是该套件。关闭时：`/oauth2/jwks` 中没有 OKP 签名密钥（包括备用、固定和签名者组密钥）；EdDSA 不在 `id_token_signing_alg_values_supported`、`userinfo_signing_alg_values_supported`、`introspection_signing_alg_values_supported` 或 `authorization_signing_alg_values_supported` 中；客户端不能为 ID 令牌、UserInfo、内省或 JARM 响应注册或被指定 EdDSA；仍被请求的此类签名——由在此设置开启时注册的客户端，或由设为 EdDSA 的 SSF、WS-Trust 或 Provider Commands 算法——会被拒绝，而不是用无人能获取的密钥生成。**不变：**客户端用来签名的 EdDSA（客户端断言、DPoP 证明、请求对象、钱包证明）仍被接受并被宣告为接受；密钥随 `x5c` 或 DID 文档传递的签名；运营者配置的 OpenID4VCI 凭证算法仍会签名，因此在此设置关闭时不要在那里配置 EdDSA；DID 文档、COSE、XML 签名、DKIM 和 TLS 不属于 JOSE JWKS 发布。设为 EdDSA 的 `oauth2.accessTokenSigningAlg` 或 `oidfed.signingAlg` 改用此领域的默认算法签名。开启时：按 `oauth2.eddsaCurve` 的设定签名并发布 EdDSA。"
   },
   "keys.signingAlgorithms|label": {
     "en": "23087da9ac3a37f0",
@@ -1534,6 +1534,94 @@
   "keys.signingAlgorithms|description": {
     "en": "6ca0d3f207d8dcd4",
     "text": "此领域用于签名并为其发布密钥的 JWS 算法。**默认值为空，保留领域原有的所有算法。** 列表必须包含 RS256：OpenID Connect Discovery 要求它出现在 `id_token_signing_alg_values_supported` 中，它也是 ID 令牌和访问令牌的默认算法。设置列表后：`/oauth2/jwks` 中不含未列出算法的签名密钥（包括备用密钥、固定密钥和签名者组密钥；一个 RSA 密钥可用于所有 RS 和 PS 算法，因此会保留）；未列出的算法不会出现在发现文档的 ID 令牌、UserInfo、内省或 JARM 签名列表中；客户端不能为这些响应注册或被分配该算法；仍要求使用该算法的签名会被拒绝，而不是用无人能获取的密钥签名；未列出的 `oauth2.accessTokenSigningAlg` 改用 RS256 签名。使用 FAPI 1.0 Advanced 时还需列出 PS256。`keys.postQuantumSigning` 和 `keys.eddsaSigning` 仍然有效：列出某个算法不会开启其算法系列。**不变的内容：**此领域从客户端接受的内容（客户端断言、DPoP 证明、请求对象、钱包证明）；纯 JSON 的 UserInfo 响应；加密密钥；COSE、XML 签名、DKIM 和 TLS；以及 `oauth2.httpSignatureResponseAlg`、`oidfed.signingAlg` 和 OpenID4VCI 凭证算法所配置的算法，因此请在这些设置中指定已列出的算法。"
+  },
+  "keys.pqcOnly|label": {
+    "en": "d27c2ce62f5e2d05",
+    "text": "仅使用后量子签名"
+  },
+  "keys.pqcOnly|description": {
+    "en": "6bfa6be713279597",
+    "text": "此领域是否仅使用后量子算法签名，涵盖 JOSE、COSE、XML 和 Data Integrity。**默认关闭。**开启时：每个签名列表都缩小为其中的后量子算法，未指定任何后量子算法时则为全部后量子算法，经典算法的签名会被拒绝。此领域接受的内容不变。**ID 令牌保留 RS256**，因为 OpenID Connect Discovery 要求如此，且仅用于注册了它或未注册任何算法的客户端。证书算法和 DKIM 不变。`keys.postQuantumSigning` 关闭时不能开启此设置，无法验证 ML-DSA 的客户端或依赖方也无法读取此领域签名的内容。"
+  },
+  "keys.acceptedSigningAlgorithms|label": {
+    "en": "13c74bb1ab9ae1ae",
+    "text": "接受的 JWS 算法"
+  },
+  "keys.acceptedSigningAlgorithms|description": {
+    "en": "c09dd7c2c5ff488b",
+    "text": "此领域接受来自任何一方的 JWS 算法：客户端断言、DPoP 证明、请求对象、钱包证明、联合声明及其自身的令牌。**留空（默认）时接受每个用例原本接受的全部算法。**未列出算法的签名会在任何密钥操作之前被拒绝。列表必须包含 `keys.signingAlgorithms` 列出的全部算法，该设置为空时必须包含 RS256，否则此领域会拒绝自己的令牌。HS 行是 `client_secret_jwt` 使用的；只有没有客户端使用时才可省略。"
+  },
+  "cose.algorithms|label": {
+    "en": "fe94cc0994dab40b",
+    "text": "用于签名的 COSE 算法"
+  },
+  "cose.algorithms|description": {
+    "en": "fb657d7568044786",
+    "text": "此领域按顺序用于签名状态列表 CWT 和 `vc+cose` 凭证的 COSE 算法。**留空（默认）时保持每个用例当前的做法。**通行密钥不在此管理：请参阅 `webauthn.algorithms`。"
+  },
+  "cose.acceptedAlgorithms|label": {
+    "en": "de35db5c8aac8926",
+    "text": "接受的 COSE 算法"
+  },
+  "cose.acceptedAlgorithms|description": {
+    "en": "3c809e701d0ecee5",
+    "text": "此领域在 mdoc 的 IssuerAuth 和 DeviceAuth、状态列表 CWT 及 `vc+cose` 凭证中接受的 COSE 算法。**留空（默认）时接受各自已接受的算法**，规范可能进一步缩小范围：mdoc 从不接受 RSA。通行密钥不在此管理。"
+  },
+  "saml.signatureAlgorithms|label": {
+    "en": "fd4f436bdda0de4a",
+    "text": "用于签名的 XML 算法"
+  },
+  "saml.signatureAlgorithms|description": {
+    "en": "01cb8501b8f096c8",
+    "text": "此领域可按顺序用于签名的 XML 签名算法。**留空（默认）时不限制 `saml.signatureAlgorithm`。**`saml.signatureAlgorithm` 仍是所选算法，且必须在列表内。此领域没有对应 XML 密钥的算法会回退到列表中第一个有密钥的算法。"
+  },
+  "saml.acceptedSignatureAlgorithms|label": {
+    "en": "a190f155d61e54ca",
+    "text": "接受的 XML 算法"
+  },
+  "saml.acceptedSignatureAlgorithms|description": {
+    "en": "2bf9046fd2019c80",
+    "text": "此领域在 SP 请求和元数据、RFC 7522 断言、合作方断言及 WS-Security 上接受的 XML SignatureMethod。**留空（默认）时接受其原本验证的全部算法。**SHA-1 仍由 `saml.allowSha1Signatures` 决定，该设置关闭时列出的 SHA-1 方法会被拒绝。"
+  },
+  "saml.acceptedDigestAlgorithms|label": {
+    "en": "4c713f76e897330c",
+    "text": "接受的 XML 摘要"
+  },
+  "saml.acceptedDigestAlgorithms|description": {
+    "en": "0e9213b8012dea7a",
+    "text": "此领域接受的 XML DigestMethod。**留空（默认）时接受其计算的全部摘要。**SHA-1 仍由 `saml.allowSha1Signatures` 决定。"
+  },
+  "vc.cryptosuites|label": {
+    "en": "75a59ba059432f82",
+    "text": "用于签名的 Data Integrity 套件"
+  },
+  "vc.cryptosuites|description": {
+    "en": "3be8a2fb2911c2b3",
+    "text": "此领域按顺序用于签名的 W3C Data Integrity 密码套件：VC API 签发、Bitstring 状态列表、zcap 和 bbs-2023。**留空（默认）时保持每个用例当前的做法。**"
+  },
+  "vc.acceptedCryptosuites|label": {
+    "en": "962cf7c5a55dd594",
+    "text": "接受的 Data Integrity 套件"
+  },
+  "vc.acceptedCryptosuites|description": {
+    "en": "3148c6ff243294cb",
+    "text": "此领域接受的 W3C Data Integrity 密码套件：持有者证明、VC API 验证、zcap 和 bbs-2023 派生证明。**留空（默认）时接受各自已接受的套件。**"
+  },
+  "pki.acceptedSignatureAlgorithms|label": {
+    "en": "86ec8af66a70814d",
+    "text": "接受的证书签名"
+  },
+  "pki.acceptedSignatureAlgorithms|description": {
+    "en": "9a8e168d927bb934",
+    "text": "此领域在其验证路径中的证书上接受的签名算法，以行名而非 OID 指定。**留空（默认）时接受路径验证原本接受的全部算法**，其中不包括 SHA-1 和 MD5。列出过少会拒绝此领域自身的层级结构，因此请包含 `pki.signatureAlgorithm` 用于签发的算法。"
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|label": {
+    "en": "0e6e6b8920059b86",
+    "text": "接受的 HTTP 签名算法"
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|description": {
+    "en": "595341df5d9412f0",
+    "text": "此领域接受的 RFC 9421 HTTP Message Signatures 算法，OAuth 客户端和 GNAP 客户端均适用。**留空（默认）时接受其验证的全部算法。**未列出算法的签名会在任何密钥操作之前被拒绝。"
   },
   "keys.jwksCertificateUrl|label": {
     "en": "b910ac23ecc20134",
@@ -4954,6 +5042,14 @@
   "saml2.assertionLifetimeMin|description": {
     "en": "a243fee8db63660f",
     "text": "签发的断言的有效时长：它同时成为 Conditions/NotOnOrAfter 和持有者 SubjectConfirmationData/NotOnOrAfter。将其设为 1，即可观察服务提供方是否拒绝过时的断言，这是大多数服务提供方都会弄错的检查。"
+  },
+  "saml2.publishAlgorithmSupport|label": {
+    "en": "fae70314b5ff4257",
+    "text": "在元数据中发布算法支持"
+  },
+  "saml2.publishAlgorithmSupport|description": {
+    "en": "38900a41645aeba6",
+    "text": "IdP 元数据是否包含 `<alg:SigningMethod>` 和 `<alg:DigestMethod>`（SAML V2.0 Metadata Profile for Algorithm Support 1.0），列出此领域能够验证的 XML 签名方法及摘要，按优先顺序排列。**默认开启。**不了解该配置文件的使用方会忽略它们，这是 SAML 元数据第 2.3.1 节的要求。"
   },
   "saml2.signAssertion|label": {
     "en": "762a7ca973d4ab92",

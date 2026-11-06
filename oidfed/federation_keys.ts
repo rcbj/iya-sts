@@ -213,7 +213,8 @@ class FederationKeys {
   algorithm(): string {
     const { log, config } = this.deps;
     log.debug("Entering FederationKeys.algorithm().");
-    const alg = String(config.value('oidfed.signingAlg') || 'ES256');
+    const alg = helpers.usableSigningAlg(
+      String(config.value('oidfed.signingAlg') || 'ES256'));
     log.debug("Leaving FederationKeys.algorithm(). " + alg);
     return helpers.FEDERATION_KEY_ALGS.indexOf(alg) >= 0 ? alg : 'ES256';
   }

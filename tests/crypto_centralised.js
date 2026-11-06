@@ -132,15 +132,11 @@ const LIBRARY_PENDING = {};
 const PQ_ENGINE_CALLS = [/\bpqJose\.(?:sign|verify|signAsync|verifyAsync)\s*\(/];
 const BBS_SUITE = [/require\(\s*['"][^'"]*crypto_impl\/bbs2023(?:\.js)?['"]\s*\)/];
 const X509_ENGINE_CALLS = [
-  /\bx509\.(?:issueCertificate|signCertificate|verifyChain|verifyBytes)\s*\(/
+  /\bx509\.(?:issueCertificate|signCertificate|verifyChain|verifyBytes)\s*\(/,
+  /getCrypto\([^)]*\)\s*\.verifyWithPublicKey\s*\(/
 ];
-// Phase 2's X.509 moves wait on #1360's, which change the same files. This list
-// may only shrink, and #1368 is not finished until it is empty.
-const X509_PENDING = {
-  'common/certificate_details.ts': 'pki.verifyChain() (#1368)',
-  'common/cert_enrollment.ts': 'pki.csrProofOfPossession() (#1368)',
-  'spiffe/spiffe_ca.ts': 'pki.issueSelfSignedAuthority() (#1368)'
-};
+// Empty since #1368's X.509 moves, and it stays empty.
+const X509_PENDING = {};
 
 const TOKEN_LIBRARIES = [
   new RegExp('(?:require|import)\\s*\\(\\s*[\'"](?:macaroon|' +
