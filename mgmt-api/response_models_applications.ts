@@ -55,7 +55,8 @@ const FLAT_PAGING = {
 };
 
 // `protocolEndpoints`: `sendJson()` adds it to a GET mirroring a Protocols page
-// outside the view (`admin_api_spec.ts` says it too, for the models it can read).
+// outside the view (`admin_api_spec.ts` says it too, for the models it can
+// read).
 const PROTOCOL_ENDPOINTS = Kit.listOf(Kit.closed({
   name: STR, methods: Kit.oneOrMany(STR), url: STR, route: STR, transport: STR,
   registered: BOOL
@@ -75,7 +76,8 @@ const SELECT_ALL_RULE = Kit.listOf(Kit.closed({
 const SETTING = Kit.closed({
   key: STR, group: STR, label: STR, description: STR, type: STR,
   enumValues: STRS, csvValues: STRS, ordered: BOOL,
-  csvValueNotes: Kit.mapOf(STR, 'The sentence beside each of a list\'s values.'),
+  csvValueNotes: Kit.mapOf(STR,
+  'The sentence beside each of a list\'s values.'),
   selectAll: Kit.closed({
     onlyWhileOn: SELECT_ALL_RULE, aloneWhileOn: SELECT_ALL_RULE
   }),
@@ -314,7 +316,8 @@ const CREDENTIAL_LINEAGE = Kit.closed({
   truncated: BOOL, acts: Kit.listOf(DELEGATION_ACT), graph: GRAPH,
   maxGenerations: INT,
   drawing: Kit.closed({ width: NUM, height: NUM, failed: NULL_STR }),
-  looks: Kit.mapOf(NODE_LOOK, 'How each node of the graph is drawn, by its id.'),
+  looks: Kit.mapOf(NODE_LOOK, 'How each node of the graph is drawn,
+  by its id.'),
   label: STR, svg: STR, subjectKey: STR,
   facts: Kit.closed({
     users: Kit.mapOf(BOOL, 'Who in the answer has a user page.'),
@@ -324,7 +327,8 @@ const CREDENTIAL_LINEAGE = Kit.closed({
 });
 
 // ---------------------------------------------------------------------------
-// THE TEN TOKEN ACTIONS, `tokenAction()`. One action's `revoked` is a count; the
+// THE TEN TOKEN ACTIONS, `tokenAction()`. One action's `revoked` is a count;
+// the
 // `set` member of the set actions is the key that was asked for.
 // ---------------------------------------------------------------------------
 const TOKEN_SET_ACTION = Kit.action({
@@ -397,7 +401,8 @@ const TOKEN_LIFETIMES: Json = Kit.closed({
 // ---------------------------------------------------------------------------
 // WHAT A CREDENTIAL CARRIES: `vcJson()` and `vcAction()`.
 //
-// A subject's claims are the catalogue's (`VC_ATTRIBUTES`), one level of nesting
+// A subject's claims are the catalogue's (`VC_ATTRIBUTES`), one level of
+// nesting
 // at most (`address`, `place_of_birth`), and each value a directory value or a
 // generated one: never deeper.
 // ---------------------------------------------------------------------------
@@ -407,7 +412,8 @@ const NESTED_CLAIM = Kit.oneOf(CLAIM_VALUE, Kit.mapOf(CLAIM_VALUE,
 const CREDENTIAL_CLAIMS: Json = Kit.closed({
   selected: STRS, defaults: STRS, ldpOmitted: STRS,
   attributes: Kit.listOf(Kit.closed({
-    ldap: STR, claim: STR, label: STR, schema: STR, ldpTerm: STR, selected: BOOL,
+    ldap: STR, claim: STR, label: STR, schema: STR, ldpTerm: STR,
+    selected: BOOL,
     example: Kit.closed({ value: CLAIM_VALUE, source: STR })
   })),
   protocolEndpoints: PROTOCOL_ENDPOINTS,
@@ -497,7 +503,8 @@ const REQUESTED_CLAIMS = Kit.action({
 
 const PRESENTED_CLAIMS = Kit.freeForm(
   'What a holder\'s wallet disclosed from a credential, which may be another ' +
-  'issuer\'s: its names and values are the presentation\'s, not this service\'s.');
+  'issuer\'s: its names and values are the presentation\'s, not this ' +
+  'service\'s.');
 
 const VERDICT_CHECK = Kit.closed({
   name: STR, ok: BOOL, detail: CLAIM_VALUE
@@ -580,7 +587,8 @@ const AS_DRIFT = Kit.listOf(Kit.closed({
 const AS_LIST = Kit.closed(Object.assign({
   profileCount: INT, shown: INT, members: Kit.listOf(AS_MEMBER), paging: PAGING,
   overrideTotal: INT, driftTotal: INT,
-  authorizationServers: Kit.listOf(Kit.closed(Object.assign({}, AS_PROFILE_MEMBERS,
+  authorizationServers: Kit.listOf(Kit.closed(Object.assign({},
+  AS_PROFILE_MEMBERS,
     { drift: AS_DRIFT })))
 }, FLAT_PAGING));
 
@@ -592,19 +600,26 @@ const AS_DETAIL = Kit.closed(Object.assign({}, AS_PROFILE_MEMBERS, {
   members: Kit.listOf(AS_MEMBER), memberGroups: STRS
 }));
 
+// The list, or one profile: one closed object, as `APPLICATION_LIST` says
+// below.
+const AUTHORIZATION_SERVER_LIST: Json = Kit.closed(Object.assign({},
+  AS_LIST.properties, AS_DETAIL.properties));
+
 const AS_ACTION = Kit.action({ profile: Kit.nullable(AS_PROFILE) });
 
 // ---------------------------------------------------------------------------
 // THE OAUTH 2.0 / OIDC MONITOR, `oauth2_monitor_console.ts` over `par.ts`.
 //
-// A pushed request's `parameters` are what the client pushed, a request object's
+// A pushed request's `parameters` are what the client pushed, a request
+// object's
 // claims among them: its names and values are the client's.
 // ---------------------------------------------------------------------------
 const ERROR_COUNT = Kit.listOf(Kit.closed({ name: STR, count: INT }));
 
 const PUSHED_REQUEST = Kit.closed({
   request_uri_digest: STR, request_uri_shown: STR, client_id: CLAIM_VALUE,
-  authorization_server: CLAIM_VALUE, state: STR, created_at: STR, expires_at: STR,
+  authorization_server: CLAIM_VALUE, state: STR, created_at: STR,
+  expires_at: STR,
   expires_in: INT, spent_at: NULL_STR, reads: INT, client_authenticated: BOOL,
   authentication_method: STR, source: CLAIM_VALUE,
   request_object_alg: CLAIM_VALUE, request_object_encrypted: CLAIM_VALUE,
@@ -648,7 +663,8 @@ const OAUTH2_MONITOR = Kit.closed({
 });
 
 // ---------------------------------------------------------------------------
-// GRANT MANAGEMENT, `grant_management.ts`. A row is `decorate()`d, or is `list()`'s
+// GRANT MANAGEMENT, `grant_management.ts`. A row is `decorate()`d, or is
+// `list()`'s
 // bare row where the grant went between the two reads. `authorization_details`
 // is what the client asked for (RFC 9396): each type's fields are its own.
 // ---------------------------------------------------------------------------
@@ -660,7 +676,8 @@ const GRANTS = Kit.closed({
     claims: STRS,
     authorization_details: Kit.listOf(Kit.freeForm(
       'An RFC 9396 authorization detail as the client asked for it: a ' +
-      'type\'s fields are that type\'s definition\'s, written by an operator.')),
+      'type\'s fields are that type\'s definition\'s, written by an ' +
+      'operator.')),
     created_at: NUM, last_updated: NUM, expires_at: NUM, updated_by: CLAIM_VALUE
   })),
   total: INT, matched: INT,
@@ -799,7 +816,8 @@ const NEW_APPLICATION_FORM: Json = Kit.closed({
   realm: Kit.closed({ id: STR, name: STR }),
   kinds: Kit.listOf(KIND_ROW), protocols: Kit.listOf(PROTOCOL_ROW),
   declarations: Kit.listOf(DECLARATION_ROW), fields: Kit.listOf(FIELD_ROW),
-  fieldGroups: Kit.listOf(FIELD_GROUP), familyChoices: Kit.listOf(FAMILY_CHOICE),
+  fieldGroups: Kit.listOf(FIELD_GROUP),
+  familyChoices: Kit.listOf(FAMILY_CHOICE),
   longTextAttributes: STRS, defaultSecretLifetimeDays: NUM,
   persistence: Kit.closed({ persistsDirectory: BOOL, mode: STR }),
   resourceMetadataImport: Kit.closed({
@@ -813,7 +831,8 @@ const NEW_APPLICATION_FORM: Json = Kit.closed({
 // `applicationsListJson()`.
 const APPLICATIONS_LIST = Kit.closed(Object.assign({
   applicationCount: INT, matched: INT, shown: INT, registered: INT,
-  filter: Kit.closed({ q: NULL_STR, kind: NULL_STR, exclude: Kit.nullable(STRS) }),
+  filter: Kit.closed({ q: NULL_STR, kind: NULL_STR,
+  exclude: Kit.nullable(STRS) }),
   container: NULL_STR, max: NULL_NUM, kinds: Kit.listOf(KIND_ROW),
   settings: Kit.nullable(SETTINGS_BLOCK), paging: PAGING,
   kindCounts: Kit.mapOf(INT, 'How many applications are of each kind.'),
@@ -834,7 +853,8 @@ const SCOPE_WARNING = Kit.closed({
   attribute: STR, value: STR, reason: STR, dropped: BOOL, text: STR
 });
 
-// `certificateSummary()`, which answers `{ unreadable }` for what will not parse.
+// `certificateSummary()`, which answers `{ unreadable }` for what will not
+// parse.
 const CERTIFICATE_SUMMARY = Kit.closed({
   subject: STR, issuer: STR, serialHex: STR, notBefore: STR, notAfter: STR,
   expired: BOOL, selfSigned: BOOL, keyType: NULL_STR, thumbprint: STR,
@@ -876,7 +896,8 @@ const HELD_CERTIFICATE_MEMBERS = {
 const HELD_CERTIFICATE = Kit.closed(HELD_CERTIFICATE_MEMBERS);
 
 // The revoked row itself, which `revoke()` answers as `listFor()` built it.
-const REVOKED_CERTIFICATE = Kit.closed(Object.assign({}, HELD_CERTIFICATE_MEMBERS, {
+const REVOKED_CERTIFICATE = Kit.closed(Object.assign({},
+HELD_CERTIFICATE_MEMBERS, {
   slot: Kit.oneOf(STR, NUM, { type: 'null' }),
   createdAt: Kit.oneOf(STR, NUM, { type: 'null' })
 }));
@@ -931,7 +952,8 @@ const CREDENTIALS_JSON = Kit.closed({
   signing: SIGNING_STATE, stored: STORED_CERTIFICATES
 });
 
-// The same state as the page has it: `applicationPageData()` takes `json` and two
+// The same state as the page has it: `applicationPageData()` takes `json` and
+// two
 // secrets off, and keeps the rest.
 const CREDENTIALS_PAGE = Kit.closed({
   oauthDeclared: BOOL,
@@ -958,7 +980,8 @@ const SSF_STREAM = Kit.closed({
   stream_id: STR, status: STR, statusReason: NULL_STR, aud: CLAIM_VALUE,
   delivery: Kit.closed({ method: STR, endpoint_url: NULL_STR }),
   events_requested: STRS, events_delivered: STRS, format: STR, description: STR,
-  createdBy: STR, createdAt: Kit.oneOf(STR, NUM), updatedAt: Kit.oneOf(STR, NUM),
+  createdBy: STR, createdAt: Kit.oneOf(STR, NUM), updatedAt: Kit.oneOf(STR,
+  NUM),
   lastPushAt: Kit.oneOf(STR, NUM), lastPushError: STR
 });
 
@@ -997,7 +1020,8 @@ const STATEMENT_JSON = Kit.closed({
 
 const STATEMENT_PAGE = Kit.closed({
   issuers: STRS, usableKeys: INT, keyProblems: Kit.listOf(CLAIM_VALUE),
-  issuedToken: STR, issued: Kit.nullable(Kit.closed(STATEMENT_DESCRIBED_MEMBERS)),
+  issuedToken: STR,
+  issued: Kit.nullable(Kit.closed(STATEMENT_DESCRIBED_MEMBERS)),
   registeredWith: STATEMENT_REGISTERED, settings: STATEMENT_SETTINGS,
   json: STATEMENT_JSON
 });
@@ -1019,10 +1043,12 @@ const LIFETIME_ROW = Kit.closed({
   source: STR
 });
 
-// A claim row, `checkClaimEntries()`, as a realm's set and an application's hold
+// A claim row, `checkClaimEntries()`, as a realm's set and an application's
+// hold
 // it; `effective` adds where each came from.
 const CLAIM_ROW_MEMBERS = {
-  name: STR, value: CLAIM_VALUE, nameFormat: STR, namespace: STR, attribute: STR,
+  name: STR, value: CLAIM_VALUE, nameFormat: STR, namespace: STR,
+  attribute: STR,
   multi: BOOL, type: STR
 };
 
@@ -1044,7 +1070,8 @@ const CLAIMS_MAP = Kit.mapOf(NESTED_CLAIM, 'The claims, by name.');
 
 const CLAIM_SELECTIONS = Kit.closed({
   catalogue: Kit.listOf(Kit.closed({
-    ldap: STR, claim: STR, label: STR, schema: STR, ldpTerm: STR, generated: BOOL
+    ldap: STR, claim: STR, label: STR, schema: STR, ldpTerm: STR,
+    generated: BOOL
   })),
   preview: Kit.closed({
     user: STR,
@@ -1142,17 +1169,20 @@ const pageOf = function (row: Json): Json {
 // One audit row, `common/audit.js`'s `record()`. `detailOf()` keeps a number, a
 // boolean or a trimmed string under any name its caller gave.
 const AUDIT_EVENT = Kit.closed({
-  seq: NUM, origin: Kit.oneOf(STR, NUM, { type: 'null' }), at: NUM, category: STR,
+  seq: NUM, origin: Kit.oneOf(STR, NUM, { type: 'null' }), at: NUM,
+  category: STR,
   action: STR, outcome: STR, errorCode: STR, actor: STR, actorForm: STR,
   target: STR, protocol: STR, channel: STR, address: STR, summary: STR,
   detail: Kit.mapOf(Kit.oneOf(STR, NUM, BOOL), 'What the event recorded.')
 });
 
-// An access type, `authorizationDetailsTypeOf()` (#432, #564). `schema`, `limits`
+// An access type, `authorizationDetailsTypeOf()` (#432, #564). `schema`,
+// `limits`
 // and `source` are the JSON an operator wrote; a compiled `validate` is a
 // function, which JSON leaves out, so only its null is ever sent.
 const OPERATOR_JSON = Kit.freeForm(
-  'The JSON an operator wrote into an access type\'s definition: a JSON Schema ' +
+  'The JSON an operator wrote into an access type\'s definition: a JSON ' +
+  'Schema ' +
   '(RFC 9396 leaves a type\'s fields to its definition), or the definition.');
 
 const FGA_ROW = Kit.closed({
@@ -1161,12 +1191,14 @@ const FGA_ROW = Kit.closed({
 });
 
 const ACCESS_TYPE = Kit.closed({
-  stored: STR, type: STR, description: STR, locations: STRS, schema: OPERATOR_JSON,
+  stored: STR, type: STR, description: STR, locations: STRS,
+  schema: OPERATOR_JSON,
   validate: { type: 'null' }, problem: STR, actions: Kit.nullable(STRS),
   datatypes: Kit.nullable(STRS), privileges: Kit.nullable(STRS), required: STRS,
   interaction: STR, consentActions: STRS, bearer: CLAIM_VALUE,
   maxLifetimeS: NULL_NUM, acr: STR, derivableFrom: STRS,
-  introspectionClaims: STRS, limits: OPERATOR_JSON, validateLimits: { type: 'null' },
+  introspectionClaims: STRS, limits: OPERATOR_JSON,
+  validateLimits: { type: 'null' },
   xacml: Kit.listOf(FGA_ROW), notForPolicy: STRS, source: OPERATOR_JSON
 });
 
@@ -1231,7 +1263,8 @@ const MARKED_VALUES = Kit.listOf(Kit.closed({ value: STR, declared: BOOL }));
 
 // `applicationObservedState()`.
 const OBSERVED_STATE = Kit.closed({
-  oauthGrantTypeObserved: MARKED_VALUES, oauthResponseTypeObserved: MARKED_VALUES,
+  oauthGrantTypeObserved: MARKED_VALUES,
+  oauthResponseTypeObserved: MARKED_VALUES,
   appRedirectUriObserved: MARKED_VALUES, oauthScope: MARKED_VALUES,
   appAuthorizationServer: MARKED_VALUES, samlNameIdFormat: MARKED_VALUES,
   samlResponseBinding: MARKED_VALUES,
@@ -1256,7 +1289,8 @@ const OWNER_ROW = Kit.closed({ dn: STR, kind: STR, name: STR, present: BOOL });
 
 const EDITABLE_NAME = Kit.listOf(Kit.closed({ name: STR, sensitive: BOOL }));
 
-// `applicationPageData()`: what the console's page is drawn from. The name `page`
+// `applicationPageData()`: what the console's page is drawn from. The name
+// `page`
 // cannot collide with an attribute, and is a number on the list reply.
 const APPLICATION_PAGE = Kit.closed({
   notes: Kit.mapOf(ATTRIBUTE_NOTE, 'What each attribute of the entry is.'),
@@ -1265,7 +1299,8 @@ const APPLICATION_PAGE = Kit.closed({
     values: Kit.mapOf(STRS, 'Each field\'s values, by attribute.'),
     groups: Kit.listOf(FIELD_GROUP), familyChoices: Kit.listOf(FAMILY_CHOICE),
     protocols: Kit.listOf(PROTOCOL_ROW), longTextAttributes: STRS,
-    fieldSearches: Kit.mapOf(STR, 'What each attribute\'s search looks through.'),
+    fieldSearches: Kit.mapOf(STR,
+    'What each attribute\'s search looks through.'),
     observed: OBSERVED_STATE,
     derived: Kit.closed({
       oauthAllowedScope: Kit.listOf(Kit.closed({
@@ -1275,7 +1310,8 @@ const APPLICATION_PAGE = Kit.closed({
     fieldWarnings: Kit.mapOf(Kit.listOf(SCOPE_WARNING), 'By attribute.')
   }),
   passkeyPolicies: Kit.closed({
-    named: STR, missing: BOOL, applies: STR, precedence: NUM, groupPolicies: INT,
+    named: STR, missing: BOOL, applies: STR, precedence: NUM,
+    groupPolicies: INT,
     link: STR
   }),
   launchUrls: Kit.mapOf(Kit.closed({
@@ -1306,7 +1342,8 @@ const APPLICATION_PAGE = Kit.closed({
     origins: STRS
   }),
   credentials: CREDENTIALS_PAGE,
-  signals: Kit.closed(Object.assign({}, SIGNALS_MEMBERS, { json: SIGNALS_JSON })),
+  signals: Kit.closed(Object.assign({}, SIGNALS_MEMBERS,
+  { json: SIGNALS_JSON })),
   softwareStatement: STATEMENT_PAGE,
   roles: ROLES_STATE,
   permissions: Kit.closed({
@@ -1318,7 +1355,8 @@ const APPLICATION_PAGE = Kit.closed({
   }),
   lifetimes: Kit.closed({ rows: Kit.listOf(LIFETIME_ROW), skew: NUM }),
   claims: Kit.listOf(CLAIM_SET_ROW), claimSelections: CLAIM_SELECTIONS,
-  enrollment: Kit.closed({ credentials: ENROLLMENT_PAGE, config: ENROLLMENT_PAGE }),
+  enrollment: Kit.closed({ credentials: ENROLLMENT_PAGE,
+  config: ENROLLMENT_PAGE }),
   observed: pageOf(OBSERVED_ADDRESS),
   warnings: Kit.listOf(SCOPE_WARNING),
   owners: Kit.listOf(OWNER_ROW), maxOwners: NUM,
@@ -1328,17 +1366,20 @@ const APPLICATION_PAGE = Kit.closed({
   krb5Across: KRB5_ACROSS
 });
 
-// `applicationDetailJson()`, `{ found: false, identifier }` for one nobody holds,
+// `applicationDetailJson()`, `{ found: false, identifier }` for one nobody
+// holds,
 // and an owner's narrowing of it (#607), whose `owners` and `maxOwners` are the
 // page's lifted out. So every member is optional.
 const APPLICATION_DETAIL = Kit.closed(Object.assign({}, APP_VIEW_MEMBERS, {
   found: BOOL, page: APPLICATION_PAGE, warnings: Kit.listOf(SCOPE_WARNING),
   attributesShown: Kit.listOf(Kit.closed({
-    name: STR, values: Kit.listOf(CLAIM_VALUE), sealedAtRest: BOOL, operational: BOOL
+    name: STR, values: Kit.listOf(CLAIM_VALUE), sealedAtRest: BOOL,
+    operational: BOOL
   })),
   attributesPaging: PAGING, authenticationEvents: Kit.listOf(AUDIT_EVENT),
   authenticationEventsPaging: PAGING, authenticationEventsMatched: INT,
-  authenticationEventsKnownActors: Kit.mapOf(BOOL, 'Which actors have a user page.'),
+  authenticationEventsKnownActors: Kit.mapOf(BOOL,
+  'Which actors have a user page.'),
   authenticationEventsLog: Kit.closed({
     held: NUM, recorded: NUM, dropped: NUM, maxEvents: NUM
   }),
@@ -1359,8 +1400,10 @@ const APPLICATION_DETAIL = Kit.closed(Object.assign({}, APP_VIEW_MEMBERS, {
 }));
 
 // ---------------------------------------------------------------------------
-// THE APPLICATION ACTIONS, `applicationsAction()`. `application` is the view after
-// a write, or the identifier where the action answers only its name. `changed` is
+// THE APPLICATION ACTIONS, `applicationsAction()`. `application` is the view
+// after
+// a write, or the identifier where the action answers only its name. `changed`
+// is
 // a boolean, and the list of attributes on `update-fields`.
 // ---------------------------------------------------------------------------
 const APP_ACTION_MEMBERS = {
@@ -1381,7 +1424,8 @@ const CERTIFICATE_ISSUED = Kit.closed({
 });
 
 // `tlsClientCertificates.bundle()`. Each file travels as `text` or as `base64`.
-const BUNDLE_FILE = Kit.closed({ name: STR, mime: STR, text: STR, base64: STR });
+const BUNDLE_FILE = Kit.closed({ name: STR, mime: STR, text: STR,
+base64: STR });
 
 const CERTIFICATE_BUNDLE = Kit.closed({
   pkcs12: BUNDLE_FILE, key: BUNDLE_FILE, chain: BUNDLE_FILE
@@ -1397,7 +1441,8 @@ const REVOCATION_ENTRY = Kit.nullable(Kit.closed({
 }));
 
 const CERTIFICATE_REVOKE = appAction({
-  certificate: REVOKED_CERTIFICATE, reason: STR, entry: REVOCATION_ENTRY, why: STR
+  certificate: REVOKED_CERTIFICATE, reason: STR, entry: REVOCATION_ENTRY,
+  why: STR
 });
 
 const STORED_CERTIFICATE_ACTION = appAction({
@@ -1422,7 +1467,8 @@ const FGA_ACTION = appAction({
   })
 });
 
-// What `sp_metadata.ts`'s `consume()` says of a document it read, with its refusal.
+// What `sp_metadata.ts`'s `consume()` says of a document it read, with its
+// refusal.
 const SP_METADATA_ACTION = appAction({
   how: STR, entityId: STR, signature: STR, certificateUse: STR,
   signingCertificates: INT, assertionConsumerServices: Kit.listOf(CLAIM_VALUE),
@@ -1431,8 +1477,10 @@ const SP_METADATA_ACTION = appAction({
   cacheDuration: NULL_STR, skipped: STRS, url: STR, why: STR
 });
 
-// `protected_resource_metadata.ts`'s `analyse()` or a refusal. The document is the
-// resource's own (RFC 9728), and a refusal may name a status or the members read.
+// `protected_resource_metadata.ts`'s `analyse()` or a refusal. The document is
+// the
+// resource's own (RFC 9728), and a refusal may name a status or the members
+// read.
 const THIRD_PARTY_METADATA = Kit.freeForm(
   'An RFC 9728 document as the resource published it, which may carry ' +
   'extensions and a signed form: the document\'s, not this service\'s.');
@@ -1446,7 +1494,8 @@ const RESOURCE_METADATA_ACTION = appAction({
   })),
   extensions: STRS, signedMetadata: THIRD_PARTY_METADATA,
   resourceCheck: Kit.closed({
-    checked: BOOL, matches: NULL_BOOL, expected: STRS, url: STR, why: STR
+    checked: BOOL, matches: NULL_BOOL, expected: STRS, wellKnownUrl: NULL_STR,
+    why: STR
   }),
   authorizationServers: Kit.closed({
     listed: INT, matched: INT, allMatched: BOOL, anyUnmatched: BOOL,
@@ -1464,9 +1513,20 @@ const RESOURCE_METADATA_ACTION = appAction({
   warnings: STRS, status: NUM
 });
 
-// A list row's `$ref` keeps the operation's name; `getApplications` is a list or
+// A list row's `$ref` keeps the operation's name; `getApplications` is a list
+// or
 // one application, whose `page` is a number on one and an object on the other.
-const APPLICATION_LIST: Json = Kit.oneOf(APPLICATIONS_LIST, APPLICATION_DETAIL);
+//
+// ONE CLOSED OBJECT, NOT `oneOf`: a validator's refusal of a union names every
+// branch's members, and STS-API-0139 is read by a person. Nothing is opened by
+// it, since each member is still declared and typed.
+const APPLICATION_LIST: Json = Kit.closed(Object.assign({},
+  APPLICATIONS_LIST.properties, APPLICATION_DETAIL.properties, {
+    page: Kit.oneOf(INT, APPLICATION_PAGE),
+    kinds: Kit.listOf(Kit.oneOf(STR, KIND_ROW)),
+    protocols: Kit.listOf(Kit.oneOf(STR, PROTOCOL_ROW)),
+    registered: Kit.oneOf(BOOL, NUM)
+  }));
 
 export = {
   components: {
@@ -1477,7 +1537,7 @@ export = {
     TokenLifetimes: TOKEN_LIFETIMES,
     CredentialClaims: CREDENTIAL_CLAIMS,
     VerifierRequest: VERIFIER_REQUEST,
-    AuthorizationServerList: Kit.oneOf(AS_LIST, AS_DETAIL),
+    AuthorizationServerList: AUTHORIZATION_SERVER_LIST,
     ApplicationList: APPLICATION_LIST,
     NewApplicationForm: NEW_APPLICATION_FORM
   } as Record<string, unknown>,
@@ -1504,6 +1564,7 @@ export = {
     revokeTokensByUser: { '200': TOKEN_COUNT_ACTION },
     revokeAllTokens: { '200': TOKEN_COUNT_ACTION },
     getIssued: { '400': Kit.action() },
+    getApplications: { '400': Kit.action() },
     getUsedAssertions: { '200': USED_ASSERTIONS, '400': Kit.action() },
     getOauth2Settings: { '200': PROTOCOL_SETTINGS_PAGE },
     getOid4vciSettings: { '200': PROTOCOL_SETTINGS_PAGE },
@@ -1644,7 +1705,7 @@ export = {
     },
     importApplicationLdif: { '200': appAction() },
     deleteApplication: { '200': appAction() },
-    getOauth2Monitor: { '200': OAUTH2_MONITOR },
+    getOauth2Monitor: { '200': OAUTH2_MONITOR, '400': Kit.action() },
     deletePushedRequest: {
       '200': Kit.action({
         request_uri_digest: STR, client_id: CLAIM_VALUE, state: STR
