@@ -72,16 +72,18 @@ const FUZZ_DPOP = Object.freeze({
 
 // SIGN-IN RISK SCORING OFF IN THE FUZZ REALMS (#1299, the cb74ce0f8 run). The
 // fuzz person signs in rapidly with no stable device or TLS client, which the
-// risk engine scores HIGH ("device and TLS client changed"); the product
-// risk-response policy then runs risk-end-sessions (a global logout) and
-// risk-credential-compromise, REVOKING the proxy's token — so every admin-api
-// request answered STS-API-0122 (isRevoked), ~50/s, never recovering, because
-// each fresh sign-in re-triggered HIGH and was revoked again. The fuzz person
-// is not a real user and its risk is test noise; risk.assessSignIns=false
-// short-circuits the scoring before any response can fire
-// (risk/risk_engine.ts:1733), and the risk ADMIN endpoints are still fuzzed —
-// only the fuzz person's own sign-in scoring stops. A change of who is asking
-// (a test realm's config), not of the service.
+// risk engine scored HIGH once ("device and TLS client changed") during the
+// authn-api cell; the product risk-response policy then ran risk-end-sessions
+// (a global logout for fuzzer) and risk-credential-compromise. That is real
+// self-sabotage worth preventing — but, on closer reading of the log, it was
+// NOT the cause of the admin-api STS-API-0122 flood: that was the examples
+// phase calling revoke-kind (every access_token, now excluded) plus the
+// admin-api cell having rewritten its own policies so the proxy's re-sign hit
+// MFA. This setting stops only the risk-driven logout. The fuzz person is not a
+// real user and its risk is test noise; risk.assessSignIns=false short-circuits
+// the scoring before any response can fire (risk/risk_engine.ts:1733), and the
+// risk ADMIN endpoints are still fuzzed. A change of who is asking (a test
+// realm's config), not of the service.
 const FUZZ_RISK = Object.freeze({ "risk.assessSignIns": false });
 
 // What every fuzz realm carries beside its mode flag: the DPoP headroom and the
@@ -179,6 +181,15 @@ const CUSTOM_CHECKS = [
 // DPoP token; the synthesized protocol doc is built from `/admin-api/
 // sts-metadata`, admin:read). `auth` is how the OPERATIONS are authenticated.
 // ---------------------------------------------------------------------------
+// ADMIN-API RUNS LAST IN EACH REALM (#1299, iya-sts-60's directive). Holding
+// SECURITY_ADMIN, the admin-api cell can rewrite the realm's policies (authn,
+// passkey, post-login), and a fuzzed save turned sign-in into an MFA / held
+// "pqc-passkey-migration" step that broke the LATER cells' sign-ins
+// (report-api and protocol errored after it on the cb74ce0f8 run). Run it after
+// account-api, authn-api, report-api and protocol, and it can only affect
+// itself; the per-cell re-assert then has only the earlier cells' doing to fix.
+// A realm's admin-api cannot reach the next realm (each realm is its own tree,
+// keys and policies); if a way is found, it is a finding.
 const SURFACES = [
   { key: "account-api", title: "Account API (portal/user)",
     kind: "openapi", schemaPath: "/account-api/openapi.json",
@@ -186,15 +197,16 @@ const SURFACES = [
   { key: "authn-api", title: "Sign-in API",
     kind: "openapi", schemaPath: "/authn-api/openapi.json",
     schemaAuth: "none", auth: "authn", checks: INVARIANT_BUILTIN },
-  { key: "admin-api", title: "Management API",
-    kind: "openapi", schemaPath: "/admin-api/openapi.json",
-    schemaAuth: "dpop-console", auth: "dpop-console", checks: INVARIANT_BUILTIN },
   { key: "report-api", title: "Reporting API",
     kind: "openapi", schemaPath: "/report-api/openapi.json",
     schemaAuth: "dpop-report", auth: "dpop-report", checks: INVARIANT_BUILTIN },
   { key: "protocol", title: "Protocol endpoints (synthesized)",
     kind: "synthesized", schemaPath: "/admin-api/sts-metadata",
     schemaAuth: "dpop-console", auth: "per-op",
+    checks: INVARIANT_BUILTIN },
+  { key: "admin-api", title: "Management API",
+    kind: "openapi", schemaPath: "/admin-api/openapi.json",
+    schemaAuth: "dpop-console", auth: "dpop-console",
     checks: INVARIANT_BUILTIN }
 ];
 
@@ -224,7 +236,14 @@ const EXCLUSIONS = [
       "tokens at once" },
   { surface: "admin-api", match: "revokeAllTokens",
     reason: "revokes every token, the run's own admin:read/write token " +
-      "among them, so the adapter cannot drive the next operation" }
+      "among them, so the adapter cannot drive the next operation" },
+  { surface: "admin-api", match: "revokeTokensByKind",
+    reason: "revokes every token of a kind (e.g. access_token), which " +
+      "includes the run's own admin-api token — no username or subject the " +
+      "fuzz person could avoid naming makes it miss, unlike revoke-subject / " +
+      "revoke-user (kept, since the fuzz cannot name the random fuzz person). " +
+      "It revoked the run's token ~2s into the 2026-11-06 admin-api cell and " +
+      "the STS-API-0122 flood followed (#1299)" }
 ];
 
 // ---------------------------------------------------------------------------
@@ -409,7 +428,16 @@ function validate() {
 // above without one.
 // ---------------------------------------------------------------------------
 
-const FUZZ_USER = "fuzzer";
+// A RANDOM username, so the fuzzer cannot NAME the fuzz person (#1299). The
+// token-revoking actions revoke-subject and revoke-user match `sub` OR
+// `username` EXACTLY, and a fixed "fuzzer" is a short string the fuzzer can
+// generate — which would revoke the run's own tokens. The uuid subject is
+// already random; this makes the username un-nameable too, so those two
+// actions stay fuzzable (iya-sts-60: fuzz them with another subject). The
+// probe on 2026-11-06 confirmed a named revoke-subject/revoke-user revokes the
+// token and the proxy then recovers; revoke-KIND is excluded below instead,
+// because it revokes every access_token and no username makes it miss.
+const FUZZ_USER = "fuzzer-" + crypto.randomBytes(4).toString("hex");
 // Meets a typical product password policy: upper, lower, digit, symbol, long.
 const FUZZ_PASSWORD = "Fuzz-Runner-Passw0rd!2026";
 // The console roles are granted on the roster (`/admin-api/rbac/grant`,
@@ -1199,6 +1227,31 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
       output: (((run.stdout || "") + (run.stderr || "")).slice(-40000)) +
         spawnError };
   } finally {
+    // Surface the proxy's recovery behaviour into the run log (#1299,
+    // iya-sts-60): its stdio is piped to proxyOut and was otherwise shown only
+    // when it failed to listen, so a re-sign storm or a re-sign that kept
+    // throwing was invisible. Report how many times it re-signed in and how
+    // many of those failed — a large count is the admin-api cell breaking its
+    // own sign-in (a policy it rewrote now demands MFA).
+    try {
+      const lines = proxyOut.split("\n");
+      const resigns = lines.filter(function (l) {
+        return /re-signing in/.test(l);
+      }).length;
+      const failed = lines.filter(function (l) {
+        return /re-sign-in failed|sign-in threw/.test(l);
+      }).length;
+      if (resigns || failed) {
+        say("[schemathesis] " + surface.key + " @ " + realmShown +
+          ": proxy re-signed in " + resigns + " time(s), " + failed +
+          " failed" + (failed ? " (sign-in blocked — see proxy tail): " +
+            lines.filter(function (l) {
+              return /re-sign-in failed|sign-in threw/.test(l);
+            }).slice(-3).join(" | ").slice(-400) : ""));
+      }
+    } catch (e) {
+      log.debug("Caught surfacing the proxy log: " + ((e && e.message) || e));
+    }
     proxy.kill();
   }
 }
