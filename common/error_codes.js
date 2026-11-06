@@ -4463,7 +4463,7 @@ const CODES = [
     spec: 'the verifier\'s refusal: whatever the certificate was presented ' +
       'for is refused as an untrusted certificate' },
   { code: 'STS-PKI-0203',
-    summary: 'A Certificate & Key Configuration pane field that takes a ' +
+    summary: 'A Certificate Workbench field that takes a ' +
       'closed set (pki_profile, pki_pq_mode, pki_key_alg, pki_alt_key_alg, ' +
       'pki_ks_format) held a value outside it (#86).',
     spec: 'HTTP 400 page or { ok: false, errors }' },

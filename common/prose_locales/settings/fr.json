@@ -3412,8 +3412,8 @@
     "text": "Certificats et clés conservés par le stockage de l’atelier, par domaine"
   },
   "pki.maxStoredObjects|description": {
-    "en": "3057876f05b58063",
-    "text": "Nombre d’objets que le volet Certificate & Key Configuration de /admin/pki peut conserver dans un domaine. **UN STOCKAGE PLEIN REFUSE LE SUIVANT** ; auparavant il supprimait le plus ancien, et le plus ancien porte une clé privée que quelqu’un a choisi de conserver. Supprimez ce qui n’est plus utile, ou augmentez cette valeur."
+    "en": "d78b7992e9302874",
+    "text": "Nombre d’objets que l’Atelier de certificats de /admin/pki peut conserver dans un domaine. **UN STOCKAGE PLEIN REFUSE LE SUIVANT** ; auparavant il supprimait le plus ancien, et le plus ancien porte une clé privée que quelqu’un a choisi de conserver. Supprimez ce qui n’est plus utile, ou augmentez cette valeur."
   },
   "pki.personSelfServicePerIdentity|label": {
     "en": "16d37c1faeb2ce0c",

@@ -3412,8 +3412,8 @@
     "text": "Mga certificate at key na itinatago ng workbench store, bawat realm"
   },
   "pki.maxStoredObjects|description": {
-    "en": "3057876f05b58063",
-    "text": "Ilang object ang puwedeng itago ng Certificate & Key Configuration pane sa /admin/pki sa iisang realm. **TINATANGGIHAN NG PUNONG STORE ANG SUSUNOD**; dati ay itinatapon nito ang pinakaluma, at may dalang private key ang pinakaluma na piniling itago ng isang tao. Burahin ang hindi na kailangan, o taasan ito."
+    "en": "d78b7992e9302874",
+    "text": "Ilang object ang puwedeng itago ng Certificate Workbench sa /admin/pki sa iisang realm. **TINATANGGIHAN NG PUNONG STORE ANG SUSUNOD**; dati ay itinatapon nito ang pinakaluma, at may dalang private key ang pinakaluma na piniling itago ng isang tao. Burahin ang hindi na kailangan, o taasan ito."
   },
   "pki.personSelfServicePerIdentity|label": {
     "en": "16d37c1faeb2ce0c",

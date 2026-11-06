@@ -64,7 +64,7 @@
   "certificatePemShort": "證書（PEM）",
   "andCsr": " 及證書要求",
   "clearStoreTip": "捨棄此窗格在此領域中簽發的所有金鑰對與證書。上方的階層結構不受影響。",
-  "paneHeading": "證書與金鑰設定",
+  "paneHeading": "證書工作台",
   "paneIntro": "<strong>這是上層專案的 <em>PKI / X.509</em> 工作流程，執行在伺服器上。</strong>建立核證機關，並簽發其中任何一個都能簽章的葉證書：TLS 伺服器、用於雙向驗證的 TLS 客戶端、程式碼簽署、S/MIME、OCSP 回應程式、時間戳記、智能卡登入與 Kerberos PKINIT。下方列出了 RFC 5280 定義的每個 X.509v3 擴充，加上它未定義但常用的擴充，以及任何透過 OID 指定的擴充。編碼器是 <code>common/crypto_impl/x509.js</code>，與那個專案自己的 PKI 程式碼逐位元組相同，因此在這裡簽發的證書與在那裡簽發的證書由<em>同一個</em>編碼器建立。",
   "paneAsserting": "<strong>您在下方輸入的 <code>cRLDistributionPoints</code> 或 <code>authorityInfoAccess</code> 是您宣告的 URL，此窗格對它不作任何承諾。</strong>在 2026-09-11 之前，本頁面上的每個地址都是如此，現在<em>您輸入的</em>每個地址仍然如此 &mdash; 改變的是，本服務<em>自己</em>簽發的證書現在寫明的是它真正會回應的地址：每個授權單位都簽署一個 CRL 並執行一個 OCSP 回應程式，由其中任何一個簽發的內容都可以在下方的窗格中撤銷。在這裡由私密金鑰位於此程序中的授權單位簽發的物件也在那個登錄中。指向您自己的 URL 的則不在，這裡也不會假裝在。",
   "issue": "產生金鑰對並簽發證書",

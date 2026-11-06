@@ -5535,8 +5535,8 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. The TWELVE actions behind two console pages — build, ' +
           'clear, issue, revoke on /admin/pki, and apply-profile, ' +
           'generate-keys, generate-alt-keys, issue-certificate, use-key, ' +
-          'remove-object, clear-store, export on the Certificate & Key ' +
-          'Configuration pane — through the same pkiAction() those pages ' +
+          'remove-object, clear-store, export on the Certificate Workbench — ' +
+          'through the same pkiAction() those pages ' +
           'call. **IT RESOLVES RATHER THAN RETURNING**: issuing is Web ' +
           'Crypto all the way down, so this is one of the two action ' +
           'handlers in this API that await (/admin-api/ssf is the other). ' +

@@ -10,7 +10,7 @@
 //
 // Draws PKI from the answer of `GET /admin-api/pki`: this realm's certificate
 // authority and the tree it is under, the key pairs issued to applications and
-// people, revocation, pinned signers, the Certificate & Key Configuration pane
+// people, revocation, pinned signers, the Certificate Workbench
 // and the settings.
 //
 // A `web_` MODULE, on `web_kit.ts`'s terms: it requires other `web_` modules
@@ -43,7 +43,7 @@ const REVOCATION_LIST_PARAM =
 /**
  * Draws PKI from the answer of `GET /admin-api/pki`: this realm's certificate
  * authority and the tree it is under, the key pairs issued to applications and
- * people, revocation, pinned signers, the Certificate & Key Configuration pane
+ * people, revocation, pinned signers, the Certificate Workbench
  * and the settings.
  *
  * A static utility class; it holds no state and takes no dependencies.
@@ -847,7 +847,7 @@ class PkiPage {
   // The whole pane: the three columns, the extensions, the buttons and the
   // store, in one form.
   /**
-   * Draws the Certificate & Key Configuration pane: its three columns, the
+   * Draws the Certificate Workbench: its three columns, the
    * extensions, the buttons and the store, in one form.
    *
    * @param json - `pkiJson()`'s model
