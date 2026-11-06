@@ -235,6 +235,12 @@ with no override. It replaced #494's per-application name
   first among the roles of the one document and signs it.
   `federationMetadata()` serves that view, with the SAML endpoints unscoped (a
   `wtrealm` need not be a SAML provider), at both WS-Federation paths.
+  **It carries no `alg:SigningMethod` or `alg:DigestMethod` (#1368).** The
+  Algorithm Support profile's section 1 says it does not replace
+  WS-SecurityPolicy and is for systems built around SAML metadata, this
+  module verifies nothing a passive requestor signs, and section 2.5 says
+  absence "implies no information, rather than lack of support". It would be
+  added risk with a reader who could read metadata less leniently, for nothing.
   **The SAML paths serve the same document WITHOUT this role**: tried in one
   document everywhere first, SimpleSAMLphp's metadata validator refused the
   whole document — the role's `xsi:type` resolves only with the

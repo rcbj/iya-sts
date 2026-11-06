@@ -5780,7 +5780,16 @@ class Saml2Sso {
         '<md:Extensions><cm:CryptoMetadataLocation xmlns:cm="' +
           'urn:iya:sts:crypto-metadata:1">' +
           xmlEscape(helpers.rebaseTo(base, 'pki') + '/crypto/metadata.xml') +
-          '</cm:CryptoMetadataLocation>' + this.algorithmSupport() +
+          '</cm:CryptoMetadataLocation>' +
+          // NOT IN THE WS-FEDERATION VIEW (#1368). The profile is written for
+          // systems built around SAML metadata, and its section 1 says it does
+          // not replace WS-SecurityPolicy. WS-Federation's passive requestor
+          // sends this service nothing signed, so the statement would tell
+          // that view's readers nothing they can use, and section 2.5 makes
+          // leaving it out safe: absence "implies no information, rather than
+          // lack of support". The SAML 1.1 paths serve this same document,
+          // and that profile's signed SOAP callers do use it.
+          (withWsFederation ? '' : this.algorithmSupport()) +
           '</md:Extensions>' +
         // The role descriptors are a choice the schema lets come in any
         // order; WS-Federation's first, where a WS-Federation relying party

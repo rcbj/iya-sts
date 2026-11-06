@@ -156,6 +156,11 @@ function childMain() {
     note(/<alg:SigningMethod xmlns:alg="[^"]+" Algorithm="[^"]*ml-dsa-87"/
       .test(saml.text.slice(saml.text.indexOf('<alg:SigningMethod'))
         .split('/>')[0] + '/>'), 'in order of preference, strongest first');
+    note(/<alg:SigningMethod /.test((await get('/saml11/metadata')).text),
+         'SAML 1.1 metadata carries them: it is the same document');
+    note(!/algsupport/.test((await get(
+      '/FederationMetadata/2007-06/FederationMetadata.xml')).text),
+    'the WS-Federation view does not');
     config.setOverride('saml.acceptedSignatureAlgorithms', 'RS256');
     const narrowed = (await get('/saml2/metadata')).text;
     note((narrowed.match(/<alg:SigningMethod /g) || []).length === 1 &&

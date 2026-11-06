@@ -599,6 +599,12 @@ metadata validator refused the whole document over it (the Shibboleth SP
 accepted it). rcbj chose "two views, one entity" — one entityID, one signer,
 the WS-Federation view a superset — over one document everywhere.
 
+**The one thing the WS-Federation view leaves out is the Algorithm Support
+profile's `alg:SigningMethod` and `alg:DigestMethod` (#1368).** The SAML 2.0 and
+SAML 1.1 paths serve one document, so both carry them, and SAML 1.1's signed SOAP
+callers are verified through the same accept list. The reasons for the
+WS-Federation view are in `ws-federation/CLAUDE.md`.
+
 ---
 
 ## FOURTEEN OF THESE SETTINGS ARE PER APPLICATION, AND `settingFor()` IS THE ONLY PLACE THAT IS DECIDED
