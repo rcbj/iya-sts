@@ -136,7 +136,10 @@ function fakeDriver(origin) {
                    keySealed: row.keySealed || '',
                    body: row.body, writtenAt: Date.now(),
                    expiresAt: row.expiresAt === undefined ? null
-                     : row.expiresAt });
+                     : row.expiresAt,
+                   // The bigint `sort_at` an on-demand store's `sortBy`
+                   // answers, for the out-of-range guard (#1347).
+                   sortAt: row.sortAt === undefined ? null : row.sortAt });
       });
       deletes.forEach(function (row) {
         rows.delete(id(row.handle, row.realm, row.key));
@@ -763,6 +766,80 @@ async function body(t, dir) {
           'lost');
   throwing.delete('k');
   expiring.clear();
+  await minted.flush();
+  // -------------------------------------------------------------------------
+  // 6b-ii. AN OUT-OF-BIGINT-RANGE EXPIRY (OR SORT) IS WRITTEN AS NULL (#1347).
+  //     The Schemathesis gate (#1299) fed a huge ttl that expiryOf() passed
+  //     straight to the bigint `sts_minted.expires_at`; node-postgres bound it
+  //     as plain digits (9.3e18, SQLSTATE 22003) or, once String() turns
+  //     exponential at 1e21, as "9.22e+21" (SQLSTATE 22P02). EITHER fails the
+  //     whole flush transaction permanently and flush() re-journals the keys,
+  //     so one such row wedges every later write in the realm (reproduced on a
+  //     private postgres before this guard). expiryOf()/sortAtFor() now cap at
+  //     Number.MAX_SAFE_INTEGER and write anything above it as null — the same
+  //     "not expiring / not sorted" the throwing hook above writes, which every
+  //     path already treats as no expiry / no sort. Both sides of 2^63 are
+  //     covered because the ceiling is below it.
+  // -------------------------------------------------------------------------
+  const ranged = realms.map({
+    persist: 'test.ranged', retain: 'age',
+    expiresAt: function (value) {
+      return value && value.expiresAt;
+    }
+  });
+  const nowR = Date.now();
+  ranged.set('exp-huge', { expiresAt: 9.22e21 });   // > 2^63, exponential
+  ranged.set('exp-overbig', { expiresAt: 9.3e18 }); // > 2^63, plain digits
+  ranged.set('exp-ceiling', { expiresAt: Number.MAX_SAFE_INTEGER });
+  ranged.set('exp-live', { expiresAt: nowR + 60 * 60 * 1000 });
+  await minted.flush();
+  const rstored = function (key) {
+    return driver.rows.get(['test.ranged', 'default',
+      minted.keyColumnOf('test.ranged', 'default', key)].join('\u0000'));
+  };
+  t.check(rstored('exp-huge') && rstored('exp-huge').expiresAt === null &&
+          rstored('exp-overbig') && rstored('exp-overbig').expiresAt === null,
+          '6b-ii. an expiry past Number.MAX_SAFE_INTEGER is written as not ' +
+          'expiring (null) — both the 22003 and 22P02 magnitudes',
+          JSON.stringify(['exp-huge', 'exp-overbig'].map(function (k) {
+            return rstored(k) && rstored(k).expiresAt;
+          })));
+  t.check(rstored('exp-ceiling') &&
+          rstored('exp-ceiling').expiresAt === Number.MAX_SAFE_INTEGER &&
+          rstored('exp-live') &&
+          rstored('exp-live').expiresAt === nowR + 60 * 60 * 1000,
+          'and the ceiling itself and a normal instant are written through',
+          JSON.stringify([rstored('exp-ceiling') &&
+            rstored('exp-ceiling').expiresAt, rstored('exp-live') &&
+            rstored('exp-live').expiresAt]));
+  ranged.clear();
+  await minted.flush();
+  // The sort guard, through an on-demand store whose `sortBy` is the value
+  // written to the bigint `sort_at`; it is reached only for such a store.
+  const sorted = realms.map({
+    persist: 'test.sorted', retain: 'age', onDemand: true,
+    sortBy: function (value) {
+      return value && value.sortAt;
+    }
+  });
+  sorted.set('sort-huge', { sortAt: 9.22e21 });
+  sorted.set('sort-overbig', { sortAt: 9.3e18 });
+  sorted.set('sort-ok', { sortAt: 42 });
+  await minted.flush();
+  const sstored = function (key) {
+    return driver.rows.get(['test.sorted', 'default',
+      minted.keyColumnOf('test.sorted', 'default', key)].join('\u0000'));
+  };
+  t.check(sstored('sort-huge') && sstored('sort-huge').sortAt === null &&
+          sstored('sort-overbig') && sstored('sort-overbig').sortAt === null &&
+          sstored('sort-ok') && sstored('sort-ok').sortAt === 42,
+          '6b-iii. a sort value past Number.MAX_SAFE_INTEGER is written as ' +
+          'null (not sorted), while a normal one is written through',
+          JSON.stringify(['sort-huge', 'sort-overbig', 'sort-ok'].map(
+            function (k) {
+              return sstored(k) && sstored(k).sortAt;
+            })));
+  sorted.clear();
   await minted.flush();
   // The common shape of a hook: a field in ms, in seconds, an ISO string, the
   // bare value; anything else is "does not expire".

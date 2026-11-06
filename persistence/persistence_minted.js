@@ -254,6 +254,25 @@ const expiryHookFailed = new Set();
 // THE HOOK RUNS IN THE ROW'S REALM, not the flush's: a flush scheduled from a
 // request runs in that request's realm and writes every realm's journal, and
 // a hook that reads a lifetime setting must read the one the row's realm has.
+// The largest value a hook's answer may carry into the bigint columns
+// `sts_minted.expires_at`, `sts_minted_index.expires_at` and the session
+// index's `sort_at`. A hook fed a fuzzed or mistaken magnitude can return a
+// finite positive number far past a signed 64-bit integer; node-postgres then
+// binds it as digits (SQLSTATE 22003) or, once `String()` turns exponential at
+// 1e21, as the text "9.22e+21" (SQLSTATE 22P02) — EITHER fails the whole flush
+// transaction PERMANENTLY, and `flush()` below re-journals the keys, so one
+// such row wedges every later write in its realm (#1347; the Schemathesis gate
+// #1299 found it through join-token, which #1346 bounded, but expiryOf() is
+// the general route). `Number.MAX_SAFE_INTEGER` is the ceiling because a value
+// above it has already lost integer precision in this process, and no real
+// epoch-millisecond expiry approaches it (it is the year 287396). Such a value
+// is written as NOT EXPIRING / NOT SORTED — the same null a hook that throws
+// already writes (STS-STORE-0064), which every path (the restore filter, the
+// minted-expiry purge, the read-time expiry check, the session index) already
+// treats as "no expiry" / "no sort". This closes the MINTED path only; a
+// bigint column written anywhere else is its own case.
+const MAX_STORED_EXPIRY = Number.MAX_SAFE_INTEGER;
+
 function expiryOf(row, value, key, realmId) {
   log.debug("Entering expiryOf().");
   if (!row || typeof row.expiresAt !== 'function') {
@@ -280,7 +299,8 @@ function expiryOf(row, value, key, realmId) {
   }
   const ms = Number(at);
   log.debug("Leaving expiryOf().");
-  return at !== null && at !== undefined && Number.isFinite(ms) && ms > 0
+  return at !== null && at !== undefined && Number.isFinite(ms) && ms > 0 &&
+    ms <= MAX_STORED_EXPIRY
     ? Math.floor(ms) : null;
 }
 
@@ -3168,7 +3188,7 @@ function sortAtFor(row, value, key) {
   }
   const n = typeof answer === 'number' ? answer : Number(answer);
   if (answer === null || answer === undefined || answer === '' ||
-      !Number.isFinite(n)) {
+      !Number.isFinite(n) || Math.abs(n) > MAX_STORED_EXPIRY) {
     log.debug("Leaving sortAtFor(). No value.");
     return null;
   }
