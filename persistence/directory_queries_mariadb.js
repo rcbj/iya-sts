@@ -454,7 +454,12 @@ function holderKeys(realm, baseKey, name) {
 
 function byKeys(ask, realm, keys) {
   log.debug("Entering byKeys().");
-  const list = (keys || []).map(String);
+  // A dn_key with a NUL byte matches no stored key; drop it rather than send
+  // it to the driver (#1356). See directory_queries.js's byKeys for the
+  // argument — it is not a refusal and carries no error code.
+  const list = (keys || []).map(String).filter(function (key) {
+    return key.indexOf('\u0000') < 0;
+  });
   if (!list.length) {
     log.debug("Leaving byKeys(). None.");
     return Promise.resolve([]);
