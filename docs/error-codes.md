@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5298** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5301** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -75,9 +75,9 @@ is an ordinary outcome.
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 82
-* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 152
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 57
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 83
+* [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 153
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 58
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 52
@@ -3621,6 +3621,7 @@ Raised from: scim/.
 | `STS-SCIM-0085` | A verified TLS client certificate from an outside certificate authority was not taken as a SCIM credential: it is stored in userCertificate on more than one entry of the realm (#1061). | audit row; HTTP 401 when no other scheme authenticates |
 | `STS-SCIM-0086` | A SCIM write that only a Security Administrator may make — the Security Administrator's group created, changed or deleted, or the User of a person who holds the role changed or deleted — was asked by a caller that does not hold SECURITY_ADMIN (a person on the roster, or an application that is a member of the role). | HTTP 403 |
 | `STS-SCIM-0087` | A SCIM User write carried a value of one of the realm's custom attributes (the CustomAttributes extension) that its syntax refuses, several values for a single-valued one, or an integer past what a JSON number carries exactly; nothing was written (#699). | SCIM invalidValue (HTTP 400) |
+| `STS-SCIM-0088` | The identity gate threw on a verified client certificate, so it was not taken as a SCIM credential (#1360). | the caller's 401: another scheme, or none |
 
 ## STS-SPIFFE
 
@@ -3782,6 +3783,7 @@ Raised from: spiffe/.
 | `STS-SPIFFE-0150` | The workload agent refused a Workload API caller that is entitled to nothing it asked for: no registration entry matches it (#324). | — |
 | `STS-SPIFFE-0151` | The workload agent could not obtain an SVID or a bundle from the SPIRE Server API (#324). | — |
 | `STS-SPIFFE-0152` | The workload agent attested and bound its Unix socket but could not write the file named by --ready-file, so it stopped rather than serve a socket its workload waits on and cannot find (#695). | — |
+| `STS-SPIFFE-0153` | The SPIRE Server API could not be given a TLS identity under paranoid PKI mode, so its address was not bound plain (#1360). | none: the address does not answer, and GET /spiffe says so |
 
 ## STS-TLS
 
@@ -3848,6 +3850,7 @@ Raised from: tls/.
 | `STS-TLS-0055` | GET /tls/sign-in started no session for a verified client certificate from an outside certificate authority that is stored in userCertificate on more than one entry of the realm, so it names nobody (#1061). | HTTP 200, session.started false |
 | `STS-TLS-0056` | A stored client-truststore anchor is one the admission rule now refuses. It is kept, reported as unadmittable on /admin/tls/trust and logged once at restore; an operator removes it (#1360). | none (logged) |
 | `STS-TLS-0057` | A block of tls.trustAnchorsFile is one the admission rule refuses under paranoid PKI mode, and was left out of the truststore (#1360). | none (logged) |
+| `STS-TLS-0058` | A resumed TLS session's client certificate was demoted under paranoid PKI mode: its full handshake was refused, or this process has no record of it. The next full handshake settles it (#1360). | none (logged): the certificate is treated as unverified |
 
 ## STS-VC
 

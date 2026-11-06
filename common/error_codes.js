@@ -16406,6 +16406,10 @@ const CODES = [
       'what a JSON number carries exactly; nothing was written (#699).',
     spec: 'SCIM invalidValue (HTTP 400)' },
   // ===== SPIFFE ============================================================
+  { code: 'STS-SCIM-0088',
+    summary: 'The identity gate threw on a verified client certificate, so it ' +
+      'was not taken as a SCIM credential (#1360).',
+    spec: 'the caller\'s 401: another scheme, or none' },
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
       'gRPC status, which is a defect in this service (or the request ' +
@@ -17119,6 +17123,10 @@ const CODES = [
       '(#695).',
     spec: '' },
   // ===== TLS ===============================================================
+  { code: 'STS-SPIFFE-0153',
+    summary: 'The SPIRE Server API could not be given a TLS identity under ' +
+      'paranoid PKI mode, so its address was not bound plain (#1360).',
+    spec: 'none: the address does not answer, and GET /spiffe says so' },
   { code: 'STS-TLS-0001',
     summary: 'The service did not start: tls.minVersion, tls.ciphers, ' +
       'tls.groups or tls.signatureAlgorithms cannot build a TLS context.',
@@ -17427,6 +17435,11 @@ const CODES = [
       'refuses under paranoid PKI mode, and was left out of the truststore ' +
       '(#1360).',
     spec: 'none (logged)' },
+  { code: 'STS-TLS-0058',
+    summary: 'A resumed TLS session\'s client certificate was demoted under ' +
+      'paranoid PKI mode: its full handshake was refused, or this process has ' +
+      'no record of it. The next full handshake settles it (#1360).',
+    spec: 'none (logged): the certificate is treated as unverified' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +

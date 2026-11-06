@@ -8934,6 +8934,22 @@ may be in another realm. **ITS ADMISSION HAS NO OFF SWITCH**: it has no earlier
 behaviour to restore. Every read asks the directory, whose `entriesUnder()` caches
 the listing until something is written there, so a validation walks no realm.
 
+**PHASE 1: THE HOLD AND ITS THREE SHAPES.** A handshake cannot wait for a fetch at
+the main port (`socket.authorized` is read synchronously, and an HTTP parser reads
+past a pause), so `holdPeer()` is synchronous: the rules, the leaf's fields, and the
+register where asked. Revocation then takes the shape of the listener: the main
+port's is `annotateRequest()`, which was already there; LDAPS pauses the stream
+until `holdConnectionsOn()` has the verdict; the debugger's first middleware waits on
+`settledRequest()`. A worker needs nothing new: the front process demotes
+`socket.authorized`, and that flag is what `request_pool.peerOf()` already forwards.
+**SPIFFE's gRPC socket is `spiffe-svid`'s (Phase 5)**: it turns `rejectUnauthorized`
+off and `spiffe_auth.ts` verifies what arrived itself, so there is no OpenSSL verdict
+to demote. **RFC 8705 section 3 binds a token to a certificate, not to a CA**, so the
+two `certificateMatches` terms that always passed were removed rather than made
+`.verified`, which would have refused a self-signed client's own bound token: only
+AuthZEN's `mtls+bearer`, which asks for a verified certificate by name, and
+`certificateVerified` at the token endpoint, read `.verified`.
+
 **THE COUNTERS ARE NOT ON `/admin/caches`**: not a cache, one row per realm and
 purpose, bounded by construction, and per process, which the page says. **`pki.pins.
 audit`** is a cluster job per realm, logging and mailing only what CHANGED against

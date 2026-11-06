@@ -1079,6 +1079,10 @@ class DebuggerServer {
       tlsServer.trustClientCertificatesOn(server, 'the protocol debugger (' +
                                                   port + ')', undefined,
                                           { kind: 'debugger' });
+      // Under paranoid PKI mode it holds a client certificate as the main port
+      // does, with revocation, and `app`'s first middleware waits (#1360).
+      tlsServer.holdConnectionsOn(server, 'the protocol debugger (' + port +
+                                          ')');
       // NO shared session-ticket key (tls/session_tickets.ts): this
       // listener asks for a client certificate, and a session resumed on
       // another node has no remembered chain there — server.js says why.
@@ -1202,6 +1206,13 @@ class DebuggerServer {
     // Every request here is in the DEFAULT realm: this listener has no realm
     // prefix, and everything it reads — the client entry, the sessions, the
     // roster, the signing key — is the default realm's.
+    // An HTTP parser reads past a socket's pause, so a request waits here for
+    // what `holdConnectionsOn()` is still asking of its certificate (#1360).
+    app.use(function settledCertificate(req, res, next) {
+      require('../tls/tls_server').settledRequest(req).then(function () {
+        next();
+      }, next);
+    });
     app.use(function inDefaultRealm(req, res, next) {
       realms.run(realms.get(realms.DEFAULT_ID), next);
     });

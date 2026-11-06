@@ -1263,6 +1263,7 @@ const JOBS = [
   // every listener reads, so it is `exclusive`.
   { file: 'sts_paranoid_pki_settings.js', browser: false, exclusive: true },
   { file: 'sts_paranoid_pki_console.js', browser: true },
+  { file: 'sts_paranoid_pki_tls.js', browser: false, exclusive: true },
   // DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123): the
   // console page's shell, the five operations in the document and the gate,
   // the view and its group chooser, the refusals (a missing group 0530),

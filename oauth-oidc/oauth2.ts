@@ -16080,7 +16080,7 @@ class OAuth2Server {
           grant: grant,
           dpopJkt: dpopJkt,
           certificate: !!mtls.peerCertificate(req),
-          certificateVerified: mtls.peerVerified(req),
+          certificateVerified: mtls.peerVerified(req).verified,
           exempt: senderConstraints.mtlsExemptClient(opts.client_id),
           mtlsAvailable: mtls.available()
         });
@@ -16989,7 +16989,7 @@ class OAuth2Server {
         provedJkt: dpopJkt,
         tokenThumbprint: mtls.boundThumbprintOf(claims),
         certificate: !!mtls.peerCertificate(req),
-        certificateVerified: mtls.peerVerified(req),
+        certificateVerified: mtls.peerVerified(req).verified,
         // RFC 8705 section 7.1 again, read off the same decision the binding
         // check above made: `refreshBound` is false exactly when the client
         // authenticated by certificate on this request AND owns this token, and

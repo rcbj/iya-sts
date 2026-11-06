@@ -948,6 +948,24 @@ class SpiffeServer {
                   'says so; this is a fault here rather than a configuration ' +
                   'problem.');
         secure = null;
+        // A DOWNGRADE ON A FAULT IS WHAT PARANOID PKI MODE REFUSES (#1360): the
+        // address stays unbound, and `GET /spiffe` says so, rather than
+        // answering plain with nothing on it authenticated.
+        if (require('../common/certificate_trust')
+              .applies('tls-client', realmId)) {
+          log.error(errorCodes.tag('STS-SPIFFE-0153') + 'spiffe: paranoid PKI ' +
+                    'mode refuses to bind the SPIRE Server API plain, so it ' +
+                    'is not bound.');
+          const why = 'paranoid PKI mode refuses to bind this plain, and it ' +
+                      'could not be given a TLS identity';
+          log.debug("Leaving SpiffeServer.bindAll(). Not bound plain.");
+          return addresses.map(function (entry: any) {
+            return { address: entry.address, listening: false, error: why,
+                     port: 0, tls: false, socket: !!entry.socketPath,
+                     realm: realmId || '',
+                     authentication: SENTENCES.nothingListening };
+          });
+        }
       }
     }
     // KEPT, so a new Root can re-key this socket without rebinding it

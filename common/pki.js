@@ -9853,6 +9853,24 @@ async function importCa(scopeId, useCaseId, material) {
                       'by a path validator. A leaf cannot be an issuing ' +
                       'authority.'] }, 'STS-PKI-0041');
   }
+  // UNDER PARANOID PKI MODE (#1360): cA, keyCertSign, validity and pathLen, and
+  // an Issuing CA chains to the service Root. Off, as before: a CA whose key
+  // matches. Lazily: the door requires this module.
+  const importedInForce = require('./certificate_trust')
+    .assess('ca-import', {
+      leaf: certificatePem, pinned: useCaseId === 'root',
+      chain: useCaseId === 'root' ? [] :
+        ((rawChainFor(scopeId) || {}).tiers || []).map(function (tier) {
+          return tier.certificatePem;
+        }).filter(Boolean)
+    }, { realmId: realms.get(scopeId) ? scopeId : realms.DEFAULT_ID,
+         variant: useCaseId === 'root' ? 'root' : undefined });
+  const imported = await importedInForce;
+  if (!imported.ok) {
+    log.debug("Leaving importCa(). Paranoid: " + imported.code);
+    return errorCodes.mark({ ok: false, errors: ['That authority is refused: ' +
+             imported.why] }, imported.code);
+  }
   const desc = await keyMaterial.describePublicPem(
     cert.publicKey.export({ type: 'spki', format: 'pem' }));
   const record = {
@@ -10040,6 +10058,21 @@ async function pinKeyPair(scopeId, useCaseId, slot, material, options) {
       return errorCodes.mark({ ok: false,
                errors: ['That private key does not belong to that ' +
                         'certificate.'] }, 'STS-PKI-0040');
+    }
+    // A pinned leaf's own fields, under paranoid PKI mode (#1360): a write is
+    // not a use, so no path and no revocation, and that leaf's owner is the
+    // operator whose choice it is to chain it.
+    const pinTrust = require('./certificate_trust');
+    if (pinTrust.applies('ca-import', realms.get(scopeId) ? scopeId :
+                                      realms.DEFAULT_ID)) {
+      const field = stsCrypto.certificateFieldProblem(cert, {
+        role: 'leaf', mayBeCa: cert.subject === cert.issuer,
+        keyUsage: ['digitalSignature'] });
+      if (field) {
+        log.debug("Leaving pinKeyPair(). Paranoid: " + field.code);
+        return errorCodes.mark({ ok: false, errors: ['That certificate is ' +
+                 'refused: ' + field.why] }, field.code);
+      }
     }
     const row = rawRowFor(scopeId) || {};
     row.certs = Object.assign({}, row.certs || {});
