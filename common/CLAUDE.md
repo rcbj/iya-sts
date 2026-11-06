@@ -8891,6 +8891,53 @@ hand-over still holds; what changed is the storage and the lifecycle.
   TLS card's rule (`labelProblem()`, `STS-PKI-0225`); a handle the person holds
   nothing under is `STS-PKI-0224`.
 
+## 3de. `signature_policy.ts`: which algorithm a realm signs with and accepts (#1368)
+
+**One question had three answers.** `crypto.js` refused a post-quantum JWS in
+`prepareVerification()` and nowhere else, `helpers.js` applied the lists in
+`signJwtAs()` and not `signJwt()`, and each publisher narrowed its own list. So
+every door now asks `SignaturePolicy`, and each surface has one chokepoint:
+
+| Surface | Accept | Sign |
+|---|---|---|
+| `jose` | `refuseUnacceptableJws()`, from `prepareVerification()` and `jwsSignatureValid()` | `signatureRefusal()`, from `signJwt()`, `signJwtAs()` and their twins |
+| `httpsig` | `httpsigVerifyOne()` | `signHttpMessage()` |
+| `cose` | `refuseUnacceptableCose()`, from `coseSign1Verify()` and its twin | `coseSpecToSign()` |
+| `xml` | `xmlAlgorithmVerdict()` | `signXml()`, `signQueryString()` |
+| `di` | `VcDataIntegrity.verifyBytes()`, and `verifyLdpVc()` for bbs-2023 | `VcDataIntegrity.signBytes()`, and the `ldp_vc` issuer for bbs-2023 |
+| `x509` | `pathRuleProblem()`, whose `unaccepted-signature` has a row in `certificate_trust.ts`'s tables | none: `pki.*` settings choose, and a running hierarchy depends on them |
+
+**Four things a reader would otherwise "fix":**
+
+* **`signJws()` IS NOT A CHOKEPOINT.** The DID, status-list and trust-list signers
+  sign with keys their own documents publish, and a refusal that low would move
+  what they do by default. A signer asks where it CHOOSES its algorithm.
+* **`verifyCoseSignature()` IS NOT ONE EITHER.** Passkeys and attestation statements
+  go through it and sign no Sig_structure, and WebAuthn keeps its own two lists.
+  `coseSign1Sign()` and `coseSign1Verify()` are the door, for mdoc and the CWTs.
+* **THE FAMILY SWITCHES STAY NARROW.** `keys.postQuantumSigning` covers JOSE and
+  JWS-named HTTP signatures, as its row says; widened to every surface, a realm with
+  it off would refuse its own post-quantum CA. `keys.eddsaSigning` is JOSE signing
+  only.
+* **AN EMPTY LIST MEANS TODAY, NOT THE REGISTRY'S ORDER.** Post-quantum signing is on
+  by default, so preference order as the default would move every signature to
+  ML-DSA and reorder discovery. `crypto_impl/CLAUDE.md` has the two orders.
+
+**What is published reads the same answers**, through `helpers.narrowSigningAlgs()`
+and `narrowAcceptedLists()`. With nothing configured they leave a document alone,
+which is what keeps certified output still. `tests/signature_policy_metadata.js`
+holds that against pins **taken from HTTP output captured before they existed**, so
+it cannot be satisfied by the new code agreeing with itself. A pin moving is a
+certification question.
+
+**SAML's `alg:SigningMethod` says what this realm can VERIFY**, not what it signs
+with: section 2.4 of the profile. It is the one deliberate change to a default,
+rcbj's decision.
+
+**A guard to know about**: `tests/jose_certificate_header.js` reads three lines
+above a signing call for its `certificate-header: none` comment, so code put between
+the two fails it. That happened twice on #1368. Put it above the comment.
+
 ## 3dd. `certificate_trust.ts`, `signer_truststore.ts`, `crypto.js` SECTION 18: PARANOID PKI MODE (#1360, 2026-11-06)
 
 **Every X.509 certificate this service relies on goes through one door with a

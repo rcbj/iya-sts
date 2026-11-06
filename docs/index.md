@@ -178,6 +178,7 @@ documents it.
 | WS-Federation | `/admin/wsfed` | [WS-Federation](ws-federation.md) | [WS-Federation](configure-ws-federation.md) |
 | PKI | `/admin/pki` | [PKI](pki.md) | |
 | PKI trust | `/admin/pki/trust` | [Signer truststore](signer-truststore.md), [use cases](pki-use-cases.md), [paranoid PKI mode](pki.md#paranoid-pki-mode) | |
+| Cryptography | `/admin/crypto-metadata` | [Signature algorithms](crypto.md) | |
 | Cert issuance (ACME, EST, SCEP and SPIFFE tabs) | `/admin/cert-issuance` | [ACME](acme.md), [EST](est.md), [SCEP](scep.md), [SPIFFE](spiffe.md) | [ACME, EST, SCEP](configure-enrollment.md), [SPIFFE](configure-spiffe.md) |
 | TLS / mutual TLS | `/admin/tls`, `/admin/tls/trust` | [TLS and mutual TLS](tls.md) | [TLS and mutual TLS](configure-tls.md) |
 

@@ -154,6 +154,7 @@
     - { title: PKI, url: /pki.html }
     - { title: Signer truststore, url: /signer-truststore.html }
     - { title: PKI use cases, url: /pki-use-cases.html }
+    - { title: Signature algorithms, url: /crypto.html }
     - { title: ACME, url: /acme.html }
     - { title: EST, url: /est.html }
     - { title: SCEP, url: /scep.html }
