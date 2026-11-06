@@ -64,6 +64,93 @@ function leakedBy(cases) {
   });
 }
 
+// What tests/schemathesis/egress_routes.py says of each case, by plain python3
+// (it imports no schemathesis): the reason string when the route may show a
+// blocked outbound dial, or null.
+function dialAllowed(cases) {
+  const log = require("bunyan").createLogger({
+    name: "schemathesis_plan", level: process.env.STS_LOG_LEVEL || "info" });
+  log.debug("Entering dialAllowed().");
+  const answer = childProcess.spawnSync("python3", [path.join(__dirname,
+    "schemathesis", "egress_routes.py")], { input: cases.map(function (one) {
+    return JSON.stringify(one);
+  }).join("\n") + "\n", encoding: "utf8" });
+  if (answer.status !== 0) {
+    log.debug("Leaving dialAllowed(). It failed.");
+    throw new Error("egress_routes.py failed: " + answer.stderr);
+  }
+  log.debug("Leaving dialAllowed().");
+  return answer.stdout.trim().split("\n").map(function (line) {
+    return JSON.parse(line);
+  });
+}
+
+// (#1358) no_outbound_fetch allows a blocked dial ONLY at the exact routes
+// that dial an administrator-configured address by design. Each refused case
+// is an allowed one with a single thing changed, and the marker still fails on
+// every other route (the no-egress network is the guarantee; this only stops
+// the false positive).
+function egressRouteSection(t) {
+  t.log.debug("Entering egressRouteSection().");
+  const cases = [
+    ["a claims provider's registration dial", true,
+     { method: "POST", path: "/admin-api/claim-providers/{action}",
+       action: "add-provider" }],
+    ["an outbound SCIM client's reconcile dial", true,
+     { method: "POST", path: "/admin-api/scim/clients/{action}",
+       action: "reconcile" }],
+    ["an OpenID Federation resolve", true,
+     { method: "POST", path: "/admin-api/oidfed/{action}",
+       action: "resolve" }],
+    ["adding a trust anchor", true,
+     { method: "POST", path: "/admin-api/oidfed/{action}",
+       action: "add-trust-anchor" }],
+    ["adding a subordinate", true,
+     { method: "POST", path: "/admin-api/oidfed/{action}",
+       action: "add-subordinate" }],
+    ["a resolve whose path was filled rather than templated", true,
+     { method: "POST", path: "/admin-api/oidfed/resolve",
+       action: "resolve" }],
+    ["another action on the claim-providers route", false,
+     { method: "POST", path: "/admin-api/claim-providers/{action}",
+       action: "remove-provider" }],
+    ["another action on the oidfed route", false,
+     { method: "POST", path: "/admin-api/oidfed/{action}",
+       action: "enable" }],
+    ["the right action under the wrong method", false,
+     { method: "GET", path: "/admin-api/claim-providers/{action}",
+       action: "add-provider" }],
+    ["an unrelated route", false,
+     { method: "POST", path: "/admin-api/users/{action}",
+       action: "create" }],
+    ["a dialing action's NAME on another route", false,
+     { method: "POST", path: "/admin-api/users/{action}",
+       action: "reconcile" }]
+  ];
+  const answers = dialAllowed(cases.map(function (one) {
+    return one[2];
+  }));
+  cases.forEach(function (one, at) {
+    const allowed = answers[at] !== null;
+    t.check(allowed === one[1],
+      (one[1] ? "allowed: " : "still a finding: ") + one[0],
+      String(answers[at]));
+  });
+
+  // The routes egress_routes.py lists are exactly the five the #1358 review
+  // named (so a row added or removed in the table fails here).
+  const listed = childProcess.spawnSync("python3", [path.join(__dirname,
+    "schemathesis", "egress_routes.py"), "--routes"], { encoding: "utf8" });
+  t.equal(JSON.parse(listed.stdout).join(","),
+    ["POST /admin-api/claim-providers/{action} add-provider",
+     "POST /admin-api/oidfed/{action} add-subordinate",
+     "POST /admin-api/oidfed/{action} add-trust-anchor",
+     "POST /admin-api/oidfed/{action} resolve",
+     "POST /admin-api/scim/clients/{action} reconcile"].join(","),
+    "egress_routes lists exactly the five designed dials");
+  t.log.debug("Leaving egressRouteSection().");
+}
+
 // (#1357) Where an answer may name an error code. Each case that must fail
 // is the allowed one with a single thing changed.
 function codeMemberSection(t) {
@@ -154,6 +241,7 @@ function codeMemberSection(t) {
 function run(t) {
   t.log.debug("Entering run().");
   codeMemberSection(t);
+  egressRouteSection(t);
 
   // The plan is internally well-formed.
   const problems = kit.validate();
