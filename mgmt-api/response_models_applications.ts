@@ -54,6 +54,13 @@ const FLAT_PAGING = {
   page: INT, pages: INT, perPage: INT, firstRow: INT, lastRow: INT
 };
 
+// `protocolEndpoints`: `sendJson()` adds it to a GET mirroring a Protocols page
+// outside the view (`admin_api_spec.ts` says it too, for the models it can read).
+const PROTOCOL_ENDPOINTS = Kit.listOf(Kit.closed({
+  name: STR, methods: Kit.oneOrMany(STR), url: STR, route: STR, transport: STR,
+  registered: BOOL
+}));
+
 // ---------------------------------------------------------------------------
 // ONE SETTING, `common/config.js`'s `describe()`. A setting's value is what its
 // row's type parses to: bool, int, string, or a `csv`'s list. `default` is the
@@ -100,7 +107,8 @@ const SETTINGS_BLOCK = Kit.closed({
 const PROTOCOL_SETTINGS_PAGE = Kit.closed({
   page: STR, title: STR, what: STR, notes: STRS,
   links: Kit.listOf(Kit.closed({ href: STR, what: STR })),
-  settings: SETTINGS_BLOCK, leadHtml: STR, alsoHtml: STRS
+  settings: SETTINGS_BLOCK, leadHtml: STR, alsoHtml: STRS,
+  protocolEndpoints: PROTOCOL_ENDPOINTS
 });
 
 // ---------------------------------------------------------------------------
@@ -402,6 +410,7 @@ const CREDENTIAL_CLAIMS: Json = Kit.closed({
     ldap: STR, claim: STR, label: STR, schema: STR, ldpTerm: STR, selected: BOOL,
     example: Kit.closed({ value: CLAIM_VALUE, source: STR })
   })),
+  protocolEndpoints: PROTOCOL_ENDPOINTS,
   preview: Kit.closed({
     user: STR,
     claims: Kit.closed({
@@ -459,6 +468,7 @@ const RECENT_VERIFICATIONS = {
 };
 
 const VERIFIER_REQUEST: Json = Kit.closed({
+  protocolEndpoints: PROTOCOL_ENDPOINTS,
   requested: STRS, defaults: STRS, format: STR,
   formats: Kit.listOf(Kit.closed({
     id: STR, label: STR, identifiedBy: STR, identifier: Kit.oneOrMany(STR),
@@ -506,6 +516,7 @@ const VERDICT = Kit.closed({
 
 // The open list, or one presentation by its `state`.
 const VERIFICATIONS: Json = Kit.closed(Object.assign({}, RECENT_VERIFICATIONS, {
+  protocolEndpoints: PROTOCOL_ENDPOINTS,
   found: BOOL, state: STR, nonce: STR, client_id: STR, requested: STRS,
   dcql_query: DCQL_QUERY, received: BOOL, verdict: Kit.nullable(VERDICT)
 }));
@@ -583,6 +594,880 @@ const AS_DETAIL = Kit.closed(Object.assign({}, AS_PROFILE_MEMBERS, {
 
 const AS_ACTION = Kit.action({ profile: Kit.nullable(AS_PROFILE) });
 
+// ---------------------------------------------------------------------------
+// THE OAUTH 2.0 / OIDC MONITOR, `oauth2_monitor_console.ts` over `par.ts`.
+//
+// A pushed request's `parameters` are what the client pushed, a request object's
+// claims among them: its names and values are the client's.
+// ---------------------------------------------------------------------------
+const ERROR_COUNT = Kit.listOf(Kit.closed({ name: STR, count: INT }));
+
+const PUSHED_REQUEST = Kit.closed({
+  request_uri_digest: STR, request_uri_shown: STR, client_id: CLAIM_VALUE,
+  authorization_server: CLAIM_VALUE, state: STR, created_at: STR, expires_at: STR,
+  expires_in: INT, spent_at: NULL_STR, reads: INT, client_authenticated: BOOL,
+  authentication_method: STR, source: CLAIM_VALUE,
+  request_object_alg: CLAIM_VALUE, request_object_encrypted: CLAIM_VALUE,
+  dpop_jkt: STR, attested_jkt: STR, redirect_uri: STR,
+  redirect_uri_unregistered: BOOL, response_type: STR, scope: STR,
+  parameters: Kit.freeForm(
+    'The authorization request a client pushed (RFC 9126), which may carry ' +
+    'any parameter and a request object\'s claims of any JSON type.')
+});
+
+const MONITOR_SECTION = Kit.closed({
+  id: STR, title: STR,
+  events: Kit.listOf(Kit.closed({
+    event: STR, counter: STR, label: STR, count: INT
+  })),
+  totals: Kit.mapOf(INT, 'Each counter this section shows.'),
+  lastAt: NULL_STR, lastEvent: NULL_STR, errors: ERROR_COUNT,
+  clientsPaging: PAGING, clientsParam: STR,
+  clients: Kit.listOf(Kit.closed({
+    client_id: STR, counters: Kit.mapOf(INT, 'Each counter, for this client.'),
+    errors: ERROR_COUNT, lastAt: NULL_STR, lastEvent: NULL_STR
+  })),
+  pushedRequests: Kit.closed({
+    filter: Kit.closed({ state: STR, client_id: STR }),
+    total: INT, offset: INT, limit: INT, capacity: NUM, lifetime_s: NUM,
+    paging: Kit.closed({
+      page: INT, pages: INT, perPage: INT, firstRow: INT, lastRow: INT,
+      total: INT
+    }),
+    items: Kit.listOf(PUSHED_REQUEST)
+  }),
+  ownResourceRequirement: Kit.closed({
+    acr_values: NULL_STR, max_age: NULL_NUM
+  }),
+  acrValuesSupported: STRS
+});
+
+const OAUTH2_MONITOR = Kit.closed({
+  page: STR, title: STR, since: STR, sections: Kit.listOf(MONITOR_SECTION),
+  actions: STRS
+});
+
+// ---------------------------------------------------------------------------
+// GRANT MANAGEMENT, `grant_management.ts`. A row is `decorate()`d, or is `list()`'s
+// bare row where the grant went between the two reads. `authorization_details`
+// is what the client asked for (RFC 9396): each type's fields are its own.
+// ---------------------------------------------------------------------------
+const GRANTS = Kit.closed({
+  grants: Kit.listOf(Kit.closed({
+    grantId: STR, clientId: CLAIM_VALUE, subject: CLAIM_VALUE,
+    generation: NUM, tokens: INT,
+    scopes: Kit.listOf(Kit.closed({ scope: STR, resource: STRS })),
+    claims: STRS,
+    authorization_details: Kit.listOf(Kit.freeForm(
+      'An RFC 9396 authorization detail as the client asked for it: a ' +
+      'type\'s fields are that type\'s definition\'s, written by an operator.')),
+    created_at: NUM, last_updated: NUM, expires_at: NUM, updated_by: CLAIM_VALUE
+  })),
+  total: INT, matched: INT,
+  filter: Kit.closed({ q: NULL_STR, clientId: NULL_STR }),
+  paging: Kit.closed({ grants: PAGING })
+});
+
+// ---------------------------------------------------------------------------
+// CLAIMS PROVIDERS, `claims_providers.ts`.
+// ---------------------------------------------------------------------------
+const CLAIM_PROVIDERS = Kit.closed({
+  protocolEndpoints: PROTOCOL_ENDPOINTS,
+  redirectUri: STR, callbackPath: STR,
+  providers: Kit.listOf(Kit.closed({
+    id: STR, name: STR, issuer: STR, authorizationEndpoint: STR,
+    tokenEndpoint: STR, claimsEndpoint: STR, jwksUri: STR, clientId: STR,
+    authMethod: STR, scope: STR, claims: STRS, delivery: STR, createdAt: NUM,
+    updatedAt: NUM, hasSecret: BOOL
+  })),
+  links: Kit.listOf(Kit.closed({
+    username: STR, provider: STR, sub: STR, linkedAt: NUM, expiresAt: NUM,
+    refreshable: BOOL, stale: BOOL
+  })),
+  counts: Kit.closed({ providers: INT, links: INT }),
+  matched: Kit.closed({ links: INT }),
+  filter: Kit.closed({ links: NULL_STR }),
+  paging: Kit.closed({ providers: PAGING, links: PAGING })
+});
+
+// ---------------------------------------------------------------------------
+// OPENID PROVIDER COMMANDS, `provider_commands.ts` over `outbound_delivery.ts`.
+// `roles` and `last_access` are what a relying party said of itself.
+// ---------------------------------------------------------------------------
+const COMMAND_DELIVERY = Kit.closed({
+  id: STR, realm: STR, clientId: STR, uri: STR, state: STR, generation: NUM,
+  attempts: NUM, inFlight: BOOL, holder: STR, status: Kit.oneOf(NUM, STR),
+  errorCode: STR, why: STR, queuedAt: STR, nextAttemptAt: STR,
+  lastAttemptAt: STR, finishedAt: STR, command: STR, username: STR, sub: STR,
+  trigger: STR, accountState: STR, awaitingCallback: BOOL
+});
+
+const COMMAND_RUN = Kit.closed({
+  id: STR, clientId: STR, command: STR, uri: STR, state: STR, events: NUM,
+  accounts: NUM, totalAccounts: NULL_NUM, resumes: NUM, lastEventId: STR,
+  errors: STRS, why: STR, errorCode: STR, actor: STR, startedAt: STR,
+  finishedAt: STR
+});
+
+const PROVIDER_COMMANDS = Kit.closed({
+  protocolEndpoints: PROTOCOL_ENDPOINTS,
+  enabled: BOOL, automatic: BOOL, issuer: STR,
+  clients: Kit.listOf(Kit.closed({
+    clientId: STR, name: STR, endpoint: STR,
+    learned: Kit.nullable(Kit.closed({
+      commandsSupported: STRS, audSubRequired: BOOL,
+      roles: Kit.listOf(CLAIM_VALUE), learnedAt: STR
+    }))
+  })),
+  accounts: Kit.listOf(Kit.closed({
+    clientId: STR, sub: STR, username: STR, state: STR, lastCommand: STR,
+    updatedAt: STR, audSub: STR, lastAccess: CLAIM_VALUE
+  })),
+  deliveries: Kit.listOf(COMMAND_DELIVERY),
+  counts: Kit.closed({ pending: INT, sent: INT, dead: INT }),
+  runs: Kit.listOf(COMMAND_RUN),
+  accountCommands: STRS, tenantCommands: STRS, clientIds: STRS,
+  listCounts: Kit.closed({
+    clients: INT, accounts: INT, runs: INT, deliveries: INT
+  }),
+  paging: Kit.closed({
+    clients: PAGING, accounts: PAGING, runs: PAGING, deliveries: PAGING
+  })
+});
+
+const COMMAND_ACTION = Kit.action({ row: COMMAND_DELIVERY, run: COMMAND_RUN });
+
+// ---------------------------------------------------------------------------
+// ONE APPLICATION: `view()` in `common/applications.js`. An entry's attribute
+// names are data, the directory being schemaless on purpose, and a value is one
+// string or a list, or a typed value a write left there.
+// ---------------------------------------------------------------------------
+const ENTRY_VALUES = Kit.mapOf(CLAIM_VALUE, 'By attribute name.');
+
+const APP_VIEW_MEMBERS = {
+  identifier: STR, dnLabel: NULL_STR, dn: NULL_STR, name: NULL_STR,
+  kinds: STRS, protocols: STRS, allowedProtocols: STRS,
+  recordedProtocols: STRS, declaredKinds: STRS, registeredBy: STR,
+  returnAddressesObserved: Kit.listOf(Kit.closed({
+    attribute: STR, value: STR, held: BOOL, trusted: BOOL
+  })),
+  registered: BOOL, firstSeen: STR, lastSeen: STR, authentications: NUM,
+  sessions: NUM, users: NUM, description: NULL_STR, origin: NULL_STR,
+  createdAt: NULL_STR, modifiedAt: NULL_STR, operational: STRS,
+  attributes: ENTRY_VALUES, fields: ENTRY_VALUES
+};
+
+const APP_VIEW = Kit.closed(APP_VIEW_MEMBERS);
+
+// Each list row of `GET /applications` is masked, with its secret's expiry.
+const APP_ROW = Kit.closed(Object.assign({}, APP_VIEW_MEMBERS, {
+  secretExpiry: Kit.closed({ state: STR, at: STR })
+}));
+
+const KIND_ROW = Kit.closed({ kind: STR, label: STR, what: STR });
+
+const PROTOCOL_ROW = Kit.closed({
+  id: STR, label: STR, kind: STR, kinds: STRS, identifierAttribute: STR,
+  redirectAttribute: STR, logoutAttribute: STR, deliveryAttribute: STR,
+  eventsAttribute: STR, secretAttribute: STR, what: STR
+});
+
+const FAMILY_CHOICE = Kit.closed({
+  id: STR, label: STR, families: STRS, kind: STR, what: STR
+});
+
+const FIELD_GROUP = Kit.closed({ id: STR, label: STR, families: STRS });
+
+// `applicationFields()` through `typedField()`. An override carries the setting
+// it overrides, `described`, and the form's `inSimple` is the new-form page's.
+const FIELD_ROW = Kit.closed({
+  attribute: STR, type: STR, long: BOOL, editable: Kit.oneOf(STR, BOOL),
+  sensitive: BOOL, overrides: STR, choices: Kit.nullable(STRS),
+  example: NULL_STR, what: STR, families: STRS, everyFamily: BOOL,
+  declaration: BOOL, primaryName: BOOL, simple: BOOL, group: STR, section: STR,
+  sectionLabel: STR, described: SETTING, inSimple: BOOL
+});
+
+const DECLARATION_ROW = Kit.closed({
+  attribute: STR, role: STR, kind: STR, editable: Kit.oneOf(STR, BOOL),
+  sensitive: BOOL, what: STR,
+  families: Kit.listOf(Kit.closed({ id: STR, label: STR })), everyFamily: BOOL
+});
+
+const NEW_APPLICATION_FORM: Json = Kit.closed({
+  directory: BOOL, container: NULL_STR, max: NULL_NUM, applicationCount: INT,
+  realm: Kit.closed({ id: STR, name: STR }),
+  kinds: Kit.listOf(KIND_ROW), protocols: Kit.listOf(PROTOCOL_ROW),
+  declarations: Kit.listOf(DECLARATION_ROW), fields: Kit.listOf(FIELD_ROW),
+  fieldGroups: Kit.listOf(FIELD_GROUP), familyChoices: Kit.listOf(FAMILY_CHOICE),
+  longTextAttributes: STRS, defaultSecretLifetimeDays: NUM,
+  persistence: Kit.closed({ persistsDirectory: BOOL, mode: STR }),
+  resourceMetadataImport: Kit.closed({
+    wellKnown: STR, acceptsNonconforming: BOOL, dialsInternalAddresses: BOOL
+  }),
+  editable: Kit.listOf(Kit.closed({
+    name: STR, mode: Kit.oneOf(STR, BOOL), sensitive: BOOL, families: STRS
+  }))
+});
+
+// `applicationsListJson()`.
+const APPLICATIONS_LIST = Kit.closed(Object.assign({
+  applicationCount: INT, matched: INT, shown: INT, registered: INT,
+  filter: Kit.closed({ q: NULL_STR, kind: NULL_STR, exclude: Kit.nullable(STRS) }),
+  container: NULL_STR, max: NULL_NUM, kinds: Kit.listOf(KIND_ROW),
+  settings: Kit.nullable(SETTINGS_BLOCK), paging: PAGING,
+  kindCounts: Kit.mapOf(INT, 'How many applications are of each kind.'),
+  authentications: NUM, protocols: Kit.listOf(PROTOCOL_ROW),
+  applications: Kit.listOf(APP_ROW)
+}, FLAT_PAGING));
+
+// ---------------------------------------------------------------------------
+// ONE APPLICATION'S PAGE, `applicationDetailJson()`.
+// ---------------------------------------------------------------------------
+// `pagedRows()`'s paging, which `pagingJson()` narrows: this one has `offset`.
+const RAW_PAGING = Kit.closed({
+  page: INT, perPage: INT, pages: INT, offset: INT, total: INT, firstRow: INT,
+  lastRow: INT, param: STR, noun: STR
+});
+
+const SCOPE_WARNING = Kit.closed({
+  attribute: STR, value: STR, reason: STR, dropped: BOOL, text: STR
+});
+
+// `certificateSummary()`, which answers `{ unreadable }` for what will not parse.
+const CERTIFICATE_SUMMARY = Kit.closed({
+  subject: STR, issuer: STR, serialHex: STR, notBefore: STR, notAfter: STR,
+  expired: BOOL, selfSigned: BOOL, keyType: NULL_STR, thumbprint: STR,
+  unreadable: STR
+});
+
+// `KEY_PAIR_ATTRIBUTES` in `common/applications.js`.
+const KEY_PAIR_NAMES = Kit.closed({
+  issuer: STR, certificate: STR, chain: STR, privateKey: STR, handle: STR,
+  handleLabel: STR, expires: STR, source: STR, jwks: STR, registered: STR
+});
+
+// The registered half: a JWKS's keys for `jwt`, certificates for `saml`.
+const REGISTERED_KEYS = Kit.closed({
+  attribute: STR, problem: STR,
+  keys: Kit.listOf(Kit.closed({
+    kid: STR, kty: STR, alg: STR, use: STR,
+    certificate: Kit.nullable(CERTIFICATE_SUMMARY)
+  })),
+  certificates: Kit.listOf(CERTIFICATE_SUMMARY)
+});
+
+const KEY_PAIR_MEMBERS = {
+  label: STR, held: BOOL, source: STR, privateKeyHeld: BOOL,
+  certificate: Kit.nullable(CERTIFICATE_SUMMARY),
+  chain: Kit.listOf(CERTIFICATE_SUMMARY), handle: STR, handleLabel: STR,
+  issuers: STRS, attributes: KEY_PAIR_NAMES, registered: REGISTERED_KEYS
+};
+
+// A row of `tlsClientCertificates.listFor()`, narrowed by its two callers.
+const HELD_CERTIFICATE_MEMBERS = {
+  serialHex: STR, label: NULL_STR, subject: NULL_STR, keyAlg: NULL_STR,
+  notBefore: Kit.oneOf(STR, NUM, { type: 'null' }),
+  notAfter: Kit.oneOf(STR, NUM, { type: 'null' }), thumbprint: NULL_STR,
+  state: STR, reason: NULL_STR,
+  revokedAt: Kit.oneOf(STR, NUM, { type: 'null' }), certificatePem: NULL_STR
+};
+
+const HELD_CERTIFICATE = Kit.closed(HELD_CERTIFICATE_MEMBERS);
+
+// The revoked row itself, which `revoke()` answers as `listFor()` built it.
+const REVOKED_CERTIFICATE = Kit.closed(Object.assign({}, HELD_CERTIFICATE_MEMBERS, {
+  slot: Kit.oneOf(STR, NUM, { type: 'null' }),
+  createdAt: Kit.oneOf(STR, NUM, { type: 'null' })
+}));
+
+const CERTIFICATE_HOLDING = {
+  certificates: Kit.listOf(HELD_CERTIFICATE), active: INT, max: NUM,
+  keyAlgorithms: STRS, defaultKeyAlg: STR, revocationReasons: STRS,
+  passwordMin: NUM, implicitName: STR, caAvailable: BOOL
+};
+
+const MTLS_STATE = Kit.closed(Object.assign({}, CERTIFICATE_HOLDING, {
+  authMethod: STR, certificateMethod: BOOL,
+  subjects: Kit.listOf(Kit.closed({
+    member: STR, attribute: STR, label: STR, value: STR
+  })),
+  registeredSubject: STRS, boundTokensAttribute: STR, boundTokens: BOOL,
+  adminApiBound: BOOL, selfSignedThumbprint: STR, bindingAvailable: BOOL
+}));
+
+const SIGNING_STATE = Kit.closed(Object.assign({}, CERTIFICATE_HOLDING, {
+  ok: BOOL, kind: STR, holder: STR, wstrustDeclared: BOOL
+}));
+
+// `applicationStoredCertificatesOf()`, whose refusal has `errors`.
+const STORED_CERTIFICATE = Kit.closed({
+  sha256: STR, subject: STR, issuer: STR, serialNumber: STR, notBefore: STR,
+  notAfter: STR, expired: BOOL, readable: BOOL
+});
+
+const STORED_CERTIFICATES = Kit.closed({
+  ok: BOOL, errors: STRS, application: STR, dn: NULL_STR,
+  certificates: Kit.listOf(STORED_CERTIFICATE), rule: STR
+});
+
+const CLIENT_SECRET_SUMMARY = Kit.closed({
+  id: STR, createdAt: NUM, expiresAt: NUM, description: NULL_STR, expired: BOOL,
+  primary: BOOL
+});
+
+const CLIENT_SECRET_MEMBERS = {
+  held: BOOL, authMethod: STR, registered: BOOL,
+  registrationAccessTokenHeld: BOOL, expiresAt: NUM,
+  secrets: Kit.listOf(CLIENT_SECRET_SUMMARY), max: NUM
+};
+
+// `applicationCredentialsState().json`.
+const CREDENTIALS_JSON = Kit.closed({
+  clientSecret: Kit.closed(CLIENT_SECRET_MEMBERS),
+  keyPairs: Kit.listOf(Kit.closed(Object.assign({}, KEY_PAIR_MEMBERS,
+                                                { purpose: STR }))),
+  caAvailable: BOOL, oauthDeclared: BOOL, sources: STRS, mtls: MTLS_STATE,
+  signing: SIGNING_STATE, stored: STORED_CERTIFICATES
+});
+
+// The same state as the page has it: `applicationPageData()` takes `json` and two
+// secrets off, and keeps the rest.
+const CREDENTIALS_PAGE = Kit.closed({
+  oauthDeclared: BOOL,
+  clientSecret: Kit.closed(Object.assign({}, CLIENT_SECRET_MEMBERS, {
+    defaultLifetimeDays: NUM, overlapS: NUM
+  })),
+  purposes: Kit.listOf(Kit.closed(Object.assign({}, KEY_PAIR_MEMBERS, {
+    id: STR, sealedAtRest: BOOL, certificatePem: STR
+  }))),
+  ca: Kit.closed({
+    available: BOOL, keyAlg: STR,
+    keyAlgorithms: Kit.listOf(Kit.closed({ id: STR, label: STR, kind: STR })),
+    leafLifetimeDays: NUM
+  }),
+  sources: STRS, mtls: MTLS_STATE, signing: SIGNING_STATE,
+  stored: STORED_CERTIFICATES
+});
+
+const SSF_SETTING = Kit.closed({
+  setting: STR, attribute: STR, value: SETTING_VALUE, source: STR
+});
+
+const SSF_STREAM = Kit.closed({
+  stream_id: STR, status: STR, statusReason: NULL_STR, aud: CLAIM_VALUE,
+  delivery: Kit.closed({ method: STR, endpoint_url: NULL_STR }),
+  events_requested: STRS, events_delivered: STRS, format: STR, description: STR,
+  createdBy: STR, createdAt: Kit.oneOf(STR, NUM), updatedAt: Kit.oneOf(STR, NUM),
+  lastPushAt: Kit.oneOf(STR, NUM), lastPushError: STR
+});
+
+const SIGNALS_MEMBERS = {
+  installed: BOOL, streams: Kit.listOf(SSF_STREAM),
+  settings: Kit.listOf(SSF_SETTING)
+};
+
+const SIGNALS_JSON = Kit.closed(SIGNALS_MEMBERS);
+
+// A software statement's `metadata` is RFC 7591 client metadata, the client's.
+const STATEMENT_DESCRIBED_MEMBERS = {
+  readable: BOOL, why: STR, verifies: BOOL, typed: BOOL, issuer: STR,
+  issuedAt: NUM, expiresAt: NUM,
+  metadata: Kit.freeForm(
+    'RFC 7591 client metadata fixed by a software statement: any member a ' +
+    'publisher chose, including extensions no specification defines.'),
+  thumbprint: STR
+};
+
+const STATEMENT_SETTINGS = Kit.closed({
+  requireTrustedIssuer: BOOL, opensRegistration: BOOL, required: BOOL,
+  lifetimeSeconds: NUM
+});
+
+const STATEMENT_REGISTERED = Kit.nullable(Kit.closed({
+  issuer: STR, trusted: BOOL, publisher: STR
+}));
+
+const STATEMENT_JSON = Kit.closed({
+  declaredIssuers: STRS, usableKeys: INT,
+  issued: Kit.nullable(Kit.closed(Object.assign({}, STATEMENT_DESCRIBED_MEMBERS,
+                                                { statement: STR }))),
+  registeredWith: STATEMENT_REGISTERED, settings: STATEMENT_SETTINGS
+});
+
+const STATEMENT_PAGE = Kit.closed({
+  issuers: STRS, usableKeys: INT, keyProblems: Kit.listOf(CLAIM_VALUE),
+  issuedToken: STR, issued: Kit.nullable(Kit.closed(STATEMENT_DESCRIBED_MEMBERS)),
+  registeredWith: STATEMENT_REGISTERED, settings: STATEMENT_SETTINGS,
+  json: STATEMENT_JSON
+});
+
+const ROLES_STATE = Kit.closed({
+  held: Kit.listOf(Kit.closed({
+    name: STR, id: STR, displayName: STR, application: STR, carriedAs: STR,
+    permissions: STRS
+  })),
+  offerable: STRS,
+  required: Kit.listOf(Kit.closed({
+    name: STR, resolves: STR, displayName: STR, role: STR
+  })),
+  requirable: STRS
+});
+
+const LIFETIME_ROW = Kit.closed({
+  setting: STR, attribute: STR, label: STR, value: NUM, realmValue: NUM,
+  source: STR
+});
+
+// A claim row, `checkClaimEntries()`, as a realm's set and an application's hold
+// it; `effective` adds where each came from.
+const CLAIM_ROW_MEMBERS = {
+  name: STR, value: CLAIM_VALUE, nameFormat: STR, namespace: STR, attribute: STR,
+  multi: BOOL, type: STR
+};
+
+const CLAIM_ROW = Kit.closed(CLAIM_ROW_MEMBERS);
+
+const CLAIM_SET_ROW = Kit.closed({
+  id: STR, label: STR, attribute: STR, realm: Kit.listOf(CLAIM_ROW),
+  own: Kit.listOf(CLAIM_ROW),
+  effective: Kit.listOf(Kit.closed(Object.assign({}, CLAIM_ROW_MEMBERS, {
+    source: STR, replacesRealm: BOOL
+  })))
+});
+
+const CLAIM_REPORT_ROW = Kit.closed({
+  ldap: STR, claim: STR, value: CLAIM_VALUE, source: STR, ldpTerm: NULL_STR
+});
+
+const CLAIMS_MAP = Kit.mapOf(NESTED_CLAIM, 'The claims, by name.');
+
+const CLAIM_SELECTIONS = Kit.closed({
+  catalogue: Kit.listOf(Kit.closed({
+    ldap: STR, claim: STR, label: STR, schema: STR, ldpTerm: STR, generated: BOOL
+  })),
+  preview: Kit.closed({
+    user: STR,
+    byLdap: Kit.mapOf(CLAIM_REPORT_ROW, 'By lower-cased attribute name.'),
+    entryFound: BOOL
+  }),
+  sets: Kit.listOf(Kit.closed({
+    id: STR, label: STR, attribute: STR, realm: STRS, own: Kit.nullable(STRS),
+    inherited: BOOL, effective: STRS, claims: CLAIMS_MAP,
+    report: Kit.listOf(CLAIM_REPORT_ROW)
+  })),
+  credential: Kit.nullable(Kit.closed({
+    attribute: STR, realm: STRS, own: Kit.nullable(STRS), inherited: BOOL,
+    effective: STRS, claims: CLAIMS_MAP, report: Kit.listOf(CLAIM_REPORT_ROW),
+    ldpOmitted: STRS
+  }))
+});
+
+// `applicationEnrollmentState()`. A certificate record is what the core stored,
+// less its private key: `publicRecord()`. `device` and `attestation` are a
+// device's; `revoked` appears once it is.
+const ENROLLED_CERTIFICATE = Kit.closed({
+  serialHex: STR, family: STR, profile: STR, subject: STR, names: STRS,
+  thumbprint: STR, keyAlg: STR, notBefore: Kit.oneOf(STR, NUM),
+  notAfter: Kit.oneOf(STR, NUM), issuedAt: STR,
+  requestedBy: Kit.nullable(Kit.closed({ kind: STR, id: STR, admin: BOOL })),
+  via: STR, keySource: STR, replaces: NULL_STR, certificatePem: STR,
+  chainPem: STRS, device: STR, attestation: CLAIM_VALUE,
+  revoked: Kit.closed({ at: Kit.oneOf(STR, NUM), reason: STR, by: STR }),
+  expired: BOOL, status: STR
+});
+
+const ENROLLMENT_RULE = Kit.closed({
+  family: STR, label: STR, allowedProfiles: STRS, allowedProfilesSource: STR,
+  defaultProfile: NULL_STR, defaultProfileSource: STR,
+  certificateLifetimeDays: NUM, certificateLifetimeSource: STR
+});
+
+const VALUE_SOURCE = Kit.closed({ value: NUM, source: STR });
+
+const EST_SWITCH = Kit.closed({ on: BOOL, source: STR });
+
+const EST_STATE = Kit.nullable(Kit.closed({
+  basicAuthentication: EST_SWITCH, certificateAuthentication: EST_SWITCH,
+  serverKeyGeneration: EST_SWITCH
+}));
+
+const EAB_KEY = Kit.closed({
+  kid: STR, createdAt: Kit.oneOf(STR, NUM), expiresAt: Kit.oneOf(STR, NUM),
+  createdBy: NULL_STR, boundAccount: NULL_STR,
+  boundAt: Kit.oneOf(STR, NUM, { type: 'null' }), status: STR
+});
+
+const SCEP_CHALLENGE = Kit.closed({
+  id: STR, profile: NULL_STR, createdAt: Kit.oneOf(STR, NUM),
+  expiresAt: Kit.oneOf(STR, NUM), createdBy: NULL_STR,
+  usedAt: Kit.oneOf(STR, NUM, { type: 'null' }), status: STR
+});
+
+const ENROLLMENT_JSON = Kit.closed({
+  families: STRS, rules: Kit.listOf(ENROLLMENT_RULE),
+  certificateCap: VALUE_SOURCE, est: EST_STATE,
+  certificates: Kit.listOf(ENROLLED_CERTIFICATE), certificatesPaging: PAGING,
+  certificatesTotal: INT, eabKeys: Kit.listOf(EAB_KEY),
+  scepChallenges: Kit.listOf(SCEP_CHALLENGE), hostNames: STRS
+});
+
+const ENROLLMENT_PAGE = Kit.closed({
+  families: STRS, rules: Kit.listOf(ENROLLMENT_RULE), cap: VALUE_SOURCE,
+  est: EST_STATE, certificates: Kit.listOf(ENROLLED_CERTIFICATE),
+  paged: Kit.closed({
+    paging: RAW_PAGING, shown: Kit.listOf(ENROLLED_CERTIFICATE)
+  }),
+  eabKeys: Kit.listOf(EAB_KEY), challenges: Kit.listOf(SCEP_CHALLENGE),
+  hostNames: STRS, keyAlgorithms: STRS, json: ENROLLMENT_JSON
+});
+
+// `appPermissions.register()`.
+const PERMISSION_GRANT = Kit.closed({
+  client: STR, clientName: STR, permissionId: STR, resource: STR,
+  resourceName: STR, baseUri: NULL_STR, permissionName: STR,
+  description: NULL_STR, dangling: BOOL, asked: BOOL
+});
+
+const PERMISSION_EXPOSED = Kit.closed({
+  resource: STR, resourceName: STR, baseUri: NULL_STR, name: STR,
+  description: NULL_STR, id: NULL_STR, raw: NULL_STR,
+  grantedTo: Kit.listOf(Kit.closed({ identifier: STR, name: STR, asked: BOOL }))
+});
+
+const pageOf = function (row: Json): Json {
+  return Kit.closed({ paging: RAW_PAGING, shown: Kit.listOf(row) });
+};
+
+// One audit row, `common/audit.js`'s `record()`. `detailOf()` keeps a number, a
+// boolean or a trimmed string under any name its caller gave.
+const AUDIT_EVENT = Kit.closed({
+  seq: NUM, origin: Kit.oneOf(STR, NUM, { type: 'null' }), at: NUM, category: STR,
+  action: STR, outcome: STR, errorCode: STR, actor: STR, actorForm: STR,
+  target: STR, protocol: STR, channel: STR, address: STR, summary: STR,
+  detail: Kit.mapOf(Kit.oneOf(STR, NUM, BOOL), 'What the event recorded.')
+});
+
+// An access type, `authorizationDetailsTypeOf()` (#432, #564). `schema`, `limits`
+// and `source` are the JSON an operator wrote; a compiled `validate` is a
+// function, which JSON leaves out, so only its null is ever sent.
+const OPERATOR_JSON = Kit.freeForm(
+  'The JSON an operator wrote into an access type\'s definition: a JSON Schema ' +
+  '(RFC 9396 leaves a type\'s fields to its definition), or the definition.');
+
+const FGA_ROW = Kit.closed({
+  path: STR, attributeId: STR, category: STR, dataType: STR, multiplicity: STR,
+  description: STR
+});
+
+const ACCESS_TYPE = Kit.closed({
+  stored: STR, type: STR, description: STR, locations: STRS, schema: OPERATOR_JSON,
+  validate: { type: 'null' }, problem: STR, actions: Kit.nullable(STRS),
+  datatypes: Kit.nullable(STRS), privileges: Kit.nullable(STRS), required: STRS,
+  interaction: STR, consentActions: STRS, bearer: CLAIM_VALUE,
+  maxLifetimeS: NULL_NUM, acr: STR, derivableFrom: STRS,
+  introspectionClaims: STRS, limits: OPERATOR_JSON, validateLimits: { type: 'null' },
+  xacml: Kit.listOf(FGA_ROW), notForPolicy: STRS, source: OPERATOR_JSON
+});
+
+const PEP_HOLDER = Kit.closed({
+  name: STR, kind: STR, dn: STR, member: BOOL, scoped: BOOL, scope: BOOL,
+  why: STR, code: STR
+});
+
+// `xacml/fga_policies.ts`'s `state()`, with the page's three lists of choices.
+const FGA_STATE = Kit.nullable(Kit.closed({
+  known: BOOL, enforced: BOOL, reference: NULL_STR,
+  policy: Kit.nullable(Kit.closed({
+    name: STR, policyId: NULL_STR, version: NULL_STR, enabled: BOOL,
+    application: NULL_STR, orphanedAt: NULL_STR, own: BOOL, editor: STR
+  })),
+  usable: BOOL, failure: STR, code: STR, why: STR,
+  types: Kit.listOf(Kit.closed({
+    type: STR, covered: BOOL, uncovered: STRS, rows: INT, notForPolicy: STRS
+  })),
+  unreadable: Kit.listOf(Kit.closed({ stored: STR, problem: STR })),
+  template: STR,
+  peps: Kit.nullable(Kit.closed({
+    group: STR, authzenGroup: STR, total: INT, truncated: BOOL, unlocated: INT,
+    holders: Kit.listOf(PEP_HOLDER)
+  })),
+  applicationPolicies: Kit.closed({ count: INT, max: NUM }),
+  choices: Kit.closed({
+    categories: STRS, dataTypes: STRS, multiplicities: STRS
+  })
+}));
+
+// What `krb5_trusts.ts`'s `applicationAcross()` draws for an application.
+const KRB5_PROBLEM = Kit.closed({
+  kind: STR, params: Kit.mapOf(STR, 'What the sentence names.'), text: STR
+});
+
+const KRB5_TRUST_STATE_MEMBERS = {
+  realm: STR, via: STR, path: STRS, ok: BOOL, problems: Kit.listOf(KRB5_PROBLEM)
+};
+
+const KRB5_ACROSS = Kit.nullable(Kit.closed({
+  realm: STR,
+  frontEnds: Kit.listOf(Kit.closed(Object.assign({}, KRB5_TRUST_STATE_MEMBERS,
+                                                 { actor: STR }))),
+  targets: Kit.listOf(Kit.closed(Object.assign({}, KRB5_TRUST_STATE_MEMBERS, {
+    target: STR, classicRefused: BOOL, classicProblems: Kit.listOf(KRB5_PROBLEM)
+  }))),
+  selfRealms: Kit.listOf(Kit.closed(Object.assign({}, KRB5_TRUST_STATE_MEMBERS,
+                                                  { accepted: BOOL }))),
+  tgtDelegation: Kit.closed({
+    unconstrained: BOOL, foreignTgtDelegation: STR,
+    trusts: Kit.listOf(Kit.closed({
+      partner: STR, allowed: BOOL, attributes: STRS, delivered: BOOL
+    }))
+  }),
+  choices: Kit.closed({
+    krb5S4uSelfRealm: STRS, krb5ForeignTgtDelegation: STRS
+  })
+}));
+
+const MARKED_VALUES = Kit.listOf(Kit.closed({ value: STR, declared: BOOL }));
+
+// `applicationObservedState()`.
+const OBSERVED_STATE = Kit.closed({
+  oauthGrantTypeObserved: MARKED_VALUES, oauthResponseTypeObserved: MARKED_VALUES,
+  appRedirectUriObserved: MARKED_VALUES, oauthScope: MARKED_VALUES,
+  appAuthorizationServer: MARKED_VALUES, samlNameIdFormat: MARKED_VALUES,
+  samlResponseBinding: MARKED_VALUES,
+  samlLastRequest: Kit.nullable(Kit.closed({
+    signed: BOOL, outcome: STR, binding: STR, signatureMethod: STR, weak: BOOL
+  })),
+  samlObservedSigningCertificate: Kit.nullable(Kit.closed({
+    subject: STR, sha256: STR, unreadable: BOOL
+  })),
+  oauthAllowedTokenResponseTypes: Kit.closed({
+    enabled: STRS, enforced: BOOL, waived: BOOL
+  })
+});
+
+const ATTRIBUTE_NOTE = Kit.closed({ text: STR, sensitive: BOOL });
+
+const OBSERVED_ADDRESS = Kit.closed({
+  attribute: STR, value: STR, held: BOOL, trusted: BOOL
+});
+
+const OWNER_ROW = Kit.closed({ dn: STR, kind: STR, name: STR, present: BOOL });
+
+const EDITABLE_NAME = Kit.listOf(Kit.closed({ name: STR, sensitive: BOOL }));
+
+// `applicationPageData()`: what the console's page is drawn from. The name `page`
+// cannot collide with an attribute, and is a number on the list reply.
+const APPLICATION_PAGE = Kit.closed({
+  notes: Kit.mapOf(ATTRIBUTE_NOTE, 'What each attribute of the entry is.'),
+  config: Kit.closed({
+    fields: Kit.listOf(FIELD_ROW),
+    values: Kit.mapOf(STRS, 'Each field\'s values, by attribute.'),
+    groups: Kit.listOf(FIELD_GROUP), familyChoices: Kit.listOf(FAMILY_CHOICE),
+    protocols: Kit.listOf(PROTOCOL_ROW), longTextAttributes: STRS,
+    fieldSearches: Kit.mapOf(STR, 'What each attribute\'s search looks through.'),
+    observed: OBSERVED_STATE,
+    derived: Kit.closed({
+      oauthAllowedScope: Kit.listOf(Kit.closed({
+        value: STR, permission: STR, api: STR, apiName: STR
+      }))
+    }),
+    fieldWarnings: Kit.mapOf(Kit.listOf(SCOPE_WARNING), 'By attribute.')
+  }),
+  passkeyPolicies: Kit.closed({
+    named: STR, missing: BOOL, applies: STR, precedence: NUM, groupPolicies: INT,
+    link: STR
+  }),
+  launchUrls: Kit.mapOf(Kit.closed({
+    protocol: STR, label: STR, url: STR, enabled: BOOL, setting: STR,
+    attribute: STR, missing: STRS, endpoint: NULL_STR
+  }), 'By protocol.'),
+  cors: Kit.listOf(Kit.closed({ stored: STR, canonical: STR })),
+  accessTypes: Kit.listOf(ACCESS_TYPE), fga: FGA_STATE,
+  permissionClaims: Kit.closed({
+    permissions: Kit.listOf(Kit.closed({
+      name: STR, description: NULL_STR, id: NULL_STR, attributes: STRS
+    })),
+    stale: STRS,
+    catalogue: Kit.listOf(Kit.closed({ ldap: STR, claim: STR, label: STR }))
+  }),
+  grantsUncataloguedAccess: BOOL, acceptsUnregisteredAddresses: BOOL,
+  protocolRows: Kit.listOf(Kit.closed({
+    id: STR, label: STR, kinds: STRS, kind: STR
+  })),
+  editable: Kit.closed({
+    set: EDITABLE_NAME, multi: EDITABLE_NAME, multiAll: EDITABLE_NAME
+  }),
+  did: Kit.closed({
+    did: NULL_STR, url: STR, ok: BOOL, why: STR,
+    methods: Kit.listOf(Kit.closed({
+      kid: STR, kty: STR, crv: STR, alg: STR, kept: BOOL
+    })),
+    origins: STRS
+  }),
+  credentials: CREDENTIALS_PAGE,
+  signals: Kit.closed(Object.assign({}, SIGNALS_MEMBERS, { json: SIGNALS_JSON })),
+  softwareStatement: STATEMENT_PAGE,
+  roles: ROLES_STATE,
+  permissions: Kit.closed({
+    held: Kit.listOf(PERMISSION_GRANT), exposes: Kit.listOf(PERMISSION_EXPOSED),
+    offerable: Kit.listOf(PERMISSION_EXPOSED),
+    clients: Kit.listOf(Kit.closed({ identifier: STR, name: STR })),
+    heldPage: pageOf(PERMISSION_GRANT), exposedPage: pageOf(PERMISSION_EXPOSED),
+    grantedOutPage: pageOf(PERMISSION_GRANT), registerPermissions: INT
+  }),
+  lifetimes: Kit.closed({ rows: Kit.listOf(LIFETIME_ROW), skew: NUM }),
+  claims: Kit.listOf(CLAIM_SET_ROW), claimSelections: CLAIM_SELECTIONS,
+  enrollment: Kit.closed({ credentials: ENROLLMENT_PAGE, config: ENROLLMENT_PAGE }),
+  observed: pageOf(OBSERVED_ADDRESS),
+  warnings: Kit.listOf(SCOPE_WARNING),
+  owners: Kit.listOf(OWNER_ROW), maxOwners: NUM,
+  ownership: Kit.closed({
+    kind: STR, name: STR, marked: BOOL, protected: BOOL, reasons: STRS
+  }),
+  krb5Across: KRB5_ACROSS
+});
+
+// `applicationDetailJson()`, `{ found: false, identifier }` for one nobody holds,
+// and an owner's narrowing of it (#607), whose `owners` and `maxOwners` are the
+// page's lifted out. So every member is optional.
+const APPLICATION_DETAIL = Kit.closed(Object.assign({}, APP_VIEW_MEMBERS, {
+  found: BOOL, page: APPLICATION_PAGE, warnings: Kit.listOf(SCOPE_WARNING),
+  attributesShown: Kit.listOf(Kit.closed({
+    name: STR, values: Kit.listOf(CLAIM_VALUE), sealedAtRest: BOOL, operational: BOOL
+  })),
+  attributesPaging: PAGING, authenticationEvents: Kit.listOf(AUDIT_EVENT),
+  authenticationEventsPaging: PAGING, authenticationEventsMatched: INT,
+  authenticationEventsKnownActors: Kit.mapOf(BOOL, 'Which actors have a user page.'),
+  authenticationEventsLog: Kit.closed({
+    held: NUM, recorded: NUM, dropped: NUM, maxEvents: NUM
+  }),
+  returnAddressesObservedShown: Kit.listOf(OBSERVED_ADDRESS),
+  returnAddressesObservedPaging: PAGING, credentials: CREDENTIALS_JSON,
+  sharedSignals: SIGNALS_JSON, certificateEnrollment: ENROLLMENT_JSON,
+  customClaims: Kit.listOf(CLAIM_SET_ROW), claimSelections: CLAIM_SELECTIONS,
+  tokenLifetimes: Kit.closed({
+    lifetimes: Kit.listOf(LIFETIME_ROW), clockSkewS: NUM
+  }),
+  softwareStatements: STATEMENT_JSON, applicationRoles: ROLES_STATE,
+  delegatedPermissions: Kit.closed({
+    held: Kit.listOf(PERMISSION_GRANT), exposes: Kit.listOf(PERMISSION_EXPOSED),
+    offerable: Kit.listOf(NULL_STR), grantedOut: Kit.listOf(PERMISSION_GRANT),
+    paging: Kit.closed({ held: PAGING, exposes: PAGING, grantedOut: PAGING })
+  }),
+  owners: Kit.listOf(OWNER_ROW), maxOwners: NUM
+}));
+
+// ---------------------------------------------------------------------------
+// THE APPLICATION ACTIONS, `applicationsAction()`. `application` is the view after
+// a write, or the identifier where the action answers only its name. `changed` is
+// a boolean, and the list of attributes on `update-fields`.
+// ---------------------------------------------------------------------------
+const APP_ACTION_MEMBERS = {
+  application: Kit.oneOf(STR, APP_VIEW, { type: 'null' }),
+  changed: Kit.oneOf(BOOL, STRS)
+};
+
+const appAction = function (extra?: Json): Json {
+  return Kit.action(Object.assign({}, APP_ACTION_MEMBERS, extra || {}));
+};
+
+const APP_WRITE = appAction({ warnings: Kit.listOf(SCOPE_WARNING) });
+
+const CERTIFICATE_ISSUED = Kit.closed({
+  serialHex: STR, subject: STR, keyAlg: STR, label: NULL_STR, notBefore: STR,
+  notAfter: STR, thumbprint: STR, certificatePem: STR,
+  chainPem: Kit.oneOrMany(STR), implicitName: STR
+});
+
+// `tlsClientCertificates.bundle()`. Each file travels as `text` or as `base64`.
+const BUNDLE_FILE = Kit.closed({ name: STR, mime: STR, text: STR, base64: STR });
+
+const CERTIFICATE_BUNDLE = Kit.closed({
+  pkcs12: BUNDLE_FILE, key: BUNDLE_FILE, chain: BUNDLE_FILE
+});
+
+const CERTIFICATE_ISSUE = appAction({
+  purpose: STR, certificate: CERTIFICATE_ISSUED, files: CERTIFICATE_BUNDLE
+});
+
+const REVOCATION_ENTRY = Kit.nullable(Kit.closed({
+  serialHex: STR, revokedAt: Kit.oneOf(STR, NUM), reason: STR, reasonCode: NUM,
+  reasonWhat: STR, subject: STR, note: STR
+}));
+
+const CERTIFICATE_REVOKE = appAction({
+  certificate: REVOKED_CERTIFICATE, reason: STR, entry: REVOCATION_ENTRY, why: STR
+});
+
+const STORED_CERTIFICATE_ACTION = appAction({
+  dn: NULL_STR, certificates: Kit.listOf(STORED_CERTIFICATE), rule: STR,
+  sha256: STR
+});
+
+const CLIENT_SECRET_ACTION = appAction({
+  clientSecret: STR, secretId: STR, expiresAt: NUM, replaced: BOOL,
+  overlapUntil: NUM, left: INT
+});
+
+const ACCESS_TYPE_ACTION = appAction({
+  type: STR, definition: OPERATOR_JSON
+});
+
+const FGA_ACTION = appAction({
+  policy: STR, enforced: BOOL, created: BOOL, failure: STR,
+  peps: Kit.closed({
+    group: STR, authzenGroup: STR, granted: Kit.listOf(PEP_HOLDER),
+    held: Kit.listOf(PEP_HOLDER), failed: Kit.listOf(PEP_HOLDER)
+  })
+});
+
+// What `sp_metadata.ts`'s `consume()` says of a document it read, with its refusal.
+const SP_METADATA_ACTION = appAction({
+  how: STR, entityId: STR, signature: STR, certificateUse: STR,
+  signingCertificates: INT, assertionConsumerServices: Kit.listOf(CLAIM_VALUE),
+  singleLogoutServices: Kit.listOf(CLAIM_VALUE), nameIdFormats: STRS,
+  authnRequestsSigned: BOOL, wantAssertionsSigned: BOOL, validUntil: NULL_STR,
+  cacheDuration: NULL_STR, skipped: STRS, url: STR, why: STR
+});
+
+// `protected_resource_metadata.ts`'s `analyse()` or a refusal. The document is the
+// resource's own (RFC 9728), and a refusal may name a status or the members read.
+const THIRD_PARTY_METADATA = Kit.freeForm(
+  'An RFC 9728 document as the resource published it, which may carry ' +
+  'extensions and a signed form: the document\'s, not this service\'s.');
+
+const RESOURCE_METADATA_ACTION = appAction({
+  source: STR, url: STR, filename: STR, contentType: STR,
+  document: THIRD_PARTY_METADATA, compact: STR, pretty: STR,
+  members: Kit.listOf(Kit.closed({
+    member: STR, value: THIRD_PARTY_METADATA, known: BOOL, type: STR, what: STR,
+    maps: STR, problem: Kit.oneOf(STR, { type: 'null' })
+  })),
+  extensions: STRS, signedMetadata: THIRD_PARTY_METADATA,
+  resourceCheck: Kit.closed({
+    checked: BOOL, matches: NULL_BOOL, expected: STRS, url: STR, why: STR
+  }),
+  authorizationServers: Kit.closed({
+    listed: INT, matched: INT, allMatched: BOOL, anyUnmatched: BOOL,
+    rows: Kit.listOf(Kit.closed({
+      issuer: CLAIM_VALUE, matched: BOOL, authorizationServer: STR
+    })),
+    realm: THIRD_PARTY_METADATA
+  }),
+  plan: Kit.closed({
+    detailsTypeLines: STRS, name: STR, identifier: STR, clientId: STR,
+    baseUri: STR, audience: STR, protocols: STRS,
+    permissions: Kit.listOf(THIRD_PARTY_METADATA), permissionLines: STRS,
+    warnings: STRS
+  }),
+  warnings: STRS, status: NUM
+});
+
+// A list row's `$ref` keeps the operation's name; `getApplications` is a list or
+// one application, whose `page` is a number on one and an object on the other.
+const APPLICATION_LIST: Json = Kit.oneOf(APPLICATIONS_LIST, APPLICATION_DETAIL);
+
 export = {
   components: {
     IssuedRecord: ISSUED_RECORD,
@@ -592,7 +1477,9 @@ export = {
     TokenLifetimes: TOKEN_LIFETIMES,
     CredentialClaims: CREDENTIAL_CLAIMS,
     VerifierRequest: VERIFIER_REQUEST,
-    AuthorizationServerList: Kit.oneOf(AS_LIST, AS_DETAIL)
+    AuthorizationServerList: Kit.oneOf(AS_LIST, AS_DETAIL),
+    ApplicationList: APPLICATION_LIST,
+    NewApplicationForm: NEW_APPLICATION_FORM
   } as Record<string, unknown>,
   operations: {
     getCredentialStatus: { '200': CREDENTIAL_STATUS },
@@ -616,7 +1503,8 @@ export = {
     revokeTokensBySubject: { '200': TOKEN_COUNT_ACTION },
     revokeTokensByUser: { '200': TOKEN_COUNT_ACTION },
     revokeAllTokens: { '200': TOKEN_COUNT_ACTION },
-    getUsedAssertions: { '200': USED_ASSERTIONS },
+    getIssued: { '400': Kit.action() },
+    getUsedAssertions: { '200': USED_ASSERTIONS, '400': Kit.action() },
     getOauth2Settings: { '200': PROTOCOL_SETTINGS_PAGE },
     getOid4vciSettings: { '200': PROTOCOL_SETTINGS_PAGE },
     getOid4vpSettings: { '200': PROTOCOL_SETTINGS_PAGE },
@@ -646,6 +1534,132 @@ export = {
     setAuthorizationServerMember: { '200': AS_ACTION },
     removeAuthorizationServerMember: { '200': AS_ACTION },
     resetAuthorizationServerMember: { '200': AS_ACTION },
-    deleteAuthorizationServer: { '200': AS_ACTION }
+    deleteAuthorizationServer: { '200': AS_ACTION },
+    createApplication: { '200': appAction() },
+    setApplicationAttribute: { '200': APP_WRITE },
+    addApplicationValue: { '200': APP_WRITE },
+    removeApplicationValue: { '200': APP_WRITE },
+    updateApplicationFields: { '200': APP_WRITE },
+    confirmApplicationReturnAddress: { '200': appAction() },
+    discardApplicationReturnAddress: { '200': appAction() },
+    addApplicationOwner: {
+      '200': appAction({ owner: STR, owners: Kit.listOf(OWNER_ROW) })
+    },
+    removeApplicationOwner: {
+      '200': appAction({ owner: STR, owners: Kit.listOf(OWNER_ROW) })
+    },
+    regenerateApplicationClientSecret: { '200': CLIENT_SECRET_ACTION },
+    rotateApplicationClientSecret: { '200': CLIENT_SECRET_ACTION },
+    addApplicationClientSecret: { '200': CLIENT_SECRET_ACTION },
+    removeApplicationClientSecret: { '200': CLIENT_SECRET_ACTION },
+    revealApplicationSecret: {
+      '200': appAction({ secret: STR, value: STR })
+    },
+    generateApplicationDidKey: {
+      '200': appAction({
+        did: NULL_STR, kid: STR, algorithm: STR, verificationMethod: STR,
+        documentUrl: STR,
+        publicJwk: Kit.mapOf(Kit.oneOf(STR, NUM, STRS),
+                             'A JWK\'s members, which its algorithm decides.'),
+        privateJwk: Kit.mapOf(Kit.oneOf(STR, NUM, STRS),
+                              'A JWK\'s members, which its algorithm decides.'),
+        privateKeyPem: NULL_STR, replaced: BOOL, why: STR
+      })
+    },
+    signApplicationDomainLinkage: {
+      '200': appAction({
+        why: STR, did: NULL_STR, origin: STR, kid: STR,
+        didConfiguration: Kit.closed({
+          '@context': CLAIM_VALUE, linked_dids: STRS
+        }),
+        filename: STR, hostAt: STR
+      })
+    },
+    setApplicationCustomClaim: {
+      '200': appAction({ set: STR, claims: Kit.listOf(CLAIM_ROW) })
+    },
+    removeApplicationCustomClaim: {
+      '200': appAction({ set: STR, claims: Kit.listOf(CLAIM_ROW) })
+    },
+    setApplicationClaimAttributes: {
+      '200': appAction({
+        set: STR, inherited: BOOL, attributes: Kit.nullable(STRS)
+      })
+    },
+    setApplicationClaimSelections: {
+      '200': appAction({
+        sets: Kit.listOf(Kit.closed({
+          set: STR, changed: BOOL, inherited: BOOL, attributes: STRS
+        }))
+      })
+    },
+    inheritApplicationClaimAttributes: {
+      '200': appAction({
+        set: STR, inherited: BOOL, attributes: Kit.nullable(STRS)
+      })
+    },
+    setApplicationPermissionClaims: {
+      '200': appAction({
+        permission: STR, attributes: Kit.nullable(STRS),
+        mappings: Kit.mapOf(STRS, 'Each permission\'s claims.')
+      })
+    },
+    clearApplicationPermissionClaims: {
+      '200': appAction({
+        permission: STR, attributes: Kit.nullable(STRS),
+        mappings: Kit.mapOf(STRS, 'Each permission\'s claims.')
+      })
+    },
+    setApplicationAccessType: { '200': ACCESS_TYPE_ACTION },
+    removeApplicationAccessType: { '200': ACCESS_TYPE_ACTION },
+    setApplicationAccessTypeRow: { '200': ACCESS_TYPE_ACTION },
+    removeApplicationAccessTypeRow: { '200': ACCESS_TYPE_ACTION },
+    setApplicationAccessTypeNotForPolicy: { '200': ACCESS_TYPE_ACTION },
+    enableApplicationFga: { '200': FGA_ACTION },
+    disableApplicationFga: { '200': FGA_ACTION },
+    createApplicationFgaPolicy: { '200': FGA_ACTION },
+    resetApplicationFgaPolicy: { '200': FGA_ACTION },
+    issueApplicationTlsClientCertificate: { '200': CERTIFICATE_ISSUE },
+    revokeApplicationTlsClientCertificate: { '200': CERTIFICATE_REVOKE },
+    issueApplicationSigningCertificate: { '200': CERTIFICATE_ISSUE },
+    revokeApplicationSigningCertificate: { '200': CERTIFICATE_REVOKE },
+    addApplicationCertificate: { '200': STORED_CERTIFICATE_ACTION },
+    removeApplicationCertificate: { '200': STORED_CERTIFICATE_ACTION },
+    issueApplicationSoftwareStatement: {
+      '200': appAction({
+        softwareStatement: STR,
+        claims: Kit.freeForm(
+          'A software statement\'s claims: RFC 7591 client metadata the ' +
+          'operator asked it to fix, beside its registered claims.')
+      })
+    },
+    revokeApplicationRegistration: { '200': appAction() },
+    refreshApplicationMetadata: { '200': SP_METADATA_ACTION },
+    loadProtectedResourceMetadata: { '200': RESOURCE_METADATA_ACTION },
+    exportApplicationLdif: {
+      '200': appAction({
+        credentials: BOOL, attributes: STRS, leftOut: STRS, ldif: STR,
+        files: Kit.listOf(BUNDLE_FILE)
+      })
+    },
+    importApplicationLdif: { '200': appAction() },
+    deleteApplication: { '200': appAction() },
+    getOauth2Monitor: { '200': OAUTH2_MONITOR },
+    deletePushedRequest: {
+      '200': Kit.action({
+        request_uri_digest: STR, client_id: CLAIM_VALUE, state: STR
+      })
+    },
+    getGrants: { '200': GRANTS },
+    revokeGrant: { '200': Kit.action({ revoked: INT }) },
+    getClaimProviders: { '200': CLAIM_PROVIDERS },
+    addClaimProvider: { '200': Kit.action() },
+    updateClaimProvider: { '200': Kit.action() },
+    removeClaimProvider: { '200': Kit.action() },
+    revokeClaimSourceLink: { '200': Kit.action() },
+    getProviderCommands: { '200': PROVIDER_COMMANDS },
+    sendAccountCommand: { '200': COMMAND_ACTION },
+    sendTenantCommand: { '200': COMMAND_ACTION },
+    retryCommandDelivery: { '200': COMMAND_ACTION }
   } as Record<string, Record<string, unknown>>
 };
