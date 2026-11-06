@@ -1516,16 +1516,16 @@
     "text": "Postkvantsäker signering"
   },
   "keys.postQuantumSigning|description": {
-    "en": "68ffd5da182ec911",
-    "text": "Om den här sfären signerar, publicerar och verifierar de postkvantsäkra och sammansatta JWS-algoritmerna (ML-DSA, SLH-DSA och de sammansatta ML-DSA-algoritmerna). **På som standard.** Av: ingen postkvantsäker signeringsnyckel finns i `/oauth2/jwks` eller i DID-dokumentet (vänte-, fästa och signerargruppsnycklar inräknade); ingen postkvantsäker algoritm finns i någon `*_alg_values_supported`- eller `*_alg_values`-lista i discovery-, auktoriseringsserver-, OpenID Federation-, OpenID4VCI- och OpenID4VP-dokumenten; en JWS signerad med en sådan vägras överallt där sfären verifierar en; en klient får inte registrera en; och en signatur som fortfarande skulle kräva en — för en klient som registrerades medan detta var på, eller en HTTP-meddelandesignatur — vägras i stället för att göras med en nyckel som ingen kan hämta. Den finns för klienter och testsviter vars JOSE-bibliotek inte kan tolka en AKP-nyckel eller inte känner till dessa algoritmer, bland dem OpenID-konformitetssviten. **Oförändrat:** COSE (passkeys), XML-signaturer, TLS, certifikatalgoritmer, ML-KEM-krypteringsnycklarna (`keys.encryptionKemAlgs`), den alternativa ML-DSA-nyckel som ett `hybrid-groups`-certifikat bär i `x5c` (de fristående ML-DSA-nycklarna tas bort, certifikaten utfärdas inte på nytt), och `oidfed.signingAlg`: en sfär som namnger en ML-DSA-federationsnyckel fortsätter att signera sina utsagor med den men vägrar en ML-DSA-utsaga som den ombeds verifiera, så behåll den inställningen klassisk här."
+    "en": "0a6b412c599e2c7d",
+    "text": "Om den här sfären signerar, publicerar och verifierar de postkvantsäkra och sammansatta JWS-algoritmerna (ML-DSA, SLH-DSA och de sammansatta ML-DSA-algoritmerna). **På som standard.** Av: ingen postkvantsäker signeringsnyckel finns i `/oauth2/jwks` eller i DID-dokumentet (vänte-, fästa och signerargruppsnycklar inräknade); ingen postkvantsäker algoritm finns i någon `*_alg_values_supported`- eller `*_alg_values`-lista i discovery-, auktoriseringsserver-, OpenID Federation-, OpenID4VCI- och OpenID4VP-dokumenten; en JWS signerad med en sådan vägras överallt där sfären verifierar en; en klient får inte registrera en; och en signatur som fortfarande skulle kräva en — för en klient som registrerades medan detta var på, eller en HTTP-meddelandesignatur — vägras i stället för att göras med en nyckel som ingen kan hämta. Den finns för klienter och testsviter vars JOSE-bibliotek inte kan tolka en AKP-nyckel eller inte känner till dessa algoritmer, bland dem OpenID-konformitetssviten. **Oförändrat:** COSE (passkeys), XML-signaturer, TLS, certifikatalgoritmer, ML-KEM-krypteringsnycklarna (`keys.encryptionKemAlgs`), den alternativa ML-DSA-nyckel som ett `hybrid-groups`-certifikat bär i `x5c` (de fristående ML-DSA-nycklarna tas bort, certifikaten utfärdas inte på nytt). En `oidfed.signingAlg` som namnger ML-DSA signerar med sfärens standard i stället."
   },
   "keys.eddsaSigning|label": {
     "en": "743f659a7fcaa776",
     "text": "EdDSA-signering"
   },
   "keys.eddsaSigning|description": {
-    "en": "af67bc9dff3a0e7d",
-    "text": "Om denna sfär signerar JOSE-objekt vars algoritm en klient valt med EdDSA (RFC 8037, Ed25519 och Ed448) och publicerar sina kty OKP-signeringsnycklar. **Av som standard**, eftersom OpenID:s konformitetssvit inte kan tolka en OKP-nyckel i en JWKS, och det är den som OpenID Connect-certifieringen kör. Av: ingen OKP-signeringsnyckel finns i `/oauth2/jwks` (reserv-, fästa och signerargruppsnycklar inräknade); EdDSA finns inte i `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` eller `authorization_signing_alg_values_supported`; en klient får inte registrera eller tilldelas EdDSA för ett ID Token-, UserInfo-, introspektions- eller JARM-svar; och en sådan signatur som ändå begärs — av en klient registrerad medan detta var på, eller av en SSF-, WS-Trust- eller Provider Commands-algoritm satt till EdDSA — nekas i stället för att göras med en nyckel som ingen kan hämta. **Oförändrat:** EdDSA som en klient signerar med (klientpåståenden, DPoP-bevis, begäranobjekt, plånboksbevis) accepteras fortfarande och annonseras som accepterat; en signatur vars nyckel följer med i en `x5c` eller ett DID-dokument; en algoritm för federation eller autentiseringsuppgift som en operatör konfigurerar (`oidfed.signingAlg`, OpenID4VCI:s algoritm för autentiseringsuppgifter) signerar fortfarande, så konfigurera inte EdDSA där med detta av; DID-dokumentet, COSE, XML-signaturer, DKIM och TLS är inte JOSE JWKS-publicering. En `oauth2.accessTokenSigningAlg` satt till EdDSA signerar med RS256 i stället. På: EdDSA signeras och publiceras som `oauth2.eddsaCurve` anger."
+    "en": "78d3ca6aec2ee4f6",
+    "text": "Om denna sfär signerar JOSE-objekt vars algoritm en klient valt med EdDSA (RFC 8037, Ed25519 och Ed448) och publicerar sina kty OKP-signeringsnycklar. **Av som standard**, eftersom OpenID:s konformitetssvit inte kan tolka en OKP-nyckel i en JWKS, och det är den som OpenID Connect-certifieringen kör. Av: ingen OKP-signeringsnyckel finns i `/oauth2/jwks` (reserv-, fästa och signerargruppsnycklar inräknade); EdDSA finns inte i `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` eller `authorization_signing_alg_values_supported`; en klient får inte registrera eller tilldelas EdDSA för ett ID Token-, UserInfo-, introspektions- eller JARM-svar; och en sådan signatur som ändå begärs — av en klient registrerad medan detta var på, eller av en SSF-, WS-Trust- eller Provider Commands-algoritm satt till EdDSA — nekas i stället för att göras med en nyckel som ingen kan hämta. **Oförändrat:** EdDSA som en klient signerar med (klientpåståenden, DPoP-bevis, begäranobjekt, plånboksbevis) accepteras fortfarande och annonseras som accepterat; en signatur vars nyckel följer med i en `x5c` eller ett DID-dokument; OpenID4VCI:s algoritm för autentiseringsuppgifter som en operatör konfigurerar signerar fortfarande, så konfigurera inte EdDSA där med detta av; DID-dokumentet, COSE, XML-signaturer, DKIM och TLS är inte JOSE JWKS-publicering. En `oauth2.accessTokenSigningAlg` eller `oidfed.signingAlg` satt till EdDSA signerar med sfärens standard i stället. På: EdDSA signeras och publiceras som `oauth2.eddsaCurve` anger."
   },
   "keys.signingAlgorithms|label": {
     "en": "23087da9ac3a37f0",
@@ -1534,6 +1534,94 @@
   "keys.signingAlgorithms|description": {
     "en": "6ca0d3f207d8dcd4",
     "text": "De JWS-algoritmer som denna sfär signerar med och publicerar nycklar för. **Tomt, standardvärdet, behåller alla algoritmer som sfären annars har.** En lista måste innehålla RS256: OpenID Connect Discovery kräver det i `id_token_signing_alg_values_supported`, och det är standardvärdet för ID-token och åtkomsttoken. Med en lista: `/oauth2/jwks` innehåller ingen signeringsnyckel för en algoritm som inte finns med (inklusive reservnycklar, fästa nycklar och nycklar för signerargrupper; en RSA-nyckel används för alla RS- och PS-algoritmer och blir därför kvar); en algoritm som inte finns med anges inte i signeringslistorna för ID-token, UserInfo, introspektion eller JARM i upptäcktsdokumentet; en klient kan inte registrera eller tilldelas den för dessa svar; en signatur som ändå begärs med den nekas i stället för att göras med en nyckel som ingen kan hämta; och en `oauth2.accessTokenSigningAlg` som inte finns med signerar med RS256 i stället. Ta även med PS256 för FAPI 1.0 Advanced. `keys.postQuantumSigning` och `keys.eddsaSigning` gäller fortfarande: att lista en algoritm slår inte på dess familj. **Ändras inte:** vad denna sfär accepterar från klienter (klientintyg, DPoP-bevis, begärandeobjekt, plånboksbevis); ett UserInfo-svar i vanlig JSON; krypteringsnycklar; COSE, XML-signaturer, DKIM och TLS; samt de algoritmer som `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` och OpenID4VCI:s algoritm för autentiseringsuppgifter anger, så ange en listad algoritm där."
+  },
+  "keys.pqcOnly|label": {
+    "en": "d27c2ce62f5e2d05",
+    "text": "Signera endast postkvantiskt"
+  },
+  "keys.pqcOnly|description": {
+    "en": "6bfa6be713279597",
+    "text": "Om den här sfären signerar ENDAST med postkvantiska algoritmer, i JOSE, COSE, XML och Data Integrity. **Av som standard.** På: varje signeringslista begränsas till sina postkvantiska algoritmer, eller till alla om den inte namnger någon, och en signatur med en klassisk algoritm vägras. Vad den här sfären ACCEPTERAR ändras inte. **RS256 finns kvar för ID Tokens**, eftersom OpenID Connect Discovery kräver det, och används bara för en klient som registrerade den eller inte registrerade någon algoritm. Certifikatalgoritmer och DKIM ändras inte. Den kan inte vara på medan `keys.postQuantumSigning` är av, och en klient eller förlitande part som inte kan verifiera ML-DSA kan inte läsa det den här sfären signerar."
+  },
+  "keys.acceptedSigningAlgorithms|label": {
+    "en": "13c74bb1ab9ae1ae",
+    "text": "Accepterade JWS-algoritmer"
+  },
+  "keys.acceptedSigningAlgorithms|description": {
+    "en": "c09dd7c2c5ff488b",
+    "text": "JWS-algoritmerna den här sfären accepterar från vem som helst: klientpåståenden, DPoP-bevis, begäranobjekt, plånboksbevis, federationsutsagor, sina egna token. **Tom, standardvärdet, accepterar allt varje användningsfall annars accepterar.** En signatur med en algoritm som inte finns i listan vägras före varje nyckeloperation. En lista måste innehålla allt `keys.signingAlgorithms` listar, och RS256 om den är tom, annars vägrar sfären sina egna token. HS-raderna är vad `client_secret_jwt` använder; utelämna dem bara om ingen klient gör det."
+  },
+  "cose.algorithms|label": {
+    "en": "fe94cc0994dab40b",
+    "text": "COSE-algoritmer för signering"
+  },
+  "cose.algorithms|description": {
+    "en": "fb657d7568044786",
+    "text": "COSE-algoritmerna den här sfären signerar CWT:er för statuslistor och `vc+cose`-autentiseringsuppgifter med, i ordning. **Tom, standardvärdet, lämnar det varje användningsfall gör i dag.** Lösennycklar styrs inte här: se `webauthn.algorithms`."
+  },
+  "cose.acceptedAlgorithms|label": {
+    "en": "de35db5c8aac8926",
+    "text": "Accepterade COSE-algoritmer"
+  },
+  "cose.acceptedAlgorithms|description": {
+    "en": "3c809e701d0ecee5",
+    "text": "COSE-algoritmerna den här sfären accepterar i en mdocs IssuerAuth och DeviceAuth, en CWT för statuslista och en `vc+cose`-autentiseringsuppgift. **Tom, standardvärdet, accepterar det var och en redan accepterar**, vilket en specifikation kan begränsa ytterligare: en mdoc tar aldrig RSA. Lösennycklar styrs inte här."
+  },
+  "saml.signatureAlgorithms|label": {
+    "en": "fd4f436bdda0de4a",
+    "text": "XML-algoritmer för signering"
+  },
+  "saml.signatureAlgorithms|description": {
+    "en": "01cb8501b8f096c8",
+    "text": "XML-signaturalgoritmerna den här sfären får signera med, i ordning. **Tom, standardvärdet, lämnar `saml.signatureAlgorithm` fri.** `saml.signatureAlgorithm` förblir den valda och måste finnas i listan. En algoritm som den här sfären saknar XML-nyckel för faller tillbaka på den första i listan som den har en nyckel för."
+  },
+  "saml.acceptedSignatureAlgorithms|label": {
+    "en": "a190f155d61e54ca",
+    "text": "Accepterade XML-algoritmer"
+  },
+  "saml.acceptedSignatureAlgorithms|description": {
+    "en": "2bf9046fd2019c80",
+    "text": "XML-SignatureMethods som den här sfären accepterar, på SP-begäranden och metadata, RFC 7522-påståenden, partnerpåståenden och WS-Security. **Tom, standardvärdet, accepterar allt den annars verifierar.** `saml.allowSha1Signatures` avgör fortfarande SHA-1, och en listad SHA-1-metod vägras medan den är av."
+  },
+  "saml.acceptedDigestAlgorithms|label": {
+    "en": "4c713f76e897330c",
+    "text": "Accepterade XML-sammandrag"
+  },
+  "saml.acceptedDigestAlgorithms|description": {
+    "en": "0e9213b8012dea7a",
+    "text": "XML-DigestMethods som den här sfären accepterar. **Tom, standardvärdet, accepterar alla den beräknar.** `saml.allowSha1Signatures` avgör fortfarande SHA-1."
+  },
+  "vc.cryptosuites|label": {
+    "en": "75a59ba059432f82",
+    "text": "Data Integrity-sviter för signering"
+  },
+  "vc.cryptosuites|description": {
+    "en": "3be8a2fb2911c2b3",
+    "text": "W3C Data Integrity-kryptosviterna den här sfären signerar med, i ordning: utfärdande via VC API, Bitstring-statuslistan, zcap och bbs-2023. **Tom, standardvärdet, lämnar det varje användningsfall gör i dag.**"
+  },
+  "vc.acceptedCryptosuites|label": {
+    "en": "962cf7c5a55dd594",
+    "text": "Accepterade Data Integrity-sviter"
+  },
+  "vc.acceptedCryptosuites|description": {
+    "en": "3148c6ff243294cb",
+    "text": "W3C Data Integrity-kryptosviterna den här sfären accepterar: innehavarbevis, verifiering via VC API, zcap och härledda bbs-2023-bevis. **Tom, standardvärdet, accepterar det var och en redan accepterar.**"
+  },
+  "pki.acceptedSignatureAlgorithms|label": {
+    "en": "86ec8af66a70814d",
+    "text": "Accepterade certifikatsignaturer"
+  },
+  "pki.acceptedSignatureAlgorithms|description": {
+    "en": "9a8e168d927bb934",
+    "text": "Signaturalgoritmerna den här sfären accepterar på ett certifikat i en kedja den validerar, genom att namnge raden och inte OID:n. **Tom, standardvärdet, accepterar allt kedjevalideringen annars accepterar**, vilket SHA-1 och MD5 inte är. Att lista för lite vägrar sfärens egen hierarki, så ta med det `pki.signatureAlgorithm` utfärdar med."
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|label": {
+    "en": "0e6e6b8920059b86",
+    "text": "Accepterade HTTP-signaturalgoritmer"
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|description": {
+    "en": "595341df5d9412f0",
+    "text": "Algoritmerna för HTTP Message Signatures (RFC 9421) som den här sfären accepterar, från OAuth-klienter och GNAP-klienter lika. **Tom, standardvärdet, accepterar alla den verifierar.** En signatur med en algoritm som inte finns i listan vägras före varje nyckeloperation."
   },
   "keys.jwksCertificateUrl|label": {
     "en": "b910ac23ecc20134",

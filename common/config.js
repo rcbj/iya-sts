@@ -210,6 +210,18 @@ configFile.resolveConfigFile();
 const errorCodes = require('./error_codes');
 // Every signature algorithm, once (#1368): a leaf, so no cycle can form.
 const algorithmRegistry = require('./crypto_impl/algorithm_registry');
+// A row's id and a digest's label, as a list of algorithms names them.
+function rowId(row) {
+  log.debug("Entering rowId().");
+  log.debug("Leaving rowId().");
+  return row.id;
+}
+
+function digestLabel(uri) {
+  log.debug("Entering digestLabel().");
+  log.debug("Leaving digestLabel().");
+  return algorithmRegistry.xmlDigestMethods()[uri].label;
+}
 const path = require('path');
 const bunyan = require('bunyan');
 
@@ -3732,10 +3744,8 @@ const SETTINGS = [
                  'encryption keys (`keys.encryptionKemAlgs`), the ML-DSA ' +
                  'alternative key a `hybrid-groups` certificate carries in ' +
                  '`x5c` (the bare ML-DSA keys are dropped, the certificates ' +
-                 'are not reissued), and `oidfed.signingAlg`: a realm that ' +
-                 'names an ML-DSA federation key keeps signing its ' +
-                 'statements with it but refuses an ML-DSA statement it is ' +
-                 'asked to verify, so leave that setting classical here.' },
+                 'are not reissued). An `oidfed.signingAlg` naming ML-DSA ' +
+                 'signs with the realm\'s default instead.' },
   // EdDSA JOSE SIGNING AS A SWITCH (#1292, 2026-11-03, rcbj: "make the
   // default be whatever passes OIDC conformance"). The OpenID conformance
   // suite's nimbus throws `unknown key type 'OKP'` on an Ed25519 or Ed448
@@ -3774,13 +3784,13 @@ const SETTINGS = [
                  'with (client assertions, DPoP proofs, request objects, ' +
                  'wallet proofs) is still accepted and advertised as ' +
                  'accepted; a signature whose key travels in an `x5c` or ' +
-                 'a DID document; a federation or credential algorithm an ' +
-                 'operator configures (`oidfed.signingAlg`, OpenID4VCI\'s ' +
-                 'credential algorithm) still signs, so do not configure ' +
+                 'a DID document; OpenID4VCI\'s credential algorithm an ' +
+                 'operator configures still signs, so do not configure ' +
                  'EdDSA there with this off; the DID document, COSE, XML ' +
                  'signatures, DKIM and TLS are not JOSE JWKS publication. ' +
-                 'An `oauth2.accessTokenSigningAlg` of EdDSA signs with ' +
-                 'RS256 instead. On: EdDSA is signed and published ' +
+                 'An `oauth2.accessTokenSigningAlg` or `oidfed.signingAlg` ' +
+                 'of EdDSA signs with the realm\'s default instead. On: ' +
+                 'EdDSA is signed and published ' +
                  'as `oauth2.eddsaCurve` says.' },
   // ONE REALM'S SIGNING ALGORITHMS, NAMED ONE BY ONE (#1348, 2026-11-05, rcbj:
   // the OpenID Connect certification configuration has only RS256 enabled).
@@ -3821,6 +3831,138 @@ const SETTINGS = [
                  '`oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` ' +
                  'and OpenID4VCI\'s credential algorithm configure, so name ' +
                  'a listed one there.' },
+  // WHICH SIGNATURE ALGORITHMS, IN WHICH ORDER, ON WHICH SURFACE (#1368). Each is
+  // empty by default, and empty is today: `common/signature_policy.ts` argues it
+  // and holds what a write may say. `keys.signingAlgorithms` is the JOSE sign
+  // list, above; `webauthn.algorithms` is the passkey one.
+  { key: 'keys.pqcOnly', group: 'Signing algorithms',
+    label: 'Sign post-quantum only',
+    path: 'keys.pqcOnly', env: 'STS_KEYS_PQC_ONLY',
+    type: 'bool', dflt: false, runtime: true,
+    description: 'Whether this realm signs ONLY with post-quantum algorithms, ' +
+                 'on JOSE, COSE, XML and Data Integrity. **Off by default.** ' +
+                 'On: each signing list narrows to its post-quantum ' +
+                 'algorithms, or to all of them where it names none, and a ' +
+                 'signature in a classical one is refused. What this realm ' +
+                 'ACCEPTS does not change. **RS256 stays for ID Tokens**, ' +
+                 'because OpenID Connect Discovery requires it, and is used ' +
+                 'only for a client that registered it or registered no ' +
+                 'algorithm. Certificate algorithms and DKIM are not changed. ' +
+                 'It cannot be on while `keys.postQuantumSigning` is off, and ' +
+                 'a client or relying party that cannot verify ML-DSA cannot ' +
+                 'read what this realm signs.' },
+  { key: 'keys.acceptedSigningAlgorithms', group: 'Signing algorithms',
+    label: 'JWS algorithms accepted',
+    path: 'keys.acceptedSigningAlgorithms', env: 'STS_KEYS_ACCEPTED_SIGNING_ALGORITHMS',
+    type: 'csv', dflt: '', runtime: true,
+    csvValues: algorithmRegistry.joseNames(),
+    ordered: true,
+    description: 'The JWS algorithms this realm accepts from anybody: client ' +
+                 'assertions, DPoP proofs, request objects, wallet proofs, ' +
+                 'federation statements, its own tokens. **Empty, the default, ' +
+                 'accepts everything each use case otherwise does.** A ' +
+                 'signature in an unlisted algorithm is refused before any key ' +
+                 'operation. A list must include everything ' +
+                 '`keys.signingAlgorithms` lists, and RS256 where that is ' +
+                 'empty, or the realm refuses its own tokens. The HS rows are ' +
+                 'what `client_secret_jwt` uses; leave them out only if no ' +
+                 'client does.' },
+  { key: 'cose.algorithms', group: 'Signing algorithms',
+    label: 'COSE algorithms signed with',
+    path: 'cose.algorithms', env: 'STS_COSE_ALGORITHMS',
+    type: 'csv', dflt: '', runtime: true,
+    csvValues: algorithmRegistry.on('cose').map(rowId),
+    ordered: true,
+    description: 'The COSE algorithms this realm signs status-list CWTs and ' +
+                 '`vc+cose` credentials with, in order. **Empty, the default, ' +
+                 'leaves what each use case does today.** Passkeys are not ' +
+                 'governed here: see `webauthn.algorithms`.' },
+  { key: 'cose.acceptedAlgorithms', group: 'Signing algorithms',
+    label: 'COSE algorithms accepted',
+    path: 'cose.acceptedAlgorithms', env: 'STS_COSE_ACCEPTED_ALGORITHMS',
+    type: 'csv', dflt: '', runtime: true,
+    csvValues: algorithmRegistry.on('cose').map(rowId),
+    ordered: true,
+    description: 'The COSE algorithms this realm accepts in an mdoc\'s ' +
+                 'IssuerAuth and DeviceAuth, a status-list CWT and a `vc+cose` ' +
+                 'credential. **Empty, the default, accepts what each already ' +
+                 'does**, which a specification may narrow further: an mdoc ' +
+                 'never takes RSA. Passkeys are not governed here.' },
+  { key: 'saml.signatureAlgorithms', group: 'Signing algorithms',
+    label: 'XML algorithms signed with',
+    path: 'saml.signatureAlgorithms', env: 'STS_SAML_SIGNATURE_ALGORITHMS',
+    type: 'csv', dflt: '', runtime: true,
+    csvValues: algorithmRegistry.on('xml').map(rowId),
+    ordered: true,
+    description: 'The XML signature algorithms this realm may sign with, in ' +
+                 'order. **Empty, the default, leaves ' +
+                 '`saml.signatureAlgorithm` free.** `saml.signatureAlgorithm` ' +
+                 'remains the one chosen and must be within the list. An ' +
+                 'algorithm this realm holds no XML key for falls back to the ' +
+                 'first listed one it does.' },
+  { key: 'saml.acceptedSignatureAlgorithms', group: 'Signing algorithms',
+    label: 'XML algorithms accepted',
+    path: 'saml.acceptedSignatureAlgorithms', env: 'STS_SAML_ACCEPTED_SIGNATURE_ALGORITHMS',
+    type: 'csv', dflt: '', runtime: true,
+    csvValues: algorithmRegistry.on('xml').map(rowId),
+    ordered: true,
+    description: 'The XML SignatureMethods this realm accepts, on SP requests ' +
+                 'and metadata, RFC 7522 assertions, partner assertions and ' +
+                 'WS-Security. **Empty, the default, accepts everything it ' +
+                 'otherwise verifies.** `saml.allowSha1Signatures` still ' +
+                 'decides SHA-1, and a listed SHA-1 method is refused while it ' +
+                 'is off.' },
+  { key: 'saml.acceptedDigestAlgorithms', group: 'Signing algorithms',
+    label: 'XML digests accepted',
+    path: 'saml.acceptedDigestAlgorithms', env: 'STS_SAML_ACCEPTED_DIGEST_ALGORITHMS',
+    type: 'csv', dflt: '', runtime: true,
+    csvValues: Object.keys(algorithmRegistry.xmlDigestMethods()).map(digestLabel),
+    ordered: true,
+    description: 'The XML DigestMethods this realm accepts. **Empty, the ' +
+                 'default, accepts every one it computes.** ' +
+                 '`saml.allowSha1Signatures` still decides SHA-1.' },
+  { key: 'vc.cryptosuites', group: 'Signing algorithms',
+    label: 'Data Integrity suites signed with',
+    path: 'vc.cryptosuites', env: 'STS_VC_CRYPTOSUITES',
+    type: 'csv', dflt: '', runtime: true,
+    csvValues: algorithmRegistry.on('di').map(rowId),
+    ordered: true,
+    description: 'The W3C Data Integrity cryptosuites this realm signs with, ' +
+                 'in order: VC API issuance, the Bitstring status list, zcap ' +
+                 'and bbs-2023. **Empty, the default, leaves what each use ' +
+                 'case does today.**' },
+  { key: 'vc.acceptedCryptosuites', group: 'Signing algorithms',
+    label: 'Data Integrity suites accepted',
+    path: 'vc.acceptedCryptosuites', env: 'STS_VC_ACCEPTED_CRYPTOSUITES',
+    type: 'csv', dflt: '', runtime: true,
+    csvValues: algorithmRegistry.on('di').map(rowId),
+    ordered: true,
+    description: 'The W3C Data Integrity cryptosuites this realm accepts: ' +
+                 'holder proofs, VC API verification, zcap and bbs-2023 ' +
+                 'derived proofs. **Empty, the default, accepts what each ' +
+                 'already does.**' },
+  { key: 'pki.acceptedSignatureAlgorithms', group: 'Signing algorithms',
+    label: 'Certificate signatures accepted',
+    path: 'pki.acceptedSignatureAlgorithms', env: 'STS_PKI_ACCEPTED_SIGNATURE_ALGORITHMS',
+    type: 'csv', dflt: '', runtime: true,
+    csvValues: algorithmRegistry.on('x509').map(rowId),
+    ordered: true,
+    description: 'The signature algorithms this realm accepts on a certificate ' +
+                 'in a path it validates, naming the row and not the OID. ' +
+                 '**Empty, the default, accepts everything path validation ' +
+                 'otherwise does**, which SHA-1 and MD5 are not. Listing too ' +
+                 'little refuses this realm\'s own hierarchy, so include what ' +
+                 '`pki.signatureAlgorithm` issues with.' },
+  { key: 'oauth2.httpSignatureAcceptedAlgorithms', group: 'Signing algorithms',
+    label: 'HTTP signature algorithms accepted',
+    path: 'oauth2.httpSignatureAcceptedAlgorithms', env: 'STS_OAUTH2_HTTP_SIGNATURE_ACCEPTED_ALGORITHMS',
+    type: 'csv', dflt: '', runtime: true,
+    csvValues: algorithmRegistry.on('httpsig').map(rowId),
+    ordered: true,
+    description: 'The RFC 9421 HTTP Message Signature algorithms this realm ' +
+                 'accepts, from OAuth clients and GNAP clients alike. **Empty, ' +
+                 'the default, accepts every one it verifies.** A signature in ' +
+                 'an unlisted algorithm is refused before any key operation.' },
   // A JWK'S CERTIFICATE CHAIN AS AN ADDRESS (#1351, 2026-11-05, rcbj). What
   // `common/jose_certificate_header.js` already does for a token's header,
   // for the JWK Set. `withCertificateUrls()` there is the one reader.

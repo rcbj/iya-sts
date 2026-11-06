@@ -1516,16 +1516,16 @@
     "text": "Post-quantum na pagpirma"
   },
   "keys.postQuantumSigning|description": {
-    "en": "68ffd5da182ec911",
-    "text": "Kung pumipirma, naglalathala at nagve-verify ang realm na ito ng mga post-quantum at composite na JWS algorithm (ML-DSA, SLH-DSA at ang mga composite na ML-DSA). **Naka-on bilang default.** Kapag naka-off: walang post-quantum na signing key sa `/oauth2/jwks` o sa DID document (kasama ang mga standby, naka-pin at signer-group na key); walang post-quantum na algorithm sa anumang `*_alg_values_supported` o `*_alg_values` na listahan ng mga dokumento ng discovery, authorization server, OpenID Federation, OpenID4VCI at OpenID4VP; tinatanggihan ang JWS na pinirmahan gamit ang isa saanman nagve-verify ang realm na ito; hindi makakapag-register ng isa ang client; at ang pirmang mangangailangan pa ng isa — para sa client na nag-register habang naka-on ito, o isang HTTP message signature — ay tinatanggihan sa halip na gawin gamit ang key na walang makakakuha. Para ito sa mga client at test suite na hindi kayang basahin ng mga JOSE library ang isang AKP key o hindi alam ang mga algorithm na ito, kabilang ang OpenID conformance suite. **Hindi nagbabago:** COSE (mga passkey), mga XML signature, TLS, mga algorithm ng certificate, ang mga ML-KEM encryption key (`keys.encryptionKemAlgs`), ang alternatibong ML-DSA key na dala ng isang `hybrid-groups` certificate sa `x5c` (inaalis ang mga hiwalay na ML-DSA key, hindi muling ini-issue ang mga certificate), at ang `oidfed.signingAlg`: ang realm na nagpapangalan ng ML-DSA federation key ay patuloy na pumipirma ng mga statement nito gamit iyon pero tinatanggihan ang ML-DSA statement na hinihiling na i-verify nito, kaya panatilihing classical ang setting na iyon dito."
+    "en": "0a6b412c599e2c7d",
+    "text": "Kung pumipirma, naglalathala at nagve-verify ang realm na ito ng mga post-quantum at composite na JWS algorithm (ML-DSA, SLH-DSA at ang mga composite na ML-DSA). **Naka-on bilang default.** Kapag naka-off: walang post-quantum na signing key sa `/oauth2/jwks` o sa DID document (kasama ang mga standby, naka-pin at signer-group na key); walang post-quantum na algorithm sa anumang `*_alg_values_supported` o `*_alg_values` na listahan ng mga dokumento ng discovery, authorization server, OpenID Federation, OpenID4VCI at OpenID4VP; tinatanggihan ang JWS na pinirmahan gamit ang isa saanman nagve-verify ang realm na ito; hindi makakapag-register ng isa ang client; at ang pirmang mangangailangan pa ng isa — para sa client na nag-register habang naka-on ito, o isang HTTP message signature — ay tinatanggihan sa halip na gawin gamit ang key na walang makakakuha. Para ito sa mga client at test suite na hindi kayang basahin ng mga JOSE library ang isang AKP key o hindi alam ang mga algorithm na ito, kabilang ang OpenID conformance suite. **Hindi nagbabago:** COSE (mga passkey), mga XML signature, TLS, mga algorithm ng certificate, ang mga ML-KEM encryption key (`keys.encryptionKemAlgs`), ang alternatibong ML-DSA key na dala ng isang `hybrid-groups` certificate sa `x5c` (inaalis ang mga hiwalay na ML-DSA key, hindi muling ini-issue ang mga certificate). Ang `oidfed.signingAlg` na nagpapangalan ng ML-DSA ay pumipirma gamit ang default ng realm sa halip nito."
   },
   "keys.eddsaSigning|label": {
     "en": "743f659a7fcaa776",
     "text": "EdDSA signing"
   },
   "keys.eddsaSigning|description": {
-    "en": "af67bc9dff3a0e7d",
-    "text": "Kung pumipirma ang realm na ito ng EdDSA (RFC 8037, Ed25519 at Ed448) sa mga JOSE object na pinili ng client ang algorithm, at kung inilalathala nito ang mga kty OKP signing key nito. **Naka-off bilang default**, dahil hindi kayang i-parse ng OpenID conformance suite ang isang OKP key sa isang JWKS, at iyon ang pinapatakbo ng OpenID Connect certification. Naka-off: walang OKP signing key sa `/oauth2/jwks` (kasama ang standby, pinned at signer-group key); wala ang EdDSA sa `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` o `authorization_signing_alg_values_supported`; hindi maaaring magparehistro o mabigyan ng EdDSA ang isang client para sa ID Token, UserInfo, introspection o JARM response; at ang ganitong pirma na hinihingi pa rin — ng client na nakarehistro habang naka-on ito, o ng SSF, WS-Trust o Provider Commands algorithm na naka-set sa EdDSA — ay tinatanggihan sa halip na gawin gamit ang key na walang makakakuha. **Hindi nagbabago:** ang EdDSA na ipinapampirma ng client (client assertion, DPoP proof, request object, wallet proof) ay tinatanggap pa rin at ina-advertise bilang tinatanggap; ang signature na ang key ay nasa `x5c` o DID document; ang federation o credential algorithm na kino-configure ng operator (`oidfed.signingAlg`, ang credential algorithm ng OpenID4VCI) ay pumipirma pa rin, kaya huwag i-configure doon ang EdDSA habang naka-off ito; ang DID document, COSE, XML signature, DKIM at TLS ay hindi JOSE JWKS publication. Ang `oauth2.accessTokenSigningAlg` na EdDSA ay pumipirma gamit ang RS256 sa halip nito. Naka-on: pinipirmahan at inilalathala ang EdDSA ayon sa sinasabi ng `oauth2.eddsaCurve`."
+    "en": "78d3ca6aec2ee4f6",
+    "text": "Kung pumipirma ang realm na ito ng EdDSA (RFC 8037, Ed25519 at Ed448) sa mga JOSE object na pinili ng client ang algorithm, at kung inilalathala nito ang mga kty OKP signing key nito. **Naka-off bilang default**, dahil hindi kayang i-parse ng OpenID conformance suite ang isang OKP key sa isang JWKS, at iyon ang pinapatakbo ng OpenID Connect certification. Naka-off: walang OKP signing key sa `/oauth2/jwks` (kasama ang standby, pinned at signer-group key); wala ang EdDSA sa `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` o `authorization_signing_alg_values_supported`; hindi maaaring magparehistro o mabigyan ng EdDSA ang isang client para sa ID Token, UserInfo, introspection o JARM response; at ang ganitong pirma na hinihingi pa rin — ng client na nakarehistro habang naka-on ito, o ng SSF, WS-Trust o Provider Commands algorithm na naka-set sa EdDSA — ay tinatanggihan sa halip na gawin gamit ang key na walang makakakuha. **Hindi nagbabago:** ang EdDSA na ipinapampirma ng client (client assertion, DPoP proof, request object, wallet proof) ay tinatanggap pa rin at ina-advertise bilang tinatanggap; ang signature na ang key ay nasa `x5c` o DID document; ang credential algorithm ng OpenID4VCI na kino-configure ng operator ay pumipirma pa rin, kaya huwag i-configure doon ang EdDSA habang naka-off ito; ang DID document, COSE, XML signature, DKIM at TLS ay hindi JOSE JWKS publication. Ang `oauth2.accessTokenSigningAlg` o `oidfed.signingAlg` na EdDSA ay pumipirma gamit ang default ng realm sa halip nito. Naka-on: pinipirmahan at inilalathala ang EdDSA ayon sa sinasabi ng `oauth2.eddsaCurve`."
   },
   "keys.signingAlgorithms|label": {
     "en": "23087da9ac3a37f0",
@@ -1534,6 +1534,94 @@
   "keys.signingAlgorithms|description": {
     "en": "6ca0d3f207d8dcd4",
     "text": "Ang mga JWS algorithm na ginagamit ng realm na ito sa pagpirma at pinaglalathalaan nito ng mga key. **Kapag walang laman, ang default, nananatili ang bawat algorithm na mayroon ang realm.** Dapat kasama sa listahan ang RS256: hinihingi ito ng OpenID Connect Discovery sa `id_token_signing_alg_values_supported`, at ito ang default para sa mga ID Token at access token. Kapag may listahan: walang signing key para sa algorithm na wala sa listahan sa `/oauth2/jwks` (kasama ang mga standby, pinned, at signer-group key; nagsisilbi ang isang RSA key sa bawat RS at PS algorithm, kaya nananatili ito); wala ang algorithm na wala sa listahan sa mga signing list ng ID Token, UserInfo, introspection, o JARM sa discovery; hindi ito mairerehistro o maibibigay sa isang client para sa mga tugong iyon; tinatanggihan ang pirmang hinihingi pa rin gamit ito sa halip na gawin gamit ang key na hindi makukuha ninuman; at RS256 ang ipinipirma ng `oauth2.accessTokenSigningAlg` na wala sa listahan. Isama rin ang PS256 para sa FAPI 1.0 Advanced. Patuloy na umiiral ang `keys.postQuantumSigning` at `keys.eddsaSigning`: hindi binubuksan ang pamilya ng algorithm dahil lang nakalista ito. **Hindi nagbabago:** ang tinatanggap ng realm na ito mula sa mga client (mga client assertion, DPoP proof, request object, wallet proof); ang plain JSON na tugon ng UserInfo; ang mga encryption key; ang COSE, mga XML signature, DKIM, at TLS; at ang mga algorithm na itinatakda ng `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg`, at ng credential algorithm ng OpenID4VCI, kaya pangalanan doon ang nasa listahan."
+  },
+  "keys.pqcOnly|label": {
+    "en": "d27c2ce62f5e2d05",
+    "text": "Pumirma ng post-quantum lamang"
+  },
+  "keys.pqcOnly|description": {
+    "en": "6bfa6be713279597",
+    "text": "Kung pumipirma LAMANG ang realm na ito gamit ang mga post-quantum algorithm, sa JOSE, COSE, XML at Data Integrity. **Naka-off bilang default.** Naka-on: lumiliit ang bawat signing list sa mga post-quantum algorithm nito, o sa lahat ng mga iyon kung wala itong pinapangalanan, at tinatanggihan ang signature sa classical na algorithm. Hindi nagbabago ang TINATANGGAP ng realm na ito. **Nananatili ang RS256 para sa mga ID Token**, dahil hinihingi ito ng OpenID Connect Discovery, at ginagamit lang para sa client na nagrehistro nito o walang nirehistrong algorithm. Hindi nagbabago ang mga certificate algorithm at DKIM. Hindi ito maaaring naka-on habang naka-off ang `keys.postQuantumSigning`, at hindi mababasa ng client o relying party na hindi makapag-verify ng ML-DSA ang pinipirmahan ng realm na ito."
+  },
+  "keys.acceptedSigningAlgorithms|label": {
+    "en": "13c74bb1ab9ae1ae",
+    "text": "Mga tinatanggap na JWS algorithm"
+  },
+  "keys.acceptedSigningAlgorithms|description": {
+    "en": "c09dd7c2c5ff488b",
+    "text": "Ang mga JWS algorithm na tinatanggap ng realm na ito mula kaninuman: client assertion, DPoP proof, request object, wallet proof, federation statement, sarili nitong mga token. **Ang walang laman, ang default, ay tumatanggap ng lahat ng tinatanggap ng bawat use case.** Tinatanggihan ang signature sa algorithm na wala sa listahan bago ang anumang key operation. Dapat isama ng listahan ang lahat ng nasa `keys.signingAlgorithms`, at RS256 kung walang laman iyon, o tatanggihan ng realm ang sarili nitong mga token. Ang mga HS row ang ginagamit ng `client_secret_jwt`; alisin lang ang mga ito kung walang client na gumagamit."
+  },
+  "cose.algorithms|label": {
+    "en": "fe94cc0994dab40b",
+    "text": "Mga COSE algorithm sa pagpirma"
+  },
+  "cose.algorithms|description": {
+    "en": "fb657d7568044786",
+    "text": "Ang mga COSE algorithm na ipinapampirma ng realm na ito sa mga status-list CWT at `vc+cose` credential, ayon sa pagkakasunod-sunod. **Ang walang laman, ang default, ay iniiwan ang ginagawa ngayon ng bawat use case.** Hindi saklaw dito ang mga passkey: tingnan ang `webauthn.algorithms`."
+  },
+  "cose.acceptedAlgorithms|label": {
+    "en": "de35db5c8aac8926",
+    "text": "Mga tinatanggap na COSE algorithm"
+  },
+  "cose.acceptedAlgorithms|description": {
+    "en": "3c809e701d0ecee5",
+    "text": "Ang mga COSE algorithm na tinatanggap ng realm na ito sa IssuerAuth at DeviceAuth ng mdoc, status-list CWT at `vc+cose` credential. **Ang walang laman, ang default, ay tumatanggap ng tinatanggap na ng bawat isa**, na maaari pang paliitin ng isang specification: hindi kailanman tumatanggap ng RSA ang mdoc. Hindi saklaw dito ang mga passkey."
+  },
+  "saml.signatureAlgorithms|label": {
+    "en": "fd4f436bdda0de4a",
+    "text": "Mga XML algorithm sa pagpirma"
+  },
+  "saml.signatureAlgorithms|description": {
+    "en": "01cb8501b8f096c8",
+    "text": "Ang mga XML signature algorithm na maaaring ipampirma ng realm na ito, ayon sa pagkakasunod-sunod. **Ang walang laman, ang default, ay iniiwang malaya ang `saml.signatureAlgorithm`.** Nananatiling piniling algorithm ang `saml.signatureAlgorithm` at dapat nasa listahan. Ang algorithm na walang XML key ang realm na ito ay babalik sa unang nakalista na mayroon itong key."
+  },
+  "saml.acceptedSignatureAlgorithms|label": {
+    "en": "a190f155d61e54ca",
+    "text": "Mga tinatanggap na XML algorithm"
+  },
+  "saml.acceptedSignatureAlgorithms|description": {
+    "en": "2bf9046fd2019c80",
+    "text": "Ang mga XML SignatureMethod na tinatanggap ng realm na ito, sa mga SP request at metadata, RFC 7522 assertion, partner assertion at WS-Security. **Ang walang laman, ang default, ay tumatanggap ng lahat ng nave-verify nito.** Ang `saml.allowSha1Signatures` pa rin ang nagpapasya sa SHA-1, at tinatanggihan ang nakalistang SHA-1 method habang naka-off ito."
+  },
+  "saml.acceptedDigestAlgorithms|label": {
+    "en": "4c713f76e897330c",
+    "text": "Mga tinatanggap na XML digest"
+  },
+  "saml.acceptedDigestAlgorithms|description": {
+    "en": "0e9213b8012dea7a",
+    "text": "Ang mga XML DigestMethod na tinatanggap ng realm na ito. **Ang walang laman, ang default, ay tumatanggap ng bawat kinakalkula nito.** Ang `saml.allowSha1Signatures` pa rin ang nagpapasya sa SHA-1."
+  },
+  "vc.cryptosuites|label": {
+    "en": "75a59ba059432f82",
+    "text": "Mga Data Integrity suite sa pagpirma"
+  },
+  "vc.cryptosuites|description": {
+    "en": "3be8a2fb2911c2b3",
+    "text": "Ang mga W3C Data Integrity cryptosuite na ipinapampirma ng realm na ito, ayon sa pagkakasunod-sunod: VC API issuance, ang Bitstring status list, zcap at bbs-2023. **Ang walang laman, ang default, ay iniiwan ang ginagawa ngayon ng bawat use case.**"
+  },
+  "vc.acceptedCryptosuites|label": {
+    "en": "962cf7c5a55dd594",
+    "text": "Mga tinatanggap na Data Integrity suite"
+  },
+  "vc.acceptedCryptosuites|description": {
+    "en": "3148c6ff243294cb",
+    "text": "Ang mga W3C Data Integrity cryptosuite na tinatanggap ng realm na ito: holder proof, VC API verification, zcap at bbs-2023 derived proof. **Ang walang laman, ang default, ay tumatanggap ng tinatanggap na ng bawat isa.**"
+  },
+  "pki.acceptedSignatureAlgorithms|label": {
+    "en": "86ec8af66a70814d",
+    "text": "Mga tinatanggap na certificate signature"
+  },
+  "pki.acceptedSignatureAlgorithms|description": {
+    "en": "9a8e168d927bb934",
+    "text": "Ang mga signature algorithm na tinatanggap ng realm na ito sa certificate sa path na bine-validate nito, na pinapangalanan ang row at hindi ang OID. **Ang walang laman, ang default, ay tumatanggap ng lahat ng tinatanggap ng path validation**, na hindi kasama ang SHA-1 at MD5. Ang masyadong kaunting nakalista ay tatanggihan ang sariling hierarchy ng realm na ito, kaya isama ang ginagamit ng `pki.signatureAlgorithm` sa pag-issue."
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|label": {
+    "en": "0e6e6b8920059b86",
+    "text": "Mga tinatanggap na HTTP signature algorithm"
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|description": {
+    "en": "595341df5d9412f0",
+    "text": "Ang mga RFC 9421 HTTP Message Signature algorithm na tinatanggap ng realm na ito, mula sa mga OAuth client at GNAP client. **Ang walang laman, ang default, ay tumatanggap ng bawat nave-verify nito.** Tinatanggihan ang signature sa algorithm na wala sa listahan bago ang anumang key operation."
   },
   "keys.jwksCertificateUrl|label": {
     "en": "b910ac23ecc20134",

@@ -1516,16 +1516,16 @@
     "text": "Firma poscuántica"
   },
   "keys.postQuantumSigning|description": {
-    "en": "68ffd5da182ec911",
-    "text": "Si este dominio firma, publica y verifica los algoritmos JWS poscuánticos y compuestos (ML-DSA, SLH-DSA y los ML-DSA compuestos). **Activado de forma predeterminada.** Desactivado: no hay ninguna clave de firma poscuántica en `/oauth2/jwks` ni en el documento DID (incluidas las claves en espera, fijadas y de grupo de firmantes); ningún algoritmo poscuántico aparece en ninguna lista `*_alg_values_supported` o `*_alg_values` de los documentos de descubrimiento, del servidor de autorización, de OpenID Federation, de OpenID4VCI y de OpenID4VP; un JWS firmado con uno se rechaza dondequiera que este dominio verifique uno; un cliente no puede registrar uno; y una firma que todavía necesitaría uno — para un cliente registrado mientras esto estaba activado, o una firma de mensaje HTTP — se rechaza en lugar de hacerse con una clave que nadie puede obtener. Existe para los clientes y las suites de pruebas cuyas bibliotecas JOSE no pueden leer una clave AKP o no conocen estos algoritmos, entre ellas la suite de conformidad de OpenID. **Sin cambios:** COSE (claves de acceso), las firmas XML, TLS, los algoritmos de certificado, las claves de cifrado ML-KEM (`keys.encryptionKemAlgs`), la clave alternativa ML-DSA que un certificado `hybrid-groups` lleva en `x5c` (las claves ML-DSA sueltas se retiran, los certificados no se vuelven a emitir) y `oidfed.signingAlg`: un dominio que nombra una clave de federación ML-DSA sigue firmando sus declaraciones con ella pero rechaza una declaración ML-DSA que se le pide verificar, así que mantenga ese ajuste clásico aquí."
+    "en": "0a6b412c599e2c7d",
+    "text": "Si este dominio firma, publica y verifica los algoritmos JWS poscuánticos y compuestos (ML-DSA, SLH-DSA y los ML-DSA compuestos). **Activado de forma predeterminada.** Desactivado: no hay ninguna clave de firma poscuántica en `/oauth2/jwks` ni en el documento DID (incluidas las claves en espera, fijadas y de grupo de firmantes); ningún algoritmo poscuántico aparece en ninguna lista `*_alg_values_supported` o `*_alg_values` de los documentos de descubrimiento, del servidor de autorización, de OpenID Federation, de OpenID4VCI y de OpenID4VP; un JWS firmado con uno se rechaza dondequiera que este dominio verifique uno; un cliente no puede registrar uno; y una firma que todavía necesitaría uno — para un cliente registrado mientras esto estaba activado, o una firma de mensaje HTTP — se rechaza en lugar de hacerse con una clave que nadie puede obtener. Existe para los clientes y las suites de pruebas cuyas bibliotecas JOSE no pueden leer una clave AKP o no conocen estos algoritmos, entre ellas la suite de conformidad de OpenID. **Sin cambios:** COSE (claves de acceso), las firmas XML, TLS, los algoritmos de certificado, las claves de cifrado ML-KEM (`keys.encryptionKemAlgs`), la clave alternativa ML-DSA que un certificado `hybrid-groups` lleva en `x5c` (las claves ML-DSA sueltas se retiran, los certificados no se vuelven a emitir). Un `oidfed.signingAlg` que nombra ML-DSA firma con el valor por defecto del dominio en su lugar."
   },
   "keys.eddsaSigning|label": {
     "en": "743f659a7fcaa776",
     "text": "Firma EdDSA"
   },
   "keys.eddsaSigning|description": {
-    "en": "af67bc9dff3a0e7d",
-    "text": "Si este dominio firma con EdDSA (RFC 8037, Ed25519 y Ed448) los objetos JOSE cuyo algoritmo eligió un cliente, y publica sus claves de firma kty OKP. **Desactivado por defecto**, porque la suite de conformidad de OpenID no puede analizar una clave OKP en un JWKS, y es la que ejecuta la certificación OpenID Connect. Desactivado: ninguna clave de firma OKP en `/oauth2/jwks` (incluidas las claves en espera, fijadas y de grupo de firmantes); EdDSA no está en `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` ni `authorization_signing_alg_values_supported`; un cliente no puede registrar ni recibir EdDSA para una respuesta de ID Token, UserInfo, introspección o JARM; y una firma así que aún se pida — por un cliente registrado mientras esto estaba activado, o por un algoritmo de SSF, WS-Trust o Provider Commands configurado en EdDSA — se rechaza en lugar de hacerse con una clave que nadie puede obtener. **Sin cambios:** el EdDSA con el que firma un cliente (aserciones de cliente, pruebas DPoP, objetos de solicitud, pruebas de billetera) se sigue aceptando y anunciando como aceptado; una firma cuya clave viaja en un `x5c` o en un documento DID; un algoritmo de federación o de credencial que configura un operador (`oidfed.signingAlg`, el algoritmo de credencial de OpenID4VCI) sigue firmando, así que no configure EdDSA ahí con esto desactivado; el documento DID, COSE, las firmas XML, DKIM y TLS no son publicación JWKS de JOSE. Un `oauth2.accessTokenSigningAlg` con EdDSA firma con RS256 en su lugar. Activado: EdDSA se firma y publica como indica `oauth2.eddsaCurve`."
+    "en": "78d3ca6aec2ee4f6",
+    "text": "Si este dominio firma con EdDSA (RFC 8037, Ed25519 y Ed448) los objetos JOSE cuyo algoritmo eligió un cliente, y publica sus claves de firma kty OKP. **Desactivado por defecto**, porque la suite de conformidad de OpenID no puede analizar una clave OKP en un JWKS, y es la que ejecuta la certificación OpenID Connect. Desactivado: ninguna clave de firma OKP en `/oauth2/jwks` (incluidas las claves en espera, fijadas y de grupo de firmantes); EdDSA no está en `id_token_signing_alg_values_supported`, `userinfo_signing_alg_values_supported`, `introspection_signing_alg_values_supported` ni `authorization_signing_alg_values_supported`; un cliente no puede registrar ni recibir EdDSA para una respuesta de ID Token, UserInfo, introspección o JARM; y una firma así que aún se pida — por un cliente registrado mientras esto estaba activado, o por un algoritmo de SSF, WS-Trust o Provider Commands configurado en EdDSA — se rechaza en lugar de hacerse con una clave que nadie puede obtener. **Sin cambios:** el EdDSA con el que firma un cliente (aserciones de cliente, pruebas DPoP, objetos de solicitud, pruebas de billetera) se sigue aceptando y anunciando como aceptado; una firma cuya clave viaja en un `x5c` o en un documento DID; el algoritmo de credencial de OpenID4VCI que configura un operador sigue firmando, así que no configure EdDSA ahí con esto desactivado; el documento DID, COSE, las firmas XML, DKIM y TLS no son publicación JWKS de JOSE. Un `oauth2.accessTokenSigningAlg` o `oidfed.signingAlg` con EdDSA firma con el valor por defecto del dominio en su lugar. Activado: EdDSA se firma y publica como indica `oauth2.eddsaCurve`."
   },
   "keys.signingAlgorithms|label": {
     "en": "23087da9ac3a37f0",
@@ -1534,6 +1534,94 @@
   "keys.signingAlgorithms|description": {
     "en": "6ca0d3f207d8dcd4",
     "text": "Los algoritmos JWS con los que este dominio firma y para los que publica claves. **Vacío, el valor predeterminado, conserva todos los algoritmos que el dominio tenga por lo demás.** Una lista debe incluir RS256: OpenID Connect Discovery lo exige en `id_token_signing_alg_values_supported`, y es el valor predeterminado para los ID Token y los tokens de acceso. Con una lista: en `/oauth2/jwks` no hay ninguna clave de firma de un algoritmo no incluido (ni las de reserva, las fijadas o las de grupos de firmantes; una clave RSA sirve para todos los algoritmos RS y PS, así que se mantiene); un algoritmo no incluido no aparece en las listas de firma de ID Token, UserInfo, introspección o JARM del documento de descubrimiento; un cliente no puede registrarlo ni recibirlo para esas respuestas; una firma que aún se solicite con él se rechaza en lugar de hacerse con una clave que nadie puede obtener; y un `oauth2.accessTokenSigningAlg` no incluido firma con RS256 en su lugar. Incluya también PS256 para FAPI 1.0 Advanced. `keys.postQuantumSigning` y `keys.eddsaSigning` siguen aplicándose: incluir un algoritmo no activa su familia. **Sin cambios:** lo que este dominio acepta de los clientes (aserciones de cliente, pruebas DPoP, objetos de solicitud, pruebas de cartera); una respuesta UserInfo en JSON sin firmar; las claves de cifrado; COSE, las firmas XML, DKIM y TLS; y los algoritmos que configuran `oauth2.httpSignatureResponseAlg`, `oidfed.signingAlg` y el algoritmo de credenciales de OpenID4VCI, así que indique allí uno incluido."
+  },
+  "keys.pqcOnly|label": {
+    "en": "d27c2ce62f5e2d05",
+    "text": "Firmar solo con poscuánticos"
+  },
+  "keys.pqcOnly|description": {
+    "en": "6bfa6be713279597",
+    "text": "Si este dominio firma SOLO con algoritmos poscuánticos, en JOSE, COSE, XML y Data Integrity. **Desactivado por defecto.** Activado: cada lista de firma se reduce a sus algoritmos poscuánticos, o a todos ellos si no nombra ninguno, y se rechaza una firma con un algoritmo clásico. Lo que este dominio ACEPTA no cambia. **RS256 se mantiene para los ID Tokens**, porque OpenID Connect Discovery lo exige, y solo se usa para un cliente que lo registró o que no registró ningún algoritmo. Los algoritmos de certificado y DKIM no cambian. No puede activarse mientras `keys.postQuantumSigning` esté desactivado, y un cliente o usuario de confianza que no pueda verificar ML-DSA no podrá leer lo que firma este dominio."
+  },
+  "keys.acceptedSigningAlgorithms|label": {
+    "en": "13c74bb1ab9ae1ae",
+    "text": "Algoritmos JWS aceptados"
+  },
+  "keys.acceptedSigningAlgorithms|description": {
+    "en": "c09dd7c2c5ff488b",
+    "text": "Los algoritmos JWS que este dominio acepta de cualquiera: aserciones de cliente, pruebas DPoP, objetos de solicitud, pruebas de billetera, declaraciones de federación, sus propios tokens. **Vacío, el valor por defecto, acepta todo lo que cada caso de uso acepta de otro modo.** Una firma con un algoritmo no incluido se rechaza antes de cualquier operación con claves. Una lista debe incluir todo lo que enumera `keys.signingAlgorithms`, y RS256 si esa está vacía, o el dominio rechazará sus propios tokens. Las filas HS son las que usa `client_secret_jwt`; omítalas solo si ningún cliente lo usa."
+  },
+  "cose.algorithms|label": {
+    "en": "fe94cc0994dab40b",
+    "text": "Algoritmos COSE de firma"
+  },
+  "cose.algorithms|description": {
+    "en": "fb657d7568044786",
+    "text": "Los algoritmos COSE con los que este dominio firma los CWT de listas de estado y las credenciales `vc+cose`, en orden. **Vacío, el valor por defecto, deja lo que cada caso de uso hace hoy.** Las claves de acceso no se rigen aquí: consulte `webauthn.algorithms`."
+  },
+  "cose.acceptedAlgorithms|label": {
+    "en": "de35db5c8aac8926",
+    "text": "Algoritmos COSE aceptados"
+  },
+  "cose.acceptedAlgorithms|description": {
+    "en": "3c809e701d0ecee5",
+    "text": "Los algoritmos COSE que este dominio acepta en IssuerAuth y DeviceAuth de un mdoc, un CWT de lista de estado y una credencial `vc+cose`. **Vacío, el valor por defecto, acepta lo que cada uno ya acepta**, que una especificación puede reducir más: un mdoc nunca admite RSA. Las claves de acceso no se rigen aquí."
+  },
+  "saml.signatureAlgorithms|label": {
+    "en": "fd4f436bdda0de4a",
+    "text": "Algoritmos XML de firma"
+  },
+  "saml.signatureAlgorithms|description": {
+    "en": "01cb8501b8f096c8",
+    "text": "Los algoritmos de firma XML con los que este dominio puede firmar, en orden. **Vacío, el valor por defecto, deja libre `saml.signatureAlgorithm`.** `saml.signatureAlgorithm` sigue siendo el elegido y debe estar en la lista. Un algoritmo para el que este dominio no tiene clave XML recurre al primero de la lista para el que sí la tiene."
+  },
+  "saml.acceptedSignatureAlgorithms|label": {
+    "en": "a190f155d61e54ca",
+    "text": "Algoritmos XML aceptados"
+  },
+  "saml.acceptedSignatureAlgorithms|description": {
+    "en": "2bf9046fd2019c80",
+    "text": "Los SignatureMethod XML que este dominio acepta en solicitudes y metadatos de SP, aserciones RFC 7522, aserciones de socios y WS-Security. **Vacío, el valor por defecto, acepta todo lo que verifica de otro modo.** `saml.allowSha1Signatures` sigue decidiendo sobre SHA-1, y un método SHA-1 incluido se rechaza mientras esté desactivado."
+  },
+  "saml.acceptedDigestAlgorithms|label": {
+    "en": "4c713f76e897330c",
+    "text": "Resúmenes XML aceptados"
+  },
+  "saml.acceptedDigestAlgorithms|description": {
+    "en": "0e9213b8012dea7a",
+    "text": "Los DigestMethod XML que este dominio acepta. **Vacío, el valor por defecto, acepta todos los que calcula.** `saml.allowSha1Signatures` sigue decidiendo sobre SHA-1."
+  },
+  "vc.cryptosuites|label": {
+    "en": "75a59ba059432f82",
+    "text": "Suites Data Integrity de firma"
+  },
+  "vc.cryptosuites|description": {
+    "en": "3be8a2fb2911c2b3",
+    "text": "Los conjuntos criptográficos W3C Data Integrity con los que firma este dominio, en orden: emisión por VC API, la lista de estado Bitstring, zcap y bbs-2023. **Vacío, el valor por defecto, deja lo que cada caso de uso hace hoy.**"
+  },
+  "vc.acceptedCryptosuites|label": {
+    "en": "962cf7c5a55dd594",
+    "text": "Suites Data Integrity aceptadas"
+  },
+  "vc.acceptedCryptosuites|description": {
+    "en": "3148c6ff243294cb",
+    "text": "Los conjuntos criptográficos W3C Data Integrity que este dominio acepta: pruebas de titular, verificación por VC API, zcap y pruebas derivadas bbs-2023. **Vacío, el valor por defecto, acepta lo que cada uno ya acepta.**"
+  },
+  "pki.acceptedSignatureAlgorithms|label": {
+    "en": "86ec8af66a70814d",
+    "text": "Firmas de certificado aceptadas"
+  },
+  "pki.acceptedSignatureAlgorithms|description": {
+    "en": "9a8e168d927bb934",
+    "text": "Los algoritmos de firma que este dominio acepta en un certificado de una ruta que valida, nombrando la fila y no el OID. **Vacío, el valor por defecto, acepta todo lo que la validación de rutas acepta de otro modo**, y SHA-1 y MD5 no lo son. Enumerar demasiado poco rechaza la propia jerarquía de este dominio, así que incluya aquello con lo que emite `pki.signatureAlgorithm`."
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|label": {
+    "en": "0e6e6b8920059b86",
+    "text": "Algoritmos de firma HTTP aceptados"
+  },
+  "oauth2.httpSignatureAcceptedAlgorithms|description": {
+    "en": "595341df5d9412f0",
+    "text": "Los algoritmos de HTTP Message Signatures (RFC 9421) que este dominio acepta, tanto de clientes OAuth como de clientes GNAP. **Vacío, el valor por defecto, acepta todos los que verifica.** Una firma con un algoritmo no incluido se rechaza antes de cualquier operación con claves."
   },
   "keys.jwksCertificateUrl|label": {
     "en": "b910ac23ecc20134",

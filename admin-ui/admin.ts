@@ -8922,6 +8922,9 @@ const SETTING_HOMES = [
   // CSRF scheme are facts about the PROCESS and every browser-facing surface
   // shares them.
   { group: 'Web security', pages: ['/admin/config'] },
+  // WHICH SIGNATURE ALGORITHMS (#1368): a statement about every family, so it
+  // lives with the keys it governs.
+  { group: 'Signing algorithms', pages: ['/admin/config'] },
   // REPORTING (#956). The application is not a console page. The caps are
   // process settings, drawn on /admin/config with the other process facts.
   { group: 'Reporting', pages: ['/admin/config'] },
