@@ -25,7 +25,7 @@
 //      private key is handed back ONCE and this module keeps no copy.
 //   2. PACKAGE — a password-protected PKCS#12 and a PEM key and chain, through
 //      `common/crypto_impl/key_material.js`'s `exportKeyPair()`, which is the
-//      exporter `/admin/keys` and the Certificate & Key Configuration pane
+//      exporter `/admin/keys` and the Certificate Workbench
 //      already use. One exporter, so a `.p12` from here imports exactly as one
 //      from those pages does.
 //   3. RECOGNISE — `identityOf()`, the gate every door that turns a verified

@@ -23,6 +23,7 @@
 
 const assert = require("assert");
 const crypto = require("crypto");
+const http2 = require("http2");
 const zlib = require("zlib");
 const ldap = require("ldapjs");
 const { Command, Option } = require("commander");
@@ -435,6 +436,76 @@ async function aFederationAnswer() {
   });
 }
 
+async function aNamedServersMetadata() {
+  log.info("=== 10. a named server's metadata member that is an object ===");
+  const realm = await makeRealm("ns");
+  const aliases = { token_endpoint: "https://mtls.example/token" };
+  const made = await hop("POST", realm.api + "/authorization-servers/create",
+                         { id: "ov-server", label: "Outside server" });
+  assert.strictEqual(made.status, 200, made.text.slice(0, 300));
+  const set = await hop("POST", realm.api + "/authorization-servers/set",
+    { profile: "ov-server", member: "mtls_endpoint_aliases",
+      value: JSON.stringify(aliases) });
+  stands("setting it", set);
+  const page = await hop("GET", realm.api + "/sts-metadata");
+  stands("the metadata page", page);
+  check("and it is shown as it was set", function () {
+    const server = page.json.namedServers.filter(function (one) {
+      return one.id === "ov-server";
+    })[0];
+    assert.deepStrictEqual(server.overrides.mtls_endpoint_aliases, aliases);
+  });
+}
+
+// One request over HTTP/2, as a browser sends it. `fetch` here speaks HTTP/1.1,
+// which is why every job but the console's missed what this section holds.
+function overHttp2(url) {
+  log.debug("Entering overHttp2(). " + url);
+  return new Promise(function (resolve, reject) {
+    const at = new URL(url);
+    const session = http2.connect(at.origin);
+    session.on("error", reject);
+    session.on("connect", function () {
+      const protocol = session.alpnProtocol;
+      const stream = session.request({
+        ":path": at.pathname + at.search, accept: "application/json",
+        authorization: "Bearer " + (process.env.STS_ADMIN_API_TOKEN || "") });
+      let status = 0;
+      let text = "";
+      stream.on("response", function (headers) {
+        status = headers[":status"];
+      });
+      stream.setEncoding("utf8");
+      stream.on("data", function (chunk) {
+        text += chunk;
+      });
+      stream.on("end", function () {
+        session.close();
+        log.debug("Leaving overHttp2(). " + protocol + " " + status);
+        resolve({ protocol: protocol, status: status, text: text });
+      });
+      stream.on("error", reject);
+      stream.end();
+    });
+  });
+}
+
+async function theFederationPageOverHttp2() {
+  log.info("=== 11. the OpenID Federation page over HTTP/2 ===");
+  // Every realm made above is one this page walks, which is what reached the
+  // forged request and, through HTTP/2's `url` accessor, rewrote the real one.
+  const answer = await overHttp2(root + "/admin-api/oidfed");
+  if (answer.protocol !== "h2") {
+    log.info("  this service did not offer HTTP/2 (" + answer.protocol +
+             "); nothing to hold here");
+    return;
+  }
+  check("it answers, as it does over HTTP/1.1: " + answer.status, function () {
+    assert.strictEqual(answer.status, 200, answer.text.slice(0, 300));
+    assert.ok(JSON.parse(answer.text).entityId);
+  });
+}
+
 async function test() {
   log.debug("Entering test().");
   await aDelegate();
@@ -446,6 +517,8 @@ async function test() {
   await aSamlCacheDuration();
   await ldapWrites();
   await aFederationAnswer();
+  await aNamedServersMetadata();
+  await theFederationPageOverHttp2();
   log.info(checks + " checks passed.");
   log.debug("Leaving test().");
 }

@@ -1865,7 +1865,6 @@ Scope: `admin:read`.
 | `custom[].certificate.source` | string |  |  |
 | `custom[].certificateSource` | string |  |  |
 | `custom[].clientAuth` | string, or null |  |  |
-| `custom[].code` | string, or null |  |  |
 | `custom[].hostnames` | list |  |  |
 | `custom[].hostnames[]` | string |  |  |
 | `custom[].http` | object |  |  |
@@ -1939,7 +1938,9 @@ Scope: `admin:read`.
 | `live[].kind` | string |  |  |
 | `live[].label` | string |  |  |
 | `live[].realm` | string, or null |  |  |
-| `problem` | string, or null |  |  |
+| `problem` | object |  |  |
+| `problem.code` | string |  |  |
+| `problem.message` | string |  |  |
 | `process` | object |  |  |
 | `process.clientAuth` | string, or null |  |  |
 | `process.groups` | string |  |  |
@@ -2413,7 +2414,6 @@ Scope: `admin:write`.
 | `row.attempts` | number |  |  |
 | `row.bodyKept` | boolean |  |  |
 | `row.category` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.from` | string, or null |  |  |
 | `row.generation` | number |  |  |
@@ -2455,7 +2455,6 @@ Scope: `admin:write`.
 | `row.attempts` | number |  |  |
 | `row.bodyKept` | boolean |  |  |
 | `row.category` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.from` | string, or null |  |  |
 | `row.generation` | number |  |  |
@@ -2516,7 +2515,6 @@ Scope: `admin:write`.
 | `row.attempts` | number |  |  |
 | `row.bodyKept` | boolean |  |  |
 | `row.category` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.from` | string, or null |  |  |
 | `row.generation` | number |  |  |
@@ -2558,7 +2556,6 @@ Scope: `admin:write`.
 | `row.attempts` | number |  |  |
 | `row.bodyKept` | boolean |  |  |
 | `row.category` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.from` | string, or null |  |  |
 | `row.generation` | number |  |  |
@@ -2622,7 +2619,6 @@ Scope: `admin:write`.
 | `row.attempts` | number |  |  |
 | `row.bodyKept` | boolean |  |  |
 | `row.category` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.from` | string, or null |  |  |
 | `row.generation` | number |  |  |
@@ -2664,7 +2660,6 @@ Scope: `admin:write`.
 | `row.attempts` | number |  |  |
 | `row.bodyKept` | boolean |  |  |
 | `row.category` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.from` | string, or null |  |  |
 | `row.generation` | number |  |  |
@@ -2724,7 +2719,6 @@ Scope: `admin:write`.
 | `row.attempts` | number |  |  |
 | `row.bodyKept` | boolean |  |  |
 | `row.category` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.from` | string, or null |  |  |
 | `row.generation` | number |  |  |
@@ -2766,7 +2760,6 @@ Scope: `admin:write`.
 | `row.attempts` | number |  |  |
 | `row.bodyKept` | boolean |  |  |
 | `row.category` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.from` | string, or null |  |  |
 | `row.generation` | number |  |  |
@@ -2826,7 +2819,6 @@ Scope: `admin:write`.
 | `row.attempts` | number |  |  |
 | `row.bodyKept` | boolean |  |  |
 | `row.category` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.from` | string, or null |  |  |
 | `row.generation` | number |  |  |
@@ -2868,7 +2860,6 @@ Scope: `admin:write`.
 | `row.attempts` | number |  |  |
 | `row.bodyKept` | boolean |  |  |
 | `row.category` | string, or null |  |  |
-| `row.errorCode` | string, or null |  |  |
 | `row.finishedAt` | string |  |  |
 | `row.from` | string, or null |  |  |
 | `row.generation` | number |  |  |
@@ -3933,7 +3924,6 @@ Scope: `admin:write`.
 | `run.dueAt` | string, or null |  |  |
 | `run.durationMs` | number, or null |  |  |
 | `run.endedAt` | string, or null |  |  |
-| `run.errorCode` | string |  |  |
 | `run.fenceAt` | number |  |  |
 | `run.host` | string |  |  |
 | `run.jobId` | string, or null |  |  |
@@ -3985,7 +3975,6 @@ Scope: `admin:write`.
 | `run.dueAt` | string, or null |  |  |
 | `run.durationMs` | number, or null |  |  |
 | `run.endedAt` | string, or null |  |  |
-| `run.errorCode` | string |  |  |
 | `run.fenceAt` | number |  |  |
 | `run.host` | string |  |  |
 | `run.jobId` | string, or null |  |  |
@@ -4037,7 +4026,6 @@ Scope: `admin:write`.
 | `run.dueAt` | string, or null |  |  |
 | `run.durationMs` | number, or null |  |  |
 | `run.endedAt` | string, or null |  |  |
-| `run.errorCode` | string |  |  |
 | `run.fenceAt` | number |  |  |
 | `run.host` | string |  |  |
 | `run.jobId` | string, or null |  |  |
@@ -4105,7 +4093,6 @@ An empty object.
 | `run.dueAt` | string, or null |  |  |
 | `run.durationMs` | number, or null |  |  |
 | `run.endedAt` | string, or null |  |  |
-| `run.errorCode` | string |  |  |
 | `run.fenceAt` | number |  |  |
 | `run.host` | string |  |  |
 | `run.jobId` | string, or null |  |  |
@@ -4157,7 +4144,6 @@ An empty object.
 | `run.dueAt` | string, or null |  |  |
 | `run.durationMs` | number, or null |  |  |
 | `run.endedAt` | string, or null |  |  |
-| `run.errorCode` | string |  |  |
 | `run.fenceAt` | number |  |  |
 | `run.host` | string |  |  |
 | `run.jobId` | string, or null |  |  |
@@ -4209,7 +4195,6 @@ An empty object.
 | `run.dueAt` | string, or null |  |  |
 | `run.durationMs` | number, or null |  |  |
 | `run.endedAt` | string, or null |  |  |
-| `run.errorCode` | string |  |  |
 | `run.fenceAt` | number |  |  |
 | `run.host` | string |  |  |
 | `run.jobId` | string, or null |  |  |
@@ -4408,9 +4393,8 @@ Scope: `admin:read`.
 | `namedServers[].id` | string |  |  |
 | `namedServers[].label` | string, or null |  |  |
 | `namedServers[].memberCount` | integer |  |  |
-| `namedServers[].overrides` | map |  | The settings this server overrides. |
-| `namedServers[].overrides.{key}` | list, or string, or number, or boolean, or null |  |  |
-| `namedServers[].overrides.{key}[]` | string, or number, or boolean |  |  |
+| `namedServers[].overrides` | map |  | The metadata members this server overrides. |
+| `namedServers[].overrides.{key}` | any JSON |  | An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines. An RFC 8414 metadata member's value as the operator chose to publish it: any JSON, deliberately, including what no specification defines. |
 | `namedServers[].removed` | list |  |  |
 | `namedServers[].removed[]` | string |  |  |
 | `namedServers[].seen` | integer |  |  |

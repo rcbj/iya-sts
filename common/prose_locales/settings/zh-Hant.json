@@ -3412,8 +3412,8 @@
     "text": "工作台儲存區保留的憑證與金鑰數（每個領域）"
   },
   "pki.maxStoredObjects|description": {
-    "en": "3057876f05b58063",
-    "text": "/admin/pki 上的 Certificate & Key Configuration 窗格在一個領域中最多可保留的物件數。**儲存區已滿時會拒絕下一個**；過去會捨棄最舊的，而最舊的物件攜帶著某人選擇保留的私密金鑰。請刪除不再需要的物件，或調高此值。"
+    "en": "d78b7992e9302874",
+    "text": "/admin/pki 上的 憑證工作台在一個領域中最多可保留的物件數。**儲存區已滿時會拒絕下一個**；過去會捨棄最舊的，而最舊的物件攜帶著某人選擇保留的私密金鑰。請刪除不再需要的物件，或調高此值。"
   },
   "pki.personSelfServicePerIdentity|label": {
     "en": "16d37c1faeb2ce0c",

@@ -94,7 +94,6 @@ Scope: `admin:read`.
 | `realms[].listeners[].here.certificate.notBefore` | string |  |  |
 | `realms[].listeners[].here.certificate.serialHex` | string |  |  |
 | `realms[].listeners[].here.certificate.source` | string |  |  |
-| `realms[].listeners[].here.code` | string, or null |  |  |
 | `realms[].listeners[].here.hostnames` | list |  |  |
 | `realms[].listeners[].here.hostnames[]` | string |  |  |
 | `realms[].listeners[].here.id` | string |  |  |

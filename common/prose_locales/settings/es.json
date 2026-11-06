@@ -3412,8 +3412,8 @@
     "text": "Certificados y claves que guarda el almacén del banco de trabajo, por dominio"
   },
   "pki.maxStoredObjects|description": {
-    "en": "3057876f05b58063",
-    "text": "Cuántos objetos puede guardar en un dominio el panel Certificate & Key Configuration de /admin/pki. **UN ALMACÉN LLENO RECHAZA EL SIGUIENTE**; antes descartaba el más antiguo, y el más antiguo lleva una clave privada que alguien decidió conservar. Elimine lo que ya no necesite, o aumente este valor."
+    "en": "d78b7992e9302874",
+    "text": "Cuántos objetos puede guardar en un dominio el Banco de trabajo de certificados de /admin/pki. **UN ALMACÉN LLENO RECHAZA EL SIGUIENTE**; antes descartaba el más antiguo, y el más antiguo lleva una clave privada que alguien decidió conservar. Elimine lo que ya no necesite, o aumente este valor."
   },
   "pki.personSelfServicePerIdentity|label": {
     "en": "16d37c1faeb2ce0c",

@@ -22,6 +22,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import Rules = require('../scim/scim_client_rules');
+import ResponseModelKit = require('../common/response_model_kit');
 
 type Req = any;
 type Res = any;
@@ -205,9 +206,10 @@ class ScimClientsApi {
   sendJson(res: Res, status: number, body: Json): void {
     const { log } = this.deps;
     log.debug("Entering ScimClientsApi.sendJson(). status=" + status);
+    // A client's row carries its last delivery's code (#1355).
     res.status(status).type('application/json')
        .set('Cache-Control', 'no-store')
-       .send(JSON.stringify(body, null, 2));
+       .send(JSON.stringify(ResponseModelKit.actAnswer(res, body), null, 2));
     log.debug("Leaving ScimClientsApi.sendJson().");
   }
 

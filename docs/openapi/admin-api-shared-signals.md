@@ -774,9 +774,6 @@ Scope: `admin:read`.
 | `process.sinceStart.trimmed` | number |  |  |
 | `process.sweeps` | list |  |  |
 | `process.sweeps[].at` | string |  |  |
-| `process.sweeps[].byCode` | list |  |  |
-| `process.sweeps[].byCode[].count` | integer |  |  |
-| `process.sweeps[].byCode[].errorCode` | string |  |  |
 | `process.sweeps[].deadStreams` | integer |  |  |
 | `process.sweeps[].expired` | integer |  |  |
 | `process.sweeps[].held` | integer |  |  |
@@ -1140,6 +1137,7 @@ Scope: `admin:read`.
 | `received[].reactions[].reaction` | string |  |  |
 | `received[].reactions[].revoked` | integer |  |  |
 | `received[].reactions[].skipped` | string |  |  |
+| `received[].reactions[].status` | string |  |  |
 | `received[].reactions[].tokens` | integer |  |  |
 | `received[].reactions[].why` | string |  |  |
 | `received[].receivedAt` | string |  |  |

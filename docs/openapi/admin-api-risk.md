@@ -221,7 +221,6 @@ Scope: `admin:read`.
 | `assessments.rows[].datasets.{key}[].url` | object |  | Nested deeper than this page draws. |
 | `assessments.rows[].decision` | string, or null |  |  |
 | `assessments.rows[].door` | string |  |  |
-| `assessments.rows[].errorCode` | string, or null |  |  |
 | `assessments.rows[].feedback` | string, or null |  |  |
 | `assessments.rows[].feedbackAt` | number |  |  |
 | `assessments.rows[].id` | string |  |  |
@@ -342,7 +341,6 @@ Scope: `admin:read`.
 | `datasets[].versions[].attribution` | string, or null |  |  |
 | `datasets[].versions[].byteCount` | number |  |  |
 | `datasets[].versions[].dataset` | string |  |  |
-| `datasets[].versions[].errorCode` | string, or null |  |  |
 | `datasets[].versions[].fetchedAt` | number |  |  |
 | `datasets[].versions[].format` | string |  |  |
 | `datasets[].versions[].licence` | string, or null |  |  |
