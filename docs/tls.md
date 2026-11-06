@@ -468,14 +468,15 @@ logged once (`STS-TLS-0056`). A block of the file it refuses is left out
 the [signer truststore](signer-truststore.md).
 
 Under paranoid PKI mode a client certificate is also held to more than OpenSSL's
-answer on **every** listener (the main port, custom listeners, LDAPS, the debugger and
-the channel between cells): the leaf is not a CA, its keyUsage and extendedKeyUsage
+answer on the main port, custom listeners, LDAPS and the debugger: the leaf is not a CA, its keyUsage and extendedKeyUsage
 fit client authentication, revocation is consulted before the connection is read, a
 failure inside the check refuses, and a resumed session keeps what its full handshake
 concluded. A certificate that fails is treated as unverified rather than breaking the
 handshake. See the `tls-client` row of the [use cases](pki-use-cases.md). A registered
 `self_signed_tls_client_auth` certificate is held to its validity and keyUsage too,
-while equality stays the method (`tls-client-self-signed`).
+while equality stays the method (`tls-client-self-signed`). The channel between cells
+asks the same of the leaf under a row of its own, `cell-peer`, and consults this
+service's own register for revocation.
 
 **A TLS handshake has no realm in it, so a realm's own rows mostly do not decide
 it.** The path that names a realm arrives after the handshake is over, so which
