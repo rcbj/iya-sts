@@ -784,6 +784,11 @@ async function theApiMirrorsThePane(object) {
         "which is the two doors meeting on one store", function () {
           assert.strictEqual(leaf.status, 200, leaf.text.slice(0, 300));
           assert.ok(leaf.body.object.subject.indexOf(LEAF_CN) >= 0);
+          // A KEPT KEY IS NOT IN THE ANSWER (#1359): the object says it holds
+          // one, and asking for it is `use-key` or `export-keys`.
+          assert.strictEqual(leaf.body.object.hasPrivateKey, true);
+          assert.strictEqual(leaf.body.object.privateKeyPem, undefined);
+          assert.strictEqual(leaf.body.draft.pki_private_key, "");
           assert.strictEqual(leaf.body.object.selfSigned, false);
           assert.ok(leaf.body.object.issuerSubject.indexOf(CA_CN) >= 0,
             "the leaf names " + leaf.body.object.issuerSubject +

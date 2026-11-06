@@ -425,8 +425,8 @@ const PKI_KEY_ALGORITHM = Kit.closed({
 // names include one per X.509 key usage, EKU and Netscape bit from the crypto
 // engine's tables, so the keys are read from those tables and are data here.
 const PKI_DRAFT = Kit.mapOf(Kit.nullable(Kit.oneOf(STR, BOOL)));
-// `describeObject()`; and the raw record `issue()` answers with, which adds the
-// three key members below it.
+// `describeObject()`; and the record an issue answers with, which adds the
+// public keys. Neither private key: `PkiAdmin.issuedAnswer()` (#1359).
 const PKI_OBJECT = Kit.closed({
   id: STR, ca: BOOL, profile: STR, profileLabel: STR, subject: STR,
   issuerSubject: STR, issuerId: NSTR, selfSigned: BOOL, serialHex: STR,
@@ -434,8 +434,7 @@ const PKI_OBJECT = Kit.closed({
   pqMode: STR, altKeyAlg: NSTR, altSigned: BOOL, notBefore: STR, notAfter: STR,
   expired: BOOL, thumbprint: STR, createdAt: WHEN, hasPrivateKey: BOOL,
   hasCsr: BOOL, certificatePem: STR, csrPem: STR, pqc: PQC,
-  privateKeyPem: STR, publicKeyPem: STR, altPrivateKeyPem: NSTR,
-  altPublicKeyPem: NSTR
+  publicKeyPem: STR, altPublicKeyPem: NSTR
 });
 const PKI_WORKBENCH = Kit.closed({
   fields: STRS,
