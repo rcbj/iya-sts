@@ -27520,7 +27520,9 @@ class AdminApi {
     // one prefix serves the management operations and the console's own; asked
     // for the paths alone, so the options a request would supply do not matter.
     responseChecks.install(app as any, BASE, function () {
-      return spec.buildSpec(ROUTES, { authRequired: true });
+      return spec.buildSpec(ROUTES, { authRequired: true,
+        // reads only the response models: publishes nothing, so no gate state.
+      });
     }, ResponseModelTable.ERROR);
     app.use(BASE, function (req, res, next) {
       if (self.tokenRequired()) {

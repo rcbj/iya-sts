@@ -166,6 +166,7 @@ class ResponseModels {
       self.report(req, res, problem);
       res.removeHeader('Content-Disposition');
       res.removeHeader('ETag');
+      // error-code: none — `report()` above marked STS-API-0139.
       res.status(500).set('Cache-Control', 'no-store')
          .type('application/json');
       return send.call(this, FAILED_BODY);
@@ -378,12 +379,12 @@ class ResponseModels {
     const { log, mark, tag } = this.deps;
     log.debug("Entering ResponseModels.report().");
     this.failures += 1;
-    mark(res, CODE);
+    mark(res, 'STS-API-0139');
     const line = problem.operation + ' answered ' + problem.status + ': ' +
       problem.where;
     if (!this.logged.has(line) && this.logged.size < MAX_LOGGED) {
       this.logged.add(line);
-      log.error(tag(CODE) + 'An answer does not match its model and was not ' +
+      log.error(tag('STS-API-0139') + 'An answer does not match its model and was not ' +
                 'sent: ' + line);
     }
     log.debug("Leaving ResponseModels.report().");

@@ -48,6 +48,11 @@ interface Options {
   description?: string;
 }
 
+// Where a schema keeps its subschemas: everything else in one is a value.
+const SINGLE_SCHEMA_KEYWORDS = ['items', 'additionalProperties'];
+const LIST_SCHEMA_KEYWORDS = ['anyOf', 'oneOf', 'allOf'];
+const MAP_SCHEMA_KEYWORDS = ['properties', 'patternProperties'];
+
 class ResponseModelKit {
   // A STRING MEMBER. `description` is optional on all of these.
   static str(description?: string): Json {
@@ -230,23 +235,15 @@ class ResponseModelKit {
   static shareRepeated(doc: Json): Json {
     const counts = new Map<string, number>();
     const MIN = 240;
-    const isSchema = function (node: Json): boolean {
-      return node && typeof node === 'object' && !Array.isArray(node) &&
-        (node.type !== undefined || node.anyOf || node.oneOf);
-    };
     const count = function (node: Json): void {
       if (!node || typeof node !== 'object') {
         return;
       }
-      if (isSchema(node)) {
-        const text = JSON.stringify(node);
-        if (text.length >= MIN) {
-          counts.set(text, (counts.get(text) || 0) + 1);
-        }
+      const text = JSON.stringify(node);
+      if (text.length >= MIN) {
+        counts.set(text, (counts.get(text) || 0) + 1);
       }
-      Object.keys(node).forEach(function (key) {
-        count(node[key]);
-      });
+      ResponseModelKit.subschemas(node).forEach(count);
     };
     const shared = new Map<string, string>();
     // A copy: the table behind `components` is shared by every document built.
@@ -256,19 +253,17 @@ class ResponseModelKit {
       if (!node || typeof node !== 'object') {
         return node;
       }
-      if (isSchema(node)) {
-        const text = JSON.stringify(node);
-        if ((counts.get(text) || 0) > 1) {
-          let name = shared.get(text);
-          if (!name) {
-            name = 'SharedModel' + (shared.size + 1);
-            shared.set(text, name);
-            schemas[name] = ResponseModelKit.sharedChildren(node, share);
-          }
-          return { $ref: '#/components/schemas/' + name };
+      const text = JSON.stringify(node);
+      if ((counts.get(text) || 0) > 1) {
+        let name = shared.get(text);
+        if (!name) {
+          name = 'SharedModel' + (shared.size + 1);
+          shared.set(text, name);
+          schemas[name] = ResponseModelKit.withSubschemas(node, share);
         }
+        return { $ref: '#/components/schemas/' + name };
       }
-      return ResponseModelKit.sharedChildren(node, share);
+      return ResponseModelKit.withSubschemas(node, share);
     };
     const eachContent = function (visit: (media: Json) => void): void {
       Object.keys(doc.paths).forEach(function (path) {
@@ -292,13 +287,50 @@ class ResponseModelKit {
     return doc;
   }
 
-  private static sharedChildren(node: Json, share: (n: Json) => Json): Json {
-    if (Array.isArray(node)) {
-      return node.map(share);
-    }
-    const out: Json = {};
-    Object.keys(node).forEach(function (key) {
-      out[key] = share(node[key]);
+  // THE WALK KNOWS WHERE A SCHEMA IS, because a member of a model may be NAMED
+  // like a keyword. A generic walk took the `properties` map of a model with a
+  // member called `type` for a schema, moved the map itself to `components`, and
+  // every answer with such a member was then refused (the first live run).
+  private static subschemas(node: Json): Json[] {
+    const out: Json[] = [];
+    SINGLE_SCHEMA_KEYWORDS.forEach(function (key) {
+      if (node[key] && typeof node[key] === 'object') {
+        out.push(node[key]);
+      }
+    });
+    LIST_SCHEMA_KEYWORDS.forEach(function (key) {
+      (Array.isArray(node[key]) ? node[key] : []).forEach(function (one: Json) {
+        out.push(one);
+      });
+    });
+    MAP_SCHEMA_KEYWORDS.forEach(function (key) {
+      Object.keys(node[key] || {}).forEach(function (name) {
+        out.push(node[key][name]);
+      });
+    });
+    return out;
+  }
+
+  private static withSubschemas(node: Json, share: (n: Json) => Json): Json {
+    const out = Object.assign({}, node);
+    SINGLE_SCHEMA_KEYWORDS.forEach(function (key) {
+      if (out[key] && typeof out[key] === 'object') {
+        out[key] = share(out[key]);
+      }
+    });
+    LIST_SCHEMA_KEYWORDS.forEach(function (key) {
+      if (Array.isArray(out[key])) {
+        out[key] = out[key].map(share);
+      }
+    });
+    MAP_SCHEMA_KEYWORDS.forEach(function (key) {
+      if (out[key] && typeof out[key] === 'object') {
+        const map: Json = {};
+        Object.keys(out[key]).forEach(function (name) {
+          map[name] = share(out[key][name]);
+        });
+        out[key] = map;
+      }
     });
     return out;
   }

@@ -88,6 +88,48 @@ function fakeResponse(media) {
   return res;
 }
 
+// A member NAMED like a keyword is a member. A walk that was not schema-aware
+// moved such a model's whole `properties` map to `components`, and the first
+// live run refused every answer carrying one.
+function sharingKeepsWhatModelsSay(t) {
+  log.debug("Entering sharingKeepsWhatModelsSay().");
+  const Kit = require('../common/response_model_kit');
+  const Ajv = require('ajv');
+  const row = Kit.closed({
+    type: Kit.str('a long enough description to be worth sharing, on a member ' +
+                  'whose NAME is the word type, as a setting row has'),
+    items: Kit.listOf(Kit.closed({ properties: Kit.str(), anyOf: Kit.int() })),
+    required: Kit.bool('another member named like a keyword, for the same ' +
+                       'reason as the one above and long enough to count')
+  });
+  const json = function (schema) {
+    return { description: 'd', content: {
+      'application/json': { schema: schema } } };
+  };
+  const doc = Kit.shareRepeated({
+    components: { schemas: {} },
+    paths: {
+      '/a': { get: { responses: { 200: json(Kit.closed({ one: row })) } } },
+      '/b': { get: { responses: { 200: json(Kit.closed({ two: row })) } } }
+    }
+  });
+  const shared = Object.keys(doc.components.schemas);
+  t.check(shared.length >= 1, 'a repeated model moves to components: ' +
+          shared.join(','));
+  const schema = doc.paths['/a'].get.responses[200]
+    .content['application/json'].schema;
+  const validate = new Ajv({ strict: false }).compile({
+    allOf: [schema], components: doc.components });
+  t.check(validate({ one: { type: 'x', required: true,
+                            items: [{ properties: 'y', anyOf: 1 }] } }),
+          'and an answer with members named like keywords still meets it');
+  t.check(!validate({ one: { type: 'x', stray: 1 } }),
+          'and it is still closed');
+  t.check(typeof schema.properties.one.$ref === 'string' &&
+          !schema.properties.$ref, 'the model moved, never its properties map');
+  log.debug("Leaving sharingKeepsWhatModelsSay().");
+}
+
 function validatorCases(t) {
   log.debug("Entering validatorCases().");
   const { ResponseModels, CODE } = require('../common/response_models');
@@ -332,6 +374,7 @@ function nothingAnswersRoundTheDoor(t) {
 async function run(t) {
   log.debug("Entering run().");
   validatorCases(t);
+  sharingKeepsWhatModelsSay(t);
   nothingAnswersRoundTheDoor(t);
   ruleOverDocuments(t);
   log.debug("Leaving run().");
