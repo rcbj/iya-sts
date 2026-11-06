@@ -557,6 +557,9 @@ async function run(t, double, crls) {
   t.check(!trust.pinnedSync('saml-signer', namedPin.pem).ok &&
           trust.pinnedSync('saml-signer', namedPin.pem, { named: true }).ok,
           'L. a certificate named by an administrator needs no path', '');
+  t.check(trust.pinnedSync('federation-partner', namedPin.pem,
+                           { named: true }).ok,
+          'L. a partner\'s, on a relationship, the same', '');
   t.check(trust.pinnedSync('wss-x509-token', goodSelf.pem,
                            { named: true }).ok,
           'L. nor is a self-signed one refused for being that', '');
