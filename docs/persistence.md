@@ -265,6 +265,8 @@ and cannot be read, or holds no certificate, stops the service starting
 (`STS-STORE-0079`). The setting may also name a directory, and then every `.crt`
 and `.pem` file in it is read.
 
+Turning it off is honoured in development mode only: a product deployment with `false` still stored verifies, and writing `false` there is refused. Under [paranoid PKI mode](pki.md#paranoid-pki-mode) the server's certificate is also held to `tls-server-outbound`, with one softer rule: a revocation status that could not be established does not stop the store being dialled, and a certificate revoked does.
+
 > **Warning:** turning `persistence.databaseTlsRejectUnauthorized` off leaves
 > the database server **unauthenticated**. The connection is still encrypted,
 > but anything that can answer at the database's address can impersonate it and

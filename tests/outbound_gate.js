@@ -142,7 +142,8 @@ const CLIENTS = {
       return { reached: true };
     }, function (e) {
       // A server that speaks no SMTP is still a server that was reached.
-      const refused = /refused|ERR_STS/.test(String(e.code) + String(e.message));
+      const refused = /refused|ERR_STS/
+        .test(String(e.code) + String(e.message));
       return { reached: !refused, error: e.code || e.message };
     });
   },
@@ -259,7 +260,8 @@ function stapleOf(cert, root, status) {
       '-cert', file('leaf.pem'), '-reqout', file('req.der'), '-no_nonce'],
     { stdio: 'pipe' });
     childProcess.execFileSync('openssl', ['ocsp', '-index', file('index.txt'),
-      '-CA', file('ca.pem'), '-rsigner', file('ca.pem'), '-rkey', file('ca.key'),
+      '-CA', file('ca.pem'), '-rsigner', file('ca.pem'),
+      '-rkey', file('ca.key'),
       '-reqin', file('req.der'), '-respout', file('res.der'), '-ndays', '2'],
     { stdio: 'pipe' });
     log.debug("Leaving stapleOf().");
@@ -293,7 +295,8 @@ async function child() {
     eku: ['serverAuth'] }, profile));
   const servers = {
     revoked: await serverOf(revoked, root), good: await serverOf(good, root),
-    wrongEku: await serverOf(wrongEku, root), noList: await serverOf(noList, root)
+    wrongEku: await serverOf(wrongEku, root),
+    noList: await serverOf(noList, root)
   };
   const pgServers = { revoked: await pgServerOf(revoked, root),
                       good: await pgServerOf(good, root) };
@@ -423,8 +426,8 @@ module.exports = {
       t.equal(r.on[name].reached, false, 'B. on: ' + name + ' does not: ' +
               r.on[name].error);
       t.equal(r.on[name].bytes, 0, 'B. on: ' + name + ' delivered no byte');
-      t.equal(r.good[name].reached, true, 'C. on: ' + name + ' reaches a good ' +
-              'server');
+      t.equal(r.good[name].reached, true, 'C. on: ' + name +
+              ' reaches a good server');
     });
     t.check(r.good.https.bytes > 0, 'C. and its request arrives whole', '');
     t.check(r.good.fetch.bytes > 0, 'C. through undici too', '');
