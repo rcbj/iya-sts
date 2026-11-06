@@ -40,6 +40,7 @@
 
 const bunyan = require('bunyan');
 const config = require('./config');
+const algorithmRegistry = require('./crypto_impl/algorithm_registry');
 
 const log = bunyan.createLogger({
   name: 'signer_groups',
@@ -123,7 +124,10 @@ const GROUP_IDS = GROUPS.map(function (one) { return one.id; });
  */
 const PAIRS = [
   { slot: 'RS256', keyAlg: 'rsa-3072', kind: 'rsa',
-    jwsAlgs: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512'],
+    // An RSA key serves every RS and PS algorithm; the registry lists them.
+    jwsAlgs: algorithmRegistry.joseNames(function (row) {
+      return row.keyKind === 'rsa';
+    }),
     pq: { slot: 'ML-DSA-65', alg: 'ML-DSA-65' } },
   { slot: 'ES256', keyAlg: 'ec-p256', kind: 'curve', jwsAlgs: ['ES256'],
     pq: { slot: 'ML-DSA-44', alg: 'ML-DSA-44' } },
