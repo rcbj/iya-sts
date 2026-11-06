@@ -36,3 +36,18 @@ services:
   tests:
     environment:
       - STS_TEST_FUZZ=1
+
+  # THE PROCESS-LEVEL DPoP FALLBACK (#1299). The kit re-asserts each realm's
+  # DPoP replay headroom and short window before every cell (schemathesis_kit.js
+  # `reassertRealm`), but a cell's own fuzzing can reset a realm's `oauth2.dpop*`
+  # mid-cell, and a realm's override may not have reached the request worker that
+  # checks a proof. So the PROCESS defaults are the big values here, and any
+  # realm with no override in force falls back to them rather than to the 10000
+  # live-ID cap and 600s window (2 × 300s skew) of `env/defaults.js`, which the
+  # fuzzer's proof volume fills in minutes (STS-OAUTH-0554 / STS-CORE-0097). A
+  # realm override still wins; this is only the floor. Literal values, so BARE
+  # with a value (the docker-compose.yml rule: an empty one would be wrong).
+  sts:
+    environment:
+      - STS_OAUTH2_DPOP_IAT_SKEW_S=30
+      - STS_OAUTH2_DPOP_REPLAY_CACHE_SIZE=200000

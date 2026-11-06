@@ -41,6 +41,7 @@ import schemathesis
 # the import path.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import code_members  # noqa: E402
+import egress_routes  # noqa: E402
 
 # STS-<SUBSYSTEM>-<NNNN>: an uppercase subsystem and four digits. The audit and
 # log form; it must never appear in a response body.
@@ -106,6 +107,23 @@ def _route(case):
     path = (getattr(case, "path", None) or getattr(operation, "path", None)
             or getattr(operation, "label", None) or "")
     return (str(method or "").upper() + " " + str(path or "")).strip()
+
+
+def _action(case):
+    """The value of the route's `{action}` path parameter, or '': the admin-api
+    `:action` routes carry the operation there, and egress_routes keys on it.
+    Read defensively, as the other case accessors are."""
+    params = getattr(case, "path_parameters", None)
+    if isinstance(params, dict) and params.get("action") is not None:
+        return str(params.get("action"))
+    # A fallback for a version that fills the path: the last segment of a
+    # concrete route whose template is not shown.
+    path = getattr(case, "path", None) or ""
+    if "{" not in str(path):
+        tail = str(path).rstrip("/").rsplit("/", 1)
+        if len(tail) == 2:
+            return tail[1]
+    return ""
 
 
 def _record_finding(kind, case, response, detail):
@@ -217,12 +235,27 @@ def frame_ancestors_present(ctx, response, case):
 
 @schemathesis.check
 def no_outbound_fetch(ctx, response, case):
-    """Best-effort: the service did not try to resolve an outbound host."""
+    """Best-effort: the service did not try to resolve an outbound host, EXCEPT
+    at the handful of routes that dial an administrator-configured address by
+    design (egress_routes.py). The marker still fails on every other route."""
     body = _body_bytes(response)
+    hit = None
     for marker in _EGRESS_MARKERS:
         if marker in body:
-            message = ("response suggests an attempted outbound DNS lookup ("
-                       + marker.decode("ascii", "replace")
-                       + "); the stack must stay on the device")
-            _record_finding("outbound_fetch", case, response, message)
-            raise AssertionError(message)
+            hit = marker
+            break
+    if hit is None:
+        return
+    route = _route(case).split(" ", 1)
+    method = route[0] if route else ""
+    path = route[1] if len(route) > 1 else ""
+    reason = egress_routes.allowed(method, path, _action(case))
+    if reason:
+        # A designed dial, blocked by the no-egress network: not a finding.
+        # Keyed on the exact method and route, never on the body's text.
+        return
+    message = ("response suggests an attempted outbound DNS lookup ("
+               + hit.decode("ascii", "replace")
+               + "); the stack must stay on the device")
+    _record_finding("outbound_fetch", case, response, message)
+    raise AssertionError(message)
