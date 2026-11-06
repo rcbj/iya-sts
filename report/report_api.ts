@@ -36,6 +36,7 @@ import Query = require('./query');
 import Catalog = require('./catalog');
 import Limits = require('./limits');
 import OpenApi = require('./openapi');
+import responseChecks = require('../common/response_models');
 import version = require('../common/version');
 
 const log = bunyan.createLogger({ name: 'sts-report-api' });
@@ -1924,6 +1925,10 @@ class ReportApi {
    */
   registerRoutes(app: any): void {
     log.debug("Entering registerRoutes().");
+    // EVERY ANSWER IS HELD TO ITS MODEL (#1353), before any route answers.
+    responseChecks.install(app, BASE, function () {
+      return OpenApi.document(new Catalog());
+    });
     app.get(BASE, function (req: any, res: any): void {
       reportAnswer(req, res);
     });

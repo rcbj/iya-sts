@@ -68,6 +68,8 @@ const { log } = helpers;
 // can say that its reply carries them (2026-09-13). A library that requires
 // nothing route-registering; see its header.
 import protocolEndpoints = require('../admin-core/protocol_endpoints');
+import ResponseModels = require('./response_models');
+import Kit = require('../common/response_model_kit');
 
 const ACTION_RESULT = {
   type: 'object',
@@ -625,7 +627,7 @@ class AdminApiSpec {
           schema: { $ref: '#/components/schemas/ActionResult' } } }
       };
       log.debug("Leaving AdminApiSpec.operationOf().");
-      return operation;
+      return ResponseModels.apply(operation, null, SCHEMAS);
     }
     operation.responses['200'] = {
       description: source.responseDescription || 'The current state.',
@@ -659,7 +661,12 @@ class AdminApiSpec {
       };
     });
     log.debug("Leaving AdminApiSpec.operationOf().");
-    return operation;
+    // THE ANSWER'S MODEL (#1353): `response_models.ts`, per operation and
+    // status, with the member `sendJson()` adds for a mirrored Protocols page.
+    return ResponseModels.apply(operation,
+      mirroredPage && entry.method === 'GET' &&
+      protocolEndpoints.pages().indexOf(mirroredPage[1]) >= 0
+        ? PROTOCOL_ENDPOINT_ROWS : null, SCHEMAS);
   }
 
   // The document. `routes` is admin_api.ts's table; an entry carrying `actions`
@@ -1285,6 +1292,17 @@ const CLAIM_SET_PROPS = {
  * Every named schema the document's operations refer to, keyed by name
  * (`components.schemas`).
  */
+// `protocolEndpoints` on a GET mirroring a Protocols page: `sendJson()` adds it
+// outside the view every model describes (`admin-core/protocol_endpoints.ts`).
+const PROTOCOL_ENDPOINT_ROWS = Kit.listOf(Kit.closed({
+  name: Kit.str(),
+  methods: Kit.oneOrMany(Kit.str()),
+  url: Kit.str(),
+  route: Kit.str(),
+  transport: Kit.str(),
+  registered: Kit.bool()
+}));
+
 const SCHEMAS = {
   ActionResult: ACTION_RESULT,
   IssuedRecord: ISSUED_RECORD,
@@ -6317,7 +6335,7 @@ slot.buildNowUnlessDeferred();
  */
 export = {
   AdminApiSpec: AdminApiSpec,
-  SCHEMAS: SCHEMAS,
+  SCHEMAS: Object.assign(SCHEMAS, ResponseModels.components()),
   /**
    * Installs the instance the composition root built, which the facades below
    * forward to.

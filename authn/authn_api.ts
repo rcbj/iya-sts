@@ -65,6 +65,9 @@
 // that module's exports.
 // ---------------------------------------------------------------------------
 
+import responseChecks = require('../common/response_models');
+import Kit = require('../common/response_model_kit');
+import Models = require('./authn_response_models');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -2083,7 +2086,8 @@ class AuthnApi {
       if (op.mirrors) {
         entry['x-mirrors'] = op.mirrors;
       }
-      paths[path][op.method.toLowerCase()] = entry;
+      paths[path][op.method.toLowerCase()] = Kit.applyModels(entry,
+        Models.operations[op.operationId], Models.ERROR);
     });
     const doc = {
       openapi: '3.1.0',
@@ -2116,6 +2120,10 @@ class AuthnApi {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AuthnApi.registerRoutes().");
+    // EVERY ANSWER IS HELD TO ITS MODEL (#1353), before any route answers.
+    responseChecks.install(app, API, function () {
+      return AuthnApi.document({});
+    });
     OPERATIONS.forEach(function (op) {
       app[op.method.toLowerCase()](op.path, function (req: Json, res: Json) {
         log.debug('Entering ' + op.method + ' ' + op.path + '.');

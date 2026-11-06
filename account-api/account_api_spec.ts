@@ -24,6 +24,8 @@
 // A LIBRARY (rule 3): it registers nothing and requires only `helpers`.
 // ---------------------------------------------------------------------------
 
+import Kit = require('../common/response_model_kit');
+import Models = require('./account_response_models');
 import helpers = require('../common/helpers');
 
 type Json = any;
@@ -194,7 +196,8 @@ class AccountApiSpec {
         entry.requestBody = { required: true, content: {
           'application/json': { schema: body } } };
       }
-      paths[path][op.method.toLowerCase()] = entry;
+      paths[path][op.method.toLowerCase()] = Kit.applyModels(entry,
+        Models.operations[op.operationId], Models.ERROR);
     });
     const doc = {
       openapi: '3.1.0',

@@ -24849,6 +24849,16 @@ const CODES = [
       'not carry admin:security or whose subject does not hold ' +
       'SECURITY_ADMIN. Admin Write does not reach these.',
     spec: 'HTTP 403' },
+  { code: 'STS-API-0139',
+    summary: 'An answer of an API this service publishes an OpenAPI document ' +
+      'for (the management, account, sign-in or report API) did not match ' +
+      'the model its operation declares for that status, so it was not sent ' +
+      'and the caller was answered 500. A member no model declares, a value ' +
+      'of the wrong type, a status or media type the operation does not ' +
+      'declare, or an operation the document does not have. The log line ' +
+      'names the operation, the status and where in the body; it is a defect ' +
+      'in the model or in the handler, never in the request.',
+    spec: 'HTTP 500' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
