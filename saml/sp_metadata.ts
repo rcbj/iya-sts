@@ -1259,7 +1259,8 @@ class SpMetadata {
                'provider\'s metadata must be signed by a trust anchor, and ' +
                'none is configured: set samlSpMetadataSigningCertificate on ' +
                'the entry or saml2.metadataTrustAnchors, or switch off ' +
-               'pki.paranoidSamlSigner. Nothing on the entry was changed.'] };
+               'pki.paranoidSamlSigner. saml2.mdqImportWithoutAnchors does ' +
+               'not lift this. Nothing on the entry was changed.'] };
     }
 
     // The encryption certificate. One marked use="encryption" that cannot be
