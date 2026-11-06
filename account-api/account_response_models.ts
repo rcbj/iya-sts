@@ -474,6 +474,322 @@ Object.assign(operations, {
     refusedOn({ view: PASSWORD_VIEW }, '400', '429'))
 });
 
+// ---------------------------------------------------------------------------
+// `portal/account_keys.ts`.
+// ---------------------------------------------------------------------------
+const WEBAUTHN_CREATION_OPTIONS: Json = Kit.closed({
+  rp: Kit.closed({ name: STR, id: STR }),
+  algorithms: Kit.listOf(INT), attestation: STR, timeout: NUM,
+  authenticatorSelection: Kit.closed({
+    userVerification: STR, residentKey: STR, requireResidentKey: BOOL,
+    authenticatorAttachment: STR
+  }),
+  credProps: BOOL, minPinLength: BOOL, hints: STRS
+});
+
+// `keyRow()`.
+const KEY_ROW: Json = Kit.closed({
+  credentialId: STR, group: STR, name: STR, provider: STR, enrolledAt: WHEN,
+  lastUsedAt: WHEN, syncedRefused: BOOL, attestationRefused: STR,
+  pinRefused: STR, postQuantumRefused: BOOL,
+  backupEligible: Kit.nullable(BOOL), backupState: BOOL, transports: STRS,
+  kind: STR, withoutUsername: STR,
+  algorithm: Kit.closed({ text: STR, postQuantum: BOOL, insecure: BOOL }),
+  lane: STR,
+  // `credentials.ts`'s `keyUpgradeHistory()`.
+  upgrade: Kit.nullable(Kit.closed({
+    upgradedAt: NUM, mode: STR, previousAlgorithm: STR,
+    previousCredentialId: STR, upgradedTo: STR
+  })),
+  possiblyReplaced: Kit.nullable(Kit.closed({ at: NUM })),
+  attestation: Kit.nullable(Kit.closed({
+    verified: BOOL, trusted: BOOL, model: STR, type: STR, androidStatus: STR,
+    deviceSerial: STR
+  })),
+  aaguid: STR
+});
+
+const PENDING_ENROLMENT: Json = Kit.closed({
+  id: STR, kind: STR, lane: STR, challenge: STR, rpId: STR, user: STR,
+  userHandle: STR, display: STR, exclude: STRS,
+  options: WEBAUTHN_CREATION_OPTIONS,
+  fallback: Kit.closed({ asksPostQuantum: BOOL, classical: BOOL,
+                         retrying: BOOL })
+});
+
+const KEYS_VIEW: Json = Kit.closed({
+  password: BOOL, mfaRequired: BOOL, keys: Kit.listOf(KEY_ROW),
+  enrol: Kit.closed({
+    enabled: BOOL, count: INT, atCap: BOOL, allowed: BOOL, kinds: STRS,
+    pending: Kit.nullable(PENDING_ENROLMENT), lanes: STRS
+  }),
+  signals: Kit.listOf(Kit.closed({
+    lane: STR, rpId: STR, userId: STR, accepted: STRS, name: STR, display: STR
+  }))
+});
+
+// `refused()` is the 400 and the 500; a browser that may retry classically is a
+// 400 with no view, which `view` being optional covers.
+Object.assign(operations, {
+  getKeys: answers(KEYS_VIEW),
+  enrolKey: answers(act(), refusedOn({ view: KEYS_VIEW }, '400', '500')),
+  removeKey: answers(act({ sessionsEnded: INT }),
+    refusedOn({ view: KEYS_VIEW }, '400')),
+  renameKey: answers(act(), refusedOn({ view: KEYS_VIEW }, '400'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/account_mfa.ts`.
+// ---------------------------------------------------------------------------
+const MFA_VIEW: Json = Kit.closed({
+  username: STR, verifiesCredentials: BOOL,
+  totp: Kit.closed({
+    enrolled: BOOL, usable: BOOL,
+    detail: Kit.nullable(Kit.closed({
+      enrolledAt: WHEN, lastUsedAt: WHEN, algorithm: STR, digits: NUM,
+      period: NUM
+    })),
+    offered: BOOL, digits: NNUM, period: NNUM
+  }),
+  doors: Kit.closed({ applies: BOOL, refused: STRS }),
+  setup: Kit.nullable(Kit.closed({
+    grouped: STR, issuer: STR, qr: STR, algorithm: STR, digits: NUM, period: NUM
+  })),
+  emailFactor: Kit.nullable(Kit.closed({
+    allowed: Kit.closed({ code: BOOL, link: BOOL }), optedIn: STR, usable: BOOL,
+    kind: STR, why: STR, offered: Kit.closed({ code: BOOL, link: BOOL }),
+    verified: BOOL, masked: STR
+  })),
+  codes: Kit.closed({
+    enabled: BOOL, count: NNUM, length: NNUM, advised: BOOL, present: BOOL,
+    usable: BOOL, why: STR, remaining: NUM, total: NUM, generatedAt: WHEN,
+    lastUsedAt: WHEN
+  }),
+  fresh: Kit.nullable(Kit.closed({
+    handle: STR, replacing: BOOL, codes: STRS
+  }))
+});
+
+Object.assign(operations, {
+  getMfa: answers(MFA_VIEW),
+  changeMfa: answers(act({ view: MFA_VIEW, sessionsEnded: INT }),
+    refusedOn({ view: MFA_VIEW }, '400', '429'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/account_signing_key.ts`.
+// ---------------------------------------------------------------------------
+// `{ name, mime, base64 }`: a file saved once, never on a URL (`files`).
+const SAVED_FILE: Json = Kit.closed({ name: STR, mime: STR, base64: STR });
+
+const SIGNING_KEYS_VIEW: Json = Kit.closed({
+  username: STR, entry: BOOL, holdsAny: BOOL, offered: BOOL, issuable: BOOL,
+  tokenEndpoint: STR, maxPerPerson: NUM, reasons: STRS,
+  profiles: Kit.listOf(Kit.closed({
+    id: STR, rfc: STR, grantType: STR, atCap: BOOL,
+    held: Kit.closed({
+      keys: Kit.listOf(Kit.closed({
+        handle: STR, label: STR, source: STR, serialHex: STR, keyAlg: STR,
+        notAfter: STR, expiresAt: STR, state: STR, reason: STR, revokedAt: STR,
+        certificate: STR
+      })),
+      valid: INT, issuers: STRS
+    })
+  })),
+  tls: Kit.closed({
+    signIn: STR, trusted: BOOL, note: STR, maxPerPerson: NUM, keyAlgs: STRS,
+    defaultKeyAlg: NSTR,
+    held: Kit.listOf(Kit.closed({
+      label: STR, serialHex: STR, keyAlg: STR, notAfter: STR, state: STR,
+      reason: STR, revokedAt: STR
+    }))
+  }),
+  // A TLS client certificate's (`kind`, `issued`) or a signing key's (the
+  // rest); `files` on both.
+  fresh: Kit.nullable(Kit.closed({
+    kind: STR,
+    issued: Kit.closed({ subject: STR, serialHex: STR, keyAlg: STR,
+                         notAfter: STR }),
+    purpose: STR, handle: STR, label: STR,
+    files: Kit.closed({ key: SAVED_FILE, chain: SAVED_FILE }),
+    kid: STR, thumbprint: STR, jwsAlg: STR, issuer: STR
+  }))
+});
+
+Object.assign(operations, {
+  getSigningKeys: answers(SIGNING_KEYS_VIEW),
+  changeSigningKeys: answers(act({ view: SIGNING_KEYS_VIEW }),
+    refusedOn({ view: SIGNING_KEYS_VIEW }, '400', '403', '429', '500'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/portal_certificates.ts`, over `common/cert_enrollment.ts`.
+// ---------------------------------------------------------------------------
+// `publicRecord()`.
+const ENROLLED: Json = Kit.closed({
+  serialHex: STR, family: STR, profile: STR, subject: STR, names: STRS,
+  thumbprint: STR, keyAlg: STR, notBefore: STR, notAfter: STR, issuedAt: STR,
+  requestedBy: Kit.nullable(Kit.closed({ kind: STR, id: STR, admin: BOOL })),
+  via: STR, keySource: STR, replaces: NSTR, certificatePem: STR,
+  chainPem: STRS,
+  revoked: Kit.closed({ at: STR, reason: STR, by: STR }),
+  expired: BOOL, status: STR
+});
+
+// The statuses `core.refuse()` writes, each of which `made.status` can carry.
+const CERTIFICATES_VIEW: Json = Kit.closed({
+  name: STR, resolved: BOOL, reasons: STRS,
+  familyLabels: Kit.mapOf(STR, 'Each enrollment family\'s label, by its id.'),
+  urls: Kit.closed({ acmeDirectory: STR, scep: STR, est: STR }),
+  // An ACME key's `hmacKey` or a SCEP `challenge`, shown once.
+  fresh: Kit.closed({
+    kind: STR, kid: STR, hmacKey: STR, challenge: STR, profile: STR,
+    expiresAt: WHEN, scepUrl: STR, plainScepUrl: STR
+  }),
+  enrolled: Kit.listOf(ENROLLED), hostNames: STRS,
+  acme: Kit.nullable(Kit.closed({
+    keys: Kit.listOf(Kit.closed({
+      kid: STR, createdAt: WHEN, expiresAt: WHEN, createdBy: NSTR,
+      boundAccount: NSTR, boundAt: WHEN, status: STR
+    }))
+  })),
+  est: Kit.nullable(Kit.closed({ profiles: STRS })),
+  scep: Kit.nullable(Kit.closed({
+    challenges: Kit.listOf(Kit.closed({
+      id: STR, profile: NSTR, createdAt: WHEN, expiresAt: WHEN,
+      createdBy: NSTR, usedAt: WHEN, status: STR
+    })),
+    profiles: STRS, defaultProfile: NSTR
+  }))
+});
+
+Object.assign(operations, {
+  getCertificates: answers(CERTIFICATES_VIEW),
+  changeCertificates: answers(act({ view: CERTIFICATES_VIEW }),
+    refusedOn({ view: CERTIFICATES_VIEW }, '400', '401', '403', '404', '409',
+              '429', '500', '503'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/portal_app_passwords.ts`.
+// ---------------------------------------------------------------------------
+const APP_PASSWORDS_VIEW: Json = Kit.closed({
+  username: STR,
+  doors: Kit.closed({ refused: STRS, secondFactor: BOOL, applies: BOOL }),
+  doorTable: Kit.listOf(Kit.closed({ id: STR, label: STR, what: STR })),
+  doorLabels: Kit.mapOf(STR, 'Each door\'s label, by its id.'),
+  unreadable: BOOL,
+  passwords: Kit.listOf(Kit.closed({
+    id: STR, name: STR, doors: STRS, createdAt: WHEN, lastUsedAt: WHEN,
+    lastUsedDoor: STR
+  })),
+  enabled: BOOL, maxName: NUM,
+  fresh: Kit.closed({ id: STR, name: STR, doors: STRS, password: STR })
+});
+
+Object.assign(operations, {
+  getAppPasswords: answers(APP_PASSWORDS_VIEW),
+  changeAppPasswords: answers(act({ view: APP_PASSWORDS_VIEW }),
+    refusedOn({ view: APP_PASSWORDS_VIEW }, '400', '404', '429'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/portal_kerberos.ts`.
+// ---------------------------------------------------------------------------
+const KERBEROS_VIEW: Json = Kit.closed({
+  kdc: BOOL, person: BOOL, principal: STR, productKdc: BOOL, disabled: BOOL,
+  keys: Kit.nullable(Kit.closed({
+    kvno: NNUM, current: BOOL, etypes: Kit.listOf(Kit.closed({ name: STR }))
+  })),
+  made: Kit.closed({
+    principal: STR, kvno: NNUM, etypes: STRS, source: STR, keytab: STR,
+    keytabFilename: STR
+  })
+});
+
+Object.assign(operations, {
+  getKerberos: answers(KERBEROS_VIEW),
+  makeKeytab: answers(act({ view: KERBEROS_VIEW }),
+    refusedOn({ view: KERBEROS_VIEW }, '400', '429'))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/portal_delegate.ts`.
+// ---------------------------------------------------------------------------
+const DELEGATE_VIEW: Json = Kit.closed({
+  mayAct: STR, delegate: Kit.nullable(Kit.closed({ kind: STR })),
+  notDelegated: BOOL
+});
+
+Object.assign(operations, {
+  getDelegate: answers(DELEGATE_VIEW),
+  setDelegate: answers(act(), refusedOn({ view: DELEGATE_VIEW }, '400')),
+  findDelegateCandidates: answers(Kit.closed({
+    query: STR,
+    people: Kit.listOf(Kit.closed({ uid: STR, cn: STR, dn: STR }), 'At most ten.'),
+    more: BOOL
+  }))
+});
+
+// ---------------------------------------------------------------------------
+// `portal/portal_self_issued.ts`, over `oid4vc/siop.ts` and `person_did.ts`.
+// ---------------------------------------------------------------------------
+// `person_did.ts`'s `list()`. A version's `authorizedBy` is one of the records
+// its writers keep: the wallet's or the current key's proof, or a person's act.
+const DID_AUTHORIZATION: Json = Kit.closed({
+  kind: STR, subject: STR, keyThumbprint: STR, versionId: NUM, transaction: STR,
+  at: STR, actor: STR
+});
+
+const PUBLISHED_DID: Json = Kit.closed({
+  rid: STR, did: STR, custody: STR, documentUrl: STR, createdAt: WHEN, by: NSTR,
+  state: STR,
+  deactivated: Kit.nullable(Kit.closed({ at: STR, by: NSTR, reason: NSTR })),
+  proof: STR, preferred: BOOL, currentVersion: NUM,
+  pending: Kit.nullable(Kit.closed({ change: STR, expiresAt: STR })),
+  versions: Kit.listOf(Kit.closed({
+    versionId: NUM, created: WHEN, change: STR,
+    keys: Kit.listOf(Kit.closed({ id: STR, kty: STR, crv: STR, alg: STR })),
+    authorizedBy: Kit.listOf(DID_AUTHORIZATION)
+  }))
+});
+
+const SELF_ISSUED_VIEW: Json = Kit.closed({
+  enabled: BOOL,
+  turnOn: Kit.nullable(Kit.closed({
+    setting: STR, env: STR, administrator: BOOL, page: NSTR
+  })),
+  loginHint: STR, didClaim: BOOL,
+  published: Kit.nullable(Kit.closed({
+    enabled: BOOL, custody: STR, maxPerPerson: NUM, keyAlgorithm: STR,
+    active: INT, canPublish: BOOL,
+    dids: Kit.nullable(Kit.listOf(PUBLISHED_DID))
+  })),
+  subjects: Kit.listOf(Kit.closed({
+    subject: STR, label: STR, enrolledAt: WHEN, by: STR, proof: STR,
+    preferred: BOOL,
+    location: Kit.nullable(Kit.closed({ kind: STR, value: STR })),
+    didDocumentUrl: STR, didResolved: BOOL
+  })),
+  notice: STR,
+  fresh: Kit.closed({
+    kind: STR, rid: STR, did: STR, file: SAVED_FILE
+  })
+});
+
+Object.assign(operations, {
+  getSelfIssued: answers(SELF_ISSUED_VIEW),
+  removeSelfIssued: answers(act(), refusedOn({ view: SELF_ISSUED_VIEW }, '400')),
+  getSelfIssuedDidDocument: answers(Kit.closed({
+    ok: BOOL, subject: STR,
+    document: Kit.nullable(Kit.freeForm(
+      'A DID document as the DID\'s method resolved it (W3C DID Core): its ' +
+      'verification methods and services are the DID controller\'s to state.'))
+  })),
+  actOnPublishedDid: answers(act({ view: SELF_ISSUED_VIEW }),
+    refusedOn({ view: SELF_ISSUED_VIEW }, '400'))
+});
+
 //@@NEXT@@
 
 export = { ERROR: ERROR, operations: operations };
