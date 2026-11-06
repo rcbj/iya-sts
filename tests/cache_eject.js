@@ -140,13 +140,16 @@ function childMain() {
       // The refresh-token rotation records and what each grant issued, each
       // until its family window has passed (#761): ejected here rather than
       // swept at every issuance.
-      'oauth2.refresh-token-bookkeeping'
+      'oauth2.refresh-token-bookkeeping',
+      // What was last fetched about a pinned certificate (#1360), for a door
+      // that cannot wait.
+      'pki.pinned-verdicts'
     ].sort();
     const ejecting = registry.ejecting().filter(function (n) {
       return !/^test\./.test(n);
     });
     note(JSON.stringify(ejecting) === JSON.stringify(expected),
-         'B1. exactly the forty-three stores whose entries expire eject them',
+         'B1. exactly the forty-four stores whose entries expire eject them',
          JSON.stringify({ missing: expected.filter(function (n) {
            return ejecting.indexOf(n) < 0;
          }), extra: ejecting.filter(function (n) {

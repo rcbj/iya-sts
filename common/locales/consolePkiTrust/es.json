@@ -37,7 +37,7 @@
   "addHeading": "Agregar certificados",
   "addNote": "Pegue uno o más certificados PEM. Una CA autofirmada se convierte en un ancla y cualquier otra CA en un intermedio, que debe encadenar a un ancla conservada. Cada rechazo se nombra.",
   "addPurposes": "Confiar en ellos solo para estos casos de uso (si no marca ninguno, vale para todos):",
-  "addAccept": "Aceptar por su nombre este único certificado de servidor autofirmado, solo para TLS saliente. Sigue sometido a su validez y sus campos.",
+  "addAccept": "Aceptar por su nombre este único certificado de servidor, solo para TLS saliente. Sigue sometido a su validez, sus campos y cualquier lista de revocación que indique.",
   "addButton": "Confiar en estos",
   "pins": "Certificados fijados",
   "pinsNote": "Todo certificado en el que este dominio confía porque alguien lo registró, sometido a las comprobaciones sea cual sea el valor de los ajustes de arriba. Última auditoría: {when}.",

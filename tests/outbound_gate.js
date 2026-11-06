@@ -150,14 +150,12 @@ const CLIENTS = {
   },
   pg: function (port, ca) {
     log.debug("Entering the node-postgres client.");
-    const pg = require('pg');
-    // It asks for TLS in the clear first, so it is asked of `pgServerOf()`.
-    const client = new pg.Client({ host: 'localhost', port: port,
-      user: 'x', database: 'x', connectionTimeoutMillis: 6000,
+    // It asks for TLS in the clear first, so it is asked of `pgServerOf()`. The
+    // one door to the driver, as everything that dials the store uses.
+    const client = require('../persistence/knex_store').openConnection({
+      connectionString: 'postgres://x@localhost:' + port + '/x',
+      connectionTimeoutMillis: 6000,
       ssl: { ca: ca, servername: 'localhost' } });
-    client.on('error', function (e) {
-      log.debug("pg: " + e.message);
-    });
     return client.connect().then(function () {
       return { reached: true };
     }, function (e) {

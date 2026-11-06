@@ -497,7 +497,9 @@ class OutboundTls {
         log.warn(errorCodes.tag(verdict.code || 'STS-PKI-0242') + 'outbound: ' +
                  String(options.servername || options.host || 'a peer') +
                  ' is refused under paranoid PKI mode, before anything was ' +
-                 'sent: ' + verdict.why);
+                 'sent: ' + verdict.why + ' To trust this one certificate, ' +
+                 'accept it by name in the realm\'s signer truststore: ' +
+                 'kind `accepted` on /admin/pki/trust.');
         socket.destroy(Object.assign(new Error('the certificate of ' +
           String(options.servername || options.host || 'the peer') +
           ' is refused: ' + verdict.why), { code: 'ERR_STS_PEER_REFUSED' }));

@@ -1023,6 +1023,10 @@ function runMode(t, modeName) {
   if (process.env.NODE_V8_COVERAGE) {
     clean.STS_FEDERATION_OUTBOUND_TIMEOUT_MS = '60000';
   }
+  // This file's partner is a local listener on a private CA naming no list,
+  // and what it holds is federation: paranoid PKI at an outbound dial is
+  // `tests/outbound_gate.js` and `tests/certificate_trust.js`.
+  clean.STS_PKI_PARANOID_OUTBOUND_TLS = 'false';
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean, { LOG_LEVEL: 'fatal', FSO_ROOT: ROOT,
