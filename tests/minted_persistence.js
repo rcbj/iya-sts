@@ -630,6 +630,110 @@ async function body(t, dir) {
   minted.setDriver(driver, 'postgres');
 
   // -------------------------------------------------------------------------
+  // 5c. A PERMANENT DATA ERROR DROPS THE BATCH; A RETRYABLE ONE RE-JOURNALS
+  //     (#1347).
+  //
+  // A value a column can never hold — SQLSTATE class 22 (22003 numeric out of
+  // range, "9.22e+21" as 22P02, 22001 string truncation) or MariaDB's
+  // strict-mode data errnos — fails the whole flush transaction and can never
+  // commit, so re-journalling it wedges the realm's every later write (the
+  // #1299 gate's 25,445 handled 503s). Such a batch is DROPPED rather than put
+  // back, a post-mortem audit row is written through the installed auditor, and
+  // the realm keeps flushing. A deadlock (40P01) is NOT permanent and
+  // re-journals as section 5 shows.
+  // -------------------------------------------------------------------------
+  t.log.info('=== a permanent data error drops the batch, not retries it ===');
+  replication.reset();
+  minted.reset();
+  const poison = fakeDriver('process-a');
+  const realPoisonSave = poison.saveMinted;
+  let poisonHits = 0;
+  poison.saveMinted = function (upserts, deletes) {
+    log.debug("Entering saveMinted().");
+    const bad = upserts.concat(deletes).some(function (row) {
+      return row.journalKey === 'wedge';
+    });
+    if (bad) {
+      poisonHits++;
+      log.debug("Leaving saveMinted().");
+      return Promise.reject(Object.assign(
+        new Error('invalid input syntax for type bigint: "9.22e+21"'),
+        { code: '22P02' }));
+    }
+    log.debug("Leaving saveMinted().");
+    return realPoisonSave(upserts, deletes);
+  };
+  minted.setDriver(poison, 'postgres');
+  const drops = [];
+  minted.setPoisonAuditor(function (drop) {
+    log.debug("Entering poisonAuditor().");
+    drops.push(drop);
+    log.debug("Leaving poisonAuditor().");
+  });
+  const poisoned = realms.map({ persist: 'test.poison' });
+  poisoned.set('wedge', { ttl: 9.223372038648674e+21 });
+  const poisonResult = await minted.flush();
+  t.check(!!poisonResult && poisonResult.permanent === true,
+          'the flush reports the failure as a permanent data error');
+  t.check(!!poisonResult && !!poisonResult.poisonDropped &&
+          poisonResult.poisonDropped.rows >= 1,
+          'and carries the dropped batch on its result');
+  t.equal(poisonHits, 1,
+          'the write was attempted once and NOT retried — the key did not go ' +
+          'back on the journal');
+  t.check(!minted.failing(),
+          'the module is not in a failed-write state: the realm keeps flushing');
+  t.equal(drops.length, 1,
+          'the installed auditor was handed the drop once, for the ' +
+          'post-mortem row');
+  t.check(!!drops[0] && drops[0].code === '22P02' &&
+          drops[0].handles.indexOf('test.poison') >= 0,
+          'and the drop names the SQLSTATE and the store, for the post-mortem',
+          JSON.stringify(drops[0] || null));
+  t.check(minted.status().droppedPoison >= 1,
+          'and /admin/persistence counts the dropped row(s)');
+  // The poison key is dropped and not re-journalled, so the very next flush —
+  // a different key of the same store — commits. The realm was never wedged.
+  poisoned.set('fine', { n: 1 });
+  const afterResult = await minted.flush();
+  t.check(!!afterResult && afterResult.written === true,
+          'the next flush writes a good key normally — the poison did not ' +
+          'wedge the realm');
+  poisoned.delete('wedge');
+  poisoned.delete('fine');
+  minted.reset();
+  replication.reset();
+  // A RETRYABLE error is NOT a permanent data error: it re-journals and keeps
+  // failing, which section 5 pins at length. One deadlock is enough to tell the
+  // two branches of the catch apart.
+  const jammed = fakeDriver('process-b');
+  jammed.saveMinted = function () {
+    log.debug("Entering saveMinted().");
+    log.debug("Leaving saveMinted().");
+    return Promise.reject(Object.assign(new Error('deadlock detected'),
+                                        { code: '40P01' }));
+  };
+  minted.setDriver(jammed, 'postgres');
+  let retryDrops = 0;
+  minted.setPoisonAuditor(function () {
+    log.debug("Entering poisonAuditor().");
+    retryDrops++;
+    log.debug("Leaving poisonAuditor().");
+  });
+  const jammedStore = realms.map({ persist: 'test.jam' });
+  jammedStore.set('x', { n: 1 });
+  const jammedResult = await minted.flush();
+  t.check(!!jammedResult && !jammedResult.permanent,
+          'a deadlock (40P01) is NOT a permanent data error');
+  t.check(minted.failing(),
+          'it re-journals and the module is in a failed-write state, retried ' +
+          'later (section 5)');
+  t.equal(retryDrops, 0, 'and nothing was dropped or audited');
+  jammedStore.delete('x');
+  minted.reset();
+  minted.setDriver(driver, 'postgres');
+
+  // -------------------------------------------------------------------------
   // 6. RETENTION, PER STORE (2026-09-18). A SHORT-LIVED store's month-old row
   //    is not restored and is deleted; every other store's is kept however
   //    old it is. Until that day every old row of every store went — a

@@ -120,6 +120,42 @@ function engines() {
   return Object.keys(CLIENT);
 }
 
+// The MariaDB/MySQL errnos for a value a column cannot hold: an integer out of
+// range (1264, 1690), a string longer than the column (1406), a value
+// truncated or of the wrong type for its field (1292, 1366). These are
+// STRICT-mode refusals (the session is strict — `persistence/CLAUDE.md`), so
+// the second engine REFUSES such a value as PostgreSQL does rather than
+// clamping it, which is the case #1347 step 5 asked be checked.
+const MARIADB_DATA_ERRNOS = new Set([1264, 1690, 1406, 1292, 1366]);
+
+/**
+ * Whether a failure is a PERMANENT data error — a value the column cannot hold,
+ * which can NEVER commit however many times it is retried, as opposed to a
+ * serialization or lock failure (`isRetryable()`) that running the transaction
+ * again resolves, or a unique-key race (`isUniqueViolation()`) already handled.
+ * On PostgreSQL it is SQLSTATE class 22 (data exception: 22003 numeric out of
+ * range, 22P02 invalid text representation, 22001 string truncation, and the
+ * rest of the class); on MariaDB it is a strict-mode data refusal. #1347: the
+ * minted flush must DROP such a change rather than re-journal it for ever, or
+ * one poison row wedges a realm's every later write. Deliberately NOT the
+ * integrity-constraint class (23xxx): a unique-violation race is
+ * retried/handled, not dropped. Engine-agnostic — a PostgreSQL error never
+ * carries these errnos and a MariaDB error never a `22xx` SQLSTATE — so it is a
+ * module-level function and a member of every engine's dialect alike.
+ *
+ * @param err - what the connection rejected with
+ * @returns true when the value can never commit
+ */
+function isPermanentDataError(err) {
+  log.debug("Entering isPermanentDataError().");
+  const code = err && err.code;
+  const permanent = (typeof code === 'string' && /^22/.test(code)) ||
+    (!!err && typeof err.errno === 'number' &&
+      MARIADB_DATA_ERRNOS.has(err.errno));
+  log.debug("Leaving isPermanentDataError(). " + !!permanent);
+  return !!permanent;
+}
+
 /**
  * Builds the dialect for one engine.
  *
@@ -296,6 +332,7 @@ function create(engine) {
     engine: engine,
     ago: ago,
     isRetryable: isRetryable,
+    isPermanentDataError: isPermanentDataError,
     isUniqueViolation: isUniqueViolation,
     kx: kx,
     compile: compile,
@@ -312,6 +349,7 @@ function create(engine) {
 
 module.exports = {
   create: create,
+  isPermanentDataError: isPermanentDataError,
   // The same factory under a name that does not read as a call of a
   // caller's own `create()` (`tests/no_periodic_timers.js` treats a
   // function that calls its own name as one that repeats).

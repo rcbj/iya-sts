@@ -344,7 +344,12 @@ const PERSISTENCE_STATUS: Json = closed({
     restoredAt: OPT_STR,
     restored: int(),
     droppedUnreadable: int(),
-    droppedUnknown: int()
+    droppedUnknown: int(),
+    droppedPoison: int(),
+    poisonDrops: listOf(closed({
+      at: str(), code: str(), message: str(), rows: int(),
+      handles: listOf(str()), realms: listOf(str())
+    }))
   }),
   usedAssertions: closed({
     store: str(),

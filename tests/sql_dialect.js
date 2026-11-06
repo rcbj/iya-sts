@@ -146,6 +146,34 @@ async function run(t) {
   }
   t.check(!!unknown, 'E3. an engine this store does not support is refused',
           unknown ? unknown.message : '');
+
+  t.log.info('=== F. isPermanentDataError (#1347) ===');
+  const permanent = sqlDialect.isPermanentDataError;
+  t.check(permanent({ code: '22003' }) && permanent({ code: '22P02' }) &&
+          permanent({ code: '22001' }) && permanent({ code: '22023' }),
+          'F1. PostgreSQL SQLSTATE class 22 (data exception) is permanent — ' +
+          'an out-of-range number, invalid text, string truncation, a bad ' +
+          'parameter value');
+  t.check(permanent({ errno: 1264 }) && permanent({ errno: 1690 }) &&
+          permanent({ errno: 1406 }) && permanent({ errno: 1292 }) &&
+          permanent({ errno: 1366 }),
+          'F2. MariaDB\'s strict-mode data errnos are permanent — out of ' +
+          'range, data too long, truncated or wrong value for a field');
+  t.check(!permanent({ code: '40P01' }) && !permanent({ code: '40001' }) &&
+          !permanent({ errno: 1213 }) && !permanent({ errno: 1205 }),
+          'F3. a deadlock, a serialization failure and a lock-wait timeout ' +
+          'are NOT permanent — they are retried (isRetryable)');
+  t.check(!permanent({ code: '23505' }) && !permanent({ errno: 1062 }),
+          'F4. a unique-key violation is NOT permanent — it is a race, ' +
+          'handled, not dropped');
+  t.check(!permanent(null) && !permanent(undefined) && !permanent({}) &&
+          !permanent(new Error('connect ECONNREFUSED')) &&
+          !permanent({ code: '08006' }),
+          'F5. nothing, a bare error and a connection error are not permanent');
+  t.check(sqlDialect.forEngine('postgres').isPermanentDataError({ code:
+            '22P02' }) &&
+          sqlDialect.forEngine('mariadb').isPermanentDataError({ errno: 1264 }),
+          'F6. the same answer is a member of every engine\'s dialect');
   log.debug("Leaving run().");
 }
 

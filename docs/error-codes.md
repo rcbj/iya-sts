@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5301** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5302** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 97
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 105
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 106
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
@@ -414,6 +414,7 @@ Raised from: persistence/.
 | `STS-STORE-0089` | A replicated minted-row change names its row under a data encryption key this process does not hold, even after reading the data-key rows again, and was skipped (another build's or a removed realm's); said once per key. | — |
 | `STS-STORE-0090` | The change-log sequence jumped by more than a thousand numbers between two rows a pull read (a setval, a sequence restored out of step); the numbers between are asked for as one range rather than one by one. | — |
 | `STS-STORE-0091` | The store was refused at open: the change log's sequence is not dense (an increment above one or a cache above one), so every reader would wait for numbers no transaction will commit. | — |
+| `STS-STORE-0092` | A minted flush batch was DROPPED, not retried, because the commit failed with a permanent data error (a value a column can never hold — an out-of-range bigint expiry, a value too long, a MariaDB strict-mode refusal) that would wedge the realm's every later write if re-journalled; the realm keeps flushing and a post-mortem audit row records what was dropped. | — |
 | `STS-STORE-0100` | A value was refused on MariaDB because it is longer than its keyed column; it is never truncated, which would make it another row's key. | — |
 | `STS-STORE-0101` | A realm's registry row was inserted and removed by other writers twice while this write waited for it, and nothing was written. | — |
 | `STS-STORE-0120` | A minted flush on MariaDB was refused: a value it writes is longer than its MariaDB column (sts_minted.key holds 512 characters), and the store refuses it rather than truncate it. | — |
