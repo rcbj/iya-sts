@@ -210,12 +210,31 @@ async function signInToReport(base, user, log2, options) {
   let at = await fetchKeeping(authorizeUrl);
   let location = at.headers.get("location") || "";
   const authn = (location.match(/[?&]authn=([^&]+)/) || [])[1];
+  // The body of a refusal at a hop fetchKeeping did not make, for the
+  // diagnostic: the sign-in and consent steps go through authn_signin (not
+  // fetchKeeping), so without this a 400 there left `lastRefusal` empty and the
+  // final assertion blamed the authorization endpoint for a refusal the
+  // sign-in step answered (#1299: the admin-api cell changed `fuzzer`'s
+  // password, so the sign-in answered STS-AUTHN-0054 and this said "the
+  // authorization endpoint … answered 400").
+  function noteStepRefusal(where, answer) {
+    if (!answer || Number(answer.status) < 400) {
+      return;
+    }
+    const detail = typeof answer.text === "string" && answer.text
+      ? answer.text
+      : JSON.stringify(answer.json || {});
+    lastRefusal = (answer.status + " at " + where + ": " + String(detail))
+      .slice(0, 500);
+  }
+
   if (authn) {
     const signedIn = await authnSignin.signIn(base,
       fromLocation(base, location),
       { action: "login", username: user, password: password },
       { cookie: cookies.header() });
     cookies.keep(signedIn);
+    noteStepRefusal("the sign-in step", signedIn);
     at = authnSignin.responseLike(signedIn);
     location = at.headers.get("location") || "";
   }
@@ -228,6 +247,7 @@ async function signInToReport(base, user, log2, options) {
       const answered = await authnSignin.consentFor(
         fromLocation(base, location), cookies.header());
       cookies.keep(answered);
+      noteStepRefusal("the consent step", answered);
       at = authnSignin.responseLike(answered);
     } else if (at.status === 200) {
       break;

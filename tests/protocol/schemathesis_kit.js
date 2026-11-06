@@ -343,11 +343,83 @@ const SCHEMATHESIS_BIN = process.env.STS_SCHEMATHESIS_BIN ||
     ? path.join(process.env.STS_SCHEMATHESIS_DIR, "bin", "schemathesis")
     : "schemathesis");
 
-// The management API's bearer token the launcher minted for this run.
+// The management API's bearer token. The preload (attach-admin-token.js) holds
+// the live one — a job may have minted itself a fresh token and handed it there
+// — so prefer that; `process.env.STS_ADMIN_API_TOKEN` is the launcher's and the
+// fallback for an in-process run with no preload.
 function adminToken() {
   log.debug("Entering adminToken().");
-  log.debug("Leaving adminToken().");
+  if (globalThis.stsAdminApiToken &&
+      typeof globalThis.stsAdminApiToken.get === "function") {
+    const held = globalThis.stsAdminApiToken.get();
+    if (held) {
+      log.debug("Leaving adminToken(). from the preload");
+      return held;
+    }
+  }
+  log.debug("Leaving adminToken(). from the environment");
   return process.env.STS_ADMIN_API_TOKEN || "";
+}
+
+// The client secret this run was handed. The tests container is given
+// `ADMIN_API_CLIENT_SECRET` (docker-compose-run-tests.yml), and a launcher that
+// minted the token itself exports `STS_ADMIN_API_CLIENT_SECRET`; either is the
+// seeded `sts-api-client`'s secret.
+function adminClientSecret() {
+  log.debug("Entering adminClientSecret().");
+  log.debug("Leaving adminClientSecret().");
+  return process.env.STS_ADMIN_API_CLIENT_SECRET ||
+    process.env.ADMIN_API_CLIENT_SECRET || "";
+}
+
+// One warning when no secret is available to re-mint with, so the fallback to
+// the launcher's one-shot token is visible rather than silent.
+let adminMintWarned = false;
+
+// Mints a FRESH `/admin-api` token and installs it everywhere this run reads
+// one, so a long run never provisions or fuzzes with an EXPIRED token (#1299:
+// the launcher's token is minted once at start and the access-token lifetime is
+// an hour, so cells and provisioning 63 minutes in answered 401 invalid_token).
+// Called per provisioning and per cell. It mints DIRECTLY with the secret the
+// kit can read rather than through the preload's refresh(), whose secretFor()
+// reads only `STS_ADMIN_API_CLIENT_SECRET` and so mints nothing in the tests
+// container. Updates the preload's live token (what console_signin's unheadered
+// /admin-api calls carry) AND `process.env.STS_ADMIN_API_TOKEN` (what adminCall
+// reads here and what a proxy child inherits at spawn). On no secret, or a mint
+// that throws, it keeps the token in place: the caller's own 401 says so, and a
+// mint failure must not be reported as whatever was being fuzzed.
+async function freshAdminToken(serviceBase, say) {
+  log.debug("Entering freshAdminToken().");
+  const secret = adminClientSecret();
+  if (!secret) {
+    if (!adminMintWarned) {
+      adminMintWarned = true;
+      (say || function () {})("[schemathesis] WARNING: no client secret " +
+        "(STS_ADMIN_API_CLIENT_SECRET / ADMIN_API_CLIENT_SECRET) to re-mint " +
+        "the /admin-api token; using the launcher's one-shot token, which " +
+        "expires mid-run.");
+    }
+    log.debug("Leaving freshAdminToken(). no secret");
+    return adminToken();
+  }
+  try {
+    const minter = require("../tools/admin-api-token.js");
+    const fresh = await minter.mint(serviceBase, secret);
+    if (fresh) {
+      process.env.STS_ADMIN_API_TOKEN = fresh;
+      if (globalThis.stsAdminApiToken &&
+          typeof globalThis.stsAdminApiToken.set === "function") {
+        globalThis.stsAdminApiToken.set(fresh);
+      }
+    }
+    log.debug("Leaving freshAdminToken(). minted");
+    return adminToken();
+  } catch (e) {
+    log.warn("freshAdminToken() could not mint (keeping the current token): " +
+      ((e && e.message) || e));
+    log.debug("Leaving freshAdminToken(). threw");
+    return adminToken();
+  }
 }
 
 // One `/admin-api` call with the run's admin token; { status, json }.
@@ -449,6 +521,9 @@ async function metadataAnswer(serviceBase, provisioned, say) {
 // behaviour is confirmed at the end-to-end run. Resolves the sign-in facts.
 async function provision(serviceBase, profile, say) {
   log.debug("Entering provision(). " + profile.realm);
+  // A fresh token before provisioning: the launcher's one expires an hour in,
+  // and a late realm's provisioning would otherwise answer 401 (#1299).
+  await freshAdminToken(serviceBase, say);
   const realmPrefix = "/realm/" + profile.realm;
   const made = await adminCall(serviceBase, "", "POST",
     "/admin-api/realms/create",
@@ -497,6 +572,65 @@ async function provision(serviceBase, profile, say) {
   log.debug("Leaving provision().");
   return { realmPrefix: realmPrefix, user: FUZZ_USER,
     password: FUZZ_PASSWORD, label: profile.label };
+}
+
+// Re-assert the realm's known state before every cell (#1299, "start from a
+// known state"): a cell's own fuzzing changes the realm, and the next cell
+// starts from whatever it left. The 2026-11-06 run showed two: the admin-api
+// cell changed the fuzz person's password, so report-api's sign-in answered
+// STS-AUTHN-0054 (a password that does not match); and the DPoP replay cap was
+// back at its 10000 default (STS-CORE-0097 / STS-OAUTH-0554), filling under the
+// proof volume and refusing every proof. So before each cell, with a fresh
+// token already in hand, this re-asserts the DPoP replay headroom and window
+// (FUZZ_DPOP), the fuzz person's password, and the console and configured
+// roles, through the runtime doors — idempotent, and the process-env default on
+// the fuzz stack's `sts` service is the fallback for a reset WITHIN a cell.
+// Resolves { ok, why }; the caller FAILS THE CELL LOUDLY when it is not ok.
+async function reassertRealm(serviceBase, provisioned, say) {
+  log.debug("Entering reassertRealm(). " + provisioned.realmPrefix);
+  const prefix = provisioned.realmPrefix;
+  const dpop = await adminCall(serviceBase, prefix, "POST",
+    "/admin-api/config/set-many", FUZZ_DPOP);
+  if (dpop.status !== 200) {
+    log.debug("Leaving reassertRealm(). set-many " + dpop.status);
+    return { ok: false, why: "config/set-many in " + prefix + " answered " +
+      dpop.status + " " + JSON.stringify(dpop.json).slice(0, 200) };
+  }
+  const password = await adminCall(serviceBase, prefix, "POST",
+    "/admin-api/users/set-password",
+    { user: FUZZ_USER, password: FUZZ_PASSWORD });
+  if (password.status !== 200) {
+    log.debug("Leaving reassertRealm(). set-password " + password.status);
+    return { ok: false, why: "users/set-password in " + prefix +
+      " answered " + password.status + " " +
+      JSON.stringify(password.json).slice(0, 200) };
+  }
+  for (let i = 0; i < FUZZ_CONSOLE_ROLES.length; i++) {
+    const granted = await adminCall(serviceBase, prefix, "POST",
+      "/admin-api/rbac/grant",
+      { username: FUZZ_USER, role: FUZZ_CONSOLE_ROLES[i] });
+    if (granted.status !== 200) {
+      log.debug("Leaving reassertRealm(). grant " + granted.status);
+      return { ok: false, why: "granting " + FUZZ_CONSOLE_ROLES[i] + " in " +
+        prefix + " answered " + granted.status + " " +
+        JSON.stringify(granted.json).slice(0, 200) };
+    }
+  }
+  for (let i = 0; i < FUZZ_CONFIGURED_ROLES.length; i++) {
+    const member = await adminCall(serviceBase, prefix, "POST",
+      "/admin-api/roles/add-member",
+      { role: FUZZ_CONFIGURED_ROLES[i], kind: "user", member: FUZZ_USER });
+    if (member.status !== 200) {
+      log.debug("Leaving reassertRealm(). add-member " + member.status);
+      return { ok: false, why: "adding " + FUZZ_USER + " to " +
+        FUZZ_CONFIGURED_ROLES[i] + " in " + prefix + " answered " +
+        member.status + " " + JSON.stringify(member.json).slice(0, 200) };
+    }
+  }
+  say("[schemathesis] re-asserted " + prefix + ": DPoP headroom, the fuzz " +
+    "person's password and its roles");
+  log.debug("Leaving reassertRealm(). ok");
+  return { ok: true, why: "" };
 }
 
 // A free loopback TCP port.
@@ -669,6 +803,24 @@ function runSchemathesis(bin, args, env, cwd) {
 // own. Resolves { surface, realm, code, status, output }.
 async function runSurface(serviceBase, provisioned, surface, workDir, say) {
   log.debug("Entering runSurface(). " + surface.key);
+  // A fresh token before every cell, and BEFORE the proxy is spawned so the
+  // child inherits it in `process.env`: a cell is ~25 min and the token lasts
+  // an hour, so a realm's third cell otherwise fuzzes with an expired token
+  // and console_signin's /admin-api account-ensure answers 401 (#1299).
+  await freshAdminToken(serviceBase, say);
+  // Re-assert the realm's known state before the cell, and FAIL THE CELL
+  // LOUDLY if it cannot be done (#1299): a previous cell's fuzzing can change
+  // the fuzz person's password or the realm's DPoP settings, and the next cell
+  // starts from whatever it left.
+  const reasserted = await reassertRealm(serviceBase, provisioned, say);
+  if (!reasserted.ok) {
+    log.debug("Leaving runSurface(). re-assert failed");
+    return { surface: surface.key, realm: provisioned.realmPrefix,
+      code: null, status: "error", findings: [],
+      output: "could not re-assert the realm's known state before the " +
+        surface.key + " cell (#1299, start from a known state): " +
+        reasserted.why };
+  }
   const port = await freePort();
   const proxyEnv = Object.assign({}, process.env, {
     STS_SCHEMA_PROXY_PORT: String(port),
@@ -790,8 +942,11 @@ async function run(serviceBase, options) {
   log.debug("Entering run().");
   const opts = options || {};
   const say = typeof opts.say === "function" ? opts.say : function () {};
-  if (!adminToken()) {
-    throw new Error("STS_ADMIN_API_TOKEN is required; the launcher mints it");
+  if (!adminToken() && !adminClientSecret()) {
+    throw new Error("STS_ADMIN_API_TOKEN or a client secret " +
+      "(STS_ADMIN_API_CLIENT_SECRET / ADMIN_API_CLIENT_SECRET) is required; " +
+      "the launcher provides one and the kit re-mints per cell from the " +
+      "secret");
   }
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "sts-schemathesis-"));
   const onResult = typeof opts.onResult === "function"
