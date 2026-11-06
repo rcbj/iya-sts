@@ -373,6 +373,19 @@ const BUILT_IN: TemplateSpec[] = [
           '{{justification}}</p><p>The policy allows emergency access to ' +
           'this. <a href="{{link}}">Review it</a>, and revoke it if it was ' +
           'not warranted.</p>' },
+  { id: 'pki-pin-status', category: 'security',
+    title: 'A certificate this realm relies on changed state',
+    values: ['changes'],
+    links: [],
+    subject: '{{service}}: a certificate this realm relies on changed state',
+    text: 'The daily audit of the certificates this realm relies on found ' +
+          'these changes:\n\n{{changes}}\n\nThe PKI trust page of the admin ' +
+          'console shows every one. You receive this because you hold Admin ' +
+          'Write in this realm.\n',
+    html: '<p>The daily audit of the certificates this realm relies on found ' +
+          'these changes:</p><p>{{changes}}</p><p>The PKI trust page of the ' +
+          'admin console shows every one. You receive this because you hold ' +
+          'Admin Write in this realm.</p>' },
   { id: 'administrator-alert', category: 'security',
     title: 'An act of the service, for administrators',
     values: ['username', 'when', 'act', 'why'],

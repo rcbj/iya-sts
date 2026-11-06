@@ -249,6 +249,8 @@ const LIST_PARAMS = {
   // `back`, so removing the last row on page 3 lands on page 3 — clamped to the
   // last page there is — rather than on page 1.
   '/admin/tls/trust': ['per', 'page'],
+  // The inventory of what a realm pins (#1360).
+  '/admin/pki/trust': ['per', 'pinsPage'],
   // The Kerberos principals' two lists (2026-09-12), paged separately and
   // sharing one `per`. Spent by every row button's `back`.
   '/admin/kerberos/principals': ['per', 'peoplePage', 'servicesPage'],

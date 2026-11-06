@@ -61,6 +61,10 @@ class TlsTrustPage {
         (anchor.readable ? '' : '<div class="state-invalid">' +
           kit.esc(t.text('consoleTlsTrust.unreadable')) +
           '</div>') +
+        // Admitted once and refused by the rule now (#1360). The rule's own
+        // sentence stays English, as every refusal does.
+        (anchor.unadmittable ? '<div class="state-invalid">' +
+          kit.esc(anchor.unadmittable) + '</div>' : '') +
         '<div class="sub">' + (anchor.ca ? t.html('consoleTlsTrust.ca')
                                          : t.html('consoleTlsTrust.notCa')) +
         '</div></td>' +

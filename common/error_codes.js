@@ -3490,6 +3490,41 @@ const CODES = [
       'empty must include RS256, which OpenID Connect Discovery requires ' +
       'and which is the default for ID Tokens and access tokens (#1348).',
     spec: 'none: an operator\'s write, refused with its reason' },
+  { code: 'STS-KEYS-0168',
+    summary: 'A certificate is past its notAfter, under a use case that ' +
+      'asks its validity.',
+    spec: 'none — recorded on the refusal the use case makes (#1360)' },
+  { code: 'STS-KEYS-0169',
+    summary: 'A certificate is before its notBefore, under a use case that ' +
+      'asks its validity.',
+    spec: 'none — recorded on the refusal the use case makes (#1360)' },
+  { code: 'STS-KEYS-0170',
+    summary: 'A certificate\'s basicConstraints does not fit the role it ' +
+      'was asked to play: not a CA where one is required, or a CA ' +
+      'used as an end entity.',
+    spec: 'none — recorded on the refusal the use case makes (#1360)' },
+  { code: 'STS-KEYS-0171',
+    summary: 'A certificate\'s keyUsage does not permit what its use case ' +
+      'asks.',
+    spec: 'none — recorded on the refusal the use case makes (#1360)' },
+  { code: 'STS-KEYS-0172',
+    summary: 'A certificate\'s extendedKeyUsage does not name what its use ' +
+      'case asks, or is absent where the use case\'s specification ' +
+      'requires it.',
+    spec: 'none — recorded on the refusal the use case makes (#1360)' },
+  { code: 'STS-KEYS-0173',
+    summary: 'A certificate is signed with a broken hash (MD2, MD5, or ' +
+      'SHA-1 where it is not allowed).',
+    spec: 'none — recorded on the refusal the use case makes (#1360)' },
+  { code: 'STS-KEYS-0174',
+    summary: 'A certificate holds a key too weak to rely on: a short or ' +
+      'ROCA-affected RSA modulus, or a curve this service does not ' +
+      'rely on.',
+    spec: 'none — recorded on the refusal the use case makes (#1360)' },
+  { code: 'STS-KEYS-0175',
+    summary: 'A certificate carries a critical extension nothing here ' +
+      'reads.',
+    spec: 'none — recorded on the refusal the use case makes (#1360)' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -4591,6 +4626,216 @@ const CODES = [
       'and asked for the certificate, so it carries no x5c or x5u (an ' +
       'OpenID4VCI credential a wallet cannot verify offline).',
     spec: 'none — the token is issued without the header' },
+  { code: 'STS-PKI-0228',
+    summary: 'A certificate offered to a truststore as an anchor is not ' +
+      'self-signed, or its self-signature does not verify.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0229',
+    summary: 'A certificate offered to a truststore is not a certificate ' +
+      'authority where the role asks one.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0230',
+    summary: 'A CA offered to a truststore states a keyUsage without ' +
+      'keyCertSign.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0231',
+    summary: 'A certificate offered to a truststore is outside its ' +
+      'validity window.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0232',
+    summary: 'A certificate offered to a truststore holds a weak key or ' +
+      'signature, or a critical extension nothing reads.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0233',
+    summary: 'An intermediate offered to a truststore chains to no anchor ' +
+      'held there.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0234',
+    summary: 'A leaf was offered to a truststore: a leaf to pin goes on ' +
+      'the entry or relationship that uses it.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0235',
+    summary: 'The signer truststore has no directory: the slot was offered ' +
+      'part of what it needs, or nothing filled it in this process.',
+    spec: 'none (logged), and an add is refused' },
+  { code: 'STS-PKI-0236',
+    summary: 'The signer truststore is full: 32 anchors or 64 ' +
+      'intermediates per realm, or the directory itself.',
+    spec: 'the caller\'s refusal: /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0237',
+    summary: 'pki.signerTrustAnchorsFile names a file that cannot be read ' +
+      'or holds no certificate; the process does not start.',
+    spec: 'none — the process exits' },
+  { code: 'STS-PKI-0238',
+    summary: 'What was handed to the validation door or a truststore is ' +
+      'not an X.509 certificate.',
+    spec: 'the use case\'s refusal, or /admin-api HTTP 400 with ' +
+      '{ok:false, errors}' },
+  { code: 'STS-PKI-0239',
+    summary: 'A paranoid PKI row, or the master, is off in product mode. ' +
+      'Logged once per process per setting; nothing refuses it, and ' +
+      '/admin/pki/trust draws it red.',
+    spec: 'none (logged)' },
+  { code: 'STS-PKI-0240',
+    summary: 'Refused under paranoid PKI mode for tls-client: a client ' +
+      'certificate at a TLS handshake; nothing established what the ' +
+      'use case needs, or the use case itself refused (a self- ' +
+      'signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0241',
+    summary: 'Refused under paranoid PKI mode for tls-client-self-signed: ' +
+      'a registered self-signed client certificate; nothing ' +
+      'established what the use case needs, or the use case itself ' +
+      'refused (a self-signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0242',
+    summary: 'Refused under paranoid PKI mode for tls-server-outbound: the ' +
+      'server certificate of an outbound request; nothing ' +
+      'established what the use case needs, or the use case itself ' +
+      'refused (a self-signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0243',
+    summary: 'Refused under paranoid PKI mode for jose-signer: a JOSE ' +
+      'signer\'s chain; nothing established what the use case needs, ' +
+      'or the use case itself refused (a self-signed leaf, an ' +
+      'anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0244',
+    summary: 'Refused under paranoid PKI mode for saml-signer: a SAML ' +
+      'signer\'s certificate; nothing established what the use case ' +
+      'needs, or the use case itself refused (a self-signed leaf, ' +
+      'an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0245',
+    summary: 'Refused under paranoid PKI mode for federation-partner: a ' +
+      'federation partner\'s certificate; nothing established what ' +
+      'the use case needs, or the use case itself refused (a self- ' +
+      'signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0246',
+    summary: 'Refused under paranoid PKI mode for wss-x509-token: a WS- ' +
+      'Security X.509 token; nothing established what the use case ' +
+      'needs, or the use case itself refused (a self-signed leaf, ' +
+      'an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0247',
+    summary: 'Refused under paranoid PKI mode for jose-bare-key: a JWK ' +
+      'carrying an x5c; nothing established what the use case ' +
+      'needs, or the use case itself refused (a self-signed leaf, ' +
+      'an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0248',
+    summary: 'Refused under paranoid PKI mode for encryption-recipient: an ' +
+      'encryption recipient\'s certificate; nothing established what ' +
+      'the use case needs, or the use case itself refused (a self- ' +
+      'signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0249',
+    summary: 'Refused under paranoid PKI mode for client-attestation: an ' +
+      'attestation-based client authentication chain; nothing ' +
+      'established what the use case needs, or the use case itself ' +
+      'refused (a self-signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0250',
+    summary: 'Refused under paranoid PKI mode for webauthn-attestation: a ' +
+      'WebAuthn attestation chain; nothing established what the use ' +
+      'case needs, or the use case itself refused (a self-signed ' +
+      'leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0251',
+    summary: 'Refused under paranoid PKI mode for device-attestation: a ' +
+      'device attestation chain; nothing established what the use ' +
+      'case needs, or the use case itself refused (a self-signed ' +
+      'leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0252',
+    summary: 'Refused under paranoid PKI mode for spiffe-svid: an ' +
+      'X509-SVID; nothing established what the use case needs, or ' +
+      'the use case itself refused (a self-signed leaf, an anchor ' +
+      'source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0253',
+    summary: 'Refused under paranoid PKI mode for spiffe-attestation: a ' +
+      'SPIFFE node attestor\'s certificate; nothing established what ' +
+      'the use case needs, or the use case itself refused (a self- ' +
+      'signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0254',
+    summary: 'Refused under paranoid PKI mode for pkinit: a PKINIT client ' +
+      'certificate; nothing established what the use case needs, or ' +
+      'the use case itself refused (a self-signed leaf, an anchor ' +
+      'source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0255',
+    summary: 'Refused under paranoid PKI mode for enrollment-credential: ' +
+      'an enrollment credential; nothing established what the use ' +
+      'case needs, or the use case itself refused (a self-signed ' +
+      'leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0256',
+    summary: 'Refused under paranoid PKI mode for vc-key-attestation: an ' +
+      'OpenID4VCI key attestation chain; nothing established what ' +
+      'the use case needs, or the use case itself refused (a self- ' +
+      'signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0257',
+    summary: 'Refused under paranoid PKI mode for vc-issuer: a credential ' +
+      'issuer\'s or status-list signer\'s certificate; nothing ' +
+      'established what the use case needs, or the use case itself ' +
+      'refused (a self-signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0258',
+    summary: 'Refused under paranoid PKI mode for cell-peer: the other ' +
+      'cell at the inter-cell channel; nothing established what the ' +
+      'use case needs, or the use case itself refused (a self- ' +
+      'signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0259',
+    summary: 'Refused under paranoid PKI mode for ca-import: a CA or key ' +
+      'pair an operator imports; nothing established what the use ' +
+      'case needs, or the use case itself refused (a self-signed ' +
+      'leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0260',
+    summary: 'Refused under paranoid PKI mode for anchor-admission: ' +
+      'admission to a truststore; nothing established what the use ' +
+      'case needs, or the use case itself refused (a self-signed ' +
+      'leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0261',
+    summary: 'Refused under paranoid PKI mode for revocation-signer: an ' +
+      'OCSP responder or CRL signer; nothing established what the ' +
+      'use case needs, or the use case itself refused (a self- ' +
+      'signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0262',
+    summary: 'Refused under paranoid PKI mode for fido-mds: the FIDO ' +
+      'Metadata Service BLOB signer; nothing established what the ' +
+      'use case needs, or the use case itself refused (a self- ' +
+      'signed leaf, an anchor source out of reach).',
+    spec: 'the use case\'s refusal (#1360)' },
+  { code: 'STS-PKI-0263',
+    summary: 'pki.pins.audit: a pinned certificate is expiring within ' +
+      'pki.pinnedCertificateWarningDays. Logged once per change of ' +
+      'state.',
+    spec: 'none (logged)' },
+  { code: 'STS-PKI-0264',
+    summary: 'pki.pins.audit: a pinned certificate or truststore entry is ' +
+      'expired, revoked or chain-missing. Logged once per change of ' +
+      'state.',
+    spec: 'none (logged)' },
+  { code: 'STS-PKI-0265',
+    summary: 'A pin source threw while listing its certificates, so the ' +
+      'inventory is missing its rows.',
+    spec: 'none (logged)' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -17172,6 +17417,16 @@ const CODES = [
       'names nobody (#1061).',
     spec: 'HTTP 200, session.started false' },
   // ===== VC ================================================================
+  { code: 'STS-TLS-0056',
+    summary: 'A stored client-truststore anchor is one the admission rule ' +
+      'now refuses. It is kept, reported as unadmittable on /admin/tls/trust ' +
+      'and logged once at restore; an operator removes it (#1360).',
+    spec: 'none (logged)' },
+  { code: 'STS-TLS-0057',
+    summary: 'A block of tls.trustAnchorsFile is one the admission rule ' +
+      'refuses under paranoid PKI mode, and was left out of the truststore ' +
+      '(#1360).',
+    spec: 'none (logged)' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -24418,6 +24673,26 @@ const CODES = [
       'refused the value. The directory\'s own STS-LDAP code is recorded ' +
       'on its log (#644).',
     spec: 'HTTP 400 (API) or a refusal on the person\'s page' },
+  { code: 'STS-ADMIN-0910',
+    summary: '/admin-api/pki/trust was asked for an action it does not have ' +
+      '(#1360).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0911',
+    summary: 'A signer truststore add was refused whole: nothing in it was ' +
+      'admitted. The refusal of each certificate is its own code (#1360).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0912',
+    summary: 'A signer truststore remove named nothing this realm holds, or ' +
+      'an entry that comes from pki.signerTrustAnchorsFile (#1360).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0913',
+    summary: 'set-row named something that is not a paranoid PKI setting ' +
+      '(#1360).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0914',
+    summary: 'set-row was refused by the settings write path, or a use case ' +
+      'an add named is not one this service has (#1360).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -24865,6 +25140,10 @@ const CODES = [
       'the sentence a refused answer gets, rather than an HTML page. The log ' +
       'line names the path and the message once per distinct failure.',
     spec: 'HTTP 500' },
+  { code: 'STS-API-0141',
+    summary: 'An action of /admin-api/pki/trust threw rather than answering ' +
+      '(#1360).',
+    spec: 'HTTP 500 with {ok:false, errors}' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

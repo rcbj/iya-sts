@@ -3104,12 +3104,9 @@ const PATH_MAX_POLICY_NODES = 10000;
 // Every extension this module reads and so may accept marked critical. The
 // purpose extensions (keyUsage, extKeyUsage) are the caller's to ask about,
 // and understanding them is what lets a caller ask.
-const PATH_UNDERSTOOD_CRITICAL = Object.keys(PATH_EXTENSION_OIDS)
-  .map(function (name) { return PATH_EXTENSION_OIDS[name]; });
-const PATH_KEY_USAGE_BITS = ['digitalSignature', 'nonRepudiation',
-                             'keyEncipherment', 'dataEncipherment',
-                             'keyAgreement', 'keyCertSign', 'cRLSign',
-                             'encipherOnly', 'decipherOnly'];
+// One list (#1360): `crypto.js`'s field checks read the same one.
+const PATH_UNDERSTOOD_CRITICAL = stsCrypto.CERTIFICATE_UNDERSTOOD_CRITICAL;
+const PATH_KEY_USAGE_BITS = stsCrypto.KEY_USAGE_BITS;
 const PATH_EMAIL_ADDRESS_OID = '1.2.840.113549.1.9.1';
 // RFC 9881 section 2's three ML-DSA parameter sets, and section 5's rule for
 // the keyUsage a certificate carrying one of them may state.
@@ -4381,6 +4378,20 @@ function pathRuleProblem(path, opts) {
   if (!policy.ok) {
     log.debug("Leaving pathRuleProblem(). Policy.");
     return { check: 'policy', index: 0, why: policy.why };
+  }
+  // THE LEAF'S OWN FIELDS, LAST (#1360): what its use case asks of its
+  // keyUsage and extendedKeyUsage, so they are part of path validation rather
+  // than something a caller remembers to add. Only a caller naming a purpose
+  // passes `opts.leaf`; every other path is exactly what it was.
+  if (options.leaf) {
+    const field = stsCrypto.certificateFieldProblem(path[0].der,
+      Object.assign({ role: 'leaf', allowSha1: options.allowSha1,
+                      allowCritical: allowed }, options.leaf));
+    if (field) {
+      log.debug("Leaving pathRuleProblem(). The leaf's " + field.check + ".");
+      return { check: field.check, index: 0, why: field.why,
+               code: field.code };
+    }
   }
   log.debug("Leaving pathRuleProblem(). The path holds.");
   return null;
@@ -12194,6 +12205,178 @@ function subjectText(one) {
         ? ' (' + String(one.x509.subjectAltName) + ')' : '');
 }
 
+// The certificates a named source of anchors holds, as `certificateFromDer()`
+// entries for the anchors and DER for the intermediates. `signer_truststore`
+// requires this module, so it is reached lazily, as `revocation_status` is.
+function namedAnchors(source, options) {
+  log.debug("Entering namedAnchors(). " + source);
+  let anchorDers = [];
+  let intermediates = [];
+  if (source === 'signer-truststore') {
+    const held = require('./signer_truststore')
+      .anchorsFor(options.realmId, options.purpose);
+    anchorDers = held.anchors;
+    intermediates = held.intermediates;
+  } else {
+    anchorDers = trustAnchorsFor(options.realmId).map(function (pem) {
+      return pemToDer(pem);
+    });
+  }
+  const anchors = anchorDers.map(function (der) {
+    return certificateFromDer(der);
+  }).filter(Boolean);
+  log.debug("Leaving namedAnchors(). " + anchors.length + " anchor(s).");
+  return { anchors: anchors, intermediates: intermediates };
+}
+
+// ---------------------------------------------------------------------------
+// WHO MAY ENTER A TRUSTSTORE (#1360, gap 5 of the audit): the one admission
+// rule, for the signer truststore and the client-certificate truststore and
+// the files beside each. An ANCHOR is a self-signed CA, whose self-signature
+// verifies, within its validity, that may sign certificates. An INTERMEDIATE
+// is a CA that chains to an anchor already held. A LEAF is refused from both:
+// a leaf to pin goes on the entry or relationship that uses it, and a
+// self-signed leaf in OpenSSL's store is an anchor for itself, which is the
+// hole this closes. The validity and strength of an anchor are asked even
+// though RFC 5280 relies on neither, because this is an administrator deciding
+// what to trust from here on rather than a path being walked.
+// ---------------------------------------------------------------------------
+// The half of the rule that needs no engine: is this the kind of certificate
+// the role asks for at all. `{ entry, facts, role, problem }`.
+function anchorFieldsOf(cert, opts) {
+  log.debug("Entering anchorFieldsOf().");
+  let entry = null;
+  try {
+    const der = Buffer.isBuffer(cert) || cert instanceof Uint8Array ? cert :
+      stsCrypto.parseCertificate(String(cert)).raw;
+    entry = certificateFromDer(der);
+  } catch (e) {
+    log.debug("Caught in anchorFieldsOf(): " + ((e && e.message) || e));
+  }
+  if (!entry) {
+    log.debug("Leaving anchorFieldsOf(). Not a certificate.");
+    return { problem: { code: 'STS-PKI-0238', role: opts.role || '',
+                        why: 'this is not an X.509 certificate' } };
+  }
+  const facts = stsCrypto.certificateFacts(entry.x509);
+  const role = opts.role || (facts.selfIssued ? 'anchor' : 'intermediate');
+  const out = { entry: entry, facts: facts, role: role, problem: null };
+  if (!facts.ca) {
+    out.problem = { code: 'STS-PKI-0234', role: role, why: '"' + facts.subject +
+      '" is a leaf, not a certificate authority: a leaf to pin goes on the ' +
+      'entry or relationship that uses it, never in a truststore' };
+  } else if (role === 'anchor' && !facts.selfIssued) {
+    out.problem = { code: 'STS-PKI-0228', role: role, why: '"' + facts.subject +
+      '" is not self-signed, so it cannot be an anchor; add the Root it ' +
+      'chains to, and this as an intermediate' };
+  } else {
+    const field = stsCrypto.certificateFieldProblem(entry.x509,
+      { role: role, keyUsage: ['keyCertSign'], now: opts.now });
+    if (field) {
+      const codes = { validity: 'STS-PKI-0231',
+                      'basic-constraints': 'STS-PKI-0229',
+                      'key-usage': 'STS-PKI-0230' };
+      out.problem = { code: codes[field.check] || 'STS-PKI-0232', role: role,
+                      why: field.why };
+    }
+  }
+  log.debug("Leaving anchorFieldsOf(). " + (out.problem ? out.problem.code :
+                                            'holds'));
+  return out;
+}
+
+/**
+ * Holds a certificate to the admission rule of a truststore.
+ *
+ * @param cert - PEM text or DER bytes
+ * @param options - `{ role: 'anchor'|'intermediate' (omitted: a self-issued
+ *   certificate is an anchor, any other an intermediate), heldAnchors: the
+ *   anchors an intermediate may chain to, as PEM or DER, heldIntermediates,
+ *   now }`
+ * @returns a promise of null, or `{ code, why, role }`
+ */
+async function anchorProblem(cert, options) {
+  log.debug("Entering anchorProblem().");
+  const opts = options || {};
+  const read = anchorFieldsOf(cert, opts);
+  if (read.problem) {
+    log.debug("Leaving anchorProblem(). " + read.problem.code);
+    return read.problem;
+  }
+  if (read.role === 'anchor' && !(await pathSigned(read.entry, read.entry))) {
+    log.debug("Leaving anchorProblem(). The self-signature does not verify.");
+    return { code: 'STS-PKI-0228', role: read.role, why: '"' +
+             read.facts.subject + '" does not verify under its own key' };
+  }
+  if (read.role === 'intermediate') {
+    const held = (opts.heldAnchors || []).map(function (one) {
+      return certificateFromDer(typeof one === 'string' ?
+        stsCrypto.parseCertificate(one).raw : one);
+    }).filter(Boolean);
+    const path = await verifyPathToAnchors(read.entry.der,
+      opts.heldIntermediates || [], held, { now: opts.now });
+    if (!path.ok) {
+      log.debug("Leaving anchorProblem(). Reaches no held anchor.");
+      return { code: 'STS-PKI-0233', role: read.role, why: '"' +
+               read.facts.subject + '" chains to no anchor held here (' +
+               path.reason + ')' };
+    }
+  }
+  log.debug("Leaving anchorProblem(). Admitted as " + read.role + ".");
+  return null;
+}
+
+/**
+ * The same rule for the client-certificate truststore's synchronous doors: a
+ * listener's context is rebuilt in the same tick, and the file is read at
+ * require. The signature and the one hop go through node, so a key node cannot
+ * read is held to the fields alone here; such an anchor is still only what
+ * OpenSSL will build a path to.
+ *
+ * @param cert - PEM text or DER bytes
+ * @param options - as `anchorProblem()`; `heldAnchors` are the certificates an
+ *   intermediate may be issued by, directly
+ * @returns null, or `{ code, why, role }`
+ */
+function anchorProblemSync(cert, options) {
+  log.debug("Entering anchorProblemSync().");
+  const opts = options || {};
+  const read = anchorFieldsOf(cert, opts);
+  if (read.problem) {
+    log.debug("Leaving anchorProblemSync(). " + read.problem.code);
+    return read.problem;
+  }
+  if (read.role === 'anchor') {
+    let signed = true;
+    try {
+      signed = read.entry.x509.verify(read.entry.x509.publicKey);
+    } catch (e) {
+      log.debug("Caught in anchorProblemSync(): " + ((e && e.message) || e));
+    }
+    if (!signed) {
+      log.debug("Leaving anchorProblemSync(). Not self-signed.");
+      return { code: 'STS-PKI-0228', role: read.role, why: '"' +
+               read.facts.subject + '" does not verify under its own key' };
+    }
+  } else {
+    const held = (opts.heldAnchors || []).map(function (one) {
+      return { raw: typeof one === 'string' ?
+        stsCrypto.parseCertificate(one).raw : one };
+    });
+    const direct = verifyIssuedDirectly(read.entry.der, held,
+                                        { now: opts.now });
+    if (!direct.ok) {
+      log.debug("Leaving anchorProblemSync(). Reaches nothing held.");
+      return { code: 'STS-PKI-0233', role: read.role, why: '"' +
+               read.facts.subject + '" chains to nothing held here (' +
+               direct.reason + ')' };
+    }
+  }
+  log.debug("Leaving anchorProblemSync(). Admitted as " + read.role + ".");
+  return null;
+}
+
+
 // Build and verify a path from `leafDer` through `intermediateDers` to one of
 // `anchors` (certificateFromDer() answers). `opts.now` is milliseconds;
 // `opts.skewMs` widens every validity window; `opts.allowCritical` names
@@ -12219,6 +12402,19 @@ function subjectText(one) {
 async function verifyPathToAnchors(leafDer, intermediateDers, anchors, opts) {
   log.debug("Entering verifyPathToAnchors().");
   const options = opts || {};
+  // A NAMED SOURCE OF ANCHORS (#1360): `signer-truststore` is the realm's
+  // store, and what it holds as intermediates completes a chain; `realm` is
+  // this service's Root. Answered through the same builder, with the source
+  // recorded on the result.
+  if (anchors === 'signer-truststore' || anchors === 'realm') {
+    const named = namedAnchors(anchors, options);
+    const result = /** @type {any} */ (await verifyPathToAnchors(leafDer,
+      (intermediateDers || []).concat(named.intermediates), named.anchors,
+      options));
+    result.anchorSource = anchors;
+    log.debug("Leaving verifyPathToAnchors(). Through " + anchors + ".");
+    return result;
+  }
   const leaf = certificateFromDer(leafDer);
   if (!leaf) {
     log.debug("Leaving verifyPathToAnchors(). No leaf.");
@@ -13862,6 +14058,11 @@ module.exports = {
   spkiOf: spkiOf,
   keyUsageOf: keyUsageOf,
   verifyPathToAnchors: verifyPathToAnchors,
+  anchorProblem: anchorProblem,
+  anchorProblemSync: anchorProblemSync,
+  pemToDer: pemToDer,
+  pathSigned: pathSigned,
+  pathValidityProblem: pathValidityProblem,
   verifyIssuedDirectly: verifyIssuedDirectly,
   peerChainProblem: peerChainProblem,
   pathFactsOf: pathFactsOf,

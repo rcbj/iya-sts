@@ -4709,6 +4709,42 @@ function listenerPolicies() {
  * @returns `{ added, duplicates, total }`, or with `error` and `errorCode` when
  * nothing was added
  */
+// Whether this process's truststore holds to the admission rule. The MODE IS
+// ASKED IN THE DEFAULT REALM, `truststoreOpenToAnybody()`'s reason: these are
+// one array for every listener. Lazily, as this runs at require for a file.
+function admissionApplies() {
+  log.debug("Entering admissionApplies().");
+  const trust = require('../common/certificate_trust');
+  log.debug("Leaving admissionApplies().");
+  return trust.applies('anchor-admission', realms.DEFAULT_ID);
+}
+
+// What the admission rule says of one row, given the rows beside it, what is
+// held and the service Root an intermediate may hang from. null when it holds
+// or when the rule is not in force.
+function admissionProblemOf(row, rows) {
+  log.debug("Entering admissionProblemOf().");
+  if (!admissionApplies()) {
+    log.debug("Leaving admissionProblemOf(). Not in force.");
+    return null;
+  }
+  const held = anchors.map(function (one) {
+    return one.pem;
+  }).concat(rows.map(function (one) {
+    return one.pem;
+  })).filter(function (pem) {
+    return pem !== row.pem;
+  });
+  const root = issuedClientCertificateAnchor();
+  if (root) {
+    held.push(root);
+  }
+  const problem = require('../common/pki')
+    .anchorProblemSync(row.pem, { heldAnchors: held });
+  log.debug("Leaving admissionProblemOf(). " + (problem ? problem.code : 'ok'));
+  return problem;
+}
+
 function addAnchors(text, options) {
   log.debug('Entering addAnchors().');
   const opts = options || {};
@@ -4737,6 +4773,21 @@ function addAnchors(text, options) {
         'verify against — so none was added. A block OpenSSL cannot parse is ' +
         'not an anchor it will use, and putting one in the truststore makes ' +
         'the next setSecureContext() on every listener throw.' };
+    }
+  }
+  // THE ADMISSION RULE (#1360, gap 5), under paranoid PKI mode: all or nothing
+  // for the reason above. Off, this store takes what OpenSSL can read, as it
+  // did. The file's own loader asks below; only the gated doors are strict.
+  if (opts.strict) {
+    const refused = described.map(function (one) {
+      return admissionProblemOf(one, described);
+    }).filter(Boolean);
+    if (refused.length) {
+      log.debug('Leaving addAnchors(). ' + refused.length + ' not admitted.');
+      return { added: 0, total: anchors.length, errorCode: refused[0].code,
+               error: refused.map(function (one) {
+                 return one.why;
+               }).join('; ') + '. So none was added.' };
     }
   }
   let added = 0;
@@ -4859,6 +4910,8 @@ function publicAnchor(anchor) {
     fingerprint256: anchor.fingerprint256, ca: !!anchor.ca,
     readable: !!anchor.readable,
     source: anchor.source === 'file' ? 'file' : 'runtime',
+    // Admitted once and refused by the rule now (#1360): kept, and reported.
+    unadmittable: anchor.unadmittable || '',
     // Whether this anchor survives a restart. A `file` anchor does, because
     // the file brings it back; a `runtime` one does exactly when it was
     // written to ou=trustAnchors, which fails only on a full directory or in
@@ -5058,6 +5111,15 @@ function reloadStoredAnchors() {
     anchors.push(Object.assign(described, {
       source: 'runtime', stored: true, addedAt: row.addedAt || ''
     }));
+    // KEPT AND REPORTED (#1360): admitted before the rule, or before this mode.
+    // Nothing is taken away silently; an operator removes it.
+    const refused = admissionProblemOf(described, []);
+    if (refused) {
+      anchors[anchors.length - 1].unadmittable = refused.why;
+      log.warn(errorCodes.tag('STS-TLS-0056') + 'tls: a stored trust anchor ' +
+               'is one the admission rule refuses, and it is kept: ' +
+               refused.why);
+    }
     added += 1;
   });
   if (added || removed) {
@@ -6021,7 +6083,18 @@ let anchorsFileReport = { file: '', loaded: 0 };
               'truststore would be empty while configured to be filled.');
     process.exit(1);
   }
-  found.slice(0, MAX_ANCHORS).forEach(function (pem) {
+  // Under paranoid a block the admission rule refuses is left out by name,
+  // rather than stopping the process: an expired CA in this file must not take
+  // the service down, and an anchor left out trusts less, not more.
+  const fileRows = found.slice(0, MAX_ANCHORS).map(describePem);
+  found.slice(0, MAX_ANCHORS).filter(function (pem, i) {
+    const refused = admissionProblemOf(fileRows[i], fileRows);
+    if (refused) {
+      log.error(errorCodes.tag('STS-TLS-0057') + 'tls: tls.trustAnchorsFile: ' +
+                'left out under paranoid PKI mode: ' + refused.why);
+    }
+    return !refused;
+  }).forEach(function (pem) {
     const described = describePem(pem);
     if (!anchors.some(function (one) {
       return one.fingerprint256 === described.fingerprint256;

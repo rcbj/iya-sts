@@ -7470,6 +7470,78 @@ class AdminViews {
   // which is the half of a key pair meant to be handed around.
   // ---------------------------------------------------------------------------
   /**
+   * Builds `/admin/pki/trust` (#1360): paranoid PKI mode and every use case's
+   * row, this realm's signer truststore, what it pins as the audit last found
+   * it, and where the client-certificate truststore is. Certificates and
+   * sentences only; a refusal's code is recorded, never sent.
+   *
+   * @param req - the request
+   * @returns the JSON
+   */
+  pkiTrustJson(req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminViews.pkiTrustJson().");
+    // Lazily: libraries, and this module is loaded long before any of them.
+    const trust = require('../common/certificate_trust');
+    const signers = require('../common/signer_truststore');
+    const realmId = realms.currentId();
+    const master = trust.inForce(realmId);
+    const counters = trust.counters(realmId);
+    const rows = trust.PURPOSES.map(function (one) {
+      const on = trust.rowOn(one.id, realmId);
+      const count = counters[one.id];
+      return {
+        purpose: one.id, setting: one.setting, title: one.title,
+        covers: one.covers, adds: one.adds, anchors: one.anchors.slice(),
+        exemptions: one.exemptions.map(function (ex) {
+          return { check: ex.check, spec: ex.spec };
+        }),
+        phase: one.phase, on: on, inForce: master.inForce && on,
+        assessed: count.assessed, refused: count.refused,
+        lastRefusal: count.lastRefusal ? count.lastRefusal.why : ''
+      };
+    });
+    const entries = signers.list(realmId);
+    const audited = trust.lastAudit(realmId);
+    const page = this.pagedRows(req.query || {}, audited.pins || [],
+                                { noun: 'pins', name: 'pins' });
+    const limits = signers.limits();
+    const held = truststore ? truststore.list().anchors.length : 0;
+    log.debug("Leaving AdminViews.pkiTrustJson().");
+    return {
+      realm: realmId,
+      master: { value: master.master, inForce: master.inForce,
+                decidedBy: master.decidedBy, product: mode.isProduct() },
+      rows: rows,
+      truststore: {
+        installed: limits.installed, file: limits.file,
+        loadedFromFile: limits.loadedFromFile,
+        maxAnchors: limits.maxAnchors,
+        maxIntermediates: limits.maxIntermediates,
+        anchors: entries.filter(function (e) {
+          return e.kind === 'anchor';
+        }).length,
+        intermediates: entries.filter(function (e) {
+          return e.kind === 'intermediate';
+        }).length,
+        entries: entries
+      },
+      assessedAt: audited.assessedAt || 0,
+      pins: page.shown.map(function (pin) {
+        const shown = Object.assign({}, pin);
+        delete shown.code;
+        delete shown.pem;
+        delete shown.chain;
+        return shown;
+      }),
+      pinsTotal: (audited.pins || []).length,
+      pinsPaging: this.pagingJson(page.paging),
+      clientTruststore: { href: '/admin/tls/trust', count: held },
+      actions: require('./admin_actions').PKI_TRUST_ACTIONS.slice()
+    };
+  }
+
+  /**
    * Builds the client-certificate truststore's JSON; certificates only.
    *
    * @param req - the request
@@ -16328,6 +16400,7 @@ export = {
   umaOf: slot.forward('umaOf'),
   setTruststore: slot.forward('setTruststore'),
   truststoreJson: slot.forward('truststoreJson'),
+  pkiTrustJson: slot.forward('pkiTrustJson'),
   kerberosPrincipalsJson: slot.forward('kerberosPrincipalsJson'),
   kerberosTrustsJson: slot.forward('kerberosTrustsJson'),
   krbtgtView: slot.forward('krbtgtView'),

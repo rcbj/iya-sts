@@ -630,7 +630,33 @@ var config = {
     revocationLdapCaFile: "",                   // CA certificates for ldaps revocation directories
     revocationHttpsCaFile: "",                  // CA certificates for https CRL and OCSP servers
     revocationLdapDirectory: "",                // Directory for CRL names relative to their issuer
-    enrollmentMaxCertificatesPerEntry: 20       // Enrolled certificates one entry may hold
+    enrollmentMaxCertificatesPerEntry: 20,      // Enrolled certificates one entry may hold
+    paranoid: "auto",                           // Paranoid PKI mode
+    paranoidTlsClient: true,                    // Paranoid: a client certificate at a TLS handshake
+    paranoidTlsClientSelfSigned: true,          // Paranoid: a self-signed TLS client certificate a client registered
+    paranoidOutboundTls: true,                  // Paranoid: the server certificate of an outbound request
+    paranoidJoseSigner: true,                   // Paranoid: a JOSE signer's certificate chain
+    paranoidSamlSigner: true,                   // Paranoid: a SAML signer's certificate
+    paranoidFederationPartner: true,            // Paranoid: a federation partner's signing certificate
+    paranoidWsSecurityToken: true,              // Paranoid: a WS-Security X.509 token
+    paranoidJoseBareKey: true,                  // Paranoid: a bare JWK that carries an x5c
+    paranoidEncryptionRecipient: true,          // Paranoid: an encryption recipient's certificate
+    paranoidClientAttestation: true,            // Paranoid: an attestation-based client authentication chain
+    paranoidWebauthnAttestation: true,          // Paranoid: a WebAuthn attestation chain
+    paranoidDeviceAttestation: true,            // Paranoid: a device attestation chain
+    paranoidSpiffeSvid: true,                   // Paranoid: an X509-SVID presented to the SPIRE Server or Broker API
+    paranoidSpiffeAttestation: true,            // Paranoid: a SPIFFE node attestor's certificate
+    paranoidPkinit: true,                       // Paranoid: a PKINIT client certificate
+    paranoidEnrollmentCredential: true,         // Paranoid: a certificate presented to enroll or renew
+    paranoidVcKeyAttestation: true,             // Paranoid: an OpenID4VCI key attestation chain
+    paranoidVcIssuer: true,                     // Paranoid: a credential issuer's or status-list signer's certificate
+    paranoidCellPeer: true,                     // Paranoid: the other cell at the inter-cell channel
+    paranoidCaImport: true,                     // Paranoid: a CA or key pair an operator imports
+    paranoidAnchorAdmission: true,              // Paranoid: admission to a truststore
+    paranoidRevocationSigner: true,             // Paranoid: an OCSP responder or CRL signer
+    paranoidFidoMds: true,                      // Paranoid: the FIDO Metadata Service BLOB signer
+    signerTrustAnchorsFile: "",                 // Signer truststore: a PEM file of anchors and intermediates; restart to apply
+    pinnedCertificateWarningDays: 30            // Pinned certificate expiry warning (days)
   },
 
   // --- ACME ------------------------------------------------------------

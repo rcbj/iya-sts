@@ -20641,6 +20641,124 @@ class AdminApi {
           });
         } },
 
+      // #1360. Paranoid PKI mode, the signer truststore and what is pinned.
+      // ABOVE `/pki/:action` only for a reader: one more path segment means the
+      // two cannot match the same request.
+      { method: 'GET', path: BASE + '/pki/trust', tag: 'PKI',
+        operationId: 'getPkiTrust',
+        summary: 'Paranoid PKI mode, the signer truststore and what is pinned',
+        description: 'Everything /admin/pki/trust draws: the master and every ' +
+                     'use case\'s row, this realm\'s signer truststore, and ' +
+                     'what the realm pins as the daily audit last found it.',
+        mirrors: 'GET /admin/pki/trust',
+        parameters: this.detailPagingParameters(['pins']),
+        responseDescription: 'The trust view of this realm.',
+        responseSchema: { type: 'object',
+                          description: 'The trust view of this realm.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API PKI trust endpoint.");
+          self.sendJson(res, 200, adminViews.pkiTrustJson(req));
+          log.debug("Leaving the management API PKI trust endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/pki/trust/:action', tag: 'PKI',
+        mirrors: 'POST /admin/pki/trust',
+        handler: function (req, res) {
+          log.debug("Entering the management API PKI trust action endpoint.");
+          const body = parseBody(req);
+          // AWAITED, AND THE REJECTION IS TURNED INTO A REFUSAL, `/pki/:action`'s
+          // reason: Express 4 does not look at what a handler returns.
+          adminActions.pkiTrustAction(self.withAction(req, body),
+            { via: 'api', actor: self.callerNameOf(res) })
+            .then(function (result) {
+              if (!result.ok) {
+                errorCodes.mark(res, errorCodes.codeOf(result) ||
+                                     'STS-API-0141');
+              }
+              self.sendJson(res, result.ok ? 200 : 400, result);
+              log.debug("Leaving the management API PKI trust action " +
+                        "endpoint.");
+            }, function (e) {
+              log.debug("Caught in the management API PKI trust action " +
+                        "endpoint: " + ((e && e.message) || e));
+              errorCodes.mark(res, 'STS-API-0141');
+              self.sendJson(res, 500, { ok: false, errors: [e.message] });
+            });
+        },
+        actions: [
+          { action: 'add', operationId: 'addSignerTrustAnchors',
+            summary: 'Trust a third party\'s certificate authorities in this ' +
+                     'realm',
+            description: 'One or more PEM certificates, each through the ' +
+                         'admission rule: a self-signed CA is an anchor, any ' +
+                         'other CA an intermediate that must chain to an ' +
+                         'anchor held, and a leaf is refused by name.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                certificates: { description: 'One or more PEM blocks, as one ' +
+                                             'string or a list.',
+                                oneOf: [{ type: 'string' },
+                                        { type: 'array',
+                                          items: { type: 'string' } }] },
+                kind: { type: 'string', enum: ['anchor', 'intermediate'],
+                        description: 'Omitted: a self-issued certificate is ' +
+                                     'an anchor, any other an intermediate.' },
+                purposes: { description: 'Use cases to restrict them to; ' +
+                                         'none means every use case.',
+                            oneOf: [{ type: 'string' },
+                                    { type: 'array',
+                                      items: { type: 'string' } }] }
+              },
+              required: ['certificates'],
+              examples: [{ certificates: '-----BEGIN CERTIFICATE-----\n' +
+                'MIIB...\n-----END CERTIFICATE-----\n' }],
+              additionalProperties: false
+            },
+            responseDescription: 'What was added, what was already held and ' +
+                                 'each refusal by name.' },
+          { action: 'remove', operationId: 'removeSignerTrustAnchor',
+            summary: 'Stop trusting a certificate in this realm\'s signer ' +
+                     'truststore',
+            description: 'By its SHA-256 fingerprint, in either spelling. An ' +
+                         'entry from pki.signerTrustAnchorsFile is refused: ' +
+                         'it would come back at the next start.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: { fingerprint: { type: 'string' } },
+              required: ['fingerprint'],
+              examples: [{ fingerprint: 'AB'.repeat(32) }],
+              additionalProperties: false
+            },
+            responseDescription: 'Whether it was removed.' },
+          { action: 'recheck', operationId: 'recheckPinnedCertificates',
+            summary: 'Audit what this realm pins, now',
+            description: 'What the daily pki.pins.audit job does, on demand: ' +
+                         'it keeps the result, and logs and mails what changed.',
+            requestBody: { type: 'object', properties: {},
+                           examples: [{}], additionalProperties: false },
+            responseDescription: 'How many were audited and how many changed.' },
+          { action: 'set-row', operationId: 'setParanoidPkiRow',
+            summary: 'Set paranoid PKI mode, or one use case\'s row',
+            description: 'pki.paranoid (auto, on, off) or one ' +
+                         'pki.paranoid<UseCase> (true, false), for this ' +
+                         'realm, through the ordinary settings write.',
+            requestBodyRequired: true,
+            requestBody: {
+              type: 'object',
+              properties: {
+                setting: { type: 'string' },
+                value: { oneOf: [{ type: 'string' }, { type: 'boolean' }] }
+              },
+              required: ['setting', 'value'],
+              examples: [{ setting: 'pki.paranoidFidoMds', value: true }],
+              additionalProperties: false
+            },
+            responseDescription: 'The setting written.' }
+        ] },
+
       { method: 'POST', route: BASE + '/pki/:action', tag: 'PKI',
         // TWO CONSOLE PATHS, because the pane answers with a PAGE rather than a
         // redirect and needs a route of its own to do it. This field is how the

@@ -1065,6 +1065,36 @@ function refusesUnrevocableCertificates() {
   return isProduct();
 }
 
+// Is every X.509 certificate this service relies on held to the FULL set of
+// checks — a path to an anchor it was told about, validity, revocation, the
+// basicConstraints, keyUsage and extendedKeyUsage the use case asks, and the
+// pin rule — through the one validation door (#1360, 2026-11-06)? This is
+// what `pki.paranoid=auto` resolves to: product answers yes, development no.
+//
+// **DEVELOPMENT IS LEFT EXACTLY AS IT WAS, BY rcbj's DECISION (2026-11-06).**
+// The audit behind #1360 found pinned certificates never validity-checked,
+// revocation skipped on outbound peers and attestors, EKU never a path rule,
+// and anchor admission checking nothing; paranoid PKI mode closes each of
+// those, per use case, and a product deployment gets all of it by default. A
+// development stack is where a client author points a half-built client, and
+// the certificate it presents is usually the first one they ever minted, so
+// development keeps every site's behaviour as the audit recorded it and an
+// operator who wants the checks there switches the master on. The per-use-case
+// rows (`pki.paranoid<UseCase>`) are consulted only while the master is in
+// force, and each one off is exactly today's behaviour for that use case.
+// `common/certificate_trust.ts` is the door and argues the rest.
+/**
+ * Tells whether paranoid PKI mode is in force: what `pki.paranoid=auto`
+ * resolves to (on in product, off in development).
+ *
+ * @returns true in product mode
+ */
+function enforcesParanoidPki() {
+  log.debug("Entering enforcesParanoidPki().");
+  log.debug("Leaving enforcesParanoidPki().");
+  return isProduct();
+}
+
 // Does a GNAP key proved by MUTUAL TLS need a certificate a trusted authority
 // issued, rather than one merely registered (#107, 2026-09-23)? This is what
 // `gnap.mtlsTrust=auto` resolves to: product answers yes (`pki`), development
@@ -3477,6 +3507,31 @@ const REQUIREMENTS = [
              'information exists (section 4 skips the check). Setting ' +
              'the setting to off accepts the rest, with a warning.',
     where: 'common/revocation_status.js' },
+  // #1360, 2026-11-06. One row for the master switch of paranoid PKI mode;
+  // the per-use-case rows are settings, drawn with their state on
+  // /admin/pki/trust rather than listed here one by one.
+  { id: 'paranoid-pki',
+    what: 'Every X.509 certificate relied on is held to the full checks ' +
+          '(path, validity, revocation, usage fields) through one door',
+    development: 'OFF (pki.paranoid=auto): every use case behaves as it did ' +
+                 'before #1360 — a pinned certificate is not validity-' +
+                 'checked, revocation is not consulted for an outbound peer, ' +
+                 'an attestor or a partner\'s signer, and extendedKeyUsage ' +
+                 'is asked only where a site asks it by hand. Set ' +
+                 'pki.paranoid=on to exercise the checks here.',
+    product: 'ON (pki.paranoid=auto): common/certificate_trust.ts holds ' +
+             'every certificate — at a TLS handshake in either direction, ' +
+             'under a signature, as an encryption recipient, in an ' +
+             'attestation — to a path to an anchor this service was told ' +
+             'about (the client or signer truststore, the realm\'s CA, a ' +
+             'family\'s own setting), validity at now, revocation, and the ' +
+             'basicConstraints, keyUsage and extendedKeyUsage its use case ' +
+             'asks; a check the use case never ran is a refusal. One ' +
+             'pki.paranoid<UseCase> row per use case restores that use ' +
+             'case\'s earlier behaviour when off, and is drawn red on ' +
+             '/admin/pki/trust (STS-PKI-0239).',
+    where: 'common/certificate_trust.ts, common/pki.js, common/crypto.js, ' +
+           'common/signer_truststore.ts' },
   // 2026-09-13. The embedded protocol debugger. Its GATE is not on this page
   // because it does not move: an access token carrying the debugger
   // permission, issued only to a console administrator, in both modes.
@@ -4189,6 +4244,7 @@ module.exports = {
   sendsWeakerThanAsked: sendsWeakerThanAsked,
   refusesUnknownRevocationStatus: refusesUnknownRevocationStatus,
   refusesUnrevocableCertificates: refusesUnrevocableCertificates,
+  enforcesParanoidPki: enforcesParanoidPki,
   requiresPkiForGnapMtls: requiresPkiForGnapMtls,
   requiresEnrollmentTls: requiresEnrollmentTls,
   opensIntrospection: opensIntrospection,

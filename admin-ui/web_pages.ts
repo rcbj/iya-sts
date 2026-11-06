@@ -101,6 +101,7 @@ import SsfDeadLettersPage = require('../ssf/web_ssf_dead_letters');
 import SsfPage = require('../ssf/web_ssf');
 import SsfTransmittersPage = require('../ssf/web_ssf_transmitters');
 import TlsTrustPage = require('../tls/web_tls_trust');
+import PkiTrustPage = require('./web_pki_trust');
 import TlsConnectionPage = require('../tls/web_tls_connection');
 import TokenLifetimesPage = require('./web_token_lifetimes');
 import TokensPage = require('./web_tokens');
@@ -300,6 +301,7 @@ const PROTOCOL_TABS: Record<string, string[]> = {
   '/admin/wsfed': ['settings'],
   '/admin/pki': ['hierarchy', 'pinned', 'edit', 'build', 'applications',
                  'people', 'revocation', 'workbench', 'settings'],
+  '/admin/pki/trust': ['paranoid', 'signers', 'pins', 'client'],
   '/admin/tls': [],
   '/admin/tls/trust': ['anchors', 'add'],
   // DIRECTORY (rcbj, 2026-10-12): the pages with more than one section. A
@@ -793,6 +795,8 @@ const PAGES: WebPage[] = [
   { path: '/admin/post-login-activities', title: 'Post-login activities',
     operation: '/admin-api/post-login-activities',
     render: PostLoginActivitiesPage.render },
+  { path: '/admin/pki/trust', title: 'PKI trust',
+    operation: '/admin-api/pki/trust', render: PkiTrustPage.render },
   { path: '/admin/pki', title: 'PKI', operation: '/admin-api/pki',
     fixed: { rows: 'shown' }, render: PkiPage.render },
   { path: '/admin/policies', title: 'Policies',

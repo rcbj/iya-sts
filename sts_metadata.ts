@@ -5529,6 +5529,25 @@ const ENDPOINTS: EndpointEntry[] = [
           'at all are different answers and one field could only carry one ' +
           'of them. `residency` is the other limit: in development mode the ' +
           'hierarchy dies with the process. Mirrors GET /admin/pki.' },
+  { path: '/admin-api/pki/trust', group: 'Management API',
+    name: 'Paranoid PKI mode, the signer truststore and what is pinned',
+    specs: ['rfc5280', 'openapi'],
+    what: 'GET /admin/pki/trust over JSON (#1360): the master and every use ' +
+          'case\'s row with what it adds and what its specification exempts, ' +
+          'this realm\'s signer truststore, what the realm has pinned as the ' +
+          'daily audit last found it (paged with ?pinsPage=), and the ' +
+          'refusals the validation door has made in this process.' },
+  { path: '/admin-api/pki/trust/:action', group: 'Management API',
+    name: 'Change the signer truststore, a paranoid row, or recheck the pins',
+    specs: ['rfc5280', 'openapi'],
+    what: 'add | remove | recheck | set-row — the controls on ' +
+          '/admin/pki/trust. add takes `certificates` (one or more PEM ' +
+          'blocks, each through the admission rule and each refusal named), ' +
+          'with `purposes` to restrict them; remove takes one `fingerprint`; ' +
+          'recheck runs the audit now; set-row takes a `pki.paranoid*` ' +
+          '`setting` and its `value`, through the ordinary settings write. ' +
+          'Needs admin:write. Written to ou=signerTrustAnchors, so a change ' +
+          'survives a restart.' },
   { path: '/admin-api/pki/:action', group: 'Management API',
     name: 'Build a hierarchy, issue a key pair, author a certificate',
     specs: ['rfc5280'],

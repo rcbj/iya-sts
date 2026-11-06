@@ -1635,6 +1635,59 @@ Object.assign(operations, {
   revokeOidfedKey: { '200': Kit.action() }
 });
 
+// ---------------------------------------------------------------------------
+// #1360. Paranoid PKI mode, the signer truststore and what is pinned. No member
+// here carries an error code: those are recorded, never sent.
+// ---------------------------------------------------------------------------
+const SIGNER_ENTRY: Json = Kit.closed({
+  fingerprint256: STR, pem: STR, kind: STR, purposes: STRS, source: STR,
+  addedBy: STR, addedAt: STR, subject: STR, issuer: STR, notBefore: NUM,
+  notAfter: NUM, unadmittable: STR
+});
+const PKI_TRUST: Json = Kit.closed({
+  realm: STR,
+  master: Kit.closed({ value: Kit.strEnum(['auto', 'on', 'off']), inForce: BOOL,
+                       decidedBy: STR, product: BOOL }),
+  rows: Kit.listOf(Kit.closed({
+    purpose: STR, setting: STR, title: STR, covers: STR, adds: STR,
+    anchors: STRS,
+    exemptions: Kit.listOf(Kit.closed({ check: STR, spec: STR })),
+    phase: INT, on: BOOL, inForce: BOOL, assessed: INT, refused: INT,
+    lastRefusal: STR
+  })),
+  truststore: Kit.closed({
+    installed: BOOL, file: STR, loadedFromFile: INT, maxAnchors: INT,
+    maxIntermediates: INT, anchors: INT, intermediates: INT,
+    entries: Kit.listOf(SIGNER_ENTRY)
+  }),
+  assessedAt: NUM,
+  pins: Kit.listOf(Kit.closed({
+    source: STR, where: STR, purpose: STR, href: STR, thumbprint: STR,
+    subject: STR, notBefore: NUM, notAfter: NUM, selfSigned: BOOL,
+    chainedTo: STR, revocation: STR,
+    status: Kit.strEnum(['valid', 'expiring', 'expired', 'not-yet-valid',
+                         'revoked', 'chain-missing', 'self-signed',
+                         'thumbprint-only', 'unreadable']),
+    fingerprint256: STR
+  })),
+  pinsTotal: INT, pinsPaging: PAGING,
+  clientTruststore: Kit.closed({ href: STR, count: INT }),
+  actions: STRS
+});
+
+Object.assign(operations, {
+  getPkiTrust: { '200': PKI_TRUST },
+  addSignerTrustAnchors: { '200': Kit.action({
+    added: Kit.listOf(SIGNER_ENTRY), duplicates: INT,
+    refused: Kit.listOf(Kit.closed({ subject: STR, why: STR }))
+  }) },
+  removeSignerTrustAnchor: { '200': Kit.action() },
+  recheckPinnedCertificates: { '200': Kit.action({
+    pins: INT, truststore: INT, changes: INT
+  }) },
+  setParanoidPkiRow: { '200': Kit.action({ setting: STR }) }
+});
+
 //@@NEXT@@
 
 export = { components, operations };

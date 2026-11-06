@@ -17332,6 +17332,418 @@ function pkinitKdf(kdfOid, z, otherInfo, etype) {
            key: new Uint8Array(Buffer.concat(parts).subarray(0, size)) };
 }
 
+// ===========================================================================
+// SECTION 18 — CERTIFICATE FIELD CHECKS (#1360, 2026-11-06).
+//
+// Everything decidable from the bytes of ONE certificate and the role it is
+// asked to play. The door (`common/certificate_trust.ts`) composes these with
+// a path, a truststore and revocation, which this leaf may not reach: a chain
+// needs anchors from a store and a revocation answer dials. `pki.js` asks
+// them as the last rule of a path (`pathRuleProblem()`'s `opts.leaf`) and for
+// who may enter a truststore (`anchorProblem()`), so there is one reading of
+// what a keyUsage bit or an extendedKeyUsage means across the service.
+//
+// **THE CHECKS ARE THE CHECK, NOT THE MODE.** `rsaKeyProblem()` and
+// `xmlEcdsaCurveProblem()` wave a short key or an odd curve through in
+// development, which is right for what THEY are asked. A caller reaches this
+// section only because somebody decided these checks apply, and paranoid
+// forced on in development has to refuse the same certificate product does,
+// so the size and the curve are asked here outright. What `rsaKeyProblem()`
+// still answers (the exponent, ROCA) it answers in every mode.
+//
+// **A DN IS NOT COMPARED HERE.** `common/certificate_subject.js` holds the one
+// comparison and it requires this module, so `certificateNameMatches()` is
+// about the subjectAltName forms RFC 9525 names and the door compares a DN.
+//
+// **PARSED SYNCHRONOUSLY, WITH pkijs ONLY FOR THE EXTENSIONS.** The vendored
+// `describeCertificate()` is asynchronous because of its key import and its
+// digests, and two doors the door serves are synchronous.
+// ===========================================================================
+
+const CERTIFICATE_ROLES = Object.freeze(['leaf', 'intermediate', 'anchor']);
+const KEY_USAGE_BITS = Object.freeze([
+  'digitalSignature', 'nonRepudiation', 'keyEncipherment', 'dataEncipherment',
+  'keyAgreement', 'keyCertSign', 'cRLSign', 'encipherOnly', 'decipherOnly']);
+// The one table of the extended key usages a use case asks by name.
+const EKU = Object.freeze({
+  any: '2.5.29.37.0',
+  serverAuth: '1.3.6.1.5.5.7.3.1',
+  clientAuth: '1.3.6.1.5.5.7.3.2',
+  codeSigning: '1.3.6.1.5.5.7.3.3',
+  ocspSigning: '1.3.6.1.5.5.7.3.9',
+  pkinitClientAuth: '1.3.6.1.5.2.3.4',
+  msSmartCardLogon: '1.3.6.1.4.1.311.20.2.2',
+  tcgAik: '2.23.133.8.3',
+  mdocDs: '1.0.18013.5.1.2'
+});
+// Every extension a path rule reads, and so may be accepted marked critical.
+// `pki.js`'s path rules read this same list.
+const CERTIFICATE_UNDERSTOOD_CRITICAL = Object.freeze([
+  '2.5.29.14', '2.5.29.15', '2.5.29.17', '2.5.29.19', '2.5.29.30',
+  '2.5.29.35', '2.5.29.37', '2.5.29.32', '2.5.29.33', '2.5.29.36',
+  '2.5.29.54']);
+// One code per check, so an operator learns WHICH field refused.
+const FIELD_CHECK_CODES = Object.freeze({
+  expired: 'STS-KEYS-0168',
+  'not-yet-valid': 'STS-KEYS-0169',
+  'basic-constraints': 'STS-KEYS-0170',
+  'key-usage': 'STS-KEYS-0171',
+  'extended-key-usage': 'STS-KEYS-0172',
+  'signature-strength': 'STS-KEYS-0173',
+  'key-strength': 'STS-KEYS-0174',
+  'critical-extensions': 'STS-KEYS-0175'
+});
+const CERT_MD_SIGNATURES = ['1.2.840.113549.1.1.2', '1.2.840.113549.1.1.4'];
+const CERT_SHA1_SIGNATURES = ['1.2.840.113549.1.1.5', '1.3.14.3.2.29',
+                              '1.2.840.10045.4.1', '1.2.840.10040.4.3'];
+const CERT_RSASSA_PSS = '1.2.840.113549.1.1.10';
+const CERT_SHA1 = '1.3.14.3.2.26';
+const CERT_MINIMUM_RSA_BITS = 2048;
+const CERT_EDWARDS_KEYS = ['ed25519', 'ed448'];
+
+// The first value of an extension's OCTET STRING, or an Error for bytes that
+// are not BER.
+function certificateExtensionNode(ext) {
+  log.debug("Entering certificateExtensionNode().");
+  const parsed = asn1js.fromBER(
+    new Uint8Array(ext.extnValue.valueBlock.valueHexView));
+  if (parsed.offset === -1) {
+    log.debug("Leaving certificateExtensionNode(). Not BER.");
+    // error-code: none — the caller reports it as the check it was reading
+    throw new Error('the extension ' + ext.extnID + ' is not DER');
+  }
+  log.debug("Leaving certificateExtensionNode().");
+  // A cast for asn1js's declared union, which names no member every block has.
+  return /** @type {any} */ (parsed.result);
+}
+
+// What an IP address in a subjectAltName's OCTET STRING reads as.
+function certificateIpText(bytes) {
+  log.debug("Entering certificateIpText().");
+  const raw = Buffer.from(bytes);
+  if (raw.length === 4) {
+    log.debug("Leaving certificateIpText(). IPv4.");
+    return Array.from(raw).join('.');
+  }
+  const groups = [];
+  for (let i = 0; i + 1 < raw.length; i += 2) {
+    groups.push(raw.readUInt16BE(i).toString(16));
+  }
+  log.debug("Leaving certificateIpText().");
+  return groups.join(':');
+}
+
+// Which of the weak hashes a certificate's own signature names: 'md', 'sha1'
+// or ''. RSASSA-PSS names its hash in its parameters, and SHA-1 when they
+// name none (RFC 4055 section 3.1).
+function certificateWeakSignature(signatureAlgorithm) {
+  log.debug("Entering certificateWeakSignature().");
+  const oid = signatureAlgorithm.algorithmId;
+  let weak = '';
+  if (CERT_MD_SIGNATURES.indexOf(oid) !== -1) {
+    weak = 'md';
+  } else if (CERT_SHA1_SIGNATURES.indexOf(oid) !== -1) {
+    weak = 'sha1';
+  } else if (oid === CERT_RSASSA_PSS) {
+    let hash = CERT_SHA1;
+    const fields = (signatureAlgorithm.algorithmParams &&
+                    signatureAlgorithm.algorithmParams.valueBlock &&
+                    signatureAlgorithm.algorithmParams.valueBlock.value) || [];
+    fields.forEach(function (field) {
+      if (field.idBlock && field.idBlock.tagNumber === 0 &&
+          field.valueBlock.value && field.valueBlock.value[0] &&
+          field.valueBlock.value[0].valueBlock.value[0]) {
+        hash = field.valueBlock.value[0].valueBlock.value[0].getValue();
+      }
+    });
+    weak = hash === CERT_SHA1 ? 'sha1' : '';
+  }
+  log.debug("Leaving certificateWeakSignature(). " + (weak || 'neither'));
+  return weak;
+}
+
+/**
+ * Reads one certificate's facts: the one reader every page, the inventory and
+ * the field checks use.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @returns `{ subject, issuer, serialHex, notBefore, notAfter, selfIssued,
+ *   ca, hasBasicConstraints, pathLen, keyUsage, eku, san, critical,
+ *   fingerprint256, spkiSha256, sigAlg, weakSignature, keyAlg, keyBits,
+ *   curve, spkiOid }`; `keyUsage` and `eku` are null where the extension is
+ *   absent, which is not the same as empty
+ * @throws Error when the input is not a certificate
+ */
+function certificateFacts(cert) {
+  log.debug("Entering certificateFacts().");
+  const parsed = parseCertificate(cert);
+  const pkijs = require('pkijs');
+  const pk = pkijs.Certificate.fromBER(new Uint8Array(parsed.raw));
+  const facts = {
+    subject: certificateIdentifiers(parsed.toString()).subject,
+    issuer: certificateIdentifiers(parsed.toString()).issuer,
+    serialHex: String(parsed.serialNumber || '').toLowerCase(),
+    notBefore: Date.parse(parsed.validFrom),
+    notAfter: Date.parse(parsed.validTo),
+    selfIssued: parsed.subject === parsed.issuer,
+    ca: false, hasBasicConstraints: false, pathLen: null,
+    keyUsage: null, eku: null,
+    san: { dns: [], email: [], uri: [], ip: [] },
+    critical: [],
+    fingerprint256: String(parsed.fingerprint256 || ''),
+    spkiSha256: '',
+    sigAlg: pk.signatureAlgorithm.algorithmId,
+    weakSignature: certificateWeakSignature(pk.signatureAlgorithm),
+    keyAlg: '', keyBits: 0, curve: '',
+    spkiOid: pk.subjectPublicKeyInfo.algorithm.algorithmId
+  };
+  (pk.extensions || []).forEach(function (ext) {
+    if (ext.critical) {
+      facts.critical.push(ext.extnID);
+    }
+    if (ext.extnID === '2.5.29.19') {
+      const node = certificateExtensionNode(ext);
+      facts.hasBasicConstraints = true;
+      (node.valueBlock.value || []).forEach(function (field) {
+        if (field instanceof asn1js.Boolean) {
+          facts.ca = !!field.getValue();
+        } else if (field instanceof asn1js.Integer) {
+          facts.pathLen = field.valueBlock.valueDec;
+        }
+      });
+    } else if (ext.extnID === '2.5.29.15') {
+      const raw = Buffer.from(
+        certificateExtensionNode(ext).valueBlock.valueHexView || []);
+      facts.keyUsage = KEY_USAGE_BITS.filter(function (name, bit) {
+        return raw.length > (bit >> 3) &&
+               ((raw[bit >> 3] >> (7 - (bit & 7))) & 1) === 1;
+      });
+    } else if (ext.extnID === '2.5.29.37') {
+      facts.eku = (certificateExtensionNode(ext).valueBlock.value || [])
+        .map(function (purpose) {
+          return purpose.getValue();
+        });
+    } else if (ext.extnID === '2.5.29.17') {
+      (certificateExtensionNode(ext).valueBlock.value || [])
+        .forEach(function (name) {
+          const tag = name.idBlock.tagNumber;
+          const raw = Buffer.from(name.valueBlock.valueHexView || []);
+          if (tag === 1) {
+            facts.san.email.push(raw.toString('latin1'));
+          } else if (tag === 2) {
+            facts.san.dns.push(raw.toString('latin1'));
+          } else if (tag === 6) {
+            facts.san.uri.push(raw.toString('latin1'));
+          } else if (tag === 7) {
+            facts.san.ip.push(certificateIpText(raw));
+          }
+        });
+    }
+  });
+  try {
+    const key = parsed.publicKey;
+    const details = key.asymmetricKeyDetails || {};
+    facts.keyAlg = String(key.asymmetricKeyType || '');
+    facts.keyBits = Number(details.modulusLength || 0);
+    facts.curve = String(details.namedCurve || '');
+    facts.spkiSha256 = sha256Hex(
+      key.export({ type: 'spki', format: 'der' }));
+  } catch (e) {
+    // A key node's OpenSSL cannot read (a composite, say): it is named by its
+    // algorithm's OID, and `certificateFieldProblem()` asks the post-quantum
+    // registry about it.
+    log.debug("Caught in certificateFacts(): " + ((e && e.message) || e));
+  }
+  log.debug("Leaving certificateFacts().");
+  return facts;
+}
+
+// Is this key strong enough to rely on, whatever mode the realm is in: '' or a
+// sentence.
+function certificateKeyStrengthProblem(parsed, facts) {
+  log.debug("Entering certificateKeyStrengthProblem().");
+  let problem = '';
+  if (!facts.keyAlg) {
+    if (!pqcX509.algForOid(facts.spkiOid)) {
+      problem = 'its public key (' + facts.spkiOid + ') is not one this ' +
+                'service can read';
+    }
+  } else if (facts.keyAlg === 'rsa' || facts.keyAlg === 'rsa-pss') {
+    problem = rsaKeyProblem(parsed.publicKey, 0);
+    if (!problem && facts.keyBits < CERT_MINIMUM_RSA_BITS) {
+      problem = 'a ' + facts.keyBits + '-bit RSA key, where ' +
+                CERT_MINIMUM_RSA_BITS + ' bits or more are required';
+    }
+  } else if (facts.keyAlg === 'ec') {
+    if (XML_ECDSA_CURVES.indexOf(facts.curve) === -1) {
+      problem = 'an EC key on the curve "' + facts.curve + '", which is not ' +
+                'one this service relies on';
+    }
+  } else if (CERT_EDWARDS_KEYS.indexOf(facts.keyAlg) === -1 &&
+             !pqcX509.algForOid(facts.spkiOid)) {
+    problem = 'a ' + facts.keyAlg + ' key, which is not one this service ' +
+              'relies on';
+  }
+  log.debug("Leaving certificateKeyStrengthProblem(). " + (problem || 'ok'));
+  return problem;
+}
+
+/**
+ * Holds one certificate to the role it is asked to play and answers every
+ * check that failed. Pure: no store, no setting and no network, and `now` is
+ * the caller's. The door reads this, because a verdict names every check
+ * rather than the first to fail.
+ *
+ * In order: validity, basicConstraints, keyUsage, extendedKeyUsage, the
+ * signature's hash, the key, and critical extensions. A keyUsage absent
+ * permits everything (RFC 5280 section 4.2.1.3). An extendedKeyUsage absent
+ * is refused only where the use case's specification requires it, and present
+ * it must name a purpose asked, or anyExtendedKeyUsage where presence is not
+ * what is required.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @param options - `{ role, now, skewMs, keyUsage (any of; empty asks
+ *   nothing), eku: { oids, required } | null, mayBeCa, allowSha1,
+ *   allowCritical (OIDs), validityAt }`; `validityAt` replaces `now` for the
+ *   window alone, which is sigstore's rule
+ * @returns an array of `{ check, code, why }`, empty when all hold
+ * @throws Error when the input is not a certificate
+ */
+function certificateFieldProblems(cert, options) {
+  log.debug("Entering certificateFieldProblems().");
+  const opts = options || {};
+  const role = opts.role || 'leaf';
+  const parsed = parseCertificate(cert);
+  const facts = certificateFacts(parsed);
+  const problems = [];
+  const refuse = function (check, code, why) {
+    log.debug("Entering refuse(). " + check);
+    problems.push({ check: check, code: code,
+                    why: '"' + facts.subject + '" ' + why });
+    log.debug("Leaving refuse().");
+  };
+  let now = opts.now === undefined ? Date.now() : Number(opts.now);
+  if (opts.validityAt !== undefined) {
+    now = Number(opts.validityAt);
+  }
+  // A certificate's times are whole seconds, so it is valid through the whole
+  // second its notAfter names: `pathValidityProblem()`'s rule.
+  now = Math.floor(now / 1000) * 1000;
+  const skewMs = Number(opts.skewMs || 0);
+  if (now - skewMs > facts.notAfter) {
+    refuse('validity', FIELD_CHECK_CODES.expired,
+           'expired at ' + parsed.validTo);
+  } else if (now + skewMs < facts.notBefore) {
+    refuse('validity', FIELD_CHECK_CODES['not-yet-valid'],
+           'is not valid until ' + parsed.validFrom);
+  }
+  if (role !== 'leaf' && !facts.ca) {
+    refuse('basic-constraints', FIELD_CHECK_CODES['basic-constraints'],
+           'is not a certificate authority (basicConstraints cA)');
+  } else if (role === 'leaf' && facts.ca && !opts.mayBeCa) {
+    refuse('basic-constraints', FIELD_CHECK_CODES['basic-constraints'],
+           'is a certificate authority used as an end entity');
+  }
+  const asked = opts.keyUsage || [];
+  if (facts.keyUsage && asked.length &&
+      !asked.some(function (bit) {
+        return facts.keyUsage.indexOf(bit) !== -1;
+      })) {
+    refuse('key-usage', FIELD_CHECK_CODES['key-usage'],
+           'does not permit ' + asked.join(' or ') + ' (keyUsage: ' +
+           (facts.keyUsage.join(', ') || 'empty') + ')');
+  }
+  if (opts.eku && (opts.eku.oids || []).length) {
+    const named = opts.eku.oids.some(function (oid) {
+      return !!facts.eku && facts.eku.indexOf(oid) !== -1;
+    });
+    const anyPurpose = !!facts.eku && !opts.eku.required &&
+                       facts.eku.indexOf(EKU.any) !== -1;
+    if (!facts.eku && opts.eku.required) {
+      refuse('extended-key-usage', FIELD_CHECK_CODES['extended-key-usage'],
+             'carries no extendedKeyUsage, where ' +
+             opts.eku.oids.join(' or ') + ' is required');
+    } else if (facts.eku && !named && !anyPurpose) {
+      refuse('extended-key-usage', FIELD_CHECK_CODES['extended-key-usage'],
+             'has an extendedKeyUsage that does not name ' +
+             opts.eku.oids.join(' or '));
+    }
+  }
+  if (facts.weakSignature === 'md' ||
+      (facts.weakSignature === 'sha1' && !opts.allowSha1)) {
+    refuse('signature-strength', FIELD_CHECK_CODES['signature-strength'],
+           'is signed with a broken hash (' + facts.sigAlg + ')');
+  }
+  const weakKey = certificateKeyStrengthProblem(parsed, facts);
+  if (weakKey) {
+    refuse('key-strength', FIELD_CHECK_CODES['key-strength'],
+           'holds ' + weakKey);
+  }
+  const allowed = opts.allowCritical || [];
+  const unread = facts.critical.filter(function (oid) {
+    return CERTIFICATE_UNDERSTOOD_CRITICAL.indexOf(oid) === -1 &&
+           allowed.indexOf(oid) === -1;
+  });
+  if (unread.length) {
+    refuse('critical-extensions', FIELD_CHECK_CODES['critical-extensions'],
+           'carries a critical extension nothing here reads (' +
+           unread.join(', ') + ')');
+  }
+  log.debug("Leaving certificateFieldProblems(). " + problems.length + ".");
+  return problems;
+}
+
+/**
+ * The first of `certificateFieldProblems()`, for a caller who only asks
+ * whether the certificate may play the role.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @param options - as `certificateFieldProblems()`
+ * @returns null, or `{ check, code, why }`
+ * @throws Error when the input is not a certificate
+ */
+function certificateFieldProblem(cert, options) {
+  log.debug("Entering certificateFieldProblem().");
+  const problems = certificateFieldProblems(cert, options);
+  log.debug("Leaving certificateFieldProblem().");
+  return problems.length ? problems[0] : null;
+}
+
+/**
+ * Answers whether a certificate's subjectAltName names what a caller expects
+ * (RFC 9525: never the common name). A DN is compared by the door, through
+ * `common/certificate_subject.js`, which requires this module.
+ *
+ * @param cert - PEM text, DER bytes or a parsed certificate
+ * @param expected - `{ dns, ip, uri, email }`; every member given must match
+ * @returns true when each member given matches, false when nothing was given
+ * @throws Error when the input is not a certificate
+ */
+function certificateNameMatches(cert, expected) {
+  log.debug("Entering certificateNameMatches().");
+  const asked = expected || {};
+  const parsed = parseCertificate(cert);
+  const facts = certificateFacts(parsed);
+  const members = ['dns', 'ip', 'uri', 'email'].filter(function (member) {
+    return !!asked[member];
+  });
+  const matched = members.every(function (member) {
+    const value = String(asked[member]);
+    if (member === 'dns') {
+      return !!parsed.checkHost(value, { subject: 'never' });
+    }
+    if (member === 'ip') {
+      return !!parsed.checkIP(value);
+    }
+    if (member === 'email') {
+      return !!parsed.checkEmail(value, { subject: 'never' });
+    }
+    return facts.san.uri.indexOf(value) !== -1;
+  });
+  log.debug("Leaving certificateNameMatches(). " + matched);
+  return members.length > 0 && matched;
+}
+
 /**
  * The one place this service signs, verifies, encrypts and decrypts.
  *
@@ -17344,6 +17756,16 @@ function pkinitKdf(kdfOid, z, otherInfo, etype) {
  * @namespace
  */
 module.exports = {
+  // --- section 18: certificate field checks (#1360) ---
+  CERTIFICATE_ROLES: CERTIFICATE_ROLES,
+  KEY_USAGE_BITS: KEY_USAGE_BITS,
+  EKU: EKU,
+  CERTIFICATE_UNDERSTOOD_CRITICAL: CERTIFICATE_UNDERSTOOD_CRITICAL,
+  FIELD_CHECK_CODES: FIELD_CHECK_CODES,
+  certificateFacts: certificateFacts,
+  certificateFieldProblems: certificateFieldProblems,
+  certificateFieldProblem: certificateFieldProblem,
+  certificateNameMatches: certificateNameMatches,
   // --- section 17: the rest of the service's operations (#453) ---
   SHA1_PURPOSES: SHA1_PURPOSES,
   sha1Digest: sha1Digest,

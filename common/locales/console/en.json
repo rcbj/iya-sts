@@ -124,6 +124,7 @@
   "nav.spiffe-trust-domain": "Trust domain",
   "nav.tls": "TLS / mutual TLS",
   "nav.tls-connection": "TLS connection",
+  "nav.pki-trust": "PKI trust",
   "nav.tls-trust": "Client-certificate truststore",
   "nav.users": "Users",
   "nav.groups": "Groups",

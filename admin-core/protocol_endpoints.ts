@@ -115,6 +115,10 @@ const EXEMPT = {
   // A hidden row (admin-ui/admin.ts): a tab of /admin/oauth2, kept in NAV
   // only so SETTING_HOMES can name it; /admin/oauth2's row lists the
   // endpoints, and a tab has no page of its own to draw a list on.
+  // #1360: what this realm relies on in other people's certificates. Every
+  // family's own page lists the endpoints that use it.
+  '/admin/pki/trust': 'a console page, not a protocol: it has no endpoint ' +
+                      'of its own to list',
   '/admin/token-lifetimes': 'a tab of /admin/oauth2, whose row lists ' +
                             'the endpoints'
 };
