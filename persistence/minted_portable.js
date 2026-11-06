@@ -50,7 +50,8 @@
 //   3. THE WRITES GO IN (handle, realm, key) ORDER, upserts and the
 //      tombstones written among them, so two flushes inserting overlapping
 //      new keys meet them in one order; a run of rows of one kind is one
-//      statement, and the runs follow the order.
+//      statement, and the runs follow the order. A longer list of rows is
+//      several statements, KEYS_PER_STATEMENT at a time, in that same order.
 //   4. THE SIDE TABLES FOLLOW THE BODIES, and are written only for a body
 //      that was: the session index (`ses_*`, deleted for every key the
 //      flush removed), the minted index (a written row's index rows not
@@ -100,6 +101,16 @@ const log = require('bunyan').createLogger({
 
 // The change rows one INSERT carries: the driver's CHANGE_ROWS_PER_STATEMENT.
 const CHANGE_ROWS_PER_STATEMENT = 5000;
+
+// THE ROWS ONE STATEMENT OF A FLUSH CARRIES (#677, 2026-11-05). A journal has
+// no size: one Global logout of a person holding 3789 tokens made a flush of
+// 8894 rows, and its lock's `(handle, realm, key) IN (…)` of 26682 parameters
+// was refused by PostgreSQL with "stack depth limit exceeded". The retry sends
+// the same list and a little more, so that realm's writes were refused from
+// then on, every one a 503, on a `cluster-portable` run. A key list nests in
+// the parser and an INSERT's parameters stop at 65535, so every list is cut
+// here, inside the one transaction: what commits is still all of it or none.
+const KEYS_PER_STATEMENT = 500;
 
 // How many times an "insert or nothing" that met another flush's row is
 // asked again when that row has gone by the time it is locked.
@@ -250,6 +261,22 @@ function create(deps) {
   // ===================================================================
 
   /**
+   * Runs `fn` over `list`, KEYS_PER_STATEMENT at a time and one at a time, in
+   * the list's order: a flush's statements share one connection.
+   *
+   * @param list - the items
+   * @param fn - given a chunk; answers a promise
+   * @returns a promise settled after the last
+   */
+  async function inChunks(list, fn) {
+    log.debug("Entering inChunks(). " + list.length);
+    for (let at = 0; at < list.length; at += KEYS_PER_STATEMENT) {
+      await fn(list.slice(at, at + KEYS_PER_STATEMENT));
+    }
+    log.debug("Leaving inChunks().");
+  }
+
+  /**
    * One minted flush on a held connection inside the driver's transaction
    * (the fence already checked): MINTED_FLUSH's contract, step by step.
    *
@@ -264,18 +291,22 @@ function create(deps) {
   async function flush(client, touched, prepare) {
     log.debug("Entering flush(). " + touched.length + " row(s).");
     // 1. THE LOCK: every existing row, in one order, before any write.
+    // `touched` arrives sorted (`planMintedFlush()`), so its chunks keep the
+    // order. Where that sort and a column's collation disagree, two long
+    // flushes can still meet out of order; the database calls that a deadlock
+    // and `withTransaction()` runs the flush again.
     const stored = new Map();
-    if (touched.length) {
+    await inChunks(touched, async function (chunk) {
       const locked = await run(client, 'flush.lock',
         kx('sts_minted').select('handle', 'realm', 'key', 'body')
-          .whereIn(['handle', 'realm', 'key'], touched.map(function (row) {
+          .whereIn(['handle', 'realm', 'key'], chunk.map(function (row) {
             return [String(row.handle), String(row.realm), String(row.key)];
           }))
           .orderBy(['handle', 'realm', 'key']).forUpdate());
       dialect.rowsOf(locked).forEach(function (row) {
         stored.set(idOf(row.handle, row.realm, row.key), String(row.body));
       });
-    }
+    });
     const prepared = prepare(stored);
     const p = prepared.named;
     const up = (p.up_h || []).map(function (h, i) {
@@ -318,28 +349,30 @@ function create(deps) {
     });
     // 3. THE WRITES, in the flush's order, a run a statement.
     for (const one of runs) {
-      const rows = one.rows.map(function (row) {
-        return Object.assign({}, row, { written_at: stamp() });
-      });
-      if (one.kind === 'write') {
-        await run(client, 'flush.upsert',
-          kx('sts_minted').insert(rows)
-            .onConflict(['handle', 'realm', 'key'])
-            .merge(['body', 'written_at', 'expires_at', 'key_sealed']));
-        one.rows.forEach(function (row) {
-          written.add(idOf(row.handle, row.realm, row.key));
+      await inChunks(one.rows, async function (chunk) {
+        const rows = chunk.map(function (row) {
+          return Object.assign({}, row, { written_at: stamp() });
         });
-      } else {
-        await freshRun(client, one.rows, rows, written, unwritten);
-      }
+        if (one.kind === 'write') {
+          await run(client, 'flush.upsert',
+            kx('sts_minted').insert(rows)
+              .onConflict(['handle', 'realm', 'key'])
+              .merge(['body', 'written_at', 'expires_at', 'key_sealed']));
+          chunk.forEach(function (row) {
+            written.add(idOf(row.handle, row.realm, row.key));
+          });
+        } else {
+          await freshRun(client, chunk, rows, written, unwritten);
+        }
+      });
     }
     const dels = (p.del_h || []).map(function (h, i) {
       return [String(h), String(p.del_r[i]), String(p.del_k[i])];
     });
-    if (dels.length) {
-      await run(client, 'flush.delete',
-        kx('sts_minted').whereIn(['handle', 'realm', 'key'], dels).del());
-    }
+    await inChunks(dels, function (chunk) {
+      return run(client, 'flush.delete',
+        kx('sts_minted').whereIn(['handle', 'realm', 'key'], chunk).del());
+    });
     // 4. THE SIDE TABLES, for the bodies written.
     await sideTables(client, p, written);
     log.debug("Leaving flush(). " + written.size + " written, " +
@@ -449,17 +482,19 @@ function create(deps) {
     });
     if (sessions.length) {
       measure('sts_sessions', sessions);
-      await run(client, 'flush.sessions',
-        kx('sts_sessions').insert(sessions).onConflict(['realm', 'key'])
-          .merge(SESSION_COLUMNS.slice(2)));
+      await inChunks(sessions, function (chunk) {
+        return run(client, 'flush.sessions',
+          kx('sts_sessions').insert(chunk).onConflict(['realm', 'key'])
+            .merge(SESSION_COLUMNS.slice(2)));
+      });
     }
     const sessionsGone = (p.sesdel_realm || []).map(function (r, i) {
       return [String(r), String(p.sesdel_key[i])];
     });
-    if (sessionsGone.length) {
-      await run(client, 'flush.sessionsGone',
-        kx('sts_sessions').whereIn(['realm', 'key'], sessionsGone).del());
-    }
+    await inChunks(sessionsGone, function (chunk) {
+      return run(client, 'flush.sessionsGone',
+        kx('sts_sessions').whereIn(['realm', 'key'], chunk).del());
+    });
     // THE MINTED INDEX (#820): the rows of a written body and of a removed
     // one cleared, except those filed again (kept, so a sort row is updated
     // in place below rather than deleted and inserted).
@@ -477,23 +512,41 @@ function create(deps) {
                index_key: String(p.ixnew_i[i]), key: String(p.ixnew_k[i]),
                sort_at: p.ixnew_s[i] === undefined ? null : p.ixnew_s[i] };
     });
-    if (clear.length) {
-      await run(client, 'flush.indexClear',
-        kx('sts_minted_index').whereIn(['handle', 'realm', 'key'], clear)
-          .whereNotIn(['handle', 'realm', 'index_key', 'key'],
-                      filed.map(function (one) {
-                        return [one.handle, one.realm, one.index_key, one.key];
-                      })).del());
-    }
+    // Each chunk keeps only the filed rows of its own bodies: a row of
+    // another body cannot match this chunk's `whereIn` anyway, and the whole
+    // list in every statement would be the unbounded list again.
+    const filedOf = new Map();
+    filed.forEach(function (one) {
+      const id = idOf(one.handle, one.realm, one.key);
+      if (!filedOf.has(id)) {
+        filedOf.set(id, []);
+      }
+      filedOf.get(id).push([one.handle, one.realm, one.index_key, one.key]);
+    });
+    await inChunks(clear, function (chunk) {
+      const kept = [];
+      new Set(chunk.map(function (row) {
+        return idOf(row[0], row[1], row[2]);
+      })).forEach(function (id) {
+        (filedOf.get(id) || []).forEach(function (row) {
+          kept.push(row);
+        });
+      });
+      return run(client, 'flush.indexClear',
+        kx('sts_minted_index').whereIn(['handle', 'realm', 'key'], chunk)
+          .whereNotIn(['handle', 'realm', 'index_key', 'key'], kept).del());
+    });
     const filing = filed.filter(function (one) {
       return written.has(idOf(one.handle, one.realm, one.key));
     });
     if (filing.length) {
       measure('sts_minted_index', filing);
-      await run(client, 'flush.indexFile',
-        kx('sts_minted_index').insert(filing)
-          .onConflict(['handle', 'realm', 'index_key', 'key'])
-          .merge(['sort_at']));
+      await inChunks(filing, function (chunk) {
+        return run(client, 'flush.indexFile',
+          kx('sts_minted_index').insert(chunk)
+            .onConflict(['handle', 'realm', 'index_key', 'key'])
+            .merge(['sort_at']));
+      });
     }
     // THE CHANGE LOG: a row per written upsert and per delete, in order.
     const changes = [];
