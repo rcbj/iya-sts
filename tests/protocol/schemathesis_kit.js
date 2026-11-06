@@ -796,7 +796,11 @@ async function reassertRealm(serviceBase, provisioned, say) {
     const member = await adminCall(serviceBase, prefix, "POST",
       "/admin-api/roles/add-member",
       { role: FUZZ_CONFIGURED_ROLES[i], kind: "user", member: FUZZ_USER });
-    if (member.status !== 200) {
+    // Already holding it is the state this asks for, and this door refuses
+    // the second add (400 "already holds"), where rbac/grant answers 200.
+    const holds = member.status === 400 &&
+      /already holds/.test(JSON.stringify(member.json));
+    if (member.status !== 200 && !holds) {
       log.debug("Leaving reassertRealm(). add-member " + member.status);
       return { ok: false, why: "adding " + FUZZ_USER + " to " +
         FUZZ_CONFIGURED_ROLES[i] + " in " + prefix + " answered " +
