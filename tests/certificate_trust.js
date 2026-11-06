@@ -817,8 +817,8 @@ async function run(t, double, crls) {
     const scepHeld = await trust.realmLeaf('enrollment-credential', REALM,
       serverCert.pem, [], { variant: 'scep' });
     t.check(scepHeld.ok, 'N. and may renew itself over SCEP', scepHeld.why);
-    const scepSigner = trust.assessSync('enrollment-credential',
-      { leaf: serverCert.pem, pinned: true }, { variant: 'scep' });
+    const scepSigner = trust.fields('enrollment-credential', serverCert.pem,
+      { variant: 'scep', mayBeCa: true, realmId: REALM });
     t.check(scepSigner.ok, 'N. at the signature as well', scepSigner.why);
     await withSettings({ 'pki.paranoid': 'off' }, async () => {
       t.check((await trust.realmLeaf('enrollment-credential', REALM, nLeaf.pem,
