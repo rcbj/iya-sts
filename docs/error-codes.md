@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5242** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5243** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 258
-* [Management API (`STS-API`)](#sts-api) — 88
+* [Management API (`STS-API`)](#sts-api) — 89
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
@@ -5489,6 +5489,7 @@ Raised from: mgmt-api/.
 | `STS-API-0136` | A management API users action that answers later (a by-value did:web enrolment, which fetches the DID document) failed inside this service; the log says why (#693). | HTTP 500 |
 | `STS-API-0137` | An /admin-api access token issued to a client that declares tls_client_auth, self_signed_tls_client_auth or tls_client_certificate_bound_access_tokens carries no cnf x5t#S256 (RFC 8705): such a client's tokens are accepted only certificate-bound. | invalid_token (HTTP 401) |
 | `STS-API-0138` | A management API write that only a Security Administrator may make — a Directory → Policies policy saved, reset or acted on, a policy named on an application, group or person, the Security Administrator's role granted or revoked by any door, or the account of a person who holds it acted on — was asked with a token that does not carry admin:security or whose subject does not hold SECURITY_ADMIN. Admin Write does not reach these. | HTTP 403 |
+| `STS-API-0139` | An answer of an API this service publishes an OpenAPI document for (the management, account, sign-in or report API) did not match the model its operation declares for that status, so it was not sent and the caller was answered 500. A member no model declares, a value of the wrong type, a status or media type the operation does not declare, or an operation the document does not have. The log line names the operation, the status and where in the body; it is a defect in the model or in the handler, never in the request. | HTTP 500 |
 
 ## STS-PORTAL
 

@@ -15073,3 +15073,30 @@ to it could undo.
   answering once the old entry goes.
 * **Not built, and nobody asked:** an administrator removing a person's photo.
   Disabling the account hides it. SCIM's `photos` is not mapped.
+
+## 3dc. `response_models.ts`, `response_model_kit.ts` (#1353): every answer is held to its model
+
+**rcbj's decision, 2026-11-05: every operation of the four published APIs
+(`/admin-api`, `/account-api`, `/authn-api`, `/report-api`) has a response model
+for every status, no model admits a member it does not declare, and every
+response is validated against it, always.** There is no setting, in either mode.
+
+* **ONE DOOR.** Each API calls `install()` first under its prefix (the management
+  API before its gate), which wraps `res.send`, so a gate's refusal meets the same
+  check as a handler's answer, and no sender can forget.
+* **A VIOLATION IS NOT SENT.** The caller gets a 500 `server_error` saying nothing
+  of the shape; the operator gets `STS-API-0139` once per distinct failure, naming
+  the operation, the status and where, with key names and never a value.
+* **THE MODELS ARE IN ONE FILE PER FAMILY**, keyed by operationId
+  (`mgmt-api/response_models_*.ts`, `account-api/account_response_models.ts`,
+  `authn/authn_response_models.ts`), and in `report/openapi.ts` itself. A new
+  operation owes a model; `tests/openapi_response_models.js` fails otherwise, at
+  any depth. **A new member of an answer owes a line in its model in the same
+  commit**, or that answer becomes a 500.
+* **THREE SHAPES AND ONLY THREE**: `closed()`, `mapOf()` where keys are data, and
+  `freeForm('why')`, the argued exception, printed by that test.
+* **NO MEMBER IS `required` UNLESS EVERY BRANCH SENDS IT**: the management API
+  removes members after a view built them (an owner's projection, the console's
+  own members).
+
+`tests/tools/openapi_inventory.js` prints the state of every operation and status.

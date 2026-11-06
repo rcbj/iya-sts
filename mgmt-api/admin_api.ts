@@ -365,6 +365,8 @@ import xacmlModel = require('../xacml/xacml_model');
 // ES default exports.
 import AjvModule = require('ajv');
 import addFormatsModule = require('ajv-formats');
+import responseChecks = require('../common/response_models');
+import ResponseModelTable = require('./response_models');
 
 const Ajv: any = AjvModule;
 const addFormats: any = addFormatsModule;
@@ -27513,6 +27515,15 @@ class AdminApi {
             rolePermissions } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.registerGate().");
+    // EVERY ANSWER IS HELD TO ITS MODEL (#1353), a gate's refusal
+    // included, so this comes before the gate. Both documents, because this
+    // one prefix serves the management operations and the console's own; asked
+    // for the paths alone, so the options a request would supply do not matter.
+    responseChecks.install(app as any, BASE, function () {
+      return spec.buildSpec(ROUTES, { authRequired: true,
+        // reads only the response models: publishes nothing, so no gate state.
+      });
+    }, ResponseModelTable.ERROR);
     app.use(BASE, function (req, res, next) {
       if (self.tokenRequired()) {
         // THE ONE OPERATION THAT IS NOT AN ADMINISTRATOR'S (#164 phase 3):
