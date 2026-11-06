@@ -319,11 +319,14 @@ services:
     # this server; that mode, where it is the whole store, names 1G
     # (tests/tools/modes.sh). No mem_limit: a limit is a container killed
     # mid-run, where a small pool is only slower.
+    # THE DIRECTORY IS 711, NOT 700 (#677): in the `mariadb` mode the service,
+    # uid 10001, reads server.crt from here by name, and 700 stopped it starting
+    # (STS-STORE-0079, EACCES). The key is closed by its own 0600.
     command: >
       bash -c 'set -euo pipefail;
       chown mysql:mysql /mariadb-tls/tls
       /mariadb-tls/tls/server.key /mariadb-tls/tls/server.crt;
-      chmod 700 /mariadb-tls/tls;
+      chmod 711 /mariadb-tls/tls;
       chmod 600 /mariadb-tls/tls/server.key;
       chmod 644 /mariadb-tls/tls/server.crt;
       exec docker-entrypoint.sh mariadbd
