@@ -338,6 +338,13 @@ const JOBS = [
   { file: 'sts_signature_policy.js',     browser: false, local: true },
   // #1368: a post-quantum authority's CRL and OCSP response, verified here.
   { file: 'sts_pki_pq_revocation.js',    browser: false, local: true },
+  // #1299: oauth2.dpopReplayCacheSize is a PER-REALM cap, consulted at the
+  // DPoP replay check. `local: true`: the setting and the per-realm store are
+  // ours, and it is asserted over HTTP. It must run in single-node and cluster
+  // (dispatched workers), which is the case it exists for — a worker reading
+  // the PROCESS value rather than the ambient realm's would be a product bug
+  // the fuzz stack's process-env floor hides. It leaves two realms standing.
+  { file: 'sts_dpop_replay_realm_cap.js', browser: false, local: true },
   // #107: a key proved by mutual TLS under the pinned and PKI trust models,
   // revocation in both, the binding to an application entry, rotation at the
   // authority, the per-client override and the product default. Presents
