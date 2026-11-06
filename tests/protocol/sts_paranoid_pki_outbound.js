@@ -150,7 +150,11 @@ async function test() {
   log.debug("Entering test().");
   log.info("Paranoid PKI at an outbound request, " + base);
   const made = await send("POST", "/admin-api/realms/create", {
-    id: REALM, domain: REALM + ".example.net", name: REALM });
+    id: REALM, domain: REALM + ".example.net", name: REALM,
+    // A development realm in every mode: the listeners below are on this job's
+    // own host, which product refuses to dial for a reason of its own
+    // (`sts_outbound_tls.js` holds that), and the master is set by hand here.
+    overrides: { "global.mode": "development" } });
   assert.strictEqual(made.status, 200, made.raw.slice(0, 300));
 
   const root = await kit.mint({ cn: "paranoid outbound " + STAMP, ca: true });

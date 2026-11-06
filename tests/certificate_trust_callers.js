@@ -158,6 +158,20 @@ module.exports = {
     t.check(unwired.length === 0,
             'every site the table names asks for its own row',
             unwired.join('; '));
+    // A SITE THAT WOULD REFUSE FOR HAVING NO ANCHOR ASKS WHETHER THE SIGNER
+    // TRUSTSTORE IS THERE FIRST (rcbj, #1360).
+    const missingAsk = ['authn/webauthn_attestation.ts',
+                        'common/device_attestation.ts',
+                        'oauth-oidc/client_attestation.ts',
+                        'oid4vc/vc_mdoc.ts',
+                        'spiffe/spiffe_attestor_tpm_devid.ts',
+                        'common/pki.js'].filter(function (file) {
+      return fs.readFileSync(path.join(ROOT, file), 'utf8')
+        .indexOf('anchorsAvailable(') === -1;
+    });
+    t.check(missingAsk.length === 0,
+            'a site with no configured anchors asks for the signer truststore',
+            missingAsk.join('; '));
     t.check(Object.keys(counted).length >= 1,
             'the scan found the tree it was asked about', '');
   }

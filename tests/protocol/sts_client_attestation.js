@@ -31,6 +31,9 @@
 //      the attested key's DPoP proof alone authenticates it; another
 //      key's, or a PoP JWT beside it, is refused.
 //   g. Introspection takes the PoP mode too.
+//   h. Paranoid PKI mode (#1360): an attester whose keyUsage forbids signing is
+//      refused, one that may sign is accepted though its chain names no list, and
+//      with the row off the first is accepted again.
 //
 // What each check refuses in detail, with every error code, is
 // `tests/client_attestation.js`, in process.
