@@ -42,6 +42,7 @@
 //   * the wait skipped where node completed the issuer        — 1 red (G)
 //   * a row with an empty chain counting as a chain           — 1 red (G)
 //   * a row with no verdict counting as held                  — 4 red (G)
+//   * a client chain not stopped at the listener's anchor     — 1 red (H)
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -288,7 +289,55 @@ async function child() {
   const settledBy = await askMain(beforeOn);
   results.gNextFull = settledBy.answer;
   results.gNextResumed = (await askMain(beforeOn, settledBy.session)).answer;
+  // H. A CLIENT CHAIN ENDING IN A CROSS-SIGNED ROOT, over a real handshake: the
+  // leaf and a copy of the listener's anchor another root signed, whose issuer
+  // is not sent. Under hard-fail the walk refused it for having no issuer.
+  const keyMaterial = require('../common/crypto_impl/key_material');
+  const crossPair = await keyMaterial.generateKeyPair('rsa-2048');
+  const crossAnchor = await kit.mint({ cn: 'client cross root', ca: true,
+                                       pair: crossPair });
+  const olderAnchor = await kit.mint({ cn: 'client older root', ca: true,
+    pair: await keyMaterial.generateKeyPair('rsa-2048') });
+  const crossCopy = await kit.mint({ cn: 'client cross root', ca: true,
+                                     issuer: olderAnchor, pair: crossPair });
+  const crossClient = await kit.mint({ cn: 'cross client', issuer: crossAnchor,
+    eku: ['clientAuth'], crls: [crls.base + '/h.crl'] });
+  crls.routes['/h.crl'] = await kit.crlOf(crossAnchor, []);
+  const revokedCross = await kit.mint({ cn: 'cross revoked',
+    issuer: crossAnchor, eku: ['clientAuth'], crls: [crls.base + '/hr.crl'] });
+  crls.routes['/hr.crl'] = await kit.crlOf(crossAnchor,
+                                           [revokedCross.serialHex]);
+  const crossListener = tls.createServer({
+    key: serverCert.key, cert: serverCert.pem + root.pem,
+    ca: [crossAnchor.pem], requestCert: true, rejectUnauthorized: false,
+    maxVersion: 'TLSv1.2'
+  }, function (socket) {
+    socket.once('data', function () {
+      const revocation = require('../common/revocation_status');
+      revocation.verdictFor(revocation.fromSocket(socket)).then(function (v) {
+        socket.write(JSON.stringify({ authorized: socket.authorized,
+                                      refused: !!v.refused,
+                                      status: String(v.status),
+                                      why: String(v.why || '') }) + '\n');
+      });
+    });
+  });
+  await new Promise(function (resolve) {
+    crossListener.listen(0, '127.0.0.1', resolve);
+  });
+  const crossPort = crossListener.address().port;
+  const presenting = function (one) {
+    log.debug("Entering presenting().");
+    log.debug("Leaving presenting().");
+    return { pem: one.pem + crossCopy.pem, key: one.key };
+  };
+  const anchored = tlsServer.truststore.add(crossAnchor.pem, {});
+  results.hAdded = !!anchored;
+  results.hGood = (await connect(crossPort, presenting(crossClient))).answer;
+  results.hRevoked = (await connect(crossPort,
+                                    presenting(revokedCross))).answer;
   answering.close();
+  crossListener.close();
   config.setOverride('pki.revocationCheck', 'soft-fail');
   const revocationStatus = require('../common/revocation_status');
   const der = Buffer.from(good.pem.replace(/-----[^-]+-----/g, '')
@@ -413,6 +462,13 @@ module.exports = {
     t.check(r.gNextResumed.resumed && r.gNextResumed.authorized,
             'G. and a session of that one resumes',
             JSON.stringify(r.gNextResumed));
+    t.check(r.hGood.authorized && !r.hGood.refused,
+            'H. a client chain ending in a cross-signed copy of the ' +
+            'listener\'s anchor ends at the anchor, under hard-fail',
+            JSON.stringify(r.hGood));
+    t.check(r.hRevoked.refused && r.hRevoked.status === 'revoked',
+            'H. and a client below that anchor is still asked about revocation',
+            JSON.stringify(r.hRevoked));
     t.equal(r.rememberedFalse, false, 'D. a demotion is remembered');
     t.equal(r.rememberedTrue, true, 'D. and so is its being settled');
     t.equal(r.rowOff.authorized, true, 'F. the row off restores the baseline');
