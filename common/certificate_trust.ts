@@ -238,8 +238,9 @@ const PURPOSES: Purpose[] = [
     title: 'A bare JWK that carries an x5c',
     covers: 'OpenID Federation entity keys, SSF transmitter keys, ' +
       'claims-provider keys and GNAP cert keys.',
-    adds: 'A JWK that carries an x5c is validated as a JOSE signer; a bare ' +
-      'JWK is left alone.',
+    adds: 'A JWK that carries an x5c is held to what its certificate says: ' +
+      'validity, usage, revocation. It needs no path, as a bare JWK needs ' +
+      'none.',
     sites: ['ssf/ssf_transmitters.ts',
             'oauth-oidc/claims_providers.ts', 'gnap/gnap_keys.ts'],
     anchors: ['registered-root', 'signer-truststore'],
@@ -2121,9 +2122,13 @@ class CertificateTrust {
       helpers.log.debug("Leaving CertificateTrust.bareKey(). Bare.");
       return { ok: true, code: '', why: '' };
     }
+    // The same key with no x5c is accepted, so a path here would refuse nothing
+    // but the key that says more about itself: the certificate is named, and
+    // what it says about its validity, usage and revocation is held (#1360).
     helpers.log.debug("Leaving CertificateTrust.bareKey().");
     return CertificateTrust.pinnedSync('jose-bare-key',
-      Buffer.from(String(x5c[0]), 'base64'), options);
+      Buffer.from(String(x5c[0]), 'base64'),
+      Object.assign({}, options || {}, { named: true }));
   }
 
   /**
