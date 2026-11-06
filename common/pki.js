@@ -4235,6 +4235,8 @@ function describePathName(name) {
 //   unusable        the certificate cannot be held to the rules (see
 //                   `pathFactsOf()`)
 //   critical        a critical extension nothing here implements
+//   unaccepted-signature  a certificate signed with an algorithm
+//                   `pki.acceptedSignatureAlgorithms` does not list (#1368)
 //   weak-signature  a certificate signed with MD2, MD5 or (unless
 //                   `opts.allowSha1`) SHA-1
 //   malformed       a rule of RFC 5280 section 4 a relying party can and
@@ -4254,7 +4256,8 @@ function describePathName(name) {
  * Holds a certificate path to this module's path rules and reports the first
  * certificate, from the leaf, that breaks one.
  *
- * `check` is one of unusable, critical, weak-signature, malformed, not-ca,
+ * `check` is one of unusable, critical, weak-signature, unaccepted-signature,
+ * malformed, not-ca,
  * key-cert-sign, path-len, name-constraints or policy.
  * @param path - entries with `der`, leaf first and anchor last
  * @param opts - `allowCritical` (extensions the caller evaluates itself),
@@ -4535,6 +4538,7 @@ function authorityCode(problem, issuerCode) {
   const codes = { 'name-constraints': 'STS-PKI-0194',
                   critical: 'STS-PKI-0195', malformed: 'STS-PKI-0196',
                   unusable: 'STS-PKI-0196', 'weak-signature': 'STS-PKI-0197',
+                  'unaccepted-signature': 'STS-KEYS-0185',
                   policy: 'STS-PKI-0199' };
   const code = codes[problem.check] || issuerCode;
   log.debug("Leaving authorityCode(). " + code);
@@ -14097,6 +14101,7 @@ async function verifyEmbeddedScts(leafDer, issuerDer, logs) {
  * @namespace
  */
 module.exports = {
+  authorityCode: authorityCode,
   // --- the console prose (#543) ---
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,

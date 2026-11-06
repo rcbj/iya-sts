@@ -89,13 +89,15 @@ const CHECK_ORDER: CheckId[] = ['validity', 'basic-constraints', 'key-usage',
 // What `verifyPathToAnchors()` or the path rules call a failed rule, as a check.
 const RULE_CHECKS: Json = {
   critical: 'critical-extensions', 'weak-signature': 'signature-strength',
+  'unaccepted-signature': 'signature-strength',
   'name-constraints': 'name-constraints'
 };
 // `pki.authorityCode()`'s table, for a rule the path broke.
 const RULE_CODES: Json = {
   'name-constraints': 'STS-PKI-0194', critical: 'STS-PKI-0195',
   malformed: 'STS-PKI-0196', unusable: 'STS-PKI-0196',
-  'weak-signature': 'STS-PKI-0197', policy: 'STS-PKI-0199'
+  'weak-signature': 'STS-PKI-0197', policy: 'STS-PKI-0199',
+  'unaccepted-signature': 'STS-KEYS-0185'
 };
 
 function leaf(keyUsage: string[], oids?: string[], required?: boolean): Json {

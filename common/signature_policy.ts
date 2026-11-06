@@ -363,6 +363,21 @@ class SignaturePolicy {
   }
 
   /**
+   * The algorithm a setting's choice signs with under `keys.pqcOnly`: its own,
+   * unless that flag is what refuses it. Narrower than `usableSigningAlg()`,
+   * for a setting whose other refusals are documented as the operator's to
+   * avoid (`oid4vci.credentialSigningAlgorithm`).
+   *
+   * @param alg - the algorithm a setting names
+   * @returns the algorithm to sign with
+   */
+  static underPqcOnly(alg: string): string {
+    const cause = SignaturePolicy.signCause('jose', alg);
+    return cause && cause.code === 'STS-KEYS-0191'
+      ? SignaturePolicy.defaultJoseAlg() : alg;
+  }
+
+  /**
    * The row `saml.signatureAlgorithm`'s short name means: the fragment of its
    * URI, which is how every one of them is spelled.
    *

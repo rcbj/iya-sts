@@ -278,6 +278,11 @@ module.exports = {
       'RSASSA-PSS is told apart by its hash');
       config.clearOverride('pki.acceptedSignatureAlgorithms');
 
+      // The path rule's check reaches an operator under its own code.
+      t.check(require('../common/pki').authorityCode(
+        { check: 'unaccepted-signature' }, 'STS-PKI-0000') === 'STS-KEYS-0185',
+      'a path refused by the list reports the list\'s code');
+
       // keys.pqcOnly, and RS256's one place under it.
       config.setOverride('keys.pqcOnly', true);
       t.check(policy.signCause('jose', 'RS256').code === 'STS-KEYS-0191',
@@ -302,6 +307,24 @@ module.exports = {
         'and a post-quantum algorithm it leaves out is refused');
       config.clearOverride(LIST);
       config.clearOverride('keys.pqcOnly');
+
+      // keys.pqcOnly replaces a classical credential or status-list algorithm,
+      // and leaves the documented EdDSA refusal to the operator.
+      t.check(policy.underPqcOnly('RS256') === 'RS256' &&
+        policy.underPqcOnly('EdDSA') === 'EdDSA',
+      'underPqcOnly() changes nothing with the flag off');
+      config.setOverride('keys.pqcOnly', true);
+      t.check(policy.underPqcOnly('RS256') === 'ML-DSA-44',
+        'and moves a classical choice to post-quantum with it on',
+        policy.underPqcOnly('RS256'));
+      t.check(policy.underPqcOnly('ML-DSA-65') === 'ML-DSA-65',
+        'and leaves a post-quantum choice');
+      config.clearOverride('keys.pqcOnly');
+      config.setOverride('vc.acceptedCryptosuites', 'eddsa-jcs-2022');
+      t.check(policy.acceptCause('di', 'bbs-2023').code === 'STS-KEYS-0184' &&
+        policy.acceptCause('di', 'eddsa-jcs-2022') === null,
+      'bbs-2023 is governed as a Data Integrity suite');
+      config.clearOverride('vc.acceptedCryptosuites');
 
       // A configured list's first usable element is the default; empty is not.
       t.check(policy.defaultJoseAlg() === 'RS256', 'by default, RS256');

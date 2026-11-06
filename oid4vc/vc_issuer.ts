@@ -1947,6 +1947,12 @@ class VcIssuer {
       unsecured.credentialStatus = status.credentialStatus;
     }
     logArtifact('ldp_vc credential', 'before signing', unsecured);
+    // bbs-2023 is a Data Integrity suite like any other (#1368).
+    const unsignable = stsCrypto.signaturePolicy.signCause('di', 'bbs-2023');
+    if (unsignable) {
+      log.debug("Leaving VcIssuer. bbs-2023 is not signed here.");
+      throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+    }
     const issued = await bbs2023.issue(unsecured, {
       verificationMethod: bbsVerificationMethod,
       created: new Date(now * 1000).toISOString()
