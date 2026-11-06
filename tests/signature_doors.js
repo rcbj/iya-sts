@@ -36,6 +36,31 @@ module.exports = {
         material);
       });
 
+    // ---- The kids a relying party has already cached. ----------------------
+    // Each expected value below came out of the image built BEFORE this change,
+    // through the same function, so these hold the kids to what was published
+    // and not to the new digest. **A persisted RSA key's kid is RECOMPUTED from
+    // its certificate on restore (kidOf()), so this is the one a change would
+    // move under a key already in the store and in clients' caches.** A curve
+    // or post-quantum key's kid is stored in its publicJwk and read back as is;
+    // those vectors hold what a NEW key of a rotation is named.
+    const helpers = require('../common/helpers');
+    t.check(helpers.kidOf('MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA') ===
+      'sts-72745da5aaef', 'an RSA key restored from the store keeps its kid');
+    t.check(helpers.groupKidOf('fixed', 'ES256',
+      JSON.stringify(['P-256', 'xxxx', 'yyyy'])) ===
+      'sts-g-fixed-es256-5eec706e', 'a signer group key keeps its kid');
+    t.check(helpers.pqKeyFrom('ML-DSA-44', { pub: Buffer.alloc(32, 9),
+      priv: Buffer.alloc(32, 1) }).publicJwk.kid === 'sts-ml-dsa-44-10f76ce3',
+    'a post-quantum key keeps its kid');
+    t.check(helpers.curveKeyFrom({ alg: 'ES256', curve: 'P-256' },
+      { publicKey: nodeCrypto.createPublicKey({ format: 'jwk', key: {
+        kty: 'EC', crv: 'P-256',
+        x: 'EtDTO-BEY2xFIWLHu5S6Wnnm2NvICAYhOXW__VUZjos',
+        y: 'eOhBZkxFLHkejlezfstvMPv06RLH7GwEIG4_lUQDEd4' } }),
+      privateKey: null }).publicJwk.kid === 'sts-p-256-ef5eecf3',
+    'a curve key keeps its kid');
+
     // ---- A published RSA modulus, read as it always was. ------------------
     const rsa = forge.pki.rsa.generateKeyPair({ bits: 2048, e: 0x10001 });
     const certificate = forge.pki.createCertificate();
