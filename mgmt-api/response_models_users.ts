@@ -213,8 +213,8 @@ const STORED_KEY = Kit.closed({
   possiblyReplacedBy: STR, possiblyReplacedAt: NUM,
   // Two refusals a sign-in leaves on the key (`noteKeyPolicyRefused()`, and the
   // attestation recheck's): the policy's by its kind, whose name is data.
-  policyRefused: Kit.mapOf(Kit.closed({ code: STR, why: STR, at: NUM })),
-  attestationRefused: Kit.closed({ code: STR, why: STR, at: NUM })
+  policyRefused: Kit.mapOf(Kit.closed({ why: STR, at: NUM })),
+  attestationRefused: Kit.closed({ why: STR, at: NUM })
 });
 
 // `AdminViews.mfaJson()`'s key: a description, no public key.
@@ -816,7 +816,7 @@ const TERMINATE_RESULT = Kit.closed({
     relationship: STR, label: STR, protocol: STR, what: STR, kind: STR,
     url: STR, action: STR, fields: Kit.mapOf(STR)
   })),
-  backchannel: Kit.listOf(DELIVERY), message: STR,
+  backchannel: Kit.listOf(Kit.withoutCodes(DELIVERY)), message: STR,
   acrossCluster: Kit.listOf(Kit.closed({ family: STR, at: WHEN, message: STR }))
 });
 
@@ -1121,7 +1121,7 @@ const ROLE_PREVIEW = Kit.closed({
     roles: STRS, required: STRS
   })),
   transfer: Kit.nullable(Kit.closed({ verdict: STR, decidedBy: STR })),
-  passkey: Kit.nullable(Kit.closed({ verdict: STR, code: STR, reason: STR,
+  passkey: Kit.nullable(Kit.closed({ verdict: STR, reason: STR,
                                      decidedBy: STR })),
   deferred: BOOL,
   // The two verdicts `IssuanceAnswer` declares for a question a preview does
@@ -1200,7 +1200,7 @@ const ACCOUNT_STATE = personAction({
   // `AccountState.endEverything()`: counts, not the rows `terminate()` said.
   ended: Kit.nullable(Kit.closed({
     ended: BOOL, terminated: NUM, skipped: NUM, notifications: NUM,
-    backchannel: Kit.listOf(DELIVERY), message: STR
+    backchannel: Kit.listOf(Kit.withoutCodes(DELIVERY)), message: STR
   }))
 });
 
@@ -1460,7 +1460,9 @@ export = {
     getLiveSessions: read(LOGOUT_VIEW),
     globalLogout: { '200': LOGOUT_ACTION },
     endLiveSessions: { '200': LOGOUT_ACTION },
-    retryBackchannelDelivery: { '200': Kit.action({ delivery: DELIVERY }) },
+    retryBackchannelDelivery: {
+      '200': Kit.action({ delivery: Kit.withoutCodes(DELIVERY) })
+    },
     restoreLoggedOutToken: { '200': Kit.action({ jti: STR }) },
     clearKerberosSignOut: { '200': Kit.action() },
 

@@ -1096,7 +1096,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -1125,7 +1124,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -1148,7 +1146,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -1272,7 +1269,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -1301,7 +1297,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -1324,7 +1319,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -1467,7 +1461,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -1496,7 +1489,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -1519,7 +1511,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -1643,7 +1634,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -1672,7 +1662,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -1695,7 +1684,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -1837,7 +1825,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -1866,7 +1853,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -1889,7 +1875,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -2013,7 +1998,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -2042,7 +2026,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -2065,7 +2048,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -2208,7 +2190,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -2237,7 +2218,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -2260,7 +2240,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -2384,7 +2363,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -2413,7 +2391,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -2436,7 +2413,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -2579,7 +2555,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -2608,7 +2583,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -2631,7 +2605,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -2755,7 +2728,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -2784,7 +2756,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -2807,7 +2778,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -2949,7 +2919,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -2978,7 +2947,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -3001,7 +2969,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -3125,7 +3092,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -3154,7 +3120,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -3177,7 +3142,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -3320,7 +3284,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -3349,7 +3312,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -3372,7 +3334,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -3496,7 +3457,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -3525,7 +3485,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -3548,7 +3507,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -3691,7 +3649,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -3720,7 +3677,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -3743,7 +3699,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -3867,7 +3822,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -3896,7 +3850,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -3919,7 +3872,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -4061,7 +4013,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -4090,7 +4041,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -4113,7 +4063,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -4237,7 +4186,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -4266,7 +4214,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -4289,7 +4236,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -4460,7 +4406,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -4489,7 +4434,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -4512,7 +4456,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |
@@ -4636,7 +4579,6 @@ Scope: `admin:write`.
 | `client.byCell[].dead[].attempts` | number, or null |  |  |
 | `client.byCell[].dead[].client` | string |  |  |
 | `client.byCell[].dead[].clientId` | string |  |  |
-| `client.byCell[].dead[].errorCode` | string, or null |  |  |
 | `client.byCell[].dead[].finishedAt` | string |  |  |
 | `client.byCell[].dead[].generation` | number, or null |  |  |
 | `client.byCell[].dead[].holder` | string |  |  |
@@ -4665,7 +4607,6 @@ Scope: `admin:write`.
 | `client.byCell[].queued[].attempts` | number, or null |  |  |
 | `client.byCell[].queued[].client` | string |  |  |
 | `client.byCell[].queued[].clientId` | string |  |  |
-| `client.byCell[].queued[].errorCode` | string, or null |  |  |
 | `client.byCell[].queued[].finishedAt` | string |  |  |
 | `client.byCell[].queued[].generation` | number, or null |  |  |
 | `client.byCell[].queued[].holder` | string |  |  |
@@ -4688,7 +4629,6 @@ Scope: `admin:write`.
 | `client.byCell[].retrying[].attempts` | number, or null |  |  |
 | `client.byCell[].retrying[].client` | string |  |  |
 | `client.byCell[].retrying[].clientId` | string |  |  |
-| `client.byCell[].retrying[].errorCode` | string, or null |  |  |
 | `client.byCell[].retrying[].finishedAt` | string |  |  |
 | `client.byCell[].retrying[].generation` | number, or null |  |  |
 | `client.byCell[].retrying[].holder` | string |  |  |

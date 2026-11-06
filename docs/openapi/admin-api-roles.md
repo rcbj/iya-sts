@@ -710,7 +710,6 @@ Scope: `admin:read`.
 | `mechanism.satisfied[]` | string |  |  |
 | `mechanism.secondFactor` | boolean |  |  |
 | `passkey` | object |  |  |
-| `passkey.code` | string |  |  |
 | `passkey.decidedBy` | string |  |  |
 | `passkey.reason` | string |  |  |
 | `passkey.verdict` | string |  |  |

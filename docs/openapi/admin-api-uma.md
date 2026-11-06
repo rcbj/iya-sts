@@ -331,7 +331,6 @@ Scope: `admin:read`.
 | `whatIf.code` | string |  |  |
 | `whatIf.layers` | list |  |  |
 | `whatIf.layers[].approval` | boolean |  |  |
-| `whatIf.layers[].code` | string |  |  |
 | `whatIf.layers[].decision` | string |  |  |
 | `whatIf.layers[].layer` | string |  |  |
 | `whatIf.layers[].missing` | list |  |  |

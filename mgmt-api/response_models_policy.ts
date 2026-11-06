@@ -1080,7 +1080,7 @@ const UMA: Json = Kit.closed({
     asked: Kit.closed({ resource: STR, scope: STR, party: STR, client: STR }),
     problem: STR, outcome: STR, code: STR,
     layers: Kit.listOf(Kit.closed({
-      layer: STR, outcome: STR, code: STR, policy: STR, decision: STR,
+      layer: STR, outcome: STR, policy: STR, decision: STR,
       missing: STRS, approval: BOOL, why: STR
     }))
   })),

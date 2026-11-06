@@ -774,9 +774,6 @@ Scope: `admin:read`.
 | `process.sinceStart.trimmed` | number |  |  |
 | `process.sweeps` | list |  |  |
 | `process.sweeps[].at` | string |  |  |
-| `process.sweeps[].byCode` | list |  |  |
-| `process.sweeps[].byCode[].count` | integer |  |  |
-| `process.sweeps[].byCode[].errorCode` | string |  |  |
 | `process.sweeps[].deadStreams` | integer |  |  |
 | `process.sweeps[].expired` | integer |  |  |
 | `process.sweeps[].held` | integer |  |  |

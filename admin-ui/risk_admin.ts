@@ -358,7 +358,15 @@ class RiskAdmin {
       redistribution: registry.redistribution,
       lookup: lookup,
       authenticatorLookup: authenticatorLookup,
-      assessments: assessed.assessments,
+      // The page draws the decision and not the code it was refused under,
+      // which stays on the stored assessment and the audit row (#1355).
+      assessments: Object.assign({}, assessed.assessments, {
+        rows: assessed.assessments.rows.map(function (row: Json): Json {
+          const shown = Object.assign({}, row);
+          delete shown.errorCode;
+          return shown;
+        })
+      }),
       assessmentsPaging: adminViews.pagingJson(assessmentsPaging),
       subjects: assessed.subjects,
       subjectsPaging: adminViews.pagingJson(subjectsPaging),
