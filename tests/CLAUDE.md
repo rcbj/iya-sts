@@ -435,6 +435,16 @@ reporting green having driven nothing.
 
 ## Running it
 
+**`./run-tests.sh --modes=schema-validation` (#1353, rcbj 2026-11-06) is one
+container holding the service, its stores, OpenBao, a balancer, the jobs, Chrome
+and Selenium**, and it starts no compose project. It runs the `memory`,
+`single-node`, `mariadb` and `cluster` settings of `tools/modes.sh` in turn. It
+fails on any `STS-API-0139` or `STS-API-0140` in a node's log, or if
+`openapi_response_models` or `sts_outside_values` fails. Other jobs' failures are
+reported only, since it has no test peer, remote PEP, mail relay or conformance
+suite. `tests/schema-validation/in-container.sh` argues it; `STS_SCHEMA_STAGES`
+narrows it. Cells are not a stage.
+
 ```bash
 ./docker-npm-test.sh                 # from the repository root (#50)
 ./docker-npm-test.sh --only=ldif     # one file, by any part of its name
