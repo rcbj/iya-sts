@@ -640,6 +640,20 @@ async function reassertRealm(serviceBase, provisioned, say) {
     return { ok: false, why: "config/set-many in " + prefix + " answered " +
       applied.status + " " + JSON.stringify(applied.json).slice(0, 200) };
   }
+  // Re-ENABLE the fuzz person (#1299): a cell's own fuzzing can disable the
+  // account (STS-API-0122, "the person's account disabled") — the fuzz person
+  // now holds SECURITY_ADMIN, and an admin:write token always could — and a
+  // disabled account refuses the next cell's sign-in before anything is fuzzed.
+  // Idempotent (accountState.setDisabled(who, false) on an enabled account is
+  // ok), so it runs every cell. Any WITHIN-cell disable the proxy's re-mint
+  // cannot undo (it holds no admin token) is undone here at the next cell.
+  const enabled = await adminCall(serviceBase, prefix, "POST",
+    "/admin-api/users/enable", { user: FUZZ_USER });
+  if (enabled.status !== 200) {
+    log.debug("Leaving reassertRealm(). enable " + enabled.status);
+    return { ok: false, why: "users/enable in " + prefix + " answered " +
+      enabled.status + " " + JSON.stringify(enabled.json).slice(0, 200) };
+  }
   // A FRESH password every re-assert, never a constant: the realm's password
   // policy refuses the current password and the five before it
   // (password-history), so re-setting FUZZ_PASSWORD failed every cell after the

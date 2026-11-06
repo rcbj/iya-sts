@@ -210,12 +210,24 @@ function nonceCarrier(answer) {
 // fuzz-induced 401 into a refresh, 56,750 oauth2/token calls, and a run that
 // timed out before it left the first realm. A re-sign-in is bounded by a
 // cooldown so a token that cannot be recovered cannot storm either.
+// 2s (#1299): low enough that a fuzz-induced token revocation/disown
+// (STS-API-0122, "token revoked or disowned") costs at most ~2s of the cell
+// rather than 20s — on the 2026-11-06 run that refusal held for whole cooldown
+// windows across 295 routes — and high enough that a fresh PKCE sign-in cannot
+// storm (a re-sign-in is NOT a refresh, so it does not trip the reuse-revocation
+// the 2026-11-05 spin did; the bound is only on sign-in VOLUME, ~30/min here).
 const RESIGN_COOLDOWN_MS = parseInt(
-  process.env.STS_SCHEMA_RESIGN_COOLDOWN_MS || "20000", 10);
+  process.env.STS_SCHEMA_RESIGN_COOLDOWN_MS || "2000", 10);
 let lastResignAt = 0;
 
 // Re-signs the surface's credential in, at most once per cooldown. Returns
-// whether it did, so the caller retries only after a fresh sign-in.
+// whether it did AND recovered, so the caller retries only after a fresh
+// sign-in. A sign-in that THROWS — the account disabled is the case
+// (STS-API-0122's third cause), which no fresh token recovers and the per-cell
+// re-assert re-enables — is caught, logged, and reported as not recovered, so
+// the original 401 is returned rather than becoming a 502 the no-5xx check
+// would flag. lastResignAt is set either way, so a persistently failing
+// sign-in backs off on the cooldown instead of storming.
 async function resignInIfDue(reason) {
   log.debug("Entering resignInIfDue().");
   const now = Date.now();
@@ -225,7 +237,14 @@ async function resignInIfDue(reason) {
   }
   lastResignAt = now;
   log.info("[schemathesis] re-signing in: " + reason);
-  await signIn();
+  try {
+    await signIn();
+  } catch (e) {
+    log.warn("[schemathesis] re-sign-in failed (" + reason + "): " +
+      ((e && e.message) || e) + " -- returning the refusal unchanged");
+    log.debug("Leaving resignInIfDue(). sign-in threw");
+    return false;
+  }
   log.debug("Leaving resignInIfDue(). re-signed in");
   return true;
 }
