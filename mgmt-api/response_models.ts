@@ -33,6 +33,14 @@ type Json = any;
 const FAMILIES: Json[] = [users, policy, applications, service, directory,
                           trust, consoleOperations];
 
+// Merged once: `apply()` asks per operation, and there are eight hundred.
+const COMPONENTS: Json = Object.assign({}, ...FAMILIES.map(function (family) {
+  return family.components;
+}));
+const OPERATIONS: Json = Object.assign({}, ...FAMILIES.map(function (family) {
+  return family.operations;
+}));
+
 // A refusal, whichever door answered it: the gate's RFC 6750 pair, or an
 // action's `{ ok: false, errors }`.
 const ERROR: Json = Kit.closed({
@@ -49,16 +57,12 @@ class ResponseModels {
 
   // Each family's named schemas, for `admin_api_spec.ts`'s `SCHEMAS`.
   static components(): Json {
-    return Object.assign({}, ...FAMILIES.map(function (family) {
-      return family.components;
-    }));
+    return COMPONENTS;
   }
 
   // The operations a family has modelled, for the test that all of them are.
   static operations(): Json {
-    return Object.assign({}, ...FAMILIES.map(function (family) {
-      return family.operations;
-    }));
+    return OPERATIONS;
   }
 
   /**

@@ -366,6 +366,7 @@ import xacmlModel = require('../xacml/xacml_model');
 import AjvModule = require('ajv');
 import addFormatsModule = require('ajv-formats');
 import responseChecks = require('../common/response_models');
+import ResponseModelTable = require('./response_models');
 
 const Ajv: any = AjvModule;
 const addFormats: any = addFormatsModule;
@@ -27520,7 +27521,7 @@ class AdminApi {
     // for the paths alone, so the options a request would supply do not matter.
     responseChecks.install(app as any, BASE, function () {
       return spec.buildSpec(ROUTES, { authRequired: true });
-    });
+    }, ResponseModelTable.ERROR);
     app.use(BASE, function (req, res, next) {
       if (self.tokenRequired()) {
         // THE ONE OPERATION THAT IS NOT AN ADMINISTRATOR'S (#164 phase 3):

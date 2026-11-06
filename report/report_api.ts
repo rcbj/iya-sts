@@ -1928,7 +1928,7 @@ class ReportApi {
     // EVERY ANSWER IS HELD TO ITS MODEL (#1353), before any route answers.
     responseChecks.install(app, BASE, function () {
       return OpenApi.document(new Catalog());
-    });
+    }, { $ref: '#/components/schemas/Error' });
     app.get(BASE, function (req: any, res: any): void {
       reportAnswer(req, res);
     });

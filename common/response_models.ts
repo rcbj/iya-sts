@@ -77,6 +77,7 @@ interface Deps {
 
 interface Installed {
   documentOf: () => Json;
+  refusal: Json;
   built: Json;
   exact: Map<string, Json>;
   templated: { method: string; pattern: RegExp; operation: Json }[];
@@ -112,11 +113,14 @@ class ResponseModels {
    * @param prefix - the API's base path
    * @param documentOf - builds the OpenAPI document; asked once, at the first
    *   answer, because some operation tables are complete only by then
+   * @param refusal - the model of this API's refusal, for a path no operation
+   *   documents: an action nobody defined, which its `:action` route refuses
    */
-  install(app: Json, prefix: string, documentOf: () => Json): void {
+  install(app: Json, prefix: string, documentOf: () => Json,
+          refusal: Json): void {
     const self = this;
     this.deps.log.debug("Entering ResponseModels.install(). " + prefix);
-    const installed = this.installed(documentOf);
+    const installed = this.installed(documentOf, refusal);
     app.use(prefix, function (req: Json, res: Json, next: Json) {
       self.wrap(installed, req, res);
       next();
@@ -129,12 +133,15 @@ class ResponseModels {
    * check one answer with no express app.
    *
    * @param documentOf - builds the document
+   * @param refusal - the API's refusal model
    * @returns the record
    */
-  installed(documentOf: () => Json): Installed {
+  installed(documentOf: () => Json, refusal?: Json): Installed {
     this.deps.log.debug("Entering ResponseModels.installed().");
     this.deps.log.debug("Leaving ResponseModels.installed().");
-    return { documentOf: documentOf, built: null, exact: new Map(),
+    return { documentOf: documentOf,
+             refusal: refusal ? { schema: refusal } : null,
+             built: null, exact: new Map(),
              templated: [], components: null };
   }
 
@@ -193,10 +200,8 @@ class ResponseModels {
     }
     const name = req.method + ' ' + path;
     if (!operation) {
-      const isJson = /json/.test(media);
       log.debug("Leaving ResponseModels.problemOf(). Undocumented.");
-      return isJson ? { operation: name, status: status,
-                        where: 'no operation in the document' } : null;
+      return this.undocumentedProblem(installed, name, status, media, body);
     }
     const opName = operation.operationId || name;
     const declared = operation.responses[status] ||
@@ -241,6 +246,42 @@ class ResponseModels {
     log.debug("Leaving ResponseModels.problemOf(). Invalid.");
     return { operation: opName, status: status,
              where: this.describeErrors(validate.errors) };
+  }
+
+  // A path no operation documents may refuse: the document lists each action
+  // at its concrete URL, and `/x/nonsense` reaches the `:action` route, whose
+  // refusal is the right answer. It may not answer anything else in JSON. A
+  // body that is not JSON is left alone: Express's own 404 is `Cannot GET`.
+  private undocumentedProblem(installed: Installed, name: string,
+                              status: string, media: string,
+                              body: Json): Json {
+    const { log } = this.deps;
+    log.debug("Entering ResponseModels.undocumentedProblem().");
+    if (!/json/.test(media)) {
+      log.debug("Leaving ResponseModels.undocumentedProblem(). Not JSON.");
+      return null;
+    }
+    const nothing = { operation: name, status: status,
+                      where: 'no operation in the document' };
+    if (Number(status) < 400 || !installed.refusal) {
+      log.debug("Leaving ResponseModels.undocumentedProblem(). No operation.");
+      return nothing;
+    }
+    let parsed: Json;
+    try {
+      parsed = JSON.parse(Buffer.isBuffer(body) ? body.toString('utf8') :
+        String(body));
+    } catch (e: Json) {
+      log.debug("Caught in ResponseModels.undocumentedProblem(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving ResponseModels.undocumentedProblem(). Unparsable.");
+      return nothing;
+    }
+    const validate = this.validatorFor(installed, installed.refusal);
+    const valid = validate(parsed);
+    log.debug("Leaving ResponseModels.undocumentedProblem(). " + valid);
+    return valid ? null : { operation: name, status: status,
+                            where: this.describeErrors(validate.errors) };
   }
 
   /**
@@ -358,9 +399,9 @@ const shared = new ResponseModels({
 export = {
   ResponseModels: ResponseModels,
   CODE: CODE,
-  install: function (app: Json, prefix: string,
-                     documentOf: () => Json): void {
-    shared.install(app, prefix, documentOf);
+  install: function (app: Json, prefix: string, documentOf: () => Json,
+                     refusal: Json): void {
+    shared.install(app, prefix, documentOf, refusal);
   },
   failureCount: function (): number {
     return shared.failureCount();

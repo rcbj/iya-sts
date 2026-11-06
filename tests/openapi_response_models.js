@@ -136,7 +136,7 @@ function validatorCases(t) {
   const app = fakeApp();
   models.install(app, '/api', function () {
     return doc;
-  });
+  }, refusal);
   const answer = function (method, url, media, status, body) {
     const res = fakeResponse(media);
     const req = { method: method, baseUrl: '/api', path: url };
@@ -195,6 +195,12 @@ function validatorCases(t) {
           'a media type the status does not declare is not sent');
   t.equal(answer('GET', '/absent', 'application/json', 200, '{}').statusCode,
           500, 'JSON from an operation the document lacks is not sent');
+  t.equal(answer('POST', '/thing/nonsense', 'application/json', 400,
+                 { error: 'no such action' }).statusCode, 400,
+          'an undocumented path may answer the API\'s refusal');
+  t.equal(answer('POST', '/thing/nonsense', 'application/json', 400,
+                 { error: 'x', stray: 1 }).statusCode, 500,
+          'and that refusal is held to its model too');
   t.equal(answer('GET', '/absent', 'text/html', 404,
                  'Cannot GET /absent').statusCode, 404,
           'a body that is not JSON on an unrouted path is left alone');

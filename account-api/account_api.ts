@@ -64,6 +64,7 @@ import version = require('../common/version');
 import mode = require('../common/mode');
 import AccountApiSpec = require('./account_api_spec');
 import responseChecks = require('../common/response_models');
+import AccountResponseModels = require('./account_response_models');
 import ProfilePhoto = require('../common/profile_photo');
 
 type Json = any;
@@ -1115,7 +1116,7 @@ class AccountApi {
     // before the placement relays anything and before the gate refuses.
     responseChecks.install(app, BASE, function () {
       return AccountApiSpec.document(self.operations(), {});
-    });
+    }, AccountResponseModels.ERROR);
     app.use(BASE, function (req: Json, res: Json, next: () => void) {
       log.debug("Entering the account API's cell placement.");
       self.placeRequest(req, res).then(function (relayed) {

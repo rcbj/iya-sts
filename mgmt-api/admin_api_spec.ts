@@ -745,7 +745,7 @@ class AdminApiSpec {
     // the same builder over the console's rows, under its own title and with
     // a first paragraph saying what those operations are.
     const consoleDocument = opts.console === true;
-    return {
+    return Kit.shareRepeated({
       openapi: '3.1.0',
       info: {
         title: consoleDocument ? 'IYA STS admin console operations'
@@ -782,7 +782,7 @@ class AdminApiSpec {
         : [],
       paths: paths,
       components: components
-    };
+    });
   }
 }
 

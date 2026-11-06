@@ -216,6 +216,92 @@ class ResponseModelKit {
     };
     return operation;
   }
+
+  /**
+   * Moves every model repeated across a document's responses into
+   * `components`, leaving a `$ref` at each use. A model is written once in its
+   * family's file and reached by many operations, so inlining all of them made
+   * `GET /admin-api/openapi.json` several times its size, and the console reads
+   * that document for its forms. What a model says does not change.
+   *
+   * @param doc - the OpenAPI document
+   * @returns the document
+   */
+  static shareRepeated(doc: Json): Json {
+    const counts = new Map<string, number>();
+    const MIN = 240;
+    const isSchema = function (node: Json): boolean {
+      return node && typeof node === 'object' && !Array.isArray(node) &&
+        (node.type !== undefined || node.anyOf || node.oneOf);
+    };
+    const count = function (node: Json): void {
+      if (!node || typeof node !== 'object') {
+        return;
+      }
+      if (isSchema(node)) {
+        const text = JSON.stringify(node);
+        if (text.length >= MIN) {
+          counts.set(text, (counts.get(text) || 0) + 1);
+        }
+      }
+      Object.keys(node).forEach(function (key) {
+        count(node[key]);
+      });
+    };
+    const shared = new Map<string, string>();
+    // A copy: the table behind `components` is shared by every document built.
+    const schemas = Object.assign({}, doc.components.schemas);
+    doc.components = Object.assign({}, doc.components, { schemas: schemas });
+    const share = function (node: Json): Json {
+      if (!node || typeof node !== 'object') {
+        return node;
+      }
+      if (isSchema(node)) {
+        const text = JSON.stringify(node);
+        if ((counts.get(text) || 0) > 1) {
+          let name = shared.get(text);
+          if (!name) {
+            name = 'SharedModel' + (shared.size + 1);
+            shared.set(text, name);
+            schemas[name] = ResponseModelKit.sharedChildren(node, share);
+          }
+          return { $ref: '#/components/schemas/' + name };
+        }
+      }
+      return ResponseModelKit.sharedChildren(node, share);
+    };
+    const eachContent = function (visit: (media: Json) => void): void {
+      Object.keys(doc.paths).forEach(function (path) {
+        Object.keys(doc.paths[path]).forEach(function (method) {
+          const responses = doc.paths[path][method].responses || {};
+          Object.keys(responses).forEach(function (status) {
+            const content = responses[status].content || {};
+            Object.keys(content).forEach(function (type) {
+              visit(content[type]);
+            });
+          });
+        });
+      });
+    };
+    eachContent(function (media) {
+      count(media.schema);
+    });
+    eachContent(function (media) {
+      media.schema = share(media.schema);
+    });
+    return doc;
+  }
+
+  private static sharedChildren(node: Json, share: (n: Json) => Json): Json {
+    if (Array.isArray(node)) {
+      return node.map(share);
+    }
+    const out: Json = {};
+    Object.keys(node).forEach(function (key) {
+      out[key] = share(node[key]);
+    });
+    return out;
+  }
 }
 
 export = ResponseModelKit;

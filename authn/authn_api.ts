@@ -2123,7 +2123,7 @@ class AuthnApi {
     // EVERY ANSWER IS HELD TO ITS MODEL (#1353), before any route answers.
     responseChecks.install(app, API, function () {
       return AuthnApi.document({});
-    });
+    }, Models.ERROR);
     OPERATIONS.forEach(function (op) {
       app[op.method.toLowerCase()](op.path, function (req: Json, res: Json) {
         log.debug('Entering ' + op.method + ' ' + op.path + '.');
