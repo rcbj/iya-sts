@@ -312,13 +312,26 @@ function validate() {
 const FUZZ_USER = "fuzzer";
 // Meets a typical product password policy: upper, lower, digit, symbol, long.
 const FUZZ_PASSWORD = "Fuzz-Runner-Passw0rd!2026";
-// The two console roles are granted on the roster (`/admin-api/rbac/grant`,
-// `rbacAction`), by their SHORT roster ids — `read` and `write`, not the
-// permission names (`admin-ui/admin_rbac.ts` ROLES; an unknown id is 400,
-// STS-ADMIN-0582). `write` implies `read`, but both are granted for clarity.
+// The console roles are granted on the roster (`/admin-api/rbac/grant`,
+// `rbacAction`), by their SHORT roster ids — `read`, `write`, `security`, not
+// the permission names (`admin-ui/admin_rbac.ts` ROLES; an unknown id is 400,
+// STS-ADMIN-0582). `write` and `security` each imply `read`, but all are
+// granted for clarity.
+//
+// `security` is SECURITY_ADMIN (#645, #1299): without it the gate refuses every
+// SECURITY CHANGE on /admin-api with STS-API-0138 — a Directory → Policies save
+// or reset, a policy reference that changes, a grant of the role, an act on a
+// holder's account — and console_signin ALREADY requests `admin:security`
+// (narrowed off a subject that does not hold the role), so holding the role is
+// the whole of what lets the cell's token carry the scope and reach those
+// operations. It is a change of WHO IS ASKING, not of the service. The one
+// account-ending power this adds over admin:write (which already disables and
+// deletes) bites only a request that names the fuzz person, which the fuzzer's
+// random usernames almost never do; the per-cell re-assert recovers the rest.
+//
 // The report roles are CONFIGURED roles granted on the role register by NAME
 // (`/admin-api/roles/add-member`, `rolesAction`).
-const FUZZ_CONSOLE_ROLES = ["read", "write"];
+const FUZZ_CONSOLE_ROLES = ["read", "write", "security"];
 const FUZZ_CONFIGURED_ROLES = ["REPORT_USE", "REPORT_ADMIN"];
 // The person-create attributes a realm's attribute policy requires every
 // person to hold (#396): cn, sn, givenName, mail (uid is the `username`).
