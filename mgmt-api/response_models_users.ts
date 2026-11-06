@@ -852,8 +852,7 @@ const LOGOUT_VIEW = Kit.closed({
 // ---------------------------------------------------------------------------
 const DIRECTORY_STATE = {
   baseDn: STR, usersDn: STR, groupsDn: STR, port: NNUM, listening: BOOL,
-  listenError: NSTR, ldapsPort: NNUM, ldapsListening: BOOL, entryCount: NUM,
-  maxEntries: NUM
+  listenError: NSTR, ldapsPort: NNUM, ldapsListening: BOOL, entryCount: NUM
 };
 
 const ADMIN_GROUPS = Kit.closed({ read: NSTR, write: NSTR });

@@ -48,7 +48,11 @@ const ERROR: Json = Kit.closed({
   errors: Kit.listOf(Kit.str()),
   error: Kit.str(),
   error_description: Kit.str(),
-  message: Kit.str()
+  message: Kit.str(),
+  // `why` is the XACML actions' sentence beside `errors`, and `status` what the
+  // enrollment families' core says it refused with.
+  why: Kit.str(),
+  status: Kit.int()
 }, { description: 'A refusal or a failure. The sentence is for a person; ' +
                   'no error code is ever in it.' });
 

@@ -212,7 +212,10 @@ class PostLoginActivitiesApi {
               errorCodes.mark(res, String(result.errorCode ||
                                           'STS-AUTHN-0491'));
             }
-            self.sendJson(res, result.ok ? 200 : 400, result);
+            // The code is recorded above and never sent (the root CLAUDE.md).
+            const answer = Object.assign({}, result);
+            delete answer.errorCode;
+            self.sendJson(res, result.ok ? 200 : 400, answer);
             log.debug("Leaving the management API post-login activities " +
                       "action. ok=" + result.ok);
           }, function (e: any): void {
