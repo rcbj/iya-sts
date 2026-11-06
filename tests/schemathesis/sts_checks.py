@@ -29,6 +29,8 @@
 # is built.
 # ===========================================================================
 
+import json
+import os
 import re
 
 import schemathesis
@@ -88,6 +90,50 @@ def _body_bytes(response):
     return b""
 
 
+def _route(case):
+    """`METHOD /path` for the operation, however this version exposes it. Read
+    defensively, as the Response accessors are (schemathesis moves these across
+    majors)."""
+    operation = getattr(case, "operation", None)
+    method = getattr(case, "method", None) or getattr(operation, "method", "")
+    path = (getattr(case, "path", None) or getattr(operation, "path", None)
+            or getattr(operation, "label", None) or "")
+    return (str(method or "").upper() + " " + str(path or "")).strip()
+
+
+def _record_finding(kind, case, response, detail):
+    """Append one finding -- kind, realm, surface, route, status, detail and a
+    short body snippet -- as a JSON line to the file named by
+    STS_SCHEMATHESIS_FINDINGS, so a run emits the authoritative route->code list
+    the per-cell SUMMARY omits (the kit's 40000-char tail drops the per-failure
+    detail on a large cell). BEST-EFFORT: a capture failure must never change
+    the check's verdict, so everything here is caught and dropped. #1347's
+    leak-sink work reads this list."""
+    path = os.environ.get("STS_SCHEMATHESIS_FINDINGS")
+    if not path:
+        return
+    try:
+        snippet = _body_bytes(response)[:400].decode("utf-8", "replace")
+        status = getattr(response, "status_code", None)
+        try:
+            status = int(status)
+        except (TypeError, ValueError):
+            status = None
+        row = {
+            "kind": kind,
+            "realm": os.environ.get("STS_SCHEMA_REALM_PREFIX", ""),
+            "surface": os.environ.get("STS_SCHEMA_SURFACE", ""),
+            "route": _route(case),
+            "status": status,
+            "detail": detail,
+            "body": snippet,
+        }
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row) + "\n")
+    except Exception:
+        pass
+
+
 @schemathesis.check
 def no_uncaught_server_error(ctx, response, case):
     """No uncaught 5xx: the fault boundary holds. A deliberate 501 is allowed,
@@ -105,17 +151,21 @@ def no_uncaught_server_error(ctx, response, case):
         leaks_code = _ERROR_CODE.search(_body_bytes(response)) is not None
         if retry_after and not leaks_code:
             return
-        raise AssertionError(
+        message = (
             "service unavailable 503 is a finding here: a handled 503 must "
             "carry Retry-After and leak no operator error code"
             + ("" if retry_after else " (no Retry-After)")
             + (" (leaks an STS code)" if leaks_code else "")
         )
-    raise AssertionError(
+        _record_finding("uncaught_server_error", case, response, message)
+        raise AssertionError(message)
+    message = (
         "server error " + str(status)
         + " (the fault boundary should hold; only a deliberate 501 Not "
         "Implemented, or a handled 503 with Retry-After, is allowed)"
     )
+    _record_finding("uncaught_server_error", case, response, message)
+    raise AssertionError(message)
 
 
 @schemathesis.check
@@ -123,9 +173,11 @@ def no_error_code_leak(ctx, response, case):
     """No STS error code is ever sent to a client."""
     match = _ERROR_CODE.search(_body_bytes(response))
     if match is not None:
+        code = match.group(0).decode("ascii", "replace")
+        _record_finding("error_code_leak", case, response, code)
         raise AssertionError(
             "response body leaks the operator error code "
-            + match.group(0).decode("ascii", "replace")
+            + code
             + " (it is recorded, never sent)"
         )
 
@@ -138,10 +190,10 @@ def frame_ancestors_present(ctx, response, case):
         return
     policy = _header(response, "content-security-policy").lower()
     if "frame-ancestors" not in policy:
-        raise AssertionError(
-            "an HTML response dropped the frame-ancestors CSP clause "
-            "(it has no fallback from default-src)"
-        )
+        message = ("an HTML response dropped the frame-ancestors CSP clause "
+                   "(it has no fallback from default-src)")
+        _record_finding("frame_ancestors_dropped", case, response, message)
+        raise AssertionError(message)
 
 
 @schemathesis.check
@@ -150,8 +202,8 @@ def no_outbound_fetch(ctx, response, case):
     body = _body_bytes(response)
     for marker in _EGRESS_MARKERS:
         if marker in body:
-            raise AssertionError(
-                "response suggests an attempted outbound DNS lookup ("
-                + marker.decode("ascii", "replace")
-                + "); the stack must stay on the device"
-            )
+            message = ("response suggests an attempted outbound DNS lookup ("
+                       + marker.decode("ascii", "replace")
+                       + "); the stack must stay on the device")
+            _record_finding("outbound_fetch", case, response, message)
+            raise AssertionError(message)

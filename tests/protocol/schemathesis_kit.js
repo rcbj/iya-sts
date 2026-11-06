@@ -566,7 +566,7 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     if (!up) {
       log.debug("Leaving runSurface(). proxy did not listen");
       return { surface: surface.key, realm: provisioned.realmPrefix,
-        code: null, status: "error",
+        code: null, status: "error", findings: [],
         output: "the auth proxy did not listen: " + proxyOut.slice(-600) };
     }
     let schemaLocation;
@@ -594,8 +594,25 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     exclusionsFor(surface.key).forEach(function (one) {
       args.push("--exclude-operation-id", one.match);
     });
+    // Each custom check appends its finding (route, status, code, body
+    // snippet) as a JSON line here, so the run emits the authoritative
+    // route->code list the per-cell summary omits — the 40000-char output tail
+    // below drops the per-failure detail on a large cell (#1347's leak-sink
+    // work reads this). A per-(surface, realm) file so cells never collide.
+    const realmSlug = provisioned.realmPrefix.replace(/[^A-Za-z0-9]+/g, "_");
+    const findingsPath = path.join(workDir,
+      "findings-" + surface.key + realmSlug + ".jsonl");
+    try {
+      fs.rmSync(findingsPath, { force: true });
+    } catch (e) {
+      log.debug("Caught removing a stale findings file: " +
+                ((e && e.message) || e));
+    }
     const runEnv = Object.assign({}, process.env,
-      { SCHEMATHESIS_HOOKS: HOOKS_FILE });
+      { SCHEMATHESIS_HOOKS: HOOKS_FILE,
+        STS_SCHEMATHESIS_FINDINGS: findingsPath,
+        STS_SCHEMA_REALM_PREFIX: provisioned.realmPrefix,
+        STS_SCHEMA_SURFACE: surface.key });
     say("[schemathesis] " + surface.key + " @ " + provisioned.realmPrefix +
       ": " + SCHEMATHESIS_BIN + " " + args.join(" "));
     const run = childProcess.spawnSync(SCHEMATHESIS_BIN, args,
@@ -609,12 +626,26 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
       ? ("\nspawn error: " + ((run.error && run.error.message) || run.error))
       : "";
     log.debug("Leaving runSurface(). " + status + " (" + code + ")");
+    // The structured findings the checks recorded this cell (one JSON line
+    // each), so route->code survives whatever the output slice drops.
+    let findings = [];
+    try {
+      const raw = fs.readFileSync(findingsPath, "utf8");
+      findings = raw.split("\n").filter(function (line) {
+        return line.trim().length > 0;
+      }).map(function (line) {
+        return JSON.parse(line);
+      });
+    } catch (e) {
+      log.debug("Caught reading the findings file (none is normal on a " +
+                "clean cell): " + ((e && e.message) || e));
+    }
     // The scope is the four invariants, so a failing run prints only the real
     // findings (a 5xx, a leaked error code, a dropped frame-ancestors clause).
     // Keep a generous slice so each finding's endpoint and the custom check's
     // message — which names the leaked code — survive into the host log.
     return { surface: surface.key, realm: provisioned.realmPrefix,
-      code: code, status: status,
+      code: code, status: status, findings: findings,
       output: (((run.stdout || "") + (run.stderr || "")).slice(-40000)) +
         spawnError };
   } finally {

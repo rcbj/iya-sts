@@ -80,6 +80,17 @@ async function test() {
                 one.code + ")\n" +
                 String(one.output || "").split("\n").slice(-60).join("\n"));
     }
+    // The structured findings the checks recorded (route -> code/detail),
+    // printed in full so the authoritative list survives whatever the output
+    // slice above dropped. #1347's leak-sink work reads these lines.
+    const findings = Array.isArray(one.findings) ? one.findings : [];
+    if (findings.length) {
+      log.error("  findings for " + where + " (" + findings.length + "):");
+      findings.forEach(function (finding) {
+        log.error("    [" + finding.kind + "] " + finding.status + " " +
+                  finding.route + " -> " + finding.detail);
+      });
+    }
   });
   const bad = results.filter(function (one) {
     return one.status !== "pass";
