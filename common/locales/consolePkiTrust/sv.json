@@ -37,6 +37,7 @@
   "addHeading": "Lägg till certifikat",
   "addNote": "Klistra in ett eller flera PEM-certifikat. En självsignerad CA blir ett ankare och varje annan CA ett mellancertifikat, som måste kedja till ett ankare som finns. Varje avslag namnges.",
   "addPurposes": "Lita på dem bara för dessa användningsfall (inget ibockat betyder varje användningsfall):",
+  "addAccept": "Godkänn just detta självsignerade servercertifikat vid namn, endast för utgående TLS. Dess giltighet och fält kontrolleras fortfarande.",
   "addButton": "Lita på dessa",
   "pins": "Fästa certifikat",
   "pinsNote": "Varje certifikat som den här sfären förlitar sig på därför att någon registrerat det, underkastat kontrollerna oavsett vad inställningarna ovan säger. Senast granskat: {when}.",

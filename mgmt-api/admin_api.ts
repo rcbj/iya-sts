@@ -20737,9 +20737,13 @@ class AdminApi {
                                 oneOf: [{ type: 'string' },
                                         { type: 'array',
                                           items: { type: 'string' } }] },
-                kind: { type: 'string', enum: ['anchor', 'intermediate'],
+                kind: { type: 'string',
+                        enum: ['anchor', 'intermediate', 'accepted'],
                         description: 'Omitted: a self-issued certificate is ' +
-                                     'an anchor, any other an intermediate.' },
+                                     'an anchor, any other an intermediate. ' +
+                                     '`accepted`: one self-signed leaf a ' +
+                                     'server presents, trusted as itself ' +
+                                     'for outbound TLS and for nothing else.' },
                 purposes: { description: 'Use cases to restrict them to; ' +
                                          'none means every use case.',
                             oneOf: [{ type: 'string' },
