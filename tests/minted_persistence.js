@@ -832,6 +832,9 @@ async function body(t, dir) {
   const splitStore = realms.map({ persist: 'test.split' });
   splitStore.set('jammed', { n: 1 });
   splitStore.set('wedge', { n: 2 });
+  // What a request that wrote these rows waits through: read BEFORE the flush,
+  // since re-journalling moves the generation on past what it advances to.
+  const heldThrough = minted.generation();
   const splitResult = await minted.flush();
   t.check(!!splitResult && splitResult.written === false &&
           !splitResult.permanent,
@@ -841,6 +844,18 @@ async function body(t, dir) {
           'the module is in a failed-write state, so the unfinished rows retry');
   t.equal(splitDrops, 0,
           'and NOTHING was dropped — the poison was never isolated alone');
+  // A REQUEST WAITING ON THAT COMMIT IS NOT TOLD IT LANDED. `flushThrough()`
+  // answers "already committed" with no error once the commit position has
+  // passed its target, so a split that stopped must not advance it, or a later
+  // waiter is answered success for a row that went back on the journal: a
+  // revocation reported done that the store does not hold.
+  t.check(minted.committedGeneration() < heldThrough,
+          'a split that stopped does not advance the commit position',
+          JSON.stringify([minted.committedGeneration(), heldThrough]));
+  const waited = await minted.flushThrough(heldThrough);
+  t.check(!!waited && !!waited.error,
+          'and a request waiting through those rows is answered the failure, ' +
+          'not success', JSON.stringify(waited));
   splitStore.delete('jammed');
   splitStore.delete('wedge');
   minted.reset();

@@ -2173,7 +2173,6 @@ function flush() {
   const isolatePermanent = function (err) {
     log.debug("Entering isolatePermanent(). " + tagged.length);
     return isolateSlice(tagged, err).then(function (outcome) {
-      committedAt = Math.max(committedAt, takenAt);
       if (!outcome.done) {
         const plain = outcome.unfinished.map(function (r) {
           return r.up || r.del;
@@ -2182,6 +2181,11 @@ function flush() {
                   "the split; re-journalling the unfinished rows.");
         return reJournalAndReport(plain, outcome.err);
       }
+      // ONLY NOW, as the ordinary failure path never does: `flushThrough()`
+      // takes a commit position past its target for "already committed", so
+      // advancing it with rows back on the journal would answer a waiting
+      // request success for a write the store does not hold.
+      committedAt = Math.max(committedAt, takenAt);
       ensureTombstoneJob();
       writes++;
       lastWriteAt = new Date().toISOString();
