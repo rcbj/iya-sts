@@ -208,6 +208,8 @@ configFile.resolveConfigFile();
 // that stop the process are written before any audit ring could hold them
 // anyway.
 const errorCodes = require('./error_codes');
+// Every signature algorithm, once (#1368): a leaf, so no cycle can form.
+const algorithmRegistry = require('./crypto_impl/algorithm_registry');
 const path = require('path');
 const bunyan = require('bunyan');
 
@@ -770,59 +772,17 @@ const REALM_BUILDS_ITS_OWN = '. A TRUST REALM may carry it even so: a ' +
 // ---------------------------------------------------------------------------
 
 // common/crypto_impl/key_material.js's keyAlgIds(), in its order.
-const PKI_KEY_ALGORITHMS = [
-  'rsa-2048', 'rsa-3072', 'rsa-4096', 'ec-p256', 'ec-p384', 'ec-p521',
-  'ed25519',
-  'ml-dsa-44', 'ml-dsa-65', 'ml-dsa-87',
-  'slh-dsa-sha2-128s', 'slh-dsa-sha2-128f', 'slh-dsa-sha2-192s',
-  'slh-dsa-sha2-192f', 'slh-dsa-sha2-256s', 'slh-dsa-sha2-256f',
-  'slh-dsa-shake-128s', 'slh-dsa-shake-128f', 'slh-dsa-shake-192s',
-  'slh-dsa-shake-192f', 'slh-dsa-shake-256s', 'slh-dsa-shake-256f',
-  'mldsa44-rsa2048-pss-sha256', 'mldsa44-rsa2048-pkcs15-sha256',
-  'mldsa44-ed25519-sha512', 'mldsa44-ecdsa-p256-sha256',
-  'mldsa65-rsa3072-pss-sha512', 'mldsa65-rsa3072-pkcs15-sha512',
-  'mldsa65-rsa4096-pss-sha512', 'mldsa65-rsa4096-pkcs15-sha512',
-  'mldsa65-ecdsa-p256-sha512', 'mldsa65-ecdsa-p384-sha512',
-  'mldsa65-ed25519-sha512', 'mldsa87-ecdsa-p384-sha512',
-  'mldsa87-ed448-shake256', 'mldsa87-rsa3072-pss-sha512',
-  'mldsa87-rsa4096-pss-sha512', 'mldsa87-ecdsa-p521-sha512',
-  'ml-kem-512', 'ml-kem-768', 'ml-kem-1024'
-];
+const PKI_KEY_ALGORITHMS = algorithmRegistry.pkiKeyAlgorithms();
 
 // common/crypto_impl/x509.js's SIG_ALGS — every id sigAlg() resolves — in that
 // module's SIG_ALG_ORDER. The two SHA-1 ids stay: the row's `onlyWhile`
 // makes them development-only, which is a different refusal from this one.
-const PKI_SIGNATURE_ALGORITHMS = [
-  'sha256-rsa', 'sha384-rsa', 'sha512-rsa',
-  'sha256-rsapss', 'sha384-rsapss', 'sha512-rsapss',
-  'sha1-rsa', 'sha256-ecdsa', 'sha384-ecdsa', 'sha512-ecdsa', 'sha1-ecdsa',
-  'ed25519',
-  'ml-dsa-44', 'ml-dsa-65', 'ml-dsa-87',
-  'slh-dsa-sha2-128s', 'slh-dsa-sha2-128f', 'slh-dsa-sha2-192s',
-  'slh-dsa-sha2-192f', 'slh-dsa-sha2-256s', 'slh-dsa-sha2-256f',
-  'slh-dsa-shake-128s', 'slh-dsa-shake-128f', 'slh-dsa-shake-192s',
-  'slh-dsa-shake-192f', 'slh-dsa-shake-256s', 'slh-dsa-shake-256f',
-  'mldsa44-rsa2048-pss-sha256', 'mldsa44-rsa2048-pkcs15-sha256',
-  'mldsa44-ed25519-sha512', 'mldsa44-ecdsa-p256-sha256',
-  'mldsa65-rsa3072-pss-sha512', 'mldsa65-rsa3072-pkcs15-sha512',
-  'mldsa65-rsa4096-pss-sha512', 'mldsa65-rsa4096-pkcs15-sha512',
-  'mldsa65-ecdsa-p256-sha512', 'mldsa65-ecdsa-p384-sha512',
-  'mldsa65-ed25519-sha512', 'mldsa87-ecdsa-p384-sha512',
-  'mldsa87-ed448-shake256', 'mldsa87-rsa3072-pss-sha512',
-  'mldsa87-rsa4096-pss-sha512', 'mldsa87-ecdsa-p521-sha512'
-];
+const PKI_SIGNATURE_ALGORITHMS = algorithmRegistry.pkiSignatureAlgorithms();
 
 // common/crypto.js's JWS_ASYMMETRIC_ALGS. A SET is signed through
 // helpers.js's signJwtAsAsync() with no secret (ssf/ssf_events.js), so the
 // HS* rows of JWS_ALGS — which sign with a CLIENT's secret — cannot sign one.
-const SET_SIGNING_ALGORITHMS = [
-  'RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
-  'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA',
-  'ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87',
-  'SLH-DSA-SHA2-128s', 'SLH-DSA-SHAKE-128s',
-  'ML-DSA-44-ES256', 'ML-DSA-65-ES256', 'ML-DSA-87-ES384',
-  'ML-DSA-44-Ed25519', 'ML-DSA-65-Ed25519', 'ML-DSA-87-Ed448'
-];
+const SET_SIGNING_ALGORITHMS = algorithmRegistry.asymmetricJoseNames();
 
 // ssf/ssf_subjects.js's PERSON_FORMATS: every one subjectForUser() composes.
 const RISC_SUBJECT_FORMATS = ['account', 'email', 'iss_sub', 'opaque',
@@ -880,10 +840,7 @@ const OID4VP_RESPONSE_KEY_ALGS = ['ECDH-ES'].concat(
 // and -87 are RFC 9964's; SLH-DSA and the composites are Internet-Drafts
 // (draft-ietf-cose-sphincs-plus, draft-ietf-jose-pq-composite-sigs), and no
 // wallet in use accepts any of the eleven.
-const VC_PQ_SIGNING_ALGS = ['ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87',
-  'SLH-DSA-SHA2-128s', 'SLH-DSA-SHAKE-128s', 'ML-DSA-44-ES256',
-  'ML-DSA-65-ES256', 'ML-DSA-87-ES384', 'ML-DSA-44-Ed25519',
-  'ML-DSA-65-Ed25519', 'ML-DSA-87-Ed448'];
+const VC_PQ_SIGNING_ALGS = algorithmRegistry.postQuantumJoseNames();
 
 // A list of short event-type names, and each again under its URI. The CAEP
 // and RISC readers strip ssf/ssf_events.js's CAEP_PREFIX / RISC_PREFIX before
@@ -3830,19 +3787,14 @@ const SETTINGS = [
   // algorithms, and both switches still win over it. `common/helpers.js`'s
   // `signingAlgAllowlist()` is the one reader, and `common/CLAUDE.md` (*A
   // REALM'S SIGNING ALGORITHMS, NAMED ONE BY ONE*) says where each piece is.
-  // `csvValues` repeats `stsCrypto.JWS_SIGNING_ALGS` because this file
-  // requires nothing of this service; `tests/signing_algorithm_allowlist.js`
-  // fails if the two differ.
+  // `csvValues` is the registry's JOSE list, which `stsCrypto.JWS_SIGNING_ALGS`
+  // also is (#1368); `tests/signing_algorithm_allowlist.js` fails if the two
+  // differ.
   { key: 'keys.signingAlgorithms', group: 'Key material',
     label: 'Signing algorithms this realm uses',
     path: 'keys.signingAlgorithms', env: 'STS_KEYS_SIGNING_ALGORITHMS',
     type: 'csv', dflt: '', runtime: true,
-    csvValues: ['HS256', 'HS384', 'HS512', 'RS256', 'RS384', 'RS512', 'PS256',
-                'PS384', 'PS512', 'ES256', 'ES384', 'ES512', 'ES256K',
-                'EdDSA', 'ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87',
-                'SLH-DSA-SHA2-128s', 'SLH-DSA-SHAKE-128s', 'ML-DSA-44-ES256',
-                'ML-DSA-65-ES256', 'ML-DSA-87-ES384', 'ML-DSA-44-Ed25519',
-                'ML-DSA-65-Ed25519', 'ML-DSA-87-Ed448'],
+    csvValues: algorithmRegistry.joseNames(),
     description: 'The JWS algorithms this realm signs with and publishes ' +
                  'keys for. **Empty, the default, leaves every algorithm ' +
                  'the realm otherwise has.** A list must include RS256: ' +
@@ -5201,8 +5153,8 @@ const SETTINGS = [
   { key: 'oauth2.accessTokenSigningAlg', group: 'OAuth 2.0 / OIDC',
     label: 'Access token signing algorithm',
     env: 'STS_OAUTH2_ACCESS_TOKEN_SIGNING_ALG', type: 'enum',
-    enumValues: ['default', 'RS256', 'RS384', 'RS512', 'PS256', 'PS384',
-                 'PS512', 'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA'],
+    enumValues: ['default'].concat(
+      algorithmRegistry.classicalAsymmetricJoseNames()),
     dflt: 'default', runtime: true,
     description: 'The JWS algorithm access tokens (and refresh tokens) are ' +
                  'signed with, by this realm\'s key for it — every one is ' +
@@ -6413,8 +6365,7 @@ const SETTINGS = [
   { key: 'oauth2.signedMetadataAlgorithm', group: 'OAuth 2.0 / OIDC',
     label: 'Algorithm signed_metadata is signed with',
     env: 'STS_OAUTH2_SIGNED_METADATA_ALGORITHM', type: 'enum',
-    enumValues: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
-                 'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA'],
+    enumValues: algorithmRegistry.classicalAsymmetricJoseNames(),
     dflt: 'RS256', runtime: true,
     description: 'The JWS algorithm of the `signed_metadata` member of the ' +
                  'RFC 8414 document, the OpenID Provider Configuration and ' +
@@ -11726,12 +11677,7 @@ const SETTINGS = [
     // builders sign asynchronously now, so an ML-DSA, SLH-DSA or composite
     // signature is made on libuv's thread pool, and the Verifier accepts one as
     // this realm's (vc_verifier.ts, verifyIssuerSignatureAsync()).
-    enumValues: ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512',
-                 'ES256', 'ES384', 'ES512', 'ES256K', 'EdDSA',
-                 'ML-DSA-44', 'ML-DSA-65', 'ML-DSA-87', 'SLH-DSA-SHA2-128s',
-                 'SLH-DSA-SHAKE-128s', 'ML-DSA-44-ES256', 'ML-DSA-65-ES256',
-                 'ML-DSA-87-ES384', 'ML-DSA-44-Ed25519', 'ML-DSA-65-Ed25519',
-                 'ML-DSA-87-Ed448'],
+    enumValues: algorithmRegistry.asymmetricJoseNames(),
     dflt: 'RS256', runtime: true,
     description: 'The JWS algorithm dc+sd-jwt and jwt_vc_json credentials ' +
                  'are signed with — post-quantum ones included — and the ' +
@@ -19782,7 +19728,7 @@ const SETTINGS = [
                  '<selector>._domainkey.<domain>.' },
   { key: 'mail.dkimAlgorithm', group: 'Mail', label: 'DKIM algorithm',
     env: 'STS_MAIL_DKIM_ALGORITHM', type: 'enum',
-    enumValues: ['rsa-sha256', 'ed25519-sha256'], dflt: 'rsa-sha256',
+    enumValues: algorithmRegistry.dkimAlgorithms(), dflt: 'rsa-sha256',
     runtime: true,
     description: '`rsa-sha256` (RFC 6376; a 2048-bit key or larger, per RFC ' +
                  '8301) or `ed25519-sha256` (RFC 8463). Many receivers still ' +
