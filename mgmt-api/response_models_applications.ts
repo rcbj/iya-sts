@@ -708,7 +708,8 @@ const CLAIM_PROVIDERS = Kit.closed({
 
 // ---------------------------------------------------------------------------
 // OPENID PROVIDER COMMANDS, `provider_commands.ts` over `outbound_delivery.ts`.
-// `roles` and `last_access` are what a relying party said of itself.
+// `roles` and `last_access` are what a relying party said of itself, each held
+// to its shape where it arrives (`rolesFrom()`, `lastAccessFrom()`).
 // ---------------------------------------------------------------------------
 const COMMAND_DELIVERY = Kit.closed({
   id: STR, realm: STR, clientId: STR, uri: STR, state: STR, generation: NUM,
@@ -732,12 +733,15 @@ const PROVIDER_COMMANDS = Kit.closed({
     clientId: STR, name: STR, endpoint: STR,
     learned: Kit.nullable(Kit.closed({
       commandsSupported: STRS, audSubRequired: BOOL,
-      roles: Kit.listOf(CLAIM_VALUE), learnedAt: STR
+      // Section 2.2's role object, which `ProviderCommands.rolesFrom()` holds a
+      // relying party's answer to.
+      roles: Kit.listOf(Kit.closed({ id: STR, display: STR, description: STR })),
+      learnedAt: STR
     }))
   })),
   accounts: Kit.listOf(Kit.closed({
     clientId: STR, sub: STR, username: STR, state: STR, lastCommand: STR,
-    updatedAt: STR, audSub: STR, lastAccess: CLAIM_VALUE
+    updatedAt: STR, audSub: STR, lastAccess: Kit.oneOf(STR, NUM)
   })),
   deliveries: Kit.listOf(COMMAND_DELIVERY),
   counts: Kit.closed({ pending: INT, sent: INT, dead: INT }),
