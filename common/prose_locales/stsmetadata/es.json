@@ -3942,5 +3942,9 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "un parámetro"
+  },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC. El icono que un navegador solicita por sí solo en cada página: la marca cuadrada del logotipo (common/favicon.ico). Se responde en cada escucha; se conserva un día."
   }
 }

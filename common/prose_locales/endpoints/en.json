@@ -108,6 +108,7 @@
   "endpoints.route./home-api/front.name": "The front page's view",
   "endpoints.route./logo.png.name": "The logo on the front page",
   "endpoints.route./realms.name": "The trust realm directory",
+  "endpoints.route./favicon.ico.name": "The service's icon",
   "endpoints.route./web/card.css.name": "The public surfaces' card stylesheet",
   "endpoints.route./web/theme.css.name": "A realm's sign-in appearance stylesheet",
   "endpoints.route./web/branding/logo.name": "A realm's sign-in logo",

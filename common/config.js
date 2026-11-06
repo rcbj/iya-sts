@@ -3773,13 +3773,14 @@ const SETTINGS = [
                  'client signs ' +
                  'with (client assertions, DPoP proofs, request objects, ' +
                  'wallet proofs) is still accepted and advertised as ' +
-                 'accepted; an access-token, federation or credential ' +
-                 'algorithm an operator configures ' +
-                 '(`oauth2.accessTokenSigningAlg`, `oidfed.signingAlg`, ' +
-                 'OpenID4VCI\'s credential algorithm) still signs, so do ' +
-                 'not configure EdDSA there with this off; the DID ' +
-                 'document, COSE, XML signatures, DKIM and TLS are not ' +
-                 'JOSE JWKS publication. On: EdDSA is signed and published ' +
+                 'accepted; a signature whose key travels in an `x5c` or ' +
+                 'a DID document; a federation or credential algorithm an ' +
+                 'operator configures (`oidfed.signingAlg`, OpenID4VCI\'s ' +
+                 'credential algorithm) still signs, so do not configure ' +
+                 'EdDSA there with this off; the DID document, COSE, XML ' +
+                 'signatures, DKIM and TLS are not JOSE JWKS publication. ' +
+                 'An `oauth2.accessTokenSigningAlg` of EdDSA signs with ' +
+                 'RS256 instead. On: EdDSA is signed and published ' +
                  'as `oauth2.eddsaCurve` says.' },
   // ONE REALM'S SIGNING ALGORITHMS, NAMED ONE BY ONE (#1348, 2026-11-05, rcbj:
   // the OpenID Connect certification configuration has only RS256 enabled).

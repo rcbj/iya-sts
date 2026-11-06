@@ -102,6 +102,8 @@ const config = require('./config');
 // Every signature algorithm, once (#1368): the tables below are views of it.
 const algorithmRegistry = require('./crypto_impl/algorithm_registry');
 const LazyModule = require('./lazy_module');
+// Which algorithm this realm may sign with or accept (#1368).
+const signaturePolicy = require('./signature_policy');
 const pqJose = require('./pq_jose');
 
 const xmldom = require('@xmldom/xmldom');
@@ -3694,7 +3696,7 @@ function tokenClockSkew() {
  */
 function postQuantumSigningOn() {
   log.debug("Entering postQuantumSigningOn().");
-  const on = config.value('keys.postQuantumSigning') !== false;
+  const on = signaturePolicy.postQuantumOn();
   log.debug("Leaving postQuantumSigningOn(). " + on);
   return on;
 }
@@ -3955,6 +3957,17 @@ function decodeJws(token, options) {
   }
 }
 
+// THE ONE JOSE ACCEPT CHOKEPOINT (#1368). A hot path: asked per signature, so
+// no Entering/Leaving pair, which would drown the log. The code is marked on
+// the Error, never put in its message: callers copy the message into an
+// `error_description`, and a code is never sent (`error_codes.js`, rule 1).
+function refuseUnacceptableJws(alg) {
+  const cause = signaturePolicy.acceptCause('jose', alg);
+  if (cause) {
+    throw errorCodes.mark(new Error(cause.message), cause.code);
+  }
+}
+
 function prepareVerification(token, key, options) {
   log.debug('Entering prepareVerification().');
   const parts = String(token || '').split('.');
@@ -3988,19 +4001,10 @@ function prepareVerification(token, key, options) {
       allowed.join(', ') + ' ' + (allowed.length === 1 ? 'is' : 'are') +
       ' accepted here.');
   }
-  // A POST-QUANTUM JWS IN A REALM THAT HAS THEM OFF (`keys.postQuantumSigning`,
-  // 2026-10-23) is refused HERE, after the caller's own list and before the
-  // signature: every JOSE verifier in this service comes through this
-  // function, so none of them can accept what the realm no longer publishes
-  // or advertises, whatever list it was handed. The code is marked on the
-  // Error, never put in its message — callers copy the message into an
-  // `error_description`, and a code is never sent (`error_codes.js`, rule 1).
-  if (isPqJwsAlg(header.alg) && !postQuantumSigningOn()) {
-    log.debug('Leaving prepareVerification(). Post-quantum signing is off.');
-    throw errorCodes.mark(new Error('this JWS is signed with "' +
-      header.alg + '", a post-quantum algorithm this realm does not ' +
-      'accept (keys.postQuantumSigning is off).'), 'STS-KEYS-0157');
-  }
+  // After the caller's own list and before the signature: every JOSE verifier
+  // comes through here or through jwsSignatureValid(), so none can accept what
+  // the realm no longer publishes, whatever list it was handed.
+  refuseUnacceptableJws(header.alg);
   const spec = jwsSpec(header.alg);
   const prepared = {
     header: header,
@@ -4081,6 +4085,9 @@ function checkPreparedSignature(prepared, key) {
  */
 function jwsSignatureValid(alg, key, signingInput, signature) {
   log.debug('Entering jwsSignatureValid(). alg=' + alg);
+  // GNAP's `jws` and `jwsd` proofs come through here and not through
+  // prepareVerification(), and until #1368 were never asked.
+  refuseUnacceptableJws(alg);
   const spec = jwsSpec(alg);
   const prepared = {
     header: { alg: alg },
@@ -13938,6 +13945,11 @@ function signHttpMessage(message, options) {
                        ' is not supported; the supported ones are ' +
                        Object.keys(HTTP_SIGNATURE_ALGORITHMS).join(', ') + '.');
   }
+  const unsignable = signaturePolicy.signCause('httpsig', name);
+  if (unsignable) {
+    log.debug("Leaving signHttpMessage(). Not signed here.");
+    return httpsigRefuse(unsignable.code, unsignable.message);
+  }
   if (algParam !== undefined &&
       (entry.registry === 'jws' || algParam !== name)) {
     log.debug("Leaving signHttpMessage(). alg conflict.");
@@ -14484,6 +14496,13 @@ function httpsigVerifyOne(message, parsed, opts, now) {
     return httpsigRefuse('STS-KEYS-0134',
                        'The signature algorithm ' + JSON.stringify(name) +
                        ' is not supported.');
+  }
+  // THE ONE HTTP SIGNATURE ACCEPT CHOKEPOINT (#1368): OAuth's and GNAP's both
+  // come through here. It had no gate until then.
+  const unacceptable = signaturePolicy.acceptCause('httpsig', name);
+  if (unacceptable) {
+    log.debug("Leaving httpsigVerifyOne(). Not accepted here.");
+    return httpsigRefuse(unacceptable.code, unacceptable.message);
   }
   if (Array.isArray(opts.allowedAlgorithms) &&
       opts.allowedAlgorithms.indexOf(name) < 0) {

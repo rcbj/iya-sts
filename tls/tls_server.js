@@ -6201,6 +6201,11 @@ function holdToPathRules(socket, label) {
       problem = problem || resumedProblem(socket, peer);
       if (peer && peer.raw && (typeof socket.isSessionReused !== 'function' ||
                                !socket.isSessionReused())) {
+        // The chain with the verdict, in one row, so another node has both
+        // when the session resumes there, whether or not a request came first.
+        if (!problem && typeof socket.isSessionReused === 'function') {
+          revocationStatus.fromSocket(socket);
+        }
         revocationStatus.rememberHold(peer.raw, !problem);
       }
     }
@@ -6230,10 +6235,15 @@ function holdToPathRules(socket, label) {
 
 // A RESUMED SESSION UNDER PARANOID PKI MODE (#1360). Node hands over the leaf
 // alone, so the hold above saw one certificate. What the full handshake's hold
-// concluded is remembered with its chain: a demoted one is demoted again, and
-// one nothing is remembered of (another node's ticket, a row aged out) is
-// demoted too, because nothing established it; the client's next full handshake
-// settles it. null when the session is not resumed, or the leaf held.
+// concluded is remembered with its chain, and it is the session's verdict: a
+// demoted one is demoted again. One not known here yet may be on its way from
+// the node that saw the handshake, so the socket is marked and
+// `revocation_status.awaitResumedChain()` settles it before any request is
+// answered; what has not arrived by then is demoted. The leaf's own fields, its
+// window included, are asked on every connection, and revocation by the
+// request's verdict as it always was, so neither is frozen at the full
+// handshake. null when the session is not resumed, the leaf held, or that is
+// still to be settled.
 function resumedProblem(socket, peer) {
   log.debug("Entering resumedProblem().");
   if (typeof socket.isSessionReused !== 'function' ||
@@ -6243,11 +6253,13 @@ function resumedProblem(socket, peer) {
   }
   const held = revocationStatus.rememberedHold(peer.raw);
   log.debug("Leaving resumedProblem(). " + held);
+  if (held === null) {
+    socket.stsResumedHoldPending = true;
+    return null;
+  }
   return held === true ? null : {
     check: 'path', code: 'STS-TLS-0058',
-    why: held === false
-      ? 'its full handshake was refused, and this session resumes it'
-      : 'this session resumes a handshake this process has no record of'
+    why: 'its full handshake was refused, and this session resumes it'
   };
 }
 
@@ -6284,8 +6296,10 @@ function holdConnectionsOn(server, label) {
     }
     holdToPathRules(socket, label);
     socket.pause();
-    socket.certificateTrustSettled = checkedSocket(socket)
-      .then(function (verdict) {
+    socket.certificateTrustSettled = revocationStatus.awaitResumedChain(socket)
+      .then(function () {
+        return checkedSocket(socket);
+      }).then(function (verdict) {
         if (verdict && verdict.refused && socket.authorized) {
           socket.authorized = false;
           socket.authorizationError = 'ERR_STS_REVOCATION: ' + verdict.why;

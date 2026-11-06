@@ -851,8 +851,11 @@ class VcDid {
     // certificate-header: none — the DIF specification allows exactly `alg`
     // and `kid` in this header, so an x5c or x5u would make the linkage
     // non-conformant (common/jose_certificate_header.js).
-    const token = stsCrypto.signJws({ iss: did, sub: did, nbf: now, exp: exp,
-                                      vc: vc }, signer.key, {
+    // On libuv's thread pool (#1368): a post-quantum signature took seconds of
+    // this thread when made here synchronously.
+    const token = await stsCrypto.signJwsAsync({ iss: did, sub: did, nbf: now,
+                                                 exp: exp, vc: vc },
+                                               signer.key, {
       algorithm: signer.alg,
       noTimestamp: true,
       header: { alg: signer.alg, kid: did + '#' + signer.kid,
