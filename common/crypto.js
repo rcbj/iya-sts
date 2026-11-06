@@ -282,6 +282,15 @@ function directChildByLocal(parent, localName, namespaceUri) {
 function signXml(xml, opts) {
   log.debug("Entering signXml().");
   const options = opts || {};
+  // THE XML SIGN CHOKEPOINT (#1368). `xmlSignatureChoice()` chooses within the
+  // list; this is what holds a caller that named a method itself.
+  if (options.sigAlg) {
+    const unsignable = signaturePolicy.signCause('xml', options.sigAlg);
+    if (unsignable) {
+      log.debug("Leaving signXml(). Not signed here.");
+      throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+    }
+  }
   const what = options.what || 'XML document';
   log.debug('Entering signXml(). what=' + what + ', placement=' +
             (options.placement || PLACEMENT.AFTER_ISSUER));
@@ -602,6 +611,14 @@ function xmlAlgorithmVerdict(signatureMethod, digestMethods, opts) {
     log.debug("Leaving xmlAlgorithmVerdict(). An HMAC with no shared key.");
     return out;
   }
+  // THE XML ACCEPT CHOKEPOINT (#1368), before any key operation.
+  const unaccepted = signaturePolicy.acceptCause('xml', signatureMethod);
+  if (unaccepted) {
+    out.problem = unaccepted.message;
+    out.code = unaccepted.code;
+    log.debug("Leaving xmlAlgorithmVerdict(). Not accepted here.");
+    return out;
+  }
   out.weak = sig.weak;
   out.sha1 = sig.sha1;
   const digests = digestMethods || [];
@@ -614,6 +631,13 @@ function xmlAlgorithmVerdict(signatureMethod, digestMethods, opts) {
           ? ': ' + XML_DIGEST_REFUSED[uri] : '');
       out.code = 'STS-KEYS-0061';
       log.debug("Leaving xmlAlgorithmVerdict(). Unknown DigestMethod.");
+      return out;
+    }
+    const digestRefused = signaturePolicy.acceptXmlDigestCause(dig.label);
+    if (digestRefused) {
+      out.problem = digestRefused.message;
+      out.code = digestRefused.code;
+      log.debug("Leaving xmlAlgorithmVerdict(). Digest not accepted here.");
       return out;
     }
     out.weak = out.weak || dig.weak;
@@ -1838,6 +1862,11 @@ function verifyWsSecurityHmac(xml, opts) {
  */
 function signQueryString(queryString, privateKeyPem, sigAlg, privateKey) {
   log.debug('Entering signQueryString().');
+  const unsignable = signaturePolicy.signCause('xml', sigAlg);
+  if (unsignable) {
+    log.debug('Leaving signQueryString(). Not signed here.');
+    throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+  }
   const pqMethod = xmldsig.SIG_METHODS[sigAlg] &&
     xmldsig.SIG_METHODS[sigAlg].postQuantum
     ? xmldsig.SIG_METHODS[sigAlg] : null;
@@ -10835,6 +10864,15 @@ function coseSignParams(spec, key) {
   return params;
 }
 
+// THE ONE COSE ACCEPT CHOKEPOINT (#1368), before any key operation. A hot path:
+// no Entering/Leaving pair. The code is marked, never in the message.
+function refuseUnacceptableCose(coseAlg) {
+  const cause = signaturePolicy.acceptCause('cose', String(coseAlg));
+  if (cause) {
+    throw errorCodes.mark(new Error(cause.message), cause.code);
+  }
+}
+
 // The row to sign with, or a refusal: a broken algorithm is never signed with.
 function coseSpecToSign(coseAlg) {
   log.debug("Entering coseSpecToSign(). alg=" + coseAlg);
@@ -10844,6 +10882,11 @@ function coseSpecToSign(coseAlg) {
     // error-code: none — a programming error; callers name a listed algorithm
     throw new Error('COSE: this service does not sign with algorithm ' +
                     String(coseAlg) + '.');
+  }
+  const cause = signaturePolicy.signCause('cose', String(coseAlg));
+  if (cause) {
+    log.debug("Leaving coseSpecToSign(). Not signed here.");
+    throw errorCodes.mark(new Error(cause.message), cause.code);
   }
   log.debug("Leaving coseSpecToSign().");
   return spec;
@@ -10910,6 +10953,7 @@ async function coseSign1SignAsync(coseAlg, key, protectedBytes, payload,
 function coseSign1Verify(coseAlg, key, protectedBytes, payload, signature,
                          options) {
   log.debug("Entering coseSign1Verify(). alg=" + coseAlg);
+  refuseUnacceptableCose(coseAlg);
   const ok = verifyCoseSignature(coseAlg, key,
     coseSigStructure(protectedBytes, options && options.external, payload),
     signature, { ecdsaEncoding: 'ieee-p1363' });
@@ -10931,6 +10975,7 @@ function coseSign1Verify(coseAlg, key, protectedBytes, payload, signature,
 async function coseSign1VerifyAsync(coseAlg, key, protectedBytes, payload,
                                     signature, options) {
   log.debug("Entering coseSign1VerifyAsync(). alg=" + coseAlg);
+  refuseUnacceptableCose(coseAlg);
   const spec = coseSignatureAlg(coseAlg);
   if (!spec || spec.family !== 'pq' || (key && key.spki !== undefined)) {
     log.debug("Leaving coseSign1VerifyAsync(). In process.");
@@ -10942,6 +10987,70 @@ async function coseSign1VerifyAsync(coseAlg, key, protectedBytes, payload,
     Buffer.from(signature || [])));
   log.debug("Leaving coseSign1VerifyAsync(). " + ok);
   return ok;
+}
+
+// ---------------------------------------------------------------------------
+// A SIGNATURE ON AN X.509 STRUCTURE (#1368): a foreign CRL or OCSP response. A
+// classical one goes where it always went, the engine's `verifyWithPublicKey()`,
+// which handles RSA, RSASSA-PSS and ECDSA by the AlgorithmIdentifier. The engine
+// has no post-quantum algorithm, so a post-quantum list answered "not signed by
+// this certificate" for every signer it was tried against.
+//
+// `pki.acceptedSignatureAlgorithms` is asked first, before any key is used.
+// ---------------------------------------------------------------------------
+/**
+ * Verifies the signature on a CRL's or OCSP response's TBS bytes.
+ *
+ * @param tbs - the signed bytes
+ * @param signatureValue - the signature, as an asn1js BIT STRING
+ * @param publicKeyInfo - the signer's pkijs PublicKeyInfo
+ * @param signatureAlgorithm - the pkijs AlgorithmIdentifier
+ * @returns a promise of whether it verifies; throws what the engine throws for
+ *   a key it cannot use with the algorithm, which callers read as "not this key"
+ */
+async function verifyX509Signature(tbs, signatureValue, publicKeyInfo,
+                                   signatureAlgorithm) {
+  log.debug("Entering verifyX509Signature().");
+  const oid = String(signatureAlgorithm.algorithmId);
+  const unaccepted = signaturePolicy.acceptX509Cause(oid);
+  if (unaccepted) {
+    log.warn(errorCodes.tag(unaccepted.code) + unaccepted.message);
+    log.debug("Leaving verifyX509Signature(). Not accepted here.");
+    return false;
+  }
+  const entry = pqcX509.algForOid(oid);
+  if (entry && entry.use !== 'kem') {
+    const read = pqcX509.decodeSpki(new Uint8Array(
+      publicKeyInfo.toSchema().toBER(false)));
+    if (!read || read.alg !== entry.id) {
+      log.debug("Leaving verifyX509Signature(). The wrong key for " + entry.id);
+      return false;
+    }
+    const ok = !!(await pqcX509.verify(entry.id,
+      new Uint8Array(signatureValue.valueBlock.valueHexView),
+      new Uint8Array(tbs), read.pub));
+    log.debug("Leaving verifyX509Signature(). " + entry.id + " " + ok);
+    return ok;
+  }
+  const pkijs = require('pkijs');
+  const verified = await pkijs.getCrypto(true).verifyWithPublicKey(tbs,
+    signatureValue, publicKeyInfo, signatureAlgorithm);
+  log.debug("Leaving verifyX509Signature(). " + verified);
+  return verified;
+}
+
+/**
+ * Whether a certificate's signature verifies under a public key. OpenSSL
+ * answers, and throws for a key of the wrong type; callers read that as no.
+ *
+ * @param certificate - an X509Certificate
+ * @param publicKey - the candidate issuer's public key
+ * @returns true when it verifies
+ */
+function certificateSignedWith(certificate, publicKey) {
+  log.debug("Entering certificateSignedWith().");
+  log.debug("Leaving certificateSignedWith().");
+  return certificate.verify(publicKey);
 }
 
 // The COSE entry for an identifier, or null.
@@ -17819,6 +17928,9 @@ module.exports = {
   hmac: hmac,
   parseCertificate: parseCertificate,
   decodeJws: decodeJws,
+  verifyX509Signature: verifyX509Signature,
+  certificateSignedWith: certificateSignedWith,
+  signaturePolicy: signaturePolicy,
   bbs: bbs,
   signRawSignatureAsync: signRawSignatureAsync,
   coseSign1Sign: coseSign1Sign,

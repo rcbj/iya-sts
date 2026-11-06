@@ -253,6 +253,8 @@ const NS_SAMLP = 'urn:oasis:names:tc:SAML:2.0:protocol';
 
 const NS_SAML = 'urn:oasis:names:tc:SAML:2.0:assertion';
 
+// SAML V2.0 Metadata Profile for Algorithm Support Version 1.0 (#1368).
+const NS_ALG = 'urn:oasis:names:tc:SAML:metadata:algsupport';
 const NS_MD = 'urn:oasis:names:tc:SAML:2.0:metadata';
 
 const NS_DS = 'http://www.w3.org/2000/09/xmldsig#';
@@ -647,6 +649,35 @@ class Saml2Sso {
    *
    * @returns the count
    */
+  // WHAT THIS REALM CAN VERIFY, PUBLISHED (#1368): the SAML V2.0 Metadata Profile
+  // for Algorithm Support 1.0, inside md:Extensions, which a consumer that does
+  // not know the profile ignores (SAML metadata section 2.3.1).
+  private algorithmSupport(): string {
+    const { config, stsCrypto } = this.deps;
+    const { log, xmlEscape } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.algorithmSupport().");
+    if (config.value('saml2.publishAlgorithmSupport') === false) {
+      log.debug("Leaving Saml2Sso.algorithmSupport(). Off.");
+      return '';
+    }
+    const digests: Record<string, any> = {};
+    stsCrypto.xmlSignatureAlgorithms().digests.forEach(function (row: any) {
+      digests[row.uri] = row;
+    });
+    const support = stsCrypto.signaturePolicy.xmlAlgorithmSupport(digests);
+    const element = function (name: string, uri: string): string {
+      return '<alg:' + name + ' xmlns:alg="' + NS_ALG + '" Algorithm="' +
+        xmlEscape(uri) + '"/>';
+    };
+    const out = support.digests.map(function (uri: string) {
+      return element('DigestMethod', uri);
+    }).concat(support.signing.map(function (uri: string) {
+      return element('SigningMethod', uri);
+    })).join('');
+    log.debug("Leaving Saml2Sso.algorithmSupport().");
+    return out;
+  }
+
   artifactCount(): number {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.artifactCount().");
@@ -5777,7 +5808,8 @@ class Saml2Sso {
         '<md:Extensions><cm:CryptoMetadataLocation xmlns:cm="' +
           'urn:iya:sts:crypto-metadata:1">' +
           xmlEscape(helpers.rebaseTo(base, 'pki') + '/crypto/metadata.xml') +
-          '</cm:CryptoMetadataLocation></md:Extensions>' +
+          '</cm:CryptoMetadataLocation>' + this.algorithmSupport() +
+          '</md:Extensions>' +
         // The role descriptors are a choice the schema lets come in any
         // order; WS-Federation's first, where a WS-Federation relying party
         // looks for it.

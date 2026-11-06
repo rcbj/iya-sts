@@ -581,12 +581,22 @@ class CertificateDetails {
   //   unverified   candidates carry the name and none of their keys verifies
   //   too-deep     the walk passed MAX_PATH, which only a loop produces
   // -------------------------------------------------------------------------
+  // Each link of a chain, from pki.js's door (#1368). Lazily: this module is
+  // required by what pki.js's own callers load, and it needs pki.js only when a
+  // dialog is opened.
+  private chainLinks(pems: string[]): Promise<any[]> {
+    const { log } = this.deps;
+    log.debug("Entering CertificateDetails.chainLinks().");
+    log.debug("Leaving CertificateDetails.chainLinks().");
+    return require('./pki').verifyChain(pems);
+  }
+
   private async signedBy(childPem: string, parentPem: string):
       Promise<boolean> {
     const { log, x509 } = this.deps;
     log.debug("Entering CertificateDetails.signedBy().");
     try {
-      const links = await x509.verifyChain([childPem, parentPem]);
+      const links = await this.chainLinks([childPem, parentPem]);
       log.debug("Leaving CertificateDetails.signedBy().");
       return !!(links[0] && links[0].signatureValid);
     } catch (e) {
@@ -723,7 +733,7 @@ class CertificateDetails {
     const opts = options || {};
     const anchors = opts.anchors || {};
     const built = await this.pathFor(pem, candidates);
-    const links = await x509.verifyChain(built.path.map(function (one) {
+    const links = await this.chainLinks(built.path.map(function (one) {
       return one.pem;
     }));
     const chain = [];

@@ -3625,16 +3625,46 @@ const ALG_OF_CURVE = { 'P-256': ['ES256'], 'P-384': ['ES384'],
  * @param keys - the public JWKs
  * @returns the keys to publish
  */
+// What a passkey ceremony offers, as a list of names.
+function webauthnAlgorithmsOffered() {
+  log.debug("Entering webauthnAlgorithmsOffered().");
+  const raw = config.value('webauthn.algorithms');
+  log.debug("Leaving webauthnAlgorithmsOffered().");
+  return (Array.isArray(raw) ? raw : String(raw || '').split(','))
+    .map(function (one) {
+      return String(one).trim();
+    }).filter(Boolean);
+}
+
+// EVERY LIST A DOCUMENT CARRIES, IN ONE CALL (#1368, phase 5): a publisher asks
+// this and cannot miss one of the switches. With nothing configured the output
+// is what each of them already answered.
+function narrowSigningAlgs(doc) {
+  log.debug("Entering narrowSigningAlgs().");
+  withoutPqSigningAlgs(doc);
+  withoutEddsaSigningAlgs(doc);
+  withoutUnlistedSigningAlgs(doc);
+  signaturePolicy.narrowOwnMembers(doc, OWN_SIGNING_ALG_MEMBERS);
+  signaturePolicy.narrowAcceptedLists(doc, OWN_SIGNING_ALG_MEMBERS);
+  log.debug("Leaving narrowSigningAlgs().");
+  return doc;
+}
+
 function withoutUnlistedSigningKeys(keys) {
   log.debug("Entering withoutUnlistedSigningKeys().");
   const list = signingAlgAllowlist();
   if (!list) {
     log.debug("Leaving withoutUnlistedSigningKeys(). Unchanged.");
-    return keys;
+    // keys.pqcOnly leaves no list to read, and still narrows what is published.
+    return signaturePolicy.pqcOnly()
+      ? (keys || []).filter(signaturePolicy.publishedUnderPqcOnly) : keys;
   }
   const out = (keys || []).filter(function (jwk) {
     if (!jwk || jwk.use === 'enc') {
       return true;
+    }
+    if (!signaturePolicy.publishedUnderPqcOnly(jwk)) {
+      return false;
     }
     if (jwk.alg) {
       return list.indexOf(jwk.alg) >= 0;
@@ -3663,10 +3693,12 @@ function withoutUnlistedSigningKeys(keys) {
 // `keyNamedElsewhere` is a signature whose verifying key travels in an `x5c` or
 // a DID document rather than in `/oauth2/jwks`, so `keys.eddsaSigning`'s reason,
 // a key nobody can fetch, does not apply to it. The list still does.
-function signatureRefusal(alg, keyNamedElsewhere) {
+function signatureRefusal(alg, opts) {
   log.debug("Entering signatureRefusal(). alg=" + alg);
-  const cause = signaturePolicy.signCause('jose', alg);
-  if (!cause || (keyNamedElsewhere && cause.code === 'STS-KEYS-0165')) {
+  const options = opts || {};
+  const cause = signaturePolicy.signCause('jose', alg, {
+    idToken: options.certificateHeader === 'id-token' });
+  if (!cause || (options.keyNamedElsewhere && cause.code === 'STS-KEYS-0165')) {
     log.debug("Leaving signatureRefusal(). Allowed.");
     return null;
   }
@@ -3683,7 +3715,7 @@ function signatureRefusal(alg, keyNamedElsewhere) {
 
 /**
  * The algorithm a signature this realm chose for itself is made with: the one
- * asked for where the realm may use it, else RS256, which it always may. For a
+ * asked for where the realm may use it, else its default. For a
  * setting, where nothing a client did asked for the algorithm. A client's own
  * choice is refused instead (`signatureRefusal()`).
  *
@@ -3701,11 +3733,13 @@ function usableSigningAlg(alg) {
   if (!signatureRefusalsSaid.has(said)) {
     signatureRefusalsSaid.add(said);
     log.warn(errorCodes.tag('STS-KEYS-0178') + 'helpers: the "' +
-             String(realms.currentId()) + '" realm signs with RS256 where a ' +
-             'setting names ' + alg + ': ' + cause.message);
+             String(realms.currentId()) + '" realm signs with ' +
+             signaturePolicy.defaultJoseAlg() + ' where a setting names ' +
+             alg + ': ' + cause.message);
   }
-  log.debug("Leaving usableSigningAlg(). RS256 instead.");
-  return 'RS256';
+  const instead = signaturePolicy.defaultJoseAlg();
+  log.debug("Leaving usableSigningAlg(). " + instead + " instead.");
+  return instead;
 }
 
 /**
@@ -4094,11 +4128,22 @@ const xmlFallbackSaid = new Set();
  *
  * @returns `{ name, view }`, with `fellBack: true` on a fallback
  */
+// The chosen XML algorithm, or the first listed one where a list leaves it out
+// and it reached the store anyway. A hot path: no Entering/Leaving pair.
+function xmlAlgorithmWithinList(asked) {
+  const row = signaturePolicy.xmlRowNamed(asked);
+  if (!row || !signaturePolicy.signCause('xml', row.xml)) {
+    return asked;
+  }
+  const first = signaturePolicy.effective('xml', 'sign')[0];
+  return first ? String(first).split('#')[1] : asked;
+}
+
 function xmlSignatureChoice() {
   log.debug("Entering xmlSignatureChoice().");
   const keys = stsKeysFor();
-  const asked = String(mode.valueInForce('saml.signatureAlgorithm') ||
-                       'rsa-sha256');
+  const asked = xmlAlgorithmWithinList(String(
+    mode.valueInForce('saml.signatureAlgorithm') || 'rsa-sha256'));
   const rsaView = function () {
     log.debug("Entering rsaView().");
     log.debug("Leaving rsaView().");
@@ -8282,7 +8327,7 @@ function signJwtAs(payload, alg, secret, opts) {
   log.debug("Entering signJwtAs(). alg=" + alg);
   // Ahead of the HMAC branch below: an HMAC signature uses no published key,
   // but the list says what this realm signs with, HS256 included (#1348).
-  const refused = signatureRefusal(alg);
+  const refused = signatureRefusal(alg, options);
   if (refused) {
     log.debug("Leaving signJwtAs(). Refused by the policy.");
     throw refused;
@@ -8340,7 +8385,7 @@ function signJwtAsAsync(payload, alg, secret, opts) {
   const options = opts || {};
   log.debug("Entering signJwtAsAsync(). alg=" + alg);
   // See signJwtAs().
-  const refused = signatureRefusal(alg);
+  const refused = signatureRefusal(alg, options);
   if (refused) {
     log.debug("Leaving signJwtAsAsync(). Refused by the policy.");
     return Promise.reject(refused);
@@ -8411,10 +8456,11 @@ function signJwtAsAsync(payload, alg, secret, opts) {
  */
 function signJwt(payload, context, opts) {
   log.debug("Entering signJwt(). typ=" + (payload.typ || '(none)'));
-  const alg = String((opts && opts.algorithm) || 'RS256');
+  const alg = String((opts && opts.algorithm) ||
+                     signaturePolicy.defaultJoseAlg());
   // Held to the same answer as signJwtAs() since #1368: a signature this realm
   // publishes no key for helps nobody.
-  const refused = signatureRefusal(alg, opts && opts.keyNamedElsewhere);
+  const refused = signatureRefusal(alg, opts);
   if (refused) {
     log.debug("Leaving signJwt(). Refused by the policy.");
     throw refused;
@@ -8480,9 +8526,10 @@ function signJwt(payload, context, opts) {
  */
 function signJwtAsync(payload, context, opts) {
   log.debug("Entering signJwtAsync(). typ=" + (payload.typ || '(none)'));
-  const alg = String((opts && opts.algorithm) || 'RS256');
+  const alg = String((opts && opts.algorithm) ||
+                     signaturePolicy.defaultJoseAlg());
   // See signJwt().
-  const refused = signatureRefusal(alg, opts && opts.keyNamedElsewhere);
+  const refused = signatureRefusal(alg, opts);
   if (refused) {
     log.debug("Leaving signJwtAsync(). Refused by the policy.");
     return Promise.reject(refused);
@@ -9389,6 +9436,8 @@ module.exports = {
   curveKeyFrom: curveKeyFrom,
   listedSigningAlgs: listedSigningAlgs,
   withoutUnlistedSigningAlgs: withoutUnlistedSigningAlgs,
+  narrowSigningAlgs: narrowSigningAlgs,
+  webauthnAlgorithmsOffered: webauthnAlgorithmsOffered,
   withoutUnlistedSigningKeys: withoutUnlistedSigningKeys,
   browserDeviceKeysFor: browserDeviceKeysFor,
   vcApiKeysFor: vcApiKeysFor,

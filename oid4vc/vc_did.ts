@@ -550,8 +550,8 @@ class VcDid {
   private didSigner(): { alg: string; key: any; kid: string } {
     const { log, config, STS, signingKeyFor } = this.deps;
     log.debug("Entering VcDid.didSigner().");
-    const alg = String(config.value('oid4vci.credentialSigningAlgorithm') ||
-                       'RS256');
+    const alg = stsCrypto.signaturePolicy.underPqcOnly(String(
+      config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'));
     if (alg === 'RS256') {
       log.debug("Leaving VcDid.didSigner(). RS256.");
       return { alg: 'RS256', key: STS.privateKey, kid: STS.kid };
@@ -568,8 +568,8 @@ class VcDid {
                                             kid: string }> {
     const { log, config, STS, signingKeyForAsync } = this.deps;
     log.debug("Entering VcDid.didSignerAsync().");
-    const alg = String(config.value('oid4vci.credentialSigningAlgorithm') ||
-                       'RS256');
+    const alg = stsCrypto.signaturePolicy.underPqcOnly(String(
+      config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'));
     if (alg === 'RS256') {
       log.debug("Leaving VcDid.didSignerAsync(). RS256.");
       return { alg: 'RS256', key: STS.privateKey, kid: STS.kid };
@@ -637,8 +637,8 @@ class VcDid {
     // (2026-10-23): the realm then signs nothing with it — didSignerAsync()
     // would be refused (STS-KEYS-0158) — and publishes it nowhere, so the
     // document is the RSA key's and the rest below.
-    const credentialAlg = String(this.deps.config.value(
-      'oid4vci.credentialSigningAlgorithm') || 'RS256');
+    const credentialAlg = stsCrypto.signaturePolicy.underPqcOnly(String(
+      this.deps.config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'));
     const pqOff = stsCrypto.isPqJwsAlg(credentialAlg) &&
       !stsCrypto.postQuantumSigningOn();
     const signer = pqOff ? { alg: 'RS256', key: STS.privateKey, kid: STS.kid }

@@ -514,9 +514,8 @@ class VcStatus {
     const { log, config, STS, signingKeyForAsync, publishedKidFor } =
       this.deps;
     log.debug("Entering VcStatus.signerAsync().");
-    const alg = String(chosen ||
-                       config.value('oid4vci.credentialSigningAlgorithm') ||
-                       'RS256');
+    const alg = stsCrypto.signaturePolicy.underPqcOnly(String(chosen ||
+      config.value('oid4vci.credentialSigningAlgorithm') || 'RS256'));
     // THE CREDENTIALS GROUP'S KEY in a hybrid-groups realm (#68) — the list
     // and the credentials it describes are both `vci-credential`, so they
     // still sign with one key — else the per-algorithm key.
