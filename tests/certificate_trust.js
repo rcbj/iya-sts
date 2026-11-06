@@ -21,11 +21,11 @@
 //    audit row. J: the synchronous door. K: expected names.
 //
 // MUTATION RECORD, each applied to a scratch build, seen red and put back:
-//   * `fieldChecks()` not marking a failure                  — section A red
-//   * `compose()` letting `not-asked` pass under paranoid    — sections E, J
-//   * the `pinned` condition dropping `registered`           — section C
-//   * `anchorsFor()` ignoring `purposes`                     — section D
-//   * `ruleOf()` ignoring the variant                        — sections B, G
+//   * `fieldChecks()` not marking a failure                  — 53 red
+//   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
+//   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
+//   * `anchorsFor()` ignoring `purposes`                     — 1 red (D)
+//   * `ruleOf()` ignoring the variant                        — 4 red (B, E, G)
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

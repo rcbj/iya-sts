@@ -2128,7 +2128,7 @@ Scope: `admin:read`.
 
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
-| `template` | query | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `reset-refused-attempt`, `layout`, `test-message` |  | A message id, to answer its wording. |
+| `template` | query | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `pki-pin-status`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `reset-refused-attempt`, `layout`, `test-message` |  | A message id, to answer its wording. |
 | `lang` | query | string |  | The language of `template`; `en` by default. |
 
 **200**: The mail channel's state in this realm.
@@ -2498,7 +2498,7 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `lang` | string | yes | A BCP 47 tag. |
-| `template` | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `reset-refused-attempt`, `layout`, `test-message` | yes | The message id. |
+| `template` | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `pki-pin-status`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `reset-refused-attempt`, `layout`, `test-message` | yes | The message id. |
 
 **200**: Whether it was reset.
 
@@ -2603,7 +2603,7 @@ Scope: `admin:write`.
 | `html` | string | yes | The HTML part. |
 | `lang` | string | yes | A BCP 47 tag. |
 | `subject` | string | yes | One line. |
-| `template` | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `reset-refused-attempt`, `layout`, `test-message` | yes | The message id. |
+| `template` | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `pki-pin-status`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `reset-refused-attempt`, `layout`, `test-message` | yes | The message id. |
 | `text` | string | yes | The text part. |
 
 **200**: Whether it was saved.

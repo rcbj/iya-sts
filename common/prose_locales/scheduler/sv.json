@@ -375,6 +375,14 @@
     "en": "98370fb755b4ba95",
     "text": "I en tjänst som driftsätts som celler tar den bort gravstenarna för avslutade skapade rader som är äldre än persistence.mintedRetention från den globala nivåns databas, i samma omgångar; dess körning tas i anspråk i den globala nivån, så att en enda cell kör varje tidsfack. Avstängd i en tjänst med en enda databas, där den andra rensningen täcker den."
   },
+  "sched.jobs.pki.pins.audit.title": {
+    "en": "3ccb80617905a1db",
+    "text": "Granskning av fästa certifikat"
+  },
+  "sched.jobs.pki.pins.audit.describe": {
+    "en": "e5cc243756f71f7e",
+    "text": "Underkastar varje fäst certifikat och varje post i sfärens förtroendelager för signerare kontrollerna i paranoid PKI-läge, behåller resultatet som /admin/pki/trust ritar, och loggar och mejlar det som ändrats."
+  },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",
     "text": "E-post för aktiviteter efter inloggning"

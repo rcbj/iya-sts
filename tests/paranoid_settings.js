@@ -22,11 +22,11 @@
 // carry an exemption.
 //
 // MUTATION RECORD, each applied to a scratch build, seen red and put back:
-//   * `inForce()` answering true for `auto` in development   — section B
-//   * `applies()` ignoring the row                           — section C
-//   * `applies()` ignoring the master                        — section D
-//   * a row removed from the purpose table                   — section A
-//   * `announce()` logging every time                        — section F
+//   * `inForce()` answering true for `auto` in development   — 48 red
+//   * `applies()` ignoring the row                           — 71 red
+//   * `applies()` ignoring the master                        — 92 red
+//   * a row of the table naming a setting that does not exist — 7 red
+//   * `announce()` logging every time                        — 1 red (F)
 // ===========================================================================
 
 // The child is the appconfig file's case, so it keeps what it was handed.

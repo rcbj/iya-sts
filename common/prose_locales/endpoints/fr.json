@@ -775,6 +775,14 @@
     "en": "bc458d477b4de7d9",
     "text": "L’autorité de certification que détient ce domaine"
   },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "Mode PKI paranoïaque, magasin de confiance des signataires et certificats épinglés"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "Modifier le magasin de confiance des signataires, une ligne paranoïaque, ou revérifier les épinglages"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "Construire une hiérarchie, émettre une paire de clés, rédiger un certificat"

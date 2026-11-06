@@ -13,7 +13,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 
 | API | Base path | Operations |
 |---|---|---|
-| [Management API](admin-api.html) | `/admin-api` | 664 |
+| [Management API](admin-api.html) | `/admin-api` | 669 |
 | [Admin console operations](admin-console-api.html) | `/admin-api/console` | 20 |
 | [Account API](account-api.html) | `/account-api` | 80 |
 | [Sign-in API](authn-api.html) | `/authn-api` | 46 |

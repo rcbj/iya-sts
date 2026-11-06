@@ -14,10 +14,12 @@
 // shared app.
 //
 // MUTATION RECORD, each applied to a scratch build, seen red and put back:
-//   * `anchorFieldsOf()` admitting a leaf                     — A red
-//   * `anchorProblem()` skipping the self-signature           — A red
-//   * `rowsOf()` reading one realm for all                    — C red
-//   * `setDirectory()` accepting a partial object             — F red
+//   * `anchorFieldsOf()` admitting a leaf                     — 5 red (A, B, G)
+//   * `anchorProblem()` skipping the self-signature           — 1 red (A); it
+//     needed its own fixture, a certificate named as its own issuer and signed
+//     by another key, or every self-issued fixture passed either way
+//   * `rowsOf()` reading one realm for all                    — 13 red
+//   * `setDirectory()` accepting a partial object             — 2 red (F)
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -31,6 +33,7 @@ const errorCodes = require('../common/error_codes');
 const signers = require('../common/signer_truststore');
 const pki = require('../common/pki');
 const kit = require('./tools/trust_kit');
+const keys = require('../common/crypto_impl/key_material');
 
 const log = require('bunyan').createLogger({ name: 'signer_truststore_test',
   level: process.env.LOG_LEVEL || 'info' });
@@ -141,6 +144,15 @@ module.exports = {
                     { heldAnchors: [root.pem] });
       await refused(issuing, 'STS-PKI-0228', 'an intermediate as an anchor',
                     { role: 'anchor' });
+      // Named as its own issuer and signed by another key: self-issued, and
+      // not self-signed. Only the signature can tell.
+      const otherKey = await keys.generateKeyPair('rsa-2048');
+      const sameName = await kit.mint({ cn: 'forged root', ca: true,
+                                        pair: otherKey });
+      const forged = await kit.mint({ cn: 'forged root', ca: true,
+                                      issuer: sameName });
+      await refused(forged, 'STS-PKI-0228', 'a self-signature that does not ' +
+                    'verify');
       await refused('not a certificate', 'STS-PKI-0238', 'not X.509');
       t.equal(await pki.anchorProblem(root.pem), null, 'A. a Root is admitted');
       t.equal(await pki.anchorProblem(issuing.pem,

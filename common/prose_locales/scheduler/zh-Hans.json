@@ -375,6 +375,14 @@
     "en": "98370fb755b4ba95",
     "text": "在以单元方式部署的服务中，以相同的批次从全局层的数据库中删除早于 persistence.mintedRetention 的已结束铸造行的墓碑；其运行在全局层中认领，因此每个时段只有一个单元运行。在只有一个数据库的服务中关闭，由另一项清理涵盖。"
   },
+  "sched.jobs.pki.pins.audit.title": {
+    "en": "3ccb80617905a1db",
+    "text": "固定证书审计"
+  },
+  "sched.jobs.pki.pins.audit.describe": {
+    "en": "e5cc243756f71f7e",
+    "text": "对领域中每一份固定证书和签名者信任库的每一个条目执行偏执 PKI 模式的检查，保存 /admin/pki/trust 所绘制的结果，并记录和邮件通知发生的变化。"
+  },
   "sched.jobs.post-login.activity-mail.title": {
     "en": "ae44cc986739ab6b",
     "text": "登录后活动邮件"

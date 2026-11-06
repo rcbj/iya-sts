@@ -75,6 +75,11 @@
       "text": "Nödåtkomst beviljades direkt, utan godkännare, för en begäran som anger dig, {{username}}, som en av sina godkännare: {{subject}} får {{action}} {{resource}} i programmet {{application}}, via {{requester}}, under en kort tid.\n\nDen angivna motiveringen: {{justification}}\n\nPolicyn tillåter nödåtkomst till detta. Granska den och återkalla den om den inte var befogad:\n\n{{link}}\n",
       "html": "<p>Nödåtkomst beviljades direkt, utan godkännare, för en begäran som anger dig, <strong>{{username}}</strong>, som en av sina godkännare: <strong>{{subject}}</strong> får <strong>{{action}}</strong> <strong>{{resource}}</strong> i programmet <strong>{{application}}</strong>, via {{requester}}, under en kort tid.</p><p>Den angivna motiveringen: {{justification}}</p><p>Policyn tillåter nödåtkomst till detta. <a href=\"{{link}}\">Granska den</a> och återkalla den om den inte var befogad.</p>"
     },
+    "pki-pin-status": {
+      "subject": "{{service}}: ett certifikat som den här sfären förlitar sig på har ändrat tillstånd",
+      "text": "Den dagliga granskningen av de certifikat som den här sfären förlitar sig på fann följande ändringar:\n\n{{changes}}\n\nSidan PKI-förtroende i administrationskonsolen visar var och en. Du får detta eftersom du har Admin Write i den här sfären.\n",
+      "html": "<p>Den dagliga granskningen av de certifikat som den här sfären förlitar sig på fann följande ändringar:</p><p>{{changes}}</p><p>Sidan PKI-förtroende i administrationskonsolen visar var och en. Du får detta eftersom du har Admin Write i den här sfären.</p>"
+    },
     "administrator-alert": {
       "subject": "{{service}}: {{act}} för {{username}}",
       "text": "Tjänsten, inte en person, utförde en åtgärd på kontot {{username}} {{when}}: {{act}}.\n\n{{why}}\n\nDu får detta eftersom du har Admin Write i den här sfären.\n",

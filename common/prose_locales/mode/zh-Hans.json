@@ -935,6 +935,18 @@
     "en": "68f6ce868376fbc6",
     "text": "在硬失败下拒绝（pki.revocationRequireDistributionPoint=auto，STS-PKI-0190）：由 CA 签发——而非自签名——且既未指明分发点也未指明响应方的证书永远无法被吊销，因此其下被盗的密钥在过期之前一直有效。携带 RFC 9608 noRevAvail 的证书会被接受，因为其颁发者声明不存在吊销信息（section 4 跳过该检查）。将此设置设为 off 会接受其余证书，并给出警告。"
   },
+  "mode.requirements.paranoid-pki.what": {
+    "en": "36fb0f39456c2c43",
+    "text": "所依赖的每一份 X.509 证书都通过同一个入口接受完整检查（路径、有效期、吊销、用途字段）"
+  },
+  "mode.requirements.paranoid-pki.development": {
+    "en": "584ecba221940147",
+    "text": "关闭（pki.paranoid=auto）：每个用例的行为与 #1360 之前相同——固定的证书不检查有效期，对出站对端、证明方或合作伙伴的签名者不查询吊销状态，extendedKeyUsage 只在某处手工要求时才检查。将 pki.paranoid 设为 on 即可在此运行这些检查。"
+  },
+  "mode.requirements.paranoid-pki.product": {
+    "en": "1ddc02b9b0701d2a",
+    "text": "开启（pki.paranoid=auto）：common/certificate_trust.ts 对每一份证书——无论是任一方向的 TLS 握手、签名之下、作为加密接收方，还是在证明中——都要求：存在通往本服务已知锚点（客户端或签名者信任库、领域的 CA、某个协议族自己的设置）的路径、当前时间有效、未被吊销，以及其用例所要求的 basicConstraints、keyUsage 和 extendedKeyUsage；用例从未运行的检查视为拒绝。每个用例有一行 pki.paranoid<UseCase>，关闭时恢复该用例此前的行为，并在 /admin/pki/trust 上以红色显示（STS-PKI-0239）。"
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "通过双向 TLS 证明的 GNAP 密钥是受信任颁发机构签发给该客户端的证书"

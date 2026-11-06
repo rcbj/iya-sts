@@ -775,6 +775,14 @@
     "en": "bc458d477b4de7d9",
     "text": "此領域持有的憑證授權單位"
   },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "偏執 PKI 模式、簽署者信任存放區與已釘選的內容"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "變更簽署者信任存放區或某個偏執列，或重新檢查釘選"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "建立階層、簽發金鑰組、撰寫憑證"

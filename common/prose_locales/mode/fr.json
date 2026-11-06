@@ -935,6 +935,18 @@
     "en": "68f6ce868376fbc6",
     "text": "REFUSÉ en échec strict (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190) : un certificat émis par une AC — non auto-signé — qui ne nomme aucun point de distribution ni aucun répondeur ne peut jamais être révoqué, si bien qu’une clé volée sous ce certificat reste valable jusqu’à son expiration. Un certificat portant noRevAvail de RFC 9608 est accepté, car son émetteur a déclaré qu’aucune information de révocation n’existe (la section 4 omet la vérification). Désactiver ce paramètre accepte le reste, avec un avertissement."
   },
+  "mode.requirements.paranoid-pki.what": {
+    "en": "36fb0f39456c2c43",
+    "text": "Chaque certificat X.509 auquel on se fie est soumis à l’ensemble des contrôles (chemin, validité, révocation, champs d’usage) par une porte unique"
+  },
+  "mode.requirements.paranoid-pki.development": {
+    "en": "584ecba221940147",
+    "text": "DÉSACTIVÉ (pki.paranoid=auto) : chaque cas d’usage se comporte comme avant #1360 — un certificat épinglé n’est pas contrôlé en validité, la révocation n’est pas consultée pour un pair sortant, un attestateur ou le signataire d’un partenaire, et extendedKeyUsage n’est demandé que là où un site le demande à la main. Définissez pki.paranoid=on pour exercer les contrôles ici."
+  },
+  "mode.requirements.paranoid-pki.product": {
+    "en": "1ddc02b9b0701d2a",
+    "text": "ACTIVÉ (pki.paranoid=auto) : common/certificate_trust.ts soumet chaque certificat — lors d’une négociation TLS dans un sens comme dans l’autre, sous une signature, comme destinataire de chiffrement, dans une attestation — à un chemin vers une ancre que ce service connaît (le magasin de confiance des clients ou des signataires, l’AC du domaine, le réglage propre à une famille), à la validité à l’instant présent, à la révocation, et aux basicConstraints, keyUsage et extendedKeyUsage que son cas d’usage demande ; un contrôle que le cas d’usage n’a jamais exécuté est un refus. Une ligne pki.paranoid<UseCase> par cas d’usage rétablit le comportement antérieur de ce cas d’usage lorsqu’elle est désactivée, et s’affiche en rouge sur /admin/pki/trust (STS-PKI-0239)."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "Une clé GNAP prouvée par TLS mutuel est un certificat qu’une autorité de confiance a émis pour le client"

@@ -13,10 +13,11 @@
 // wrong, absent and required, absent and optional.
 //
 // MUTATION RECORD, each applied to a scratch build, seen red and put back:
-//   * a keyUsage absent read as permitting nothing       — one red (B)
-//   * anyExtendedKeyUsage answering a required EKU       — one red (C)
-//   * the key strength asking `mode` in development      — two red (E)
-//   * `certificateNameMatches()` falling back to the CN  — one red (G)
+//   * a keyUsage absent read as permitting nothing       — 1 red (B)
+//   * anyExtendedKeyUsage answering a required EKU       — 1 red (C)
+//   * the key size asking `mode` in development          — 1 red (E)
+//   * `certificateNameMatches()` falling back to the CN  — 1 red (G)
+//   * `pathRuleProblem()` not asking `opts.leaf`         — 3 red (I)
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;

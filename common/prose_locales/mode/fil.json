@@ -935,6 +935,18 @@
     "en": "68f6ce868376fbc6",
     "text": "TINATANGGIHAN sa ilalim ng hard-fail (pki.revocationRequireDistributionPoint=auto, STS-PKI-0190): ang certificate na in-issue ng CA — hindi self-signed — na walang pinangangalanang distribution point at responder ay hindi kailanman mare-revoke, kaya valid ang ninakaw na key sa ilalim nito hanggang mag-expire ito. Tinatanggap ang may dalang RFC 9608 noRevAvail, dahil idineklara ng issuer nito na walang umiiral na revocation information (nilalaktawan ng section 4 ang check). Kapag itinakda sa off ang setting, tinatanggap ang iba pa, na may babala."
   },
+  "mode.requirements.paranoid-pki.what": {
+    "en": "36fb0f39456c2c43",
+    "text": "Bawat X.509 certificate na pinagbabatayan ay isinasailalim sa buong mga pagsusuri (path, validity, revocation, mga usage field) sa pamamagitan ng iisang door"
+  },
+  "mode.requirements.paranoid-pki.development": {
+    "en": "584ecba221940147",
+    "text": "OFF (pki.paranoid=auto): kumikilos ang bawat use case gaya ng dati bago ang #1360 — hindi chine-check ang validity ng naka-pin na certificate, hindi kinokonsulta ang revocation para sa outbound peer, attestor o signer ng isang partner, at itinatanong lang ang extendedKeyUsage kung saan ito manu-manong itinatanong ng isang site. Itakda ang pki.paranoid=on para masubukan ang mga pagsusuri rito."
+  },
+  "mode.requirements.paranoid-pki.product": {
+    "en": "1ddc02b9b0701d2a",
+    "text": "ON (pki.paranoid=auto): isinasailalim ng common/certificate_trust.ts ang bawat certificate — sa TLS handshake sa alinmang direksyon, sa ilalim ng isang signature, bilang encryption recipient, sa isang attestation — sa path papunta sa anchor na ipinaalam sa serbisyong ito (ang client o signer truststore, ang CA ng realm, ang sariling setting ng isang family), validity sa ngayon, revocation, at ang basicConstraints, keyUsage at extendedKeyUsage na hinihingi ng use case nito; ang pagsusuring hindi isinagawa ng use case ay isang pagtanggi. Ibinabalik ng isang pki.paranoid<UseCase> row bawat use case ang dating kilos ng use case na iyon kapag off, at pula itong iginuguhit sa /admin/pki/trust (STS-PKI-0239)."
+  },
   "mode.requirements.gnap-mtls-trust.what": {
     "en": "9797405bffe8917b",
     "text": "Ang GNAP key na pinatunayan ng mutual TLS ay isang certificate na in-issue sa client ng pinagkakatiwalaang authority"

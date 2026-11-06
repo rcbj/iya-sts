@@ -107,6 +107,7 @@
   "title.ssf-dead-letters": "Mensajes fallidos",
   "title.ssf-transmitters": "Señales de socios",
   "title.tls-connection": "Conexión TLS",
+  "title.pki-trust": "Confianza de PKI",
   "title.tls-trust": "Almacén de confianza de certificados de cliente",
   "title.token-lifetimes": "Duración de los tokens",
   "title.tokens-credential": "Tokens — una credencial",

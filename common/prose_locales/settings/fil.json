@@ -3623,6 +3623,218 @@
     "en": "f292a8cf26b697f2",
     "text": "Ilang certificate na iniisyu sa ACME, EST o SCEP ang puwedeng sabay-sabay na dalhin ng isang entry ng tao o application. Inaalis sa entry ang expired na certificate bago ito bilangin; lampas dito, tinatanggihan ang request (STS-ENROLL-0040) sa halip na kalimutan ang mas lumang certificate, dahil ang certificate na ginagamit pa ng isang tao ay hindi dapat mawala sa entry na nagsasabi kung kanino ito."
   },
+  "pki.paranoid|label": {
+    "en": "69d9666085a31d95",
+    "text": "Paranoid PKI mode"
+  },
+  "pki.paranoid|description": {
+    "en": "168070ad5991fba4",
+    "text": "Paranoid PKI mode (#1360): kung ang bawat X.509 certificate na pinagbabatayan ng serbisyong ito — sa TLS handshake sa alinmang direksyon, sa ilalim ng isang signature, bilang encryption recipient, sa isang attestation, sa isang CMS message — ay isinasailalim sa buong hanay ng mga pagsusuri sa pamamagitan ng iisang validation door (common/certificate_trust.ts): path papunta sa anchor na ipinaalam sa serbisyong ito, validity sa ngayon, revocation, at ang basicConstraints, keyUsage at extendedKeyUsage na hinihingi ng use case nito, kung saan ang pagsusuring hindi isinagawa ng use case ay binibilang na pagtanggi. **Ang `auto` ay on sa product mode at off sa development** (mode.enforcesParanoidPki()); pinipilit ng `on` at `off` ang setting sa alinmang mode. Habang ipinapatupad ito, kinokonsulta ang bawat `pki.paranoid<UseCase>` row sa ibaba; kapag hindi, kumikilos ang bawat use case nang eksakto gaya ng dati bago ang #1360. Kapag pinilit na off ang master sa product, nilolog ito nang isang beses (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust; walang tumatanggi sa pagsulat."
+  },
+  "pki.paranoidTlsClient|label": {
+    "en": "c0010750fb1dedac",
+    "text": "Paranoid: isang client certificate sa TLS handshake"
+  },
+  "pki.paranoidTlsClient|description": {
+    "en": "e6a7e7e97a2f4251",
+    "text": "Use case `tls-client`: isang client certificate na ipinakita sa main port, sa custom listener, sa LDAPS, sa debugger listener, sa mga gRPC socket ng SPIFFE o sa inter-cell channel, at bawat gumagamit ng socket.authorized. Isinasailalim ng paranoid ang BAWAT listener sa mga path rule (hindi lang ang main port at mga custom listener), itinatanong ang extendedKeyUsage clientAuth at keyUsage digitalSignature o keyAgreement sa bawat leaf, kinokonsulta ang revocation sa bawat listener, dinadala ang na-demote na verdict sa TLS resumption, at nagfa-fail CLOSED kapag nag-throw ang pagsusuri. Mga anchor: ang client-certificate truststore at ang service Root. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidTlsClientSelfSigned|label": {
+    "en": "1fffd43ed19648a8",
+    "text": "Paranoid: isang self-signed na TLS client certificate na nirehistro ng isang client"
+  },
+  "pki.paranoidTlsClientSelfSigned|description": {
+    "en": "976e7f91b601714f",
+    "text": "Use case `tls-client-self-signed`: RFC 8705 section 2.2 self_signed_tls_client_auth at isang GNAP key na pinatunayan ng naka-pin na certificate (RFC 9635 section 7.3.2). Parehong tinutukoy ng dalawang specification ang method bilang EQUALITY ng certificate, kaya walang chain na hinihingi (exempt ayon sa spec); idinaragdag ng paranoid ang validity window, keyUsage digitalSignature o keyAgreement, at ang revocation ng register. Ang tanging use case kung saan tinatanggap ang self-signed na leaf sa TLS handshake. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidOutboundTls|label": {
+    "en": "806774c88eae0cf1",
+    "text": "Paranoid: ang server certificate ng isang outbound request"
+  },
+  "pki.paranoidOutboundTls|description": {
+    "en": "ad7a2574ae96644e",
+    "text": "Use case `tls-server-outbound`: bawat address na tinatawagan ng serbisyong ito — federation back channel, SSF at GNAP push, XACML PEP nudge, SCIM provisioning, mail, ang database, ang secret store, ang mga cloud SDK, CRL at OCSP sa https, LDAPS. Idinaragdag ng paranoid ang revocation ng certificate ng peer (OCSP stapling muna, saka OCSP o CRL) na nagsisilbing gate sa handshake bago may maisulat na request body, extendedKeyUsage serverAuth, ang mga path rule at RFC 9525 host check sa bawat proseso, at ang signer truststore sa tabi ng CA file ng bawat family. Exempt ayon sa spec: ang pagkuha ng CRL o OCSP sa plain http ay walang certificate na masusuri (RFC 5280 section 4.2.1.13). Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidJoseSigner|label": {
+    "en": "6712f80a7d8d0d37",
+    "text": "Paranoid: ang certificate chain ng isang JOSE signer"
+  },
+  "pki.paranoidJoseSigner|description": {
+    "en": "a361abe6b62ec518",
+    "text": "Use case `jose-signer`: ang x5c sa likod ng isang RFC 7523 assertion, private_key_jwt, JAR request object, software statement at x5c ng isang nakarehistrong JWK. Kinukumpleto ng paranoid ang hindi kumpletong nakarehistrong chain mula sa signer truststore bago ito tanggihan, itinatanong ang keyUsage digitalSignature ng leaf, at isinasailalim ang self-signed na x5c[0] na idinikit sa isang JWK sa rule ng upload door (walang bare na self-signed leaf). Mga anchor: ang CA ng realm, ang nakarehistrong root, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidSamlSigner|label": {
+    "en": "f542d60aa4055a78",
+    "text": "Paranoid: ang certificate ng isang SAML signer"
+  },
+  "pki.paranoidSamlSigner|description": {
+    "en": "9185c29a838854a8",
+    "text": "Use case `saml-signer`: ang certificate sa likod ng isang RFC 7522 assertion, ang naka-sign na AuthnRequest o LogoutRequest ng isang service provider, ang SOAP artifact caller at isang SP metadata signature. Idinaragdag ng paranoid ang validity sa bawat paggamit, chain papunta sa signer truststore kapag hindi self-signed ang certificate, revocation, keyUsage digitalSignature, at TINATANGGIHAN ang SP metadata na walang naaabot na anchor (dating tinatanggap sa unang gamit). Ang self-signed na certificate na nakarehistro sa application ay tinatanggap ayon sa spec (SAML Metadata section 2.4.1.1) at nakalista sa inventory bilang self-signed. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidFederationPartner|label": {
+    "en": "1153fde809c347ea",
+    "text": "Paranoid: ang signing certificate ng isang federation partner"
+  },
+  "pki.paranoidFederationPartner|description": {
+    "en": "c7dd276f9a86e888",
+    "text": "Use case `federation-partner`: ang SAML o WS-Federation signature ng isang partner, ang x5c ng JWK ng partner at ang signer ng isang federated logout. Idinaragdag ng paranoid ang validity sa bawat paggamit, chain papunta sa signer truststore kapag hindi self-signed ang certificate, revocation sa logout at sign-in, at field check sa registration door. Ang self-signed na certificate na nakarehistro sa relationship ay tinatanggap ayon sa spec, gaya ng sa isang SAML signer. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidWsSecurityToken|label": {
+    "en": "fdf207fb5b68e7c1",
+    "text": "Paranoid: isang WS-Security X.509 token"
+  },
+  "pki.paranoidWsSecurityToken|description": {
+    "en": "d1b001f7c3cf7dad",
+    "text": "Use case `wss-x509-token`: ang signer ng WS-Security X.509 Token Profile sa isang WS-Trust request. Hinihiling ng paranoid na ang naka-store na outside leaf ay mag-chain sa signer truststore at kinukuha ang OCSP o CRL issuer mula sa path ng truststore, hindi kailanman mula lang sa sariling Authority Information Access ng leaf. Mga anchor: ang CA ng realm, ang naka-store na leaf, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidJoseBareKey|label": {
+    "en": "ae8a99b03823519c",
+    "text": "Paranoid: isang bare JWK na may dalang x5c"
+  },
+  "pki.paranoidJoseBareKey|description": {
+    "en": "d55aaf11968d0119",
+    "text": "Use case `jose-bare-key`: mga entity key ng OpenID Federation, mga transmitter key ng SSF, mga key ng claims-provider at mga `cert` key ng GNAP. Ang JWK na MAY DALANG x5c ay vine-validate bilang JOSE signer sa ilalim ng paranoid; ang bare JWK ay hindi ginagalaw, dahil tinutukoy ng OpenID Federation 1.1 section 3 ang mga entity key bilang bare JWK (exempt ayon sa spec kapag walang x5c). Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidEncryptionRecipient|label": {
+    "en": "1fec5dc0c124d4d7",
+    "text": "Paranoid: ang certificate ng isang encryption recipient"
+  },
+  "pki.paranoidEncryptionRecipient|description": {
+    "en": "22e7d1dcaf21b830",
+    "text": "Use case `encryption-recipient`: ang certificate kung saan ine-encrypt ang isang SAML assertion at ang x5c ng isang JWE recipient. Idinaragdag ng paranoid ang validity, keyUsage keyEncipherment o keyAgreement at revocation, at hindi kailanman nag-e-encrypt sa certificate na basta NAOBSERBAHAN lang sa isang request (ginagawa iyon ng development bago ang #1360, sa labas ng paranoid). Ang self-signed na certificate na nakarehistro sa application ay tinatanggap ayon sa spec. Exempt ang bare JWK na walang x5c (ginagawang opsyonal ng RFC 7517 section 4.7 ang x5c). Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidClientAttestation|label": {
+    "en": "f9781b19e7a5faa5",
+    "text": "Paranoid: isang chain ng attestation-based client authentication"
+  },
+  "pki.paranoidClientAttestation|description": {
+    "en": "3272afd18d05a5d0",
+    "text": "Use case `client-attestation`: ang certificate ng attester sa likod ng OAuth attestation-based client authentication. Idinaragdag ng paranoid ang revocation at keyUsage digitalSignature sa leaf. Mga anchor: oauth2.clientAttestationTrustAnchors at ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidWebauthnAttestation|label": {
+    "en": "56518cdbf25aba42",
+    "text": "Paranoid: isang WebAuthn attestation chain"
+  },
+  "pki.paranoidWebauthnAttestation|description": {
+    "en": "a1da1a7091f590f6",
+    "text": "Use case `webauthn-attestation`: ang attestation statement ng isang passkey sa mga format na packed, tpm, android-key, android-safetynet at apple. Ginagawang tahasan ng paranoid ang extendedKeyUsage at keyUsage ng bawat format sa pamamagitan ng door (kinakailangan ang TPM AIK EKU 2.23.133.8.3 para sa tpm); itinatanong na dati ang revocation. Sinusuri ang validity sa ngayon, gaya ng dati — ang nag-expire na attestation certificate ay nagiging untrusted ang statement (rcbj, 2026-11-06). Mga anchor: webauthn.attestationTrustAnchors, ang mga root ng FIDO Metadata Service, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidDeviceAttestation|label": {
+    "en": "eb8ad90daa8e84e6",
+    "text": "Paranoid: isang device attestation chain"
+  },
+  "pki.paranoidDeviceAttestation|description": {
+    "en": "1e8781ffffcd5976",
+    "text": "Use case `device-attestation`: Android key attestation, Apple App Attest at TPM attestation ng isang nakarehistrong device. Idinaragdag ng paranoid ang OCSP o CRL para sa mga chain ng Apple at TPM kung saan may pinangalanan ang chain, at ang extendedKeyUsage na hinihingi ng bawat format. Mga anchor: ang mga setting na devices.*TrustAnchors, ang mga naka-ship na root, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeSvid|label": {
+    "en": "78e43611bf44d5cf",
+    "text": "Paranoid: isang X509-SVID na ipinakita sa SPIRE Server o Broker API"
+  },
+  "pki.paranoidSpiffeSvid|description": {
+    "en": "9df64672b57d6dfa",
+    "text": "Use case `spiffe-svid`: ang X509-SVID na ipinapakita ng tumatawag sa SPIRE Server API o Broker API, at isang federated SVID. Ginagawang MUST ng paranoid ang SHOULD ng extendedKeyUsage sa section 4.3 ng X509-SVID specification at sinusuri ang mga field ng authority certificate ng isang federated bundle sa pagrehistro at sa paggamit nito. Exempt ayon sa spec: ang Workload API ay MUST NOT mag-authenticate at hindi ginagalaw, at hindi kinokonsulta ang revocation ng federated SVID dahil walang inilalathala ang federated authority na maaaring tawagan ng serbisyong ito. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidSpiffeAttestation|label": {
+    "en": "02cc79ee469c2d68",
+    "text": "Paranoid: ang certificate ng isang SPIFFE node attestor"
+  },
+  "pki.paranoidSpiffeAttestation|description": {
+    "en": "589e499a7857c323",
+    "text": "Use case `spiffe-attestation`: ang mga attestor na x509pop, TPM DevID, Azure IMDS, AWS instance identity at sigstore. Idinaragdag ng paranoid ang revocation kung saan may pinangalanan ang chain, ang keyUsage at extendedKeyUsage na hinihingi ng bawat attestor, ang validity ng naka-pin na certificate ng AWS, at hinihiling na mag-chain ang Azure AIA intermediate bago ito gamitin. Exempt ayon sa spec: sinusuri ng sigstore ang validity sa notBefore ng certificate (rule ng Sigstore client specification); ang pag-skip sa SCT at Rekor ay nananatiling sarili nilang mga setting. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidPkinit|label": {
+    "en": "075d91f34c26d707",
+    "text": "Paranoid: isang PKINIT client certificate"
+  },
+  "pki.paranoidPkinit|description": {
+    "en": "4cd0d308a974fcbd",
+    "text": "Use case `pkinit`: ang client certificate sa isang RFC 4556 AS-REQ. Buo na ang pagsusuri (path papunta sa mga identity CA ng realm, validity na may krb5.clockSkew, id-pkinit-KPClientAuth o ang Microsoft smart-card EKU, revocation); ginagawa ito ng paranoid na isang tawag sa door, kaya iisang code ito gaya ng bawat ibang use case. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidEnrollmentCredential|label": {
+    "en": "ce5c0d1996e12403",
+    "text": "Paranoid: isang certificate na ipinakita para mag-enroll o mag-renew"
+  },
+  "pki.paranoidEnrollmentCredential|description": {
+    "en": "e581316f80e4f785",
+    "text": "Use case `enrollment-credential`: ang client certificate na ipinapakita ng isang EST request at ang signer ng isang SCEP renewal. Buo na para sa EST; binibigyan ng paranoid ang self-signed na PKCSReq signer ng SCEP ng validity window. Exempt ayon sa spec: tinutukoy ng RFC 8894 section 2.3 ang PKCSReq signer bilang self-signed, kaya walang chain na hinihingi rito. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidVcKeyAttestation|label": {
+    "en": "c9da12bd29969033",
+    "text": "Paranoid: isang OpenID4VCI key attestation chain"
+  },
+  "pki.paranoidVcKeyAttestation|description": {
+    "en": "65f64443cb54f4c6",
+    "text": "Use case `vc-key-attestation`: ang x5c ng key attestation ng isang wallet sa OpenID4VCI credential endpoint. Bumubuo ang paranoid ng tunay na path na may mga intermediate (isang hop lang dati), kinokonsulta ang revocation at itinatanong ang keyUsage digitalSignature ng leaf. Mga anchor: oidc4vci.keyAttestationTrustedCertificates at ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidVcIssuer|label": {
+    "en": "bf59999c71087b0a",
+    "text": "Paranoid: ang certificate ng isang credential issuer o status-list signer"
+  },
+  "pki.paranoidVcIssuer|description": {
+    "en": "4497f64a995a4cbf",
+    "text": "Use case `vc-issuer`: ang IACA-to-DS chain ng isang mdoc, isang CWT status-list signer, isang trusted issuer certificate ng OpenID4VP at ang signer ng isang dayuhang status list. Itinatanong ng paranoid ang document-signer EKU 1.0.18013.5.1.2 ng ISO 18013-5 at ang DS profile (keyUsage digitalSignature, DS validity na nasa loob ng sa IACA nito), revocation para sa status-list signer, at validity at chain para sa trusted-issuer certificate na hindi self-signed. Ang naka-configure na trusted-issuer certificate ay tinatanggap na self-signed ayon sa spec, na itinatanong pa rin ang validity at revocation. Mga anchor: oid4vp.mdocTrustAnchors, oid4vp.trustedIssuerCertificates, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidCellPeer|label": {
+    "en": "29ff42feacbce3f9",
+    "text": "Paranoid: ang kabilang cell sa inter-cell channel"
+  },
+  "pki.paranoidCellPeer|description": {
+    "en": "4dbdc1d9a7d0f4c4",
+    "text": "Use case `cell-peer`: ang certificate na ipinapakita ng kabilang cell sa inter-cell channel, sa dalawang direksyon. Idinaragdag ng paranoid ang revocation mula sa register, extendedKeyUsage clientAuth at serverAuth (parehong iniisyu ng sariling CA ng serbisyong ito), at ang mga path rule. Anchor: ang service Root. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidCaImport|label": {
+    "en": "db5c10402103e4d7",
+    "text": "Paranoid: isang CA o key pair na ini-import ng operator"
+  },
+  "pki.paranoidCaImport|description": {
+    "en": "d87040a5e24c74ae",
+    "text": "Use case `ca-import`: ang import ng /admin/pki ng Root o Issuing CA ng operator at ng naka-pin na key pair. Hinihiling ng paranoid na ang ini-import na Issuing CA ay mag-chain sa service Root at sinusuri ang cA, keyCertSign, validity at pathLen; ang naka-pin na leaf ay sinusuri ang mga field. Ang ini-import na Root ay nananatiling self-anchoring. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidAnchorAdmission|label": {
+    "en": "7d8bf2554b7ae476",
+    "text": "Paranoid: pagtanggap sa isang truststore"
+  },
+  "pki.paranoidAnchorAdmission|description": {
+    "en": "169bc8829426f512",
+    "text": "Use case `anchor-admission`: kung ano ang tinatanggap ng /admin/tls/trust, ng signer truststore, ng tls.trustAnchorsFile at ng pki.signerTrustAnchorsFile. Ang anchor ay isang self-signed na CA na nasa loob ng validity at na-verify ang self-signature (cA, at keyCertSign kung may keyUsage); ang intermediate ay isang CA na nakakadena sa anchor na hawak na; ang leaf ay tinatanggihan sa dalawang truststore — ang leaf na ipi-pin ay inilalagay sa entry o relationship na gumagamit nito. Bago ang #1360, tinatanggap ng client truststore ang anumang kayang i-parse ng OpenSSL. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidRevocationSigner|label": {
+    "en": "05be41dc43e60403",
+    "text": "Paranoid: isang OCSP responder o CRL signer"
+  },
+  "pki.paranoidRevocationSigner|description": {
+    "en": "02ce618736381ac9",
+    "text": "Use case `revocation-signer`: ang delegated OCSP responder certificate at ang CRL signer sa loob ng common/revocation_status.js. Buo na (id-kp-OCSPSigning, cRLSign); nagtatanong ang paranoid sa door para iisang code ang mga pagsusuri. Exempt ayon sa spec: ang responder na may id-pkix-ocsp-nocheck ay hindi mismo sinusuri para sa revocation (RFC 6960 section 4.2.2.2.1). Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.paranoidFidoMds|label": {
+    "en": "49e3f63a1962f092",
+    "text": "Paranoid: ang signer ng FIDO Metadata Service BLOB"
+  },
+  "pki.paranoidFidoMds|description": {
+    "en": "03950106a2822b70",
+    "text": "Use case `fido-mds`: ang signer ng na-import na FIDO MDS3 BLOB. Buo na; nagtatanong ang paranoid sa door para iisang code ang mga pagsusuri. Hindi nagbabago ang na-audit na overrideSignature bypass ng administrator. Mga anchor: risk.mdsTrustAnchors, ang GlobalSign Root R3, ang signer truststore. Kapag off, ang use case na ito lamang ang kikilos gaya ng dati bago ang #1360, habang walang ginagalaw sa bawat ibang row at sa master; kapag off sa product mode, isang beses itong nilolog (STS-PKI-0239) at pula itong iginuguhit sa /admin/pki/trust."
+  },
+  "pki.signerTrustAnchorsFile|label": {
+    "en": "9d4fabbc6c6918f1",
+    "text": "Signer truststore: isang PEM file ng mga anchor at intermediate"
+  },
+  "pki.signerTrustAnchorsFile|description": {
+    "en": "32ac16c13b12ea05",
+    "text": "Isang PEM bundle na nilo-load sa signer truststore ng DEFAULT realm sa pag-start ng proseso: ang mga certificate authority, at ang mga intermediate sa ilalim ng mga ito, na maaaring pagdugtungan ng signing, encryption o attestation certificate ng third party kapag hindi ito sa serbisyong ito (common/signer_truststore.ts). Bawat block ay dumadaan sa admission rule: ang self-signed na CA ay anchor, ang ibang CA ay intermediate, at ang leaf ay tinatanggihan nang may pangalan. Kapag pinangalanan ngunit hindi mabasa, o walang certificate, FATAL ito (STS-PKI-0237), gaya ng tls.trustAnchorsFile. Ang mga anchor na idinagdag habang tumatakbo sa pamamagitan ng /admin/pki/trust ay iniingatan sa directory sa tabi ng mga ito. Walang laman bilang default."
+  },
+  "pki.signerTrustAnchorsFile|restartReason": {
+    "en": "736eb74db8a5c84f",
+    "text": "binabasa nang isang beses ang file, bago mag-validate ang anumang bagay"
+  },
+  "pki.pinnedCertificateWarningDays|label": {
+    "en": "bc1a8dace838ed5f",
+    "text": "Babala sa pag-expire ng naka-pin na certificate (araw)"
+  },
+  "pki.pinnedCertificateWarningDays|description": {
+    "en": "7ce39ba31b8cb865",
+    "text": "Gaano kaaga bago ang notAfter ng naka-pin na certificate minamarkahan ito ng inventory ng /admin/pki/trust bilang `expiring` at nilolog ito ng araw-araw na job na pki.pins.audit (STS-PKI-0263, isang beses bawat pagbabago ng state). Ang naka-pin na certificate ay ang nakarehistro sa isang application entry, isang relationship, isang setting, x5c ng isang JWK, isang federated bundle o ang cloud-anchor table; ang expired, revoked o walang-chain ay STS-PKI-0264."
+  },
   "acme.enabled|label": {
     "en": "4e21aa7b001c95d8",
     "text": "Patakbuhin ang ACME server"
@@ -3660,8 +3872,8 @@
     "text": "Pinakamalaking request body (bytes)"
   },
   "acme.maxRequestBytes|description": {
-    "en": "1e75b2f8a06b2682",
-    "text": "Ang flattened JWS na mas malaki rito ay tinatanggihan (HTTP 413) bago ito i-parse. Ang finalize na may dalang post-quantum CSR ang pinakamalaking lehitimong request; sampu-sampung kilobyte ang mga pirma ng SLH-DSA."
+    "en": "64645666fe96987c",
+    "text": "Tinatanggihan (HTTP 413) ang flattened JWS na mas malaki rito bago ito i-parse. Ang finalize na may dalang post-quantum CSR ang pinakamalaking lehitimong request; ang mga signature ng SLH-DSA ay sampu-sampung kilobyte."
   },
   "acme.attemptsPerIdentity|label": {
     "en": "0357e08b72306dd7",

@@ -193,6 +193,8 @@
   "endpoints.route./admin-api/keys/history.name": "The signing-key history",
   "endpoints.route./admin-api/keys/:action.name": "Export a key pair, or rotate the signing keys",
   "endpoints.route./admin-api/pki.name": "The certificate authority this realm holds",
+  "endpoints.route./admin-api/pki/trust.name": "Paranoid PKI mode, the signer truststore and what is pinned",
+  "endpoints.route./admin-api/pki/trust/:action.name": "Change the signer truststore, a paranoid row, or recheck the pins",
   "endpoints.route./admin-api/pki/:action.name": "Build a hierarchy, issue a key pair, author a certificate",
   "endpoints.route./admin-api/certificates.name": "Every certificate this realm holds, or one of them in full",
   "endpoints.route./admin-api/secrets.name": "The secret store, and whether this process read from it",

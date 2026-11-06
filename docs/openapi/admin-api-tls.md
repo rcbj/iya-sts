@@ -330,6 +330,7 @@ Scope: `admin:read`.
 | `anchors[].serial` | string, or null |  |  |
 | `anchors[].source` | string |  |  |
 | `anchors[].subject` | string, or null |  |  |
+| `anchors[].unadmittable` | string |  |  |
 | `anchorsFile` | string |  |  |
 | `atRuntime` | integer |  |  |
 | `doors` | object |  |  |
@@ -388,6 +389,7 @@ Scope: `admin:read`.
 | `anchors[].serial` | string, or null |  |  |
 | `anchors[].source` | string |  |  |
 | `anchors[].subject` | string, or null |  |  |
+| `anchors[].unadmittable` | string |  |  |
 | `anchorsFile` | string |  |  |
 | `atRuntime` | integer |  |  |
 | `doors` | object |  |  |

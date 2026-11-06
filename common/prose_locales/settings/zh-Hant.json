@@ -3623,6 +3623,218 @@
     "en": "f292a8cf26b697f2",
     "text": "一個人員或應用程式項目同時可攜帶多少張透過 ACME、EST 或 SCEP 簽發的憑證。計數前會先從項目中移除已過期的憑證；超過此數時要求會被拒絕（STS-ENROLL-0040），而不是遺忘較舊的憑證，因為某人仍在使用的憑證不得從說明其歸屬的項目中消失。"
   },
+  "pki.paranoid|label": {
+    "en": "69d9666085a31d95",
+    "text": "偏執 PKI 模式"
+  },
+  "pki.paranoid|description": {
+    "en": "168070ad5991fba4",
+    "text": "偏執 PKI 模式（#1360）：本服務所依賴的每一張 X.509 憑證 — 無論是任一方向的 TLS 交握、簽章之下、作為加密收件者、證明中，或 CMS 訊息中 — 是否都透過唯一的驗證門（common/certificate_trust.ts）接受完整檢查：通往本服務已知信任錨的路徑、此刻有效、撤銷，以及其使用情境所要求的 basicConstraints、keyUsage 與 extendedKeyUsage，使用情境從未執行的檢查視為拒絕。**`auto` 在產品模式下為開啟，在開發模式下為關閉**（mode.enforcesParanoidPki()）；`on` 與 `off` 在任一模式下強制設定。生效期間，下方每個 `pki.paranoid<UseCase>` 列都會被參考；未生效時，每個使用情境的行為與 #1360 之前完全相同。在產品模式下強制關閉主開關時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示；沒有任何機制會拒絕該寫入。"
+  },
+  "pki.paranoidTlsClient|label": {
+    "en": "c0010750fb1dedac",
+    "text": "偏執：TLS 交握中的用戶端憑證"
+  },
+  "pki.paranoidTlsClient|description": {
+    "en": "e6a7e7e97a2f4251",
+    "text": "使用情境 `tls-client`：呈現給主連接埠、自訂接聽程式、LDAPS、偵錯工具接聽程式、SPIFFE 的 gRPC 通訊端或跨 Cell 通道的用戶端憑證，以及 socket.authorized 的每一個使用者。偏執模式要求「每一個」接聽程式遵守路徑規則（不只主連接埠與自訂接聽程式），對每張葉憑證要求 extendedKeyUsage clientAuth 與 keyUsage digitalSignature 或 keyAgreement，在每個接聽程式上查詢撤銷，讓降級的判定延續跨越 TLS 恢復，並在檢查擲出例外時以封閉方式失敗。信任錨：用戶端憑證信任存放區與服務根憑證。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidTlsClientSelfSigned|label": {
+    "en": "1fffd43ed19648a8",
+    "text": "偏執：用戶端註冊的自簽 TLS 用戶端憑證"
+  },
+  "pki.paranoidTlsClientSelfSigned|description": {
+    "en": "976e7f91b601714f",
+    "text": "使用情境 `tls-client-self-signed`：RFC 8705 第 2.2 節的 self_signed_tls_client_auth，以及由已釘選憑證證明的 GNAP 金鑰（RFC 9635 第 7.3.2 節）。兩份規格都將此方法定義為憑證「相等」，因此不要求憑證鏈（依規格豁免）；偏執模式另加有效期間、keyUsage digitalSignature 或 keyAgreement，以及登錄的撤銷。這是唯一在 TLS 交握時接受自簽葉憑證的使用情境。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidOutboundTls|label": {
+    "en": "806774c88eae0cf1",
+    "text": "偏執：對外請求的伺服器憑證"
+  },
+  "pki.paranoidOutboundTls|description": {
+    "en": "ad7a2574ae96644e",
+    "text": "使用情境 `tls-server-outbound`：本服務撥接的每一個位址 — 聯盟反向通道、SSF 與 GNAP 推送、XACML PEP 提示、SCIM 佈建、郵件、資料庫、祕密儲存區、雲端 SDK、經 https 的 CRL 與 OCSP、LDAPS。偏執模式新增對等端憑證的撤銷（先 OCSP 裝訂，再 OCSP 或 CRL），在寫入任何請求主體之前就以交握把關，extendedKeyUsage serverAuth，在每個程序中套用路徑規則與 RFC 9525 主機檢查，並在各系列的 CA 檔案旁加入簽署者信任存放區。依規格豁免：經純 http 擷取 CRL 或 OCSP 沒有憑證可檢查（RFC 5280 第 4.2.1.13 節）。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidJoseSigner|label": {
+    "en": "6712f80a7d8d0d37",
+    "text": "偏執：JOSE 簽署者的憑證鏈"
+  },
+  "pki.paranoidJoseSigner|description": {
+    "en": "a361abe6b62ec518",
+    "text": "使用情境 `jose-signer`：RFC 7523 斷言、private_key_jwt、JAR 請求物件、軟體聲明，以及已註冊 JWK 的 x5c 背後的 x5c。偏執模式在拒絕不完整的已註冊憑證鏈之前，先以簽署者信任存放區補全，要求葉憑證具備 keyUsage digitalSignature，並將貼入 JWK 的自簽 x5c[0] 依上傳門的規則處理（不接受單獨的自簽葉憑證）。信任錨：領域的 CA、已註冊的根、簽署者信任存放區。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidSamlSigner|label": {
+    "en": "f542d60aa4055a78",
+    "text": "偏執：SAML 簽署者的憑證"
+  },
+  "pki.paranoidSamlSigner|description": {
+    "en": "9185c29a838854a8",
+    "text": "使用情境 `saml-signer`：RFC 7522 斷言、服務提供者已簽署的 AuthnRequest 或 LogoutRequest、SOAP 構件呼叫端與 SP 中繼資料簽章背後的憑證。偏執模式新增每次使用時的有效期、憑證非自簽時通往簽署者信任存放區的憑證鏈、撤銷、keyUsage digitalSignature，並「拒絕」無法抵達任何信任錨的 SP 中繼資料（先前於首次使用時即接受）。註冊在應用程式上的自簽憑證依規格接受（SAML Metadata 第 2.4.1.1 節），並在清冊上列為自簽。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidFederationPartner|label": {
+    "en": "1153fde809c347ea",
+    "text": "偏執：聯盟夥伴的簽署憑證"
+  },
+  "pki.paranoidFederationPartner|description": {
+    "en": "c7dd276f9a86e888",
+    "text": "使用情境 `federation-partner`：夥伴的 SAML 或 WS-Federation 簽章、夥伴 JWK 的 x5c，以及聯盟登出簽署者。偏執模式新增每次使用時的有效期、憑證非自簽時通往簽署者信任存放區的憑證鏈、登出與登入同樣適用的撤銷，以及註冊門的欄位檢查。註冊在關係上的自簽憑證依規格接受，與 SAML 簽署者相同。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidWsSecurityToken|label": {
+    "en": "fdf207fb5b68e7c1",
+    "text": "偏執：WS-Security X.509 權杖"
+  },
+  "pki.paranoidWsSecurityToken|description": {
+    "en": "d1b001f7c3cf7dad",
+    "text": "使用情境 `wss-x509-token`：WS-Trust 請求的 WS-Security X.509 Token Profile 簽署者。偏執模式要求已儲存的外部葉憑證須鏈結至簽署者信任存放區，且 OCSP 或 CRL 簽發者取自信任存放區的路徑，絕不單獨取自葉憑證本身的 Authority Information Access。信任錨：領域的 CA、已儲存的葉憑證、簽署者信任存放區。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidJoseBareKey|label": {
+    "en": "ae8a99b03823519c",
+    "text": "偏執：帶有 x5c 的裸 JWK"
+  },
+  "pki.paranoidJoseBareKey|description": {
+    "en": "d55aaf11968d0119",
+    "text": "使用情境 `jose-bare-key`：OpenID Federation 實體金鑰、SSF 傳送端金鑰、宣告提供者金鑰與 GNAP `cert` 金鑰。在偏執模式下，「帶有」x5c 的 JWK 會作為 JOSE 簽署者驗證；裸 JWK 則不處理，因為 OpenID Federation 1.1 第 3 節將實體金鑰定義為裸 JWK（沒有 x5c 時依規格豁免）。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidEncryptionRecipient|label": {
+    "en": "1fec5dc0c124d4d7",
+    "text": "偏執：加密收件者的憑證"
+  },
+  "pki.paranoidEncryptionRecipient|description": {
+    "en": "22e7d1dcaf21b830",
+    "text": "使用情境 `encryption-recipient`：SAML 斷言所加密的對象憑證，以及 JWE 收件者的 x5c。偏執模式新增有效期、keyUsage keyEncipherment 或 keyAgreement 與撤銷，並且絕不對僅在請求上「被觀察到」的憑證加密（開發模式在偏執之外、#1360 之前會這麼做）。註冊在應用程式上的自簽憑證依規格接受。沒有 x5c 的裸 JWK 豁免（RFC 7517 第 4.7 節使 x5c 為選用）。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidClientAttestation|label": {
+    "en": "f9781b19e7a5faa5",
+    "text": "偏執：以證明為基礎的用戶端驗證憑證鏈"
+  },
+  "pki.paranoidClientAttestation|description": {
+    "en": "3272afd18d05a5d0",
+    "text": "使用情境 `client-attestation`：OAuth 以證明為基礎的用戶端驗證背後證明者的憑證。偏執模式對葉憑證新增撤銷與 keyUsage digitalSignature。信任錨：oauth2.clientAttestationTrustAnchors 與簽署者信任存放區。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidWebauthnAttestation|label": {
+    "en": "56518cdbf25aba42",
+    "text": "偏執：WebAuthn 證明憑證鏈"
+  },
+  "pki.paranoidWebauthnAttestation|description": {
+    "en": "a1da1a7091f590f6",
+    "text": "使用情境 `webauthn-attestation`：通行金鑰在 packed、tpm、android-key、android-safetynet 與 apple 格式下的證明陳述。偏執模式透過該門明確指定每種格式的 extendedKeyUsage 與 keyUsage（tpm 要求 TPM AIK EKU 2.23.133.8.3）；撤銷先前已會查詢。有效期仍如先前在此刻評估 — 過期的證明憑證會使該陳述不受信任（rcbj，2026-11-06）。信任錨：webauthn.attestationTrustAnchors、FIDO Metadata Service 根憑證、簽署者信任存放區。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidDeviceAttestation|label": {
+    "en": "eb8ad90daa8e84e6",
+    "text": "偏執：裝置證明憑證鏈"
+  },
+  "pki.paranoidDeviceAttestation|description": {
+    "en": "1e8781ffffcd5976",
+    "text": "使用情境 `device-attestation`：已註冊裝置的 Android 金鑰證明、Apple App Attest 與 TPM 證明。偏執模式在 Apple 與 TPM 憑證鏈指出任何位置時，新增 OCSP 或 CRL，並加入各格式所要求的 extendedKeyUsage。信任錨：devices.*TrustAnchors 設定、隨附的根憑證、簽署者信任存放區。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidSpiffeSvid|label": {
+    "en": "78e43611bf44d5cf",
+    "text": "偏執：出示給 SPIRE Server 或 Broker API 的 X509-SVID"
+  },
+  "pki.paranoidSpiffeSvid|description": {
+    "en": "9df64672b57d6dfa",
+    "text": "使用情境 `spiffe-svid`：SPIRE Server API 或 Broker API 的呼叫端所出示的 X509-SVID，以及聯盟 SVID。偏執模式將 X509-SVID 規格第 4.3 節的 extendedKeyUsage SHOULD 提升為 MUST，並在註冊聯盟套件的授權單位憑證時與使用時進行欄位檢查。依規格豁免：Workload API 不得驗證（MUST NOT）因此不受影響，且不查詢聯盟 SVID 的撤銷，因為聯盟授權單位不發佈本服務可撥接的任何內容。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidSpiffeAttestation|label": {
+    "en": "02cc79ee469c2d68",
+    "text": "偏執：SPIFFE 節點證明者的憑證"
+  },
+  "pki.paranoidSpiffeAttestation|description": {
+    "en": "589e499a7857c323",
+    "text": "使用情境 `spiffe-attestation`：x509pop、TPM DevID、Azure IMDS、AWS 執行個體身分與 sigstore 證明者。偏執模式在憑證鏈指出任何位置時新增撤銷、各證明者所要求的 keyUsage 與 extendedKeyUsage、AWS 已釘選憑證的有效期，並要求 Azure AIA 中繼憑證在使用之前須能組成憑證鏈。依規格豁免：sigstore 以憑證的 notBefore 評估有效期（Sigstore 用戶端規格的規則）；SCT 與 Rekor 的略過仍是各自的設定。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidPkinit|label": {
+    "en": "075d91f34c26d707",
+    "text": "偏執：PKINIT 用戶端憑證"
+  },
+  "pki.paranoidPkinit|description": {
+    "en": "4cd0d308a974fcbd",
+    "text": "使用情境 `pkinit`：RFC 4556 AS-REQ 中的用戶端憑證。檢查先前已完整（通往領域身分 CA 的路徑、含 krb5.clockSkew 的有效期、id-pkinit-KPClientAuth 或 Microsoft 智慧卡 EKU、撤銷）；偏執模式使其成為對該門的一次呼叫，因此與其他每個使用情境是同一份程式碼。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidEnrollmentCredential|label": {
+    "en": "ce5c0d1996e12403",
+    "text": "偏執：為註冊或更新而出示的憑證"
+  },
+  "pki.paranoidEnrollmentCredential|description": {
+    "en": "e581316f80e4f785",
+    "text": "使用情境 `enrollment-credential`：EST 請求出示的用戶端憑證，以及 SCEP 更新的簽署者。EST 先前已完整；偏執模式為 SCEP 的自簽 PKCSReq 簽署者加上有效期間。依規格豁免：RFC 8894 第 2.3 節將 PKCSReq 簽署者定義為自簽，因此不對其要求憑證鏈。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidVcKeyAttestation|label": {
+    "en": "c9da12bd29969033",
+    "text": "偏執：OpenID4VCI 金鑰證明憑證鏈"
+  },
+  "pki.paranoidVcKeyAttestation|description": {
+    "en": "65f64443cb54f4c6",
+    "text": "使用情境 `vc-key-attestation`：OpenID4VCI 憑證端點上錢包金鑰證明的 x5c。偏執模式建立含中繼憑證的真實路徑（先前僅一躍），查詢撤銷，並要求葉憑證具備 keyUsage digitalSignature。信任錨：oidc4vci.keyAttestationTrustedCertificates 與簽署者信任存放區。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidVcIssuer|label": {
+    "en": "bf59999c71087b0a",
+    "text": "偏執：憑證簽發者或狀態清單簽署者的憑證"
+  },
+  "pki.paranoidVcIssuer|description": {
+    "en": "4497f64a995a4cbf",
+    "text": "使用情境 `vc-issuer`：mdoc 的 IACA 至 DS 憑證鏈、CWT 狀態清單簽署者、OpenID4VP 受信任簽發者憑證，以及外部狀態清單的簽署者。偏執模式要求 ISO 18013-5 文件簽署者 EKU 1.0.18013.5.1.2 與 DS 設定檔（keyUsage digitalSignature、DS 的有效期在其 IACA 之內），對狀態清單簽署者查詢撤銷，並對非自簽的受信任簽發者憑證要求有效期與憑證鏈。已設定的受信任簽發者憑證依規格可為自簽，仍要求有效期與撤銷。信任錨：oid4vp.mdocTrustAnchors、oid4vp.trustedIssuerCertificates、簽署者信任存放區。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidCellPeer|label": {
+    "en": "29ff42feacbce3f9",
+    "text": "偏執：跨 Cell 通道上的另一個 Cell"
+  },
+  "pki.paranoidCellPeer|description": {
+    "en": "4dbdc1d9a7d0f4c4",
+    "text": "使用情境 `cell-peer`：另一個 Cell 在跨 Cell 通道上於兩個方向出示的憑證。偏執模式新增登錄中的撤銷、extendedKeyUsage clientAuth 與 serverAuth（兩者都由本服務自己的 CA 簽發），以及路徑規則。信任錨：服務根憑證。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidCaImport|label": {
+    "en": "db5c10402103e4d7",
+    "text": "偏執：操作員匯入的 CA 或金鑰組"
+  },
+  "pki.paranoidCaImport|description": {
+    "en": "d87040a5e24c74ae",
+    "text": "使用情境 `ca-import`：/admin/pki 匯入操作員的根或簽發 CA 以及已釘選的金鑰組。偏執模式要求匯入的簽發 CA 須鏈結至服務根，並檢查 cA、keyCertSign、有效期與 pathLen；已釘選的葉憑證則進行欄位檢查。匯入的根仍為自我錨定。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidAnchorAdmission|label": {
+    "en": "7d8bf2554b7ae476",
+    "text": "偏執：信任存放區的收納"
+  },
+  "pki.paranoidAnchorAdmission|description": {
+    "en": "169bc8829426f512",
+    "text": "使用情境 `anchor-admission`：/admin/tls/trust、簽署者信任存放區、tls.trustAnchorsFile 與 pki.signerTrustAnchorsFile 所接受的內容。信任錨是在有效期內且自簽章可驗證的自簽 CA（cA，以及存在 keyUsage 時的 keyCertSign）；中繼憑證是鏈結至已持有信任錨的 CA；兩個信任存放區都拒絕葉憑證 — 要釘選的葉憑證應放在使用它的項目或關係上。在 #1360 之前，用戶端信任存放區接受 OpenSSL 能解析的任何內容。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidRevocationSigner|label": {
+    "en": "05be41dc43e60403",
+    "text": "偏執：OCSP 回應程式或 CRL 簽署者"
+  },
+  "pki.paranoidRevocationSigner|description": {
+    "en": "02ce618736381ac9",
+    "text": "使用情境 `revocation-signer`：common/revocation_status.js 內的委派 OCSP 回應程式憑證與 CRL 簽署者。先前已完整（id-kp-OCSPSigning、cRLSign）；偏執模式透過該門查詢，使檢查成為同一份程式碼。依規格豁免：帶有 id-pkix-ocsp-nocheck 的回應程式本身不檢查撤銷（RFC 6960 第 4.2.2.2.1 節）。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.paranoidFidoMds|label": {
+    "en": "49e3f63a1962f092",
+    "text": "偏執：FIDO Metadata Service BLOB 簽署者"
+  },
+  "pki.paranoidFidoMds|description": {
+    "en": "03950106a2822b70",
+    "text": "使用情境 `fido-mds`：已匯入 FIDO MDS3 BLOB 的簽署者。先前已完整；偏執模式透過該門查詢，使檢查成為同一份程式碼。管理員可稽核的 overrideSignature 略過維持不變。信任錨：risk.mdsTrustAnchors、GlobalSign Root R3、簽署者信任存放區。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+  },
+  "pki.signerTrustAnchorsFile|label": {
+    "en": "9d4fabbc6c6918f1",
+    "text": "簽署者信任存放區：含信任錨與中繼憑證的 PEM 檔案"
+  },
+  "pki.signerTrustAnchorsFile|description": {
+    "en": "32ac16c13b12ea05",
+    "text": "一個 PEM 套件，程序啟動時載入到「預設」領域的簽署者信任存放區：當第三方的簽署、加密或證明憑證不是本服務自己的時，它可鏈結到的憑證授權單位，以及其下的中繼憑證（common/signer_truststore.ts）。每個區塊都經過收納規則：自簽 CA 為信任錨，其他 CA 為中繼憑證，葉憑證則被點名拒絕。若已指定但無法讀取，或不含任何憑證，則為致命錯誤（STS-PKI-0237），與 tls.trustAnchorsFile 相同。於執行時透過 /admin/pki/trust 新增的信任錨會保存在其旁的目錄中。預設為空。"
+  },
+  "pki.signerTrustAnchorsFile|restartReason": {
+    "en": "736eb74db8a5c84f",
+    "text": "檔案只在任何驗證之前讀取一次"
+  },
+  "pki.pinnedCertificateWarningDays|label": {
+    "en": "bc1a8dace838ed5f",
+    "text": "已釘選憑證到期警告（天）"
+  },
+  "pki.pinnedCertificateWarningDays|description": {
+    "en": "7ce39ba31b8cb865",
+    "text": "在已釘選憑證的 notAfter 之前多久，/admin/pki/trust 清冊將其標示為 `expiring`，且每日的 pki.pins.audit 作業記錄它（STS-PKI-0263，每次狀態變更一次）。已釘選的憑證是指註冊在應用程式項目、關係、設定、JWK 的 x5c、聯盟套件或雲端信任錨表上的憑證；已過期、已撤銷或缺少憑證鏈者為 STS-PKI-0264。"
+  },
   "acme.enabled|label": {
     "en": "4e21aa7b001c95d8",
     "text": "執行 ACME 伺服器"
@@ -3660,8 +3872,8 @@
     "text": "要求本文大小上限（位元組）"
   },
   "acme.maxRequestBytes|description": {
-    "en": "1e75b2f8a06b2682",
-    "text": "大於此值的扁平化 JWS 會在剖析前被拒絕（HTTP 413）。攜帶後量子 CSR 的 finalize 是最大的合法要求；SLH-DSA 的簽章達數十 KB。"
+    "en": "64645666fe96987c",
+    "text": "大於此值的扁平化 JWS 會在解析之前被拒絕（HTTP 413）。帶有後量子 CSR 的 finalize 是最大的合法請求；SLH-DSA 的簽章有數十 KB。"
   },
   "acme.attemptsPerIdentity|label": {
     "en": "0357e08b72306dd7",

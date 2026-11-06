@@ -75,6 +75,11 @@
       "text": "一项将您（{{username}}）列为审批人之一的请求已被立即授予紧急访问权限，未经审批人批准：{{subject}} 可以在短时间内通过 {{requester}} 在应用程序 {{application}} 中对 {{resource}} 执行 {{action}}。\n\n给出的理由：{{justification}}\n\n策略允许对此进行紧急访问。请审核，如不合理请撤销：\n\n{{link}}\n",
       "html": "<p>一项将您（<strong>{{username}}</strong>）列为审批人之一的请求已被立即授予紧急访问权限，未经审批人批准：<strong>{{subject}}</strong> 可以在短时间内通过 {{requester}} 在应用程序 <strong>{{application}}</strong> 中对 <strong>{{resource}}</strong> 执行 <strong>{{action}}</strong>。</p><p>给出的理由：{{justification}}</p><p>策略允许对此进行紧急访问。请<a href=\"{{link}}\">审核</a>，如不合理请撤销。</p>"
     },
+    "pki-pin-status": {
+      "subject": "{{service}}：本领域所依赖的证书状态已更改",
+      "text": "对本领域所依赖证书的每日审计发现了以下变化：\n\n{{changes}}\n\n管理控制台的 PKI 信任页面会显示每一项。您收到此邮件，是因为您在此领域中拥有 Admin Write 权限。\n",
+      "html": "<p>对本领域所依赖证书的每日审计发现了以下变化：</p><p>{{changes}}</p><p>管理控制台的 PKI 信任页面会显示每一项。您收到此邮件，是因为您在此领域中拥有 Admin Write 权限。</p>"
+    },
     "administrator-alert": {
       "subject": "{{service}}：{{username}} 的 {{act}}",
       "text": "本服务（而非某个人）于 {{when}} 对账户 {{username}} 执行了操作：{{act}}。\n\n{{why}}\n\n您收到此邮件，是因为您在此领域中拥有 Admin Write 权限。\n",

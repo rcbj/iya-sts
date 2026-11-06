@@ -775,6 +775,14 @@
     "en": "bc458d477b4de7d9",
     "text": "La autoridad de certificación que tiene este dominio"
   },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "Modo PKI paranoico, el almacén de confianza de firmantes y lo que está fijado"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "Cambiar el almacén de confianza de firmantes, una fila paranoica, o volver a comprobar las fijaciones"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "Construir una jerarquía, emitir un par de claves, redactar un certificado"

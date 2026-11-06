@@ -5416,6 +5416,295 @@ Scope: `admin:write`.
 | `workbench.slowFamilies` | list |  |  |
 | `workbench.slowFamilies[]` | string |  |  |
 
+## GET /admin-api/pki/trust
+
+`getPkiTrust`
+
+**Paranoid PKI mode, the signer truststore and what is pinned**
+
+Everything /admin/pki/trust draws: the master and every use case's row, this realm's signer truststore, and what the realm pins as the daily audit last found it.
+
+**Mirrors** `GET /admin/pki/trust` on the admin console.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `undefinedPage` | query | integer |  | Which page of `undefined` to return, answered by `undefinedPaging`. undefined |
+
+**200**: The trust view of this realm.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `actions` | list |  |  |
+| `actions[]` | string |  |  |
+| `assessedAt` | number |  |  |
+| `clientTruststore` | object |  |  |
+| `clientTruststore.count` | integer |  |  |
+| `clientTruststore.href` | string |  |  |
+| `master` | object |  |  |
+| `master.decidedBy` | string |  |  |
+| `master.inForce` | boolean |  |  |
+| `master.product` | boolean |  |  |
+| `master.value` | one of `auto`, `on`, `off` |  |  |
+| `pins` | list |  |  |
+| `pins[].chainedTo` | string |  |  |
+| `pins[].fingerprint256` | string |  |  |
+| `pins[].href` | string |  |  |
+| `pins[].notAfter` | number |  |  |
+| `pins[].notBefore` | number |  |  |
+| `pins[].purpose` | string |  |  |
+| `pins[].revocation` | string |  |  |
+| `pins[].selfSigned` | boolean |  |  |
+| `pins[].source` | string |  |  |
+| `pins[].status` | one of `valid`, `expiring`, `expired`, `not-yet-valid`, `revoked`, `chain-missing`, `self-signed`, `thumbprint-only`, `unreadable` |  |  |
+| `pins[].subject` | string |  |  |
+| `pins[].thumbprint` | string |  |  |
+| `pins[].where` | string |  |  |
+| `pinsPaging` | object |  |  |
+| `pinsPaging.firstRow` | integer |  |  |
+| `pinsPaging.lastRow` | integer |  |  |
+| `pinsPaging.noun` | string |  |  |
+| `pinsPaging.page` | integer |  |  |
+| `pinsPaging.pages` | integer |  |  |
+| `pinsPaging.param` | string |  |  |
+| `pinsPaging.perPage` | integer |  |  |
+| `pinsPaging.total` | integer |  |  |
+| `pinsTotal` | integer |  |  |
+| `realm` | string |  |  |
+| `rows` | list |  |  |
+| `rows[].adds` | string |  |  |
+| `rows[].anchors` | list |  |  |
+| `rows[].anchors[]` | string |  |  |
+| `rows[].assessed` | integer |  |  |
+| `rows[].covers` | string |  |  |
+| `rows[].exemptions` | list |  |  |
+| `rows[].exemptions[].check` | string |  |  |
+| `rows[].exemptions[].spec` | string |  |  |
+| `rows[].inForce` | boolean |  |  |
+| `rows[].lastRefusal` | string |  |  |
+| `rows[].on` | boolean |  |  |
+| `rows[].phase` | integer |  |  |
+| `rows[].purpose` | string |  |  |
+| `rows[].refused` | integer |  |  |
+| `rows[].setting` | string |  |  |
+| `rows[].title` | string |  |  |
+| `truststore` | object |  |  |
+| `truststore.anchors` | integer |  |  |
+| `truststore.entries` | list |  |  |
+| `truststore.entries[].addedAt` | string |  |  |
+| `truststore.entries[].addedBy` | string |  |  |
+| `truststore.entries[].fingerprint256` | string |  |  |
+| `truststore.entries[].issuer` | string |  |  |
+| `truststore.entries[].kind` | string |  |  |
+| `truststore.entries[].notAfter` | number |  |  |
+| `truststore.entries[].notBefore` | number |  |  |
+| `truststore.entries[].pem` | string |  |  |
+| `truststore.entries[].purposes` | list |  |  |
+| `truststore.entries[].purposes[]` | string |  |  |
+| `truststore.entries[].source` | string |  |  |
+| `truststore.entries[].subject` | string |  |  |
+| `truststore.entries[].unadmittable` | string |  |  |
+| `truststore.file` | string |  |  |
+| `truststore.installed` | boolean |  |  |
+| `truststore.intermediates` | integer |  |  |
+| `truststore.loadedFromFile` | integer |  |  |
+| `truststore.maxAnchors` | integer |  |  |
+| `truststore.maxIntermediates` | integer |  |  |
+
+## POST /admin-api/pki/trust/add
+
+`addSignerTrustAnchors`
+
+**Trust a third party's certificate authorities in this realm**
+
+One or more PEM certificates, each through the admission rule: a self-signed CA is an anchor, any other CA an intermediate that must chain to an anchor held, and a leaf is refused by name.
+
+**Mirrors** `POST /admin/pki/trust` on the admin console.
+
+Scope: `admin:write`.
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `certificates` | list, or string | yes |  |
+| `certificates[]` | string |  |  |
+| `kind` | one of `anchor`, `intermediate` |  | Omitted: a self-issued certificate is an anchor, any other an intermediate. |
+| `purposes` | list, or string |  |  |
+| `purposes[]` | string |  |  |
+
+**200**: What was added, what was already held and each refusal by name.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `added` | list |  |  |
+| `added[].addedAt` | string |  |  |
+| `added[].addedBy` | string |  |  |
+| `added[].fingerprint256` | string |  |  |
+| `added[].issuer` | string |  |  |
+| `added[].kind` | string |  |  |
+| `added[].notAfter` | number |  |  |
+| `added[].notBefore` | number |  |  |
+| `added[].pem` | string |  |  |
+| `added[].purposes` | list |  |  |
+| `added[].purposes[]` | string |  |  |
+| `added[].source` | string |  |  |
+| `added[].subject` | string |  |  |
+| `added[].unadmittable` | string |  |  |
+| `duplicates` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `refused` | list |  |  |
+| `refused[].subject` | string |  |  |
+| `refused[].why` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `added` | list |  |  |
+| `added[].addedAt` | string |  |  |
+| `added[].addedBy` | string |  |  |
+| `added[].fingerprint256` | string |  |  |
+| `added[].issuer` | string |  |  |
+| `added[].kind` | string |  |  |
+| `added[].notAfter` | number |  |  |
+| `added[].notBefore` | number |  |  |
+| `added[].pem` | string |  |  |
+| `added[].purposes` | list |  |  |
+| `added[].purposes[]` | string |  |  |
+| `added[].source` | string |  |  |
+| `added[].subject` | string |  |  |
+| `added[].unadmittable` | string |  |  |
+| `duplicates` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `refused` | list |  |  |
+| `refused[].subject` | string |  |  |
+| `refused[].why` | string |  |  |
+
+## POST /admin-api/pki/trust/recheck
+
+`recheckPinnedCertificates`
+
+**Audit what this realm pins, now**
+
+What the daily pki.pins.audit job does, on demand: it keeps the result, and logs and mails what changed.
+
+**Mirrors** `POST /admin/pki/trust` on the admin console.
+
+Scope: `admin:write`.
+
+**Request body** (optional)
+
+An empty object.
+
+**200**: How many were audited and how many changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `changes` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pins` | integer |  |  |
+| `truststore` | integer |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `changes` | integer |  |  |
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `pins` | integer |  |  |
+| `truststore` | integer |  |  |
+
+## POST /admin-api/pki/trust/remove
+
+`removeSignerTrustAnchor`
+
+**Stop trusting a certificate in this realm's signer truststore**
+
+By its SHA-256 fingerprint, in either spelling. An entry from pki.signerTrustAnchorsFile is refused: it would come back at the next start.
+
+**Mirrors** `POST /admin/pki/trust` on the admin console.
+
+Scope: `admin:write`.
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `fingerprint` | string | yes |  |
+
+**200**: Whether it was removed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+
+## POST /admin-api/pki/trust/set-row
+
+`setParanoidPkiRow`
+
+**Set paranoid PKI mode, or one use case's row**
+
+pki.paranoid (auto, on, off) or one pki.paranoid&lt;UseCase> (true, false), for this realm, through the ordinary settings write.
+
+**Mirrors** `POST /admin/pki/trust` on the admin console.
+
+Scope: `admin:write`.
+
+**Request body**
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `setting` | string | yes |  |
+| `value` | string, or boolean | yes |  |
+
+**200**: The setting written.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `setting` | string |  |  |
+
+**400**: The operation was refused; `errors` says why and nothing changed.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `errors` | list |  |  |
+| `errors[]` | string |  |  |
+| `message` | string |  |  |
+| `ok` | boolean | yes |  |
+| `setting` | string |  |  |
+
 ## POST /admin-api/pki/unpin-key
 
 `unpinPkiKeyPair`

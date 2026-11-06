@@ -775,6 +775,10 @@
     "en": "feb59a61d26db396",
     "text": "May client-certificate trust anchor na idinagdag o inalis"
   },
+  "audit.actions.admin.pki.trust.change.label": {
+    "en": "ab34b1a9778d5c8e",
+    "text": "Binago ang signer truststore o isang paranoid na PKI setting"
+  },
   "audit.actions.krb5.keys.derived.label": {
     "en": "048452fd758565c6",
     "text": "Kinuha mula sa password ng isang tao ang kanyang mga Kerberos key"

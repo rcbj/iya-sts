@@ -775,6 +775,14 @@
     "en": "bc458d477b4de7d9",
     "text": "Ang certificate authority na hawak ng realm na ito"
   },
+  "endpoints.route./admin-api/pki/trust.name": {
+    "en": "d529a2413e65246d",
+    "text": "Paranoid PKI mode, ang signer truststore at kung ano ang naka-pin"
+  },
+  "endpoints.route./admin-api/pki/trust/:action.name": {
+    "en": "49eac4924ef09867",
+    "text": "Baguhin ang signer truststore, isang paranoid row, o muling suriin ang mga pin"
+  },
   "endpoints.route./admin-api/pki/:action.name": {
     "en": "c17f40560a0a857f",
     "text": "Bumuo ng hierarchy, mag-issue ng key pair, gumawa ng certificate"
