@@ -15218,10 +15218,12 @@ function createApplication(detail) {
   // A CERTIFICATE AT THE CREATE DOOR, under paranoid PKI mode, as at the update
   // door (#1360). Lazily: the door reaches the authority.
   const certificateTrust = require('./certificate_trust');
-  for (const attribute of SAML_CERTIFICATE_ATTRIBUTES) {
+  for (const attribute of SAML_CERTIFICATE_ATTRIBUTES
+    .concat(['samlEncryptionCertificate'])) {
     for (const one of valuesOf((info.fields || {})[attribute])) {
       const refused = String(one || '') && certificateTrust.registrationProblem(
-        'saml-signer',
+        attribute === 'samlEncryptionCertificate' ? 'encryption-recipient' :
+          'saml-signer',
         Buffer.from(samlCertificateBase64(String(one)), 'base64'));
       if (refused) {
         log.debug("Leaving createApplication(). Paranoid: " + refused.code);
@@ -16416,6 +16418,18 @@ function updateApplication(identifier, change) {
   // normalised and not checked, the asymmetry every rule here has: it names a
   // value already on the entry.
   // ---------------------------------------------------------------------------
+  // The encryption certificate's own use case, at the door (#1360).
+  if (attribute === 'samlEncryptionCertificate' && value && mode !== 'remove') {
+    const refused = require('./certificate_trust').registrationProblem(
+      'encryption-recipient',
+      Buffer.from(samlCertificateBase64(value), 'base64'));
+    if (refused) {
+      log.debug("Leaving updateApplication(). Paranoid: " + refused.code);
+      return errorCodes.mark({ ok: false, errors: ['`' + attribute + '` is ' +
+                               'refused: ' + refused.why +
+                               '. Nothing was written.'] }, refused.code);
+    }
+  }
   if (SAML_CERTIFICATE_ATTRIBUTES.indexOf(attribute) >= 0 && value) {
     value = samlCertificateBase64(value);
     if (mode !== 'remove') {

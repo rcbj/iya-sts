@@ -192,6 +192,16 @@ async function aSamlSigner() {
     assert.ok(refused.status >= 400 && refused.status < 500,
               String(refused.status));
   });
+  const recipient = await kit.mint({ cn: "paranoid sp recipient",
+    notBefore: now - 3 * kit.DAY, notAfter: now - kit.DAY,
+    usages: ["keyEncipherment"] });
+  const refusedRecipient = await send("POST", api() + "/applications/create", {
+    identifier: SP + "/enc", name: "paranoid enc", protocols: ["saml2"],
+    fields: { samlEncryptionCertificate: b64(recipient) } });
+  check("an expired encryption certificate is refused at the door", function () {
+    assert.strictEqual(refusedRecipient.status, 400,
+                       refusedRecipient.raw.slice(0, 300));
+  });
   const metadata = '<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:' +
     'metadata" entityID="' + SP + '"><md:SPSSODescriptor protocolSupport' +
     'Enumeration="urn:oasis:names:tc:SAML:2.0:protocol"><md:AssertionConsumer' +
@@ -279,7 +289,7 @@ async function test() {
   assert.strictEqual(made.status, 200, made.raw.slice(0, 300));
   await aSamlSigner();
   await aJoseSigner();
-  assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 9, "only " + checks + " checks ran; a section has " +
                                           "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

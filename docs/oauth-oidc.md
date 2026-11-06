@@ -2309,6 +2309,8 @@ endpoints on this page:
 * A foreign `subject_token` issuer in product mode.
 * Enrichment of declared `authorization_details` types (RFC 9396 section 7).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a client's encryption key that carries an `x5c` is held to that certificate; a bare key is left alone. See the `encryption-recipient` row of the [use cases](pki-use-cases.md).
+
 ## Development and product mode
 
 `global.mode` changes a good deal here. The full list, with the reasoning, is

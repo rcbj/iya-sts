@@ -584,6 +584,8 @@ being answered.
 
 Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a service provider's signing certificate is held to its validity, keyUsage and revocation, and when it is not self-signed, to a chain to the realm's [signer truststore](signer-truststore.md). A self-signed one registered on the application stays acceptable. Metadata no trust anchor vouches for is not consumed. See the `saml-signer` row of the [use cases](pki-use-cases.md).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the certificate an assertion is encrypted to must be in date, permit keyEncipherment or keyAgreement, and not be revoked, and nothing is ever encrypted to a certificate merely observed on a request. A refused certificate refuses the response rather than sending it in clear, in either mode. See the `encryption-recipient` row of the [use cases](pki-use-cases.md).
+
 ## Development and product mode
 
 | | Development | Product |
