@@ -21,6 +21,7 @@
 //   bare      an object with no declared members (`{ type: 'object' }`)
 //   open      declared members, but something inside admits undeclared ones
 //   closed    every object inside is closed, or is a typed map
+//   free-form a member is `Kit.freeForm()`, carrying the reason
 //   not-json  a declared non-JSON media type
 // ---------------------------------------------------------------------------
 
@@ -53,8 +54,12 @@ function stateOf(doc, schema, seen) {
     return s ? 'closed' : 'none';
   }
   seen.add(s);
+  if (s['x-free-form']) {
+    log.debug("Leaving stateOf(). Free-form.");
+    return 'free-form';
+  }
   const worse = function (a, b) {
-    const order = ['closed', 'open', 'bare', 'none'];
+    const order = ['closed', 'free-form', 'open', 'bare', 'none'];
     return order.indexOf(a) > order.indexOf(b) ? a : b;
   };
   let out = 'closed';

@@ -31,7 +31,8 @@
 //
 // **THE THREE THINGS IT DOES NOT CHECK.** `res.end()` and a piped stream have no
 // `res.send` to pass through; `tests/openapi_response_models.js` holds that none
-// of these APIs answers JSON that way. An unrouted path answers Express's own
+// of these APIs answers JSON that way, and the one stream there is, a finished
+// report job's file (`report/report_api.ts`), is bytes under a declared type. An unrouted path answers Express's own
 // `Cannot GET /path`, which `tests/protocol/sts_metadata.js` depends on and
 // which does not use `res.send`. And a request a cell relays is checked by the
 // cell that answers it.
