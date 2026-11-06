@@ -2396,12 +2396,7 @@ class OAuth2Server {
     // algorithm in any `*_alg_values_supported` list — the same narrowing
     // the JWKS and the verifiers apply. Before the profile, as the two modes
     // above are, for the reason given below.
-    helpers.withoutPqSigningAlgs(metadata);
-    // `keys.eddsaSigning` off (#1292, the default): EdDSA out of the lists
-    // of what this realm SIGNS, as the JWKS leaves its OKP keys out.
-    helpers.withoutEddsaSigningAlgs(metadata);
-    // And to what `keys.signingAlgorithms` lists, if it lists anything (#1348).
-    helpers.withoutUnlistedSigningAlgs(metadata);
+    helpers.narrowSigningAlgs(metadata);
     // The PROFILE, last, so it can override anything above it — including what
     // RFC 9700 mode just narrowed. That order is deliberate and it is the one a
     // reader of the form expects: a profile is somebody saying "publish this",
@@ -3356,12 +3351,7 @@ class OAuth2Server {
     // own lists, and the OpenID Connect members merged since — the ID Token,
     // UserInfo and request object lists among them — are narrowed here,
     // before the profile, as there.
-    helpers.withoutPqSigningAlgs(metadata);
-    // And EdDSA out of the ID Token and UserInfo signing lists while
-    // `keys.eddsaSigning` is off (#1292).
-    helpers.withoutEddsaSigningAlgs(metadata);
-    // And to what `keys.signingAlgorithms` lists, if it lists anything (#1348).
-    helpers.withoutUnlistedSigningAlgs(metadata);
+    helpers.narrowSigningAlgs(metadata);
     // THE PROFILE, AGAIN, and it has to be applied twice.
     //
     // asMetadata() applied it already — and then the Object.assign above

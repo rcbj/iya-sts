@@ -701,6 +701,81 @@ Scope: `admin:read`.
 | `postQuantum.symmetric.strongest` | string |  |  |
 | `postQuantum.symmetric.what` | string |  |  |
 | `realm` | string |  | The trust realm the key material below belongs to. The ALGORITHM tables are process-wide; the SIGNING KEYS are per realm. |
+| `signaturePolicy` | object |  |  |
+| `signaturePolicy.pqcOnly` | boolean |  |  |
+| `signaturePolicy.surfaces` | object |  |  |
+| `signaturePolicy.surfaces.cose` | object |  |  |
+| `signaturePolicy.surfaces.cose.acceptSetting` | string |  | The setting holding what this surface accepts. |
+| `signaturePolicy.surfaces.cose.rows` | list |  |  |
+| `signaturePolicy.surfaces.cose.rows[].acceptRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.cose.rows[].accepts` | boolean |  | Whether this realm accepts it now. |
+| `signaturePolicy.surfaces.cose.rows[].id` | string |  | The algorithm. |
+| `signaturePolicy.surfaces.cose.rows[].pqc` | string |  | pq or composite, or empty for a classical algorithm. |
+| `signaturePolicy.surfaces.cose.rows[].signRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.cose.rows[].signs` | boolean |  | Whether this realm signs with it now. |
+| `signaturePolicy.surfaces.cose.rows[].spelling` | string |  | Its name on this surface. |
+| `signaturePolicy.surfaces.cose.rows[].weak` | boolean |  |  |
+| `signaturePolicy.surfaces.cose.signSetting` | string |  | The setting holding what this surface signs with. |
+| `signaturePolicy.surfaces.di` | object |  |  |
+| `signaturePolicy.surfaces.di.acceptSetting` | string |  | The setting holding what this surface accepts. |
+| `signaturePolicy.surfaces.di.rows` | list |  |  |
+| `signaturePolicy.surfaces.di.rows[].acceptRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.di.rows[].accepts` | boolean |  | Whether this realm accepts it now. |
+| `signaturePolicy.surfaces.di.rows[].id` | string |  | The algorithm. |
+| `signaturePolicy.surfaces.di.rows[].pqc` | string |  | pq or composite, or empty for a classical algorithm. |
+| `signaturePolicy.surfaces.di.rows[].signRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.di.rows[].signs` | boolean |  | Whether this realm signs with it now. |
+| `signaturePolicy.surfaces.di.rows[].spelling` | string |  | Its name on this surface. |
+| `signaturePolicy.surfaces.di.rows[].weak` | boolean |  |  |
+| `signaturePolicy.surfaces.di.signSetting` | string |  | The setting holding what this surface signs with. |
+| `signaturePolicy.surfaces.httpsig` | object |  |  |
+| `signaturePolicy.surfaces.httpsig.acceptSetting` | string |  | The setting holding what this surface accepts. |
+| `signaturePolicy.surfaces.httpsig.rows` | list |  |  |
+| `signaturePolicy.surfaces.httpsig.rows[].acceptRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.httpsig.rows[].accepts` | boolean |  | Whether this realm accepts it now. |
+| `signaturePolicy.surfaces.httpsig.rows[].id` | string |  | The algorithm. |
+| `signaturePolicy.surfaces.httpsig.rows[].pqc` | string |  | pq or composite, or empty for a classical algorithm. |
+| `signaturePolicy.surfaces.httpsig.rows[].signRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.httpsig.rows[].signs` | boolean |  | Whether this realm signs with it now. |
+| `signaturePolicy.surfaces.httpsig.rows[].spelling` | string |  | Its name on this surface. |
+| `signaturePolicy.surfaces.httpsig.rows[].weak` | boolean |  |  |
+| `signaturePolicy.surfaces.httpsig.signSetting` | string |  | The setting holding what this surface signs with. |
+| `signaturePolicy.surfaces.jose` | object |  |  |
+| `signaturePolicy.surfaces.jose.acceptSetting` | string |  | The setting holding what this surface accepts. |
+| `signaturePolicy.surfaces.jose.rows` | list |  |  |
+| `signaturePolicy.surfaces.jose.rows[].acceptRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.jose.rows[].accepts` | boolean |  | Whether this realm accepts it now. |
+| `signaturePolicy.surfaces.jose.rows[].id` | string |  | The algorithm. |
+| `signaturePolicy.surfaces.jose.rows[].pqc` | string |  | pq or composite, or empty for a classical algorithm. |
+| `signaturePolicy.surfaces.jose.rows[].signRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.jose.rows[].signs` | boolean |  | Whether this realm signs with it now. |
+| `signaturePolicy.surfaces.jose.rows[].spelling` | string |  | Its name on this surface. |
+| `signaturePolicy.surfaces.jose.rows[].weak` | boolean |  |  |
+| `signaturePolicy.surfaces.jose.signSetting` | string |  | The setting holding what this surface signs with. |
+| `signaturePolicy.surfaces.x509` | object |  |  |
+| `signaturePolicy.surfaces.x509.acceptSetting` | string |  | The setting holding what this surface accepts. |
+| `signaturePolicy.surfaces.x509.rows` | list |  |  |
+| `signaturePolicy.surfaces.x509.rows[].acceptRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.x509.rows[].accepts` | boolean |  | Whether this realm accepts it now. |
+| `signaturePolicy.surfaces.x509.rows[].id` | string |  | The algorithm. |
+| `signaturePolicy.surfaces.x509.rows[].pqc` | string |  | pq or composite, or empty for a classical algorithm. |
+| `signaturePolicy.surfaces.x509.rows[].signRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.x509.rows[].signs` | boolean |  | Whether this realm signs with it now. |
+| `signaturePolicy.surfaces.x509.rows[].spelling` | string |  | Its name on this surface. |
+| `signaturePolicy.surfaces.x509.rows[].weak` | boolean |  |  |
+| `signaturePolicy.surfaces.x509.signSetting` | string |  | The setting holding what this surface signs with. |
+| `signaturePolicy.surfaces.xml` | object |  |  |
+| `signaturePolicy.surfaces.xml.acceptSetting` | string |  | The setting holding what this surface accepts. |
+| `signaturePolicy.surfaces.xml.rows` | list |  |  |
+| `signaturePolicy.surfaces.xml.rows[].acceptRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.xml.rows[].accepts` | boolean |  | Whether this realm accepts it now. |
+| `signaturePolicy.surfaces.xml.rows[].id` | string |  | The algorithm. |
+| `signaturePolicy.surfaces.xml.rows[].pqc` | string |  | pq or composite, or empty for a classical algorithm. |
+| `signaturePolicy.surfaces.xml.rows[].signRefusal` | string |  | Why not, or empty. |
+| `signaturePolicy.surfaces.xml.rows[].signs` | boolean |  | Whether this realm signs with it now. |
+| `signaturePolicy.surfaces.xml.rows[].spelling` | string |  | Its name on this surface. |
+| `signaturePolicy.surfaces.xml.rows[].weak` | boolean |  |  |
+| `signaturePolicy.surfaces.xml.signSetting` | string |  | The setting holding what this surface signs with. |
 | `signatures` | object |  |  |
 | `signatures.canonicalization` | list |  |  |
 | `signatures.canonicalization[].comments` | boolean, or null |  |  |

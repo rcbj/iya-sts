@@ -5043,6 +5043,14 @@
     "en": "a243fee8db63660f",
     "text": "签发的断言的有效时长：它同时成为 Conditions/NotOnOrAfter 和持有者 SubjectConfirmationData/NotOnOrAfter。将其设为 1，即可观察服务提供方是否拒绝过时的断言，这是大多数服务提供方都会弄错的检查。"
   },
+  "saml2.publishAlgorithmSupport|label": {
+    "en": "fae70314b5ff4257",
+    "text": "在元数据中发布算法支持"
+  },
+  "saml2.publishAlgorithmSupport|description": {
+    "en": "38900a41645aeba6",
+    "text": "IdP 元数据是否包含 `<alg:SigningMethod>` 和 `<alg:DigestMethod>`（SAML V2.0 Metadata Profile for Algorithm Support 1.0），列出此领域能够验证的 XML 签名方法及摘要，按优先顺序排列。**默认开启。**不了解该配置文件的使用方会忽略它们，这是 SAML 元数据第 2.3.1 节的要求。"
+  },
   "saml2.signAssertion|label": {
     "en": "762a7ca973d4ab92",
     "text": "签署断言"

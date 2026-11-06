@@ -5043,6 +5043,14 @@
     "en": "a243fee8db63660f",
     "text": "簽發的斷言有效多久：它同時成為 Conditions/NotOnOrAfter 與持有人 SubjectConfirmationData/NotOnOrAfter。設為 1 即可觀察服務提供者拒絕過時的斷言，這是大多數服務提供者會做錯的檢查。"
   },
+  "saml2.publishAlgorithmSupport|label": {
+    "en": "fae70314b5ff4257",
+    "text": "在中繼資料中發布演算法支援"
+  },
+  "saml2.publishAlgorithmSupport|description": {
+    "en": "38900a41645aeba6",
+    "text": "IdP 中繼資料是否包含 `<alg:SigningMethod>` 與 `<alg:DigestMethod>`（SAML V2.0 Metadata Profile for Algorithm Support 1.0），列出此領域能夠驗證的 XML 簽章方法及摘要，依優先順序排列。**預設開啟。**不了解該設定檔的使用方會忽略它們，這是 SAML 中繼資料第 2.3.1 節的要求。"
+  },
   "saml2.signAssertion|label": {
     "en": "762a7ca973d4ab92",
     "text": "簽署斷言"

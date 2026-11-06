@@ -793,6 +793,7 @@ var config = {
   // --- SAML 2.0 assertions ---------------------------------------------
   saml2: {
     assertionLifetimeMin: 60,                                              // Assertion lifetime (minutes)
+    publishAlgorithmSupport: true,                                         // Publish algorithm support in metadata
     signAssertion: true,                                                   // Sign the assertion
     signResponse: true,                                                    // Sign the response
     nameIdFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified", // Default NameID format

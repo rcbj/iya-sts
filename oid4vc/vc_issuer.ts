@@ -940,6 +940,21 @@ class VcIssuer {
     // classical algorithms, which are what this realm then signs and
     // verifies. Last, so a list built above cannot be missed.
     helpers.withoutPqSigningAlgs(meta);
+    // What a configuration signs with is the sign list's, and what a proof may
+    // be signed with is the accept list's (#1368). A name with no JOSE row,
+    // bbs-2023 or a COSE identifier, is not a JOSE list's to narrow.
+    const policy = stsCrypto.signaturePolicy;
+    const signs = 'credential_signing_alg_values_supported';
+    policy.narrowAcceptedLists(meta, [signs]);
+    Object.keys(meta.credential_configurations_supported).forEach(function (id) {
+      const one = meta.credential_configurations_supported[id];
+      if (Array.isArray(one[signs])) {
+        one[signs] = one[signs].filter(function (alg: unknown) {
+          return typeof alg !== 'string' ||
+            !stsCrypto.JWS_ALGS[alg] || policy.signCause('jose', alg) === null;
+        });
+      }
+    });
 
     log.debug("Leaving VcIssuer.vciMetadata(). " +
               Object.keys(meta.credential_configurations_supported).length +

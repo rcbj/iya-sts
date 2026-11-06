@@ -373,6 +373,34 @@ class CryptoMetadataPage {
     return html;
   }
 
+  // WHICH ALGORITHM, ON WHICH SURFACE, AND WHY NOT (#1368). A row is the policy's
+  // own answer. The lists are set on /admin/config with the other settings.
+  static renderAlgorithms(report, t) {
+    const yes = t.html('consoleCryptoMetadata.yes');
+    const no = t.html('consoleCryptoMetadata.no');
+    const policy = report.signaturePolicy;
+    let html = '<h2 id="algorithms" data-tab="algorithms">' +
+      t.html('consoleCryptoMetadata.algorithmsHeading') + '</h2>' +
+      '<p class="lead">' + t.html('consoleCryptoMetadata.algorithmsLead') +
+      ' <a href="/admin/config">' +
+      t.html('consoleCryptoMetadata.algorithmsSettings') + '</a></p>';
+    Object.keys(policy.surfaces).forEach(function (name) {
+      const surface = policy.surfaces[name];
+      html += '<h3><code>' + esc(name) + '</code></h3>' +
+        '<table><thead><tr><th>' + t.html('consoleCryptoMetadata.thAlgName') +
+        '</th><th>' + t.html('consoleCryptoMetadata.thAlgSigns') + '</th><th>' +
+        t.html('consoleCryptoMetadata.thAlgAccepts') + '</th><th>' +
+        t.html('consoleCryptoMetadata.thAlgWhyNot') + '</th></tr></thead><tbody>' +
+        surface.rows.map(function (row) {
+          return '<tr><td><code>' + esc(row.id) + '</code></td><td>' +
+            (surface.signSetting ? (row.signs ? yes : no) : '') + '</td><td>' +
+            (row.accepts ? yes : no) + '</td><td>' +
+            esc(row.signRefusal || row.acceptRefusal) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    });
+    return html;
+  }
+
   static renderSignatures(report, t) {
     const self = this;
     const s = report.signatures;
@@ -724,6 +752,8 @@ class CryptoMetadataPage {
       '</a> &middot; ' +
       '<a href="#signatures">' +
       t.html('consoleCryptoMetadata.tocSignatures') + '</a> &middot; ' +
+      '<a href="#algorithms">' +
+      t.html('consoleCryptoMetadata.tocAlgorithms') + '</a> &middot; ' +
       '<a href="#encryption">' +
       t.html('consoleCryptoMetadata.tocEncryption') + '</a> &middot; ' +
       '<a href="#post-quantum">' + t.html('consoleCryptoMetadata.tocPq') +
@@ -735,6 +765,7 @@ class CryptoMetadataPage {
     html += self.renderKeys(report, t);
     html += self.renderHashing(report, t);
     html += self.renderSignatures(report, t);
+    html += self.renderAlgorithms(report, t);
     html += self.renderEncryption(report, t);
     html += self.renderPostQuantum(report, t);
     html += self.renderStandards(report, t);

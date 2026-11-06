@@ -5043,6 +5043,14 @@
     "en": "a243fee8db63660f",
     "text": "Cuánto tiempo es válida una aserción emitida: se convierte tanto en Conditions/NotOnOrAfter como en el SubjectConfirmationData/NotOnOrAfter portador. Defínalo en 1 para ver cómo un proveedor de servicios rechaza una aserción obsoleta, que es la comprobación que la mayoría hace mal."
   },
+  "saml2.publishAlgorithmSupport|label": {
+    "en": "fae70314b5ff4257",
+    "text": "Publicar compatibilidad de algoritmos en metadatos"
+  },
+  "saml2.publishAlgorithmSupport|description": {
+    "en": "38900a41645aeba6",
+    "text": "Si los metadatos del IdP incluyen `<alg:SigningMethod>` y `<alg:DigestMethod>` (SAML V2.0 Metadata Profile for Algorithm Support 1.0), que enumeran los métodos de firma XML y los resúmenes que este dominio puede verificar, por orden de preferencia. **Activado por defecto.** Un consumidor que no conoce el perfil los ignora, como exige la sección 2.3.1 de los metadatos SAML."
+  },
   "saml2.signAssertion|label": {
     "en": "762a7ca973d4ab92",
     "text": "Firmar la aserción"
