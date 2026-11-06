@@ -160,12 +160,18 @@ const PURPOSES: Purpose[] = [
     selfSigned: 'refuse', validity: 'now', revocation: 'required',
     exemptions: [{ check: 'revocation',
                    spec: 'RFC 5280 section 4.2.1.13: a CRL or OCSP fetch over ' +
-                         'plain http has no certificate to check' }],
+                         'plain http has no certificate to check' },
+                 { check: 'self-signed-allowed',
+                   spec: 'Not a specification, rcbj\'s decision: one ' +
+                         'self-signed certificate accepted by name in the ' +
+                         'signer truststore, or configured byte for byte as ' +
+                         'this dialer\'s own CA, still held to its window ' +
+                         'and fields' }],
     // THE STORE, NOT A SPECIFICATION, AND THE ONE WEAKENING IN THIS TABLE: the
-    // database is dialled before anything else can answer, and managed
-    // databases' certificates commonly name no list, so a status that could not
-    // be established would stop the service starting. A certificate revoked is
-    // still refused. rcbj may overrule this on #1360.
+    // database and the secret store are dialled before anything else can
+    // answer, and their certificates commonly name no list, so a status that
+    // could not be established would stop the service starting. A certificate
+    // revoked is still refused. rcbj may overrule this on #1360.
     variants: { store: { softRevocation: true } },
     baseline: 'peer-chain', code: 'STS-PKI-0242', phase: 2 },
   { id: 'jose-signer', setting: 'pki.paranoidJoseSigner',
@@ -1399,8 +1405,11 @@ class CertificateTrust {
     }
     const read = CertificateTrust.certificatesOf({ peer: peer });
     const certs = read && CertificateTrust.readable(read.leaf) ? read : null;
+    const named = !!certs &&
+      CertificateTrust.acceptedByName(id, certs.leaf, opts);
     const field = certs && stsCrypto.certificateFieldProblem(certs.leaf,
-      Object.assign({}, purpose.leaf, { role: 'leaf', now: opts.now }));
+      Object.assign({}, purpose.leaf, { role: 'leaf', now: opts.now,
+                                        mayBeCa: named }));
     if (!certs || field) {
       helpers.log.debug("Leaving CertificateTrust.holdPeer(). A field.");
       return { ok: false, inForce: true,
@@ -1410,7 +1419,7 @@ class CertificateTrust {
                  'what was presented is not an X.509 certificate' };
     }
     const facts = stsCrypto.certificateFacts(certs.leaf);
-    if (facts.selfIssued && !facts.ca) {
+    if (facts.selfIssued && !facts.ca && !named) {
       helpers.log.debug("Leaving CertificateTrust.holdPeer(). Self-signed.");
       return { ok: false, inForce: true, check: 'self-signed-allowed',
                code: purpose.code,
@@ -1485,6 +1494,50 @@ class CertificateTrust {
     return chain;
   }
 
+  // A SERVER'S CERTIFICATE ACCEPTED CASE BY CASE (rcbj, #1360), which is not a
+  // softer rule: it is this one certificate, byte for byte, and it is still
+  // held to its window and its fields. Either the operator accepted it in the
+  // signer truststore, or this dialer was configured with it as its own CA: the
+  // shipped OpenBao's and postgres's, which `generate-tls` makes and the stack
+  // delivers, and without which a new install in product mode would not start.
+  // A public root, or an anchor of the signer truststore, reached this dialer's
+  // `ca` without anybody naming this server, so neither counts.
+  private static acceptedByName(id: string, leaf: Buffer, opts: Json): boolean {
+    helpers.log.debug("Entering CertificateTrust.acceptedByName().");
+    if (id !== 'tls-server-outbound') {
+      helpers.log.debug("Leaving CertificateTrust.acceptedByName(). Not here.");
+      return false;
+    }
+    const realmId = opts.realmId || realms.currentId();
+    if (signerTruststore.accepted(realmId, leaf)) {
+      helpers.log.debug("Leaving CertificateTrust.acceptedByName(). Accepted.");
+      return true;
+    }
+    const wanted = leaf.toString('base64');
+    const armoured = function (pem: unknown): string {
+      helpers.log.debug("Entering armoured().");
+      helpers.log.debug("Leaving armoured().");
+      return String(pem).replace(/-----[^-]+-----|\s+/g, '');
+    };
+    const blocks: string[] = ([] as unknown[]).concat(opts.pinnedTo || [])
+      .map(function (one: unknown) {
+        return String(one);
+      }).join('\n').match(
+        /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+    const configured = blocks.some(function (pem: string) {
+      return armoured(pem) === wanted;
+    });
+    const elsewhere = CertificateTrust.bundledAnchors()
+      .has(CertificateTrust.anchorIdOf(leaf)) ||
+      (signerTruststore.pemsFor(realmId, id) as string[])
+        .some(function (pem: string) {
+          return armoured(pem) === wanted;
+        });
+    helpers.log.debug("Leaving CertificateTrust.acceptedByName(). " +
+                      (configured && !elsewhere));
+    return configured && !elsewhere;
+  }
+
   /**
    * What a handshake's peer owes once OpenSSL has verified it, with revocation:
    * `holdPeer()`, then the fetch a hold cannot wait for. Counted and audited as
@@ -1493,7 +1546,8 @@ class CertificateTrust {
    *
    * @param id - the purpose
    * @param peer - `getPeerCertificate(true)`
-   * @param options - `{ realmId, now, staple, variant, expectName }`
+   * @param options - `{ realmId, now, staple, variant, expectName, pinnedTo }`;
+   *   `pinnedTo` is the dialer's own `ca`
    * @returns a promise of `{ ok, inForce, code, why }`
    */
   static async assessPeer(id: string, peer: Json,
@@ -1506,8 +1560,8 @@ class CertificateTrust {
       const verdict = CertificateTrust.blank(id, true);
       const codes: Json = {};
       const whys: Json = {};
-      const held = CertificateTrust.holdPeer(id, peer, { realmId: realmId,
-                                                         now: opts.now });
+      const held = CertificateTrust.holdPeer(id, peer,
+        { realmId: realmId, now: opts.now, pinnedTo: opts.pinnedTo });
       if (!held.inForce) {
         return held;
       }

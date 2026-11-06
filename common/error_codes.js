@@ -4933,6 +4933,10 @@ const CODES = [
     summary: 'A pin source threw while listing its certificates, so the ' +
       'inventory is missing its rows.',
     spec: 'none (logged)' },
+  { code: 'STS-PKI-0267',
+    summary: 'A certificate offered to be accepted by name is not a ' +
+      'self-signed leaf (#1360).',
+    spec: 'none — recorded on the refusal the page or the API makes' },
   { code: 'STS-PKI-0266',
     summary: 'An https CRL distribution point or OCSP responder was not asked: ' +
       'pki.revocationHttpsCaFile names a file that cannot be used, under ' +

@@ -20,7 +20,8 @@
 // with no byte delivered. C: a good server is reached, its request whole. D: an
 // EKU that omits serverAuth. E: a staple answering revoked, off a real OCSP
 // response, with no fetch. F: the opt-out, the row and the master. G: the signer
-// truststore beside a dialer's `ca`. H: the store's variant.
+// truststore beside a dialer's `ca`. H: the store's variant. I: the
+// certificates the shipped stack generates, through the gate.
 //
 // MUTATION RECORD, each applied to a scratch build, seen red and put back:
 //   * `cork()` dropped, so a stream writer's bytes go first   — 2 red (B)
@@ -391,6 +392,95 @@ async function child() {
     });
     req.end('x');
   });
+  // I. THE CERTIFICATES THE SHIPPED STACK GENERATES (the product stack's first
+  // dial, refused until a dialer's own `ca` counted as naming the server): each
+  // generator's real output, over a real handshake, through the gate, under
+  // hard-fail. `generate-tls` is what a new install runs, with nobody present.
+  const cp = require('child_process');
+  const os = require('os');
+  const generated = fs.mkdtempSync(path.join(os.tmpdir(), 'outbound-gate-'));
+  const baoDir = path.join(generated, 'bao');
+  const pgDir = path.join(generated, 'pg');
+  fs.mkdirSync(baoDir);
+  cp.execFileSync(process.execPath,
+    [path.join(__dirname, '..', 'openbao', 'generate-tls.js')],
+    { env: Object.assign({}, process.env, { STS_BAO_TLS_DIR: baoDir,
+                                            STS_BAO_RAFT_DIR: baoDir }),
+      stdio: 'ignore' });
+  cp.execFileSync('sh', [path.join(__dirname, '..', 'postgres',
+                                   'generate-tls.sh')],
+    { env: Object.assign({}, process.env, { POSTGRES_TLS_DIR: pgDir,
+                                            POSTGRES_TLS_CN: 'localhost',
+                                            POSTGRES_TLS_PUBLIC_DIR: '' }),
+      stdio: 'ignore' });
+  const selfSignedServer = function (keyFile, certFile) {
+    log.debug("Entering selfSignedServer().");
+    const pem = fs.readFileSync(certFile, 'utf8');
+    const server = https.createServer(
+      { key: fs.readFileSync(keyFile), cert: pem }, function (req, res) {
+        res.end('ok');
+      });
+    log.debug("Leaving selfSignedServer().");
+    return new Promise(function (resolve) {
+      server.listen(0, '127.0.0.1', function () {
+        resolve({ server: server, pem: pem, port: server.address().port });
+      });
+    });
+  };
+  const dial = function (port, ca, extra) {
+    log.debug("Entering dial().");
+    log.debug("Leaving dial().");
+    return new Promise(function (resolve) {
+      const req = https.request(Object.assign(
+        { host: 'localhost', port: port, path: '/', ca: ca, agent: false },
+        extra || {}), function (res) {
+        res.resume();
+        resolve({ reached: res.statusCode === 200, why: '' });
+      });
+      req.on('error', function (e) {
+        resolve({ reached: false, why: String(e.message) });
+      });
+      req.end();
+    });
+  };
+  config.setOverride('pki.revocationCheck', 'hard-fail');
+  config.setOverride('pki.revocationRequireDistributionPoint', 'on');
+  const bao = await selfSignedServer(path.join(baoDir, 'server.key'),
+                                     path.join(baoDir, 'server.crt'));
+  const pg = await selfSignedServer(path.join(pgDir, 'server.key'),
+                                    path.join(pgDir, 'server.crt'));
+  results.generatedBao = await dial(bao.port, bao.pem);
+  results.generatedPg = await dial(pg.port, pg.pem);
+  // A pair the volume already holds is what it reads: nothing is regenerated.
+  cp.execFileSync(process.execPath,
+    [path.join(__dirname, '..', 'openbao', 'generate-tls.js')],
+    { env: Object.assign({}, process.env, { STS_BAO_TLS_DIR: baoDir,
+                                            STS_BAO_RAFT_DIR: baoDir }),
+      stdio: 'ignore' });
+  results.keptPair = fs.readFileSync(path.join(baoDir, 'server.crt'),
+                                     'utf8') === bao.pem;
+  const stranger = await kit.mint({ cn: 'localhost', san: ['DNS:localhost'],
+    usages: ['digitalSignature', 'keyEncipherment'], eku: ['serverAuth'] });
+  fs.writeFileSync(path.join(generated, 's.key'), stranger.key);
+  fs.writeFileSync(path.join(generated, 's.crt'), stranger.pem);
+  const unnamed = await selfSignedServer(path.join(generated, 's.key'),
+                                         path.join(generated, 's.crt'));
+  // In a truststore row of no kind this may not be: an anchor is a CA. So the
+  // refusal is OpenSSL's for an unnamed server, and the gate's once accepted
+  // and then expired.
+  results.strangerUnnamed = await dial(unnamed.port, bao.pem);
+  const aged = await kit.mint({ cn: 'localhost', san: ['DNS:localhost'],
+    usages: ['digitalSignature', 'keyEncipherment'], eku: ['serverAuth'],
+    notBefore: Date.now() - 3 * 86400000, notAfter: Date.now() - 86400000 });
+  fs.writeFileSync(path.join(generated, 'a.key'), aged.key);
+  fs.writeFileSync(path.join(generated, 'a.crt'), aged.pem);
+  const agedServer = await selfSignedServer(path.join(generated, 'a.key'),
+                                            path.join(generated, 'a.crt'));
+  results.agedPinned = await dial(agedServer.port, aged.pem);
+  [bao, pg, unnamed, agedServer].forEach(function (one) {
+    one.server.close();
+  });
+  fs.rmSync(generated, { recursive: true, force: true });
   process.stdout.write('RESULTS ' + JSON.stringify(results) + '\n');
   await crls.close();
   log.debug("Leaving child().");
@@ -448,5 +538,20 @@ module.exports = {
             'H. under hard-fail a certificate naming no list is refused');
     t.equal(r.noListStore, true, 'H. the store\'s row takes it');
     t.equal(r.revokedStore, false, 'H. and still refuses what is revoked');
+    t.check(r.generatedBao.reached,
+            'I. the certificate openbao/generate-tls.js makes is reached, by ' +
+            'the dialer configured with it, under hard-fail',
+            r.generatedBao.why);
+    t.check(r.generatedPg.reached,
+            'I. and so is the one postgres/generate-tls.sh makes',
+            r.generatedPg.why);
+    t.equal(r.keptPair, true,
+            'I. a volume already holding a pair keeps it, so an existing ' +
+            'install needs nothing');
+    t.equal(r.strangerUnnamed.reached, false,
+            'I. another self-signed server is not reached by that pin');
+    t.check(!r.agedPinned.reached && /expired/.test(r.agedPinned.why),
+            'I. and a pinned certificate is still held to its window',
+            r.agedPinned.why);
   }
 };
