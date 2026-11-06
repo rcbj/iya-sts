@@ -213,6 +213,12 @@ stage() {
   local url=https://sts:8081 nodes=sts
   KRBTGT="$(secret)"; KRBSVC="$(secret)"
   unset STS_DATABASE_URL STS_DATABASE_TLS_CA_FILE
+  # THE CAPS ARE PROCESS-WIDE AND NO JOB REMOVES A REALM. A run side by side has
+  # the bulk jobs raise them early; serially those come last and the suite's own
+  # growth fills the directory near job 976, after which every job fails at its
+  # set-up and exercises nothing.
+  export LDAP_MAX_ENTRIES=500000 STS_APPLICATIONS_MAX=100000 \
+    STS_REALMS_MAX_COUNT=5000
   export CONFIG_FILE=./env/docker-tests.js STS_HTTPS=true STS_LOG_LEVEL=info \
     STS_DATABASE_PASSWORD_PROVIDER=vault \
     STS_DATABASE_PASSWORD_FIELD=databasePassword \
@@ -283,6 +289,15 @@ stage() {
     STS_TEST_PEER_URL= XACML_PEP_URL= MAILPIT_API_URL= \
     STS_TEST_ATTRIBUTE_DB_URL= STS_TEST_ATTRIBUTE_MYSQL_URL= \
     STS_TEST_PERSISTENCE_DB_URL=
+
+  # WHAT A NODE IS GIVEN IS NOT THE JOBS' TO SEE: in the compose stacks the
+  # runner is another container. An in-process test that builds its own store
+  # reads these and looks for a secret store's files it has no business with.
+  local name
+  for name in $(compgen -e | grep -E '^(STS_|PKI_|KRB5_|LDAP_MAX)' \
+                | grep -vE '^STS_(TEST_|LDAP_URL$|ADMIN_API_)'); do
+    unset "${name}"
+  done
 
   local reportArgs=("--service-url=${url}" "--report-dir=${STAGE_OUT}/report"
                     --serial)
