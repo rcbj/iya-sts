@@ -956,6 +956,73 @@ function mintedChanged() {
 }
 
 // ---------------------------------------------------------------------------
+// THE POST-MORTEM AUDIT ROW FOR A DROPPED POISON BATCH (#1347).
+//
+// persistence_minted.js drops a minted batch whose commit failed with a
+// permanent data error rather than re-journal it for ever, and hands the
+// descriptor here (it cannot write the row itself: audit.js requires
+// persistence_replication.js, which requires persistence_minted.js, so a
+// require there closes a cycle). rcbj's decision: "retain enough audit
+// information to reliably do post-mortem analysis with the audit log. Beyond
+// that, I don't believe we need to keep anything." So one `error` row per
+// affected realm, naming the error's SQLSTATE/errno, its message (which names
+// the offending VALUE, not a secret), and the stores and row counts — never a
+// journal key, which for several stores IS the credential.
+//
+// audit.js is required LAZILY, at call time, for the same cycle reason, the way
+// audit.js reaches this module. A require that fails, or an audit that throws,
+// is swallowed: the batch is already dropped and logged, and the audit row is
+// the only thing missed.
+// ---------------------------------------------------------------------------
+function auditPoisonDrop(drop) {
+  log.debug("Entering auditPoisonDrop().");
+  if (!drop || !Array.isArray(drop.stores)) {
+    log.debug("Leaving auditPoisonDrop(). Nothing to audit.");
+    return;
+  }
+  let audit;
+  try {
+    audit = require('../common/audit');
+  } catch (e) {
+    log.debug("Caught in auditPoisonDrop(): " + ((e && e.message) || e));
+    log.debug("Leaving auditPoisonDrop(). No audit module.");
+    return;
+  }
+  const byRealm = {};
+  drop.stores.forEach(function (one) {
+    const realmId = String((one && one.realm) || '');
+    if (!byRealm[realmId]) {
+      byRealm[realmId] = [];
+    }
+    byRealm[realmId].push(String((one && one.handle) || '') + ' (' +
+                          Number((one && one.rows) || 0) + ')');
+  });
+  Object.keys(byRealm).forEach(function (realmId) {
+    const stores = byRealm[realmId].join(', ');
+    try {
+      realms.run(realms.get(realmId), function () {
+        audit.record({
+          action: 'persistence.minted-drop',
+          category: 'persistence',
+          outcome: 'error',
+          errorCode: 'STS-STORE-0092',
+          protocol: 'persistence',
+          channel: 'internal',
+          target: stores,
+          detail: 'A minted batch was dropped because the commit failed with ' +
+            'a permanent data error (' + drop.code + ') that can never ' +
+            'commit: ' + drop.message + '. Stores dropped in this realm: ' +
+            stores + '. The realm kept flushing. #1347.'
+        });
+      });
+    } catch (e) {
+      log.debug("Caught in auditPoisonDrop(): " + ((e && e.message) || e));
+    }
+  });
+  log.debug("Leaving auditPoisonDrop().");
+}
+
+// ---------------------------------------------------------------------------
 // A FIFTH DOOR, FOR THE DIRECTORY WINDOW (#349): an entry was HANDED OUT, so
 // the next flush must look at it — an entry edited in place is found by
 // comparing it with what it was, and the window holds what it handed out
@@ -3165,6 +3232,10 @@ function openStore(chosen, resolvedUrl, globalUrls) {
     // And the schedule: a minted write alone is a reason to flush. See
     // mintedChanged().
     minted.setScheduler(mintedChanged);
+    // And the post-mortem auditor for a dropped poison batch (#1347). This runs
+    // in every process setDriver() runs in — the front and every request worker
+    // — so a drop is audited wherever the flush happened. See auditPoisonDrop().
+    minted.setPoisonAuditor(auditPoisonDrop);
     // AND A WINDOWED WORKER'S DIRECTORY ITS BRIDGE (#349), before anything is
     // restored: from here a key the window does not hold is asked of this
     // store, through a thread with a connection of its own.

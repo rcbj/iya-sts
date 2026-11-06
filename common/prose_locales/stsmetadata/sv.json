@@ -3942,5 +3942,9 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "en parameter"
+  },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC. Ikonen som en webbläsare självmant begär på varje sida: logotypens kvadratiska märke (common/favicon.ico). Besvaras på varje lyssnare; sparas i en dag."
   }
 }

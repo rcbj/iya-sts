@@ -1,5 +1,20 @@
 # common/crypto_impl/
 
+**`algorithm_registry.js` (#1368, phase 1) is the one exception to "an engine"
+here**: it signs nothing. It is every signature algorithm once, with its
+spelling on every surface, and `JWS_ALGS`, `COSE_SIGNATURE_ALGS`,
+`XML_SIGNATURE_METHODS`, the PKI ids in `config.js` and the rest are views of
+it, each keeping its name, shape, members and order. **Add an algorithm there,
+in both `ROWS` and `RECORDED`**; `tests/algorithm_registry.js` fails on one
+without the other, and pins each view's bytes against the tree before the
+registry existed. `ROWS` is preference order, what a console draws; `RECORDED`
+is what each surface does today, which is what an empty setting means. They are
+different on purpose, because post-quantum signing is on by default and
+preference order would otherwise move every default signature to ML-DSA. The
+file's header argues the rest, including why each COSE consumer keeps its own
+set. `pq_jose.js`, `x509.js` and `xmldsig.js` keep their own tables because they
+run on them; the same test holds them equal.
+
 **EVERY FILE IN THIS DIRECTORY IS THIS SERVICE'S OWN SINCE #1280
 (2026-11-02).** They began as byte-identical copies of the parent project's
 (`../id-proto-debugger`) and stopped being copies in three steps:

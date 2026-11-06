@@ -630,6 +630,238 @@ async function body(t, dir) {
   minted.setDriver(driver, 'postgres');
 
   // -------------------------------------------------------------------------
+  // 5c. A PERMANENT DATA ERROR IS ISOLATED BY A BISECT; NO GOOD ROW IS LOST
+  //     (#1347, rcbj — "we can't have lost revoked certificates").
+  //
+  // A value a column can never hold — SQLSTATE class 22 (22003, "9.22e+21" as
+  // 22P02, 22001) or MariaDB's strict-mode data errnos — fails the WHOLE flush
+  // transaction and can never commit, so re-journalling it wedges the realm.
+  // The earlier fix dropped the whole batch, but a REVOCATION is an UPSERT in
+  // that batch (admin_stats.revokedJtis and the rest), so dropping it whole
+  // lost revocations. The flush now BISECTS: it commits every row it can and
+  // drops ONLY the row that fails by itself, naming only it. A deadlock during
+  // the split re-journals the unfinished rows. A single `saveMinted()` sorts
+  // its own locks, so slicing cannot deadlock two transactions on a shared row.
+  //
+  // The stub rejects — atomically, committing nothing — any slice carrying the
+  // poison key, exactly as one transaction a bad value fails as a whole.
+  // -------------------------------------------------------------------------
+  t.log.info('=== 5c-i. a bisect keeps every good row and drops only the ' +
+             'poison ===');
+  replication.reset();
+  minted.reset();
+  const poison = fakeDriver('process-a');
+  const realPoisonSave = poison.saveMinted;
+  let poisonAttempts = 0;
+  poison.saveMinted = function (upserts, deletes) {
+    log.debug("Entering saveMinted().");
+    const bad = upserts.concat(deletes).some(function (row) {
+      return row.journalKey === 'wedge';
+    });
+    if (bad) {
+      poisonAttempts++;
+      log.debug("Leaving saveMinted(). The slice carries the poison.");
+      return Promise.reject(Object.assign(
+        new Error('invalid input syntax for type bigint: "9.22e+21"'),
+        { code: '22P02' }));
+    }
+    log.debug("Leaving saveMinted().");
+    return realPoisonSave(upserts, deletes);
+  };
+  minted.setDriver(poison, 'postgres');
+  const drops = [];
+  minted.setPoisonAuditor(function (drop) {
+    log.debug("Entering poisonAuditor().");
+    drops.push(drop);
+    log.debug("Leaving poisonAuditor().");
+  });
+  // A revocation upsert, a delete and a tombstone must first be IN the store,
+  // so the poison batch can delete/tombstone them and we can see it took.
+  const revStore = realms.map({ persist: 'test.rev' });
+  const poisonStore = realms.map({ persist: 'test.poison' });
+  const delStore = realms.map({ persist: 'test.del' });
+  const tombStore = realms.map({ persist: 'test.tomb', tombstone: true });
+  delStore.set('del-key', { n: 1 });
+  tombStore.set('tomb-key', { n: 1 });
+  await minted.flush();
+  const revKey = minted.keyColumnOf('test.rev', 'default', 'rev');
+  const delKey = minted.keyColumnOf('test.del', 'default', 'del-key');
+  const tombKey = minted.keyColumnOf('test.tomb', 'default', 'tomb-key');
+  t.check(poison.rows.has('test.del\u0000default\u0000' + delKey) &&
+          poison.rows.has('test.tomb\u0000default\u0000' + tombKey),
+          'the delete and tombstone targets are committed first');
+  // The poison batch: a revocation upsert, the poison upsert, a delete and a
+  // tombstone, in one flush.
+  revStore.set('rev', { jti: 'r1' });
+  poisonStore.set('wedge', { ttl: 9.223372038648674e+21 });
+  delStore.delete('del-key');
+  tombStore.delete('tomb-key');
+  const bisectResult = await minted.flush();
+  t.check(!!bisectResult && bisectResult.written === true &&
+          bisectResult.permanent === true,
+          'the flush is written (the good rows committed) and marked permanent',
+          JSON.stringify(bisectResult && { w: bisectResult.written,
+            p: bisectResult.permanent }));
+  t.check(poison.rows.has('test.rev\u0000default\u0000' + revKey),
+          'THE REVOCATION UPSERT SURVIVED — it is in the store');
+  t.check(!poison.rows.has('test.del\u0000default\u0000' + delKey),
+          'the delete took effect — its row is gone from the store');
+  t.check(!poison.rows.has('test.tomb\u0000default\u0000' + tombKey),
+          'the tombstone took effect — its row is gone from the store');
+  t.check(!poison.rows.has('test.poison\u0000default\u0000' +
+          minted.keyColumnOf('test.poison', 'default', 'wedge')),
+          'and ONLY the poison is absent — it never committed');
+  t.equal(drops.length, 1,
+          'exactly one row was reported dropped — the poison, named by itself',
+          JSON.stringify(drops));
+  t.check(!!drops[0] && drops[0].code === '22P02' && drops[0].rows === 1 &&
+          drops[0].handles.length === 1 &&
+          drops[0].handles.indexOf('test.poison') >= 0,
+          'and the post-mortem names only the poison store, not the good rows',
+          JSON.stringify(drops[0] || null));
+  t.check(Array.isArray(bisectResult.poisonDropped) &&
+          bisectResult.poisonDropped.length === 1,
+          'the result lists the one dropped row');
+  t.check(!minted.failing(),
+          'the realm is not in a failed-write state — it kept flushing');
+  t.check(poisonAttempts > 0,
+          'the poison slice was attempted and refused while bisecting',
+          'attempts: ' + poisonAttempts);
+  // A SECOND PROCESS RESTORES WHAT THE STORE HOLDS: loadMinted() is the read a
+  // restore makes, so it sees the revocation and not the poison. (The change
+  // log that carries a commit to a live peer is the driver's recordChanges(),
+  // exercised by the postgres/portable driver tests, not this stub.)
+  const seenByRestore = await poison.loadMinted({ realms: ['', 'default'],
+    nowMs: Date.now(), staleBefore: 0, ageHandles: [] });
+  t.check(seenByRestore.some(function (r) { return r.key === revKey; }) &&
+          !seenByRestore.some(function (r) {
+            return r.handle === 'test.poison';
+          }),
+          'a restore (a second process) reads the revocation and not the poison');
+  revStore.delete('rev');
+  minted.reset();
+  replication.reset();
+
+  // 5c-ii. THE POISON ALONE: dropped, and the realm keeps flushing.
+  t.log.info('=== 5c-ii. the realm keeps flushing after a poison is dropped ' +
+             '===');
+  minted.setDriver(poison, 'postgres');
+  const dropsTwo = [];
+  minted.setPoisonAuditor(function (drop) {
+    log.debug("Entering poisonAuditor().");
+    dropsTwo.push(drop);
+    log.debug("Leaving poisonAuditor().");
+  });
+  poisonStore.set('wedge', { ttl: 9.223372038648674e+21 });
+  const aloneResult = await minted.flush();
+  t.check(!!aloneResult && aloneResult.written === true &&
+          dropsTwo.length === 1,
+          'a batch that is only the poison drops it and is still written');
+  t.check(minted.status().droppedPoison >= 1,
+          '/admin/persistence counts the dropped row(s)');
+  poisonStore.set('fine', { n: 1 });
+  const afterResult = await minted.flush();
+  t.check(!!afterResult && afterResult.written === true,
+          'the next flush writes a good key — the poison did not wedge the realm');
+  poisonStore.delete('wedge');
+  poisonStore.delete('fine');
+  minted.reset();
+  replication.reset();
+
+  // 5c-iii. A DEADLOCK (NON-PERMANENT) RE-JOURNALS THE WHOLE BATCH (section 5).
+  t.log.info('=== 5c-iii. a deadlock is not permanent and re-journals ===');
+  const jammed = fakeDriver('process-b');
+  jammed.saveMinted = function () {
+    log.debug("Entering saveMinted().");
+    log.debug("Leaving saveMinted().");
+    return Promise.reject(Object.assign(new Error('deadlock detected'),
+                                        { code: '40P01' }));
+  };
+  minted.setDriver(jammed, 'postgres');
+  let retryDrops = 0;
+  minted.setPoisonAuditor(function () {
+    log.debug("Entering poisonAuditor().");
+    retryDrops++;
+    log.debug("Leaving poisonAuditor().");
+  });
+  const jammedStore = realms.map({ persist: 'test.jam' });
+  jammedStore.set('x', { n: 1 });
+  const jammedResult = await minted.flush();
+  t.check(!!jammedResult && !jammedResult.permanent,
+          'a deadlock (40P01) is NOT a permanent data error');
+  t.check(minted.failing(),
+          'it re-journals and the module is in a failed-write state, retried ' +
+          'later (section 5)');
+  t.equal(retryDrops, 0, 'and nothing was dropped or audited');
+  jammedStore.delete('x');
+  minted.reset();
+  replication.reset();
+
+  // 5c-iv. A NON-PERMANENT ERROR *DURING THE SPLIT* RE-JOURNALS THE UNFINISHED
+  //        ROWS AND DROPS NOTHING. The stub fails a slice carrying `jammed`
+  //        with 40P01 and one carrying `wedge` with 22P02; a batch of both
+  //        fails the whole as permanent (wedge), bisects, and the sub-slice
+  //        carrying `jammed` then fails non-permanent — so the split stops and
+  //        both go back on the journal.
+  t.log.info('=== 5c-iv. a deadlock during the split re-journals, drops ' +
+             'nothing ===');
+  const split = fakeDriver('process-c');
+  split.saveMinted = function (upserts, deletes) {
+    log.debug("Entering saveMinted().");
+    const rows = upserts.concat(deletes);
+    if (rows.some(function (r) { return r.journalKey === 'wedge'; })) {
+      log.debug("Leaving saveMinted(). Permanent.");
+      return Promise.reject(Object.assign(
+        new Error('numeric field overflow'), { code: '22003' }));
+    }
+    if (rows.some(function (r) { return r.journalKey === 'jammed'; })) {
+      log.debug("Leaving saveMinted(). Deadlock.");
+      return Promise.reject(Object.assign(
+        new Error('deadlock detected'), { code: '40P01' }));
+    }
+    log.debug("Leaving saveMinted().");
+    return Promise.reject(new Error('unexpected slice'));
+  };
+  minted.setDriver(split, 'postgres');
+  let splitDrops = 0;
+  minted.setPoisonAuditor(function () {
+    log.debug("Entering poisonAuditor().");
+    splitDrops++;
+    log.debug("Leaving poisonAuditor().");
+  });
+  const splitStore = realms.map({ persist: 'test.split' });
+  splitStore.set('jammed', { n: 1 });
+  splitStore.set('wedge', { n: 2 });
+  // What a request that wrote these rows waits through: read BEFORE the flush,
+  // since re-journalling moves the generation on past what it advances to.
+  const heldThrough = minted.generation();
+  const splitResult = await minted.flush();
+  t.check(!!splitResult && splitResult.written === false &&
+          !splitResult.permanent,
+          'a non-permanent error during the split fails the flush (re-journal)',
+          JSON.stringify(splitResult));
+  t.check(minted.failing(),
+          'the module is in a failed-write state, so the unfinished rows retry');
+  t.equal(splitDrops, 0,
+          'and NOTHING was dropped — the poison was never isolated alone');
+  // A REQUEST WAITING ON THAT COMMIT IS NOT TOLD IT LANDED. `flushThrough()`
+  // answers "already committed" with no error once the commit position has
+  // passed its target, so a split that stopped must not advance it, or a later
+  // waiter is answered success for a row that went back on the journal: a
+  // revocation reported done that the store does not hold.
+  t.check(minted.committedGeneration() < heldThrough,
+          'a split that stopped does not advance the commit position',
+          JSON.stringify([minted.committedGeneration(), heldThrough]));
+  const waited = await minted.flushThrough(heldThrough);
+  t.check(!!waited && !!waited.error,
+          'and a request waiting through those rows is answered the failure, ' +
+          'not success', JSON.stringify(waited));
+  splitStore.delete('jammed');
+  splitStore.delete('wedge');
+  minted.reset();
+  minted.setDriver(driver, 'postgres');
+
+  // -------------------------------------------------------------------------
   // 6. RETENTION, PER STORE (2026-09-18). A SHORT-LIVED store's month-old row
   //    is not restored and is deleted; every other store's is kept however
   //    old it is. Until that day every old row of every store went — a

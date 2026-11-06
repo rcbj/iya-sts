@@ -2454,5 +2454,9 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (hinihingi ang client certificate, hindi kailanman kinakailangan)"
+  },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "Ang icon ng serbisyo"
   }
 }

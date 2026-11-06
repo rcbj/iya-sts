@@ -2454,5 +2454,9 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS (se pide un certificado de cliente, nunca se exige)"
+  },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "El icono del servicio"
   }
 }
