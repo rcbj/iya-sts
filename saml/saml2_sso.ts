@@ -1937,13 +1937,15 @@ class Saml2Sso {
   // believe the wrong thing about what their client accepted. So it is logged
   // at WARN, every time, naming the application and what to do about it.
   // The certificate chosen, held to its use case under paranoid PKI mode (#1360):
-  // in date, may encipher, not revoked. Refused, there is no certificate and the
-  // answer says why, so `encryptFor()` does not send what it was asked to seal.
+  // in date, may encipher, not revoked. It is registered on the application,
+  // which named it, so it needs no chain (rcbj). Refused, there is no certificate
+  // and the answer says why, so `encryptFor()` does not send what it was asked
+  // to seal.
   private heldRecipient(pem: string, source: string): any {
     const { log } = this.deps.helpers;
     log.debug("Entering Saml2Sso.heldRecipient(). " + source);
     const held = require('../common/certificate_trust')
-      .pinnedSync('encryption-recipient', pem);
+      .pinnedSync('encryption-recipient', pem, { named: true });
     if (!held.ok) {
       log.warn(this.deps.errorCodes.tag(held.code) + 'saml2: ' + source +
                ' is not encrypted to: ' + held.why);
