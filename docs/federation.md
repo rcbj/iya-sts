@@ -730,7 +730,7 @@ rather than a convenience: `?application=` is a string anybody who can reach
 the port chose, and the attribute it would grow is on the one entry whose
 contents decide whether an assertion is verified.
 
-Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a partner's signing certificate is held to its validity, keyUsage and revocation at every use, and when it is not self-signed, to a chain to the realm's [signer truststore](signer-truststore.md). A partner key that carries an `x5c` is held to it; a bare key is left alone. See the `federation-partner` row of the [use cases](pki-use-cases.md).
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a partner's signing certificate is held to its validity, keyUsage and revocation at every use. An administrator registering it on the relationship names it, so it needs no chain. A partner key that carries an `x5c` is held to what its certificate says, and needs no chain either; a bare key is left alone. See the `federation-partner` row of the [use cases](pki-use-cases.md).
 
 ## Development and product mode
 

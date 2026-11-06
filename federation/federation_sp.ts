@@ -1181,13 +1181,13 @@ class FederationSp {
     log.debug("Leaving FederationSp.signerStillAccepted(). The verdict is " +
               'pending.');
     // WHAT THE SIGNER IS, under paranoid PKI mode (#1360), beside what the
-    // revocation says: in date, may sign, and when it is not self-signed, chains
-    // to the realm's signer truststore. A partner's self-signed certificate
-    // registered on the relationship stays acceptable, SAML Metadata's rule.
+    // revocation says: in date and may sign. An administrator registered it on
+    // the relationship, which named it, so it needs no chain (rcbj).
     const held = unsigned ? { ok: true, code: '', why: '' } :
       (jwk ? certificateTrust.bareKey(jwk)
            : certificateTrust.pinnedSync('federation-partner',
-                                         this.certPemOf(record)));
+                                         this.certPemOf(record),
+                                         { named: true }));
     if (!held.ok) {
       log.warn('federation: ' + record.fedId + ': the signer is refused: ' +
                held.why);
