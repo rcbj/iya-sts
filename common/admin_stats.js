@@ -608,6 +608,19 @@ function kindOfTyp(typ) {
 // that says nothing (the credential issuer, WS-Trust's JWT) leaves both fields
 // empty, which the users page reports as "not through a browser session" rather
 // than as unknown.
+// A claim as text for a register row, or ''. These rows hold what an UNVERIFIED
+// token said in development mode (token exchange, the Credential Endpoint), so
+// a `sub` of any JSON type reached them and made the tokens page or a person's
+// page unanswerable (#1353). Called for every token this service issues, so no
+// Entering/Leaving pair, which would drown the log on a path this hot.
+function claimText(value) {
+  if (typeof value === 'string') {
+    return value;
+  }
+  return typeof value === 'number' || typeof value === 'boolean'
+    ? String(value) : '';
+}
+
 function recordJwt(payload, signed, context) {
   log.debug("Entering recordJwt(). typ=" + (payload.typ || '(none)'));
   const issuedUnder = context || {};
@@ -631,7 +644,7 @@ function recordJwt(payload, signed, context) {
     kind: kind,
     typ: payload.typ || '',
     revocable: !!payload.jti && REVOCABLE_KINDS.indexOf(kind) >= 0,
-    sub: payload.sub || '',
+    sub: claimText(payload.sub),
     // WHO SAID IT, which is this service under whichever base URL the request
     // arrived on — `oauth2.issuer` is empty by default precisely so that one
     // process answers correctly as localhost, as `sts` on a compose network and
@@ -1907,7 +1920,7 @@ function recordCredentialStatus(subject, status, detail) {
 function recordCredential(format, detail) {
   log.debug("Entering recordCredential(). format=" + format);
   const record = recordArtifact('Credential (' + format + ')', {
-    subject: detail.subject || '',
+    subject: claimText(detail.subject),
     // THE PERSON IT WAS ISSUED FOR, when that is not its subject (#38). An
     // ldp_vc names its HOLDER KEY as a did:jwk and says nothing about whose
     // wallet that is, so without this the credential was nobody's on
@@ -3809,7 +3822,7 @@ function recordAuthentication(detail) {
   // The subject, now that the entry exists: the caller's where it gave one, and
   // otherwise the directory's — '' for a client, for somebody the directory
   // declined to create, and in a process with no directory.
-  const subject = info.sub ||
+  const subject = claimText(info.sub) ||
     (record.isClient ? '' : subjectForName(identity.key));
   family.count++;
   family.methods[method] = (family.methods[method] || 0) + 1;
@@ -3826,9 +3839,9 @@ function recordAuthentication(detail) {
   record.events.push({
     at: now, protocol: protocol, method: method, presented: identity.form,
     realm: identity.realm || '', sub: subject, address: address,
-    client_id: info.client_id || '',
-    amr: (info.amr || []).join(', '), acr: info.acr || '',
-    sessionId: info.sessionId || '', note: info.note || ''
+    client_id: claimText(info.client_id),
+    amr: (info.amr || []).join(', '), acr: claimText(info.acr),
+    sessionId: claimText(info.sessionId), note: claimText(info.note)
   });
   if (record.events.length > MAX_EVENTS_PER_USER) {
     record.events.shift();

@@ -185,6 +185,17 @@ interface AttributeSourcesDeps {
  * The register of attribute sources, and the refresh that reads them onto
  * people's entries.
  */
+// Every member `AttributeSources.normalise()` writes, by its JSON kind.
+const DEFINITION_KINDS: Record<string, string> = {
+  dialect: 'string', host: 'string', port: 'number', database: 'string',
+  user: 'string', passwordProvider: 'string', passwordRef: 'string',
+  passwordField: 'string', caFile: 'string', caCertificates: 'string',
+  trustPublicRoots: 'boolean', serverName: 'string', table: 'string',
+  keyColumn: 'string', keyAttribute: 'string', columns: 'map', refresh: 'list',
+  scheduleS: 'number', timeoutMs: 'number', onFailure: 'string',
+  enabled: 'boolean'
+};
+
 class AttributeSources {
   deps: AttributeSourcesDeps;
 
@@ -229,6 +240,35 @@ class AttributeSources {
   // THE REGISTER.
   // ===========================================================================
 
+  // A stored definition held to what `normalise()` writes. An LDAP client can
+  // write this attribute, so one entry with an extra member or a wrong type
+  // made the whole register unanswerable, and could throw where a member is
+  // used (#1353). A member of the wrong kind is left out, as if never set.
+  private static definitionFrom(parsed: Json): Json {
+    const out: Json = {};
+    const given = parsed && typeof parsed === 'object' &&
+      !Array.isArray(parsed) ? parsed : {};
+    Object.keys(DEFINITION_KINDS).forEach(function (name) {
+      const value = given[name];
+      const kind = DEFINITION_KINDS[name];
+      const kept = kind === 'list'
+        ? Array.isArray(value) && value.every(function (one) {
+          return typeof one === 'string';
+        })
+        : (kind === 'map'
+          ? value && typeof value === 'object' && !Array.isArray(value) &&
+            Object.keys(value).every(function (key) {
+              return typeof value[key] === 'string';
+            })
+          : (kind === 'number' ? Number.isFinite(value)
+            : typeof value === kind));
+      if (kept) {
+        out[name] = value;
+      }
+    });
+    return out;
+  }
+
   // One entry's definition: the JSON value, with the id from its `cn`.
   private recordOf(entry: { attributes: Record<string, string[]> }):
       Json | null {
@@ -241,7 +281,8 @@ class AttributeSources {
     try {
       const parsed = JSON.parse(String(data || '{}'));
       log.debug("Leaving AttributeSources.recordOf().");
-      return Object.assign(parsed, { id: String(cn || parsed.id || '') });
+      return Object.assign(AttributeSources.definitionFrom(parsed),
+        { id: String(cn || (parsed && parsed.id) || '') });
     } catch (e) {
       log.debug("Caught in AttributeSources.recordOf(): " +
                 ((e && e.message) || e));

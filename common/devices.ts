@@ -2405,12 +2405,9 @@ class Devices {
             secretMembers.join(', ')) + ', and nothing was stored.');
     }
     const thumbprint = stsCrypto.jwkThumbprint(jwk);
-    const pub: Json = {};
-    Object.keys(jwk).sort().forEach(function (m) {
-      pub[m] = jwk[m];
-    });
     log.debug("Leaving Devices.jwkMaterial().");
-    return { thumbprint: thumbprint, material: { jwk: pub } };
+    return { thumbprint: thumbprint,
+             material: { jwk: Devices.publicJwkMembers(jwk) } };
   }
 
   // The webauthn half: a credential the OWNER already enrolled, linked to
@@ -3462,6 +3459,34 @@ class Devices {
    * @param isLive - whether the secret's session is live
    * @returns the view
    */
+  /**
+   * A JWK's members as a device key keeps them: RFC 7517's parameters are
+   * strings, numbers, booleans and lists of strings, and the person proving
+   * the key wrote this object. An object under any member made the realm's
+   * whole device list unanswerable (#1353), so it is left out at the write and
+   * at the read, where a key stored before this still is one.
+   *
+   * @param jwk - the key
+   * @returns its members, sorted, those of a JWK's kinds only
+   */
+  static publicJwkMembers(jwk: Json): Json {
+    helpers.log.debug("Entering Devices.publicJwkMembers().");
+    const pub: Json = {};
+    Object.keys(jwk || {}).sort().forEach(function (m) {
+      const value = jwk[m];
+      const kept = typeof value === 'string' || typeof value === 'boolean' ||
+        (typeof value === 'number' && Number.isFinite(value)) ||
+        (Array.isArray(value) && value.every(function (one) {
+          return typeof one === 'string';
+        }));
+      if (kept) {
+        pub[m] = value;
+      }
+    });
+    helpers.log.debug("Leaving Devices.publicJwkMembers().");
+    return pub;
+  }
+
   static view(device: Device, isLive?: (session: string) => boolean): Json {
     helpers.log.debug("Entering Devices.view().");
     const attestedBy = device.keys.filter(function (k) {
@@ -3473,7 +3498,11 @@ class Devices {
       ownerKind: device.ownerKind, label: device.label,
       applications: device.applications.slice(0),
       keys: device.keys.map(function (k) {
-        return JSON.parse(JSON.stringify(k));
+        const copy = JSON.parse(JSON.stringify(k));
+        if (copy.material && copy.material.jwk) {
+          copy.material.jwk = Devices.publicJwkMembers(copy.material.jwk);
+        }
+        return copy;
       }),
       keyKinds: Devices.keyKindsOf(device),
       attestation: {

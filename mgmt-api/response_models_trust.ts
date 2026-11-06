@@ -137,17 +137,28 @@ FED_SINGLE.forEach(function (name) {
 FED_MULTI.forEach(function (name) {
   FED_ATTRIBUTES[name] = STRS;
 });
+// The attributes `federation.js`'s schema marks `sensitive`, left out of a
+// write's answer by `AdminApi.federationAnswer()`.
+const FED_CREDENTIALS = ['fedClientSecret', 'fedClientSigningKey',
+                         'fedSignalsClientSecret', 'fedSignalsBearer',
+                         'fedEncryptionKey'];
 // A directory entry as `ldap_server.js`'s `entryObject()` hands it over. Its
 // attribute names are data: an entry carries what an `ldapmodify` gave it.
 const DIRECTORY_ENTRY = Kit.closed({
   dn: STR, origin: STR, createdAt: WHEN, modifiedAt: WHEN,
   operational: STRS, attributes: Kit.mapOf(STRS)
 });
-// `federation.get()`: the attributes, where the entry is, and the entry. See
-// the report on #1353: `entry` carries the sealed credentials.
-const FED_RECORD = Kit.closed(Object.assign({}, FED_ATTRIBUTES, {
-  dn: STR, createdAt: WHEN, modifiedAt: WHEN, entry: DIRECTORY_ENTRY
-}));
+// A relationship as a write answers it, `AdminActions.answeredFederation()`:
+// the attributes and where the entry is. NOT the credentials and NOT the entry
+// that holds them (#1354), and this model is what holds that rule: a handler
+// that answers one again is refused rather than sent.
+const FED_RECORD = Kit.closed(Object.assign(
+  Object.keys(FED_ATTRIBUTES).reduce(function (kept: Json, name: string) {
+    if (FED_CREDENTIALS.indexOf(name) < 0) {
+      kept[name] = FED_ATTRIBUTES[name];
+    }
+    return kept;
+  }, {}), { dn: STR, createdAt: WHEN, modifiedAt: WHEN }));
 const FED_READINESS = Kit.closed({ ready: BOOL, missing: STRS });
 const FED_ACTION = Kit.action({
   relationship: Kit.nullable(FED_RECORD), readiness: FED_READINESS, kid: STR
@@ -1600,7 +1611,7 @@ Object.assign(operations, {
       crawlEveryS: NUM, jobOff: STR
     })
   }) },
-  addOidfedTrustAnchor: { '200': Kit.action() },
+  addOidfedTrustAnchor: { '200': Kit.action({ jwks: STATEMENT_MEMBER }) },
   removeOidfedTrustAnchor: { '200': Kit.action() },
   addOidfedMarkType: { '200': Kit.action({ markType: OIDFED_MARK_TYPE }) },
   removeOidfedMarkType: { '200': Kit.action() },

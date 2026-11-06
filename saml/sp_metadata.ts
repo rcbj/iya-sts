@@ -217,6 +217,9 @@ interface Freshness {
  * or a Metadata Query responder), verifying it and consuming its
  * SPSSODescriptor onto the application entry.
  */
+// A thousand years.
+const MAX_CACHE_DURATION_MS = 1000 * 365 * 24 * 3600 * 1000;
+
 class SpMetadata {
   // True only while a background consumption runs — `consume()` is
   // synchronous, so nothing else can observe it set.
@@ -578,8 +581,18 @@ class SpMetadata {
       return m[i] ? Number(m[i]) : 0;
     };
     const days = n(1) * 365 + n(2) * 30 + n(3);
+    const ms = Math.round(
+      (((days * 24 + n(4)) * 60 + n(5)) * 60 + n(6)) * 1000);
+    // A partner writes this. Longer than any date can reach is no duration:
+    // read as one, `freshness()` threw for that service provider at its
+    // sign-in, its page and the refresher (#1353). This holds for a value
+    // already stored too, because the stored text is read through here.
+    if (!Number.isFinite(ms) || ms > MAX_CACHE_DURATION_MS) {
+      log.debug("Leaving SpMetadata.durationMs(). Out of range.");
+      return -1;
+    }
     log.debug("Leaving SpMetadata.durationMs().");
-    return Math.round((((days * 24 + n(4)) * 60 + n(5)) * 60 + n(6)) * 1000);
+    return ms;
   }
 
   // The shortest of some xs:duration values, as written; '' for none.

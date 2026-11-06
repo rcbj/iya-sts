@@ -24859,6 +24859,12 @@ const CODES = [
       'names the operation, the status and where in the body; it is a defect ' +
       'in the model or in the handler, never in the request.',
     spec: 'HTTP 500' },
+  { code: 'STS-API-0140',
+    summary: 'A handler of an API this service publishes an OpenAPI document ' +
+      'for threw and nothing caught it. The caller was answered 500 in JSON, ' +
+      'the sentence a refused answer gets, rather than an HTML page. The log ' +
+      'line names the path and the message once per distinct failure.',
+    spec: 'HTTP 500' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

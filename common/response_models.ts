@@ -91,6 +91,7 @@ class ResponseModels {
 
   private readonly validators = new Map<Json, Json>();
 
+  private prefixes: string[] = [];
   private readonly logged = new Set<string>();
 
   private failures = 0;
@@ -121,11 +122,53 @@ class ResponseModels {
     const self = this;
     this.deps.log.debug("Entering ResponseModels.install(). " + prefix);
     const installed = this.installed(documentOf, refusal);
+    this.prefixes.push(prefix);
     app.use(prefix, function (req: Json, res: Json, next: Json) {
       self.wrap(installed, req, res);
       next();
     });
     this.deps.log.debug("Leaving ResponseModels.install().");
+  }
+
+  /**
+   * An exception no handler caught, on a published API, answered as that API
+   * answers: JSON and the same sentence, where Express's own would be an HTML
+   * page no model declares. Called once, after every route is registered,
+   * because Express reaches an error handler only if it comes after the route
+   * that threw. A status below 500 is somebody else's and passes.
+   *
+   * @param app - the express app
+   */
+  answerExceptions(app: Json): void {
+    const self = this;
+    this.deps.log.debug("Entering ResponseModels.answerExceptions().");
+    this.prefixes.forEach(function (prefix: string) {
+      app.use(prefix, function (err: Json, req: Json, res: Json, next: Json) {
+        if (res.headersSent || Number(err && err.status) < 500) {
+          return next(err);
+        }
+        self.reportException(req, res, err);
+        // error-code: none — `reportException()` marked STS-API-0140.
+        res.status(500).set('Cache-Control', 'no-store')
+           .type('application/json');
+        return res.send(FAILED_BODY);
+      });
+    });
+    this.deps.log.debug("Leaving ResponseModels.answerExceptions().");
+  }
+
+  private reportException(req: Json, res: Json, err: Json): void {
+    const { log, mark, tag } = this.deps;
+    log.debug("Entering ResponseModels.reportException().");
+    mark(res, 'STS-API-0140');
+    const line = req.method + ' ' + String(req.baseUrl || '') +
+      String(req.path || '') + ': ' + String((err && err.message) || err);
+    if (!this.logged.has(line) && this.logged.size < MAX_LOGGED) {
+      this.logged.add(line);
+      log.error(tag('STS-API-0140') + 'A handler threw and nothing caught ' +
+                'it: ' + line);
+    }
+    log.debug("Leaving ResponseModels.reportException().");
   }
 
   /**
@@ -388,13 +431,24 @@ class ResponseModels {
   private describeErrors(errors: Json[]): string {
     const { log } = this.deps;
     log.debug("Entering ResponseModels.describeErrors().");
-    const said = (errors || []).slice(0, 8).map(function (e: Json) {
+    // THE DEEPEST FIRST, EACH SAID ONCE. Where a model is a union, ajv reports
+    // every branch: `getUsers`, a list or one person's detail, answered a bad
+    // member of the detail as dozens of "additionalProperties" of the list
+    // branch at `/`, and the eight this line keeps never reached the member
+    // that was wrong. The branch the answer really is goes deepest.
+    const depth = function (e: Json): number {
+      return String(e.instancePath || '').split('/').length;
+    };
+    const said = new Set<string>();
+    (errors || []).slice().sort(function (a: Json, b: Json) {
+      return depth(b) - depth(a);
+    }).forEach(function (e: Json) {
       const member = e.params && e.params.additionalProperty
         ? ' "' + e.params.additionalProperty + '"' : '';
-      return (e.instancePath || '/') + ' ' + e.keyword + member;
+      said.add((e.instancePath || '/') + ' ' + e.keyword + member);
     });
     log.debug("Leaving ResponseModels.describeErrors().");
-    return said.join('; ');
+    return Array.from(said).slice(0, 8).join('; ');
   }
 
   private report(req: Json, res: Json, problem: Json): void {
@@ -425,6 +479,9 @@ export = {
   install: function (app: Json, prefix: string, documentOf: () => Json,
                      refusal: Json): void {
     shared.install(app, prefix, documentOf, refusal);
+  },
+  answerExceptions(app: Json): void {
+    shared.answerExceptions(app);
   },
   failureCount: function (): number {
     return shared.failureCount();
