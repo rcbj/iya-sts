@@ -40,6 +40,7 @@
 
 const bunyan = require("bunyan");
 const childProcess = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
 const net = require("net");
 const os = require("os");
@@ -586,6 +587,15 @@ async function provision(serviceBase, profile, say) {
 // roles, through the runtime doors — idempotent, and the process-env default on
 // the fuzz stack's `sts` service is the fallback for a reset WITHIN a cell.
 // Resolves { ok, why }; the caller FAILS THE CELL LOUDLY when it is not ok.
+// A random, policy-compliant password: a fixed stem guarantees an upper, a
+// lower, a digit and a symbol, and the random middle keeps it out of the
+// realm's password history (#1299). Never a constant — see reassertRealm().
+function freshFuzzPassword() {
+  log.debug("Entering freshFuzzPassword().");
+  log.debug("Leaving freshFuzzPassword().");
+  return "Fuzz-" + crypto.randomBytes(12).toString("base64url") + "-Aa1!";
+}
+
 async function reassertRealm(serviceBase, provisioned, say) {
   log.debug("Entering reassertRealm(). " + provisioned.realmPrefix);
   const prefix = provisioned.realmPrefix;
@@ -596,15 +606,26 @@ async function reassertRealm(serviceBase, provisioned, say) {
     return { ok: false, why: "config/set-many in " + prefix + " answered " +
       dpop.status + " " + JSON.stringify(dpop.json).slice(0, 200) };
   }
+  // A FRESH password every re-assert, never a constant: the realm's password
+  // policy refuses the current password and the five before it
+  // (password-history), so re-setting FUZZ_PASSWORD failed every cell after the
+  // first. The new one is set, then becomes provisioned.password, which the
+  // proxy child (STS_SCHEMA_PASSWORD) and console_signin / portal_signin /
+  // report_signin all sign in with — so the account's one password and every
+  // sign-in's agree, and nothing holds a stale constant. The realm's policy is
+  // NOT weakened: product baseline is what is under test, and this is a
+  // random policy-compliant value.
+  const nextPassword = freshFuzzPassword();
   const password = await adminCall(serviceBase, prefix, "POST",
     "/admin-api/users/set-password",
-    { user: FUZZ_USER, password: FUZZ_PASSWORD });
+    { user: FUZZ_USER, password: nextPassword });
   if (password.status !== 200) {
     log.debug("Leaving reassertRealm(). set-password " + password.status);
     return { ok: false, why: "users/set-password in " + prefix +
       " answered " + password.status + " " +
       JSON.stringify(password.json).slice(0, 200) };
   }
+  provisioned.password = nextPassword;
   for (let i = 0; i < FUZZ_CONSOLE_ROLES.length; i++) {
     const granted = await adminCall(serviceBase, prefix, "POST",
       "/admin-api/rbac/grant",

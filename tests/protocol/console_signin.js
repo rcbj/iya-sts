@@ -351,7 +351,15 @@ async function signInToTheConsole(base, user, log2, options) {
     return r;
   }
 
-  const password = await ensureConsoleAccount(base, user, say);
+  // `options.password` signs in an account that EXISTS with that password —
+  // `portal_signin.js`'s rule (its line "opts.password || ensureConsoleAccount")
+  // — so a caller that manages the account's password itself (the #1299 fuzz
+  // kit re-sets it per cell) is not fought by ensureConsoleAccount's own
+  // set-password of a stable value, which the realm's password history would
+  // then refuse, leaving the account on the caller's password and this sign-in
+  // on the wrong one. With no `options.password` the account is created here
+  // with a random password this process holds, exactly as before.
+  const password = opts.password || await ensureConsoleAccount(base, user, say);
   // A LIST AS WELL SINCE #645: `["write", "security"]` adds the Security
   // Administrator, which a job saving a policy needs — the console asks
   // admin:security at sign-in, and it is narrowed off a person without the
