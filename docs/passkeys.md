@@ -1900,6 +1900,8 @@ Turn these two rows off, in each realm that needs it. Attestation is then decide
 | `pki.paranoidWebauthnAttestation` | `STS_PKI_PARANOID_WEBAUTHN_ATTESTATION` | A passkey's attestation certificate is held to its path alone. |
 | `pki.paranoidFidoMds` | `STS_PKI_PARANOID_FIDO_MDS` | A FIDO MDS BLOB's signer is held to its path alone. |
 
+The BLOB is one for the whole service, so `pki.paranoidFidoMds` belongs in the default realm: that is the row the scheduled download reads. A realm's own row decides only an import made under that realm's path.
+
 Three ways to do it:
 
 * **In the console:** open `/admin/pki/trust` in the realm and switch the row off.
