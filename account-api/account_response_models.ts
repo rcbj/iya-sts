@@ -15,7 +15,8 @@
 //
 // **A POST ANSWERS IN `account-api/CLAUDE.md`'s MEMBERS** (*What an answer
 // is*): `message`, `view`, `go`, `errors` with `ok: false`, `stepUp`,
-// `location`, `files`. `act()` below is that shape, with the view each operation draws.
+// `location`, `files`. `act()` below is that shape, with the view each
+// operation draws.
 //
 // **EVERY REFUSAL THAT CARRIES MORE THAN `{ ok, errors }` IS NAMED, STATUS BY
 // STATUS.** `ctx.refuse(res, status, code, errors, extra)` answers
