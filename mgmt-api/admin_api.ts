@@ -1371,9 +1371,7 @@ class AdminApi {
     }
     // AN ACT'S ANSWER CARRIES NO ERROR CODE (#1355), though it may hand back a
     // row the page's GET carries one on: only that page draws it.
-    if (res.req && res.req.method === 'POST') {
-      body = ResponseModelKit.stripCodes(body);
-    }
+    body = ResponseModelKit.actAnswer(res, body);
     res.status(status).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(body, null, 2));
     log.debug("Leaving AdminApi.sendJson().");

@@ -17,6 +17,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
+import ResponseModelKit = require('../common/response_model_kit');
 
 type Req = any;
 type Res = any;
@@ -106,7 +107,8 @@ class ProviderCommandsApi {
   sendJson(res: Res, status: number, body: Json): void {
     const { log } = this.deps;
     log.debug("Entering ProviderCommandsApi.sendJson(). status=" + status);
-    const reply = Object.assign({}, body);
+    // Not only at the top: a delivery's row carries one too (#1355).
+    const reply = Object.assign({}, ResponseModelKit.actAnswer(res, body));
     delete reply.errorCode;
     res.status(status).type('application/json')
        .set('Cache-Control', 'no-store')
