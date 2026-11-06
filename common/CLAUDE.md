@@ -8946,10 +8946,6 @@ port's is `annotateRequest()`, which was already there; LDAPS pauses the stream
 until `holdConnectionsOn()` has the verdict; the debugger's first middleware waits on
 `settledRequest()`. A worker needs nothing new: the front process demotes
 `socket.authorized`, and that flag is what `request_pool.peerOf()` already forwards.
-**THE HOLD READS THE DEFAULT REALM'S SETTINGS**: a handshake has no realm in it
-(the root file's *Trust realms*, item 5), so a realm's own `pki.paranoid` and
-`pki.paranoidTlsClient` decide nothing there, in either direction.
-
 **A RESUMED SESSION GETS ITS FULL HANDSHAKE'S VERDICT, ON ANY NODE.** Node hands
 a resumed connection the leaf alone, so the verdict rides beside the chain on the
 replicated `tls.presentedChains` row, written together at the full handshake's
@@ -8963,6 +8959,14 @@ What is not frozen at the full handshake: the leaf's fields, its window included
 are asked on every connection, and revocation by the request's own verdict (on
 LDAPS and the debugger, by the hold's) as before #1360. The cell channel needs
 none of this: it requires the issuer on the connection and asks the rules itself.
+
+**A HANDSHAKE'S HOLD READS THE DEFAULT REALM'S ROWS**: a handshake has no realm in it
+(the root file's *Trust realms*, item 5), so on the main port, custom listeners, LDAPS
+and the debugger another realm's `pki.paranoid` and `pki.paranoidTlsClient` decide
+nothing, in either direction (`tls_server.js`'s `holdToPathRules()` and
+`holdConnectionsOn()`). The cell channel asks `cell-peer` with no realm. SPIFFE's
+sockets have no such hold (the next paragraph): the realm's row decides only whether
+the SPIRE Server API may bind plain. `docs/tls.md` says all of this.
 
 **SPIFFE's gRPC socket is `spiffe-svid`'s (Phase 5)**: it turns `rejectUnauthorized`
 off and `spiffe_auth.ts` verifies what arrived itself, so there is no OpenSSL verdict

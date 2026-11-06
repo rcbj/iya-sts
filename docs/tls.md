@@ -468,20 +468,35 @@ logged once (`STS-TLS-0056`). A block of the file it refuses is left out
 the [signer truststore](signer-truststore.md).
 
 Under paranoid PKI mode a client certificate is also held to more than OpenSSL's
-answer on **every** listener (the main port, custom listeners, LDAPS, the debugger and
-the channel between cells): the leaf is not a CA, its keyUsage and extendedKeyUsage
+answer on the main port, custom listeners, LDAPS and the debugger: the leaf is not a CA, its keyUsage and extendedKeyUsage
 fit client authentication, revocation is consulted before the connection is read, a
 failure inside the check refuses, and a resumed session keeps what its full handshake
 concluded. A certificate that fails is treated as unverified rather than breaking the
 handshake. See the `tls-client` row of the [use cases](pki-use-cases.md). A registered
 `self_signed_tls_client_auth` certificate is held to its validity and keyUsage too,
-while equality stays the method (`tls-client-self-signed`).
+while equality stays the method (`tls-client-self-signed`). The channel between cells
+asks the same of the leaf under a row of its own, `cell-peer`, and consults this
+service's own register for revocation.
 
-**The hold at a handshake follows the default realm.** A TLS handshake has no
-realm in it, so `pki.paranoid` and `pki.paranoidTlsClient` are read from the default
-realm, whichever realm's path the request later names. Setting either in another
-realm changes nothing at a handshake. The use cases decided on a request, such as
-`tls-client-self-signed`, do follow the realm of that request.
+**A TLS handshake has no realm in it, so a realm's own rows mostly do not decide
+it.** The path that names a realm arrives after the handshake is over, so which
+realm's setting applies depends on the listener:
+
+| Where a client certificate arrives | Whose settings decide |
+|---|---|
+| The main port, a custom listener, LDAPS, the debugger listener | The **default realm's** `pki.paranoid` and `pki.paranoidTlsClient`, whichever realm the request later names |
+| The channel between cells | `pki.paranoid` and `pki.paranoidCellPeer`, read outside any realm |
+| A use case decided on a request, such as `tls-client-self-signed` | The realm of that request |
+
+So setting `pki.paranoid` or `pki.paranoidTlsClient` in another realm changes nothing
+at these handshakes, in either direction: it neither turns the hold on for that realm
+nor weakens it. To change them, change the default realm's rows.
+
+SPIFFE's gRPC sockets belong to one realm each, told apart by address. There, the
+realm's own `pki.paranoid` and `pki.paranoidTlsClient` decide one thing: whether the
+SPIRE Server API may bind in plain text when it could not be given a TLS identity.
+They add no check to each connection there: those sockets verify a caller's SVID
+themselves, as [SPIFFE](spiffe.md) describes.
 
 **Why it starts empty.** The certificate authority whose clients it verifies is
 often generated in somebody's *browser* minutes before the connection, and

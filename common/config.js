@@ -7770,9 +7770,8 @@ const SETTINGS = [
     env: 'STS_PKI_PARANOID_TLS_CLIENT', type: 'bool',
     dflt: true, runtime: true,
     description: 'Use case `tls-client`: a client certificate presented to ' +
-                 'the main port, a custom listener, LDAPS, the debugger ' +
-                 'listener, SPIFFE\'s gRPC sockets or the inter-cell ' +
-                 'channel, and every consumer of socket.authorized. Paranoid ' +
+                 'the main port, a custom listener, LDAPS or the debugger ' +
+                 'listener, and every consumer of socket.authorized. Paranoid ' +
                  'holds EVERY listener to the path rules (not only the main ' +
                  'port and custom listeners), asks extendedKeyUsage ' +
                  'clientAuth and keyUsage digitalSignature or keyAgreement ' +
@@ -7783,7 +7782,10 @@ const SETTINGS = [
                  'this use case alone behaves as it did before #1360, while ' +
                  'every other row and the master are untouched; off in ' +
                  'product mode it is logged once (STS-PKI-0239) and drawn ' +
-                 'red on /admin/pki/trust.' },
+                 'red on /admin/pki/trust. On SPIFFE\'s gRPC sockets it holds ' +
+                 'no connection and only refuses to bind the SPIRE Server ' +
+                 'API in the clear; the channel between cells has a row of ' +
+                 'its own, pki.paranoidCellPeer.' },
   { key: 'pki.paranoidTlsClientSelfSigned', group: 'PKI',
     label: 'Paranoid: a self-signed TLS client certificate a client ' +
            'registered',

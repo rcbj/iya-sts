@@ -3636,8 +3636,8 @@
     "text": "偏执：TLS 握手时的客户端证书"
   },
   "pki.paranoidTlsClient|description": {
-    "en": "e6a7e7e97a2f4251",
-    "text": "用例 `tls-client`：出示给主端口、自定义监听器、LDAPS、调试器监听器、SPIFFE 的 gRPC 套接字或单元间通道的客户端证书，以及 socket.authorized 的每一个使用者。偏执模式要求每个监听器（不只是主端口和自定义监听器）都遵守路径规则，对每个叶证书要求 extendedKeyUsage clientAuth 以及 keyUsage digitalSignature 或 keyAgreement，在每个监听器上查询吊销状态，在 TLS 恢复时延续已降级的结论，并在检查抛出异常时以拒绝（fail CLOSED）处理。锚点：客户端证书信任库和服务根证书。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。"
+    "en": "a92be9cfd66a7481",
+    "text": "用例 `tls-client`：出示给主端口、自定义监听器、LDAPS 或调试器监听器的客户端证书，以及 socket.authorized 的每一个使用者。偏执模式要求每个监听器（不只是主端口和自定义监听器）都遵守路径规则，对每个叶证书要求 extendedKeyUsage clientAuth 以及 keyUsage digitalSignature 或 keyAgreement，在每个监听器上查询吊销状态，在 TLS 恢复时延续已降级的结论，并在检查抛出异常时以拒绝（fail CLOSED）处理。锚点：客户端证书信任库和服务根证书。关闭时，仅此用例恢复 #1360 之前的行为，其他各行和总开关不受影响；在产品模式下关闭会被记录一次（STS-PKI-0239），并在 /admin/pki/trust 上以红色显示。 在 SPIFFE 的 gRPC 套接字上，它不拦截任何连接，只拒绝以明文绑定 SPIRE Server API；单元间通道有自己的一行，即 pki.paranoidCellPeer。"
   },
   "pki.paranoidTlsClientSelfSigned|label": {
     "en": "1fffd43ed19648a8",
