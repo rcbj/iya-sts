@@ -240,8 +240,15 @@ async function resignInIfDue(reason) {
   try {
     await signIn();
   } catch (e) {
-    log.warn("[schemathesis] re-sign-in failed (" + reason + "): " +
-      ((e && e.message) || e) + " -- returning the refusal unchanged");
+    // FAIL LOUDLY (#1299, iya-sts-60): a re-sign that cannot finish — the
+    // commonest cause is the admin-api cell having rewritten a policy so
+    // sign-in now demands MFA or a held post-login step the proxy cannot
+    // complete — must be visible, not a silent 401 flood. Logged at ERROR with
+    // a distinctive phrase; schemathesis_kit.js surfaces the count into the run
+    // log. The refusal is returned unchanged (the proxy cannot recover).
+    log.error("[schemathesis] re-sign-in failed (" + reason + "): " +
+      ((e && e.message) || e) + " -- the cell's sign-in is broken (a policy " +
+      "change demanding MFA / a held post-login step?); returning the refusal");
     log.debug("Leaving resignInIfDue(). sign-in threw");
     return false;
   }

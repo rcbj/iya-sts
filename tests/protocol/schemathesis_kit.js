@@ -243,7 +243,14 @@ const EXCLUSIONS = [
       "fuzz person could avoid naming makes it miss, unlike revoke-subject / " +
       "revoke-user (kept, since the fuzz cannot name the random fuzz person). " +
       "It revoked the run's token ~2s into the 2026-11-06 admin-api cell and " +
-      "the STS-API-0122 flood followed (#1299)" }
+      "the STS-API-0122 flood followed (#1299)" },
+  { surface: "admin-api", match: "resetAllSettings",
+    reason: "config/reset-all clears every setting override in the realm — " +
+      "the DPoP headroom, the mode flag and (before the process floor) the " +
+      "risk opt-out — mid-cell, which the between-cells re-assert cannot undo; " +
+      "it cleared 31 settings 4.5 min into the 211fecc74 admin-api cell and " +
+      "risk scoring came back on. A single config/reset or config/set is kept " +
+      "(the risk and DPoP process floors hold whatever one override does)" }
 ];
 
 // ---------------------------------------------------------------------------
