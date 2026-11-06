@@ -23,6 +23,9 @@
 //
 // MUTATION RECORD, each applied to a scratch build, seen red and put back:
 //   * `readable()` not asked at either door                  — red each
+//   * `endingAtAnchor()` not asked (real hosts: STS-PKI-0119) — 1 red
+//   * an anchor matched on its subject alone                  — 1 red
+//   * the certificates below the anchor dropped from the walk — 1 red
 //   * `fieldChecks()` not marking a failure                  — 53 red
 //   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
 //   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
@@ -810,6 +813,93 @@ async function run(t, double, crls) {
   t.check(!/its signer is refused/.test(JSON.stringify(stillGood)),
           'N. and only in force', JSON.stringify(stillGood).slice(0, 300));
   double.rows(REALM).clear();
+  // A CHAIN ENDING IN A CROSS-SIGNED ROOT (the shape of every Google endpoint):
+  // a root the store holds, sent as a copy another root signed, whose issuer is
+  // not sent. Hard-fail refused it for having no issuer until the walk stopped
+  // at the anchor. Generated here: nothing in the suite depends on a real host.
+  t.log.info('a chain ending in a cross-signed root');
+  const crossKeys = require('../common/crypto_impl/key_material');
+  const crossPair = await crossKeys.generateKeyPair('rsa-2048');
+  const crossRoot = await kit.mint({ cn: 'cross root', ca: true,
+                                     pair: crossPair });
+  const olderRoot = await kit.mint({ cn: 'older root', ca: true,
+    pair: await crossKeys.generateKeyPair('rsa-2048') });
+  const crossCopy = await kit.mint({ cn: 'cross root', ca: true,
+                                     issuer: olderRoot, pair: crossPair });
+  const crossCrls = await kit.crlServer();
+  const crossLeaf = await kit.mint({ cn: 'cross leaf', issuer: crossRoot,
+    usages: ['digitalSignature', 'keyEncipherment'], eku: ['serverAuth'],
+    crls: [crossCrls.base + '/cross.crl'] });
+  crossCrls.routes['/cross.crl'] = await kit.crlOf(crossRoot, []);
+  const peerOf = function (one, above) {
+    log.debug("Entering peerOf().");
+    log.debug("Leaving peerOf().");
+    return { raw: pemDer(one.pem), issuerCertificate: above };
+  };
+  const crossPeer = peerOf(crossLeaf, peerOf(crossCopy));
+  await withSettings({ 'pki.revocationCheck': 'hard-fail' }, async () => {
+    const unheld = await trust.assessPeer('tls-server-outbound', crossPeer,
+                                          { realmId: REALM });
+    t.check(!unheld.ok && unheld.code === 'STS-PKI-0119',
+            'with no anchor held, what is above it has no issuer to ask',
+            String(unheld.code) + ' ' + unheld.why);
+    await signers.add(REALM, crossRoot.pem, {});
+    const heldRoot = await trust.assessPeer('tls-server-outbound', crossPeer,
+                                            { realmId: REALM });
+    t.check(heldRoot.ok,
+            'with the root held, the path ends at it and the peer passes',
+            String(heldRoot.why));
+    const revokedPeer = await kit.mint({ cn: 'cross revoked', issuer: crossRoot,
+      usages: ['digitalSignature', 'keyEncipherment'], eku: ['serverAuth'],
+      crls: [crossCrls.base + '/crossr.crl'] });
+    crossCrls.routes['/crossr.crl'] = await kit.crlOf(crossRoot,
+                                                     [revokedPeer.serialHex]);
+    const stillAsked = await trust.assessPeer('tls-server-outbound',
+      peerOf(revokedPeer, peerOf(crossCopy)), { realmId: REALM });
+    t.check(!stillAsked.ok && stillAsked.code === 'STS-PKI-0118',
+            'and a leaf below that anchor is still asked about revocation',
+            stillAsked.code + ' ' + stillAsked.why);
+    // An intermediate below the anchor is walked too.
+    const crossMiddle = await kit.mint({ cn: 'cross middle', ca: true,
+      issuer: crossRoot, crls: [crossCrls.base + '/crossm.crl'],
+      pair: await crossKeys.generateKeyPair('rsa-2048') });
+    const underMiddle = await kit.mint({ cn: 'under middle',
+      issuer: crossMiddle, usages: ['digitalSignature', 'keyEncipherment'],
+      eku: ['serverAuth'], crls: [crossCrls.base + '/under.crl'] });
+    crossCrls.routes['/under.crl'] = await kit.crlOf(crossMiddle, []);
+    crossCrls.routes['/crossm.crl'] = await kit.crlOf(crossRoot,
+                                                     [crossMiddle.serialHex]);
+    const revokedMiddle = await trust.assessPeer('tls-server-outbound',
+      peerOf(underMiddle, peerOf(crossMiddle, peerOf(crossCopy))),
+      { realmId: REALM });
+    t.check(!revokedMiddle.ok && revokedMiddle.code === 'STS-PKI-0118',
+            'a revoked intermediate below the anchor is refused',
+            revokedMiddle.code + ' ' + revokedMiddle.why);
+    // The anchor's subject under another key is not the anchor, so the walk
+    // does not stop there, and this one still has no issuer to ask.
+    const sameName = await kit.mint({ cn: 'cross root', ca: true,
+      issuer: olderRoot, crls: [crossCrls.base + '/samename.crl'],
+      pair: await crossKeys.generateKeyPair('rsa-2048') });
+    const underName = await kit.mint({ cn: 'under the same name',
+      issuer: sameName, usages: ['digitalSignature', 'keyEncipherment'],
+      eku: ['serverAuth'], crls: [crossCrls.base + '/name.crl'] });
+    crossCrls.routes['/name.crl'] = await kit.crlOf(sameName, []);
+    const named = await trust.assessPeer('tls-server-outbound',
+      peerOf(underName, peerOf(sameName)), { realmId: REALM });
+    t.check(!named.ok && /neither held here nor in the chain/.test(named.why),
+            'the anchor\'s subject under another key does not stop the walk',
+            named.code + ' ' + named.why);
+    // And a good path through that same-named CA is not cut short at it.
+    // Stopped there, the leaf would be asked against a key that never signed it.
+    await signers.add(REALM, olderRoot.pem, {});
+    crossCrls.routes['/samename.crl'] = await kit.crlOf(olderRoot, []);
+    const through = await trust.assessPeer('tls-server-outbound',
+      peerOf(underName, peerOf(sameName, peerOf(olderRoot))),
+      { realmId: REALM });
+    t.check(through.ok, 'and a good path through it goes on to its real anchor',
+            String(through.why));
+  });
+  await crossCrls.close();
   // UNREADABLE (x509-limbo found one): node reads it and the field checks cannot.
   // The second parser is a double, since what is under test is that the door
   // answers a verdict; which bytes split the two parsers is not this file's.
