@@ -61,7 +61,6 @@
 import zlib = require('zlib');
 import helpers = require('../common/helpers');
 import stsCrypto = require('../common/crypto');
-import pqJose = require('../common/pq_jose');
 import algorithmRegistry = require('../common/crypto_impl/algorithm_registry');
 import InstanceSlot = require('../common/instance_slot');
 
@@ -150,7 +149,6 @@ class Tagged {
 interface VcStatusCodecDeps {
   log: typeof helpers.log;
   stsCrypto: typeof stsCrypto;
-  pqJose: typeof pqJose;
 }
 
 interface StatusListParts {
@@ -240,7 +238,7 @@ class VcStatusCodec {
   static defaultDeps(): VcStatusCodecDeps {
     helpers.log.debug("Entering VcStatusCodec.defaultDeps().");
     helpers.log.debug("Leaving VcStatusCodec.defaultDeps().");
-    return { log: helpers.log, stsCrypto: stsCrypto, pqJose: pqJose };
+    return { log: helpers.log, stsCrypto: stsCrypto };
   }
 
   private checkBits(bits: unknown): number {
@@ -807,46 +805,6 @@ class VcStatusCodec {
 
   // A post-quantum private key is the seed bytes, or an AKP JWK carrying
   // them in `priv`, as `common/crypto.js`'s signer takes.
-  private pqPrivate(key: any): Buffer {
-    const { log } = this.deps;
-    log.debug("Entering VcStatusCodec.pqPrivate().");
-    log.debug("Leaving VcStatusCodec.pqPrivate().");
-    return (key && key.priv) ? Buffer.from(key.priv, 'base64url')
-                             : Buffer.from(key);
-  }
-
-  private pqPublic(key: any): Buffer {
-    const { log } = this.deps;
-    log.debug("Entering VcStatusCodec.pqPublic().");
-    log.debug("Leaving VcStatusCodec.pqPublic().");
-    return (key && key.pub) ? Buffer.from(key.pub, 'base64url')
-      : (typeof key === 'string' ? Buffer.from(key, 'base64url')
-                                 : Buffer.from(key));
-  }
-
-  private nodeParams(spec: any, key: any, isPrivate: boolean): any {
-    const { log, stsCrypto } = this.deps;
-    log.debug("Entering VcStatusCodec.nodeParams().");
-    const keyObject = (key && (key.type === 'private' ||
-                               key.type === 'public'))
-      ? key
-      : (isPrivate
-          ? stsCrypto.privateKeyFrom(
-              (key && key.kty) ? { key: key, format: 'jwk' } : key)
-          : stsCrypto.publicKeyOf(
-              (key && key.kty) ? { key: key, format: 'jwk' } : key));
-    const params: any = { key: keyObject };
-    if (spec.padding !== undefined) {
-      params.padding = spec.padding;
-      params.saltLength = spec.saltLength;
-    }
-    if (spec.family === 'ec') {
-      params.dsaEncoding = 'ieee-p1363';
-    }
-    log.debug("Leaving VcStatusCodec.nodeParams().");
-    return params;
-  }
-
   private coseSetup(input: CoseSignInput): { alg: any; protectedBytes: Buffer;
                                              toBeSigned: Buffer } {
     const { log } = this.deps;
@@ -891,15 +849,11 @@ class VcStatusCodec {
    * @returns the COSE_Sign1 bytes
    */
   coseSign1Sign(input: CoseSignInput): Buffer {
-    const { log, pqJose, stsCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering VcStatusCodec.coseSign1Sign(). alg=" + input.alg);
     const setup = this.coseSetup(input);
-    const spec = setup.alg.spec;
-    const signature = spec.family === 'pq'
-      ? Buffer.from(pqJose.sign(setup.alg.name, this.pqPrivate(input.key),
-                                setup.toBeSigned))
-      : stsCrypto.signBytes(spec.hash, setup.toBeSigned,
-                            this.nodeParams(spec, input.key, true));
+    const signature = stsCrypto.coseSign1Sign(setup.alg.id, input.key,
+      setup.protectedBytes, Buffer.from(input.payload));
     const out = this.coseAssemble(input, setup.protectedBytes, signature);
     log.debug("Leaving VcStatusCodec.coseSign1Sign().");
     return out;
@@ -914,19 +868,14 @@ class VcStatusCodec {
    * @returns the COSE_Sign1 bytes
    */
   async coseSign1SignAsync(input: CoseSignInput): Promise<Buffer> {
-    const { log, pqJose } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering VcStatusCodec.coseSign1SignAsync(). alg=" +
               input.alg);
     const setup = this.coseSetup(input);
-    if (setup.alg.spec.family !== 'pq') {
-      log.debug("Leaving VcStatusCodec.coseSign1SignAsync(). In process.");
-      return this.coseSign1Sign(input);
-    }
-    const signature = await pqJose.signAsync(setup.alg.name,
-      this.pqPrivate(input.key), setup.toBeSigned);
-    log.debug("Leaving VcStatusCodec.coseSign1SignAsync(). On libuv.");
-    return this.coseAssemble(input, setup.protectedBytes,
-                             Buffer.from(signature));
+    const signature = await stsCrypto.coseSign1SignAsync(setup.alg.id,
+      input.key, setup.protectedBytes, Buffer.from(input.payload));
+    log.debug("Leaving VcStatusCodec.coseSign1SignAsync().");
+    return this.coseAssemble(input, setup.protectedBytes, signature);
   }
 
   // Parses a COSE_Sign1 and checks everything but the signature itself, in
@@ -981,8 +930,7 @@ class VcStatusCodec {
     return {
       alg: alg, protectedHeader: protectedHeader,
       unprotectedHeader: unprotectedHeader, payload: payload,
-      signature: signature,
-      toBeSigned: this.sigStructure(protectedBytes, payload)
+      signature: signature, protectedBytes: protectedBytes
     };
   }
 
@@ -1011,16 +959,11 @@ class VcStatusCodec {
    */
   coseSign1Verify(buf: Buffer, key: any,
                   opts: { algorithms: string[] }): any {
-    const { log, pqJose, stsCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering VcStatusCodec.coseSign1Verify().");
     const parsed = this.coseParse(buf, opts);
-    const spec = parsed.alg.spec;
-    const ok = spec.family === 'pq'
-      ? !!pqJose.verify(parsed.alg.name, this.pqPublic(key),
-                        parsed.toBeSigned, parsed.signature)
-      : stsCrypto.signatureValid(spec.hash, parsed.toBeSigned,
-                                 this.nodeParams(spec, key, false),
-                                 parsed.signature);
+    const ok = stsCrypto.coseSign1Verify(parsed.alg.id, key,
+      parsed.protectedBytes, parsed.payload, parsed.signature);
     const out = this.coseFinish(parsed, ok);
     log.debug("Leaving VcStatusCodec.coseSign1Verify().");
     return out;
@@ -1037,16 +980,12 @@ class VcStatusCodec {
    */
   async coseSign1VerifyAsync(buf: Buffer, key: any,
                              opts: { algorithms: string[] }): Promise<any> {
-    const { log, pqJose } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering VcStatusCodec.coseSign1VerifyAsync().");
     const parsed = this.coseParse(buf, opts);
-    if (parsed.alg.spec.family !== 'pq') {
-      log.debug("Leaving VcStatusCodec.coseSign1VerifyAsync(). In process.");
-      return this.coseSign1Verify(buf, key, opts);
-    }
-    const ok = await pqJose.verifyAsync(parsed.alg.name, this.pqPublic(key),
-      parsed.toBeSigned, parsed.signature);
-    log.debug("Leaving VcStatusCodec.coseSign1VerifyAsync(). On libuv.");
+    const ok = await stsCrypto.coseSign1VerifyAsync(parsed.alg.id, key,
+      parsed.protectedBytes, parsed.payload, parsed.signature);
+    log.debug("Leaving VcStatusCodec.coseSign1VerifyAsync().");
     return this.coseFinish(parsed, !!ok);
   }
 

@@ -19,7 +19,8 @@
 //    G: the main port's shape, under hard-fail: a resumed session gets its full
 //    handshake's verdict after a request has written the chain, waits for a
 //    verdict on its way, is refused when a refusal or nothing arrives, and is
-//    refused once revoked or expired since.
+//    refused once revoked or expired since. A session made before paranoid was
+//    turned on is refused until the client's next full handshake.
 //    E: a throw inside the hold fails closed in force and leaves OpenSSL's verdict
 //    alone out of force. F: the row, and the master.
 //
@@ -40,6 +41,7 @@
 //   * a remembered refusal ignored                            — 1 red (G)
 //   * the wait skipped where node completed the issuer        — 1 red (G)
 //   * a row with an empty chain counting as a chain           — 1 red (G)
+//   * a row with no verdict counting as held                  — 4 red (G)
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -272,6 +274,20 @@ async function child() {
   });
   results.gExpiredSince = (await askMain(shortLived,
                                          shortFirst.session)).answer;
+  // A session from before paranoid was turned on: nothing held it, so it is
+  // refused until the client's next full handshake, and that settles it.
+  config.setOverride('pki.paranoid', 'off');
+  const beforeOn = await kit.mint({ cn: 'made before paranoid', issuer: root,
+                                    eku: ['clientAuth'] });
+  const madeOff = await askMain(beforeOn);
+  results.gMadeOff = madeOff.answer;
+  results.gMadeOffResumed = (await askMain(beforeOn, madeOff.session)).answer;
+  config.setOverride('pki.paranoid', 'on');
+  results.gMadeOffVerdict = revocationG.rememberedHold(rawOf(beforeOn));
+  results.gTurnedOn = (await askMain(beforeOn, madeOff.session)).answer;
+  const settledBy = await askMain(beforeOn);
+  results.gNextFull = settledBy.answer;
+  results.gNextResumed = (await askMain(beforeOn, settledBy.session)).answer;
   answering.close();
   config.setOverride('pki.revocationCheck', 'soft-fail');
   const revocationStatus = require('../common/revocation_status');
@@ -382,6 +398,21 @@ module.exports = {
             /expired/.test(r.gExpiredSince.error),
             'G. and a session of it is refused once the window has closed',
             JSON.stringify(r.gExpiredSince));
+    t.check(r.gMadeOff.authorized && r.gMadeOffResumed.resumed &&
+            r.gMadeOffResumed.authorized,
+            'G. out of force a session is made and resumes, with no verdict',
+            JSON.stringify(r.gMadeOffResumed));
+    t.equal(r.gMadeOffVerdict, null, 'G. so no verdict is on its row');
+    t.check(r.gTurnedOn.resumed && !r.gTurnedOn.authorized &&
+            /no record/.test(r.gTurnedOn.error),
+            'G. once paranoid is on, that session is refused',
+            JSON.stringify(r.gTurnedOn));
+    t.check(!r.gNextFull.resumed && r.gNextFull.authorized,
+            'G. the client\'s next full handshake is held and passes',
+            JSON.stringify(r.gNextFull));
+    t.check(r.gNextResumed.resumed && r.gNextResumed.authorized,
+            'G. and a session of that one resumes',
+            JSON.stringify(r.gNextResumed));
     t.equal(r.rememberedFalse, false, 'D. a demotion is remembered');
     t.equal(r.rememberedTrue, true, 'D. and so is its being settled');
     t.equal(r.rowOff.authorized, true, 'F. the row off restores the baseline');

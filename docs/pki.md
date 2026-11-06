@@ -946,7 +946,11 @@ and nothing else changes.** There is no third state, and development mode with
 `auto` is that earlier behaviour, whole.
 
 The rows are per realm and change at runtime, through
-[`/admin/pki/trust`](signer-truststore.md) or `POST /admin-api/config/set`. There
+[`/admin/pki/trust`](signer-truststore.md) or `POST /admin-api/config/set`. **The
+exception is a client certificate at a TLS handshake**, which has no realm in it: on
+the main port, custom listeners, LDAPS and the debugger, the default realm's rows
+decide, and another realm's page shows a row that has no effect there. See
+[TLS](tls.md). There
 is no switch for one application, relationship or key: a partner that cannot meet a
 check is a reason to switch that row off for the realm and see it red on the page.
 

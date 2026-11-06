@@ -296,6 +296,7 @@
   "audit.actions.risc.event.emit.label": "A RISC event was emitted by hand",
   "audit.actions.risc.account.reset.label": "One account's RISC state was reset",
   "audit.actions.risc.account.clear.label": "The RISC account register was cleared",
+  "audit.actions.persistence.minted-drop.label": "A minted row that could never commit was dropped",
   "audit.actions.admin.aud-sub.set.label": "A person's aud_sub setting was changed by an administrator",
   "audit.actions.admin.mfa.backup-codes.cleared.label": "An administrator cleared a person's recovery codes",
   "audit.actions.admin.password.reset-keytab.label": "An administrator reset a password and handed over the person's keytab",

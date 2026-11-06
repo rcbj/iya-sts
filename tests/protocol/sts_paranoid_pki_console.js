@@ -173,7 +173,8 @@ async function test() {
   log.info("/admin/pki/trust at " + base);
   const created = await api("POST", "/admin-api/users/create", {
     username: USER, invent: false,
-    attributes: { cn: USER, sn: "Console", mail: USER + "@paranoid.test" },
+    attributes: { cn: USER, givenName: "Paranoid", sn: "Console",
+                  mail: USER + "@paranoid.test" },
     credential: "password", password: PASSWORD });
   assert.ok(created.status === 200, created.raw.slice(0, 300));
   const granted = await api("POST", "/admin-api/rbac/grant",
