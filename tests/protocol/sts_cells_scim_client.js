@@ -456,7 +456,15 @@ async function run(cells, provider) {
                   async function () {
                     return JSON.stringify(memberIds()) ===
                            JSON.stringify(both);
-                  });
+                  }).catch(function (e) {
+    // What each cell actually sent is the only way to tell this failure's
+    // causes apart: the provider saw it, and a counter does not say.
+    log.info("the group the provider holds: " + JSON.stringify(groupHeld()));
+    log.info("wanted " + JSON.stringify(both) + " from alice at " + addrA +
+             " and bob at " + addrB);
+    log.info("the provider's requests: " + JSON.stringify(sp.requests));
+    throw e;
+  });
   check("a group with members in both cells holds every member", function () {
     assert.deepStrictEqual(memberIds(), both);
   });

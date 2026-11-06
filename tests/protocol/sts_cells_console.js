@@ -176,8 +176,12 @@ async function signInAtB(cells) {
               location: opened.location, set: opened.set });
   const pair = kit.pkce();
   const state = nodeCrypto.randomBytes(16).toString("base64url");
-  const redirectUri = origin + "/admin/callback";
-  const resource = origin + "/admin-api";
+  // CELL B'S ADDRESS IS A TEST'S OWN (#98 section 9) AND NOBODY REGISTERED IT:
+  // the client's redirect URI and the token's resource are the public name's,
+  // and `atB()` brings each redirect to it back to this cell.
+  const publicOrigin = new URL(cells.a).origin;
+  const redirectUri = publicOrigin + "/admin/callback";
+  const resource = publicOrigin + "/admin-api";
   let at = origin + "/oauth2/authorize?" + new URLSearchParams({
     response_type: "code", client_id: "sts-admin-console",
     redirect_uri: redirectUri,
@@ -339,7 +343,10 @@ async function test() {
   check("its operation answers at cell B and the page is drawn", function () {
     assert.strictEqual(page.status, 200, page.status + " at " +
                        operationUrl);
-    assert.ok(/<h2>The cells<\/h2>/.test(page.text), kit.said(page.text));
+    // A TAB SINCE 2026-10-12: the renderer makes the heading the tab's own
+    // label, so the page is known by its grid of cells rather than a heading.
+    assert.ok(/The cells/.test(page.text) && /class="grid"/.test(page.text),
+              kit.said(page.text));
   });
   check("it names " + cells.ids.b + " as this cell, in " +
         cells.jurisdictions.b, function () {

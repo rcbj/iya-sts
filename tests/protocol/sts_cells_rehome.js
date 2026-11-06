@@ -198,8 +198,10 @@ async function didSettings(realm) {
 async function publishAtB(realm) {
   log.debug("Entering publishAtB().");
   await didSettings(realm);
+  // CELL B'S ADDRESS IS A TEST'S OWN (#98 section 9) AND NOBODY REGISTERED IT:
+  // the client's redirect URI and the token's resource are the public name's.
   const portal = await portalSignin.signInToThePortal(realm.b, PERSON, null,
-    { password: PASSWORD });
+    { password: PASSWORD, publicBase: realm.a });
   const made = await portal.act("/portal/self-issued/dids",
                                 { action: "publish" });
   const mine = (await publishedAt(realm.b))[0] || {};
