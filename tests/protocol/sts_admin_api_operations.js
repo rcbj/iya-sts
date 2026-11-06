@@ -2856,12 +2856,12 @@ async function theSamlRegistriesRoundTrip() {
   // certificates are what a service provider's request signatures are
   // verified against now, so a value that is not an RSA certificate is
   // refused at the door — which is asserted too.
-  const credentials = require("../tools/pep-credential.js");
-  const minted = await credentials.mint({
-    rootSubject: "CN=admin-api-operations saml2 " + REALM +
-                 ",O=iya-sts tests",
-    subject: "CN=admin-api-operations-saml2-sp,O=iya-sts tests" });
-  const certificate = String(minted.anchorPem)
+  // A SERVICE PROVIDER'S OWN SIGNING CERTIFICATE, self-signed and allowed to
+  // sign. It was the test CA's until paranoid PKI mode refused a certificate
+  // whose keyUsage does not permit signing at this door (#1360).
+  const minted = await require("../tools/trust_kit.js").mint({
+    cn: "admin-api-operations saml2 " + REALM });
+  const certificate = String(minted.pem)
     .replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
   await refused("/saml2/set-signing-certificate",
     { sp: sp, value: "MIIBtest" + "A".repeat(40) },
@@ -2873,7 +2873,7 @@ async function theSamlRegistriesRoundTrip() {
     /X\.509 certificate|not an X\.509|not base64/i,
     "a signing certificate that is not a certificate");
   const set = await ok("/saml2/set-signing-certificate",
-    { sp: sp, value: minted.anchorPem }, "recorded a signing certificate");
+    { sp: sp, value: minted.pem }, "recorded a signing certificate");
   assert.strictEqual(set.changed, true,
     "`set-signing-certificate` should report that it CHANGED something. This " +
     "handler answers 200 with `changed: false` when the body named a field " +
