@@ -884,8 +884,8 @@ them on the console or with `POST /admin-api/config/set`.
   lines with no dependency, where `swagger-ui-dist` would add about 11.7 MB
   and an install-time telemetry package, in an image built where there may be
   no network beyond the registry. It does what was needed — read the
-  document, fill a form, show the response — plus the equivalent `curl` line
-  beside each operation, which is what an operator actually copies. It is one
+  document, show what each operation can answer, fill a form, show the
+  response — plus the equivalent `curl` line beside each operation, which is what an operator actually copies. It is one
   of the few pages allowed a script, and it loads the script as a file
   (`script-src 'self'`), never inline.
 * **The document declares the credential.** It carries `security`, two

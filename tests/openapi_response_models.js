@@ -370,6 +370,14 @@ function buildDocuments(out) {
   fs.writeFileSync(out, JSON.stringify({
     finalization: finalized.finalization,
     admin: spec.buildSpec(adminApi.ROUTES, { authRequired: true }),
+    // The two as `/admin-api/openapi.json` and its console twin serve them, for
+    // the published pages (`tests/tools/openapi_pages.js`).
+    management: spec.buildSpec(adminApi.ROUTES.filter(function (route) {
+      return (route.kind || 'management') === 'management';
+    }), { authRequired: true }),
+    console: spec.buildSpec(adminApi.ROUTES.filter(function (route) {
+      return route.kind === 'console';
+    }), { authRequired: true, console: true }),
     account: AccountApiSpec.document(accountApi.operations(), {}),
     authn: authnApi.document({}),
     report: OpenApi.document(new Catalog())
@@ -569,5 +577,6 @@ module.exports = {
   name: 'openapi_response_models',
   describe: 'Every OpenAPI operation has a closed response model, and every ' +
     'answer is held to it (#1353)',
-  run: run
+  run: run,
+  documents: documents
 };

@@ -900,7 +900,9 @@ them as a path that is not registered.
 also owes a closed response model, and a new member of an answer owes a line in
 it in the same commit** (#1353): every answer is validated against its model,
 always, and one that does not match is a 500 (`common/CLAUDE.md` 3dc;
-`tests/openapi_response_models.js`).
+`tests/openapi_response_models.js`). **Either one also owes
+`tests/tools/regenerate-openapi-pages.sh`** (`docs/openapi/`, the public
+reference); `tests/openapi_pages.js` fails otherwise.
 
 **So adding a protocol family costs four things**: an entry in `ENDPOINTS`, a
 card in `sts_metadata.ts`'s `PROTOCOLS`, a row in
