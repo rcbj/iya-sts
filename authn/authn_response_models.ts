@@ -54,11 +54,11 @@ type Json = any;
 const STRINGS: Json = Kit.listOf(Kit.str());
 
 // SEVERAL DOCUMENTS IN ONE PLACE (a step's page is `mfaView()`'s or the emailed
-// factor's, a sign-out's view an inventory, a result or a refusal) ARE ONE CLOSED
-// OBJECT HOLDING EVERY ONE'S MEMBERS, not an `anyOf`: what is being guarded is a
-// member nobody declared, and an `anyOf`'s failure names every arm's complaint
-// about every member, where this names the member. An enumerated member takes
-// each document's values.
+// factor's, a sign-out's view an inventory, a result or a refusal) ARE ONE
+// CLOSED OBJECT HOLDING EVERY ONE'S MEMBERS, not an `anyOf`: what is being
+// guarded is a member nobody declared, and an `anyOf`'s failure names every
+// arm's complaint about every member, where this names the member. An
+// enumerated member takes each document's values.
 function unionOf(...models: Json[]): Json {
   const members: Json = {};
   models.forEach(function (model: Json): void {
@@ -509,8 +509,9 @@ const NEXT_MEMBERS: Json = Object.assign({}, REFUSAL_MEMBERS, {
 
 const NEXT: Json = Kit.closed(NEXT_MEMBERS, { description:
   'What the act leads to. `redirect`: go to `location` with a GET. `mfa`: ' +
-  'the second-factor step `step`, whose page is `location`. `password-change`: ' +
-  'the forced change, at `location`. `home-cell`: send `form` as it is. ' +
+  'the second-factor step `step`, whose page is `location`. ' +
+  '`password-change`: the forced change, at `location`. `home-cell`: send ' +
+  '`form` as it is. ' +
   '`stay`: draw the page again. `refused`: `errors` says why, in English; ' +
   'with `location` the sign-in screen says it, and with `end` the page ends.'
 });
