@@ -887,6 +887,9 @@ const GROUP_OBJECT = Kit.closed({
 });
 
 const GROUP_DETAIL = Kit.closed(Object.assign({}, DIRECTORY_STATE, {
+  // A drill-down says the directory's cap; the list's answer does not, and
+  // `tests/protocol/admin_api.js` reads `GroupList`, so it stays off that one.
+  maxEntries: NUM,
   found: BOOL, requested: STR, notAGroup: BOOL, canWrite: BOOL,
   group: GROUP_OBJECT, groups: GROUP_ROWS, groupCount: NUM,
   policyReferences: Kit.listOf(Kit.closed({
@@ -903,6 +906,7 @@ const GROUPS_ABSENT = Kit.closed({ directory: BOOL, groups: Kit.listOf(STR) });
 
 // `?group=` naming nothing, or an entry that is not a group: an answer, 200.
 const GROUP_MISSING = Kit.closed(Object.assign({}, DIRECTORY_STATE, {
+  maxEntries: NUM,
   found: BOOL, requested: STR, notAGroup: BOOL, group: { type: 'null' },
   groups: GROUP_ROWS, groupCount: NUM, entryDn: STR, wanted: STR,
   adminGroups: ADMIN_GROUPS
