@@ -1337,6 +1337,19 @@ class XacmlEditor {
         action === 'set-expression-selector' ||
         action === 'set-expression-function' ||
         action === 'set-expression-variable') {
+      // An empty or root-level path resolves to the document itself, which has
+      // no parent to write the expression into — `located.parent[located.key]`
+      // would throw (reading a property of null) and the action's catch would
+      // answer 500. A fuzzed `path: ""` found it (#1356). The `remove` action
+      // above guards the same way; an expression replaces a node that HAS a
+      // parent, so the root is a refusal, not a crash.
+      if (!located.parent || located.key === null) {
+        log.debug('Leaving XacmlEditor.applyEdit(). No node to replace.');
+        return { ok: false,
+                 why: 'That path is the policy itself, which is not an ' +
+                      'expression — point the edit at an expression inside ' +
+                      'the document.' };
+      }
       const replacement = self.newExpression(action, given,
                                         self.variablesInScope(policy, path));
       if (!replacement.ok) {
