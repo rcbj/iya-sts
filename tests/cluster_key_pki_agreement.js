@@ -839,6 +839,98 @@ async function crlSection(t) {
   log.debug("Leaving crlSection().");
 }
 
+// A CERTIFICATE'S REVOCATION SURVIVES A STORE THAT REFUSED IT (rcbj,
+// 2026-11-06: "we can't have lost revoked certificates"). `revoke()` answers
+// at once and the row is written behind it, so each link is asserted with a
+// store that really refuses: the write's failure is reported (which is what
+// `persistence.commitThrough()` turns into the request's 503,
+// `tests/answer_after_commit.js` F), nothing has reached the store, the retry
+// lands it, a process started afterwards reads it from the store alone, and a
+// node holding a copy from before it cannot write it away.
+async function revocationDurabilitySection(t) {
+  log.debug("Entering revocationDurabilitySection().");
+  t.log.info('=== 12b. a revocation the store refused is not lost ===');
+  const REALM = 'revocation-durability';
+  const FIRST = '7e57ab1e01';
+  const SECOND = '7e57ab1e02';
+  const THIRD = '7e57ab1e03';
+  const store = sharedStore(1);
+  const merge = store.mergeKeys;
+  const save = store.saveKeys;
+  let refusing = false;
+  const refused = function () {
+    log.debug("Entering refused().");
+    log.debug("Leaving refused().");
+    return Promise.reject(new Error('the key table refused on purpose'));
+  };
+  store.mergeKeys = function (realm, cipher, decide) {
+    log.debug("Entering the refusing mergeKeys().");
+    log.debug("Leaving the refusing mergeKeys().");
+    return refusing ? refused() : merge(realm, cipher, decide);
+  };
+  store.saveKeys = function (realm, material) {
+    log.debug("Entering the refusing saveKeys().");
+    log.debug("Leaving the refusing saveKeys().");
+    return refusing ? refused() : save(realm, material);
+  };
+  const started = async function () {
+    log.debug("Entering started().");
+    const node = freshNode(['keystore', 'pki', 'pki_revocation']);
+    node.keystore.setStore(store);
+    await node.keystore.start();
+    log.debug("Leaving started().");
+    return node;
+  };
+  const a = await started();
+  const built = await a.pki.buildChain(REALM, { keyAlg: 'ec-p256' });
+  t.check(built.ok, 'the certificate authority is built', built.errors);
+  await a.keystore.settleAll();
+  // A NODE THAT READ THE STORE BEFORE ANY REVOCATION: its copy is stale.
+  const stale = await started();
+
+  refusing = true;
+  const answered = a.pki_revocation.revoke(REALM, 'jose', {
+    serialHex: FIRST, reason: 'keyCompromise' });
+  t.check(answered.ok && !!a.pki_revocation.isRevoked(REALM, 'jose', FIRST),
+          'this process holds the revocation at once', answered);
+  const outcomes = await a.keystore.settleAll();
+  t.check((outcomes || []).some(function (one) {
+    return one && one.ok === false && one.error;
+  }), 'A WRITE THE STORE REFUSED IS REPORTED, which is what a request waiting ' +
+      'on the commit is answered 503 for', outcomes);
+  t.check(a.keystore.failing() === true,
+          'and the keystore says a failed row is waiting');
+  const before = await started();
+  t.check(!before.pki_revocation.isRevoked(REALM, 'jose', FIRST),
+          'the store really does not hold it yet, so what follows proves ' +
+          'something');
+  a.pki_revocation.revoke(REALM, 'jose', { serialHex: SECOND,
+                                           reason: 'keyCompromise' });
+  await a.keystore.settleAll();
+
+  refusing = false;
+  a.keystore.retryFailed();
+  await a.keystore.settleAll();
+  t.check(a.keystore.failing() === false,
+          'the retry lands, with nobody revoking anything again');
+  const after = await started();
+  t.check(!!after.pki_revocation.isRevoked(REALM, 'jose', FIRST) &&
+          !!after.pki_revocation.isRevoked(REALM, 'jose', SECOND),
+          'A PROCESS STARTED AFTERWARDS READS BOTH FROM THE STORE, the second ' +
+          'made while the first was still failing');
+
+  stale.pki_revocation.revoke(REALM, 'jose', { serialHex: THIRD,
+                                               reason: 'keyCompromise' });
+  await stale.keystore.settleAll();
+  const last = await started();
+  t.check(!!last.pki_revocation.isRevoked(REALM, 'jose', FIRST) &&
+          !!last.pki_revocation.isRevoked(REALM, 'jose', SECOND) &&
+          !!last.pki_revocation.isRevoked(REALM, 'jose', THIRD),
+          'AND A NODE WRITING FROM A COPY OLDER THAN THEM DOES NOT WRITE THEM ' +
+          'AWAY: the store ends up holding all three');
+  log.debug("Leaving revocationDurabilitySection().");
+}
+
 async function spiffeSection(t) {
   log.debug("Entering spiffeSection().");
   t.log.info('=== 13. two nodes establish ONE SPIFFE JWT authority ===');
@@ -1320,6 +1412,7 @@ async function run(t) {
     await broadcastNudgeSection(t, kek);
     await buildSection(t);
     await crlSection(t);
+    await revocationDurabilitySection(t);
     await spiffeSection(t);
   } finally {
     Object.keys(saved).forEach(function (name) {
