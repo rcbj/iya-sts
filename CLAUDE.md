@@ -967,6 +967,14 @@ failure — the audit log, and the rows `tests/openapi_response_models.js`'s
 nowhere else**: not `/account-api`, `/authn-api` or `/report-api`, not an act's
 answer, and not an `/admin-api` member no page draws.
 
+**The second is rcbj's decision of 2026-11-06 (#1357): fixed help text in a
+successful `/admin-api` answer may name a code**, because a sentence telling an
+administrator which code to look for ("refused under hard-fail (STS-PKI-0188)")
+carries no failure and is the same whatever was asked. A setting's description
+and a mode requirement are the usual cases. `tests/schemathesis/code_members.py`
+lists the members by route, and a code in any other member of an answer is a
+fuzz finding.
+
 **A new failure is not finished until it has a code**, and that is enforced:
 a row in the table, a `mark()` / `errorCode:` / `tag()` where the failure is
 detected, and `node common/error_codes.js --docs`. `tests/error_codes.js` fails
