@@ -928,6 +928,51 @@ async function run(t) {
             'every run is made in the end, never more than three at once',
             JSON.stringify({ done: done, most: most }));
 
+    // A GLOBAL JOB ANOTHER CELL RUNS TAKES NO PLACE IN THE LINE (#98): the
+    // winner's run row is in the winner's database, so here the run stays due
+    // and oldest. It asked for the claim on every tick, each ask holding a
+    // place under the cap, and this cell's own jobs never had a turn.
+    const cell = kit.world({ clustered: false,
+                             realmIds: ['default', 'acme', 'beta'],
+                             settings: { 'scheduler.maxConcurrentRuns': 2 } });
+    const atB = cell.node('cell-b');
+    atB.scheduler.runScopeOf = function (job) {
+      return /^test\.global/.test(job.id) ? 'scheduler.run.global'
+                                          : 'scheduler.run';
+    };
+    let asked2 = 0;
+    const ownClaims = atB.scheduler.deps.claims;
+    atB.scheduler.deps.claims = Object.assign({}, ownClaims, {
+      claim: function (opts) {
+        if (opts.scope === 'scheduler.run.global') {
+          asked2++;
+          return Promise.resolve({ ok: false, reason: 'used', existing: null });
+        }
+        return ownClaims.claim(opts);
+      }
+    });
+    let ownRuns = 0;
+    atB.scheduler.register(baseJob({ id: 'test.global-hourly', scope: 'realm',
+      everyMs: function () { return HOUR; },
+      run: function () {
+        return Promise.resolve('never');
+      } }));
+    atB.scheduler.register(baseJob({ id: 'test.own-often', scope: 'service',
+      everyMs: function () { return 60000; },
+      run: function () {
+        ownRuns++;
+        return Promise.resolve('ok');
+      } }));
+    atB.scheduler.start('front');
+    await cell.advance(5 * 60000);
+    t.check(ownRuns >= 1,
+            'a cell whose oldest due runs are global jobs another cell holds ' +
+            'still runs its own', JSON.stringify({ ownRuns: ownRuns,
+                                                   asked: asked2 }));
+    t.check(asked2 <= 3,
+            'and it asks for each lost claim once, not on every tick',
+            String(asked2));
+
     const pooled = kit.world({ clustered: false, storeConnections: 4,
                                settings: { 'scheduler.maxConcurrentRuns':
                                            50 } });
