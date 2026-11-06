@@ -8960,6 +8960,14 @@ are asked on every connection, and revocation by the request's own verdict (on
 LDAPS and the debugger, by the hold's) as before #1360. The cell channel needs
 none of this: it requires the issuer on the connection and asks the rules itself.
 
+**A HANDSHAKE'S HOLD READS THE DEFAULT REALM'S ROWS**: a handshake has no realm in it
+(the root file's *Trust realms*, item 5), so on the main port, custom listeners, LDAPS
+and the debugger another realm's `pki.paranoid` and `pki.paranoidTlsClient` decide
+nothing, in either direction (`tls_server.js`'s `holdToPathRules()` and
+`holdConnectionsOn()`). The cell channel asks `cell-peer` with no realm. SPIFFE's
+sockets have no such hold (the next paragraph): the realm's row decides only whether
+the SPIRE Server API may bind plain. `docs/tls.md` says all of this.
+
 **SPIFFE's gRPC socket is `spiffe-svid`'s (Phase 5)**: it turns `rejectUnauthorized`
 off and `spiffe_auth.ts` verifies what arrived itself, so there is no OpenSSL verdict
 to demote. **RFC 8705 section 3 binds a token to a certificate, not to a CA**, so the

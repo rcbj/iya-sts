@@ -1890,5 +1890,9 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "发送到审计导出目标的测试事件"
+  },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "已丢弃一条永远无法提交的已签发记录"
   }
 }

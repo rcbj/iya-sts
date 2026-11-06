@@ -86,7 +86,6 @@
 // is a replayed credential, and RFC 7523 section 3 says so.
 // ===========================================================================
 
-const jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 const stsCrypto = require('../common/crypto');
 const { log } = require('../common/helpers');
@@ -1579,7 +1578,8 @@ function methodFor(registered, presented) {
   } else if (p.assertion && assertionType === ASSERTION_TYPE) {
     let alg = '';
     try {
-      const decoded = jwt.decode(String(p.assertion), { complete: true });
+      const decoded = stsCrypto.decodeJws(String(p.assertion),
+                                          { complete: true });
       alg = String((decoded && decoded.header && decoded.header.alg) || '');
     } catch (e) {
       log.debug("Caught in methodFor(): " + ((e && e.message) || e));

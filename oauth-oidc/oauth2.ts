@@ -103,8 +103,6 @@
 import realms = require('../common/realms');
 // The listeners `oauth-oidc` is on, for RFC 8705's aliases (#472). A LEAF.
 import listenerMap = require('../common/listener_map');
-import forge = require('node-forge');
-import jwt = require('jsonwebtoken');
 // One signer and one verifier for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 // WHICH CELL MINTED AN ARTIFACT (#98 D10): a keyed tag appended to what
@@ -459,8 +457,6 @@ type Res = any;
 // as it did.
 interface OAuth2ServerDeps {
   realms: typeof realms;
-  forge: typeof forge;
-  jwt: typeof jwt;
   stsCrypto: typeof stsCrypto;
   app: typeof app;
   // `common/helpers.js`, member by member, as this module destructured it.
@@ -1707,8 +1703,6 @@ class OAuth2Server {
     helpers.log.debug("Leaving OAuth2Server.defaultDeps().");
     return {
       realms: realms,
-      forge: forge,
-      jwt: jwt,
       stsCrypto: stsCrypto,
       app: app,
       log: helpers.log,
@@ -3458,19 +3452,12 @@ class OAuth2Server {
 
   private sendJwks(req: Req, res: Res, signingKeys: Json[]): void {
     // Not `b64u` from the deps: the body declares its own, for hex.
-    const { forge, log, STS, joseKid, errorCodes,
+    const { stsCrypto, log, STS, joseKid, errorCodes,
             requestObjectKeysFor } = this.deps;
     log.debug("Entering OAuth2Server.sendJwks().");
     try {
-      const pub = forge.pki.certificateFromPem(STS.certPem).publicKey;
+      const pub = stsCrypto.rsaPublicJwkOf(STS.certPem);
 
-      const b64u = function (hex) {
-        log.debug("Entering b64u().");
-        log.debug("Leaving b64u().");
-        return Buffer.from(hex.length % 2 ? '0' + hex : hex, 'hex')
-                     .toString('base64')
-          .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      };
       res.status(200)
          .type('application/json')
          .set('Cache-Control', 'no-store')
@@ -3538,7 +3525,7 @@ class OAuth2Server {
           helpers.withoutEddsaSigningKeys(helpers.withoutPqSigningKeys(
           joseKid.withThumbprintUriEntries([{
           kty: 'RSA', use: 'sig', kid: STS.kid,
-          n: b64u(pub.n.toString(16)), e: b64u(pub.e.toString(16)),
+          n: pub.n, e: pub.e,
           // **THE CHAIN AND NOT ONLY THE LEAF, SINCE 2026-09-11.** RFC 7517
           // section 4.7 defines `x5c` as the certificate CHAIN, leaf first —
           // and this service's signing key stopped being self-signed on that
@@ -13712,7 +13699,7 @@ class OAuth2Server {
   // somewhere deeper.
   private async protectUserinfo(body: Json, registered: Json, base: Json,
                                 claims: Json): Promise<Json> {
-    const { jwt, stsCrypto, log, introspectionJwt } = this.deps;
+    const { stsCrypto, log, introspectionJwt } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.protectUserinfo().");
     const signAlg = String(registered.userinfo_signed_response_alg || 'none');
@@ -14276,7 +14263,7 @@ class OAuth2Server {
   // `jwt.verify`, because these are this service's own tokens and the
   // signature was made two lines before.
   private issuedJtis(response: Json): string[] {
-    const { log, jwt, errorCodes, refreshTokenCrypto } = this.deps;
+    const { log, stsCrypto, errorCodes, refreshTokenCrypto } = this.deps;
     log.debug("Entering OAuth2Server.issuedJtis().");
     log.debug("Leaving OAuth2Server.issuedJtis().");
     const done = { response: response };
@@ -14291,7 +14278,7 @@ class OAuth2Server {
           // it and reads a JWS unchanged.
           const claims = refreshTokenCrypto.isEncrypted(token)
             ? refreshTokenCrypto.claimsOfIssued(token)
-            : jwt.decode(token);
+            : stsCrypto.decodeJws(token);
           return (claims && claims.jti) || '';
         } catch (e) {
           // Not decodable, which cannot happen for a token this service minted
@@ -14314,7 +14301,7 @@ class OAuth2Server {
   // by; the code itself is not needed past its presentation.
   private replayOrRefuseRedemption(res: Res, code: string, fingerprint: Json,
                                    respond: Json): Json {
-    const { jwt, log, STS, mode, stats, bcp, errorCodes,
+    const { log, STS, mode, stats, bcp, errorCodes,
             refreshTokenCrypto } = this.deps;
     const self = this;
     log.debug("Entering OAuth2Server.replayOrRefuseRedemption().");
@@ -19385,7 +19372,7 @@ class OAuth2Server {
   }
 
   private async parRequest(req: Req, res: Res): Promise<Json> {
-    const { realms, jwt, log, STS, parseBody, bodyValues,
+    const { realms, log, STS, parseBody, bodyValues,
             hasScope, dpop, mtls, mode, config, bcp, oauth21, fapi,
             applications, validation, errorCodes, requestObject,
             par, oauthMonitor, websecurity } = this.deps;
@@ -22554,7 +22541,7 @@ class OAuth2Server {
    */
   registerRoutes(app: any): void {
     const self = this;
-    const { realms, forge, jwt, stsCrypto, log, logArtifact, STS,
+    const { realms, stsCrypto, log, logArtifact, STS,
             baseUrlOf, b64u, jsonFromB64u, nowSec, randomId, xmlEscape,
             parseBody, bodyValues, plainOauthError, signJwt, signJwtAs,
             allSigningKeys, allSigningKeysAsync, signJwtAsAsync, userFor,

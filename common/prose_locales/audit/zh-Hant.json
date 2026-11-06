@@ -1890,5 +1890,9 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "傳送到稽核匯出目的地的測試事件"
+  },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "已捨棄一筆永遠無法提交的已簽發記錄"
   }
 }

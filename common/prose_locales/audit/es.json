@@ -1890,5 +1890,9 @@
   "audit.actions.audit.export.test.label": {
     "en": "25d9164b7269ce2d",
     "text": "Un evento de prueba enviado a un destino de exportación de auditoría"
+  },
+  "audit.actions.persistence.minted-drop.label": {
+    "en": "065f403ac7419f76",
+    "text": "Se descartó una fila acuñada que nunca podía confirmarse"
   }
 }
