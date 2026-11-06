@@ -546,8 +546,26 @@ async function run(cells, provider) {
     assert.strictEqual(off.length, 0, JSON.stringify(off).slice(0, 400));
     assert.notStrictEqual(userBy(uuids.bob).body.active, false);
   });
+  // THE NEW CELL PUTS THEM BACK AFTER ITS PUT, SO THIS IS WAITED FOR; and then
+  // held, because the old cell taking its share out late would drop them again.
+  await kit.until("bob is in the group after the move", WAIT_MS,
+                  async function () {
+                    return memberIds().indexOf(bobId) >= 0;
+                  }).catch(function (e) {
+    log.info("the group after the move: " + JSON.stringify(groupHeld()));
+    log.info("the provider's requests since the move: " +
+             JSON.stringify(sp.requests.slice(before)));
+    throw e;
+  });
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 20000);
+  });
   check("and they stay in the group", function () {
-    assert.ok(memberIds().indexOf(bobId) >= 0, JSON.stringify(memberIds()));
+    assert.ok(memberIds().indexOf(bobId) >= 0, JSON.stringify({
+      members: memberIds(), since: sp.requests.slice(before).filter(
+        function (r) {
+          return r.method === "PATCH";
+        }) }).slice(0, 1200));
   });
 
   log.info("=== 6. deleting a group needs both cells ===");
