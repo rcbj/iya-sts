@@ -848,11 +848,11 @@ class VcDid {
     // still a DID URL into this DID's own document, which is what the DIF
     // specification requires of the JWT form.
     const signer = this.didSigner();
+    // On libuv's thread pool (#1368): a post-quantum signature took seconds of
+    // this thread when made here synchronously.
     // certificate-header: none — the DIF specification allows exactly `alg`
     // and `kid` in this header, so an x5c or x5u would make the linkage
     // non-conformant (common/jose_certificate_header.js).
-    // On libuv's thread pool (#1368): a post-quantum signature took seconds of
-    // this thread when made here synchronously.
     const token = await stsCrypto.signJwsAsync({ iss: did, sub: did, nbf: now,
                                                  exp: exp, vc: vc },
                                                signer.key, {
