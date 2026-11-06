@@ -25,6 +25,8 @@
 //   * `endingAtAnchor()` not asked (real hosts: STS-PKI-0119) — 1 red
 //   * an anchor matched on its subject alone                  — 1 red
 //   * the certificates below the anchor dropped from the walk — 1 red
+//   * a server accepted without being named                   — 2 red
+//   * a truststore anchor counting as a dialer's pin          — 1 red
 //   * `fieldChecks()` not marking a failure                  — 53 red
 //   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
 //   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
@@ -651,6 +653,60 @@ async function run(t, double, crls) {
             String(through.why));
   });
   await crossCrls.close();
+  // ONE CERTIFICATE ACCEPTED BY NAME (rcbj): the door's half. The gate's is
+  // `tests/outbound_gate.js` section I, over real handshakes.
+  t.log.info('a server certificate accepted case by case');
+  const appliance = await kit.mint({ cn: 'an appliance', eku: ['serverAuth'],
+    usages: ['digitalSignature', 'keyEncipherment'] });
+  const appliancePeer = peerOf(appliance);
+  const asAppliance = function (options) {
+    log.debug("Entering asAppliance().");
+    log.debug("Leaving asAppliance().");
+    return trust.assessPeer('tls-server-outbound', appliancePeer,
+                            Object.assign({ realmId: REALM }, options || {}));
+  };
+  const notNamed = await asAppliance();
+  t.check(!notNamed.ok && /self-signed/.test(notNamed.why),
+          'a self-signed server nobody named is refused', notNamed.why);
+  const offered = await signers.add(REALM, appliance.pem, { kind: 'accepted' });
+  t.check(offered.added.length === 1 && offered.added[0].kind === 'accepted' &&
+          offered.added[0].purposes[0] === 'tls-server-outbound',
+          'accepted by name, for outbound TLS alone',
+          JSON.stringify(offered.refused));
+  const nowNamed = await asAppliance();
+  t.check(nowNamed.ok, 'and the same server then passes', nowNamed.why);
+  t.check(!signers.anchorsFor(REALM).anchors.concat(
+    signers.anchorsFor(REALM).intermediates).some(function (der) {
+    return der.equals(pemDer(appliance.pem));
+  }), 'it is no step on anybody\'s path', '');
+  const acceptedRoot = await signers.add(REALM,
+    (await kit.mint({ cn: 'a ca offered by name', ca: true })).pem,
+    { kind: 'accepted' });
+  t.check(!acceptedRoot.added.length &&
+          acceptedRoot.refused[0].code === 'STS-PKI-0267',
+          'a CA cannot be accepted by name: it would vouch for what it signs',
+          JSON.stringify(acceptedRoot.refused));
+  const lapsedOffer = await signers.add(REALM,
+    (await kit.mint({ cn: 'lapsed appliance', notBefore: now - 3 * kit.DAY,
+                      notAfter: now - kit.DAY })).pem, { kind: 'accepted' });
+  t.check(!lapsedOffer.added.length,
+          'nor can one that is out of date', '');
+  signers.remove(REALM, offered.added[0].fingerprint256);
+  t.check(!(await asAppliance()).ok, 'removing the row takes it back', '');
+  const pinnedOk = await asAppliance({ pinnedTo: ['x', appliance.pem] });
+  t.check(pinnedOk.ok, 'a dialer configured with it has named it',
+          pinnedOk.why);
+  // Fit for a server in every field, so only the rule can refuse it.
+  const anchorAsServer = await kit.mint({ cn: 'an anchor as a server', ca: true,
+    usages: ['digitalSignature', 'keyEncipherment', 'keyCertSign'],
+    eku: ['serverAuth'] });
+  const heldAnchor = await signers.add(REALM, anchorAsServer.pem, {});
+  t.equal(heldAnchor.added.length, 1, 'an anchor is held');
+  const asAnchor = await trust.assessPeer('tls-server-outbound',
+    peerOf(anchorAsServer), { realmId: REALM, pinnedTo: anchorAsServer.pem });
+  t.check(!asAnchor.ok, 'a truststore anchor in a dialer\'s `ca` names no server',
+          String(asAnchor.why));
+
   // UNREADABLE (x509-limbo found one): node reads it and the field checks cannot.
   // The second parser is a double, since what is under test is that the door
   // answers a verdict; which bytes split the two parsers is not this file's.

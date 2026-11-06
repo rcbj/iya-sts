@@ -208,7 +208,8 @@ class SignerTruststore {
       // WHAT WAS ADMITTED CAN STOP BEING ADMISSIBLE: an anchor expires where
       // it sits. It stays, and the page says so; an operator removes it.
       const field = crypto.certificateFieldProblem(row.pem,
-        { role: row.kind, keyUsage: ['keyCertSign'] });
+        row.kind === 'accepted' ? { role: 'leaf', keyUsage: [] } :
+          { role: row.kind, keyUsage: ['keyCertSign'] });
       if (field) {
         described.unadmittable = field.why;
       }
@@ -253,7 +254,10 @@ class SignerTruststore {
     const intermediates: Buffer[] = [];
     this.rowsOf(this.realmIdOf(realmId)).forEach(function (row: Json) {
       const purposes = row.purposes || [];
-      if (purpose && purposes.length && purposes.indexOf(purpose) === -1) {
+      // A certificate accepted by name vouches for itself and nothing else, so
+      // it is no step on anybody's path.
+      if (row.kind === 'accepted' ||
+          (purpose && purposes.length && purposes.indexOf(purpose) === -1)) {
         return;
       }
       (row.kind === 'anchor' ? anchors : intermediates)
@@ -262,6 +266,24 @@ class SignerTruststore {
     log.debug("Leaving SignerTruststore.anchorsFor(). " + anchors.length +
               " anchor(s), " + intermediates.length + " intermediate(s).");
     return { anchors: anchors, intermediates: intermediates };
+  }
+
+  /**
+   * Has an operator accepted this one certificate, by name, in this realm?
+   *
+   * @param realmId - the realm; the ambient one where omitted
+   * @param cert - the certificate
+   * @returns whether a row of kind `accepted` is this certificate
+   */
+  accepted(realmId: string | undefined, cert: Json): boolean {
+    const { log, crypto } = this.deps;
+    log.debug("Entering SignerTruststore.accepted().");
+    const fingerprint = this.fingerprintOf(crypto.parseCertificate(cert));
+    const found = this.rowsOf(this.realmIdOf(realmId)).some(function (row) {
+      return row.kind === 'accepted' && row.fingerprint === fingerprint;
+    });
+    log.debug("Leaving SignerTruststore.accepted(). " + found);
+    return found;
   }
 
   /**
@@ -325,6 +347,28 @@ class SignerTruststore {
     }).map(function (row: Json) {
       return pki.pemToDer(row.pem);
     });
+    // ONE CERTIFICATE, ACCEPTED BY NAME (rcbj, #1360): a self-signed leaf a
+    // server presents, such as an appliance's. Only that: a CA is an anchor,
+    // because trusting one trusts everything it signs. In date and of a
+    // strength this deployment takes, like anything else held.
+    if (kind === 'accepted') {
+      const read = crypto.parseCertificate(pem);
+      const facts = crypto.certificateFacts(read);
+      if (!facts.selfIssued || facts.ca) {
+        log.debug("Leaving SignerTruststore.admit(). Not a self-signed leaf.");
+        return { refused: { code: 'STS-PKI-0267', why: '"' + facts.subject +
+          '" is not a self-signed leaf: a certificate authority is added as ' +
+          'an anchor, and one a CA issued is trusted through that CA' } };
+      }
+      const wrong = crypto.certificateFieldProblem(read,
+        { role: 'leaf', keyUsage: [] });
+      if (wrong) {
+        log.debug("Leaving SignerTruststore.admit(). A field.");
+        return { refused: { code: wrong.code, why: wrong.why } };
+      }
+      log.debug("Leaving SignerTruststore.admit(). Accepted by name.");
+      return { kind: 'accepted', fingerprint: this.fingerprintOf(read) };
+    }
     const problem = await pki.anchorProblem(pem, {
       role: kind || undefined, heldAnchors: anchorsHeld,
       heldIntermediates: intermediatesHeld
@@ -396,14 +440,17 @@ class SignerTruststore {
       const sameKind = held.filter(function (row: Json) {
         return row.kind === seen.kind;
       }).length;
-      const cap = seen.kind === 'anchor' ? MAX_ANCHORS : MAX_INTERMEDIATES;
+      const cap = seen.kind === 'intermediate' ? MAX_INTERMEDIATES :
+        MAX_ANCHORS;
       if (sameKind >= cap) {
         refuse(blocks[i], 'STS-PKI-0236', 'this realm already holds ' + cap +
                ' signer truststore ' + seen.kind + 's');
         continue;
       }
       const row = { fingerprint: seen.fingerprint, pem: blocks[i],
-                    kind: seen.kind, purposes: opts.purposes || [],
+                    kind: seen.kind,
+                    purposes: seen.kind === 'accepted' ?
+                      ['tls-server-outbound'] : opts.purposes || [],
                     addedBy: String(opts.addedBy || ''), source: 'runtime' };
       if (this.directory.put(id, row) === false) {
         refuse(blocks[i], 'STS-PKI-0236', 'the directory is full');
@@ -547,6 +594,7 @@ export = {
   list: slot.forward('list'),
   anchorsFor: slot.forward('anchorsFor'),
   pemsFor: slot.forward('pemsFor'),
+  accepted: slot.forward('accepted'),
   add: slot.forward('add'),
   remove: slot.forward('remove'),
   loadFile: slot.forward('loadFile'),
