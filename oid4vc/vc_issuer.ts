@@ -68,22 +68,17 @@
 import realms = require('../common/realms');
 // Required, as it always was, although nothing here signs with it directly
 // any more; the require keeps the load order of this module unchanged.
-import jwt = require('jsonwebtoken');
 // One signer, one verifier and one JWE for the whole service since 2026-08-27.
 import stsCrypto = require('../common/crypto');
 import app = require('../common/app');
 import config = require('../common/config');
 import helpers = require('../common/helpers');
-import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
 // at its top, and together they are resident memory in every request worker
 // that never issues or verifies a BBS credential. `common/lazy_module.ts`
 // argues it; `common/helpers.js` defers the same file by hand.
 type Bbs2023 = typeof import('../common/crypto_impl/bbs2023.js');
-const bbs2023: Bbs2023 = LazyModule.of('common/crypto_impl/bbs2023.js',
-  function () {
-    return require('../common/crypto_impl/bbs2023.js') as Bbs2023;
-  }, helpers.log);
+const bbs2023: Bbs2023 = stsCrypto.bbs;
 import InstanceSlot = require('../common/instance_slot');
 import dpop = require('../oauth-oidc/dpop');
 import mode = require('../common/mode');
@@ -4098,7 +4093,6 @@ const slot = new InstanceSlot<VcIssuer>(
 // requiring this module used to register them.
 // `jwt` is referenced so the compiler keeps its require (an unused
 // `import = require` is dropped from the output).
-void jwt;
 
 // #46: a pre-authorized code and a c_nonce are spent once across the cluster,
 // and Transaction Code failures are counted against one budget — the c_nonce

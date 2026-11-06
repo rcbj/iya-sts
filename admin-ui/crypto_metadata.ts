@@ -179,16 +179,11 @@
 
 import app = require('../common/app');
 import helpers = require('../common/helpers');
-import LazyModule = require('../common/lazy_module');
 // THE VENDORED BBS SUITE, REQUIRED AT FIRST USE (#348): it requires `jsonld`
 // at its top, and together they are resident memory in every request worker
 // that never issues or verifies a BBS credential. `common/lazy_module.ts`
 // argues it; `common/helpers.js` defers the same file by hand.
 type Bbs2023 = typeof import('../common/crypto_impl/bbs2023.js');
-const bbs2023: Bbs2023 = LazyModule.of('common/crypto_impl/bbs2023.js',
-  function () {
-    return require('../common/crypto_impl/bbs2023.js') as Bbs2023;
-  }, helpers.log);
 import config = require('../common/config');
 // The signer groups' table (#68), a leaf: the model and the group ids.
 import signerGroups = require('../common/signer_groups');
@@ -217,6 +212,8 @@ import adminViews = require('../admin-core/admin_views');
 // vendored module re-exported, which is taken from here rather than required
 // again so that there stays exactly one spelling of it in the process.
 import stsCrypto = require('../common/crypto');
+// The BBS suite, through crypto.js's lazy door (#1368).
+const bbs2023: Bbs2023 = stsCrypto.bbs;
 import pqJose = require('../common/pq_jose');
 import krb5crypto = require('../kerberos/krb5_crypto');
 import spiffeCa = require('../spiffe/spiffe_ca');

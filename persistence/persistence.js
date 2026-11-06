@@ -1003,7 +1003,7 @@ function auditPoisonDrop(drop) {
       realms.run(realms.get(realmId), function () {
         audit.record({
           action: 'persistence.minted-drop',
-          category: 'persistence',
+          category: 'service',
           outcome: 'error',
           errorCode: 'STS-STORE-0092',
           protocol: 'persistence',

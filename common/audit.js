@@ -1273,6 +1273,11 @@ const ACTIONS = [
     label: 'The RISC account register was cleared' },
 
   // ---------------------------------------------------------------------
+  // #1347: a minted row a permanent data error dropped, its post-mortem. An
+  // operator looking for it must be able to name it in `?action=`.
+  { action: 'persistence.minted-drop', category: 'service',
+    label: 'A minted row that could never commit was dropped' },
+  // ---------------------------------------------------------------------
   // ACTIONS RECORDED AND NEVER LISTED (2026-09-26). Each was written by its
   // module and had no row here, so the audit filter could not name it — and
   // since #86 holds `?action=` to this list, `GET /admin-api/audit` REFUSED a

@@ -154,7 +154,6 @@
 const https = require('https');
 const tls = require('tls');
 const fs = require('fs');
-const forge = require('node-forge');
 // The RSA keygen-and-self-sign skeleton this shares with `common/helpers.js`
 // lives in one module since 2026-08-27. What is NOT shared is anything below —
 // the extensions, and the subjectAltName that is the only place the names are.
@@ -2261,29 +2260,14 @@ function splitPemCertificates(text) {
 function describePem(pem) {
   log.debug('Entering describePem().');
   let subject = '(unreadable)';
+  // A label on a page, not a check. OpenSSL reads it, which is what the listener
+  // will verify against, and it reads the ML-DSA anchors forge could not, so an
+  // ML-DSA root is no longer labelled '(unreadable)'.
   try {
-    const cert = forge.pki.certificateFromPem(pem);
-    subject = cert.subject.attributes.map(function (attribute) {
-      return (attribute.shortName || attribute.name) + '=' + attribute.value;
-    }).join(', ');
+    subject = stsCrypto.parseCertificate(pem).subject
+      .split('\n').join(', ');
   } catch (e) {
-    // Not a certificate this parser can read. It is still handed to OpenSSL as
-    // an anchor — forge and OpenSSL do not accept exactly the same set, and
-    // refusing here on forge's opinion would reject anchors that work. The
-    // subject is a label on a page, not a check.
-    //
-    // AND THE COMMONEST CASE IS NOW A POST-QUANTUM ANCHOR. node-forge has no
-    // ML-DSA and cannot parse a certificate signed with one at all, while the
-    // OpenSSL underneath this process reads it perfectly — so ask OpenSSL
-    // before giving up, or every ML-DSA root a debugger uploads is labelled
-    // '(unreadable)' on a page whose whole job is to say what was trusted.
-    try {
-      subject = stsCrypto.parseCertificate(pem).subject
-          .split('\n').join(', ');
-    } catch (openSslError) {
-      log.warn('tls: an anchor could not be parsed for display: ' +
-               e.message + ' / ' + openSslError.message);
-    }
+    log.warn('tls: an anchor could not be parsed for display: ' + e.message);
   }
   // THE REST OF WHAT A PERSON COMPARES BY EYE (2026-09-12), for the truststore
   // page at /admin/tls/trust: the issuer, the serial and the validity. Read
