@@ -470,6 +470,8 @@ unverifiable, not invalid: it is somebody else's conforming document.
 A credential issued in development on an unverified token cannot sign anybody
 in, in either mode. See [What is not checked](what-is-not-checked.md).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the `x5c` of a key attestation is a real path, so a wallet provider's intermediates count where outside this mode only one hop does. Revocation is asked, and a chain naming no list is refused as `pki.revocationCheck` says. A certificate in `oid4vci.keyAttestationTrustedCertificates` that signs the attestation itself must hold its own fields. `pki.paranoidVcKeyAttestation` turns this row off.
+
 ## Configuration
 
 | Setting | Environment variable | Default | Runtime? | What it does |

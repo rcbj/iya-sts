@@ -145,6 +145,8 @@ authenticated by what it carries:
 * Refused PKIOperations are rate-limited per challenge
   (`scep.attemptsPerIdentity`) and per address (`scep.attemptsPerAddress`).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the signer of a SCEP message is held to its fields: its window, its key and its signature strength. It may still be self-signed, as RFC 8894 section 2.3 defines a PKCSReq's signer. `pki.paranoidEnrollmentCredential` turns this row off.
+
 ## With sscep
 
 sscep has no TLS, so it uses the plain-HTTP URL:

@@ -106,6 +106,7 @@
 import helpers = require('../common/helpers');
 import config = require('../common/config');
 import cryptoLib = require('../common/crypto');
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import realms = require('../common/realms');
 import mode = require('../common/mode');
@@ -643,8 +644,9 @@ class Krb5Pkinit {
       return pki.certificateFromDer(Buffer.from(String(pem)
         .replace(/-----[^-]+-----/g, '').replace(/\s+/g, ''), 'base64'));
     }).filter(Boolean);
-    const path = await pki.verifyPathToAnchors(leaf, intermediates, anchors,
-      { now: this.now().getTime(), skewMs: this.skewMs() });
+    const path = await CertificateTrust.path('pkinit', leaf, intermediates,
+      anchors, { now: this.now().getTime(), skewMs: this.skewMs(),
+                 siteAsksRevocation: true });
     if (!path.ok) {
       log.debug('Leaving Krb5Pkinit.checkCertificate(). No path: ' +
                 path.check);

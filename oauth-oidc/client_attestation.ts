@@ -115,6 +115,7 @@ import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import usedAssertions = require('../common/used_assertions');
 import cacheRegistry = require('../common/cache_registry');
@@ -669,8 +670,8 @@ class ClientAttestation {
           'trust anchor in oauth2.clientAttestationTrustAnchors (HAIP 1.0 ' +
           'section 4.4.1: "MUST NOT be self-signed")');
       }
-      const path = await pki.verifyPathToAnchors(ders[0], ders.slice(1),
-        anchors, { skewMs: this.skewS() * 1000 });
+      const path = await CertificateTrust.path('client-attestation', ders[0],
+        ders.slice(1), anchors, { skewMs: this.skewS() * 1000 });
       if (!path.ok) {
         log.debug("Leaving ClientAttestation.attesterKeys(). No path.");
         return this.refuse('STS-OAUTH-0725', 'the Client Attestation\'s x5c ' +

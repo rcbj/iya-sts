@@ -104,6 +104,7 @@ import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
 import stsCrypto = require('./crypto');
+import CertificateTrust = require('./certificate_trust');
 import pki = require('./pki');
 import errorCodes = require('./error_codes');
 import mode = require('./mode');
@@ -245,16 +246,16 @@ class DeviceAttestation {
   // Anchors()`'s answer). `{ ok, anchor, chain }` or `{ ok: false, why }`;
   // `chain` is the DER of the path that VERIFIED, leaf first, which is what
   // a revocation check must read (#902) rather than what the caller sent.
-  private async chainOf(leaf: Buffer, rest: Buffer[],
-                        anchors: Json): Promise<Json> {
+  private async chainOf(leaf: Buffer, rest: Buffer[], anchors: Json,
+                        variant?: string): Promise<Json> {
     const { log, pki } = this.deps;
     log.debug("Entering DeviceAttestation.chainOf().");
     if (!anchors.anchors.length) {
       log.debug("Leaving DeviceAttestation.chainOf(). No anchor.");
       return { ok: false, why: 'no trust anchor is configured for it' };
     }
-    const path = await pki.verifyPathToAnchors(leaf, rest, anchors.anchors,
-                                               { now: this.deps.now() });
+    const path = await CertificateTrust.path('device-attestation', leaf, rest,
+      anchors.anchors, { now: this.deps.now(), variant: variant });
     if (!path.ok) {
       log.debug("Leaving DeviceAttestation.chainOf(). " + path.reason);
       return { ok: false, why: String(path.reason) };
@@ -802,7 +803,8 @@ class DeviceAttestation {
     const chain = await this.chainOf(ak, certs.filter(function (one) {
       return one !== ak;
     }), pki.deviceAttestationAnchors('tpm',
-                                     config.value('devices.tpmTrustAnchors')));
+                                     config.value('devices.tpmTrustAnchors')),
+    'tpm');
     const said = 'TPM 2.0 key attestation (TPM2_Certify, ' + scheme.family +
       '/' + scheme.hash + '), extraData ' +
       (attest.extraData.length ? attest.extraData.toString('hex')

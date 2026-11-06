@@ -13754,8 +13754,11 @@ async function verifyFidoMdsBlob(token, opts) {
       '(risk.mdsTrustAnchors) and GlobalSign Root CA - R3 is not in this ' +
       'node\'s root store';
   } else {
-    const path = await verifyPathToAnchors(ders[0], ders.slice(1), anchors,
-                                           { now: options.now });
+    // Through the door, lazily (it requires this module), so paranoid PKI mode
+    // asks the same checks of this signer as of any other (#1360).
+    const path = await require('./certificate_trust')
+      .path('fido-mds', ders[0], ders.slice(1), anchors,
+            { now: options.now, siteAsksRevocation: true });
     if (!path.ok) {
       failure = 'the BLOB\'s signing chain does not verify: ' + path.reason;
     } else {

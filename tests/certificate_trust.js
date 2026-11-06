@@ -18,7 +18,8 @@
 //    signer truststore, and purposes restricting an entry. E: revocation, off a
 //    real CRL, under each policy. F: name constraints, a critical extension.
 //    G: sigstore's notBefore rule. H: the baselines. I: the counters and the
-//    audit row. J: the synchronous door. K: expected names.
+//    audit row. J: the synchronous door. K: expected names. L: signers.
+//    M: encryption recipients. N: the path helpers of Phase 5.
 //
 // MUTATION RECORD, each applied to a scratch build, seen red and put back:
 //   * `fieldChecks()` not marking a failure                  — 53 red
@@ -30,6 +31,19 @@
 //   * a chain not completed from the signer truststore       — 1 red (L)
 //   * the pinned certificate's fetched verdict never read    — 1 red (L)
 //   * a JWK's x5c not held                                   — 1 red (L)
+//   * `path()` always the baseline                           — 9 red (N)
+//   * a site's anchor entries not read as DER                — 11 red (N)
+//   * `where-named` ignored                                  — 1 red (N)
+//   * `siteAsksRevocation` ignored                           — 1 red (N)
+//   * and honoured with the check switched off               — 1 red (N)
+//   * `direct()` assessing an authority that signed nothing  — 1 red (N)
+//   * `direct()` skipping the door                           — 2 red (N)
+//   * `realmLeaf()` asking no fields                         — 1 red (N)
+//   * `fields()` ignoring `only`                             — 1 red (N)
+//   * `fields()` ignoring `fieldRole`                        — 1 red (N)
+//   * a certificate naming no list still `not-asked`         — 1 red (N)
+//   * a CRL's signer not held                                — 1 red (N)
+//   * the path's own word for a refusal lost                 — 2 red (N)
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -37,6 +51,7 @@ delete process.env.CONFIG_FILE;
 const config = require('../common/config');
 const audit = require('../common/audit');
 const trust = require('../common/certificate_trust');
+const stsCrypto = require('../common/crypto');
 const signers = require('../common/signer_truststore');
 const kit = require('./tools/trust_kit');
 
@@ -558,6 +573,227 @@ async function run(t, double, crls) {
   t.check(trust.registrationProblem('encryption-recipient',
                                     signsOnly.pem) !== null,
           'M. and at the door', '');
+  // N. THE PATH HELPERS (Phase 5): a site's shape kept, the checks added.
+  t.log.info('N. attestation, enrollment and credential paths');
+  const pki = require('../common/pki');
+  const nRoot = await kit.mint({ cn: 'n root', ca: true });
+  const nMiddle = await kit.mint({ cn: 'n middle', ca: true, issuer: nRoot });
+  const nLeaf = await kit.mint({ cn: 'n leaf', issuer: nMiddle });
+  const nDer = function (one) {
+    log.debug("Entering nDer().");
+    log.debug("Leaving nDer().");
+    return pemDer(one.pem);
+  };
+  const nPath = function (id, leaf, intermediates, options) {
+    log.debug("Entering nPath().");
+    log.debug("Leaving nPath().");
+    return trust.path(id, nDer(leaf), intermediates.map(nDer),
+                      [pki.certificateFromDer(nDer(nRoot))], options);
+  };
+  const nAnchored = await nPath('device-attestation', nLeaf, [nMiddle]);
+  t.check(nAnchored.ok && nAnchored.anchor === 'caller' &&
+          !!nAnchored.chain[0].x509,
+          'N. a good path answers the shape a site reads', nAnchored.reason);
+  const encipherer = await kit.mint({ cn: 'n encipherer', issuer: nRoot,
+                                      usages: ['keyEncipherment'] });
+  const fieldBad = await nPath('device-attestation', encipherer, []);
+  t.check(!fieldBad.ok && fieldBad.code === 'STS-KEYS-0171' &&
+          fieldBad.check === 'paranoid',
+          'N. a leaf whose field fails is refused by name', fieldBad.reason);
+  const unrelated = await kit.mint({ cn: 'n stranger',
+                                     issuer: await kit.mint({ cn: 'n other',
+                                                              ca: true }) });
+  const noPath = await nPath('device-attestation', unrelated, []);
+  t.check(!noPath.ok && noPath.check === 'no-path',
+          'N. a rule the path broke keeps that function\'s word for it',
+          noPath.check);
+  const nKeys = require('../common/crypto_impl/key_material');
+  const forgedCa = await kit.mint({ cn: 'n root', ca: true,
+    pair: await nKeys.generateKeyPair('rsa-2048') });
+  const forged = await kit.mint({ cn: 'n forged', issuer: forgedCa });
+  const badSignature = await nPath('pkinit', forged, []);
+  const badOff = await withSettings({ 'pki.paranoid': 'off' }, function () {
+    return nPath('pkinit', forged, []);
+  });
+  t.equal(badSignature.check, badOff.check,
+          'N. in force and out, PKINIT reads the same refusal off a forged ' +
+          'link');
+  const noAik = await nPath('webauthn-attestation', nLeaf, [nMiddle],
+                            { variant: 'tpm' });
+  t.check(!noAik.ok && noAik.code === 'STS-KEYS-0172',
+          'N. a TPM attestation needs the AIK extendedKeyUsage', noAik.code);
+  const aik = await kit.mint({ cn: 'n aik', issuer: nRoot,
+                               eku: [stsCrypto.EKU.tcgAik] });
+  t.check((await nPath('webauthn-attestation', aik, [],
+                       { variant: 'tpm' })).ok, 'N. and passes with it', '');
+  t.check((await nPath('webauthn-attestation', nLeaf, [nMiddle])).ok,
+          'N. another format is not asked for it', '');
+  const notDs = await nPath('vc-issuer', nLeaf, [nMiddle], { variant: 'mdoc' });
+  t.check(!notDs.ok && notDs.code === 'STS-KEYS-0172',
+          'N. an mdoc signer needs the document-signer EKU', notDs.code);
+  const ds = await kit.mint({ cn: 'n ds', issuer: nRoot,
+                              eku: [stsCrypto.EKU.mdocDs] });
+  t.check((await nPath('vc-issuer', ds, [], { variant: 'mdoc' })).ok,
+          'N. and passes with it', '');
+  t.check(!(await nPath('spiffe-attestation', encipherer, [])).ok &&
+          (await nPath('spiffe-attestation', encipherer, [],
+                       { variant: 'tpm-ek' })).ok,
+          'N. an endorsement key enciphers, and only that variant says so', '');
+  const nFulcio = await kit.mint({ cn: 'n fulcio', ca: true,
+                                  notBefore: now - 10 * kit.DAY });
+  const lapsed = await kit.mint({ cn: 'n lapsed', issuer: nFulcio,
+    eku: [stsCrypto.EKU.codeSigning], notBefore: now - 3 * kit.DAY,
+    notAfter: now - kit.DAY });
+  const sigstorePath = await trust.path('spiffe-attestation', nDer(lapsed), [],
+    [pki.certificateFromDer(nDer(nFulcio))],
+    { variant: 'sigstore', now: now - 2 * kit.DAY });
+  t.check(sigstorePath.ok, 'N. sigstore reads a certificate at its notBefore',
+          sigstorePath.reason);
+  const selfLeaf = await kit.mint({ cn: 'n self leaf' });
+  const selfAnchored = await trust.path('client-attestation', nDer(selfLeaf),
+    [], [pki.certificateFromDer(nDer(selfLeaf))]);
+  t.check(!selfAnchored.ok && selfAnchored.code === 'STS-PKI-0249',
+          'N. a self-signed leaf is not its own anchor', selfAnchored.reason);
+  const nStoreRoot = await kit.mint({ cn: 'n store root', ca: true });
+  const nStoreLeaf = await kit.mint({ cn: 'n store leaf', issuer: nStoreRoot });
+  await signers.add(REALM, nStoreRoot.pem, {});
+  const nViaStore = await nPath('webauthn-attestation', nStoreLeaf, []);
+  t.check(nViaStore.ok && nViaStore.anchor === 'signer-truststore',
+          'N. a use case that reaches the signer truststore finds it there',
+          nViaStore.reason);
+  t.check(!(await nPath('pkinit', nStoreLeaf, [])).ok,
+          'N. and one that does not, does not', '');
+  const listedLeaf = await kit.mint({ cn: 'n listed', issuer: nRoot,
+                                      crls: [crls.base + '/n.crl'] });
+  crls.routes['/n.crl'] = await kit.crlOf(nRoot, [listedLeaf.serialHex]);
+  const nRevoked = await nPath('device-attestation', listedLeaf, []);
+  t.check(!nRevoked.ok && nRevoked.code === 'STS-PKI-0118',
+          'N. revocation is asked', nRevoked.code + ' ' + nRevoked.reason);
+  await withSettings({ 'pki.revocationCheck': 'hard-fail',
+                       'pki.revocationRequireDistributionPoint': 'on' },
+                     async () => {
+    const noneNamed = await nPath('device-attestation', nLeaf, [nMiddle]);
+    t.check(noneNamed.ok, 'N. under hard-fail, a hardware chain naming ' +
+            'nothing is not refused for it', noneNamed.reason);
+    t.check(!(await nPath('client-attestation', nLeaf, [nMiddle])).ok,
+            'N. where a use case does not say so, it is', '');
+  });
+  const asksItself = await nPath('device-attestation', listedLeaf, [],
+                                 { siteAsksRevocation: true });
+  t.check(asksItself.ok, 'N. and a site that asks for itself is left to it',
+          asksItself.reason);
+  await withSettings({ 'pki.revocationCheck': 'off' }, async () => {
+    const nobody = await nPath('device-attestation', listedLeaf, [],
+                               { siteAsksRevocation: true });
+    t.check(!nobody.ok, 'N. unless the check is off, when nobody asked',
+            nobody.reason);
+  });
+  await withSettings({ 'pki.paranoid': 'off' }, async () => {
+    t.check((await nPath('device-attestation', listedLeaf, [])).ok &&
+            (await nPath('device-attestation', encipherer, [])).ok,
+            'N. out of force the path is all that is asked', '');
+  });
+  // The one-hop door.
+  const nAuthority = [{ raw: nDer(nRoot) }];
+  const svid = await kit.mint({ cn: 'n svid', issuer: nRoot,
+    eku: [stsCrypto.EKU.clientAuth] });
+  const svidOk = trust.direct('spiffe-svid', nDer(svid), nAuthority);
+  t.check(svidOk.ok && !!svidOk.chain,
+          'N. an SVID naming no list passes the door that cannot wait',
+          svidOk.reason);
+  const noEkuSvid = trust.direct('spiffe-svid', nDer(nLeaf),
+                                 [{ raw: nDer(nMiddle) }]);
+  t.check(!noEkuSvid.ok && noEkuSvid.code === 'STS-KEYS-0172',
+          'N. an SVID needs the extendedKeyUsage', noEkuSvid.code);
+  const nAssessed = function () {
+    log.debug("Entering nAssessed().");
+    log.debug("Leaving nAssessed().");
+    return (trust.counters(REALM)['spiffe-svid'] || {}).assessed || 0;
+  };
+  const assessedBefore = nAssessed();
+  t.equal(trust.direct('spiffe-svid', nDer(unrelated), nAuthority).check,
+          'no-path', 'N. another authority\'s is left for the next authority');
+  t.equal(nAssessed(), assessedBefore, 'N. and nothing is counted for trying');
+  const svidListed = await kit.mint({ cn: 'n svid listed', issuer: nRoot,
+    eku: [stsCrypto.EKU.clientAuth], crls: [crls.base + '/none.crl'] });
+  const cannotWait = trust.direct('spiffe-svid', nDer(svidListed), nAuthority);
+  t.check(!cannotWait.ok, 'N. one naming a list is a check nobody made',
+          cannotWait.reason);
+  t.check(trust.direct('spiffe-svid', nDer(svidListed), nAuthority,
+                       { variant: 'federated' }).ok,
+          'N. except a federated one, whose authority publishes nothing here',
+          '');
+  // The realm's own leaf: `verifyLeaf()` is a double here, since what is under
+  // test is what the door adds to its answer. `tests/pki.js` holds the rest.
+  const realLeaf = pki.verifyLeaf;
+  pki.verifyLeaf = async function () {
+    return { ok: true, revocation: { status: 'good' } };
+  };
+  try {
+    const held = await trust.realmLeaf('enrollment-credential', REALM,
+                                       nLeaf.pem, []);
+    t.check(!held.ok && /extended/i.test(held.why),
+            'N. the realm\'s own leaf is held to the fields as well', held.why);
+    t.check((await trust.realmLeaf('enrollment-credential', REALM, svid.pem,
+                                   [])).ok, 'N. and passes them', '');
+    await withSettings({ 'pki.paranoid': 'off' }, async () => {
+      t.check((await trust.realmLeaf('enrollment-credential', REALM, nLeaf.pem,
+                                     [])).ok,
+              'N. out of force, it is that function\'s answer', '');
+    });
+  } finally {
+    pki.verifyLeaf = realLeaf;
+  }
+  // Fields alone.
+  const aged = await kit.mint({ cn: 'n aged', notBefore: now - 3 * kit.DAY,
+                                notAfter: now - kit.DAY });
+  const weakKu = await kit.mint({ cn: 'n ku', usages: ['keyEncipherment'] });
+  t.check(trust.fields('spiffe-attestation', weakKu.pem,
+                       { variant: 'aws', only: ['validity'] }).ok &&
+          !trust.fields('spiffe-attestation', aged.pem,
+                        { variant: 'aws', only: ['validity'] }).ok,
+          'N. a pin is asked its window and nothing else', '');
+  t.check(!trust.fields('spiffe-attestation', weakKu.pem, {}).ok,
+          'N. while no `only` asks everything', '');
+  const signsCertsOnly = await kit.mint({ cn: 'n not a ca', issuer: nRoot,
+                                          usages: ['keyCertSign'] });
+  t.check(!trust.fields('spiffe-svid', signsCertsOnly.pem,
+                        { variant: 'federated-authority',
+                          fieldRole: 'anchor' }).ok &&
+          trust.fields('spiffe-svid', nRoot.pem,
+                       { variant: 'federated-authority',
+                         fieldRole: 'anchor' }).ok,
+          'N. a federated authority must be a certificate authority', '');
+  const responder = await kit.mint({ cn: 'n responder', issuer: nRoot,
+    eku: [stsCrypto.EKU.ocspSigning] });
+  t.check(trust.fields('revocation-signer', responder.pem).ok &&
+          !trust.fields('revocation-signer', nLeaf.pem).ok,
+          'N. a responder needs id-kp-OCSPSigning', '');
+  // A list signed by an authority whose own window has closed.
+  const agedCa = await kit.mint({ cn: 'n aged ca', ca: true,
+    notBefore: now - 3 * kit.DAY, notAfter: now - kit.DAY });
+  const underAged = await kit.mint({ cn: 'n under aged', issuer: agedCa,
+    notBefore: now - 2 * kit.DAY, notAfter: now + kit.DAY,
+    crls: [crls.base + '/aged.crl'] });
+  crls.routes['/aged.crl'] = await kit.crlOf(agedCa, []);
+  const revocationStatus = require('../common/revocation_status');
+  const agedVerdict = await revocationStatus.verdictFor(
+    { leaf: nDer(underAged), chain: [nDer(agedCa)], verified: true }, {});
+  t.check(agedVerdict.status !== 'good' &&
+          /its signer is refused/.test(JSON.stringify(agedVerdict)),
+          'N. a CRL\'s signer is held to the fields too',
+          JSON.stringify(agedVerdict).slice(0, 300));
+  // A second list: what the first answered is remembered by its address.
+  const underAgedToo = await kit.mint({ cn: 'n under aged too', issuer: agedCa,
+    notBefore: now - 2 * kit.DAY, notAfter: now + kit.DAY,
+    crls: [crls.base + '/aged-too.crl'] });
+  crls.routes['/aged-too.crl'] = await kit.crlOf(agedCa, []);
+  const stillGood = await withSettings({ 'pki.paranoid': 'off' }, function () {
+    return revocationStatus.verdictFor(
+      { leaf: nDer(underAgedToo), chain: [nDer(agedCa)], verified: true }, {});
+  });
+  t.check(!/its signer is refused/.test(JSON.stringify(stillGood)),
+          'N. and only in force', JSON.stringify(stillGood).slice(0, 300));
   double.rows(REALM).clear();
   log.debug("Leaving run().");
 }

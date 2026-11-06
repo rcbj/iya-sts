@@ -32,6 +32,10 @@ export interface TrustVerdict {
   checks: Record<CheckId, CheckStatus>;
   code: string;
   why: string;
+  /** The path `assess()` built, in `verifyPathToAnchors()`'s shape. */
+  builtChain?: any[];
+  /** The rule the path broke, in that function's words. */
+  pathCheck?: string;
 }
 
 export interface LeafRule {
@@ -59,7 +63,7 @@ export interface Purpose {
   leaf: LeafRule;
   selfSigned: 'refuse' | 'allow-by-spec';
   validity: 'now' | 'not-before-by-spec';
-  revocation: 'required' | 'exempt-by-spec';
+  revocation: 'required' | 'where-named' | 'exempt-by-spec';
   exemptions: Array<{ check: CheckId; spec: string }>;
   variants?: Record<string, PurposeVariant>;
   baseline: 'none' | 'peer-chain' | 'signer-chain' | 'caller-path' |

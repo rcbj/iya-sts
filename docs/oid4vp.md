@@ -622,6 +622,8 @@ The Verifier's checks, the sign-in rules, the browser binding and the status
 check are the same in both modes. See
 [What is not checked](what-is-not-checked.md).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, an mdoc's document signer must carry the ISO 18013-5 extendedKeyUsage, and its chain is asked about revocation. A certificate in `oid4vp.trustedIssuerCertificates` must be in date, must not be known to be revoked, and must chain to this realm's signer truststore unless it is self-signed. One that fails is left out and named in the log. A chain naming no list is refused here, as `pki.revocationCheck` says. `pki.paranoidVcIssuer` turns this row off.
+
 ## Configuration
 
 | Setting | Environment variable | Default | Runtime? | What it does |

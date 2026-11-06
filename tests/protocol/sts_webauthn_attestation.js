@@ -212,7 +212,7 @@ async function vendor(name) {
   log.debug("Leaving vendor().");
   return {
     rootPem: root.pem,
-    attestationCertificate: async function (aaguid) {
+    attestationCertificate: async function (aaguid, usages) {
       log.debug("Entering attestationCertificate().");
       const pair = await keyMaterial.generateKeyPair("ec-p256");
       const cert = await x509.issueCertificate({
@@ -227,7 +227,7 @@ async function vendor(name) {
         extensions: {
           basicConstraints: { present: true, critical: true, ca: false },
           keyUsage: { present: true, critical: true,
-                      usages: ["digitalSignature"] },
+                      usages: usages || ["digitalSignature"] },
           custom: [{ oid: "1.3.6.1.4.1.45724.1.1.4", critical: false,
                      value: Buffer.concat([Buffer.from([0x04, 0x10]),
                                            aaguid]).toString("base64") }] } });
@@ -241,7 +241,7 @@ async function vendor(name) {
 // credential `/portal/keys` takes, attested `how`: "packed" (the x5c
 // statement), "self", "forged" (packed, signature over something else) or
 // "none".
-async function authenticator(model, aaguid) {
+async function authenticator(model, aaguid, usages) {
   log.debug("Entering authenticator().");
   const pair = nodeCrypto.generateKeyPairSync("ec",
                                               { namedCurve: "prime256v1" });
@@ -249,7 +249,7 @@ async function authenticator(model, aaguid) {
   const cose = new Map([[1, 2], [3, -7], [-1, 1],
                         [-2, Buffer.from(jwk.x, "base64url")],
                         [-3, Buffer.from(jwk.y, "base64url")]]);
-  const attCert = await model.attestationCertificate(aaguid);
+  const attCert = await model.attestationCertificate(aaguid, usages);
   log.debug("Leaving authenticator().");
   return {
     register: function (challenge, how) {
@@ -638,6 +638,28 @@ async function test() {
   await reset("webauthn.attestationAllowedAaguids");
 
   // -------------------------------------------------------------------------
+  log.info("=== 1b. paranoid PKI mode: the statement's certificate ===");
+  await setting("pki.paranoid", "on");
+  const mayNotSign = await enrol(b,
+    await authenticator(model, AAGUID, ["keyEncipherment"]), "packed",
+    "cannot sign");
+  check("in force, an attestation certificate whose keyUsage forbids signing " +
+        "is not trusted", function () {
+    assert.strictEqual(mayNotSign.status, 400, mayNotSign.text.slice(0, 300));
+    assert.ok(/keyUsage/i.test(mayNotSign.text),
+              mayNotSign.text.slice(0, 600));
+  });
+  await setting("pki.paranoidWebauthnAttestation", false);
+  const rowOff = await enrol(b,
+    await authenticator(model, AAGUID, ["keyEncipherment"]), "packed",
+    "row off");
+  check("with the row off the same statement is accepted", function () {
+    assert.strictEqual(rowOff.status, 200, rowOff.text.slice(0, 500));
+  });
+  await reset("pki.paranoidWebauthnAttestation");
+  await reset("pki.paranoid");
+
+  // -------------------------------------------------------------------------
   log.info("=== 2. verify-if-present ===");
   await setting("webauthn.attestationPolicy", "verify-if-present");
   const forged = await enrol(b, await authenticator(model, AAGUID), "forged",
@@ -669,8 +691,9 @@ async function test() {
     assert.ok(a.verified === true && a.trusted === false &&
               a.type === "none", JSON.stringify(keys));
   });
-  check("and none of the three refused keys was stored", function () {
-    assert.strictEqual(keys.length, 2, JSON.stringify(keys));
+  check("and none of the refused keys was stored: the anchored key, the one " +
+        "section 1b took with its row off, and the passkey", function () {
+    assert.strictEqual(keys.length, 3, JSON.stringify(keys));
   });
   const portal = await b.go("GET", R + "/portal/keys");
   check("/portal/keys shows the person what each key's statement proved",
@@ -721,7 +744,7 @@ async function test() {
                          JSON.stringify(status.attestationFormats));
     });
 
-  assert.ok(checks >= 11,
+  assert.ok(checks >= 13,
     "only " + checks + " checks ran; a section has stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");

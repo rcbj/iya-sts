@@ -106,6 +106,7 @@ interface VcMdocDeps {
   codec: typeof codec;
   coseKeyToJwk: (coseKey: unknown) => any;
   pki: () => any;
+  certificateTrust: () => any;
   walletCompatibility: () => boolean;
 }
 
@@ -171,6 +172,9 @@ class VcMdoc {
       // presented.
       pki: function () {
         return require('../common/pki');
+      },
+      certificateTrust: function () {
+        return require('../common/certificate_trust');
       },
       walletCompatibility: function () {
         return VcAlgorithms.walletCompatibility();
@@ -341,8 +345,8 @@ class VcMdoc {
    * @returns `{ ok, leaf, anchorPem, reason }`; `leaf` is the leaf as
    *   `certificateFromDer()` makes it
    */
-  async chainToAnchors(chain: Buffer[], anchorsPem: string,
-                       now: number): Promise<any> {
+  async chainToAnchors(chain: Buffer[], anchorsPem: string, now: number,
+                       variant?: string): Promise<any> {
     const { log } = this.deps;
     log.debug("Entering VcMdoc.chainToAnchors(). " + chain.length);
     const pki = this.deps.pki();
@@ -358,8 +362,8 @@ class VcMdoc {
       return { ok: false, reason: 'oid4vp.mdocTrustAnchors names no ' +
                'certificate, so no mdoc issuer is trusted' };
     }
-    const path = await pki.verifyPathToAnchors(chain[0], chain.slice(1),
-                                               anchors, { now: now });
+    const path = await this.deps.certificateTrust().path('vc-issuer', chain[0],
+      chain.slice(1), anchors, { now: now, variant: variant });
     if (!path.ok) {
       log.debug("Leaving VcMdoc.chainToAnchors(). " + path.reason);
       return { ok: false, reason: 'its signer\'s certificate does not ' +
@@ -506,7 +510,7 @@ class VcMdoc {
       return done('No issuerAuth.');
     }
     const chained = await this.chainToAnchors(this.x5chainOf(issuerAuth),
-                                              ctx.anchorsPem, now);
+                                              ctx.anchorsPem, now, 'mdoc');
     if (!chained.ok) {
       log.error(errorCodes.tag('STS-VC-0157') + 'oid4vp: an mdoc was ' +
                 'refused: ' + chained.reason);

@@ -49,6 +49,7 @@ const { log } = helpers;
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import spiffeId = require('./spiffe_id');
 import rpc = require('./spiffe_grpc');
@@ -530,6 +531,17 @@ class AwsIidAttestor {
       throw this.refuse(call, 'STS-SPIFFE-0099', status.INTERNAL,
         'failed to load the AWS CA certificate for region "' + doc.region +
         '": unsupported region');
+    }
+    // THE PINNED CERTIFICATE'S VALIDITY, UNDER PARANOID. It is AWS's, and its
+    // key size and hash are not this deployment's to judge, so the window is
+    // the one thing asked of it: decision 3 on #1360.
+    const pinHeld = CertificateTrust.fields('spiffe-attestation',
+      certificate.der, { variant: 'aws', only: ['validity'], mayBeCa: true });
+    if (!pinHeld.ok) {
+      log.debug("Leaving AwsIidAttestor.attest(). The pin is out of date.");
+      throw this.refuse(call, 'STS-SPIFFE-0099', status.INTERNAL,
+        'the AWS CA certificate for region "' + doc.region +
+        '" is refused: ' + pinHeld.why);
     }
     const document = Buffer.from(String(data.document), 'utf8');
     let verified = false;

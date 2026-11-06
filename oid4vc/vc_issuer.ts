@@ -94,6 +94,7 @@ import cacheRegistry = require('../common/cache_registry');
 // THE PATH RULES (#201): a key attestation's `x5c` leaf is held to them
 // through the one synchronous issuer door. A leaf library that requires
 // nothing here.
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 // The register the admin console counts credentials in. The three builders
 // below sign with jsonwebtoken (or with BBS) directly rather than through
@@ -1221,8 +1222,9 @@ class VcIssuer {
    * @returns what it attests
    * @throws Error, with the reason, when it does not verify
    */
-  verifyKeyAttestation(token: string, opts: { proofJwk?: any;
-                                               expRequired?: boolean }): any {
+  async verifyKeyAttestation(token: string,
+                             opts: { proofJwk?: any;
+                                     expRequired?: boolean }): Promise<any> {
     const { log, jsonFromB64u, stsCrypto, vciNonces } = this.deps;
     log.debug("Entering VcIssuer.verifyKeyAttestation().");
     const parts = String(token || '').split('.');
@@ -1247,7 +1249,12 @@ class VcIssuer {
                       ATTESTATION_ALGS.join(', ') + '.');
     }
     const trusted = this.attesterKeys();
-    const candidates: any[] = trusted.map(function (t) {
+    const candidates: any[] = trusted.filter(function (t) {
+      // A configured certificate that signs the attestation itself has no path
+      // to walk, and under paranoid its own fields still have to hold.
+      return CertificateTrust.fields('vc-key-attestation', t.cert.raw,
+                                     { mayBeCa: true }).ok;
+    }).map(function (t) {
       return { label: t.label, key: t.cert.publicKey };
     });
     let last = 'no certificate in oid4vci.keyAttestationTrustedCertificates ' +
@@ -1269,18 +1276,36 @@ class VcIssuer {
         log.debug("Caught in VcIssuer.verifyKeyAttestation(): " +
                   ((e && e.message) || e));
       }
-      trusted.forEach(function (t) {
-        const direct = pki.verifyIssuedDirectly(der,
-                                                [{ certificate: t.cert }]);
-        if (direct.ok) {
-          candidates.unshift({ label: 'a certificate ' + t.label +
-                                      ' issued',
-                               key: direct.chain[0].x509.publicKey });
-        } else if (direct.check !== 'no-path') {
-          refusedX5c = refusedX5c || '; the x5c certificate ' + t.label +
-                       ' issued is refused: ' + direct.reason;
+      if (CertificateTrust.applies('vc-key-attestation')) {
+        // UNDER PARANOID, A REAL PATH: the wallet's intermediates count, and
+        // revocation is asked, which is why this function waits.
+        const path = await CertificateTrust.path('vc-key-attestation', der,
+          header.x5c.slice(1).map(function (one: unknown) {
+            return Buffer.from(String(one), 'base64');
+          }), trusted.map(function (t) {
+            return t.cert.raw;
+          }));
+        if (path.ok) {
+          candidates.unshift({ label: 'a certificate a trusted attester ' +
+                                      'issued',
+                               key: path.chain[0].x509.publicKey });
+        } else {
+          refusedX5c = '; the x5c is refused: ' + path.reason;
         }
-      });
+      } else {
+        trusted.forEach(function (t) {
+          const direct = CertificateTrust.direct('vc-key-attestation', der,
+                                                 [{ certificate: t.cert }]);
+          if (direct.ok) {
+            candidates.unshift({ label: 'a certificate ' + t.label +
+                                        ' issued',
+                                 key: direct.chain[0].x509.publicKey });
+          } else if (direct.check !== 'no-path') {
+            refusedX5c = refusedX5c || '; the x5c certificate ' + t.label +
+                         ' issued is refused: ' + direct.reason;
+          }
+        });
+      }
     }
     let claims: any = null;
     let by = '';
@@ -1484,9 +1509,9 @@ class VcIssuer {
     // the key; required where `oid4vci.keyAttestationRequired` says so.
     let attestation = null;
     if (header.key_attestation) {
-      attestation = this.verifyKeyAttestation(String(header.key_attestation),
-                                              { proofJwk: named.jwk,
-                                                expRequired: true });
+      attestation = await this.verifyKeyAttestation(
+        String(header.key_attestation),
+        { proofJwk: named.jwk, expRequired: true });
     } else if (this.deps.config.value('oid4vci.keyAttestationRequired') ===
                true) {
       throw new Error('this issuer requires a key attestation ' +
@@ -3582,14 +3607,14 @@ class VcIssuer {
         holderKids = proven.map(function (one) {
           return String(one.kid || '');
         });
-        attestationProofs.forEach((token) => {
-          const read = this.verifyKeyAttestation(token, {});
+        for (const token of attestationProofs) {
+          const read = await this.verifyKeyAttestation(token, {});
           read.keys.forEach(function (key) {
             holderJwks.push(key);
             attestations.push(read);
             holderKids.push('');
           });
-        });
+        }
         if (holderJwks.length > vciBatchSize()) {
           throw new Error('the key attestations attest ' + holderJwks.length +
                           ' keys, and this issuer issues at most ' +

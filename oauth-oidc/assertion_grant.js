@@ -782,7 +782,8 @@ async function keyFromChain(header) {
   const rest = chain.slice(1).map(pem);
   let checked;
   try {
-    checked = await pki.verifyLeaf(undefined, leafPem, rest);
+    checked = await require('../common/certificate_trust')
+      .realmLeaf('jose-signer', undefined, leafPem, rest);
   } catch (e) {
     log.debug('Leaving keyFromChain(). The path would not build.');
     return { errorCode: 'STS-OAUTH-0034', error: 'the x5c chain could not be ' +

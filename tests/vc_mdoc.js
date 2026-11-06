@@ -55,7 +55,9 @@ const NS = 'org.iso.18013.5.1';
 const QUERY_ID = 'identity_credential';
 const OVERRIDES = ['oid4vp.mdocTrustAnchors', 'oid4vp.requireStatusReference',
                    'oid4vp.expectedDoctype', 'keys.postQuantumSigning',
-                   'oid4vp.claims', 'oid4vc.walletCompatibility'];
+                   'oid4vp.claims', 'oid4vc.walletCompatibility',
+                   'pki.paranoid', 'pki.paranoidVcIssuer',
+                   'pki.revocationCheck'];
 
 // --- this file's own CBOR (RFC 8949), encoding only -------------------------
 class Tag {
@@ -134,7 +136,7 @@ function encRaw(v) {
 }
 
 // --- the issuing authority and the document signer ------------------------
-async function authority(label) {
+async function authority(label, documentSigner) {
   log.debug("Entering authority(). " + label);
   const repo = path.join(__dirname, '..');
   const x509 = require(path.join(repo, 'common', 'crypto_impl', 'x509'));
@@ -170,12 +172,13 @@ async function authority(label) {
     serial: nodeCrypto.randomBytes(8).toString('hex'),
     notBefore: new Date(now - 3600000).toISOString(),
     notAfter: new Date(now + 30 * 86400000).toISOString(),
-    extensions: {
+    extensions: Object.assign({
       keyUsage: { present: true, critical: true,
                   usages: ['digitalSignature'] },
       subjectKeyIdentifier: { present: true },
       authorityKeyIdentifier: { present: true }
-    }
+    }, documentSigner ? { extKeyUsage: { present: true,
+                                         usages: ['1.0.18013.5.1.2'] } } : {})
   });
   log.debug("Leaving authority().");
   return { caPem: ca.pem, dsPem: ds.pem,
@@ -493,6 +496,25 @@ async function body(t) {
   config.setOverride('oid4vp.requireStatusReference', 'own-only');
   v = await answer(plainRecord, present(iss, wallet, plainCtx), '');
   t.check(v.ok, '4b. under `own-only` it is accepted', failures(v));
+
+  t.log.info('=== 5. paranoid PKI mode (#1360) ===');
+  // A chain naming no list is another question, which `tests/certificate_trust`
+  // asks. This section is about the document signer's profile.
+  config.setOverride('pki.revocationCheck', 'soft-fail');
+  config.setOverride('pki.paranoid', 'on');
+  v = await answer(plainRecord, present(iss, wallet, plainCtx), '');
+  t.check(failed(v, 'Issuer certificate chain'),
+          '5a. a document signer without the ISO 18013-5 extendedKeyUsage is ' +
+          'refused in force', failures(v));
+  const marked = await authority('marked authority', true);
+  config.setOverride('oid4vp.mdocTrustAnchors', marked.caPem);
+  v = await answer(plainRecord, present(marked, wallet, plainCtx), '');
+  t.check(v.ok, '5b. and one that carries it is accepted', failures(v));
+  config.setOverride('oid4vp.mdocTrustAnchors', iss.caPem);
+  config.setOverride('pki.paranoidVcIssuer', false);
+  v = await answer(plainRecord, present(iss, wallet, plainCtx), '');
+  t.check(v.ok, '5c. with the row off the first is accepted again',
+          failures(v));
   log.debug("Leaving body().");
 }
 

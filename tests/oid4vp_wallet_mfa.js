@@ -402,6 +402,72 @@ function childMain() {
       m.config.clearOverride('oid4vci.keyAttestationTrustedCertificates');
     });
 
+    // ------------------------------------------------------------------
+    // 4g. PARANOID PKI MODE (#1360): THE ATTESTATION'S x5c IS A REAL PATH.
+    // Out of force a chain is one hop, so an attester behind an intermediate
+    // cannot be read, which is what paranoid's real path adds. It adds
+    // revocation too, off a list this file serves.
+    // ------------------------------------------------------------------
+    const trustKit = require(ROOT + '/tests/tools/trust_kit');
+    const keyMaterial = require(ROOT + '/common/crypto_impl/key_material');
+    const attesterPair = await keyMaterial.generateKeyPair('rsa-2048');
+    const attesterRoot = await trustKit.mint({ cn: 'attester root', ca: true });
+    const attesterMiddle = await trustKit.mint({ cn: 'attester middle',
+                                                 ca: true,
+                                                 issuer: attesterRoot });
+    const lists = await trustKit.crlServer();
+    const attesterLeaf = await trustKit.mint({ cn: 'attester leaf',
+      issuer: attesterMiddle, pair: attesterPair,
+      crls: [lists.base + '/leaf.crl'] });
+    lists.routes['/leaf.crl'] = await trustKit.crlOf(attesterMiddle, []);
+    const revokedLeaf = await trustKit.mint({ cn: 'attester revoked',
+      issuer: attesterRoot, pair: attesterPair,
+      crls: [lists.base + '/revoked.crl'] });
+    const derB64 = function (pem) {
+      return String(pem).replace(/-----[^-]+-----|\s+/g, '');
+    };
+    const chained = function (holder, leaves) {
+      return function (nonce) {
+        const now = Math.floor(Date.now() / 1000);
+        return m.stsCrypto.signJws({ iss: 'https://wallet.example', iat: now,
+                                     exp: now + 300, nonce: nonce,
+                                     attested_keys: [holder.jwk] },
+          nodeCrypto.createPrivateKey(attesterPair.privatePem),
+          { algorithm: 'RS256',
+            header: { alg: 'RS256', typ: 'key-attestation+jwt',
+                      x5c: leaves.map(derB64) } });
+      };
+    };
+    lists.routes['/revoked.crl'] = await trustKit.crlOf(attesterRoot,
+                                                       [revokedLeaf.serialHex]);
+    await w.inRealm(function () {
+      m.config.setOverride('oid4vci.keyAttestationTrustedCertificates',
+                           attesterRoot.pem);
+    });
+    const pathKey = w.holderKey();
+    const oneHop = await w.issue('mfa-carol', pathKey, { attestation:
+      chained(pathKey, [attesterLeaf.pem, attesterMiddle.pem]) });
+    note(!oneHop.credential, '4g. out of force, an attester behind an ' +
+         'intermediate is not read: the check is one hop',
+         oneHop.error || 'issued');
+    await w.inRealm(function () {
+      m.config.setOverride('pki.paranoid', 'on');
+    });
+    const realPath = await w.issue('mfa-carol', pathKey, { attestation:
+      chained(pathKey, [attesterLeaf.pem, attesterMiddle.pem]) });
+    note(!!realPath.credential, '4h. in force the same attestation verifies, ' +
+         'through its intermediate and a list that clears it',
+         realPath.error || 'issued');
+    const revokedIssue = await w.issue('mfa-carol', pathKey, { attestation:
+      chained(pathKey, [revokedLeaf.pem]) });
+    note(!revokedIssue.credential, '4i. and an attester its issuer revoked ' +
+         'is refused', revokedIssue.error || 'issued');
+    await w.inRealm(function () {
+      m.config.clearOverride('pki.paranoid');
+      m.config.clearOverride('oid4vci.keyAttestationTrustedCertificates');
+    });
+    await lists.close();
+
     // ==================================================================
     // 5. a policy allowing the wallet alone
     // ==================================================================

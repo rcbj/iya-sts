@@ -612,6 +612,8 @@ chain's serial numbers, so whenever a new list is activated, and daily, the
 **Protocols → Device registration** shows the active list, its age, the
 address and the job (`GET /admin-api/device-registration`, `androidStatus`).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a device's attestation chain must be in date and permit digitalSignature. A TPM attestation key must carry the AIK extendedKeyUsage. Revocation is asked only where the chain names a list or a responder, because hardware vendors' chains usually name neither. `pki.paranoidDeviceAttestation` turns this row off.
+
 ## Configuration
 
 Drawn on **Protocols → Device registration**; the live source is that page and

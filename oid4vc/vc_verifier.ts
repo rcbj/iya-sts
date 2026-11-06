@@ -713,6 +713,9 @@ class VcVerifier {
       if (this.pqCertificate(pem)) {
         return;
       }
+      if (!this.trustedIssuerHeld(pem, i)) {
+        return;
+      }
       try {
         out.push({ label: 'trusted issuer certificate ' + (i + 1), pem: pem,
                    key: stsCrypto.parseCertificate(pem).publicKey });
@@ -729,6 +732,23 @@ class VcVerifier {
     log.debug("Leaving VcVerifier.trustedIssuerKeys(). " + out.length + " " +
               "key(s).");
     return out;
+  }
+
+  // Under paranoid a configured issuer certificate holds its window and fields,
+  // chains when it is not self-signed, and is not known to be revoked. One that
+  // fails is left out, named in the log, so the others still answer.
+  private trustedIssuerHeld(pem: string, i: number): boolean {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering VcVerifier.trustedIssuerHeld().");
+    const held = require('../common/certificate_trust')
+      .pinnedSync('vc-issuer', pem);
+    if (!held.ok) {
+      log.error(errorCodes.tag(held.code) +
+                'oid4vp.trustedIssuerCertificates: certificate ' + (i + 1) +
+                ' is ignored: ' + held.why);
+    }
+    log.debug("Leaving VcVerifier.trustedIssuerHeld(). " + held.ok);
+    return held.ok;
   }
 
   // Does this certificate hold a post-quantum key — one with a JOSE name, or
@@ -771,7 +791,7 @@ class VcVerifier {
     blocks.forEach((pem, i) => {
       try {
         const pq = this.pkiModule().pqJwkFromCertificate(pem);
-        if (pq) {
+        if (pq && this.trustedIssuerHeld(pem, i)) {
           out.push({ label: 'trusted issuer certificate ' + (i + 1) + ' (' +
                             pq.alg + ')',
                      pem: pem, alg: pq.alg, publicJwk: pq.publicJwk });
