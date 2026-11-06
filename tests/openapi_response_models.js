@@ -170,6 +170,10 @@ function validatorCases(t) {
         200: { description: 'd', content: {
           'image/svg+xml': { schema: { type: 'string' } } } }
       } } },
+      // A model ajv refuses to compile: this answer's problem, said to nobody.
+      '/api/broken': { get: { operationId: 'getBroken', responses: {
+        200: json({ type: 'string', enum: ['a', 'a'] })
+      } } },
       '/api/free': { get: { operationId: 'getFree', responses: {
         200: json({ 'x-free-form': 'a relayed document' })
       } } }
@@ -207,10 +211,6 @@ function validatorCases(t) {
           'a free-form model takes anything, and is the only one that does');
   t.equal(answer('GET', '/thing', 'application/json', 200, '').statusCode, 200,
           'an empty body has nothing to check');
-  // A model that cannot compile is this answer's problem and says nothing.
-  const broken = { 200: json({ type: 'string', enum: ['a', 'a'] }) };
-  doc.paths['/api/broken'] = { get: { operationId: 'getBroken',
-                                      responses: broken } };
   const nothingYet = marked.length;
   t.equal(nothingYet, 0, 'none of those was reported');
 
@@ -258,6 +258,10 @@ function validatorCases(t) {
   t.check(uncompilable.sent.indexOf('enum') < 0 &&
           JSON.parse(uncompilable.sent).error === 'server_error',
           'and the caller hears nothing about the schema');
+  t.check(logged.some(function (line) {
+    return line.indexOf('getBroken') >= 0 &&
+      line.indexOf('does not compile') >= 0;
+  }), 'while the operator is told which model it was');
   const count = models.failureCount();
   t.check(count >= 7, 'every refusal is counted: ' + count);
   log.debug("Leaving validatorCases().");
