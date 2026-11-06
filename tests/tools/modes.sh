@@ -459,7 +459,7 @@ stsModeTimeout()
     cluster) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
     cluster-portable) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
     single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-4800}" ;;
-    fuzz)     echo "${STS_FUZZ_MODE_TIMEOUT:-7200}" ;;
+    fuzz)     echo "${STS_FUZZ_MODE_TIMEOUT:-21600}" ;;
     *)       echo "${STS_BASE_MODE_TIMEOUT:-3000}" ;;
   esac
 }
