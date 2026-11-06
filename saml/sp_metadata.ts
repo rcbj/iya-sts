@@ -111,7 +111,6 @@ import http = require('http');
 import https = require('https');
 import url = require('url');
 import xmldom = require('@xmldom/xmldom');
-import forge = require('node-forge');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
@@ -185,7 +184,6 @@ interface SpMetadataDeps {
   https: typeof https;
   url: typeof url;
   xmldom: typeof xmldom;
-  forge: typeof forge;
   helpers: typeof helpers;
   config: typeof config;
   errorCodes: typeof errorCodes;
@@ -251,7 +249,6 @@ class SpMetadata {
       https: https,
       url: url,
       xmldom: xmldom,
-      forge: forge,
       helpers: helpers,
       config: config,
       errorCodes: errorCodes,
@@ -700,7 +697,6 @@ class SpMetadata {
    * @returns the problem as a sentence, or '' when there is none
    */
   certificateProblem(value) {
-    const { forge } = this.deps;
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.certificateProblem().");
     const pem = this.toPem(value);
@@ -709,8 +705,8 @@ class SpMetadata {
       return 'it is empty';
     }
     try {
-      const cert = forge.pki.certificateFromPem(pem);
-      if (!cert.publicKey || !cert.publicKey.n) {
+      const key = stsCrypto.parseCertificate(pem).publicKey;
+      if (!key || key.asymmetricKeyType !== 'rsa') {
         log.debug("Leaving SpMetadata.certificateProblem().");
         return 'its public key is not an RSA key, and XML Encryption key ' +
                'transport here wraps to RSA';

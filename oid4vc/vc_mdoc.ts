@@ -305,17 +305,15 @@ class VcMdoc {
   // Does a COSE_Sign1 verify over `payload` (its own, or the detached one)
   // under `key`, in one of the algorithms offered now?
   private coseVerifies(parts: any, payload: Buffer, key: any): string {
-    const { log, codec, stsCrypto } = this.deps;
+    const { log, stsCrypto } = this.deps;
     log.debug("Entering VcMdoc.coseVerifies(). alg=" + parts.alg);
     if (this.coseAlgs().indexOf(Number(parts.alg)) < 0) {
       log.debug("Leaving VcMdoc.coseVerifies(). Algorithm not accepted.");
       return 'it is signed with COSE algorithm ' + parts.alg + ', and this ' +
              'Verifier accepts ' + this.coseAlgs().join(', ');
     }
-    const toBeSigned = codec.cborEncode(['Signature1', parts.protectedBytes,
-                                         Buffer.alloc(0), payload]);
-    const ok = stsCrypto.verifyCoseSignature(Number(parts.alg), key,
-      toBeSigned, parts.signature, { ecdsaEncoding: 'ieee-p1363' });
+    const ok = stsCrypto.coseSign1Verify(Number(parts.alg), key,
+      parts.protectedBytes, payload, parts.signature);
     log.debug("Leaving VcMdoc.coseVerifies(). " + ok);
     return ok ? '' : 'the COSE algorithm ' + parts.alg + ' signature does ' +
                      'not verify';

@@ -26,6 +26,8 @@ cd "$(dirname "$(realpath "$0")")/../.." || exit 1
 # shellcheck source=tests/tools/modes.sh
 . tests/tools/modes.sh
 
+compgen -e > /tmp/image-environment
+
 OUT=/out
 BAO_SEAL_KEY="$(openssl rand -base64 32)"
 ADMIN_SECRET="$(openssl rand -hex 24)"
@@ -213,6 +215,12 @@ stage() {
   local url=https://sts:8081 nodes=sts
   KRBTGT="$(secret)"; KRBSVC="$(secret)"
   unset STS_DATABASE_URL STS_DATABASE_TLS_CA_FILE
+  # THE CAPS ARE PROCESS-WIDE AND NO JOB REMOVES A REALM. A run side by side has
+  # the bulk jobs raise them early; serially those come last and the suite's own
+  # growth fills the directory near job 976, after which every job fails at its
+  # set-up and exercises nothing.
+  export LDAP_MAX_ENTRIES=500000 STS_APPLICATIONS_MAX=100000 \
+    STS_REALMS_MAX_COUNT=5000
   export CONFIG_FILE=./env/docker-tests.js STS_HTTPS=true STS_LOG_LEVEL=info \
     STS_DATABASE_PASSWORD_PROVIDER=vault \
     STS_DATABASE_PASSWORD_FIELD=databasePassword \
@@ -284,6 +292,19 @@ stage() {
     STS_TEST_ATTRIBUTE_DB_URL= STS_TEST_ATTRIBUTE_MYSQL_URL= \
     STS_TEST_PERSISTENCE_DB_URL=
 
+  # WHAT A NODE IS GIVEN IS NOT THE JOBS' TO SEE: in the compose stacks the
+  # runner is another container. An in-process test that builds its own store
+  # reads these and looks for a secret store's files it has no business with.
+  # Only what this script added: the image's own (where a test corpus is, and
+  # the like) are the jobs' to read.
+  local name
+  for name in $(compgen -e | grep -E '^(STS_|PKI_|KRB5_|LDAP_MAX)' \
+                | grep -vE '^STS_(TEST_|LDAP_URL$|ADMIN_API_)'); do
+    if ! grep -qx "${name}" /tmp/image-environment; then
+      unset "${name}"
+    fi
+  done
+
   local reportArgs=("--service-url=${url}" "--report-dir=${STAGE_OUT}/report"
                     --serial)
   # The in-process half is one answer whatever the deployment: once.
@@ -305,7 +326,8 @@ verdict() {
   [ "${count}" -eq 0 ] || ok=0
   local key
   for key in sts_outside_values openapi_response_models; do
-    if grep -E "(FAIL|failed).*${key}|${key}.*(FAIL|failed)" \
+    # The runner's own line for the job: a passing test may say "failed".
+    if grep -E "\"name\":\"run-report\".*\"msg\":\" +(FAILED|failed)[^\"]*${key}" \
          "${dir}/run-report.log" > /dev/null; then
       ok=0
       echo "${key} failed" >> "${dir}/violations.log"

@@ -118,6 +118,7 @@ const ROWS: Row[] = [
     why: 'the public surfaces\' card and locale catalogs, the same files ' +
          'in every cell (#570)' },
   { prefix: '/logo.png', strategy: 'local', why: 'a static image' },
+  { prefix: '/favicon.ico', strategy: 'local', why: 'a static image' },
   { prefix: '/home.js', strategy: 'local',
     why: 'the front door\'s script, the same file in every cell (#579)' },
   { prefix: '/home.css', strategy: 'local',
