@@ -160,6 +160,12 @@ const ATTESTATION_ALGORITHMS = Kit.closed({
   }))
 });
 
+// `AttestationRevocation.consult()`'s verdict on a certificate chain.
+const REVOCATION_VERDICT = Kit.closed({
+  status: STR, reason: STR, serial: STR, listVersion: STR, checkedAt: WHEN,
+  chainSerials: STRS, why: STR
+});
+
 // `authn/webauthn_attestation.ts`'s `assess()`, stored on the key as it was.
 const ATTESTATION = Kit.nullable(Kit.closed({
   policy: STR, format: STR, type: STR, verified: BOOL, trusted: BOOL,
@@ -175,10 +181,7 @@ const ATTESTATION = Kit.nullable(Kit.closed({
     renewAfter: WHEN, hashAlgorithm: STR, tsa: NSTR
   }),
   // `common/attestation_revocation.ts`'s verdict on the chain.
-  androidRevocation: Kit.closed({
-    status: STR, reason: STR, serial: STR, listVersion: STR, checkedAt: WHEN,
-    chainSerials: STRS, why: STR
-  })
+  androidRevocation: REVOCATION_VERDICT
 }));
 
 const KEY_ALGORITHM = Kit.closed({
@@ -346,10 +349,7 @@ const DEVICE_KEY = Kit.closed({
   proof: STR,
   attestation: Kit.closed({
     level: STR, format: STR, summary: STR, verifiedAt: WHEN,
-    chainSerials: STRS,
-    revocation: Kit.freeForm(
-      'What a device attestation\'s revocation consultation said, which ' +
-      'differs by attestation format.'),
+    chainSerials: STRS, revocation: REVOCATION_VERDICT,
     freshness: Kit.closed({ status: STR, detail: STR })
   }),
   material: Kit.freeForm(
@@ -770,7 +770,8 @@ const SESSION_ROW = Kit.closed({
 
 const SESSION_LIST = Kit.closed({
   // `note` says why, where `logout/logout.ts` is not in this process.
-  installed: BOOL, note: STR, held: NUM, matched: NUM, shown: NUM, heldByKind: COUNTS,
+  installed: BOOL, note: STR, held: NUM, matched: NUM, shown: NUM,
+  heldByKind: COUNTS,
   filter: Kit.closed({ q: NSTR, protocol: NSTR }), protocols: STRS, at: NUM,
   expiryRules: Kit.mapOf(STR),
   sessions: Kit.listOf({ $ref: '#/components/schemas/SessionRow' }),
@@ -1092,6 +1093,10 @@ const ROLES_VIEW = Kit.closed({
   role: ROLE_DETAIL
 });
 
+const VERDICT_FACTS = Kit.freeForm(
+  'An exchange or per-right verdict the role PEP passes through from the ' +
+  'XACML obligations of the policy that decided it.');
+
 // `AdminViews.rolesPreview()`, with what the role PEP's `preview()` answers.
 const ROLE_PREVIEW = Kit.closed({
   answered: BOOL, available: BOOL, why: STR,
@@ -1111,7 +1116,12 @@ const ROLE_PREVIEW = Kit.closed({
     roles: STRS, required: STRS
   })),
   transfer: Kit.nullable(Kit.closed({ verdict: STR, decidedBy: STR })),
-  passkey: Kit.nullable(Kit.closed({ verdict: STR, code: STR, reason: STR }))
+  passkey: Kit.nullable(Kit.closed({ verdict: STR, code: STR, reason: STR,
+                                     decidedBy: STR })),
+  deferred: BOOL,
+  // The two verdicts `IssuanceAnswer` declares for a question a preview does
+  // not ask today; a member of the answer all the same.
+  exchange: VERDICT_FACTS, gnapRights: Kit.listOf(VERDICT_FACTS)
 });
 
 // ---------------------------------------------------------------------------
