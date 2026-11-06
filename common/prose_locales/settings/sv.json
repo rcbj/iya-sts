@@ -3724,8 +3724,8 @@
     "text": "Paranoid: ett klientcertifikat vid en TLS-handskakning"
   },
   "pki.paranoidTlsClient|description": {
-    "en": "e6a7e7e97a2f4251",
-    "text": "Användningsfall `tls-client`: ett klientcertifikat som visas upp för huvudporten, en anpassad lyssnare, LDAPS, felsökarens lyssnare, SPIFFE:s gRPC-uttag eller kanalen mellan celler, och varje konsument av socket.authorized. Paranoid underkastar VARJE lyssnare kedjereglerna (inte bara huvudporten och anpassade lyssnare), frågar efter extendedKeyUsage clientAuth och keyUsage digitalSignature eller keyAgreement hos varje lövcertifikat, konsulterar återkallelse på varje lyssnare, för en nedgraderad dom vidare över TLS-återupptagning och STÄNGER vid fel när kontrollen kastar. Ankare: förtroendelagret för klientcertifikat och tjänstens Root. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust."
+    "en": "a92be9cfd66a7481",
+    "text": "Användningsfall `tls-client`: ett klientcertifikat som visas upp för huvudporten, en anpassad lyssnare, LDAPS eller felsökarens lyssnare, och varje konsument av socket.authorized. Paranoid underkastar VARJE lyssnare kedjereglerna (inte bara huvudporten och anpassade lyssnare), frågar efter extendedKeyUsage clientAuth och keyUsage digitalSignature eller keyAgreement hos varje lövcertifikat, konsulterar återkallelse på varje lyssnare, för en nedgraderad dom vidare över TLS-återupptagning och STÄNGER vid fel när kontrollen kastar. Ankare: förtroendelagret för klientcertifikat och tjänstens Root. Av, och bara det här användningsfallet beter sig som före #1360, medan varje annan rad och huvudinställningen lämnas orörda; av i produktionsläge loggas det en gång (STS-PKI-0239) och ritas rött på /admin/pki/trust. På SPIFFE:s gRPC-uttag håller den ingen anslutning och vägrar bara att binda SPIRE Server API okrypterat; kanalen mellan celler har en egen rad, pki.paranoidCellPeer."
   },
   "pki.paranoidTlsClientSelfSigned|label": {
     "en": "1fffd43ed19648a8",

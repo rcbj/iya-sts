@@ -3724,8 +3724,8 @@
     "text": "偏執：TLS 交握中的用戶端憑證"
   },
   "pki.paranoidTlsClient|description": {
-    "en": "e6a7e7e97a2f4251",
-    "text": "使用情境 `tls-client`：呈現給主連接埠、自訂接聽程式、LDAPS、偵錯工具接聽程式、SPIFFE 的 gRPC 通訊端或跨 Cell 通道的用戶端憑證，以及 socket.authorized 的每一個使用者。偏執模式要求「每一個」接聽程式遵守路徑規則（不只主連接埠與自訂接聽程式），對每張葉憑證要求 extendedKeyUsage clientAuth 與 keyUsage digitalSignature 或 keyAgreement，在每個接聽程式上查詢撤銷，讓降級的判定延續跨越 TLS 恢復，並在檢查擲出例外時以封閉方式失敗。信任錨：用戶端憑證信任存放區與服務根憑證。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。"
+    "en": "a92be9cfd66a7481",
+    "text": "使用情境 `tls-client`：呈現給主連接埠、自訂接聽程式、LDAPS 或偵錯工具接聽程式的用戶端憑證，以及 socket.authorized 的每一個使用者。偏執模式要求「每一個」接聽程式遵守路徑規則（不只主連接埠與自訂接聽程式），對每張葉憑證要求 extendedKeyUsage clientAuth 與 keyUsage digitalSignature 或 keyAgreement，在每個接聽程式上查詢撤銷，讓降級的判定延續跨越 TLS 恢復，並在檢查擲出例外時以封閉方式失敗。信任錨：用戶端憑證信任存放區與服務根憑證。 關閉時，僅此使用情境的行為恢復為 #1360 之前，其他各列與主開關不受影響；在產品模式下關閉時會記錄一次（STS-PKI-0239），並在 /admin/pki/trust 上以紅色顯示。 在 SPIFFE 的 gRPC 通訊端上，它不攔阻任何連線，只拒絕以明文繫結 SPIRE Server API；跨 Cell 通道有自己的一列，即 pki.paranoidCellPeer。"
   },
   "pki.paranoidTlsClientSelfSigned|label": {
     "en": "1fffd43ed19648a8",

@@ -110,15 +110,17 @@ const PURPOSES: Purpose[] = [
   { id: 'tls-client', setting: 'pki.paranoidTlsClient',
     title: 'A client certificate at a TLS handshake',
     covers: 'A client certificate presented to the main port, a custom ' +
-      'listener, LDAPS, the debugger listener, SPIFFE\'s gRPC sockets or the ' +
-      'inter-cell channel, and everything that reads the verdict of that ' +
-      'handshake.',
+      'listener, LDAPS or the debugger listener, and everything that reads ' +
+      'the verdict of that handshake. On SPIFFE\'s gRPC sockets it holds no ' +
+      'connection and only refuses to bind the SPIRE Server API in the clear; ' +
+      'the channel between cells is `cell-peer`.',
     adds: 'The path rules on every listener, not only the main port; ' +
       'clientAuth and keyUsage on every leaf; revocation on every listener; ' +
       'a demoted connection stays demoted across TLS resumption; a failure ' +
       'inside the check refuses.',
     sites: ['tls/tls_server.js holdToPathRules', 'ldap/ldap_server.js',
-            'debugger/debugger_server.ts', 'spiffe/spiffe_grpc.ts'],
+            'debugger/debugger_server.ts',
+            'spiffe/spiffe_server.ts plain bind'],
     anchors: ['client-truststore', 'realm'],
     leaf: leaf(TLS_CLIENT_USAGE, [EKU.clientAuth]),
     selfSigned: 'refuse', validity: 'now', revocation: 'required',

@@ -421,6 +421,9 @@ function childMain() {
          'C4. /web/card.css is the card', JSON.stringify([card.status,
                                                          card.type]));
     listener.close();
+    note(hosted.classify('/favicon.ico') === hosted.EVERYWHERE,
+         'the icon is answered on every listener, since a browser asks for it ' +
+         'on whichever one its page came from');
     note(hosted.classify('/web/card.css') === hosted.EVERYWHERE &&
          hosted.classify('/web/locales/authn/en.json') === hosted.EVERYWHERE &&
          hosted.classify('/webx') !== hosted.EVERYWHERE &&
