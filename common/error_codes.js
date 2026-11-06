@@ -1215,6 +1215,11 @@ const CODES = [
       'node holding an out-of-date secret. Refused before anything else is ' +
       'decided about it.',
     spec: 'none — HTTP 403, with no reason given' },
+  { code: 'STS-CORE-0166',
+    summary: 'GET /favicon.ico found no common/favicon.ico in this image: ' +
+      'the file was left out of the build. The browser shows no icon; nothing ' +
+      'else is affected.',
+    spec: 'none — HTTP 404' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +

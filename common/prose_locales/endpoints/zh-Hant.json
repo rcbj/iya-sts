@@ -2454,5 +2454,9 @@
   "endpoints.socket.mainPortTransport": {
     "en": "f09855213e0c9733",
     "text": "TLS（會索取用戶端憑證，但從不強制要求）"
+  },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "服務的圖示"
   }
 }

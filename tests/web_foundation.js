@@ -346,6 +346,24 @@ function childMain() {
                encoding: res.headers.get('content-encoding') || '',
                type: res.headers.get('content-type') || '' };
     };
+    // THE ICON: its type, and a real ICO holding the small sizes a tab draws.
+    // `common/favicon.ico` is read as the service reads it, so a build that
+    // left it out fails here rather than showing no icon in a browser.
+    const iconRes = await fetch(base + '/favicon.ico');
+    const icon = Buffer.from(await iconRes.arrayBuffer());
+    const iconSizes = [];
+    if (icon.length > 6 && icon.readUInt16LE(0) === 0 &&
+        icon.readUInt16LE(2) === 1) {
+      for (let i = 0; i < icon.readUInt16LE(4); i++) {
+        iconSizes.push(icon[6 + i * 16] || 256);
+      }
+    }
+    note(iconRes.status === 200 &&
+         /^image\/x-icon/.test(iconRes.headers.get('content-type') || '') &&
+         /max-age=86400/.test(iconRes.headers.get('cache-control') || '') &&
+         iconSizes.indexOf(16) >= 0 && iconSizes.indexOf(32) >= 0,
+         'GET /favicon.ico answers an ICO with the sizes a tab draws, kept ' +
+         'for a day', JSON.stringify([iconRes.status, iconSizes]));
     // KEYED BY THE BUILD, NOT THE VERSION (#1298): every build of a release
     // reports the same version, so `?v=<version>` is revalidated like any
     // other address and only this build's identifier is kept for good.
