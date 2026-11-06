@@ -266,7 +266,13 @@ function crlServer() {
   });
 }
 
-async function withSettings(pairs, fn) {
+async // Product mode as #174 wrote it. Paranoid PKI mode, on there by default, has the
+// sharper rule: where a certificate names no source there is no check to perform
+// (rcbj, #1360), which `tests/certificate_trust.js` holds.
+const PRODUCT_NOT_PARANOID = { 'global.mode': 'product',
+                               'pki.paranoid': 'off' };
+
+function withSettings(pairs, fn) {
   log.debug("Entering withSettings().");
   const config = require('../common/config');
   const keys = Object.keys(pairs);
@@ -317,7 +323,7 @@ async function thePolicy(t) {
   t.equal(status.policy().effective, 'soft-fail',
           'and auto is SOFT-FAIL in development — the register is consulted, ' +
           'an unreachable foreign list is not a refusal');
-  await withSettings({ 'global.mode': 'product' }, async function () {
+  await withSettings(PRODUCT_NOT_PARANOID, async function () {
     t.equal(status.policy().effective, 'hard-fail',
             'and HARD-FAIL in product, through ' +
             'mode.refusesUnknownRevocationStatus()');
@@ -720,7 +726,7 @@ async function theForeignCrl(t, fixture, realmId) {
             'verdict says its list was not dialled', l.why);
   });
   // PRODUCT MODE, pki.revocationRequireDistributionPoint=auto: the new default.
-  await withSettings({ 'global.mode': 'product' }, async function () {
+  await withSettings(PRODUCT_NOT_PARANOID, async function () {
     t.equal(status.policy().requireDistributionPoint, true,
             'in PRODUCT, auto is mode.refusesUnrevocableCertificates(): yes');
     const v = await status.verdictFor(input(bare));
@@ -2736,7 +2742,7 @@ async function theUndialledAndNoRevAvail(t, fx) {
             'while the undialled responder is accepted under soft-fail, and ' +
             'reported', ocspLdap.why);
   });
-  await withSettings({ 'global.mode': 'product' }, async function () {
+  await withSettings(PRODUCT_NOT_PARANOID, async function () {
     status.resetCache();
     const none = await status.verdictFor(input(fx.leaf.nNone));
     t.check(none.refused && errorCodes.codeOf(none) === 'STS-PKI-0190',
@@ -2896,7 +2902,7 @@ async function theRegisteredApi(t, fx) {
               'unless pki.revocationRequireDistributionPoint says it must',
               required.why);
     });
-    await withSettings({ 'global.mode': 'product' }, async function () {
+    await withSettings(PRODUCT_NOT_PARANOID, async function () {
       const product = await status.registeredVerdictFor(
           { certificate: fx.leaf.gNoAia.pem, source: 'a test registration' });
       t.check(product.refused &&

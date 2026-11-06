@@ -140,6 +140,9 @@ const CERTIFICATE = /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE----
  * product mode refuses plain http and ignores a switch that skips verification.
  */
 class OutboundTls {
+  // What each context built in this process names as its CA (#1360).
+  private static contextAnchors = new WeakMap<object, unknown>();
+
   /**
    * The error code of a CA file setting that names an unusable file:
    * `STS-CORE-0104`.
@@ -428,6 +431,17 @@ class OutboundTls {
   // -------------------------------------------------------------------------
   private static installGate(): void {
     const original = tls.connect;
+    // A dialer may hand `tls.connect()` a context it built itself, as mysql2
+    // does, and a context cannot be asked what it was built with. So what it
+    // names is remembered as it is built: its `ca` is still that dialer's own.
+    const originalContext = tls.createSecureContext;
+    (tls as any).createSecureContext = function (...args: any[]) {
+      const context = (originalContext as any).apply(tls, args);
+      if (args[0] && args[0].ca) {
+        OutboundTls.contextAnchors.set(context, args[0].ca);
+      }
+      return context;
+    };
     (tls as any).connect = function (...args: any[]) {
       const options = args.filter(function (one) {
         return one && typeof one === 'object';
@@ -490,7 +504,9 @@ class OutboundTls {
         return true;
       }
       trust.assessPeer('tls-server-outbound', socket.getPeerCertificate(true),
-        { realmId: realmId, staple: staple, pinnedTo: options.ca,
+        { realmId: realmId, staple: staple, pinnedTo: options.ca ||
+            (options.secureContext &&
+             OutboundTls.contextAnchors.get(options.secureContext)),
           variant: options.stsOutboundVariant }).then(function (verdict: any) {
         if (socket.destroyed) {
           return;

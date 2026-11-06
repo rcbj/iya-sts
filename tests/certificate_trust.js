@@ -32,6 +32,7 @@
 //   * every link with no issuer passing, naming or not        — 2 red
 //   * a pin asking only its own extensions, not the path      — 2 red (L)
 //   * `named` ignored at the path, or at the self-signed rule — 1 red (L)
+//   * a JWK's x5c asked for a path again                      — 1 red (L)
 //   * a pin always asking, naming or not                     — 2 red (L)
 //   * `fieldChecks()` not marking a failure                  — 53 red
 //   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
@@ -562,6 +563,10 @@ async function run(t, double, crls) {
   t.check(!trust.pinnedSync('saml-signer', expiredSelf.pem,
                             { named: true }).ok,
           'L. and its validity still counts', '');
+  t.check(trust.bareKey({ kty: 'EC', x5c: [pemDer(namedPin.pem)
+    .toString('base64')] }).ok,
+          'L. a JWK whose x5c chains to nothing held is the key it would be ' +
+          'without one', '');
   const bareOk = trust.bareKey({ kty: 'EC' });
   t.check(bareOk.ok, 'L. a bare JWK is left alone (OpenID Federation 1.1)', '');
   const carried = trust.bareKey({ kty: 'EC', x5c: [pemDer(expiredSelf.pem)
