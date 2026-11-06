@@ -10,10 +10,11 @@
 //
 // `local: true`, and `exclusive`: the hold is asked in the DEFAULT realm, because
 // a handshake has no realm in it, so a realm's own master and row decide nothing
-// there. Its section writes the default realm's master for a moment, and it adds a CA to the process's truststore. Both are put
-// back in a `finally`. What it asserts is what the service does: the token
-// endpoint's answer, what `GET /admin-api/tls-connection` reports of the
-// connection it was asked over, and the door's own count of refusals.
+// there. Its section writes the default realm's master for a moment, and it adds
+// a CA to the process's truststore. Both are put back in a `finally`. What it
+// asserts is what the service does: the token endpoint's answer, what `GET
+// /admin-api/tls-connection` reports of the connection it was asked over, and the
+// door's own count of refusals.
 //
 // LDAPS and the debugger are not driven here: a stack does not publish either for
 // a client certificate, and `tests/listener_path_rules.js` holds the same function
@@ -243,7 +244,7 @@ async function theMainPortHolds() {
                { key: "pki.paranoid", value: "on" });
     const onGood = await seen(good);
     const onCa = await seen(caLeaf);
-    // A handshake has no realm in it, so a realm's own row decides nothing here.
+    // A handshake has no realm in it, so a realm's row decides nothing here.
     await setRow(realmApi(), "pki.paranoidTlsClient", false);
     const realmRowOff = await seen(caLeaf);
     await setRow("/admin-api", "pki.paranoidTlsClient", false);
@@ -292,7 +293,7 @@ async function test() {
   assert.strictEqual(made.status, 200, made.raw.slice(0, 300));
   await anExpiredPinIsRefused();
   await theMainPortHolds();
-  assert.ok(checks >= 8, "only " + checks + " checks ran; a section has " +
+  assert.ok(checks >= 9, "only " + checks + " checks ran; a section has " +
                                           "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
