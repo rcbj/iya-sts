@@ -435,6 +435,27 @@ async function aFederationAnswer() {
   });
 }
 
+async function aNamedServersMetadata() {
+  log.info("=== 10. a named server's metadata member that is an object ===");
+  const realm = await makeRealm("ns");
+  const aliases = { token_endpoint: "https://mtls.example/token" };
+  const made = await hop("POST", realm.api + "/authorization-servers/create",
+                         { id: "ov-server", label: "Outside server" });
+  assert.strictEqual(made.status, 200, made.text.slice(0, 300));
+  const set = await hop("POST", realm.api + "/authorization-servers/set",
+    { profile: "ov-server", member: "mtls_endpoint_aliases",
+      value: JSON.stringify(aliases) });
+  stands("setting it", set);
+  const page = await hop("GET", realm.api + "/sts-metadata");
+  stands("the metadata page", page);
+  check("and it is shown as it was set", function () {
+    const server = page.json.namedServers.filter(function (one) {
+      return one.id === "ov-server";
+    })[0];
+    assert.deepStrictEqual(server.overrides.mtls_endpoint_aliases, aliases);
+  });
+}
+
 async function test() {
   log.debug("Entering test().");
   await aDelegate();
@@ -446,6 +467,7 @@ async function test() {
   await aSamlCacheDuration();
   await ldapWrites();
   await aFederationAnswer();
+  await aNamedServersMetadata();
   log.info(checks + " checks passed.");
   log.debug("Leaving test().");
 }
