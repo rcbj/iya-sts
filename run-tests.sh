@@ -81,6 +81,8 @@
 #                                             # `cluster` job runs the third
 #                                             # (2026-09-21)
 #   ./run-tests.sh --modes=cells --only=sts_cells --no-browser
+#   ./run-tests.sh --modes=schema-validation  # every answer held to its model,
+#                                             # one container, every deployment
 #                                             # the fourth mode, two cells of
 #                                             # one service (#98): run only
 #                                             # when named, never by a bare
@@ -430,6 +432,14 @@ do
   esac
   shift
 done
+
+# THE schema-validation MODE (#1353) is one container with everything in it,
+# named on its own: it starts no compose project, so nothing below applies.
+if [ "${RUN_MODES[*]}" = "schema-validation" ];
+then
+  # shellcheck disable=SC2086
+  exec "${CURRENT_DIR}/tests/schema-validation/run.sh" ${STS_TEST_ARGS}
+fi
 STS_TEST_ARGS="${STS_TEST_ARGS# }"
 
 # ---------------------------------------------------------------------------
