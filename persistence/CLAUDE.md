@@ -1133,28 +1133,52 @@ pin the three. **What to look for next time**: `STS-STORE-0021` repeating on one
 pid while `STS-WORKER-0007` barrier timeouts pile up — the flush is failing, not
 slow.
 
-### A PERMANENT DATA ERROR IS DROPPED, NOT RE-JOURNALLED (#1347, 2026-11-06)
+### A PERMANENT DATA ERROR IS ISOLATED BY A BISECT, NO GOOD ROW LOST (#1347, 2026-11-06)
 
 **The paragraph above re-journals every failed batch — and for a value a column
 can never hold, that is the wedge, not the fix.** The #1299 Schemathesis gate
 fed a `ttl` of `9.22e21` into `sts_minted.expires_at` (a bigint); the commit
 failed permanently (`22003`, or `22P02` once `String()` goes exponential), the
 keys went back on the journal, and every later write of that realm failed the
-same way — `STS-STORE-0066` fired 25,445 times in 77 minutes. rcbj's decision:
-**retain enough to post-mortem, and drop the rest.** So `flush()`'s catch asks
-`sql_dialect.isPermanentDataError(err)` FIRST — SQLSTATE class 22, or MariaDB's
-strict-mode data errnos (1264, 1690, 1406, 1292, 1366) — and on a match it does
-NOT re-journal: the batch's keys are dropped, `STS-STORE-0092` is logged, a
-bounded ring (`status().poisonDrops`, `droppedPoison`) records it, and a
-post-mortem audit row is written. The realm keeps flushing. A deadlock (`40P01`)
-or a serialization failure is NOT permanent and re-journals as above; a unique
-race (`23505`) is not either.
+same way — `STS-STORE-0066` fired 25,445 times in 77 minutes.
 
-* **No bisect.** A good row batched with the poison is dropped too; a client
-  whose request wrote one is answered 503 and recovers on its own retry, which
-  now commits (the in-memory copy is unchanged, and `expiryOf()`/`sortAtFor()`
-  cap the one known column to null — *A FAILED WRITE IS LOGGED*, the expiry
-  guard). Dropping the batch over isolating the poison is rcbj's call.
+**The first fix DROPPED the whole batch (rcbj: "retain enough to post-mortem,
+drop the rest"). rcbj then reversed the no-bisect part — "we can't have lost
+revoked certificates" — because a REVOCATION is an UPSERT in the minted batch,
+not a delete** (`admin_stats.revokedJtis`, `admin_stats.revokedArtifacts`,
+`access_token_status.invalid`, `vc_status.entries`, `gnap.biscuitRevocations`;
+`persistence/tiers.js`), so dropping the batch whole lost revocations. (Certificate
+authority revocations are NOT in this path — they are unions in the `sts_keys`
+row, `keystore.js`, retried by `keystore.retryFailed()`/`mergeKeys()` and never
+dropped; a `sts_keys` write holds service-generated JSON, so a class-22 there is
+not reachable from a request.)
+
+So `flush()`'s catch asks `sql_dialect.isPermanentDataError(err)` FIRST —
+SQLSTATE class 22, or MariaDB's strict-mode data errnos (1264, 1690, 1406, 1292,
+1366) — and on a match `isolatePermanent()` BISECTS: the whole-batch transaction
+already failed and committed nothing, so it splits the batch and flushes the
+parts in SEPARATE transactions, down to single rows. A part that commits is done
+(its change rows and merges are the driver's, per slice, through
+`applyCommitted()`); a SINGLE row that still fails permanently IS the poison —
+it is dropped, `STS-STORE-0092` names only it, the bounded ring
+(`status().poisonDrops`, `droppedPoison`) records it, and the post-mortem audit
+row is written. A deadlock (`40P01`), a serialization failure or a unique race
+(`23505`) is NOT permanent: during the split it stops the bisect and
+`reJournalAndReport()` puts the UNFINISHED rows back for the normal retry;
+whole-batch, it re-journals as the paragraph above. Every path ends with the
+poison gone and the rest committed or re-journalled, bounded by the batch size.
+
+* **Bisecting cannot deadlock.** Each slice's own `saveMinted()` locks
+  `ORDER BY handle, realm, key` in the SQL (both drivers), so two transactions —
+  slices included — take a shared row's lock in the one total order; the
+  `MINTED_FLUSH` header's "two flushes cannot deadlock" argument holds per
+  slice, and the residual 40P01 is re-journalled.
+* **The result is `written: true` with `permanent: true`** and
+  `poisonDropped` the LIST of dropped descriptors (one per poison row), so the
+  good-row requests are not answered 503. `expiryOf()`/`sortAtFor()` still cap
+  the one known bigint column to null before any engine sees it (*A FAILED WRITE
+  IS LOGGED*, the expiry guard), so the bisect is the backstop for any other
+  permanent error, not the first line.
 * **The audit row is written by `persistence.js`, not here.** `persistence_minted.js`
   cannot require `common/audit.js` — audit requires `persistence_replication.js`,
   which requires this module, so the require closes a cycle — so the drop is

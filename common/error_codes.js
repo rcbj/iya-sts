@@ -1912,12 +1912,13 @@ const CODES = [
       'reader would wait for numbers no transaction will commit.',
     spec: '' },
   { code: 'STS-STORE-0092',
-    summary: 'A minted flush batch was DROPPED, not retried, because the ' +
-      'commit failed with a permanent data error (a value a column can never ' +
-      'hold — an out-of-range bigint expiry, a value too long, a MariaDB ' +
-      'strict-mode refusal) that would wedge the realm\'s every later write ' +
-      'if re-journalled; the realm keeps flushing and a post-mortem audit ' +
-      'row records what was dropped.',
+    summary: 'One minted row was DROPPED after a flush bisect isolated it as ' +
+      'the row whose commit fails with a permanent data error (a value a ' +
+      'column can never hold — an out-of-range bigint expiry, a value too ' +
+      'long, a MariaDB strict-mode refusal) that would wedge the realm\'s ' +
+      'every later write if re-journalled; every other row in the batch ' +
+      'committed, the realm keeps flushing, and a post-mortem audit row ' +
+      'records what was dropped.',
     spec: '' },
   { code: 'STS-STORE-0100',
     summary: 'A value was refused on MariaDB because it is longer than its ' +
