@@ -282,6 +282,15 @@ function directChildByLocal(parent, localName, namespaceUri) {
 function signXml(xml, opts) {
   log.debug("Entering signXml().");
   const options = opts || {};
+  // THE XML SIGN CHOKEPOINT (#1368). `xmlSignatureChoice()` chooses within the
+  // list; this is what holds a caller that named a method itself.
+  if (options.sigAlg) {
+    const unsignable = signaturePolicy.signCause('xml', options.sigAlg);
+    if (unsignable) {
+      log.debug("Leaving signXml(). Not signed here.");
+      throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+    }
+  }
   const what = options.what || 'XML document';
   log.debug('Entering signXml(). what=' + what + ', placement=' +
             (options.placement || PLACEMENT.AFTER_ISSUER));
@@ -602,6 +611,14 @@ function xmlAlgorithmVerdict(signatureMethod, digestMethods, opts) {
     log.debug("Leaving xmlAlgorithmVerdict(). An HMAC with no shared key.");
     return out;
   }
+  // THE XML ACCEPT CHOKEPOINT (#1368), before any key operation.
+  const unaccepted = signaturePolicy.acceptCause('xml', signatureMethod);
+  if (unaccepted) {
+    out.problem = unaccepted.message;
+    out.code = unaccepted.code;
+    log.debug("Leaving xmlAlgorithmVerdict(). Not accepted here.");
+    return out;
+  }
   out.weak = sig.weak;
   out.sha1 = sig.sha1;
   const digests = digestMethods || [];
@@ -614,6 +631,13 @@ function xmlAlgorithmVerdict(signatureMethod, digestMethods, opts) {
           ? ': ' + XML_DIGEST_REFUSED[uri] : '');
       out.code = 'STS-KEYS-0061';
       log.debug("Leaving xmlAlgorithmVerdict(). Unknown DigestMethod.");
+      return out;
+    }
+    const digestRefused = signaturePolicy.acceptXmlDigestCause(dig.label);
+    if (digestRefused) {
+      out.problem = digestRefused.message;
+      out.code = digestRefused.code;
+      log.debug("Leaving xmlAlgorithmVerdict(). Digest not accepted here.");
       return out;
     }
     out.weak = out.weak || dig.weak;
@@ -1838,6 +1862,11 @@ function verifyWsSecurityHmac(xml, opts) {
  */
 function signQueryString(queryString, privateKeyPem, sigAlg, privateKey) {
   log.debug('Entering signQueryString().');
+  const unsignable = signaturePolicy.signCause('xml', sigAlg);
+  if (unsignable) {
+    log.debug('Leaving signQueryString(). Not signed here.');
+    throw errorCodes.mark(new Error(unsignable.message), unsignable.code);
+  }
   const pqMethod = xmldsig.SIG_METHODS[sigAlg] &&
     xmldsig.SIG_METHODS[sigAlg].postQuantum
     ? xmldsig.SIG_METHODS[sigAlg] : null;
@@ -10835,6 +10864,15 @@ function coseSignParams(spec, key) {
   return params;
 }
 
+// THE ONE COSE ACCEPT CHOKEPOINT (#1368), before any key operation. A hot path:
+// no Entering/Leaving pair. The code is marked, never in the message.
+function refuseUnacceptableCose(coseAlg) {
+  const cause = signaturePolicy.acceptCause('cose', String(coseAlg));
+  if (cause) {
+    throw errorCodes.mark(new Error(cause.message), cause.code);
+  }
+}
+
 // The row to sign with, or a refusal: a broken algorithm is never signed with.
 function coseSpecToSign(coseAlg) {
   log.debug("Entering coseSpecToSign(). alg=" + coseAlg);
@@ -10844,6 +10882,11 @@ function coseSpecToSign(coseAlg) {
     // error-code: none — a programming error; callers name a listed algorithm
     throw new Error('COSE: this service does not sign with algorithm ' +
                     String(coseAlg) + '.');
+  }
+  const cause = signaturePolicy.signCause('cose', String(coseAlg));
+  if (cause) {
+    log.debug("Leaving coseSpecToSign(). Not signed here.");
+    throw errorCodes.mark(new Error(cause.message), cause.code);
   }
   log.debug("Leaving coseSpecToSign().");
   return spec;
@@ -10910,6 +10953,7 @@ async function coseSign1SignAsync(coseAlg, key, protectedBytes, payload,
 function coseSign1Verify(coseAlg, key, protectedBytes, payload, signature,
                          options) {
   log.debug("Entering coseSign1Verify(). alg=" + coseAlg);
+  refuseUnacceptableCose(coseAlg);
   const ok = verifyCoseSignature(coseAlg, key,
     coseSigStructure(protectedBytes, options && options.external, payload),
     signature, { ecdsaEncoding: 'ieee-p1363' });
@@ -10931,6 +10975,7 @@ function coseSign1Verify(coseAlg, key, protectedBytes, payload, signature,
 async function coseSign1VerifyAsync(coseAlg, key, protectedBytes, payload,
                                     signature, options) {
   log.debug("Entering coseSign1VerifyAsync(). alg=" + coseAlg);
+  refuseUnacceptableCose(coseAlg);
   const spec = coseSignatureAlg(coseAlg);
   if (!spec || spec.family !== 'pq' || (key && key.spki !== undefined)) {
     log.debug("Leaving coseSign1VerifyAsync(). In process.");
@@ -17819,6 +17864,7 @@ module.exports = {
   hmac: hmac,
   parseCertificate: parseCertificate,
   decodeJws: decodeJws,
+  signaturePolicy: signaturePolicy,
   bbs: bbs,
   signRawSignatureAsync: signRawSignatureAsync,
   coseSign1Sign: coseSign1Sign,

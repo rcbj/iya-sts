@@ -315,6 +315,8 @@ var config = {
     postQuantumSigning: true,          // Post-quantum signing
     eddsaSigning: false,               // EdDSA signing
     signingAlgorithms: "",             // Signing algorithms this realm uses
+    pqcOnly: false,                    // Sign post-quantum only
+    acceptedSigningAlgorithms: "",     // JWS algorithms accepted
     jwksCertificateUrl: false,         // Name a published key's certificates by URL
     kidFormat: "internal",             // Signed token kid format
     kekProvider: "file",               // Key-encryption key provider; restart to apply
@@ -347,37 +349,110 @@ var config = {
     previousKekVault: ""               // Key Vault URL of the previous key; restart to apply
   },
 
-  // --- Global ----------------------------------------------------------
-  workers: {
-    startTimeoutMs: 60000,                                                                 // Request worker start limit (ms); restart to apply
-    giveUpRetryMs: 300000,                                                                 // Give-up retry wait (ms)
-    requestCount: 1,                                                                       // Request worker threads; restart to apply
-    heapLimitMb: 0,                                                                        // Heap limit per process (MiB); restart to apply
-    startConcurrency: 0,                                                                   // Request workers starting at once; restart to apply
-    dispatch: "*",                                                                         // Handled in a request worker; restart to apply
-    fanout: "/scim,/xacml,/admin-api,/account-api",                                        // Dispatched paths with no session affinity; restart to apply
-    surfaceCount: 0,                                                                       // Hosted-surface worker processes; restart to apply
-    surfaces: "/admin,/portal",                                                            // Paths handled by the hosted-surface workers; restart to apply
-    batch: "/scim,/admin/signals/receive,/portal/signals/receive,/report/signals/receive", // Batch traffic paths
-    batchWorkerShare: 50,                                                                  // Share of workers batch traffic may use (%)
-    batchConcurrency: 8,                                                                   // Batch requests in flight per lane worker
-    batchQueueLimit: 5000,                                                                 // Batch requests waiting
-    batchQueueTimeoutS: 60,                                                                // Longest a batch request waits (seconds)
-    maxSockets: 64,                                                                        // Connections per request worker; restart to apply
-    readYourWrite: "session",                                                              // Read-your-write across request workers
-    socketDir: ""                                                                          // Request worker socket directory; restart to apply
+  // --- Signing algorithms ----------------------------------------------
+  cose: {
+    algorithms: "",         // COSE algorithms signed with
+    acceptedAlgorithms: ""  // COSE algorithms accepted
   },
 
-  // --- Trust realms ----------------------------------------------------
-  realms: {
-    enabled: true,               // Trust realms enabled
-    pathSegment: "realm",        // Realm path segment
-    removalDeliveryTimeoutS: 10, // Realm removal: delivery wait (seconds)
-    maxCount: 10                 // Maximum number of realms
+  // --- Signing algorithms ----------------------------------------------
+  saml: {
+    signatureAlgorithms: "",                           // XML algorithms signed with
+    acceptedSignatureAlgorithms: "",                   // XML algorithms accepted
+    acceptedDigestAlgorithms: "",                      // XML digests accepted
+    clockSkewS: 0,                                     // Assertion clock skew (s)
+    signatureAlgorithm: "rsa-sha256",                  // XML signature algorithm
+    canonicalizationAlgorithm: "exclusive",            // XML canonicalization
+    allowSha1Signatures: false,                        // Accept SHA-1 XML signatures
+    organizationName: "sts",                           // Metadata OrganizationName
+    organizationDisplayName: "Security token service", // Metadata OrganizationDisplayName
+    organizationUrl: ""                                // Metadata OrganizationURL
   },
 
-  // --- OAuth 2.0 / OIDC ------------------------------------------------
+  // --- Signing algorithms ----------------------------------------------
+  vc: {
+    cryptosuites: "",         // Data Integrity suites signed with
+    acceptedCryptosuites: ""  // Data Integrity suites accepted
+  },
+
+  // --- Signing algorithms ----------------------------------------------
+  pki: {
+    acceptedSignatureAlgorithms: "",            // Certificate signatures accepted
+    crlLifetimeMinutes: 60,                     // How long a CRL claims to be fresh
+    httpPort: 8082,                             // Plain-HTTP revocation listener port; restart to apply
+    distributionBaseUrl: "",                    // Base URL published in CRL and OCSP addresses
+    distributionPort: 0,                        // Port published in HTTP CRL and OCSP addresses
+    distributionLdapHost: "",                   // Host published in ldap:// CRL addresses
+    distributionLdapPort: 0,                    // Port published in ldap:// CRL addresses
+    publishCrlToDirectory: true,                // Publish every CRL into the embedded directory
+    autoBuild: true,                            // Build the certificate authority at startup; restart to apply
+    keyAlgorithm: "rsa-2048",                   // Default CA key algorithm
+    signatureAlgorithm: "",                     // Default CA signature algorithm
+    alternativeKeyAlgorithm: "none",            // CA alternative (post-quantum) key algorithm
+    organisation: "iya-sts",                    // Default organisation name (O=)
+    personSelfService: true,                    // Let a person issue their own signing key pair
+    leafLifetimeDays: 365,                      // Default lifetime of an issued key pair (days)
+    rootLifetimeYears: 0,                       // Root CA lifetime (years, 0 = the profile's)
+    intermediateLifetimeYears: 0,               // Intermediate CA lifetime (years, 0 = the profile's)
+    issuingLifetimeYears: 0,                    // Issuing CA lifetime (years, 0 = the profile's)
+    maxStoredObjects: 200,                      // Certificates and keys the workbench store keeps, per realm
+    personSelfServicePerIdentity: 5,            // Self-issued key pairs one person may ask for per window
+    personSelfServicePerAddress: 5,             // Self-issued key pairs one address may ask for per window
+    personTlsClientCertificateMax: 5,           // TLS client certificates one person may hold
+    personSigningKeyMax: 5,                     // Signing key pairs one person may hold per profile
+    applicationTlsClientCertificateMax: 5,      // TLS client certificates one application may hold
+    messageSigningCertificateMax: 5,            // Message-signing certificates one holder may hold
+    pinnedSigners: false,                       // Sign with a pinned key pair
+    pinnedSignerLeadMinutes: 1440,              // Publish a pinned key this long before it signs (minutes)
+    pinnedSignerExpiryWarningDays: 30,          // Warn this long before a pinned key's certificate expires (days)
+    revocationCheck: "auto",                    // Revocation check on a presented certificate
+    revocationRequireDistributionPoint: "auto", // Refuse a certificate whose issuer names no CRL and no OCSP responder
+    revocationFetchTimeoutMs: 3000,             // CRL fetch timeout (milliseconds)
+    revocationMaxCrlBytes: 1048576,             // Largest CRL fetched (bytes)
+    revocationCrlCacheEntries: 256,             // Foreign CRLs kept in memory
+    revocationCrlMaxAgeS: 3600,                 // Longest a fetched CRL is believed (seconds)
+    revocationFailureRetryS: 60,                // Wait before retrying a CRL that failed (seconds)
+    revocationOcsp: "first",                    // OCSP for a foreign certificate
+    revocationOcspMaxAgeS: 3600,                // Longest an OCSP response is believed (seconds)
+    revocationOcspRequireNonce: false,          // Refuse an OCSP response that does not echo the nonce
+    revocationClockSkewS: 300,                  // Clock skew allowed on CRL and OCSP freshness (seconds)
+    revocationCrlIssuersFile: "",               // Certificates that may sign an indirect CRL
+    revocationLdap: "ldaps",                    // LDAP revocation addresses
+    revocationLdapCaFile: "",                   // CA certificates for ldaps revocation directories
+    revocationHttpsCaFile: "",                  // CA certificates for https CRL and OCSP servers
+    revocationLdapDirectory: "",                // Directory for CRL names relative to their issuer
+    enrollmentMaxCertificatesPerEntry: 20,      // Enrolled certificates one entry may hold
+    paranoid: "auto",                           // Paranoid PKI mode
+    paranoidTlsClient: true,                    // Paranoid: a client certificate at a TLS handshake
+    paranoidTlsClientSelfSigned: true,          // Paranoid: a self-signed TLS client certificate a client registered
+    paranoidOutboundTls: true,                  // Paranoid: the server certificate of an outbound request
+    paranoidJoseSigner: true,                   // Paranoid: a JOSE signer's certificate chain
+    paranoidSamlSigner: true,                   // Paranoid: a SAML signer's certificate
+    paranoidFederationPartner: true,            // Paranoid: a federation partner's signing certificate
+    paranoidWsSecurityToken: true,              // Paranoid: a WS-Security X.509 token
+    paranoidJoseBareKey: true,                  // Paranoid: a bare JWK that carries an x5c
+    paranoidEncryptionRecipient: true,          // Paranoid: an encryption recipient's certificate
+    paranoidClientAttestation: true,            // Paranoid: an attestation-based client authentication chain
+    paranoidWebauthnAttestation: true,          // Paranoid: a WebAuthn attestation chain
+    paranoidDeviceAttestation: true,            // Paranoid: a device attestation chain
+    paranoidSpiffeSvid: true,                   // Paranoid: an X509-SVID presented to the SPIRE Server or Broker API
+    paranoidSpiffeAttestation: true,            // Paranoid: a SPIFFE node attestor's certificate
+    paranoidPkinit: true,                       // Paranoid: a PKINIT client certificate
+    paranoidEnrollmentCredential: true,         // Paranoid: a certificate presented to enroll or renew
+    paranoidVcKeyAttestation: true,             // Paranoid: an OpenID4VCI key attestation chain
+    paranoidVcIssuer: true,                     // Paranoid: a credential issuer's or status-list signer's certificate
+    paranoidCellPeer: true,                     // Paranoid: the other cell at the inter-cell channel
+    paranoidCaImport: true,                     // Paranoid: a CA or key pair an operator imports
+    paranoidAnchorAdmission: true,              // Paranoid: admission to a truststore
+    paranoidRevocationSigner: true,             // Paranoid: an OCSP responder or CRL signer
+    paranoidFidoMds: true,                      // Paranoid: the FIDO Metadata Service BLOB signer
+    signerTrustAnchorsFile: "",                 // Signer truststore: a PEM file of anchors and intermediates; restart to apply
+    pinnedCertificateWarningDays: 30            // Pinned certificate expiry warning (days)
+  },
+
+  // --- Signing algorithms ----------------------------------------------
   oauth2: {
+    httpSignatureAcceptedAlgorithms: "",           // HTTP signature algorithms accepted
     issuer: "",                                    // Issuer identifier
     rfc9700: false,                                // RFC 9700 mode; restart to apply
     allowImplicitTokenResponses: false,            // Allow token response types under RFC 9700
@@ -554,6 +629,35 @@ var config = {
     backchannelLogoutSummaryS: 60                  // Back-channel logout summary interval (seconds)
   },
 
+  // --- Global ----------------------------------------------------------
+  workers: {
+    startTimeoutMs: 60000,                                                                 // Request worker start limit (ms); restart to apply
+    giveUpRetryMs: 300000,                                                                 // Give-up retry wait (ms)
+    requestCount: 1,                                                                       // Request worker threads; restart to apply
+    heapLimitMb: 0,                                                                        // Heap limit per process (MiB); restart to apply
+    startConcurrency: 0,                                                                   // Request workers starting at once; restart to apply
+    dispatch: "*",                                                                         // Handled in a request worker; restart to apply
+    fanout: "/scim,/xacml,/admin-api,/account-api",                                        // Dispatched paths with no session affinity; restart to apply
+    surfaceCount: 0,                                                                       // Hosted-surface worker processes; restart to apply
+    surfaces: "/admin,/portal",                                                            // Paths handled by the hosted-surface workers; restart to apply
+    batch: "/scim,/admin/signals/receive,/portal/signals/receive,/report/signals/receive", // Batch traffic paths
+    batchWorkerShare: 50,                                                                  // Share of workers batch traffic may use (%)
+    batchConcurrency: 8,                                                                   // Batch requests in flight per lane worker
+    batchQueueLimit: 5000,                                                                 // Batch requests waiting
+    batchQueueTimeoutS: 60,                                                                // Longest a batch request waits (seconds)
+    maxSockets: 64,                                                                        // Connections per request worker; restart to apply
+    readYourWrite: "session",                                                              // Read-your-write across request workers
+    socketDir: ""                                                                          // Request worker socket directory; restart to apply
+  },
+
+  // --- Trust realms ----------------------------------------------------
+  realms: {
+    enabled: true,               // Trust realms enabled
+    pathSegment: "realm",        // Realm path segment
+    removalDeliveryTimeoutS: 10, // Realm removal: delivery wait (seconds)
+    maxCount: 10                 // Maximum number of realms
+  },
+
   // --- Devices ---------------------------------------------------------
   devices: {
     maxPerPerson: 20,                                                      // Devices one person may hold
@@ -583,80 +687,6 @@ var config = {
     browserTokenLifetimeDays: 180,                                         // Remembered browser cookie lifetime (days)
     browserReissueGraceSeconds: 60,                                        // Remembered browser: previous token accepted for (seconds)
     browserTokenCertificateHeader: "x5u"                                   // Remembered browser token certificate header
-  },
-
-  // --- PKI -------------------------------------------------------------
-  pki: {
-    crlLifetimeMinutes: 60,                     // How long a CRL claims to be fresh
-    httpPort: 8082,                             // Plain-HTTP revocation listener port; restart to apply
-    distributionBaseUrl: "",                    // Base URL published in CRL and OCSP addresses
-    distributionPort: 0,                        // Port published in HTTP CRL and OCSP addresses
-    distributionLdapHost: "",                   // Host published in ldap:// CRL addresses
-    distributionLdapPort: 0,                    // Port published in ldap:// CRL addresses
-    publishCrlToDirectory: true,                // Publish every CRL into the embedded directory
-    autoBuild: true,                            // Build the certificate authority at startup; restart to apply
-    keyAlgorithm: "rsa-2048",                   // Default CA key algorithm
-    signatureAlgorithm: "",                     // Default CA signature algorithm
-    alternativeKeyAlgorithm: "none",            // CA alternative (post-quantum) key algorithm
-    organisation: "iya-sts",                    // Default organisation name (O=)
-    personSelfService: true,                    // Let a person issue their own signing key pair
-    leafLifetimeDays: 365,                      // Default lifetime of an issued key pair (days)
-    rootLifetimeYears: 0,                       // Root CA lifetime (years, 0 = the profile's)
-    intermediateLifetimeYears: 0,               // Intermediate CA lifetime (years, 0 = the profile's)
-    issuingLifetimeYears: 0,                    // Issuing CA lifetime (years, 0 = the profile's)
-    maxStoredObjects: 200,                      // Certificates and keys the workbench store keeps, per realm
-    personSelfServicePerIdentity: 5,            // Self-issued key pairs one person may ask for per window
-    personSelfServicePerAddress: 5,             // Self-issued key pairs one address may ask for per window
-    personTlsClientCertificateMax: 5,           // TLS client certificates one person may hold
-    personSigningKeyMax: 5,                     // Signing key pairs one person may hold per profile
-    applicationTlsClientCertificateMax: 5,      // TLS client certificates one application may hold
-    messageSigningCertificateMax: 5,            // Message-signing certificates one holder may hold
-    pinnedSigners: false,                       // Sign with a pinned key pair
-    pinnedSignerLeadMinutes: 1440,              // Publish a pinned key this long before it signs (minutes)
-    pinnedSignerExpiryWarningDays: 30,          // Warn this long before a pinned key's certificate expires (days)
-    revocationCheck: "auto",                    // Revocation check on a presented certificate
-    revocationRequireDistributionPoint: "auto", // Refuse a certificate whose issuer names no CRL and no OCSP responder
-    revocationFetchTimeoutMs: 3000,             // CRL fetch timeout (milliseconds)
-    revocationMaxCrlBytes: 1048576,             // Largest CRL fetched (bytes)
-    revocationCrlCacheEntries: 256,             // Foreign CRLs kept in memory
-    revocationCrlMaxAgeS: 3600,                 // Longest a fetched CRL is believed (seconds)
-    revocationFailureRetryS: 60,                // Wait before retrying a CRL that failed (seconds)
-    revocationOcsp: "first",                    // OCSP for a foreign certificate
-    revocationOcspMaxAgeS: 3600,                // Longest an OCSP response is believed (seconds)
-    revocationOcspRequireNonce: false,          // Refuse an OCSP response that does not echo the nonce
-    revocationClockSkewS: 300,                  // Clock skew allowed on CRL and OCSP freshness (seconds)
-    revocationCrlIssuersFile: "",               // Certificates that may sign an indirect CRL
-    revocationLdap: "ldaps",                    // LDAP revocation addresses
-    revocationLdapCaFile: "",                   // CA certificates for ldaps revocation directories
-    revocationHttpsCaFile: "",                  // CA certificates for https CRL and OCSP servers
-    revocationLdapDirectory: "",                // Directory for CRL names relative to their issuer
-    enrollmentMaxCertificatesPerEntry: 20,      // Enrolled certificates one entry may hold
-    paranoid: "auto",                           // Paranoid PKI mode
-    paranoidTlsClient: true,                    // Paranoid: a client certificate at a TLS handshake
-    paranoidTlsClientSelfSigned: true,          // Paranoid: a self-signed TLS client certificate a client registered
-    paranoidOutboundTls: true,                  // Paranoid: the server certificate of an outbound request
-    paranoidJoseSigner: true,                   // Paranoid: a JOSE signer's certificate chain
-    paranoidSamlSigner: true,                   // Paranoid: a SAML signer's certificate
-    paranoidFederationPartner: true,            // Paranoid: a federation partner's signing certificate
-    paranoidWsSecurityToken: true,              // Paranoid: a WS-Security X.509 token
-    paranoidJoseBareKey: true,                  // Paranoid: a bare JWK that carries an x5c
-    paranoidEncryptionRecipient: true,          // Paranoid: an encryption recipient's certificate
-    paranoidClientAttestation: true,            // Paranoid: an attestation-based client authentication chain
-    paranoidWebauthnAttestation: true,          // Paranoid: a WebAuthn attestation chain
-    paranoidDeviceAttestation: true,            // Paranoid: a device attestation chain
-    paranoidSpiffeSvid: true,                   // Paranoid: an X509-SVID presented to the SPIRE Server or Broker API
-    paranoidSpiffeAttestation: true,            // Paranoid: a SPIFFE node attestor's certificate
-    paranoidPkinit: true,                       // Paranoid: a PKINIT client certificate
-    paranoidEnrollmentCredential: true,         // Paranoid: a certificate presented to enroll or renew
-    paranoidVcKeyAttestation: true,             // Paranoid: an OpenID4VCI key attestation chain
-    paranoidVcIssuer: true,                     // Paranoid: a credential issuer's or status-list signer's certificate
-    paranoidCellPeer: true,                     // Paranoid: the other cell at the inter-cell channel
-    paranoidCaImport: true,                     // Paranoid: a CA or key pair an operator imports
-    paranoidAnchorAdmission: true,              // Paranoid: admission to a truststore
-    paranoidRevocationSigner: true,             // Paranoid: an OCSP responder or CRL signer
-    paranoidFidoMds: true,                      // Paranoid: the FIDO Metadata Service BLOB signer
-    signerTrustAnchorsFile: "",                 // Signer truststore: a PEM file of anchors and intermediates; restart to apply
-    pinnedCertificateWarningDays: 30            // Pinned certificate expiry warning (days)
   },
 
   // --- ACME ------------------------------------------------------------
@@ -758,17 +788,6 @@ var config = {
     spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified", // NameIDFormat in this service's SP metadata
     atprotoPlcDirectory: "https://plc.directory",                            // PLC directory for Bluesky sign-ins
     encryptionKeyGraceS: 86400                                               // Previous encryption key kept for (seconds)
-  },
-
-  // --- SAML ------------------------------------------------------------
-  saml: {
-    clockSkewS: 0,                                     // Assertion clock skew (s)
-    signatureAlgorithm: "rsa-sha256",                  // XML signature algorithm
-    canonicalizationAlgorithm: "exclusive",            // XML canonicalization
-    allowSha1Signatures: false,                        // Accept SHA-1 XML signatures
-    organizationName: "sts",                           // Metadata OrganizationName
-    organizationDisplayName: "Security token service", // Metadata OrganizationDisplayName
-    organizationUrl: ""                                // Metadata OrganizationURL
   },
 
   // --- SAML 2.0 assertions ---------------------------------------------

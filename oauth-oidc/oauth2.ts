@@ -2470,7 +2470,7 @@ class OAuth2Server {
    * @returns the algorithm
    */
   accessTokenAlg(req?: Req): string {
-    const { log, config, fapi, authorizationServers } = this.deps;
+    const { log, config, fapi, authorizationServers, stsCrypto } = this.deps;
     log.debug("Entering OAuth2Server.accessTokenAlg().");
     const profileId = req ? this.profileOf(req) : '';
     const own = profileId && profileId !== authorizationServers.DEFAULT_ID
@@ -2479,7 +2479,8 @@ class OAuth2Server {
     const set = String(config.value('oauth2.accessTokenSigningAlg') ||
                        'default');
     let alg = named || (set !== 'default' ? set : '') ||
-              fapi.defaultSigningAlg() || 'RS256';
+              fapi.defaultSigningAlg() ||
+              stsCrypto.signaturePolicy.defaultJoseAlg();
     // Replaced for FAPI's reason just below: the server's own signature, which
     // nothing a client did asked for (#1348, #1368). RS256 is always usable.
     alg = helpers.usableSigningAlg(alg);
