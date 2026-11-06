@@ -51,6 +51,7 @@
 // ===========================================================================
 
 import fs = require('fs');
+import tls = require('tls');
 import path = require('path');
 import helpers = require('./helpers');
 import config = require('./config');
@@ -72,6 +73,8 @@ type TrustVerdict = import('../types/certificate_trust').TrustVerdict;
 type PinnedSource = import('../types/certificate_trust').PinnedSource;
 type PinnedCertificate = import('../types/certificate_trust').PinnedCertificate;
 
+// `bundledAnchors()`'s index.
+let bundledRoots: Map<string, Buffer> | null = null;
 const { EKU } = stsCrypto;
 const SIGNS = ['digitalSignature'];
 const TLS_CLIENT_USAGE = ['digitalSignature', 'keyAgreement'];
@@ -1428,6 +1431,60 @@ class CertificateTrust {
     return { ok: true, inForce: true, check: '', code: '', why: '' };
   }
 
+  // Subject and key, which is what makes a certificate the same trust anchor
+  // as another: a cross-signed copy of a root differs in nothing that matters.
+  private static anchorIdOf(der: Json): string {
+    helpers.log.debug("Entering CertificateTrust.anchorIdOf().");
+    const facts = stsCrypto.certificateFacts(der);
+    helpers.log.debug("Leaving CertificateTrust.anchorIdOf().");
+    return facts.subject + '|' + facts.spkiSha256;
+  }
+
+  // Node's bundled roots, indexed once: they cannot change while it runs.
+  private static bundledAnchors(): Map<string, Buffer> {
+    helpers.log.debug("Entering CertificateTrust.bundledAnchors().");
+    if (!bundledRoots) {
+      bundledRoots = new Map();
+      pki.certificateBundle(tls.rootCertificates.join('\n')).certificates
+        .forEach(function (one: Json) {
+          bundledRoots.set(CertificateTrust.anchorIdOf(one.der), one.der);
+        });
+    }
+    helpers.log.debug("Leaving CertificateTrust.bundledAnchors().");
+    return bundledRoots;
+  }
+
+  // A PATH ENDS AT ITS TRUST ANCHOR (RFC 5280 section 6.1). A server may send a
+  // root cross-signed by an older one: Google's chains end at GTS Root R4 under
+  // GlobalSign Root CA, which it does not send. OpenSSL stops at the anchor it
+  // holds, and asking revocation of what lies above it asked about a
+  // certificate nothing relies on, which hard-fail then refused for having no
+  // issuer: every Google endpoint, in product mode. Nothing here makes a chain
+  // trusted: OpenSSL has verified it by the time this is asked, and what is
+  // below the anchor is still walked.
+  private static endingAtAnchor(chain: Buffer[], realmId: string): Buffer[] {
+    helpers.log.debug("Entering CertificateTrust.endingAtAnchor().");
+    const bundled = CertificateTrust.bundledAnchors();
+    const held = new Map<string, Buffer>();
+    signerTruststore.anchorsFor(realmId, 'tls-server-outbound').anchors
+      .forEach(function (der: Buffer) {
+        held.set(CertificateTrust.anchorIdOf(der), der);
+      });
+    for (let i = 0; i < chain.length; i++) {
+      if (!CertificateTrust.readable(chain[i])) {
+        continue;
+      }
+      const id = CertificateTrust.anchorIdOf(chain[i]);
+      const anchor = held.get(id) || bundled.get(id);
+      if (anchor) {
+        helpers.log.debug("Leaving CertificateTrust.endingAtAnchor(). " + i);
+        return chain.slice(0, i).concat([anchor]);
+      }
+    }
+    helpers.log.debug("Leaving CertificateTrust.endingAtAnchor(). None.");
+    return chain;
+  }
+
   /**
    * What a handshake's peer owes once OpenSSL has verified it, with revocation:
    * `holdPeer()`, then the fetch a hold cannot wait for. Counted and audited as
@@ -1469,7 +1526,9 @@ class CertificateTrust {
         const rule = CertificateTrust.ruleOf(purpose, opts.variant);
         const certs = CertificateTrust.certificatesOf({ peer: peer });
         const fetched = await revocationStatus.verdictFor(
-          { leaf: certs.leaf, chain: certs.chain, verified: true },
+          { leaf: certs.leaf,
+            chain: CertificateTrust.endingAtAnchor(certs.chain, realmId),
+            verified: true },
           { stapled: opts.staple || undefined });
         if (rule.softRevocation && fetched.refused &&
             fetched.status !== 'revoked') {
