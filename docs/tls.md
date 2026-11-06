@@ -477,6 +477,26 @@ handshake. See the `tls-client` row of the [use cases](pki-use-cases.md). A regi
 `self_signed_tls_client_auth` certificate is held to its validity and keyUsage too,
 while equality stays the method (`tls-client-self-signed`).
 
+**A TLS handshake has no realm in it, so a realm's own rows mostly do not decide
+it.** The path that names a realm arrives after the handshake is over, so which
+realm's setting applies depends on the listener:
+
+| Where a client certificate arrives | Whose settings decide |
+|---|---|
+| The main port, a custom listener, LDAPS, the debugger listener | The **default realm's** `pki.paranoid` and `pki.paranoidTlsClient`, whichever realm the request later names |
+| The channel between cells | `pki.paranoid` and `pki.paranoidCellPeer`, read outside any realm |
+| A use case decided on a request, such as `tls-client-self-signed` | The realm of that request |
+
+So setting `pki.paranoid` or `pki.paranoidTlsClient` in another realm changes nothing
+at these handshakes, in either direction: it neither turns the hold on for that realm
+nor weakens it. To change them, change the default realm's rows.
+
+SPIFFE's gRPC sockets belong to one realm each, told apart by address. There, the
+realm's own `pki.paranoid` and `pki.paranoidTlsClient` decide one thing: whether the
+SPIRE Server API may bind in plain text when it could not be given a TLS identity.
+They add no check to each connection there: those sockets verify a caller's SVID
+themselves, as [SPIFFE](spiffe.md) describes.
+
 **Why it starts empty.** The certificate authority whose clients it verifies is
 often generated in somebody's *browser* minutes before the connection, and
 exists nowhere else, so no configuration file could hold it and no image could
