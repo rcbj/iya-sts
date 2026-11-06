@@ -229,7 +229,6 @@ Scope: `admin:write`.
 | `result.backchannel[].attempts` | number |  |  |
 | `result.backchannel[].clientId` | string |  |  |
 | `result.backchannel[].encrypted` | string |  |  |
-| `result.backchannel[].errorCode` | string, or null |  |  |
 | `result.backchannel[].finishedAt` | string |  |  |
 | `result.backchannel[].generation` | number |  |  |
 | `result.backchannel[].holder` | string |  |  |
@@ -315,7 +314,6 @@ Scope: `admin:write`.
 | `result.backchannel[].attempts` | number |  |  |
 | `result.backchannel[].clientId` | string |  |  |
 | `result.backchannel[].encrypted` | string |  |  |
-| `result.backchannel[].errorCode` | string, or null |  |  |
 | `result.backchannel[].finishedAt` | string |  |  |
 | `result.backchannel[].generation` | number |  |  |
 | `result.backchannel[].holder` | string |  |  |

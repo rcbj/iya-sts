@@ -339,6 +339,19 @@ function unionsAndExceptions(t) {
   } });
   t.check(passed && passed.status === 400,
           'a status below 500 is somebody else\'s');
+  // The answer is to what was asked, whatever the request says by the send.
+  const app = fakeApp();
+  models.install(app, '/api', function () {
+    return doc;
+  });
+  const forged = { method: 'GET', baseUrl: '/api', path: '/u' };
+  const asked = fakeResponse('application/json');
+  app.middleware(forged, asked, function () {});
+  forged.baseUrl = '';
+  forged.path = '/.well-known/openid-federation';
+  asked.send(JSON.stringify({ a: 'x' }));
+  t.equal(asked.statusCode, 200, 'an answer is judged by the path it was ' +
+          'asked on, not by one the request was changed to: ' + asked.sent);
   log.debug("Leaving unionsAndExceptions().");
 }
 
@@ -442,10 +455,132 @@ function aFinishedGrantMeetsEveryModel(t, docs) {
   log.debug("Leaving aFinishedGrantMeetsEveryModel().");
 }
 
+// AN ERROR CODE IS AN OPERATOR'S NAME, RECORDED AND NEVER SENT, with the one
+// exception rcbj allowed on 2026-11-06 (#1355): an administrator's console page
+// that draws it for someone diagnosing a recorded failure. Nothing here is a
+// list of what MAY be added; each row names the page that draws the member.
+const DRAWN_CODE_OPERATIONS = {
+  getAudit: 'admin-ui/web_audit.ts: the audit log',
+  getUsers: 'admin-ui/web_users.ts: a person\'s attempts, as audit rows',
+  getApplications: 'admin-ui/web_applications.ts: an application\'s attempts',
+  getScheduler: 'admin-ui/web_scheduler.ts: a run that failed',
+  getRisk: 'admin-ui/web_risk.ts: the failure history',
+  getMailOutbox: 'admin-ui/web_mail_outbox.ts: a message that failed',
+  getLiveSessions: 'logout/web_logout.ts: a dead back-channel delivery',
+  getProviderCommands: 'oauth-oidc/web_provider_commands.ts: a delivery',
+  getOutboundDeliveries: 'oauth-oidc/web_provider_commands.ts: every kind',
+  getSsf: 'ssf/web_ssf.ts: a stream\'s dead letters',
+  getSsfDeadLetters: 'ssf/web_ssf_dead_letters.ts: why letters are held',
+  getScim: 'scim/web_scim_clients.ts: the Clients tab\'s dead deliveries',
+  getScimClients: 'scim/web_scim_clients.ts: a client\'s dead deliveries',
+  getAttributeSources: 'attribute-sources/web_attribute_sources.ts: last error',
+  getAcmeMonitor: 'acme/web_acme.ts: refused requests',
+  getEstMonitor: 'est/web_est.ts: refused requests',
+  getScepMonitor: 'scep/web_scep.ts: refused requests'
+};
+
+// `code` is too common a word to catch by name, so these are the ones kept,
+// each checked to be still there.
+const DRAWN_PLAIN_CODES = {
+  'getErrorCodes codes.code': 'admin-ui/web_error_codes.ts: the catalogue',
+  'getErrorCodes unregisteredSeen.code': 'admin-ui/web_error_codes.ts: the ' +
+    'audit codes the catalogue does not hold',
+  'getAudit filter.code': 'admin-ui/web_audit.ts: the filter, as asked',
+  'getListeners problem.code': 'admin-ui/web_listeners.ts: a bad setting',
+  'getSsfDeadLetters causes.code': 'ssf/web_ssf_dead_letters.ts: each cause',
+  'getUma whatIf.code': 'uma/web_uma.ts: the dry run\'s verdict'
+};
+
+const CODE_MEMBER = /^(errorCode|errorCodes|lastCode|byCode)$/;
+
+// Every member path in one operation's answers, following `$ref`.
+function memberPaths(doc, schema, prefix, seen, out) {
+  log.debug("Entering memberPaths().");
+  let node = schema;
+  while (node && node.$ref) {
+    node = doc.components.schemas[String(node.$ref).split('/').pop()];
+  }
+  if (!node || typeof node !== 'object' || seen.indexOf(node) >= 0) {
+    log.debug("Leaving memberPaths(). Nothing further.");
+    return out;
+  }
+  const below = seen.concat([node]);
+  Object.keys(node.properties || {}).forEach(function (name) {
+    const at = prefix ? prefix + '.' + name : name;
+    out.push(at);
+    memberPaths(doc, node.properties[name], at, below, out);
+  });
+  ['items', 'additionalProperties'].forEach(function (key) {
+    memberPaths(doc, node[key], prefix, below, out);
+  });
+  ['oneOf', 'anyOf', 'allOf'].forEach(function (key) {
+    (node[key] || []).forEach(function (one) {
+      memberPaths(doc, one, prefix, below, out);
+    });
+  });
+  log.debug("Leaving memberPaths().");
+  return out;
+}
+
+function codesOnlyWhereDrawn(t, docs) {
+  log.debug("Entering codesOnlyWhereDrawn().");
+  const Kit = require('../common/response_model_kit');
+  const body = { ok: true, errorCode: 'x', rows: [{ errorCode: 'y', id: 1 }] };
+  t.equal(JSON.stringify(Kit.stripCodes(body)),
+          JSON.stringify({ ok: true, rows: [{ id: 1 }] }),
+          'an act\'s answer loses a code at any depth');
+  const found = {};
+  ['admin', 'account', 'authn', 'report'].forEach(function (api) {
+    const doc = docs[api];
+    Object.keys(doc.paths).forEach(function (p) {
+      Object.keys(doc.paths[p]).forEach(function (m) {
+        const op = doc.paths[p][m] || {};
+        Object.keys(op.responses || {}).forEach(function (status) {
+          const content = op.responses[status].content || {};
+          Object.keys(content).forEach(function (type) {
+            memberPaths(doc, content[type].schema, '', [], []).forEach(
+              function (at) {
+                const key = api + ' ' + op.operationId;
+                found[key] = found[key] || new Set();
+                found[key].add(at);
+              });
+          });
+        });
+      });
+    });
+  });
+  const wrong = [];
+  Object.keys(found).forEach(function (key) {
+    const [api, id] = key.split(' ');
+    found[key].forEach(function (at) {
+      const named = CODE_MEMBER.test(at.split('.').pop());
+      if (named && (api !== 'admin' || !DRAWN_CODE_OPERATIONS[id])) {
+        wrong.push(key + ' ' + at);
+      }
+    });
+  });
+  t.check(wrong.length === 0, 'a code is a member only where a console page ' +
+          'draws it; these are not listed:\n  ' + wrong.join('\n  '));
+  Object.keys(DRAWN_CODE_OPERATIONS).forEach(function (id) {
+    const members = Array.from(found['admin ' + id] || []);
+    t.check(members.some(function (at) {
+      return CODE_MEMBER.test(at.split('.').pop());
+    }), id + ' is listed and still carries a code: ' +
+        DRAWN_CODE_OPERATIONS[id]);
+  });
+  Object.keys(DRAWN_PLAIN_CODES).forEach(function (key) {
+    const [id, at] = key.split(' ');
+    t.check((found['admin ' + id] || new Set()).has(at), key + ' is still ' +
+            'there: ' + DRAWN_PLAIN_CODES[key]);
+  });
+  log.debug("Leaving codesOnlyWhereDrawn().");
+}
+
 function ruleOverDocuments(t) {
   log.debug("Entering ruleOverDocuments().");
   const docs = documents();
   aFinishedGrantMeetsEveryModel(t, docs);
+  codesOnlyWhereDrawn(t, docs);
   delete docs.finalization;
   let total = 0;
   Object.keys(docs).forEach(function (api) {

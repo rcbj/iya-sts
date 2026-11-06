@@ -119,7 +119,7 @@ copy of it is the parent's concern: this file is not vendored to it.
 re-syncs since #1280.*
 
 **Six files were re-copied from the parent on 2026-09-10 and two of them are
-new**, for `/admin/pki`'s Certificate & Key Configuration pane: it needs the
+new**, for `/admin/pki`'s Certificate Workbench: it needs the
 PKCS#10 request and the post-quantum certificate encodings, and the copies here
 were a snapshot from before either existed.
 

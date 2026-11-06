@@ -2925,9 +2925,18 @@ class AdminViews {
     });
     log.debug("Leaving AdminViews.rolesPreview(). " +
               (answer.allowed ? 'Permit.' : 'Refused.'));
-    return Object.assign({ asked: { application: application, subject: who,
-                                    subjectKind: kind, kind: issuance },
-                           available: true }, answer);
+    // The passkey verdict's `code` is what the sign-in records when it acts on
+    // it; no console page draws it here, so it leaves the answer (#1355).
+    const shown: any = Object.assign({ asked: { application: application,
+                                                subject: who,
+                                                subjectKind: kind,
+                                                kind: issuance },
+                                       available: true }, answer);
+    if (shown.passkey) {
+      shown.passkey = Object.assign({}, shown.passkey);
+      delete shown.passkey.code;
+    }
+    return shown;
   }
 
   // Which person the four tables show values for, and where the page sends
@@ -3643,8 +3652,14 @@ class AdminViews {
           id: one.id, port: one.port, publicBaseUrl: one.publicBaseUrl,
           hostnames: one.hostnames, clientAuth: one.clientAuth,
           certificateSource: one.certificateFile ? 'file' : 'issued',
+          // Without `code`: `why` is what a page says, and the failure to
+          // bind is on the log under it (#1355).
           here: bound.filter(function (b: any): boolean {
             return b.id === one.id;
+          }).map(function (b: any): any {
+            const shown = Object.assign({}, b);
+            delete shown.code;
+            return shown;
           })[0] || null
         };
       }),
@@ -15161,11 +15176,28 @@ class AdminViews {
         mech: Object.assign({}, mech, {
           keys: (mech.keys || []).map(function (one) {
             // #470: the name, group and provider the passkey pages show.
-            return Object.assign({}, one,
+            const shown: any = Object.assign({}, one,
                                  { algorithm: credentials.keyAlgorithm(one),
                                    name: credentials.keyName(one),
                                    group: credentials.keyGroup(one),
                                    provider: credentials.keyProvider(one) });
+            // The two refusal marks keep their reason and time; the code
+            // stays on the stored key and the refused sign-in's audit row,
+            // since no console page draws it (#1355).
+            if (shown.attestationRefused) {
+              shown.attestationRefused = {
+                why: shown.attestationRefused.why,
+                at: shown.attestationRefused.at };
+            }
+            if (shown.policyRefused) {
+              shown.policyRefused = Object.keys(shown.policyRefused)
+                .reduce(function (out, reason) {
+                  const mark = shown.policyRefused[reason] || {};
+                  out[reason] = { why: mark.why, at: mark.at };
+                  return out;
+                }, {});
+            }
+            return shown;
           })
         }),
         totp: totp.settings(),

@@ -1153,7 +1153,7 @@ async function test() {
 const program = new Command();
 program
   .name("sts_pki_workbench")
-  .description("Drive IYA STS's Certificate & Key Configuration pane " +
+  .description("Drive IYA STS's Certificate Workbench " +
       "through both its doors, in a throwaway trust realm: the form round " +
       "trip that is the whole mechanism with no script, an issue, a refusal " +
       "that keeps the form, the store as /admin-api reports it, the download " +

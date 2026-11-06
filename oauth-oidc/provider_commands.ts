@@ -1283,7 +1283,7 @@ class ProviderCommands {
              accounts: run.accounts, totalAccounts: run.totalAccounts,
              resumes: run.resumes, lastEventId: run.lastEventId || '',
              errors: (run.errors || []).slice(0), why: run.why || '',
-             errorCode: run.errorCode || '', actor: run.actor || '',
+             actor: run.actor || '',
              startedAt: iso(run.startedAt), finishedAt: iso(run.finishedAt) };
   }
 

@@ -263,7 +263,7 @@ const REVOCATION_LIST_PARAM =
 // turns two tests off with nothing failing.
 // THE FIRST FOUR ARE THE HIERARCHY AND THE APPLICATION LEAF, which is what
 // this page was when it was written. The eight after `upload-certificate` are
-// the Certificate & Key Configuration pane, which arrived 2026-09-10 — and
+// the Certificate Workbench, which arrived 2026-09-10 — and
 // they are on the SAME list because `/admin-api/pki/{action}` mirrors this
 // list and rule 7 says every control on this console has an operation. A pane
 // action answers with a DRAFT as well as a verdict, which is what the

@@ -132,6 +132,7 @@ import app = require('../common/app');
 // The error-code registry, a leaf. A refusal here is MARKED on the response for
 // the call log and never written into the JSON a caller receives.
 import errorCodes = require('../common/error_codes');
+import ResponseModelKit = require('../common/response_model_kit');
 // THE CONSOLE'S LANGUAGE (#539 phase 5): the catalogs and the negotiation,
 // and the hosted surfaces' table for the console's own client id — and the
 // prose a view carries, in the caller's language (#543). Libraries.
@@ -1368,6 +1369,9 @@ class AdminApi {
     if (typeof res.vary === 'function') {
       res.vary('Accept-Language');
     }
+    // AN ACT'S ANSWER CARRIES NO ERROR CODE (#1355), though it may hand back a
+    // row the page's GET carries one on: only that page draws it.
+    body = ResponseModelKit.actAnswer(res, body);
     res.status(status).type('application/json').set('Cache-Control', 'no-store')
        .send(JSON.stringify(body, null, 2));
     log.debug("Leaving AdminApi.sendJson().");

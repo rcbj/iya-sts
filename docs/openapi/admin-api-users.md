@@ -1093,7 +1093,6 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.keys[].attestation.verified` | boolean |  |  |
 | `(shape 2).page.mfa.mech.keys[].attestationRefused` | object |  |  |
 | `(shape 2).page.mfa.mech.keys[].attestationRefused.at` | number |  |  |
-| `(shape 2).page.mfa.mech.keys[].attestationRefused.code` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].attestationRefused.why` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].backupEligible` | boolean, or null |  |  |
 | `(shape 2).page.mfa.mech.keys[].backupState` | boolean, or null |  |  |
@@ -1113,7 +1112,6 @@ Scope: `admin:read`.
 | `(shape 2).page.mfa.mech.keys[].name` | string |  |  |
 | `(shape 2).page.mfa.mech.keys[].policyRefused` | map |  |  |
 | `(shape 2).page.mfa.mech.keys[].policyRefused.{key}.at` | object |  | Nested deeper than this page draws. |
-| `(shape 2).page.mfa.mech.keys[].policyRefused.{key}.code` | object |  | Nested deeper than this page draws. |
 | `(shape 2).page.mfa.mech.keys[].policyRefused.{key}.why` | object |  | Nested deeper than this page draws. |
 | `(shape 2).page.mfa.mech.keys[].possiblyReplacedAt` | number |  |  |
 | `(shape 2).page.mfa.mech.keys[].possiblyReplacedBy` | string |  |  |
@@ -2870,7 +2868,6 @@ Scope: `admin:write`.
 | `ended.backchannel[].attempts` | number |  |  |
 | `ended.backchannel[].clientId` | string |  |  |
 | `ended.backchannel[].encrypted` | string |  |  |
-| `ended.backchannel[].errorCode` | string, or null |  |  |
 | `ended.backchannel[].finishedAt` | string |  |  |
 | `ended.backchannel[].generation` | number |  |  |
 | `ended.backchannel[].holder` | string |  |  |
@@ -2917,7 +2914,6 @@ Scope: `admin:write`.
 | `ended.backchannel[].attempts` | number |  |  |
 | `ended.backchannel[].clientId` | string |  |  |
 | `ended.backchannel[].encrypted` | string |  |  |
-| `ended.backchannel[].errorCode` | string, or null |  |  |
 | `ended.backchannel[].finishedAt` | string |  |  |
 | `ended.backchannel[].generation` | number |  |  |
 | `ended.backchannel[].holder` | string |  |  |
@@ -3130,7 +3126,6 @@ Scope: `admin:write`.
 | `ended.backchannel[].attempts` | number |  |  |
 | `ended.backchannel[].clientId` | string |  |  |
 | `ended.backchannel[].encrypted` | string |  |  |
-| `ended.backchannel[].errorCode` | string, or null |  |  |
 | `ended.backchannel[].finishedAt` | string |  |  |
 | `ended.backchannel[].generation` | number |  |  |
 | `ended.backchannel[].holder` | string |  |  |
@@ -3177,7 +3172,6 @@ Scope: `admin:write`.
 | `ended.backchannel[].attempts` | number |  |  |
 | `ended.backchannel[].clientId` | string |  |  |
 | `ended.backchannel[].encrypted` | string |  |  |
-| `ended.backchannel[].errorCode` | string, or null |  |  |
 | `ended.backchannel[].finishedAt` | string |  |  |
 | `ended.backchannel[].generation` | number |  |  |
 | `ended.backchannel[].holder` | string |  |  |

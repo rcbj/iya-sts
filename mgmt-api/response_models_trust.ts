@@ -1323,8 +1323,7 @@ const SSF_DEAD_LETTERS = Kit.closed({
     pushes: PUSH_GATE,
     sweeps: Kit.listOf(Kit.closed({
       at: STR, held: INT, letters: INT, expired: INT, orphaned: INT,
-      trimmed: INT, deadStreams: INT, probes: INT,
-      byCode: Kit.listOf(Kit.closed({ errorCode: STR, count: INT }))
+      trimmed: INT, deadStreams: INT, probes: INT
     })),
     sinceStart: Kit.closed({ firstSweepAt: STR, sweeps: NUM, letters: NUM,
                              expired: NUM, orphaned: NUM, trimmed: NUM,

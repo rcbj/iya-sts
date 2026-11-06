@@ -360,7 +360,39 @@ async function adminCall(serviceBase, realmPrefix, method, apiPath, body) {
   if (body) {
     init.body = JSON.stringify(body);
   }
-  const response = await fetch(url, init);
+  // Retry a CONNECTION-LEVEL failure once (#1299). `TypeError: fetch failed`
+  // carries the real reason on e.cause -- a socket hang up / ECONNRESET, e.g.
+  // a keep-alive socket in node's fetch agent gone stale over a long idle gap
+  // (a realm's surfaces fuzz for ~25 min while nothing calls /admin-api, which
+  // is where the 2026-11-06 run died, just before provisioning fuzz-21). Log
+  // the message, the cause and the URL both times; the retry picks up a fresh
+  // connection. A final failure answers status 0 so the caller's own status
+  // check refuses it with a clear message rather than this throwing.
+  let response = null;
+  let lastError = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      response = await fetch(url, init);
+      lastError = null;
+      break;
+    } catch (e) {
+      lastError = e;
+      const cause = e && e.cause;
+      log.warn("adminCall " + method + " " + url + " failed (attempt " +
+        (attempt + 1) + " of 2): " + ((e && e.message) || e) + "; cause: " +
+        ((cause && (cause.code || cause.message)) || "none"));
+      if (attempt === 0) {
+        await new Promise(function (resolve) { setTimeout(resolve, 300); });
+      }
+    }
+  }
+  if (!response) {
+    log.debug("Leaving adminCall(). fetch failed after a retry");
+    return { status: 0, json: { fetchError:
+      (lastError && lastError.message) || "fetch failed",
+      cause: (lastError && lastError.cause &&
+        (lastError.cause.code || lastError.cause.message)) || "none" } };
+  }
   const text = await response.text();
   let json = {};
   try {
@@ -593,6 +625,46 @@ function synthesizeProtocolDoc(rows) {
     paths: paths };
 }
 
+// Runs the Schemathesis CLI and ECHOES its output live to our own stdout --
+// the persisted per-job log -- so a failing case appears there as it happens
+// and SURVIVES A CRASH of a LATER cell (#1299: the 2026-11-06 run died 57 min
+// in and spawnSync's buffer, returned only when the whole job ended, took
+// every finding with it). It still accumulates stdout/stderr for the result's
+// tail. Resolves { status, stdout, stderr, error } in spawnSync's shape, so
+// runSurface reads it unchanged.
+function runSchemathesis(bin, args, env, cwd) {
+  log.debug("Entering runSchemathesis().");
+  return new Promise(function (resolve) {
+    let out = "";
+    let err = "";
+    let child = null;
+    try {
+      child = childProcess.spawn(bin, args,
+        { env: env, cwd: cwd, stdio: ["ignore", "pipe", "pipe"] });
+    } catch (e) {
+      log.debug("Caught spawning schemathesis: " + ((e && e.message) || e));
+      resolve({ status: null, stdout: "", stderr: "", error: e });
+      return;
+    }
+    child.stdout.on("data", function (chunk) {
+      out += chunk;
+      process.stdout.write(chunk);
+    });
+    child.stderr.on("data", function (chunk) {
+      err += chunk;
+      process.stderr.write(chunk);
+    });
+    child.on("error", function (e) {
+      log.debug("Caught a schemathesis child error: " + ((e && e.message) || e));
+      resolve({ status: null, stdout: out, stderr: err, error: e });
+    });
+    child.on("close", function (code) {
+      log.debug("Leaving runSchemathesis(). close " + code);
+      resolve({ status: code, stdout: out, stderr: err, error: null });
+    });
+  });
+}
+
 // Runs Schemathesis against one surface of one realm, through a proxy of its
 // own. Resolves { surface, realm, code, status, output }.
 async function runSurface(serviceBase, provisioned, surface, workDir, say) {
@@ -676,9 +748,7 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
         STS_SCHEMA_SURFACE: surface.key });
     say("[schemathesis] " + surface.key + " @ " + provisioned.realmPrefix +
       ": " + SCHEMATHESIS_BIN + " " + args.join(" "));
-    const run = childProcess.spawnSync(SCHEMATHESIS_BIN, args,
-      { env: runEnv, encoding: "utf8", cwd: workDir,
-        maxBuffer: 64 * 1024 * 1024 });
+    const run = await runSchemathesis(SCHEMATHESIS_BIN, args, runEnv, workDir);
     const code = run.status;
     const status = code === 0 ? "pass" : (code === 1 ? "fail" : "error");
     // A null status means the binary could not be spawned (ENOENT, EACCES) or
@@ -724,12 +794,54 @@ async function run(serviceBase, options) {
     throw new Error("STS_ADMIN_API_TOKEN is required; the launcher mints it");
   }
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "sts-schemathesis-"));
+  const onResult = typeof opts.onResult === "function"
+    ? opts.onResult : function () {};
   const results = [];
+  function record(result) {
+    results.push(result);
+    // Emit each cell the moment it ends, so a crash of a LATER cell keeps
+    // what the finished ones found (#1299: the 2026-11-06 run buffered every
+    // result and printed at the end, so a fetch failure before fuzz-21 lost
+    // all of fuzz-base's and fuzz-9700's). Returning them is now only for the
+    // final assert.
+    try {
+      onResult(result);
+    } catch (e) {
+      log.debug("Caught in onResult(): " + ((e && e.message) || e));
+    }
+  }
   for (let p = 0; p < PROFILES.length; p++) {
-    const provisioned = await provision(serviceBase, PROFILES[p], say);
+    const profile = PROFILES[p];
+    let provisioned = null;
+    try {
+      provisioned = await provision(serviceBase, profile, say);
+    } catch (e) {
+      // A failed provisioning step must not end the job (#1299): record it as
+      // this realm's error and carry on to the next realm, so the realms that
+      // DID run are not lost with it.
+      log.warn("provisioning " + profile.realm + " failed: " +
+        ((e && e.message) || e));
+      record({ surface: "(provision)", realm: "/realm/" + profile.realm,
+        code: null, status: "error", findings: [],
+        output: "provisioning " + profile.realm + " failed: " +
+          ((e && e.message) || e) });
+      continue;
+    }
     for (let s = 0; s < SURFACES.length; s++) {
-      results.push(await runSurface(serviceBase, provisioned, SURFACES[s],
-        workDir, say));
+      let result;
+      try {
+        result = await runSurface(serviceBase, provisioned, SURFACES[s],
+          workDir, say);
+      } catch (e) {
+        // runSurface returns its own error results; this is the backstop for
+        // an unexpected throw, so one surface never ends the matrix.
+        log.warn("the surface " + SURFACES[s].key + " @ " +
+          provisioned.realmPrefix + " threw: " + ((e && e.message) || e));
+        result = { surface: SURFACES[s].key, realm: provisioned.realmPrefix,
+          code: null, status: "error", findings: [],
+          output: "the surface threw: " + ((e && e.message) || e) };
+      }
+      record(result);
     }
   }
   log.debug("Leaving run(). " + results.length + " result(s)");
