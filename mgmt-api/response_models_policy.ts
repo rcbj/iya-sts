@@ -105,7 +105,7 @@ const SETTING: Json = Kit.closed({
   selectAll: Kit.closed({ onlyWhileOn: SELECT_ALL_RULE,
                           aloneWhileOn: SELECT_ALL_RULE }),
   min: NUM, max: NUM, step: NUM,
-  value: VALUE, text: NSTR, source: STR, editable: BOOL,
+  value: VALUE, text: SCALAR, source: STR, editable: BOOL,
   restartReason: NSTR, editRefusal: NSTR,
   env: Kit.nullable(Kit.oneOrMany(STR)),
   legacyEnv: Kit.nullable(Kit.oneOrMany(STR)),
