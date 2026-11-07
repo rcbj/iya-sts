@@ -111,6 +111,14 @@ function egressRouteSection(t) {
     ["a resolve whose path was filled rather than templated", true,
      { method: "POST", path: "/admin-api/oidfed/resolve",
        action: "resolve" }],
+    ["the SCIM outbound report read (dials nothing, echoes stored error)",
+     true, { method: "GET", path: "/admin-api/scim", action: "scim" }],
+    ["the SCIM outbound clients report read", true,
+     { method: "GET", path: "/admin-api/scim/clients", action: "clients" }],
+    ["the SCIM read with no derived action still resolves whole", true,
+     { method: "GET", path: "/admin-api/scim", action: "" }],
+    ["another GET read is still a finding (the \"\" key is route-exact)",
+     false, { method: "GET", path: "/admin-api/ldap", action: "ldap" }],
     ["another action on the claim-providers route", false,
      { method: "POST", path: "/admin-api/claim-providers/{action}",
        action: "remove-provider" }],
@@ -137,17 +145,20 @@ function egressRouteSection(t) {
       String(answers[at]));
   });
 
-  // The routes egress_routes.py lists are exactly the five the #1358 review
-  // named (so a row added or removed in the table fails here).
+  // The routes egress_routes.py lists are exactly the five designed dials the
+  // #1358 review named plus the two stored-error reads #1299 added (so a row
+  // added or removed in the table fails here).
   const listed = childProcess.spawnSync("python3", [path.join(__dirname,
     "schemathesis", "egress_routes.py"), "--routes"], { encoding: "utf8" });
   t.equal(JSON.parse(listed.stdout).join(","),
-    ["POST /admin-api/claim-providers/{action} add-provider",
+    ["GET /admin-api/scim",
+     "GET /admin-api/scim/clients",
+     "POST /admin-api/claim-providers/{action} add-provider",
      "POST /admin-api/oidfed/{action} add-subordinate",
      "POST /admin-api/oidfed/{action} add-trust-anchor",
      "POST /admin-api/oidfed/{action} resolve",
      "POST /admin-api/scim/clients/{action} reconcile"].join(","),
-    "egress_routes lists exactly the five designed dials");
+    "egress_routes lists the five designed dials and two stored-error reads");
   t.log.debug("Leaving egressRouteSection().");
 }
 

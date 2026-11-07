@@ -15,6 +15,13 @@
 # `no_outbound_fetch` check reads that body for those DNS markers, so without
 # this table it fires on a dial WORKING AS DESIGNED.
 #
+# TWO ROWS ARE READS THAT DIAL NOTHING (#1299, the 6c65a8e2d run): GET
+# /admin-api/scim and GET /admin-api/scim/clients. They do not dial -- they
+# REPORT the stored last-error of an administrator's configured outbound SCIM
+# target, which on the no-egress network is a getaddrinfo failure a prior
+# reconcile recorded. The marker is in the body by design, so they are narrowed
+# the same way; the live dial they report is the `reconcile` action below.
+#
 # SO THE NARROWING IS BY EXACT METHOD AND ROUTE, AND NOTHING ELSE. It is NOT
 # keyed on the refusal's text, nor on a code appearing in the body
 # (STS-REG-0080 / STS-REG-0081 and their neighbours): a check that passed a
@@ -39,6 +46,14 @@
 # onto the OpenID Federation fetches (the thirteenth and fourteenth entries);
 # the anonymous /oidfed/resolve endpoint starts no fetch and is not here.
 #
+# A route with NO `{action}` (the two SCIM reads) is keyed by the inner key
+# `""`, which `allowed()` reads as "this whole route, whatever action
+# sts_checks derived" -- its `_action()` makes a pseudo-action from a
+# non-templated path's last segment (`scim`, `clients`), so the `""` row
+# matches it without this table having to know that quirk. An `""` key allows
+# the route whole; the dial rows carry none, so their OTHER actions stay
+# findings exactly as before.
+#
 # No schemathesis import, so tests/schemathesis_plan.js can drive this file
 # with plain python3 (`python3 egress_routes.py`, one JSON case per line on
 # stdin: {"method","path","action"} -> the reason string, or null).
@@ -49,6 +64,19 @@ import sys
 
 # (METHOD, path template) -> { action value: the reason it dials by design }.
 ALLOWED = {
+    ("GET", "/admin-api/scim"): {
+        "": "the SCIM outbound report (#552): this READ dials nothing; it "
+            "echoes the stored last-error of the administrator-configured "
+            "outbound SCIM targets, which on the no-egress fuzz network is a "
+            "getaddrinfo failure a prior reconcile recorded. The live dial is "
+            "the reconcile action below.",
+    },
+    ("GET", "/admin-api/scim/clients"): {
+        "": "the SCIM outbound clients report (#552): this READ dials nothing; "
+            "it lists the configured outbound SCIM clients with each one's "
+            "stored last-error, a getaddrinfo failure on the no-egress fuzz "
+            "network. The live dial is the reconcile action below.",
+    },
     ("POST", "/admin-api/claim-providers/{action}"): {
         "add-provider":
             "the twenty-fifth exception (an OpenID Connect claims provider, "
@@ -90,7 +118,13 @@ def allowed(method, path, action):
             actions = ALLOWED.get((verb, head[0] + "/{action}"))
     if not actions:
         return None
-    return actions.get(action)
+    hit = actions.get(action)
+    if hit is None:
+        # A route keyed `""` is allowed whole, whatever action sts_checks
+        # derived for it (the two SCIM reads). The dial rows have no `""` key,
+        # so their other actions fall through to None and stay findings.
+        hit = actions.get("")
+    return hit
 
 
 def _main():
@@ -99,7 +133,8 @@ def _main():
         rows = []
         for (method, path), actions in ALLOWED.items():
             for action in actions:
-                rows.append(method + " " + path + " " + action)
+                rows.append(method + " " + path
+                            + ((" " + action) if action else ""))
         print(json.dumps(sorted(rows)))
         return
     for line in sys.stdin:
