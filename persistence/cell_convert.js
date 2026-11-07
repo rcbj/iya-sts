@@ -235,7 +235,9 @@ function sqlStore(options) {
                     dial.refused + ' (#273).');
   }
   // Through the service's one door to PostgreSQL (#326): a Knex pool per
-  // database, dialled with the options the driver's would be.
+  // database, dialled with the options the driver's would be, under the host
+  // check and the path rules of every other dial (#1360).
+  require('../common/outbound_tls').installProcessWide();
   const pool = require('./knex_store').openPool(
     { connectionString: dial.connectionString, ssl: dial.ssl,
       connectionTimeoutMillis: 10000 },

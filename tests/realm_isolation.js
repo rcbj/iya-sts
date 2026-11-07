@@ -770,6 +770,22 @@ function checkGnapStores(t) {
             'GNAP application\'s scoped stream is decided by');
     t.check(!monitor.snapshot().rows['iso-gnap-client'],
             'nor the monitor\'s counters');
+    // The validation door's counts, in the same shape (#1360).
+    const door = require('../common/certificate_trust');
+    const doorConfig = require('../common/config');
+    const inDefault = door.counters('default')['jose-signer'].assessed;
+    const inRealm = door.counters(realm)['jose-signer'].assessed;
+    doorConfig.setOverride('pki.paranoid', 'on');
+    try {
+      door.assessSync('jose-signer', { leaf: 'not a certificate' },
+                      { realmId: realm });
+    } finally {
+      doorConfig.clearOverride('pki.paranoid');
+    }
+    t.check(door.counters(realm)['jose-signer'].assessed === inRealm + 1 &&
+            door.counters('default')['jose-signer'].assessed === inDefault,
+            'nor what the validation door answered inside the realm',
+            JSON.stringify(door.counters(realm)['jose-signer']));
     t.check(realms.run(realm, function () {
       return !!store.getGrant(ids.grant) &&
              !!store.tokenByValue('iso-gnap-token-value') &&

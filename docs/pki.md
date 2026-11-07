@@ -945,6 +945,16 @@ force, restores exactly the behaviour that use case had before this mode existed
 and nothing else changes.** There is no third state, and development mode with
 `auto` is that earlier behaviour, whole.
 
+**No source named, no check to perform.** Under this mode a certificate that names no
+CRL distribution point and no OCSP responder has no revocation check, under
+soft-fail or hard-fail. Where a source is named, in the certificate or a CA above
+it, it is enforced: revoked is refused, and under hard-fail so is a source that
+cannot be reached. A CA's source says only whether that CA is revoked; nothing is
+looked up for a leaf that names nothing itself, even under a CA that names a source.
+A certificate this service issued is always asked of its own register, whatever it
+names. `pki.revocationRequireDistributionPoint` set to `on` is an operator asking for
+more, and still refuses a certificate naming nothing.
+
 The rows are per realm and change at runtime, through
 [`/admin/pki/trust`](signer-truststore.md) or `POST /admin-api/config/set`. **The
 exception is a client certificate at a TLS handshake**, which has no realm in it: on

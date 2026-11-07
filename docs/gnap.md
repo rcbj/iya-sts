@@ -1038,6 +1038,8 @@ changed — the console page, or `POST /admin-api/config/set`.
   signed with the realm's ML-DSA-44 or SLH-DSA-SHA2-128s key, which rotates the
   same way.
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a push to a finish URI the certificate of whoever answers is checked before anything is sent: extendedKeyUsage serverAuth and revocation, stapled first, as the `tls-server-outbound` row of the [use cases](pki-use-cases.md) says. A CA in the realm's [signer truststore](signer-truststore.md) is trusted beside `gnap.pushCaFile`.
+
 ## Error codes
 
 Every GNAP failure is recorded under an `STS-GNAP-NNNN` code on the audit row

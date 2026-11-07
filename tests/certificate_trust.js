@@ -22,6 +22,15 @@
 //
 // MUTATION RECORD, each applied to a scratch build, seen red and put back:
 //   * `readable()` not asked at either door                  — red each
+//   * `endingAtAnchor()` not asked (real hosts: STS-PKI-0119) — 1 red
+//   * an anchor matched on its subject alone                  — 1 red
+//   * the certificates below the anchor dropped from the walk — 1 red
+//   * a server accepted without being named                   — 2 red
+//   * a truststore anchor counting as a dialer's pin          — 1 red
+//   * paranoid not lifting the distribution-point requirement — 1 red
+//   * a link with no issuer refused though it names nothing   — 1 red
+//   * every link with no issuer passing, naming or not        — 2 red
+//   * another process's counts not added in                  — 1 red (I)
 //   * `fieldChecks()` not marking a failure                  — 53 red
 //   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
 //   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
@@ -424,6 +433,27 @@ async function run(t, double, crls) {
   const afterCount = trust.counters()['client-attestation'];
   t.equal(afterCount.assessed, assessedThen + 1, 'I. assessed counts');
   t.equal(afterCount.refused, refusedThen + 1, 'I. refused counts');
+  // Another process's rows are added in, and its later refusal is the last one.
+  const replicationForCount = require('../persistence/persistence_replication');
+  const remoteRowsBefore = replicationForCount.remoteRows;
+  const merged = (function () {
+    replicationForCount.remoteRows = function (handle, realm, key) {
+      return handle === 'pki.door.counts' && key === 'client-attestation'
+        ? [{ assessed: 5, refused: 2,
+             lastRefusal: { code: 'STS-PKI-0249', why: 'on another node',
+                            at: Date.now() + 1000 } }] : [];
+    };
+    try {
+      return trust.counters()['client-attestation'];
+    } finally {
+      replicationForCount.remoteRows = remoteRowsBefore;
+    }
+  })();
+  t.check(merged.assessed === afterCount.assessed + 5 &&
+          merged.refused === afterCount.refused + 2 &&
+          merged.lastRefusal.why === 'on another node',
+          'I. another process\'s counts are added in, and its later refusal ' +
+          'is the one reported', JSON.stringify(merged));
   t.equal(afterCount.lastRefusal.code, counted.code,
           'I. the last refusal is what the verdict said');
   const row = audit.list().filter(function (one) {
@@ -475,6 +505,233 @@ async function run(t, double, crls) {
     { anchors: [root.pem], anchorSources: ['caller'] });
   t.check(unasked.ok && unasked.checks['name-match'] === 'not-asked',
           'K. no name expected is the one not-asked that passes', unasked.why);
+  // A CHAIN ENDING IN A CROSS-SIGNED ROOT (the shape of every Google endpoint):
+  // a root the store holds, sent as a copy another root signed, whose issuer is
+  // not sent. Hard-fail refused it for having no issuer until the walk stopped
+  // at the anchor. Generated here: nothing in the suite depends on a real host.
+  t.log.info('a chain ending in a cross-signed root');
+  const crossKeys = require('../common/crypto_impl/key_material');
+  const crossPair = await crossKeys.generateKeyPair('rsa-2048');
+  const crossRoot = await kit.mint({ cn: 'cross root', ca: true,
+                                     pair: crossPair });
+  const olderRoot = await kit.mint({ cn: 'older root', ca: true,
+    pair: await crossKeys.generateKeyPair('rsa-2048') });
+  // It names a list, as GTS Root R4 does, or there would be nothing to ask.
+  const crossCopy = await kit.mint({ cn: 'cross root', ca: true,
+                                     issuer: olderRoot, pair: crossPair,
+                                     crls: ['http://127.0.0.1:1/older.crl'] });
+  const crossCrls = await kit.crlServer();
+  const crossLeaf = await kit.mint({ cn: 'cross leaf', issuer: crossRoot,
+    usages: ['digitalSignature', 'keyEncipherment'], eku: ['serverAuth'],
+    crls: [crossCrls.base + '/cross.crl'] });
+  crossCrls.routes['/cross.crl'] = await kit.crlOf(crossRoot, []);
+  const peerOf = function (one, above) {
+    log.debug("Entering peerOf().");
+    log.debug("Leaving peerOf().");
+    return { raw: pemDer(one.pem), issuerCertificate: above };
+  };
+  const crossPeer = peerOf(crossLeaf, peerOf(crossCopy));
+  await withSettings({ 'pki.revocationCheck': 'hard-fail' }, async () => {
+    const unheld = await trust.assessPeer('tls-server-outbound', crossPeer,
+                                          { realmId: REALM });
+    t.check(!unheld.ok && unheld.code === 'STS-PKI-0119',
+            'with no anchor held, what is above it has no issuer to ask',
+            String(unheld.code) + ' ' + unheld.why);
+    await signers.add(REALM, crossRoot.pem, {});
+    const heldRoot = await trust.assessPeer('tls-server-outbound', crossPeer,
+                                            { realmId: REALM });
+    t.check(heldRoot.ok,
+            'with the root held, the path ends at it and the peer passes',
+            String(heldRoot.why));
+    const revokedPeer = await kit.mint({ cn: 'cross revoked', issuer: crossRoot,
+      usages: ['digitalSignature', 'keyEncipherment'], eku: ['serverAuth'],
+      crls: [crossCrls.base + '/crossr.crl'] });
+    crossCrls.routes['/crossr.crl'] = await kit.crlOf(crossRoot,
+                                                     [revokedPeer.serialHex]);
+    const stillAsked = await trust.assessPeer('tls-server-outbound',
+      peerOf(revokedPeer, peerOf(crossCopy)), { realmId: REALM });
+    t.check(!stillAsked.ok && stillAsked.code === 'STS-PKI-0118',
+            'and a leaf below that anchor is still asked about revocation',
+            stillAsked.code + ' ' + stillAsked.why);
+    // An intermediate below the anchor is walked too.
+    const crossMiddle = await kit.mint({ cn: 'cross middle', ca: true,
+      issuer: crossRoot, crls: [crossCrls.base + '/crossm.crl'],
+      pair: await crossKeys.generateKeyPair('rsa-2048') });
+    const underMiddle = await kit.mint({ cn: 'under middle',
+      issuer: crossMiddle, usages: ['digitalSignature', 'keyEncipherment'],
+      eku: ['serverAuth'], crls: [crossCrls.base + '/under.crl'] });
+    crossCrls.routes['/under.crl'] = await kit.crlOf(crossMiddle, []);
+    crossCrls.routes['/crossm.crl'] = await kit.crlOf(crossRoot,
+                                                     [crossMiddle.serialHex]);
+    const revokedMiddle = await trust.assessPeer('tls-server-outbound',
+      peerOf(underMiddle, peerOf(crossMiddle, peerOf(crossCopy))),
+      { realmId: REALM });
+    t.check(!revokedMiddle.ok && revokedMiddle.code === 'STS-PKI-0118',
+            'a revoked intermediate below the anchor is refused',
+            revokedMiddle.code + ' ' + revokedMiddle.why);
+    // The anchor's subject under another key is not the anchor, so the walk
+    // does not stop there, and this one still has no issuer to ask.
+    const sameName = await kit.mint({ cn: 'cross root', ca: true,
+      issuer: olderRoot, crls: [crossCrls.base + '/samename.crl'],
+      pair: await crossKeys.generateKeyPair('rsa-2048') });
+    const underName = await kit.mint({ cn: 'under the same name',
+      issuer: sameName, usages: ['digitalSignature', 'keyEncipherment'],
+      eku: ['serverAuth'], crls: [crossCrls.base + '/name.crl'] });
+    crossCrls.routes['/name.crl'] = await kit.crlOf(sameName, []);
+    const named = await trust.assessPeer('tls-server-outbound',
+      peerOf(underName, peerOf(sameName)), { realmId: REALM });
+    t.check(!named.ok && /neither held here nor in the chain/.test(named.why),
+            'the anchor\'s subject under another key does not stop the walk',
+            named.code + ' ' + named.why);
+    // And a good path through that same-named CA is not cut short at it.
+    // Stopped there, the leaf would be asked against a key that never signed it.
+    await signers.add(REALM, olderRoot.pem, {});
+    crossCrls.routes['/samename.crl'] = await kit.crlOf(olderRoot, []);
+    const through = await trust.assessPeer('tls-server-outbound',
+      peerOf(underName, peerOf(sameName, peerOf(olderRoot))),
+      { realmId: REALM });
+    t.check(through.ok, 'and a good path through it goes on to its real anchor',
+            String(through.why));
+  });
+  await crossCrls.close();
+  // ONE CERTIFICATE ACCEPTED BY NAME (rcbj): the door's half. The gate's is
+  // `tests/outbound_gate.js` section I, over real handshakes.
+  t.log.info('a server certificate accepted case by case');
+  const appliance = await kit.mint({ cn: 'an appliance', eku: ['serverAuth'],
+    usages: ['digitalSignature', 'keyEncipherment'] });
+  const appliancePeer = peerOf(appliance);
+  const asAppliance = function (options) {
+    log.debug("Entering asAppliance().");
+    log.debug("Leaving asAppliance().");
+    return trust.assessPeer('tls-server-outbound', appliancePeer,
+                            Object.assign({ realmId: REALM }, options || {}));
+  };
+  const notNamed = await asAppliance();
+  t.check(!notNamed.ok && /self-signed/.test(notNamed.why),
+          'a self-signed server nobody named is refused', notNamed.why);
+  const offered = await signers.add(REALM, appliance.pem, { kind: 'accepted' });
+  t.check(offered.added.length === 1 && offered.added[0].kind === 'accepted' &&
+          offered.added[0].purposes[0] === 'tls-server-outbound',
+          'accepted by name, for outbound TLS alone',
+          JSON.stringify(offered.refused));
+  const nowNamed = await asAppliance();
+  t.check(nowNamed.ok, 'and the same server then passes', nowNamed.why);
+  t.check(!signers.anchorsFor(REALM).anchors.concat(
+    signers.anchorsFor(REALM).intermediates).some(function (der) {
+    return der.equals(pemDer(appliance.pem));
+  }), 'it is no step on anybody\'s path', '');
+  // NO SOURCE NAMED, NO CHECK TO PERFORM (rcbj). A private CA's leaf naming no
+  // list passes under hard-fail; one naming a list that says revoked, or that
+  // cannot be reached, does not; and a CA's own source is asked.
+  const privateCa = await kit.mint({ cn: 'a private ca', ca: true,
+    pair: await crossKeys.generateKeyPair('rsa-2048') });
+  const serverLeaf = { usages: ['digitalSignature', 'keyEncipherment'],
+                       eku: ['serverAuth'] };
+  const privateLeaf = await kit.mint(Object.assign({ cn: 'a partner on it',
+                                                     issuer: privateCa },
+                                                   serverLeaf));
+  await signers.add(REALM, privateCa.pem, {});
+  const lists = await kit.crlServer();
+  await withSettings({ 'pki.revocationCheck': 'hard-fail' }, async () => {
+    const silent = await trust.assessPeer('tls-server-outbound',
+      peerOf(privateLeaf, peerOf(privateCa)), { realmId: REALM });
+    t.check(silent.ok, 'no source named anywhere: no check, and it passes',
+            String(silent.why));
+    const noIssuer = await trust.assessPeer('tls-server-outbound',
+      peerOf(privateLeaf), { realmId: REALM });
+    t.check(noIssuer.ok, 'and with its issuer not presented either',
+            String(noIssuer.why));
+    const revokedOne = await kit.mint(Object.assign({ cn: 'names and revoked',
+      issuer: privateCa, crls: [lists.base + '/nr.crl'] }, serverLeaf));
+    lists.routes['/nr.crl'] = await kit.crlOf(privateCa,
+                                              [revokedOne.serialHex]);
+    const namedRevoked = await trust.assessPeer('tls-server-outbound',
+      peerOf(revokedOne, peerOf(privateCa)), { realmId: REALM });
+    t.check(!namedRevoked.ok && namedRevoked.code === 'STS-PKI-0118',
+            'a source named that says revoked is refused',
+            namedRevoked.code + ' ' + namedRevoked.why);
+    const deadOne = await kit.mint(Object.assign({ cn: 'names a dead list',
+      issuer: privateCa, crls: ['http://127.0.0.1:1/dead.crl'] }, serverLeaf));
+    const namedDead = await trust.assessPeer('tls-server-outbound',
+      peerOf(deadOne, peerOf(privateCa)), { realmId: REALM });
+    t.check(!namedDead.ok && namedDead.checks.revocation === 'failed',
+            'a source named that cannot be reached is refused under hard-fail',
+            String(namedDead.why));
+    // A CA naming a source is asked, and the leaf naming none gets no lookup.
+    const middle = await kit.mint({ cn: 'a ca naming a list', ca: true,
+      issuer: privateCa, crls: [lists.base + '/mid.crl'],
+      pair: await crossKeys.generateKeyPair('rsa-2048') });
+    const under = await kit.mint(Object.assign({ cn: 'names nothing itself',
+                                                 issuer: middle }, serverLeaf));
+    lists.routes['/mid.crl'] = await kit.crlOf(privateCa, []);
+    const fine = await trust.assessPeer('tls-server-outbound',
+      peerOf(under, peerOf(middle, peerOf(privateCa))), { realmId: REALM });
+    t.check(fine.ok,
+            'a leaf naming nothing under a CA whose list clears it passes',
+            String(fine.why));
+    const middleRevoked = await kit.mint({ cn: 'a ca that is revoked', ca: true,
+      issuer: privateCa, crls: [lists.base + '/mid3.crl'],
+      pair: await crossKeys.generateKeyPair('rsa-2048') });
+    lists.routes['/mid3.crl'] = await kit.crlOf(privateCa,
+                                                [middleRevoked.serialHex]);
+    const underRevoked = await kit.mint(Object.assign({ cn: 'under it',
+      issuer: middleRevoked }, serverLeaf));
+    const caRevoked = await trust.assessPeer('tls-server-outbound',
+      peerOf(underRevoked, peerOf(middleRevoked, peerOf(privateCa))),
+      { realmId: REALM });
+    t.check(!caRevoked.ok && caRevoked.code === 'STS-PKI-0118',
+            'and is refused when that CA is revoked',
+            caRevoked.code + ' ' + caRevoked.why);
+  });
+  await withSettings({ 'pki.revocationCheck': 'hard-fail',
+                       'pki.revocationRequireDistributionPoint': 'on' },
+    async () => {
+      t.check(!(await trust.assessPeer('tls-server-outbound',
+        peerOf(privateLeaf, peerOf(privateCa)), { realmId: REALM })).ok,
+        'an operator who set the requirement `on` still gets it', '');
+    });
+  // Development mode never asks for a distribution point, so the requirement
+  // being lifted is visible only in product: `auto` asks for one there unless
+  // paranoid is in force, which has a sharper rule of its own.
+  const requires = async function (pairs) {
+    return await withSettings(
+      Object.assign({ 'global.mode': 'product' }, pairs),
+      async () => require('../common/revocation_status')
+        .policy().requireDistributionPoint);
+  };
+  t.equal(await requires({ 'pki.paranoid': 'on' }), false,
+          'in product, paranoid in force lifts `auto`\'s requirement');
+  t.equal(await requires({ 'pki.paranoid': 'off' }), true,
+          'in product without it, `auto` still asks for a source');
+  await lists.close();
+  const acceptedRoot = await signers.add(REALM,
+    (await kit.mint({ cn: 'a ca offered by name', ca: true })).pem,
+    { kind: 'accepted' });
+  t.check(!acceptedRoot.added.length &&
+          acceptedRoot.refused[0].code === 'STS-PKI-0267',
+          'a CA cannot be accepted by name: it would vouch for what it signs',
+          JSON.stringify(acceptedRoot.refused));
+  const lapsedOffer = await signers.add(REALM,
+    (await kit.mint({ cn: 'lapsed appliance', notBefore: now - 3 * kit.DAY,
+                      notAfter: now - kit.DAY })).pem, { kind: 'accepted' });
+  t.check(!lapsedOffer.added.length,
+          'nor can one that is out of date', '');
+  signers.remove(REALM, offered.added[0].fingerprint256);
+  t.check(!(await asAppliance()).ok, 'removing the row takes it back', '');
+  const pinnedOk = await asAppliance({ pinnedTo: ['x', appliance.pem] });
+  t.check(pinnedOk.ok, 'a dialer configured with it has named it',
+          pinnedOk.why);
+  // Fit for a server in every field, so only the rule can refuse it.
+  const anchorAsServer = await kit.mint({ cn: 'an anchor as a server', ca: true,
+    usages: ['digitalSignature', 'keyEncipherment', 'keyCertSign'],
+    eku: ['serverAuth'] });
+  const heldAnchor = await signers.add(REALM, anchorAsServer.pem, {});
+  t.equal(heldAnchor.added.length, 1, 'an anchor is held');
+  const asAnchor = await trust.assessPeer('tls-server-outbound',
+    peerOf(anchorAsServer), { realmId: REALM, pinnedTo: anchorAsServer.pem });
+  t.check(!asAnchor.ok, 'a truststore anchor in a dialer\'s `ca` names no server',
+          String(asAnchor.why));
+
   // UNREADABLE (x509-limbo found one): node reads it and the field checks cannot.
   // The second parser is a double, since what is under test is that the door
   // answers a verdict; which bytes split the two parsers is not this file's.

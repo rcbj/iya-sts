@@ -651,6 +651,8 @@ specifications, and are honoured in both modes.
 
 ## Development and product mode
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a push to a receiver the certificate of whoever answers is checked before anything is sent: extendedKeyUsage serverAuth and revocation, stapled first, as the `tls-server-outbound` row of the [use cases](pki-use-cases.md) says. A CA in the realm's [signer truststore](signer-truststore.md) is trusted beside `ssf.pushCaFile`.
+
 | | Development | Product |
 |---|---|---|
 | Credential at `/ssf/*` | required, but only a check at the door: any name and any password except `invalid` passes Basic. A token carries the read scope (`ssf.read`) or the write scope (`ssf.manage`) only when its client declares a scope granting that permission in `oauthAllowedScope` (in both modes), and is honoured only while it still does (`STS-SSF-0107`). Write includes read | required, and a Basic password is checked against the person's hashed `userPassword` |

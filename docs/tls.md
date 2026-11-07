@@ -467,6 +467,12 @@ logged once (`STS-TLS-0056`). A block of the file it refuses is left out
 (`STS-TLS-0057`). This truststore is for TLS handshakes; for everything else see
 the [signer truststore](signer-truststore.md).
 
+Under paranoid PKI mode a server this service dials may not present a self-signed
+certificate until it is [accepted by name](signer-truststore.md#accepting-one-certificate-by-name),
+or configured as that dialer's own CA. A private CA is reached by naming it in the
+dialer's CA file as before: if its certificates name no revocation source, there is
+no check to perform.
+
 Under paranoid PKI mode a client certificate is also held to more than OpenSSL's
 answer on the main port, custom listeners, LDAPS and the debugger: the leaf is not a CA, its keyUsage and extendedKeyUsage
 fit client authentication, revocation is consulted before the connection is read, a

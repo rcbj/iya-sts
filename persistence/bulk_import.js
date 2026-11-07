@@ -1468,7 +1468,9 @@ async function main(argv) {
                     'dialled: ' + dial.refused + ' (#273).');
     }
     // Through the service's one door to PostgreSQL (#326): a Knex pool of
-    // the tool's own, dialled with the options the driver's would be.
+    // the tool's own, dialled with the options the driver's would be, under
+    // the host check and the path rules of every other dial (#1360).
+    require('../common/outbound_tls').installProcessWide();
     pool = require('./knex_store').openPool(
       { connectionString: dial.connectionString, ssl: dial.ssl,
         connectionTimeoutMillis: 10000 },

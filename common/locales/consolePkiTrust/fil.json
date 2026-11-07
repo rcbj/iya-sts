@@ -37,6 +37,7 @@
   "addHeading": "Magdagdag ng mga certificate",
   "addNote": "Mag-paste ng isa o higit pang PEM certificate. Ang self-signed na CA ay nagiging anchor at ang ibang CA ay intermediate, na dapat mag-chain sa anchor na hawak na. Pinangangalanan ang bawat pagtanggi.",
   "addPurposes": "Pagkatiwalaan lang ang mga ito para sa mga use case na ito (kung walang may tsek, bawat use case):",
+  "addAccept": "Tanggapin ayon sa pangalan ang iisang server certificate na ito, para sa outbound TLS lang. Sinusuri pa rin ang validity at mga field nito, at anumang revocation list na binabanggit nito.",
   "addButton": "Pagkatiwalaan ang mga ito",
   "pins": "Mga naka-pin na certificate",
   "pinsNote": "Bawat certificate na pinagbabatayan ng realm na ito dahil may nagrehistro nito, isinasailalim sa mga pagsusuri anuman ang sabihin ng mga setting sa itaas. Huling na-audit: {when}.",

@@ -3375,7 +3375,10 @@ function dialOptions(url, verifyTls, ca, engine) {
    * @type {{ rejectUnauthorized: boolean, ca?: string,
    *          checkServerIdentity?: Function }}
    */
-  const ssl = { rejectUnauthorized: verifyChain };
+  // `stsOutboundVariant`: the store's row of the outbound gate (#1360,
+  // `common/certificate_trust.ts`); node ignores a member it does not know.
+  const ssl = /** @type {any} */ ({ rejectUnauthorized: verifyChain,
+                                    stsOutboundVariant: 'store' });
   if (ca) {
     // The database's own trust anchors, in place of the default store for
     // this connection only (the header).

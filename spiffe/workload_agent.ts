@@ -71,6 +71,7 @@ import fs = require('fs');
 import path = require('path');
 import net = require('net');
 import https = require('https');
+import tls = require('tls');
 import crypto = require('crypto');
 import grpc = require('@grpc/grpc-js');
 import protoLoader = require('@grpc/proto-loader');
@@ -140,6 +141,7 @@ class WorkloadAgent {
   trustBundlePem: string;
 
   bundleUrl: string;
+  bundleCa: string;
 
   requireSecurityHeader: boolean;
 
@@ -206,6 +208,10 @@ class WorkloadAgent {
     this.joinToken = String(options.joinToken || '');
     this.trustBundlePem = String(options.trustBundlePem || '');
     this.bundleUrl = String(options.bundleUrl || '').trim();
+    // A private CA for the bundle endpoint, beside node's store (#1360): the
+    // agent is standalone and carries none of the service's outbound policy,
+    // so it verifies by node's rules against what it is told.
+    this.bundleCa = String(options.trustBundleCa || '').trim();
     this.requireSecurityHeader = options.requireSecurityHeader !== false;
     this.attestWorkloads = options.attestWorkloads !== false;
     this.nativePath = options.nativePath
@@ -783,8 +789,12 @@ class WorkloadAgent {
   fetchText(url: string): Promise<string> {
     this.log.debug("Entering WorkloadAgent.fetchText().");
     this.log.debug("Leaving WorkloadAgent.fetchText().");
+    const bundleCa = this.bundleCa;
     return new Promise(function (resolve, reject) {
-      const req = https.get(url, { timeout: DEADLINE_MS }, function (res) {
+      const ca = bundleCa ? tls.rootCertificates.concat(
+        fs.readFileSync(bundleCa, 'utf8')) : undefined;
+      const req = https.get(url, { timeout: DEADLINE_MS, ca: ca },
+                            function (res) {
         const chunks = [];
         res.on('data', function (chunk) { chunks.push(chunk); });
         res.on('end', function () {
@@ -2711,7 +2721,7 @@ class WorkloadAgent {
     const known = ['server', 'socket', 'trust-domain', 'bundle-url',
                    'trust-bundle-file', 'require-security-header',
                    'attest-workloads', 'join-token-file', 'native',
-                   'ready-file'];
+                   'ready-file', 'trust-bundle-ca'];
     for (let i = 0; i < argv.length; i++) {
       const arg = String(argv[i] || '');
       if (arg.indexOf('--') !== 0) {
@@ -2787,6 +2797,7 @@ class WorkloadAgent {
       joinToken: token,
       trustBundlePem: pem,
       bundleUrl: map['bundle-url'] || '',
+      trustBundleCa: map['trust-bundle-ca'] || '',
       requireSecurityHeader: WorkloadAgent.flag(
         map['require-security-header']),
       attestWorkloads: WorkloadAgent.flag(map['attest-workloads']),

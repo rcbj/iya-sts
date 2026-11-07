@@ -45,6 +45,7 @@ export interface PurposeVariant {
   selfSigned?: 'refuse' | 'allow-by-spec';
   validity?: 'now' | 'not-before-by-spec';
   revocation?: 'required' | 'exempt-by-spec';
+  softRevocation?: boolean;
 }
 
 export interface Purpose {
