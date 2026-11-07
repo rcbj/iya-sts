@@ -59,6 +59,7 @@ One identity layer. Multiple protocols. Multiple trust relationships. Modern app
 iya-sts is built for organizations that don't want to replace their entire identity infrastructure just to build what's next.
 
 # OpenID Connect Certification
+<p align="left"><img src="docs/oid-l-certification-mark-l-cmyk-150dpi-90mm.jpg" alt="IYA STS — Security Token Service"></p>
 
 **Iya-STS v1.0.0**, from Iya CyberSecurity Solutions, has achieved OpenID Connect Provider (OP) certification through the OpenID Foundation across all seven published OP conformance profiles and all four OpenID Connect logout profiles.
 
