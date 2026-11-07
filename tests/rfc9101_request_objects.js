@@ -848,6 +848,7 @@ function childMain() {
            r.text.slice(0, 240));
     } finally {
       config.clearOverride('global.mode');
+      config.clearOverride('pki.paranoidOutboundTls');
       config.clearOverride('federation.outboundCaFile');
       secureRo.close();
       require('fs').unlinkSync(roCaFile);

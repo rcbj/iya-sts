@@ -30,12 +30,20 @@
 //   * paranoid not lifting the distribution-point requirement — 1 red
 //   * a link with no issuer refused though it names nothing   — 1 red
 //   * every link with no issuer passing, naming or not        — 2 red
+//   * a pin asking only its own extensions, not the path      — 2 red (L)
+//   * `named` ignored at the path, or at the self-signed rule — 1 red (L)
+//   * a JWK's x5c asked for a path again                      — 1 red (L)
+//   * a pin always asking, naming or not                     — 2 red (L)
 //   * another process's counts not added in                  — 1 red (I)
 //   * `fieldChecks()` not marking a failure                  — 53 red
 //   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
 //   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
 //   * `anchorsFor()` ignoring `purposes`                     — 1 red (D)
 //   * `ruleOf()` ignoring the variant                        — 4 red (B, E, G)
+//   * a self-signed x5c[0] left the pin it was under paranoid — 1 red (L)
+//   * a chain not completed from the signer truststore       — 1 red (L)
+//   * the pinned certificate's fetched verdict never read    — 1 red (L)
+//   * a JWK's x5c not held                                   — 1 red (L)
 // ===========================================================================
 
 delete process.env.CONFIG_FILE;
@@ -505,6 +513,113 @@ async function run(t, double, crls) {
     { anchors: [root.pem], anchorSources: ['caller'] });
   t.check(unasked.ok && unasked.checks['name-match'] === 'not-asked',
           'K. no name expected is the one not-asked that passes', unasked.why);
+  // L. THE DOORS SIGNERS CALL (Phase 3).
+  t.log.info('L. signers');
+  const expiredSelf = await kit.mint({ cn: 'expired sp',
+    notBefore: now - 3 * kit.DAY, notAfter: now - kit.DAY });
+  const goodSelf = await kit.mint({ cn: 'good sp' });
+  const pinned = trust.pinnedSync('saml-signer', goodSelf.pem);
+  t.check(pinned.ok, 'L. a self-signed SP certificate is accepted by spec',
+          pinned.why);
+  const pinnedOld = trust.pinnedSync('saml-signer', expiredSelf.pem);
+  t.check(!pinnedOld.ok && pinnedOld.code === 'STS-KEYS-0168',
+          'L. and held to its validity', pinnedOld.code);
+  const wssSelf = trust.pinnedSync('wss-x509-token', goodSelf.pem);
+  t.check(!wssSelf.ok && wssSelf.code === 'STS-PKI-0246',
+          'L. a use case that refuses self-signed refuses it', wssSelf.code);
+  const stranger2 = await kit.mint({ cn: 'stranger issued', issuer: root });
+  const unheld = trust.pinnedSync('saml-signer', stranger2.pem);
+  t.check(!unheld.ok && unheld.code === 'STS-PKI-0244',
+          'L. a CA-issued signer reaching nothing held is refused',
+          unheld.code + ' ' + unheld.why);
+  await signers.add(REALM, root.pem, {});
+  const nowHeld = trust.pinnedSync('saml-signer', stranger2.pem);
+  t.check(nowHeld.ok, 'L. and accepted once its CA is in the store',
+          nowHeld.why);
+  const listedPin = await kit.mint({ cn: 'listed pin', issuer: root,
+                                     crls: [crls.base + '/pin.crl'] });
+  crls.routes['/pin.crl'] = await kit.crlOf(root, [listedPin.serialHex]);
+  const firstAsk = trust.pinnedSync('saml-signer', listedPin.pem);
+  t.check(!firstAsk.ok, 'L. a list not yet read is a check nobody made',
+          firstAsk.why);
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 800);
+  });
+  const secondAsk = trust.pinnedSync('saml-signer', listedPin.pem);
+  t.check(!secondAsk.ok && secondAsk.code === 'STS-PKI-0118',
+          'L. and once read, it is revoked', secondAsk.code);
+  // Nothing is looked up for a pin naming nothing, unless a CA above it does.
+  const crossKeysForPins = require('../common/crypto_impl/key_material');
+  const quietCa = await kit.mint({ cn: 'pin ca naming nothing', ca: true,
+    issuer: root, pair: await crossKeysForPins.generateKeyPair('rsa-2048') });
+  const quietPin = await kit.mint({ cn: 'pin naming nothing', issuer: quietCa });
+  await signers.add(REALM, quietCa.pem, {});
+  const noSource = trust.pinnedSync('saml-signer', quietPin.pem);
+  t.check(noSource.ok,
+          'L. a pin whose path names no source has no check to perform',
+          noSource.why);
+  const loudCa = await kit.mint({ cn: 'pin ca naming a list', ca: true,
+    issuer: root, crls: [crls.base + '/pin-ca.crl'],
+    pair: await crossKeysForPins.generateKeyPair('rsa-2048') });
+  crls.routes['/pin-ca.crl'] = await kit.crlOf(root, [loudCa.serialHex]);
+  const underLoud = await kit.mint({ cn: 'pin under it', issuer: loudCa });
+  await signers.add(REALM, loudCa.pem, {});
+  t.check(!trust.pinnedSync('saml-signer', underLoud.pem).ok,
+          'L. a CA above the pin naming one is asked', '');
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 800);
+  });
+  const caAnswered = trust.pinnedSync('saml-signer', underLoud.pem);
+  t.check(!caAnswered.ok && caAnswered.code === 'STS-PKI-0118',
+          'L. and its answer about that CA holds', caAnswered.code);
+  // NAMED: an administrator's act stored it, so it needs no path (rcbj).
+  const namedPin = await kit.mint({ cn: 'named pin', issuer: await kit.mint(
+    { cn: 'a ca nobody holds', ca: true,
+      pair: await crossKeysForPins.generateKeyPair('rsa-2048') }) });
+  t.check(!trust.pinnedSync('saml-signer', namedPin.pem).ok &&
+          trust.pinnedSync('saml-signer', namedPin.pem, { named: true }).ok,
+          'L. a certificate named by an administrator needs no path', '');
+  t.check(trust.pinnedSync('federation-partner', namedPin.pem,
+                           { named: true }).ok,
+          'L. a partner\'s, on a relationship, the same', '');
+  t.check(trust.pinnedSync('wss-x509-token', goodSelf.pem,
+                           { named: true }).ok,
+          'L. nor is a self-signed one refused for being that', '');
+  t.check(!trust.pinnedSync('saml-signer', expiredSelf.pem,
+                            { named: true }).ok,
+          'L. and its validity still counts', '');
+  t.check(trust.bareKey({ kty: 'EC', x5c: [pemDer(namedPin.pem)
+    .toString('base64')] }).ok,
+          'L. a JWK whose x5c chains to nothing held is the key it would be ' +
+          'without one', '');
+  const bareOk = trust.bareKey({ kty: 'EC' });
+  t.check(bareOk.ok, 'L. a bare JWK is left alone (OpenID Federation 1.1)', '');
+  const carried = trust.bareKey({ kty: 'EC', x5c: [pemDer(expiredSelf.pem)
+    .toString('base64')] });
+  t.check(!carried.ok, 'L. a JWK carrying an x5c is held to it', carried.why);
+  t.check(trust.registrationProblem('saml-signer', expiredSelf.pem) !== null,
+          'L. the registration door asks the fields', '');
+  t.equal(trust.registrationProblem('saml-signer', goodSelf.pem), null,
+          'L. and takes a good certificate');
+  const chainOf = await trust.signerChain('jose-signer',
+    { certificate: pemDer(goodSelf.pem).toString('base64'), chain: [] });
+  t.check(!chainOf.ok && /self-signed/.test(chainOf.why),
+          'L. a self-signed x5c[0] is refused for a JOSE signer', chainOf.why);
+  const inStore = await kit.mint({ cn: 'jose leaf', issuer: root });
+  const viaStore = await trust.signerChain('jose-signer',
+    { certificate: inStore.pem, chain: [] });
+  t.check(viaStore.ok && viaStore.anchor === 'signer-truststore',
+          'L. a chain with no registered root completes from the store',
+          viaStore.why);
+  await withSettings({ 'pki.paranoid': 'off' }, async () => {
+    t.check(trust.pinnedSync('saml-signer', expiredSelf.pem).ok,
+            'L. out of force, nothing is asked', '');
+    const baseline = await trust.signerChain('jose-signer',
+      { certificate: pemDer(goodSelf.pem).toString('base64'), chain: [] });
+    t.check(baseline.ok && baseline.anchor === 'pinned',
+            'L. and a self-signed x5c[0] is the pin it was', baseline.why);
+  });
+  double.rows(REALM).clear();
   // A CHAIN ENDING IN A CROSS-SIGNED ROOT (the shape of every Google endpoint):
   // a root the store holds, sent as a copy another root signed, whose issuer is
   // not sent. Hard-fail refused it for having no issuer until the walk stopped

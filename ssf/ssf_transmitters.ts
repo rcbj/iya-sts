@@ -1246,6 +1246,9 @@ class SsfTransmitters {
       ? got.jwks.keys : [];
     const candidates = keys.filter(function (k: Json) {
       return !header.kid || k.kid === header.kid;
+    }).filter(function (k: Json) {
+      // A transmitter's key that carries an x5c is held to it (#1360).
+      return require('../common/certificate_trust').bareKey(k).ok;
     });
     let why = candidates.length ? '' : 'no key ' + (header.kid ? 'with kid ' +
       header.kid + ' ' : '') + 'at the partner\'s jwks_uri';

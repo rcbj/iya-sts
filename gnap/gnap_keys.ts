@@ -401,6 +401,14 @@ class GnapKeys {
         return this.refusal('STS-GNAP-0008', 'the key\'s "cert" member is ' +
                             'not a PEM X.509 certificate.', 'invalid_client');
       }
+      // A key named by its certificate is still a certificate (#1360).
+      const heldCert = require('../common/certificate_trust')
+        .registrationProblem('jose-bare-key', certificate);
+      if (heldCert) {
+        log.debug("Leaving GnapKeys.describe(). Paranoid: " + heldCert.code);
+        return this.refusal(heldCert.code, 'the key\'s "cert" member is ' +
+                            'refused: ' + heldCert.why, 'invalid_client');
+      }
       const publicKey = certificate.publicKey;
       log.debug("Leaving GnapKeys.describe(). Certificate.");
       return { ok: true, proof: proof, format: 'cert', jwk: null,

@@ -1143,6 +1143,22 @@
     "en": "9c59c7826b7934f6",
     "text": "Aucune expiration : actualisée à chaque vidage, une entrée par entrée d’annuaire et par domaine écrits. Vide en mode mémoire."
   },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "Révocation des certificats épinglés"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "Ce qui a été récupéré en dernier sur un certificat épinglé, pour les portes qui répondent en un seul tour sous le mode PKI paranoïaque. Indexé par l’empreinte du certificat."
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "Appliqué : 1024 entrées ; l’écriture la plus ancienne est abandonnée et récupérée de nouveau au besoin."
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 minutes"
+  },
   "caches.store.revocation.ca-certificates.title": {
     "en": "c65adefa5d027d1a",
     "text": "Certificats d’émetteur récupérés"

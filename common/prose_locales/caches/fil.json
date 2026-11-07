@@ -1143,6 +1143,22 @@
     "en": "9c59c7826b7934f6",
     "text": "Walang expiry: nire-refresh sa bawat flush, isang entry bawat directory entry at realm na isinulat. Walang laman sa memory mode."
   },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "Pagbawi ng mga naka-pin na sertipiko"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "Ang huling nakuha tungkol sa isang naka-pin na sertipiko, para sa mga pintong sumasagot sa isang tick sa ilalim ng paranoid PKI mode. Naka-key sa fingerprint ng sertipiko."
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "Ipinapatupad: 1024 entry; ang pinakalumang sulat ay tinatanggal at kinukuha muli kapag kailangan."
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 minuto"
+  },
   "caches.store.revocation.ca-certificates.title": {
     "en": "c65adefa5d027d1a",
     "text": "Mga na-fetch na issuer certificate"

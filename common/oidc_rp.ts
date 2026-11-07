@@ -273,6 +273,7 @@ interface OidcRelyingPartyDeps {
   clusterClaims: typeof clusterClaims;
   clusterBarrier: typeof clusterBarrier;
   fapi: typeof fapi;
+  signerChain: (material: any) => Promise<any>;
   http: typeof http;
   https: typeof https;
   // `tls/tls_server.js`, required only when the back channel runs — see the
@@ -638,6 +639,10 @@ class OidcRelyingParty {
         return require('../tls/tls_server');
       },
       fapi: fapi,
+      signerChain: function (material: any): Promise<any> {
+        return require('./certificate_trust')
+          .signerChain('jose-signer', material);
+      },
       loadPki: function () {
         return require('./pki');
       },
@@ -1957,7 +1962,7 @@ class OidcRelyingParty {
     }
     let verdict: any = null;
     try {
-      verdict = await pki.verifySignerChain(undefined, {
+      verdict = await this.deps.signerChain({
         certificate: held.certificatePem, chain: held.chainPem,
         source: 'the key the ' + surface.label + ' holds'
       });

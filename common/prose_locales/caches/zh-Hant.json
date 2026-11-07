@@ -1143,6 +1143,22 @@
     "en": "9c59c7826b7934f6",
     "text": "不會過期：每次清空寫入時更新，每個已寫入的目錄項目與領域各一個項目。在記憶體模式下為空。"
   },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "固定憑證的撤銷"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "針對固定憑證最近取得的資訊，供偏執 PKI 模式下在一個時鐘週期內作答的入口使用。以憑證指紋為鍵。"
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "已強制：1024 筆；最早寫入的項目被捨棄，需要時重新取得。"
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 分鐘"
+  },
   "caches.store.revocation.ca-certificates.title": {
     "en": "c65adefa5d027d1a",
     "text": "已擷取的簽發者憑證"

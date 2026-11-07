@@ -1795,3 +1795,25 @@ design. With `authn.multipleAccounts` off nothing here changes; on:
 ## The description page is a static surface's shell (#584, 2026-10-12)
 
 `GET /saml2` and `GET /saml11` are this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `saml/web_saml_description.ts` from the `describeSaml2` and `describeSaml11` catalogs, with `/saml2/description.js` and `/saml11/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. Neither page had a JSON form before; it is the view, which names no mock service provider or relying party since #592. The bare `GET /saml2/sso`, `/saml2/ars`, `/saml11/sso` and `/saml11/responder` descriptions are a specification's endpoints answering a parameterless GET and stay server-drawn. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.
+
+## Under paranoid PKI mode an administrator's act names the anchor (rcbj, #1360)
+
+**`consume()` tells the two kinds of document apart by `this.quiet`**, which is
+true only for the refresher and a lookup a request started. A document an
+administrator gives or asks for, with no anchor yet, is accepted unsigned and
+its first signing certificate is written to
+`samlSpMetadataSigningCertificate`. A quiet fetch never names one: it verifies
+against what is held, a certificate set by hand included, and is otherwise
+refused (`STS-SAML-0118`), or whoever answers for the URL would choose the key.
+A verified quiet fetch may rotate `samlSigningCertificate`, so the anchor is the
+separate field and rotation does not move it; over a hand-set certificate, the
+one it answered to is pinned there. An administrator's unsigned document is taken
+while it keeps a held anchor or names no signing key, because real providers
+publish unsigned metadata and nothing new is trusted (`keptAnchor()`); one naming
+only another key is refused, and replacing an anchor is setting that field. With
+realm anchors configured every document must verify, as it always did.
+`saml2.mdqImportWithoutAnchors` still gates an operator's MDQ import, and the
+import it lets through is an administrator's act like any other. Nothing else
+can write these attributes: no OAuth registration door names them, and a sighting
+goes to the observed attribute, never to the registered one.
+`tests/saml_metadata_lifecycle.js` F1c holds it, against nine mutants.

@@ -4836,6 +4836,17 @@ function update(id, change) {
   if (field === 'fedSigningCertificate') {
     record[field] = String(record[field]).replace(/-----[^-]+-----/g, '')
                                          .replace(/\s+/g, '');
+    // Its fields, at the door, under paranoid PKI mode (#1360): its chain and
+    // revocation are asked at the use. Lazily: the door reaches the authority.
+    const paranoid = record[field] && require('../common/certificate_trust')
+      .registrationProblem('federation-partner',
+                           Buffer.from(record[field], 'base64'));
+    if (paranoid) {
+      log.debug('Leaving update(). Paranoid: ' + paranoid.code);
+      return errorCodes.mark({ ok: false, errors: ['fedSigningCertificate is ' +
+                               'refused: ' + paranoid.why + '.'] },
+                             paranoid.code);
+    }
   }
   // And the two booleans, so that `on`, `true`, `1` and a ticked checkbox all
   // reach the entry as the same string. Without this the entry holds whatever

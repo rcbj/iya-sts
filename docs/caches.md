@@ -108,6 +108,7 @@ answer.
 | CRLs | each fetched certificate revocation list | per process | until the CRL's own `nextUpdate`, but never longer than the setting | `pki.revocationCrlMaxAgeS` (3600) |
 | OCSP answers | each fetched OCSP response | per process | until the response's `nextUpdate`, but never longer than the setting | `pki.revocationOcspMaxAgeS` (3600) |
 | Issuer certificates | certificates fetched from an Authority Information Access address | per process | as for CRLs | `pki.revocationCrlMaxAgeS` |
+| Pinned certificates' revocation | what was last fetched about a pinned certificate, for the doors that answer in one tick under [paranoid PKI mode](pki.md#paranoid-pki-mode) | per process | 5 minutes | at most 1024; none |
 | Failed fetches | an address that did not answer, so it is not asked again at once | per process | the setting; 0 means a failure is not remembered | `pki.revocationFailureRetryS` (60) |
 | Certificate files | trust anchors read from a file named in a setting | per process | until the file's path or modification time changes; one entry per setting that names a file (two) | — |
 | Client certificate chains | the chain a verified client certificate built on a full TLS handshake, handed back when that session is resumed (a resumed session carries the leaf alone) | per process | no expiry; 1024 leaves, the oldest dropped first | — |

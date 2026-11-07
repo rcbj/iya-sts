@@ -1172,7 +1172,8 @@ async function verify(opts) {
   // replaced Root went on signing assertions. `pki.verifySignerChain()` argues
   // the three anchors; the refusal is in both modes, for the registered-issuer
   // refusal's reason above.
-  const certificateChain = await pki.verifySignerChain(undefined, {
+  const certificateChain = await require('../common/certificate_trust')
+    .signerChain('saml-signer', {
     certificate: usedCertificate.pem,
     chain: usedCertificate.source === 'issued'
       ? usedCertificate.chain || ''

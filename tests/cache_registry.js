@@ -76,6 +76,7 @@ const OWNERS = {
   '../scim/scim_auth': ['scim.digest-nonces', 'scim.digest-nonce-counts',
     'scim.hoba-challenges', 'scim.hoba-signatures'],
   '../oid4vc/vc_issuer': ['oid4vci.nonces'],
+  '../common/certificate_trust': ['pki.pinned-verdicts'],
   '../common/revocation_status': ['revocation.crl', 'revocation.ocsp',
     'revocation.ca-certificates', 'revocation.failures',
     'revocation.parsed-tiers', 'revocation.pem-files',
