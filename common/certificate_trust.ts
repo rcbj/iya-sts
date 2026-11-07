@@ -487,18 +487,16 @@ PURPOSES.forEach(function (one) {
 // Who has been told a check is off in product, once per process per setting.
 // At most one name per row of this table, so it is bounded by construction.
 const announced = new Set<string>();
-// Per realm, per purpose: `{ assessed, refused, lastRefusal }`. Process-local.
-const counts = new Map<string, Json>();
+// Per realm, per purpose: `{ assessed, refused, lastRefusal }`. Each process
+// keeps its own rows and a reader adds up the rest (`merge: 'own'`, the monitors'
+// shape): a refusal lands on one node and the page is drawn by another.
+const counts = realms.map({ persist: 'pki.door.counts', merge: 'own' });
 // Each owner's list of what it pins, registered at build.
 const pinSources = new Map<string,
   (realmId: string) => Promise<PinnedSource[]> | PinnedSource[]>();
 // What the audit last found, per realm; the page draws it and the job compares
 // against it, so a restart does not re-announce every certificate.
 const lastAudit = realms.map({ persist: 'pki.pins.lastAudit' });
-
-realms.onRemove(function (id: string) {
-  counts.delete(id);
-});
 
 // WHAT WAS LAST FETCHED ABOUT A PINNED CERTIFICATE, for the doors that cannot
 // wait (`pinnedSync()`). Keyed by fingerprint, so it is about a certificate and
@@ -989,19 +987,24 @@ class CertificateTrust {
   private static count(purpose: Purpose, verdict: TrustVerdict,
                        realmId: string): void {
     helpers.log.debug("Entering CertificateTrust.count().");
-    let realm = counts.get(realmId);
-    if (!realm) {
-      realm = {};
-      counts.set(realmId, realm);
+    // A count may never be what fails a validation.
+    try {
+      realms.run(realmId, function () {
+        const row = counts.has(purpose.id) ? counts.get(purpose.id) :
+          { assessed: 0, refused: 0, lastRefusal: null };
+        row.assessed += 1;
+        if (!verdict.ok) {
+          row.refused += 1;
+          row.lastRefusal = { code: verdict.code, why: verdict.why,
+                              at: Date.now() };
+        }
+        counts.set(purpose.id, row);
+      });
+    } catch (e) {
+      helpers.log.debug("Caught in CertificateTrust.count(): " +
+                        ((e && e.message) || e));
     }
-    const row = realm[purpose.id] ||
-      { assessed: 0, refused: 0, lastRefusal: null };
-    realm[purpose.id] = row;
-    row.assessed += 1;
     if (!verdict.ok) {
-      row.refused += 1;
-      row.lastRefusal = { code: verdict.code, why: verdict.why,
-                          at: Date.now() };
       if (verdict.inForce) {
         audit.failure(verdict.code, {
           action: 'service.failure', protocol: purpose.id, channel: 'internal',
@@ -2187,18 +2190,34 @@ class CertificateTrust {
   }
 
   /**
-   * What the door has answered in this process.
+   * What the door has answered, in every process of this cluster.
    *
    * @param realmId - the realm; the ambient one where omitted
    * @returns per purpose, `{ assessed, refused, lastRefusal }`
    */
   static counters(realmId?: string): Json {
     helpers.log.debug("Entering CertificateTrust.counters().");
-    const realm = counts.get(realmId || realms.currentId()) || {};
+    // Lazily: the store's reader stands on modules that stand on this one.
+    const replication = require('../persistence/persistence_replication');
     const out: Json = {};
-    PURPOSES.forEach(function (one) {
-      out[one.id] = realm[one.id] ||
-        { assessed: 0, refused: 0, lastRefusal: null };
+    realms.run(realmId || realms.currentId(), function () {
+      PURPOSES.forEach(function (one) {
+        const merged: Json = { assessed: 0, refused: 0, lastRefusal: null };
+        [counts.has(one.id) ? counts.get(one.id) : null]
+          .concat(replication.remoteRows('pki.door.counts', undefined, one.id))
+          .forEach(function (row: Json) {
+            if (!row) {
+              return;
+            }
+            merged.assessed += Number(row.assessed) || 0;
+            merged.refused += Number(row.refused) || 0;
+            if (row.lastRefusal && (!merged.lastRefusal ||
+                row.lastRefusal.at > merged.lastRefusal.at)) {
+              merged.lastRefusal = row.lastRefusal;
+            }
+          });
+        out[one.id] = merged;
+      });
     });
     helpers.log.debug("Leaving CertificateTrust.counters().");
     return out;
