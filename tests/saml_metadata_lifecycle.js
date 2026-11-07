@@ -947,6 +947,16 @@ async function run(t) {
       t.check(!quietAgain.ok,
               'and the background still may not take an unsigned document',
               JSON.stringify(quietAgain.errors));
+      // Naming the anchor proves nothing unsigned: it is a public certificate,
+      // and whoever answers for the URL would be choosing the addresses.
+      served['/md/named'] = { status: 200, body: entity(named,
+        { signing: anchor.cert.b64, acs: 'https://named-swapped.test/acs' }) };
+      const swappedAcs = await spMetadata.refresh(named, { quiet: true });
+      t.check(!swappedAcs.ok &&
+              [].concat(fieldsOf(named).samlAssertionConsumerService || [])
+                .indexOf('https://named-swapped.test/acs') < 0,
+              'nor one that merely names the anchor and changes the addresses',
+              JSON.stringify(swappedAcs.errors));
 
       // By hand: the certificate is the anchor before any explicit one exists.
       const byHand = newSp('by-hand', {
