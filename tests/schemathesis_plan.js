@@ -386,6 +386,32 @@ function run(t) {
       "service exclusion " + one.match + " carries a reason");
   });
 
+  // The infrastructure-name guard (#1299): the proxy refuses to forward an
+  // admin-api request that names, as an exact value, one of these identities
+  // or the fuzz person — because the admin-api cell can delete, forget or
+  // disable the applications the run stands on (the 2026-11-06 run deleted
+  // sts-admin-console, its own sign-in client). Each entry is a non-empty name
+  // and carries a reason, exactly as the exclusions do; the list must include
+  // the four surface/management clients iya-sts-60 named, so a dropped one is
+  // caught here rather than as a mid-run token storm.
+  t.check(Array.isArray(kit.PROTECTED_CLIENTS) &&
+    kit.PROTECTED_CLIENTS.length > 0,
+    "the guard protects a non-empty set of infrastructure names");
+  kit.PROTECTED_CLIENTS.forEach(function (one) {
+    t.check(!!one.name && typeof one.name === "string" &&
+      one.name.trim().length > 0 && !!one.reason &&
+      one.reason.trim().length > 0,
+      "protected client " + (one && one.name) + " is a name with a reason");
+  });
+  const protectedNames = kit.PROTECTED_CLIENTS.map(function (one) {
+    return one.name;
+  });
+  ["sts-admin-console", "sts-api-client", "sts-user-portal", "sts-report"]
+    .forEach(function (name) {
+      t.check(protectedNames.indexOf(name) >= 0,
+        "the guard protects the infrastructure client " + name);
+    });
+
   t.log.debug("Leaving run().");
 }
 
