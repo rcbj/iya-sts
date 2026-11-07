@@ -600,6 +600,21 @@ class IntrospectionJwt {
         '", which needs ' + stsCrypto.jweRecipientKeyNeed(alg) + ', and ' +
         'its jwks has none that can be used for encryption.');
     }
+    // A KEY THAT CARRIES ITS CERTIFICATE IS HELD TO IT, under paranoid PKI mode
+    // (#1360): in date, may encipher, not revoked. A bare JWK has no certificate
+    // to hold, and RFC 7517 section 4.7 makes `x5c` optional.
+    const x5c = Array.isArray(candidates[0].x5c) ? candidates[0].x5c : [];
+    if (x5c.length) {
+      const held = require('../common/certificate_trust').pinnedSync(
+        'encryption-recipient', Buffer.from(String(x5c[0]), 'base64'));
+      if (!held.ok) {
+        log.debug("Leaving IntrospectionJwt.recipientKey(). Paranoid: " +
+                  held.code);
+        // error-code: none — the door records its own verdict
+        throw new Error('The certificate of the key this client registered ' +
+                        'for encryption is refused: ' + held.why);
+      }
+    }
     log.debug("Leaving IntrospectionJwt.recipientKey(). kid=" +
               (candidates[0].kid || '(none)'));
     return candidates[0];

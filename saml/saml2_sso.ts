@@ -1936,6 +1936,26 @@ class Saml2Sso {
   // is the worst of the three, because the person testing their client would
   // believe the wrong thing about what their client accepted. So it is logged
   // at WARN, every time, naming the application and what to do about it.
+  // The certificate chosen, held to its use case under paranoid PKI mode (#1360):
+  // in date, may encipher, not revoked. It is registered on the application,
+  // which named it, so it needs no chain (rcbj). Refused, there is no certificate
+  // and the answer says why, so `encryptFor()` does not send what it was asked
+  // to seal.
+  private heldRecipient(pem: string, source: string): any {
+    const { log } = this.deps.helpers;
+    log.debug("Entering Saml2Sso.heldRecipient(). " + source);
+    const held = require('../common/certificate_trust')
+      .pinnedSync('encryption-recipient', pem, { named: true });
+    if (!held.ok) {
+      log.warn(this.deps.errorCodes.tag(held.code) + 'saml2: ' + source +
+               ' is not encrypted to: ' + held.why);
+      log.debug("Leaving Saml2Sso.heldRecipient(). Refused.");
+      return { pem: '', source: '', refused: held.why };
+    }
+    log.debug("Leaving Saml2Sso.heldRecipient().");
+    return { pem: pem, source: source };
+  }
+
   private encryptionCertificateFor(spEntityId): any {
     const { applications, mode, spMetadata } = this.deps;
     const { log } = this.deps.helpers;
@@ -1953,8 +1973,8 @@ class Saml2Sso {
     if (configured) {
       log.debug("Leaving Saml2Sso.encryptionCertificateFor(). Its own " +
                 "encryption certificate.");
-      return { pem: spMetadata.toPem(configured),
-               source: 'samlEncryptionCertificate' };
+      return this.heldRecipient(spMetadata.toPem(configured),
+                                'samlEncryptionCertificate');
     }
     // THE FIRST REGISTERED SIGNING CERTIFICATE THAT CAN BE ENCRYPTED TO:
     // since the #37 follow-up a service provider may sign with EC, EdDSA or a
@@ -1973,11 +1993,15 @@ class Saml2Sso {
     if (signing) {
       log.debug("Leaving Saml2Sso.encryptionCertificateFor(). Its signing " +
                 "certificate.");
-      return { pem: spMetadata.toPem(signing),
-               source: 'samlSigningCertificate' };
+      return this.heldRecipient(spMetadata.toPem(signing),
+                                'samlSigningCertificate');
     }
     const observed = rsaOnly(fields.samlObservedSigningCertificate);
-    if (observed && mode.encryptsToObservedCertificates()) {
+    // An OBSERVED certificate is what the request itself supplied, so under
+    // paranoid PKI mode nothing is ever encrypted to it (#1360), in either mode.
+    if (observed && mode.encryptsToObservedCertificates() &&
+        !require('../common/certificate_trust')
+          .applies('encryption-recipient')) {
       log.debug("Leaving Saml2Sso.encryptionCertificateFor(). The observed " +
                 "certificate, in development.");
       return { pem: spMetadata.toPem(observed),
@@ -2022,6 +2046,10 @@ class Saml2Sso {
               ", as=" +
               wrapper);
     const cert = this.encryptionCertificateFor(spEntityId);
+    if (cert.refused) {
+      log.debug("Leaving Saml2Sso.encryptFor(). The certificate is refused.");
+      return { xml: xml, encrypted: false, refused: true, why: cert.refused };
+    }
     if (!cert.pem) {
       log.warn('saml2: ' + (spEntityId || 'this service provider') + ' is ' +
                'configured to have ' +
@@ -4327,7 +4355,8 @@ class Saml2Sso {
       ? this.encryptFor(spEntityId, built, 'saml:EncryptedAssertion',
                         'assertion')
       : { xml: built, encrypted: false };
-    if (wantsEncryption && !sealed.encrypted && !mode.sendsWeakerThanAsked()) {
+    if (wantsEncryption && !sealed.encrypted &&
+        (sealed.refused || !mode.sendsWeakerThanAsked())) {
       log.debug("Leaving Saml2Sso.answerAttributeQuery(). Encryption " +
                 "impossible.");
       return answer('STS-SAML-0011', STATUS_RESPONDER, '',
@@ -4413,7 +4442,8 @@ class Saml2Sso {
     // may drive a test control (`opensTestControls()`, which this used for an
     // hour for want of a predicate that named it).
     // -------------------------------------------------------------------------
-    if (wantsEncryption && !sealed.encrypted && !mode.sendsWeakerThanAsked()) {
+    if (wantsEncryption && !sealed.encrypted &&
+        (sealed.refused || !mode.sendsWeakerThanAsked())) {
       log.warn('saml2: refused to send an assertion for ' + ctx.spEntityId +
                ' ' +
                'in clear: saml2.encryptAssertion is on for it and the ' +

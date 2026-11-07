@@ -592,6 +592,8 @@ An administrator's act names the trust anchor: setting a signing certificate on 
 
 See the `saml-signer` row of the [use cases](pki-use-cases.md).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the certificate an assertion is encrypted to must be in date, permit keyEncipherment or keyAgreement, and not be revoked, and nothing is ever encrypted to a certificate merely observed on a request. A refused certificate refuses the response rather than sending it in clear, in either mode. See the `encryption-recipient` row of the [use cases](pki-use-cases.md).
+
 ## Development and product mode
 
 | | Development | Product |
