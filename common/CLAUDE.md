@@ -9028,6 +9028,14 @@ wait has nothing to wait for: every self-signed SPIFFE authority's SVID is one.
 `tests/certificate_trust_callers.js`'s `ALLOWED` is empty, and `PERMANENT` holds
 the calls that decide nothing, each with its reason.
 
+**PHASE 6: THE INVENTORY READS `certificate_pins.ts`.** Applications, federation
+relationships, the settings holding certificates, federated SPIFFE bundles, GNAP
+clients' keys, the shipped cloud anchors and the client truststore, each owner
+reached lazily. A setting of anchors is judged as `anchor-admission`, so a root
+reads as a root. `tests/certificate_pins.js` fails on a setting of that shape the
+list omits, and `tests/certificate_trust_callers.js` on a row whose named site
+does not ask for it, which is what found five stale `sites` entries in the table.
+
 ## 3ad. `revocation_status.js`: REVOCATION, CONSULTED (2026-09-12)
 
 `pki_revocation.js` PUBLISHES; this CONSULTS. Until it existed a client

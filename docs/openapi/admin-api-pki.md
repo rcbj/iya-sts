@@ -5532,7 +5532,7 @@ Scope: `admin:write`.
 |---|---|---|---|
 | `certificates` | list, or string | yes |  |
 | `certificates[]` | string |  |  |
-| `kind` | one of `anchor`, `intermediate`, `accepted` |  | Omitted: a self-issued certificate is an anchor, any other an intermediate. `accepted`: one self-signed leaf a server presents, trusted as itself for outbound TLS and for nothing else. |
+| `kind` | one of `anchor`, `intermediate`, `accepted` |  | Omitted: a self-issued certificate is an anchor, any other an intermediate. `accepted`: one leaf a server presents, trusted as itself for outbound TLS and for nothing else. |
 | `purposes` | list, or string |  |  |
 | `purposes[]` | string |  |  |
 

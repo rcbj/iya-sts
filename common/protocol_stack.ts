@@ -1398,6 +1398,7 @@ class ProtocolStack {
     this.build('common/signer_truststore', require('./signer_truststore'),
                'SignerTruststore');
     require('./certificate_trust').install();
+    require('./certificate_pins').install();
     this.build('risk/risk_engine', require('../risk/risk_engine'),
                'RiskEngine');
     require('../admin-ui/risk_admin');
