@@ -309,6 +309,59 @@ const SERVICE_CELL = Object.freeze({
 });
 
 // ---------------------------------------------------------------------------
+// THE INFRASTRUCTURE IDENTITIES THE PROXY WILL NOT LET A CELL NAME (#1299,
+// iya-sts-60, 2026-11-06). An admin-api cell holds admin:write and (with
+// SECURITY_ADMIN) admin:security, so a fuzzed body can delete, forget or
+// disable the very applications the run stands on — and the admin-api document
+// surfaces their identifiers, so the fuzzer finds them. On the 2026-11-06 run
+// the admin-api cell posted applications/forget naming sts-admin-console, the
+// console client the proxy signs in as; with it gone every later token failed
+// to verify (STS-API-0123 -> 0003 -> STS-API-0002, 29,079 times) and the proxy
+// re-signed 402 times, 370 failing — 365 of 661 operations saw only 401/403.
+// The service was RIGHT to let an administrator delete a client; the RUN cannot
+// survive deleting its own feet. So auth_proxy.js refuses to FORWARD (a
+// synthetic 4xx, counted and logged, never a finding — a 4xx trips no invariant
+// check) any admin-api request (the per-realm cells AND the service cell) whose
+// JSON body or query names, as an exact value, one of these identities or the
+// fuzz person (added at the proxy from STS_SCHEMA_USER, since its name is
+// random per run and so cannot be a constant here). The four clients are
+// iya-sts-60's; the four resource/surface identities are the other names the
+// admin-api document reaches that a cell needs — sts-management-api is the
+// audience the cell's OWN /admin-api token is bound to, so forgetting it breaks
+// the cell as surely as deleting its sign-in client did.
+// `tests/schemathesis_plan.js` asserts each carries a reason.
+const PROTECTED_CLIENTS = Object.freeze([
+  { name: "sts-admin-console",
+    reason: "the public console client the admin-api proxy signs in as; " +
+      "deleting it (applications/forget, as the 2026-11-06 run did) leaves " +
+      "every later token unverifiable and the proxy unable to re-sign" },
+  { name: "sts-api-client",
+    reason: "the bootstrap/management client the kit mints the run's " +
+      "admin-api token with (pinned by adminApi.clientSecret); deleting it " +
+      "stops the run minting or renewing that token" },
+  { name: "sts-user-portal",
+    reason: "the public portal client the account-api cell signs in as; " +
+      "deleting it breaks that cell's sign-in" },
+  { name: "sts-report",
+    reason: "the public reports client the report-api cell signs in as; " +
+      "deleting it breaks that cell's sign-in" },
+  { name: "sts-management-api",
+    reason: "the resource server for /admin-api; the admin-api cell's own " +
+      "token is audienced to it, so forgetting it breaks the cell's " +
+      "authentication as surely as deleting its sign-in client" },
+  { name: "sts-account-api",
+    reason: "the resource server for /account-api, the audience the " +
+      "account-api cell's token is bound to" },
+  { name: "sts-report-api",
+    reason: "the resource server for /report-api, the audience the " +
+      "report-api cell's token is bound to" },
+  { name: "sts-debugger-ui",
+    reason: "the debugger console's public client, a seeded hosted-surface " +
+      "client the admin-api document names; deleting a hosted-surface client " +
+      "removes infrastructure the service seeds" }
+]);
+
+// ---------------------------------------------------------------------------
 // Accessors the plan test reads. Pure; no stack, no I/O.
 // ---------------------------------------------------------------------------
 
@@ -1121,7 +1174,12 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     STS_SCHEMA_SURFACE: surface.key,
     STS_SCHEMA_AUTH: surface.auth,
     STS_SCHEMA_USER: provisioned.user,
-    STS_SCHEMA_PASSWORD: provisioned.password });
+    STS_SCHEMA_PASSWORD: provisioned.password,
+    // The infrastructure identities the proxy refuses to forward a naming of
+    // (#1299); the fuzz person is added at the proxy from STS_SCHEMA_USER.
+    STS_SCHEMA_PROTECTED: PROTECTED_CLIENTS.map(function (one) {
+      return one.name;
+    }).join(",") });
   const proxy = childProcess.spawn(process.execPath, [PROXY_SCRIPT],
     { env: proxyEnv, stdio: ["ignore", "pipe", "pipe"] });
   let proxyOut = "";
@@ -1256,6 +1314,27 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
               return /re-sign-in failed|sign-in threw/.test(l);
             }).slice(-3).join(" | ").slice(-400) : ""));
       }
+      // The infrastructure-name guard (#1299): how many requests the proxy
+      // refused to forward because they named a protected identity, broken
+      // down by the name. A non-zero count is the cell having TRIED to delete
+      // or disable what the run stands on — not a finding, but worth seeing.
+      const guarded = lines.filter(function (l) {
+        return /guard: not forwarding/.test(l);
+      });
+      if (guarded.length) {
+        const names = {};
+        guarded.forEach(function (l) {
+          const m = /names ([^)]+)\)/.exec(l);
+          if (m) {
+            names[m[1]] = (names[m[1]] || 0) + 1;
+          }
+        });
+        say("[schemathesis] " + surface.key + " @ " + realmShown +
+          ": guard refused " + guarded.length + " request(s) naming " +
+          "protected infrastructure: " + Object.keys(names).map(function (n) {
+            return n + " x" + names[n];
+          }).join(", "));
+      }
     } catch (e) {
       log.debug("Caught surfacing the proxy log: " + ((e && e.message) || e));
     }
@@ -1363,6 +1442,7 @@ module.exports = {
   SURFACES: SURFACES,
   SERVICE_CELL: SERVICE_CELL,
   SERVICE_EXCLUSIONS: SERVICE_EXCLUSIONS,
+  PROTECTED_CLIENTS: PROTECTED_CLIENTS,
   AUTH_KINDS: AUTH_KINDS,
   BUILTIN_CHECKS: BUILTIN_CHECKS,
   CUSTOM_CHECKS: CUSTOM_CHECKS,

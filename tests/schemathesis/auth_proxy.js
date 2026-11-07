@@ -54,6 +54,39 @@ const AUTH = String(process.env.STS_SCHEMA_AUTH || "none");
 const USER = String(process.env.STS_SCHEMA_USER || "");
 const PASSWORD = String(process.env.STS_SCHEMA_PASSWORD || "");
 
+// ===========================================================================
+// THE INFRASTRUCTURE-NAME GUARD (#1299, iya-sts-60, 2026-11-06). An admin-api
+// cell holds admin:write and (with SECURITY_ADMIN) admin:security, so a fuzzed
+// body can name — and so delete, forget or disable — the very applications the
+// run stands on. On the 2026-11-06 run the admin-api cell posted
+// applications/forget naming sts-admin-console (a name the admin-api document
+// surfaces), the console client this proxy signs in as; the sign-in client
+// gone, every later token failed to verify (STS-API-0123 -> 0003 ->
+// STS-API-0002, 29,079 times) and the proxy re-signed 402 times, 370 failing.
+// The service was RIGHT to let an administrator delete a client; the RUN cannot
+// survive deleting its own feet. So the proxy refuses to FORWARD (a synthetic
+// 4xx, counted and logged, never a finding — a 4xx trips none of the invariant
+// checks, and an application identity is not an STS error code) any admin-api
+// request whose JSON body or query names, as an exact value, one of the
+// STS_SCHEMA_PROTECTED identities (the kit's PROTECTED_CLIENTS) or the fuzz
+// person (USER, random per run). Scoped to the admin-api surface — the
+// per-realm cells (SURFACE "admin-api") and the service cell
+// ("admin-api-service") — where the destructive doors live.
+// ===========================================================================
+const PROTECTED = new Set(String(process.env.STS_SCHEMA_PROTECTED || "")
+  .split(",")
+  .map(function (one) {
+    return one.trim();
+  })
+  .filter(function (one) {
+    return one.length > 0;
+  }));
+if (USER) {
+  PROTECTED.add(USER);
+}
+const GUARDS_INFRA = SURFACE === "admin-api" || SURFACE === "admin-api-service";
+let protectedRefused = 0;
+
 // The realm base the sign-in helpers drive, and the forwarding target.
 const REALM_BASE = SERVICE_BASE + REALM_PREFIX;
 const SERVICE = new URL(SERVICE_BASE + "/");
@@ -373,11 +406,105 @@ function readBody(req) {
   });
 }
 
+// The first protected name that appears as an exact string VALUE anywhere in a
+// parsed JSON body, or null. Bounded by a node budget, since it runs on fuzzer
+// input that may be a deeply nested bomb; a value only (a client id is never a
+// JSON key here), the whole tree walked iteratively so no input can overflow
+// the stack.
+function protectedInJson(value, budget) {
+  log.debug("Entering protectedInJson().");
+  const stack = [value];
+  let seen = 0;
+  while (stack.length > 0) {
+    seen = seen + 1;
+    if (seen > budget) {
+      log.debug("Leaving protectedInJson(). budget");
+      return null;
+    }
+    const node = stack.pop();
+    if (typeof node === "string") {
+      if (PROTECTED.has(node)) {
+        log.debug("Leaving protectedInJson(). hit");
+        return node;
+      }
+    } else if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        stack.push(node[i]);
+      }
+    } else if (node && typeof node === "object") {
+      const keys = Object.keys(node);
+      for (let i = 0; i < keys.length; i++) {
+        stack.push(node[keys[i]]);
+      }
+    }
+  }
+  log.debug("Leaving protectedInJson(). none");
+  return null;
+}
+
+// The protected identity a request names in its query or JSON body, or null:
+// an exact-value match of a query parameter, or of a string value anywhere in
+// the JSON body. A body that is not JSON, or a URL that will not parse, names
+// nothing through this door (the admin-api surface's bodies are JSON).
+function namesProtected(url, bodyBuf) {
+  log.debug("Entering namesProtected().");
+  let parsed = null;
+  try {
+    parsed = new URL(url);
+  } catch (e) {
+    log.debug("Caught parsing url in namesProtected(): " +
+      ((e && e.message) || e));
+    parsed = null;
+  }
+  if (parsed) {
+    const values = Array.from(parsed.searchParams.values());
+    for (let i = 0; i < values.length; i++) {
+      if (PROTECTED.has(values[i])) {
+        log.debug("Leaving namesProtected(). query");
+        return values[i];
+      }
+    }
+  }
+  if (bodyBuf && bodyBuf.length > 0) {
+    try {
+      const hit = protectedInJson(JSON.parse(bodyBuf.toString("utf8")), 20000);
+      if (hit) {
+        log.debug("Leaving namesProtected(). body");
+        return hit;
+      }
+    } catch (e) {
+      log.debug("Caught parsing body in namesProtected(): " +
+        ((e && e.message) || e));
+    }
+  }
+  log.debug("Leaving namesProtected(). none");
+  return null;
+}
+
 // The proxy's request handler.
 async function handle(req, res) {
   log.debug("Entering handle(). " + req.method + " " + req.url);
   const body = await readBody(req);
   const url = SERVICE_BASE + REALM_PREFIX + req.url;
+  if (GUARDS_INFRA) {
+    const named = namesProtected(url, body);
+    if (named) {
+      protectedRefused = protectedRefused + 1;
+      // Counted and logged, NOT forwarded and NOT a finding: a 4xx trips no
+      // invariant check, and the name is an application identity, not an STS
+      // error code, so no_error_code_leak is unaffected. The kit surfaces the
+      // count from this phrase (schemathesis_kit.js runSurface finally block).
+      log.info("[schemathesis] guard: not forwarding (names " + named + ") " +
+        req.method + " " + req.url + " [" + protectedRefused + "]");
+      res.writeHead(422, { "content-type": "application/json",
+        "x-sts-schemathesis-proxy": "protected-name" });
+      res.end(JSON.stringify({ refused: "protected-infrastructure-name",
+        name: named, note: "the fuzz harness does not forward a request that " +
+          "names an infrastructure identity the run stands on" }));
+      log.debug("Leaving handle(). guarded " + named);
+      return;
+    }
+  }
   try {
     const answer = await forward(req, url, body);
     const headers = Object.assign({}, answer.headers);
