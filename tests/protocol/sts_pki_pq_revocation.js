@@ -53,6 +53,7 @@ const realmBase = base + "/realm/" + REALM;
 const api = base + "/admin-api";
 const realmApi = realmBase + "/admin-api";
 const CLIENT = "pqr-client-" + String(Date.now()).slice(-6);
+const BYSTANDER = "pqr-bystander-" + String(Date.now()).slice(-6);
 const ML_DSA_65 = "2.16.840.1.101.3.4.3.18";
 const OCSP_BASIC = "1.3.6.1.5.5.7.48.1.1";
 
@@ -204,6 +205,16 @@ function crlFacts(der) {
   return out;
 }
 
+function certificateSerial(der) {
+  log.debug("Entering certificateSerial().");
+  const tbs = parseDer(der).children[0];
+  const offset = tbs.children[0].tag === 0xa0 ? 1 : 0;
+  const out = Buffer.from(tbs.children[offset].value).toString("hex")
+    .replace(/^0+/, "");
+  log.debug("Leaving certificateSerial().");
+  return out;
+}
+
 function ocspFacts(der) {
   log.debug("Entering ocspFacts().");
   const top = parseDer(der);
@@ -290,30 +301,44 @@ async function test() {
                 name: "Post-quantum revocation" }, "created the realm");
   await apiOk(realmApi + "/pki/build", { keyAlg: "ml-dsa-65" },
               "built the realm's chain on ML-DSA-65");
-  await apiOk(realmApi + "/applications/create", {
-    identifier: CLIENT, kind: "oauth2-client", name: CLIENT,
-    protocols: ["oauth2"],
-    fields: { oauthClientId: [CLIENT],
-              oauthTokenEndpointAuthMethod: "private_key_jwt" } },
-              "registered the application");
-  await issue(CLIENT);
-  await issue(CLIENT);
+  for (const client of [CLIENT, BYSTANDER]) {
+    await apiOk(realmApi + "/applications/create", {
+      identifier: client, kind: "oauth2-client", name: client,
+      protocols: ["oauth2"],
+      fields: { oauthClientId: [client],
+                oauthTokenEndpointAuthMethod: "private_key_jwt" } },
+                "registered the application");
+    await issue(client);
+  }
 
+  // ONLY WHAT THIS JOB ISSUED. In this list `leaf` is the realm's OWN signing
+  // certificates and `key-pair` is what `/pki/issue` made, labelled with its
+  // holder. This chose by `leaf`, so it revoked a certificate the realm signs
+  // under, for keyCompromise, and every check below still passed.
+  // `sts_pki_distribution_points` found it, on a cluster run.
   const view = (await send(realmApi + "/pki")).json;
-  const authority = view.revocation.authorities.filter(function (one) {
+  const issuedTo = function (one, client) {
+    log.debug("Entering issuedTo().");
+    log.debug("Leaving issuedTo().");
     return one.issued.filter(function (cert) {
-      return cert.kind === "leaf" && !cert.revoked;
-    }).length >= 2;
+      return cert.kind === "key-pair" && !cert.revoked &&
+             String(cert.label).indexOf(client) >= 0;
+    })[0];
+  };
+  const authority = view.revocation.authorities.filter(function (one) {
+    return issuedTo(one, CLIENT) && issuedTo(one, BYSTANDER);
   })[0];
-  assert.ok(authority, "no authority holds the two leaves just issued: " +
+  assert.ok(authority, "no authority lists both certificates just issued: " +
             JSON.stringify(view.revocation.authorities.map(function (one) {
               return [one.ca, one.issued.length];
             })));
-  const leaves = authority.issued.filter(function (cert) {
-    return cert.kind === "leaf" && !cert.revoked;
-  });
-  const target = leaves[0];
-  const bystander = leaves[1];
+  const target = issuedTo(authority, CLIENT);
+  const bystander = issuedTo(authority, BYSTANDER);
+  check("the certificates this job revokes and keeps are the two it issued",
+    function () {
+      assert.notStrictEqual(normalSerial(target.serialHex),
+                            normalSerial(bystander.serialHex));
+    });
   const path = (authority.scopeSegment || REALM) + "/" + authority.ca;
   const serial = normalSerial(target.serialHex);
 
@@ -367,6 +392,53 @@ async function test() {
   check("and not over changed bytes", function () {
     assert.ok(!verifies(ca.publicKey, changed(crl.tbsRaw), crl.signature));
   });
+
+  // THE REALM'S OWN CERTIFICATES WERE NOT WHAT WAS REVOKED, in every mode: a
+  // `leaf` here is a slot this realm signs under, whether or not a document
+  // carries it. Only the published check below caught this on a cluster, and on
+  // one node the certificate chosen was one no document carries.
+  const afterwards = (await send(realmApi + "/pki")).json;
+  check("no signing certificate of the realm's own was revoked", function () {
+    const hit = [];
+    afterwards.revocation.authorities.forEach(function (one) {
+      one.issued.forEach(function (cert) {
+        if (cert.kind === "leaf" && cert.revoked) {
+          hit.push(one.ca + "/" + cert.label + " " + cert.serialHex);
+        }
+      });
+    });
+    assert.deepStrictEqual(hit, []);
+  });
+
+  // WHAT THE REALM PUBLISHES IS NOT WHAT WAS REVOKED: its signing certificates,
+  // in the JWK Set and in the SAML metadata, are off every list of its own.
+  const publishedSerials = [];
+  for (const document of ["/oauth2/jwks", "/saml2/metadata"]) {
+    const answer = await send(realmBase + document);
+    assert.strictEqual(answer.status, 200, document);
+    const text = answer.buffer.toString("utf8");
+    const blobs = Array.from(text.matchAll(/X509Certificate>([^<]+)</g))
+      .concat(Array.from(text.matchAll(/"x5c":\["([^"]+)"/g)));
+    blobs.forEach(function (found) {
+      publishedSerials.push(certificateSerial(Buffer.from(found[1], "base64")));
+    });
+  }
+  check("the realm publishes certificates, and none of them is revoked",
+    function () {
+      assert.ok(publishedSerials.length >= 2, String(publishedSerials.length));
+    });
+  for (const one of view.revocation.authorities) {
+    const segment = (one.scopeSegment || REALM) + "/" + one.ca;
+    const list = await send(realmBase + "/pki/crl/" + segment);
+    assert.strictEqual(list.status, 200, segment);
+    const onIt = crlFacts(list.buffer).serials;
+    check("the " + one.ca + " list names nothing the realm publishes",
+      function () {
+        assert.deepStrictEqual(publishedSerials.filter(function (serialNow) {
+          return onIt.indexOf(serialNow) >= 0;
+        }), []);
+      });
+  }
 
   const revoked = await askOcsp(path, ca, target.serialHex);
   check("the OCSP responder answers successful, in a BasicOCSPResponse",
