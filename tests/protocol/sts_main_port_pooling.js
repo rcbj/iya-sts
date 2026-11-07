@@ -38,11 +38,11 @@ const https = require("https");
 const tls = require("tls");
 const net = require("net");
 const fs = require("fs");
-const nodeCrypto = require("crypto");
 const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const credentials = require("../tools/pep-credential.js");
+const portal = require("./portal_signin.js");
 // The root section 4 posts. Removed when the job finishes, pass or fail
 // (#335). The truststore is service-wide and holds 32. tests/CLAUDE.md.
 const addedAnchors = [];
@@ -515,26 +515,28 @@ async function revocationOutlivesNoSession() {
       assert.strictEqual(row.inForce, true, row.setting);
     });
   }
-  const app = "pooling-revoked-" + STAMP;
-  const password = "pooling-" + STAMP + "-password";
-  const made = await post("/admin-api/applications/create", {
-    identifier: app, name: app, protocols: ["oauth2"],
-    fields: { oauthClientId: app,
-              oauthTokenEndpointAuthMethod: "tls_client_auth" } });
+  // A PERSON'S certificate, from this realm's TLS client authority, issued and
+  // revoked at the portal's own door: only a person signs in at /tls/sign-in.
+  const person = "pooling-revoked-" + STAMP;
+  const password = "Pooling-Revoked-" + STAMP + "-1";
+  const made = await post("/admin-api/users/create", {
+    username: person, invent: false, credential: "password", password: password,
+    attributes: { givenName: "Pooling", sn: person,
+                  mail: person + "@pooling.test" } });
   assert.strictEqual(made.status, 200, made.text.slice(0, 300));
-  const issued = await post("/admin-api/applications/" +
-                            "issue-tls-client-certificate",
-                            { application: app, password: password,
-                              keyAlg: "ec-p256" });
-  assert.strictEqual(issued.status, 200, issued.text.slice(0, 300));
-  const body = JSON.parse(issued.text);
-  const client = {
-    certPem: [body.certificate.certificatePem]
-      .concat(body.certificate.chainPem || []).join("\n"),
-    keyPem: String(nodeCrypto.createPrivateKey(
-      { key: body.files.key.text, format: "pem", passphrase: password })
-      .export({ format: "pem", type: "pkcs8" }))
+  const browser = await portal.signInToThePortal(base, person, null,
+                                                 { password: password });
+  const issued = await browser.act("/portal/signing-key",
+    { action: "generate-tls-client", label: "pooling", key_alg: "ec-p256" });
+  assert.strictEqual(issued.status, 200, String(issued.text).slice(0, 300));
+  const fresh = issued.json.view.fresh;
+  const fileText = function (file) {
+    log.debug("Entering fileText().");
+    log.debug("Leaving fileText().");
+    return Buffer.from(String(file.base64), "base64").toString("utf8");
   };
+  const client = { certPem: fileText(fresh.files.chain),
+                   keyPem: fileText(fresh.files.key) };
   const ask = [
     { path: "/admin-api/cluster",
       headers: { Authorization: "Bearer " + token() } },
@@ -582,15 +584,10 @@ async function revocationOutlivesNoSession() {
     assert.ok(signedOn.size >= EXPECTED_NODES,
               "signed in on " + Array.from(signedOn).join(", "));
   });
-  const revoked = await post("/admin-api/applications/" +
-                             "revoke-tls-client-certificate",
-                             { application: app,
-                               serialHex: body.certificate.serialHex ||
-                                 new nodeCrypto.X509Certificate(
-                                   body.certificate.certificatePem)
-                                   .serialNumber.toLowerCase(),
-                               reason: "keyCompromise" });
-  assert.strictEqual(revoked.status, 200, revoked.text.slice(0, 300));
+  const revoked = await browser.act("/portal/signing-key",
+    { action: "revoke-tls-client", serial: fresh.issued.serialHex,
+      reason: "keyCompromise" });
+  assert.strictEqual(revoked.status, 200, String(revoked.text).slice(0, 300));
   const started = Date.now();
   const refusedOn = new Set();
   const stillSignedAfterRefusal = [];
