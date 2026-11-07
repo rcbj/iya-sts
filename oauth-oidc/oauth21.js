@@ -140,7 +140,7 @@ const REQUIREMENTS = [
     title: 'Accept a token request with no redirect_uri',
     note: 'THE ROW THAT MAKES THIS A MODE OF ITS OWN. RFC 6749 section 4.1.3 ' +
           'required redirect_uri at the token endpoint, and RFC 9700 mode ' +
-          'enforces that (transaction-bound, STS-OAUTH-0147). OAuth 2.1 ' +
+          'enforces that (transaction-bound). OAuth 2.1 ' +
           'removed the parameter because PKCE binds the code instead, so a ' +
           'client following 2.1 alone never sends it. Section 10.2 still ' +
           'requires a server that supports both kinds of client to accept it ' +

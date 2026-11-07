@@ -2739,7 +2739,7 @@ class Saml2Sso {
   // store, before anything else reads it; a second arrival is refused with
   // STS-SAML-0088 once the rest of the request has been checked (below, in
   // singleSignOnChecked()). A store that cannot be asked refuses too
-  // (STS-SAML-0089): fail closed, as the artifact's claim does.
+  //: fail closed, as the artifact's claim does.
   //
   // The claim is answered in this process, synchronously, where this process
   // holds no shared claims table (`claimInProcess()`), and awaited where it
@@ -6029,19 +6029,19 @@ class Saml2Sso {
                        '(saml-core-2.0-os section 3.2.1, ' +
                        'saml-bindings-2.0-os sections 3.4.5.2 and ' +
                        '3.5.5.2); otherwise the request ' +
-                       'is refused (STS-SAML-0085).'],
+                       'is refused.'],
        ['IssueInstant', 'Required, and refused when it is more than a ' +
                         'minute in the future or older than ' +
                         'saml2.requestTtlMin — ' +
                         Math.round(this.requestWindowMs() / 60000) +
                         ' minute(s) in this realm — plus a minute of clock ' +
-                        'disagreement (STS-SAML-0086).'],
+                        'disagreement.'],
        ['Version', 'Must be 2.0 (saml-core-2.0-os section 3.2.2.1); ' +
-                   'anything else is refused (STS-SAML-0087).'],
+                   'anything else is refused.'],
        ['ID', 'Answered ONCE: the same issuer and ID arriving again inside ' +
-              'the freshness window is refused as a replay (STS-SAML-0088), ' +
+              'the freshness window is refused as a replay, ' +
               'and so is every request while the store that records them ' +
-              'cannot be asked (STS-SAML-0089).']
+              'cannot be asked.']
       ].map(function (r) {
         return '<tr><td><code>' + r[0] + '</code></td><td>' + r[1] +
                '</td></tr>';

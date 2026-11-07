@@ -742,7 +742,7 @@ const SCHEME_DESCRIPTIONS = Object.freeze({
     'certificate authority (an anchor somebody added) is the person or ' +
     'application whose entry stores it, byte for byte, in ' +
     'userCertificate, and nothing else: stored on no entry or on several, ' +
-    'it is not this credential (STS-SCIM-0084, STS-SCIM-0085). A ' +
+    'it is not this credential. A ' +
     'person\'s certificate this realm issued is filed under its subject ' +
     'in RFC 4514 form. It is not recorded again here: ' +
     'tls_server.js records a certificate once per CONNECTION on ' +
@@ -750,8 +750,8 @@ const SCHEME_DESCRIPTIONS = Object.freeze({
     'other end. A certificate this realm issued to an APPLICATION is ' +
     'that application, and may do only what its oauthAllowedScope ' +
     'declares: the read scope to read and the write scope to write, ' +
-    'asked on every request, so one that declares neither is refused ' +
-    '(STS-SCIM-0083). A person\'s certificate, issued here or stored ' +
+    'asked on every request, so one that declares neither is refused. ' +
+    'A person\'s certificate, issued here or stored ' +
     'on their entry, may do both.'
 });
 
@@ -779,7 +779,7 @@ const POLICY = Object.freeze({
     'oauthAllowedScope declares of the two above, asked on every request: ' +
     'one that declares neither is refused, one that declares only the read ' +
     'scope may only read, and removing a declaration cuts the certificate ' +
-    'off at once (STS-SCIM-0083).',
+    'off at once.',
   rfc: 'RFC 7644 section 2 requires a provider to be ABLE to map an ' +
     'authenticated client to an access control policy. This is that ' +
     'policy. It is two lines because in development mode this service ' +
@@ -789,8 +789,7 @@ const POLICY = Object.freeze({
   tied: 'A SCOPE IS TIED TO A CLIENT (#110). The SCIM scopes are issued only ' +
     'to a client whose oauthAllowedScope declares them, in both modes, and ' +
     'a token is honoured only while its client still declares the scope it ' +
-    'uses — so removing the declaration cuts off tokens already issued ' +
-    '(STS-SCIM-0079).'
+    'uses — so removing the declaration cuts off tokens already issued.'
 });
 
 // The routes whose answers carry the scim namespace's prose (#543).

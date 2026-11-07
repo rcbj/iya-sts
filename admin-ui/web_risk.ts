@@ -275,7 +275,7 @@ class RiskPage {
         t.html('consoleRisk.calibration.applyAfter') + '</p>'
         : '') +
       (c.invalidFactors.length ? '<div class="err">risk.signalFactors ' +
-        'entries ignored (STS-RISK-0026): ' +
+        'entries ignored: ' +
         esc(c.invalidFactors.join(', ')) + '</div>' : '');
   }
 

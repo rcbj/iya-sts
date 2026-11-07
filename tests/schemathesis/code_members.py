@@ -72,6 +72,7 @@ HELP_TEXT_ANYWHERE = frozenset((
 
 HELP_TEXT_BY_ROUTE = {
     "/admin-api/acme": (
+        ".mode.inForce",
         ".mode.product",
     ),
     "/admin-api/applications/new": (
@@ -83,6 +84,7 @@ HELP_TEXT_BY_ROUTE = {
         ".families[].algorithms[].how",
     ),
     "/admin-api/est": (
+        ".mode.inForce",
         ".mode.product",
     ),
     "/admin-api/ldap/applications": (
@@ -92,7 +94,11 @@ HELP_TEXT_BY_ROUTE = {
         ".schema.attributes[].what",
     ),
     "/admin-api/mode": (
+        ".requirements[].inForce",
         ".requirements[].product",
+    ),
+    "/admin-api/pki": (
+        ".revocationNote",
     ),
     "/admin-api/oauth2": (
         ".alsoHtml[]",
@@ -103,6 +109,7 @@ HELP_TEXT_BY_ROUTE = {
         ".serviceAccount.schema.attributes[].what",
     ),
     "/admin-api/scep": (
+        ".mode.requirement.inForce",
         ".mode.requirement.product",
     ),
     "/admin-api/scim/monitor": (

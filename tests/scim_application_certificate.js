@@ -307,7 +307,8 @@ function childMain() {
       return one.id === 'clientcert';
     })[0] || {};
     note(row.applicationScoped === true && row.scoped === false &&
-         /STS-SCIM-0083/.test(String(row.description || '')),
+         /oauthAllowedScope/.test(String(row.description || '')) &&
+           !/STS-[A-Z]+-\d{4}/.test(String(row.description || '')),
          '9a. GET /admin-api/scim marks the certificate scheme ' +
          'applicationScoped and says so in its description',
          JSON.stringify(row).slice(0, 400));
@@ -322,8 +323,10 @@ function childMain() {
       .filter(function (one) {
         return one.type === 'tlsclientauth';
       })[0] || {};
-    note(/STS-SCIM-0083/.test(String(published.description || '')),
-         '9c. the ServiceProviderConfig publishes the same description',
+    note(/oauthAllowedScope/.test(String(published.description || '')) &&
+         !/STS-[A-Z]+-\d{4}/.test(String(published.description || '')),
+         '9c. the ServiceProviderConfig publishes the same description, ' +
+         'naming no code',
          JSON.stringify(published).slice(0, 400));
 
     server.close();
