@@ -35,6 +35,7 @@
 //   * `named` ignored at the path, or at the self-signed rule — 1 red (L)
 //   * a JWK's x5c asked for a path again                      — 1 red (L)
 //   * a pin always asking, naming or not                     — 2 red (L)
+//   * another process's counts not added in                  — 1 red (I)
 //   * `fieldChecks()` not marking a failure                  — 53 red
 //   * `compose()` letting `not-asked` pass under paranoid    — 2 red (E, J)
 //   * the `pinned` condition accepting any self-signed leaf  — 1 red (C)
@@ -456,6 +457,27 @@ async function run(t, double, crls) {
   const afterCount = trust.counters()['client-attestation'];
   t.equal(afterCount.assessed, assessedThen + 1, 'I. assessed counts');
   t.equal(afterCount.refused, refusedThen + 1, 'I. refused counts');
+  // Another process's rows are added in, and its later refusal is the last one.
+  const replicationForCount = require('../persistence/persistence_replication');
+  const remoteRowsBefore = replicationForCount.remoteRows;
+  const merged = (function () {
+    replicationForCount.remoteRows = function (handle, realm, key) {
+      return handle === 'pki.door.counts' && key === 'client-attestation'
+        ? [{ assessed: 5, refused: 2,
+             lastRefusal: { code: 'STS-PKI-0249', why: 'on another node',
+                            at: Date.now() + 1000 } }] : [];
+    };
+    try {
+      return trust.counters()['client-attestation'];
+    } finally {
+      replicationForCount.remoteRows = remoteRowsBefore;
+    }
+  })();
+  t.check(merged.assessed === afterCount.assessed + 5 &&
+          merged.refused === afterCount.refused + 2 &&
+          merged.lastRefusal.why === 'on another node',
+          'I. another process\'s counts are added in, and its later refusal ' +
+          'is the one reported', JSON.stringify(merged));
   t.equal(afterCount.lastRefusal.code, counted.code,
           'I. the last refusal is what the verdict said');
   const row = audit.list().filter(function (one) {

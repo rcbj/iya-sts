@@ -180,7 +180,15 @@ async function anExpiredPinIsRefused() {
   await setRow(realmApi(), "pki.paranoid", "on");
   const before = await countOf("tls-client-self-signed");
   const refused = await tlsRequest("POST", url, grant, expired);
-  const after = await countOf("tls-client-self-signed");
+  // The refusal lands on one node and the count is read from another, so what
+  // is awaited is the other node hearing of it. It may not be a different number.
+  let after = await countOf("tls-client-self-signed");
+  for (let i = 0; i < 75 && after.refused < before.refused + 1; i++) {
+    await new Promise(function (resolve) {
+      setTimeout(resolve, 200);
+    });
+    after = await countOf("tls-client-self-signed");
+  }
   check("an expired registered certificate is refused at the token endpoint",
         function () {
     assert.ok(refused.status === 400 || refused.status === 401,

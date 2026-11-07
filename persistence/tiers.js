@@ -407,6 +407,9 @@ const CELL_MINTED = [
   'gnap.approvers', 'gnap.continuations', 'gnap.grants', 'gnap.instances',
   'gnap.interactions', 'gnap.manageHandles', 'gnap.manageValues',
   'gnap.movedGrants', 'gnap_monitor.counters', 'gnap.spend', 'gnap.tokens',
+  // What the validation door answered in this cell (#1360): counters, as the
+  // monitors' are.
+  'pki.door.counts',
   'gnap.tokenValues', 'gnap.userCodes', 'gnap.userRefs', 'krb5.principals',
   // USER-MANAGED ACCESS (#1168): every one of its six stores is somebody's
   // or minted here. A registered resource names its OWNER, a person, and
