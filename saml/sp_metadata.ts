@@ -1252,9 +1252,9 @@ class SpMetadata {
     }
     let pinAnchor = '';
     let signature = parsed.signed ? 'signed-not-verified' : 'unsigned';
-    const kept = paranoid && !this.quiet && !parsed.signed &&
-      this.keptAnchor(parsed, anchors);
-    if (kept !== null && kept !== false) {
+    const kept = paranoid && !this.quiet && !parsed.signed
+      ? this.keptAnchor(parsed, anchors) : null;
+    if (kept !== null) {
       // Unsigned, and no new key: the anchor it keeps is the one to hold.
       pinAnchor = handSet ? kept : '';
     } else if (anchors.length) {
@@ -1268,9 +1268,10 @@ class SpMetadata {
                  'must be signed by a trust anchor (' + anchors.length +
                  ' configured: samlSpMetadataSigningCertificate on the ' +
                  'entry and saml2.metadataTrustAnchors), and ' + verdict.why +
-                 '.' + (paranoid && !this.quiet ? ' To trust a different key, ' +
-                 'set samlSpMetadataSigningCertificate on the application.' :
-                   '') + ' Nothing on the entry was changed.'] };
+                 '.' + (paranoid && !this.quiet
+                   ? ' To trust a different key, set ' +
+                     'samlSpMetadataSigningCertificate on the application.'
+                   : '') + ' Nothing on the entry was changed.'] };
       }
       signature = 'verified';
       // The document may now rotate the signing keys, and the anchor it was
