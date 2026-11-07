@@ -1807,8 +1807,11 @@ against what is held, a certificate set by hand included, and is otherwise
 refused (`STS-SAML-0118`), or whoever answers for the URL would choose the key.
 A verified quiet fetch may rotate `samlSigningCertificate`, so the anchor is the
 separate field and rotation does not move it; over a hand-set certificate, the
-one it answered to is pinned there. An administrator's document also answers to
-an anchor already set, and replacing one is setting that field.
+one it answered to is pinned there. An administrator's unsigned document is taken
+while it keeps a held anchor or names no signing key, because real providers
+publish unsigned metadata and nothing new is trusted (`keptAnchor()`); one naming
+only another key is refused, and replacing an anchor is setting that field. With
+realm anchors configured every document must verify, as it always did.
 `saml2.mdqImportWithoutAnchors` still gates an operator's MDQ import, and the
 import it lets through is an administrator's act like any other. Nothing else
 can write these attributes: no OAuth registration door names them, and a sighting

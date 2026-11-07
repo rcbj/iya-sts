@@ -1238,18 +1238,26 @@ class SpMetadata {
     // asked for (`this.quiet`: the refresher, a lookup a request started) names
     // nothing: it verifies against what is held, a certificate set by hand
     // included, and otherwise is refused, or whoever answers for the URL could
-    // choose the key. Replacing an anchor is an administrator setting the field.
+    // choose the key. Service providers commonly publish unsigned metadata, so
+    // an administrator's unsigned document that keeps the held anchor is taken:
+    // nothing new is trusted. One naming another key is refused, and replacing
+    // an anchor is an administrator setting the field.
     const paranoid =
       require('../common/certificate_trust').applies('saml-signer');
     let anchors = this.trustAnchorsFor(fields);
     let handSet = false;
-    if (paranoid && !anchors.length && this.quiet) {
+    if (paranoid && !anchors.length) {
       anchors = this.handSetSigners(fields);
       handSet = anchors.length > 0;
     }
     let pinAnchor = '';
     let signature = parsed.signed ? 'signed-not-verified' : 'unsigned';
-    if (anchors.length) {
+    const kept = paranoid && !this.quiet && !parsed.signed &&
+      this.keptAnchor(parsed, anchors);
+    if (kept !== null && kept !== false) {
+      // Unsigned, and no new key: the anchor it keeps is the one to hold.
+      pinAnchor = handSet ? kept : '';
+    } else if (anchors.length) {
       const verdict = this.verifyAgainst(String(xml), parsed, anchors);
       if (!verdict.ok) {
         this.refreshRefused('STS-SAML-0065', identifier, 'the document\'s ' +
@@ -1260,7 +1268,9 @@ class SpMetadata {
                  'must be signed by a trust anchor (' + anchors.length +
                  ' configured: samlSpMetadataSigningCertificate on the ' +
                  'entry and saml2.metadataTrustAnchors), and ' + verdict.why +
-                 '. Nothing on the entry was changed.'] };
+                 '.' + (paranoid && !this.quiet ? ' To trust a different key, ' +
+                 'set samlSpMetadataSigningCertificate on the application.' :
+                   '') + ' Nothing on the entry was changed.'] };
       }
       signature = 'verified';
       // The document may now rotate the signing keys, and the anchor it was
@@ -1469,6 +1479,31 @@ class SpMetadata {
    * @param fields - the application entry's fields
    * @returns the anchors, leaving out any this service cannot verify with
    */
+  // Which held anchor an unsigned document keeps: '' when it names no signing
+  // key, so nothing it says is trusted anew; null when it names another key, or
+  // when the realm's own anchors hold every document to a federation's keys.
+  private keptAnchor(parsed: any, anchors: string[]): string | null {
+    const { log } = this.deps.helpers;
+    log.debug("Entering SpMetadata.keptAnchor().");
+    if (!anchors.length || this.realmAnchorValues().length) {
+      log.debug("Leaving SpMetadata.keptAnchor(). Not the entry's to keep.");
+      return null;
+    }
+    const named = (parsed.signingCertificates || [])
+      .map(function (one: any): string {
+        return String(one).replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+      });
+    if (!named.length) {
+      log.debug("Leaving SpMetadata.keptAnchor(). It names no key.");
+      return '';
+    }
+    const held = anchors.filter(function (one: string): boolean {
+      return named.indexOf(one) >= 0;
+    })[0];
+    log.debug("Leaving SpMetadata.keptAnchor(). " + !!held);
+    return held || null;
+  }
+
   private handSetSigners(fields: any): string[] {
     const { log } = this.deps.helpers;
     log.debug("Entering SpMetadata.handSetSigners().");
