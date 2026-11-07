@@ -1816,4 +1816,4 @@ realm anchors configured every document must verify, as it always did.
 import it lets through is an administrator's act like any other. Nothing else
 can write these attributes: no OAuth registration door names them, and a sighting
 goes to the observed attribute, never to the registered one.
-`tests/saml_metadata_lifecycle.js` F1c holds it, against six mutants.
+`tests/saml_metadata_lifecycle.js` F1c holds it, against nine mutants.
