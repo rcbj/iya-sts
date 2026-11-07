@@ -588,7 +588,7 @@ An administrator's act names the trust anchor: setting a signing certificate on 
 
 * A document fetched in the background (the refresher, or a lookup a request started) must verify against that anchor. It cannot replace the anchor, whether it is unsigned or signed by something new.
 * With no anchor at all, a background fetch is refused (`STS-SAML-0118`). A sighting or a request never creates an anchor.
-* A document an administrator gives must verify too, once an anchor is set. To replace the anchor, set `samlSpMetadataSigningCertificate` on the application.
+* A document an administrator gives may stay unsigned, as long as it still carries the held anchor or names no signing key, since nothing new is trusted. One naming only a different key is refused. To replace the anchor, set `samlSpMetadataSigningCertificate` on the application.
 
 See the `saml-signer` row of the [use cases](pki-use-cases.md).
 
