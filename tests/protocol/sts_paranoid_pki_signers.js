@@ -53,6 +53,7 @@ var base = String(process.env.OID4VCI_ISSUER_URL ||
 const STAMP = Date.now().toString(36);
 const REALM = "paranoid-sig-" + STAMP;
 const SP = "https://sp.paranoid.example/" + STAMP;
+const ANCHORED_SP = "https://anchored.paranoid.example/" + STAMP;
 const CLIENT = "paranoid-jwt-" + STAMP;
 
 let checks = 0;
@@ -208,16 +209,64 @@ async function aSamlSigner() {
     'Service Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location=' +
     '"https://sp.paranoid.example/acs" index="0"/></md:SPSSODescriptor>' +
     '</md:EntityDescriptor>';
-  const noAnchor = await send("POST", api() + "/saml2/upload-metadata",
-                              { sp: SP, document: metadata });
-  check("metadata no anchor vouches for is not consumed", function () {
-    assert.strictEqual(noAnchor.status, 400, noAnchor.raw.slice(0, 300));
-    assert.ok(/trust anchor/.test(noAnchor.raw), noAnchor.raw.slice(0, 300));
+  // AN ADMINISTRATOR'S ACT NAMES THE ANCHOR (rcbj). A background fetch cannot
+  // be started over HTTP, so that refusal is
+  // `tests/saml_metadata_lifecycle.js`'s; what is here is the administrator's
+  // side of the same rule, whose third case is what a fetch would also meet.
+  const signerOf = async function (cn) {
+    log.debug("Entering signerOf().");
+    const made = await kit.mint({ cn: cn });
+    log.debug("Leaving signerOf().");
+    return made.pem.replace(/-----[^-]+-----/g, "").replace(/\s+/g, "");
+  };
+  const withKey = function (b64) {
+    log.debug("Entering withKey().");
+    log.debug("Leaving withKey().");
+    return metadata.replace("<md:AssertionConsumerService",
+      '<md:KeyDescriptor use="signing"><ds:KeyInfo xmlns:ds="http://www.w3.org' +
+      '/2000/09/xmldsig#"><ds:X509Data><ds:X509Certificate>' + b64 +
+      "</ds:X509Certificate></ds:X509Data></ds:KeyInfo></md:KeyDescriptor>" +
+      "<md:AssertionConsumerService");
+  };
+  const upload = function (document) {
+    log.debug("Entering upload().");
+    log.debug("Leaving upload().");
+    return send("POST", api() + "/saml2/upload-metadata",
+                { sp: ANCHORED_SP, document: document });
+  };
+  const anchored = await send("POST", api() + "/applications/create", {
+    identifier: ANCHORED_SP, name: ANCHORED_SP, protocols: ["saml2"],
+    fields: { samlEntityId: ANCHORED_SP } });
+  assert.strictEqual(anchored.status, 200, anchored.raw.slice(0, 300));
+  const held = await signerOf("paranoid anchored sp");
+  const other = await signerOf("paranoid other key");
+  const asAnchored = function (key) {
+    log.debug("Entering asAnchored().");
+    log.debug("Leaving asAnchored().");
+    return withKey(key).replace(SP, ANCHORED_SP);
+  };
+  const first = await upload(asAnchored(held));
+  check("an administrator's first unsigned document is consumed, and creates " +
+        "the anchor", function () {
+    assert.strictEqual(first.status, 200, first.raw.slice(0, 300));
+    assert.ok(/trust anchor/.test(first.raw), first.raw.slice(0, 300));
+  });
+  const reimport = await upload(asAnchored(held));
+  check("the same document imported again keeps the anchor and is consumed",
+        function () {
+    assert.strictEqual(reimport.status, 200, reimport.raw.slice(0, 300));
+  });
+  const swapped = await upload(asAnchored(other));
+  check("a document naming a different key is refused, naming the act that " +
+        "replaces the anchor", function () {
+    assert.strictEqual(swapped.status, 400, swapped.raw.slice(0, 300));
+    assert.ok(/samlSpMetadataSigningCertificate/.test(swapped.raw),
+              swapped.raw.slice(0, 300));
   });
   await setRow("pki.paranoidSamlSigner", false);
   const consumed = await send("POST", api() + "/saml2/upload-metadata",
                               { sp: SP, document: metadata });
-  check("with the row off it is consumed, as it was", function () {
+  check("with the row off a document is consumed, as it was", function () {
     assert.strictEqual(consumed.status, 200, consumed.raw.slice(0, 300));
   });
   await setRow("pki.paranoidSamlSigner", true);

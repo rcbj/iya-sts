@@ -921,10 +921,32 @@ async function run(t) {
               signersOf(named).indexOf(stranger.cert.b64) >= 0,
               'one signed by the anchor may rotate the signing keys, and the ' +
               'anchor stays', JSON.stringify(rotated.errors));
-      const stale = spMetadata.upload(named, entity(named));
-      t.check(!stale.ok && anchorOf(named) === anchor.cert.b64,
-              'an administrator\'s document answers to an anchor already set',
-              JSON.stringify(stale.errors));
+      // An administrator's unsigned document, as real providers publish.
+      const again = spMetadata.upload(named, entity(named,
+        { signing: anchor.cert.b64, acs: 'https://named-again.test/acs' }));
+      t.check(again.ok && again.signature === 'unsigned' &&
+              anchorOf(named) === anchor.cert.b64 &&
+              [].concat(fieldsOf(named).samlAssertionConsumerService || [])
+                .indexOf('https://named-again.test/acs') >= 0,
+              'an unsigned document that keeps the held anchor is consumed, ' +
+              'its other fields updated', JSON.stringify(again.errors));
+      const noKey = spMetadata.upload(named, entity(named,
+        { acs: 'https://named-nokey.test/acs' }));
+      t.check(noKey.ok && anchorOf(named) === anchor.cert.b64 &&
+              signersOf(named).indexOf(anchor.cert.b64) >= 0,
+              'one that names no signing key trusts nothing new, so it is ' +
+              'consumed too', JSON.stringify(noKey.errors));
+      const another = spMetadata.upload(named, entity(named,
+        { signing: stranger.cert.b64, acs: 'https://named-other.test/acs' }));
+      t.check(!another.ok && anchorOf(named) === anchor.cert.b64 &&
+              signersOf(named).indexOf(stranger.cert.b64) < 0 &&
+              /samlSpMetadataSigningCertificate/.test(another.errors.join(' ')),
+              'one naming a different key is refused, naming the act that ' +
+              'replaces the anchor', JSON.stringify(another.errors));
+      const quietAgain = await fetchedBy(null);
+      t.check(!quietAgain.ok,
+              'and the background still may not take an unsigned document',
+              JSON.stringify(quietAgain.errors));
 
       // By hand: the certificate is the anchor before any explicit one exists.
       const byHand = newSp('by-hand', {
