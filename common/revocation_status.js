@@ -2646,6 +2646,13 @@ async function readCrl(der, context) {
              why: 'it was signed by a certificate whose keyUsage does not ' +
                   'include cRLSign (RFC 5280 section 4.2.1.3)' };
   }
+  const signerHeld = revocationSignerHeld(signer.x509.raw,
+                                          { variant: 'crl', mayBeCa: true });
+  if (!signerHeld.ok) {
+    log.debug('Leaving readCrl(). The door refused its signer.');
+    return { ok: false, signerProblem: true,
+             why: 'its signer is refused: ' + signerHeld.why };
+  }
   const extensions = (crl.crlExtensions && crl.crlExtensions.extensions) || [];
   const critical = extensions.filter(function (ext) {
     return ext.critical && UNDERSTOOD_CRL_EXTENSIONS.indexOf(ext.extnID) < 0;
@@ -2971,6 +2978,16 @@ async function responderStatusOf(parsedCert, x509, target) {
            why: 'from its CRL: ' + result.why };
 }
 
+// A signer's own fields, under paranoid PKI mode (#1360). Lazily: the door
+// requires this module.
+function revocationSignerHeld(der, options) {
+  log.debug('Entering revocationSignerHeld().');
+  const held = require('./certificate_trust')
+    .fields('revocation-signer', der, options);
+  log.debug('Leaving revocationSignerHeld(). ' + held.ok);
+  return held;
+}
+
 // Who signed it, and whether they were entitled to. RFC 6960 section 4.2.2.2.
 async function ocspSignerOf(basic, target) {
   log.debug('Entering ocspSignerOf().');
@@ -3017,6 +3034,11 @@ async function ocspSignerOf(basic, target) {
     }
     if (!validAt(x509, now)) {
       tried.push(label + ' is outside its validity period');
+      continue;
+    }
+    const held = revocationSignerHeld(x509.raw, {});
+    if (!held.ok) {
+      tried.push(label + ' is refused: ' + held.why);
       continue;
     }
     if (await ocspSignatureVerifies(basic, certs[i])) {

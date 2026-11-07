@@ -9011,6 +9011,23 @@ audit`** is a cluster job per realm, logging and mailing only what CHANGED again
 registers a source with `registerPinSource()`: a registry a library fills, not a
 slot, since no require would move a route. Phase 6 registers them.
 
+**PHASE 5: A SITE KEEPS ITS OWN SHAPE.** `path()`, `direct()` and `realmLeaf()`
+answer what `verifyPathToAnchors()`, `verifyIssuedDirectly()` and `verifyLeaf()`
+answer, so each site's error wording and code stand, and out of force each IS
+that call. `fields()` is for a certificate something else already decided to
+trust: a delegated responder, a CRL signer, AWS's pin, a federated authority.
+**`anchorsAvailable()`** lets a site with no configured anchors
+reach the signer truststore where its row may, also rcbj's decision.
+**`siteAsksRevocation`** is for WebAuthn, PKINIT and FIDO MDS, which ask next with
+their own codes, and in MDS's case an override that a positive revocation must
+still beat: a refusal from the door would have let that override load a revoked
+BLOB, which is what `tests/risk_mds.js` K4 caught with the master forced on.
+`assessSync()` passes a certificate that names no list, since a door that cannot
+wait has nothing to wait for: every self-signed SPIFFE authority's SVID is one.
+`verifyKeyAttestation()` became asynchronous for the real path.
+`tests/certificate_trust_callers.js`'s `ALLOWED` is empty, and `PERMANENT` holds
+the calls that decide nothing, each with its reason.
+
 ## 3ad. `revocation_status.js`: REVOCATION, CONSULTED (2026-09-12)
 
 `pki_revocation.js` PUBLISHES; this CONSULTS. Until it existed a client

@@ -31,6 +31,9 @@
 //      the attested key's DPoP proof alone authenticates it; another
 //      key's, or a PoP JWT beside it, is refused.
 //   g. Introspection takes the PoP mode too.
+//   h. Paranoid PKI mode (#1360): an attester whose keyUsage forbids signing is
+//      refused, one that may sign is accepted though its chain names no list, and
+//      with the row off the first is accepted again.
 //
 // What each check refuses in detail, with every error code, is
 // `tests/client_attestation.js`, in process.
@@ -76,7 +79,7 @@ const PASSWORD = "Attest-Passw0rd!-" + String(Date.now()).slice(-6);
 const ALICE = names.usernameFor("attest-alice");
 const SCOPE = "openid profile";
 const CHALLENGE_HEADER = "oauth-client-attestation-challenge";
-const FLOOR = 20;
+const FLOOR = 23;
 
 let checks = 0;
 function check(what, fn) {
@@ -254,7 +257,7 @@ function pkce() {
 // which is what forge makes), and a stranger's root beside it. Nothing is
 // kept on disk.
 // ---------------------------------------------------------------------------
-function certificate(subject, publicKey, issuer, signingKey, ca) {
+function certificate(subject, publicKey, issuer, signingKey, ca, usage) {
   log.debug("Entering certificate(). " + subject);
   const cert = forge.pki.createCertificate();
   cert.publicKey = publicKey;
@@ -271,20 +274,21 @@ function certificate(subject, publicKey, issuer, signingKey, ca) {
        { name: "keyUsage", keyCertSign: true, cRLSign: true,
          critical: true }]
     : [{ name: "basicConstraints", cA: false },
-       { name: "keyUsage", digitalSignature: true, critical: true }]);
+       Object.assign({ name: "keyUsage", critical: true },
+                     usage || { digitalSignature: true })]);
   cert.sign(signingKey, forge.md.sha256.create());
   log.debug("Leaving certificate().");
   return cert;
 }
 
-function attesterOf(rootName) {
+function attesterOf(rootName, usage) {
   log.debug("Entering attesterOf(). " + rootName);
   const rootKeys = forge.pki.rsa.generateKeyPair(2048);
   const root = certificate(rootName, rootKeys.publicKey, rootName,
                            rootKeys.privateKey, true);
   const leafKeys = forge.pki.rsa.generateKeyPair(2048);
   const leaf = certificate(rootName + " attester", leafKeys.publicKey,
-                           rootName, rootKeys.privateKey, false);
+                           rootName, rootKeys.privateKey, false, usage);
   log.debug("Leaving attesterOf().");
   return {
     rootPem: forge.pki.certificateToPem(root),
@@ -599,6 +603,40 @@ async function test() {
         "the token is DPoP-bound (section 5.2)", function () {
     assert.strictEqual(r.status, 200, r.raw.slice(0, 400));
     assert.strictEqual(r.body.token_type, "DPoP");
+  });
+
+  log.info("=== h. paranoid PKI mode: the attester's certificate (#1360) ===");
+  const mayNotSign = attesterOf("Paranoid Attester " + Date.now(),
+                                { keyEncipherment: true });
+  await ok(realmApi + "/config/set",
+           { key: "oauth2.clientAttestationTrustAnchors",
+             value: attester.rootPem + "\n" + mayNotSign.rootPem },
+           "trusted a second attester, whose leaf may not sign");
+  await ok(realmApi + "/config/set", { key: "pki.paranoid", value: "on" },
+           "turned paranoid PKI mode on in this realm");
+  const asAttester = function (who) {
+    log.debug("Entering asAttester().");
+    log.debug("Leaving asAttester().");
+    return postForm(tokenUrl, cc, {
+      "OAuth-Client-Attestation": attestationFor(who, combinedId, k1),
+      DPoP: dpopProof(k1, tokenUrl) });
+  };
+  r = await asAttester(mayNotSign);
+  check("in force, an attester whose keyUsage forbids signing is refused",
+        function () {
+    assert.strictEqual(r.status, 401, r.raw.slice(0, 300));
+  });
+  r = await asAttester(attester);
+  check("and one that may sign, whose chain names no list, is accepted",
+        function () {
+    assert.strictEqual(r.status, 200, r.raw.slice(0, 400));
+  });
+  await ok(realmApi + "/config/set",
+           { key: "pki.paranoidClientAttestation", value: false },
+           "turned the client attestation row off");
+  r = await asAttester(mayNotSign);
+  check("with the row off the first is accepted again", function () {
+    assert.strictEqual(r.status, 200, r.raw.slice(0, 400));
   });
 
   assert.ok(checks >= FLOOR, "only " + checks + " checks ran; a section " +

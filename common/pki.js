@@ -13780,13 +13780,16 @@ async function verifyFidoMdsBlob(token, opts) {
   // certificate's issuer "neither held here nor in the chain that was
   // presented" and hard-fail refused every genuine BLOB (2026-09-26).
   let pathChain = null;
-  if (!anchors.length) {
+  if (!require('./certificate_trust').anchorsAvailable('fido-mds', anchors)) {
     failure = 'no FIDO MDS trust anchor: none is configured ' +
       '(risk.mdsTrustAnchors) and GlobalSign Root CA - R3 is not in this ' +
       'node\'s root store';
   } else {
-    const path = await verifyPathToAnchors(ders[0], ders.slice(1), anchors,
-                                           { now: options.now });
+    // Through the door, lazily (it requires this module), so paranoid PKI mode
+    // asks the same checks of this signer as of any other (#1360).
+    const path = await require('./certificate_trust')
+      .path('fido-mds', ders[0], ders.slice(1), anchors,
+            { now: options.now, siteAsksRevocation: true });
     if (!path.ok) {
       failure = 'the BLOB\'s signing chain does not verify: ' + path.reason;
     } else {

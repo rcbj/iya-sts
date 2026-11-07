@@ -1270,6 +1270,7 @@ const JOBS = [
   { file: 'sts_paranoid_pki_tls.js', browser: false, exclusive: true },
   { file: 'sts_paranoid_pki_outbound.js', browser: false },
   { file: 'sts_paranoid_pki_signers.js', browser: false },
+  { file: 'sts_paranoid_pki_attestation.js', browser: false },
   // DIRECTORY → POST-LOGIN ACTIVITIES (#1111, 2026-10-28; #1123): the
   // console page's shell, the five operations in the document and the gate,
   // the view and its group chooser, the refusals (a missing group 0530),

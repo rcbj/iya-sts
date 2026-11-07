@@ -86,6 +86,7 @@ const { log } = helpers;
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import outbound = require('../federation/federation_http');
 import tuf = require('./spiffe_sigstore_tuf');
@@ -940,9 +941,9 @@ class SigstoreVerifier {
         reasons.push('a Fulcio CA outside its validity then');
         continue;
       }
-      const verdict = await pki.verifyPathToAnchors(
+      const verdict = await CertificateTrust.path('spiffe-attestation',
         leafDer, chainDers.concat(ca.intermediates), ca.anchors,
-        { now: facts.notBefore });
+        { now: facts.notBefore, variant: 'sigstore' });
       if (verdict.ok) {
         path = verdict.chain;
       } else {
