@@ -5009,11 +5009,56 @@ function fillPreferredLanguage(stored, opts) {
   log.debug("Leaving fillPreferredLanguage(). " + (tag || 'None.'));
 }
 
+// The attribute whose value carries a NUL, or '' when every value is clean.
+// `putEntry()` is the directory's one write of a whole entry, and a NUL that
+// reaches PostgreSQL fails the whole flush transaction (`invalid byte
+// sequence for encoding "UTF8": 0x00`) and, until #1391, was retried with the
+// poison row still in the batch, so every later write failed too.
+function nulBearingType(attributes) {
+  log.debug('Entering nulBearingType().');
+  const names = Object.keys(attributes || {});
+  for (let i = 0; i < names.length; i++) {
+    const values = valuesOf(attributes[names[i]]);
+    for (let j = 0; j < values.length; j++) {
+      if (typeof values[j] === 'string' &&
+          values[j].indexOf('\u0000') >= 0) {
+        log.debug('Leaving nulBearingType(). ' + names[i]);
+        return String(names[i]);
+      }
+    }
+  }
+  log.debug('Leaving nulBearingType(). None.');
+  return '';
+}
+
 // Put an entry in the store. `attributes` is a plain object whose values may be
 // a string or an array; the operational attributes are added here so that every
 // entry has them however it was created.
+//
+// A value carrying a NUL is not stored (#1391). The LDAP socket already
+// refused one (`refuseNulValues()`, STS-LDAP-0008) on add and modify; the
+// library doors — `createGroup()` among them — call this function and did
+// not. Returning the refusal, and writing nothing, is what lets that door
+// answer 400 instead of planting a row the store can never commit.
 function putEntry(dn, attributes, options) {
   log.debug('Entering putEntry(). dn=' + dn);
+  const nulType = nulBearingType(attributes);
+  if (nulType) {
+    log.warn(errorCodes.tag('STS-LDAP-0008') +
+             'ldap: refused to store ' + dn + ' because "' + nulType +
+             '" contains a NUL byte.');
+    log.debug('Leaving putEntry(). Refused a NUL.');
+    return coded('STS-LDAP-0008', {
+      ok: false,
+      reason: 'nul',
+      dn: String(dn),
+      attributes: {},
+      errors: ['The value for "' + nulType + '" contains a NUL byte. It ' +
+               'is malformed under every LDAP string syntax, and a value ' +
+               'that half this stack reads as shorter than the other half ' +
+               'is worse than no value at all.']
+    });
+  }
   const opts = options || {};
   const now = generalizedTime();
   const stored = { dn: String(dn), attributes: {}, createdAt: now,
@@ -8790,6 +8835,13 @@ function createUser(name, options) {
   const created = putEntry(plan.dn, attributes,
                            { origin: opts.origin || 'console',
                              application: String(opts.application || '') });
+  // `putEntry()` writes nothing when a value carries a NUL (#1391) and hands
+  // back the refusal. Checked before any of the fills below, which read
+  // `created.attributes`.
+  if (created && created.ok === false) {
+    log.debug('Leaving createUser(). A value carries a NUL.');
+    return created;
+  }
   // The same fill autoCreateUser() does, and for the same reason: the entry an
   // LDAP client reads and the credential a wallet is handed have to say the
   // same thing about this person from the moment the entry exists.
@@ -28124,6 +28176,12 @@ function writeGroupEntry(dn, attributes, origin) {
   const stored = putEntry(dn, attributes,
                           { origin: existing ? existing.origin :
                                     (origin || 'scim') });
+  // The directory's one write refused a NUL (#1391). Nothing was stored, and
+  // the caller — `createGroup()`, SCIM's group write — returns that refusal.
+  if (stored && stored.ok === false) {
+    log.debug('Leaving writeGroupEntry(). A value carries a NUL.');
+    return stored;
+  }
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
@@ -28313,7 +28371,9 @@ function createGroup(displayName, options) {
               written.reason);
     return coded(errorCodes.codeOf(written),
                  { ok: false, reason: written.reason,
-             errors: [written.reason === 'full'
+             errors: written.errors && written.errors.length
+               ? written.errors
+               : [written.reason === 'full'
                ? 'This directory holds its maximum of ' + maxEntries() +
                  ' entries (ldap.maxEntries). Nothing was written.'
                : written.reason === 'noParent'

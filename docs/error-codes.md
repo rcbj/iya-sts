@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5325** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5326** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -53,7 +53,7 @@ is an ordinary outcome.
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 98
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 106
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 107
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
@@ -430,6 +430,7 @@ Raised from: persistence/.
 | `STS-STORE-0165` | The persistence.tombstone-purge-global job, run by the one cell holding the global run claim, could not sweep the global tier's expired tombstones of ended minted rows (#1313); the cell tier's sweep is a job of its own (STS-STORE-0055) and is not affected, and the next run tries again. | none — logged, and the job run is recorded as failed |
 | `STS-STORE-0166` | A run of the persistence.granting-key-backfill job, which gives the directory entries written before #1306 their grantinggroup index keys, stopped on a store error (#1311); the pages it finished are kept, and the next run resumes after the last one. | none — logged; federated provisioning's store question still misses the entries not yet reached |
 | `STS-STORE-0167` | The grantinggroup key backfill (#1311) skipped a directory entry whose sealed attributes do not open in this process, even after the data-key rows were read again; the walk finishes and writes its mark, and the entry is keyed when it is next written. The first few are named, then a count per run. | — |
+| `STS-STORE-0168` | A directory flush dropped one row whose value the database can never store (a NUL byte, or another permanent data error) and committed every other row of the batch (#1391). The entry stays in this process's memory and is absent from the store until the process restarts; the next flush does not send the same value again. | none — logged; the request that wrote it was already answered |
 
 ## STS-CLUSTER
 

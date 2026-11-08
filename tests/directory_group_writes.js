@@ -360,10 +360,35 @@ function checkTheGroupMail(t) {
   log.debug("Leaving checkTheGroupMail().");
 }
 
+// A NUL in a value is not an LDAP string, and PostgreSQL rejects the byte
+// (`invalid byte sequence for encoding "UTF8": 0x00`). Until #1391 that row
+// stayed in the flush batch and every later write answered 503. The refusal
+// is at `putEntry()`, so the group is not stored at all.
+function checkANul(t) {
+  log.debug("Entering checkANul().");
+  t.log.info('a value carrying a NUL');
+
+  withRealm(t, 'dgw-nul', function () {
+    const note = dir.createGroup('dgw-nul-note',
+      { origin: 'test', note: 'hello\u0000there' });
+    t.equal(note.ok, false, 'a note carrying a NUL is refused');
+    t.equal(errorCodes.codeOf(note), 'STS-LDAP-0008',
+      'and the refusal is STS-LDAP-0008');
+    t.check(String((note.errors || []).join(' ')).indexOf('NUL') >= 0,
+      'and it says the value carries a NUL');
+    const stored = dir.allGroupEntries().some(function (group) {
+      return String(group.dn).indexOf('cn=dgw-nul-note,') === 0;
+    });
+    t.equal(stored, false, 'and nothing was stored under that name');
+  });
+  log.debug("Leaving checkANul().");
+}
+
 function run(t) {
   log.debug("Entering run().");
   checkTheNameRules(t);
   checkTheEmptyGroup(t);
+  checkANul(t);
   checkWhereTheValuePoints(t);
   checkIdempotenceAndRefusals(t);
   checkWhatIsNotWritten(t);
