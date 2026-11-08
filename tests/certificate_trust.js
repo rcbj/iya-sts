@@ -619,6 +619,25 @@ async function run(t, double, crls) {
     t.check(baseline.ok && baseline.anchor === 'pinned',
             'L. and a self-signed x5c[0] is the pin it was', baseline.why);
   });
+  // M. AN ENCRYPTION RECIPIENT (Phase 4).
+  t.log.info('M. encryption recipients');
+  const signsOnly = await kit.mint({ cn: 'cannot encipher', usages:
+                                     ['digitalSignature'] });
+  const enciphers = await kit.mint({ cn: 'enciphers', usages:
+                                     ['keyEncipherment'] });
+  const noEnc = trust.pinnedSync('encryption-recipient', signsOnly.pem);
+  t.check(!noEnc.ok && noEnc.code === 'STS-KEYS-0171',
+          'M. a certificate that may not encipher is refused', noEnc.code);
+  t.check(trust.pinnedSync('encryption-recipient', enciphers.pem).ok,
+          'M. one that may is accepted, self-signed by spec', '');
+  const encOld = await kit.mint({ cn: 'old recipient', usages:
+    ['keyEncipherment'], notBefore: now - 3 * kit.DAY,
+    notAfter: now - kit.DAY });
+  t.check(!trust.pinnedSync('encryption-recipient', encOld.pem).ok,
+          'M. an expired one is refused', '');
+  t.check(trust.registrationProblem('encryption-recipient',
+                                    signsOnly.pem) !== null,
+          'M. and at the door', '');
   double.rows(REALM).clear();
   // A CHAIN ENDING IN A CROSS-SIGNED ROOT (the shape of every Google endpoint):
   // a root the store holds, sent as a copy another root signed, whose issuer is

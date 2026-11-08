@@ -4301,6 +4301,7 @@ class WsTrust {
       // AppliesTo need not be the entry's identifier.
       const answering = this.appliesToApplication(audience) || audience || '';
       let failure = '';
+      let heldRefused = false;
       if (recipB64) {
         const recipPem = '-----BEGIN CERTIFICATE-----\n' +
             (recipB64.match(/.{1,64}/g) || []).join('\n') + '\n-----END ' +
@@ -4312,7 +4313,14 @@ class WsTrust {
           keyTransport: String(applications.settingFor(
             answering, 'saml2.keyTransportAlgorithm', config) || '')
         };
-        try {
+        // The requester's certificate, held to its use case under paranoid PKI
+        // mode (#1360). Refused, nothing is sent in clear in either mode.
+        const held = require('../common/certificate_trust')
+          .pinnedSync('encryption-recipient', recipPem);
+        if (!held.ok) {
+          failure = 'the certificate in the request is refused: ' + held.why;
+          heldRefused = true;
+        } else try {
           tok.xml = encryptAssertion(tok.xml, recipPem, how);
           tok.ref = '';
         } catch (e) {
@@ -4326,7 +4334,7 @@ class WsTrust {
                   'WS-Security signature)';
       }
       if (failure) {
-        if (!mode.sendsWeakerThanAsked()) {
+        if (heldRefused || !mode.sendsWeakerThanAsked()) {
           log.info('wstrust: refused to return a plaintext assertion — ' +
                    failure + '.');
           log.debug("Leaving WsTrust.finishIssue(). Encryption was required " +
