@@ -678,6 +678,22 @@ function checkVariables(t) {
           'and naming one this policy does not define is refused, citing the ' +
           'section that says why', unknown.why);
 
+  // A path that resolves but does not name a variable used to store
+  // `undefined`, and writePolicy threw reading `.kind` (#1403).
+  const notAVariable = editor.applyEdit(policy, 'rules.0', 'edit-variable',
+                                        { variableId: 'otherName' });
+  t.check(!notAVariable.ok && /no variable/.test(notAVariable.why),
+          'renaming where the path is not a variable is refused, rather ' +
+          'than writing a definition with no expression',
+          notAVariable.why);
+  const nested = editor.applyEdit(policy, 'variables.v1.attributeId',
+                                  'edit-variable',
+                                  { variableId: 'otherName' });
+  t.check(!nested.ok && /no variable/.test(nested.why),
+          'and a field of a variable is not the variable', nested.why);
+  t.check(!!policy.variables.v1 && !policy.variables.otherName,
+          'and the document is unchanged');
+
   // THE RENAME IS THE INTERESTING ONE: a rename that left the references
   // behind produces a document that does not load, so the store would refuse
   // the write and nothing would change — a control that silently does nothing.
