@@ -3646,7 +3646,8 @@ const CODES = [
       'errors}' },
   { code: 'STS-PKI-0004',
     summary: 'The signing key cannot produce the signature algorithm asked ' +
-      'for (the key and signature families disagree).',
+      'for. A post-quantum key produces exactly one, and a KEM produces ' +
+      'none (#1409).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-PKI-0005',
@@ -4950,6 +4951,11 @@ const CODES = [
     summary: 'A certificate offered to be accepted by name is a certificate ' +
       'authority (#1360).',
     spec: 'none — recorded on the refusal the page or the API makes' },
+  { code: 'STS-PKI-0268',
+    summary: 'A certificate authority was asked for a lifetime a certificate ' +
+      'cannot carry. Nothing was generated and nothing was stored (#1409).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

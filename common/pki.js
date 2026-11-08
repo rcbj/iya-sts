@@ -792,6 +792,49 @@ function tierYearsFrom(years, tier) {
   return configuredTierYears(tier);
 }
 
+// A lifetime `setUTCFullYear` cannot represent. ECMAScript throws
+// `RangeError: Invalid time value` past the largest date it can hold, and
+// `buildScope()` was recording that as the certificate encoder failing
+// (STS-PKI-0006, #1409). The caller refuses before a key is generated.
+/**
+ * Answers a refusal when a lifetime in years is not a date a certificate
+ * can carry, and null when it is or when the profile's own default applies.
+ *
+ * @param years - the lifetime `tierYearsFrom()` answered
+ * @returns `{ ok: false, errors }` marked STS-PKI-0268, or null
+ */
+function certificateLifetimeProblem(years) {
+  log.debug("Entering certificateLifetimeProblem().");
+  const n = Math.floor(Number(years));
+  if (!(n > 0)) {
+    log.debug("Leaving certificateLifetimeProblem(). The profile's own.");
+    return null;
+  }
+  const notBefore = certificateInstant();
+  const notAfter = certificateInstant(notBefore.getTime());
+  let thrown = null;
+  try {
+    notAfter.setUTCFullYear(notAfter.getUTCFullYear() + n);
+  } catch (e) {
+    // The date cannot represent the year. That is the input, not the encoder.
+    thrown = e;
+    log.debug("Caught in certificateLifetimeProblem(): " +
+              ((e && e.message) || e));
+  }
+  if (thrown || isNaN(notAfter.getTime())) {
+    log.info(errorCodes.tag('STS-PKI-0268') + 'pki: a lifetime of ' + n +
+             ' years is not a date a certificate can carry. Nothing was ' +
+             'stored.');
+    log.debug("Leaving certificateLifetimeProblem(). Unrepresentable.");
+    return errorCodes.mark({ ok: false,
+             errors: ['A lifetime of ' + n + ' years is not a date a ' +
+                      'certificate can carry. Nothing was stored.'] },
+                           'STS-PKI-0268');
+  }
+  log.debug("Leaving certificateLifetimeProblem().");
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // WHICH ALGORITHMS MAY BE ASKED FOR. Both lists are READ FROM THE MODULE THAT
 // PERFORMS THEM rather than written here, which is `crypto_metadata.js`'s rule
@@ -916,7 +959,13 @@ function signatureForIssuer(parent, preferred, subjectKeyAlg) {
   const issuerKeyAlg = parent ? parent.keyAlg : subjectKeyAlg;
   const issuerDesc = keyMaterial.keyAlg(issuerKeyAlg);
   const wanted = x509.sigAlg(preferred);
-  if (issuerDesc && wanted && wanted.kind === issuerDesc.kind &&
+  // A post-quantum key produces exactly one algorithm, and a KEM produces
+  // none. Matching on `kind` alone handed an ML-KEM issuer a composite
+  // signature, and signing the Issuing CA then threw (#1409). A signature
+  // this issuer cannot produce is replaced, which is the rule above.
+  const producible = issuerDesc
+    ? x509.signatureAlgorithmsFor(issuerDesc) : [];
+  if (wanted && producible.indexOf(wanted.id) >= 0 &&
       (!wanted.weak || mode.usesBrokenAlgorithms())) {
     log.debug("Leaving signatureForIssuer().");
     return preferred;
@@ -1202,6 +1251,12 @@ async function buildRootNow(opts) {
     log.debug('Leaving buildRoot(). ' + chosen.errors.join(' '));
     return chosen;
   }
+  const rootYears = tierYearsFrom(options.years, 'root');
+  const rootLifetime = certificateLifetimeProblem(rootYears);
+  if (rootLifetime) {
+    log.debug('Leaving buildRoot(). The lifetime.');
+    return rootLifetime;
+  }
   const organisation = String(options.organisation || DEFAULT_ORGANISATION);
   const country = String(options.country || '');
   let root;
@@ -1212,7 +1267,7 @@ async function buildRootNow(opts) {
       organisation: organisation, country: country,
       keyAlg: chosen.keyAlg, signatureAlg: chosen.signatureAlg,
       altKeyAlg: chosen.altKeyAlg,
-      years: tierYearsFrom(options.years, 'root'), parent: null
+      years: rootYears, parent: null
     });
   } catch (e) {
     log.error(errorCodes.tag('STS-PKI-0005') + 'pki: the Root CA could not ' +
@@ -1583,8 +1638,8 @@ function buildsSettled() {
 
 // The key and signature algorithm a build is to use, checked as a PAIR. It is
 // one function because the three checks belong together — an unknown key
-// algorithm, an unknown signature algorithm, and a pair whose families
-// disagree — and because every builder below makes all three.
+// algorithm, an unknown signature algorithm, and a signature the key
+// cannot produce — and because every builder below makes all three.
 /**
  * Decides the key, signature and alternative key algorithms a build is to
  * use, checked as a pair.
@@ -1633,8 +1688,16 @@ function algorithmsFrom(options) {
   // -------------------------------------------------------------------------
   const configuredSig = String(mode.valueInForce('pki.signatureAlgorithm') ||
                                '').trim();
-  const configuredFits = !!configuredSig && !!x509.sigAlg(configuredSig) &&
-                         x509.sigAlg(configuredSig).kind === keyDesc.kind;
+  const configuredSpec = x509.sigAlg(configuredSig);
+  // Membership, not kind. Two post-quantum algorithms are both `pqc`, so a
+  // kind check treated a composite setting as a signature an ML-DSA key can
+  // produce and the build was then refused. A setting the key cannot
+  // produce is skipped, as an RSA setting already is for an EC build
+  // (#1409). A caller that names the pair is still refused below.
+  const configuredFits = !!configuredSpec &&
+    signatureAlgorithms(keyAlgId).some(function (one) {
+      return one.id === configuredSpec.id;
+    });
   const sigAlgId = String(options.signatureAlg ||
                           (configuredFits ? configuredSig : '') ||
                           defaultSignatureAlgorithmFor(keyAlgId));
@@ -1657,17 +1720,21 @@ function algorithmsFrom(options) {
                         return one.id;
                       }).join(', ') + '.'] }, 'STS-PKI-0191');
   }
-  if (sig.kind !== keyDesc.kind) {
-    log.debug("Leaving algorithmsFrom().");
-    // Refused here rather than left to Web Crypto, which reports it as a key
-    // usage error naming neither the key nor the algorithm.
-    return errorCodes.mark({ ok: false,
-             errors: ['A ' + keyDesc.label + ' key cannot produce a ' +
-                      sig.label + ' signature. The algorithms this key can ' +
-                      'sign with are ' +
-                      signatureAlgorithms(keyAlgId).map(function (one) {
-                        return one.id;
-                      }).join(', ') + '.'] }, 'STS-PKI-0004');
+  // Not the kind alone. A post-quantum key produces one algorithm, and a
+  // KEM produces none; both are `kind: 'pqc'`, so a kind check accepted an
+  // ML-KEM authority asked to sign with a composite and the encoder threw
+  // (STS-PKI-0007, #1409). The authoring pane already uses this list.
+  const producible = signatureAlgorithms(keyAlgId);
+  if (!producible.some(function (one) { return one.id === sig.id; })) {
+    log.debug("Leaving algorithmsFrom(). The key cannot produce it.");
+    const listed = producible.map(function (one) { return one.id; });
+    const sentence = listed.length
+      ? ('A ' + keyDesc.label + ' key cannot produce a ' + sig.label +
+         ' signature. The algorithms this key can sign with are ' +
+         listed.join(', ') + '.')
+      : ('A ' + keyDesc.label + ' key cannot sign, so it cannot be a ' +
+         'certificate authority.');
+    return errorCodes.mark({ ok: false, errors: [sentence] }, 'STS-PKI-0004');
   }
   const alternative = alternativeKeyAlgFrom(options.altKeyAlg);
   if (!alternative.ok) {
@@ -1845,6 +1912,14 @@ async function buildScopeNow(scopeId, opts) {
     log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
     return chosen;
   }
+  const intermediateYears = tierYearsFrom(options.years, 'intermediate');
+  const issuingYears = tierYearsFrom(options.years, 'issuing');
+  const lifetime = certificateLifetimeProblem(intermediateYears) ||
+                   certificateLifetimeProblem(issuingYears);
+  if (lifetime) {
+    log.debug('Leaving buildScope(). The lifetime.');
+    return lifetime;
+  }
   const removalsAtStart = removalCount(id);
   const rooted = await ensureRoot(options);
   if (!rooted.ok) {
@@ -1887,7 +1962,7 @@ async function buildScopeNow(scopeId, opts) {
         // `intermediatePathLen()`. A realm's is 2 because it carries `spiffe`;
         // the process branch's is 1, exactly as the profile says.
         pathLen: intermediatePathLen(kind),
-        years: tierYearsFrom(options.years, 'intermediate'), parent: root
+        years: intermediateYears, parent: root
       });
     } catch (e) {
       log.error(errorCodes.tag('STS-PKI-0006') + 'pki: ' + label + '\'s ' +
@@ -1920,7 +1995,7 @@ async function buildScopeNow(scopeId, opts) {
         keyAlg: forThis.keyAlg, signatureAlg: forThis.signatureAlg,
         altKeyAlg: chosen.altKeyAlg,
         pathLen: issuingPathLen(uc.id),
-        years: tierYearsFrom(options.years, 'issuing'),
+        years: issuingYears,
         parent: intermediate
       });
     } catch (e) {

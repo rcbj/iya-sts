@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5327** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5328** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 183
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 254
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 255
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
@@ -803,7 +803,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0001` | A certificate-authority use case prefers a key algorithm this service cannot use, so its Issuing CA was built with the branch's algorithm instead. | — |
 | `STS-PKI-0002` | A build, issue, key generation or export named a key algorithm this service cannot generate. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0003` | A build or issue named a signature algorithm this service cannot produce. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-PKI-0004` | The signing key cannot produce the signature algorithm asked for (the key and signature families disagree). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0004` | The signing key cannot produce the signature algorithm asked for. A post-quantum key produces exactly one, and a KEM produces none (#1409). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0005` | The Root CA could not be issued by the certificate encoder; nothing was stored. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0006` | A scope's Intermediate CA could not be issued by the certificate encoder; nothing was stored. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0007` | One of a scope's Issuing CAs could not be issued while building its branch; nothing was stored. | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
@@ -1054,6 +1054,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0265` | A pin source threw while listing its certificates, so the inventory is missing its rows. | none (logged) |
 | `STS-PKI-0266` | An https CRL distribution point or OCSP responder was not asked: pki.revocationHttpsCaFile names a file that cannot be used, under paranoid PKI mode. Elsewhere it warned and fell back to node's store (#1360). | none: the status is unknown, and the policy decides |
 | `STS-PKI-0267` | A certificate offered to be accepted by name is a certificate authority (#1360). | none — recorded on the refusal the page or the API makes |
+| `STS-PKI-0268` | A certificate authority was asked for a lifetime a certificate cannot carry. Nothing was generated and nothing was stored (#1409). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-ENROLL
 
