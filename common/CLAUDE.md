@@ -8952,6 +8952,8 @@ until `holdConnectionsOn()` has the verdict; the debugger's first middleware wai
 OpenBao and postgres pairs are self-signed leaves, and refusing them stopped the
 service starting in product mode, which no memory-mode probe could show. A public
 root or a truststore anchor in `ca` does not count, since nobody named this server.
+**`pinnedSync(..., { named: true })` IS AN ADMINISTRATOR'S ACT (rcbj: "the application signer cert setup, especially from a metadata document should create the trust anchor").** It skips the path and the self-signed refusal and keeps the fields and revocation. A site passes it only for a certificate no request can have put there: `saml/CLAUDE.md` for metadata, and the WS-Security site only for one stored on exactly one entry. `bareKey()` always passes it, because the same key with no `x5c` is accepted, so a path there refuses only the key that says more.
+
 **A CERTIFICATE NAMING NO SOURCE HAS NO CHECK TO PERFORM (rcbj).** Under paranoid
 `policy()` drops the `auto` distribution-point requirement, a link naming nothing
 whose issuer is absent is not refused, and `nothingToAsk()` covers what the walk
@@ -8988,6 +8990,19 @@ two `certificateMatches` terms that always passed were removed rather than made
 `.verified`, which would have refused a self-signed client's own bound token: only
 AuthZEN's `mtls+bearer`, which asks for a verified certificate by name, and
 `certificateVerified` at the token endpoint, read `.verified`.
+
+**PHASE 3: A SIGNER, AND A DOOR THAT CANNOT WAIT.** `signerChain()` is what the RFC
+7523 and 7522 verifiers call in place of `pki.verifySignerChain()`, with its answer's
+shape, so those sites changed one line. A SAML request's signature and a WS-Security
+token are answered inside handlers that hand back a value, so the plan's `assess()`
+could not be awaited there without rewriting `singleSignOnChecked()` and
+`singleLogout()`. **`pinnedSync()` is what they call instead**: fields, the pin rule
+and one hop through the signer truststore are decided now, and revocation is read from
+`pinVerdicts`, a cache on `/admin/caches` filled by the first ask. So a non-self-signed
+signer naming a list is refused ONCE, on the request that starts the fetch, because a
+check nobody made is a refusal. A self-signed one, and one naming no list, costs nothing.
+A partner's signer goes through it too, from `signerStillAccepted()`, for one code
+path. `reachesHeld()` is the plan's "AIA is followed, but the result must chain".
 
 **THE COUNTERS ARE NOT ON `/admin/caches`**: not a cache, one row per realm and
 purpose, bounded by construction, and per process, which the page says. **`pki.pins.

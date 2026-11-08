@@ -1143,6 +1143,22 @@
     "en": "9c59c7826b7934f6",
     "text": "Ingen utgång: förnyas vid varje tömning, en post per skriven katalogpost och sfär. Tom i minnesläge."
   },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "Återkallelse av fästa certifikat"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "Det som senast hämtades om ett fäst certifikat, för de dörrar som svarar i ett enda varv under paranoid PKI-läge. Nyckel: certifikatets fingeravtryck."
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "Tillämpas: 1024 poster; den äldsta skrivningen kastas och hämtas igen vid behov."
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 minuter"
+  },
   "caches.store.revocation.ca-certificates.title": {
     "en": "c65adefa5d027d1a",
     "text": "Hämtade utfärdarcertifikat"

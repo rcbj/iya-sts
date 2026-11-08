@@ -155,6 +155,7 @@
 // routes (rule 1).
 // ---------------------------------------------------------------------------
 
+import certificateTrust = require('../common/certificate_trust');
 import zlib = require('zlib');
 import AtprotoClient = require('./atproto_client');
 import xmldom = require('@xmldom/xmldom');
@@ -1179,6 +1180,25 @@ class FederationSp {
       });
     log.debug("Leaving FederationSp.signerStillAccepted(). The verdict is " +
               'pending.');
+    // WHAT THE SIGNER IS, under paranoid PKI mode (#1360), beside what the
+    // revocation says: in date and may sign. An administrator registered it on
+    // the relationship, which named it, so it needs no chain (rcbj).
+    const held = unsigned ? { ok: true, code: '', why: '' } :
+      (jwk ? certificateTrust.bareKey(jwk)
+           : certificateTrust.pinnedSync('federation-partner',
+                                         this.certPemOf(record),
+                                         { named: true }));
+    if (!held.ok) {
+      log.warn('federation: ' + record.fedId + ': the signer is refused: ' +
+               held.why);
+      // error-code: none — the door's verdict names the code
+      errorCodes.mark(res, held.code);
+      return Promise.resolve(this.refuse(res, record, 401,
+        'The partner\'s signing certificate may no longer be used',
+        held.why + ' The signature verified against it: replace ' +
+        (jwk ? 'the key' : 'fedSigningCertificate') + ', or switch off the ' +
+        'row on /admin/pki/trust.'));
+    }
     return checked.then((verdict) => {
       if (verdict.refused) {
         log.warn('federation: ' + record.fedId + ': the configured signing ' +

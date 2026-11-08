@@ -1760,6 +1760,27 @@ class WsTrust {
                      'issued; a certificate stored on an entry is carried ' +
                      'in a wsse:BinarySecurityToken');
     }
+    // Under paranoid PKI mode (#1360) a certificate stored on exactly one entry
+    // was named by whoever provisioned that entry, so it needs no path; its
+    // fields and revocation still count. One this realm issued is answered by
+    // the gate below, and in product one stored nowhere or twice is refused
+    // there by its own code. Development believes a name, so the door holds it.
+    const trust = require('../common/certificate_trust');
+    if (trust.applies('wss-x509-token')) {
+      const issuedHere = gates.signingIdentityOf(certificate);
+      const stored = !!(issuedHere && issuedHere.ok);
+      if (!(issuedHere && issuedHere.issuedHere) &&
+          (stored || !mode.verifiesCredentials())) {
+        const held = trust.pinnedSync('wss-x509-token',
+          Buffer.from(String(certificate).replace(/-----[^-]+-----/g, '')
+            .replace(/\s+/g, ''), 'base64'), { named: stored });
+        if (!held.ok) {
+          log.debug("Leaving WsTrust.messageSignature(). Paranoid: " +
+                    held.code);
+          return refused(held.code, held.why);
+        }
+      }
+    }
     const identity = gates.signingIdentityOf(certificate);
     const verifies = mode.verifiesCredentials();
     if (!verifies) {

@@ -705,6 +705,7 @@ const SAML_CERTIFICATE_ATTRIBUTES = ['samlSigningCertificate',
  */
 const SAML_METADATA_FIELDS = [
   'samlSpMetadata', 'samlEncryptionCertificate', 'samlSigningCertificate',
+  'samlSpMetadataSigningCertificate',
   'samlAssertionConsumerService', 'samlAcsEndpoint',
   'samlSingleLogoutService', 'samlSloEndpoint', 'samlSpNameIdFormat',
   'samlSpAuthnRequestsSigned', 'samlSpWantAssertionsSigned',
@@ -15215,6 +15216,22 @@ function createApplication(detail) {
   const info = detail || {};
   const identifier = String(info.identifier || '').trim();
   log.debug("Entering createApplication(). identifier=" + identifier);
+  // A CERTIFICATE AT THE CREATE DOOR, under paranoid PKI mode, as at the update
+  // door (#1360). Lazily: the door reaches the authority.
+  const certificateTrust = require('./certificate_trust');
+  for (const attribute of SAML_CERTIFICATE_ATTRIBUTES) {
+    for (const one of valuesOf((info.fields || {})[attribute])) {
+      const refused = String(one || '') && certificateTrust.registrationProblem(
+        'saml-signer',
+        Buffer.from(samlCertificateBase64(String(one)), 'base64'));
+      if (refused) {
+        log.debug("Leaving createApplication(). Paranoid: " + refused.code);
+        return errorCodes.mark({ ok: false, errors: ['`' + attribute + '` is ' +
+                                 'refused: ' + refused.why + '.'] },
+                               refused.code);
+      }
+    }
+  }
   const problem = identifierProblem(identifier);
   if (problem) {
     log.debug("Leaving createApplication(). " + problem);
@@ -18040,6 +18057,14 @@ function samlCertificateProblem(value) {
   if (problem) {
     log.debug("Leaving samlCertificateProblem(). " + problem);
     return problem;
+  }
+  // ITS FIELDS, AT THE DOOR, under paranoid PKI mode (#1360): every write of a
+  // SAML certificate comes through here. Lazily: the door reaches the authority.
+  const paranoid = require('./certificate_trust')
+    .registrationProblem('saml-signer', Buffer.from(der, 'base64'));
+  if (paranoid) {
+    log.debug("Leaving samlCertificateProblem(). Paranoid: " + paranoid.code);
+    return paranoid.why;
   }
   log.debug("Leaving samlCertificateProblem(). Usable.");
   return '';

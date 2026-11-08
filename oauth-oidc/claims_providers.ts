@@ -995,6 +995,12 @@ class ClaimsProviders {
     });
     let why = 'no key in the provider\'s set verified it';
     for (const jwk of keys) {
+      // A provider's key that carries an x5c is held to it (#1360).
+      const held = require('../common/certificate_trust').bareKey(jwk);
+      if (!held.ok) {
+        why = held.why;
+        continue;
+      }
       try {
         const key = stsCrypto.publicKeyFromJwk(jwk);
         const claims = stsCrypto.verifyJws(String(jwt), key, {

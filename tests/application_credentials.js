@@ -202,6 +202,22 @@ async function runBody(t) {
           'intermediate without the self-signed root are refused, naming the ' +
           'root', sentence(noRoot));
 
+  // A WHOLE CHAIN UNDER PARANOID (#1360). The upload door hands the door the
+  // leaf; handing it the parsed block read every upload as no certificate.
+  const paranoidConfig = require('../common/config');
+  paranoidConfig.setOverride('pki.paranoid', 'on');
+  let paranoidUpload;
+  try {
+    paranoidUpload = await pki.registerCertificate(undefined, {
+      identifier: APP, purpose: 'jwt', certificatePem: leafPem,
+      chainPem: interPem + rootPem });
+  } finally {
+    paranoidConfig.clearOverride('pki.paranoid');
+  }
+  t.check(paranoidUpload.ok,
+          'under paranoid, a valid leaf and its chain are registered',
+          sentence(paranoidUpload));
+
   const strayPair = await caPair('ec-p256');
   const stray = await issue({
     cn: 'appcred-unrelated', publicPem: strayPair.publicPem,

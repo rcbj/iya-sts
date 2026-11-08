@@ -1143,6 +1143,22 @@
     "en": "9c59c7826b7934f6",
     "text": "不过期：每次刷写时刷新，每个已写入的目录条目和领域一个条目。在内存模式下为空。"
   },
+  "caches.store.pki.pinned-verdicts.title": {
+    "en": "b15bc2f1792c41b4",
+    "text": "固定证书的吊销"
+  },
+  "caches.store.pki.pinned-verdicts.description": {
+    "en": "d092c13225f4f0a7",
+    "text": "针对固定证书最近获取的信息，供偏执 PKI 模式下在一个时钟周期内作答的入口使用。以证书指纹为键。"
+  },
+  "caches.store.pki.pinned-verdicts.bound": {
+    "en": "76e83c217add330c",
+    "text": "已强制：1024 条；最早写入的条目被丢弃，需要时重新获取。"
+  },
+  "caches.store.pki.pinned-verdicts.lifetime": {
+    "en": "3170543ce47c2f0b",
+    "text": "5 分钟"
+  },
   "caches.store.revocation.ca-certificates.title": {
     "en": "c65adefa5d027d1a",
     "text": "已获取的颁发者证书"
