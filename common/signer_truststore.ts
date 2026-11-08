@@ -337,6 +337,20 @@ class SignerTruststore {
   private async admit(pem: string, held: Json[], kind: string): Promise<Json> {
     const { log, crypto, pki } = this.deps;
     log.debug("Entering SignerTruststore.admit().");
+    // A PEM envelope whose body is not base64 throws from OpenSSL
+    // (`PEM routines::bad base64 decode`). That block is not a certificate,
+    // which is already the refusal for text that has none (STS-PKI-0238).
+    // Left to throw, POST /admin-api/pki/trust/add answered 500 (#1400).
+    let parsed: Json = null;
+    try {
+      parsed = crypto.parseCertificate(pem);
+    } catch (e) {
+      log.debug("Caught in SignerTruststore.admit(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving SignerTruststore.admit(). Not a certificate.");
+      return { refused: { code: 'STS-PKI-0238',
+                          why: 'this is not an X.509 certificate' } };
+    }
     const anchorsHeld = held.filter(function (row: Json) {
       return row.kind === 'anchor';
     }).map(function (row: Json) {
@@ -352,22 +366,21 @@ class SignerTruststore {
     // list. Never a CA, because trusting one trusts everything it signs. In
     // date and of a strength this deployment takes, like anything else held.
     if (kind === 'accepted') {
-      const read = crypto.parseCertificate(pem);
-      const facts = crypto.certificateFacts(read);
+      const facts = crypto.certificateFacts(parsed);
       if (facts.ca) {
         log.debug("Leaving SignerTruststore.admit(). A CA.");
         return { refused: { code: 'STS-PKI-0267', why: '"' + facts.subject +
           '" is a certificate authority: it is added as an anchor, since ' +
           'accepting it by name would trust everything it signs' } };
       }
-      const wrong = crypto.certificateFieldProblem(read,
+      const wrong = crypto.certificateFieldProblem(parsed,
         { role: 'leaf', keyUsage: [] });
       if (wrong) {
         log.debug("Leaving SignerTruststore.admit(). A field.");
         return { refused: { code: wrong.code, why: wrong.why } };
       }
       log.debug("Leaving SignerTruststore.admit(). Accepted by name.");
-      return { kind: 'accepted', fingerprint: this.fingerprintOf(read) };
+      return { kind: 'accepted', fingerprint: this.fingerprintOf(parsed) };
     }
     const problem = await pki.anchorProblem(pem, {
       role: kind || undefined, heldAnchors: anchorsHeld,
@@ -377,7 +390,6 @@ class SignerTruststore {
       log.debug("Leaving SignerTruststore.admit(). Refused.");
       return { refused: { code: problem.code, why: problem.why } };
     }
-    const parsed = crypto.parseCertificate(pem);
     log.debug("Leaving SignerTruststore.admit(). Admitted.");
     return { kind: kind || (parsed.subject === parsed.issuer ? 'anchor' :
                             'intermediate'),
