@@ -1893,11 +1893,16 @@ function flush() {
     };
     const isolateDirectory = function (err) {
       log.debug('Entering isolateDirectory().');
-      const tagged = sentUpserts.map(function (row) {
-        return { up: row };
-      }).concat(sentDeletes.map(function (row) {
-        return { del: row };
-      }));
+      // One array. `concat` of `{ up }` onto `{ del }` is a type error
+      // under `// @ts-check`: the two element shapes are not the same.
+      /** @type {Array<{up?: any, del?: any}>} */
+      const tagged = [];
+      sentUpserts.forEach(function (row) {
+        tagged.push({ up: row });
+      });
+      sentDeletes.forEach(function (row) {
+        tagged.push({ del: row });
+      });
       const dropped = [];
       const saveSlice = function (slice) {
         log.debug('Entering saveSlice(). ' + slice.length);
