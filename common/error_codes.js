@@ -15949,6 +15949,12 @@ const CODES = [
       '(#1402).',
     spec: 'HTTP 400 on /admin-api and /scim/v2; LDAP adminLimitExceeded ' +
       '(11). The code is recorded, never sent' },
+  { code: 'STS-LDAP-0211',
+    summary: 'A description was refused because its value carries an ' +
+      'operator error code. A description is stored text this service ' +
+      'sends back, and a code is recorded, never sent (#1416).',
+    spec: 'HTTP 400 JSON (the sentence; the code is recorded). LDAP ' +
+      'constraintViolation (19). Nothing is stored' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +

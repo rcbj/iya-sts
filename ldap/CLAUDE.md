@@ -4040,7 +4040,11 @@ Three things here are this directory's.
 
   None of the offered attributes feeds the username index (`uid` and the RDN
   are withheld) or the address verification (`mail` is withheld). That is why
-  the in-place write is safe without `putEntry()`'s index bookkeeping.
+  the in-place write is safe without `putEntry()`'s index bookkeeping. A
+  `description` whose value carries an operator code is still refused and
+  not written (`STS-LDAP-0211`, #1416): this writer does not go through
+  `putEntry()`, which refuses the same value, and the editor's success
+  answer quotes the values it stored.
 
   A policy reference (`stsServiceAccountPolicy`, `stsAttributePolicy` and
   the others `PolicySelection` declares on a person) is editable and is not

@@ -5031,6 +5031,69 @@ function nulBearingType(attributes) {
   return '';
 }
 
+// The sentence a description refusal answers with. It names no code and
+// quotes no value: the body is stored text a later read would send back,
+// which is the leak this refusal exists to stop (#1416).
+const DESCRIPTION_OPERATOR_CODE =
+  'A description cannot carry an operator error code. Those codes are ' +
+  'recorded, and a description is stored text that this service would ' +
+  'send back.';
+
+// True when an attribute NAMED description (no other attribute; a policy
+// document is not one) holds a value matching an operator code. The shape
+// is the leak check's own, and the expression is built each call so a
+// sticky lastIndex cannot skip the next value.
+function descriptionCarriesOperatorCode(attributes) {
+  log.debug('Entering descriptionCarriesOperatorCode().');
+  const code = /STS-[A-Z]+-[0-9]{4}/;
+  const names = Object.keys(attributes || {});
+  for (let i = 0; i < names.length; i++) {
+    if (String(names[i]).toLowerCase() !== 'description') {
+      continue;
+    }
+    const values = valuesOf(attributes[names[i]]);
+    for (let j = 0; j < values.length; j++) {
+      if (code.test(values[j])) {
+        log.debug('Leaving descriptionCarriesOperatorCode(). Yes.');
+        return true;
+      }
+    }
+  }
+  log.debug('Leaving descriptionCarriesOperatorCode(). No.');
+  return false;
+}
+
+// The library refusal for that description. Writes nothing; the caller
+// returns it. The code is recorded on the object, never placed in `errors`.
+function operatorCodeRefusal(dn) {
+  log.debug('Entering operatorCodeRefusal().');
+  log.warn(errorCodes.tag('STS-LDAP-0211') +
+           'ldap: refused to store ' + dn + ' because its description ' +
+           'carries an operator error code.');
+  log.debug('Leaving operatorCodeRefusal().');
+  return coded('STS-LDAP-0211', {
+    ok: false,
+    reason: 'operator-code',
+    dn: String(dn),
+    attributes: {},
+    errors: [DESCRIPTION_OPERATOR_CODE]
+  });
+}
+
+// putEntry() answers `{ ok: false }` when it writes nothing, and that
+// object is truthy. A writer that then stamps timestamps and audits a
+// create has recorded a write that did not happen (#1416, the same trap
+// as a NUL). Null when the entry was stored.
+function leaveIfRefused(stored) {
+  log.debug('Entering leaveIfRefused().');
+  if (stored && stored.ok === false) {
+    log.debug('Leaving leaveIfRefused(). Refused.');
+    return stored;
+  }
+  log.debug('Leaving leaveIfRefused().');
+  return null;
+}
+
 // Put an entry in the store. `attributes` is a plain object whose values may be
 // a string or an array; the operational attributes are added here so that every
 // entry has them however it was created.
@@ -5040,6 +5103,12 @@ function nulBearingType(attributes) {
 // library doors — `createGroup()` among them — call this function and did
 // not. Returning the refusal, and writing nothing, is what lets that door
 // answer 400 instead of planting a row the store can never commit.
+//
+// A description that carries an operator code is not stored either (#1416).
+// The fuzz check is written to flag that stored text, and a later read of
+// the same entry would send the code back. Refusing here, and writing
+// nothing, is what every library door shares; the LDAP socket refuses the
+// same value before it calls this function.
 function putEntry(dn, attributes, options) {
   log.debug('Entering putEntry(). dn=' + dn);
   const nulType = nulBearingType(attributes);
@@ -5058,6 +5127,12 @@ function putEntry(dn, attributes, options) {
                'that half this stack reads as shorter than the other half ' +
                'is worse than no value at all.']
     });
+  }
+  if (descriptionCarriesOperatorCode(attributes)) {
+    const refused = operatorCodeRefusal(dn);
+    log.debug('Leaving putEntry(). Refused an operator code in a ' +
+              'description.');
+    return refused;
   }
   const opts = options || {};
   const now = generalizedTime();
@@ -8402,6 +8477,17 @@ function autoCreateUser(detail) {
                                ? 'federation:' +
                                  String(info.federation.id || '')
                                : '' });
+  // The note is this service's own sentence. A refusal (a NUL, or a
+  // description carrying an operator code) writes nothing, and the fills
+  // below read `created.attributes`. Reported rather than thrown, as a
+  // directory that is full is: the authentication itself succeeded.
+  if (created && created.ok === false) {
+    log.warn(errorCodes.tag(errorCodes.codeOf(created) || 'STS-LDAP-0211') +
+             'ldap: not creating ' + dn + ' because the directory refused ' +
+             'the entry.');
+    log.debug('Leaving autoCreateUser(). The directory refused the entry.');
+    return null;
+  }
   // The invented facts a credential will assert about this person, written HERE
   // rather than into the credential, so that the entry an LDAP client reads and
   // the credential a wallet is handed say the same thing about the same person.
@@ -8835,12 +8921,19 @@ function createUser(name, options) {
   const created = putEntry(plan.dn, attributes,
                            { origin: opts.origin || 'console',
                              application: String(opts.application || '') });
-  // `putEntry()` writes nothing when a value carries a NUL (#1391) and hands
-  // back the refusal. Checked before any of the fills below, which read
-  // `created.attributes`.
+  // `putEntry()` writes nothing when a value carries a NUL (#1391) or a
+  // description carries an operator code (#1416), and hands back the
+  // refusal. Checked before any of the fills below, which read
+  // `created.attributes`. The answer is only `ok` and `errors`: the raw
+  // refusal also carries `reason` and `attributes`, which the users/create
+  // model does not declare, and a 400 with either becomes a 500.
   if (created && created.ok === false) {
-    log.debug('Leaving createUser(). A value carries a NUL.');
-    return created;
+    log.debug('Leaving createUser(). The directory refused the entry.');
+    const held = errorCodes.codeOf(created) ||
+      (created.reason === 'operator-code' ? 'STS-LDAP-0211'
+                                           : 'STS-LDAP-0008');
+    return errorCodes.mark({ ok: false, errors: created.errors || [] },
+                           held);
   }
   // The same fill autoCreateUser() does, and for the same reason: the entry an
   // LDAP client reads and the credential a wallet is handed have to say the
@@ -17292,6 +17385,15 @@ function writePersonAttribute(dn, name, values) {
   const before = attributeSnapshot(stored);
   const key = String(name).toLowerCase();
   const kept = (values || []).map(String);
+  // This writer does not go through putEntry(), so the description refusal
+  // has to be made here or a person-attribute edit stores the code and the
+  // answer quotes it (#1416). An empty list removes the attribute.
+  if (key === 'description' &&
+      descriptionCarriesOperatorCode({ description: kept })) {
+    const refused = operatorCodeRefusal(dn);
+    log.debug('Leaving writePersonAttribute(). Refused an operator code.');
+    return refused;
+  }
   if (kept.length) {
     stored.attributes[key] = kept;
   } else {
@@ -20714,6 +20816,17 @@ function ldapAddNow(req, res, next) {
     return next(ldapRefusal(req, '', 'an add of ' + dn +
       ' carried a value with a NUL byte', nulRefusal, dn));
   }
+  if (descriptionCarriesOperatorCode(attributes)) {
+    // The same place as the NUL refusal, and for its reason: putEntry()
+    // would also refuse, and the handler below treats a returned entry as
+    // added (#1416).
+    log.debug('Leaving the LDAP add handler. A description carries an ' +
+              'operator code.');
+    return next(ldapRefusal(req, 'STS-LDAP-0211', 'an add of ' + dn +
+      ' carried a description with an operator error code',
+      coded('STS-LDAP-0211', new ldap.ConstraintViolationError(
+        DESCRIPTION_OPERATOR_CODE)), dn));
+  }
   // A PERSON ADDED WITH A PASSWORD meets the password policy and is stored as
   // a hash, like a password set at any other door. Placement decides it is a
   // person, for the reason the username check above states; also BEFORE
@@ -21387,6 +21500,21 @@ function ldapModifyNow(req, res, next) {
                 ' carried a NUL byte.');
       return next(ldapRefusal(req, '', 'a modify of ' + dn +
         ' carried a value with a NUL byte', nulInChange, dn));
+    }
+    // A description carrying an operator code, on an add or a replace that
+    // introduces values. A delete, and a replace with no values (which
+    // deletes the attribute), introduce nothing. Applied to none of the
+    // changes, for the NUL refusal's reason (#1416). The modify commits
+    // onto the entry itself, so putEntry()'s check does not see this.
+    if ((operation === 'add' || operation === 'replace') &&
+        values.length && type === 'description' &&
+        descriptionCarriesOperatorCode({ description: values })) {
+      log.debug('Leaving the LDAP modify handler. Change ' + (i + 1) +
+                ' carried an operator code in a description.');
+      return next(ldapRefusal(req, 'STS-LDAP-0211', 'a modify of ' + dn +
+        ' carried a description with an operator error code',
+        coded('STS-LDAP-0211', new ldap.ConstraintViolationError(
+          DESCRIPTION_OPERATOR_CODE)), dn));
     }
     log.debug('ldap: change ' + (i + 1) + ' is ' + operation + ' ' + type +
               ' with ' + values.length + ' value(s).');
@@ -23941,6 +24069,11 @@ function writeRole(name, attributes) {
   const created = existing ? existing.createdAt : generalizedTime();
   const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
                           { origin: existing ? existing.origin : 'roles' });
+  const refused = leaveIfRefused(stored);
+  if (refused) {
+    log.debug('Leaving writeRole(). Refused.');
+    return refused;
+  }
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
@@ -24020,6 +24153,11 @@ function writePasswordPolicy(name, attributes) {
   const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
                           { origin: existing ? existing.origin : 'password ' +
                               'policy' });
+  const refused = leaveIfRefused(stored);
+  if (refused) {
+    log.debug('Leaving writePasswordPolicy(). Refused.');
+    return refused;
+  }
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
@@ -24089,6 +24227,11 @@ function writeAuthnPolicy(name, attributes) {
   const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
                           { origin: existing ? existing.origin
                               : 'authentication policy' });
+  const refused = leaveIfRefused(stored);
+  if (refused) {
+    log.debug('Leaving writeAuthnPolicy(). Refused.');
+    return refused;
+  }
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
@@ -24159,6 +24302,11 @@ function writeServiceAccountPolicy(name, attributes) {
   const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
                           { origin: existing ? existing.origin
                               : 'service-account policy' });
+  const refused = leaveIfRefused(stored);
+  if (refused) {
+    log.debug('Leaving writeServiceAccountPolicy(). Refused.');
+    return refused;
+  }
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
@@ -24227,6 +24375,11 @@ function writePasskeyPolicy(name, attributes) {
   const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
                           { origin: existing ? existing.origin
                               : 'passkey policy' });
+  const refused = leaveIfRefused(stored);
+  if (refused) {
+    log.debug('Leaving writePasskeyPolicy(). Refused.');
+    return refused;
+  }
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
@@ -24295,6 +24448,11 @@ function writeLocalePolicy(name, attributes) {
   const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
                           { origin: existing ? existing.origin
                               : 'locale policy' });
+  const refused = leaveIfRefused(stored);
+  if (refused) {
+    log.debug('Leaving writeLocalePolicy(). Refused.');
+    return refused;
+  }
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
@@ -24357,6 +24515,11 @@ function writePolicyEntryIn(containerDn, ou, name, attributes, origin) {
   const created = existing ? existing.createdAt : generalizedTime();
   const stored = putEntry(dn, Object.assign({ cn: String(name) }, attributes),
                           { origin: existing ? existing.origin : origin });
+  const refused = leaveIfRefused(stored);
+  if (refused) {
+    log.debug('Leaving writePolicyEntryIn(). Refused.');
+    return refused;
+  }
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];
@@ -27524,7 +27687,8 @@ function sameAttributesApartFromTimestamps(a, b) {
  * @param attributes - the whole entry's attributes
  * @param options - `mailSource`, saying who vouches for the address
  * @returns `{ ok: true, created, dn, ... }`, or `{ ok: false, reason }`
- * (`notAPerson`, `full` or `noParent`) marked with its error code
+ * (`notAPerson`, `full`, `noParent`, `nul` or `operator-code`) marked with
+ * its error code
  */
 function writePerson(dn, attributes, options) {
   log.debug('Entering writePerson(). dn=' + dn);
@@ -27557,6 +27721,22 @@ function writePerson(dn, attributes, options) {
   const created = existing ? existing.createdAt : generalizedTime();
   const stored = putEntry(dn, attributes,
                           { origin: existing ? existing.origin : 'scim' });
+  // Before the timestamp stamps and the audit. A refusal's `attributes` is
+  // empty, and returning `{ ok: true }` after mutating it would tell SCIM
+  // the replace happened (#1416). `reason` stays, so SCIM's sentence can
+  // name it; it is `operator-code` or `nul`, never the code text.
+  if (stored && stored.ok === false) {
+    log.debug('Leaving writePerson(). The directory refused the entry.');
+    const held = errorCodes.codeOf(stored) ||
+      (stored.reason === 'operator-code' ? 'STS-LDAP-0211'
+                                          : 'STS-LDAP-0008');
+    return errorCodes.mark({
+      ok: false,
+      reason: stored.reason,
+      errors: stored.errors || [],
+      dn: dn
+    }, held);
+  }
   stored.createdAt = created;
   stored.attributes.createtimestamp = [created];
   stored.attributes.modifytimestamp = [generalizedTime()];

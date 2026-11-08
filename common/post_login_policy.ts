@@ -1059,7 +1059,18 @@ class PostLoginPolicy {
     if (named) {
       attributes.stsPostLoginPrecedence = String(precedence);
     }
-    const written = this.directory.writePostLoginPolicy(which, attributes);
+    // `{ ok: false }` is truthy. putEntry() answers it for a description
+    // that carries an operator code and writes nothing (#1416); `false`
+    // is still the directory being full.
+    const written = this.directory.writePostLoginPolicy(which,
+                                                        attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug('Leaving PostLoginPolicy.save(). A description carries an ' +
+                'operator code.');
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
     if (!written) {
       log.debug('Leaving PostLoginPolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,

@@ -1423,7 +1423,20 @@ class AuthnPolicy {
     if (description) {
       attributes.description = description;
     }
-    if (!this.directory.writeAuthnPolicy(text, attributes)) {
+    // `{ ok: false }` is truthy. putEntry() answers it for a description
+    // that carries an operator code and writes nothing (#1416). Reading
+    // the store afterwards would answer the old policy, or none when this
+    // name is new, and a save that reports success either way is a lie.
+    // `false` is still the directory being full.
+    const written = this.directory.writeAuthnPolicy(text, attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug("Leaving AuthnPolicy.saveNamed(). A description carries " +
+                "an operator code.");
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
+    if (!written) {
       log.debug("Leaving AuthnPolicy.saveNamed(). Not stored.");
       return errorCodes.mark({ ok: false,
                errors: ['The directory would not store the policy — it is ' +
@@ -1659,8 +1672,17 @@ class AuthnPolicy {
     if (!attributes.description) {
       delete attributes.description;
     }
+    // See saveNamed(): a truthy `{ ok: false }` is a description refusal,
+    // and `false` is the directory being full (#1416).
     const written = this.directory.writeAuthnPolicy(DEFAULT_PROFILE,
-                                                    attributes);
+                                                    attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug('Leaving AuthnPolicy.save(). A description carries an ' +
+                'operator code.');
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
     if (!written) {
       log.debug('Leaving AuthnPolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,

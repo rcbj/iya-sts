@@ -1285,6 +1285,17 @@ function write(name, record) {
     attributes.roleMemberGroup = [];
   }
   const written = directory.writeRole(String(name), attributes);
+  // `{ ok: false }` is truthy. putEntry() answers it for a description
+  // that carries an operator code and writes nothing (#1416). The role
+  // answer's field is `why`, and it must not be the raw refusal: that
+  // object has no `why`, so the door would report a blank sentence.
+  if (written && written.ok === false) {
+    log.debug('Leaving write(). A description carries an operator code.');
+    return errorCodes.mark({ ok: false,
+             why: (written.errors && written.errors[0]) ||
+                  'A description cannot carry an operator error code.' },
+             written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+  }
   if (!written) {
     log.debug('Leaving write(). The directory refused.');
     return errorCodes.mark({ ok: false,

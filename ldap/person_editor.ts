@@ -202,8 +202,14 @@ interface LocatedPerson {
 interface PersonDirectory {
   locate(key: string): LocatedPerson | null;
   // Replace one attribute's values (none removes it) and report it. Answers
-  // whether the entry was written.
-  write(dn: string, name: string, values: string[]): boolean;
+  // whether the entry was written. `{ ok: false }` is a description that
+  // carries an operator code: nothing was written, and the object is
+  // truthy (#1416).
+  write(dn: string, name: string, values: string[]): boolean | {
+    ok: false;
+    errors?: string[];
+    reason?: string;
+  };
 }
 
 interface EditRequest {
@@ -1109,20 +1115,42 @@ class PersonEditor {
       return this.refused('STS-LDAP-0164', policy.message);
     }
     const written = directory.write(person.dn, lower, after);
-    audit({ category: 'admin', action: 'admin.user.attribute',
-            actor: String(ctx.actor || ''), target: person.dn,
-            outcome: written ? 'success' : 'failure',
-            errorCode: written ? undefined : 'STS-LDAP-0110',
-            // THE ATTRIBUTE AND THE ACT, NOT THE VALUE — see the header.
-            summary: (written ? '' : 'could not ') + mode + ' ' + row.name +
-                     ' on ' + person.dn,
-            detail: { attribute: row.name, mode: mode,
-                      values: after.length, via: String(ctx.via || '') } });
+    // `{ ok: false }` is truthy. writePersonAttribute() answers it when a
+    // description carries an operator code and writes nothing (#1416).
+    // The success answer below quotes every value, which is how that code
+    // would leave this process. Audit the failure before that return, and
+    // do not audit it as a success. `false` is still "not a person".
+    if (written && typeof written === 'object') {
+      audit({ category: 'admin', action: 'admin.user.attribute',
+              actor: String(ctx.actor || ''), target: person.dn,
+              outcome: 'failure', errorCode: 'STS-LDAP-0211',
+              // THE ATTRIBUTE AND THE ACT, NOT THE VALUE — see the header.
+              summary: 'could not ' + mode + ' ' + row.name + ' on ' +
+                       person.dn,
+              detail: { attribute: row.name, mode: mode,
+                        values: after.length, via: String(ctx.via || '') } });
+      log.debug("Leaving PersonEditor.update(). Not written.");
+      return this.refused('STS-LDAP-0211', (written.errors || [])[0] ||
+                          'The directory did not store the change.');
+    }
     if (!written) {
+      audit({ category: 'admin', action: 'admin.user.attribute',
+              actor: String(ctx.actor || ''), target: person.dn,
+              outcome: 'failure', errorCode: 'STS-LDAP-0110',
+              summary: 'could not ' + mode + ' ' + row.name + ' on ' +
+                       person.dn,
+              detail: { attribute: row.name, mode: mode,
+                        values: after.length, via: String(ctx.via || '') } });
       log.debug("Leaving PersonEditor.update(). Not written.");
       return this.refused('STS-LDAP-0110', 'The directory did not store the ' +
                           'change to ' + row.name + ' on ' + person.dn + '.');
     }
+    audit({ category: 'admin', action: 'admin.user.attribute',
+            actor: String(ctx.actor || ''), target: person.dn,
+            outcome: 'success',
+            summary: mode + ' ' + row.name + ' on ' + person.dn,
+            detail: { attribute: row.name, mode: mode,
+                      values: after.length, via: String(ctx.via || '') } });
     log.debug("Leaving PersonEditor.update(). " + mode + " " + row.name +
               ": " + before.length + " -> " + after.length + " value(s).");
     return { ok: true, dn: person.dn, attribute: row.name, mode: mode,

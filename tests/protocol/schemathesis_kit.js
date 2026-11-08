@@ -1342,8 +1342,30 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
   }
 }
 
+// The cells a caller named, or null for the whole matrix. Keys match a
+// surface or the service cell exactly: `admin-api` does not select
+// `admin-api-service`. Empty and unset are the whole matrix (#1416).
+function selectedSurfaces() {
+  log.debug("Entering selectedSurfaces().");
+  const raw = String(process.env.STS_SCHEMATHESIS_SURFACES || "").trim();
+  if (!raw) {
+    log.debug("Leaving selectedSurfaces(). Every surface.");
+    return null;
+  }
+  const wanted = {};
+  raw.split(",").forEach(function (one) {
+    const key = one.trim();
+    if (key) {
+      wanted[key] = true;
+    }
+  });
+  log.debug("Leaving selectedSurfaces(). " + Object.keys(wanted).join(","));
+  return wanted;
+}
+
 // The whole matrix: every surface of every realm profile. Resolves the list
-// of per-(realm, surface) results.
+// of per-(realm, surface) results. `STS_SCHEMATHESIS_SURFACES` narrows it
+// to the named cells; the realms are still provisioned.
 async function run(serviceBase, options) {
   log.debug("Entering run().");
   const opts = options || {};
@@ -1358,6 +1380,23 @@ async function run(serviceBase, options) {
   const onResult = typeof opts.onResult === "function"
     ? opts.onResult : function () {};
   const results = [];
+  const only = selectedSurfaces();
+  if (only) {
+    const known = {};
+    SURFACES.forEach(function (one) {
+      known[one.key] = true;
+    });
+    known[SERVICE_CELL.key] = true;
+    const unknown = Object.keys(only).filter(function (key) {
+      return !known[key];
+    });
+    if (unknown.length) {
+      throw new Error("STS_SCHEMATHESIS_SURFACES names " +
+        unknown.join(", ") + ", which is not a surface. The surfaces are " +
+        Object.keys(known).join(", ") + ".");
+    }
+    say("[schemathesis] running only " + Object.keys(only).join(", ") + ".");
+  }
   function record(result) {
     results.push(result);
     // Emit each cell the moment it ends, so a crash of a LATER cell keeps
@@ -1389,6 +1428,9 @@ async function run(serviceBase, options) {
       continue;
     }
     for (let s = 0; s < SURFACES.length; s++) {
+      if (only && !only[SURFACES[s].key]) {
+        continue;
+      }
       let result;
       try {
         result = await runSurface(serviceBase, provisioned, SURFACES[s],
@@ -1410,7 +1452,9 @@ async function run(serviceBase, options) {
   // operations every realm cell's realm token is refused (STS-API-0112) are
   // fuzzed. Run after every realm cell so a service op that disrupts the
   // process cannot wedge a realm's cell; a failure here is this cell's error
-  // and ends nothing (the realm cells have all run).
+  // and ends nothing (the realm cells have all run). Skipped only when a
+  // surface filter is set and does not name this cell exactly.
+  if (!only || only[SERVICE_CELL.key]) {
   try {
     const serviceAdmin = await provisionServiceAdmin(serviceBase, say);
     let result;
@@ -1432,6 +1476,7 @@ async function run(serviceBase, options) {
       realm: "(default realm, service admin)", code: null, status: "error",
       findings: [], output: "provisioning the default-realm service admin " +
         "failed: " + ((e && e.message) || e) });
+  }
   }
   log.debug("Leaving run(). " + results.length + " result(s)");
   return results;
