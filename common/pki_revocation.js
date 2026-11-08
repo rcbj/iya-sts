@@ -979,37 +979,40 @@ function signingParamsFor(tier) {
   return { name: 'RSASSA-PKCS1-v1_5', hash: { name: sig.hash || 'SHA-256' } };
 }
 
-// A POST-QUANTUM AUTHORITY'S SIGNATURE (#1368). pkijs's `sign()` goes through
-// Web Crypto, which has no post-quantum algorithm, so a CRL or OCSP response
-// from such an authority failed with a code. This is `sign()`'s own sequence
-// with the engine certificates are signed with: the algorithm named with no
-// parameters (RFC 9881 section 3 forbids them), the TBS encoded, its bytes
-// signed.
+// ALGORITHMS PKIJS CANNOT SIGN (#1368, #1401). pkijs's `sign()` goes through
+// Web Crypto, which has no post-quantum algorithm and no Ed25519: its
+// `getSignatureParameters` throws `Parameter 'algorithm' is empty` for an
+// Ed25519 key, which is what an Ed25519 authority's CRL did. `x509.js`
+// already signs those certificates by hand. A CRL and an OCSP response do
+// the same: the algorithm named with no parameters, the TBS encoded, its
+// bytes signed by the engine.
 //
 // **THE TIER'S OWN KEY DECIDES, AND NOT `tier.signatureAlg`.** That is the
 // signature ON the tier's certificate, made by its PARENT: an ML-DSA
-// Intermediate under a classical Root carries the Root's algorithm and can sign
-// only ML-DSA, and a classical tier under a post-quantum parent is the same
-// mistake the other way round. A post-quantum key has exactly one algorithm,
-// whose id is the key's.
-function postQuantumSigAlgOf(tier) {
-  log.debug("Entering postQuantumSigAlgOf().");
-  const sig = x509.sigAlg(tier.keyAlg);
-  log.debug("Leaving postQuantumSigAlgOf().");
-  return sig && sig.kind === 'pqc' ? sig : null;
+// Intermediate under a classical Root carries the Root's algorithm and can
+// sign only ML-DSA, and a classical tier under a post-quantum parent is the
+// same mistake the other way round. A post-quantum key has exactly one
+// algorithm, whose id is the key's. Ed25519 is the same shape.
+const ED25519_OID = '1.3.101.112';
+
+function engineSigAlgOf(tier) {
+  log.debug("Entering engineSigAlgOf().");
+  const sig = x509.sigAlg(tier && tier.keyAlg);
+  if (!sig || (sig.kind !== 'pqc' && sig.kind !== 'okp')) {
+    log.debug("Leaving engineSigAlgOf(). pkijs signs it.");
+    return null;
+  }
+  // `sigAlg('ed25519')` carries no OID. The certificate path names this one.
+  const named = sig.oid ? sig : Object.assign({ oid: ED25519_OID }, sig);
+  log.debug("Leaving engineSigAlgOf(). " + named.id + ".");
+  return named;
 }
 
-function isPostQuantumTier(tier) {
-  log.debug("Entering isPostQuantumTier().");
-  log.debug("Leaving isPostQuantumTier().");
-  return postQuantumSigAlgOf(tier) !== null;
-}
-
-async function postQuantumSignature(tier, tbs) {
-  log.debug("Entering postQuantumSignature().");
-  const sig = postQuantumSigAlgOf(tier);
+async function engineSignature(tier, tbs) {
+  log.debug("Entering engineSignature().");
+  const sig = engineSigAlgOf(tier);
   const value = await x509.signBytes(sig, tier.privateKeyPem, null, tbs);
-  log.debug("Leaving postQuantumSignature().");
+  log.debug("Leaving engineSignature().");
   return { algorithm: new pkijs.AlgorithmIdentifier({
              algorithmId: sig.oid }),
            value: new asn1js.BitString({ valueHex: Uint8Array.from(value)
@@ -1018,15 +1021,16 @@ async function postQuantumSignature(tier, tbs) {
 
 async function signCrl(crl, tier) {
   log.debug("Entering signCrl().");
-  if (isPostQuantumTier(tier)) {
+  const engine = engineSigAlgOf(tier);
+  if (engine) {
     // The TBS names the algorithm, so it is named before the bytes are made.
     const algorithm = new pkijs.AlgorithmIdentifier({
-      algorithmId: postQuantumSigAlgOf(tier).oid });
+      algorithmId: engine.oid });
     crl.signature = algorithm;
     crl.signatureAlgorithm = algorithm;
     crl.tbsView = new Uint8Array(crl.encodeTBS().toBER());
-    crl.signatureValue = (await postQuantumSignature(tier, crl.tbsView)).value;
-    log.debug("Leaving signCrl(). Post-quantum.");
+    crl.signatureValue = (await engineSignature(tier, crl.tbsView)).value;
+    log.debug("Leaving signCrl(). " + engine.id + ".");
     return;
   }
   const key = await importSigningKey(tier);
@@ -1037,14 +1041,15 @@ async function signCrl(crl, tier) {
 
 async function signOcspResponse(basic, tier) {
   log.debug("Entering signOcspResponse().");
-  if (isPostQuantumTier(tier)) {
+  const engine = engineSigAlgOf(tier);
+  if (engine) {
     basic.tbsResponseData.tbsView = new Uint8Array(
       basic.tbsResponseData.toSchema(true).toBER());
-    const signed = await postQuantumSignature(tier,
-                                              basic.tbsResponseData.tbsView);
+    const signed = await engineSignature(tier,
+                                         basic.tbsResponseData.tbsView);
     basic.signatureAlgorithm = signed.algorithm;
     basic.signature = signed.value;
-    log.debug("Leaving signOcspResponse(). Post-quantum.");
+    log.debug("Leaving signOcspResponse(). " + engine.id + ".");
     return;
   }
   const key = await importSigningKey(tier);
