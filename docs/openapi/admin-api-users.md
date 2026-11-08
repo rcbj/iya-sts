@@ -2524,6 +2524,8 @@ Scope: `admin:write`.
 | `serviceAccountError` | string |  |  |
 | `typed` | list |  |  |
 | `typed[]` | string |  |  |
+| `unknown` | list |  |  |
+| `unknown[]` | string |  |  |
 | `username` | string |  |  |
 
 **400**: The operation was refused; `errors` says why and nothing changed.
@@ -2581,6 +2583,8 @@ Scope: `admin:write`.
 | `serviceAccountError` | string |  |  |
 | `typed` | list |  |  |
 | `typed[]` | string |  |  |
+| `unknown` | list |  |  |
+| `unknown[]` | string |  |  |
 | `username` | string |  |  |
 
 ## POST /admin-api/users/create-app-password
