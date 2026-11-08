@@ -247,6 +247,7 @@ const cluster = require('../cluster/cluster');
 // the postgres driver applies inside its transaction and this module applies
 // again to a local write that raced a flush or a replicated row (#46 sec. 3).
 const directoryMerge = require('./directory_merge');
+const sqlDialect = require('./sql_dialect');
 // WHICH CELL THIS IS (#98). A LEAF (config, error codes, a logger), so a
 // require from here closes nothing; it is how start() knows the store is two
 // databases.
@@ -1865,14 +1866,145 @@ function flush() {
     // transaction or an earlier one — given back by a statement of it.
     carriedReleases = typeof driver.releaseClaims === 'function'
       ? takeClaimReleases(takenAt) : [];
-    return driver.saveDirectory({
+    // ONE ROW THE COLUMN CAN NEVER HOLD used to fail this whole transaction
+    // and the retry put the same batch back, poison included (#1391). The
+    // minted flush already bisects that case (`isolatePermanent()`, #1347).
+    // The directory flush did not, so one NUL from `POST /admin-api/groups/
+    // create` stopped every later store write. A permanent data error is
+    // split into its own transactions down to the single row that cannot
+    // commit. That row is dropped: the shadow records the json that was
+    // refused, so the next flush does not send it again, and the entry
+    // stays in memory until this process restarts. Every other row commits.
+    // A deadlock or any other non-permanent error during the split throws,
+    // and the catch below re-journals the batch; rows a slice already
+    // committed are written again, which an upsert allows.
+    const directoryPayload = {
       upserts: sentUpserts,
       deletes: sentDeletes,
       touched: sentTouched,
       removedRealms: changes.removedRealms,
       releaseClaims: claimReleaseRows(carriedReleases),
       all: live
-    }).then(function (result) {
+    };
+    const commitDirectory = function (payload) {
+      log.debug('Entering commitDirectory().');
+      log.debug('Leaving commitDirectory().');
+      return driver.saveDirectory(payload);
+    };
+    const isolateDirectory = function (err) {
+      log.debug('Entering isolateDirectory().');
+      // One array. `concat` of `{ up }` onto `{ del }` is a type error
+      // under `// @ts-check`: the two element shapes are not the same.
+      // The rows are the untyped directory diff, so the element is `any`.
+      /** @type {Array<{up?: any, del?: any}>} */
+      const tagged = [];
+      sentUpserts.forEach(function (row) {
+        tagged.push({ up: row });
+      });
+      sentDeletes.forEach(function (row) {
+        tagged.push({ del: row });
+      });
+      const dropped = [];
+      const saveSlice = function (slice) {
+        log.debug('Entering saveSlice(). ' + slice.length);
+        const ups = [];
+        const dels = [];
+        slice.forEach(function (row) {
+          if (row.up) {
+            ups.push(row.up);
+          } else {
+            dels.push(row.del);
+          }
+        });
+        log.debug('Leaving saveSlice().');
+        return commitDirectory({
+          upserts: ups, deletes: dels, touched: sentTouched,
+          removedRealms: [], releaseClaims: [], all: null
+        });
+      };
+      const isolateSlice = function (slice) {
+        log.debug('Entering isolateSlice(). ' + slice.length);
+        if (slice.length <= 1) {
+          const row = slice.length ? (slice[0].up || slice[0].del) : null;
+          dropped.push(row);
+          const where = row
+            ? (row.realm + ' ' + String(row.key)
+              .replace(/\u0000/g, '\\0').slice(0, 80))
+            : '(empty)';
+          log.error(errorCodes.tag('STS-STORE-0168') +
+                    'persistence: one directory row was DROPPED because ' +
+                    'the commit failed with a permanent data error that ' +
+                    'can never commit: ' + err.message + '. The realm ' +
+                    'keeps flushing and every other row committed (' +
+                    where + '). #1391.');
+          log.debug('Leaving isolateSlice(). Dropped the poison row.');
+          return Promise.resolve({ done: true });
+        }
+        const mid = Math.floor(slice.length / 2);
+        // A half that COMMITS is saved whole. Bisecting it would walk a
+        // clean half down to single rows and drop them (#1391). Only a
+        // half whose own commit fails permanently is split again.
+        const commitOrSplit = function (half) {
+          log.debug('Entering commitOrSplit(). ' + half.length);
+          return saveSlice(half).then(function () {
+            log.debug('Leaving commitOrSplit(). Committed.');
+            return { done: true };
+          }, function (halfErr) {
+            if (!sqlDialect.isPermanentDataError(halfErr)) {
+              log.debug('Leaving commitOrSplit(). Non-permanent.');
+              return { done: false, err: halfErr };
+            }
+            log.debug('Leaving commitOrSplit(). Splitting.');
+            return isolateSlice(half);
+          });
+        };
+        return saveSlice(slice.slice(0, mid)).then(function () {
+          log.debug('Leaving isolateSlice(). The left half committed.');
+          return commitOrSplit(slice.slice(mid));
+        }, function (leftErr) {
+          if (!sqlDialect.isPermanentDataError(leftErr)) {
+            log.debug('Leaving isolateSlice(). Non-permanent in the ' +
+                      'left half.');
+            return { done: false, err: leftErr };
+          }
+          return isolateSlice(slice.slice(0, mid)).then(function (left) {
+            if (!left.done) {
+              log.debug('Leaving isolateSlice(). The left half stopped.');
+              return left;
+            }
+            log.debug('Leaving isolateSlice(). The left half was split.');
+            return commitOrSplit(slice.slice(mid));
+          });
+        });
+      };
+      const tail = function () {
+        log.debug('Entering tail().');
+        if (!changes.removedRealms.length && !carriedReleases.length) {
+          log.debug('Leaving tail(). Nothing beside the rows.');
+          return Promise.resolve(null);
+        }
+        log.debug('Leaving tail().');
+        return commitDirectory({
+          upserts: [], deletes: [], touched: changes.touched,
+          removedRealms: changes.removedRealms,
+          releaseClaims: claimReleaseRows(carriedReleases),
+          all: live
+        });
+      };
+      log.debug('Leaving isolateDirectory().');
+      return isolateSlice(tagged).then(function (outcome) {
+        if (!outcome.done) {
+          return outcome;
+        }
+        return tail().then(function () {
+          return { done: true, dropped: dropped };
+        }, function (tailErr) {
+          return { done: false, err: tailErr };
+        });
+      });
+    };
+    const directoryWritten = function (result) {
+      log.debug('Entering directoryWritten().');
       settleClaimReleases(carriedReleases, { released: true });
       carriedReleases = [];
       advanceShadow(changes, changes.removedRealms);
@@ -1880,6 +2012,20 @@ function flush() {
         win.committed(windowed, result && result.outcomes);
       }
       applyDirectoryOutcomes(changes, result && result.outcomes);
+      log.debug('Leaving directoryWritten().');
+    };
+    return commitDirectory(directoryPayload).then(function (result) {
+      directoryWritten(result);
+    }, function (err) {
+      if (!sqlDialect.isPermanentDataError(err)) {
+        throw err;
+      }
+      return isolateDirectory(err).then(function (outcome) {
+        if (!outcome.done) {
+          throw outcome.err;
+        }
+        directoryWritten(null);
+      });
     });
   }).then(function () {
     // THE CLAIMS WHOSE WRITES HAVE COMMITTED AND WHICH NO DIRECTORY

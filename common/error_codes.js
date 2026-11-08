@@ -2010,6 +2010,13 @@ const CODES = [
       'writes its mark, and the entry is keyed when it is next written. ' +
       'The first few are named, then a count per run.',
     spec: '' },
+  { code: 'STS-STORE-0168',
+    summary: 'A directory flush dropped one row whose value the database ' +
+      'can never store (a NUL byte, or another permanent data error) and ' +
+      'committed every other row of the batch (#1391). The entry stays in ' +
+      'this process\'s memory and is absent from the store until the ' +
+      'process restarts; the next flush does not send the same value again.',
+    spec: 'none — logged; the request that wrote it was already answered' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
