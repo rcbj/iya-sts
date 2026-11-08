@@ -11032,6 +11032,27 @@ async function verifyX509Signature(tbs, signatureValue, publicKeyInfo,
     log.debug("Leaving verifyX509Signature(). " + entry.id + " " + ok);
     return ok;
   }
+  // pkijs cannot verify Ed25519 (x509.js). The same OID a CRL signed here
+  // carries (#1401) is checked with the key, as a certificate's is.
+  if (oid === '1.3.101.112') {
+    try {
+      const spki = Buffer.from(publicKeyInfo.toSchema().toBER(false));
+      const key = nodeCrypto.createPublicKey({ key: spki, format: 'der',
+                                               type: 'spki' });
+      const raw = signatureValue.valueBlock
+        ? signatureValue.valueBlock.valueHexView : signatureValue;
+      const ok = nodeCrypto.verify(null, Buffer.from(tbs), key,
+                                   Buffer.from(raw));
+      log.debug("Leaving verifyX509Signature(). Ed25519 " + ok);
+      return ok;
+    } catch (e) {
+      // A key of the wrong type throws. A check reads that as "no".
+      log.debug("Caught in verifyX509Signature(): " +
+                ((e && e.message) || e));
+      log.debug("Leaving verifyX509Signature(). Ed25519 did not verify.");
+      return false;
+    }
+  }
   const pkijs = require('pkijs');
   const verified = await pkijs.getCrypto(true).verifyWithPublicKey(tbs,
     signatureValue, publicKeyInfo, signatureAlgorithm);

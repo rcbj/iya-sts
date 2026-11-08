@@ -267,6 +267,13 @@ module.exports = {
       'a composite authority signs a CRL that verifies');
     t.check(await crlVerifies(await signedCrl(ecCa), ecCa),
       'a classical CRL still signs and verifies through the same doors');
+    const edCa = await authority('ed25519', 'ed25519');
+    const edCrl = await signedCrl(edCa);
+    t.check(edCrl.signatureAlgorithm.algorithmId === '1.3.101.112' &&
+      edCrl.signature.algorithmId === '1.3.101.112',
+      'an Ed25519 authority names Ed25519 on a CRL, in both places');
+    t.check(await crlVerifies(edCrl, edCa),
+      'and that CRL verifies (#1401)');
     const verifyBasic = function (basic, ca) {
       return stsCrypto.verifyX509Signature(basic.tbsResponseData.tbsView,
         basic.signature, ca.cert.subjectPublicKeyInfo,
@@ -276,6 +283,8 @@ module.exports = {
       'an ML-DSA authority signs an OCSP response that verifies');
     t.check(await verifyBasic(await ocspResponse(ecCa), ecCa),
       'and a classical one still does');
+    t.check(await verifyBasic(await ocspResponse(edCa), edCa),
+      'an Ed25519 authority signs an OCSP response that verifies');
     const ecCert = stsCrypto.parseCertificate(
       Buffer.from(ecCa.cert.toSchema().toBER(false)));
     t.check(stsCrypto.certificateSignedWith(ecCert, ecCert.publicKey),
