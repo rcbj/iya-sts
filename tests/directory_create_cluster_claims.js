@@ -359,6 +359,14 @@ async function persistChild() {
     isActiveActive: function () { return true; },
     clusterMode: function () { return 'active-active'; }
   }));
+  const huge = 'cn=' + 'a'.repeat(5000) + ',dc=example,dc=com';
+  const tooLong = await inStore.claim({ realm: 'default', dns: [huge],
+                                        usernames: [] });
+  note(!tooLong.ok && tooLong.reason === 'name' &&
+       tooLong.code === 'STS-LDAP-0210',
+       'B0. a name longer than the coordinator holds is refused as a name, ' +
+       'not as a store outage',
+       JSON.stringify({ reason: tooLong.reason, code: tooLong.code }));
   const create = async function (claimer, name, waitMs) {
     const dn = dnOf(name);
     const held = await claimer.claim({ realm: 'default', dns: [dn],

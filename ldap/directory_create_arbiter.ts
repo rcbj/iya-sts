@@ -142,6 +142,12 @@ class DirectoryCreateArbiter {
   static readonly MAX_SETTLED = 8192;
   /** The most keys one claim may carry. */
   static readonly MAX_KEYS = 64;
+  /**
+   * The most characters of one DN or username a claim key may hold. A longer
+   * name is not a store outage: the coordinator cannot tell two of them
+   * apart, so the create is refused (#1402).
+   */
+  static readonly MAX_KEY_CHARS = 4096;
   /** How long a worker waits for the front process's answer. */
   static readonly ANSWER_MS = 10000;
   /** The holder name of the front process itself. */
@@ -449,7 +455,7 @@ class DirectoryCreateArbiter {
       value.length <= DirectoryCreateArbiter.MAX_KEYS &&
       value.every(function (one) {
         return typeof one === 'string' && one.length > 0 &&
-          one.length <= 4096;
+          one.length <= DirectoryCreateArbiter.MAX_KEY_CHARS;
       });
     log.debug("Leaving DirectoryCreateArbiter.keysOf().");
     return ok ? value.slice(0) : null;

@@ -17,8 +17,10 @@
 // that 503 as an UNCAUGHT server error because it carried no `Retry-After`,
 // where `answerDirectoryFailure()`'s unreadable-store 503 sets one. So the 503
 // now carries `Retry-After`, and a name genuinely held by another create
-// (`reason` anything but `'store'`) still answers 409 with NONE — a 409 is not
-// a transient store failure and a client must not retry it as one.
+// (`reason` `'used'` or `'claimed'`) still answers 409 with NONE — a 409 is
+// not a transient store failure and a client must not retry it as one. A name
+// longer than the coordinator holds (`reason:'name'`, STS-LDAP-0210) answers
+// 400 with none either: retrying it cannot succeed (#1402).
 //
 // WHY THIS DRIVES `runClaimed()` DIRECTLY over the exported `AdminApi`, rather
 // than the full path: the fail-closed shape (`reason:'store'`) is
@@ -103,6 +105,18 @@ function run(t) {
       t.ok(taken.res.headers['retry-after'] === undefined,
            'the 409 sets no Retry-After — it is not a transient store ' +
            'failure and must not be retried as one');
+
+      // A name the coordinator cannot hold: 400, and no Retry-After.
+      const long = 'cn=' + 'a'.repeat(5000) + ',dc=example,dc=com';
+      const huge = drive({ ok: false, reason: 'name',
+                           code: 'STS-LDAP-0210', what: long });
+      return Promise.resolve(huge.ran).then(function () {
+        t.equal(huge.res.status, 400,
+                'a name longer than the coordinator holds answers 400');
+        t.ok(huge.res.headers['retry-after'] === undefined,
+             'the 400 sets no Retry-After — retrying the same name cannot ' +
+             'succeed (#1402)');
+      });
     });
   });
 }

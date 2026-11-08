@@ -26,7 +26,9 @@
 // refused as in progress (`STS-LDAP-0092`: LDAP 68, HTTP 409) only when the
 // first is still holding the name when the wait runs out. A store that cannot
 // be asked refuses at once (`STS-LDAP-0093`), which is that module's
-// fail-closed rule.
+// fail-closed rule. A name longer than the coordinator holds is refused
+// before it is asked (`STS-LDAP-0210`): that is not an outage, and
+// retrying it cannot succeed (#1402).
 //
 // **THE CLAIM GUARDS THE WINDOW AND NOTHING LONGER.** Once the create has
 // committed every node sees the entry — the winner of the next claim catches up
@@ -407,7 +409,7 @@ class DirectoryCreateClaims {
   // -------------------------------------------------------------------------
   // claim({ realm, dns, usernames }) -> Promise of
   //   { ok: true, settle(succeeded), catchUp }
-  //   { ok: false, reason: 'used' | 'store', code, what }
+  //   { ok: false, reason: 'used' | 'store' | 'name', code, what }
   //
   // `dns` are NORMALISED DNs and `usernames` are lower-cased; both are the
   // caller's to compute, because deciding what a DN and a username are is
@@ -426,8 +428,8 @@ class DirectoryCreateClaims {
    * `waitMs` (default `CLAIM_WAIT_MS`, for tests)
    * @returns a promise of `{ ok: true, settle(succeeded), catchUp }`, where
    * `settle(true)` releases once the write has committed and
-   * `settle(false)` at once, or `{ ok: false, reason: 'used' | 'store',
-   * code, what }`
+   * `settle(false)` at once, or `{ ok: false, reason: 'used' | 'store' |
+   * 'name', code, what }`
    */
   claim(spec?: ClaimSpec): Promise<HeldClaim> {
     const self = this;
@@ -456,6 +458,27 @@ class DirectoryCreateClaims {
                 "here.");
       return Promise.resolve({ ok: true, settle: function () {} });
     }
+    // BEFORE the arbiter is asked. A key longer than it holds comes back as
+    // "no keys", which the arbiter reports as the store being down
+    // (STS-LDAP-0093). The name is the problem, and a retry will not shorten
+    // it (#1402). The log keeps a prefix: the value that found this was
+    // 65,000 characters.
+    const maxChars = require('./directory_create_arbiter')
+      .DirectoryCreateArbiter.MAX_KEY_CHARS;
+    const tooLong = wanted.filter(function (one) {
+      return one.value.length > maxChars;
+    })[0];
+    if (tooLong) {
+      const kind = tooLong.scope === 'directory.dn' ? 'the DN '
+        : 'the username ';
+      log.info(errorCodes.tag('STS-LDAP-0210') + 'ldap: a create of ' +
+               kind + tooLong.value.slice(0, 80) +
+               '… was refused: the name is longer than the create ' +
+               'coordinator holds.');
+      log.debug("Leaving DirectoryCreateClaims.claim(). The name is too " +
+                "long.");
+      return Promise.resolve(self.refusal('name', tooLong, 'STS-LDAP-0210'));
+    }
     const realm = String(o.realm || '');
     const here = this.arbitratedHere();
     const waitMs = o.waitMs === undefined
@@ -468,6 +491,7 @@ class DirectoryCreateClaims {
       return (here ? self.claimHere(wanted, realm)
         : self.claimInStore(wanted, realm)).then(function (answer) {
         if (answer.ok || answer.reason === 'store' ||
+            answer.reason === 'name' ||
             Date.now() >= deadline) {
           return answer;
         }
@@ -535,11 +559,14 @@ class DirectoryCreateClaims {
                   code?: string): HeldClaim {
     const { log } = this.deps;
     log.debug("Entering DirectoryCreateClaims.refusal().");
-    const store = reason === 'store';
+    const reasonName = reason === 'store' ? 'store'
+      : (reason === 'name' ? 'name' : 'used');
     const what = one || { scope: 'directory.dn', value: '' };
     log.debug("Leaving DirectoryCreateClaims.refusal().");
-    return { ok: false, reason: store ? 'store' : 'used',
-             code: code || (store ? 'STS-LDAP-0093' : 'STS-LDAP-0092'),
+    return { ok: false, reason: reasonName,
+             code: code || (reasonName === 'store' ? 'STS-LDAP-0093'
+               : (reasonName === 'name' ? 'STS-LDAP-0210'
+                 : 'STS-LDAP-0092')),
              what: what.value,
              whatKind: what.scope === 'directory.dn' ? 'the DN '
                : 'the username ' };
@@ -754,13 +781,22 @@ class DirectoryCreateClaims {
   refusalMessage(refusal: { reason?: string; what?: string }): string {
     const { log } = this.deps;
     log.debug("Entering DirectoryCreateClaims.refusalMessage().");
+    let sentence;
+    if (refusal.reason === 'name') {
+      sentence = '"' + String(refusal.what || '').slice(0, 48) +
+        '…" is longer than this service can coordinate a create of. ' +
+        'Choose a shorter name.';
+    } else if (refusal.reason === 'store') {
+      sentence = 'This service could not confirm that "' + refusal.what +
+        '" is not being created by another request at this moment, so it ' +
+        'was not created. Try again.';
+    } else {
+      sentence = '"' + refusal.what + '" is being created by another ' +
+        'request at this moment. One entry per name: it was not created ' +
+        'twice.';
+    }
     log.debug("Leaving DirectoryCreateClaims.refusalMessage().");
-    return refusal.reason === 'store'
-      ? 'This service could not confirm that "' + refusal.what + '" is not ' +
-        'being created by another request at this moment, so it was not ' +
-        'created. Try again.'
-      : '"' + refusal.what + '" is being created by another request at this ' +
-        'moment. One entry per name: it was not created twice.';
+    return sentence;
   }
 }
 
