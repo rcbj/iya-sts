@@ -21051,7 +21051,12 @@ function isPerProcess(key) {
 function realmOverrideOf(key) {
   log.debug("Entering realmOverrideOf().");
   const realm = realmFor(key);
-  if (!realm || !Object.prototype.hasOwnProperty.call(realm.overrides, key)) {
+  // A context that is not a realm record has no overrides object. Calling
+  // hasOwnProperty on it threw (STS-STORE-0002, #1398) and the flush retried
+  // that throw forever, so every later write answered 503. No override is
+  // the answer the default realm gives.
+  if (!realm || !realm.overrides ||
+      !Object.prototype.hasOwnProperty.call(realm.overrides, key)) {
     log.debug("Leaving realmOverrideOf().");
     return undefined;
   }

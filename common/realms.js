@@ -377,40 +377,74 @@ function isDefault(realm) {
   return (realm || current()).id === DEFAULT_ID;
 }
 
+// The record `run()` and `bind()` store. An object is the record the caller
+// already holds. A missing value or `default` is the built-in realm. A known
+// id is that realm's record. Anything else keeps the id the caller named and
+// carries empty overrides.
+//
+// The context has to hold a RECORD. #1360's certificate-trust counters passed
+// the id string (`common/certificate_trust.ts`). A string is truthy, so
+// `current()` returned it, `current().id` was undefined, and the flush that
+// `counts.set` armed kept that context. Its read of `persistence.minted`
+// then threw TypeError on `realm.overrides` (STS-STORE-0002) and retried
+// forever, so every later write answered 503. The same string made
+// `noteWrite()` journal the count against the default realm. An unknown id
+// is not filed there either: those rows belong to the name the caller used.
+function asRealm(realm) {
+  log.debug("Entering asRealm().");
+  if (realm && typeof realm === 'object') {
+    log.debug("Leaving asRealm().");
+    return realm;
+  }
+  if (!realm || realm === DEFAULT_ID) {
+    log.debug("Leaving asRealm().");
+    return DEFAULT_REALM;
+  }
+  const found = get(String(realm));
+  if (found) {
+    log.debug("Leaving asRealm().");
+    return found;
+  }
+  log.debug("Leaving asRealm(). Unknown id.");
+  return { id: String(realm), overrides: {} };
+}
+
 // Run `fn` with `realm` as the ambient realm, for `fn` and for everything it
-// awaits, schedules or calls back into. The return value is fn's.
+// awaits, schedules or calls back into. The return value is fn's. `realm`
+// may be the record or its id; see `asRealm()`.
 /**
  * Runs a function with a realm ambient, for it and everything it awaits or
  * schedules.
  *
- * @param realm - the realm record; the default realm when omitted
+ * @param realm - the realm record or its id; the default realm when omitted
  * @param fn - the function to run
  * @returns what `fn` returns
  */
 function run(realm, fn) {
   log.debug("Entering run().");
+  const record = asRealm(realm);
   log.debug("Leaving run().");
-  return als.run(realm || DEFAULT_REALM, fn);
+  return als.run(record, fn);
 }
 
 // The same thing as a wrapper, for the callback-shaped surfaces — an LDAP
 // handler, a gRPC method, a datagram listener — that are handed a function
-// rather than being called inside one.
+// rather than being called inside one. The id is resolved when the callback
+// runs, so a listener wrapped before that realm exists finds the record.
 /**
  * Wraps a callback so that it always runs with a realm ambient.
  *
- * @param realm - the realm record; the default realm when omitted
+ * @param realm - the realm record or its id; the default realm when omitted
  * @param fn - the callback
  * @returns the wrapped callback
  */
 function bind(realm, fn) {
   log.debug("Entering bind().");
-  const captured = realm || DEFAULT_REALM;
   log.debug("Leaving bind().");
   return function () {
     const args = arguments;
     const self = this;
-    return als.run(captured, function () {
+    return als.run(asRealm(realm), function () {
       return fn.apply(self, args);
     });
   };

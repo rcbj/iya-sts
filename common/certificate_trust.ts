@@ -987,9 +987,12 @@ class CertificateTrust {
   private static count(purpose: Purpose, verdict: TrustVerdict,
                        realmId: string): void {
     helpers.log.debug("Entering CertificateTrust.count().");
-    // A count may never be what fails a validation.
+    // A count may never be what fails a validation. The id is resolved to
+    // the record: `realms.run(realmId)` stored the string, the flush that
+    // `counts.set` arms kept that context, and the next setting read threw
+    // STS-STORE-0002 (#1398). Already-ambient stays put.
     try {
-      realms.run(realmId, function () {
+      CertificateTrust.inRealm(realmId, function () {
         const row = counts.has(purpose.id) ? counts.get(purpose.id) :
           { assessed: 0, refused: 0, lastRefusal: null };
         row.assessed += 1;
@@ -2200,7 +2203,9 @@ class CertificateTrust {
     // Lazily: the store's reader stands on modules that stand on this one.
     const replication = require('../persistence/persistence_replication');
     const out: Json = {};
-    realms.run(realmId || realms.currentId(), function () {
+    // Omitted means the ambient realm. `run(currentId())` stored the id
+    // string (#1398); `inRealm` stays on the record already ambient.
+    CertificateTrust.inRealm(realmId, function () {
       PURPOSES.forEach(function (one) {
         const merged: Json = { assessed: 0, refused: 0, lastRefusal: null };
         [counts.has(one.id) ? counts.get(one.id) : null]
