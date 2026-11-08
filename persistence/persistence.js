@@ -1895,6 +1895,7 @@ function flush() {
       log.debug('Entering isolateDirectory().');
       // One array. `concat` of `{ up }` onto `{ del }` is a type error
       // under `// @ts-check`: the two element shapes are not the same.
+      // The rows are the untyped directory diff, so the element is `any`.
       /** @type {Array<{up?: any, del?: any}>} */
       const tagged = [];
       sentUpserts.forEach(function (row) {
