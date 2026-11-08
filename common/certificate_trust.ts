@@ -30,7 +30,9 @@
 // all, because no specification asks it of that use case (an extendedKeyUsage
 // of a JOSE signer), passes rather than being `not-asked`: the rule is about a
 // check the use case needs and could not make. So `pki.revocationCheck=off`
-// under paranoid refuses, and the way out is the row, drawn red on the page.
+// under paranoid refuses a certificate naming a source, and the way out is the
+// row, drawn red on the page. A certificate naming no source has no check to
+// perform (rcbj): see `nothingToAsk()`.
 //
 // **AN EXEMPTION IS WRITTEN INTO THE TABLE, NEVER AT A CALL SITE**, with the
 // specification that makes it. No entry, relationship or JWK may exempt one
@@ -51,6 +53,7 @@
 // ===========================================================================
 
 import fs = require('fs');
+import tls = require('tls');
 import path = require('path');
 import helpers = require('./helpers');
 import config = require('./config');
@@ -71,6 +74,8 @@ type TrustVerdict = import('../types/certificate_trust').TrustVerdict;
 type PinnedSource = import('../types/certificate_trust').PinnedSource;
 type PinnedCertificate = import('../types/certificate_trust').PinnedCertificate;
 
+// `bundledAnchors()`'s index.
+let bundledRoots: Map<string, Buffer> | null = null;
 const { EKU } = stsCrypto;
 const SIGNS = ['digitalSignature'];
 const TLS_CLIENT_USAGE = ['digitalSignature', 'keyAgreement'];
@@ -156,7 +161,18 @@ const PURPOSES: Purpose[] = [
     selfSigned: 'refuse', validity: 'now', revocation: 'required',
     exemptions: [{ check: 'revocation',
                    spec: 'RFC 5280 section 4.2.1.13: a CRL or OCSP fetch over ' +
-                         'plain http has no certificate to check' }],
+                         'plain http has no certificate to check' },
+                 { check: 'self-signed-allowed',
+                   spec: 'Not a specification, rcbj\'s decision: one ' +
+                         'self-signed certificate accepted by name in the ' +
+                         'signer truststore, or configured byte for byte as ' +
+                         'this dialer\'s own CA, still held to its window ' +
+                         'and fields' }],
+    // THE STORE, NOT A SPECIFICATION, AND THE ONE WEAKENING IN THIS TABLE: the
+    // database is dialled before anything else can answer, so a source it names
+    // being unreachable would stop the service starting. A certificate revoked
+    // is still refused. rcbj kept this on #1360.
+    variants: { store: { softRevocation: true } },
     baseline: 'peer-chain', code: 'STS-PKI-0242', phase: 2 },
   { id: 'jose-signer', setting: 'pki.paranoidJoseSigner',
     title: 'A JOSE signer\'s certificate chain',
@@ -461,18 +477,16 @@ PURPOSES.forEach(function (one) {
 // Who has been told a check is off in product, once per process per setting.
 // At most one name per row of this table, so it is bounded by construction.
 const announced = new Set<string>();
-// Per realm, per purpose: `{ assessed, refused, lastRefusal }`. Process-local.
-const counts = new Map<string, Json>();
+// Per realm, per purpose: `{ assessed, refused, lastRefusal }`. Each process
+// keeps its own rows and a reader adds up the rest (`merge: 'own'`, the monitors'
+// shape): a refusal lands on one node and the page is drawn by another.
+const counts = realms.map({ persist: 'pki.door.counts', merge: 'own' });
 // Each owner's list of what it pins, registered at build.
 const pinSources = new Map<string,
   (realmId: string) => Promise<PinnedSource[]> | PinnedSource[]>();
 // What the audit last found, per realm; the page draws it and the job compares
 // against it, so a restart does not re-announce every certificate.
 const lastAudit = realms.map({ persist: 'pki.pins.lastAudit' });
-
-realms.onRemove(function (id: string) {
-  counts.delete(id);
-});
 
 /**
  * The one door every X.509 validation goes through, and the settings of
@@ -494,20 +508,25 @@ class CertificateTrust {
    * @throws Error for a purpose the table does not name: a programming error
    */
   static purpose(id: string): Purpose {
+    helpers.log.debug("Entering CertificateTrust.purpose().");
     const row = BY_ID[id];
     if (!row) {
       // error-code: none — a caller naming a purpose the table lacks is a bug
       throw new Error('certificate_trust: no such purpose "' + id + '"');
     }
+    helpers.log.debug("Leaving CertificateTrust.purpose().");
     return row;
   }
 
   // Runs `fn` with the realm named as the ambient one.
   private static inRealm(realmId: string | undefined, fn: () => Json): Json {
+    helpers.log.debug("Entering CertificateTrust.inRealm().");
     if (!realmId || realmId === realms.currentId()) {
+      helpers.log.debug("Leaving CertificateTrust.inRealm().");
       return fn();
     }
     const realm = realms.get(realmId);
+    helpers.log.debug("Leaving CertificateTrust.inRealm().");
     return realm ? realms.run(realm, fn) : fn();
   }
 
@@ -570,6 +589,7 @@ class CertificateTrust {
   // The log line of a check switched off in product: once per process per
   // setting, with nothing refused.
   private static announceIfOff(id: string, realmId?: string): void {
+    helpers.log.debug("Entering CertificateTrust.announceIfOff().");
     CertificateTrust.inRealm(realmId, function () {
       if (!mode.isProduct()) {
         return;
@@ -581,6 +601,7 @@ class CertificateTrust {
         CertificateTrust.announce(CertificateTrust.purpose(id).setting);
       }
     });
+    helpers.log.debug("Leaving CertificateTrust.announceIfOff().");
   }
 
   private static announce(setting: string): void {
@@ -627,41 +648,51 @@ class CertificateTrust {
 
   // What a purpose asks in one of its variants.
   private static ruleOf(purpose: Purpose, variant?: string): Json {
+    helpers.log.debug("Entering CertificateTrust.ruleOf().");
     const v = (variant && purpose.variants && purpose.variants[variant]) || {};
+    helpers.log.debug("Leaving CertificateTrust.ruleOf().");
     return {
       leaf: Object.assign({}, purpose.leaf, v.leaf || {}),
       selfSigned: v.selfSigned || purpose.selfSigned,
       validity: v.validity || purpose.validity,
-      revocation: v.revocation || purpose.revocation
+      revocation: v.revocation || purpose.revocation,
+      softRevocation: !!(v as Json).softRevocation
     };
   }
 
   // A verdict that has decided nothing yet: every check not asked.
   private static blank(id: string, inForce: boolean): TrustVerdict {
+    helpers.log.debug("Entering CertificateTrust.blank().");
     const checks: Json = {};
     CHECK_ORDER.forEach(function (check) {
       checks[check] = 'not-asked';
     });
+    helpers.log.debug("Leaving CertificateTrust.blank().");
     return { ok: false, purpose: id, inForce: inForce, anchor: 'none',
              path: [], revocation: null, checks: checks, code: '', why: '' };
   }
 
   // Every spelling of a certificate as DER, or null.
   private static derOf(cert: Json): Buffer | null {
+    helpers.log.debug("Entering CertificateTrust.derOf().");
     try {
+      helpers.log.debug("Leaving CertificateTrust.derOf().");
       return stsCrypto.parseCertificate(
         Buffer.isBuffer(cert) || cert instanceof Uint8Array ?
           cert : String(cert)).raw;
     } catch (e) {
       helpers.log.debug("Caught in CertificateTrust.derOf(): " +
                         ((e && e.message) || e));
+      helpers.log.debug("Leaving CertificateTrust.derOf().");
       return null;
     }
+    helpers.log.debug("Leaving CertificateTrust.derOf().");
   }
 
   // The material's leaf and chain, read from whichever member carries them.
   // A peer certificate is `getPeerCertificate(true)`'s linked list.
   private static certificatesOf(material: Json): Json {
+    helpers.log.debug("Entering CertificateTrust.certificatesOf().");
     const m = material || {};
     const chain: Buffer[] = [];
     let leafDer: Buffer | null = null;
@@ -680,8 +711,10 @@ class CertificateTrust {
     }
     const given = (m.chain || []).map(CertificateTrust.derOf);
     if (!leafDer || given.indexOf(null) !== -1) {
+      helpers.log.debug("Leaving CertificateTrust.certificatesOf().");
       return null;
     }
+    helpers.log.debug("Leaving CertificateTrust.certificatesOf().");
     return { leaf: leafDer, chain: chain.concat(given) };
   }
 
@@ -689,33 +722,44 @@ class CertificateTrust {
   // malformed certificates, and a verdict is what the door promises for a bad
   // certificate, never a throw (x509-limbo found one that reached it).
   private static readable(der: Buffer, chain?: Buffer[]): boolean {
+    helpers.log.debug("Entering CertificateTrust.readable().");
     try {
       [der].concat(chain || []).forEach(function (one) {
         stsCrypto.certificateFacts(one);
       });
+      helpers.log.debug("Leaving CertificateTrust.readable().");
       return true;
     } catch (e) {
       helpers.log.debug("Caught in CertificateTrust.readable(): " +
                         ((e && e.message) || e));
+      helpers.log.debug("Leaving CertificateTrust.readable().");
       return false;
     }
+    helpers.log.debug("Leaving CertificateTrust.readable().");
   }
 
   private static pemOf(der: Buffer): string {
+    helpers.log.debug("Entering CertificateTrust.pemOf().");
+    helpers.log.debug("Leaving CertificateTrust.pemOf().");
     return pki.certificateFromDer(der).pem;
   }
 
   private static stepOf(der: Buffer): Json {
+    helpers.log.debug("Entering CertificateTrust.stepOf().");
     const facts = stsCrypto.certificateFacts(der);
+    helpers.log.debug("Leaving CertificateTrust.stepOf().");
     return { der: der, subject: facts.subject,
              fingerprint256: facts.fingerprint256 };
   }
 
   private static async isSelfSigned(der: Buffer): Promise<boolean> {
+    helpers.log.debug("Entering CertificateTrust.isSelfSigned().");
     const entry = pki.certificateFromDer(der);
     if (entry.x509.subject !== entry.x509.issuer) {
+      helpers.log.debug("Leaving CertificateTrust.isSelfSigned().");
       return false;
     }
+    helpers.log.debug("Leaving CertificateTrust.isSelfSigned().");
     return !!(await pki.pathSigned(entry, entry));
   }
 
@@ -815,6 +859,7 @@ class CertificateTrust {
   // case that asks nothing of a field passes it: see the header.
   private static fieldChecks(verdict: TrustVerdict, der: Buffer, rule: Json,
                              opts: Json, mayBeCa: boolean): Json[] {
+    helpers.log.debug("Entering CertificateTrust.fieldChecks().");
     const options: Json = Object.assign({}, rule.leaf, {
       role: 'leaf', now: opts.now, skewMs: opts.skewMs,
       allowSha1: opts.allowSha1, allowCritical: opts.allowCritical,
@@ -835,11 +880,13 @@ class CertificateTrust {
     problems.forEach(function (one: Json) {
       verdict.checks[one.check] = 'failed';
     });
+    helpers.log.debug("Leaving CertificateTrust.fieldChecks().");
     return problems;
   }
 
   // Does this certificate carry the name the caller expected?
   private static nameMatches(der: Buffer, expected: Json): boolean {
+    helpers.log.debug("Entering CertificateTrust.nameMatches().");
     const { dn } = expected;
     const others = Object.assign({}, expected);
     delete others.dn;
@@ -847,14 +894,17 @@ class CertificateTrust {
       return !!others[key];
     });
     if (sanAsked && !stsCrypto.certificateNameMatches(der, others)) {
+      helpers.log.debug("Leaving CertificateTrust.nameMatches().");
       return false;
     }
     if (dn) {
       const parsed = stsCrypto.parseCertificate(der);
+      helpers.log.debug("Leaving CertificateTrust.nameMatches().");
       return certificateSubject.normalDn(String(dn)) ===
              certificateSubject.normalDn(
                certificateSubject.subjectOf(parsed).text);
     }
+    helpers.log.debug("Leaving CertificateTrust.nameMatches().");
     return sanAsked;
   }
 
@@ -862,6 +912,7 @@ class CertificateTrust {
   private static compose(purpose: Purpose, verdict: TrustVerdict,
                          codes: Json, whys: Json, realmId: string,
                          quiet: boolean): TrustVerdict {
+    helpers.log.debug("Entering CertificateTrust.compose().");
     // What FAILED is named before what nobody asked: a check not asked is
     // usually only not asked because an earlier one ended the walk.
     const failed = CHECK_ORDER.filter(function (check) {
@@ -880,24 +931,31 @@ class CertificateTrust {
     if (!quiet) {
       CertificateTrust.count(purpose, verdict, realmId);
     }
+    helpers.log.debug("Leaving CertificateTrust.compose().");
     return verdict;
   }
 
   private static count(purpose: Purpose, verdict: TrustVerdict,
                        realmId: string): void {
-    let realm = counts.get(realmId);
-    if (!realm) {
-      realm = {};
-      counts.set(realmId, realm);
+    helpers.log.debug("Entering CertificateTrust.count().");
+    // A count may never be what fails a validation.
+    try {
+      realms.run(realmId, function () {
+        const row = counts.has(purpose.id) ? counts.get(purpose.id) :
+          { assessed: 0, refused: 0, lastRefusal: null };
+        row.assessed += 1;
+        if (!verdict.ok) {
+          row.refused += 1;
+          row.lastRefusal = { code: verdict.code, why: verdict.why,
+                              at: Date.now() };
+        }
+        counts.set(purpose.id, row);
+      });
+    } catch (e) {
+      helpers.log.debug("Caught in CertificateTrust.count(): " +
+                        ((e && e.message) || e));
     }
-    const row = realm[purpose.id] ||
-      { assessed: 0, refused: 0, lastRefusal: null };
-    realm[purpose.id] = row;
-    row.assessed += 1;
     if (!verdict.ok) {
-      row.refused += 1;
-      row.lastRefusal = { code: verdict.code, why: verdict.why,
-                          at: Date.now() };
       if (verdict.inForce) {
         audit.failure(verdict.code, {
           action: 'service.failure', protocol: purpose.id, channel: 'internal',
@@ -908,6 +966,7 @@ class CertificateTrust {
         });
       }
     }
+    helpers.log.debug("Leaving CertificateTrust.count().");
   }
 
   // THE BASELINE: what the site did before #1360, through the same central
@@ -1043,6 +1102,7 @@ class CertificateTrust {
   private static async assessAdmission(purpose: Purpose, verdict: TrustVerdict,
                                        certs: Json, opts: Json, realmId: string,
                                        quiet: boolean): Promise<TrustVerdict> {
+    helpers.log.debug("Entering CertificateTrust.assessAdmission().");
     const problem = await pki.anchorProblem(certs.leaf, {
       role: opts.role, heldAnchors: opts.heldAnchors, now: opts.now
     });
@@ -1059,6 +1119,7 @@ class CertificateTrust {
       whys.path = problem.why;
     }
     verdict.anchor = 'caller';
+    helpers.log.debug("Leaving CertificateTrust.assessAdmission().");
     return CertificateTrust.compose(purpose, verdict, codes, whys, realmId,
                                     quiet);
   }
@@ -1068,6 +1129,7 @@ class CertificateTrust {
                                      certs: Json, material: Json, opts: Json,
                                      realmId: string,
                                      quiet: boolean): Promise<TrustVerdict> {
+    helpers.log.debug("Entering CertificateTrust.assessInForce().");
     const rule = CertificateTrust.ruleOf(purpose, opts.variant);
     const m = material || {};
     const codes: Json = {};
@@ -1140,6 +1202,7 @@ class CertificateTrust {
     }
     await CertificateTrust.revocationCheck(verdict, rule, chain, certs, codes,
                                            whys);
+    helpers.log.debug("Leaving CertificateTrust.assessInForce().");
     return CertificateTrust.compose(purpose, verdict, codes, whys, realmId,
                                     quiet);
   }
@@ -1149,21 +1212,27 @@ class CertificateTrust {
   private static async revocationCheck(verdict: TrustVerdict, rule: Json,
                                        chain: Buffer[], certs: Json,
                                        codes: Json, whys: Json): Promise<void> {
+    helpers.log.debug("Entering CertificateTrust.revocationCheck().");
     if (rule.revocation === 'exempt-by-spec') {
       verdict.checks.revocation = 'exempt-by-spec';
+      helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
       return;
     }
     if (verdict.checks.path !== 'passed' &&
         verdict.checks.path !== 'exempt-by-spec') {
+      helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
       return;
     }
     const answer = await revocationStatus.verdictFor(
       { leaf: certs.leaf, chain: chain.slice(1), verified: true }, {});
     CertificateTrust.readRevocation(verdict, answer, codes, whys);
+    CertificateTrust.nothingToAsk(verdict, [certs.leaf].concat(chain.slice(1)));
+    helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
   }
 
   private static readRevocation(verdict: TrustVerdict, answer: Json,
                                 codes: Json, whys: Json): void {
+    helpers.log.debug("Entering CertificateTrust.readRevocation().");
     verdict.revocation = answer;
     if (answer.refused) {
       verdict.checks.revocation = 'failed';
@@ -1183,6 +1252,7 @@ class CertificateTrust {
     } else {
       verdict.checks.revocation = 'passed';
     }
+    helpers.log.debug("Leaving CertificateTrust.readRevocation().");
   }
 
   /**
@@ -1260,6 +1330,7 @@ class CertificateTrust {
             revocationStatus.localVerdictFor(
               { leaf: certs.leaf, chain: chain, verified: true }),
             codes, whys);
+          CertificateTrust.nothingToAsk(answer, [certs.leaf].concat(chain));
         }
       }
       return CertificateTrust.compose(purpose, answer, codes, whys, realmId,
@@ -1300,8 +1371,11 @@ class CertificateTrust {
     }
     const read = CertificateTrust.certificatesOf({ peer: peer });
     const certs = read && CertificateTrust.readable(read.leaf) ? read : null;
+    const named = !!certs &&
+      CertificateTrust.acceptedByName(id, certs.leaf, opts);
     const field = certs && stsCrypto.certificateFieldProblem(certs.leaf,
-      Object.assign({}, purpose.leaf, { role: 'leaf', now: opts.now }));
+      Object.assign({}, purpose.leaf, { role: 'leaf', now: opts.now,
+                                        mayBeCa: named }));
     if (!certs || field) {
       helpers.log.debug("Leaving CertificateTrust.holdPeer(). A field.");
       return { ok: false, inForce: true,
@@ -1311,7 +1385,7 @@ class CertificateTrust {
                  'what was presented is not an X.509 certificate' };
     }
     const facts = stsCrypto.certificateFacts(certs.leaf);
-    if (facts.selfIssued && !facts.ca) {
+    if (facts.selfIssued && !facts.ca && !named) {
       helpers.log.debug("Leaving CertificateTrust.holdPeer(). Self-signed.");
       return { ok: false, inForce: true, check: 'self-signed-allowed',
                code: purpose.code,
@@ -1330,6 +1404,212 @@ class CertificateTrust {
     }
     helpers.log.debug("Leaving CertificateTrust.holdPeer(). Holds.");
     return { ok: true, inForce: true, check: '', code: '', why: '' };
+  }
+
+  // Subject and key, which is what makes a certificate the same trust anchor
+  // as another: a cross-signed copy of a root differs in nothing that matters.
+  private static anchorIdOf(der: Json): string {
+    helpers.log.debug("Entering CertificateTrust.anchorIdOf().");
+    const facts = stsCrypto.certificateFacts(der);
+    helpers.log.debug("Leaving CertificateTrust.anchorIdOf().");
+    return facts.subject + '|' + facts.spkiSha256;
+  }
+
+  // Node's bundled roots, indexed once: they cannot change while it runs.
+  private static bundledAnchors(): Map<string, Buffer> {
+    helpers.log.debug("Entering CertificateTrust.bundledAnchors().");
+    if (!bundledRoots) {
+      bundledRoots = new Map();
+      pki.certificateBundle(tls.rootCertificates.join('\n')).certificates
+        .forEach(function (one: Json) {
+          bundledRoots.set(CertificateTrust.anchorIdOf(one.der), one.der);
+        });
+    }
+    helpers.log.debug("Leaving CertificateTrust.bundledAnchors().");
+    return bundledRoots;
+  }
+
+  // A PATH ENDS AT ITS TRUST ANCHOR (RFC 5280 section 6.1). A server may send a
+  // root cross-signed by an older one: Google's chains end at GTS Root R4 under
+  // GlobalSign Root CA, which it does not send. OpenSSL stops at the anchor it
+  // holds, and asking revocation of what lies above it asked about a
+  // certificate nothing relies on, which hard-fail then refused for having no
+  // issuer: every Google endpoint, in product mode. Nothing here makes a chain
+  // trusted: OpenSSL has verified it by the time this is asked, and what is
+  // below the anchor is still walked.
+  private static endingAtAnchor(chain: Buffer[], realmId: string): Buffer[] {
+    helpers.log.debug("Entering CertificateTrust.endingAtAnchor().");
+    const anchors = new Map(CertificateTrust.bundledAnchors());
+    signerTruststore.anchorsFor(realmId, 'tls-server-outbound').anchors
+      .forEach(function (der: Buffer) {
+        anchors.set(CertificateTrust.anchorIdOf(der), der);
+      });
+    helpers.log.debug("Leaving CertificateTrust.endingAtAnchor().");
+    return CertificateTrust.cutAtAnchor(chain, anchors);
+  }
+
+  // The chain as far as its first certificate that is one of these anchors.
+  private static cutAtAnchor(chain: Buffer[],
+                             anchors: Map<string, Buffer>): Buffer[] {
+    helpers.log.debug("Entering CertificateTrust.cutAtAnchor().");
+    for (let i = 0; i < chain.length; i++) {
+      if (!CertificateTrust.readable(chain[i])) {
+        continue;
+      }
+      const anchor = anchors.get(CertificateTrust.anchorIdOf(chain[i]));
+      if (anchor) {
+        helpers.log.debug("Leaving CertificateTrust.cutAtAnchor(). " + i);
+        return chain.slice(0, i).concat([anchor]);
+      }
+    }
+    helpers.log.debug("Leaving CertificateTrust.cutAtAnchor(). None.");
+    return chain;
+  }
+
+  /**
+   * The same stop for a client certificate, under paranoid PKI mode: a chain
+   * that OpenSSL verified ends at the listener's own anchor. Only what that
+   * listener trusts counts, so a public root is no anchor here. Out of force
+   * the chain is as presented, which is what the row off owes.
+   *
+   * @param chain - what is above the leaf, as DER
+   * @param anchors - the listener's anchors, as DER
+   * @returns the chain to ask revocation of
+   */
+  static endingAtClientAnchor(chain: Buffer[], anchors: Buffer[]): Buffer[] {
+    helpers.log.debug("Entering CertificateTrust.endingAtClientAnchor().");
+    if (!CertificateTrust.applies('tls-client', realms.DEFAULT_ID)) {
+      helpers.log.debug("Leaving CertificateTrust.endingAtClientAnchor(). " +
+                        "Off.");
+      return chain;
+    }
+    const held = new Map<string, Buffer>();
+    anchors.forEach(function (der: Buffer) {
+      held.set(CertificateTrust.anchorIdOf(der), der);
+    });
+    helpers.log.debug("Leaving CertificateTrust.endingAtClientAnchor().");
+    return CertificateTrust.cutAtAnchor(chain, held);
+  }
+
+  // NO SOURCE NAMED, NO CHECK TO PERFORM (rcbj, #1360). The walk has already
+  // been asked, so a certificate this service issued met its own register
+  // whatever it names. This covers the one case the walk leaves `not-asked`:
+  // a door that
+  // cannot wait, or `pki.revocationCheck=off`, about a chain naming nothing.
+  private static nothingToAsk(verdict: TrustVerdict, chain: Buffer[]): void {
+    helpers.log.debug("Entering CertificateTrust.nothingToAsk().");
+    if (verdict.checks.revocation === 'not-asked' &&
+        !chain.some(revocationStatus.namesSource)) {
+      verdict.checks.revocation = 'passed';
+    }
+    helpers.log.debug("Leaving CertificateTrust.nothingToAsk().");
+  }
+
+  // A SERVER'S CERTIFICATE ACCEPTED CASE BY CASE (rcbj, #1360), which is not a
+  // softer rule: it is this one certificate, byte for byte, and it is still
+  // held to its window and its fields. Either the operator accepted it in the
+  // signer truststore, or this dialer was configured with it as its own CA: the
+  // shipped OpenBao's and postgres's, which `generate-tls` makes and the stack
+  // delivers, and without which a new install in product mode would not start.
+  // A public root, or an anchor of the signer truststore, reached this dialer's
+  // `ca` without anybody naming this server, so neither counts.
+  private static acceptedByName(id: string, leaf: Buffer, opts: Json): boolean {
+    helpers.log.debug("Entering CertificateTrust.acceptedByName().");
+    if (id !== 'tls-server-outbound') {
+      helpers.log.debug("Leaving CertificateTrust.acceptedByName(). Not here.");
+      return false;
+    }
+    const realmId = opts.realmId || realms.currentId();
+    if (signerTruststore.accepted(realmId, leaf)) {
+      helpers.log.debug("Leaving CertificateTrust.acceptedByName(). Accepted.");
+      return true;
+    }
+    const wanted = leaf.toString('base64');
+    const armoured = function (pem: unknown): string {
+      helpers.log.debug("Entering armoured().");
+      helpers.log.debug("Leaving armoured().");
+      return String(pem).replace(/-----[^-]+-----|\s+/g, '');
+    };
+    const blocks: string[] = ([] as unknown[]).concat(opts.pinnedTo || [])
+      .map(function (one: unknown) {
+        return String(one);
+      }).join('\n').match(
+        /-----BEGIN CERTIFICATE-----[\s\S]*?-----END CERTIFICATE-----/g) || [];
+    const configured = blocks.some(function (pem: string) {
+      return armoured(pem) === wanted;
+    });
+    const elsewhere = CertificateTrust.bundledAnchors()
+      .has(CertificateTrust.anchorIdOf(leaf)) ||
+      (signerTruststore.pemsFor(realmId, id) as string[])
+        .some(function (pem: string) {
+          return armoured(pem) === wanted;
+        });
+    helpers.log.debug("Leaving CertificateTrust.acceptedByName(). " +
+                      (configured && !elsewhere));
+    return configured && !elsewhere;
+  }
+
+  /**
+   * What a handshake's peer owes once OpenSSL has verified it, with revocation:
+   * `holdPeer()`, then the fetch a hold cannot wait for. Counted and audited as
+   * `assess()` is. A staple is asked first, and the `store` variant refuses
+   * only what is revoked (see the table).
+   *
+   * @param id - the purpose
+   * @param peer - `getPeerCertificate(true)`
+   * @param options - `{ realmId, now, staple, variant, expectName, pinnedTo }`;
+   *   `pinnedTo` is the dialer's own `ca`
+   * @returns a promise of `{ ok, inForce, code, why }`
+   */
+  static async assessPeer(id: string, peer: Json,
+                          options?: Json): Promise<Json> {
+    helpers.log.debug("Entering CertificateTrust.assessPeer(). " + id);
+    const opts = options || {};
+    const purpose = CertificateTrust.purpose(id);
+    const realmId = opts.realmId || realms.currentId();
+    const answer = await CertificateTrust.inRealm(realmId, async function () {
+      const verdict = CertificateTrust.blank(id, true);
+      const codes: Json = {};
+      const whys: Json = {};
+      const held = CertificateTrust.holdPeer(id, peer,
+        { realmId: realmId, now: opts.now, pinnedTo: opts.pinnedTo });
+      if (!held.inForce) {
+        return held;
+      }
+      CHECK_ORDER.forEach(function (check) {
+        verdict.checks[check] = 'passed';
+      });
+      verdict.checks['name-match'] = 'not-asked';
+      verdict.checks.revocation = 'not-asked';
+      if (!held.ok) {
+        const named = RULE_CHECKS[held.check] || held.check;
+        const check = CHECK_ORDER.indexOf(named) === -1 ? 'path' : named;
+        verdict.checks[check] = 'failed';
+        codes[check] = held.code;
+        whys[check] = held.why;
+      } else {
+        const rule = CertificateTrust.ruleOf(purpose, opts.variant);
+        const certs = CertificateTrust.certificatesOf({ peer: peer });
+        const fetched = await revocationStatus.verdictFor(
+          { leaf: certs.leaf,
+            chain: CertificateTrust.endingAtAnchor(certs.chain, realmId),
+            verified: true },
+          { stapled: opts.staple || undefined });
+        if (rule.softRevocation && fetched.refused &&
+            fetched.status !== 'revoked') {
+          verdict.checks.revocation = 'passed';
+          verdict.revocation = fetched;
+        } else {
+          CertificateTrust.readRevocation(verdict, fetched, codes, whys);
+          CertificateTrust.nothingToAsk(verdict,
+                                        [certs.leaf].concat(certs.chain));
+        }
+      }
+      return CertificateTrust.compose(purpose, verdict, codes, whys, realmId,
+                                      false);
+    });
+    helpers.log.debug("Leaving CertificateTrust.assessPeer(). " + answer.ok);
+    return answer;
   }
 
   /**
@@ -1357,18 +1637,34 @@ class CertificateTrust {
   }
 
   /**
-   * What the door has answered in this process.
+   * What the door has answered, in every process of this cluster.
    *
    * @param realmId - the realm; the ambient one where omitted
    * @returns per purpose, `{ assessed, refused, lastRefusal }`
    */
   static counters(realmId?: string): Json {
     helpers.log.debug("Entering CertificateTrust.counters().");
-    const realm = counts.get(realmId || realms.currentId()) || {};
+    // Lazily: the store's reader stands on modules that stand on this one.
+    const replication = require('../persistence/persistence_replication');
     const out: Json = {};
-    PURPOSES.forEach(function (one) {
-      out[one.id] = realm[one.id] ||
-        { assessed: 0, refused: 0, lastRefusal: null };
+    realms.run(realmId || realms.currentId(), function () {
+      PURPOSES.forEach(function (one) {
+        const merged: Json = { assessed: 0, refused: 0, lastRefusal: null };
+        [counts.has(one.id) ? counts.get(one.id) : null]
+          .concat(replication.remoteRows('pki.door.counts', undefined, one.id))
+          .forEach(function (row: Json) {
+            if (!row) {
+              return;
+            }
+            merged.assessed += Number(row.assessed) || 0;
+            merged.refused += Number(row.refused) || 0;
+            if (row.lastRefusal && (!merged.lastRefusal ||
+                row.lastRefusal.at > merged.lastRefusal.at)) {
+              merged.lastRefusal = row.lastRefusal;
+            }
+          });
+        out[one.id] = merged;
+      });
     });
     helpers.log.debug("Leaving CertificateTrust.counters().");
     return out;
@@ -1403,6 +1699,7 @@ class CertificateTrust {
   private static async pinRow(row: PinnedSource, realmId: string,
                               horizonMs: number,
                               now: number): Promise<PinnedCertificate> {
+    helpers.log.debug("Entering CertificateTrust.pinRow().");
     const out: Json = Object.assign({
       subject: '', notBefore: 0, notAfter: 0, selfSigned: false, chainedTo: '',
       revocation: '', status: 'unreadable', code: '', fingerprint256: ''
@@ -1410,10 +1707,12 @@ class CertificateTrust {
     if (!row.pem) {
       out.status = row.thumbprint ? 'thumbprint-only' : 'unreadable';
       out.fingerprint256 = row.thumbprint || '';
+      helpers.log.debug("Leaving CertificateTrust.pinRow().");
       return out;
     }
     const der = CertificateTrust.derOf(row.pem);
     if (!der || !CertificateTrust.readable(der)) {
+      helpers.log.debug("Leaving CertificateTrust.pinRow().");
       return out;
     }
     const facts = stsCrypto.certificateFacts(der);
@@ -1444,6 +1743,7 @@ class CertificateTrust {
     } else {
       out.status = 'valid';
     }
+    helpers.log.debug("Leaving CertificateTrust.pinRow().");
     return out;
   }
 

@@ -42,6 +42,7 @@ const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const credentials = require("../tools/pep-credential.js");
+const portal = require("./portal_signin.js");
 // The root section 4 posts. Removed when the job finishes, pass or fail
 // (#335). The truststore is service-wide and holds 32. tests/CLAUDE.md.
 const addedAnchors = [];
@@ -481,12 +482,163 @@ async function resumption() {
   log.debug("Leaving resumption().");
 }
 
+// ---------------------------------------------------------------------------
+// 5. A KEPT SESSION DOES NOT OUTLIVE REVOCATION, ON ANY NODE (#1360, rcbj: "we
+// can't have lost revoked certificates"). A certificate this realm issued, so
+// that its revocation reaches the other node through replication and nothing
+// else: resumed everywhere, revoked through whichever node the balancer picks,
+// and then resumed again until every node has refused it.
+//
+// THE WAIT IS THE REPLICATION'S AND IT IS BOUNDED: REVOCATION_WAIT_MS, then the
+// check fails. A node may go on signing the holder in only inside that window.
+// ---------------------------------------------------------------------------
+const REVOCATION_WAIT_MS = Number(process.env.STS_POOLING_REVOCATION_WAIT_MS ||
+                                  20000);
+
+async function revocationOutlivesNoSession() {
+  log.debug("Entering revocationOutlivesNoSession().");
+  log.info("== 5. A revoked certificate's kept session signs nobody in, on " +
+           "any node");
+  const trust = await get("/admin-api/pki/trust",
+                          { Authorization: "Bearer " + token() });
+  const row = trust.json.rows.filter(function (one) {
+    return one.purpose === "tls-client";
+  })[0];
+  log.info("  paranoid PKI mode: " + trust.json.master.inForce + " (" +
+           trust.json.master.decidedBy + "); tls-client row in force: " +
+           row.inForce);
+  if (trust.json.master.product) {
+    check("in product, paranoid PKI mode and its tls-client row are in force",
+          function () {
+      assert.strictEqual(trust.json.master.inForce, true,
+                         trust.json.master.decidedBy);
+      assert.strictEqual(row.inForce, true, row.setting);
+    });
+  }
+  // A PERSON'S certificate, from this realm's TLS client authority, issued and
+  // revoked at the portal's own door: only a person signs in at /tls/sign-in.
+  const person = "pooling-revoked-" + STAMP;
+  const password = "Pooling-Revoked-" + STAMP + "-1";
+  const made = await post("/admin-api/users/create", {
+    username: person, invent: false, credential: "password", password: password,
+    attributes: { givenName: "Pooling", sn: person,
+                  mail: person + "@pooling.test" } });
+  assert.strictEqual(made.status, 200, made.text.slice(0, 300));
+  const browser = await portal.signInToThePortal(base, person, null,
+                                                 { password: password });
+  const issued = await browser.act("/portal/signing-key",
+    { action: "generate-tls-client", label: "pooling", key_alg: "ec-p256" });
+  assert.strictEqual(issued.status, 200, String(issued.text).slice(0, 300));
+  const fresh = issued.json.view.fresh;
+  const fileText = function (file) {
+    log.debug("Entering fileText().");
+    log.debug("Leaving fileText().");
+    return Buffer.from(String(file.base64), "base64").toString("utf8");
+  };
+  const client = { certPem: fileText(fresh.files.chain),
+                   keyPem: fileText(fresh.files.key) };
+  const ask = [
+    { path: "/admin-api/cluster",
+      headers: { Authorization: "Bearer " + token() } },
+    { path: "/tls/sign-in" }
+  ];
+  const read = function (got) {
+    log.debug("Entering read().");
+    const status = got.responses[0] && got.responses[0].json &&
+      got.responses[0].json.status && got.responses[0].json.status.self;
+    const signIn = got.responses[1] || {};
+    log.debug("Leaving read().");
+    return { node: status ? String(status.name || status.nodeId || "") : "",
+             reused: got.reused,
+             signedIn: !!(signIn.json && signIn.json.signedIn === true),
+             why: String(signIn.body || "").slice(0, 300) };
+  };
+  // A new realm authority and a new anchor reach the other node as any row does.
+  let session = null;
+  let before = null;
+  for (let i = 0; i < 40 && !(before && before.signedIn && session); i += 1) {
+    const got = await pipelined(ask, client);
+    before = read(got);
+    session = got.session;
+    if (!(before.signedIn && session)) {
+      await new Promise(function (r) { setTimeout(r, 500); });
+    }
+  }
+  check("before it is revoked, the certificate signs its holder in",
+        function () {
+    assert.ok(before.signedIn && session, before.why);
+  });
+  const signedOn = new Set();
+  for (let i = 0; i < Math.max(8, EXPECTED_NODES * 4) &&
+                  signedOn.size < EXPECTED_NODES; i += 1) {
+    const got = await pipelined(ask, Object.assign({ session: session },
+                                                   client));
+    const one = read(got);
+    if (one.reused && one.signedIn) {
+      signedOn.add(one.node);
+    }
+    session = got.session || session;
+  }
+  check("and its session resumes and signs in on " + EXPECTED_NODES +
+        " node(s)", function () {
+    assert.ok(signedOn.size >= EXPECTED_NODES,
+              "signed in on " + Array.from(signedOn).join(", "));
+  });
+  const revoked = await browser.act("/portal/signing-key",
+    { action: "revoke-tls-client", serial: fresh.issued.serialHex,
+      reason: "keyCompromise" });
+  assert.strictEqual(revoked.status, 200, String(revoked.text).slice(0, 300));
+  const started = Date.now();
+  const refusedOn = new Set();
+  const stillSignedAfterRefusal = [];
+  const rows = [];
+  while (refusedOn.size < signedOn.size &&
+         Date.now() - started < REVOCATION_WAIT_MS) {
+    const got = await pipelined(ask, Object.assign({ session: session },
+                                                   client));
+    const one = read(got);
+    rows.push((one.node || "?") + (one.reused ? "/resumed" : "/full") +
+              (one.signedIn ? "/SIGNED-IN" : "/refused") + "+" +
+              (Date.now() - started) + "ms");
+    if (one.signedIn && refusedOn.has(one.node)) {
+      stillSignedAfterRefusal.push(one.node);
+    }
+    if (one.reused && !one.signedIn) {
+      refusedOn.add(one.node);
+    }
+    session = got.session || session;
+    await new Promise(function (r) { setTimeout(r, 100); });
+  }
+  log.info("  after the revocation: " + rows.join(" "));
+  check("within " + REVOCATION_WAIT_MS + " ms every node that signed the " +
+        "holder in refuses the kept session", function () {
+    assert.deepStrictEqual(Array.from(refusedOn).sort(),
+      Array.from(signedOn).sort(), "connections: " + rows.join(" "));
+  });
+  check("and a node that has refused it never signs the holder in again",
+        function () {
+    assert.deepStrictEqual(stillSignedAfterRefusal, [], rows.join(" "));
+  });
+  if (EXPECTED_NODES > 1) {
+    check("that is " + refusedOn.size + " nodes, so a revocation reached one " +
+          "that did not take it", function () {
+      assert.ok(refusedOn.size >= 2, Array.from(refusedOn).join(", "));
+    });
+  } else {
+    log.info("  [not exercised] the revocation crossing nodes: this stack " +
+             "has one node (STS_TEST_CLUSTER_NODES). The cluster mode is " +
+             "what asserts it.");
+  }
+  log.debug("Leaving revocationOutlivesNoSession().");
+}
+
 async function main() {
   log.debug("Entering main().");
   await keepAlive();
   await pipelining();
   await sessionLifetime();
   await resumption();
+  await revocationOutlivesNoSession();
   log.info("sts_main_port_pooling passed: " + checks + " checks.");
   log.debug("Leaving main().");
 }

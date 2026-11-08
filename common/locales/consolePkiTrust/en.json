@@ -37,6 +37,7 @@
   "addHeading": "Add certificates",
   "addNote": "Paste one or more PEM certificates. A self-signed CA becomes an anchor and any other CA an intermediate, which must chain to an anchor held. Each refusal is named.",
   "addPurposes": "Trust them only for these use cases (none ticked means every use case):",
+  "addAccept": "Accept this one server certificate by name, for outbound TLS only. It is still held to its validity and fields, and to any revocation list it names.",
   "addButton": "Trust these",
   "pins": "Pinned certificates",
   "pinsNote": "Every certificate this realm relies on because somebody registered it, held to the checks whatever the settings above say. Last audited: {when}.",

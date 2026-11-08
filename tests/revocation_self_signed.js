@@ -82,7 +82,9 @@ async function run(harness) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rev-self-'));
   try {
     const certs = makeCertificates(dir);
+    // #174's rule; under paranoid PKI mode nothing named is nothing to check.
     config.setOverride('global.mode', 'product');
+    config.setOverride('pki.paranoid', 'off');
     const policy = revocation.policy();
     t.check(policy.requireDistributionPoint === true,
             'A0. product mode requires a distribution point (#174), so the ' +
@@ -100,6 +102,7 @@ async function run(harness) {
             'A2. the control: a CA-issued leaf naming no list is still ' +
             'refused in product', JSON.stringify(leaf));
   } finally {
+    config.clearOverride('pki.paranoid');
     config.clearOverride('global.mode');
     fs.rmSync(dir, { recursive: true, force: true });
   }

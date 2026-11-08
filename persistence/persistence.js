@@ -1989,7 +1989,10 @@ function flush() {
               'persistence: could not write to the ' + activeMode +
               ' store: ' + err.message + '. It is retried shortly; a ' +
               'request whose change was in it is answered 503 in postgres ' +
-              'mode (#351), and the change stays in memory until it lands.');
+              'mode (#351), and the change stays in memory until it lands.' +
+              // A driver's message names its own cause. A bug here does not:
+              // "Cannot convert undefined or null to object" names nothing.
+              (err && err instanceof TypeError ? ' ' + err.stack : ''));
     log.debug('Leaving flush(). It failed.');
     return { written: false, error: err.message };
   }).then(function (result) {
@@ -2145,7 +2148,10 @@ function resolveDatabaseUrl() {
 function verifiesDatabaseTls() {
   log.debug("Entering verifiesDatabaseTls().");
   log.debug("Leaving verifiesDatabaseTls().");
-  return !!config.value('persistence.databaseTlsRejectUnauthorized');
+  // In force (#1360): this is a skip like every other, development's alone, so
+  // a product deployment with `false` still stored verifies and says so.
+  return !!require('../common/mode')
+    .valueInForce('persistence.databaseTlsRejectUnauthorized');
 }
 
 // ---------------------------------------------------------------------------

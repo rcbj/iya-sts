@@ -352,6 +352,7 @@ STS_SPIFFE_JOIN_TOKEN=<token> node spiffe/workload_agent.js \
 | `--socket` | the Unix socket to serve the Workload API on (required) |
 | `--trust-domain` | the realm's trust domain (required) |
 | `--bundle-url` or `--trust-bundle-file` | the anchors the server is verified against: an `https:` bundle URL, or a PEM file (one is required) |
+| `--trust-bundle-ca` | a PEM file of CA certificates the bundle URL's own certificate may chain to, beside node's store |
 | `--join-token-file` | a file holding the token, instead of `STS_SPIFFE_JOIN_TOKEN` |
 | `--require-security-header`, `--attest-workloads` | both on by default; `false` turns one off |
 | `--native` | the peer-credentials module, when it is not in `spiffe/native/` |
