@@ -30,6 +30,7 @@ const assert = require("assert");
 const https = require("https");
 const { Command, Option } = require("commander");
 const credentials = require("../tools/pep-credential.js");
+const kit = require("../tools/trust_kit.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -262,6 +263,65 @@ async function theAdmissionRowDecides() {
   log.debug("Leaving theAdmissionRowDecides().");
 }
 
+// A row decides at its own door: refused with the row on, written with it off.
+// The attestation rows, which need an authenticator, a wallet or an agent, are
+// `sts_webauthn_attestation.js`, `sts_paranoid_pki_attestation.js` and the
+// in-process files `tests/CLAUDE.md` names for them.
+async function refusedThenWritten(id, setting, path, body, what) {
+  log.debug("Entering refusedThenWritten(). " + setting);
+  const url = inRealm(id) + path;
+  const refused = await send("POST", url, body);
+  check(what + " is refused at the door with " + setting + " on", function () {
+    assert.strictEqual(refused.status, 400, refused.raw.slice(0, 300));
+  });
+  await send("POST", inRealm(id) + "/pki/trust/set-row",
+             { setting: setting, value: false });
+  const written = await send("POST", url, body);
+  check("and written with it off", function () {
+    assert.strictEqual(written.status, 200, written.raw.slice(0, 300));
+  });
+  log.debug("Leaving refusedThenWritten().");
+}
+
+async function theRowsAtTheirDoors() {
+  log.debug("Entering theRowsAtTheirDoors().");
+  const now = Date.now();
+  const expired = await kit.mint({ cn: "paranoid settings expired",
+    notBefore: now - 3 * kit.DAY, notAfter: now - kit.DAY });
+  const expiredCa = await kit.mint({ cn: "paranoid settings expired CA",
+    ca: true, notBefore: now - 3 * kit.DAY, notAfter: now - kit.DAY });
+  const base64 = expired.pem.replace(/-----[^-]+-----|\s+/g, "");
+  const id = "paranoid-doors-" + STAMP;
+  const made = await send("POST", "/admin-api/realms/create",
+    { id: id, domain: id + ".example.net", name: id });
+  assert.strictEqual(made.status, 200, made.raw.slice(0, 300));
+  await send("POST", inRealm(id) + "/pki/trust/set-row",
+             { setting: "pki.paranoid", value: "on" });
+  await refusedThenWritten(id, "pki.paranoidEncryptionRecipient",
+    "/applications/create",
+    { identifier: "https://sp.doors.example/" + STAMP, name: "doors sp",
+      protocols: ["saml2"],
+      fields: { samlAssertionConsumerService:
+                  ["https://sp.doors.example/acs"],
+                samlEncryptionCertificate: base64 } },
+    "an expired encryption certificate");
+  const fed = "doors-" + STAMP;
+  const relationship = await send("POST", inRealm(id) + "/federation/create",
+    { id: fed, role: "service-provider", protocol: "saml2",
+      peer: "https://idp.doors.example/" + STAMP });
+  assert.strictEqual(relationship.status, 200,
+                     relationship.raw.slice(0, 300));
+  await refusedThenWritten(id, "pki.paranoidFederationPartner",
+    "/federation/set",
+    { id: fed, field: "fedSigningCertificate", value: expired.pem },
+    "an expired partner certificate");
+  await refusedThenWritten(id, "pki.paranoidCaImport", "/pki/import-ca",
+    { scope: id, useCase: "jose", certificatePem: expiredCa.pem,
+      privateKeyPem: expiredCa.key },
+    "an expired certificate authority");
+  log.debug("Leaving theRowsAtTheirDoors().");
+}
+
 async function test() {
   log.debug("Entering test().");
   log.info("Paranoid PKI settings at " + base);
@@ -272,7 +332,8 @@ async function test() {
   }
   await theRowsAnswerTheirSwitch();
   await theAdmissionRowDecides();
-  assert.ok(checks >= 50, "only " + checks + " checks ran; a section has " +
+  await theRowsAtTheirDoors();
+  assert.ok(checks >= 56, "only " + checks + " checks ran; a section has " +
                                             "stopped being called.");
   log.info(checks + " check(s) passed.");
   log.info("Test completed successfully.");
