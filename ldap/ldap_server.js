@@ -15252,13 +15252,15 @@ if (typeof mailChannel.setDirectory === 'function') {
           return { ok: false, code: 'STS-LDAP-0093' };
         }
         if (!held || !held.ok) {
+          const tooLong = held && held.reason === 'name';
           const store = held && held.reason === 'store';
-          log.info(errorCodes.tag(store ? 'STS-LDAP-0093' :
-                                   'STS-LDAP-0202') +
-                   'ldap: an address was not written.');
+          const code = tooLong ? 'STS-LDAP-0210'
+            : (store ? 'STS-LDAP-0093' : 'STS-LDAP-0202');
+          log.info(errorCodes.tag(code) +
+                   'ldap: an address was not written.' +
+                   (tooLong ? ' ' + createClaims.refusalMessage(held) : ''));
           log.debug('Leaving writeAddress(). The claim was refused.');
-          return { ok: false, code: store ? 'STS-LDAP-0093' :
-                                            'STS-LDAP-0202' };
+          return { ok: false, code: code };
         }
         const other = existingUserEntry(value);
         if (other && normalizeDn(other.dn) !== normalizeDn(stored.dn)) {
@@ -15779,6 +15781,11 @@ async function writePseudonyms(entryOrUsername, spec) {
       'Whether that name is already taken could not be decided.');
   }
   if (!held || !held.ok) {
+    if (held && held.reason === 'name') {
+      log.debug('Leaving writePseudonyms(). The name is too long.');
+      return refusePseudonym('STS-LDAP-0210',
+        createClaims.refusalMessage(held));
+    }
     const store = held && held.reason === 'store';
     log.debug('Leaving writePseudonyms(). The claim was refused.');
     return refusePseudonym(store ? 'STS-LDAP-0093' :
@@ -17848,6 +17855,17 @@ function claimingTheAdd(handler) {
     }).then(function (held) {
       if (!held.ok) {
         return inRealmOf(dn, function () {
+          if (held.reason === 'name') {
+            // The log keeps a prefix. The value that found this was 65,000
+            // characters, and the whole of it is not a useful record (#1402).
+            const shown = String(dn).slice(0, 80);
+            return next(ldapRefusal(req, 'STS-LDAP-0210',
+              'an add of ' + shown +
+              '… was refused: the name is longer than the create ' +
+              'coordinator holds',
+              new ldap.AdminLimitExceededError(
+                createClaims.refusalMessage(held)), dn));
+          }
           if (held.reason === 'store') {
             return next(ldapRefusal(req, 'STS-LDAP-0093', 'an add of ' + dn +
               ' was refused: ' + createClaims.refusalMessage(held),

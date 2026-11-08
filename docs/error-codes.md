@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5326** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5327** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -71,7 +71,7 @@ is an ordinary outcome.
 * [Federation (`STS-FED`)](#sts-fed) — 211
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 254
-* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 163
+* [LDAP directory (`STS-LDAP`)](#sts-ldap) — 164
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
@@ -3463,6 +3463,7 @@ Raised from: ldap/, persistence/bulk_import.js (STS-LDAP-0150 to 0161).
 | `STS-LDAP-0207` | update-person-attribute was refused for a field: a label empty, longer than 128 characters or holding a control character, a description longer than 1024 or holding one, or a portal flag that is neither true nor false (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
 | `STS-LDAP-0208` | update-person-attribute would have changed a custom attribute's syntax or whether it holds several values. Both are fixed once it is defined, because the values people hold were checked against them (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
 | `STS-LDAP-0209` | The directory would not store a changed custom attribute definition (#700). | HTTP 400 JSON (the sentence; the code is recorded) |
+| `STS-LDAP-0210` | A create was refused because its DN or username is longer than the create coordinator holds (4096 characters). The name is not being created elsewhere, and retrying it cannot succeed (#1402). | HTTP 400 on /admin-api and /scim/v2; LDAP adminLimitExceeded (11). The code is recorded, never sent |
 
 ## STS-ATTR
 

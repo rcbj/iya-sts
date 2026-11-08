@@ -1464,16 +1464,19 @@ class AdminApi {
   // create cannot race (`createClaims.active()` false, which is every
   // single-process service) — `run` is called SYNCHRONOUSLY, exactly as the
   // handler did before. Otherwise the claim is awaited, a refusal answered in
-  // this API's shape (409, or 503 when the store could not be asked), and `run`
-  // handed the claim to settle with the action's outcome.
+  // this API's shape (409 when another create holds the name, 400 when the
+  // name is longer than the coordinator holds, or 503 when the store could
+  // not be asked), and `run` handed the claim to settle with the action's
+  // outcome.
   // ---------------------------------------------------------------------------
   /**
    * Runs an action, claiming its name first when there is one to claim and a
    * create can race.
    *
    * Without a claim `run` is called synchronously. A refused claim is answered
-   * 409 (or 503 when the store could not be asked); a throw after the claim
-   * settles it as failed and answers 500.
+   * 409 when another create holds the name, 400 when the name is longer than
+   * the coordinator holds (#1402), or 503 when the store could not be asked.
+   * A throw after the claim settles it as failed and answers 500.
    *
    * @param res - the response
    * @param what - the name to claim, or null
@@ -1492,6 +1495,14 @@ class AdminApi {
     log.debug("Leaving AdminApi.runClaimed(). Claiming first.");
     return this.claimForCreate(what).then(function (held) {
       if (!held.ok) {
+        if (held.reason === 'name') {
+          // A name longer than the coordinator holds cannot succeed on a
+          // retry, so this is a 400 and carries no Retry-After (#1402).
+          errorCodes.mark(res, 'STS-LDAP-0210');
+          self.sendJson(res, 400, { ok: false,
+            errors: [createClaims.refusalMessage(held)] });
+          return;
+        }
         errorCodes.mark(res, held.code);
         if (held.reason === 'store') {
           // The create-claims store could not be asked (STS-LDAP-0093, fail

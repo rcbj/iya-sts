@@ -15936,6 +15936,13 @@ const CODES = [
     summary: 'The directory would not store a changed custom attribute ' +
       'definition (#700).',
     spec: 'HTTP 400 JSON (the sentence; the code is recorded)' },
+  { code: 'STS-LDAP-0210',
+    summary: 'A create was refused because its DN or username is longer ' +
+      'than the create coordinator holds (4096 characters). The name is ' +
+      'not being created elsewhere, and retrying it cannot succeed ' +
+      '(#1402).',
+    spec: 'HTTP 400 on /admin-api and /scim/v2; LDAP adminLimitExceeded ' +
+      '(11). The code is recorded, never sent' },
   { code: 'STS-ATTR-0001',
     summary: 'An attribute source\'s driver (or Knex) is not installed: the ' +
       'dialect\'s package is an optional one, installed into the image with ' +

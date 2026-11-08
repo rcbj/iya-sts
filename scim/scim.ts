@@ -2129,6 +2129,10 @@ class Scim {
       const held = await directory.claimCreate(type === 'User'
         ? { username: String(given.userName || '').trim() }
         : { group: String(given.displayName || '').trim() });
+      if (!held.ok && held.reason === 'name') {
+        throw coded('STS-LDAP-0210', new SCIMMY.Types.Error(400,
+          'invalidValue', createClaims.refusalMessage(held)));
+      }
       if (!held.ok && held.reason === 'store') {
         throw coded('STS-LDAP-0093', new SCIMMY.Types.Error(500, null,
           createClaims.refusalMessage(held)));
@@ -3055,6 +3059,12 @@ class Scim {
       const given = (body && typeof body === 'object') ? body : {};
       const held = await directory.claimCreate(type === 'User'
         ? { username: given.userName } : { group: given.displayName });
+      if (!held.ok && held.reason === 'name') {
+        // 400 invalidValue: the name cannot be stored, and a retry will not
+        // shorten it (#1402). RFC 7644 section 3.12 lists no 503.
+        throw coded('STS-LDAP-0210', new SCIMMY.Types.Error(400,
+          'invalidValue', createClaims.refusalMessage(held)));
+      }
       if (!held.ok && held.reason === 'store') {
         // 500 and not 503: RFC 7644 section 3.12 lists no 503, which is the
         // same reading `scim_auth.ts` makes of its own store failure.
