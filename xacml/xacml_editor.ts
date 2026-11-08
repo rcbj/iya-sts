@@ -1121,10 +1121,23 @@ class XacmlEditor {
         log.debug('Leaving XacmlEditor.applyEdit(). Nothing to rename.');
         return { ok: true, what: 'Unchanged.' };
       }
-      if (holder.variables[renamed]) {
+      const variables = holder && holder.variables;
+      if (variables && variables[renamed]) {
         log.debug('Leaving XacmlEditor.applyEdit(). Duplicate variable id.');
         return { ok: false,
                  why: 'This policy already defines $' + renamed + '.' };
+      }
+      // A PATH THAT RESOLVES IS NOT A VARIABLE. The last segment is read as
+      // the id, and a path that names a rule, or a field of a variable, still
+      // resolves. Copying that miss stored `undefined`, and writePolicy then
+      // threw reading `.kind` (STS-API-0140, #1403). A policy set has no
+      // variables map, and reading it threw the same way.
+      const defined = variables && variables[wasCalled];
+      if (!defined || !defined.kind) {
+        log.debug('Leaving XacmlEditor.applyEdit(). No such variable.');
+        return { ok: false,
+                 why: 'There is no variable $' + (wasCalled || '') +
+                      ' to rename.' };
       }
       // EVERY REFERENCE IS REWRITTEN WITH IT. The alternative — refusing to
       // rename a variable that is used — is safe and useless, because a
@@ -1132,7 +1145,7 @@ class XacmlEditor {
       // rename that left the references behind would produce a document that
       // does not load, and the store would refuse the write with a message
       // about a variable that no longer exists.
-      holder.variables[renamed] = holder.variables[wasCalled];
+      holder.variables[renamed] = defined;
       delete holder.variables[wasCalled];
       const rewritten = self.renameVariableReferences(holder, wasCalled,
                                                       renamed);
