@@ -88,6 +88,11 @@ ALLOWED = {
             "the twenty-sixth exception (an outbound SCIM service, #552): a "
             "reconcile dials the SCIM endpoint an administrator configured on "
             "the client's entry, through common/outbound_tls.",
+        "test-connection":
+            "the twenty-sixth exception (an outbound SCIM service, #552): a "
+            "connection test discovers that same configured endpoint and "
+            "reads one User from it, through common/outbound_tls. It is not "
+            "a URL the request names (#1405).",
     },
     ("POST", "/admin-api/oidfed/{action}"): {
         "resolve":
