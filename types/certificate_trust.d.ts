@@ -32,6 +32,10 @@ export interface TrustVerdict {
   checks: Record<CheckId, CheckStatus>;
   code: string;
   why: string;
+  /** The path `assess()` built, in `verifyPathToAnchors()`'s shape. */
+  builtChain?: any[];
+  /** The rule the path broke, in that function's words. */
+  pathCheck?: string;
 }
 
 export interface LeafRule {

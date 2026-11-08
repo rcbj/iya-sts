@@ -44,6 +44,7 @@ import spiffeId = require('./spiffe_id');
 import rpc = require('./spiffe_grpc');
 // Certificate paths and signatures are checked where every other one is
 // (rcbj, 2026-09-21).
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import stsCrypto = require('../common/crypto');
 import tpm = require('./spiffe_tpm');
@@ -207,7 +208,8 @@ class TpmDevidAttestor {
       config.value('spiffe.tpmDevidCaBundle') || '')).certificates;
     const ekRoots = pki.certificateBundle(String(
       config.value('spiffe.tpmEndorsementCaBundle') || '')).certificates;
-    if (!devidRoots.length || !ekRoots.length) {
+    if (!CertificateTrust.anchorsAvailable('spiffe-attestation', devidRoots) ||
+        !CertificateTrust.anchorsAvailable('spiffe-attestation', ekRoots)) {
       log.debug("Leaving TpmDevidAttestor.attest(). Not configured.");
       throw this.refuse(call, 'STS-SPIFFE-0085', status.FAILED_PRECONDITION,
         'tpm_devid is not configured in this realm: ' +
@@ -238,9 +240,10 @@ class TpmDevidAttestor {
                         'unable to parse DevID certificate');
     }
     // 2. THE DevID PATH.
-    const devidPath = await pki.verifyPathToAnchors(devidChain[0],
-                                                    devidChain.slice(1),
-                                                    devidRoots);
+    const devidPath = await CertificateTrust.path('spiffe-attestation',
+                                                  devidChain[0],
+                                                  devidChain.slice(1),
+                                                  devidRoots);
     if (!devidPath.ok) {
       log.debug("Leaving TpmDevidAttestor.attest(). DevID path.");
       throw this.refuse(call, 'STS-SPIFFE-0089', status.INVALID_ARGUMENT,
@@ -296,8 +299,10 @@ class TpmDevidAttestor {
         'public key in EK certificate differs from public key created via ' +
         'EK template');
     }
-    const ekPath = await pki.verifyPathToAnchors(ekCert.der, [], ekRoots,
-                                                 { allowCritical:
+    const ekPath = await CertificateTrust.path('spiffe-attestation',
+                                               ekCert.der, [], ekRoots,
+                                               { variant: 'tpm-ek',
+                                                 allowCritical:
                                                    ['subjectAltName'] });
     if (!ekPath.ok) {
       log.debug("Leaving TpmDevidAttestor.attest(). EK path.");

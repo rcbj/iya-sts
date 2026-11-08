@@ -271,7 +271,7 @@ const PURPOSES: Purpose[] = [
     title: 'An attestation-based client authentication chain',
     covers: 'The attester\'s certificate behind OAuth attestation-based client ' +
       'authentication.',
-    adds: 'Revocation; keyUsage on the leaf.',
+    adds: 'Revocation where the chain names a list; keyUsage on the leaf.',
     sites: ['oauth-oidc/client_attestation.ts attesterKeys'],
     anchors: ['caller', 'signer-truststore'],
     leaf: leaf(SIGNS),
@@ -317,7 +317,11 @@ const PURPOSES: Purpose[] = [
     exemptions: [{ check: 'revocation',
                    spec: 'A federated SVID: the federated authority publishes ' +
                          'nothing this service may dial' }],
-    variants: { federated: { revocation: 'exempt-by-spec' } },
+    variants: {
+      federated: { revocation: 'exempt-by-spec' },
+      'federated-authority': { leaf: { keyUsage: ['keyCertSign'], eku: null,
+                                       mayBeCa: true } }
+    },
     baseline: 'direct', code: 'STS-PKI-0252', phase: 5 },
   { id: 'spiffe-attestation', setting: 'pki.paranoidSpiffeAttestation',
     title: 'A SPIFFE node attestor\'s certificate',
@@ -340,7 +344,9 @@ const PURPOSES: Purpose[] = [
       sigstore: { validity: 'not-before-by-spec',
                   leaf: { eku: { oids: [EKU.codeSigning], required: true } } },
       aws: { selfSigned: 'allow-by-spec' },
-      tpm: { leaf: { eku: { oids: [EKU.tcgAik], required: false } } }
+      // An endorsement key decrypts and never signs (TPM 2.0 EK Credential
+      // Profile), so `digitalSignature` would refuse every real one.
+      'tpm-ek': { leaf: { keyUsage: ENCIPHERS, eku: null, mayBeCa: false } }
     },
     baseline: 'caller-path', code: 'STS-PKI-0253', phase: 5 },
   { id: 'pkinit', setting: 'pki.paranoidPkinit',
@@ -367,15 +373,16 @@ const PURPOSES: Purpose[] = [
                    spec: 'RFC 8894 section 2.3: the PKCSReq signer is ' +
                          'self-signed by definition' }],
     variants: {
-      scep: { selfSigned: 'allow-by-spec',
-              leaf: { eku: { oids: [EKU.clientAuth], required: false } } }
+      // A renewal is signed by the certificate being renewed, whatever it was
+      // issued for: a TLS server's or a code signer's EKU is no refusal here.
+      scep: { selfSigned: 'allow-by-spec', leaf: { eku: null } }
     },
     baseline: 'realm-leaf', code: 'STS-PKI-0255', phase: 5 },
   { id: 'vc-key-attestation', setting: 'pki.paranoidVcKeyAttestation',
     title: 'An OpenID4VCI key attestation chain',
     covers: 'The x5c of a wallet\'s key attestation at the credential endpoint.',
-    adds: 'A real path with intermediates, not one hop; revocation; keyUsage ' +
-      'on the leaf.',
+    adds: 'A real path with intermediates, not one hop; revocation where the ' +
+      'chain names a list; keyUsage on the leaf.',
     sites: ['oid4vc/vc_issuer.ts verifyKeyAttestation'],
     anchors: ['caller', 'signer-truststore'],
     leaf: leaf(SIGNS),
@@ -902,7 +909,7 @@ class CertificateTrust {
                              opts: Json, mayBeCa: boolean): Json[] {
     helpers.log.debug("Entering CertificateTrust.fieldChecks().");
     const options: Json = Object.assign({}, rule.leaf, {
-      role: 'leaf', now: opts.now, skewMs: opts.skewMs,
+      role: opts.fieldRole || 'leaf', now: opts.now, skewMs: opts.skewMs,
       allowSha1: opts.allowSha1, allowCritical: opts.allowCritical,
       mayBeCa: mayBeCa || rule.leaf.mayBeCa
     });
@@ -1216,11 +1223,13 @@ class CertificateTrust {
         verdict.anchor = built.anchor;
         verdict.checks.path = 'passed';
         verdict.checks['name-constraints'] = 'passed';
+        verdict.builtChain = built.chain;
         chain = built.chain.map(function (step: Json) {
           return step.der;
         });
       } else {
         const named = RULE_CHECKS[built.check] || 'path';
+        verdict.pathCheck = built.check;
         verdict.checks.path = 'failed';
         verdict.checks[named] = 'failed';
         // The leaf's own field failing says it better, if it did.
@@ -1242,7 +1251,7 @@ class CertificateTrust {
       }
     }
     await CertificateTrust.revocationCheck(verdict, rule, chain, certs, codes,
-                                           whys);
+                                           whys, opts);
     helpers.log.debug("Leaving CertificateTrust.assessInForce().");
     return CertificateTrust.compose(purpose, verdict, codes, whys, realmId,
                                     quiet);
@@ -1252,7 +1261,8 @@ class CertificateTrust {
   // path, so an address inside the leaf is never what decides who answers.
   private static async revocationCheck(verdict: TrustVerdict, rule: Json,
                                        chain: Buffer[], certs: Json,
-                                       codes: Json, whys: Json): Promise<void> {
+                                       codes: Json, whys: Json,
+                                       opts: Json): Promise<void> {
     helpers.log.debug("Entering CertificateTrust.revocationCheck().");
     if (rule.revocation === 'exempt-by-spec') {
       verdict.checks.revocation = 'exempt-by-spec';
@@ -1261,6 +1271,19 @@ class CertificateTrust {
     }
     if (verdict.checks.path !== 'passed' &&
         verdict.checks.path !== 'exempt-by-spec') {
+      helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
+      return;
+    }
+    // A SITE THAT ASKS FOR ITSELF, NEXT, on the path this built: its own codes
+    // and its override are what it asks for, and two asks would disagree about
+    // which refusal was the one. With the check switched off nobody asks.
+    if (opts.siteAsksRevocation) {
+      if (config.value('pki.revocationCheck') === 'off') {
+        whys.revocation = 'revocation was not consulted ' +
+                          '(pki.revocationCheck is off)';
+      } else {
+        verdict.checks.revocation = 'passed';
+      }
       helpers.log.debug("Leaving CertificateTrust.revocationCheck().");
       return;
     }
@@ -1727,6 +1750,195 @@ class CertificateTrust {
   }
 
   /**
+   * Is there anything a site could build a path to? Its own configured anchors,
+   * or under paranoid the realm's signer truststore where its use case may
+   * reach it. A site asks this where it would otherwise refuse for having no
+   * anchor.
+   *
+   * @param id - the purpose
+   * @param anchors - what the site was configured with
+   * @param options - `{ realmId }`
+   * @returns whether a path could be built
+   */
+  static anchorsAvailable(id: string, anchors: Json[],
+                          options?: Json): boolean {
+    helpers.log.debug("Entering CertificateTrust.anchorsAvailable(). " + id);
+    const realmId = (options && options.realmId) || realms.currentId();
+    const available = anchors.length > 0 ||
+      (CertificateTrust.applies(id, realmId) &&
+       CertificateTrust.purpose(id).anchors.indexOf('signer-truststore') >= 0 &&
+       signerTruststore.anchorsFor(realmId, id).anchors.length > 0);
+    helpers.log.debug("Leaving CertificateTrust.anchorsAvailable(). " +
+                      available);
+    return available;
+  }
+
+  /**
+   * The door for a site that builds a path to anchors it was configured with,
+   * in the shape `pki.verifyPathToAnchors()` answers, so the site's own codes
+   * and wording stand. Not in force, it IS that call. In force, it is
+   * `assess()`, and a refusal adds `code`, the door's name for what failed; the
+   * audit row is `assess()`'s.
+   *
+   * @param id - the purpose
+   * @param leaf - the leaf's DER
+   * @param intermediates - DER, any order
+   * @param anchors - what the site trusts
+   * @param options - `{ realmId, now, skewMs, allowCritical, variant,
+   *   siteAsksRevocation }`
+   * @returns `{ ok, chain }` or `{ ok: false, check, reason, code }`
+   */
+  static async path(id: string, leaf: Json, intermediates: Json[],
+                    anchors: Json, options?: Json): Promise<Json> {
+    helpers.log.debug("Entering CertificateTrust.path(). " + id);
+    const opts = options || {};
+    if (!CertificateTrust.applies(id, opts.realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.path(). The baseline.");
+      return pki.verifyPathToAnchors(leaf, intermediates, anchors,
+        { now: opts.now, skewMs: opts.skewMs,
+          allowCritical: opts.allowCritical });
+    }
+    const verdict = await CertificateTrust.assess(id,
+      { leaf: leaf, chain: intermediates },
+      // A site holds `pki.certificateFromDer()`'s entries; the door reads DER.
+      Object.assign({}, opts, { anchors: anchors.map(function (one: Json) {
+        return one.der || one.raw || one;
+      }) }));
+    if (!verdict.ok) {
+      helpers.log.debug("Leaving CertificateTrust.path(). " + verdict.code);
+      return { ok: false, check: verdict.pathCheck || 'paranoid',
+               reason: verdict.why, code: verdict.code };
+    }
+    helpers.log.debug("Leaving CertificateTrust.path().");
+    return { ok: true, chain: verdict.builtChain, anchor: verdict.anchor };
+  }
+
+  /**
+   * The synchronous door for a one-hop issuer check, in the shape
+   * `pki.verifyIssuedDirectly()` answers. `no-path` is answered uncounted,
+   * since a site tries one authority after another and only the last says
+   * anything.
+   *
+   * @param id - the purpose
+   * @param leaf - the leaf's DER
+   * @param authorities - as `verifyIssuedDirectly()` takes them
+   * @param options - `{ realmId, now, skewMs, allowCritical, variant }`
+   * @returns `{ ok, chain }` or `{ ok: false, check, reason, code }`
+   */
+  static direct(id: string, leaf: Json, authorities: Json[],
+                options?: Json): Json {
+    helpers.log.debug("Entering CertificateTrust.direct(). " + id);
+    const opts = options || {};
+    const answer = pki.verifyIssuedDirectly(leaf, authorities,
+      { now: opts.now, skewMs: opts.skewMs,
+        allowCritical: opts.allowCritical });
+    if (!CertificateTrust.applies(id, opts.realmId) ||
+        (!answer.ok && answer.check === 'no-path')) {
+      helpers.log.debug("Leaving CertificateTrust.direct(). As it was.");
+      return answer;
+    }
+    const verdict = CertificateTrust.assessSync(id, { leaf: leaf },
+      Object.assign({}, opts, { anchors: authorities }));
+    if (!verdict.ok) {
+      helpers.log.debug("Leaving CertificateTrust.direct(). " + verdict.code);
+      return { ok: false, check: answer.check || 'paranoid',
+               reason: verdict.why, code: verdict.code };
+    }
+    helpers.log.debug("Leaving CertificateTrust.direct().");
+    return answer;
+  }
+
+  /**
+   * The door for a certificate that must chain to this realm's own
+   * Intermediate, in the shape `pki.verifyLeaf()` answers. The path and its
+   * revocation are that function's; in force the leaf's fields are asked too.
+   *
+   * @param id - the purpose
+   * @param realmId - the realm, or undefined for the ambient one
+   * @param pem - the leaf
+   * @param chain - what was presented with it
+   * @param options - `{ now, skewMs, variant }`
+   * @returns what `verifyLeaf()` answers, or `{ ok: false, why, revocation }`
+   *   marked with the field's code
+   */
+  static async realmLeaf(id: string, realmId: string | undefined, pem: string,
+                         chain: string[], options?: Json): Promise<Json> {
+    helpers.log.debug("Entering CertificateTrust.realmLeaf(). " + id);
+    const opts = options || {};
+    const answer = await pki.verifyLeaf(realmId, pem, chain);
+    if (!answer.ok || !CertificateTrust.applies(id, realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.realmLeaf(). As it was.");
+      return answer;
+    }
+    const held = CertificateTrust.fields(id, pem,
+      Object.assign({}, opts, { realmId: realmId }));
+    if (!held.ok) {
+      helpers.log.debug("Leaving CertificateTrust.realmLeaf(). " + held.code);
+      return errorCodes.mark({ ok: false, why: held.why,
+                               revocation: answer.revocation || null },
+                             held.code);
+    }
+    helpers.log.debug("Leaving CertificateTrust.realmLeaf().");
+    return answer;
+  }
+
+  /**
+   * A certificate's own fields, under the purpose's rule, where something else
+   * has already decided how it came to be trusted: a responder its issuer
+   * delegated to, a pinned certificate, a signature a site just checked.
+   * Counted and audited as any other refusal.
+   *
+   * @param id - the purpose
+   * @param cert - PEM, DER or an `x5c` member
+   * @param options - `{ realmId, now, skewMs, variant, mayBeCa, fieldRole,
+   *   only (the checks to ask, all of them otherwise) }`; a `fieldRole` other
+   *   than `leaf` asks for a certificate authority
+   * @returns `{ ok, code, why }`; `ok` when paranoid does not apply
+   */
+  static fields(id: string, cert: Json, options?: Json): Json {
+    helpers.log.debug("Entering CertificateTrust.fields(). " + id);
+    const opts = options || {};
+    const realmId = opts.realmId || realms.currentId();
+    if (!CertificateTrust.applies(id, realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.fields(). Not in force.");
+      return { ok: true, code: '', why: '' };
+    }
+    const purpose = CertificateTrust.purpose(id);
+    const verdict = CertificateTrust.blank(id, true);
+    const codes: Json = {};
+    const whys: Json = {};
+    const der = CertificateTrust.derOf(cert);
+    if (!der || !CertificateTrust.readable(der)) {
+      verdict.checks.path = 'failed';
+      codes.path = 'STS-PKI-0238';
+      whys.path = 'it is not an X.509 certificate';
+    } else {
+      CertificateTrust.fieldChecks(verdict, der,
+        CertificateTrust.ruleOf(purpose, opts.variant), opts, !!opts.mayBeCa)
+        .filter(function (one: Json) {
+          if (opts.only && opts.only.indexOf(one.check) === -1) {
+            verdict.checks[one.check] = 'passed';
+            return false;
+          }
+          return true;
+        })
+        .forEach(function (one: Json) {
+          codes[one.check] = codes[one.check] || one.code;
+          whys[one.check] = whys[one.check] || one.why;
+        });
+    }
+    // What this door was not asked to decide was decided elsewhere.
+    CHECK_ORDER.forEach(function (check) {
+      if (verdict.checks[check] === 'not-asked') {
+        verdict.checks[check] = 'exempt-by-spec';
+      }
+    });
+    CertificateTrust.compose(purpose, verdict, codes, whys, realmId, false);
+    helpers.log.debug("Leaving CertificateTrust.fields(). " + verdict.ok);
+    return { ok: verdict.ok, code: verdict.code, why: verdict.why };
+  }
+
+  /**
    * A pinned certificate at a door that cannot wait: a SAML request's signature
    * and a WS-Security token are answered in one tick, inside handlers that hand
    * back a value. Fields, the pin rule, and one hop through the signer truststore
@@ -1829,6 +2041,8 @@ class CertificateTrust {
     return done();
   }
 
+  // Does it name a list or a responder? One that names neither has nothing a
+  // fetch could ask, so a door that cannot wait is not refusing to wait.
   // What was last fetched about a pin, or the fetch begun.
   private static pinRevocation(verdict: TrustVerdict, der: Buffer, facts: Json,
                                issuers: Buffer[], codes: Json,

@@ -49,6 +49,7 @@ const { log } = helpers;
 import config = require('../common/config');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import spiffeId = require('./spiffe_id');
 import rpc = require('./spiffe_grpc');
@@ -348,8 +349,8 @@ class AzureImdsAttestor {
     }
     const roots = pki.azureImdsRoots().concat(pki.certificateBundle(String(
       config.value('spiffe.azureImdsTrustBundle') || '')).certificates);
-    const path = await pki.verifyPathToAnchors(signer.der,
-                                               [intermediate.der], roots);
+    const path = await CertificateTrust.path('spiffe-attestation', signer.der,
+                                             [intermediate.der], roots);
     if (!path.ok) {
       log.debug("Leaving AzureImdsAttestor.validatedContent(). Chain.");
       // error-code: none — turned into STS-SPIFFE-0107 by the caller

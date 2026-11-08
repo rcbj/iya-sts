@@ -276,7 +276,7 @@ function childMain() {
       header: { typ: 'key-attestation+jwt' } });
     let attestationError = '';
     try {
-      issuer.verifyKeyAttestation(token, {});
+      await issuer.verifyKeyAttestation(token, {});
     } catch (e) {
       attestationError = e.message;
     }

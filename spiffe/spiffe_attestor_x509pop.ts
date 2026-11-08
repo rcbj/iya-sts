@@ -58,6 +58,7 @@ import rpc = require('./spiffe_grpc');
 import ca = require('./spiffe_ca');
 // Certificates and signatures are checked in the two modules that check
 // every other certificate and signature here (rcbj, 2026-09-21).
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import stsCrypto = require('../common/crypto');
 import agentPath = require('./spiffe_agent_path');
@@ -473,9 +474,10 @@ class X509popAttestor {
       }
     }
     // 2. THE PATH.
-    const verified = await pki.verifyPathToAnchors(certificates[0],
-                                                   certificates.slice(1),
-                                                   roots);
+    const verified = await CertificateTrust.path('spiffe-attestation',
+                                                 certificates[0],
+                                                 certificates.slice(1),
+                                                 roots);
     if (!verified.ok) {
       log.debug("Leaving X509popAttestor.attest(). No path.");
       errorCodes.mark(call, 'STS-SPIFFE-0089');

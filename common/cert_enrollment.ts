@@ -92,6 +92,7 @@ import errorCodes = require('./error_codes');
 import keyMaterial = require('./crypto_impl/key_material');
 import keystore = require('./keystore');
 import mode = require('./mode');
+import CertificateTrust = require('./certificate_trust');
 import pki = require('./pki');
 import realms = require('./realms');
 import x509 = require('./crypto_impl/x509');
@@ -1116,7 +1117,11 @@ class CertEnrollment {
     const self = this;
     log.debug("Entering CertEnrollment.authenticatePresentedCertificate().");
     const opts = options || {};
-    const verified = await pki.verifyLeaf(realms.currentId(), pem, []);
+    // A site that does not ask for clientAuth is SCEP's renewal, whose signer
+    // is held to the variant its codec already asked.
+    const verified = await CertificateTrust.realmLeaf('enrollment-credential',
+      realms.currentId(), pem, [],
+      opts.clientAuth === false ? { variant: 'scep' } : undefined);
     if (!verified.ok) {
       log.debug("Leaving CertEnrollment.authenticatePresentedCertificate(). " +
                 "Path refused.");

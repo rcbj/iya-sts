@@ -115,6 +115,7 @@ import config = require('../common/config');
 import realms = require('../common/realms');
 import errorCodes = require('../common/error_codes');
 import stsCrypto = require('../common/crypto');
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 import usedAssertions = require('../common/used_assertions');
 import cacheRegistry = require('../common/cache_registry');
@@ -624,14 +625,16 @@ class ClientAttestation {
     log.debug("Entering ClientAttestation.attesterKeys().");
     const anchors = this.anchors();
     const trusted = this.trustedKeys();
-    if (!anchors.length && !trusted.length) {
+    const reachable = CertificateTrust.anchorsAvailable('client-attestation',
+                                                        anchors);
+    if (!reachable && !trusted.length) {
       log.debug("Leaving ClientAttestation.attesterKeys(). Nobody trusted.");
       return this.refuse('STS-OAUTH-0724', 'this realm trusts no client ' +
         'attester: oauth2.clientAttestationTrustAnchors and ' +
         'oauth2.clientAttestationTrustedKeys are both empty, so no Client ' +
         'Attestation can be verified here');
     }
-    if (Array.isArray(header.x5c) && header.x5c.length && anchors.length) {
+    if (Array.isArray(header.x5c) && header.x5c.length && reachable) {
       let ders: Buffer[] = [];
       try {
         ders = header.x5c.map(function (one: unknown) {
@@ -669,8 +672,8 @@ class ClientAttestation {
           'trust anchor in oauth2.clientAttestationTrustAnchors (HAIP 1.0 ' +
           'section 4.4.1: "MUST NOT be self-signed")');
       }
-      const path = await pki.verifyPathToAnchors(ders[0], ders.slice(1),
-        anchors, { skewMs: this.skewS() * 1000 });
+      const path = await CertificateTrust.path('client-attestation', ders[0],
+        ders.slice(1), anchors, { skewMs: this.skewS() * 1000 });
       if (!path.ok) {
         log.debug("Leaving ClientAttestation.attesterKeys(). No path.");
         return this.refuse('STS-OAUTH-0725', 'the Client Attestation\'s x5c ' +

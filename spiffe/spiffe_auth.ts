@@ -162,6 +162,7 @@ import revocationStatus = require('../common/revocation_status');
 // THE PATH RULES (#201): the synchronous door every one-hop issuer check in
 // this service asks, so an SVID is held to RFC 5280 as every other
 // certificate path is. Already loaded — `revocation_status` requires it.
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 // WHO IS ON THE OTHER END OF A UNIX SOCKET (#40), asked here since #104 for
 // the SPIRE Server API's socket: in product mode the `local` entity needs the
@@ -1310,9 +1311,11 @@ class SpiffeAuth {
       // was checked above with this surface's own skew and code; it is
       // asked again there with the same skew, for the authority.
       // -------------------------------------------------------------------
-      const direct = pki.verifyIssuedDirectly(certificate.raw,
+      const direct = CertificateTrust.direct('spiffe-svid', certificate.raw,
         [{ certificate: authority.certificate }],
-        { now: now * 1000, skewMs: skew * 1000 });
+        { now: now * 1000, skewMs: skew * 1000,
+          variant: authority.trustDomain === ca.trustDomain() ? undefined :
+            'federated' });
       if (!direct.ok && direct.check === 'no-path') continue;
       if (!direct.ok) {
         log.debug('Leaving SpiffeAuth.verifyPresentedCertificate(). The ' +

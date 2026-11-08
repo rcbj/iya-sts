@@ -220,6 +220,39 @@ async function childMain(packageRoot) {
     x509answer('ecdsa', encLeafKey.privateKey));
   out.x509garbage = await attest('x509pop', Buffer.from('not json'),
                                  x509answer('ecdsa', ecLeafKey.privateKey));
+  // PARANOID PKI MODE (#1360): a chain naming a list is asked it. One that
+  // names none has nothing to ask, as a vendor's seldom do.
+  const trustKit = require(p('tests/tools/trust_kit'));
+  const popRoot = await trustKit.mint({ cn: 'pop root', ca: true });
+  const lists = await trustKit.crlServer();
+  const popPair = await trustKit.keyPair();
+  const popKey = nodeCrypto.createPrivateKey(popPair.privatePem);
+  const popDer = function (one) {
+    return { der: Buffer.from(one.pem.replace(/-----[^-]+-----|\s+/g, ''),
+                              'base64') };
+  };
+  const popFine = await trustKit.mint({ cn: 'pop fine', issuer: popRoot,
+    crls: [lists.base + '/fine.crl'] });
+  const popRevoked = await trustKit.mint({ cn: 'pop revoked', issuer: popRoot,
+    crls: [lists.base + '/revoked.crl'] });
+  const popSilent = await trustKit.mint({ cn: 'pop silent', issuer: popRoot });
+  lists.routes['/fine.crl'] = await trustKit.crlOf(popRoot, []);
+  lists.routes['/revoked.crl'] = await trustKit.crlOf(popRoot,
+                                                     [popRevoked.serialHex]);
+  const popBundle = config.value('spiffe.x509popCaBundle');
+  config.setOverride('spiffe.x509popCaBundle', popRoot.pem);
+  out.x509revokedOff = await attest('x509pop', x509payload(popDer(popRevoked)),
+                                    x509answer('rsa', popKey));
+  config.setOverride('pki.paranoid', 'on');
+  out.x509revokedOn = await attest('x509pop', x509payload(popDer(popRevoked)),
+                                   x509answer('rsa', popKey));
+  out.x509fineOn = await attest('x509pop', x509payload(popDer(popFine)),
+                                x509answer('rsa', popKey));
+  out.x509silentOn = await attest('x509pop', x509payload(popDer(popSilent)),
+                                  x509answer('rsa', popKey));
+  config.clearOverride('pki.paranoid');
+  config.setOverride('spiffe.x509popCaBundle', popBundle);
+  await lists.close();
   config.setOverride('spiffe.x509popAgentPathTemplate',
                      '/{{ .PluginName }}/{{ .Subject.CommonName | lower }}');
   out.x509template = await attest('x509pop', x509payload(ecLeaf),
@@ -583,6 +616,16 @@ function run(t) {
   t.check(refused(out.x509noSign, INTERNAL),
           'a certificate not for digitalSignature cannot be challenged ' +
           '(INTERNAL, as SPIRE)', show(out.x509noSign));
+  t.check(out.x509revokedOff.ok,
+          'out of paranoid PKI mode a chain\'s list is not asked',
+          show(out.x509revokedOff));
+  t.check(refused(out.x509revokedOn, PERMISSION_DENIED),
+          'in force, an agent under a CRL that lists it is PERMISSION_DENIED',
+          show(out.x509revokedOn));
+  t.check(out.x509fineOn.ok, 'and one the list clears attests',
+          show(out.x509fineOn));
+  t.check(out.x509silentOn.ok, 'and so does one whose chain names no list',
+          show(out.x509silentOn));
   t.check(refused(out.x509garbage, INVALID_ARGUMENT),
           'a payload that is not the attestor\'s JSON is INVALID_ARGUMENT',
           show(out.x509garbage));

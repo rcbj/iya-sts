@@ -948,6 +948,8 @@ service is not willing to be (`KDC_ERR_S_PRINCIPAL_UNKNOWN`), the names in
 modes**, and a replay is refused in both. See
 [What is not checked](what-is-not-checked.md).
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, a PKINIT client certificate must also be in date, permit digitalSignature and carry the PKINIT or smart-card extendedKeyUsage. The KDC's own error codes are unchanged, and revocation is still asked by the KDC. `pki.paranoidPkinit` turns this row off.
+
 ## Configuration
 
 | Setting | Environment variable | Default | Runtime? | What it does |

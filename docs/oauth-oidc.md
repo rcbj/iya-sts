@@ -2341,6 +2341,8 @@ on [What is not checked](what-is-not-checked.md).
 | Signing keys | new on every start | persisted, sealed, and rotated with an overlap |
 | `/logout?username=` | honoured (`logout.anyUser`) | ignored |
 
+Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mode, the certificate behind attestation-based client authentication must also permit digitalSignature, and is asked about revocation where its chain names a source. A root in this realm's [signer truststore](signer-truststore.md) can stand in for `oauth2.clientAttestationTrustAnchors`. `pki.paranoidClientAttestation` turns this row off.
+
 ## Configuration
 
 These are the `oauth2.*` settings that are not about security modes, plus

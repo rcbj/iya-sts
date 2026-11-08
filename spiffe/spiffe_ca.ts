@@ -2871,7 +2871,8 @@ class SpiffeCa {
           'as that realm\'s identities. Realms here are isolated; name a ' +
           'trust domain no realm of this service uses.' };
     }
-    const checked = this.checkBundleDocument(document);
+    const checked = this.checkBundleDocument(document,
+                                             this.realmIdOf(opts.realm));
     if (!checked.ok) {
       log.debug('Leaving SpiffeCa.setFederatedBundle(). Bad document.');
       checked.errorCode = 'STS-SPIFFE-0041';
@@ -3076,7 +3077,7 @@ class SpiffeCa {
    * @param value - the document, or its JSON text
    * @returns `{ ok: true, document }`, or `{ ok: false, reason }`
    */
-  checkBundleDocument(value): Record<string, any> {
+  checkBundleDocument(value, realmId?): Record<string, any> {
     const { log } = this.deps;
     log.debug('Entering SpiffeCa.checkBundleDocument().');
     let document = value;
@@ -3136,6 +3137,20 @@ class SpiffeCa {
                  reason: 'Key ' + i + ' is an x509-svid key with no `x5c`; ' +
                                     'the certificate is what an X.509 ' +
                                     'authority IS.' };
+      }
+      // Under paranoid a federated authority's own fields hold when it is
+      // accepted: a CA, in its window, of a strength this deployment takes.
+      const certificates = key.use === 'x509-svid' ? key.x5c : [];
+      for (let c = 0; c < certificates.length; c++) {
+        const held = CertificateTrust.fields('spiffe-svid', certificates[c],
+          { realmId: realmId, variant: 'federated-authority',
+            fieldRole: 'anchor' });
+        if (!held.ok) {
+          log.debug('Leaving SpiffeCa.checkBundleDocument(). An authority ' +
+                    'is refused.');
+          return { ok: false, reason: 'Key ' + i + '\'s certificate is ' +
+                                      'refused: ' + held.why };
+        }
       }
     }
     log.debug('Leaving SpiffeCa.checkBundleDocument(). ' +
@@ -3812,6 +3827,7 @@ let startError = null;
 // moves nothing in the router, and it requires nothing that requires this
 // module back.
 // ===========================================================================
+import CertificateTrust = require('../common/certificate_trust');
 import pki = require('../common/pki');
 
 // ---------------------------------------------------------------------------
