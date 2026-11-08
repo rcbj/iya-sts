@@ -104,9 +104,21 @@ HELP_TEXT_BY_ROUTE = {
         ".alsoHtml[]",
         ".notes[]",
     ),
+    # The seeded document names the codes its obligations record (#1406).
+    # A description is stored text and is not listed.
+    "/admin-api/ldap/policies": (
+        ".policies[].attributes.xacmlPolicyDocument[]",
+    ),
+    # The directory read returns that same stored document on the entry
+    # (#1406). A description there is stored text and is not listed.
+    "/admin-api/ldap/directory": (
+        ".entries[].attributes.xacmlPolicyDocument[]",
+    ),
     "/admin-api/policies": (
         ".serviceAccount.fields[].what",
         ".serviceAccount.schema.attributes[].what",
+        # A named profile's fields are the same sentences (#1406).
+        ".serviceAccount.named[].fields[].what",
     ),
     "/admin-api/scep": (
         ".mode.requirement.inForce",
