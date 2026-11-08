@@ -1300,7 +1300,11 @@ export = {
         passwordSet: BOOL, generated: BOOL, password: STR, activationUrl: STR,
         activationLink: STR,
         // A name somebody holds, and what the attribute policy still asks for.
-        existing: Kit.closed({ dn: STR, origin: STR }), missing: STRS
+        existing: Kit.closed({ dn: STR, origin: STR }), missing: STRS,
+        // The attribute names a create refused because a person does not
+        // have them (STS-LDAP-0047). Absent, the refusal is something else
+        // (#1404).
+        unknown: STRS
       }, MAIL_LINK))
     },
     setUserPassword: {
