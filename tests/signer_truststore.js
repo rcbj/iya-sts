@@ -193,6 +193,17 @@ module.exports = {
       const none = await signers.add(realmA, 'no certificate', {});
       t.equal(none.refused[0].code, 'STS-PKI-0238',
               'B. nothing PEM is refused');
+      const wrapped = '-----BEGIN CERTIFICATE-----\n' +
+        '!!!!not-base64!!!!\n-----END CERTIFICATE-----\n';
+      const badPem = await signers.add(realmA, wrapped,
+                                       { kind: 'accepted' });
+      t.equal(badPem.added.length, 0,
+              'B. a PEM envelope that is not base64 is not added');
+      t.equal(badPem.refused[0].code, 'STS-PKI-0238',
+              'B. and refused as not a certificate (#1400)');
+      const badAny = await signers.add(realmA, wrapped, {});
+      t.equal(badAny.refused[0].code, 'STS-PKI-0238',
+              'B. the same envelope is refused with no kind');
       const scoped = await signers.add(realmB, root.pem,
                                        { purposes: ['saml-signer'] });
       t.equal(scoped.added[0].purposes[0], 'saml-signer',
