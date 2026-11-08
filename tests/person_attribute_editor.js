@@ -291,6 +291,16 @@ function childMain() {
                JSON.stringify(answer).slice(0, 300));
         }
       });
+      const codedDesc = act('set-attribute', 'pae-alice', 'description',
+        'kept for the operator (STS-LDAP-0001).');
+      refusedWith(codedDesc, 'STS-LDAP-0211',
+        '4. a description carrying an operator code is refused');
+      note(valuesOf('pae-alice', 'description').join(' ')
+             .indexOf('STS-LDAP-0001') < 0 &&
+           (codedDesc.errors || []).join(' ').indexOf('STS-') < 0 &&
+           !codedDesc.values,
+           '4. the code is not stored and the refusal does not repeat it',
+           JSON.stringify(codedDesc.errors || codedDesc).slice(0, 300));
 
       // ====================================================================
       // 5. THE ACCOUNT OBSERVER

@@ -1878,6 +1878,13 @@ do
   if stsModeIsFuzz "${MODE}";
   then
     COMPOSE_FILE_ARGS+=(-f "${FUZZ_COMPOSE_FILE}")
+    # Exact cell keys for the schemathesis kit. Empty is every cell, so it
+    # is forwarded only when set; sudo would otherwise drop it and the
+    # overlay's default would silently run the whole matrix.
+    if [ -n "${STS_SCHEMATHESIS_SURFACES:-}" ];
+    then
+      MODE_ENV+=("STS_SCHEMATHESIS_SURFACES=${STS_SCHEMATHESIS_SURFACES}")
+    fi
   fi
   if stsModeIsCells "${MODE}";
   then

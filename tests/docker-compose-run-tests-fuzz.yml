@@ -36,6 +36,11 @@ services:
   tests:
     environment:
       - STS_TEST_FUZZ=1
+      # Empty runs every cell. A comma-separated list of exact surface keys
+      # (admin-api does not select admin-api-service) runs only those.
+      # Forwarded by run-tests.sh's MODE_ENV when the caller set it, because
+      # sudo empties the environment. The default must stay empty.
+      - STS_SCHEMATHESIS_SURFACES=${STS_SCHEMATHESIS_SURFACES:-}
 
   # THE PROCESS-LEVEL DPoP FALLBACK (#1299). The kit re-asserts each realm's
   # DPoP replay headroom and short window before every cell (schemathesis_kit.js

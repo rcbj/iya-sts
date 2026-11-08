@@ -1586,7 +1586,17 @@ class AttributePolicy {
       attributes[SELECTION.precedenceAttribute] =
         String(selectors.precedence);
     }
-    const written = this.directory.writeAttributePolicy(which, attributes);
+    // `{ ok: false }` is truthy. putEntry() answers it for a description
+    // that carries an operator code and writes nothing (#1416); `false`
+    // is still the directory being full.
+    const written = this.directory.writeAttributePolicy(which, attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (written && typeof written === 'object' && written.ok === false) {
+      log.debug('Leaving AttributePolicy.save(). A description carries an ' +
+                'operator code.');
+      return errorCodes.mark({ ok: false, errors: written.errors || [] },
+        written.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
     if (!written) {
       log.debug('Leaving AttributePolicy.save(). The directory refused.');
       return errorCodes.mark({ ok: false,
@@ -1894,7 +1904,18 @@ class AttributePolicy {
     if (description) {
       attributes.description = description;
     }
-    if (!this.directory.writeAttributeDefinition(name, attributes)) {
+    // See save(): a truthy `{ ok: false }` is a description refusal, and
+    // `false` is the directory being full (#1416).
+    const defined = this.directory.writeAttributeDefinition(name,
+                                                            attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (defined && typeof defined === 'object' && defined.ok === false) {
+      log.debug("Leaving AttributePolicy.define(). A description carries " +
+                "an operator code.");
+      return errorCodes.mark({ ok: false, errors: defined.errors || [] },
+        defined.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
+    if (!defined) {
       log.debug("Leaving AttributePolicy.define(). The directory refused.");
       return errorCodes.mark({ ok: false,
                errors: ['The directory would not store the definition — it ' +
@@ -2015,7 +2036,19 @@ class AttributePolicy {
     if (description) {
       attributes.description = description;
     }
-    if (!this.directory.writeAttributeDefinition(found.name, attributes)) {
+    // See save(): a truthy `{ ok: false }` is a description refusal, and
+    // `false` is the directory being full (#1416).
+    const redefined = this.directory.writeAttributeDefinition(found.name,
+                                                              attributes) as
+      boolean | { ok?: boolean; reason?: string; errors?: string[] };
+    if (redefined && typeof redefined === 'object' &&
+        redefined.ok === false) {
+      log.debug("Leaving AttributePolicy.redefine(). A description " +
+                "carries an operator code.");
+      return errorCodes.mark({ ok: false, errors: redefined.errors || [] },
+        redefined.reason === 'nul' ? 'STS-LDAP-0008' : 'STS-LDAP-0211');
+    }
+    if (!redefined) {
       log.debug("Leaving AttributePolicy.redefine(). The directory refused.");
       return errorCodes.mark({ ok: false,
                errors: ['The directory would not store the change to ' +
