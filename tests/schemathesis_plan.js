@@ -195,6 +195,30 @@ function codeMemberSection(t) {
          get: { description: CODE } } } } }) }],
     ["an answer naming no code", 0,
      { method: "GET", path: "/admin-api/oauth2", status: 200, body: "{}" }],
+    ["a seeded policy document on the policies read", 0,
+     { method: "GET", path: "/admin-api/ldap/policies", status: 200,
+       body: JSON.stringify({ policies: [{ attributes: {
+         xacmlPolicyDocument: [CODE] } }] }) }],
+    ["the same document on another route", 1,
+     { method: "GET", path: "/admin-api/ldap/roles", status: 200,
+       body: JSON.stringify({ policies: [{ attributes: {
+         xacmlPolicyDocument: [CODE] } }] }) }],
+    ["the same document on the directory read", 0,
+     { method: "GET", path: "/admin-api/ldap/directory", status: 200,
+       body: JSON.stringify({ entries: [{ attributes: {
+         xacmlPolicyDocument: [CODE] } }] }) }],
+    ["a directory entry's description, which is stored text", 1,
+     { method: "GET", path: "/admin-api/ldap/directory", status: 200,
+       body: JSON.stringify({ entries: [{ attributes: {
+         description: [CODE] } }] }) }],
+    ["a named service-account field's sentence", 0,
+     { method: "GET", path: "/admin-api/policies", status: 200,
+       body: JSON.stringify({ serviceAccount: { named: [{ fields: [{
+         what: CODE }] }] } }) }],
+    ["a role description, which is stored text", 1,
+     { method: "GET", path: "/admin-api/roles", status: 200,
+       body: JSON.stringify({ roles: [{ description: CODE }],
+                              shownRoles: [{ description: CODE }] }) }],
     ["the same text in a refusal", 1,
      { method: "GET", path: "/admin-api/saml2", status: 400, body: settings }],
     ["the same text on another API", 1,
