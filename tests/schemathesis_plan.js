@@ -217,7 +217,8 @@ function codeMemberSection(t) {
        body: JSON.stringify({ caches: [{ bound: CODE }] }) }],
     ["a secret's fixed sentence", 0,
      { method: "GET", path: "/admin-api/secrets", status: 200,
-       body: JSON.stringify({ notes: { "previous-kek": { without: CODE } } }) }],
+       body: JSON.stringify({ notes: { "previous-kek": {
+         without: CODE } } }) }],
     ["but a cache's name is not help text", 1,
      { method: "GET", path: "/admin-api/caches", status: 200,
        body: JSON.stringify({ caches: [{ name: CODE }] }) }],
