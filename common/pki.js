@@ -1903,58 +1903,82 @@ function realmRemovedDuringBuild(id, kind, since) {
 // (SSL_MAX_CERT_LIST_DEFAULT). The process listener presents four
 // certificates: the leaf, the TLS Issuing CA, the Intermediate and the
 // Root (#1064). A scope build does not replace the Root. The Intermediate
-// is signed by that Root, so a hybrid process branch puts the alternative
-// signature on the leaf and on each Issuing CA — two signatures — and the
-// classical bodies still have to fit. 16384 bytes is that headroom.
-// ML-DSA-87 (4627) stays inside the limit. SLH-DSA-256f (49856) does not,
-// and the listener then fails every handshake (#1421).
+// is signed by that Root, so the leaf and the TLS Issuing CA are the two
+// certificates this build signs. A hybrid branch adds the alternative
+// signature on those two, and a post-quantum signing key replaces the
+// classical signature on those two. The classical bodies still have to
+// fit. 16384 bytes is that headroom. ML-DSA-87 (4627) stays inside the
+// limit. SLH-DSA-256f (49856) does not, whether it is the alternative key
+// (#1421) or the signing key itself (#1432), and the listener then fails
+// every handshake.
 const LISTENER_CERT_LIST_MAX = 102400;
 const LISTENER_CLASSICAL_CHAIN_BUDGET = 16384;
 const PROCESS_LISTENER_ALT_SIGNATURES = 2;
 
-function processListenerAltSignatureProblem(altKeyAlg) {
-  log.debug('Entering processListenerAltSignatureProblem().');
-  if (!altKeyAlg) {
-    log.debug('Leaving processListenerAltSignatureProblem(). Classical.');
-    return null;
+// A classical id contributes nothing: its signature already sits in the
+// 16384-byte budget. A post-quantum id contributes its FIPS signature
+// length. An id the size table does not know contributes nothing here;
+// the algorithm refusal that already ran is the answer for that id.
+function listenerPqSignatureBytes(alg) {
+  log.debug('Entering listenerPqSignatureBytes().');
+  if (!alg) {
+    log.debug('Leaving listenerPqSignatureBytes(). None.');
+    return 0;
   }
-  const desc = keyMaterial.keyAlg(altKeyAlg);
+  const desc = keyMaterial.keyAlg(alg);
   let signatureBytes = 0;
   try {
     const found = desc && desc.pqc ? pqc.signatureAlg(desc.pqc) : null;
     signatureBytes = (found && found.lengths &&
                       found.lengths.signature) || 0;
   } catch (e) {
-    // NAMED rather than swallowed: an alternative key the size table does
-    // not know is not evidence it is small, but alternativeKeyAlgFrom()
-    // has already refused an id this table does not hold. Falling through
-    // leaves that refusal's own answer in place.
-    log.debug('Caught in processListenerAltSignatureProblem(): ' +
+    log.debug('Caught in listenerPqSignatureBytes(): ' +
               ((e && e.message) || e));
     signatureBytes = 0;
   }
-  if (!signatureBytes) {
-    log.debug('Leaving processListenerAltSignatureProblem(). No size.');
+  log.debug('Leaving listenerPqSignatureBytes().');
+  return signatureBytes;
+}
+
+function processListenerAltSignatureProblem(altKeyAlg, keyAlg) {
+  log.debug('Entering processListenerAltSignatureProblem().');
+  const altBytes = listenerPqSignatureBytes(altKeyAlg);
+  const primaryBytes = listenerPqSignatureBytes(keyAlg);
+  if (!altBytes && !primaryBytes) {
+    log.debug('Leaving processListenerAltSignatureProblem(). Classical.');
     return null;
   }
-  const bytes = signatureBytes * PROCESS_LISTENER_ALT_SIGNATURES +
+  const bytes = (altBytes + primaryBytes) *
+                PROCESS_LISTENER_ALT_SIGNATURES +
                 LISTENER_CLASSICAL_CHAIN_BUDGET;
   if (bytes <= LISTENER_CERT_LIST_MAX) {
     log.debug('Leaving processListenerAltSignatureProblem(). Fits.');
     return null;
   }
-  log.error(errorCodes.tag('STS-PKI-0270') + 'pki: an alternative ' +
-            altKeyAlg + ' key on the process branch would put ' +
-            signatureBytes + '-byte signatures on the listener chain, past ' +
-            'the ' + LISTENER_CERT_LIST_MAX + '-byte certificate list a ' +
-            'stock TLS client accepts. The branch was not built.');
+  // The #1421 sentence stays word for word when only the alternative key
+  // is large. A signing key, or both, is named for what it is.
+  let detail = 'An alternative ' + altKeyAlg + ' key';
+  if (primaryBytes && altBytes) {
+    detail = 'A ' + keyAlg + ' signing key and an alternative ' +
+             altKeyAlg + ' key';
+  } else if (primaryBytes) {
+    detail = 'A ' + keyAlg + ' signing key';
+  }
+  const logged = detail.charAt(0).toLowerCase() + detail.slice(1);
+  log.error(errorCodes.tag('STS-PKI-0270') + 'pki: ' + logged +
+            ' on the process branch would put ' +
+            (altBytes + primaryBytes) + ' bytes of signature on each of ' +
+            'the ' + PROCESS_LISTENER_ALT_SIGNATURES + ' certificates ' +
+            'this build signs, past the ' + LISTENER_CERT_LIST_MAX +
+            '-byte certificate list a stock TLS client accepts. The ' +
+            'branch was not built.');
   log.debug('Leaving processListenerAltSignatureProblem(). Too large.');
   return errorCodes.mark({ ok: false,
-           errors: ['An alternative ' + altKeyAlg + ' key on the process ' +
-                    'branch would make the TLS listener certificate list ' +
-                    'larger than a stock TLS client can receive. The ' +
-                    'process branch was not rebuilt, and the listener ' +
-                    'certificate was left as it is.'] },
+           errors: [detail + ' on the process branch would make the TLS ' +
+                    'listener certificate list larger than a stock TLS ' +
+                    'client can receive. The process branch was not ' +
+                    'rebuilt, and the listener certificate was left as ' +
+                    'it is.'] },
                          'STS-PKI-0270');
 }
 
@@ -1973,11 +1997,13 @@ async function buildScopeNow(scopeId, opts) {
   }
   // BEFORE the Root and BEFORE any tier is made, for the same reason as the
   // algorithm refusal above. A process branch is the main listener's chain.
-  // An alternative key whose signatures do not fit in a stock TLS client's
-  // certificate list would be installed and then every handshake would fail
-  // (#1421). Refusing here leaves the branch, and the listener, as they are.
+  // A signing key or an alternative key whose signatures do not fit in a
+  // stock TLS client's certificate list would be installed and then every
+  // handshake would fail (#1421, #1432). Refusing here leaves the branch,
+  // and the listener, as they are.
   if (kind === 'process') {
-    const handshake = processListenerAltSignatureProblem(chosen.altKeyAlg);
+    const handshake = processListenerAltSignatureProblem(chosen.altKeyAlg,
+                                                         chosen.keyAlg);
     if (handshake) {
       log.debug('Leaving buildScope(). The listener chain.');
       return handshake;
