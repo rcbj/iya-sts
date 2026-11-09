@@ -118,6 +118,12 @@ function egressRouteSection(t) {
      true, { method: "GET", path: "/admin-api/scim", action: "scim" }],
     ["the SCIM outbound clients report read", true,
      { method: "GET", path: "/admin-api/scim/clients", action: "clients" }],
+    ["the audit history read (dials nothing, echoes stored event text)",
+     true, { method: "GET", path: "/admin-api/audit", action: "audit" }],
+    ["the audit read with no derived action still resolves whole", true,
+     { method: "GET", path: "/admin-api/audit", action: "" }],
+    ["a POST to the audit route is still a finding", false,
+     { method: "POST", path: "/admin-api/audit", action: "audit" }],
     ["the SCIM read with no derived action still resolves whole", true,
      { method: "GET", path: "/admin-api/scim", action: "" }],
     ["another GET read is still a finding (the \"\" key is route-exact)",
@@ -153,12 +159,14 @@ function egressRouteSection(t) {
 
   // The routes egress_routes.py lists are exactly the designed dials the
   // #1358 review named, the connection test of that same SCIM client
-  // (#1405), and the two stored-error reads #1299 added (so a row added or
-  // removed in the table fails here).
+  // (#1405), and the three stored-error reads (#1299's two SCIM reports
+  // and the audit history read, #1420), so a row added or removed in the
+  // table fails here.
   const listed = childProcess.spawnSync("python3", [path.join(__dirname,
     "schemathesis", "egress_routes.py"), "--routes"], { encoding: "utf8" });
   t.equal(JSON.parse(listed.stdout).join(","),
-    ["GET /admin-api/scim",
+    ["GET /admin-api/audit",
+     "GET /admin-api/scim",
      "GET /admin-api/scim/clients",
      "POST /admin-api/claim-providers/{action} add-provider",
      "POST /admin-api/oidfed/{action} add-subordinate",
