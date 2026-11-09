@@ -176,7 +176,8 @@ async function checkThePolicy(t, who) {
 
   // The Pwned Passwords screen off: this file is about the policy, and the
   // screen is tests/breached_passwords.js's (#62 P6).
-  await withSettings({ 'global.mode': 'product', 'risk.breachCheck': 'off' },
+  await withSettings({ 'global.mode': 'product', 'risk.breachCheck': 'off',
+                       'authn.allowOptionalSecondFactor': 'true' },
                      async function () {
     // ---------------------------------------------------------------------
     t.log.info('=== 1b. product mode: the composition rules ===');

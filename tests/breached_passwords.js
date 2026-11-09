@@ -83,6 +83,7 @@ async function run(t) {
     });
   };
   config.setOverride('global.mode', 'product');
+  config.setOverride('authn.allowOptionalSecondFactor', 'true');
   config.setOverride('risk.breachCheck', 'on');
   try {
     // The realm's attribute policy (#396) requires givenName, sn and mail of
@@ -181,6 +182,7 @@ async function run(t) {
     federationHttp.fetchPublished = original;
     config.clearOverride('ldap.selfWritableAttributes');
     config.clearOverride('global.mode');
+    config.clearOverride('authn.allowOptionalSecondFactor');
     config.clearOverride('risk.breachCheck');
     breached.forget();
   }

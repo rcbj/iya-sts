@@ -83,7 +83,8 @@ async function childMain() {
   const WHO = 'esthperson' + stamp;
   realms.create({ id: A, name: A });
   realms.create({ id: B, name: B });
-  realms.create({ id: P, name: P, overrides: { 'global.mode': 'product' } });
+  realms.create({ id: P, name: P, overrides: { 'global.mode': 'product',
+    'authn.allowOptionalSecondFactor': 'true' } });
 
   function inRealm(id, fn) {
     log.debug("Entering inRealm().");
