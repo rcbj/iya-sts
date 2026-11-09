@@ -12386,5 +12386,21 @@
   "security.requestsPerAddressPerMinute|description": {
     "en": "7324a27b3b761012",
     "text": "每个进程对单个地址所有请求的上限。这是防滥用的措施，与凭据尝试限制不同。0 表示无上限，这是开发模式的默认值。产品模式默认 6000。在代理后面时，请设置 global.trustedProxies 以正确读取地址。"
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "在产品模式下允许明文 syslog 审计导出"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "默认关闭时，产品模式的 syslog 审计目标仅接受 tls 传输。开启后也接受 tcp 和 udp，审计日志将以未加密方式通过网络。仅在可信网络中使用。"
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "此服务可连接的主机"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "如果设置，合作方、客户端或调用方可影响的出站请求只能访问这些主机。以逗号分隔：精确名称，或以点开头表示整个域，如 .example.com。默认为空，允许任何公共主机。产品模式下始终拒绝内部地址。"
   }
 }

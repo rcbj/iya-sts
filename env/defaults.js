@@ -88,6 +88,7 @@ var config = {
     fileRoots: "/etc/ssl,/etc/pki,/usr/share/ca-certificates,/usr/local/share/ca-certificates,/run/secrets,/var/run/secrets,/etc/sts", // Directories a named file may be read from; restart to apply
     allowUnscopedPeople: false,                                                                                                        // Let a person reach SCIM and Shared Signals with no role
     passwordContextWords: "",                                                                                                          // Words a password may not contain
+    outboundAllowedHosts: "",                                                                                                          // Hosts this service may dial
     rateLimitWindowS: 60,                                                                                                              // Rate-limit window (seconds)
     rateLimitPerIdentity: 5,                                                                                                           // Attempts per identity per window
     rateLimitPerAddress: 20,                                                                                                           // Attempts per address per window
@@ -373,6 +374,14 @@ var config = {
     rememberedAccountDays: 30,        // How long a signed-out account is remembered (days)
     passwordAloneDoors: "",           // Password-only doors that accept a password alone
     unauthenticatedSessions: false    // Offer "Continue without signing in"
+  },
+
+  // --- Audit log -------------------------------------------------------
+  audit: {
+    allowPlainSyslog: false,       // Allow plain syslog audit export in product mode
+    maxEvents: 5000,               // Maximum events held
+    protocolCalls: true,           // Record protocol endpoint calls
+    authenticationHistoryDays: 30  // Authentication history (days)
   },
 
   // --- Malware scanning ------------------------------------------------
@@ -1381,13 +1390,6 @@ var config = {
     remotePepGroup: "remote-peps",   // Group granting the REMOTE_PEPS role
     xacmlUserGroup: "xacml-users",   // Group granting the XACML_USER role
     authzenPepGroup: "authzen-peps"  // Group granting the AUTHZEN_PEPS role
-  },
-
-  // --- Audit log -------------------------------------------------------
-  audit: {
-    maxEvents: 5000,               // Maximum events held
-    protocolCalls: true,           // Record protocol endpoint calls
-    authenticationHistoryDays: 30  // Authentication history (days)
   },
 
   // --- Audit export ----------------------------------------------------

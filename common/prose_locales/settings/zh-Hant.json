@@ -12386,5 +12386,21 @@
   "security.requestsPerAddressPerMinute|description": {
     "en": "7324a27b3b761012",
     "text": "每個處理程序對單一位址所有要求的上限。這是防濫用的措施，與認證嘗試限制不同。0 表示無上限，為開發模式預設值。產品模式預設 6000。在 Proxy 後方時，請設定 global.trustedProxies 以正確讀取位址。"
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "在產品模式下允許明文 syslog 稽核匯出"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "預設關閉時，產品模式的 syslog 稽核目的地僅接受 tls 傳輸。開啟後也接受 tcp 和 udp，稽核日誌將以未加密方式通過網路。僅在可信任的網路中使用。"
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "此服務可連線的主機"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "如果設定，合作夥伴、用戶端或呼叫端可影響的傳出要求只能連線至這些主機。以逗號分隔：精確名稱，或以點開頭表示整個網域，如 .example.com。預設為空，允許任何公用主機。產品模式下一律拒絕內部位址。"
   }
 }

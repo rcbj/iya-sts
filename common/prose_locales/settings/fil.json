@@ -12386,5 +12386,21 @@
   "security.requestsPerAddressPerMinute|description": {
     "en": "7324a27b3b761012",
     "text": "Limitasyon sa lahat ng request mula sa isang address, bawat process. Preno ito sa pang-aabuso, hiwalay sa mga limitasyon sa pagsubok ng credential. Ang 0 ay walang limitasyon, ang default sa development. 6000 ang default ng product mode. Sa likod ng proxy, itakda ang global.trustedProxies para mabasa nang tama ang mga address."
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "Payagan ang plain syslog audit export sa product mode"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "Kapag naka-off, ang default, tls transport lamang ang tinatanggap ng product mode para sa syslog audit destination. Kapag naka-on, tinatanggap din ang tcp at udp, kaya hindi naka-encrypt ang audit log sa network. Gamitin lamang sa network na pinagkakatiwalaan."
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "Mga host na maaaring tawagan ng service na ito"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "Kung nakatakda, ang outbound request na maiimpluwensyahan ng partner, client o tumatawag ay makakarating lamang sa mga host na ito. Pinaghihiwalay ng kuwit: eksaktong pangalan, o tuldok sa unahan para sa buong domain, gaya ng .example.com. Ang walang laman, ang default, ay nagpapahintulot ng anumang public host. Laging tinatanggihan ang mga internal address sa product mode."
   }
 }

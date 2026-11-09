@@ -12386,5 +12386,21 @@
   "security.requestsPerAddressPerMinute|description": {
     "en": "7324a27b3b761012",
     "text": "Plafond de toutes les requêtes d’une adresse, par processus. C’est un frein aux abus, distinct des limites sur les tentatives d’identifiants. 0 signifie aucun plafond, valeur par défaut en développement. Le mode produit utilise 6000 par défaut. Derrière un proxy, définissez global.trustedProxies pour que les adresses soient lues correctement."
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "Autoriser l’export d’audit syslog en clair en mode produit"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "Désactivé, par défaut, le mode produit n’accepte que le transport tls pour une destination d’audit syslog. Activé, tcp et udp sont aussi acceptés, et le journal d’audit traverse le réseau sans chiffrement. À n’utiliser que sur un réseau de confiance."
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "Hôtes que ce service peut contacter"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "Si défini, une requête sortante qu’un partenaire, un client ou un appelant peut influencer ne peut atteindre que ces hôtes. Séparés par des virgules : un nom exact, ou un point initial pour tout un domaine, comme .example.com. Vide, par défaut, autorise tout hôte public. Les adresses internes sont refusées dans tous les cas en mode produit."
   }
 }

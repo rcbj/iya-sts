@@ -1471,6 +1471,25 @@ const SETTINGS = [
                  'default. Product mode defaults to 6000. Behind a proxy, set ' +
                  'global.trustedProxies so that addresses are read correctly.' },
 
+  { key: 'audit.allowPlainSyslog', group: 'Audit log',
+    label: 'Allow plain syslog audit export in product mode',
+    env: 'STS_AUDIT_ALLOW_PLAIN_SYSLOG', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode accepts only the tls ' +
+                 'transport for a syslog audit destination. On, tcp and udp ' +
+                 'are accepted too, so the audit log crosses the network ' +
+                 'unencrypted. Use it only on a network you trust.' },
+
+  { key: 'security.outboundAllowedHosts', group: 'Web security',
+    label: 'Hosts this service may dial',
+    env: 'STS_SECURITY_OUTBOUND_ALLOWED_HOSTS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'If set, an outbound request a partner, client or caller can ' +
+                 'influence may reach only these hosts. Comma separated: an ' +
+                 'exact name, or a leading dot for a whole domain, such as ' +
+                 '.example.com. Empty, the default, allows any public host. ' +
+                 'Internal addresses are refused either way in product mode.' },
+
   { key: 'malwareScan.enabled', group: 'Malware scanning',
     label: 'Scan files for malware',
     env: 'STS_MALWARE_SCAN_ENABLED', type: 'bool', dflt: false,

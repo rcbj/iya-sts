@@ -12386,5 +12386,21 @@
   "security.requestsPerAddressPerMinute|description": {
     "en": "7324a27b3b761012",
     "text": "Límite de todas las solicitudes de una dirección, por proceso. Es un freno al abuso, distinto de los límites de intentos de credenciales. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 6000 por defecto. Detrás de un proxy, defina global.trustedProxies para que las direcciones se lean correctamente."
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "Permitir la exportación de auditoría syslog sin cifrar en modo producto"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "Desactivado, el valor predeterminado, el modo producto solo acepta el transporte tls para un destino de auditoría syslog. Activado, también se aceptan tcp y udp, y el registro de auditoría cruza la red sin cifrar. Úselo solo en una red de confianza."
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "Hosts a los que este servicio puede conectarse"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "Si se define, una solicitud saliente en la que pueda influir un socio, cliente o llamante solo puede llegar a estos hosts. Separados por comas: un nombre exacto, o un punto inicial para todo un dominio, como .example.com. Vacío, el valor predeterminado, permite cualquier host público. Las direcciones internas se rechazan siempre en modo producto."
   }
 }

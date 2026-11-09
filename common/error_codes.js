@@ -27534,7 +27534,10 @@ const CODES = [
       'itself (HTTP 400). That event is counted permanently failed and the ' +
       'cursor moves past it. The destination is not paused for the events ' +
       'after it (#641).',
-    spec: 'none (that event is dropped; later events are still delivered)' }
+    spec: 'none (that event is dropped; later events are still delivered)' },
+  { code: 'STS-AUDIT-0016',
+    summary: 'A syslog audit destination was refused because product mode needs tls.',
+    spec: 'HTTP 400' }
   // ===== END ===============================================================
 ];
 

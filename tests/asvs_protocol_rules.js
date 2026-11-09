@@ -58,6 +58,28 @@ async function run(t) {
   t.equal(inProduct(function () {
     return mode.hidesFailureDetail();
   }), true, 'product hides an internal error\'s text');
+  const http = require(ROOT + '/federation/federation_http');
+  const vet = async function (host) {
+    config.setOverride('global.mode', 'product');
+    try {
+      return await http.vetHost(host);
+    } finally {
+      config.clearOverride('global.mode');
+    }
+  };
+  config.setOverride('security.outboundAllowedHosts',
+                     'idp.example.test,.partner.example');
+  t.equal((await vet('elsewhere.example')).ok, false,
+          'a host off the list is refused');
+  t.equal(/outboundAllowedHosts/.test((await vet('elsewhere.example')).why),
+          true, 'and the refusal names the setting');
+  t.equal(/outboundAllowedHosts/.test(
+    (await vet('a.partner.example')).why || ''), false,
+          'a host under a listed domain passes the list');
+  config.clearOverride('security.outboundAllowedHosts');
+  t.equal(inProduct(function () {
+    return mode.refusesPlainSyslog();
+  }), true, 'product refuses plain syslog');
   const budget = require(ROOT + '/common/request_budget');
   const at = Date.now();
   t.equal(budget.allowed('198.51.100.7', 2, at), true, 'a first request passes');

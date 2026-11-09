@@ -12386,5 +12386,21 @@
   "security.requestsPerAddressPerMinute|description": {
     "en": "7324a27b3b761012",
     "text": "Ett tak för alla förfrågningar från en adress, per process. Det är en broms mot missbruk, skild från gränserna för inloggningsförsök. 0 betyder inget tak, standardvärdet i utveckling. Produktläget använder 6000 som standard. Bakom en proxy, ange global.trustedProxies så att adresser läses korrekt."
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "Tillåt okrypterad syslog-export av granskningsloggen i produktläge"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "Av, standardvärdet, accepterar produktläget bara transporten tls för ett syslog-mål. På accepteras även tcp och udp, så granskningsloggen går okrypterad över nätverket. Använd bara på ett nätverk du litar på."
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "Värdar som tjänsten får ansluta till"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "Om angivet får en utgående förfrågan som en partner, klient eller anropare kan påverka bara nå dessa värdar. Kommaseparerade: ett exakt namn, eller en inledande punkt för en hel domän, till exempel .example.com. Tomt, standardvärdet, tillåter alla publika värdar. Interna adresser avvisas alltid i produktläge."
   }
 }

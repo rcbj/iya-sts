@@ -654,6 +654,16 @@ function refusesDefaultDatabasePassword() {
     config.value('persistence.allowDefaultDatabasePassword') !== true;
 }
 
+/**
+ * @returns true when a syslog destination must use tls
+ */
+function refusesPlainSyslog() {
+  log.debug("Entering refusesPlainSyslog().");
+  log.debug("Leaving refusesPlainSyslog().");
+  return isProduct() &&
+    config.value('audit.allowPlainSyslog') !== true;
+}
+
 // Must a malware scanner be reached over TLS (#1501, ASVS 5.0.0 12.3.1)?
 /**
  * @returns true when a plain icap:// address may not be used
@@ -4846,6 +4856,7 @@ module.exports = {
   requiresPkceOfEveryClient: requiresPkceOfEveryClient,
   requiresSecondFactorOfEveryone: requiresSecondFactorOfEveryone,
   requiresTlsToMalwareScanner: requiresTlsToMalwareScanner,
+  refusesPlainSyslog: refusesPlainSyslog,
   refusesDefaultDatabasePassword: refusesDefaultDatabasePassword,
   redactsRequestLog: redactsRequestLog,
   requiresTypedLogoutToken: requiresTypedLogoutToken,
