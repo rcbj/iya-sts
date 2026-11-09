@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5333** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5334** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 263
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 264
 * [Management API (`STS-API`)](#sts-api) — 91
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -5479,6 +5479,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0912` | A signer truststore remove named nothing this realm holds, or an entry that comes from pki.signerTrustAnchorsFile (#1360). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0913` | set-row named something that is not a paranoid PKI setting (#1360). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0914` | set-row was refused by the settings write path, or a use case an add named is not one this service has (#1360). | HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0915` | A software statement was asked for with a lifetimeSeconds that puts its expiry past the last date this service can write (#1470). | a refusal naming the field |
 
 ## STS-API
 

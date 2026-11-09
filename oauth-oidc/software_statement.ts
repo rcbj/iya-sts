@@ -974,6 +974,17 @@ class SoftwareStatement {
                      options.lifetimeSeconds === ''
       ? self.issuedLifetimeSeconds()
       : Math.max(0, Math.floor(Number(options.lifetimeSeconds) || 0));
+    // An `exp` no Date can hold was signed, and the line that writes it down
+    // then threw a 500 (#1470). The field also takes text, so the management
+    // API's integer bound does not cover it.
+    if (lifetime > 0 &&
+        Number.isNaN(new Date((issuedAt + lifetime) * 1000).getTime())) {
+      log.debug("Leaving SoftwareStatement.issue(). Lifetime out of range.");
+      return errorCodes.mark({ ok: false,
+        errors: ['lifetimeSeconds is too large: the statement would expire ' +
+                 'after the last date this service can write.'] },
+        'STS-ADMIN-0915');
+    }
     const claims = Object.assign({ software_id: identifier }, metadata, {
       iss: iss,
       sub: identifier,
