@@ -12402,5 +12402,13 @@
   "security.outboundAllowedHosts|description": {
     "en": "f1d0447a0b56f74e",
     "text": "Om angivet får en utgående förfrågan som en partner, klient eller anropare kan påverka bara nå dessa värdar. Kommaseparerade: ett exakt namn, eller en inledande punkt för en hel domän, till exempel .example.com. Tomt, standardvärdet, tillåter alla publika värdar. Interna adresser avvisas alltid i produktläge."
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "Tillämpa HSTS på underdomäner"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "Lägger till includeSubDomains i Strict-Transport-Security, så att webbläsare använder HTTPS för alla underdomäner till tjänstens värdnamn. På som standard i produktläge. Stäng av om en underdomän fortfarande måste svara över okrypterad HTTP."
   }
 }

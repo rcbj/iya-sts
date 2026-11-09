@@ -830,6 +830,7 @@ class ProfilePhoto {
         return;
       }
       res.status(200).type(String(row.type))
+         .set('Content-Disposition', 'inline; filename="profile-photo"')
          .send(Buffer.from(String(row.data), 'base64'));
       log.debug("Leaving GET " + ROUTE + ".");
     });

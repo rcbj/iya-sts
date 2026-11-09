@@ -450,7 +450,16 @@ class SpaClient extends WebPage {
    */
   async nonceMatches(idToken: Json, verifier: string): Promise<boolean> {
     const carried = SpaClient.claimOf(idToken, 'nonce');
-    return carried !== '' && carried === await this.nonceFor(verifier);
+    if (carried === '' || carried !== await this.nonceFor(verifier)) {
+      return false;
+    }
+    // ASVS 5.0.0 10.5.4 and 6.8.2: the token is for this client, from this
+    // server. `iss` is held to the metadata where this page has read it, and
+    // that has passed its own check in `asMetadata()`.
+    const issuer = String((this.metadata && this.metadata.issuer) || '');
+    return SpaClient.claimOf(idToken, 'aud').split(',')
+      .indexOf(this.clientId) >= 0 &&
+      (!issuer || SpaClient.claimOf(idToken, 'iss') === issuer);
   }
 
   // THE KEY IS MADE NON-EXTRACTABLE, which is the condition rcbj attached
@@ -593,8 +602,29 @@ class SpaClient extends WebPage {
       // refuses in words the page draws.
       json = {};
     }
-    this.metadata = json || {};
+    // RFC 8414 section 3.3 (ASVS 5.0.0 10.5.3): the document must name the
+    // server it was fetched from. One that does not is ignored, as if none had
+    // answered.
+    const meta = json || {};
+    const expected = String(this.url('')).replace(/\/+$/, '');
+    this.metadata = meta.issuer && String(meta.issuer) !== expected ? {} : meta;
     return this.metadata;
+  }
+
+  /**
+   * RFC 9207's `iss` on the authorization response, where the server sends one
+   * (ASVS 5.0.0 10.2.2): it must name this server.
+   *
+   * @param query - the response's parameters
+   * @returns false when the response came from somebody else
+   */
+  async issuerMatches(query: Json): Promise<boolean> {
+    const sent = String((query && query.iss) || '');
+    if (!sent) {
+      return true;
+    }
+    const meta = await this.asMetadata();
+    return !meta.issuer || sent === String(meta.issuer);
   }
 
   /**

@@ -12402,5 +12402,13 @@
   "security.outboundAllowedHosts|description": {
     "en": "f1d0447a0b56f74e",
     "text": "Si défini, une requête sortante qu’un partenaire, un client ou un appelant peut influencer ne peut atteindre que ces hôtes. Séparés par des virgules : un nom exact, ou un point initial pour tout un domaine, comme .example.com. Vide, par défaut, autorise tout hôte public. Les adresses internes sont refusées dans tous les cas en mode produit."
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "Appliquer HSTS aux sous-domaines"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "Ajoute includeSubDomains à Strict-Transport-Security, afin que les navigateurs utilisent HTTPS pour tous les sous-domaines du nom d’hôte de ce service. Activé par défaut en mode produit. Désactivez-le si un sous-domaine doit encore répondre en HTTP simple."
   }
 }

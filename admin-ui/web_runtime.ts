@@ -299,7 +299,7 @@ class ConsoleRuntime extends SpaClient {
       return;
     }
     if (!saved || saved.unreadable || !query.code ||
-        query.state !== saved.state) {
+        query.state !== saved.state || !await this.issuerMatches(query)) {
       // THE RETURN TAB of a same-device wallet holds no PKCE record. The
       // tab that opened the console still does, and it redeems the code.
       if (query.code && query.state &&
@@ -786,6 +786,13 @@ class ConsoleRuntime extends SpaClient {
     }
     if (['password', 'file', 'hidden', 'submit', 'button', 'reset',
          'image'].indexOf(type) >= 0) {
+      return false;
+    }
+    // WHAT PEOPLE TYPE STAYS OUT OF STORAGE (ASVS 5.0.0 14.3.3): names and mail
+    // are personal data, and this survives until the page returns. Choices
+    // carry none of it.
+    if (['checkbox', 'radio', 'select-one', 'select-multiple']
+      .indexOf(type) < 0) {
       return false;
     }
     const auto = el.getAttribute

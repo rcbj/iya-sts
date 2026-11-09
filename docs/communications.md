@@ -63,13 +63,15 @@ A signed or configured record names these. A request cannot.
 
 ## Outbound: locations a caller can name
 
-The service never fetches a URL just because a request supplied it. In each case
-below the URL comes from a caller's kind of input, and the listed condition
-decides whether it is dialled.
+Some URLs below are supplied by a caller, such as GNAP's push address. In each
+case the listed condition decides whether it is dialled, and in product mode an
+internal address is always refused.
 
 | What | Condition |
 |---|---|
 | A client's `jwks_uri` | The registered value, when a key is needed |
+| GNAP `interact.finish` push URI | Named by the client in its grant request. Held to `gnap.pushFinish` and https in product |
+| XACML PEP notification URL | Configured for the PEP. Held to the same address rules |
 | A `sector_identifier_uri` | Fetched once, when the client registers it |
 | An RFC 9101 `request_uri` | Only the address the client registered |
 | A status list in a credential | Only under a signature from a trusted issuer |

@@ -664,6 +664,15 @@ function refusesPlainSyslog() {
     config.value('audit.allowPlainSyslog') !== true;
 }
 
+/**
+ * @returns true when ES256K is used only if keys.signingAlgorithms lists it
+ */
+function omitsUnapprovedSigningCurves() {
+  log.debug("Entering omitsUnapprovedSigningCurves().");
+  log.debug("Leaving omitsUnapprovedSigningCurves().");
+  return isProduct();
+}
+
 // Must a malware scanner be reached over TLS (#1501, ASVS 5.0.0 12.3.1)?
 /**
  * @returns true when a plain icap:// address may not be used
@@ -4856,6 +4865,7 @@ module.exports = {
   requiresPkceOfEveryClient: requiresPkceOfEveryClient,
   requiresSecondFactorOfEveryone: requiresSecondFactorOfEveryone,
   requiresTlsToMalwareScanner: requiresTlsToMalwareScanner,
+  omitsUnapprovedSigningCurves: omitsUnapprovedSigningCurves,
   refusesPlainSyslog: refusesPlainSyslog,
   refusesDefaultDatabasePassword: refusesDefaultDatabasePassword,
   redactsRequestLog: redactsRequestLog,

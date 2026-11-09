@@ -11086,6 +11086,19 @@ class OAuth2Server {
     // checked against by the schema, because it comes off the entry and an
     // `ldapmodify` reaches the entry without passing any check at all.
     const registeredClient = applications.clientConfigOf(q.client_id);
+    // RFC 6749 section 3.1 forbids repeats; product refuses them as OAuth 2.1
+    // mode does (ASVS 5.0.0 15.3.7).
+    if (!oauth21.enabled() &&
+        require('../common/mode').refusesRepeatedTokenParameters()) {
+      const repeated = oauth21.repeatedParameterRefusal(
+          opts.repeated || oauth21.repeatedNames(req.query),
+          opts.what || 'authorization request', true);
+      if (repeated) {
+        log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). A repeat.");
+        return refuse(repeated.errorCode || 'STS-OAUTH-0285', repeated.error,
+                      repeated.description);
+      }
+    }
     if (oauth21.enabled()) {
       const repeated = oauth21.repeatedParameterRefusal(
           opts.repeated || oauth21.repeatedNames(req.query),
@@ -11959,6 +11972,14 @@ class OAuth2Server {
                why: 'the id_token_hint was issued to ' +
                JSON.stringify(claims.aud) + ', not to client "' + clientId +
                '".' };
+    }
+    // ASVS 5.0.0 9.2.2: a Logout Token this realm signed for the same client
+    // is not an ID Token, so its sid may not stand in for one.
+    if (claims.events !== undefined ||
+        /logout\+jwt|at\+jwt/i.test(String(header.typ || ''))) {
+      log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Not an ID Token.");
+      return { ok: false, reason: 'signature',
+               why: 'the id_token_hint is not an ID Token.' };
     }
     log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Verified.");
     return { ok: true, sub: String(claims.sub || ''), claims: claims };

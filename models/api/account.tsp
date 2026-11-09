@@ -6591,7 +6591,7 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
     `reason`?: post_account_api_signing_key_b_application_json_reason_h295;
     `purpose`?: post_account_api_signing_key_b_application_json_purpose_h297
   },
-  `responses/200/content/application~1json/schema`: {
+  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
@@ -7778,7 +7778,7 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
     }) `serial`?: string;
     `reason`?: post_account_api_certificates_b_application_json_reason_h319
   },
-  `responses/200/content/application~1json/schema`: {
+  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
@@ -8430,7 +8430,7 @@ op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
     `door_ssf`?: post_account_api_app_passwords_b_application_json_door_ssf_h385;
     `door_est`?: post_account_api_app_passwords_b_application_json_door_est_h387
   },
-  `responses/200/content/application~1json/schema`: {
+  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
@@ -9667,7 +9667,7 @@ op `removeSelfIssued`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_self_issued_b_application_json_action_h422;
     @js(#{`maxLength`:2048,`description`:"The enrolled subject, from the list."}) `subject`: string
   },
-  `responses/200/content/application~1json/schema`: {
+  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
@@ -10127,7 +10127,7 @@ op `actOnPublishedDid`(`requestBody/content/application~1json/schema`: {
     }) `action`: "publish" | "add-key" | "rotate-key" | "deactivate";
     `rid`?: post_account_api_self_issued_dids_b_application_json_rid_h436
   },
-  `responses/200/content/application~1json/schema`: {
+  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;

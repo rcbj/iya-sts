@@ -12402,5 +12402,13 @@
   "security.outboundAllowedHosts|description": {
     "en": "f1d0447a0b56f74e",
     "text": "Kung nakatakda, ang outbound request na maiimpluwensyahan ng partner, client o tumatawag ay makakarating lamang sa mga host na ito. Pinaghihiwalay ng kuwit: eksaktong pangalan, o tuldok sa unahan para sa buong domain, gaya ng .example.com. Ang walang laman, ang default, ay nagpapahintulot ng anumang public host. Laging tinatanggihan ang mga internal address sa product mode."
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "Ilapat ang HSTS sa mga subdomain"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "Idinaragdag ang includeSubDomains sa Strict-Transport-Security, para gumamit ang mga browser ng HTTPS sa bawat subdomain ng host name ng service na ito. Naka-on bilang default sa product mode. I-off kung kailangan pang sumagot ng subdomain sa plain HTTP."
   }
 }

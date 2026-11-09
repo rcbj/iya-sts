@@ -1070,6 +1070,7 @@ class Branding {
         return;
       }
       res.status(200).type(record.type)
+         .set('Content-Disposition', 'inline; filename="logo"')
          .send(Buffer.from(String(record.data), 'base64'));
       log.debug("Leaving GET " + PATHS.logo + ".");
     });

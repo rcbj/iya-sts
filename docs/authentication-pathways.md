@@ -31,6 +31,8 @@ product mode, how strong each is, and the rules that hold for all of them.
 | **Sign-in screen**, password then a second factor | Password, and a TOTP code, passkey, recovery code or wallet | `pwd` and the factor, such as `otp` or `hwk` | `mfa` | Required |
 | **Passkey alone** (passwordless) | One passkey | `hwk` | `1` | Refused under the requirement above, because one key is one factor. Asks for a password instead |
 | **Continue with your certificate** on the screen | A verified TLS client certificate | `swk` | `1` | Asked afterwards where one is required |
+| **Passkey with no username** | A discoverable passkey with user verification | `hwk`, `user` | `mfa` | Already two factors |
+| **SIOPv2 self-issued ID** | A wallet's self-issued ID Token, where enabled | `swk` | `1` | Asked afterwards where one is required |
 | **`GET /tls/sign-in`** | A verified TLS client certificate | `swk` | `1` | **Required in product.** This door has no screen, so it starts no session for somebody who needs a second factor. They use the screen's certificate button instead |
 | **SPNEGO** (`/authn/spnego`) | A Kerberos ticket | From the ticket's flags | `mfa` if the ticket records two factors, otherwise `1` | Enforced at the KDC when the ticket was issued. See below |
 | **Kerberos AS-REQ** | Password and FAST with OTP, a passkey, or PKINIT | `pwd` and `otp`, among others | From the factors | A person who holds or must hold a second factor gets no ticket on a password alone |
@@ -46,6 +48,13 @@ product mode, how strong each is, and the rules that hold for all of them.
 > authentication. To keep such a session out of applications that need two
 > factors, name them in the [issuance policy](authorization.md) or have the
 > application request `acr_values` of `mfa`.
+>
+> A partner that states no authentication strength is treated as the weakest: it
+> never satisfies an application that demands `acr_values`. A partner's
+> authentication age is checked only where `federation.maxPartnerAuthAgeS` is set.
+>
+> A WS-Trust exchange also records a session for the person, like every sign-in.
+> With an app password that is one factor, by design.
 >
 > Programs that present a client certificate, such as WS-Trust, token exchange,
 > mutual-TLS client authentication, LDAP SASL EXTERNAL and PKINIT, are not asked

@@ -294,6 +294,7 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
       curl -fsSL "${STS_DATABASE_CA_URL}" -o /opt/sts-sdk/database-ca.pem \
       && grep -q 'BEGIN CERTIFICATE' /opt/sts-sdk/database-ca.pem; \
     fi
+RUN cd /opt/sts-sdk && npm sbom --omit=dev --sbom-format=cyclonedx --sbom-type=application > /usr/src/sts/sbom-sdks.cdx.json
 # ---------------------------------------------------------------------------
 # AND THE SUITE BACK OUT AGAIN, WHICH .dockerignore USED TO DO.
 #

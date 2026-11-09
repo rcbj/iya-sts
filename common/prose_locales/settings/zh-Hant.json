@@ -12402,5 +12402,13 @@
   "security.outboundAllowedHosts|description": {
     "en": "f1d0447a0b56f74e",
     "text": "如果設定，合作夥伴、用戶端或呼叫端可影響的傳出要求只能連線至這些主機。以逗號分隔：精確名稱，或以點開頭表示整個網域，如 .example.com。預設為空，允許任何公用主機。產品模式下一律拒絕內部位址。"
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "將 HSTS 套用至子網域"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "在 Strict-Transport-Security 加入 includeSubDomains，使瀏覽器對此服務主機名稱的所有子網域也使用 HTTPS。產品模式預設開啟。若某個子網域仍需透過純 HTTP 回應，請關閉。"
   }
 }

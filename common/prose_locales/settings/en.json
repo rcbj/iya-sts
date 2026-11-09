@@ -81,6 +81,8 @@
   "audit.allowPlainSyslog|description": "Off, the default, product mode accepts only the tls transport for a syslog audit destination. On, tcp and udp are accepted too, so the audit log crosses the network unencrypted. Use it only on a network you trust.",
   "security.outboundAllowedHosts|label": "Hosts this service may dial",
   "security.outboundAllowedHosts|description": "If set, an outbound request a partner, client or caller can influence may reach only these hosts. Comma separated: an exact name, or a leading dot for a whole domain, such as .example.com. Empty, the default, allows any public host. Internal addresses are refused either way in product mode.",
+  "security.hstsIncludeSubDomains|label": "Apply HSTS to subdomains",
+  "security.hstsIncludeSubDomains|description": "Adds includeSubDomains to Strict-Transport-Security, so browsers use HTTPS for every subdomain of this service's host name too. On by default in product mode. Turn it off if a subdomain of this host name must still answer over plain HTTP.",
   "malwareScan.enabled|label": "Scan files for malware",
   "malwareScan.enabled|description": "Off, the default, nothing is scanned. On, every profile photo, logo, photo copied from a federation partner and uploaded risk dataset is sent to the ICAP service in malwareScan.url first, and refused if the service flags it or cannot answer.",
   "malwareScan.url|label": "ICAP service address",

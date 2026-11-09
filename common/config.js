@@ -1490,6 +1490,16 @@ const SETTINGS = [
                  '.example.com. Empty, the default, allows any public host. ' +
                  'Internal addresses are refused either way in product mode.' },
 
+  { key: 'security.hstsIncludeSubDomains', group: 'Web security',
+    label: 'Apply HSTS to subdomains',
+    env: 'STS_SECURITY_HSTS_INCLUDE_SUBDOMAINS', type: 'bool', dflt: strongerInProduct(true, false), derived: true,
+    runtime: true,
+    description: 'Adds includeSubDomains to Strict-Transport-Security, so ' +
+                 'browsers use HTTPS for every subdomain of this service\'s ' +
+                 'host name too. On by default in product mode. Turn it off ' +
+                 'if a subdomain of this host name must still answer over ' +
+                 'plain HTTP.' },
+
   { key: 'malwareScan.enabled', group: 'Malware scanning',
     label: 'Scan files for malware',
     env: 'STS_MALWARE_SCAN_ENABLED', type: 'bool', dflt: false,

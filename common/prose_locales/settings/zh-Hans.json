@@ -12402,5 +12402,13 @@
   "security.outboundAllowedHosts|description": {
     "en": "f1d0447a0b56f74e",
     "text": "如果设置，合作方、客户端或调用方可影响的出站请求只能访问这些主机。以逗号分隔：精确名称，或以点开头表示整个域，如 .example.com。默认为空，允许任何公共主机。产品模式下始终拒绝内部地址。"
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "将 HSTS 应用于子域"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "向 Strict-Transport-Security 添加 includeSubDomains，使浏览器对此服务主机名的所有子域也使用 HTTPS。产品模式默认开启。如果某个子域仍需通过纯 HTTP 响应，请关闭。"
   }
 }

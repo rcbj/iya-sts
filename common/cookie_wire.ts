@@ -148,7 +148,9 @@ class CookieWire {
         const writeHead = res.writeHead;
         res.writeHead = function () {
           if (hsts) {
-            res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+            res.setHeader('Strict-Transport-Security', 'max-age=31536000' +
+              (config.value('security.hstsIncludeSubDomains')
+                ? '; includeSubDomains' : ''));
           }
           const lines = prefixes ? res.getHeader('Set-Cookie') : undefined;
           if (lines !== undefined) {

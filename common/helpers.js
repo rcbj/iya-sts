@@ -3582,7 +3582,10 @@ function signingAlgAllowlist() {
 function signingAlgListed(alg) {
   log.debug("Entering signingAlgListed(). alg=" + alg);
   const list = signingAlgAllowlist();
-  const listed = !list || alg === 'none' || list.indexOf(String(alg)) >= 0;
+  // secp256k1 is outside the approved curves (ASVS 5.0.0 11.6.1), so product
+  // signs with it only where the operator lists it.
+  const listed = list ? alg === 'none' || list.indexOf(String(alg)) >= 0
+    : !(alg === 'ES256K' && require('./mode').omitsUnapprovedSigningCurves());
   log.debug("Leaving signingAlgListed(). " + listed);
   return listed;
 }

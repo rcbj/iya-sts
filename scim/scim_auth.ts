@@ -1508,8 +1508,11 @@ class ScimAuth {
     const isClient = !claims.username &&
       (!sub || (!!clientId &&
                 (sub === clientId || sub === 'urn:sts:client:' + clientId)));
-    const principal = String((isClient ? clientId : '') || claims.username ||
-                             sub || clientId).trim();
+    // `sub` first: it cannot be reassigned and a username can (ASVS 5.0.0
+    // 10.3.3).
+    const principal = String((isClient ? clientId : '') ||
+                             require('../common/helpers').nameForSubject(sub) ||
+                             claims.username || sub || clientId).trim();
 
     log.debug("Leaving ScimAuth.attemptBearer(). " + row + " for " +
               (principal || '(unnamed)') + ".");

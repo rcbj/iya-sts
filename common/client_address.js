@@ -394,7 +394,10 @@ function clientAddressOf(req) {
   const theRanges = ranges();
   if (!theRanges.configured) {
     log.debug("Leaving clientAddressOf(). The old rule.");
-    return chain[0] || peer || 'unknown';
+    // A client writes the left-most entry, so product does not believe it with
+    // no list of proxies (ASVS 5.0.0 4.1.3, 15.3.4).
+    return require('./mode').requiresTrustedProxyRanges()
+      ? (peer || 'unknown') : (chain[0] || peer || 'unknown');
   }
   if (!inRanges(peer, theRanges)) {
     log.debug("Leaving clientAddressOf(). An untrusted peer's header is " +
