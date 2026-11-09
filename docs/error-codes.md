@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5350** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5354** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,12 +58,12 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 185
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 255
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 257
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 430
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 431
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 749
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 14
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 184
+* [Registries (`STS-REG`)](#sts-reg) — 185
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 * [Reporting (`STS-REPORT`)](#sts-report) — 54
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 14
@@ -1058,6 +1058,8 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0266` | An https CRL distribution point or OCSP responder was not asked: pki.revocationHttpsCaFile names a file that cannot be used, under paranoid PKI mode. Elsewhere it warned and fell back to node's store (#1360). | none: the status is unknown, and the policy decides |
 | `STS-PKI-0267` | A certificate offered to be accepted by name is a certificate authority (#1360). | none — recorded on the refusal the page or the API makes |
 | `STS-PKI-0268` | A certificate authority was asked for a lifetime a certificate cannot carry. Nothing was generated and nothing was stored (#1409). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0269` | A signing key pair was asked for a subject key that has no JWK this service can publish: a composite ML-DSA key, whose X.509 bytes are not the JOSE composite, or a key-establishment algorithm asked to sign. The certificate was not recorded (#1418). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0270` | A process-scope certificate authority was asked for a signing key or an alternative key whose signatures would make the TLS listener certificate list larger than a stock TLS client accepts (OpenSSL SSL_MAX_CERT_LIST_DEFAULT, 102400 bytes). Nothing was stored, and the listener certificate was left as it is (#1421, #1432). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-ENROLL
 
@@ -1711,6 +1713,7 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0493` | A started post-login activity's run could not read its population (the directory refused, or one of its groups is gone); nobody was mailed by it this run and its cursor did not move, or the gone group's members were not read (#1111, #1123). | none (logged; the scheduler run row) |
 | `STS-AUTHN-0494` | The mail channel refused a started post-login activity's reminder to some people this run: no address on the entry, the notification declined, or a ceiling. Counted on the started activity and the run's audit row; Monitoring → Mail names each (#1111). | none (audit row authn.post-login.activity-run) |
 | `STS-AUTHN-0495` | A post-login activity is running in a realm with no mail transport: its run mailed nobody and moved no cursor (#1111). | none (logged; the scheduler run row) |
+| `STS-AUTHN-0496` | GET /admin-api/post-login-activities refused its groups query: longer than 4096 characters, which is as much as one request line can carry. The activities were not read (#1111, #1434). A stock parser resets the connection once the incoming bytes pass about 64KiB, and a schema that allowed 65536 characters reached that reset during fuzzing. | none (HTTP 400 from GET /admin-api/post-login-activities) |
 | `STS-AUTHN-0500` | A settings write was refused (#1114): it would leave webauthn.attestation `enterprise` with webauthn.attestationEnterpriseRpIds empty — choosing enterprise with no RP ID listed, or emptying the list while it is chosen. Enterprise attestation is asked for only for a listed RP ID (WebAuthn Level 3 section 5.4.7). Nothing is changed. | none (HTTP 400 from the console's and /admin-api's settings writes) |
 | `STS-AUTHN-0520` | The passkey report's recount counted the realm and wrote its baseline, but the day's passkey history row (#1109) could not be written. The baseline stands; the day has no history row until the next recount writes one. | none — logged; the recount's run is not failed |
 | `STS-AUTHN-0521` | The passkey history rows older than webauthn.passkeyHistoryDays could not be pruned after a recount (#1109). They are kept, and the next recount tries again. | none — logged |
@@ -5986,6 +5989,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0364` | oauthAllowedTokenResponseTypes was given a token response type while the realm does not allow them: RFC 9700 mode is in force and oauth2.allowImplicitTokenResponses is off, or OAuth 2.1 mode or a FAPI profile is on (#1296). A remove is never refused. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0365` | A logo_uri, policy_uri or tos_uri (oauthLogoUri, oauthPolicyUri, oauthTosUri) is not an absolute https URL with a host and no credentials: the sign-in and consent screens draw it (OpenID Connect Registration section 2, #1300). At registration, an RFC 7592 update, a create and an attribute write. | HTTP 400 {error: invalid_client_metadata} at registration; a console or management API refusal otherwise |
 | `STS-REG-0366` | A realm's custom attribute is named as a claim of the directory attribute catalogue is (a custom birthdate, say), so it is not offered to the claim sets: the catalogue's claim would be overwritten. An attribute claim can carry it under another name (#700). | log line; the attribute is absent from every claim set |
+| `STS-REG-0367` | An oauthPermission name or description contains an operator error code. Both are returned on every page that lists the permission, and a code is recorded rather than sent. At a create and at an attribute add (#1426). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

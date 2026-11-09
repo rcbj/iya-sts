@@ -1899,6 +1899,89 @@ function realmRemovedDuringBuild(id, kind, since) {
   return true;
 }
 
+// OpenSSL's default maximum certificate list is 102400 bytes
+// (SSL_MAX_CERT_LIST_DEFAULT). The process listener presents four
+// certificates: the leaf, the TLS Issuing CA, the Intermediate and the
+// Root (#1064). A scope build does not replace the Root. The Intermediate
+// is signed by that Root, so the leaf and the TLS Issuing CA are the two
+// certificates this build signs. A hybrid branch adds the alternative
+// signature on those two, and a post-quantum signing key replaces the
+// classical signature on those two. The classical bodies still have to
+// fit. 16384 bytes is that headroom. ML-DSA-87 (4627) stays inside the
+// limit. SLH-DSA-256f (49856) does not, whether it is the alternative key
+// (#1421) or the signing key itself (#1432), and the listener then fails
+// every handshake.
+const LISTENER_CERT_LIST_MAX = 102400;
+const LISTENER_CLASSICAL_CHAIN_BUDGET = 16384;
+const PROCESS_LISTENER_ALT_SIGNATURES = 2;
+
+// A classical id contributes nothing: its signature already sits in the
+// 16384-byte budget. A post-quantum id contributes its FIPS signature
+// length. An id the size table does not know contributes nothing here;
+// the algorithm refusal that already ran is the answer for that id.
+function listenerPqSignatureBytes(alg) {
+  log.debug('Entering listenerPqSignatureBytes().');
+  if (!alg) {
+    log.debug('Leaving listenerPqSignatureBytes(). None.');
+    return 0;
+  }
+  const desc = keyMaterial.keyAlg(alg);
+  let signatureBytes = 0;
+  try {
+    const found = desc && desc.pqc ? pqc.signatureAlg(desc.pqc) : null;
+    signatureBytes = (found && found.lengths &&
+                      found.lengths.signature) || 0;
+  } catch (e) {
+    log.debug('Caught in listenerPqSignatureBytes(): ' +
+              ((e && e.message) || e));
+    signatureBytes = 0;
+  }
+  log.debug('Leaving listenerPqSignatureBytes().');
+  return signatureBytes;
+}
+
+function processListenerAltSignatureProblem(altKeyAlg, keyAlg) {
+  log.debug('Entering processListenerAltSignatureProblem().');
+  const altBytes = listenerPqSignatureBytes(altKeyAlg);
+  const primaryBytes = listenerPqSignatureBytes(keyAlg);
+  if (!altBytes && !primaryBytes) {
+    log.debug('Leaving processListenerAltSignatureProblem(). Classical.');
+    return null;
+  }
+  const bytes = (altBytes + primaryBytes) *
+                PROCESS_LISTENER_ALT_SIGNATURES +
+                LISTENER_CLASSICAL_CHAIN_BUDGET;
+  if (bytes <= LISTENER_CERT_LIST_MAX) {
+    log.debug('Leaving processListenerAltSignatureProblem(). Fits.');
+    return null;
+  }
+  // The #1421 sentence stays word for word when only the alternative key
+  // is large. A signing key, or both, is named for what it is.
+  let detail = 'An alternative ' + altKeyAlg + ' key';
+  if (primaryBytes && altBytes) {
+    detail = 'A ' + keyAlg + ' signing key and an alternative ' +
+             altKeyAlg + ' key';
+  } else if (primaryBytes) {
+    detail = 'A ' + keyAlg + ' signing key';
+  }
+  const logged = detail.charAt(0).toLowerCase() + detail.slice(1);
+  log.error(errorCodes.tag('STS-PKI-0270') + 'pki: ' + logged +
+            ' on the process branch would put ' +
+            (altBytes + primaryBytes) + ' bytes of signature on each of ' +
+            'the ' + PROCESS_LISTENER_ALT_SIGNATURES + ' certificates ' +
+            'this build signs, past the ' + LISTENER_CERT_LIST_MAX +
+            '-byte certificate list a stock TLS client accepts. The ' +
+            'branch was not built.');
+  log.debug('Leaving processListenerAltSignatureProblem(). Too large.');
+  return errorCodes.mark({ ok: false,
+           errors: [detail + ' on the process branch would make the TLS ' +
+                    'listener certificate list larger than a stock TLS ' +
+                    'client can receive. The process branch was not ' +
+                    'rebuilt, and the listener certificate was left as ' +
+                    'it is.'] },
+                         'STS-PKI-0270');
+}
+
 async function buildScopeNow(scopeId, opts) {
   log.debug('Entering buildScope(). scope=' + scopeId);
   const id = String(scopeId);
@@ -1911,6 +1994,20 @@ async function buildScopeNow(scopeId, opts) {
   if (!chosen.ok) {
     log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
     return chosen;
+  }
+  // BEFORE the Root and BEFORE any tier is made, for the same reason as the
+  // algorithm refusal above. A process branch is the main listener's chain.
+  // A signing key or an alternative key whose signatures do not fit in a
+  // stock TLS client's certificate list would be installed and then every
+  // handshake would fail (#1421, #1432). Refusing here leaves the branch,
+  // and the listener, as they are.
+  if (kind === 'process') {
+    const handshake = processListenerAltSignatureProblem(chosen.altKeyAlg,
+                                                         chosen.keyAlg);
+    if (handshake) {
+      log.debug('Leaving buildScope(). The listener chain.');
+      return handshake;
+    }
   }
   const intermediateYears = tierYearsFrom(options.years, 'intermediate');
   const issuingYears = tierYearsFrom(options.years, 'issuing');
@@ -2987,14 +3084,51 @@ async function issueSigningKeyPair(realmId, opts) {
   // same rule every kid in this service follows, and for the same reason: two
   // keys under one name is a verifier reporting a bad signature about a key it
   // fetched from the wrong place.
-  const publicJwk = publicJwkOf(pair.publicPem);
+  //
+  // A CLASSICAL PEM goes through Node's decoder. A post-quantum one does not:
+  // OpenSSL has no decoder for these OIDs, and `createPublicKey` throws
+  // `error:03000072`, which left this call as an uncaught 500 on
+  // `POST /admin-api/pki/issue` (#1418). `pubToJwk()` is the AKP conversion
+  // already used everywhere else, and it refuses a composite ML-DSA key on
+  // purpose — the X.509 bytes and the JOSE bytes are not the same key.
+  let publicJwk;
+  try {
+    if (keyDesc.kind === 'pqc') {
+      publicJwk = await keyMaterial.pubToJwk(pair.publicPem, keyDesc);
+    } else {
+      publicJwk = publicJwkOf(pair.publicPem);
+    }
+  } catch (e) {
+    // The composite refusal, or a PEM this build cannot read. The sentence
+    // the caller sees names neither the key nor the OpenSSL text: both are
+    // an operator's, and the code is recorded rather than sent.
+    log.debug('Caught in issueSigningKeyPair(): ' +
+              ((e && e.message) || e));
+    log.debug('Leaving issueSigningKeyPair(). No JWK.');
+    return unpublishedJwk(identifier, (e && e.message) || e);
+  }
   const jwsAlg = jwsAlgFor(keyDesc, sigAlgId);
-  publicJwk.kid = subjectKind.kidPrefix +
-                  stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
-  publicJwk.use = encryption ? 'enc' : 'sig';
+  // `alg` is set BEFORE the thumbprint. It is not a member of a classical
+  // thumbprint, so moving it changes no RSA, EC or OKP kid. It IS a member
+  // of an AKP thumbprint (RFC 9964), and computing one without it throws.
   if (jwsAlg && !encryption) {
     publicJwk.alg = jwsAlg;
   }
+  if (!encryption && keyDesc.kind === 'pqc' && !jwsAlg) {
+    // A KEM, or a parameter set JOSE has no name for. A signing JWK with no
+    // `alg` is not a key a verifier can use, and an AKP thumbprint cannot
+    // be computed without one when pubToJwk did not set it either.
+    log.debug('Leaving issueSigningKeyPair(). No JOSE algorithm.');
+    return unpublishedJwk(identifier,
+                          'no JOSE signature algorithm for ' + keyDesc.id);
+  }
+  if (publicJwk.kty === 'AKP' && !publicJwk.alg) {
+    log.debug('Leaving issueSigningKeyPair(). AKP without alg.');
+    return unpublishedJwk(identifier, 'an AKP key is missing alg');
+  }
+  publicJwk.kid = subjectKind.kidPrefix +
+                  stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  publicJwk.use = encryption ? 'enc' : 'sig';
   // `x5c` is the certificate chain in the JWK itself (RFC 7517 section 4.7):
   // base64 DER, leaf first, NOT base64url. A client that registers this JWKS
   // therefore registers the chain as well, which is what lets `client_auth.js`
@@ -6377,6 +6511,21 @@ function publicJwkOf(publicPem) {
   return stsCrypto.publicKeyOf(publicPem).export({ format: 'jwk' });
 }
 
+// The refusal `issueSigningKeyPair()` returns when the subject key has no
+// JWK this service can publish (#1418). The sentence is fixed: it does not
+// repeat the key, the OpenSSL text, or the code, which is recorded here.
+function unpublishedJwk(identifier, why) {
+  log.debug('Entering unpublishedJwk().');
+  log.error(errorCodes.tag('STS-PKI-0269') + 'pki: the public key for "' +
+            identifier + '" has no JWK this service can publish: ' + why);
+  log.debug('Leaving unpublishedJwk().');
+  return errorCodes.mark({ ok: false,
+           errors: ['That key cannot be published as a JWK. A composite ' +
+                    'ML-DSA key is kept as PEM, and a key-establishment ' +
+                    'algorithm is not a signing key.'] },
+                         'STS-PKI-0269');
+}
+
 // The JWS `alg` a key of this kind signs with, so that the JWK this module
 // hands out names one. The signature algorithm chosen for the CERTIFICATE
 // decides the digest — an RSA key issued under a SHA-384 chain gets RS384 —
@@ -6412,10 +6561,19 @@ function jwsAlgFor(keyDesc, sigAlgId) {
     log.debug('Leaving jwsAlgFor(). RSA.');
     return (sig.pss ? 'PS' : 'RS') + digit;
   }
-  // A POST-QUANTUM KEY HAS THE ONE ALGORITHM, where JOSE has a name for it
-  // (#1368). `null` for a parameter set it has none for, and for a KEM, which
-  // signs nothing. Until then every leaf under a post-quantum authority was
-  // `null`, and `/admin-api/pki/issue` could not answer at all.
+  // A POST-QUANTUM SUBJECT KEY HAS THE ONE ALGORITHM, where JOSE has a name
+  // for it (#1368). The name is the SUBJECT's, not the issuer's signature:
+  // a classical Issuing CA can certify an ML-DSA leaf, and the JWK's `alg`
+  // is the leaf's (#1418). `null` for a parameter set JOSE has none for, and
+  // for a KEM, which signs nothing. A composite ML-DSA key never reaches
+  // here with a JWK: `pubToJwk()` refuses it, because the X.509 bytes and
+  // the JOSE bytes are not the same key.
+  if (keyDesc.kind === 'pqc') {
+    const subject = algorithmRegistry.byId(keyDesc.pqc);
+    log.debug('Leaving jwsAlgFor(). ' +
+              ((subject && subject.jose) || 'None') + '.');
+    return (subject && subject.jose) || null;
+  }
   const row = sig.kind === 'pqc'
     ? algorithmRegistry.bySpelling('x509', sigAlgId) : null;
   log.debug('Leaving jwsAlgFor(). ' + ((row && row.jose) || 'None') + '.');
@@ -14430,6 +14588,10 @@ module.exports = {
   keyAlgorithms: keyAlgorithms,
   signatureAlgorithms: signatureAlgorithms,
   alternativeKeyAlgs: alternativeKeyAlgs,
+  // Whether an alternative key's signatures fit the process listener's
+  // certificate list (#1421). Null when they do. Exported so a test can
+  // ask without building a branch.
+  processListenerAltSignatureProblem: processListenerAltSignatureProblem,
   certifySignerGroups: certifySignerGroups,
   alternativeProblem: alternativeProblem,
   defaultSignatureAlgorithmFor: defaultSignatureAlgorithmFor,

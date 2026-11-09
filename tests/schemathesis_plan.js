@@ -118,6 +118,21 @@ function egressRouteSection(t) {
      true, { method: "GET", path: "/admin-api/scim", action: "scim" }],
     ["the SCIM outbound clients report read", true,
      { method: "GET", path: "/admin-api/scim/clients", action: "clients" }],
+    ["a secret destination's test push", true,
+     { method: "POST", path: "/admin-api/secret-destinations/{action}",
+       action: "test-push" }],
+    ["a filled secret-destination test-push path", true,
+     { method: "POST", path: "/admin-api/secret-destinations/test-push",
+       action: "test-push" }],
+    ["another action on the secret-destinations route", false,
+     { method: "POST", path: "/admin-api/secret-destinations/{action}",
+       action: "add-destination" }],
+    ["the audit history read (dials nothing, echoes stored event text)",
+     true, { method: "GET", path: "/admin-api/audit", action: "audit" }],
+    ["the audit read with no derived action still resolves whole", true,
+     { method: "GET", path: "/admin-api/audit", action: "" }],
+    ["a POST to the audit route is still a finding", false,
+     { method: "POST", path: "/admin-api/audit", action: "audit" }],
     ["the SCIM read with no derived action still resolves whole", true,
      { method: "GET", path: "/admin-api/scim", action: "" }],
     ["another GET read is still a finding (the \"\" key is route-exact)",
@@ -153,19 +168,23 @@ function egressRouteSection(t) {
 
   // The routes egress_routes.py lists are exactly the designed dials the
   // #1358 review named, the connection test of that same SCIM client
-  // (#1405), and the two stored-error reads #1299 added (so a row added or
-  // removed in the table fails here).
+  // (#1405), a secret destination's test push (#1430, the seventeenth
+  // exception), and the three stored-error reads (#1299's two SCIM
+  // reports and the audit history read, #1420), so a row added or
+  // removed in the table fails here.
   const listed = childProcess.spawnSync("python3", [path.join(__dirname,
     "schemathesis", "egress_routes.py"), "--routes"], { encoding: "utf8" });
   t.equal(JSON.parse(listed.stdout).join(","),
-    ["GET /admin-api/scim",
+    ["GET /admin-api/audit",
+     "GET /admin-api/scim",
      "GET /admin-api/scim/clients",
      "POST /admin-api/claim-providers/{action} add-provider",
      "POST /admin-api/oidfed/{action} add-subordinate",
      "POST /admin-api/oidfed/{action} add-trust-anchor",
      "POST /admin-api/oidfed/{action} resolve",
      "POST /admin-api/scim/clients/{action} reconcile",
-     "POST /admin-api/scim/clients/{action} test-connection"].join(","),
+     "POST /admin-api/scim/clients/{action} test-connection",
+     "POST /admin-api/secret-destinations/{action} test-push"].join(","),
     "egress_routes lists the designed dials and two stored-error reads");
   t.log.debug("Leaving egressRouteSection().");
 }
@@ -387,6 +406,16 @@ function run(t) {
     t.check(kit.CUSTOM_CHECKS.indexOf(check) >= 0,
       "the custom checks include " + check);
   });
+
+  // One request may take 120 seconds. The CLI default is 10, and a legal
+  // realm certificate-authority rebuild whose alternative key is
+  // SLH-DSA-SHAKE-256s took 21 to 33 seconds (one POST /admin-api/pki
+  // handler 77 seconds) on iya-sts-fuzz-1432. The client recorded that as
+  // a network error and banned the later phases (#1435).
+  t.equal(kit.REQUEST_TIMEOUT_SECONDS, 120,
+    "one Schemathesis request may take 120 seconds");
+  t.equal(kit.requestTimeoutArgs().join(" "), "--request-timeout 120",
+    "the run passes that timeout, so a legal realm CA build is observed");
 
   // Every exclusion is scoped to a known surface and carries a reason. An
   // op excluded with no reason is indistinguishable from one dropped by

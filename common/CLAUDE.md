@@ -893,6 +893,23 @@ of the few declaration attributes a PROTOCOL also writes, because a receiver
 authenticating and being agreed a stream is exactly the kind of event this
 registry exists to hold.
 
+## A permission name or description may not carry an operator error code (#1426)
+
+`oauthPermission` is `name` or `name|description`, and both halves are returned
+on every page that lists the permission: the register, the delegation picture,
+and the directory read. A code stored in either half is sent. `STS-AUTHN-0294`
+is a legal scope token, so `permissionNameProblem()` accepts it, and a
+description has no grammar at all — a setting description, which may name a
+code, pastes straight in.
+
+`permissionOperatorCodeProblem()` refuses both, at the add in
+`updateApplication()` and on the create walk (a create never reaches the
+update). The sentence quotes neither value: a 400 body is scanned raw, and a
+quoted code is the same finding. The check runs before
+`permissionNameProblem()`, whose illegal-token sentence quotes the name.
+`STS-REG-0367`. An `ldapmodify` still writes the attribute unchecked, as the
+schema row says.
+
 ## A SAML SIGNING CERTIFICATE HAS A PROVENANCE TOO (2026-09-17, #37)
 
 `samlSigningCertificate` became the trust anchor a service provider's request
@@ -8340,7 +8357,17 @@ neither.
 SHA-384 chain signs RS384 — the certificate's digest decides. An EC key does
 NOT: RFC 7518 pins ES256 to P-256, ES384 to P-384 and ES512 to P-521, so a P-256
 key under a SHA-512 chain is still ES256, and naming it ES512 would produce
-assertions nothing can verify. `tests/pki.js` asserts both readings.
+assertions nothing can verify. `tests/pki.js` asserts both readings. A
+post-quantum subject key names its own JOSE algorithm (`ML-DSA-65` on an
+ML-DSA-65 leaf), whichever key signed the certificate (#1418). The public JWK
+comes from `keyMaterial.pubToJwk()`, because Node's decoder throws
+`error:03000072` on these SPKIs and that throw was an uncaught 500 on
+`POST /admin-api/pki/issue`. `alg` is assigned before the RFC 7638 thumbprint,
+because an AKP thumbprint hashes `alg`. A composite ML-DSA key, and a
+key-establishment algorithm asked to sign, are refused as STS-PKI-0269 before
+that thumbprint. The composite has no JWK form here (the X.509 bytes and the
+JOSE bytes differ), and the refusal is the same `{ok:false, errors}` the other
+issuance refusals already are, so the management API answers 400.
 
 ### 3w, CONTINUED: HYBRID AUTHORITIES, OFF BY DEFAULT (2026-09-26, #68 phase 1)
 
@@ -8400,6 +8427,19 @@ ML-DSA-87. `docs/pki.md` says what that does to a TLS handshake and to an
 #68 (2026-09-26): no published profile defines an alternative signature on
 either, so nothing could verify one. `tests/pki_hybrid.js` holds all of it,
 including OpenSSL verifying the classical chain untouched.
+
+**A process branch is also held to the listener's certificate list** (#1421,
+#1432). The main port presents that branch's leaf, its TLS Issuing CA, the
+Intermediate and the Root. OpenSSL's default certificate list is 102400
+bytes. A scope build does not replace the Root, so the leaf and the Issuing
+CA are the two certificates the build signs. A hybrid branch adds the
+alternative signature on those two, and a post-quantum signing key replaces
+the classical signature on those two. When those signatures plus the
+certificates would exceed 102400 bytes, `buildScope()` refuses before
+anything is stored (`STS-PKI-0270`) and the socket keeps the chain it is
+already presenting. SLH-DSA-256f (49856 bytes) is past the limit as either
+key. ML-DSA-87 is not. A realm branch is not that chain and is not refused
+for size.
 
 ### 3w, CONTINUED: SIGNER GROUPS, COLLAPSED BY ALGORITHM (2026-09-26, #68 phase 2a)
 
@@ -14862,6 +14902,14 @@ it:
   `ldap_server.js`'s `groupChoices()`: the group INDEX, a row per group
   rebuilt only when a group may have been written, never the directory's
   entries or anybody's membership.
+* **The `groups` query is at most 4096 characters** (`GROUPS_QUERY_MAX`,
+  #1434). The console's links carry the chosen DNs in that one parameter,
+  and fifty ordinary names fit. A longer value is refused before it is
+  split (STS-AUTHN-0496, HTTP 400): a stock Node parser resets the
+  connection once the incoming bytes pass about 64KiB, and
+  percent-encoding turns one character into twelve, so 4096 stays inside
+  the line the parser accepts. The split walks the characters into a list
+  and joins at each `;`, so a legal value is not copied once per character.
 * **A mail is not an invitation**: `invitedAt`, from which the allotted
   time counts, is still only written at a sign-in.
 * **The message is `post-login-reminder`, a NOTIFICATION** (a person may

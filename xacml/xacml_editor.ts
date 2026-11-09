@@ -1194,13 +1194,37 @@ class XacmlEditor {
     }
 
     if (action === 'edit-match') {
+      // A MATCH IS THE ONLY NODE THIS ACTION MAY READ A VALUE FROM. The
+      // fuzzer named an AllOf (`.rules.0.target.anyOf.0.allOf.0`) and
+      // omitted `value`. An AllOf has `matches`, not `value`, so
+      // `node.value.lexical` throws (STS-API-0140, #1428). An expression
+      // edit of the wrong kind is already a refusal (#1419); this is the
+      // same rule for the action that owns a Match.
+      if (self.kindAt(path, node) !== 'match') {
+        log.debug('Leaving XacmlEditor.applyEdit(). Not a Match.');
+        return { ok: false,
+                 why: 'That path is not a Match. This action edits a ' +
+                      'Match, and an AllOf, a rule or a target is edited ' +
+                      'by its own action.' };
+      }
       const matchId = given.matchId || node.matchId;
       const definition = functions.lookup(matchId);
       if (!definition) {
         log.debug('Leaving XacmlEditor.applyEdit(). Unknown match function.');
         return { ok: false, why: 'There is no function "' + matchId + '".' };
       }
-      const type = definition.args[0].type;
+      // A MATCH FUNCTION COMPARES A VALUE. `string-bag` and the other
+      // constructors take no positional argument, so `args[0].type`
+      // throws the same way the missing value does. Refused before the
+      // node is written.
+      const first = definition.args && definition.args[0];
+      if (!first || !first.type) {
+        log.debug('Leaving XacmlEditor.applyEdit(). Not a Match function.');
+        return { ok: false,
+                 why: 'That function cannot be a Match. A Match compares ' +
+                      'a value, and this function takes none.' };
+      }
+      const type = first.type;
       const was = node.reference || {};
       // WHICH KIND OF REFERENCE. A <Match> may hold an <AttributeDesignator> or
       // an <AttributeSelector> and the schema allows exactly one of the two, so
@@ -1210,10 +1234,19 @@ class XacmlEditor {
       const wantsSelector = given.referenceKind
         ? given.referenceKind === 'selector'
         : was.kind === 'selector';
+      let lexical: string;
+      if (given.value === undefined) {
+        if (!node.value || node.value.lexical === undefined) {
+          log.debug('Leaving XacmlEditor.applyEdit(). Match has no value.');
+          return { ok: false,
+                   why: 'A Match needs a value, and this one has none.' };
+        }
+        lexical = node.value.lexical;
+      } else {
+        lexical = String(given.value);
+      }
       node.matchId = matchId;
-      node.value = { kind: 'value', type: type,
-                     lexical: given.value === undefined ? node.value.lexical
-                                                        : String(given.value) };
+      node.value = { kind: 'value', type: type, lexical: lexical };
       // THE DATATYPE FOLLOWS THE FUNCTION, always. A Match whose literal is a
       // string and whose designator is an integer does not typecheck, and
       // letting the two be chosen independently is how somebody spends ten
@@ -1362,6 +1395,21 @@ class XacmlEditor {
                  why: 'That path is the policy itself, which is not an ' +
                       'expression — point the edit at an expression inside ' +
                       'the document.' };
+      }
+      // A MATCH IS NOT AN EXPRESSION. These six actions replace the node
+      // at the path. A path that names a Match still resolves, and
+      // writing an Apply into that slot makes writeTarget() call
+      // writeExpression() on match.value, which is now absent, so it
+      // throws reading `.kind` (STS-API-0140, #1419). A rule, a target,
+      // an AnyOf and an AllOf are the same kind of miss. A Match is
+      // edited by edit-match.
+      const slot = self.kindAt(path, node);
+      if (slot !== 'expression' && slot !== 'variable') {
+        log.debug('Leaving XacmlEditor.applyEdit(). Not an expression.');
+        return { ok: false,
+                 why: 'That path is not an expression. These actions ' +
+                      'replace an expression, and a Match, a rule or a ' +
+                      'target is edited by its own action.' };
       }
       const replacement = self.newExpression(action, given,
                                         self.variablesInScope(policy, path));

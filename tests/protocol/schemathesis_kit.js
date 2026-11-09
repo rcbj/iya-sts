@@ -537,6 +537,18 @@ const PROXY_SCRIPT = path.join(__dirname, "..", "schemathesis",
 const HOOKS_FILE = path.join(__dirname, "..", "schemathesis", "sts_checks.py");
 const MAX_EXAMPLES = parseInt(
   process.env.STS_SCHEMATHESIS_MAX_EXAMPLES || "50", 10);
+// How long one Schemathesis request may take, in seconds. The CLI default
+// is 10. A realm certificate-authority rebuild whose alternative key is
+// SLH-DSA-SHAKE-256s finished in 21 to 33 seconds on iya-sts-fuzz-1432
+// (four builds, 2026-11-09T06:33:05Z through 06:34:44Z), and one
+// POST /admin-api/pki handler in that window ran 77 seconds (phase total
+// 81 seconds). The client recorded each as "Read timed out after 10
+// seconds" and banned the later phases. 120 covers that 81 seconds with
+// margin. A true hang waits 120 seconds; coverage is one case per
+// constraint, so the cost is bounded. Not an environment variable: a run
+// that forgot it would fail the same way again. The algorithm stays legal
+// on a realm branch (#1432 refuses it only on the process branch, #1435).
+const REQUEST_TIMEOUT_SECONDS = 120;
 // The venv the tests image builds, or the PATH. STS_SCHEMATHESIS_DIR is the
 // venv ROOT (the Dockerfile's `python3 -m venv /opt/schemathesis`), so the
 // executable is `<dir>/bin/schemathesis` — no `venv` segment.
@@ -544,6 +556,13 @@ const SCHEMATHESIS_BIN = process.env.STS_SCHEMATHESIS_BIN ||
   (process.env.STS_SCHEMATHESIS_DIR
     ? path.join(process.env.STS_SCHEMATHESIS_DIR, "bin", "schemathesis")
     : "schemathesis");
+
+function requestTimeoutArgs() {
+  log.debug("Entering requestTimeoutArgs().");
+  const args = ["--request-timeout", String(REQUEST_TIMEOUT_SECONDS)];
+  log.debug("Leaving requestTimeoutArgs().");
+  return args;
+}
 
 // The management API's bearer token. The preload (attach-admin-token.js) holds
 // the live one — a job may have minted itself a fresh token and handed it there
@@ -1225,7 +1244,8 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     // how the scope stays the four invariants.
     const enabledChecks = surface.checks.concat(CUSTOM_CHECKS);
     const args = ["run", schemaLocation, "--url", base,
-      "--checks", enabledChecks.join(","), "-n", String(MAX_EXAMPLES)];
+      "--checks", enabledChecks.join(","), "-n", String(MAX_EXAMPLES)]
+      .concat(requestTimeoutArgs());
     // The surface's own run-sabotage exclusions (the service cell inherits the
     // admin-api surface's through exclusionsKey) plus any serviceExclusions it
     // carries (#1299, the default-realm service cell).
@@ -1491,6 +1511,8 @@ module.exports = {
   AUTH_KINDS: AUTH_KINDS,
   BUILTIN_CHECKS: BUILTIN_CHECKS,
   CUSTOM_CHECKS: CUSTOM_CHECKS,
+  REQUEST_TIMEOUT_SECONDS: REQUEST_TIMEOUT_SECONDS,
+  requestTimeoutArgs: requestTimeoutArgs,
   EXCLUSIONS: EXCLUSIONS,
   surfaceNamed: surfaceNamed,
   exclusionsFor: exclusionsFor,

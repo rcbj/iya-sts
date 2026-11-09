@@ -1210,7 +1210,7 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `q` | query | string |  | Substring of the issuer, the `jti` or `ID`, the client or the subject, case-insensitive. |
 | `format` | query | one of `jwt`, `openid2`, `saml`, `saml11`, `saml-message`, `attestation-challenge`, `wss-message` |  | `jwt` (RFC 7523) or `saml` (RFC 7522). |
-| `use` | query | one of `steam-assertion`, `client-authentication`, `authorization-grant`, `request-object`, `ciba-request`, `federated-logout`, `provider-notification`, `client-attestation-pop`, `token-exchange`, `wstrust-requester` |  | What the assertion was accepted AS — `request-object` is an RFC 9101 request object whose `jti` was spent (#35). |
+| `use` | query | one of `steam-assertion`, `client-authentication`, `authorization-grant`, `federated-sign-in`, `request-object`, `ciba-request`, `federated-logout`, `provider-notification`, `client-attestation-pop`, `token-exchange`, `wstrust-requester` |  | What the assertion was accepted AS — `request-object` is an RFC 9101 request object whose `jti` was spent (#35). |
 | `state` | query | one of `reserved`, `spent` |  | `reserved` (its token request has not finished) or `spent` (tokens were issued). |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |

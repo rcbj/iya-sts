@@ -4968,6 +4968,22 @@ const CODES = [
       'cannot carry. Nothing was generated and nothing was stored (#1409).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0269',
+    summary: 'A signing key pair was asked for a subject key that has no ' +
+      'JWK this service can publish: a composite ML-DSA key, whose X.509 ' +
+      'bytes are not the JOSE composite, or a key-establishment algorithm ' +
+      'asked to sign. The certificate was not recorded (#1418).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
+  { code: 'STS-PKI-0270',
+    summary: 'A process-scope certificate authority was asked for a ' +
+      'signing key or an alternative key whose signatures would make the ' +
+      'TLS listener certificate list larger than a stock TLS client ' +
+      'accepts (OpenSSL SSL_MAX_CERT_LIST_DEFAULT, 102400 bytes). ' +
+      'Nothing was stored, and the listener certificate was left as it ' +
+      'is (#1421, #1432).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -7754,6 +7770,14 @@ const CODES = [
     summary: 'A post-login activity is running in a realm with no ' +
       'mail transport: its run mailed nobody and moved no cursor (#1111).',
     spec: 'none (logged; the scheduler run row)' },
+  { code: 'STS-AUTHN-0496',
+    summary: 'GET /admin-api/post-login-activities refused its groups ' +
+      'query: longer than 4096 characters, which is as much as one ' +
+      'request line can carry. The activities were not read (#1111, ' +
+      '#1434). A stock parser resets the connection once the incoming ' +
+      'bytes pass about 64KiB, and a schema that allowed 65536 characters ' +
+      'reached that reset during fuzzing.',
+    spec: 'none (HTTP 400 from GET /admin-api/post-login-activities)' },
   { code: 'STS-AUTHN-0500',
     summary: 'A settings write was refused (#1114): it would leave ' +
       'webauthn.attestation `enterprise` with ' +
@@ -27012,6 +27036,14 @@ const CODES = [
       'overwritten. An attribute claim can carry it under another name ' +
       '(#700).',
     spec: 'log line; the attribute is absent from every claim set' },
+  // #1426: a permission name or description is returned wherever the
+  // permission is listed, so a code stored in one would be sent.
+  { code: 'STS-REG-0367',
+    summary: 'An oauthPermission name or description contains an operator ' +
+      'error code. Both are returned on every page that lists the ' +
+      'permission, and a code is recorded rather than sent. At a create ' +
+      'and at an attribute add (#1426).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +
