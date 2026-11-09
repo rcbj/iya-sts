@@ -1445,19 +1445,6 @@ function noDecision(answer) {
     why: 'No issuance decision could be made.' }, 'STS-XACML-0183');
 }
 
-// NO DECISION IS NO TOKEN, IN PRODUCT (#1494, ASVS 5.0.0 16.5.3), as at the
-// access gate; development keeps the answer it is handed.
-function noDecision(answer) {
-  log.debug("Entering noDecision().");
-  if (require('./mode').failsOpenOnPolicyFault()) {
-    log.debug("Leaving noDecision(). Development.");
-    return answer;
-  }
-  log.debug("Leaving noDecision(). Refused.");
-  return errorCodes.mark({ allowed: false, decision: 'Indeterminate',
-    why: 'No issuance decision could be made.' }, 'STS-XACML-0183');
-}
-
 function allow(why) {
   log.debug("Entering allow().");
   log.debug("Leaving allow().");

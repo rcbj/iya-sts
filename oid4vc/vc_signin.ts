@@ -1540,7 +1540,9 @@ class VcSignin {
     if (!res.headersSent) {
       errorCodes.mark(res, code);
       authn.answerJson(res, 500, { ok: false, next: 'refused',
-        errors: [String((e && e.message) || e)] });
+        errors: [require('../common/mode').hidesFailureDetail()
+          ? 'The sign-in could not be completed.'
+          : String((e && e.message) || e)] });
     }
     log.debug("Leaving VcSignin.failed().");
   }

@@ -4696,7 +4696,10 @@ class FederationSp {
       log.debug("Leaving FederationSp.returnToOf().");
       return '';
     }
-    if (text.charAt(0) !== '/' || text.charAt(1) === '/') {
+    // A backslash and a control character too: a browser reads `/\\host` as
+    // another host (ASVS 5.0.0 3.7.2).
+    if (text.charAt(0) !== '/' || text.charAt(1) === '/' ||
+        /[\\\u0000-\u001f\u007f]/.test(text)) {
       log.warn('federation: refused a returnTo of "' + text + '" — it must ' +
                'be a path on this service. The sign-in continues and ends on ' +
                'the result page instead.');

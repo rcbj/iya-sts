@@ -823,7 +823,9 @@ class ProfilePhoto {
          .set('Content-Security-Policy',
               require('./app').contentSecurityPolicy(SERVED_POLICY))
          .set('Cross-Origin-Resource-Policy', 'cross-origin')
-         .set('Cache-Control', 'public, max-age=300');
+         // Personal data: a browser may keep it, a shared cache may not (ASVS
+         // 5.0.0 14.2.2).
+         .set('Cache-Control', 'private, max-age=300');
       if (req.headers && req.headers['if-none-match'] === etag) {
         res.status(304).end();
         log.debug("Leaving GET " + ROUTE + ". Not modified.");

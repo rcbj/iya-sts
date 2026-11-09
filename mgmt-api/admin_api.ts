@@ -1411,10 +1411,12 @@ class AdminApi {
     // A 500 is by definition something nobody planned to say, so product mode
     // says nothing of it to the caller (ASVS 5.0.0 16.5.1). The sites that send
     // one log it.
-    if (status === 500 && body && Array.isArray(body.errors) &&
+    if (status === 500 && body && typeof body === 'object' &&
         require('../common/mode').hidesFailureDetail()) {
+      const generic = 'The request could not be completed.';
       body = Object.assign({}, body,
-                           { errors: ['The request could not be completed.'] });
+        Array.isArray(body.errors) ? { errors: [generic] } : {},
+        body.error_description ? { error_description: generic } : {});
     }
     // The realm's endpoints for a Protocols page, when this is the GET that
     // mirrors one: the registration loop computed them onto `res.locals`, and

@@ -130,6 +130,16 @@ async function run(t) {
           'an authorization response naming another server is refused');
   t.equal(await spa.prototype.issuerMatches.call(client, {}), true,
           'and one naming none is allowed');
+  // ASVS 5.0.0 3.7.2: a browser reads `/\\host` as another host.
+  const fedSp = require(ROOT + '/federation/federation_sp');
+  const returnToOf = function (value) {
+    return fedSp.FederationSp.prototype.returnToOf.call(
+      { deps: { log: require('bunyan').createLogger({ name: 'test', level: 60 }) } },
+      value);
+  };
+  t.equal(returnToOf('/portal/ok'), '/portal/ok', 'a path on this service is kept');
+  t.equal(returnToOf('/\\evil.example'), '', 'a backslash path is refused');
+  t.equal(returnToOf('//evil.example'), '', 'and so is a protocol-relative one');
   const budget = require(ROOT + '/common/request_budget');
   const at = Date.now();
   t.equal(budget.allowed('198.51.100.7', 2, at), true, 'a first request passes');
