@@ -186,22 +186,22 @@ class SsfTransmittersApi {
         mirrors: 'GET /admin/ssf/transmitters',
         parameters: [
           { name: 'relationship', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['no-such-relationship'] },
             description: 'Only what arrived from this relationship. ' +
                          'Applied before what arrived is paged.' },
           { name: 'receivedPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of what arrived, newest first. ' +
                          'Clamped, like every page parameter here.' },
           { name: 'blocksPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of the sign-ins partners blocked.' },
           { name: 'locksPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of the account locks partners put ' +
                          'on people here.' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page, shared by the three lists.' }
         ],
         responseDescription: 'The report.',

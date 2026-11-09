@@ -2067,13 +2067,13 @@ class AdminApi {
     log.debug("Leaving AdminApi.pagingParameters().");
     return [
       { name: 'page', in: 'query', required: false,
-        schema: { type: 'integer', minimum: 1 },
+        schema: { type: 'integer', minimum: 1, examples: [1] },
         description: 'Which page of the match to return. CLAMPED rather than ' +
                      'refused: a page past the end returns the last one, and ' +
                      'the reply says which page it actually is.' },
       { name: 'per', in: 'query', required: false,
         schema: { type: 'integer', minimum: 1,
-                  maximum: adminViews.MAX_ROWS },
+                  maximum: adminViews.MAX_ROWS, examples: [10] },
         description: 'Rows per page. Defaults to ' +
                      adminViews.DEFAULT_PER_PAGE + ' and is capped at ' +
                      adminViews.MAX_ROWS + '. On a ' +
@@ -2108,7 +2108,7 @@ class AdminApi {
     log.debug("Leaving AdminApi.detailPagingParameters().");
     return lists.map(function (list) {
       return { name: list.name + 'Page', in: 'query', required: false,
-               schema: { type: 'integer', minimum: 1 },
+               schema: { type: 'integer', minimum: 1, examples: [1] },
                description: 'Which page of `' + list.name + '` to return, ' +
                             'answered by `' + list.name + 'Paging`. ' +
                             list.description };
@@ -3041,11 +3041,11 @@ class AdminApi {
         // one answer, as the console's own JSON always was.
         parameters: [
           { name: 'people', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['cell-a'] },
             description: 'A cell whose residents to list, under its release ' +
                          'policy.' },
           { name: 'after', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['alice'] },
             description: 'With `people`: the last name of the previous ' +
                          'page.' }
         ],
@@ -3084,10 +3084,11 @@ class AdminApi {
         mirrors: 'GET /admin/cells?people=',
         parameters: [
           { name: 'cell', in: 'query', required: true,
-            schema: { type: 'string', minLength: 1, maxLength: 16 },
+            schema: { type: 'string', minLength: 1, maxLength: 16,
+                      examples: ['cell-a'] },
             description: 'The other cell\'s id.' },
           { name: 'after', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
+            schema: { type: 'string', maxLength: 256, examples: ['alice'] },
             description: 'The last login name of the previous page.' }
         ],
         handler: function (req, res) {
@@ -3265,7 +3266,7 @@ class AdminApi {
                  'page draws, fed by POST /admin/broadcast (#1086)',
         parameters: [
           { name: 'since', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 0 },
+            schema: { type: 'integer', minimum: 0, examples: [0] },
             description: 'The `now` of the first answer, in milliseconds.' }
         ],
         handler: function (req, res) {
@@ -3536,7 +3537,8 @@ class AdminApi {
         mirrors: 'GET /admin/risk-scoring',
         parameters: [
           { name: 'window', in: 'query', required: false,
-            schema: { type: 'string', enum: ['1h', '24h', '7d', '30d'] },
+            schema: { type: 'string', enum: ['1h', '24h', '7d', '30d'],
+                      examples: ['24h'] },
             description: 'How far back the assessments are counted; 24h ' +
                          'when absent.' }
         ],
@@ -3565,16 +3567,19 @@ class AdminApi {
         mirrors: 'GET /admin/geolocation',
         parameters: [
           { name: 'window', in: 'query', required: false,
-            schema: { type: 'string', enum: ['live', '24h', '7d', '30d'] },
+            schema: { type: 'string', enum: ['live', '24h', '7d', '30d'],
+                      examples: ['7d'] },
             description: 'Live sessions, or everybody over a span; live ' +
                          'when absent.' },
           { name: 'continent', in: 'query', required: false,
             schema: { type: 'string', enum: ['africa', 'antarctica', 'asia',
                                              'europe', 'north-america',
-                                             'oceania', 'south-america'] },
+                                             'oceania', 'south-america'],
+                      examples: ['europe'] },
             description: 'One continent\'s countries.' },
           { name: 'country', in: 'query', required: false,
-            schema: { type: 'string', pattern: '^[A-Za-z]{2}$' },
+            schema: { type: 'string', pattern: '^[A-Za-z]{2}$',
+                      examples: ['FR'] },
             description: 'One country (ISO 3166-1 alpha-2) and its cities.' }
         ],
         handler: function (req, res) {
@@ -3613,15 +3618,17 @@ class AdminApi {
         handlerOwnsBody: true,
         parameters: [
           { name: 'dataset', in: 'query', required: true,
-            schema: { type: 'string', enum: closed.riskDatasets },
+            schema: { type: 'string', enum: closed.riskDatasets,
+                      examples: ['iplist.operator-allow'] },
             description: 'The dataset, as GET /admin-api/risk lists them.' },
           { name: 'format', in: 'query', required: true,
-            schema: { type: 'string', enum: closed.riskFormats },
+            schema: { type: 'string', enum: closed.riskFormats,
+                      examples: ['ip-list'] },
             description: 'The format of the file once expanded. Each ' +
                          'dataset takes only some of them, which the ' +
                          'handler refuses by name.' },
           { name: 'realm', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['no-such-realm'] },
             description: 'The realm, for an operator list only.' },
           { name: 'version', in: 'query', required: false,
             schema: { type: 'string' },
@@ -3731,10 +3738,11 @@ class AdminApi {
         mirrors: 'GET /admin/mail',
         parameters: [
           { name: 'template', in: 'query', required: false,
-            schema: { type: 'string', enum: closed.mailTemplates },
+            schema: { type: 'string', enum: closed.mailTemplates,
+                      examples: ['password-reset'] },
             description: 'A message id, to answer its wording.' },
           { name: 'lang', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['fr'] },
             description: 'The language of `template`; `en` by default.' }
         ],
         handler: function (req, res) {
@@ -3928,7 +3936,8 @@ class AdminApi {
         mirrors: 'GET /admin/devices/monitor',
         parameters: [
           { name: 'days', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1, maximum: 366 },
+            schema: { type: 'integer', minimum: 1, maximum: 366,
+                      examples: [30] },
             description: 'How many days the timeline covers; 30 by ' +
                          'default.' }
         ],
@@ -4091,7 +4100,7 @@ class AdminApi {
         mirrors: 'GET /admin/worker-pools',
         parameters: [
           { name: 'node', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['node-a'] },
             description: 'A cluster node\'s NAME (`cluster.nodeName`, ' +
                          'node-a, node-b, …), to answer about that node ' +
                          'alone: its view at the top, `nodes` holding its ' +
@@ -4135,7 +4144,7 @@ class AdminApi {
         mirrors: 'GET /admin/node-health',
         parameters: [
           { name: 'node', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['node-a'] },
             description: 'A cluster node\'s NAME (`cluster.nodeName`, ' +
                          'node-a, node-b, …), to answer about that node ' +
                          'alone: its view at the top, `nodes` holding its ' +
@@ -4346,10 +4355,10 @@ class AdminApi {
         mirrors: 'GET /admin/keys/history',
         parameters: [
           { name: 'unit', in: 'query', required: true,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['jose:RS256'] },
             description: 'The signing unit, `jose:RS256` and the like.' },
           { name: 'kid', in: 'query', required: true,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['no-such-kid'] },
             description: 'The key\'s identifier.' }
         ],
         handler: function (req, res) {
@@ -4515,10 +4524,12 @@ class AdminApi {
         actions: [
           { action: 'export', operationId: 'exportKey' },
           // ROTATE AND EMERGENCY (#48, 2026-09-22): /admin/keys/rotate's two
-          // forms. NO EXAMPLE, deliberately: an example is what
-          // `sts_admin_api_operations.js` drives, and an emergency signs a
-          // realm out; `sts_key_rotation.js` drives both, in a realm of its
-          // own, and the operations job's NOT_DRIVEN_HERE says so.
+          // forms. An example is what `sts_admin_api_operations.js` drives,
+          // and an emergency signs a realm out, so each example names a unit
+          // no realm holds and is the 400 (STS-KEYS-0065, asked before the
+          // confirmation) that rotates nothing (#1475). `sts_key_rotation.js`
+          // drives both for real, in a realm of its own, and the operations
+          // job's NOT_DRIVEN_HERE says so.
           { action: 'rotate', operationId: 'rotateSigningKeys' },
           { action: 'emergency', operationId: 'rotateSigningKeysEmergency' }
         ] },
@@ -4853,7 +4864,7 @@ class AdminApi {
         mirrors: 'GET /admin/users',
         parameters: [
           { name: 'user', in: 'query', required: true,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['alice'] },
             description: 'The person, as /admin-api/users names them.' }
         ],
         handler: function (req, res) {
@@ -4879,7 +4890,7 @@ class AdminApi {
             description: 'The older spelling of `user`, read when `user` ' +
                          'is absent.' },
           { name: 'user', in: 'query', required: true,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['alice'] },
             description: 'The person, as /admin-api/users names them.' }
         ],
         handler: function (req, res) {
@@ -4899,7 +4910,7 @@ class AdminApi {
             description: 'The older spelling of `user`, read when `user` ' +
                          'is absent.' },
           { name: 'user', in: 'query', required: true,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['alice'] },
             description: 'The person, as /admin-api/users names them.' }
         ],
         handler: function (req, res) {
@@ -4922,7 +4933,7 @@ class AdminApi {
             description: 'The older spelling of `user`, read when `user` ' +
                          'is absent.' },
           { name: 'user', in: 'query', required: true,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['alice'] },
             description: 'The person, as /admin-api/users names them.' }
         ],
         handler: function (req, res) {
@@ -4960,7 +4971,7 @@ class AdminApi {
             description: 'A username to open the form for, which the form ' +
                          'starts from when the request gives no body.' },
           { name: 'invent', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
+            schema: { type: 'string', maxLength: 256, examples: ['alice'] },
             description: 'A username: the answer carries `invented`, the ' +
                          'attribute values this service would invent for ' +
                          'that person, which the console\'s Fill button ' +
@@ -5976,11 +5987,12 @@ class AdminApi {
         mirrors: 'GET /admin/tokens/credential',
         parameters: [
           { name: 'id', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['no-such-credential'] },
             description: 'The credential\'s identifier, as the tokens ' +
                          'table shows it.' },
           { name: 'format', in: 'query', required: false,
-            schema: { type: 'string', enum: ['json', 'svg'] },
+            schema: { type: 'string', enum: ['json', 'svg'],
+                      examples: ['json'] },
             description: '`svg` answers the drawing alone, as a document ' +
                          'with no links in it. `json`, the default, ' +
                          'answers everything.' }
@@ -6066,7 +6078,8 @@ class AdminApi {
         operationId: 'getIssuedSet',
         mirrors: 'GET /admin/tokens/set',
         parameters: [
-          { name: 'id', in: 'query', required: true, schema: { type: 'string' },
+          { name: 'id', in: 'query', required: true,
+            schema: { type: 'string', examples: ['no-such-set'] },
             description: 'The `setKey` off a row of GET /admin-api/tokens.' }
         ],
         handler: function (req, res, next) {
@@ -6396,7 +6409,7 @@ class AdminApi {
         mirrors: 'GET /admin/claims',
         parameters: [
           { name: 'user', in: 'query', required: false,
-            schema: { type: 'string', default: 'alice' },
+            schema: { type: 'string', default: 'alice', examples: ['alice'] },
             description: 'Whose attribute values to preview. Defaults to a ' +
                          'person the directory holds from startup, so the ' +
                          'preview shows real values on a fresh process. ' +
@@ -6456,7 +6469,7 @@ class AdminApi {
         mirrors: 'GET /admin/userinfo-claims',
         parameters: [
           { name: 'user', in: 'query', required: false,
-            schema: { type: 'string', default: 'alice' },
+            schema: { type: 'string', default: 'alice', examples: ['alice'] },
             description: 'Whose attribute values to preview. The same ' +
                          'parameter, the same cap and the same default GET ' +
                          '/admin-api/claims takes, deliberately: the three ' +
@@ -6466,7 +6479,8 @@ class AdminApi {
                          'them or the values were invented from the ' +
                          'username.' },
           { name: 'request', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string',
+                      examples: ['{"userinfo":{"birthdate":null}}'] },
             description: 'A section 5.5 claims request, as the JSON a client ' +
                          'would send — for example ' +
                          '`{"userinfo":{"birthdate":null,"address":null}}`. ' +
@@ -6522,7 +6536,7 @@ class AdminApi {
         mirrors: 'GET /admin/saml2',
         parameters: [
           { name: 'user', in: 'query', required: false,
-            schema: { type: 'string', default: 'alice' },
+            schema: { type: 'string', default: 'alice', examples: ['alice'] },
             description: 'Whose attribute values to preview. Defaults to a ' +
                          'person the directory holds from startup, so the ' +
                          'preview shows real values on a fresh process. ' +
@@ -6574,7 +6588,7 @@ class AdminApi {
         mirrors: 'GET /admin/kerberos',
         parameters: [
           { name: 'user', in: 'query', required: false,
-            schema: { type: 'string', default: 'alice' },
+            schema: { type: 'string', default: 'alice', examples: ['alice'] },
             description: 'Whose claims to preview: `preview.claims` is what ' +
                          'their next TGT would carry.' }
         ],
@@ -6616,7 +6630,7 @@ class AdminApi {
         mirrors: 'GET /admin/vc',
         parameters: [
           { name: 'user', in: 'query', required: false,
-            schema: { type: 'string', default: 'alice' },
+            schema: { type: 'string', default: 'alice', examples: ['alice'] },
             description: 'Whose credential to preview. Defaults to a person ' +
                          'the directory holds from startup, so the preview ' +
                          'shows real values on a fresh process.' }
@@ -6808,7 +6822,7 @@ class AdminApi {
         mirrors: 'GET /admin/vc',
         parameters: [
           { name: 'state', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['no-such-state'] },
             description: 'The `state` `POST /verifications/start` ' +
                          'answered.' }
         ],
@@ -6857,7 +6871,7 @@ class AdminApi {
         mirrors: 'no console page — a wallet under test asks it',
         parameters: [
           { name: 'id', in: 'query', required: true,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['no-such-notification'] },
             description: 'The `notification_id`.' }
         ],
         handler: function (req, res) {
@@ -8288,7 +8302,8 @@ class AdminApi {
         mirrors: 'GET /admin/scim',
         parameters: [
           { name: 'client', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 512 },
+            schema: { type: 'string', maxLength: 512,
+                      examples: ['no-such-client'] },
             description: 'One outbound SCIM client\'s identifier (#552): ' +
                          '`scimClients.client` is then that client\'s ' +
                          'page — its queues, dead letters and discovery.' }
@@ -9320,11 +9335,12 @@ class AdminApi {
         mirrors: 'GET /admin/delegation/user',
         parameters: withDelegationQuery([
           { name: 'user', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['alice'] },
             description: 'The person, under any spelling this service has ' +
                          'seen them under.' },
           { name: 'format', in: 'query', required: false,
-            schema: { type: 'string', enum: ['json', 'svg'] },
+            schema: { type: 'string', enum: ['json', 'svg'],
+                      examples: ['json'] },
             description: '`svg` answers the drawing alone, as a document ' +
                          'with no links in it. `json`, the default, ' +
                          'answers everything.' }
@@ -9353,11 +9369,12 @@ class AdminApi {
         mirrors: 'GET /admin/delegation/application',
         parameters: withDelegationQuery([
           { name: 'application', in: 'query', required: false,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['no-such-application'] },
             description: 'The application, as a protocol presented it or ' +
                          'normalised.' },
           { name: 'format', in: 'query', required: false,
-            schema: { type: 'string', enum: ['json', 'svg'] },
+            schema: { type: 'string', enum: ['json', 'svg'],
+                      examples: ['json'] },
             description: '`svg` answers the drawing alone, as a document ' +
                          'with no links in it. `json`, the default, ' +
                          'answers everything.' }
@@ -9428,16 +9445,16 @@ class AdminApi {
         mirrors: 'GET /admin/delegation',
         parameters: [
           { name: 'policyPairsPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'The page of `pairs`.' },
           { name: 'intermediariesPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'The page of `intermediaries`.' },
           { name: 'peoplePage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'The page of `people`.' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page, for all three lists (default ' +
                          '10).' }
         ],
@@ -9532,21 +9549,21 @@ class AdminApi {
                          'several lists a delegation page can hold and a ' +
                          'bare `page` would move them together. Not read ' +
                          'when `application` is given.',
-            schema: { type: 'integer', minimum: 1 } },
+            schema: { type: 'integer', minimum: 1, examples: [1] } },
           { name: 'groupGrantsPage', in: 'query',
             description: 'Which page of the GRANTS inside one group. Read ' +
                          'only when `application` is given.',
-            schema: { type: 'integer', minimum: 1 } },
+            schema: { type: 'integer', minimum: 1, examples: [1] } },
           { name: 'groupPermissionsPage', in: 'query',
             description: 'Which page of the PERMISSIONS the applications in ' +
                          'one group expose, granted or not. Read only when ' +
                          '`application` is given.',
-            schema: { type: 'integer', minimum: 1 } },
+            schema: { type: 'integer', minimum: 1, examples: [1] } },
           { name: 'per', in: 'query',
             description: 'Rows per page, shared by both lists above — one ' +
                          '`per` per page is this console\'s rule and this ' +
                          'operation follows it.',
-            schema: { type: 'integer', minimum: 1 } }
+            schema: { type: 'integer', minimum: 1, examples: [10] } }
         ],
         handler: function (req, res) {
           log.debug("Entering the management API permission groups endpoint.");
@@ -9655,7 +9672,7 @@ class AdminApi {
             description: 'The older spelling of `subject`, read when ' +
                          '`subject` is absent.' },
           { name: 'application', in: 'query',
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['no-such-application'] },
             description: 'What something would be issued FOR — a ' +
                          '`client_id`, a wtrealm, a SAML entityID, an SPN. ' +
                          'An application no entry names requires EVERYBODY, ' +
@@ -9663,15 +9680,17 @@ class AdminApi {
                          'and refusing the first request from a new client ' +
                          'is precisely the permissiveness it is for.' },
           { name: 'subject', in: 'query',
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['alice'] },
             description: 'Who it would be issued to — a username, or a ' +
                          'client_id where `subjectKind` is `application`.' },
           { name: 'subjectKind', in: 'query',
-            schema: { type: 'string', enum: ['user', 'application'] },
+            schema: { type: 'string', enum: ['user', 'application'],
+                      examples: ['user'] },
             description: 'Whether the subject is a person or a client ' +
                          'authenticating as itself. Defaults to `user`.' },
           { name: 'kind', in: 'query',
-            schema: { type: 'string', enum: closed.issuanceKinds },
+            schema: { type: 'string', enum: closed.issuanceKinds,
+                      examples: ['issue-access-token'] },
             description: 'Which issuance. It becomes the XACML `action-id`, ' +
                          'so a policy may permit an access token and refuse ' +
                          'a refresh token. `GET ' +
@@ -9771,10 +9790,11 @@ class AdminApi {
                  'stsOwnerProtected on the entry',
         parameters: [
           { name: 'kind', in: 'query', required: true,
-            schema: { type: 'string', enum: ownership.KINDS.slice(0) },
+            schema: { type: 'string', enum: ownership.KINDS.slice(0),
+                      examples: ['application'] },
             description: 'Which kind of object.' },
           { name: 'name', in: 'query', required: true,
-            schema: { type: 'string' },
+            schema: { type: 'string', examples: ['no-such-application'] },
             description: 'A role\'s name, a group\'s cn or DN, a service ' +
                          'account\'s username, an application\'s ' +
                          'identifier.' }

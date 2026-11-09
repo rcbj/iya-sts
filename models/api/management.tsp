@@ -29458,7 +29458,7 @@ op `getCryptoMetadata`(`responses/200/content/application~1json/schema`: `Crypto
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getEncryption`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `what`?: string;
     `mode`?: string;
@@ -29589,7 +29589,7 @@ op `getEncryption`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
     `requestBody`:#{`required`:false,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `rotateDataKeys`(`requestBody/content/application~1json/schema`: {
+op `rotateDataKeys`(@js(#{`examples`:#[#{`realm`:"no-such-realm",`cls`:"no-such-class"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"A realm id; omitted for every realm, `default` for the default realm."
     }) `realm`?: string;
@@ -29603,6 +29603,9 @@ op `rotateDataKeys`(`requestBody/content/application~1json/schema`: {
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
 
+// NO EXAMPLE, deliberately (#1475): an example is executed, this body has
+// nothing to name that could make it harmless, and a re-encryption pass
+// rewrites what the store is read through.
 @endpoint("/admin-api/encryption/reencrypt-data-keys",
   "post",
   #{
@@ -29666,13 +29669,16 @@ op `reencryptDataKeys`(`requestBody/content/application~1json/schema`: {},
     `requestBody`:#{`required`:false,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `countDataKeys`(`requestBody/content/application~1json/schema`: {},
+op `countDataKeys`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~1json/schema`: {},
   `responses/200/content/application~1json/schema`: `SharedModel9`,
   `responses/202/content/application~1json/schema`: `SharedModel9`,
   `responses/400/content/application~1json/schema`: `SharedModel9`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
 
+// NO EXAMPLE, deliberately (#1475): executed, and with nothing to name, an
+// example would rotate the key every sealed secret is wrapped under wherever
+// that key lives in a key service.
 @endpoint("/admin-api/encryption/rotate-kek",
   "post",
   #{
@@ -29829,8 +29835,8 @@ op `rotateKek`(`requestBody/content/application~1json/schema`: {},
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getCells`(`parameters/0/schema`: string,
-  `parameters/1/schema`: string,
+op `getCells`(@js(#{`examples`:#["cell-a"]}) `parameters/0/schema`: string,
+  @js(#{`examples`:#["alice"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `multi`?: boolean;
     `cell`?: string;
@@ -29895,13 +29901,6 @@ op `getCells`(`parameters/0/schema`: string,
     },
     `parameters`:#[
       #{
-        `name`:"cell",
-        `in`:"query",
-        `required`:true,
-        `schema`:null,
-        `description`:"The other cell's id."
-      },
-      #{
         `name`:"after",
         `in`:"query",
         `required`:false,
@@ -29911,8 +29910,7 @@ op `getCells`(`parameters/0/schema`: string,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getCellPeople`(@js(#{`minLength`:1,`maxLength`:16}) `parameters/0/schema`: string,
-  @js(#{`maxLength`:256}) `parameters/1/schema`: string,
+op `getCellPeople`(@js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `SharedModel22`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -30054,7 +30052,7 @@ op `sendBroadcast`(@js(#{
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getConsoleAnnouncements`(@js(#{`minimum`:0}) `parameters/0/schema`: integer,
+op `getConsoleAnnouncements`(@js(#{`minimum`:0,`examples`:#[0]}) `parameters/0/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `now`?: numeric;
     `everyMs`?: numeric;
@@ -30512,8 +30510,8 @@ op `setListenerApplications`(@js(#{
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getCredentialStatus`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/1/schema`: integer,
+op `getCredentialStatus`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `size`?: integer;
     `bits`?: integer;
@@ -31047,10 +31045,10 @@ op `getRisk`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `parameters/2/schema`: string,
   `parameters/3/schema`: string,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
     `realmOnly`?: boolean;
@@ -31279,7 +31277,7 @@ op `getRisk`(`parameters/0/schema`: string,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getRiskMetrics`(`parameters/0/schema`: "1h" | "24h" | "7d" | "30d",
+op `getRiskMetrics`(@js(#{`examples`:#["24h"]}) `parameters/0/schema`: "1h" | "24h" | "7d" | "30d",
   `responses/200/content/application~1json/schema`: {
     `window`?: string;
     `windows`?: (string)[];
@@ -31481,9 +31479,9 @@ op `getRiskMetrics`(`parameters/0/schema`: "1h" | "24h" | "7d" | "30d",
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getGeolocation`(`parameters/0/schema`: "live" | "24h" | "7d" | "30d",
-  `parameters/1/schema`: "africa" | "antarctica" | "asia" | "europe" | "north-america" | "oceania" | "south-america",
-  @js(#{`pattern`:"^[A-Za-z]{2}$"}) `parameters/2/schema`: string,
+op `getGeolocation`(@js(#{`examples`:#["7d"]}) `parameters/0/schema`: "live" | "24h" | "7d" | "30d",
+  @js(#{`examples`:#["europe"]}) `parameters/1/schema`: "africa" | "antarctica" | "asia" | "europe" | "north-america" | "oceania" | "south-america",
+  @js(#{`pattern`:"^[A-Za-z]{2}$",`examples`:#["FR"]}) `parameters/2/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `realm`?: string;
@@ -31704,9 +31702,9 @@ op `getGeolocation`(`parameters/0/schema`: "live" | "24h" | "7d" | "30d",
     },
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `uploadRiskDataset`(`parameters/0/schema`: "geo.city" | "geo.country" | "asn" | "iplist.tor-exit" | "iplist.reputation" | "iplist.operator-deny" | "iplist.operator-allow" | "fido.mds3" | "android.attestation-status",
-  `parameters/1/schema`: "dbip-city-csv" | "dbip-country-csv" | "dbip-asn-csv" | "ipinfo-lite-csv" | "fido-mds3-jwt" | "android-attestation-status-json" | "ip-list",
-  `parameters/2/schema`: string,
+op `uploadRiskDataset`(@js(#{`examples`:#["iplist.operator-allow"]}) `parameters/0/schema`: "geo.city" | "geo.country" | "asn" | "iplist.tor-exit" | "iplist.reputation" | "iplist.operator-deny" | "iplist.operator-allow" | "fido.mds3" | "android.attestation-status",
+  @js(#{`examples`:#["ip-list"]}) `parameters/1/schema`: "dbip-city-csv" | "dbip-country-csv" | "dbip-asn-csv" | "ipinfo-lite-csv" | "fido-mds3-jwt" | "android-attestation-status-json" | "ip-list",
+  @js(#{`examples`:#["no-such-realm"]}) `parameters/2/schema`: string,
   `parameters/3/schema`: string,
   `parameters/4/schema`: string,
   `parameters/5/schema`: string,
@@ -32038,8 +32036,8 @@ op `deleteRiskDatasetVersion`(@js(#{`examples`:#[#{`dataset`:"asn",`version`:"20
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getMail`(`parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "reset-refused-attempt" | "layout" | "test-message",
-  `parameters/1/schema`: string,
+op `getMail`(@js(#{`examples`:#["password-reset"]}) `parameters/0/schema`: "password-reset" | "account-activation" | "address-verification" | "pseudonym-verification" | "password-changed" | "account-disabled" | "sessions-ended" | "credential-compromised" | "recovery-started" | "address-changed" | "account-connected" | "access-request" | "uma-approval" | "authzen-access-request" | "authzen-emergency-access" | "pki-pin-status" | "administrator-alert" | "sign-in-code" | "sign-in-link" | "report-ready" | "post-login-reminder" | "reset-refused-attempt" | "layout" | "test-message",
+  @js(#{`examples`:#["fr"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
     `mode`?: string;
@@ -32370,8 +32368,8 @@ op `resetMailTemplate`(@js(#{`examples`:#[#{`template`:"test-message",`lang`:"de
 op `getMailOutbox`(`parameters/0/schema`: "pending" | "sent" | "captured" | "dead",
   `parameters/1/schema`: string,
   `parameters/2/schema`: string,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
     `transport`?: get_admin_api_mail_outbox_r200_application_json_transport_h2411;
@@ -32651,8 +32649,8 @@ op `getDevices`(`parameters/0/schema`: string,
   `parameters/6/schema`: "attested" | "self-asserted" | "bearer",
   `parameters/7/schema`: "x509" | "jwk" | "webauthn" | "native-sso",
   `parameters/8/schema`: "active" | "compromised",
-  @js(#{`minimum`:1}) `parameters/9/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/10/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/9/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/10/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `found`?: boolean;
     `id`?: string;
@@ -33048,7 +33046,7 @@ op `reportDeviceCompliance`(@js(#{
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getDevicesMonitor`(@js(#{`minimum`:1,`maximum`:366}) `parameters/0/schema`: integer,
+op `getDevicesMonitor`(@js(#{`minimum`:1,`maximum`:366,`examples`:#[30]}) `parameters/0/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `counts`?: {
       `total`?: numeric;
@@ -33167,8 +33165,8 @@ op `getDevicesMonitor`(@js(#{`minimum`:1,`maximum`:366}) `parameters/0/schema`: 
   })
 op `getServiceAccounts`(`parameters/0/schema`: "true",
   `parameters/1/schema`: string,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `policy`?: {
       `rotationEnabled`?: boolean;
@@ -33481,8 +33479,8 @@ op `getScheduler`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
   `parameters/1/schema`: string,
   `parameters/2/schema`: string,
   `parameters/3/schema`: "succeeded" | "failed" | "abandoned" | "running" | "queued",
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/5/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `generatedAt`?: string;
     `nowMs`?: numeric;
@@ -33710,8 +33708,8 @@ op `stepDownScheduler`(@js(#{`examples`:#[#{}]}) `requestBody/content/applicatio
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getCaches`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `generatedAt`?: string;
     `pid`?: string;
@@ -33815,7 +33813,7 @@ op `getCaches`(`parameters/0/schema`: string,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getWorkerPools`(`parameters/0/schema`: string,
+op `getWorkerPools`(@js(#{`examples`:#["node-a"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `generatedAt`?: string;
     `node`?: get_admin_api_worker_pools_r200_application_json_node_h2479;
@@ -33951,7 +33949,7 @@ op `getWorkerPools`(`parameters/0/schema`: string,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getNodeHealth`(`parameters/0/schema`: string,
+op `getNodeHealth`(@js(#{`examples`:#["node-a"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `generatedAt`?: string;
     `node`?: get_admin_api_node_health_r200_application_json_node_h2485;
@@ -34432,8 +34430,8 @@ op `getKeys`(`responses/200/content/application~1json/schema`: `KeyList`,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getKeyHistoryCertificate`(`parameters/0/schema`: string,
-  `parameters/1/schema`: string,
+op `getKeyHistoryCertificate`(@js(#{`examples`:#["jose:RS256"]}) `parameters/0/schema`: string,
+  @js(#{`examples`:#["no-such-kid"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1pem-certificate-chain/schema`: string,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -34529,8 +34527,8 @@ op `getKeyHistoryCertificate`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getKeyHistory`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
     `unit`?: string;
@@ -34642,7 +34640,7 @@ op `exportKey`(@js(#{`examples`:#[#{`key`:"sts-rsa",`format`:"pem",`password`:""
     `requestBody`:#{`required`:false,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `rotateSigningKeys`(`requestBody/content/application~1json/schema`: {
+op `rotateSigningKeys`(@js(#{`examples`:#[#{`units`:#["no-such-unit"]}]}) `requestBody/content/application~1json/schema`: {
     @js(#{
       `description`:"Units from GET /admin-api/keys `rotation.units`, e.g. `jose:RS256`."
     }) `units`?: (string)[]
@@ -34681,7 +34679,7 @@ op `rotateSigningKeys`(`requestBody/content/application~1json/schema`: {
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `rotateSigningKeysEmergency`(`requestBody/content/application~1json/schema`: {`confirm`: "compromised"; `units`?: (string)[]},
+op `rotateSigningKeysEmergency`(@js(#{`examples`:#[#{`confirm`:"compromised",`units`:#["no-such-unit"]}]}) `requestBody/content/application~1json/schema`: {`confirm`: "compromised"; `units`?: (string)[]},
   `responses/200/content/application~1json/schema`: `SharedModel84`,
   `responses/202/content/application~1json/schema`: `SharedModel84`,
   `responses/400/content/application~1json/schema`: `SharedModel84`,
@@ -34957,15 +34955,15 @@ op `getUsers`(`parameters/0/schema`: string,
   `parameters/3/schema`: "any" | "totp" | "key" | "none" | "unreadable",
   `parameters/4/schema`: "service" | "person",
   @js(#{`minimum`:1}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/7/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/8/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/9/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/10/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/11/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/12/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/13/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/8/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/9/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/10/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/11/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/12/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/13/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/14/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_users_r200_application_json_h2549,
   `responses/400/content/application~1json/schema`: `SharedModel48`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -35026,8 +35024,8 @@ op `getUsers`(`parameters/0/schema`: string,
   })
 op `getUserAppPasswords`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `enabled`?: boolean;
@@ -35080,7 +35078,7 @@ op `getUserAppPasswords`(`parameters/0/schema`: string,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getUserCertificates`(`parameters/0/schema`: string,
+op `getUserCertificates`(@js(#{`examples`:#["alice"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `ok`: boolean;
     `message`?: string;
@@ -35186,7 +35184,7 @@ op `getUserCertificates`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getUserDevices`(`parameters/0/schema`: string,
-  `parameters/1/schema`: string,
+  @js(#{`examples`:#["alice"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `maxPerPerson`?: numeric;
@@ -35299,7 +35297,7 @@ op `getUserDevices`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getUserSelfIssuedSubjects`(`parameters/0/schema`: string,
-  `parameters/1/schema`: string,
+  @js(#{`examples`:#["alice"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `entryFound`?: boolean;
@@ -35413,7 +35411,7 @@ op `getUserSelfIssuedSubjects`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getUserPublishedDids`(`parameters/0/schema`: string,
-  `parameters/1/schema`: string,
+  @js(#{`examples`:#["alice"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `entryFound`?: boolean;
@@ -35509,8 +35507,8 @@ op `getUserPublishedDids`(`parameters/0/schema`: string,
   })
 op `getUserVerifications`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `trustFrameworks`?: (string)[];
@@ -35571,7 +35569,7 @@ op `getUserVerifications`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getNewUserForm`(`parameters/0/schema`: string,
-  @js(#{`maxLength`:256}) `parameters/1/schema`: string,
+  @js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: `NewUserForm`,
   `responses/400/content/application~1json/schema`: `SharedModel48`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -37453,7 +37451,7 @@ op `revokeUserAppPassword`(@js(#{`examples`:#[#{`user`:"alice",`id`:"K7QD"}]}) `
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `beginUserPasskeyUpgrade`(`requestBody/content/application~1json/schema`: {`user`: string; `credentialId`: string},
+op `beginUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person",`credentialId`:"no-such-credential"}]}) `requestBody/content/application~1json/schema`: {`user`: string; `credentialId`: string},
   `responses/200/content/application~1json/schema`: `SharedModel140`,
   `responses/400/content/application~1json/schema`: `SharedModel140`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -37483,7 +37481,7 @@ op `beginUserPasskeyUpgrade`(`requestBody/content/application~1json/schema`: {`u
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `proveUserPasskeyUpgrade`(`requestBody/content/application~1json/schema`: {
+op `proveUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person",`upgradeId`:"no-such-upgrade",`credential`:"{}"}]}) `requestBody/content/application~1json/schema`: {
     `user`: string;
     `upgradeId`: string;
     @js(#{`maxLength`:65536}) `credential`: string
@@ -37517,7 +37515,7 @@ op `proveUserPasskeyUpgrade`(`requestBody/content/application~1json/schema`: {
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `finishUserPasskeyUpgrade`(`requestBody/content/application~1json/schema`: {
+op `finishUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person",`upgradeId`:"no-such-upgrade",`credential`:"{}"}]}) `requestBody/content/application~1json/schema`: {
     `user`: string;
     `upgradeId`: string;
     @js(#{`maxLength`:65536}) `credential`: string
@@ -37551,7 +37549,7 @@ op `finishUserPasskeyUpgrade`(`requestBody/content/application~1json/schema`: {
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `cancelUserPasskeyUpgrade`(`requestBody/content/application~1json/schema`: {`user`: string},
+op `cancelUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person"}]}) `requestBody/content/application~1json/schema`: {`user`: string},
   `responses/200/content/application~1json/schema`: {`ok`: boolean; `message`?: string; `errors`?: (string)[]},
   `responses/400/content/application~1json/schema`: {`ok`: boolean; `message`?: string; `errors`?: (string)[]},
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -37792,8 +37790,8 @@ op `finishUserPasskeyEnrolment`(@js(#{
 op `getSessions`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: `SessionList`,
   `responses/400/content/application~1json/schema`: `SharedModel48`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -37921,8 +37919,8 @@ op `getLiveSessions`(`parameters/0/schema`: string,
   `parameters/2/schema`: "pending" | "sent" | "dead",
   @js(#{`maxLength`:256}) `parameters/3/schema`: string,
   @js(#{`minimum`:1}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/6/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `known`?: boolean;
@@ -38368,10 +38366,10 @@ op `clearKerberosSignOut`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/c
 op `getGroups`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `parameters/2/schema`: (string)[],
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/6/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_groups_r200_application_json_h2596,
   `responses/400/content/application~1json/schema`: `SharedModel48`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -38665,8 +38663,8 @@ op `removeGroupOwner`(@js(#{
   })
 op `getDirectoryEntries`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryEntryList`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -38714,8 +38712,8 @@ op `getDirectoryEntries`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getDirectoryApplications`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryApplicationList`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -38763,8 +38761,8 @@ op `getDirectoryApplications`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getDirectoryFederations`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryFederationList`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -38834,10 +38832,10 @@ op `getDirectoryFederations`(`parameters/0/schema`: string,
   })
 op `getDirectorySpiffe`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/5/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectorySpiffe`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -38885,8 +38883,8 @@ op `getDirectorySpiffe`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getDirectoryRoles`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryRoleList`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -38934,8 +38932,8 @@ op `getDirectoryRoles`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getDirectoryPolicies`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryPolicyList`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -38983,8 +38981,8 @@ op `getDirectoryPolicies`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getDirectoryPeps`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DirectoryPepList`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -39053,8 +39051,8 @@ op `getDirectoryPeps`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getDirectoryDevices`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `baseDn`?: string;
     `container`?: string;
@@ -39279,8 +39277,8 @@ op `getAdminRoles`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/3/schema`: integer,
   @js(#{`minimum`:0}) `parameters/4/schema`: integer,
   `parameters/5/schema`: string,
-  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/7/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `enforced`?: boolean;
     `openWhenEmpty`?: boolean;
@@ -39564,8 +39562,8 @@ op `revokeAdminRole`(@js(#{`examples`:#[#{`username`:"rcbj",`role`:"read"}]}) `r
   })
 op `getMultiFactor`(`parameters/0/schema`: string,
   `parameters/1/schema`: "any" | "totp" | "key" | "none" | "unreadable",
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `offered`?: boolean;
     `totp`?: `SharedModel169`;
@@ -39854,8 +39852,8 @@ op `clearEmailFactor`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/c
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getCredentialLineage`(`parameters/0/schema`: string,
-  `parameters/1/schema`: "json" | "svg",
+op `getCredentialLineage`(@js(#{`examples`:#["no-such-credential"]}) `parameters/0/schema`: string,
+  @js(#{`examples`:#["json"]}) `parameters/1/schema`: "json" | "svg",
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `identifier`?: get_admin_api_tokens_credential_r200_application_json_identifier_h2625;
@@ -40081,8 +40079,8 @@ op `getIssued`(`parameters/0/schema`: "token" | "assertion" | "ticket" | "svid",
   `parameters/1/schema`: "id_token" | "access_token" | "refresh_token" | "userinfo_response" | "request_object" | "gnap_access_token" | "SAML 2.0" | "SAML 1.1" | "Kerberos TGT" | "Kerberos service ticket" | "SVID (X.509)" | "SVID (JWT)",
   `parameters/2/schema`: "valid" | "expired" | "revoked" | "not yet valid" | "no expiry stated",
   `parameters/3/schema`: string,
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/5/schema`: integer,
   `responses/200/content/application~1json/schema`: `IssuedList`,
   `responses/400/content/application~1json/schema`: {`ok`: boolean; `message`?: string; `errors`?: (string)[]},
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -40116,7 +40114,7 @@ op `getIssued`(`parameters/0/schema`: "token" | "assertion" | "ticket" | "svid",
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getIssuedSet`(`parameters/0/schema`: string,
+op `getIssuedSet`(@js(#{`examples`:#["no-such-set"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `IssuedSetDetail`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -41000,6 +40998,9 @@ op `resetSetting`(@js(#{`examples`:#[#{`key`:"saml.organizationName"}]}) `reques
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
 
+// NO EXAMPLE, deliberately (#1475): with nothing to name, an executed example
+// would clear every override of the realm it ran in; `sts_admin_api_operations`
+// drives it on purpose.
 @endpoint("/admin-api/config/reset-all",
   "post",
   #{
@@ -41513,6 +41514,9 @@ op `setTokenLifetimes`(@js(#{
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
 
+// NO EXAMPLE, deliberately (#1475): with nothing to name, an executed example
+// would drop these overrides in the realm it ran in;
+// `sts_admin_api_operations` drives it on purpose.
 @endpoint("/admin-api/token-lifetimes/defaults",
   "post",
   #{
@@ -41673,6 +41677,9 @@ op `setSamlAssertions`(@js(#{
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
 
+// NO EXAMPLE, deliberately (#1475): with nothing to name, an executed example
+// would drop these overrides in the realm it ran in;
+// `sts_admin_api_operations` drives it on purpose.
 @endpoint("/admin-api/saml-assertions/defaults",
   "post",
   #{
@@ -41731,7 +41738,7 @@ op `resetSamlAssertions`(`requestBody/content/application~1json/schema`: {},
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getClaims`(@js(#{`default`:"alice"}) `parameters/0/schema`: string,
+op `getClaims`(@js(#{`default`:"alice",`examples`:#["alice"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: `ClaimSets`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -42051,8 +42058,8 @@ op `clearClaimAttributes`(@js(#{`examples`:#[#{`set`:"id_token"}]}) `requestBody
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getUserInfoClaims`(@js(#{`default`:"alice"}) `parameters/0/schema`: string,
-  `parameters/1/schema`: string,
+op `getUserInfoClaims`(@js(#{`default`:"alice",`examples`:#["alice"]}) `parameters/0/schema`: string,
+  @js(#{`examples`:#["{\"userinfo\":{\"birthdate\":null}}"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: `UserInfoClaimSets`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -42381,7 +42388,7 @@ op `clearUserInfoClaimAttributes`(@js(#{`examples`:#[#{`set`:"userinfo"}]}) `req
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getSamlAttributes`(@js(#{`default`:"alice"}) `parameters/0/schema`: string,
+op `getSamlAttributes`(@js(#{`default`:"alice",`examples`:#["alice"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `defaultSaml11Namespace`?: string;
@@ -42754,7 +42761,7 @@ op `clearSamlDirectoryAttributes`(@js(#{`examples`:#[#{`set`:"saml11"}]}) `reque
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getKerberosPacClaims`(@js(#{`default`:"alice"}) `parameters/0/schema`: string,
+op `getKerberosPacClaims`(@js(#{`default`:"alice",`examples`:#["alice"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `enabled`?: boolean;
@@ -43150,7 +43157,7 @@ op `clearKerberosPacClaimAttributes`(@js(#{`examples`:#[#{`set`:"kerberos-pac"}]
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getCredentialClaims`(@js(#{`default`:"alice"}) `parameters/0/schema`: string,
+op `getCredentialClaims`(@js(#{`default`:"alice",`examples`:#["alice"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `selected`?: (string)[];
     `defaults`?: (string)[];
@@ -43852,7 +43859,7 @@ op `startVerification`(@js(#{
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getVerifications`(`parameters/0/schema`: string,
+op `getVerifications`(@js(#{`examples`:#["no-such-state"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `verifications`?: `SharedModel222`;
     `total`?: integer;
@@ -43958,7 +43965,7 @@ op `getLastCredentialRequest`(`responses/200/content/application~1json/schema`: 
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getCredentialNotification`(`parameters/0/schema`: string,
+op `getCredentialNotification`(@js(#{`examples`:#["no-such-notification"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `notification_id`?: string;
     `event`?: get_admin_api_oid4vci_notifications_r200_application_json_event_h2681;
@@ -44201,9 +44208,9 @@ op `getFederationRelationships`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `parameters/2/schema`: "service-provider" | "identity-provider",
   `parameters/3/schema`: "enterprise" | "consumer",
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/6/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `relationshipCount`?: integer;
     `matched`?: integer;
@@ -44649,7 +44656,7 @@ op `addFederationValue`(@js(#{
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `removeFederationValue`(`requestBody/content/application~1json/schema`: {
+op `removeFederationValue`(@js(#{`examples`:#[#{`id`:"no-such-relationship",`field`:"fedAttributeMap",`value`:"no-such-value"}]}) `requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The relationship."}) `id`: string;
     @js(#{`description`:"Which list."}) `field`: "description" | "fedAllowedTenants" | "fedAuthorizeParams" | "fedAttributeMap" | "fedSubjectGroup" | "fedSubjectDomain" | "fedHomeRealmDomain" | "fedSignalsEvents" | "fedRelease";
     @js(#{`description`:"The value to remove, exactly as it stands."}) `value`: string
@@ -44713,7 +44720,7 @@ op `enableFederationRelationship`(@js(#{`examples`:#[#{`id`:"partner-a"}]}) `req
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `disableFederationRelationship`(`requestBody/content/application~1json/schema`: {@js(#{`description`:"The relationship."}) `id`: string},
+op `disableFederationRelationship`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The relationship."}) `id`: string},
   `responses/200/content/application~1json/schema`: `SharedModel241`,
   `responses/400/content/application~1json/schema`: `SharedModel241`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -44743,7 +44750,7 @@ op `disableFederationRelationship`(`requestBody/content/application~1json/schema
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `checkFederationPartner`(`requestBody/content/application~1json/schema`: {@js(#{`description`:"The relationship."}) `id`: string},
+op `checkFederationPartner`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The relationship."}) `id`: string},
   `responses/200/content/application~1json/schema`: `SharedModel243`,
   `responses/400/content/application~1json/schema`: `SharedModel243`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -44773,7 +44780,7 @@ op `checkFederationPartner`(`requestBody/content/application~1json/schema`: {@js
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `registerAtFederationPartner`(`requestBody/content/application~1json/schema`: {@js(#{`description`:"The relationship."}) `id`: string},
+op `registerAtFederationPartner`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The relationship."}) `id`: string},
   `responses/200/content/application~1json/schema`: {
     `ok`: boolean;
     `message`?: string;
@@ -44815,7 +44822,7 @@ op `registerAtFederationPartner`(`requestBody/content/application~1json/schema`:
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `rotateFederationKey`(`requestBody/content/application~1json/schema`: {@js(#{`description`:"The relationship."}) `id`: string},
+op `rotateFederationKey`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The relationship."}) `id`: string},
   `responses/200/content/application~1json/schema`: `SharedModel241`,
   `responses/400/content/application~1json/schema`: `SharedModel241`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -45262,7 +45269,7 @@ op `unblockFederationSignals`(@js(#{`examples`:#[#{`id`:"partner",`user`:"alice"
     `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `deleteFederationRelationship`(`requestBody/content/application~1json/schema`: {@js(#{`description`:"The relationship."}) `id`: string},
+op `deleteFederationRelationship`(@js(#{`examples`:#[#{`id`:"no-such-relationship"}]}) `requestBody/content/application~1json/schema`: {@js(#{`description`:"The relationship."}) `id`: string},
   `responses/200/content/application~1json/schema`: {`ok`: boolean; `message`?: string; `errors`?: (string)[]},
   `responses/400/content/application~1json/schema`: {`ok`: boolean; `message`?: string; `errors`?: (string)[]},
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -45355,9 +45362,9 @@ op `deleteFederationRelationship`(`requestBody/content/application~1json/schema`
   })
 op `getSaml2ServiceProviders`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `serviceProviders`?: ({
@@ -45919,8 +45926,8 @@ op `uploadSaml2Metadata`(`requestBody/content/application~1json/schema`: post_ad
   })
 op `getSaml11RelyingParties`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `relyingParties`?: ({
@@ -46001,8 +46008,8 @@ op `getSaml11RelyingParties`(`parameters/0/schema`: string,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getSamlIdpInitiatedApplications`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/1/schema`: integer,
+op `getSamlIdpInitiatedApplications`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `idpInitiated`?: ({
@@ -46109,8 +46116,8 @@ op `registerSaml11RelyingParty`(@js(#{
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getAuthorizationServers`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `AuthorizationServerList`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -46511,8 +46518,8 @@ op `getApplications`(`parameters/0/schema`: string,
   `parameters/4/schema`: (string)[],
   @js(#{`minimum`:1}) `parameters/5/schema`: integer,
   @js(#{`minimum`:1}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/8/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/8/schema`: integer,
   @js(#{`minimum`:1}) `parameters/9/schema`: integer,
   @js(#{`minimum`:1}) `parameters/10/schema`: integer,
   @js(#{`minimum`:1}) `parameters/11/schema`: integer,
@@ -51235,7 +51242,7 @@ op `issueXacmlPepCertificate`(@js(#{
   })
 op `getSsf`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `installed`?: boolean;
     `enabled`?: boolean;
@@ -51514,8 +51521,8 @@ op `getSsfDeadLetters`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
   `parameters/2/schema`: "push-failed" | "backlog-full" | "declared-dead" | "dead-stream",
   @js(#{`minimum`:1}) `parameters/3/schema`: integer,
   @js(#{`minimum`:1}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/6/schema`: integer,
   `responses/200/content/application~1json/schema`: `SsfDeadLetters`,
   `responses/400/content/application~1json/schema`: {`ok`: boolean; `message`?: string; `errors`?: (string)[]},
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -51854,8 +51861,8 @@ op `getCaepSessions`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/4/schema`: integer,
   @js(#{`minimum`:1}) `parameters/5/schema`: integer,
   @js(#{`minimum`:1}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/8/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/8/schema`: integer,
   `responses/200/content/application~1json/schema`: `Caep`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -52093,8 +52100,8 @@ op `getRiscAccounts`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/4/schema`: integer,
   @js(#{`minimum`:1}) `parameters/5/schema`: integer,
   @js(#{`minimum`:1}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/8/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/8/schema`: integer,
   `responses/200/content/application~1json/schema`: `Risc`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -52339,7 +52346,7 @@ op `clearRiscAccounts`(@js(#{`examples`:#[#{}]}) `requestBody/content/applicatio
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getScim`(@js(#{`maxLength`:512}) `parameters/0/schema`: string,
+op `getScim`(@js(#{`maxLength`:512,`examples`:#["no-such-client"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `installed`?: boolean;
@@ -52516,8 +52523,8 @@ op `getScim`(@js(#{`maxLength`:512}) `parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
   @js(#{`maxLength`:200}) `parameters/3/schema`: string,
   `parameters/4/schema`: "all" | "shown",
   @js(#{`maxLength`:200}) `parameters/5/schema`: string,
@@ -52796,8 +52803,8 @@ op `getPki`(@js(#{`minimum`:1,`maximum`:5}) `parameters/0/schema`: integer,
   })
 op `getCertificates`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
     `total`?: integer;
@@ -53980,8 +53987,8 @@ op `getScimMonitor`(`responses/200/content/application~1json/schema`: `ScimMonit
   })
 op `getSignals`(`parameters/0/schema`: string,
   @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: `Signals`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -54071,8 +54078,8 @@ op `clearSignalsInbox`(@js(#{`examples`:#[#{}],`additionalProperties`:true}) `re
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getTruststore`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/1/schema`: integer,
+op `getTruststore`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `installed`?: boolean;
@@ -54493,10 +54500,10 @@ op `getTlsConnection`(`responses/200/content/application~1json/schema`: {
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getKerberosPrincipals`(@js(#{`minimum`:1,`maximum`:300}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
+op `getKerberosPrincipals`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `installed`?: boolean;
@@ -54941,8 +54948,8 @@ op `rotateKerberosKrbtgtInvalidate`(@js(#{`examples`:#[#{`confirm`:"invalidate"}
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getKerberosTrusts`(@js(#{`minimum`:1,`maximum`:300}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
+op `getKerberosTrusts`(@js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
   `parameters/2/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
@@ -55489,8 +55496,8 @@ op `getAudit`(`parameters/0/schema`: "authentication" | "session" | "directory" 
   `parameters/4/schema`: string,
   `parameters/5/schema`: string,
   `parameters/6/schema`: string,
-  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/8/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/8/schema`: integer,
   `responses/200/content/application~1json/schema`: `AuditList`,
   `responses/400/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -55567,8 +55574,8 @@ op `getAudit`(`parameters/0/schema`: "authentication" | "session" | "directory" 
 op `getErrorCodes`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `parameters/2/schema`: string,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `registered`?: integer;
     `retired`?: integer;
@@ -55685,8 +55692,8 @@ op `getUsedAssertions`(`parameters/0/schema`: string,
   `parameters/1/schema`: "jwt" | "openid2" | "saml" | "saml11" | "saml-message" | "attestation-challenge" | "wss-message",
   `parameters/2/schema`: "steam-assertion" | "client-authentication" | "authorization-grant" | "request-object" | "ciba-request" | "federated-logout" | "provider-notification" | "client-attestation-pop" | "token-exchange" | "wstrust-requester",
   `parameters/3/schema`: "reserved" | "spent",
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/5/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `store`?: string;
     `persistent`?: boolean;
@@ -55935,8 +55942,8 @@ op `getDelegation`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-clas
   `parameters/2/schema`: "issued" | "refused",
   `parameters/3/schema`: string,
   `parameters/4/schema`: string,
-  @js(#{`minimum`:1}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/6/schema`: integer,
   `parameters/7/schema`: string,
   `parameters/8/schema`: string,
   `parameters/9/schema`: string,
@@ -56235,7 +56242,7 @@ op `getDelegation`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-clas
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getDelegationUser`(`parameters/0/schema`: string,
+op `getDelegationUser`(@js(#{`examples`:#["alice"]}) `parameters/0/schema`: string,
   `parameters/1/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-classic" | "krb5-s4u2proxy-rbcd" | "krb5-forwarded" | "wstrust-onbehalfof" | "wstrust-actas" | "oauth-impersonation" | "oauth-delegation" | "oauth-assertion-grant" | "oauth-saml-assertion-grant" | "gnap-impersonation" | "gnap-derivation",
   `parameters/2/schema`: "impersonation" | "delegation",
   `parameters/3/schema`: "issued" | "refused",
@@ -56563,7 +56570,7 @@ op `getDelegationUser`(`parameters/0/schema`: string,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getDelegationApplication`(`parameters/0/schema`: string,
+op `getDelegationApplication`(@js(#{`examples`:#["no-such-application"]}) `parameters/0/schema`: string,
   `parameters/1/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-classic" | "krb5-s4u2proxy-rbcd" | "krb5-forwarded" | "wstrust-onbehalfof" | "wstrust-actas" | "oauth-impersonation" | "oauth-delegation" | "oauth-assertion-grant" | "oauth-saml-assertion-grant" | "gnap-impersonation" | "gnap-derivation",
   `parameters/2/schema`: "impersonation" | "delegation",
   `parameters/3/schema`: "issued" | "refused",
@@ -56683,10 +56690,10 @@ op `getDelegationApplication`(`parameters/0/schema`: string,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getDelegationPolicy`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
+op `getDelegationPolicy`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `enforced`?: boolean;
     `attributes`?: Record<string>;
@@ -56852,10 +56859,10 @@ op `getPermissions`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getPermissionGroups`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `application`?: get_admin_api_permissions_groups_r200_application_json_application_h2923;
     `counts`?: {
@@ -57174,8 +57181,8 @@ op `revokePermission`(@js(#{
 op `getRoles`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `container`?: get_admin_api_roles_r200_application_json_container_h2925;
     `storable`?: boolean;
@@ -57365,10 +57372,10 @@ op `getRoles`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `previewRoleIssuance`(`parameters/0/schema`: string,
-  `parameters/1/schema`: string,
-  `parameters/2/schema`: string,
-  `parameters/3/schema`: "user" | "application",
-  `parameters/4/schema`: "start-session" | "issue-access-token" | "issue-id-token" | "issue-refresh-token" | "issue-authorization-code" | "issue-saml-assertion" | "issue-wsfed-token" | "issue-wstrust-token" | "issue-kerberos-ticket" | "issue-certificate" | "create-account",
+  @js(#{`examples`:#["no-such-application"]}) `parameters/1/schema`: string,
+  @js(#{`examples`:#["alice"]}) `parameters/2/schema`: string,
+  @js(#{`examples`:#["user"]}) `parameters/3/schema`: "user" | "application",
+  @js(#{`examples`:#["issue-access-token"]}) `parameters/4/schema`: "start-session" | "issue-access-token" | "issue-id-token" | "issue-refresh-token" | "issue-authorization-code" | "issue-saml-assertion" | "issue-wsfed-token" | "issue-wstrust-token" | "issue-kerberos-ticket" | "issue-certificate" | "create-account",
   `responses/200/content/application~1json/schema`: {
     `answered`?: boolean;
     `available`?: boolean;
@@ -57892,8 +57899,8 @@ op `removeRoleOwner`(@js(#{
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getOwnership`(`parameters/0/schema`: "role" | "group" | "service-account" | "application",
-  `parameters/1/schema`: string,
+op `getOwnership`(@js(#{`examples`:#["application"]}) `parameters/0/schema`: "role" | "group" | "service-account" | "application",
+  @js(#{`examples`:#["no-such-application"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `found`?: boolean;
     `kind`?: string;
@@ -58083,8 +58090,8 @@ op `setOwnerProtected`(@js(#{`examples`:#[#{`kind`:"role",`name`:"staff",`protec
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getPolicies`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/1/schema`: integer,
+op `getPolicies`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/1/schema`: integer,
   `parameters/2/schema`: "count",
   @js(#{`minimum`:1}) `parameters/3/schema`: integer,
   @js(#{`minimum`:1,`maximum`:200}) `parameters/4/schema`: integer,
@@ -59903,9 +59910,9 @@ op `resetPostLoginPolicy`(@js(#{`examples`:#[#{`profile`:"default"}]}) `requestB
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getConsent`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `required`?: boolean;
     `storable`?: boolean;
@@ -60560,8 +60567,8 @@ op `removeSpiffeFederatedBundle`(@js(#{`examples`:#[#{`trustDomain`:"other.examp
 op `getSpiffeEntries`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   `parameters/2/schema`: "seed" | "console" | "api" | "grpc" | "auto" | "ldap" | "unstated",
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_spiffe_entries_r200_application_json_h3072,
   `responses/400/content/application~1json/schema`: {`ok`: boolean; `message`?: string; `errors`?: (string)[]},
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -60762,8 +60769,8 @@ op `deleteSpiffeEntry`(@js(#{`examples`:#[#{`entry`:"0f5a…"}]}) `requestBody/c
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getSpiffeBrokers`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_spiffe_brokers_r200_application_json_h3075,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -60907,8 +60914,8 @@ op `removeSpiffeBroker`(@js(#{`examples`:#[#{`id`:"spiffe://example.org/ns/mesh/
   })
 op `getSpiffeAgents`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_spiffe_agents_r200_application_json_h3076,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -61209,11 +61216,11 @@ op `createSpiffeJoinToken`(@js(#{`examples`:#[#{`ttl`:600}]}) `requestBody/conte
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getAcme`(@js(#{`minimum`:1,`maximum`:1000}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
+op `getAcme`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_acme_r200_application_json_h3087,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -61261,8 +61268,8 @@ op `getAcme`(@js(#{`minimum`:1,`maximum`:1000}) `parameters/0/schema`: integer,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getAcmeMonitor`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:1000}) `parameters/1/schema`: integer,
+op `getAcmeMonitor`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `page`?: string;
     `title`?: string;
@@ -61664,8 +61671,8 @@ op `removeAcmeHostName`(@js(#{
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getEst`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
+op `getEst`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_est_r200_application_json_h3097,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -61713,8 +61720,8 @@ op `getEst`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getEstMonitor`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
+op `getEstMonitor`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `page`?: string;
     `title`?: string;
@@ -62110,9 +62117,9 @@ op `removeEstHostName`(@js(#{
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getScep`(@js(#{`minimum`:1,`maximum`:1000}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
+op `getScep`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: get_admin_api_scep_r200_application_json_h3111,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
@@ -62160,8 +62167,8 @@ op `getScep`(@js(#{`minimum`:1,`maximum`:1000}) `parameters/0/schema`: integer,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getScepMonitor`(@js(#{`minimum`:1,`maximum`:1000}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
+op `getScepMonitor`(@js(#{`minimum`:1,`maximum`:1000,`examples`:#[10]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `page`?: string;
     `title`?: string;
@@ -62564,14 +62571,14 @@ op `removeScepHostName`(@js(#{
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getOidfed`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
+op `getOidfed`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/7/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `entityId`?: string;
     `role`?: string;
@@ -63575,14 +63582,14 @@ op `revokeOidfedKey`(@js(#{
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getOauth2Monitor`(@js(#{`minimum`:0}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:500}) `parameters/1/schema`: integer,
-  `parameters/2/schema`: "live" | "spent" | "all",
-  @js(#{`maxLength`:256}) `parameters/3/schema`: string,
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:500}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
+op `getOauth2Monitor`(@js(#{`minimum`:0,`examples`:#[0]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:500,`examples`:#[50]}) `parameters/1/schema`: integer,
+  @js(#{`examples`:#["all"]}) `parameters/2/schema`: "live" | "spent" | "all",
+  @js(#{`maxLength`:256,`examples`:#["no-such-client"]}) `parameters/3/schema`: string,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:500,`examples`:#[10]}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `page`?: string;
     `title`?: string;
@@ -63790,10 +63797,10 @@ op `deletePushedRequest`(@js(#{
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getGrants`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
-  @js(#{`maxLength`:256}) `parameters/1/schema`: string,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
+op `getGrants`(@js(#{`maxLength`:256,`examples`:#["no-such-client"]}) `parameters/0/schema`: string,
+  @js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/1/schema`: string,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `grants`?: ({
       `grantId`?: string;
@@ -63917,10 +63924,10 @@ op `revokeGrant`(@js(#{`examples`:#[#{`grantId`:"TSdqirmAxDa0_-DB_1bASQ"}]}) `re
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getClaimProviders`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`maxLength`:256}) `parameters/1/schema`: string,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
+op `getClaimProviders`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/1/schema`: string,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `redirectUri`?: string;
@@ -64193,8 +64200,8 @@ op `revokeClaimSourceLink`(@js(#{`examples`:#[#{`username`:"alice",`provider`:"b
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getAttributeSources`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
+op `getAttributeSources`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `sources`?: ({
       `status`?: {
@@ -64642,9 +64649,9 @@ op `refreshAttributeSourcePerson`(@js(#{`examples`:#[#{`username`:"alice"}]}) `r
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getSecretDestinations`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
+op `getSecretDestinations`(@js(#{`maxLength`:256,`examples`:#["vault"]}) `parameters/0/schema`: string,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `destinations`?: ({
       `id`?: string;
@@ -66130,12 +66137,12 @@ op `refuseUmaRequest`(@js(#{`examples`:#[#{`owner`:"photos-api",`pending`:"no-su
 op `getPasskeyReport`(@js(#{`maxLength`:1024}) `parameters/0/schema`: string,
   @js(#{`maxLength`:128}) `parameters/1/schema`: string,
   @js(#{`maxLength`:512}) `parameters/2/schema`: string,
-  `parameters/3/schema`: "post-quantum-only" | "classical-only" | "both" | "none" | "holding" | "algorithm" | "model",
+  @js(#{`examples`:#["both"]}) `parameters/3/schema`: "post-quantum-only" | "classical-only" | "both" | "none" | "holding" | "algorithm" | "model",
   @js(#{`maxLength`:64}) `parameters/4/schema`: string,
   `parameters/5/schema`: "classical" | "pqc",
   @js(#{`maxLength`:64}) `parameters/6/schema`: string,
-  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:500}) `parameters/8/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:500,`examples`:#[10]}) `parameters/8/schema`: integer,
   @js(#{`maxLength`:2048}) `parameters/9/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -66339,11 +66346,11 @@ op `getPasskeyReport`(@js(#{`maxLength`:1024}) `parameters/0/schema`: string,
 op `exportPasskeyReport`(@js(#{`maxLength`:1024}) `parameters/0/schema`: string,
   @js(#{`maxLength`:128}) `parameters/1/schema`: string,
   @js(#{`maxLength`:512}) `parameters/2/schema`: string,
-  `parameters/3/schema`: "post-quantum-only" | "classical-only" | "both" | "none" | "holding" | "algorithm" | "model",
+  @js(#{`examples`:#["both"]}) `parameters/3/schema`: "post-quantum-only" | "classical-only" | "both" | "none" | "holding" | "algorithm" | "model",
   @js(#{`maxLength`:64}) `parameters/4/schema`: string,
   `parameters/5/schema`: "classical" | "pqc",
   @js(#{`maxLength`:64}) `parameters/6/schema`: string,
-  `parameters/7/schema`: "csv" | "json",
+  @js(#{`examples`:#["json"]}) `parameters/7/schema`: "csv" | "json",
   `responses/200/content/text~1csv/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
@@ -66404,8 +66411,8 @@ op `exportPasskeyReport`(@js(#{`maxLength`:1024}) `parameters/0/schema`: string,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `exportPasskeyAttestationEvidence`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
-  @js(#{`maxLength`:2048}) `parameters/1/schema`: string,
+op `exportPasskeyAttestationEvidence`(@js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/0/schema`: string,
+  @js(#{`maxLength`:2048,`examples`:#["no-such-credential"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `username`?: string;
     `credentialId`?: string;
@@ -66514,7 +66521,7 @@ op `recountPasskeyReport`(@js(#{`examples`:#[#{}]}) `requestBody/content/applica
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getPostLoginActivities`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
+op `getPostLoginActivities`(@js(#{`maxLength`:256,`examples`:#["staff"]}) `parameters/0/schema`: string,
   @js(#{`maxLength`:16}) `parameters/1/schema`: string,
   @js(#{`maxLength`:4096}) `parameters/2/schema`: string,
   `responses/200/content/application~1json/schema`: {
@@ -67251,7 +67258,7 @@ op `getBranding`(`responses/200/content/application~1json/schema`: {
     },
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
-op `uploadBrandingLogo`(@js(#{`maxLength`:160}) `parameters/0/schema`: string,
+op `uploadBrandingLogo`(@js(#{`maxLength`:160,`examples`:#["Our company logo"]}) `parameters/0/schema`: string,
   @js(#{`format`:"binary"}) `requestBody/content/image~1png/schema`: string,
   @js(#{`format`:"binary"}) `requestBody/content/image~1jpeg/schema`: string,
   @js(#{`format`:"binary"}) `requestBody/content/image~1webp/schema`: string,
@@ -67393,7 +67400,7 @@ op `removeBrandingLogo`(@js(#{`examples`:#[#{}]}) `requestBody/content/applicati
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getScimClients`(@js(#{`maxLength`:512}) `parameters/0/schema`: string,
+op `getScimClients`(@js(#{`maxLength`:512,`examples`:#["no-such-client"]}) `parameters/0/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `family`?: string;
     `clients`?: `SharedModel320`;
@@ -68126,13 +68133,13 @@ op `purgeScimDeadLetters`(@js(#{`examples`:#[#{`id`:"partner-idp"},#{`id`:"partn
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getProviderCommands`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`maxLength`:16}) `parameters/4/schema`: string,
-  @js(#{`maxLength`:256}) `parameters/5/schema`: string,
-  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
+op `getProviderCommands`(@js(#{`minimum`:1,`examples`:#[1]}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
+  @js(#{`maxLength`:16,`examples`:#["pending"]}) `parameters/4/schema`: string,
+  @js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/5/schema`: string,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/6/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `enabled`?: boolean;
@@ -68425,14 +68432,14 @@ op `retryCommandDelivery`(@js(#{`examples`:#[#{`delivery`:"abc123"}]}) `requestB
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getOutboundDeliveries`(@js(#{`maxLength`:16}) `parameters/0/schema`: string,
+op `getOutboundDeliveries`(@js(#{`maxLength`:16,`examples`:#["pending"]}) `parameters/0/schema`: string,
   @js(#{`maxLength`:64}) `parameters/1/schema`: string,
-  @js(#{`maxLength`:256}) `parameters/2/schema`: string,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/5/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
+  @js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/2/schema`: string,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/5/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/7/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `kinds`?: ({
       `id`?: string;
@@ -68578,11 +68585,11 @@ op `retryOutboundDelivery`(@js(#{`examples`:#[#{`kind`:"provider-commands",`deli
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getPartnerSignals`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
+op `getPartnerSignals`(@js(#{`examples`:#["no-such-relationship"]}) `parameters/0/schema`: string,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[1]}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1,`examples`:#[10]}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `relationships`?: (`SharedModel245`)[];
     `received`?: `SharedModel236`;

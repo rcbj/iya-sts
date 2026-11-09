@@ -191,11 +191,11 @@ class AttributeSourcesApi {
         mirrors: 'GET /admin/attribute-sources',
         parameters: [
           { name: 'sourcesPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of `sources` to return, answered by ' +
                          '`sourcesPaging` (#313).' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page. Capped, like every list here.' }
         ],
         responseDescription: 'The register.',

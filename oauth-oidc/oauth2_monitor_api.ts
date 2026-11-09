@@ -186,36 +186,40 @@ class OAuth2MonitorApi {
         mirrors: 'GET /admin/oauth2/monitor',
         parameters: [
           { name: 'offset', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 0 },
+            schema: { type: 'integer', minimum: 0, examples: [0] },
             description: 'Skip this many pushed requests (newest first). ' +
                          'Wins over `page` when both are sent.' },
           { name: 'limit', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1, maximum: 500 },
+            schema: { type: 'integer', minimum: 1, maximum: 500,
+                      examples: [50] },
             description: 'At most this many pushed requests; 50 by ' +
                          'default.' },
           { name: 'state', in: 'query', required: false,
-            schema: { type: 'string', enum: ['live', 'spent', 'all'] },
+            schema: { type: 'string', enum: ['live', 'spent', 'all'],
+                      examples: ['all'] },
             description: '`live` (not yet spent), `spent` (an ' +
                          'authorization response was issued on it; kept ' +
                          'until it would have expired), or `all`, the ' +
                          'default.' },
           { name: 'client_id', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
+            schema: { type: 'string', maxLength: 256,
+                      examples: ['no-such-client'] },
             description: 'Only the pushed requests bound to this ' +
                          'client.' },
           { name: 'page', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'The console\'s spelling: which page of pushed ' +
                          'requests, `per` to a page.' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1, maximum: 500 },
+            schema: { type: 'integer', minimum: 1, maximum: 500,
+                      examples: [10] },
             description: 'Rows per page, for `page` and `clientsPage`.' },
           { name: 'clientsPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of the RFC 9126 section\'s ' +
                          'per-client counter rows.' },
           { name: 'stepUpClientsPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of the RFC 9470 section\'s ' +
                          'per-client counter rows.' }
         ],
