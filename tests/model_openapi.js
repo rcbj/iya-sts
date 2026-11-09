@@ -273,6 +273,24 @@ function bindReport(generated) {
   return bound;
 }
 
+// What an act accepts is validated from its routing row, and the document
+// states it too, so the two are held equal.
+function authnBodies(t, docs) {
+  log.debug("Entering authnBodies().");
+  const authnApi = require('../authn/authn_api');
+  const Spec = require('../account-api/account_api_spec');
+  authnApi.operations().filter(function (op) {
+    return op.method === 'POST' && op.body;
+  }).forEach(function (op) {
+    const path = String(op.path).replace(/:([A-Za-z]+)/g, '{$1}');
+    const stated = docs.authn.paths[path].post.requestBody.content[
+      'application/json'].schema;
+    sameText(t, canonical(stated), canonical(Spec.jsonSchemaOf(op.body)),
+      op.operationId + ': the body it accepts is the one the model states');
+  });
+  log.debug("Leaving authnBodies().");
+}
+
 async function typeSpec(t, docs) {
   log.debug("Entering typeSpec().");
   const compiler = await import(url.pathToFileURL(path.join(__dirname,
@@ -305,6 +323,7 @@ async function run(t) {
   fixture(t, OpenApiImport);
   const docs = served(t, OpenApiImport, ModelEmit);
   await typeSpec(t, docs);
+  authnBodies(t, docs);
   log.debug("Leaving run().");
 }
 

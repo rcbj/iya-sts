@@ -19,7 +19,8 @@ people, groups, the registers that keep one JSON value, and the directory's list
 attribute spellings and of the attributes it withholds. The PostgreSQL and MariaDB
 tables and indexes are too, and they generate both the statements the service runs
 and the scripts an owner runs. Of the five OpenAPI documents,
-the Reports API's has switched; the service still builds the other four from its
+the Reports API's and the Authentication API's have switched; the service still
+builds the other three from its
 route tables, and their models are written from those and checked against them. An object switches only
 after what the model generates is shown to be the same as what is there.
 
@@ -36,8 +37,8 @@ after what the model generates is shown to be the same as what is there.
 | Directory and table classes, with validators | Yes | Compiled and run | No |
 | PostgreSQL tables and indexes, and `postgres/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
 | MariaDB tables and indexes, and `mariadb/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
-| Reports API OpenAPI document | Yes, and TypeSpec is the source | Equal to the document it replaced | **Yes** |
-| Management API, Admin Console API, Account API, and Authentication API OpenAPI documents | Yes, but the route tables in code are still the source | Equal to each served document | No |
+| Reports API and Authentication API OpenAPI documents | Yes, and TypeSpec is the source | Equal to the documents they replaced | **Yes** |
+| Management API, Admin Console API, and Account API OpenAPI documents | Yes, but the route tables in code are still the source | Equal to each served document | No |
 
 ## Changing what a directory object holds
 
@@ -143,9 +144,9 @@ The API namespace is the service's five OpenAPI documents, written as TypeSpec
 under `models/api/`. Compiling those files gives each document back, and a test
 requires it to equal the one the service serves.
 
-The Reports API OpenAPI document has switched: `models/api/report.tsp` is its
-source, and the service serves and validates against what the image build
-generates. For the other four the direction is still from the code to the model:
+The Reports API and Authentication API OpenAPI documents have switched: their
+files under `models/api/` are the source, and the service serves and validates
+against what the image build generates. For the other three the direction is still from the code to the model:
 the service builds them from its route tables, and
 `tests/tools/regenerate-model-docs.sh` writes the TypeSpec from those tables. The [OpenAPI reference](openapi/) is their
 reading form.
