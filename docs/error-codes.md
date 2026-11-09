@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5333** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5334** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -49,7 +49,7 @@ is an ordinary outcome.
 
 ## Contents
 
-* [HTTP front door (`STS-HTTP`)](#sts-http) — 20
+* [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
 * [Service core (`STS-CORE`)](#sts-core) — 98
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
@@ -130,6 +130,7 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 | `STS-HTTP-0023` | A value of global.corsOrigins is not an origin, and was ignored rather than widened. | — |
 | `STS-HTTP-0024` | An HTTP/2 request carried both :authority and a Host header naming different hosts, which makes it malformed (RFC 9113 section 8.3.1); it was refused before any endpoint saw it. | HTTP 400 text/plain |
 | `STS-HTTP-0025` | A CONNECT request reached one of this service's HTTP listeners. This service is an origin server, not a proxy, and implements no CONNECT, so it was answered 501 before any endpoint saw it. The first is logged, and the rest are counted into one line a minute at most. | HTTP 501 text/plain (HTTP/2, or HTTP/1.1 with the connection closed) |
+| `STS-HTTP-0026` | HTTP parsing refused a request before any route saw it: its request line or headers were past the limit (431), or it was not well-formed HTTP (400). The first is logged, and the rest are counted into one line a minute at most (#1500). | HTTP 431, 408 or 400, then the connection closes |
 
 ## STS-PROXY
 

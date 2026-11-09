@@ -112,6 +112,7 @@ import proxyProtocol = require('../common/proxy_protocol');
 import Http2Framing = require('../common/http2_framing');
 import Http2Express = require('../common/http2_express');
 import ConnectRefusal = require('../common/connect_refusal');
+import ParserRefusal = require('../common/parser_refusal');
 import audit = require('../common/audit');
 import websecurity = require('../common/websecurity');
 import oidcRp = require('../common/oidc_rp');
@@ -1094,6 +1095,7 @@ class DebuggerServer {
     server.prependListener('request', Http2Framing.markFramedBody);
     // A CONNECT is answered 501, as on the main port (#1304).
     ConnectRefusal.install(server, 'the protocol debugger (' + port + ')');
+    ParserRefusal.install(server, 'the protocol debugger (' + port + ')');
     // Before TLS, like the main port's — see common/proxy_protocol.ts.
     proxyProtocol.install(server, {
       label: 'the protocol debugger (' + port + ')', channel: 'http' });

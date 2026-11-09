@@ -1142,6 +1142,8 @@ function customListener(label, certificate, certificateOf, listenerId) {
     require('./common/http2_framing').markFramedBody);
   // A CONNECT is answered 501 here, as on the main port (#1304).
   require('./common/connect_refusal').install(server, label);
+  // A request the parser refuses keeps its answer (#1500).
+  require('./common/parser_refusal').install(server, label);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1249,6 +1251,8 @@ if (useHttps) {
   // application — common/connect_refusal.ts.
   require('./common/connect_refusal').install(mainServer,
     'the main port (' + PORT + ')');
+  require('./common/parser_refusal').install(mainServer,
+    'the main port (' + PORT + ')');
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
@@ -1316,6 +1320,8 @@ if (useHttps) {
   const plainServer = http.createServer(app);
   // A CONNECT is answered 501 here too (#1304).
   require('./common/connect_refusal').install(plainServer,
+    'the main port (' + PORT + ')');
+  require('./common/parser_refusal').install(plainServer,
     'the main port (' + PORT + ')');
   proxyProtocol.install(plainServer, { label: 'the main port (' + PORT + ')',
                                        channel: 'http' });

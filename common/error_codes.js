@@ -647,6 +647,12 @@ const CODES = [
       'line a minute at most.',
     spec: 'HTTP 501 text/plain (HTTP/2, or HTTP/1.1 with the connection ' +
       'closed)' },
+  { code: 'STS-HTTP-0026',
+    summary: 'HTTP parsing refused a request before any route saw it: its ' +
+      'request line or headers were past the limit (431), or it was not ' +
+      'well-formed HTTP (400). The first is logged, and the rest are ' +
+      'counted into one line a minute at most (#1500).',
+    spec: 'HTTP 431, 408 or 400, then the connection closes' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +
