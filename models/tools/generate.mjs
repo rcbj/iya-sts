@@ -82,7 +82,8 @@ async function generate() {
   fs.writeFileSync(path.join(out, 'domain.d.ts'), renderTypes(concepts));
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
-    JSON.stringify({ objects: persistence.objects }));
+    JSON.stringify({ objects: persistence.objects,
+      added: persistence.added }));
   fs.writeFileSync(path.join(out, 'schema.sql'), renderScript(
     fs.readFileSync(path.join(ROOT, 'models', 'persistence',
       'schema.template.sql'), 'utf8'), persistence));

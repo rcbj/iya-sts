@@ -199,6 +199,9 @@ model ColumnOptions {
   generated?: boolean;
   primaryKey?: boolean;
   backticks?: boolean;
+
+  /** Added after the table first shipped: an upgrade adds it. */
+  added?: boolean;
   attributes?: string[];
 }
 

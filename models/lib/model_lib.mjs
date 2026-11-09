@@ -362,6 +362,8 @@ function tableOf(program, model, options) {
     columns.push({
       name: property.name,
       sqlType: column.sql,
+      added: column.added === true,
+      clauses: column.clauses || '',
       required: column.required === true,
       generated: column.generated === true,
       primaryKey: column.primaryKey === true,
@@ -415,6 +417,29 @@ function layout(rows) {
 }
 
 /**
+ * The statement giving an existing database each column added after its table
+ * first shipped.
+ *
+ * @param tables - the tables
+ * @returns one row per added column
+ */
+function addedColumns(tables) {
+  log.debug("Entering addedColumns().");
+  const out = [];
+  tables.forEach(function (table) {
+    table.columns.filter(function (column) {
+      return column.added;
+    }).forEach(function (column) {
+      out.push({ table: table.name, column: column.name, statement:
+        ['ALTER TABLE', table.name, 'ADD COLUMN IF NOT EXISTS', column.name,
+          column.sqlType, column.clauses].filter(Boolean).join(' ') });
+    });
+  });
+  log.debug("Leaving addedColumns().");
+  return out;
+}
+
+/**
  * The persistence namespace of a compiled program.
  *
  * @param program - the compiled program
@@ -460,7 +485,8 @@ export function readPersistence(program, engine) {
     tables: tables,
     objects: objects.map(function (one) {
       return one.object;
-    })
+    }),
+    added: addedColumns(tables)
   };
   log.debug("Leaving readPersistence().");
   return result;
