@@ -118,6 +118,15 @@ function egressRouteSection(t) {
      true, { method: "GET", path: "/admin-api/scim", action: "scim" }],
     ["the SCIM outbound clients report read", true,
      { method: "GET", path: "/admin-api/scim/clients", action: "clients" }],
+    ["a secret destination's test push", true,
+     { method: "POST", path: "/admin-api/secret-destinations/{action}",
+       action: "test-push" }],
+    ["a filled secret-destination test-push path", true,
+     { method: "POST", path: "/admin-api/secret-destinations/test-push",
+       action: "test-push" }],
+    ["another action on the secret-destinations route", false,
+     { method: "POST", path: "/admin-api/secret-destinations/{action}",
+       action: "add-destination" }],
     ["the audit history read (dials nothing, echoes stored event text)",
      true, { method: "GET", path: "/admin-api/audit", action: "audit" }],
     ["the audit read with no derived action still resolves whole", true,
@@ -159,9 +168,10 @@ function egressRouteSection(t) {
 
   // The routes egress_routes.py lists are exactly the designed dials the
   // #1358 review named, the connection test of that same SCIM client
-  // (#1405), and the three stored-error reads (#1299's two SCIM reports
-  // and the audit history read, #1420), so a row added or removed in the
-  // table fails here.
+  // (#1405), a secret destination's test push (#1430, the seventeenth
+  // exception), and the three stored-error reads (#1299's two SCIM
+  // reports and the audit history read, #1420), so a row added or
+  // removed in the table fails here.
   const listed = childProcess.spawnSync("python3", [path.join(__dirname,
     "schemathesis", "egress_routes.py"), "--routes"], { encoding: "utf8" });
   t.equal(JSON.parse(listed.stdout).join(","),
@@ -173,7 +183,8 @@ function egressRouteSection(t) {
      "POST /admin-api/oidfed/{action} add-trust-anchor",
      "POST /admin-api/oidfed/{action} resolve",
      "POST /admin-api/scim/clients/{action} reconcile",
-     "POST /admin-api/scim/clients/{action} test-connection"].join(","),
+     "POST /admin-api/scim/clients/{action} test-connection",
+     "POST /admin-api/secret-destinations/{action} test-push"].join(","),
     "egress_routes lists the designed dials and two stored-error reads");
   t.log.debug("Leaving egressRouteSection().");
 }

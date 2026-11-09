@@ -93,6 +93,16 @@ ALLOWED = {
             "#147): registering one fetches the provider's own configured "
             "addresses through federation_http.requestConfigured().",
     },
+    ("POST", "/admin-api/secret-destinations/{action}"): {
+        "test-push":
+            "the seventeenth exception (a secret push destination, #221): "
+            "a test push writes a canary to the destination an "
+            "administrator configured. common/secrets.js dials that "
+            "stored endpoint (pushVault and the other providers), never "
+            "a URL this request names. On the no-egress fuzz network the "
+            "dial fails closed and the refusal carries getaddrinfo "
+            "(#1430). No other action on this route dials.",
+    },
     ("POST", "/admin-api/scim/clients/{action}"): {
         "reconcile":
             "the twenty-sixth exception (an outbound SCIM service, #552): a "
