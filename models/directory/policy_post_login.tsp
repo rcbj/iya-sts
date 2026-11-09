@@ -81,5 +81,5 @@ model PolicyPostLogin {
   @attr(#{
     what: "Retired (#1135): the role a person with no passkey registered one in. A passkey has no role; nothing reads it."
   })
-  stsPostLoginNoPasskeyRole?: unknown;
+  stsPostLoginNoPasskeyRole?: string;
 }

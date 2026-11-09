@@ -132,7 +132,7 @@ model Person {
   @attr(#{what: "Named on the People section."})
   scimExternalId?: string;
   @attr(#{what: "Named on the People section."})
-  userPrincipalName?: unknown;
+  userPrincipalName?: string;
   @attr(#{what: "Named on the People section."})
   stsWebauthnCredential?: (DirectoryJson)[];
   @attr(#{what: "Named on the People section."})
@@ -236,7 +236,7 @@ model Person {
   @attr(#{})
   stsWebauthnPqcUserHandle?: DirectoryBase64;
   @attr(#{})
-  stsBootstrapAdministrator?: unknown;
+  stsBootstrapAdministrator?: DirectoryBoolean;
   @attr(#{})
   stsConsoleClaimedAt?: DirectoryTime;
   @attr(#{})
