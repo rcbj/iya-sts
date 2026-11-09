@@ -203,6 +203,10 @@ function probeApp() {
   app.get('/oauth2/authorize', answer);
   app.get('/scim/v2/Users', answer);
   app.post('/saml2/sso', answer);
+  // A stand-in for `/:as/gnap` matching a published API's page (#1503).
+  app.options('/account-api/gnap', function (req, res) {
+    res.status(200).json({ grant_request_endpoint: 'not a GNAP endpoint' });
+  });
   app.options('/gnap', function (req, res) {
     res.status(200).json({ grant_request_endpoint: '/gnap' });
   });
@@ -425,6 +429,12 @@ async function decision(t, suffix) {
     t.check(r.status === 200 && /grant_request_endpoint/.test(r.body) &&
             acao(r) === ORIGIN_A,
             'and from an allowed one, with the CORS headers on it', r);
+    r = await request(port, { method: 'OPTIONS', path: '/account-api/gnap',
+      headers: { Origin: ORIGIN_A,
+                 'Access-Control-Request-Method': 'GET' } });
+    t.check(!/grant_request_endpoint/.test(r.body),
+            'a published API\'s page ending in gnap is answered as a ' +
+            'preflight and never reaches a route (#1503)', r);
     // #1214. A browser's discovery is itself an OPTIONS, so its preflight asks
     // for OPTIONS, and the browser sends the request only if the answer lists
     // it. The cors package's default list does not, so this path adds it.
