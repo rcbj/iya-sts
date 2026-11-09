@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5333** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5335** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,9 +51,9 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 20
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 98
+* [Service core (`STS-CORE`)](#sts-core) — 99
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 107
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 108
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
@@ -255,6 +255,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0164` | The build stamp (common/version.js --stamp, or xacml-pep --stamp) was refused: STS_RELEASE=true marks a release build, which must name its BUILD_NUMBER as a non-negative integer with no leading zero, and it did not — or STS_RELEASE was neither true nor false. Nothing is written and the image build fails. | none — the image build exits non-zero |
 | `STS-CORE-0165` | A request arrived from an address in global.edgeProxies without global.edgeSecret in its X-Origin-Verify header: another customer's CDN distribution pointed at this load balancer, or a distribution or node holding an out-of-date secret. Refused before anything else is decided about it. | none — HTTP 403, with no reason given |
 | `STS-CORE-0166` | GET /favicon.ico found no common/favicon.ico in this image: the file was left out of the build. The browser shows no icon; nothing else is affected. | none — HTTP 404 |
+| `STS-CORE-0167` | A setting's value, or a realm's name or description, holds a NUL character or half of a surrogate pair, which the store's columns can never hold; refused before anything is written (#1463). | a refusal naming the setting or field, never the value |
 
 ## STS-WORKER
 
@@ -431,6 +432,7 @@ Raised from: persistence/.
 | `STS-STORE-0166` | A run of the persistence.granting-key-backfill job, which gives the directory entries written before #1306 their grantinggroup index keys, stopped on a store error (#1311); the pages it finished are kept, and the next run resumes after the last one. | none — logged; federated provisioning's store question still misses the entries not yet reached |
 | `STS-STORE-0167` | The grantinggroup key backfill (#1311) skipped a directory entry whose sealed attributes do not open in this process, even after the data-key rows were read again; the walk finishes and writes its mark, and the entry is keyed when it is next written. The first few are named, then a count per run. | — |
 | `STS-STORE-0168` | A directory flush dropped one row whose value the database can never store (a NUL byte, or another permanent data error) and committed every other row of the batch (#1391). The entry stays in this process's memory and is absent from the store until the process restarts; the next flush does not send the same value again. | none — logged; the request that wrote it was already answered |
+| `STS-STORE-0169` | A realm or settings save dropped one value the database can never store (a NUL, half of a surrogate pair, or another permanent data error) and committed everything else in the flush (#1463). The value stays in this process's memory and is absent from the store until the process restarts; the next flush does not send it again. | none — logged; the request that wrote it was already answered |
 
 ## STS-CLUSTER
 

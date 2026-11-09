@@ -21431,6 +21431,43 @@ function maxCountRealmProblem(key) {
     '/admin-api/config/set with no realm prefix.';
 }
 
+// ---------------------------------------------------------------------------
+// A VALUE THE STORE CAN NEVER HOLD (#1463).
+//
+// A realm's overrides and the process's are `jsonb`, and PostgreSQL refuses
+// two things a JSON string can spell: `\u0000` (22P05) and half of a
+// surrogate pair (22P02). Until #1463 a `string` setting accepted either, and
+// the flush that wrote it failed for good: a fuzzed `saml11.nameIdFormat`
+// stopped every later store write in the process. So every door that writes
+// a setting asks here, through `checkOverride()`. The sentence quotes no
+// value. `persistence.js` keeps a backstop for anything else in that class.
+// ---------------------------------------------------------------------------
+const LONE_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/**
+ * Whether a value holds text the store's JSON columns can never hold.
+ *
+ * @param value - a string, or a list or object of them, at any depth
+ * @returns true when a string in it carries a NUL or a lone surrogate
+ */
+function unstorableText(value) {
+  log.debug("Entering unstorableText().");
+  if (typeof value === 'string') {
+    log.debug("Leaving unstorableText(). A string.");
+    return value.indexOf('\u0000') >= 0 || LONE_SURROGATE.test(value);
+  }
+  if (value && typeof value === 'object') {
+    const found = Object.keys(value).some(function (key) {
+      return unstorableText(key) || unstorableText(value[key]);
+    });
+    log.debug("Leaving unstorableText(). A container.");
+    return found;
+  }
+  log.debug("Leaving unstorableText(). Neither.");
+  return false;
+}
+
 // Whether this value WOULD be accepted, without accepting it. Separate from
 // setOverride() for one caller: the console's Save posts a whole section, and a
 // section that applied its first three fields and then refused the fourth would
@@ -21499,6 +21536,11 @@ function checkOverride(key, raw, forRealm) {
   if (realmLocked) {
     log.debug("Leaving checkOverride().");
     return realmLocked;
+  }
+  if (unstorableText(raw)) {
+    log.debug("Leaving checkOverride(). Text the store cannot hold.");
+    return '"' + key + '" holds a NUL character or half of a surrogate ' +
+      'pair, which this service cannot store.';
   }
   const problem = TYPES[setting.type].check(raw, setting);
   if (problem) {
@@ -21645,6 +21687,10 @@ function checkOverrideCode(key, raw, forRealm) {
   if (maxCountOutsideDefault(key)) {
     log.debug("Leaving checkOverrideCode().");
     return 'STS-CORE-0162';
+  }
+  if (unstorableText(raw)) {
+    log.debug("Leaving checkOverrideCode().");
+    return 'STS-CORE-0167';
   }
   if (TYPES[setting.type].check(raw, setting)) {
     log.debug("Leaving checkOverrideCode().");
@@ -22668,6 +22714,7 @@ module.exports = {
   managementApiBaseUrl: managementApiBaseUrl,
   registerLogger: registerLogger,
   checkOverride: checkOverride,
+  unstorableText: unstorableText,
   checkOverrideCode: checkOverrideCode,
   checkWrite: checkWrite,
   modeWriteCode: modeWriteCode,

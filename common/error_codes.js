@@ -1220,6 +1220,11 @@ const CODES = [
       'the file was left out of the build. The browser shows no icon; nothing ' +
       'else is affected.',
     spec: 'none — HTTP 404' },
+  { code: 'STS-CORE-0167',
+    summary: 'A setting\'s value, or a realm\'s name or description, holds ' +
+      'a NUL character or half of a surrogate pair, which the store\'s ' +
+      'columns can never hold; refused before anything is written (#1463).',
+    spec: 'a refusal naming the setting or field, never the value' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -2016,6 +2021,13 @@ const CODES = [
       'committed every other row of the batch (#1391). The entry stays in ' +
       'this process\'s memory and is absent from the store until the ' +
       'process restarts; the next flush does not send the same value again.',
+    spec: 'none — logged; the request that wrote it was already answered' },
+  { code: 'STS-STORE-0169',
+    summary: 'A realm or settings save dropped one value the database can ' +
+      'never store (a NUL, half of a surrogate pair, or another permanent ' +
+      'data error) and committed everything else in the flush (#1463). The ' +
+      'value stays in this process\'s memory and is absent from the store ' +
+      'until the process restarts; the next flush does not send it again.',
     spec: 'none — logged; the request that wrote it was already answered' },
   // ===== CLUSTER ===========================================================
   { code: 'STS-CLUSTER-0001',

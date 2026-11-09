@@ -1484,6 +1484,110 @@ function advanceRealmShadow(delta) {
   log.debug("Leaving advanceRealmShadow().");
 }
 
+// ---------------------------------------------------------------------------
+// A REALM OR SETTINGS VALUE THE COLUMN CAN NEVER HOLD (#1463).
+//
+// This save runs ahead of the directory and the minted rows, and a permanent
+// data error here used to be re-sent by every flush, so nothing else ever
+// committed. `isolateDirectory()` and `isolatePermanent()` already deal with
+// that error for their rows; these two are the same answer for these rows.
+// `checkOverride()` and `realmTextErrors()` refuse the known values at the
+// door, so this is a backstop for what reaches a save some other way.
+//
+// Each part is a transaction of its own and a non-permanent error is thrown
+// to the flush's catch, which retries the whole delta: every statement here
+// is an upsert or a delete, so a part already committed may be written again.
+// ---------------------------------------------------------------------------
+function storableRealmChange(change) {
+  log.debug("Entering storableRealmChange().");
+  const dropped = [];
+  const keepStorable = function (from) {
+    const kept = {};
+    Object.keys(from || {}).forEach(function (key) {
+      if (config.unstorableText(from[key])) {
+        if (dropped.indexOf(key) < 0) {
+          dropped.push(key);
+        }
+      } else {
+        kept[key] = from[key];
+      }
+    });
+    return kept;
+  };
+  const row = Object.assign({}, change.row,
+                            { overrides: keepStorable(change.row.overrides) });
+  const clean = Object.assign({}, change,
+                              { row: row, set: keepStorable(change.set) });
+  if (config.unstorableText(row.name)) {
+    row.name = row.id;
+    clean.name = false;
+    dropped.push('name');
+  }
+  if (config.unstorableText(row.description)) {
+    row.description = '';
+    clean.description = false;
+    dropped.push('description');
+  }
+  log.debug("Leaving storableRealmChange(). " + dropped.length);
+  return { change: clean, dropped: dropped };
+}
+
+function reportDropped(what, err) {
+  log.debug("Entering reportDropped().");
+  log.error(errorCodes.tag('STS-STORE-0169') + 'persistence: ' + what +
+            ' was DROPPED because the store can never hold it (' +
+            err.code + ': ' + err.message + '). Everything else in this ' +
+            'flush is still written. #1463.');
+  log.debug("Leaving reportDropped().");
+}
+
+function saveRealmsIsolated(delta, save, cause) {
+  log.debug("Entering saveRealmsIsolated().");
+  let chain = delta.removed.length
+    ? save({ upserts: [], removed: delta.removed }) : Promise.resolve();
+  delta.upserts.forEach(function (change) {
+    chain = chain.then(function () {
+      const part = storableRealmChange(change);
+      part.dropped.forEach(function (field) {
+        reportDropped('"' + field + '" of the realm "' + change.row.id + '"',
+                      cause);
+      });
+      return save({ upserts: [part.change], removed: [] })
+        .catch(function (err) {
+          if (!sqlDialect.isPermanentDataError(err)) {
+            throw err;
+          }
+          reportDropped('the change to the realm "' + change.row.id + '"',
+                        err);
+        });
+    });
+  });
+  log.debug("Leaving saveRealmsIsolated().");
+  return chain;
+}
+
+function saveOverridesIsolated(delta, save, cause) {
+  log.debug("Entering saveOverridesIsolated(). " + cause.code);
+  let chain = delta.cleared.length
+    ? save({ set: {}, cleared: delta.cleared, live: delta.live })
+    : Promise.resolve();
+  Object.keys(delta.set).forEach(function (key) {
+    chain = chain.then(function () {
+      const one = {};
+      one[key] = delta.set[key];
+      return save({ set: one, cleared: [], live: delta.live })
+        .catch(function (err) {
+          if (!sqlDialect.isPermanentDataError(err)) {
+            throw err;
+          }
+          reportDropped('the setting "' + key + '"', err);
+        });
+    });
+  });
+  log.debug("Leaving saveOverridesIsolated().");
+  return chain;
+}
+
 function appconfigDelta() {
   log.debug("Entering appconfigDelta().");
   const live = config.persistableOverrides();
@@ -1796,7 +1900,16 @@ function flush() {
     }
     // The whole list AND the delta: a snapshot driver writes the first, a
     // database the second. See `realmShadow` above.
-    return driver.saveRealms(realmRows(), realmChanges).then(function () {
+    return driver.saveRealms(realmRows(), realmChanges).catch(function (err) {
+      if (!sqlDialect.isPermanentDataError(err)) {
+        throw err;
+      }
+      return saveRealmsIsolated(realmChanges, function (part) {
+        return driver.saveRealms(realmRows(), part);
+      }, err);
+    }).then(function () {
+      // The whole delta, a dropped value included, so that the next flush
+      // does not send it again: `isolateDirectory()`'s rule.
       advanceRealmShadow(realmChanges);
     });
   }).then(function () {
@@ -1804,6 +1917,14 @@ function flush() {
       return null;
     }
     return driver.saveOverrides(configChanges.live, configChanges)
+      .catch(function (err) {
+        if (!sqlDialect.isPermanentDataError(err)) {
+          throw err;
+        }
+        return saveOverridesIsolated(configChanges, function (part) {
+          return driver.saveOverrides(configChanges.live, part);
+        }, err);
+      })
       .then(function () {
         advanceAppconfigShadow(configChanges);
       });
@@ -5310,6 +5431,9 @@ function directoryWindowWanted() {
 }
 
 module.exports = {
+  // For tests/unstorable_text.js, which hands them a save that fails (#1463).
+  saveRealmsIsolated: saveRealmsIsolated,
+  saveOverridesIsolated: saveOverridesIsolated,
   directoryWindowWanted: directoryWindowWanted,
   PROSE_ROUTES: PROSE_ROUTES,
   prose: prose,

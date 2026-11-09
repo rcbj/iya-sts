@@ -1198,6 +1198,23 @@ time**: `STS-STORE-0092` with a store name and a SQLSTATE, and the audit log's
 `persistence.minted-drop` row — a realm dropped a write it can never commit, and
 kept going.
 
+### A REALM OR SETTINGS VALUE THE COLUMN CAN NEVER HOLD (#1463, 2026-11-09)
+
+**The realm and settings save runs ahead of the directory and the minted rows,
+and it was the one save with no answer to a permanent data error.** The #1299
+run stored a NUL in `saml11.nameIdFormat`; `jsonb` refuses it (22P05, and a lone
+surrogate 22P02), every later flush re-sent it, and nothing committed in that
+process again. Each write was answered 503 with `Retry-After`, which the fuzz
+gate allows, so the outage passed as a clean cell.
+
+`checkOverride()` and `realmTextErrors()` refuse such text at the door
+(STS-CORE-0167). `saveRealmsIsolated()` and `saveOverridesIsolated()` are the
+backstop: each part its own transaction, the value that cannot commit dropped
+(STS-STORE-0169), the shadow advanced past it, and a non-permanent error thrown
+to the flush's retry. The fuzz kit now reads `/admin-api/persistence` when a
+cell ends, and a store still failing fails the cell.
+`tests/unstorable_text.js` holds it.
+
 ### ONE MINTED FLUSH AT A TIME PER PROCESS, OR THE OLDER VALUE CAN WIN (2026-09-13)
 
 **A flush READS a value when it takes the journal and WRITES it when its
