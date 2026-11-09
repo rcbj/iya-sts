@@ -673,6 +673,15 @@ function omitsUnapprovedSigningCurves() {
   return isProduct();
 }
 
+/**
+ * @returns true when a realm with no audit destination is warned about
+ */
+function warnsWithoutAuditDestination() {
+  log.debug("Entering warnsWithoutAuditDestination().");
+  log.debug("Leaving warnsWithoutAuditDestination().");
+  return isProduct();
+}
+
 // Must a malware scanner be reached over TLS (#1501, ASVS 5.0.0 12.3.1)?
 /**
  * @returns true when a plain icap:// address may not be used
@@ -3273,6 +3282,13 @@ const REQUIREMENTS = [
              'level, and a default database password stops the service ' +
              'unless persistence.allowDefaultDatabasePassword is on.',
     where: 'common/helpers.js, persistence/persistence.js' },
+  { id: 'audit-destination',
+    what: 'The audit log should leave this service',
+    development: 'Nothing is said about audit export.',
+    product: 'Add an audit export destination, so that a copy of the log ' +
+             'is out of reach of a compromise here. Until one exists the ' +
+             'service logs a warning for that realm.',
+    where: 'common/audit_export.ts' },
   // #1501 (ASVS 5.0.0 12.3.1).
   { id: 'malware-scan-tls',
     what: 'Files reach the malware scanner encrypted',
@@ -4865,6 +4881,7 @@ module.exports = {
   requiresPkceOfEveryClient: requiresPkceOfEveryClient,
   requiresSecondFactorOfEveryone: requiresSecondFactorOfEveryone,
   requiresTlsToMalwareScanner: requiresTlsToMalwareScanner,
+  warnsWithoutAuditDestination: warnsWithoutAuditDestination,
   omitsUnapprovedSigningCurves: omitsUnapprovedSigningCurves,
   refusesPlainSyslog: refusesPlainSyslog,
   refusesDefaultDatabasePassword: refusesDefaultDatabasePassword,

@@ -82,7 +82,7 @@ model PolicyPasskey {
     what: "`realm` (the default) offers the realm's webauthn.algorithms. Otherwise the signature algorithms a passkey registration offers to this profile's people, in order of preference (an authenticator makes the first it supports), from the algorithms webauthn.algorithms may name. The next row may narrow or reorder it, and a passkey whose algorithm is not one this profile offers is refused when it is registered. Left out of a save, `realm` is kept.",
     field: #{key: "registrationAlgorithms", type: "list", optional: true, label: "Algorithms a passkey registration offers"}
   })
-  stsPasskeyRegistrationAlgorithms?: unknown;
+  stsPasskeyRegistrationAlgorithms?: string;
   @attr(#{
     what: "`realm` (the default) follows webauthn.pqcOnly and webauthn.pqcAlongsideClassical. `pq-only` offers only ML-DSA, and refuses a retry with the classical algorithms. `pq-first` offers ML-DSA first and the classical algorithms after it, even where the realm requests ML-DSA only. `classical-only` offers no ML-DSA and no post-quantum passkey beside a classical one, for people whose devices fail an ML-DSA registration. Refused with postQuantumRequired other than off or with attestationAlgorithms set (classical-only), and where the algorithms offered name no ML-DSA (pq-only, pq-first). Left out of a save, `realm` is kept.",
     field: #{key: "registrationMode", type: "enum", dflt: "realm", optional: true, label: "Post-quantum algorithms at registration"}
@@ -107,32 +107,32 @@ model PolicyPasskey {
     what: "EMPTY BY DEFAULT: every client is offered the list as it stands. Otherwise up to 20 rules separated by `;`, each `<browser> on <system>`, where either side is a family as the passkey ceremony rows name it (`Chrome`, `Firefox`, `macOS`, `Android`) or `*` for any, optionally followed by a major-version range (`141`, `130-140`, `130-`, `-140`): `Firefox 140- on Linux; * on Android 13`. A passkey registration from a matching client offers the list less ML-DSA (ES256 and RS256 where that leaves none). Not applied where a classical passkey is not allowed — registrationMode pq-only, webauthn.pqcOnly, postQuantumRequired registration-and-sign-in, or at the sign-in step under postQuantumRequired sign-in — nor to the post-quantum lane, and the ceremony row says it was not. Left out of a save, empty is kept.",
     field: #{key: "clientRules", type: "clientRules", dflt: "", optional: true, label: "Clients a registration offers no ML-DSA"}
   })
-  stsPasskeyClientRules?: unknown;
+  stsPasskeyClientRules?: string;
   @attr(#{
     what: "The WebAuthn hints (Level 3 section 5.4.8) the portal's *Create a passkey* sends, in order, from security-key, client-device and hybrid, or none. They tell the browser which way of making the passkey to lead with. A hint may not contradict webauthn.authenticatorAttachment: client-device implies platform, security-key and hybrid cross-platform.",
     field: #{key: "passkeyHints", type: "list", dflt: "client-device,hybrid", label: "Hints \"Create a passkey\" sends"}
   })
-  stsPasskeyHintsPasskey?: unknown;
+  stsPasskeyHintsPasskey?: string;
   @attr(#{
     what: "The hints *Use a security key* sends, in order, or none. The button asks for a cross-platform authenticator, so client-device contradicts it and is refused.",
     field: #{key: "securityKeyHints", type: "list", dflt: "security-key", label: "Hints \"Use a security key\" sends"}
   })
-  stsPasskeyHintsSecurityKey?: unknown;
+  stsPasskeyHintsSecurityKey?: string;
   @attr(#{
     what: "The hints a sign-in ceremony sends — the passkey step, the sign-in with no username and its autofill — in order, or none (the default: the browser offers every way it knows).",
     field: #{key: "signInHints", type: "list", label: "Hints a passkey sign-in sends"}
   })
-  stsPasskeyHintsSignIn?: unknown;
+  stsPasskeyHintsSignIn?: string;
   @attr(#{
     what: "EMPTY BY DEFAULT: no serial is checked. Set to an attribute of a person's entry (for example `serialNumber`, which may hold several values), a security key registers only with a TRUSTED enterprise attestation whose certificate names a device serial that is one of that person's values. Needs webauthn.attestation set to enterprise, and the vendor or platform configured to release enterprise attestation to this RP ID; without that the browser sends ordinary attestation and every registration is refused.",
     field: #{key: "enterpriseSerialAttribute", type: "attribute", dflt: "", label: "Directory attribute holding a person's security-key serials"}
   })
-  stsPasskeyEnterpriseSerialAttribute?: unknown;
+  stsPasskeyEnterpriseSerialAttribute?: string;
   @attr(#{
     what: "EMPTY BY DEFAULT: the name the sign-in knows, else the username. Otherwise up to six directory attributes in order, separated by commas; a group of attributes separated by spaces (givenName sn) joins their values. The first whose every attribute has a value becomes user.displayName (WebAuthn Level 3 section 5.4.3), with control and direction-changing characters removed and at most 64 characters. The username is always user.name.",
     field: #{key: "userDisplayName", type: "attributes", dflt: "", label: "The name a passkey prompt shows for the person"}
   })
-  stsPasskeyUserDisplayName?: unknown;
+  stsPasskeyUserDisplayName?: string;
   @attr(#{
     what: "`none` (the default) shows webauthn.rpName alone. `realm`, `organisation` or `realm-and-organisation` append the realm's name and/or saml.organizationName, so a person with accounts in several realms can tell the prompts apart.",
     field: #{key: "rpNameExtras", type: "enum", dflt: "none", label: "What a passkey prompt adds to the service's name"}
@@ -142,7 +142,7 @@ model PolicyPasskey {
     what: "EMPTY BY DEFAULT: the provider's name, else \"Passkey\" or \"Security key\". Otherwise this text, with {provider} and {kind} filled in, at most 60 characters. The person may rename it afterwards, as always.",
     field: #{key: "credentialLabel", type: "text", dflt: "", label: "The name a new passkey is given"}
   })
-  stsPasskeyCredentialLabel?: unknown;
+  stsPasskeyCredentialLabel?: string;
   @attr(#{
     what: "ON BY DEFAULT: one \"Use passkey\" step whose request lists every one of the person's passkeys, and the browser offers whichever is present. Off, a person with more than one is shown a choice per passkey, by its name, and the request names only that one.",
     field: #{key: "aggregateDevices", type: "bool", dflt: true, label: "Offer a person's passkeys as one sign-in choice"}
@@ -157,7 +157,7 @@ model PolicyPasskey {
     what: "`none` BY DEFAULT: an attestation is accepted whatever it is signed with. Otherwise a list from post-quantum, ml-dsa-44, ml-dsa-65, ml-dsa-87, slh-dsa and composite-ml-dsa: a passkey registers only with a TRUSTED attestation that carries a certificate, whose statement signature and the signature on every certificate of its chain, from the leaf to the trust anchor, are each one the list allows (`post-quantum` allows any ML-DSA, SLH-DSA or composite ML-DSA signature). Self and none attestation are refused, having no certificate. With enforceAttestationAtSignIn on, every sign-in holds the passkey to it by what its registration recorded, so a passkey registered before the rule stops working. This is the attestation's algorithm, not the passkey's own (postQuantumRequired). Left out of a save, the built-in default is kept.",
     field: #{key: "attestationAlgorithms", type: "list", optional: true, label: "Algorithms a passkey's attestation must be signed with"}
   })
-  stsPasskeyAttestationAlgorithms?: unknown;
+  stsPasskeyAttestationAlgorithms?: string;
   @attr(#{
     what: "`off` BY DEFAULT. `on` lets an administrator holding the Admin Write console role enrol a passkey for a person this profile applies to, from the person's page on the console or /admin-api: the registration ceremony runs in the administrator's own browser, against an authenticator they hold (a security key to be handed over, say), under the person's user handle, and is verified exactly as the person's own registration is — attestation, algorithms and this policy's registration rules. Nothing made elsewhere can be imported. The key records which administrator enrolled it and when, and the person is told. Left out of a save, the built-in default is kept.",
     field: #{key: "adminEnrolment", type: "enum", dflt: "off", optional: true, label: "Let an administrator enrol a passkey for a person"}
@@ -175,11 +175,11 @@ model PolicyPasskey {
     what: "Which named passkey policy wins where several match: the lowest, from 1 to 1000.",
     selector: #{key: "precedence"}
   })
-  stsPasskeyPrecedence?: unknown;
+  stsPasskeyPrecedence?: DirectoryInteger;
   @attr(#{
     what: "What the profile is for, for the next person."
   })
-  description?: unknown;
+  description?: (string)[];
 }
 
 @entry(#{
@@ -189,7 +189,7 @@ model PolicyPasskey {
 })
 model PolicyPasskeyOnPerson {
   @attr(#{what: "A recovery restored access to this person, who holds a passkey, and no passkey has signed them in since: the door and when, as `<door> <ISO 8601 instant>`. While the passkey policy's recoveryAssurance is not-weaker or operator-only, a sign-in that is not a passkey reaches no application. Maintained by this service."})
-  stsRecoveryPending?: unknown;
+  stsRecoveryPending?: string;
   @attr(#{what: "Who issued the password reset link on this entry: `self` (the forgot-password form) or `operator` (an administrator). Written and cleared with the link. Maintained by this service."})
-  stsPasswordResetSource?: unknown;
+  stsPasswordResetSource?: string;
 }

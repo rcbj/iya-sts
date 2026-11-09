@@ -1358,5 +1358,17 @@
   "mode.requirements.no-known-secrets.product": {
     "en": "a037c255a759deb1",
     "text": "Inaalis ng mga request log ang mga credential at body sa bawat level, at pinapahinto ng default na database password ang service maliban kung naka-on ang persistence.allowDefaultDatabasePassword."
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "Dapat lumabas sa service na ito ang audit log"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "Walang sinasabi tungkol sa audit export."
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "Magdagdag ng audit export destination, para hindi maabot ang kopya ng log kung makompromiso ang service. Hangga’t wala pa, nagtatala ang service ng babala para sa realm na iyon."
   }
 }

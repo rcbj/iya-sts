@@ -34,7 +34,7 @@ namespace IyaSts.Directory;
 })
 model ClaimProvider {
   @attr(#{})
-  stsClaimProviderData?: unknown;
+  stsClaimProviderData?: DirectoryJson;
   @attr(#{})
-  stsClaimProviderSecret?: unknown;
+  stsClaimProviderSecret?: string;
 }

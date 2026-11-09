@@ -48,36 +48,36 @@ namespace IyaSts.Directory;
 })
 model Group {
   @attr(#{what: "Named on the Groups section."})
-  cn?: unknown;
+  cn?: (string)[];
   @attr(#{what: "Named on the Groups section."})
   @link(#{to: "person", cardinality: "multi", owns: false, what: "The members, by DN."})
-  member?: unknown;
+  member?: (string)[];
   @attr(#{what: "Named on the Groups section."})
-  description?: unknown;
+  description?: (string)[];
   @attr(#{what: "Named on the Groups section."})
   @link(#{to: "person", cardinality: "multi", owns: false, what: "The members, by DN."})
-  uniqueMember?: unknown;
+  uniqueMember?: (string)[];
   @attr(#{what: "Named on the Groups section."})
-  memberUid?: unknown;
+  memberUid?: (string)[];
   @attr(#{what: "Named on the Groups section."})
   @link(#{to: "policy.passkey", cardinality: "single", owns: false, what: "The named passkey policy of its members."})
-  stsPasskeyPolicy?: unknown;
+  stsPasskeyPolicy?: string;
   @attr(#{what: "Named on the Groups section."})
   @link(#{to: "policy.locale", cardinality: "single", owns: false, what: "The named locale policy of its members."})
-  stsLocalePolicy?: unknown;
+  stsLocalePolicy?: string;
   @attr(#{what: "Named on the Groups section."})
   @link(#{to: "policy.password", cardinality: "single", owns: false, what: "The named password policy of its members."})
-  stsPasswordPolicy?: unknown;
+  stsPasswordPolicy?: string;
   @attr(#{what: "Named on the Groups section."})
   @link(#{to: "policy.authn", cardinality: "single", owns: false, what: "The named authentication policy of its members."})
-  stsAuthnPolicy?: unknown;
+  stsAuthnPolicy?: string;
   @attr(#{what: "Named on the Groups section."})
   @link(#{to: "policy.postLogin", cardinality: "single", owns: false, what: "The named post-login policy of its members."})
-  stsPostLoginPolicy?: unknown;
+  stsPostLoginPolicy?: string;
   @attr(#{what: "Named on the Groups section."})
   @link(#{to: "policy.attributes", cardinality: "single", owns: false, what: "The named attribute policy of its members."})
-  stsAttributePolicy?: unknown;
+  stsAttributePolicy?: string;
   @attr(#{what: "Named on the Groups section."})
   @link(#{to: "federationRelationship", cardinality: "multi", owns: false, what: "The relationships this group is tied to."})
-  federationRelationship?: unknown;
+  federationRelationship?: (string)[];
 }

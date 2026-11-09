@@ -34,9 +34,9 @@ namespace IyaSts.Directory;
 })
 model TrustAnchor {
   @attr(#{})
-  stsTrustAnchorCertificate?: unknown;
+  stsTrustAnchorCertificate?: string;
   @attr(#{})
-  stsTrustAnchorFingerprint?: unknown;
+  stsTrustAnchorFingerprint?: string;
   @attr(#{})
-  stsTrustAnchorAddedBy?: unknown;
+  stsTrustAnchorAddedBy?: string;
 }

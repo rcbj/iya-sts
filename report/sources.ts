@@ -57,6 +57,7 @@
 
 import bunyan = require('bunyan');
 import errorCodes = require('../common/error_codes');
+import DomainMap = require('../common/domain_map');
 import stores = require('./stores');
 import Catalog = require('./catalog');
 import Limits = require('./limits');
@@ -727,19 +728,23 @@ function reportSecondFactors(entry: any): number {
 
 function reportUserRow(entry: any, names: string[]): any {
   log.debug("Entering reportUserRow().");
+  // Who the person is comes from the domain model (#1390): entryUUID is an
+  // operational attribute, and this entry carries it among its own.
+  const attributes = (entry && entry.attributes) || {};
+  const user = DomainMap.fromEntry('User', attributes,
+    { on: { operational: attributes } });
   // pwdAccountLockedTime is the administrative disable and any other
   // lock. The catalog calls both locked. This read does not ask
   // account_state, which would walk the directory a second time.
   const locked = reportAttr(entry, 'pwdAccountLockedTime');
   const row = {
-    username: reportAttr(entry, 'uid'),
+    username: user.username || '',
     status: locked ? 'locked' : 'active',
     createdAt: reportLdapTime(reportAttr(entry, 'createTimestamp')),
     modifiedAt: reportLdapTime(reportAttr(entry, 'modifyTimestamp')),
-    entryUuid: reportAttr(entry, 'entryUUID'),
-    mail: reportAttr(entry, 'mail'),
-    displayName: reportAttr(entry, 'displayName') ||
-      reportAttr(entry, 'cn'),
+    entryUuid: user.entryUuid || '',
+    mail: user.email || '',
+    displayName: user.displayName || reportAttr(entry, 'cn'),
     memberOf: names.join(', '),
     // WHAT THE PERSON CAN SIGN IN WITH, AND HAS (#1019, rcbj: account for
     // username/password): whether a password is set, how many second

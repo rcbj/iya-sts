@@ -1358,5 +1358,17 @@
   "mode.requirements.no-known-secrets.product": {
     "en": "a037c255a759deb1",
     "text": "要求日誌在任何層級都不包含認證資料和本文；預設資料庫密碼會使服務停止，除非開啟 persistence.allowDefaultDatabasePassword。"
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "稽核日誌應傳送至此服務之外"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "不提示稽核匯出。"
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "請新增稽核匯出目的地，使日誌副本在此服務遭入侵時不受影響。在新增之前，服務會為該信任領域記錄警告。"
   }
 }

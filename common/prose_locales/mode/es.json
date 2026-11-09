@@ -1358,5 +1358,17 @@
   "mode.requirements.no-known-secrets.product": {
     "en": "a037c255a759deb1",
     "text": "Los registros de solicitudes omiten credenciales y cuerpos en todos los niveles, y una contraseña predeterminada de la base de datos detiene el servicio salvo que persistence.allowDefaultDatabasePassword esté activo."
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "El registro de auditoría debería salir de este servicio"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "No se indica nada sobre la exportación de auditoría."
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "Añada un destino de exportación de auditoría, para que una copia del registro quede fuera del alcance de una intrusión. Mientras no exista, el servicio registra una advertencia para ese dominio."
   }
 }
