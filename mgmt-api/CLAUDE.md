@@ -2894,3 +2894,32 @@ logo carry the core's codes (`STS-AUTHN-0544`–`0548`, `0551`,
 `STS-CORE-0004`, `STS-CORE-0006`). The walk drives `logo` with a real PNG in
 its throwaway realm (`theSignInLogoRoundTrips()`), since a bytes body has no
 JSON example to replay. `tests/branding_api.js` holds the rows in process.
+
+## WHAT A REQUEST MAY NAME (#1476, rcbj 2026-11-09)
+
+**The table's `parameters` are the whole of what an operation takes.** The
+wrapper in `registerRoutes()` refuses, before the handler and after the
+enums, a query name the operation does not declare (`STS-API-0142`), a value
+its type does not hold (`STS-API-0143`, `ClosedSets.checkQueryDeclared()`) and
+a custom header (`STS-API-0144`, `request_headers.ts`, which carries the
+rule and the provider families). **Parsing is the handlers': `parseInt`-shaped
+integers, an empty value as absent, a repeat as each of its values, no range
+check, because the document clamps a page rather than refusing it.**
+
+**A handler reading a query name it does not declare is a bug now**, and
+#1476's audit was the reason this was safe to turn on: a static taint of every
+handler, a live read of `req.query` through a Proxy with a filled query, and
+every name the console and `tests/` send. Reads it found no meaning for were
+deliberately left undeclared: `ldap/directory`'s `format` (a debug line),
+`mfa`'s `protocol` and `kind` (`AdminViews.unfiltered()`, a shared reader
+that decides a cache), `passkey-report/export`'s `page`, `per` and `from`
+(`listOf()` parses them for the list and the export ignores them), and
+`format` on the management halves of the delegation drawings, which
+`consoleOnly()` refuses first.
+
+`declareImplicitParameters()` adds `DPoP` and `cell` to every row once, in
+`wire()`. **`consoleOnly()` now runs before the query check**, so `format=svg`
+at a management address is still told where the drawing is rather than called
+an unknown name. `tests/admin_api_request_names.js` holds the rules, the
+wrapper and every `x-sts-` name; `schemathesis_kit.js`'s
+`probeStrictRequests()` holds the running service.

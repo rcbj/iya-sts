@@ -8696,3 +8696,13 @@ Every write control is drawn `disabled` for a reader without Admin Write;
 the preview stays usable. The catalog is `consoleSignInAppearance` (seven
 languages); the documentation link is `sign-in-appearance.html`
 (`common/web_doc_links.ts`). `tests/branding_api.js` G holds the page.
+
+## A page's query is not its operation's (#1476)
+
+A page's address holds names only it means (`notice`, `error`, `view`,
+`format=json`), and `/admin-api` refuses a name its operation does not
+declare. So `GET /admin-api/console/operations`' GET rows carry `query`, the
+names each operation declares, and `web_runtime.ts` passes them to
+`WebPages.operationQuery()`, which leaves the rest on the address.
+`tests/tools/console_page.js` calls a handler directly and goes through
+no wrapper, so it needs no such filter.

@@ -261,6 +261,41 @@ function pathsIn(program, namespace) {
 }
 
 /**
+ * Adds to every operation the parameters every operation takes (#1476), which
+ * a document states once as `x-iya-every-operation` so that seven hundred
+ * operations do not each carry a copy. An operation that states one itself
+ * keeps its own, and its own come first, as `declareImplicitParameters()` in
+ * `mgmt-api/admin_api.ts` builds them; `tests/model_openapi.js` holds the two
+ * equal.
+ *
+ * @param paths - the OpenAPI `paths` object, changed in place
+ * @param everyOperation - the parameters, or undefined
+ * @returns the same object
+ */
+function withEveryOperation(paths, everyOperation) {
+  log.debug("Entering withEveryOperation().");
+  if (!everyOperation) {
+    log.debug("Leaving withEveryOperation(). None.");
+    return paths;
+  }
+  Object.keys(paths).forEach(function (path) {
+    Object.keys(paths[path]).forEach(function (method) {
+      const detail = paths[path][method];
+      const own = detail.parameters || [];
+      detail.parameters = own.concat(everyOperation.filter(function (one) {
+        return !own.some(function (mine) {
+          return mine.in === one.in && mine.name === one.name;
+        });
+      }).map(function (one) {
+        return JSON.parse(JSON.stringify(one));
+      }));
+    });
+  });
+  log.debug("Leaving withEveryOperation().");
+  return paths;
+}
+
+/**
  * The OpenAPI documents of a compiled program.
  *
  * @param program - the compiled program
@@ -273,7 +308,10 @@ export function documents(program) {
     const document = Object.assign({}, top);
     const name = document['x-iya-doc'];
     delete document['x-iya-doc'];
-    document.paths = pathsIn(program, namespace);
+    const everyOperation = document['x-iya-every-operation'];
+    delete document['x-iya-every-operation'];
+    document.paths = withEveryOperation(pathsIn(program, namespace),
+      everyOperation);
     const schemas = componentsIn(program, namespace);
     if (top.components !== undefined || Object.keys(schemas).length > 0) {
       document.components = Object.assign({}, top.components || {});

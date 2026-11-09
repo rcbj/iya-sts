@@ -593,6 +593,25 @@ written through `/config/set-many` is held to its own list: an `enum`
 setting's `enumValues`, and for a comma-separated setting, every entry against
 its `csvValues`. `GET /admin-api/config` publishes both.
 
+### Query parameters and headers
+
+An operation takes the query parameters its entry in the OpenAPI document
+lists. A parameter it does not list is refused with a 400
+(`STS-API-0142`), and so is a value that does not fit a listed parameter's
+type, such as a word where an integer is declared (`STS-API-0143`). An empty
+value counts as absent. Every operation takes `cell`, and `DPoP` as a header.
+
+A request header is refused with a 400 (`STS-API-0144`) unless the operation
+declares it, it is a standard HTTP header, or it belongs to a family that
+browsers, proxies, CDNs, load balancers and tracing systems add: `Sec-*`,
+`X-Forwarded-*`, `Forwarded`, `Via`, `X-Real-IP`, `X-Request-Id`, `traceparent`, `tracestate`,
+`baggage`, the headers that carry a client certificate from an edge
+(`X-Client-Cert`, `X-SSL-Client-*`), and the families AWS, Google Cloud and
+Azure add at their edges (`CloudFront-*`, `X-Amz-*`, `X-Amzn-*`,
+`X-Cloud-Trace-Context`, `X-Goog-*`, `X-Azure-*`, `X-ARR-*`, `X-MS-*`,
+`X-Original-*`, `X-FD-*`, `X-AppGW-*`). A refusal names the parameter or
+header and never its value. This applies to `/admin-api` only.
+
 ### Sign-in appearance
 
 Four operations set a realm's sign-in colours, layout and logo. They mirror

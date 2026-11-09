@@ -15,6 +15,22 @@ import "../lib/api_lib.tsp";
 using IyaSts.ApiLib;
 
 @apiDocument(#{
+  `x-iya-every-operation`:#[
+    #{
+      `name`:"DPoP",
+      `in`:"header",
+      `required`:false,
+      `schema`:#{`type`:"string"},
+      `description`:"RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires."
+    },
+    #{
+      `name`:"cell",
+      `in`:"query",
+      `required`:false,
+      `schema`:#{`type`:"string"},
+      `description`:"The cell to answer this request, where this service runs as several. Ignored in a service that runs as one."
+    }
+  ],
   `openapi`:"3.1.0",
   `info`:#{
     `title`:"IYA STS admin console operations",
@@ -19055,6 +19071,146 @@ op `setConsoleLanguage`(@js(#{`$open`:true}) `requestBody/content/application~1j
         `required`:false,
         `schema`:null,
         `description`:"`svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything."
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      },
+      #{
+        `name`:"permq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a permission's resource."
+      },
+      #{
+        `name`:"grantq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a grant's client or resource."
+      },
+      #{
+        `name`:"appq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The application chooser's search."
+      },
+      #{
+        `name`:"userq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The person chooser's search."
+      },
+      #{
+        `name`:"appfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the application chooser's page starts."
+      },
+      #{
+        `name`:"userfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the person chooser's page starts."
+      },
+      #{
+        `name`:"chainsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `chains` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"permissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `permissions` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"grantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `grants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"pairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `pairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"flagsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `flags` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"mechanismsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `mechanisms` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"policyPairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `policyPairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"intermediariesPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `intermediaries` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"peoplePage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `people` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groups` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupGrantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupGrants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupPermissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupPermissions` to return, clamped as `page` is."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:console"]},#{`bearerAuth`:#[]}]
@@ -19065,6 +19221,26 @@ op `getDelegationMap`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-c
   `parameters/3/schema`: string,
   `parameters/4/schema`: string,
   `parameters/5/schema`: "json" | "svg",
+  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/7/schema`: integer,
+  `parameters/8/schema`: string,
+  `parameters/9/schema`: string,
+  `parameters/10/schema`: string,
+  `parameters/11/schema`: string,
+  @js(#{`minimum`:0}) `parameters/12/schema`: integer,
+  @js(#{`minimum`:0}) `parameters/13/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/15/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/16/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/17/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/18/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/19/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/20/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/21/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/22/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/23/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/24/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/25/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `drawing`?: {
@@ -19352,6 +19528,167 @@ op `getFederationMap`(`parameters/0/schema`: string,
         `required`:false,
         `schema`:null,
         `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      },
+      #{
+        `name`:"type",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it."
+      },
+      #{
+        `name`:"mode",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing."
+      },
+      #{
+        `name`:"outcome",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to."
+      },
+      #{
+        `name`:"protocol",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is."
+      },
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in."
+      },
+      #{
+        `name`:"permq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a permission's resource."
+      },
+      #{
+        `name`:"grantq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a grant's client or resource."
+      },
+      #{
+        `name`:"appq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The application chooser's search."
+      },
+      #{
+        `name`:"userq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The person chooser's search."
+      },
+      #{
+        `name`:"appfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the application chooser's page starts."
+      },
+      #{
+        `name`:"userfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the person chooser's page starts."
+      },
+      #{
+        `name`:"chainsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `chains` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"permissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `permissions` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"grantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `grants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"pairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `pairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"flagsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `flags` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"mechanismsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `mechanisms` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"policyPairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `policyPairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"intermediariesPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `intermediaries` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"peoplePage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `people` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groups` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupGrantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupGrants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupPermissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupPermissions` to return, clamped as `page` is."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:console"]},#{`bearerAuth`:#[]}]
@@ -19360,6 +19697,29 @@ op `getDelegationCluster`(`parameters/0/schema`: string,
   `parameters/1/schema`: "json" | "svg",
   @js(#{`minimum`:1}) `parameters/2/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  `parameters/4/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-classic" | "krb5-s4u2proxy-rbcd" | "krb5-forwarded" | "wstrust-onbehalfof" | "wstrust-actas" | "oauth-impersonation" | "oauth-delegation" | "oauth-assertion-grant" | "oauth-saml-assertion-grant" | "gnap-impersonation" | "gnap-derivation",
+  `parameters/5/schema`: "impersonation" | "delegation",
+  `parameters/6/schema`: "issued" | "refused",
+  `parameters/7/schema`: string,
+  `parameters/8/schema`: string,
+  `parameters/9/schema`: string,
+  `parameters/10/schema`: string,
+  `parameters/11/schema`: string,
+  `parameters/12/schema`: string,
+  @js(#{`minimum`:0}) `parameters/13/schema`: integer,
+  @js(#{`minimum`:0}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/15/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/16/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/17/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/18/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/19/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/20/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/21/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/22/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/23/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/24/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/25/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/26/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `drawing`?: {
@@ -19439,6 +19799,167 @@ op `getDelegationCluster`(`parameters/0/schema`: string,
         `required`:false,
         `schema`:null,
         `description`:"`svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything."
+      },
+      #{
+        `name`:"type",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it."
+      },
+      #{
+        `name`:"mode",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing."
+      },
+      #{
+        `name`:"outcome",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to."
+      },
+      #{
+        `name`:"protocol",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is."
+      },
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in."
+      },
+      #{
+        `name`:"permq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a permission's resource."
+      },
+      #{
+        `name`:"grantq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a grant's client or resource."
+      },
+      #{
+        `name`:"appq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The application chooser's search."
+      },
+      #{
+        `name`:"userq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The person chooser's search."
+      },
+      #{
+        `name`:"appfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the application chooser's page starts."
+      },
+      #{
+        `name`:"userfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the person chooser's page starts."
+      },
+      #{
+        `name`:"chainsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `chains` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"permissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `permissions` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"grantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `grants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"pairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `pairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"flagsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `flags` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"mechanismsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `mechanisms` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"policyPairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `policyPairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"intermediariesPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `intermediaries` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"peoplePage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `people` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groups` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupGrantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupGrants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupPermissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupPermissions` to return, clamped as `page` is."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:console"]},#{`bearerAuth`:#[]}]
@@ -19446,6 +19967,29 @@ op `getDelegationCluster`(`parameters/0/schema`: string,
 op `getDelegationAllowed`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300}) `parameters/1/schema`: integer,
   `parameters/2/schema`: "json" | "svg",
+  `parameters/3/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-classic" | "krb5-s4u2proxy-rbcd" | "krb5-forwarded" | "wstrust-onbehalfof" | "wstrust-actas" | "oauth-impersonation" | "oauth-delegation" | "oauth-assertion-grant" | "oauth-saml-assertion-grant" | "gnap-impersonation" | "gnap-derivation",
+  `parameters/4/schema`: "impersonation" | "delegation",
+  `parameters/5/schema`: "issued" | "refused",
+  `parameters/6/schema`: string,
+  `parameters/7/schema`: string,
+  `parameters/8/schema`: string,
+  `parameters/9/schema`: string,
+  `parameters/10/schema`: string,
+  `parameters/11/schema`: string,
+  @js(#{`minimum`:0}) `parameters/12/schema`: integer,
+  @js(#{`minimum`:0}) `parameters/13/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/15/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/16/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/17/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/18/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/19/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/20/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/21/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/22/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/23/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/24/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/25/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `drawing`?: {
@@ -19574,6 +20118,153 @@ op `getDelegationAllowed`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
         `required`:false,
         `schema`:null,
         `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      },
+      #{
+        `name`:"type",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it."
+      },
+      #{
+        `name`:"mode",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing."
+      },
+      #{
+        `name`:"outcome",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to."
+      },
+      #{
+        `name`:"protocol",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is."
+      },
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in."
+      },
+      #{
+        `name`:"appq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The application chooser's search."
+      },
+      #{
+        `name`:"userq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The person chooser's search."
+      },
+      #{
+        `name`:"appfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the application chooser's page starts."
+      },
+      #{
+        `name`:"userfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the person chooser's page starts."
+      },
+      #{
+        `name`:"chainsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `chains` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"permissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `permissions` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"grantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `grants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"pairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `pairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"flagsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `flags` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"mechanismsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `mechanisms` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"policyPairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `policyPairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"intermediariesPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `intermediaries` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"peoplePage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `people` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groups` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupGrantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupGrants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupPermissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupPermissions` to return, clamped as `page` is."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:console"]},#{`bearerAuth`:#[]}]
@@ -19582,6 +20273,27 @@ op `getDelegationSettings`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
   @js(#{`minimum`:1}) `parameters/2/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  `parameters/4/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-classic" | "krb5-s4u2proxy-rbcd" | "krb5-forwarded" | "wstrust-onbehalfof" | "wstrust-actas" | "oauth-impersonation" | "oauth-delegation" | "oauth-assertion-grant" | "oauth-saml-assertion-grant" | "gnap-impersonation" | "gnap-derivation",
+  `parameters/5/schema`: "impersonation" | "delegation",
+  `parameters/6/schema`: "issued" | "refused",
+  `parameters/7/schema`: string,
+  `parameters/8/schema`: string,
+  `parameters/9/schema`: string,
+  `parameters/10/schema`: string,
+  @js(#{`minimum`:0}) `parameters/11/schema`: integer,
+  @js(#{`minimum`:0}) `parameters/12/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/13/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/15/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/16/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/17/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/18/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/19/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/20/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/21/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/22/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/23/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/24/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `allowed`?: {
       `resources`?: `SharedModel38`;
@@ -19964,12 +20676,212 @@ op `getConsoleNewApplicationForm`(`responses/200/content/application~1json/schem
         `required`:false,
         `schema`:null,
         `description`:"`svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything."
+      },
+      #{
+        `name`:"type",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it."
+      },
+      #{
+        `name`:"mode",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing."
+      },
+      #{
+        `name`:"outcome",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to."
+      },
+      #{
+        `name`:"protocol",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is."
+      },
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in."
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      },
+      #{
+        `name`:"permq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a permission's resource."
+      },
+      #{
+        `name`:"grantq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a grant's client or resource."
+      },
+      #{
+        `name`:"appq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The application chooser's search."
+      },
+      #{
+        `name`:"userq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The person chooser's search."
+      },
+      #{
+        `name`:"appfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the application chooser's page starts."
+      },
+      #{
+        `name`:"userfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the person chooser's page starts."
+      },
+      #{
+        `name`:"chainsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `chains` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"permissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `permissions` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"grantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `grants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"pairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `pairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"flagsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `flags` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"mechanismsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `mechanisms` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"policyPairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `policyPairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"intermediariesPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `intermediaries` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"peoplePage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `people` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groups` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupGrantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupGrants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupPermissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupPermissions` to return, clamped as `page` is."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:console"]},#{`bearerAuth`:#[]}]
   })
 op `getConsoleDelegationUser`(`parameters/0/schema`: string,
   `parameters/1/schema`: "json" | "svg",
+  `parameters/2/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-classic" | "krb5-s4u2proxy-rbcd" | "krb5-forwarded" | "wstrust-onbehalfof" | "wstrust-actas" | "oauth-impersonation" | "oauth-delegation" | "oauth-assertion-grant" | "oauth-saml-assertion-grant" | "gnap-impersonation" | "gnap-derivation",
+  `parameters/3/schema`: "impersonation" | "delegation",
+  `parameters/4/schema`: "issued" | "refused",
+  `parameters/5/schema`: string,
+  `parameters/6/schema`: string,
+  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/8/schema`: integer,
+  `parameters/9/schema`: string,
+  `parameters/10/schema`: string,
+  `parameters/11/schema`: string,
+  `parameters/12/schema`: string,
+  @js(#{`minimum`:0}) `parameters/13/schema`: integer,
+  @js(#{`minimum`:0}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/15/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/16/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/17/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/18/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/19/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/20/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/21/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/22/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/23/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/24/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/25/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/26/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `drawing`?: {
@@ -20094,12 +21006,212 @@ op `getConsoleDelegationUser`(`parameters/0/schema`: string,
         `required`:false,
         `schema`:null,
         `description`:"`svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything."
+      },
+      #{
+        `name`:"type",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it."
+      },
+      #{
+        `name`:"mode",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing."
+      },
+      #{
+        `name`:"outcome",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to."
+      },
+      #{
+        `name`:"protocol",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is."
+      },
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in."
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      },
+      #{
+        `name`:"permq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a permission's resource."
+      },
+      #{
+        `name`:"grantq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a grant's client or resource."
+      },
+      #{
+        `name`:"appq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The application chooser's search."
+      },
+      #{
+        `name`:"userq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The person chooser's search."
+      },
+      #{
+        `name`:"appfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the application chooser's page starts."
+      },
+      #{
+        `name`:"userfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the person chooser's page starts."
+      },
+      #{
+        `name`:"chainsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `chains` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"permissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `permissions` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"grantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `grants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"pairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `pairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"flagsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `flags` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"mechanismsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `mechanisms` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"policyPairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `policyPairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"intermediariesPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `intermediaries` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"peoplePage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `people` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groups` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupGrantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupGrants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupPermissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupPermissions` to return, clamped as `page` is."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:console"]},#{`bearerAuth`:#[]}]
   })
 op `getConsoleDelegationApplication`(`parameters/0/schema`: string,
   `parameters/1/schema`: "json" | "svg",
+  `parameters/2/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-classic" | "krb5-s4u2proxy-rbcd" | "krb5-forwarded" | "wstrust-onbehalfof" | "wstrust-actas" | "oauth-impersonation" | "oauth-delegation" | "oauth-assertion-grant" | "oauth-saml-assertion-grant" | "gnap-impersonation" | "gnap-derivation",
+  `parameters/3/schema`: "impersonation" | "delegation",
+  `parameters/4/schema`: "issued" | "refused",
+  `parameters/5/schema`: string,
+  `parameters/6/schema`: string,
+  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/8/schema`: integer,
+  `parameters/9/schema`: string,
+  `parameters/10/schema`: string,
+  `parameters/11/schema`: string,
+  `parameters/12/schema`: string,
+  @js(#{`minimum`:0}) `parameters/13/schema`: integer,
+  @js(#{`minimum`:0}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/15/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/16/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/17/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/18/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/19/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/20/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/21/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/22/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/23/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/24/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/25/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/26/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `drawing`?: {
@@ -20331,7 +21443,8 @@ op `getConsoleOperations`(`responses/200/content/application~1json/schema`: {
       `summary`?: string;
       `mirrors`?: string;
       `kind`?: string;
-      `drawnOn`?: (string)[]
+      `drawnOn`?: (string)[];
+      `query`?: (string)[]
     })[]
   },
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;

@@ -484,7 +484,61 @@ function run(t) {
         "the guard protects the infrastructure client " + name);
     });
 
+  strictRequestSection(t);
   t.log.debug("Leaving run().");
+}
+
+// #1476: what the gate sends to every /admin-api GET, and what each answer
+// means. The probes themselves need a stack; the decisions do not.
+function strictRequestSection(t) {
+  t.log.debug("Entering strictRequestSection().");
+  const probes = kit.strictRequestProbes({ paths: {
+    "/admin-api/bare": { get: { operationId: "bare" } },
+    "/admin-api/paged/{id}": { get: { operationId: "paged", parameters: [
+      { name: "page", in: "query", schema: { type: "integer" } },
+      { name: "skip", in: "query", schema: { type: "integer",
+                                             "x-refused-by-handler": true } }
+    ] } },
+    "/admin-api/held": { post: { operationId: "held" } }
+  } });
+  const of = function (id, kind) {
+    return probes.filter(function (one) {
+      return one.operationId === id && one.kind === kind;
+    });
+  };
+  t.check(of("held", "unknown-parameter").length === 0,
+    "only a GET is probed");
+  t.check(of("bare", "unknown-parameter").length === 1 &&
+    of("bare", "garbage-header").length === 1 &&
+    of("bare", "standard-header").length === 1,
+    "a GET with no parameters gets the unknown parameter and both headers");
+  t.check(of("bare", "wrong-type").length === 0,
+    "and no wrong-typed value, having nothing to type");
+  t.check(of("paged", "wrong-type").length === 1 &&
+    /\?page=abc$/.test(of("paged", "wrong-type")[0].url),
+    "a declared integer is sent a word");
+  t.check(of("paged", "unknown-parameter")[0].url.indexOf("{") < 0,
+    "a path parameter is given a harmless value");
+  t.equal(of("bare", "garbage-header")[0].headers["X-Sts-Garbage"],
+    "%%%{{<garbage>}}~", "the garbage header is sent as the issue says");
+  [ ["unknown-parameter", 400, "", null],
+    ["unknown-parameter", 200, "", "unknown-parameter answered 200, not 400"],
+    ["wrong-type", 400, "", null],
+    ["wrong-type", 200, "", "wrong-type answered 200, not 400"],
+    ["garbage-header", 400, "", null],
+    ["garbage-header", 200, "", "garbage-header answered 200, not 400"],
+    ["garbage-header", 400, '{"errors":["STS-API-0144"]}',
+      "a refusal carried an error code"],
+    ["standard-header", 200, "", null],
+    ["standard-header", 400, "", null],
+    ["standard-header", 500, "", "a standard header answered 500"],
+    ["unknown-parameter", 401, "", "gate"],
+    ["garbage-header", 403, "", "gate"]
+  ].forEach(function (one) {
+    t.equal(kit.strictRequestVerdict(one[0], one[1], one[2]), one[3],
+      one[0] + " answered " + one[1] + " is " + one[3]);
+  });
+  t.log.debug("Leaving strictRequestSection().");
 }
 
 module.exports = {

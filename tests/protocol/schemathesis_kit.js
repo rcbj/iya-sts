@@ -42,6 +42,7 @@ const bunyan = require("bunyan");
 const childProcess = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
+const http = require("http");
 const net = require("net");
 const os = require("os");
 const path = require("path");
@@ -383,6 +384,159 @@ function exclusionsFor(surfaceKey) {
   });
   log.debug("Leaving exclusionsFor().");
   return list;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A /admin-api GET DOES WITH A NAME IT DOES NOT TAKE (#1476, rcbj
+// 2026-11-09). Schemathesis sends what the document declares, so a parameter
+// or header nothing declares is the one request it never makes. These probes
+// make it, on every GET in the document, while the cell's proxy is up:
+//
+//   unknown-parameter   one query parameter nothing declares        400
+//   wrong-type          a declared integer holding a word            400
+//   garbage-header      a custom header no specification defines     400
+//   standard-header     a garbage value in a standard header         no 5xx
+//
+// A refusal carries no error code. A gate's 401 or 403 means the request
+// never reached the check, and is counted rather than called a miss: a realm's
+// administrator is refused the process-wide operations, and that is correct.
+// ---------------------------------------------------------------------------
+const STRICT_UNKNOWN_PARAMETER = "sts_garbage";
+const STRICT_GARBAGE_VALUE = "%%%{{<garbage>}}~";
+const STRICT_FINDING = "strict_request_miss";
+const LEAKED_CODE = /STS-[A-Z0-9]+-\d{4}/;
+
+// The requests one GET of the document is probed with. Pure, so that
+// tests/schemathesis_plan.js can hold the plan without a stack.
+function strictRequestProbes(document) {
+  log.debug("Entering strictRequestProbes().");
+  const out = [];
+  const paths = (document && document.paths) || {};
+  Object.keys(paths).sort().forEach(function (template) {
+    const get = paths[template] && paths[template].get;
+    if (!get) {
+      return;
+    }
+    // A harmless value for a path parameter: the check runs before the
+    // handler, so the route only has to match.
+    const url = template.replace(/\{[^}]+\}/g, "fuzz-probe");
+    const id = get.operationId || url;
+    const parameters = get.parameters || [];
+    out.push({ kind: "unknown-parameter", operationId: id, path: template,
+      url: url + "?" + STRICT_UNKNOWN_PARAMETER + "=1", headers: {} });
+    const integer = parameters.filter(function (p) {
+      return p && p.in === "query" && p.schema &&
+        p.schema.type === "integer" &&
+        p.schema["x-refused-by-handler"] !== true;
+    })[0];
+    if (integer) {
+      out.push({ kind: "wrong-type", operationId: id, path: template,
+        url: url + "?" + encodeURIComponent(integer.name) + "=abc",
+        headers: {} });
+    }
+    out.push({ kind: "garbage-header", operationId: id, path: template,
+      url: url, headers: { "X-Sts-Garbage": STRICT_GARBAGE_VALUE } });
+    out.push({ kind: "standard-header", operationId: id, path: template,
+      url: url, headers: { "Accept-Language": STRICT_GARBAGE_VALUE } });
+  });
+  log.debug("Leaving strictRequestProbes(). " + out.length + ".");
+  return out;
+}
+
+// What one probe's answer means: null for an answer that is right, `gate`
+// for a request a gate stopped, otherwise the finding's detail. Pure.
+function strictRequestVerdict(kind, status, body) {
+  log.debug("Entering strictRequestVerdict(). " + kind + " " + status);
+  let verdict = null;
+  const text = String(body || "");
+  if (status === 401 || status === 403) {
+    verdict = "gate";
+  } else if (status >= 400 && LEAKED_CODE.test(text)) {
+    verdict = "a refusal carried an error code";
+  } else if (kind === "standard-header") {
+    verdict = status >= 500 ? "a standard header answered " + status : null;
+  } else if (status !== 400) {
+    verdict = kind + " answered " + status + ", not 400";
+  }
+  log.debug("Leaving strictRequestVerdict().");
+  return verdict;
+}
+
+// One request to the cell's proxy; the proxy signs it.
+function strictRequest(port, url, headers) {
+  log.debug("Entering strictRequest().");
+  return new Promise(function (resolve) {
+    const req = http.request({ host: "127.0.0.1", port: port, path: url,
+      method: "GET", headers: Object.assign({ accept: "application/json" },
+        headers), timeout: 60000 }, function (res) {
+      let text = "";
+      res.setEncoding("utf8");
+      res.on("data", function (chunk) {
+        text += chunk;
+      });
+      res.on("end", function () {
+        log.debug("Leaving strictRequest(). " + res.statusCode);
+        resolve({ status: res.statusCode || 0, text: text });
+      });
+    });
+    req.on("timeout", function () {
+      req.destroy(new Error("timed out"));
+    });
+    req.on("error", function (e) {
+      log.debug("Caught in strictRequest(): " + ((e && e.message) || e));
+      log.debug("Leaving strictRequest(). No answer.");
+      resolve({ status: 0, text: String((e && e.message) || e) });
+    });
+    req.end();
+  });
+}
+
+// Every GET in the cell's document, probed through the cell's proxy. Answers
+// the findings; a document that cannot be read, or one where every probe was
+// stopped by a gate, is itself a finding, because a gate that checked nothing
+// must not read as a gate that passed.
+async function probeStrictRequests(port, surface, say) {
+  log.debug("Entering probeStrictRequests(). " + surface.key);
+  const documentAnswer = await strictRequest(port, surface.schemaPath, {});
+  let document = null;
+  try {
+    document = JSON.parse(documentAnswer.text);
+  } catch (e) {
+    log.debug("Caught parsing the cell's document: " +
+              ((e && e.message) || e));
+  }
+  const probes = strictRequestProbes(document);
+  if (documentAnswer.status !== 200 || !probes.length) {
+    log.debug("Leaving probeStrictRequests(). No document.");
+    return [{ kind: STRICT_FINDING, status: documentAnswer.status,
+      route: surface.schemaPath, detail: "the document could not be read" }];
+  }
+  const findings = [];
+  let gated = 0;
+  for (let i = 0; i < probes.length; i++) {
+    const probe = probes[i];
+    const answer = await strictRequest(port, probe.url, probe.headers);
+    const verdict = strictRequestVerdict(probe.kind, answer.status,
+                                         answer.text);
+    if (verdict === "gate") {
+      gated = gated + 1;
+    } else if (verdict) {
+      findings.push({ kind: STRICT_FINDING, status: answer.status,
+        method: "GET", route: probe.path, operationId: probe.operationId,
+        probe: probe.kind, detail: verdict,
+        body: answer.text.slice(0, 200) });
+    }
+  }
+  if (gated === probes.length) {
+    findings.push({ kind: STRICT_FINDING, status: 403,
+      route: surface.schemaPath,
+      detail: "every probe was stopped by a gate, so nothing was checked" });
+  }
+  say("[schemathesis] " + surface.key + ": " + probes.length +
+      " strict-request probe(s), " + gated + " stopped by a gate, " +
+      findings.length + " finding(s) (#1476)");
+  log.debug("Leaving probeStrictRequests(). " + findings.length + ".");
+  return findings;
 }
 
 // Every check name the plan may name, built-in or custom.
@@ -1282,7 +1436,16 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     // diagnostic only; it changes nothing and never fails the cell.
     await logDpopSettings(serviceBase, provisioned, surface.key, say);
     const code = run.status;
-    const status = code === 0 ? "pass" : (code === 1 ? "fail" : "error");
+    let status = code === 0 ? "pass" : (code === 1 ? "fail" : "error");
+    // WHAT THE DOCUMENT DOES NOT SAY (#1476): the probes Schemathesis cannot
+    // make, while this cell's proxy is up. A miss fails the cell.
+    let strictFindings = [];
+    if (surface.schemaPath === "/admin-api/openapi.json") {
+      strictFindings = await probeStrictRequests(port, surface, say);
+      if (strictFindings.length && status === "pass") {
+        status = "fail";
+      }
+    }
     // A null status means the binary could not be spawned (ENOENT, EACCES) or
     // was killed by a signal; `run.error` names which, so carry it.
     const spawnError = run.error
@@ -1308,7 +1471,7 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     // Keep a generous slice so each finding's endpoint and the custom check's
     // message — which names the leaked code — survive into the host log.
     return { surface: surface.key, realm: realmShown,
-      code: code, status: status, findings: findings,
+      code: code, status: status, findings: findings.concat(strictFindings),
       output: (((run.stdout || "") + (run.stderr || "")).slice(-40000)) +
         spawnError };
   } finally {
@@ -1523,6 +1686,9 @@ module.exports = {
   synthesizeProtocolDoc: synthesizeProtocolDoc,
   provision: provision,
   provisionServiceAdmin: provisionServiceAdmin,
+  STRICT_FINDING: STRICT_FINDING,
+  strictRequestProbes: strictRequestProbes,
+  strictRequestVerdict: strictRequestVerdict,
   runSurface: runSurface,
   run: run
 };

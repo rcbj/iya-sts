@@ -1684,6 +1684,22 @@ import "../lib/api_lib.tsp";
 using IyaSts.ApiLib;
 
 @apiDocument(#{
+  `x-iya-every-operation`:#[
+    #{
+      `name`:"DPoP",
+      `in`:"header",
+      `required`:false,
+      `schema`:#{`type`:"string"},
+      `description`:"RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires."
+    },
+    #{
+      `name`:"cell",
+      `in`:"query",
+      `required`:false,
+      `schema`:#{`type`:"string"},
+      `description`:"The cell to answer this request, where this service runs as several. Ignored in a service that runs as one."
+    }
+  ],
   `openapi`:"3.1.0",
   `info`:#{
     `title`:"IYA STS management API",
@@ -31638,9 +31654,24 @@ op `getGeolocation`(`parameters/0/schema`: "live" | "24h" | "7d" | "30d",
         `schema`:null,
         `description`:"An ISO 8601 date."
       },
-      #{`name`:"provider",`in`:"query",`required`:false,`schema`:null},
-      #{`name`:"licence",`in`:"query",`required`:false,`schema`:null},
-      #{`name`:"attribution",`in`:"query",`required`:false,`schema`:null},
+      #{
+        `name`:"provider",
+        `in`:"query",
+        `required`:false,
+        `schema`:null
+      },
+      #{
+        `name`:"licence",
+        `in`:"query",
+        `required`:false,
+        `schema`:null
+      },
+      #{
+        `name`:"attribution",
+        `in`:"query",
+        `required`:false,
+        `schema`:null
+      },
       #{
         `name`:"activate",
         `in`:"query",
@@ -33402,6 +33433,13 @@ op `getDeviceRegistration`(`responses/200/content/application~1json/schema`: {
     },
     `parameters`:#[
       #{
+        `name`:"jobsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of the job register to return, answered by `jobsPaging`."
+      },
+      #{
         `name`:"run",
         `in`:"query",
         `required`:false,
@@ -33439,11 +33477,12 @@ op `getDeviceRegistration`(`responses/200/content/application~1json/schema`: {
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getScheduler`(`parameters/0/schema`: string,
+op `getScheduler`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
   `parameters/1/schema`: string,
-  `parameters/2/schema`: "succeeded" | "failed" | "abandoned" | "running" | "queued",
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/4/schema`: integer,
+  `parameters/2/schema`: string,
+  `parameters/3/schema`: "succeeded" | "failed" | "abandoned" | "running" | "queued",
+  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/5/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `generatedAt`?: string;
     `nowMs`?: numeric;
@@ -34955,6 +34994,13 @@ op `getUsers`(`parameters/0/schema`: string,
     },
     `parameters`:#[
       #{
+        `name`:"username",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The older spelling of `user`, read when `user` is absent."
+      },
+      #{
         `name`:"user",
         `in`:"query",
         `required`:true,
@@ -34979,8 +35025,9 @@ op `getUsers`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getUserAppPasswords`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  `parameters/1/schema`: string,
+  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `enabled`?: boolean;
@@ -35122,6 +35169,13 @@ op `getUserCertificates`(`parameters/0/schema`: string,
     },
     `parameters`:#[
       #{
+        `name`:"username",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The older spelling of `user`, read when `user` is absent."
+      },
+      #{
         `name`:"user",
         `in`:"query",
         `required`:true,
@@ -35132,6 +35186,7 @@ op `getUserCertificates`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getUserDevices`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `maxPerPerson`?: numeric;
@@ -35227,6 +35282,13 @@ op `getUserDevices`(`parameters/0/schema`: string,
     },
     `parameters`:#[
       #{
+        `name`:"username",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The older spelling of `user`, read when `user` is absent."
+      },
+      #{
         `name`:"user",
         `in`:"query",
         `required`:true,
@@ -35237,6 +35299,7 @@ op `getUserDevices`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getUserSelfIssuedSubjects`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `entryFound`?: boolean;
@@ -35333,6 +35396,13 @@ op `getUserSelfIssuedSubjects`(`parameters/0/schema`: string,
     },
     `parameters`:#[
       #{
+        `name`:"username",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The older spelling of `user`, read when `user` is absent."
+      },
+      #{
         `name`:"user",
         `in`:"query",
         `required`:true,
@@ -35343,6 +35413,7 @@ op `getUserSelfIssuedSubjects`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getUserPublishedDids`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `entryFound`?: boolean;
@@ -35406,6 +35477,13 @@ op `getUserPublishedDids`(`parameters/0/schema`: string,
     },
     `parameters`:#[
       #{
+        `name`:"username",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The older spelling of `user`, read when `user` is absent."
+      },
+      #{
         `name`:"user",
         `in`:"query",
         `required`:true,
@@ -35430,8 +35508,9 @@ op `getUserPublishedDids`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getUserVerifications`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  `parameters/1/schema`: string,
+  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `trustFrameworks`?: (string)[];
@@ -35475,6 +35554,13 @@ op `getUserVerifications`(`parameters/0/schema`: string,
     },
     `parameters`:#[
       #{
+        `name`:"user",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"A username to open the form for, which the form starts from when the request gives no body."
+      },
+      #{
         `name`:"invent",
         `in`:"query",
         `required`:false,
@@ -35484,7 +35570,8 @@ op `getUserVerifications`(`parameters/0/schema`: string,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getNewUserForm`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
+op `getNewUserForm`(`parameters/0/schema`: string,
+  @js(#{`maxLength`:256}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: `NewUserForm`,
   `responses/400/content/application~1json/schema`: `SharedModel48`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -40495,9 +40582,27 @@ op `revokeAllTokens`(@js(#{`examples`:#[#{}]}) `requestBody/content/application~
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}],
+    `parameters`:#[
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      }
+    ]
   })
-op `getRealms`(`responses/200/content/application~1json/schema`: {
+op `getRealms`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/1/schema`: integer,
+  `responses/200/content/application~1json/schema`: {
     `enabled`?: boolean;
     `active`?: boolean;
     `pathSegment`?: string;
@@ -45211,6 +45316,13 @@ op `deleteFederationRelationship`(`requestBody/content/application~1json/schema`
     },
     `parameters`:#[
       #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a service provider's entityID, case-insensitive, narrowing the list."
+      },
+      #{
         `name`:"sp",
         `in`:"query",
         `required`:false,
@@ -45242,9 +45354,10 @@ op `deleteFederationRelationship`(`requestBody/content/application~1json/schema`
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getSaml2ServiceProviders`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
-  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
+  `parameters/1/schema`: string,
+  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `serviceProviders`?: ({
@@ -45774,6 +45887,13 @@ op `uploadSaml2Metadata`(`requestBody/content/application~1json/schema`: post_ad
     },
     `parameters`:#[
       #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a relying party's identifier, case-insensitive, narrowing the list."
+      },
+      #{
         `name`:"rp",
         `in`:"query",
         `required`:false,
@@ -45798,8 +45918,9 @@ op `uploadSaml2Metadata`(`requestBody/content/application~1json/schema`: post_ad
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getSaml11RelyingParties`(`parameters/0/schema`: string,
-  @js(#{`minimum`:1}) `parameters/1/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/2/schema`: integer,
+  `parameters/1/schema`: string,
+  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/3/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `protocolEndpoints`?: `SharedModel49`;
     `relyingParties`?: ({
@@ -46274,6 +46395,13 @@ op `deleteAuthorizationServer`(`requestBody/content/application~1json/schema`: p
     },
     `parameters`:#[
       #{
+        `name`:"claimsUser",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"On one application, the person the claims preview is drawn for. Defaults to the signed-in person."
+      },
+      #{
         `name`:"application",
         `in`:"query",
         `required`:false,
@@ -46330,18 +46458,67 @@ op `deleteAuthorizationServer`(`requestBody/content/application~1json/schema`: p
         `required`:false,
         `schema`:null,
         `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      },
+      #{
+        `name`:"observedPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `observed` to return, answered by `observedPaging`. On the `?application=` reply only: the claims observed on its tokens."
+      },
+      #{
+        `name`:"heldPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `held` to return, answered by `heldPaging`. On the `?application=` reply only: the delegated permissions it holds."
+      },
+      #{
+        `name`:"exposedPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `exposed` to return, answered by `exposedPaging`. On the `?application=` reply only: the permissions it exposes."
+      },
+      #{
+        `name`:"grantedOutPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `grantedOut` to return, answered by `grantedOutPaging`. On the `?application=` reply only: the permissions it has granted out."
+      },
+      #{
+        `name`:"enrolledPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `enrolled` to return, answered by `enrolledPaging`. On the `?application=` reply only: the certificates on its entry."
+      },
+      #{
+        `name`:"enrolledConfigPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `enrolledConfig` to return, answered by `enrolledConfigPaging`. On the `?application=` reply only: those certificates on its configuration tab."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getApplications`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  `parameters/2/schema`: "oauth2-client" | "oauth2-resource-server" | "oidc-relying-party" | "saml2-service-provider" | "saml11-relying-party" | "wsfed-relying-party" | "wstrust-relying-party" | "oid4vp-verifier" | "federation-identity-provider" | "kerberos-service" | "gnap-client" | "gnap-resource-server",
-  `parameters/3/schema`: (string)[],
-  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
+  `parameters/2/schema`: string,
+  `parameters/3/schema`: "oauth2-client" | "oauth2-resource-server" | "oidc-relying-party" | "saml2-service-provider" | "saml11-relying-party" | "wsfed-relying-party" | "wstrust-relying-party" | "oid4vp-verifier" | "federation-identity-provider" | "kerberos-service" | "gnap-client" | "gnap-resource-server",
+  `parameters/4/schema`: (string)[],
   @js(#{`minimum`:1}) `parameters/5/schema`: integer,
   @js(#{`minimum`:1}) `parameters/6/schema`: integer,
-  @js(#{`minimum`:1,`maximum`:300}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/8/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/9/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/10/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/11/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/12/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/13/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/14/schema`: integer,
   `responses/200/content/application~1json/schema`: `ApplicationList`,
   `responses/400/content/application~1json/schema`: {`ok`: boolean; `message`?: string; `errors`?: (string)[]},
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
@@ -48501,9 +48678,19 @@ op `getXacmlPolicies`(`responses/200/content/application~1json/schema`: {
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}],
+    `parameters`:#[
+      #{
+        `name`:"policy",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The name of one policy. Without it, the root."
+      }
+    ]
   })
-op `getXacmlEditor`(`responses/200/content/application~1json/schema`: {
+op `getXacmlEditor`(`parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: {
     `xacml`?: boolean;
     `message`?: string;
     `policies`?: (string)[];
@@ -48580,9 +48767,35 @@ op `getXacmlEditor`(`responses/200/content/application~1json/schema`: {
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}],
+    `parameters`:#[
+      #{
+        `name`:"subject",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Who the decision is asked about."
+      },
+      #{
+        `name`:"action",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"What they would do."
+      },
+      #{
+        `name`:"resource",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"What they would do it to."
+      }
+    ]
   })
-op `getXacmlDecision`(`responses/200/content/application~1json/schema`: {
+op `getXacmlDecision`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
+  `parameters/2/schema`: string,
+  `responses/200/content/application~1json/schema`: {
     `xacml`?: boolean;
     `message`?: string;
     `asked`?: boolean;
@@ -48626,9 +48839,51 @@ op `getXacmlDecision`(`responses/200/content/application~1json/schema`: {
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}],
+    `parameters`:#[
+      #{
+        `name`:"state",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"A grant state, narrowing the grants; any other value is no filter at all."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      },
+      #{
+        `name`:"grantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `grants` to return, answered by `grantsPaging`. The grants, newest first."
+      },
+      #{
+        `name`:"resourcesPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `resources` to return, answered by `resourcesPaging`. The registered resource sets."
+      },
+      #{
+        `name`:"serversPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `servers` to return, answered by `serversPaging`. The named authorization servers."
+      }
+    ]
   })
-op `getGnap`(`responses/200/content/application~1json/schema`: `GnapServer`,
+op `getGnap`(`parameters/0/schema`: string,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/2/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/3/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/4/schema`: integer,
+  `responses/200/content/application~1json/schema`: `GnapServer`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
 
@@ -48649,9 +48904,27 @@ op `getGnap`(`responses/200/content/application~1json/schema`: `GnapServer`,
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}],
+    `parameters`:#[
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      }
+    ]
   })
-op `getGnapMonitor`(`responses/200/content/application~1json/schema`: `GnapMonitor`,
+op `getGnapMonitor`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/1/schema`: integer,
+  `responses/200/content/application~1json/schema`: `GnapMonitor`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
 
@@ -52588,16 +52861,24 @@ op `getCertificates`(`parameters/0/schema`: string,
     },
     `parameters`:#[
       #{
-        `name`:"undefinedPage",
+        `name`:"pinsPage",
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"Which page of `undefined` to return, answered by `undefinedPaging`. undefined"
+        `description`:"Which page of `pins` to return, answered by `pinsPaging`. The pinned certificates, newest first."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getPkiTrust`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/1/schema`: integer,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
     `master`?: {
@@ -55202,7 +55483,7 @@ op `pairKerberosTrust`(@js(#{
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getAudit`(`parameters/0/schema`: "authentication" | "session" | "directory" | "admin" | "api" | "application" | "protocol" | "spiffe" | "signals" | "authorization" | "service" | "mail",
-  `parameters/1/schema`: "authentication" | "authentication.refused" | "portal.activate" | "portal.activate.refused" | "portal.password.changed" | "authn.password.changed" | "portal.password.refused" | "portal.password.csrf" | "portal.signout" | "portal.signout.csrf" | "portal.key.enrolled" | "portal.key.removed" | "portal.key.renamed" | "portal.tls-client.issued" | "portal.tls-client.revoked" | "activation.issued" | "portal.password-reset" | "portal.password-reset.refused" | "authn.mfa.enrolment.required" | "authn.mfa.enrolment.started" | "authn.mfa.enrolment.offered" | "authn.mfa.enrolment.declined" | "authn.second-factor.skipped" | "authn.mfa.enrolment.at-risk" | "authn.mfa.enrolled" | "authn.recovery.refused" | "authn.recovery.limited" | "authn.recovery.completed" | "authn.sign-in.started-over" | "portal.mfa.started" | "portal.mfa.enrolled" | "portal.mfa.refused" | "portal.mfa.removed" | "portal.mfa.csrf" | "portal.activate.mfa.started" | "portal.activate.mfa.refused" | "portal.activate.key.started" | "portal.activate.key.enrolled" | "portal.activate.key.refused" | "session.start" | "session.end" | "session.renew" | "authn.session.bound" | "authn.session.refreshed" | "authn.session.binding-skipped" | "logout.global" | "logout.selective" | "logout.backchannel" | "mail.queued" | "mail.sent" | "mail.dead" | "mail.refused" | "mail.reset-requested" | "mail.retry" | "mail.template" | "branding.logo" | "mail.verified" | "mail.preferences" | "scheduler.run" | "scheduler.step-down" | "keys.rotate" | "keys.rotate.emergency" | "application.secret-expiring" | "application.secret-expired" | "keys.retire" | "keys.data-key-rotate" | "keys.data-key-reencrypt" | "keys.data-key-destroy" | "keys.kek-rotate" | "keys.pin" | "keys.unpin" | "oidfed.key-minted" | "oidfed.key-rotated" | "oidfed.key-revoked" | "oidfed.subordinate-set" | "oidfed.subordinate-removed" | "oidfed.anchor-set" | "oidfed.anchor-removed" | "oidfed.mark-type-set" | "oidfed.remove-mark-type" | "oidfed.mark-policy-set" | "oidfed.remove-mark-policy" | "oidfed.mark-issued" | "oidfed.mark-revoked" | "oidfed.held-mark-added" | "oidfed.held-mark-removed" | "oidfed.act-refused" | "oidfed.resolved" | "device.create" | "device.browser.remembered" | "device.update" | "device.delete" | "device.evict" | "device.attestation-revoked" | "webauthn.ceremony" | "webauthn.algorithm-mismatch" | "webauthn.client.learned" | "webauthn.attestation-revoked" | "device.key-add" | "device.key-remove" | "device.compliance" | "device.enrol.refused" | "user.create" | "user.delete" | "user.update" | "user.rename" | "cells.rehome" | "user.query" | "group.create" | "group.delete" | "group.update" | "group.rename" | "entry.create" | "entry.delete" | "entry.update" | "entry.rename" | "directory.search" | "directory.compare" | "directory.bind" | "application.create" | "application.secret-revealed" | "application.export" | "application.import" | "application.add-owner" | "application.remove-owner" | "application.update" | "consent.grant" | "consent.deny" | "consent.revoke" | "application.delete" | "oidfed.registered" | "oidfed.registration-refused" | "admin.view" | "admin.change" | "admin.config-dump" | "claims.change" | "admin.role.change" | "admin.console.bootstrap" | "admin.mail.set" | "admin.pseudonym.set" | "admin.mfa.totp.cleared" | "admin.mfa.key.cleared" | "admin.mfa.key.renamed" | "admin.password.reset" | "admin.password.reset-link" | "admin.mfa.primary-keys.removed" | "admin.mfa.disabled" | "admin.mfa.required" | "admin.mfa.unrequired" | "admin.delegation.not-delegated" | "admin.delegation.may-act" | "admin.delegation.semantics" | "portal.delegation.may-act" | "portal.delegation.search" | "admin.password-policy.change" | "admin.authn-policy.change" | "admin.locale-policy.change" | "admin.post-login-policy.change" | "authn.post-login.asked" | "authn.post-login.skipped" | "authn.post-login.done" | "authn.post-login.held" | "admin.post-login-activity.change" | "authn.post-login.activity-run" | "authn.post-login.unsupported" | "webauthn.key.possibly-replaced" | "authn.mail-factor.change" | "authn.mail-factor.sent" | "authn.mail-factor.accepted" | "authn.mail-factor.refused" | "admin.truststore.change" | "admin.pki.trust.change" | "krb5.keys.derived" | "krb5.trust.sid-filtered" | "admin.krb5.keys.cleared" | "admin.krb5.service.created" | "admin.krb5.service.rotated" | "admin.krb5.service.deleted" | "admin.krb5.previous.dropped" | "api.read" | "api.change" | "protocol.call" | "oauth.token.revoke" | "protocol.failure" | "service.failure" | "spiffe.svid.issue" | "spiffe.svid.validate" | "spiffe.entry.create" | "spiffe.entry.update" | "spiffe.entry.delete" | "spiffe.agent.create" | "spiffe.agent.attest" | "spiffe.agent.ban" | "spiffe.agent.unban" | "spiffe.agent.delete" | "spiffe.bundle.read" | "spiffe.bundle.change" | "spiffe.call.refuse" | "xacml.decision" | "xacml.enforcement" | "authzen.decision" | "authzen.search" | "fga.decision" | "admin.authzen.attribute.set" | "admin.authzen.attribute.removed" | "admin.authzen.scope.set" | "admin.authzen.pep.granted" | "admin.authzen.callbacks.set" | "authzen.access-request.submitted" | "authzen.access-request.approved" | "authzen.access-request.denied" | "authzen.access-request.expired" | "authzen.access-request.cancelled" | "authzen.access-request.revoked" | "authzen.access-request.approver-refused" | "authzen.access-request.callback" | "xacml.issuance.refused" | "xacml.access.refused" | "xacml.issuance.alarm" | "xacml.pep.register" | "xacml.pep.certificate" | "xacml.pip.query" | "saml2.request.signature" | "gnap.grant.request" | "gnap.grant.consent" | "gnap.grant.deny" | "gnap.grant.approve" | "gnap.grant.revoke" | "gnap.grant.owner-queued" | "gnap.grant.forward" | "uma.resource.register" | "uma.resource.update" | "uma.resource.delete" | "uma.permission.ticket" | "uma.decision" | "uma.grant" | "uma.pct.revoke" | "uma.approval.request" | "uma.approval.answer" | "uma.claims.gathered" | "uma.share.add" | "uma.share.remove" | "uma.policy.alfa" | "uma.resource-server.enable" | "uma.resource-server.disable" | "uma.owns-resources.set" | "uma.rpt.revoke" | "gnap.grant.finalize" | "gnap.token.issue" | "gnap.token.rotate" | "gnap.token.revoke" | "gnap.rs.introspect" | "gnap.rs.register" | "ssf.stream.create" | "ssf.stream.update" | "ssf.stream.delete" | "ssf.stream.status" | "ssf.subject.change" | "ssf.event.transmit" | "ssf.announcement.broadcast" | "ssf.event.refused" | "ssf.stream.dead" | "ssf.stream.revived" | "ssf.stream.delivery" | "ssf.deadletter.clear" | "ssf.event.receive" | "caep.event.auto" | "caep.event.emit" | "caep.session.reset" | "caep.session.clear" | "risc.event.auto" | "risc.event.emit" | "risc.account.reset" | "risc.account.clear" | "persistence.minted-drop" | "admin.aud-sub.set" | "admin.mfa.backup-codes.cleared" | "admin.password.reset-keytab" | "admin.user.attribute" | "admin.service-account.set" | "admin.service-account.cleared" | "admin.service-account.owner-added" | "admin.service-account.owner-removed" | "admin.service-account.destination-set" | "admin.service-account.rotate" | "admin.app-password.created" | "admin.app-password.revoked" | "admin.ciba.answered" | "admin.device.removed" | "admin.ida.recorded" | "admin.ida.removed" | "admin.siop.enrolled" | "admin.siop.removed" | "admin.siop.preferred" | "admin.passkey.enrolment-started" | "admin.passkey.enrolment-refused" | "admin.passkey.enrolled" | "admin.passkey.upgrade-started" | "admin.passkey.upgrade-refused" | "admin.passkey.upgrade-proved" | "admin.passkey.upgrade-cancelled" | "admin.passkey.upgraded" | "ssf.signals.discover" | "ssf.signals.stream" | "ssf.signals.unblock" | "ssf.signals.read-stream" | "ssf.signals.update-stream" | "ssf.signals.delete-stream" | "ssf.signals.set-status" | "ssf.signals.add-subject" | "ssf.signals.remove-subject" | "ssf.signals.verify" | "application.key-issued" | "enrollment.acme.account.create" | "enrollment.acme.account.deactivate" | "enrollment.acme.account.key-change" | "enrollment.eab.create" | "enrollment.eab.delete" | "enrollment.challenge.create" | "enrollment.challenge.delete" | "enrollment.issue" | "enrollment.issue.refused" | "enrollment.revoke" | "federation.signal-block" | "federation.signal-unblock" | "federation.signout" | "federation.signout-answered" | "federation.unlink" | "federation.connected" | "federation.provider-notification" | "federation.group-ignored" | "group.add-member" | "group.add-owner" | "group.remove-owner" | "group.owner-protected" | "group.set-mail" | "group.set-policy" | "krb5.keytab.person" | "logout.backchannel.retry" | "oauth.device-secret.revoke" | "oauth2.ciba.notify" | "oauth2.claim-source-linked" | "oauth2.claim-source-link-refused" | "oauth2.claims-providers.add-provider" | "oauth2.claims-providers.update-provider" | "oauth2.claims-providers.remove-provider" | "oauth2.claims-providers.revoke-link" | "oauth2.command" | "oauth2.command.tenant" | "oauth2.grant-revoked" | "oauth2.par.withdraw" | "password.set" | "service-account.rotated" | "service-account.rotation-failed" | "portal.app-password.created" | "portal.app-password.revoked" | "portal.app-password.csrf" | "portal.certificates.csrf" | "portal.device.remove" | "portal.device.remember-browser" | "portal.kerberos.keytab" | "portal.kerberos.refused" | "portal.kerberos.csrf" | "portal.key.started" | "portal.key.refused" | "portal.key.upgrade-started" | "portal.key.upgrade-refused" | "portal.key.upgraded" | "portal.mfa.backup-codes.generated" | "portal.mfa.backup-codes.confirmed" | "portal.mfa.backup-codes.discarded" | "portal.risc.optOutInitiated" | "portal.risc.optOutCancelled" | "portal.risc.optIn" | "portal.signing-key.issued" | "portal.signing-key.removed" | "portal.signing-key.csrf" | "portal.signing-key.revoked" | "did.person.published" | "did.person.version" | "did.person.authorized" | "did.person.deactivated" | "admin.did.deactivated" | "portal.siop.enrol" | "portal.siop.remove" | "portal.siop.prefer" | "portal.siop.view" | "portal.siop.did" | "siop.key.pinned" | "siop.key.refused" | "portal.vc.offer" | "portal.vc.remove" | "risk.feedback" | "risk.response" | "risk.terms.accept" | "attribute-sources.add" | "attribute-sources.update" | "attribute-sources.remove" | "attribute-sources.refresh" | "scim-client.change" | "scim-client.delivery" | "scim-client.reconcile" | "scim-client.queue" | "secret-destination.push" | "secret-destination.test-push" | "roles.add-owner" | "roles.remove-owner" | "roles.create" | "roles.delete" | "roles.describe" | "node-health.collect-garbage" | "saml2.authnrequest" | "saml2.artifact.resolve" | "saml2.attribute-query" | "saml2.metadata.mdq" | "saml2.metadata.refresh" | "account.add" | "account.select" | "account.switch" | "account.forget" | "account.ambiguous" | "session.reauthenticate" | "session.presented" | "session.refuse" | "session.refused" | "ssf.event.act" | "ssf.stream.swept" | "xacml.pep.enable" | "xacml.pep.disable" | "xacml.pep.forget" | "xacml.policy.write" | "xacml.policy.delete" | "report.definition.create" | "report.definition.update" | "report.definition.share" | "report.definition.delete" | "report.job.submit" | "report.job.start" | "report.job.complete" | "report.job.fail" | "report.job.cancel" | "report.notify" | "report.query" | "report.job.retrieve" | "admin.audit-export.add" | "admin.audit-export.update" | "admin.audit-export.remove" | "admin.audit-export.enable" | "admin.audit-export.disable" | "admin.audit-export.test" | "audit.export.test",
+  `parameters/1/schema`: "authentication" | "authentication.refused" | "portal.activate" | "portal.activate.refused" | "portal.password.changed" | "authn.password.changed" | "portal.password.refused" | "portal.password.csrf" | "portal.signout" | "portal.signout.csrf" | "portal.key.enrolled" | "portal.key.removed" | "portal.key.renamed" | "portal.tls-client.issued" | "portal.tls-client.revoked" | "activation.issued" | "portal.password-reset" | "portal.password-reset.refused" | "authn.mfa.enrolment.required" | "authn.mfa.enrolment.started" | "authn.mfa.enrolment.offered" | "authn.mfa.enrolment.declined" | "authn.second-factor.skipped" | "authn.mfa.enrolment.at-risk" | "authn.mfa.enrolled" | "authn.recovery.refused" | "authn.recovery.limited" | "authn.recovery.completed" | "authn.sign-in.started-over" | "portal.mfa.started" | "portal.mfa.enrolled" | "portal.mfa.refused" | "portal.mfa.removed" | "portal.mfa.csrf" | "portal.activate.mfa.started" | "portal.activate.mfa.refused" | "portal.activate.key.started" | "portal.activate.key.enrolled" | "portal.activate.key.refused" | "session.start" | "session.end" | "session.renew" | "authn.session.bound" | "authn.session.refreshed" | "authn.session.binding-skipped" | "logout.global" | "logout.selective" | "logout.backchannel" | "mail.queued" | "mail.sent" | "mail.dead" | "mail.refused" | "mail.reset-requested" | "mail.retry" | "mail.template" | "branding.logo" | "mail.verified" | "mail.preferences" | "scheduler.run" | "scheduler.step-down" | "keys.rotate" | "keys.rotate.emergency" | "application.secret-expiring" | "application.secret-expired" | "keys.retire" | "keys.data-key-rotate" | "keys.data-key-reencrypt" | "keys.data-key-destroy" | "keys.kek-rotate" | "keys.pin" | "keys.unpin" | "oidfed.key-minted" | "oidfed.key-rotated" | "oidfed.key-revoked" | "oidfed.subordinate-set" | "oidfed.subordinate-removed" | "oidfed.anchor-set" | "oidfed.anchor-removed" | "oidfed.mark-type-set" | "oidfed.remove-mark-type" | "oidfed.mark-policy-set" | "oidfed.remove-mark-policy" | "oidfed.mark-issued" | "oidfed.mark-revoked" | "oidfed.held-mark-added" | "oidfed.held-mark-removed" | "oidfed.act-refused" | "oidfed.resolved" | "device.create" | "device.browser.remembered" | "device.update" | "device.delete" | "device.evict" | "device.attestation-revoked" | "webauthn.ceremony" | "webauthn.algorithm-mismatch" | "webauthn.client.learned" | "webauthn.attestation-revoked" | "device.key-add" | "device.key-remove" | "device.compliance" | "device.enrol.refused" | "user.create" | "user.delete" | "user.update" | "user.rename" | "cells.rehome" | "user.query" | "group.create" | "group.delete" | "group.update" | "group.rename" | "entry.create" | "entry.delete" | "entry.update" | "entry.rename" | "directory.search" | "directory.compare" | "directory.bind" | "application.create" | "application.secret-revealed" | "application.export" | "application.import" | "application.add-owner" | "application.remove-owner" | "application.update" | "consent.grant" | "consent.deny" | "consent.revoke" | "application.delete" | "oidfed.registered" | "oidfed.registration-refused" | "admin.view" | "admin.change" | "claims.change" | "admin.role.change" | "admin.console.bootstrap" | "admin.mail.set" | "admin.pseudonym.set" | "admin.mfa.totp.cleared" | "admin.mfa.key.cleared" | "admin.mfa.key.renamed" | "admin.password.reset" | "admin.password.reset-link" | "admin.mfa.primary-keys.removed" | "admin.mfa.disabled" | "admin.mfa.required" | "admin.mfa.unrequired" | "admin.delegation.not-delegated" | "admin.delegation.may-act" | "admin.delegation.semantics" | "portal.delegation.may-act" | "portal.delegation.search" | "admin.password-policy.change" | "admin.authn-policy.change" | "admin.locale-policy.change" | "admin.post-login-policy.change" | "authn.post-login.asked" | "authn.post-login.skipped" | "authn.post-login.done" | "authn.post-login.held" | "admin.post-login-activity.change" | "authn.post-login.activity-run" | "authn.post-login.unsupported" | "webauthn.key.possibly-replaced" | "authn.mail-factor.change" | "authn.mail-factor.sent" | "authn.mail-factor.accepted" | "authn.mail-factor.refused" | "admin.truststore.change" | "admin.pki.trust.change" | "krb5.keys.derived" | "krb5.trust.sid-filtered" | "admin.krb5.keys.cleared" | "admin.krb5.service.created" | "admin.krb5.service.rotated" | "admin.krb5.service.deleted" | "admin.krb5.previous.dropped" | "api.read" | "api.change" | "protocol.call" | "oauth.token.revoke" | "protocol.failure" | "service.failure" | "spiffe.svid.issue" | "spiffe.svid.validate" | "spiffe.entry.create" | "spiffe.entry.update" | "spiffe.entry.delete" | "spiffe.agent.create" | "spiffe.agent.attest" | "spiffe.agent.ban" | "spiffe.agent.unban" | "spiffe.agent.delete" | "spiffe.bundle.read" | "spiffe.bundle.change" | "spiffe.call.refuse" | "xacml.decision" | "xacml.enforcement" | "authzen.decision" | "authzen.search" | "fga.decision" | "admin.authzen.attribute.set" | "admin.authzen.attribute.removed" | "admin.authzen.scope.set" | "admin.authzen.pep.granted" | "admin.authzen.callbacks.set" | "authzen.access-request.submitted" | "authzen.access-request.approved" | "authzen.access-request.denied" | "authzen.access-request.expired" | "authzen.access-request.cancelled" | "authzen.access-request.revoked" | "authzen.access-request.approver-refused" | "authzen.access-request.callback" | "xacml.issuance.refused" | "xacml.access.refused" | "xacml.issuance.alarm" | "xacml.pep.register" | "xacml.pep.certificate" | "xacml.pip.query" | "saml2.request.signature" | "gnap.grant.request" | "gnap.grant.consent" | "gnap.grant.deny" | "gnap.grant.approve" | "gnap.grant.revoke" | "gnap.grant.owner-queued" | "gnap.grant.forward" | "uma.resource.register" | "uma.resource.update" | "uma.resource.delete" | "uma.permission.ticket" | "uma.decision" | "uma.grant" | "uma.pct.revoke" | "uma.approval.request" | "uma.approval.answer" | "uma.claims.gathered" | "uma.share.add" | "uma.share.remove" | "uma.policy.alfa" | "uma.resource-server.enable" | "uma.resource-server.disable" | "uma.owns-resources.set" | "uma.rpt.revoke" | "gnap.grant.finalize" | "gnap.token.issue" | "gnap.token.rotate" | "gnap.token.revoke" | "gnap.rs.introspect" | "gnap.rs.register" | "ssf.stream.create" | "ssf.stream.update" | "ssf.stream.delete" | "ssf.stream.status" | "ssf.subject.change" | "ssf.event.transmit" | "ssf.announcement.broadcast" | "ssf.event.refused" | "ssf.stream.dead" | "ssf.stream.revived" | "ssf.stream.delivery" | "ssf.deadletter.clear" | "ssf.event.receive" | "caep.event.auto" | "caep.event.emit" | "caep.session.reset" | "caep.session.clear" | "risc.event.auto" | "risc.event.emit" | "risc.account.reset" | "risc.account.clear" | "persistence.minted-drop" | "admin.aud-sub.set" | "admin.mfa.backup-codes.cleared" | "admin.password.reset-keytab" | "admin.user.attribute" | "admin.service-account.set" | "admin.service-account.cleared" | "admin.service-account.owner-added" | "admin.service-account.owner-removed" | "admin.service-account.destination-set" | "admin.service-account.rotate" | "admin.app-password.created" | "admin.app-password.revoked" | "admin.ciba.answered" | "admin.device.removed" | "admin.ida.recorded" | "admin.ida.removed" | "admin.siop.enrolled" | "admin.siop.removed" | "admin.siop.preferred" | "admin.passkey.enrolment-started" | "admin.passkey.enrolment-refused" | "admin.passkey.enrolled" | "admin.passkey.upgrade-started" | "admin.passkey.upgrade-refused" | "admin.passkey.upgrade-proved" | "admin.passkey.upgrade-cancelled" | "admin.passkey.upgraded" | "ssf.signals.discover" | "ssf.signals.stream" | "ssf.signals.unblock" | "ssf.signals.read-stream" | "ssf.signals.update-stream" | "ssf.signals.delete-stream" | "ssf.signals.set-status" | "ssf.signals.add-subject" | "ssf.signals.remove-subject" | "ssf.signals.verify" | "application.key-issued" | "enrollment.acme.account.create" | "enrollment.acme.account.deactivate" | "enrollment.acme.account.key-change" | "enrollment.eab.create" | "enrollment.eab.delete" | "enrollment.challenge.create" | "enrollment.challenge.delete" | "enrollment.issue" | "enrollment.issue.refused" | "enrollment.revoke" | "federation.signal-block" | "federation.signal-unblock" | "federation.signout" | "federation.signout-answered" | "federation.unlink" | "federation.connected" | "federation.provider-notification" | "federation.group-ignored" | "group.add-member" | "group.add-owner" | "group.remove-owner" | "group.owner-protected" | "group.set-mail" | "group.set-policy" | "krb5.keytab.person" | "logout.backchannel.retry" | "oauth.device-secret.revoke" | "oauth2.ciba.notify" | "oauth2.claim-source-linked" | "oauth2.claim-source-link-refused" | "oauth2.claims-providers.add-provider" | "oauth2.claims-providers.update-provider" | "oauth2.claims-providers.remove-provider" | "oauth2.claims-providers.revoke-link" | "oauth2.command" | "oauth2.command.tenant" | "oauth2.grant-revoked" | "oauth2.par.withdraw" | "password.set" | "service-account.rotated" | "service-account.rotation-failed" | "portal.app-password.created" | "portal.app-password.revoked" | "portal.app-password.csrf" | "portal.certificates.csrf" | "portal.device.remove" | "portal.device.remember-browser" | "portal.kerberos.keytab" | "portal.kerberos.refused" | "portal.kerberos.csrf" | "portal.key.started" | "portal.key.refused" | "portal.key.upgrade-started" | "portal.key.upgrade-refused" | "portal.key.upgraded" | "portal.mfa.backup-codes.generated" | "portal.mfa.backup-codes.confirmed" | "portal.mfa.backup-codes.discarded" | "portal.risc.optOutInitiated" | "portal.risc.optOutCancelled" | "portal.risc.optIn" | "portal.signing-key.issued" | "portal.signing-key.removed" | "portal.signing-key.csrf" | "portal.signing-key.revoked" | "did.person.published" | "did.person.version" | "did.person.authorized" | "did.person.deactivated" | "admin.did.deactivated" | "portal.siop.enrol" | "portal.siop.remove" | "portal.siop.prefer" | "portal.siop.view" | "portal.siop.did" | "siop.key.pinned" | "siop.key.refused" | "portal.vc.offer" | "portal.vc.remove" | "risk.feedback" | "risk.response" | "risk.terms.accept" | "attribute-sources.add" | "attribute-sources.update" | "attribute-sources.remove" | "attribute-sources.refresh" | "scim-client.change" | "scim-client.delivery" | "scim-client.reconcile" | "scim-client.queue" | "secret-destination.push" | "secret-destination.test-push" | "roles.add-owner" | "roles.remove-owner" | "roles.create" | "roles.delete" | "roles.describe" | "node-health.collect-garbage" | "saml2.authnrequest" | "saml2.artifact.resolve" | "saml2.attribute-query" | "saml2.metadata.mdq" | "saml2.metadata.refresh" | "account.add" | "account.select" | "account.switch" | "account.forget" | "account.ambiguous" | "session.reauthenticate" | "session.presented" | "session.refuse" | "session.refused" | "ssf.event.act" | "ssf.stream.swept" | "xacml.pep.enable" | "xacml.pep.disable" | "xacml.pep.forget" | "xacml.policy.write" | "xacml.policy.delete" | "report.definition.create" | "report.definition.update" | "report.definition.share" | "report.definition.delete" | "report.job.submit" | "report.job.start" | "report.job.complete" | "report.job.fail" | "report.job.cancel" | "report.notify" | "report.query" | "report.job.retrieve" | "admin.audit-export.add" | "admin.audit-export.update" | "admin.audit-export.remove" | "admin.audit-export.enable" | "admin.audit-export.disable" | "admin.audit-export.test" | "audit.export.test",
   `parameters/2/schema`: "success" | "refused" | "error",
   `parameters/3/schema`: string,
   `parameters/4/schema`: string,
@@ -55402,7 +55683,7 @@ op `getErrorCodes`(`parameters/0/schema`: string,
   })
 op `getUsedAssertions`(`parameters/0/schema`: string,
   `parameters/1/schema`: "jwt" | "openid2" | "saml" | "saml11" | "saml-message" | "attestation-challenge" | "wss-message",
-  `parameters/2/schema`: "steam-assertion" | "client-authentication" | "authorization-grant" | "federated-sign-in" | "request-object" | "ciba-request" | "federated-logout" | "provider-notification" | "client-attestation-pop" | "token-exchange" | "wstrust-requester",
+  `parameters/2/schema`: "steam-assertion" | "client-authentication" | "authorization-grant" | "request-object" | "ciba-request" | "federated-logout" | "provider-notification" | "client-attestation-pop" | "token-exchange" | "wstrust-requester",
   `parameters/3/schema`: "reserved" | "spent",
   @js(#{`minimum`:1}) `parameters/4/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300}) `parameters/5/schema`: integer,
@@ -55519,6 +55800,132 @@ op `getUsedAssertions`(`parameters/0/schema`: string,
         `required`:false,
         `schema`:null,
         `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      },
+      #{
+        `name`:"permq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a permission's resource."
+      },
+      #{
+        `name`:"grantq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a grant's client or resource."
+      },
+      #{
+        `name`:"appq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The application chooser's search."
+      },
+      #{
+        `name`:"userq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The person chooser's search."
+      },
+      #{
+        `name`:"appfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the application chooser's page starts."
+      },
+      #{
+        `name`:"userfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the person chooser's page starts."
+      },
+      #{
+        `name`:"chainsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `chains` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"permissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `permissions` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"grantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `grants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"pairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `pairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"flagsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `flags` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"mechanismsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `mechanisms` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"policyPairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `policyPairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"intermediariesPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `intermediaries` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"peoplePage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `people` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groups` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupGrantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupGrants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupPermissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupPermissions` to return, clamped as `page` is."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
@@ -55530,6 +55937,24 @@ op `getDelegation`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-clas
   `parameters/4/schema`: string,
   @js(#{`minimum`:1}) `parameters/5/schema`: integer,
   @js(#{`minimum`:1,`maximum`:300}) `parameters/6/schema`: integer,
+  `parameters/7/schema`: string,
+  `parameters/8/schema`: string,
+  `parameters/9/schema`: string,
+  `parameters/10/schema`: string,
+  @js(#{`minimum`:0}) `parameters/11/schema`: integer,
+  @js(#{`minimum`:0}) `parameters/12/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/13/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/15/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/16/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/17/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/18/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/19/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/20/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/21/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/22/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/23/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/24/schema`: integer,
   `responses/200/content/application~1json/schema`: `DelegationList`,
   `responses/400/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -55631,11 +56056,211 @@ op `getDelegation`(`parameters/0/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-clas
         `required`:false,
         `schema`:null,
         `description`:"The person, under any spelling this service has seen them under."
+      },
+      #{
+        `name`:"type",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it."
+      },
+      #{
+        `name`:"mode",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing."
+      },
+      #{
+        `name`:"outcome",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to."
+      },
+      #{
+        `name`:"protocol",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is."
+      },
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in."
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      },
+      #{
+        `name`:"permq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a permission's resource."
+      },
+      #{
+        `name`:"grantq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a grant's client or resource."
+      },
+      #{
+        `name`:"appq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The application chooser's search."
+      },
+      #{
+        `name`:"userq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The person chooser's search."
+      },
+      #{
+        `name`:"appfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the application chooser's page starts."
+      },
+      #{
+        `name`:"userfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the person chooser's page starts."
+      },
+      #{
+        `name`:"chainsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `chains` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"permissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `permissions` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"grantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `grants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"pairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `pairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"flagsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `flags` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"mechanismsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `mechanisms` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"policyPairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `policyPairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"intermediariesPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `intermediaries` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"peoplePage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `people` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groups` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupGrantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupGrants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupPermissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupPermissions` to return, clamped as `page` is."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getDelegationUser`(`parameters/0/schema`: string,
+  `parameters/1/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-classic" | "krb5-s4u2proxy-rbcd" | "krb5-forwarded" | "wstrust-onbehalfof" | "wstrust-actas" | "oauth-impersonation" | "oauth-delegation" | "oauth-assertion-grant" | "oauth-saml-assertion-grant" | "gnap-impersonation" | "gnap-derivation",
+  `parameters/2/schema`: "impersonation" | "delegation",
+  `parameters/3/schema`: "issued" | "refused",
+  `parameters/4/schema`: string,
+  `parameters/5/schema`: string,
+  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/7/schema`: integer,
+  `parameters/8/schema`: string,
+  `parameters/9/schema`: string,
+  `parameters/10/schema`: string,
+  `parameters/11/schema`: string,
+  @js(#{`minimum`:0}) `parameters/12/schema`: integer,
+  @js(#{`minimum`:0}) `parameters/13/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/15/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/16/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/17/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/18/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/19/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/20/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/21/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/22/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/23/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/24/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/25/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `user`?: get_admin_api_delegation_user_r200_application_json_user_h2903;
@@ -55759,11 +56384,211 @@ op `getDelegationUser`(`parameters/0/schema`: string,
         `required`:false,
         `schema`:null,
         `description`:"The application, as a protocol presented it or normalised."
+      },
+      #{
+        `name`:"type",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it."
+      },
+      #{
+        `name`:"mode",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing."
+      },
+      #{
+        `name`:"outcome",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to."
+      },
+      #{
+        `name`:"protocol",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is."
+      },
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in."
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own."
+      },
+      #{
+        `name`:"permq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a permission's resource."
+      },
+      #{
+        `name`:"grantq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Part of a grant's client or resource."
+      },
+      #{
+        `name`:"appq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The application chooser's search."
+      },
+      #{
+        `name`:"userq",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The person chooser's search."
+      },
+      #{
+        `name`:"appfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the application chooser's page starts."
+      },
+      #{
+        `name`:"userfrom",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Where the person chooser's page starts."
+      },
+      #{
+        `name`:"chainsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `chains` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"permissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `permissions` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"grantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `grants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"pairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `pairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"flagsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `flags` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"mechanismsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `mechanisms` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"policyPairsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `policyPairs` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"intermediariesPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `intermediaries` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"peoplePage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `people` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groups` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupGrantsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupGrants` to return, clamped as `page` is."
+      },
+      #{
+        `name`:"groupPermissionsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `groupPermissions` to return, clamped as `page` is."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getDelegationApplication`(`parameters/0/schema`: string,
+  `parameters/1/schema`: "krb5-s4u2self" | "krb5-s4u2proxy-classic" | "krb5-s4u2proxy-rbcd" | "krb5-forwarded" | "wstrust-onbehalfof" | "wstrust-actas" | "oauth-impersonation" | "oauth-delegation" | "oauth-assertion-grant" | "oauth-saml-assertion-grant" | "gnap-impersonation" | "gnap-derivation",
+  `parameters/2/schema`: "impersonation" | "delegation",
+  `parameters/3/schema`: "issued" | "refused",
+  `parameters/4/schema`: string,
+  `parameters/5/schema`: string,
+  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:300}) `parameters/7/schema`: integer,
+  `parameters/8/schema`: string,
+  `parameters/9/schema`: string,
+  `parameters/10/schema`: string,
+  `parameters/11/schema`: string,
+  @js(#{`minimum`:0}) `parameters/12/schema`: integer,
+  @js(#{`minimum`:0}) `parameters/13/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/14/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/15/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/16/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/17/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/18/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/19/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/20/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/21/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/22/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/23/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/24/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/25/schema`: integer,
   `responses/200/content/image~1svg+xml/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `application`?: get_admin_api_delegation_application_r200_application_json_application_h2911;
@@ -56506,6 +57331,13 @@ op `getRoles`(`parameters/0/schema`: string,
     },
     `parameters`:#[
       #{
+        `name`:"username",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The older spelling of `subject`, read when `subject` is absent."
+      },
+      #{
         `name`:"application",
         `in`:"query",
         `schema`:null,
@@ -56534,8 +57366,9 @@ op `getRoles`(`parameters/0/schema`: string,
   })
 op `previewRoleIssuance`(`parameters/0/schema`: string,
   `parameters/1/schema`: string,
-  `parameters/2/schema`: "user" | "application",
-  `parameters/3/schema`: "start-session" | "issue-access-token" | "issue-id-token" | "issue-refresh-token" | "issue-authorization-code" | "issue-saml-assertion" | "issue-wsfed-token" | "issue-wstrust-token" | "issue-kerberos-ticket" | "issue-certificate" | "create-account",
+  `parameters/2/schema`: string,
+  `parameters/3/schema`: "user" | "application",
+  `parameters/4/schema`: "start-session" | "issue-access-token" | "issue-id-token" | "issue-refresh-token" | "issue-authorization-code" | "issue-saml-assertion" | "issue-wsfed-token" | "issue-wstrust-token" | "issue-kerberos-ticket" | "issue-certificate" | "create-account",
   `responses/200/content/application~1json/schema`: {
     `answered`?: boolean;
     `available`?: boolean;
@@ -64094,9 +64927,19 @@ op `testSecretDestination`(@js(#{`examples`:#[#{`id`:"vault-prod",`secretName`:"
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}],
+    `parameters`:#[
+      #{
+        `name`:"caller",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Looks one caller up by name or DN, in the group or not."
+      }
+    ]
   })
-op `getXacmlAuthzen`(`responses/200/content/application~1json/schema`: {
+op `getXacmlAuthzen`(`parameters/0/schema`: string,
+  `responses/200/content/application~1json/schema`: {
     `realm`?: string;
     `enabled`?: boolean;
     `xacmlEnabled`?: boolean;
@@ -64584,9 +65427,99 @@ op `cancelAuthzenAccessRequest`(@js(#{`examples`:#[#{`request`:"arq_EXAMPLE"}]})
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}],
+    `parameters`:#[
+      #{
+        `name`:"resourceServer",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Narrows the registered resources to one resource server."
+      },
+      #{
+        `name`:"owner",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"A username or application: adds that owner's resources, document and waiting requests."
+      },
+      #{
+        `name`:"resource",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"With `scope`, asks the what-if about this resource."
+      },
+      #{
+        `name`:"scope",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The scope the what-if asks about."
+      },
+      #{
+        `name`:"party",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The requesting party of the what-if."
+      },
+      #{
+        `name`:"client",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The client of the what-if."
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Rows per page, shared by the four lists."
+      },
+      #{
+        `name`:"resourcesPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `resources` to return."
+      },
+      #{
+        `name`:"ticketsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `tickets` to return."
+      },
+      #{
+        `name`:"rptsPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `rpts` to return."
+      },
+      #{
+        `name`:"pendingPage",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which page of `pending` to return."
+      }
+    ]
   })
-op `getUma`(`responses/200/content/application~1json/schema`: {
+op `getUma`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
+  `parameters/2/schema`: string,
+  `parameters/3/schema`: string,
+  `parameters/4/schema`: string,
+  `parameters/5/schema`: string,
+  @js(#{`minimum`:1}) `parameters/6/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/7/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/8/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/9/schema`: integer,
+  @js(#{`minimum`:1}) `parameters/10/schema`: integer,
+  `responses/200/content/application~1json/schema`: {
     `page`?: string;
     `title`?: string;
     `enabled`?: boolean;
@@ -65456,8 +66389,18 @@ op `exportPasskeyReport`(@js(#{`maxLength`:1024}) `parameters/0/schema`: string,
       }
     },
     `parameters`:#[
-      #{`name`:"username",`in`:"query",`required`:true,`schema`:null},
-      #{`name`:"credentialId",`in`:"query",`required`:true,`schema`:null}
+      #{
+        `name`:"username",
+        `in`:"query",
+        `required`:true,
+        `schema`:null
+      },
+      #{
+        `name`:"credentialId",
+        `in`:"query",
+        `required`:true,
+        `schema`:null
+      }
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })

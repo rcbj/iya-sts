@@ -121,6 +121,8 @@ class ConsoleRuntime extends SpaClient {
   // The announcement banner's poller (#1086), once the shell is in hand.
   private announcements: WebAnnouncements | null = null;
   private formTable: Json;
+  // `{ path: names }` of each GET operation's query (#1476).
+  private declaredQueries: Json;
   private view: Json;
   // The path and query of the page last drawn: a `popstate` that changes
   // neither is a fragment's, which the browser has already answered.
@@ -174,6 +176,7 @@ class ConsoleRuntime extends SpaClient {
     this.shellPrefix = '';
     this.me = null;
     this.formTable = null;
+    this.declaredQueries = null;
     this.view = null;
     this.drawnAt = '';
     this.spec = null;
@@ -1205,6 +1208,17 @@ class ConsoleRuntime extends SpaClient {
     return path + (this.env.location.search || '');
   }
 
+  /**
+   * The names an operation declares, for `WebPages.operationQuery()`.
+   *
+   * @param operation - the operation's path
+   * @returns its names, or undefined when the table is not in hand
+   */
+  private declaredQueryOf(operation: string): string[] | undefined {
+    const known = this.declaredQueries && this.declaredQueries[operation];
+    return known || undefined;
+  }
+
   // The shell answer belongs to a realm (its sections, its chooser, its
   // banners), so it is fetched again when the realm changes; and the
   // operation table, which is the same everywhere, once.
@@ -1269,6 +1283,15 @@ class ConsoleRuntime extends SpaClient {
         return false;
       }
       this.formTable = WebForms.table(index.json.operations || []);
+      // What each GET declares (#1476): a page's own address holds names
+      // its operation would refuse, and asking only these is what keeps
+      // `notice`, `error` and the like on the address alone.
+      this.declaredQueries = {};
+      (index.json.operations || []).forEach((op: Json) => {
+        if (op.method === 'GET' && Array.isArray(op.query)) {
+          this.declaredQueries[op.path] = op.query;
+        }
+      });
     }
     return true;
   }
@@ -1657,7 +1680,8 @@ class ConsoleRuntime extends SpaClient {
                  'this console.'), null);
       return;
     }
-    const opQuery = WebPages.operationQuery(page.path, query);
+    const opQuery = WebPages.operationQuery(page.path, query,
+      this.declaredQueryOf(page.operation));
     const qs = new URLSearchParams(opQuery).toString();
     const answer = await this.apiJson('GET', page.operation +
                                       (qs ? '?' + qs : ''));
@@ -2883,7 +2907,8 @@ class ConsoleRuntime extends SpaClient {
     }
     const query = ConsoleRuntime.queryOf(url.search);
     delete query.format;
-    const mapped = WebPages.operationQuery(row.path, query);
+    const mapped = WebPages.operationQuery(row.path, query,
+      this.declaredQueryOf(row.operation));
     if (format === 'svg') {
       mapped.format = 'svg';
     }
