@@ -119,6 +119,15 @@ class AccountApiSpec {
                                schema: prop },
                              description ? { description: description } : {}));
     });
+    // THE SPENT-LINK SECRET OF A LINK PAGE'S GET (#1454) arrives in this
+    // header and never in a URL, so the operation has to declare it (#1483's
+    // refusal of a custom header no operation takes).
+    if (op.access === 'link' && op.method === 'GET') {
+      out.push({ name: 'X-Link-Token', in: 'header', required: false,
+                 schema: { type: 'string' },
+                 description: 'The single-use secret the link carried in ' +
+                              'its fragment.' });
+    }
     AccountApiSpec.implicitHeaders().forEach(function (one) {
       out.push(one);
     });
