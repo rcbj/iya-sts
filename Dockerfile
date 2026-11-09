@@ -171,6 +171,7 @@ COPY package*.json ./
 COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs
 RUN npm ci --omit=dev && npm cache clean --force
+RUN npm sbom --omit=dev --sbom-format=cyclonedx --sbom-type=application > /usr/src/sts/sbom.cdx.json
 
 
 # THE WHOLE SOURCE TREE IN ONE LINE, and that is deliberate rather than lazy.

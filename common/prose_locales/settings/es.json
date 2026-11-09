@@ -12346,5 +12346,45 @@
   "account.recentAuthMinutes|description": {
     "en": "50ed3d8089739a00",
     "text": "Una persona que cambie sus segundos factores, códigos de recuperación, llaves de acceso o dirección de correo en el portal debe haber iniciado sesión en estos minutos; de lo contrario, se la envía a iniciar sesión de nuevo. 0 significa que no se pide, el valor predeterminado en desarrollo. El modo producto usa 15 por defecto."
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "Permitir una contraseña predeterminada de la base de datos en modo producto"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "Desactivado, el valor predeterminado, el modo producto no se inicia con una contraseña de base de datos conocida, como sts_app del archivo compose incluido, o una contraseña igual al nombre de usuario. Activado, se inicia de todos modos. Úselo solo en una pila de pruebas."
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "Las sesiones iniciadas antes de este instante han finalizado (ms)"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "Lo define «Finalizar todas las sesiones» en la página Sesiones. Una sesión iniciada antes de este instante, en milisegundos desde 1970, ha finalizado. 0 significa que ninguna."
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "Pedir siempre consentimiento para un cliente público"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "Un cliente público no puede demostrar quién es, así que se pregunta a la persona cada vez que solicita acceso, sea cual sea su respuesta anterior. Las aplicaciones de este servicio no se preguntan. Activado por defecto en modo producto."
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "Autenticación de socio más antigua aceptada (s)"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "Rechaza un inicio de sesión federado cuyo socio indique que la persona se autenticó hace más tiempo que este, usando auth_time o AuthnInstant. Mientras haya un límite, se rechaza a un socio que no lo indique. 0, el valor predeterminado, no lo pide."
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "Solicitudes por dirección y minuto"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "Límite de todas las solicitudes de una dirección, por proceso. Es un freno al abuso, distinto de los límites de intentos de credenciales. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 6000 por defecto. Detrás de un proxy, defina global.trustedProxies para que las direcciones se lean correctamente."
   }
 }

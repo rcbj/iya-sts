@@ -58,6 +58,21 @@ async function run(t) {
   t.equal(inProduct(function () {
     return mode.hidesFailureDetail();
   }), true, 'product hides an internal error\'s text');
+  const budget = require(ROOT + '/common/request_budget');
+  const at = Date.now();
+  t.equal(budget.allowed('198.51.100.7', 2, at), true, 'a first request passes');
+  t.equal(budget.allowed('198.51.100.7', 2, at), true, 'and a second');
+  t.equal(budget.allowed('198.51.100.7', 2, at), false, 'a third is over');
+  t.equal(budget.allowed('198.51.100.8', 2, at), true,
+          'another address has its own count');
+  t.equal(budget.allowed('198.51.100.7', 2, at + 61000), true,
+          'and the next minute starts again');
+  t.equal(inProduct(function () {
+    return config.value('security.requestsPerAddressPerMinute');
+  }), 6000, 'product has a ceiling');
+  t.equal(inProduct(function () {
+    return config.value('oauth2.consentAlwaysForPublicClients');
+  }), true, 'product always asks consent for a public client');
   if (address.peerIsTrustedProxy) {
     const req = { socket: { remoteAddress: '203.0.113.9' } };
     t.equal(address.peerIsTrustedProxy(req), true,

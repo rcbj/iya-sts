@@ -12581,6 +12581,7 @@ class OAuth2Server {
           clientId: String(q.client_id || ''),
           clientName: (entry && entry.name) || String(q.client_id || ''),
           scopes: decision.outstanding,
+          resources: [].concat(q.resource || []).map(String),
           authorizationDetails: detailsOutstanding
             ? richAuthorization.describe(consentDetails.details) : [],
           detailsDigest: detailsOutstanding ? detailsDigest : '',

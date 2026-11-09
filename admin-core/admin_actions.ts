@@ -1820,11 +1820,27 @@ class AdminActions {
     }
     const asked = body || {};
     const action = String(asked.action || '');
+    if (action === 'end-all') {
+      const instant = Date.now();
+      require('../common/config').setOverride('authn.sessionsEndedBefore',
+                                              String(instant));
+      this.deps.auditLog.record({
+        category: 'session', action: 'session.end',
+        actor: (opts && opts.by) || '', target: 'every sign-on session',
+        outcome: 'success',
+        summary: 'ended every sign-on session in this realm',
+        detail: { startedBefore: instant }
+      });
+      log.debug("Leaving AdminActions.sessionsAction(). Ended all.");
+      return { ok: true, message: 'Every sign-on session in this realm has ' +
+        'ended. Issued tokens are not revoked by this: use Revoke all on ' +
+        'the Tokens page as well.' };
+    }
     if (action !== 'revoke') {
       log.debug("Leaving AdminActions.sessionsAction(). Unknown action.");
       return this.refused('STS-ADMIN-0500',
                           { ok: false, errors: ['Unknown action "' + action +
-        '". There is one: revoke.'] });
+        '". There are two: revoke, end-all.'] });
     }
     const key = String(asked.key || '').trim();
     const selected = String(asked.select || '').trim();

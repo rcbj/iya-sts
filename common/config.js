@@ -1425,6 +1425,52 @@ const SETTINGS = [
                  'first. 0 means it is not asked, which is the development ' +
                  'default. Product mode defaults to 15.' },
 
+  { key: 'persistence.allowDefaultDatabasePassword', group: 'Persistence',
+    label: 'Allow a default database password in product mode',
+    env: 'STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode will not start with a ' +
+                 'well-known database password, such as the shipped compose ' +
+                 'file\'s sts_app, or a password equal to the user name. On, ' +
+                 'it starts anyway. Use it only for a test stack.' },
+
+  { key: 'authn.sessionsEndedBefore', group: 'Web security',
+    label: 'Sessions started before this instant have ended (ms)',
+    env: 'STS_AUTHN_SESSIONS_ENDED_BEFORE', type: 'int', dflt: 0, min: 0, max: 9007199254740991,
+    runtime: true,
+    description: 'Set by End every session on the Sessions page. A sign-on ' +
+                 'session started before this instant, in milliseconds since ' +
+                 '1970, has ended. 0 means none has.' },
+
+  { key: 'oauth2.consentAlwaysForPublicClients', group: 'OAuth 2.0 / OIDC per-client',
+    label: 'Always ask consent for a public client',
+    env: 'STS_OAUTH2_CONSENT_ALWAYS_FOR_PUBLIC_CLIENTS', type: 'bool', dflt: strongerInProduct(true, false), derived: true,
+    runtime: true,
+    description: 'A public client cannot prove who it is, so a person is ' +
+                 'asked every time it requests access, whatever they answered ' +
+                 'before. This service\'s own applications are not asked. On ' +
+                 'by default in product mode.' },
+
+  { key: 'federation.maxPartnerAuthAgeS', group: 'Federation',
+    label: 'Oldest partner authentication accepted (s)',
+    env: 'STS_FEDERATION_MAX_PARTNER_AUTH_AGE_S', type: 'int', dflt: 0, min: 0, max: 31536000,
+    runtime: true,
+    description: 'Refuses a federated sign-in whose partner says the person ' +
+                 'authenticated longer ago than this, using auth_time or ' +
+                 'AuthnInstant. While a limit is set, a partner that does not ' +
+                 'say when is refused. 0, the default, does not ask.' },
+
+  { key: 'security.requestsPerAddressPerMinute', group: 'Web security',
+    label: 'Requests one address may make per minute',
+    env: 'STS_SECURITY_REQUESTS_PER_ADDRESS_PER_MINUTE', type: 'int', dflt: strongerInProduct(6000, 0), derived: true,
+    min: 0, max: 100000000,
+    runtime: true,
+    description: 'A ceiling on all requests from one address, per process. It ' +
+                 'is a brake on abuse, separate from the limits on credential ' +
+                 'attempts. 0 means no ceiling, which is the development ' +
+                 'default. Product mode defaults to 6000. Behind a proxy, set ' +
+                 'global.trustedProxies so that addresses are read correctly.' },
+
   { key: 'malwareScan.enabled', group: 'Malware scanning',
     label: 'Scan files for malware',
     env: 'STS_MALWARE_SCAN_ENABLED', type: 'bool', dflt: false,

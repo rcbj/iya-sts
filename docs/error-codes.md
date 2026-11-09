@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5361** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5365** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,9 +51,9 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 20
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 102
+* [Service core (`STS-CORE`)](#sts-core) — 103
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 107
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 108
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 214
+* [Federation (`STS-FED`)](#sts-fed) — 215
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 165
@@ -95,7 +95,7 @@ is an ordinary outcome.
 * [Management API (`STS-API`)](#sts-api) — 91
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
-* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 14
+* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 184
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
@@ -259,6 +259,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0168` | The malware scanner flagged a file (ASVS 5.0.0 5.4.3). | HTTP 422 |
 | `STS-CORE-0169` | A file could not be scanned because the malware scanner did not answer. | HTTP 503 |
 | `STS-CORE-0170` | An action on the malware scanning page was not one it has. | HTTP 400 |
+| `STS-CORE-0171` | A request was refused because its address made too many in a minute. | HTTP 429 |
 
 ## STS-WORKER
 
@@ -435,6 +436,7 @@ Raised from: persistence/.
 | `STS-STORE-0166` | A run of the persistence.granting-key-backfill job, which gives the directory entries written before #1306 their grantinggroup index keys, stopped on a store error (#1311); the pages it finished are kept, and the next run resumes after the last one. | none — logged; federated provisioning's store question still misses the entries not yet reached |
 | `STS-STORE-0167` | The grantinggroup key backfill (#1311) skipped a directory entry whose sealed attributes do not open in this process, even after the data-key rows were read again; the walk finishes and writes its mark, and the entry is keyed when it is next written. The first few are named, then a count per run. | — |
 | `STS-STORE-0168` | A directory flush dropped one row whose value the database can never store (a NUL byte, or another permanent data error) and committed every other row of the batch (#1391). The entry stays in this process's memory and is absent from the store until the process restarts; the next flush does not send the same value again. | none — logged; the request that wrote it was already answered |
+| `STS-STORE-0169` | The service did not start because the database password is a well-known default. | — |
 
 ## STS-CLUSTER
 
@@ -2968,6 +2970,7 @@ Raised from: federation/.
 | `STS-FED-0237` | A federated answer arrived in a browser other than the one that started the flow, in product (ASVS 5.0.0 10.1.2). | HTTP 401 |
 | `STS-FED-0238` | A federated answer names another issuer, or arrived for another relationship than its state (ASVS 5.0.0 10.2.2). | HTTP 401 |
 | `STS-FED-0239` | An unsolicited SAML assertion was presented a second time (ASVS 5.0.0 6.8.3). | HTTP 401 |
+| `STS-FED-0240` | A federated sign-in was refused because the partner authenticated the person too long ago. | HTTP 401 |
 
 ## STS-OIDFED
 
@@ -5788,6 +5791,7 @@ Raised from: logout/.
 | `STS-LOGOUT-0012` | The account chosen at the sign-out's account step (#561) is not signed in in this browser any more — its session ended between the page and the choice, or the key names an account of another browser. Nothing was ended and the step is drawn again. | HTTP 409 from POST /authn-api/logout/accounts |
 | `STS-LOGOUT-0013` | The sign-out's account step (#561) was asked for in a trust realm with authn.multipleAccounts off, where a browser holds one session and there is no account to choose. | HTTP 400 from /authn-api/logout/accounts |
 | `STS-LOGOUT-0014` | POST /logout in its JSON form came from a page of another site (#1442). | HTTP 403 |
+| `STS-LOGOUT-0015` | Ending another session was refused because the sign-in was not recent enough. | HTTP 403 |
 
 ## STS-LAUNCH
 

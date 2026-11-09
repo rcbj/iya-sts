@@ -69,3 +69,9 @@ to a destination that provides one. See [Audit export](audit-export.md).
 * [Admin console → Audit log](admin-console.md#audit-log--adminaudit)
 * [Audit export destinations](audit-export.md)
 * [Error codes](error-codes.md)
+
+## Time
+
+Every timestamp is in UTC. Run the service on hosts whose clocks are synchronized
+with NTP, so that timestamps agree across nodes and with the systems you send logs
+to.

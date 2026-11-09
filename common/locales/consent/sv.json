@@ -20,5 +20,7 @@
   "meta.nothingIssued": "Ingenting har utfärdats än. Den här skärmen är <code>oauth2.consentRequired</code>, som är på som standard; på /admin/consent kan varje svar som ges här läsas och dras tillbaka.",
   "meta.consentingFor": "Godkänner för: <code>{protocol}</code>",
   "client.policy": "Integritetspolicy",
-  "client.tos": "Användarvillkor"
+  "client.tos": "Användarvillkor",
+  "resources": "Det kommer att användas på:",
+  "duration": "Detta gäller tills du återkallar det från ditt konto."
 }

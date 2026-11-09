@@ -352,7 +352,8 @@ class AccountMfa {
       log.info('portal: ' + username + ' removed their authenticator app. ' +
                'That account is down to one factor.');
       log.debug("Leaving AccountMfa.act(). Removed.");
-      const said = t.text('portal.done.totpRemoved');
+      const said = t.text('portal.done.totpRemoved') + ' ' +
+                   t.text('portal.done.endOthers');
       return ctx.json(res, 200, { ok: true,
         message: ended.sentence ? said + ' ' + ended.sentence : said,
         sessionsEnded: ended.sessionsEnded });

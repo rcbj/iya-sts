@@ -20,5 +20,7 @@
   "meta.nothingIssued": "Rien n’a encore été émis. Cet écran correspond à <code>oauth2.consentRequired</code>, activé par défaut ; /admin/consent permet de consulter et de retirer chaque réponse donnée ici.",
   "meta.consentingFor": "Consentement pour : <code>{protocol}</code>",
   "client.policy": "Politique de confidentialité",
-  "client.tos": "Conditions d’utilisation"
+  "client.tos": "Conditions d’utilisation",
+  "resources": "Elle sera utilisée sur :",
+  "duration": "Cet accord reste valable jusqu’à ce que vous le retiriez depuis votre compte."
 }

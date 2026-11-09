@@ -337,6 +337,7 @@ class ConsentScreen {
       // render time, so that what the person is shown is what was decided —
       // the same rule `authn.js`'s record follows for `forcePasswordless`.
       scopes: Array.isArray(info.scopes) ? info.scopes : [],
+      resources: Array.isArray(info.resources) ? info.resources : [],
       // What the whole request asked for, including the scopes already
       // agreed. Shown under a fold, because "you already agreed to these
       // three" is the answer to the question somebody asks when a screen they
@@ -554,6 +555,8 @@ class ConsentScreen {
       // where it registered any of them, drawn above the card's body by
       // the sign-in surface's frame as on the sign-in pages; null otherwise.
       clientDisplay: this.deps.authn.clientDisplay(record.clientId),
+      // ASVS 5.0.0 10.7.2: where the access will be used.
+      resources: record.resources || [],
       scopes: record.scopes.map(function (one: Json): Json {
         const p = one.permission;
         return { scope: String(one.scope),

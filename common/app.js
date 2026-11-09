@@ -656,6 +656,7 @@ app.use(function awaitResumedChainLazily(req, res, next) {
   resumedChainWait(req, res, next);
 });
 
+app.use(require('./request_budget').middleware());
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // ---------------------------------------------------------------------------

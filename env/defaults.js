@@ -292,6 +292,7 @@ var config = {
   // --- Federation ------------------------------------------------------
   federation: {
     allowUntypedLogoutToken: false,                                          // Accept a partner's Logout Token with no explicit type
+    maxPartnerAuthAgeS: 0,                                                   // Oldest partner authentication accepted (s)
     enabled: true,                                                           // Federation endpoints answer
     max: 50,                                                                 // Relationships remembered
     usernamePrefix: "",                                                      // Prefix for federated usernames
@@ -316,17 +317,41 @@ var config = {
     encryptionKeyGraceS: 86400                                               // Previous encryption key kept for (seconds)
   },
 
-  // --- Malware scanning ------------------------------------------------
-  malwareScan: {
-    enabled: false,        // Scan files for malware
-    url: "",               // ICAP service address
-    timeoutMs: 30000,      // Scan timeout (milliseconds)
-    caFile: "",            // CA file for an icaps service
-    allowCleartext: false  // Allow plain ICAP in product mode
+  // --- Persistence -----------------------------------------------------
+  persistence: {
+    allowDefaultDatabasePassword: false,                   // Allow a default database password in product mode
+    mode: "memory",                                        // Persistence mode; restart to apply
+    sqlDialect: "native",                                  // Cluster SQL dialect; restart to apply
+    metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
+    dataDir: "./data",                                     // Data directory; restart to apply
+    databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply
+    databasePasswordProvider: "none",                      // Where the database password is read from; restart to apply
+    databasePasswordRef: "",                               // The database password's location; restart to apply
+    databasePasswordField: "databasePassword",             // The field the password is in; restart to apply
+    databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
+    databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
+    databasePasswordToken: "",                             // Vault token for the database password; restart to apply
+    databaseTlsRejectUnauthorized: true,                   // Verify the database certificate; restart to apply
+    databaseTlsCaFile: "",                                 // Database CA certificate file; restart to apply
+    globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
+    globalDatabaseReadUrl: "",                             // Global tier database (this cell's replica); restart to apply
+    globalDatabasePasswordProvider: "none",                // Where the global database password is read from; restart to apply
+    globalDatabasePasswordRef: "",                         // The global database password's location; restart to apply
+    globalDatabasePasswordField: "globalDatabasePassword", // The field the global database password is in; restart to apply
+    globalDatabasePasswordRegion: "",                      // AWS region of the global database password; restart to apply
+    writeDelay: 1500,                                      // Write delay (ms)
+    realms: true,                                          // Persist the realm registry; restart to apply
+    appconfig: true,                                       // Persist runtime setting changes; restart to apply
+    minted: true,                                          // Persist sessions, tokens and the audit log; restart to apply
+    mintedRetention: 604800000,                            // Minted state retention (ms)
+    coordinate: true,                                      // Coordinate with other processes; restart to apply
+    pollInterval: 5000,                                    // Change poll interval (ms)
+    changeLogRetentionS: 3600                              // Change log retention (s)
   },
 
   // --- Web security ----------------------------------------------------
   authn: {
+    sessionsEndedBefore: 0,           // Sessions started before this instant have ended (ms)
     allowOptionalSecondFactor: false, // Let a person sign in without a second factor
     sessionSweepS: 30,                // How often expired sessions are ended (seconds)
     cookieDomain: "",                 // Sign-on session cookie domain
@@ -348,6 +373,15 @@ var config = {
     rememberedAccountDays: 30,        // How long a signed-out account is remembered (days)
     passwordAloneDoors: "",           // Password-only doors that accept a password alone
     unauthenticatedSessions: false    // Offer "Continue without signing in"
+  },
+
+  // --- Malware scanning ------------------------------------------------
+  malwareScan: {
+    enabled: false,        // Scan files for malware
+    url: "",               // ICAP service address
+    timeoutMs: 30000,      // Scan timeout (milliseconds)
+    caFile: "",            // CA file for an icaps service
+    allowCleartext: false  // Allow plain ICAP in product mode
   },
 
   // --- Web security ----------------------------------------------------
@@ -1511,37 +1545,6 @@ var config = {
     serverSocket: "/tmp/spire-server/private/api.sock",                       // SPIRE Server API socket path; restart to apply
     brokerPort: 0,                                                            // SPIFFE Broker API TCP port; restart to apply
     grpcHost: "0.0.0.0"                                                       // gRPC bind address; restart to apply
-  },
-
-  // --- Persistence -----------------------------------------------------
-  persistence: {
-    mode: "memory",                                        // Persistence mode; restart to apply
-    sqlDialect: "native",                                  // Cluster SQL dialect; restart to apply
-    metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
-    dataDir: "./data",                                     // Data directory; restart to apply
-    databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply
-    databasePasswordProvider: "none",                      // Where the database password is read from; restart to apply
-    databasePasswordRef: "",                               // The database password's location; restart to apply
-    databasePasswordField: "databasePassword",             // The field the password is in; restart to apply
-    databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
-    databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
-    databasePasswordToken: "",                             // Vault token for the database password; restart to apply
-    databaseTlsRejectUnauthorized: true,                   // Verify the database certificate; restart to apply
-    databaseTlsCaFile: "",                                 // Database CA certificate file; restart to apply
-    globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
-    globalDatabaseReadUrl: "",                             // Global tier database (this cell's replica); restart to apply
-    globalDatabasePasswordProvider: "none",                // Where the global database password is read from; restart to apply
-    globalDatabasePasswordRef: "",                         // The global database password's location; restart to apply
-    globalDatabasePasswordField: "globalDatabasePassword", // The field the global database password is in; restart to apply
-    globalDatabasePasswordRegion: "",                      // AWS region of the global database password; restart to apply
-    writeDelay: 1500,                                      // Write delay (ms)
-    realms: true,                                          // Persist the realm registry; restart to apply
-    appconfig: true,                                       // Persist runtime setting changes; restart to apply
-    minted: true,                                          // Persist sessions, tokens and the audit log; restart to apply
-    mintedRetention: 604800000,                            // Minted state retention (ms)
-    coordinate: true,                                      // Coordinate with other processes; restart to apply
-    pollInterval: 5000,                                    // Change poll interval (ms)
-    changeLogRetentionS: 3600                              // Change log retention (s)
   },
 
   // --- Cluster ---------------------------------------------------------

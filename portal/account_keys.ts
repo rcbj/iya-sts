@@ -701,7 +701,8 @@ class AccountKeys {
                 sessionsEnded: ended.sessionsEnded,
                 address: websecurity.addressOf(req) }
     });
-    const said = ctx.translatorFor(username).text('portal.done.passkeyRemoved');
+    const said = ctx.translatorFor(username).text('portal.done.passkeyRemoved') + ' ' +
+      ctx.translatorFor(username).text('portal.done.endOthers');
     log.debug("Leaving AccountKeys.remove(). Removed.");
     return ctx.json(res, 200, { ok: true,
       message: ended.sentence ? said + ' ' + ended.sentence : said,

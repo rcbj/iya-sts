@@ -68,7 +68,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [SCIM](admin-api-scim.html) | 13 | The SCIM 2.0 provisioning endpoints under /scim/v2 — what they have been asked to do, and what they will and will not do. READ-ONLY here, and that is the parity rule holding rather than a gap: the console page has no form on it either, because everything about SCIM that can be changed is a configuration row. What SCIM WROTE is under Users and Groups, since it provisions into the same directory and has no store of its own. |
 | [SPIFFE](admin-api-spiffe.html) | 16 |  |
 | [Service](admin-api-service.html) | 44 | What this API is, its document, and the explorer that calls it. |
-| [Sessions](admin-api-sessions.html) | 2 |  |
+| [Sessions](admin-api-sessions.html) | 3 |  |
 | [Shared Signals](admin-api-shared-signals.html) | 14 |  |
 | [Sign-out](admin-api-sign-out.html) | 6 |  |
 | [TLS](admin-api-tls.html) | 5 |  |

@@ -88,5 +88,6 @@
   "accounts.added": "comptes ajoutés",
   "accounts.switched": "défaut basculé",
   "accounts.forgotten": "comptes oubliés",
-  "accounts.expired": "comptes mémorisés expirés"
+  "accounts.expired": "comptes mémorisés expirés",
+  "endAll": "Mettre fin à toutes les sessions de ce domaine"
 }

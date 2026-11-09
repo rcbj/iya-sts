@@ -1233,6 +1233,9 @@ const CODES = [
   { code: 'STS-CORE-0170',
     summary: 'An action on the malware scanning page was not one it has.',
     spec: 'HTTP 400' },
+  { code: 'STS-CORE-0171',
+    summary: 'A request was refused because its address made too many in a minute.',
+    spec: 'HTTP 429' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -2031,6 +2034,8 @@ const CODES = [
       'process restarts; the next flush does not send the same value again.',
     spec: 'none — logged; the request that wrote it was already answered' },
   // ===== CLUSTER ===========================================================
+  { code: 'STS-STORE-0169',
+    summary: 'The service did not start because the database password is a well-known default.' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -13676,6 +13681,9 @@ const CODES = [
       '(ASVS 5.0.0 6.8.3).',
     spec: 'HTTP 401' },
   // ===== OIDFED ============================================================
+  { code: 'STS-FED-0240',
+    summary: 'A federated sign-in was refused because the partner authenticated the person too long ago.',
+    spec: 'HTTP 401' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +
@@ -26129,6 +26137,9 @@ const CODES = [
       'site (#1442).',
     spec: 'HTTP 403' },
   // ===== LAUNCH ============================================================
+  { code: 'STS-LOGOUT-0015',
+    summary: 'Ending another session was refused because the sign-in was not recent enough.',
+    spec: 'HTTP 403' },
   { code: 'STS-LAUNCH-0001',
     summary: 'A /launch/{app} link named no application this realm has ' +
       '(#713).',

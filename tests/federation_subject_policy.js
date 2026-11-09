@@ -406,6 +406,7 @@ function childMain() {
         config.setOverride('global.mode', 'product');
         config.setOverride('security.allowUnscopedPeople', 'true');
         config.setOverride('authn.allowOptionalSecondFactor', 'true');
+        config.setOverride('totp.window', '1');
       }
     });
     const created = inSp(function () {

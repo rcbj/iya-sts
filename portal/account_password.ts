@@ -195,7 +195,8 @@ class AccountPassword {
       reasonUser: 'You changed your password.' });
     log.debug("Leaving AccountPassword.change(). Changed.");
     return ctx.json(res, 200, { ok: true,
-                                message: t.text('portal.done.password') });
+                                message: t.text('portal.done.password') + ' ' +
+                                         t.text('portal.done.endOthers') });
   }
 
   /**

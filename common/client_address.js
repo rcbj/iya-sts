@@ -529,6 +529,7 @@ module.exports = {
   edgeRefused: edgeRefused,
   forwardedBelieved: forwardedBelieved,
   peerIsTrustedProxy: peerIsTrustedProxy,
+  fromFrontProcess: fromFrontProcess,
   trustedProxyRanges: trustedProxyRanges,
   isTrustedProxy: isTrustedProxy,
   normalise: normalise,

@@ -5249,7 +5249,8 @@ class AdminApi {
           log.debug("Leaving the management API sessions action endpoint.");
         },
         actions: [
-          { action: 'revoke', operationId: 'revokeSession' }
+          { action: 'revoke', operationId: 'revokeSession' },
+          { action: 'end-all', operationId: 'endAllSessions' }
         ] },
 
       { method: 'GET', path: BASE + '/logout', tag: 'Sign-out',

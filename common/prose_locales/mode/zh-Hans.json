@@ -1346,5 +1346,17 @@
   "mode.requirements.strict-protocol-input.product": {
     "en": "85fca28b66faee87",
     "text": "重复的令牌参数被拒绝，合作方的注销令牌必须为 logout+jwt 类型（除非开启 federation.allowUntypedLogoutToken），转发地址需要 global.trustedProxies，内部错误文本只保留在日志中。"
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "日志和数据库中没有众所周知的密钥"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "调试级别下，日志包含完整的请求和响应，数据库可以使用演示密码。"
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "a037c255a759deb1",
+    "text": "请求日志在任何级别都不包含凭据和正文；默认数据库密码会使服务停止，除非开启 persistence.allowDefaultDatabasePassword。"
   }
 }

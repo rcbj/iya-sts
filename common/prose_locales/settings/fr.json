@@ -12346,5 +12346,45 @@
   "account.recentAuthMinutes|description": {
     "en": "50ed3d8089739a00",
     "text": "Une personne qui modifie ses seconds facteurs, codes de récupération, clés d’accès ou adresse e-mail sur le portail doit s’être connectée depuis moins de ce nombre de minutes, sinon elle doit d’abord se reconnecter. 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "Autoriser un mot de passe de base par défaut en mode produit"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "Désactivé, par défaut, le mode produit ne démarre pas avec un mot de passe de base bien connu, comme sts_app du fichier compose fourni, ou un mot de passe égal au nom d’utilisateur. Activé, il démarre quand même. À réserver à une pile de test."
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "Les sessions démarrées avant cet instant sont terminées (ms)"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "Défini par « Mettre fin à toutes les sessions » sur la page Sessions. Une session démarrée avant cet instant, en millisecondes depuis 1970, est terminée. 0 signifie qu’aucune ne l’est."
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "Toujours demander le consentement pour un client public"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "Un client public ne peut pas prouver son identité : la personne est donc interrogée à chaque demande d’accès, quelle que soit sa réponse précédente. Les applications de ce service ne sont pas concernées. Activé par défaut en mode produit."
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "Authentification partenaire la plus ancienne acceptée (s)"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "Refuse une connexion fédérée dont le partenaire indique que la personne s’est authentifiée depuis plus longtemps que cette durée, selon auth_time ou AuthnInstant. Tant qu’une limite est définie, un partenaire qui n’indique pas cette date est refusé. 0, par défaut, ne le demande pas."
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "Requêtes autorisées par adresse et par minute"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "Plafond de toutes les requêtes d’une adresse, par processus. C’est un frein aux abus, distinct des limites sur les tentatives d’identifiants. 0 signifie aucun plafond, valeur par défaut en développement. Le mode produit utilise 6000 par défaut. Derrière un proxy, définissez global.trustedProxies pour que les adresses soient lues correctement."
   }
 }

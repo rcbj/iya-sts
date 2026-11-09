@@ -1346,5 +1346,17 @@
   "mode.requirements.strict-protocol-input.product": {
     "en": "85fca28b66faee87",
     "text": "Un parámetro de token repetido se rechaza, el token de cierre de sesión de un socio debe tener el tipo logout+jwt salvo que federation.allowUntypedLogoutToken esté activo, las direcciones reenviadas requieren global.trustedProxies, y el texto de un error interno queda en el registro."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Los registros y la base de datos no contienen secretos conocidos"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "En el nivel debug, el registro incluye solicitudes y respuestas completas, y la base de datos puede usar una contraseña de demostración."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "a037c255a759deb1",
+    "text": "Los registros de solicitudes omiten credenciales y cuerpos en todos los niveles, y una contraseña predeterminada de la base de datos detiene el servicio salvo que persistence.allowDefaultDatabasePassword esté activo."
   }
 }

@@ -20,5 +20,7 @@
   "meta.nothingIssued": "Wala pang naibibigay. Ang screen na ito ay <code>oauth2.consentRequired</code>, na naka-on bilang default; sa /admin/consent mababasa at mababawi ang bawat sagot na ibinigay dito.",
   "meta.consentingFor": "Pumapayag para sa: <code>{protocol}</code>",
   "client.policy": "Patakaran sa privacy",
-  "client.tos": "Mga tuntunin ng serbisyo"
+  "client.tos": "Mga tuntunin ng serbisyo",
+  "resources": "Gagamitin ito sa:",
+  "duration": "Tatagal ito hanggang bawiin mo sa iyong account."
 }

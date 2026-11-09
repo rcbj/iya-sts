@@ -1346,5 +1346,17 @@
   "mode.requirements.strict-protocol-input.product": {
     "en": "85fca28b66faee87",
     "text": "Un paramètre de jeton répété est refusé, le jeton de déconnexion d’un partenaire doit être de type logout+jwt sauf si federation.allowUntypedLogoutToken est activé, les adresses transmises exigent global.trustedProxies, et le texte d’une erreur interne reste dans le journal."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Les journaux et la base ne contiennent aucun secret connu"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "Au niveau debug, le journal contient les requêtes et réponses entières, et la base peut utiliser un mot de passe de démonstration."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "a037c255a759deb1",
+    "text": "Les journaux de requêtes omettent les identifiants et les corps à tous les niveaux, et un mot de passe de base par défaut arrête le service sauf si persistence.allowDefaultDatabasePassword est activé."
   }
 }

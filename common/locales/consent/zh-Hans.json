@@ -20,5 +20,7 @@
   "meta.nothingIssued": "目前尚未签发任何内容。此页面由 <code>oauth2.consentRequired</code> 控制，默认开启；在 /admin/consent 可以查看并撤回在此作出的每一个答复。",
   "meta.consentingFor": "同意的对象：<code>{protocol}</code>",
   "client.policy": "隐私政策",
-  "client.tos": "服务条款"
+  "client.tos": "服务条款",
+  "resources": "将用于：",
+  "duration": "此授权在您从账户中撤销之前一直有效。"
 }

@@ -1346,5 +1346,17 @@
   "mode.requirements.strict-protocol-input.product": {
     "en": "85fca28b66faee87",
     "text": "En upprepad tokenparameter avvisas, en partners utloggningstoken måste ha typen logout+jwt om inte federation.allowUntypedLogoutToken är på, vidarebefordrade adresser kräver global.trustedProxies, och texten i ett internt fel stannar i loggen."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Loggar och databas innehåller inga välkända hemligheter"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "På debugnivå innehåller loggen hela förfrågningar och svar, och databasen kan använda ett demonstrationslösenord."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "a037c255a759deb1",
+    "text": "Förfrågningsloggar utelämnar autentiseringsuppgifter och innehåll på alla nivåer, och ett standardlösenord för databasen stoppar tjänsten om inte persistence.allowDefaultDatabasePassword är på."
   }
 }

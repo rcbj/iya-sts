@@ -12346,5 +12346,45 @@
   "account.recentAuthMinutes|description": {
     "en": "50ed3d8089739a00",
     "text": "使用者在入口網站變更第二因素、復原代碼、通行金鑰或電子郵件地址時，必須在此分鐘數內登入過，否則須先重新登入。0 表示不要求，為開發模式預設值。產品模式預設 15。"
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "在產品模式下允許預設資料庫密碼"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "預設關閉時，產品模式不會使用眾所周知的資料庫密碼（如隨附 compose 檔案的 sts_app）或與使用者名稱相同的密碼啟動。開啟後仍會啟動。僅用於測試環境。"
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "在此時刻之前開始的工作階段已結束（毫秒）"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "由「工作階段」頁面上的「結束所有工作階段」設定。在此時刻（自 1970 年起的毫秒數）之前開始的登入工作階段已結束。0 表示沒有。"
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "一律徵求公用用戶端的同意"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "公用用戶端無法證明其身分，因此每次要求存取時都會詢問使用者，無論先前如何回答。本服務自身的應用程式除外。產品模式預設開啟。"
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "接受的最早合作夥伴驗證（秒）"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "如果合作夥伴依 auth_time 或 AuthnInstant 表示使用者的驗證早於此時長，則拒絕同盟登入。設定限制後，未說明時間的合作夥伴將被拒絕。預設 0 表示不檢查。"
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "每個位址每分鐘允許的要求數"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "每個處理程序對單一位址所有要求的上限。這是防濫用的措施，與認證嘗試限制不同。0 表示無上限，為開發模式預設值。產品模式預設 6000。在 Proxy 後方時，請設定 global.trustedProxies 以正確讀取位址。"
   }
 }

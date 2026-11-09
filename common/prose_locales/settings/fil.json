@@ -12346,5 +12346,45 @@
   "account.recentAuthMinutes|description": {
     "en": "50ed3d8089739a00",
     "text": "Ang taong nagbabago ng second factor, recovery code, passkey o email address sa portal ay dapat nakapag-sign in sa loob ng ganitong karaming minuto, o papapag-sign in muna siya. Ang 0 ay hindi hinihingi, ang default sa development. 15 ang default ng product mode."
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "Payagan ang default na database password sa product mode"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "Kapag naka-off, ang default, hindi magsisimula ang product mode gamit ang kilalang database password, gaya ng sts_app ng kasamang compose file, o password na katulad ng user name. Kapag naka-on, magsisimula pa rin. Gamitin lamang sa test stack."
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "Natapos na ang mga session na nagsimula bago ang sandaling ito (ms)"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "Itinatakda ng Tapusin ang bawat session sa pahina ng Sessions. Natapos na ang sign-on session na nagsimula bago ang sandaling ito, sa millisecond mula 1970. Ang 0 ay wala."
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "Laging humingi ng pahintulot para sa public client"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "Hindi mapapatunayan ng public client kung sino ito, kaya tinatanong ang tao tuwing humihiling ito ng access, anuman ang sagot niya dati. Hindi kasama ang sariling mga application ng service na ito. Naka-on bilang default sa product mode."
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "Pinakalumang partner authentication na tinatanggap (s)"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "Tinatanggihan ang federated sign-in kung sinasabi ng partner na mas matagal pa rito nang nag-authenticate ang tao, gamit ang auth_time o AuthnInstant. Habang may limitasyon, tinatanggihan ang partner na hindi nagsasabi. Ang 0, ang default, ay hindi nagtatanong."
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "Mga request bawat address bawat minuto"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "Limitasyon sa lahat ng request mula sa isang address, bawat process. Preno ito sa pang-aabuso, hiwalay sa mga limitasyon sa pagsubok ng credential. Ang 0 ay walang limitasyon, ang default sa development. 6000 ang default ng product mode. Sa likod ng proxy, itakda ang global.trustedProxies para mabasa nang tama ang mga address."
   }
 }

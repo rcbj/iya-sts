@@ -545,5 +545,6 @@
   "photo.errSmall": "Cette image mesure {width} sur {height} pixels. Son petit côté doit mesurer au moins {min}.",
   "photo.errRead": "Ce fichier n'a pas pu être lu comme une image.",
   "done.photo": "Votre photo de profil est enregistrée.",
-  "done.photoRemoved": "Votre photo de profil est retirée."
+  "done.photoRemoved": "Votre photo de profil est retirée.",
+  "done.endOthers": "Vous pouvez mettre fin à vos autres sessions sur /logout."
 }

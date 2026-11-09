@@ -39,6 +39,17 @@ class SessionsPage {
    * @returns the body as HTML
    */
   static body(ctx, json) {
+    const t = ctx.t;
+    return SessionsPage.listBody(ctx, json) +
+      (json.installed && ctx.write
+        ? '<form method="post" action="/admin/sessions">' +
+          '<input type="hidden" name="action" value="end-all">' +
+          '<div class="formrow"><button class="danger">' +
+          t.html('consoleSessions.endAll') + '</button></div></form>'
+        : '');
+  }
+
+  static listBody(ctx, json) {
     // The page's words are its translator's (#539 phase 6); a row's rule,
     // its reason and its detail come from the view and are drawn as they
     // come, and the not-installed box is an error and stays English.

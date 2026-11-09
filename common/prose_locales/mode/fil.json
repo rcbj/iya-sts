@@ -1346,5 +1346,17 @@
   "mode.requirements.strict-protocol-input.product": {
     "en": "85fca28b66faee87",
     "text": "Tinatanggihan ang paulit-ulit na token parameter, dapat logout+jwt ang type ng Logout Token ng partner maliban kung naka-on ang federation.allowUntypedLogoutToken, kailangan ng global.trustedProxies ang mga forwarded address, at nananatili sa log ang text ng internal error."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Walang kilalang lihim sa mga log at database"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "Sa debug level, buong request at response ang nasa log, at maaaring gumamit ng demo password ang database."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "a037c255a759deb1",
+    "text": "Inaalis ng mga request log ang mga credential at body sa bawat level, at pinapahinto ng default na database password ang service maliban kung naka-on ang persistence.allowDefaultDatabasePassword."
   }
 }

@@ -635,6 +635,25 @@ function requiresTypedLogoutToken() {
     config.value('federation.allowUntypedLogoutToken') !== true;
 }
 
+/**
+ * @returns true when request logs leave out credentials and bodies
+ */
+function redactsRequestLog() {
+  log.debug("Entering redactsRequestLog().");
+  log.debug("Leaving redactsRequestLog().");
+  return isProduct();
+}
+
+/**
+ * @returns true when a default database password stops the service
+ */
+function refusesDefaultDatabasePassword() {
+  log.debug("Entering refusesDefaultDatabasePassword().");
+  log.debug("Leaving refusesDefaultDatabasePassword().");
+  return isProduct() &&
+    config.value('persistence.allowDefaultDatabasePassword') !== true;
+}
+
 // Must a malware scanner be reached over TLS (#1501, ASVS 5.0.0 12.3.1)?
 /**
  * @returns true when a plain icap:// address may not be used
@@ -3226,6 +3245,15 @@ const REQUIREMENTS = [
              'addresses need global.trustedProxies, and an internal ' +
              'error\'s text stays in the log.',
     where: 'common/mode.js' },
+  { id: 'no-known-secrets',
+    what: 'Logs and the database hold no well-known secrets',
+    development: 'At debug level the log carries whole requests and ' +
+                 'responses, and the database may use a demonstration ' +
+                 'password.',
+    product: 'Request logs leave out credentials and bodies at every ' +
+             'level, and a default database password stops the service ' +
+             'unless persistence.allowDefaultDatabasePassword is on.',
+    where: 'common/helpers.js, persistence/persistence.js' },
   // #1501 (ASVS 5.0.0 12.3.1).
   { id: 'malware-scan-tls',
     what: 'Files reach the malware scanner encrypted',
@@ -4818,6 +4846,8 @@ module.exports = {
   requiresPkceOfEveryClient: requiresPkceOfEveryClient,
   requiresSecondFactorOfEveryone: requiresSecondFactorOfEveryone,
   requiresTlsToMalwareScanner: requiresTlsToMalwareScanner,
+  refusesDefaultDatabasePassword: refusesDefaultDatabasePassword,
+  redactsRequestLog: redactsRequestLog,
   requiresTypedLogoutToken: requiresTypedLogoutToken,
   hidesFailureDetail: hidesFailureDetail,
   requiresTrustedProxyRanges: requiresTrustedProxyRanges,

@@ -545,5 +545,6 @@
   "photo.errSmall": "That image is {width} by {height} pixels. Its shorter side has to be at least {min}.",
   "photo.errRead": "That file could not be read as an image.",
   "done.photo": "Your profile photo is saved.",
-  "done.photoRemoved": "Your profile photo is removed."
+  "done.photoRemoved": "Your profile photo is removed.",
+  "done.endOthers": "You can end your other sessions at /logout."
 }

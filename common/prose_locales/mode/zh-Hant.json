@@ -1346,5 +1346,17 @@
   "mode.requirements.strict-protocol-input.product": {
     "en": "85fca28b66faee87",
     "text": "重複的權杖參數會被拒絕，合作夥伴的登出權杖必須為 logout+jwt 類型（除非開啟 federation.allowUntypedLogoutToken），轉送位址需要 global.trustedProxies，內部錯誤文字只保留在日誌中。"
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "日誌和資料庫中沒有眾所周知的密鑰"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "偵錯層級下，日誌包含完整的要求和回應，資料庫可以使用示範密碼。"
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "a037c255a759deb1",
+    "text": "要求日誌在任何層級都不包含認證資料和本文；預設資料庫密碼會使服務停止，除非開啟 persistence.allowDefaultDatabasePassword。"
   }
 }

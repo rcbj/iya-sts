@@ -67713,4 +67713,29 @@ op `testMalwareScanning`(`responses/200/content/application~1json/schema`: {
     `message`: string
   },
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+
+@endpoint("/admin-api/sessions/end-all",
+  "post",
+  #{
+    `operationId`:"endAllSessions",
+    `summary`:"End every sign-on session in this realm",
+    `description`:"Every session started before now ends the next time it is read. The cost does not grow with the number of sessions. Issued tokens are not revoked: use /admin-api/tokens/revoke-all as well.",
+    `tags`:#["Sessions"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Every session has ended.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `endAllSessions`(`responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string
+  },
+  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
 }

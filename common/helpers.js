@@ -181,7 +181,15 @@ function logArtifact(what, stage, value) {
 function headersOf(source) {
   log.debug("Entering headersOf().");
   const out = {};
-  Object.keys(source || {}).forEach(function (k) { out[k] = source[k]; });
+  // Raising the log level must not put a credential in the log (ASVS 5.0.0
+  // 16.2.5), so product mode leaves these out at any level.
+  const redact = require('./mode').redactsRequestLog();
+  Object.keys(source || {}).forEach(function (k) {
+    if (!redact || !/^(?:authorization|cookie|set-cookie|dpop|x-api-key)$/i
+      .test(k)) {
+      out[k] = source[k];
+    }
+  });
   log.debug("Leaving headersOf().");
   return out;
 }
@@ -195,6 +203,10 @@ function headersOf(source) {
  */
 function bodyOf(value) {
   log.debug("Entering bodyOf().");
+  if (require('./mode').redactsRequestLog()) {
+    log.debug("Leaving bodyOf(). Withheld.");
+    return value === undefined || value === null ? '' : '[withheld]';
+  }
   if (value === undefined || value === null) {
     log.debug("Leaving bodyOf().");
     return '';

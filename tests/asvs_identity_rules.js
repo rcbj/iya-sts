@@ -64,6 +64,18 @@ async function run(t) {
             'development: ' + action + ' asks for no statement');
   }
 
+  // #1520: ending every session is one instant, read when a session is.
+  const authn = require(ROOT + '/authn/authn');
+  const started = { startedAt: Date.now() - 1000, expires: Date.now() + 60000 };
+  t.equal(authn.sessionEnded(started), '', 'a live session is live');
+  config.setOverride('authn.sessionsEndedBefore', String(Date.now()));
+  t.equal(authn.sessionEnded(started), 'expired',
+          'a session from before the instant has ended');
+  t.equal(authn.sessionEnded({ startedAt: Date.now() + 5000,
+                               expires: Date.now() + 60000 }), '',
+          'one started after it has not');
+  config.clearOverride('authn.sessionsEndedBefore');
+
   const words = function (password) {
     return policy.problemsWith(password, { minLength: 12, history: 0 })
       .filter(function (one) {

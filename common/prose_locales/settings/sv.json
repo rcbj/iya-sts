@@ -12346,5 +12346,45 @@
   "account.recentAuthMinutes|description": {
     "en": "50ed3d8089739a00",
     "text": "En person som ändrar sina andra faktorer, återställningskoder, nycklar eller e-postadress på portalen måste ha loggat in inom så många minuter, annars skickas personen till inloggning först. 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "Tillåt ett standardlösenord för databasen i produktläge"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "Av, standardvärdet, startar produktläget inte med ett välkänt databaslösenord, som sts_app i den medföljande compose-filen, eller ett lösenord som är lika med användarnamnet. På startar det ändå. Använd bara för en teststack."
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "Sessioner som startade före denna tidpunkt har avslutats (ms)"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "Sätts av Avsluta alla sessioner på sidan Sessioner. En inloggningssession som startade före denna tidpunkt, i millisekunder sedan 1970, har avslutats. 0 betyder ingen."
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "Fråga alltid om samtycke för en offentlig klient"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "En offentlig klient kan inte bevisa vem den är, så personen tillfrågas varje gång den begär åtkomst, oavsett tidigare svar. Tjänstens egna program tillfrågas inte. På som standard i produktläge."
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "Äldsta partnerautentisering som accepteras (s)"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "Avvisar en federerad inloggning där partnern anger att personen autentiserades längre tillbaka än så, med auth_time eller AuthnInstant. Så länge en gräns finns avvisas en partner som inte anger tiden. 0, standardvärdet, frågar inte."
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "Förfrågningar per adress och minut"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "Ett tak för alla förfrågningar från en adress, per process. Det är en broms mot missbruk, skild från gränserna för inloggningsförsök. 0 betyder inget tak, standardvärdet i utveckling. Produktläget använder 6000 som standard. Bakom en proxy, ange global.trustedProxies så att adresser läses korrekt."
   }
 }
