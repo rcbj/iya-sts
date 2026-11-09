@@ -2145,9 +2145,9 @@ async function getFormInANewTab(driver, path, index, form, values) {
 //
 // A GET form is submitted by the BROWSER building a query string out of its own
 // successful controls — which is the rule this suite would otherwise have to
-// re-implement, and the rule the page-size control depends on: `per` is drawn
-// as a select AND as a hidden input on some pages, and which one wins is a
-// browser behaviour, not a server one.
+// re-implement. A name drawn on two of a form's controls reaches the address
+// twice, and the console joins the two, so `per=300,300` is a value no
+// operation takes (#1476): that is asserted form by form below.
 //
 // Two things are asserted for each: the submission lands on a URL carrying the
 // fields, and the page that comes back is still the page (drawn in the shell,
@@ -2167,6 +2167,21 @@ async function everyGetFormSubmits(driver, pages) {
       if (form.method !== "GET") {
         continue;
       }
+      check(path + " GET form " + i + " names each field once", function () {
+        const seen = {};
+        form.controls.forEach(function (control) {
+          if (!control.name || control.disabled ||
+              control.type === "checkbox" || control.type === "radio" ||
+              control.type === "select-multiple") {
+            return;
+          }
+          assert.ok(!seen[control.name],
+            "`" + control.name + "` is on this GET form twice, so the " +
+            "address would hold the two joined by a comma.");
+          seen[control.name] = true;
+        });
+      });
+
       // What this form would send. For a select the value chosen is one that
       // DIFFERS from what is already selected where the control offers one —
       // the realm switcher is the case that forces it: its options are the
@@ -2576,13 +2591,16 @@ async function theNewUserPageDescribesAPerson(driver) {
   // **AND IT ASKS THE OPERATION THE PAGE IS DRAWN FROM (#568).** The portal
   // is a static application: `/portal/activate` answers its document, 200,
   // for any token at all, and the link is checked by the page's operation,
-  // `GET /account-api/activation`, with the link's own query. That is what
-  // the person's browser asks when the link is opened.
+  // `GET /account-api/activation`, with the link's own query and, since
+  // #1454, the fragment's token in `X-Link-Token`. That is what the person's
+  // browser asks when the link is opened.
   const linked = new URL(String(link).trim(), root("/"));
   const opened = await fetch(new URL(linked.pathname.replace(
     /\/portal\/activate$/, "/account-api/activation") + linked.search,
     linked).href, { redirect: "manual",
-                    headers: { accept: "application/json" } });
+                    headers: { accept: "application/json",
+                               "X-Link-Token": new URLSearchParams(
+                                 linked.hash.slice(1)).get("token") || "" } });
   const view = await opened.json().catch(function () {
     return {};
   });

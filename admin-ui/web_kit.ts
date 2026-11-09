@@ -1018,7 +1018,8 @@ class WebKit {
    * Submitting it resets every table's page to the first.
    *
    * @param path - the page the form submits to
-   * @param key - the name of the hidden parameter that selects the drill-down
+   * @param key - the name of the hidden parameter that selects the drill-down,
+   *   or '' for a list with no drill-down to select
    * @param value - that parameter's value
    * @param perPage - the page size in use
    * @param extraNote - optional; a sentence added to the form's note
@@ -1028,14 +1029,20 @@ class WebKit {
    */
   static perPageForm(path, key, value, perPage, extraNote?, carry?,
                      t = webMessages.WebTranslator.fallback()) {
-    const carried = Object.keys(carry || {}).map(function (name) {
+    // ONE FIELD TO A NAME. The select below IS `per`, so a `per` handed in
+    // (a list view carries one, and /admin/realms named it as its key) is
+    // dropped here rather than drawn beside it: two controls of one name
+    // reach the address as `per=300,300`, which is no number, and the page's
+    // operation refuses it (#1476). A key also in `carry` is the key.
+    const hidden = Object.assign({}, carry || {},
+                                 key ? { [key]: value } : {});
+    delete hidden.per;
+    const carried = Object.keys(hidden).map(function (name) {
       return '<input type="hidden" name="' + WebKit.esc(name) + '" value="' +
-             WebKit.esc(carry[name]) + '">';
+             WebKit.esc(hidden[name]) + '">';
     }).join('');
     const html = '<form method="get" action="' + WebKit.esc(path) + '"><div ' +
-      'class="formrow"><input type="hidden" ' +
-      'name="' + WebKit.esc(key) + '" value="' + WebKit.esc(value) + '">' +
-      carried +
+      'class="formrow">' + carried +
       '<label for="per"' + WebKit.tip(t.text('consoleKit.perPage.tip')) +
       '>' + t.html('consoleKit.perPage.label') + '</label>' +
       '<select id="per" name="per"' +
