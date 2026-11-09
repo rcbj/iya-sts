@@ -766,7 +766,10 @@ const STEP_VIEW: Json = Models.envelope(Models.unionOf(MFA_VIEW, EMAIL_VIEW),
 
 const WALLET_VIEW_REFUSALS: Json = {
   next: Kit.strEnum(['refused']),
-  errors: STRINGS
+  errors: STRINGS,
+  // What every operation's refusal of its own request carries (#1483).
+  error: Kit.str(),
+  error_description: Kit.str()
 };
 
 // `startView()`, `waitView()` and what `admitted()`, `startable()`, `closed()`
