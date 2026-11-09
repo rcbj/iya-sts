@@ -1445,9 +1445,14 @@ const REVOCATION_ENTRY = Kit.nullable(Kit.closed({
   reasonWhat: STR, subject: STR, note: STR
 }));
 
+// A second revoke is idempotent (`pki_revocation.revoke()`): the earlier
+// entry wins and the answer carries `already`. Leaving that member off
+// the model turned the 200 into a 500 (STS-API-0139, #1461).
 const CERTIFICATE_REVOKE = appAction({
   certificate: REVOKED_CERTIFICATE, reason: STR, entry: REVOCATION_ENTRY,
-  why: STR
+  why: STR,
+  already: Kit.bool('True when the certificate was already revoked. The ' +
+                    'earlier entry is kept and its date does not move.')
 });
 
 const STORED_CERTIFICATE_ACTION = appAction({
