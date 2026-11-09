@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5393** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5394** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 216
+* [Federation (`STS-FED`)](#sts-fed) — 217
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 165
@@ -2983,6 +2983,7 @@ Raised from: federation/.
 | `STS-FED-0239` | An unsolicited SAML assertion was presented a second time (ASVS 5.0.0 6.8.3). | HTTP 401 |
 | `STS-FED-0240` | A federated sign-in was refused because the partner authenticated the person too long ago. | HTTP 401 |
 | `STS-FED-0241` | A federated assertion was refused because it names no audience. | HTTP 401 |
+| `STS-FED-0242` | A partner was asked for a fresh sign-in and answered with an earlier authentication. | HTTP 401 |
 
 ## STS-OIDFED
 

@@ -13751,6 +13751,9 @@ const CODES = [
   { code: 'STS-FED-0241',
     summary: 'A federated assertion was refused because it names no audience.',
     spec: 'HTTP 401' },
+  { code: 'STS-FED-0242',
+    summary: 'A partner was asked for a fresh sign-in and answered with an earlier authentication.',
+    spec: 'HTTP 401' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +

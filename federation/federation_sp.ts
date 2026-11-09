@@ -511,6 +511,9 @@ const PARTNER_KIND = 'federation-identity-provider';
  * Nothing is accepted unless it verifies against what the relationship was
  * configured with, in every mode.
  */
+// How much older than the request a partner's authentication may be.
+const FRESH_SIGN_IN_SKEW_S = 60;
+
 class FederationSp {
   /**
    * The path of the federation index page, `/federation`.
@@ -797,6 +800,28 @@ class FederationSp {
   // service's own "signed in" page, and no pair is counted because nothing said
   // what the sign-in was for.
   // ---------------------------------------------------------------------------
+  // When the sign-in behind this step had to be a fresh one, in seconds, else 0.
+  private reauthAskedAt(pendingStep: string): number {
+    const { log, authn } = this.deps;
+    log.debug("Entering FederationSp.reauthAskedAt().");
+    const pending: any = /^[A-Za-z0-9_-]{1,64}$/.test(pendingStep)
+      ? authn.pendingFor(pendingStep) : null;
+    log.debug("Leaving FederationSp.reauthAskedAt().");
+    return pending && pending.reauthentication
+      ? Math.floor(Date.now() / 1000) : 0;
+  }
+
+  // A partner that was asked for a fresh sign-in and answered with an old one
+  // is refused, because its answer would only send the person round again.
+  private partnerIgnoredFreshSignIn(res): boolean {
+    const { log } = this.deps;
+    log.debug("Entering FederationSp.partnerIgnoredFreshSignIn().");
+    const asked = Number(res.locals.fedReauthAskedAt || 0);
+    const at = Number(res.locals.fedPartnerAuthAt || 0);
+    log.debug("Leaving FederationSp.partnerIgnoredFreshSignIn().");
+    return asked > 0 && at > 0 && at < asked - FRESH_SIGN_IN_SKEW_S;
+  }
+
   private fromContext(context) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.fromContext().");
@@ -1799,6 +1824,13 @@ class FederationSp {
   private completeSignIn(req, res, record, result) {
     const { fedMap, errorCodes, log, federation } = this.deps;
     log.debug("Entering FederationSp.completeSignIn(). id=" + record.fedId);
+    if (this.partnerIgnoredFreshSignIn(res)) {
+      errorCodes.mark(res, 'STS-FED-0242');
+      log.debug("Leaving FederationSp.completeSignIn(). Not a fresh sign-in.");
+      return this.refuse(res, record, 401, 'The sign-in was refused',
+        'This sign-in had to be a fresh one, and the partner answered with ' +
+        'an earlier authentication.');
+    }
     // A CONNECT FROM THE PORTAL (#565) is not a sign-in: the partner's
     // verified subject is linked to the person who asked, and nothing else
     // happens. See finishConnect().
@@ -4242,6 +4274,9 @@ class FederationSp {
     }
     const session = authn.startSession(res, username, amr,
                                        result.acr || '', via, said);
+    // WHEN THE PARTNER AUTHENTICATED THE PERSON, not when they arrived here
+    // (#1554), so an application's max_age is judged on the real age.
+    authn.backdateAuthentication(session, res.locals.fedPartnerAuthAt);
     this.copyPartnerPhoto(req, record, username, session, decision, detail);
     // -------------------------------------------------------------------------
     // THE ISSUANCE POLICY CAN REFUSE THE SESSION (2026-09-06), and a null is
@@ -4728,7 +4763,7 @@ class FederationSp {
   // the Redirect binding is DEFLATEd into a URL, and a signed assertion of a
   // few kilobytes does not reliably fit in one.
   // ---------------------------------------------------------------------------
-  private authnRequestXml(base, record) {
+  private authnRequestXml(base, record, fresh?: boolean) {
     const {
       federation, documentSettings, stsCrypto, log, logArtifact, STS,
       xmlEscape, iso
@@ -4740,6 +4775,7 @@ class FederationSp {
         NS_SAML + '" ' +
         'ID="' + id + '" Version="2.0" IssueInstant="' + iso(0) + '"' +
         ' Destination="' + xmlEscape(record.fedSsoUrl) + '"' +
+        (fresh ? ' ForceAuthn="true"' : '') +
         ' ProtocolBinding="' + BINDING_POST + '"' +
         ' AssertionConsumerServiceURL="' + xmlEscape(
             this.acsUrl(base, record)) + '"><saml:Issuer>' +
@@ -5317,6 +5353,9 @@ class FederationSp {
     const parts = federation.responseTypeParts(record);
     const mode = String(record.fedResponseMode || '');
     const params = new URLSearchParams();
+    if (context && context.reauthAskedAt) {
+      params.set('prompt', 'login');
+    }
     params.set('response_type', responseType);
     params.set('client_id', String(record.fedClientId || ''));
     params.set('redirect_uri', this.acsUrl(base, record));
@@ -5502,6 +5541,9 @@ class FederationSp {
       // Only an id; the record stays in the sign-in service's store.
       authnPending: /^[A-Za-z0-9_-]{1,64}$/.test(pendingStep) ? pendingStep
                                                               : '',
+      // WHEN THIS SIGN-IN WAS ASKED TO BE A FRESH ONE (#1554, ASVS 5.0.0 6.8.4):
+      // prompt=login or an age an application's max_age no longer allows.
+      reauthAskedAt: this.reauthAskedAt(pendingStep),
       // WHAT THE PERSON WAS SIGNING IN TO, carried across the round trip so
       // that completeSignIn() can move the relationship's per-application
       // counts.
@@ -5530,7 +5572,8 @@ class FederationSp {
     this.bindFlowToBrowser(res, contextRecord);
 
     if (record.fedProtocol === 'saml2') {
-      const built = this.authnRequestXml(base, record);
+      const built = this.authnRequestXml(base, record,
+                                         !!contextRecord.reauthAskedAt);
       contextRecord.requestId = built.id;
       const handle = this.putContext(contextRecord);
       if (String(record.fedBinding || 'HTTP-Redirect') === 'HTTP-POST') {
@@ -5623,6 +5666,9 @@ class FederationSp {
       const handle = this.putContext(contextRecord);
       const params = new URLSearchParams();
       params.set('wa', 'wsignin1.0');
+      if (contextRecord.reauthAskedAt) {
+        params.set('wfresh', '0');
+      }
       params.set('wtrealm', this.ourEntityId(base, record));
       params.set('wreply', this.acsUrl(base, record));
       params.set('wctx', handle);
@@ -7353,6 +7399,9 @@ class FederationSp {
         authnPending: this.fromContext(context).authnPending
       });
     });
+    res.locals.fedReauthAskedAt = (context && context.reauthAskedAt) || 0;
+    res.locals.fedPartnerAuthAt =
+      Date.parse(String(contents.authnInstant || '')) / 1000 || 0;
     return this.claimAssertionOnce(req, res, record, assertion, version,
                                    issuer, contents, signIn);
   }
@@ -7610,6 +7659,9 @@ class FederationSp {
         authnPending: this.fromContext(context).authnPending
       });
     });
+    res.locals.fedReauthAskedAt = (context && context.reauthAskedAt) || 0;
+    res.locals.fedPartnerAuthAt =
+      Date.parse(String(contents.authnInstant || '')) / 1000 || 0;
     return this.claimAssertionOnce(req, res, record, assertion, version,
                                    issuer, contents, signIn);
   }
@@ -7853,6 +7905,7 @@ class FederationSp {
                      ? String(params.error_description) : '' }] });
     }
     const context = this.takeContext(String(params.state || ''));
+    res.locals.fedReauthAskedAt = (context && context.reauthAskedAt) || 0;
     if (!context) {
       log.debug("Leaving FederationSp.consumeOauthResponse(). No state.");
       errorCodes.mark(res, params.state ? 'STS-FED-0022' : 'STS-FED-0021');
@@ -8434,6 +8487,7 @@ class FederationSp {
             'would be accepted as this person\'s.');
         }
       }
+      res.locals.fedPartnerAuthAt = Number(payload.auth_time) || 0;
       if (this.partnerAuthStale(Number(payload.auth_time))) {
         errorCodes.mark(res, 'STS-FED-0240');
         log.debug("Leaving FederationSp.verifyIdToken(). Too old.");
