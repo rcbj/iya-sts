@@ -281,7 +281,7 @@ if [ "$STRIP" = true ]; then
   sources | xargs -r rm -f
   rm -rf ./types ./tsconfig.json ./tsconfig.build.json
   # The model's own sources: what the service reads is models/generated/.
-  rm -rf ./models/lib ./models/tools ./models/main.tsp
+  rm -rf ./models/lib ./models/tools ./models/main.tsp ./models/persistence
   find ./models -type f -name '*.tsp' -delete
   echo "build-typescript.sh: stripped $STRIPPED .ts source(s), types/ and" \
        "the tsconfig files"

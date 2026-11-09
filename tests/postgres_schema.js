@@ -265,9 +265,9 @@ function checkTheUpgradesAgree(t, sql) {
   const named = function (re, what) {
     t.check(re.test(text), what, String(re));
   };
-  named(/PRIMARY KEY \(realm, base_key, attribute, shard\)\)/,
+  named(/PRIMARY KEY \(realm, base_key, attribute, shard\) ?\)/,
         'sts_ldap_counts is created with shard in its key');
-  named(/PRIMARY KEY \(dek_id, shard\)\)/,
+  named(/PRIMARY KEY \(dek_id, shard\) ?\)/,
         'sts_ldap_dek_counts is created with shard in its key');
   named(/ON CONFLICT \(realm, base_key, attribute, shard\)/,
         'the count fold adds to a shard');

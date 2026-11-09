@@ -16,7 +16,9 @@ points, federation relationships, and the seven kinds of policy. Each is written
 in TypeSpec, and the service reads what the image build generates from it. A
 policy's settings are there too: their types, defaults, limits, and labels. So are
 people, groups, the registers that keep one JSON value, and the directory's lists of
-attribute spellings and of the attributes it withholds. The database tables still
+attribute spellings and of the attributes it withholds. The PostgreSQL and MariaDB
+tables and indexes are too, and they generate both the statements the service runs
+and the scripts an owner runs. The API still
 runs from the code and SQL files it always has, and the model is read from those
 files and checked against them. An object switches only after what the model
 generates is shown to be the same as what is there.
@@ -32,8 +34,8 @@ generates is shown to be the same as what is there.
 | The 15 switched tables, and policy settings | Yes, and TypeSpec is the source | Byte-identical to the tables they replaced | **Yes** |
 | RFC 4512 definitions, for names with an OID | Yes | Against the RFC text | No |
 | Directory and table classes, with validators | Yes | Compiled and run | No |
-| PostgreSQL statements | Yes | Equal to `postgres/schema.sql`, statement by statement | No |
-| MariaDB script | No | | |
+| PostgreSQL tables and indexes, and `postgres/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
+| MariaDB tables and indexes, and `mariadb/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
 | OpenAPI documents | No | | |
 
 ## Changing what a directory object holds
@@ -151,18 +153,23 @@ service serves are built by code, as they always were, and the
 
 ## Persistence
 
-The persistence namespace is the PostgreSQL schema. Each table is a model,
-each column carries its SQL type and clauses, and the compiled model gives
-back the statements of `postgres/schema.sql` in order.
+The persistence namespace holds the PostgreSQL and MariaDB schemas, one
+file per engine under `models/persistence/`, because the two differ in types,
+keys, and indexes. Each table is a model and each column carries its SQL type
+and clauses. The build generates the statements the service runs and the
+script an owner runs from them.
+
+To change a table, edit its model and run
+`tests/tools/regenerate-model-docs.sh`, which writes `postgres/schema.sql` and
+`mariadb/schema.sql`. Everything else in those scripts is in the templates
+beside the models. An upgrade to an existing database is still written in the
+driver.
 
 Directory attributes do not become columns. One directory entry is one row
 of `sts_ldap_entries`, with the attributes sealed in `attrs`. Four lookup
 columns name attributes the SQL already states: `name_keys` is `uid`,
 `mail_keys` is `mail`, `uuid_keys` is `entryUUID` and `stsEntryUuidAlias`,
 and `class_keys` is `objectClass`.
-
-MariaDB has no models yet. `mariadb/schema.sql` remains the script an owner
-runs.
 
 [PostgreSQL schema](postgres-schema.md) describes the tables.
 [Persistence](persistence.md) describes what survives a restart.

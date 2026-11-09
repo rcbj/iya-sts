@@ -9,7 +9,8 @@
 # the committed pages or TypeSpec differ. It runs in the tests image,
 # because the emitter is compiled only in an image build. It writes
 #
-#   models/persistence/persistence.tsp
+#   postgres/schema.sql
+#   mariadb/schema.sql
 #   docs/data-model-directory.md
 #   docs/data-model-persistence.md
 #
@@ -22,15 +23,18 @@ tests/tools/corpora-preflight.sh
 # shellcheck disable=SC2046
 docker build -q $(tests/tools/mirror-contexts.sh) -f tests/Dockerfile \
   -t "${TAG}" . > /dev/null
-mkdir -p docs models/directory models/persistence
+mkdir -p docs postgres mariadb
 docker run --rm --label com.docker.compose.project=none \
   -v "${PWD}/docs:/out/docs" \
-  -v "${PWD}/models:/out/models" \
+  -v "${PWD}/postgres:/out/postgres" \
+  -v "${PWD}/mariadb:/out/mariadb" \
   "${TAG}" bash -c \
   "node common/model_emit.js --docs && \
    cp docs/data-model-directory.md docs/data-model-persistence.md /out/docs/ && \
-   cp models/persistence/persistence.tsp /out/models/persistence/ && \
+   cp models/generated/schema.sql /out/postgres/schema.sql && \
+   cp models/generated/mariadb.schema.sql /out/mariadb/schema.sql && \
    chown $(id -u):$(id -g) \
      /out/docs/data-model-directory.md \
      /out/docs/data-model-persistence.md \
-     /out/models/persistence/persistence.tsp"
+     /out/postgres/schema.sql \
+     /out/mariadb/schema.sql"

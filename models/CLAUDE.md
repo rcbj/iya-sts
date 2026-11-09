@@ -5,8 +5,8 @@ is built from.** **The whole directory namespace is switched.** Every object is
 written by hand in `directory/*.tsp`, the directory's three name lists
 (`STANDARD_NAMES`, `OWN_NAMES`, `SECRET_ATTRIBUTES`) are `directory/names.tsp`, and
 the owning module reads what the build generates, through
-`common/model_tables.ts`. Persistence is still read from its sources into TypeSpec
-and held equal to them.
+`common/model_tables.ts`. **Persistence is switched too**: every PostgreSQL and
+MariaDB table and index is in `persistence/*.tsp`.
 
 | Path | What it is | Who writes it |
 |---|---|---|
@@ -18,7 +18,8 @@ and held equal to them.
 | `directory/application.overlay.ts` | The application's key, derived subject and withheld list, and the same links as `application.tsp`, held equal by the test | by hand |
 | `directory/person.tsp`, `group.tsp`, `operational.tsp`, `attribute_source.tsp`, `oidfed.tsp`, `claim_provider.tsp`, `kerberos_trust.tsp`, `trust_anchor.tsp`, `signer_trust_anchor.tsp` | The objects no module owned. `common/directory_model_catalog.ts` reads their generated tables for the collector | by hand |
 | `directory/names.tsp` | The directory's name lists, generated into `directory.names.json`, which `ldap/ldap_server.js` reads. A row with no sentence takes the comment above its name here | by hand |
-| `persistence/persistence.tsp` | The tables | `common/model_emit.ts`, until the switch |
+| `persistence/persistence.tsp`, `persistence_mariadb.tsp` | **The source of every table and index**, one file per engine because their types, keys and indexes differ. Each generates what the driver runs and the owner's script | by hand |
+| `persistence/schema.template.sql`, `mariadb.template.sql` | Everything else in `postgres/schema.sql` and `mariadb/schema.sql`: comments, `psql` commands, grants, routines, the upgrade block. `--@table name` and `--@index name` lines are where the model's go | by hand |
 | `tools/generate.mjs` | Compiles the model and writes `generated/<id>.schema.json` for each object written by hand. Run by `build-typescript.sh`, so only inside an image build | by hand |
 
 **How a switch was made, for the next object.** A one-time conversion wrote the
@@ -44,6 +45,13 @@ bytes for `Application`. Only then was the literal removed. The object goes in
   code validates against constants with finer structure than one row can state. The
   same test holds them equal. It is a second writing until a validator is generated
   from the model.
+
+**`postgres/schema.sql` and `mariadb/schema.sql` are generated files that are
+committed**, because `docker-compose.yml` mounts one from the host. A change to a
+table or a template owes `tests/tools/regenerate-model-docs.sh`, and
+`tests/model_typespec.js` fails until the committed script matches. Migrations stay
+in the driver (`SCHEMA_COLUMNS`, `SCHEMA_UPGRADES`, the routines): they are history,
+not shape, and the test holds each upgrade to the column the model says the table has.
 
 **Things that can catch you.** `common/applications.js` adds `editable` to each
 row after loading, from its `EDITABLE` table; that is not in the TypeSpec, and
@@ -93,7 +101,7 @@ undeclared one is a compile error. A new fact about an attribute is added there.
   their sources. `emit()` there returns the bytes it was given, so a test that
   compares it to those bytes proves nothing.
 
-**What is not done**, in the order it is owed: the persistence switch; the real OID root (#1471); MariaDB from the model; the API
+**What is not done**, in the order it is owed: the real OID root (#1471); the API
 namespace in TypeSpec, then OpenAPI from it; domain models distinct from
 directory entries; the CI gates (Spectral, oasdiff).
 

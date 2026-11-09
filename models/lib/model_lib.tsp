@@ -113,7 +113,7 @@ model LinkOptions {
   what: string;
 }
 
-/** A constraint or a statement, and the place it holds in the script. */
+/** A constraint, and the column it comes before. */
 model PlacedText {
   at: int32;
   text: string;
@@ -126,15 +126,22 @@ model SpellingOptions {
   secret: string[];
 }
 
+/** One index on a table. */
+model IndexOptions {
+  name: string;
+  text: string;
+  driver: unknown;
+}
+
 /** One PostgreSQL table. */
 model TableOptions {
   name: string;
-  at: int32;
+  engine?: string;
   head: string;
   suffix?: string;
-  tightClose?: boolean;
   constraints?: PlacedText[];
-  indexes?: PlacedText[];
+  driver: unknown;
+  indexes?: IndexOptions[];
 }
 
 /** One column: its SQL type and the clauses after that type. */
@@ -144,14 +151,14 @@ model ColumnOptions {
   required?: boolean;
   generated?: boolean;
   primaryKey?: boolean;
+  backticks?: boolean;
   attributes?: string[];
 }
 
 /** What a schema holds beyond its tables. */
 model SchemaOptions {
+  engine?: string;
   version: int32;
-  extensions?: string[];
-  statements?: PlacedText[];
 }
 
 extern dec entry(target: Model, options: valueof EntryOptions);

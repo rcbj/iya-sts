@@ -289,27 +289,36 @@ export function fieldsOf(object) {
 }
 
 /**
- * One CREATE TABLE statement from a compiled table.
+ * One table from a compiled model.
  *
  * @param program - the compiled program
  * @param model - the table's model
  * @param options - its `@table` value
- * @returns the statement and the table's columns
+ * @returns its name, columns, statement and script form
  */
 function tableOf(program, model, options) {
   log.debug("Entering tableOf().");
   const columns = [];
   const items = [];
+  const rows = [];
   const constraints = (options.constraints || []).slice();
-  Array.from(model.properties.values()).forEach(function (property, index) {
+  const place = function (index) {
     constraints.filter(function (one) {
       return one.at === index;
     }).forEach(function (one) {
       items.push(one.text);
+      rows.push({ text: one.text });
     });
+  };
+  Array.from(model.properties.values()).forEach(function (property, index) {
+    place(index);
     const column = program.stateMap(COLUMN).get(property) || {};
-    items.push(property.name + ' ' + column.sql +
+    const spelled = column.backticks ? '`' + property.name + '`' :
+      property.name;
+    items.push(spelled + ' ' + column.sql +
       (column.clauses ? ' ' + column.clauses : ''));
+    rows.push({ name: spelled, sql: column.sql,
+      clauses: column.clauses || '' });
     columns.push({
       name: property.name,
       sqlType: column.sql,
@@ -323,50 +332,126 @@ function tableOf(program, model, options) {
     return one.at >= model.properties.size;
   }).forEach(function (one) {
     items.push(one.text);
+    rows.push({ text: one.text });
   });
-  const statement = options.head + ' ' + options.name + ' ( ' +
-    items.join(', ') + (options.tightClose ? ')' : ' )') +
-    (options.suffix ? ' ' + options.suffix : '');
+  const tail = options.suffix ? ' ' + options.suffix : '';
+  const table = {
+    name: options.name,
+    columns: columns,
+    statement: options.head + ' ' + options.name + ' ( ' +
+      items.join(', ') + ' )' + tail,
+    script: options.head + ' ' + options.name + ' (\n' +
+      layout(rows).join(',\n') + '\n)' + tail
+  };
   log.debug("Leaving tableOf().");
-  return { name: options.name, columns: columns, statement: statement };
+  return table;
 }
 
 /**
- * The persistence namespace of a compiled program: its tables, and every
- * statement of the script in the order the script runs them.
+ * A table's lines, with its names and types in columns.
+ *
+ * @param rows - columns, and constraints as text
+ * @returns the lines
+ */
+function layout(rows) {
+  log.debug("Entering layout().");
+  const widest = function (key) {
+    return rows.reduce(function (most, row) {
+      return row[key] && row[key].length > most ? row[key].length : most;
+    }, 0);
+  };
+  const nameWidth = widest('name');
+  const sqlWidth = widest('sql');
+  const lines = rows.map(function (row) {
+    if (row.text) {
+      return '  ' + row.text;
+    }
+    const start = row.name.padEnd(nameWidth) + ' ';
+    return '  ' + start + (row.clauses ?
+      row.sql.padEnd(sqlWidth) + ' ' + row.clauses : row.sql);
+  });
+  log.debug("Leaving layout().");
+  return lines;
+}
+
+/**
+ * The persistence namespace of a compiled program.
  *
  * @param program - the compiled program
- * @returns version, extensions, tables and statements
+ * @param engine - `postgres`, or `mariadb`
+ * @returns the version, the tables and the driver's objects in its order
  */
-export function readPersistence(program) {
+export function readPersistence(program, engine) {
   log.debug("Entering readPersistence().");
-  const placed = [];
+  const wanted = engine || 'postgres';
+  const mine = function (options) {
+    return (options.engine || 'postgres') === wanted;
+  };
   const tables = [];
-  Array.from(program.stateMap(TABLE).entries()).forEach(function (pair) {
+  const objects = [];
+  const add = function (name, statement, driver) {
+    const object = { name: name, statement: statement };
+    Object.keys(driver).forEach(function (key) {
+      if (key !== 'order') {
+        object[key] = driver[key];
+      }
+    });
+    objects.push({ order: driver.order, object: object });
+  };
+  Array.from(program.stateMap(TABLE).entries()).filter(function (pair) {
+    return mine(pair[1]);
+  }).forEach(function (pair) {
     const options = pair[1];
     const table = tableOf(program, pair[0], options);
-    tables.push({ name: table.name, columns: table.columns });
-    placed.push({ at: options.at, text: table.statement });
-    (options.indexes || []).forEach(function (one) {
-      placed.push(one);
+    table.indexes = options.indexes || [];
+    tables.push(table);
+    add(table.name, table.statement, options.driver);
+    table.indexes.forEach(function (one) {
+      add(one.name, one.text, one.driver);
     });
   });
-  const schemas = Array.from(program.stateMap(SCHEMA).values());
-  const schema = schemas[0] || { version: 0 };
-  (schema.statements || []).forEach(function (one) {
-    placed.push(one);
+  objects.sort(function (a, b) {
+    return a.order - b.order;
   });
-  placed.sort(function (a, b) {
-    return a.at - b.at;
-  });
+  const schema = Array.from(program.stateMap(SCHEMA).values()).filter(mine)[0] ||
+    { version: 0 };
   const result = {
     version: schema.version,
-    extensions: schema.extensions || [],
     tables: tables,
-    statements: placed.map(function (one) {
-      return one.text;
+    objects: objects.map(function (one) {
+      return one.object;
     })
   };
   log.debug("Leaving readPersistence().");
   return result;
+}
+
+/**
+ * `postgres/schema.sql`: the template with each table and index filled in.
+ *
+ * @param template - the text of `schema.template.sql`
+ * @param persistence - the value `readPersistence()` returned
+ * @returns the script
+ */
+export function renderScript(template, persistence) {
+  log.debug("Entering renderScript().");
+  const tables = new Map();
+  const indexes = new Map();
+  persistence.tables.forEach(function (table) {
+    tables.set(table.name, table.script);
+    table.indexes.forEach(function (one) {
+      indexes.set(one.name, one.text);
+    });
+  });
+  const script = template.replace(/^--@(table|index) (\S+)$/mg,
+    function (line, kind, name) {
+      const held = (kind === 'table' ? tables : indexes).get(name);
+      if (held === undefined) {
+        throw new Error('The template names ' + kind + ' ' + name +
+          ', which the model does not have.');
+      }
+      return held + ';';
+    });
+  log.debug("Leaving renderScript().");
+  return script;
 }

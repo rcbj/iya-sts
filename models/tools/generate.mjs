@@ -18,8 +18,8 @@ import fs from 'fs';
 import path from 'path';
 import url from 'url';
 import bunyan from 'bunyan';
-import { fieldsOf, linksIn, readDirectory, readSpellings, schemaOf } from
-  '../lib/model_lib.mjs';
+import { fieldsOf, linksIn, readDirectory, readPersistence, readSpellings,
+  renderScript, schemaOf } from '../lib/model_lib.mjs';
 
 const log = bunyan.createLogger({
   name: 'sts-model-generate',
@@ -66,6 +66,18 @@ async function generate() {
     JSON.stringify(names));
   fs.writeFileSync(path.join(out, 'directory.links.json'),
     JSON.stringify(linksIn(objects)));
+  const persistence = readPersistence(program);
+  fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
+    JSON.stringify({ objects: persistence.objects }));
+  fs.writeFileSync(path.join(out, 'schema.sql'), renderScript(
+    fs.readFileSync(path.join(ROOT, 'models', 'persistence',
+      'schema.template.sql'), 'utf8'), persistence));
+  const mariadb = readPersistence(program, 'mariadb');
+  fs.writeFileSync(path.join(out, 'persistence.mariadb.json'),
+    JSON.stringify({ objects: mariadb.objects }));
+  fs.writeFileSync(path.join(out, 'mariadb.schema.sql'), renderScript(
+    fs.readFileSync(path.join(ROOT, 'models', 'persistence',
+      'mariadb.template.sql'), 'utf8'), mariadb));
   if (authored.length === 0) {
     log.debug("Leaving generate(). Nothing to write.");
     throw new Error('The model has no object written by hand, so the ' +

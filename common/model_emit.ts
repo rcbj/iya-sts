@@ -75,74 +75,6 @@ class ModelEmit {
   }
 
   /**
-   * The two SPDX lines and the imports every model file opens with.
-   *
-   * @param namespace - the file's namespace
-   * @returns the lines
-   */
-  static typeSpecHeader(namespace: string): string[] {
-    log.debug("Entering ModelEmit.typeSpecHeader().");
-    const lines = [
-      '// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC',
-      '// SPDX-License-Identifier: BUSL-1.1',
-      '//',
-      '// Written by common/model_emit.ts (#1390). The TypeSpec compiler',
-      '// compiles this file in tests/model_typespec.js.',
-      '',
-      'import "../lib/model_lib.tsp";',
-      '',
-      'using IyaSts.ModelLib;',
-      '',
-      'namespace ' + namespace + ';',
-      ''
-    ];
-    log.debug("Leaving ModelEmit.typeSpecHeader().");
-    return lines;
-  }
-
-  /**
-   * A value as a TypeSpec value literal. `${` opens an interpolation
-   * there, so it is escaped; everything else is JSON's own escaping.
-   *
-   * @param value - a string, boolean, number, array or object
-   * @returns the literal
-   */
-  static tspValue(value: unknown): string {
-    log.debug("Entering ModelEmit.tspValue().");
-    let text: string;
-    if (Array.isArray(value)) {
-      text = '#[' + value.map(ModelEmit.tspValue).join(', ') + ']';
-    } else if (value && typeof value === 'object') {
-      const source = value as Record<string, unknown>;
-      text = '#{' + Object.keys(source).filter(function (key) {
-        return source[key] !== undefined;
-      }).map(function (key) {
-        return key + ': ' + ModelEmit.tspValue(source[key]);
-      }).join(', ') + '}';
-    } else if (typeof value === 'string') {
-      text = JSON.stringify(value).replace(/\$\{/g, '\\${');
-    } else {
-      text = String(value);
-    }
-    log.debug("Leaving ModelEmit.tspValue().");
-    return text;
-  }
-
-  /**
-   * A property name, in backticks when TypeSpec needs them.
-   *
-   * @param name - the attribute or column
-   * @returns the identifier
-   */
-  static tspName(name: string): string {
-    log.debug("Entering ModelEmit.tspName().");
-    const text = /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) ? name :
-      '`' + name + '`';
-    log.debug("Leaving ModelEmit.tspName().");
-    return text;
-  }
-
-  /**
    * A doc comment, wrapped to 80 columns. An empty text writes nothing.
    * A single token longer than the width is kept whole.
    *
@@ -899,106 +831,6 @@ class ModelEmit {
   }
 
   /**
-   * The TypeSpec type of one SQL type token.
-   *
-   * @param sqlType - the type from the column
-   * @returns the TypeSpec type
-   */
-  static typeSpecSql(sqlType: string): string {
-    log.debug("Entering ModelEmit.typeSpecSql().");
-    const token = String(sqlType || '').toLowerCase();
-    const table: { [key: string]: string } = {
-      text: 'string', inet: 'string', cidr: 'string', xid8: 'string',
-      boolean: 'boolean', smallint: 'int16', integer: 'int32', int: 'int32',
-      bigint: 'int64', bigserial: 'int64', real: 'float32',
-      'double precision': 'float64', timestamptz: 'utcDateTime',
-      bytea: 'bytes', 'text[]': 'string[]'
-    };
-    const type = token.indexOf('char') === 0 ? 'string' :
-      (table[token] || 'unknown');
-    log.debug("Leaving ModelEmit.typeSpecSql().");
-    return type;
-  }
-
-  /**
-   * TypeSpec for the persistence namespace. One model per table, and one
-   * more for what the script holds beyond its tables. Each statement
-   * carries its place, so a compiled model gives the script's statements
-   * back in order.
-   *
-   * @param model - a model from `PostgresImport.read()`
-   * @returns the TypeSpec text
-   */
-  static persistenceTypeSpec(model: any): string {
-    log.debug("Entering ModelEmit.persistenceTypeSpec().");
-    const lines = ModelEmit.typeSpecHeader('IyaSts.Persistence');
-    const claimed = new Set<number>();
-    const statements: string[] = model.statements || [];
-    (model.tables || []).forEach(function (table: any) {
-      claimed.add(table.at);
-      const onTable = new RegExp('^CREATE (UNIQUE )?INDEX .* ON (ONLY )?' +
-        table.name + '\\b');
-      const indexes: { at: number; text: string }[] = [];
-      statements.forEach(function (text, at) {
-        if (onTable.test(text)) {
-          claimed.add(at);
-          indexes.push({ at: at, text: text });
-        }
-      });
-      const options: Record<string, unknown> = {
-        name: table.name,
-        at: table.at,
-        head: table.head
-      };
-      if (table.suffix) {
-        options.suffix = table.suffix;
-      }
-      if (table.tightClose) {
-        options.tightClose = true;
-      }
-      options.constraints = table.placed || [];
-      options.indexes = indexes;
-      lines.push('@table(' + ModelEmit.tspValue(options) + ')');
-      lines.push('model ' + ModelEmit.className(table.name) + ' {');
-      (table.columns || []).forEach(function (column: any) {
-        const decorator: Record<string, unknown> = { sql: column.sqlType };
-        if (column.clauses) {
-          decorator.clauses = column.clauses;
-        }
-        ['required', 'generated', 'primaryKey'].forEach(function (key) {
-          if (column[key]) {
-            decorator[key] = true;
-          }
-        });
-        if (column.attributes && column.attributes.length > 0) {
-          decorator.attributes = column.attributes;
-        }
-        lines.push('  @column(' + ModelEmit.tspValue(decorator) + ')');
-        lines.push('  ' + ModelEmit.tspName(column.name) +
-          (column.required ? '' : '?') + ': ' +
-          ModelEmit.typeSpecSql(column.sqlType) + ';');
-      });
-      lines.push('}');
-      lines.push('');
-    });
-    const rest: { at: number; text: string }[] = [];
-    statements.forEach(function (text, at) {
-      if (!claimed.has(at)) {
-        rest.push({ at: at, text: text });
-      }
-    });
-    lines.push('@schema(' + ModelEmit.tspValue({
-      version: model.version,
-      extensions: model.extensions || [],
-      statements: rest
-    }) + ')');
-    lines.push('model PostgresSchema {}');
-    lines.push('');
-    log.debug("Leaving ModelEmit.persistenceTypeSpec().");
-    return lines.join('\n');
-  }
-
-  /**
    * Notes for one column of the reading page.
    *
    * @param column - a column
@@ -1114,8 +946,6 @@ class ModelEmit {
     const persistence = path.join(root, 'models', 'persistence');
     fs.mkdirSync(dir, { recursive: true });
     fs.mkdirSync(persistence, { recursive: true });
-    fs.writeFileSync(path.join(persistence, 'persistence.tsp'),
-      ModelEmit.persistenceTypeSpec(pg));
     fs.writeFileSync(path.join(root, 'docs', 'data-model-directory.md'),
       ModelEmit.directoryDocs(catalog));
     fs.writeFileSync(
@@ -1188,8 +1018,6 @@ class ModelEmit {
       ModelEmit.directoryDocs(first), problems);
     ModelEmit.expectText(root, 'docs/data-model-persistence.md',
       ModelEmit.persistenceDocs(pg), problems);
-    ModelEmit.expectText(root, 'models/persistence/persistence.tsp',
-      ModelEmit.persistenceTypeSpec(pg), problems);
     log.debug("Leaving ModelEmit.check().");
     return problems;
   }

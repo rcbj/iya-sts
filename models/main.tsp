@@ -31,3 +31,4 @@ import "./directory/trust_anchor.tsp";
 import "./directory/signer_trust_anchor.tsp";
 import "./directory/names.tsp";
 import "./persistence/persistence.tsp";
+import "./persistence/persistence_mariadb.tsp";

@@ -1,5 +1,9 @@
 # CLAUDE.md — `mariadb/`
 
+**`schema.sql` is generated since #1390**, from `models/persistence/persistence_mariadb.tsp`
+and `mariadb.template.sql` beside it. Edit those and run
+`tests/tools/regenerate-model-docs.sh`.
+
 **The store's schema on MariaDB 11.8 (#677).** PostgreSQL is and stays the
 primary store (`postgres/`); MariaDB is a second engine the suite runs
 against. Nothing in this directory is run by the service.

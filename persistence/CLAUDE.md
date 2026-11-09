@@ -1,5 +1,9 @@
 # CLAUDE.md — `persistence/`
 
+**The tables and indexes are written in `models/persistence/*.tsp` since #1390**, and
+`SCHEMA_OBJECTS` in each driver is what the build generates from them. Upgrades
+(`SCHEMA_COLUMNS`, `SCHEMA_UPGRADES`, the routines) are still written in the driver.
+
 ## What is in here
 
 | File | What it is |

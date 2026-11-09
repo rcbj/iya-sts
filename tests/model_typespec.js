@@ -175,6 +175,25 @@ function namesAreTheService(t, tools, program) {
   log.debug("Leaving namesAreTheService().");
 }
 
+function columnsAreInTheModel(t, persistence) {
+  log.debug("Entering columnsAreInTheModel().");
+  // An upgrade's ALTER is migration history and stays in the driver, so
+  // each one is held to the column the model says the table has.
+  const driver = require('../persistence/persistence_postgres');
+  driver.SCHEMA_COLUMNS.forEach(function (one) {
+    const table = persistence.tables.filter(function (row) {
+      return row.name === one.table;
+    })[0];
+    const column = table && table.columns.filter(function (row) {
+      return row.name === one.column;
+    })[0];
+    t.check(!!column && one.statement.replace(/\s+/g, ' ').indexOf(
+      ' ' + one.column + ' ' + column.sqlType) >= 0,
+      one.table + '.' + one.column + ': the upgrade adds what the model has');
+  });
+  log.debug("Leaving columnsAreInTheModel().");
+}
+
 function overlayLinks(t, objects) {
   log.debug("Entering overlayLinks().");
   const ApplicationOverlay = require(
@@ -264,9 +283,9 @@ async function editsReachTheOutput(t, tools) {
     t.check(ModelEmit.directoryClass(application)
       .indexOf('modelAuthoredField') >= 0,
       'a field written in TypeSpec reaches the class');
-    t.check(tools.lib.readPersistence(program).statements.some(
-      function (statement) {
-        return statement.indexOf('model_authored_column text') >= 0;
+    t.check(tools.lib.readPersistence(program).objects.some(
+      function (object) {
+        return object.statement.indexOf('model_authored_column text') >= 0;
       }), 'a column written in TypeSpec reaches the DDL');
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -364,7 +383,19 @@ async function run(t) {
   policyFields(t, tools, objects);
   const PostgresImport = require('../common/postgres_import');
   const sql = PostgresImport.read(ROOT);
-  sameStatements(t, persistence.statements, sql.statements);
+  const script = tools.lib.renderScript(fs.readFileSync(path.join(ROOT,
+    'models', 'persistence', 'schema.template.sql'), 'utf8'), persistence);
+  t.equal(script, fs.readFileSync(path.join(ROOT, 'postgres', 'schema.sql'),
+    'utf8'), 'postgres/schema.sql is what the model generates');
+  sameStatements(t, PostgresImport.statements(script), sql.statements);
+  columnsAreInTheModel(t, persistence);
+  const mariadb = tools.lib.readPersistence(program, 'mariadb');
+  t.equal(tools.lib.renderScript(fs.readFileSync(path.join(ROOT, 'models',
+    'persistence', 'mariadb.template.sql'), 'utf8'), mariadb),
+    fs.readFileSync(path.join(ROOT, 'mariadb', 'schema.sql'), 'utf8'),
+    'mariadb/schema.sql is what the model generates');
+  t.equal(mariadb.version, persistence.version,
+    'one schema version across both engines');
   t.equal(persistence.version, sql.version, 'the schema version');
   const directory = require('../common/directory_model');
   ldapDefinitions(t, new directory.DirectoryModel(

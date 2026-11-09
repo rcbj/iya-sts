@@ -281,10 +281,6 @@ function run(t) {
     fs.readFileSync(path.join(ROOT, 'docs',
       'data-model-persistence.md'), 'utf8'),
     'the persistence reading page matches the model');
-  sameText(t, ModelEmit.persistenceTypeSpec(model),
-    fs.readFileSync(path.join(ROOT, 'models', 'persistence',
-      'persistence.tsp'), 'utf8'),
-    'persistence.tsp matches the model');
   log.debug("Leaving run().");
 }
 
