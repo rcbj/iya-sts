@@ -159,6 +159,9 @@ const VERBS: Json = {
  * The composition root builds one instance. The facades forward to it.
  */
 class AuditExport {
+  // The realms already warned about having no destination.
+  private readonly warnedNoDestination = new Set<string>();
+
   // Open file handles, keyed by realm and destination. A socket is not a
   // row, so it lives on the process (`CLAUDE.md`, *One front process*).
   private readonly files = new Map<string, Json>();
@@ -278,6 +281,16 @@ class AuditExport {
     const why = realmBook.run(realm, function (): string {
       return self.offHere();
     });
+    // A COPY OF THE LOG LEAVES THIS SERVICE ONLY IF SOMEBODY SAYS WHERE TO (ASVS
+    // 5.0.0 16.4.3). Said once per realm per process, as the state it is.
+    if (why && !self.warnedNoDestination.has(realmId) &&
+        require('./mode').warnsWithoutAuditDestination()) {
+      self.warnedNoDestination.add(realmId);
+      logger.warn(require('./error_codes').tag('STS-AUDIT-0017') + 'audit ' +
+        'export: realm "' + realmId + '" sends its audit log nowhere (' + why +
+        ') A compromise of this service could alter it. Add a destination ' +
+        'under Audit export.');
+    }
     logger.debug("Leaving AuditExport.offIn(). " + (why || 'on'));
     return why;
   }

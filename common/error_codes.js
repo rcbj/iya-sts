@@ -27628,7 +27628,9 @@ const CODES = [
     spec: 'none (that event is dropped; later events are still delivered)' },
   { code: 'STS-AUDIT-0016',
     summary: 'A syslog audit destination was refused because product mode needs tls.',
-    spec: 'HTTP 400' }
+    spec: 'HTTP 400' },
+  { code: 'STS-AUDIT-0017',
+    summary: 'A realm in product mode has no audit export destination, so its audit log stays with the service.' }
   // ===== END ===============================================================
 ];
 
