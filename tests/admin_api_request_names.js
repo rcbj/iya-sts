@@ -16,7 +16,7 @@
 // wrapper with every handler replaced, so nothing here depends on a store.
 //
 //   A. `common/closed_sets.ts`'s `checkQueryDeclared()`.
-//   B. `mgmt-api/request_headers.ts`: one header per provider, the families,
+//   B. `common/request_headers.ts`: one header per provider, the families,
 //      HTTP/2's pseudo-headers and every internal header.
 //   C. The wrapper, through the route table: both refusals on a route with
 //      and without declared parameters, and a declared value still passing.
@@ -247,7 +247,7 @@ function queryRules(t) {
 function headerRules(t) {
   log.debug("Entering headerRules().");
   t.log.info('=== B. what a header may be ===');
-  const headers = require('../mgmt-api/request_headers');
+  const headers = require('../common/request_headers');
   ACCEPTED_HEADERS.forEach(function (name) {
     t.check(headers.accepted(name), name + ' is accepted', '');
   });
@@ -340,7 +340,7 @@ function wrapper(t) {
 function everyInternalName(t) {
   log.debug("Entering everyInternalName().");
   t.log.info('=== D. every internal header name ===');
-  const headers = require('../mgmt-api/request_headers');
+  const headers = require('../common/request_headers');
   const names = new Set();
   const dirs = ['common', 'cluster', 'tls', 'ldap', 'kerberos', 'persistence',
                 'mgmt-api', 'admin-ui', 'admin-core', 'oauth-oidc'];

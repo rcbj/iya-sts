@@ -1,5 +1,17 @@
 # CLAUDE.md — `report/`
 
+## WHAT A REQUEST MAY NAME (#1483, `/admin-api`'s #1476 rule)
+
+`reportRoute()` asks `reportShapeRefused()` first, after the token: the
+operation's parameters from `openapi.ts` (read once and matched by method and
+path template) and `common/request_headers.ts`'s `checkRequest()`. An
+undeclared query name is `STS-REPORT-0056`, a value its declared type does not
+hold `0057`, a custom header `0058`: `error: invalid_query`, the sentence names
+the name and never the value. `DPoP` and `X-Requested-With` are every
+operation's. `report_examples.ts` holds the examples (#1475's rules; a
+definition's document names no source, so nothing is stored).
+`tests/api_request_names.js` holds it.
+
 ## A STATIC APPLICATION (#956) — READ THIS FIRST
 
 `/report` and every path under it answer one document (`report_app.ts`),

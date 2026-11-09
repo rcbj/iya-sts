@@ -40,6 +40,8 @@
 // ---------------------------------------------------------------------------
 
 import bunyan = require('bunyan');
+import Kit = require('../common/response_model_kit');
+import Examples = require('./report_examples');
 
 const log = bunyan.createLogger({ name: 'sts-report-openapi' });
 
@@ -140,9 +142,27 @@ function operation(summary: string, description: string,
       op[key] = extras[key];
     }
   }
+  (op as any).parameters = ((op as any).parameters || [])
+    .concat(IMPLICIT_HEADERS);
   log.debug("Leaving operation().");
   return op;
 }
+
+// WHAT EVERY OPERATION TAKES WITHOUT SAYING SO (#1483, `/admin-api`'s #1476
+// rule): `DPoP`, which the application's runtime sends on every call, and
+// `X-Requested-With`, which an Android WebView adds to every request of a
+// page it hosts. In the operation's own `parameters`, so that the document
+// and the refusal read one list.
+const IMPLICIT_HEADERS = [
+  { name: 'DPoP', in: 'header', required: false,
+    schema: { type: 'string' },
+    description: 'RFC 9449: the proof of possession for the DPoP-bound ' +
+      'access token, which Authorization: DPoP <token> requires.' },
+  { name: 'X-Requested-With', in: 'header', required: false,
+    schema: { type: 'string' },
+    description: 'Added by an Android WebView, naming the application that ' +
+      'hosts the page. This API reads nothing in it.' }
+];
 
 function idParameter(name: string, description: string): any {
   log.debug("Entering idParameter().");
@@ -375,11 +395,15 @@ class OpenApi {
             'the caller belongs to, and every definition when the token ' +
             'has report:admin. In name order, numbered pages: `page` and ' +
             '`per` (50 unless given, at most 200); the answer carries ' +
-            'page, pages, per and total beside the rows.', {
+            'page, pages, per and total beside the rows. `limit` is the ' +
+            'older spelling of `per`, read when `per` is absent.', {
               parameters: [
                 { name: 'page', in: 'query', required: false,
                   schema: { type: 'integer', minimum: 1 } },
                 { name: 'per', in: 'query', required: false,
+                  schema: { type: 'integer', minimum: 1, maximum: 200 } },
+                { name: 'limit', in: 'query', required: false,
+                  description: 'The older spelling of `per`.',
                   schema: { type: 'integer', minimum: 1, maximum: 200 } }
               ],
               responses: {
@@ -1074,6 +1098,13 @@ class OpenApi {
         }
       }
     };
+    Object.keys(document.paths).forEach(function (path: string): void {
+      const item: any = (document.paths as any)[path];
+      Object.keys(item).forEach(function (verb: string): void {
+        Kit.applyExample(item[verb],
+                         (Examples as any)[verb.toUpperCase() + ' ' + path]);
+      });
+    });
     log.debug("Leaving OpenApi.document().");
     return document;
   }

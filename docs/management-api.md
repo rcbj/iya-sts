@@ -610,7 +610,9 @@ browsers, proxies, CDNs, load balancers and tracing systems add: `Sec-*`,
 Azure add at their edges (`CloudFront-*`, `X-Amz-*`, `X-Amzn-*`,
 `X-Cloud-Trace-Context`, `X-Goog-*`, `X-Azure-*`, `X-ARR-*`, `X-MS-*`,
 `X-Original-*`, `X-FD-*`, `X-AppGW-*`). A refusal names the parameter or
-header and never its value. This applies to `/admin-api` only.
+header and never its value. `/account-api`, `/authn-api` and `/report-api` hold
+themselves to the same rule (their own codes); a protocol endpoint is not held
+to it.
 
 ### Sign-in appearance
 

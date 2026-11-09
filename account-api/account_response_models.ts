@@ -157,7 +157,9 @@ Object.assign(operations, {
     api: STR, document: STR,
     operations: Kit.listOf(Kit.closed({
       method: STR, path: STR, operationId: STR, tag: STR, access: STR,
-      mirrors: NSTR, summary: STR
+      mirrors: NSTR, summary: STR,
+      // A GET's declared query names (#1483): what the portal may forward.
+      query: Kit.listOf(STR)
     }))
   })),
   getOpenApi: answers(Kit.closed({

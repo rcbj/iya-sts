@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5336** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5345** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -63,7 +63,7 @@ is an ordinary outcome.
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 430
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 433
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 747
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
@@ -94,12 +94,12 @@ is an ordinary outcome.
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 263
 * [Management API (`STS-API`)](#sts-api) — 94
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
-* [Account API (`STS-ACCOUNT`)](#sts-account) — 19
+* [Account API (`STS-ACCOUNT`)](#sts-account) — 22
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 185
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 54
+* [Reporting (`STS-REPORT`)](#sts-report) — 57
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 14
 
 ## STS-HTTP
@@ -1736,6 +1736,9 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0549` | A realm's sign-in logo was asked for (GET /web/branding/logo) and the realm has none (#717). | none (HTTP 404) |
 | `STS-AUTHN-0550` | A sign-in appearance preview was refused: a colour or layout it was asked to show is not one the settings would accept (#717). | none (HTTP 400) |
 | `STS-AUTHN-0551` | A sign-in logo's link (branding.logoLinkUrl) was not saved: it is not an absolute https URL (#717). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0552` | A /authn-api request named a query parameter its operation does not declare, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0553` | A query parameter of a /authn-api request held a value its declared type does not, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0554` | A /authn-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 
 ## STS-OAUTH
 
@@ -5740,6 +5743,9 @@ Raised from: account-api/.
 | `STS-ACCOUNT-0017` | An /account-api request body was not JSON. | HTTP 415 |
 | `STS-ACCOUNT-0018` | An /account-api request body did not validate against its operation's schema. | HTTP 400 |
 | `STS-ACCOUNT-0019` | An /account-api operation threw; answered 500. | HTTP 500 |
+| `STS-ACCOUNT-0020` | An /account-api request named a query parameter its operation does not declare, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
+| `STS-ACCOUNT-0021` | A query parameter of an /account-api request held a value its declared type does not, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
+| `STS-ACCOUNT-0022` | An /account-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 
 ## STS-LOGOUT
 
@@ -6072,6 +6078,9 @@ Raised from: report/.
 | `STS-REPORT-0053` | The store would not take a finished report (the database refused or went away while its pieces were written), so the job failed and nothing of it was kept (#1045). Until #1045 this read as STS-REPORT-0042, could not be sealed. | none (the job fails as unavailable) |
 | `STS-REPORT-0054` | A query on an AuthZEN search source (authzenSubjects, authzenResources, authzenActions) does not give every input the search is asked with as an eq filter of the top-level "and", so it was refused rather than run (#1176). | invalid_query (the job fails) |
 | `STS-REPORT-0055` | An AuthZEN search source could not be asked: the search APIs are off in the realm (authzen.searchEnabled), or the report's owner is not a person of the realm it runs in, and a search runs as its owner (#1176). | unavailable or forbidden (the job fails) |
+| `STS-REPORT-0056` | A /report-api request named a query parameter its operation does not declare, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
+| `STS-REPORT-0057` | A query parameter of a /report-api request held a value its declared type does not, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
+| `STS-REPORT-0058` | A /report-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
 
 ## STS-AUDIT
 

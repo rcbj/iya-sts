@@ -141,6 +141,20 @@ foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
 | `GET`/`POST /authn-api/password-change/{id}` | the forced change's view and act |
 | `GET /authn-api/pending/{id}/accounts`, `POST …/accounts/select`, `…/another`, `…/forget`, `GET /authn-api/accounts` | the account picker's view and acts, and a browser's account list (#561): *Several signed-in accounts in one browser*, below |
 
+**WHAT A REQUEST MAY NAME (#1483, `/admin-api`'s #1476 rule)**: the route
+wrapper asks `RequestHeaders.checkRequest()` over the operation's own
+parameters (`AuthnApi.parametersOf()`, which reads each operation's `query`
+zod) before any handler and before an act's binding: an undeclared query name
+(`STS-AUTHN-0552`), a wrong-typed or nested value (`0553`) and a custom header
+(`0554`), English, naming the name and never the value, no code in the answer.
+A POST declares `X-CSRF-Token`; every operation declares `X-Requested-With`,
+which an Android WebView adds to a sign-in opened in one, so a WebView sign-in
+is not refused for a header the page did not choose. A runtime names exactly
+what it sends (`stepOperation()`, the wallet's and the sign-out's lists), so a
+sign-in in a browser meets none of these. `authn_examples.ts` holds the
+examples (#1475's rules; every act names an id nothing holds).
+`tests/api_request_names.js` holds it.
+
 **UNAUTHENTICATED, KEYED BY THE PENDING ID** — a bearer capability, as
 `authn_id` was. It is never logged here, and `common/audit.js`'s
 `redactedPath()` takes it out of an HTTP row's target and the call log

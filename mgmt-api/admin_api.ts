@@ -28863,7 +28863,7 @@ void docs;
 // 2026-09-09; `docs` above is no longer read in this file.)
 import realms = require('../common/realms');
 // What request headers this API takes (#1476). A leaf that registers nothing.
-import adminApiRequestHeaders = require('./request_headers');
+import adminApiRequestHeaders = require('../common/request_headers');
 // RFC 9068 (2026-09-13): what an access token's type and issuer must be, read
 // the way the other resource servers here read them. A library that registers
 // no route; `oauth2.js` already required it, so this is a cache hit.

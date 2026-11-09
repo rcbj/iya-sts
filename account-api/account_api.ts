@@ -66,11 +66,20 @@ import AccountApiSpec = require('./account_api_spec');
 import responseChecks = require('../common/response_models');
 import AccountResponseModels = require('./account_response_models');
 import ProfilePhoto = require('../common/profile_photo');
+// What a request may name and hold (#1483): a leaf that registers nothing.
+import RequestHeaders = require('../common/request_headers');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
 type AccountCaller = import('../types/account-api').AccountCaller;
 type AccountContext = import('../types/account-api').AccountContext;
+
+// THE CODE OF EACH WAY A REQUEST'S SHAPE IS REFUSED (#1483).
+const SHAPE_CODES: Record<string, string> = {
+  'unknown-parameter': 'STS-ACCOUNT-0020',
+  'wrong-type': 'STS-ACCOUNT-0021',
+  header: 'STS-ACCOUNT-0022'
+};
 
 /**
  * The account API's base path.
@@ -213,6 +222,9 @@ interface AccountApiDeps {
  */
 class AccountApi {
   private table: AccountOperation[] | null = null;
+  // Each operation's declared parameters, built once: the check below runs
+  // on every request and the conversion from zod is not free.
+  private readonly declared: Map<AccountOperation, Json[]> = new Map();
 
   /**
    * Builds the API over its dependencies.
@@ -525,10 +537,14 @@ class AccountApi {
           return self.json(res, 200, {
             api: 'IYA STS Account API', document: BASE + '/openapi.json',
             operations: self.operations().map(function (op) {
-              return { method: op.method, path: op.path,
+              return Object.assign({ method: op.method, path: op.path,
                        operationId: op.operationId, tag: op.tag,
                        access: op.access, mirrors: op.mirrors || null,
-                       summary: op.summary };
+                       summary: op.summary },
+                // WHAT THE PORTAL MAY FORWARD TO THIS OPERATION (#1483): a
+                // page's own query holds names only its address means, and
+                // the runtime asks each operation only what it declares.
+                op.method === 'GET' ? { query: self.queryNamesOf(op) } : {});
             }) });
         } },
       { method: 'GET', path: BASE + '/openapi.json',
@@ -597,6 +613,46 @@ class AccountApi {
     ];
     log.debug("Leaving AccountApi.ownOperations().");
     return rows;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT THE OPERATION DECLARES. The document's own parameter list, the
+  // refusal and the portal's query filter all read this one list.
+  // -------------------------------------------------------------------------
+  /**
+   * An operation's declared parameters, once.
+   *
+   * @param op - the operation
+   * @returns the OpenAPI parameter list
+   */
+  parametersFor(op: AccountOperation): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering AccountApi.parametersFor().");
+    let list = this.declared.get(op);
+    if (!list) {
+      list = AccountApiSpec.parametersOf(op);
+      this.declared.set(op, list);
+    }
+    log.debug("Leaving AccountApi.parametersFor().");
+    return list;
+  }
+
+  /**
+   * The query names an operation declares.
+   *
+   * @param op - the operation
+   * @returns the names
+   */
+  queryNamesOf(op: AccountOperation): string[] {
+    const { log } = this.deps;
+    log.debug("Entering AccountApi.queryNamesOf().");
+    const names = this.parametersFor(op).filter(function (p) {
+      return p.in === 'query';
+    }).map(function (p) {
+      return String(p.name);
+    });
+    log.debug("Leaving AccountApi.queryNamesOf().");
+    return names;
   }
 
   // -------------------------------------------------------------------------
@@ -972,6 +1028,20 @@ class AccountApi {
         log.debug("Leaving AccountApi.run(). Refused at the gate.");
         return undefined;
       }
+    }
+    // WHAT THE REQUEST NAMES AND HOLDS (#1483, `/admin-api`'s #1476 rule):
+    // a query name the operation does not declare, a value its declared type
+    // does not hold and a custom header nobody defined are each a 400, asked
+    // after the gate, so a request with no token learns nothing of the table,
+    // and before the zod schema, whose non-strict object would drop the name.
+    const shape = RequestHeaders.checkRequest(this.parametersFor(op),
+      req.query || {}, req.headers || {});
+    if (!shape.ok) {
+      log.debug("Leaving AccountApi.run(). Refused its shape: " +
+                shape.problem + ".");
+      // error-code: none — the code is SHAPE_CODES's, by the kind of refusal
+      return this.refuse(res, 400, SHAPE_CODES[String(shape.problem)],
+                         String(shape.sentence));
     }
     const input = { query: req.query || {}, body: {} };
     if (op.query) {

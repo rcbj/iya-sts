@@ -128,6 +128,24 @@ parameter documented and a parameter refused are one declaration.
   password) with a CORS-safelisted `text/plain; x=json` and no preflight.
   `tests/account_api.js` section 6.
 
+**What a request may name (#1483, `/admin-api`'s #1476 rule).** After the
+gate and before the zod query, `run()` asks
+`common/request_headers.ts`'s `checkRequest()`, over the very parameter list
+the document publishes (`AccountApiSpec.parametersOf()`, cached per
+operation): an undeclared query name (`STS-ACCOUNT-0020`), a value its
+declared type does not hold (`0021`; a `vt.integer()` page documents as an
+`anyOf` and is left to zod, `0016`), a custom header (`0022`). Every operation
+declares `DPoP` and `X-Requested-With` (`implicitHeaders()`). `GET
+/account-api` carries `query` on each GET, the names its operation declares,
+and the portal's runtime sends a page's query filtered through them
+(`web_portal_runtime.ts`, `operationQuery()`): a page's address holds names
+only it means. `tests/api_request_names.js` holds it.
+
+**Examples (#1483, on #1475's rules).** `account_examples.ts`, keyed by
+method and path, replayed by Schemathesis's Examples phase with the fuzz
+person's real token: each is valid against its schema and names a thing that
+does not exist, or a page, so nothing is created, changed or signed out.
+
 ## WHAT AN ANSWER IS
 
 The portal's runtime (`portal/web_portal_runtime.ts`, `answered()`) draws a
