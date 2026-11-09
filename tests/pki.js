@@ -57,6 +57,7 @@ require('../ldap/ldap_server');
 const keystore = require('../common/keystore');
 const stsCrypto = require('../common/crypto');
 const x509 = require('../common/crypto_impl/x509');
+const errorCodes = require('../common/error_codes');
 
 // This file's own logger, for the Entering/Leaving lines and the handled
 // exceptions the code style asks for. Its level is LOG_LEVEL, which is also
@@ -204,6 +205,42 @@ async function run(t) {
           'and `x5t#S256` is the SHA-256 of the leaf\'s DER, computed by the ' +
           'one function in this service that computes a certificate ' +
           'thumbprint');
+
+  t.log.info('=== a post-quantum subject key is a JWK, and a composite ' +
+             'is refused ===');
+  const pq = await pki.issueSigningKeyPair(REALM, {
+    identifier: 'webapp-mldsa', keyAlg: 'ml-dsa-65'
+  });
+  t.check(pq.ok, 'an ML-DSA-65 leaf under the classical Issuing CA is ' +
+          'issued', (pq.errors || []).join(' '));
+  t.equal(pq.issued && pq.issued.publicJwk.kty, 'AKP',
+          'its public JWK is an AKP key (RFC 9964), which Node\'s PEM ' +
+          'decoder cannot produce');
+  t.equal(pq.issued && pq.issued.jwsAlg, 'ML-DSA-65',
+          'and the JWS algorithm is the SUBJECT key\'s, not the issuer\'s ' +
+          'RS256');
+  t.equal(pq.issued && pq.issued.publicJwk.alg, 'ML-DSA-65',
+          'named on the JWK before the thumbprint, which an AKP key ' +
+          'requires');
+  t.check(pq.issued && /^app-/.test(pq.issued.kid),
+          'and the kid is still derived from that JWK',
+          pq.issued && pq.issued.kid);
+  t.equal(pki.describe(REALM).issuedCount, 2,
+          'and the hierarchy counts the leaf');
+  const composite = await pki.issueSigningKeyPair(REALM, {
+    identifier: 'webapp-composite',
+    keyAlg: 'mldsa65-ecdsa-p256-sha512'
+  });
+  t.check(!composite.ok &&
+          errorCodes.codeOf(composite) === 'STS-PKI-0269',
+          'a composite ML-DSA leaf is refused: its X.509 bytes are not a ' +
+          'JOSE key',
+          (composite.errors || []).join(' ') + ' ' +
+          errorCodes.codeOf(composite));
+  t.check(!/STS-/.test((composite.errors || []).join(' ')),
+          'and the sentence the caller sees does not carry the code');
+  t.equal(pki.describe(REALM).issuedCount, 2,
+          'and nothing was recorded for it');
 
   t.log.info('=== the leaf is a signing certificate and NOT a TLS one ===');
   const leafCert = new nodeCrypto.X509Certificate(leaf.certificatePem);
