@@ -1262,5 +1262,65 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "ce paramètre est réservé au mode développement."
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "Un second facteur est exigé de tous"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "La politique d’authentification décide et, par défaut, seuls ceux qui détiennent un second facteur doivent le présenter."
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "Tout le monde doit avoir un second facteur, quelle que soit la politique, sauf si authn.allowOptionalSecondFactor est activé."
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "Les sessions et les clés RSA ont des valeurs par défaut plus strictes"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "Une session n’a pas de délai d’inactivité, et les nouvelles clés RSA font 2048 bits."
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "Une session prend fin après 30 minutes d’inactivité et les nouvelles clés RSA font 3072 bits, sauf si un paramètre en dispose autrement."
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "Le mot de passe d’amorçage reste hors du journal"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "Le mot de passe généré est écrit dans le journal du service."
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "Il est écrit dans un fichier lisible par ce seul service, et le journal indique où, sauf si admin.logBootstrapPassword est activé."
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "Chaque client doit utiliser PKCE"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "Un client confidentiel qui n’envoie pas de code_challenge est seulement journalisé."
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "Il est refusé sauf si oauth2.allowConfidentialWithoutPkce est activé."
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "Les fichiers atteignent l’analyseur chiffrés"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "Une adresse icap:// ou icaps:// peut être utilisée."
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "Seule une adresse icaps:// est utilisée, sauf si malwareScan.allowCleartext est activé."
   }
 }

@@ -834,7 +834,9 @@ class AuthnPolicy {
     log.debug("Entering AuthnPolicy.requireSecondFactor().");
     const rules = profile || this.read(DEFAULT_PROFILE);
     log.debug("Leaving AuthnPolicy.requireSecondFactor().");
-    return String(rules.requireSecondFactor);
+    // EVERYBODY, IN PRODUCT (#1490, ASVS 5.0.0 6.3.3).
+    return require('./mode').requiresSecondFactorOfEveryone()
+      ? 'always' : String(rules.requireSecondFactor);
   }
 
   // `if-held`, `offer` or `always` (#246): what an administrator who holds
@@ -851,7 +853,8 @@ class AuthnPolicy {
     log.debug("Entering AuthnPolicy.requireSecondFactorForAdministrators().");
     const rules = profile || this.read(DEFAULT_PROFILE);
     log.debug("Leaving AuthnPolicy.requireSecondFactorForAdministrators().");
-    return String(rules.requireSecondFactorForAdministrators);
+    return require('./mode').requiresSecondFactorOfEveryone()
+      ? 'always' : String(rules.requireSecondFactorForAdministrators);
   }
 
   // Whether a remembered browser may stand in for the second factor, and for

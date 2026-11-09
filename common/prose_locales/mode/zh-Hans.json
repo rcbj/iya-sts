@@ -1262,5 +1262,65 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "该设置仅适用于开发模式。"
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "要求所有人使用第二因素"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "由身份验证策略决定，默认仅要求持有第二因素的人员提供。"
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "无论策略如何，所有人都需要第二因素，除非开启 authn.allowOptionalSecondFactor。"
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "会话和 RSA 密钥采用更严格的默认值"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "会话没有空闲超时，新 RSA 密钥为 2048 位。"
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "会话空闲 30 分钟后结束，新 RSA 密钥为 3072 位，除非设置另有规定。"
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "引导密码不写入日志"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "生成的密码写入服务日志。"
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "写入仅此服务可读的文件，日志说明位置，除非开启 admin.logBootstrapPassword。"
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "每个客户端都必须使用 PKCE"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "未发送 code_challenge 的机密客户端仅被记录。"
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "除非开启 oauth2.allowConfidentialWithoutPkce，否则拒绝。"
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "文件以加密方式到达恶意软件扫描器"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "可以使用 icap:// 或 icaps:// 地址。"
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "仅使用 icaps:// 地址，除非开启 malwareScan.allowCleartext。"
   }
 }

@@ -575,6 +575,54 @@ function restrictsUnscopedPeople() {
   return isProduct() && config.value('security.allowUnscopedPeople') !== true;
 }
 
+// Is a second factor required of everybody (#1490, ASVS 5.0.0 6.3.3)?
+/**
+ * Tells whether everybody needs a second factor, whatever the policy says.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function requiresSecondFactorOfEveryone() {
+  log.debug("Entering requiresSecondFactorOfEveryone().");
+  log.debug("Leaving requiresSecondFactorOfEveryone().");
+  return isProduct() && config.value('authn.allowOptionalSecondFactor') !== true;
+}
+
+// Must a malware scanner be reached over TLS (#1501, ASVS 5.0.0 12.3.1)?
+/**
+ * @returns true when a plain icap:// address may not be used
+ */
+function requiresTlsToMalwareScanner() {
+  log.debug("Entering requiresTlsToMalwareScanner().");
+  log.debug("Leaving requiresTlsToMalwareScanner().");
+  return isProduct() && config.value('malwareScan.allowCleartext') !== true;
+}
+
+// Are new RSA keys made at 3072 bits where no setting says (#1491, ASVS 5.0.0
+// 11.2.3)?
+/**
+ * The size of a new RSA key that no setting names.
+ *
+ * @returns 3072 in product mode, 2048 otherwise
+ */
+function defaultRsaBits() {
+  log.debug("Entering defaultRsaBits().");
+  log.debug("Leaving defaultRsaBits().");
+  return isProduct() ? 3072 : 2048;
+}
+
+// Must every code-flow client use PKCE (#1495, ASVS 5.0.0 10.4.6)?
+/**
+ * Tells whether a confidential client must also use PKCE.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function requiresPkceOfEveryClient() {
+  log.debug("Entering requiresPkceOfEveryClient().");
+  log.debug("Leaving requiresPkceOfEveryClient().");
+  return isProduct() &&
+    config.value('oauth2.allowConfidentialWithoutPkce') !== true;
+}
+
 // May JWE use AES-CBC with HMAC (#1486, ASVS 5.0.0 11.3.2)?
 /**
  * Tells whether JWE's CBC-HMAC content encryption is available.
@@ -3102,6 +3150,44 @@ const REQUIREMENTS = [
              'security.fileRoots lists, and the answer does not say why a ' +
              'path failed.',
     where: 'common/outbound_tls.ts' },
+  // #1490 (ASVS 5.0.0 6.3.3).
+  { id: 'second-factor-everyone',
+    what: 'A second factor is required of everybody',
+    development: 'The authentication policy decides, and by default only ' +
+                 'those who hold a second factor are asked for it.',
+    product: 'Everybody needs a second factor, whatever the policy says, ' +
+             'unless authn.allowOptionalSecondFactor is on.',
+    where: 'common/authn_policy.ts' },
+  // #1501 (ASVS 5.0.0 12.3.1).
+  { id: 'malware-scan-tls',
+    what: 'Files reach the malware scanner encrypted',
+    development: 'An icap:// or icaps:// address may be used.',
+    product: 'Only an icaps:// address is used, unless ' +
+             'malwareScan.allowCleartext is on.',
+    where: 'common/malware_scan.ts' },
+  // #1491 (ASVS 5.0.0 7.3.1, 11.2.3).
+  { id: 'session-key-defaults',
+    what: 'Sessions and RSA keys have stricter defaults',
+    development: 'A session has no idle timeout, and new RSA keys are 2048 ' +
+                 'bits.',
+    product: 'A session ends after 30 idle minutes and new RSA keys are ' +
+             '3072 bits, unless a setting says otherwise.',
+    where: 'common/config.js, common/helpers.js' },
+  // #1493 (ASVS 5.0.0 16.2.5).
+  { id: 'bootstrap-password-file',
+    what: 'The bootstrap password stays out of the log',
+    development: 'The generated password is written to the service log.',
+    product: 'It is written to a file only this service can read, and the ' +
+             'log says where, unless admin.logBootstrapPassword is on.',
+    where: 'common/credentials.ts' },
+  // #1495 (ASVS 5.0.0 10.4.6).
+  { id: 'pkce-every-client',
+    what: 'Every client must use PKCE',
+    development: 'A confidential client that sends no code_challenge is only ' +
+                 'logged.',
+    product: 'It is refused unless oauth2.allowConfidentialWithoutPkce is ' +
+             'on.',
+    where: 'oauth-oidc/oauth2_bcp.js' },
   // #1486 (ASVS 5.0.0 11.3.2).
   { id: 'jwe-cbc',
     what: 'JWE content encryption is AES-GCM only',
@@ -4661,6 +4747,10 @@ module.exports = {
   restrictsUnscopedPeople: restrictsUnscopedPeople,
   confinesNamedFiles: confinesNamedFiles,
   allowsCbcJwe: allowsCbcJwe,
+  requiresPkceOfEveryClient: requiresPkceOfEveryClient,
+  requiresSecondFactorOfEveryone: requiresSecondFactorOfEveryone,
+  requiresTlsToMalwareScanner: requiresTlsToMalwareScanner,
+  defaultRsaBits: defaultRsaBits,
   expiredAssertionGraceS: expiredAssertionGraceS,
   hidesStepIds: hidesStepIds,
   allowsLegacyHashes: allowsLegacyHashes,

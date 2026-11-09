@@ -3950,5 +3950,13 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "isang parameter"
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
+    "en": "14ed85bab8488344",
+    "text": "NON-SPEC (#1501). GET /admin/malware-scanning sa JSON: kung ini-scan ang mga in-upload na file at ang ICAP service na nag-i-scan. Walang binabago."
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
+    "en": "1bf7c4937a9313c4",
+    "text": "NON-SPEC (#1501). Ipinapadala sa naka-configure na ICAP service ang EICAR test file at nagtatagumpay lamang kung na-flag ito ng service."
   }
 }

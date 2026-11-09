@@ -2135,7 +2135,7 @@ function notifyCertificateObservers(algorithm) {
     useCase: 'tls',
     slot: 'server',
     alg: 'RS256',
-    keyAlg: 'rsa-2048',
+    keyAlg: 'rsa-' + require('../common/mode').defaultRsaBits(),
     label: 'TLS server certificate',
     commonName: rsaIssuance.commonName,
     profile: 'tls-server',

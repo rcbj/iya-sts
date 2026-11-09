@@ -2374,6 +2374,16 @@ function checkAuthorizationRequest(opts) {
                             'than "none" is treated as confidential, for ' +
                             'which PKCE is RECOMMENDED rather than required.' };
     }
+    // EVERY CODE-FLOW CLIENT, IN PRODUCT (#1495, ASVS 5.0.0 10.4.6).
+    if (require('../common/mode').requiresPkceOfEveryClient()) {
+      log.debug("Leaving checkAuthorizationRequest(). A confidential client " +
+                "sent no code_challenge.");
+      return { ok: false, errorCode: 'STS-OAUTH-1002', error: 'invalid_request',
+               requirement: 'pkce-confidential-clients',
+               description: 'This server requires PKCE (RFC 7636) of every ' +
+                            'client. Send code_challenge and ' +
+                            'code_challenge_method=S256.' };
+    }
     log.warn('RFC 9700 section 2.1.1: confidential client "' +
              (query.client_id || '') +
              '" sent no code_challenge. PKCE is RECOMMENDED for confidential ' +

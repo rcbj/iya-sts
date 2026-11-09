@@ -244,6 +244,14 @@ function childMain() {
       let linkAt = '';
       let opened = null;
       for (let hop = 0; hop < 30; hop += 1) {
+        // The flow's cookie gone: a different browser (#1497).
+        if (opts.dropFlowCookie) {
+          Object.keys(jar).filter(function (k) {
+            return /sts_fed_flow_/.test(k);
+          }).forEach(function (k) {
+            delete jar[k];
+          });
+        }
         const at = String(r.headers.location || '');
         const screenAt = r.status >= 300 && r.status < 400 &&
           /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(at)
@@ -397,6 +405,7 @@ function childMain() {
       if (MODE === 'product') {
         config.setOverride('global.mode', 'product');
         config.setOverride('security.allowUnscopedPeople', 'true');
+        config.setOverride('authn.allowOptionalSecondFactor', 'true');
       }
     });
     const created = inSp(function () {
@@ -577,6 +586,19 @@ function childMain() {
          '1i-0. the linking screen completed in ANOTHER browser is refused ' +
          'and links nothing', other.status + ' ' +
          JSON.stringify(codesSince(mark)));
+
+    // A FLOW FINISHED IN ANOTHER BROWSER THAN STARTED IT (#1497).
+    if (MODE === 'product') {
+      const WANDERER = 'fsp-wander-' + MODE;
+      makePerson(WANDERER, 'local-wander@sp.example');
+      mark = auditCount();
+      got = await signIn(WANDERER, { dropFlowCookie: true });
+      note(got.r.status === 401 &&
+           codesSince(mark).indexOf('STS-FED-0237') >= 0,
+           '1i-00. a federated answer that arrives in another browser is ' +
+           'refused (STS-FED-0237)', got.r.status + ' ' +
+           JSON.stringify(codesSince(mark)));
+    }
 
     // CANCEL
     const CAROL = 'fsp-carol-' + MODE;

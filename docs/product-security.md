@@ -38,6 +38,9 @@ Level 1. Turn one on only for the clients that need it.
 | `admin.allowDefaultUsername` | A bootstrap administrator named `admin`, `root`, `sa` or `administrator` | Test stacks |
 | `security.fileRoots` | Where a file an administrator names may be read from. Set only in the environment or appconfig file | Add the directory your certificates and tokens are mounted in |
 | `security.allowUnscopedPeople` | Any authenticated person at SCIM and Shared Signals, by a scheme with no scope | Test stacks; use OAuth scopes for real provisioning clients |
+| `authn.allowOptionalSecondFactor` | Signing in without a second factor where the authentication policy allows it | A deployment that accepts ASVS 6.3.3 not being met |
+| `oauth2.allowConfidentialWithoutPkce` | A confidential client omitting PKCE | A client that cannot send it |
+| `admin.logBootstrapPassword` | The generated first administrator password in the service log | Never outside a test stack |
 | `crypto.allowCbcJwe` | JWE's CBC-HMAC content encryption | A partner that cannot read AES-GCM |
 | `crypto.allowLegacyHashes` | OAEP over SHA-1 in XML encryption and JWE, the SHA-1 PKINIT key derivation, and S4U2Self's HMAC-MD5 checksum | Partners and Kerberos clients that support nothing newer |
 
@@ -146,6 +149,12 @@ A GNAP user assertion that has expired is refused unless an operator sets
   names an algorithm and no `enc`, unless `crypto.allowCbcJwe` is on. Kerberos
   (RFC 8009) and the TPM credential step use the only ciphers their
   specifications define.
+* **Malware scanning** of uploaded images and risk datasets is optional and off
+  by default. See [Malware scanning](malware-scanning.md).
+* **Second factor.** Required of everybody, administrators included. The
+  password-only doors (LDAP, WS-Trust, SCIM, Shared Signals and EST Basic) cannot
+  ask for one, so a person uses an app password there, with no second factor. This
+  is intentional: see [Authentication](authentication.md).
 * **XML encryption** selects and accepts AES-GCM only. AES-CBC is refused when
   decrypting, and cannot be chosen in `saml2.encryptionAlgorithm`.
 * **SCEP** answers 503 until `scep.allowInProduct` is on. See [SCEP](scep.md).

@@ -187,6 +187,7 @@
   "nav.persistence": "Persistance",
   "nav.cluster": "Cluster",
   "nav.listeners": "Écouteurs",
+  "nav.malwareScanning": "Analyse antivirus",
   "nav.cells": "Cellules",
   "nav.mail": "Courrier",
   "nav.rbac": "Rôles d’administration",

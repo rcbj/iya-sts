@@ -67654,4 +67654,56 @@ op `getPartnerSignals`(`parameters/0/schema`: string,
   },
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
+
+@endpoint("/admin-api/malware-scanning",
+  "get",
+  #{
+    `operationId`:"getMalwareScanning",
+    `summary`:"Whether uploaded files are scanned, and by which ICAP service",
+    `description`:"`enabled` and `url` as set; `scanning`, whether files are being scanned now, which needs both; and the settings the page draws.",
+    `tags`:#["Service"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The malware scanning view.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getMalwareScanning`(`responses/200/content/application~1json/schema`: {
+    `enabled`: boolean;
+    `url`: string;
+    `scanning`: boolean;
+    `settings`?: `SharedModel10`
+  },
+  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+
+@endpoint("/admin-api/malware-scanning/test",
+  "post",
+  #{
+    `operationId`:"testMalwareScanning",
+    `summary`:"Check that the configured ICAP service really scans",
+    `description`:"Sends an ICAP OPTIONS request, then the EICAR test file, which is harmless. It succeeds only if the service flags that file, because a service whose engine failed to load can answer as if every file were clean. A failure is a 400 whose `errors` says what went wrong.",
+    `tags`:#["Service"],
+    `responses`:#{
+      `200`:#{
+        `description`:"How the service answered.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `testMalwareScanning`(`responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string
+  },
+  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
 }

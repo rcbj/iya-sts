@@ -570,8 +570,10 @@ function intermediatePathLen(kind) {
 function algorithmsForUseCase(uc, chosen, options) {
   log.debug("Entering algorithmsForUseCase().");
   const configured = String(config.value('pki.keyAlgorithm') || '');
+  // Product's own default is a default too (#1491), not an operator's choice.
+  const defaulted = /^default/.test(String(config.sourceOf('pki.keyAlgorithm')));
   if (!uc.keyAlg || options.keyAlg ||
-      (configured && configured !== DEFAULT_KEY_ALG)) {
+      (configured && !defaulted && configured !== DEFAULT_KEY_ALG)) {
     log.debug("Leaving algorithmsForUseCase().");
     return chosen;
   }

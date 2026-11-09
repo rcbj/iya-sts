@@ -3228,6 +3228,44 @@ class AdminApi {
       // listeners and the mapping are set here, because the mapping's write
       // is the one that may need `confirm` (rcbj's D6).
       // ---------------------------------------------------------------------
+      // MALWARE SCANNING (#1501).
+      { method: 'GET', path: BASE + '/malware-scanning', tag: 'Service',
+        operationId: 'getMalwareScanning',
+        mirrors: 'GET /admin/malware-scanning',
+        handler: function (req, res) {
+          log.debug("Entering the management API malware scanning endpoint.");
+          self.sendJson(res, 200, require('../admin-ui/malware_scan_admin')
+            .view());
+          log.debug("Leaving the management API malware scanning endpoint.");
+        } },
+
+      { method: 'POST', route: BASE + '/malware-scanning/:action',
+        tag: 'Service', mirrors: 'POST /admin/malware-scanning',
+        handler: function (req, res) {
+          log.debug("Entering the management API malware scanning action.");
+          if (req.params.action !== 'test') {
+            errorCodes.mark(res, 'STS-CORE-0170');
+            self.sendJson(res, 400, { ok: false, errors: ['Unknown action "' +
+              req.params.action + '". The one action is: test.'] });
+            log.debug("Leaving the malware scanning action. Unknown.");
+            return;
+          }
+          void require('../admin-ui/malware_scan_admin').test()
+            .then(function (result) {
+              log.debug("Entering the malware scanning test's answer.");
+              if (result.ok) {
+                self.sendJson(res, 200, { ok: true, message: 'The service ' +
+                  'flagged the EICAR test file, so it is scanning.' });
+              } else {
+                errorCodes.mark(res, 'STS-CORE-0169');
+                self.sendJson(res, 400, { ok: false, errors: [result.why] });
+              }
+              log.debug("Leaving the malware scanning test's answer.");
+            });
+          log.debug("Leaving the management API malware scanning action.");
+        },
+        actions: [{ action: 'test', operationId: 'testMalwareScanning' }] },
+
       { method: 'GET', path: BASE + '/listeners', tag: 'Service',
         operationId: 'getListeners',
         mirrors: 'GET /admin/listeners',

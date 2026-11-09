@@ -43,6 +43,7 @@ each.
 [Endpoints](endpoints.md) ·
 [Trust realms](trust-realms.md) ·
 [Listeners and hosted applications](listeners.md) ·
+[Malware scanning](malware-scanning.md) ·
 [What is not checked](what-is-not-checked.md) ·
 [Security in product mode](product-security.md) ·
 [Input validation](validation.md) ·

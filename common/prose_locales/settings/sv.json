@@ -700,8 +700,8 @@
     "text": "Sessionens vilotidsgräns (sekunder, 0 = ingen)"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "3d8175702c053473",
-    "text": "Hur länge en session får vara OANVÄND innan den avslutas, utöver den absoluta livslängden ovan. **Noll, standardvärdet, betyder ingen vilotidsgräns**, vilket är vad tjänsten alltid har gjort. När den är satt avslutas en session som någon slutar använda så många sekunder efter sin senaste begäran, beroende på vilken av de två gränserna som kommer först — och en begäran till administratörskonsolen eller användarportalen räknas som användning av inloggningssessionen bakom den, så att en operatör som arbetar i konsolen inte loggas ut ur den av en viloklocka på en session hen inte visar upp. Den gäller direkt: den tillämpas på sessioner som redan finns, eftersom den kontrolleras där en session läses i stället för att stämplas där en skapas."
+    "en": "8c722efc24fd3b60",
+    "text": "Hur länge en session får vara OANVÄND innan den avslutas, utöver den absoluta livslängden ovan. **Noll, standardvärdet, betyder ingen vilotidsgräns**, vilket är vad tjänsten alltid har gjort. När den är satt avslutas en session som någon slutar använda så många sekunder efter sin senaste begäran, beroende på vilken av de två gränserna som kommer först — och en begäran till administratörskonsolen eller användarportalen räknas som användning av inloggningssessionen bakom den, så att en operatör som arbetar i konsolen inte loggas ut ur den av en viloklocka på en session hen inte visar upp. Den gäller direkt: den tillämpas på sessioner som redan finns, eftersom den kontrolleras där en session läses i stället för att stämplas där en skapas. I produktläge, om detta inte anges, är standardvärdet 1800."
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -7068,8 +7068,8 @@
     "text": "Okrypterad LDAP-lyssnare"
   },
   "ldap.plainListener|description": {
-    "en": "a288e85fa6b7689f",
-    "text": "Om den okrypterade lyssnaren på ldap.port startas över huvud taget. På som standard, vilket är vad den här tjänsten alltid gjorde. Av lämnar LDAPS på ldap.tlsPort som enda väg in — vilket är vad en driftsättning vars bindningar VERIFIERAS (produktläge) vill ha, eftersom en enkel bindning på 389 skickar lösenordet i klartext. Produktläge med den påslagen loggar en varning vid start som säger just det."
+    "en": "e0685a195274dbbb",
+    "text": "Om den okrypterade lyssnaren på ldap.port startas över huvud taget. På som standard, vilket är vad den här tjänsten alltid gjorde. Av lämnar LDAPS på ldap.tlsPort som enda väg in — vilket är vad en driftsättning vars bindningar VERIFIERAS (produktläge) vill ha, eftersom en enkel bindning på 389 skickar lösenordet i klartext. Produktläge med den påslagen loggar en varning vid start som säger just det. I produktläge, om detta inte anges, är det av."
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",
@@ -12250,5 +12250,69 @@
   "crypto.allowCbcJwe|description": {
     "en": "20f6a7dc269fe48a",
     "text": "Endast produktläge. Av, standardvärdet, använder och godtar JWE enbart AES-GCM: A128CBC-HS256, A192CBC-HS384 och A256CBC-HS512 varken erbjuds eller godtas, och en klient som namnger en algoritm men inget enc besvaras med A256GCM. På fungerar de som i utveckling. VARNING: medan detta är på uppfylls inte krav 11.3.2 i ASVS 5.0.0, så slå på det bara för en partner som inte kan läsa AES-GCM."
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "Låt en person logga in utan andra faktor"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "Endast produktläge. Av, standardvärdet, krävs en andra faktor av alla, administratörer inräknade, oavsett autentiseringspolicy, och den som saknar en registrerar en vid inloggning. Undantagna tjänstekonton förblir undantagna. På avgör autentiseringspolicyn. VARNING: på uppfylls krav 6.3.3 i ASVS 5.0.0 bara om policyn kräver det."
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "Logga det genererade startlösenordet"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "Endast produktläge. Av, standardvärdet, skrivs lösenordet som genereras för den första administratören till filen bootstrap-admin-password i persistence.dataDir, som bara den här tjänsten kan läsa, och loggen säger var. På skrivs det till tjänstens logg. VARNING: på uppfylls inte krav 16.2.5 i ASVS 5.0.0, eftersom en autentiseringsuppgift hamnar i loggen."
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "Låt en konfidentiell klient utelämna PKCE"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "Endast produktläge. Av, standardvärdet, avvisas en auktoriseringsbegäran utan code_challenge för varje klient. På får en konfidentiell klient utelämna den och begäran loggas bara. VARNING: på uppfylls inte krav 10.4.6 i ASVS 5.0.0."
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "Skanna filer efter skadlig kod"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "Av, standardvärdet, skannas ingenting. På skickas varje profilbild, logotyp, bild kopierad från en federationspartner och uppladdad riskdatamängd först till ICAP-tjänsten i malwareScan.url, och avvisas om tjänsten flaggar den eller inte kan svara."
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "ICAP-tjänstens adress"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "Tjänsten att skanna med, som icap://värd:port/tjänst eller icaps://värd:port/tjänst (RFC 3507). Vilken antivirusprodukt som helst med en ICAP-tjänst kan användas."
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "Tidsgräns för skanning (millisekunder)"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "Hur länge tjänsten väntas på. En stor fil får en sekund mer per mebibyte."
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "CA-fil för en icaps-tjänst"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "En PEM-fil med CA-certifikat som en icaps-tjänst får kedja till, utöver de publika rötterna. Omfattas av security.fileRoots."
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "Tillåt okrypterad ICAP i produktläge"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "Av, standardvärdet, avvisar produktläget en icap://-adress och inga filer tas emot förrän en icaps://-adress är angiven. På kan filer nå skannern okrypterade. Använd bara på ett nätverk du litar på."
   }
 }

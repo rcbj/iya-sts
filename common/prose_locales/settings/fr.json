@@ -700,8 +700,8 @@
     "text": "Délai d’inactivité d’une session (secondes, 0 = aucun)"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "3d8175702c053473",
-    "text": "Combien de temps une session peut rester INUTILISÉE avant de se terminer, en plus de la durée de vie absolue ci-dessus. **Zéro, la valeur par défaut, signifie aucun délai d’inactivité**, ce que ce service a toujours fait. Défini, une session que quelqu’un cesse d’utiliser se termine ce nombre de secondes après sa dernière requête, selon la première des deux limites atteinte — et une requête à la console d’administration ou au portail utilisateur compte comme une utilisation de la session d’authentification unique sous-jacente, si bien qu’un opérateur qui travaille dans la console n’en est pas déconnecté par une horloge d’inactivité sur une session qu’il ne présente pas. Il s’applique en direct : il vaut pour les sessions qui existent déjà, car il est vérifié là où une session est lue plutôt qu’apposé là où elle est créée."
+    "en": "8c722efc24fd3b60",
+    "text": "Combien de temps une session peut rester INUTILISÉE avant de se terminer, en plus de la durée de vie absolue ci-dessus. **Zéro, la valeur par défaut, signifie aucun délai d’inactivité**, ce que ce service a toujours fait. Défini, une session que quelqu’un cesse d’utiliser se termine ce nombre de secondes après sa dernière requête, selon la première des deux limites atteinte — et une requête à la console d’administration ou au portail utilisateur compte comme une utilisation de la session d’authentification unique sous-jacente, si bien qu’un opérateur qui travaille dans la console n’en est pas déconnecté par une horloge d’inactivité sur une session qu’il ne présente pas. Il s’applique en direct : il vaut pour les sessions qui existent déjà, car il est vérifié là où une session est lue plutôt qu’apposé là où elle est créée. En mode produit, si ce paramètre n’est pas défini, la valeur par défaut est 1800."
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -7068,8 +7068,8 @@
     "text": "Écouteur LDAP en clair"
   },
   "ldap.plainListener|description": {
-    "en": "a288e85fa6b7689f",
-    "text": "Indique si l’écouteur non chiffré sur ldap.port est démarré ou non. Activé par défaut, comme ce service l’a toujours fait. Désactivé, LDAPS sur ldap.tlsPort reste le seul accès — ce que souhaite un déploiement dont les binds sont VÉRIFIÉS (mode produit), puisqu’un bind simple sur 389 envoie le mot de passe en clair. En mode produit avec ce paramètre activé, un avertissement disant exactement cela est journalisé au démarrage."
+    "en": "e0685a195274dbbb",
+    "text": "Indique si l’écouteur non chiffré sur ldap.port est démarré ou non. Activé par défaut, comme ce service l’a toujours fait. Désactivé, LDAPS sur ldap.tlsPort reste le seul accès — ce que souhaite un déploiement dont les binds sont VÉRIFIÉS (mode produit), puisqu’un bind simple sur 389 envoie le mot de passe en clair. En mode produit avec ce paramètre activé, un avertissement disant exactement cela est journalisé au démarrage. En mode produit, si ce paramètre n’est pas défini, il est désactivé."
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",
@@ -12250,5 +12250,69 @@
   "crypto.allowCbcJwe|description": {
     "en": "20f6a7dc269fe48a",
     "text": "Mode produit uniquement. Désactivé, par défaut, JWE utilise et accepte AES-GCM seul : A128CBC-HS256, A192CBC-HS384 et A256CBC-HS512 ne sont ni proposés ni acceptés, et un client qui nomme un algorithme sans enc reçoit une réponse en A256GCM. Activé, ils fonctionnent comme en développement. AVERTISSEMENT : tant que ce paramètre est activé, l’exigence 11.3.2 d’ASVS 5.0.0 n’est pas respectée ; ne l’activez que pour un partenaire incapable de lire AES-GCM."
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "Permettre la connexion sans second facteur"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "Mode produit uniquement. Désactivé, par défaut, un second facteur est exigé de tous, administrateurs compris, quelle que soit la politique d’authentification, et une personne qui n’en a pas en enregistre un à la connexion. Les comptes de service exemptés le restent. Activé, la politique d’authentification décide. AVERTISSEMENT : activé, l’exigence 6.3.3 d’ASVS 5.0.0 n’est respectée que si la politique en exige un."
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "Journaliser le mot de passe d’amorçage généré"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "Mode produit uniquement. Désactivé, par défaut, le mot de passe généré pour le premier administrateur est écrit dans le fichier bootstrap-admin-password de persistence.dataDir, lisible par ce seul service, et le journal indique où. Activé, il est écrit dans le journal du service. AVERTISSEMENT : activé, l’exigence 16.2.5 d’ASVS 5.0.0 n’est pas respectée, car un identifiant atteint le journal."
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "Permettre à un client confidentiel d’omettre PKCE"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "Mode produit uniquement. Désactivé, par défaut, une demande d’autorisation sans code_challenge est refusée pour tout client. Activé, un client confidentiel peut l’omettre et la demande est seulement journalisée. AVERTISSEMENT : activé, l’exigence 10.4.6 d’ASVS 5.0.0 n’est pas respectée."
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "Analyser les fichiers à la recherche de logiciels malveillants"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "Désactivé, par défaut, rien n’est analysé. Activé, chaque photo de profil, logo, photo copiée depuis un partenaire de fédération et jeu de données de risque téléversé est d’abord envoyé au service ICAP de malwareScan.url, et refusé si le service le signale ou ne peut pas répondre."
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "Adresse du service ICAP"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "Le service d’analyse, sous la forme icap://hôte:port/service ou icaps://hôte:port/service (RFC 3507). Tout antivirus disposant d’un service ICAP peut être utilisé."
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "Délai d’analyse (millisecondes)"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "Temps d’attente du service. Un fichier volumineux dispose d’une seconde de plus par mébioctet."
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "Fichier CA pour un service icaps"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "Un fichier PEM de certificats CA auxquels un service icaps peut se rattacher, en plus des racines publiques. Soumis à security.fileRoots."
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "Autoriser ICAP en clair en mode produit"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "Désactivé, par défaut, le mode produit refuse une adresse icap:// et aucun fichier n’est accepté tant qu’une adresse icaps:// n’est pas définie. Activé, les fichiers peuvent atteindre l’analyseur sans chiffrement. À n’utiliser que sur un réseau de confiance."
   }
 }

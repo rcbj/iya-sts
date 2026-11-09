@@ -157,6 +157,7 @@
   "audit.actions.oidfed.registration-refused.label": "A registration through an OpenID Federation was refused",
   "audit.actions.admin.view.label": "A console page was viewed",
   "audit.actions.admin.change.label": "A console form was posted",
+  "audit.actions.admin.config-dump.label": "The configuration was exported",
   "audit.actions.claims.change.label": "A token or assertion claim set was changed",
   "audit.actions.admin.role.change.label": "An admin console role was granted or taken away",
   "audit.actions.admin.console.bootstrap.label": "The bootstrap administrator was seeded, or first signed in to the console",

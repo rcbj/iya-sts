@@ -6980,6 +6980,17 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['openapi'],
     what: 'NON-SPEC (#98 D11). A page of another cell\'s residents, ' +
           'answered by that cell only where its release policy permits.' },
+  { path: '/admin-api/malware-scanning', group: 'Management API',
+    name: 'Malware scanning',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#1501). GET /admin/malware-scanning over JSON: ' +
+          'whether uploaded files are scanned and the ICAP service that ' +
+          'scans them. It changes nothing.' },
+  { path: '/admin-api/malware-scanning/:action', group: 'Management API',
+    name: 'Test the malware scanner',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#1501). Sends the configured ICAP service the EICAR ' +
+          'test file and succeeds only if the service flags it.' },
   { path: '/admin-api/listeners', group: 'Management API',
     name: 'Listeners',
     specs: ['openapi'],

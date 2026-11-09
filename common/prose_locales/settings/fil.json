@@ -700,8 +700,8 @@
     "text": "Idle timeout ng session (segundo, 0 = wala)"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "3d8175702c053473",
-    "text": "Gaano katagal puwedeng HINDI GAMITIN ang isang session bago ito matapos, bukod pa sa absolute lifetime sa itaas. **Ang zero, ang default, ay nangangahulugang walang idle timeout**, na siyang palaging ginagawa ng serbisyong ito. Kapag itinakda, ang session na tinigilang gamitin ng isang tao ay natatapos ilang segundo matapos ang huling request nito, alinman sa dalawang limit ang mauna — at ang request sa admin console o sa user portal ay binibilang na paggamit ng sign-on session sa likod nito, kaya ang operator na nagtatrabaho sa console ay hindi masa-sign out dito ng idle clock sa session na hindi nila ipinapakita. Live ito: nalalapat ito sa mga session na umiiral na, dahil sinusuri ito kung saan binabasa ang session sa halip na itinatatak kung saan ito ginagawa."
+    "en": "8c722efc24fd3b60",
+    "text": "Gaano katagal puwedeng HINDI GAMITIN ang isang session bago ito matapos, bukod pa sa absolute lifetime sa itaas. **Ang zero, ang default, ay nangangahulugang walang idle timeout**, na siyang palaging ginagawa ng serbisyong ito. Kapag itinakda, ang session na tinigilang gamitin ng isang tao ay natatapos ilang segundo matapos ang huling request nito, alinman sa dalawang limit ang mauna — at ang request sa admin console o sa user portal ay binibilang na paggamit ng sign-on session sa likod nito, kaya ang operator na nagtatrabaho sa console ay hindi masa-sign out dito ng idle clock sa session na hindi nila ipinapakita. Live ito: nalalapat ito sa mga session na umiiral na, dahil sinusuri ito kung saan binabasa ang session sa halip na itinatatak kung saan ito ginagawa. Sa product mode, kung hindi ito itinakda, 1800 ang default."
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -7068,8 +7068,8 @@
     "text": "Plain na LDAP listener"
   },
   "ldap.plainListener|description": {
-    "en": "a288e85fa6b7689f",
-    "text": "Kung sinisimulan man lang ang hindi naka-encrypt na listener sa ldap.port. Naka-on bilang default, na siyang palaging ginagawa ng serbisyong ito. Ang Off ay nag-iiwan sa LDAPS sa ldap.tlsPort bilang tanging daan papasok — na siyang gusto ng deployment na ang mga bind ay VINE-VERIFY (product mode), dahil ang simple bind sa 389 ay nagpapadala ng password nang hindi naka-encrypt. Ang product mode na naka-on ito ay naglo-log ng babala sa startup na eksaktong nagsasabi niyon."
+    "en": "e0685a195274dbbb",
+    "text": "Kung sinisimulan man lang ang hindi naka-encrypt na listener sa ldap.port. Naka-on bilang default, na siyang palaging ginagawa ng serbisyong ito. Ang Off ay nag-iiwan sa LDAPS sa ldap.tlsPort bilang tanging daan papasok — na siyang gusto ng deployment na ang mga bind ay VINE-VERIFY (product mode), dahil ang simple bind sa 389 ay nagpapadala ng password nang hindi naka-encrypt. Ang product mode na naka-on ito ay naglo-log ng babala sa startup na eksaktong nagsasabi niyon. Sa product mode, kung hindi ito itinakda, naka-off ito."
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",
@@ -12250,5 +12250,69 @@
   "crypto.allowCbcJwe|description": {
     "en": "20f6a7dc269fe48a",
     "text": "Sa product mode lang. Kapag naka-off, ang default, AES-GCM lang ang ginagamit at tinatanggap ng JWE: hindi iniaalok o tinatanggap ang A128CBC-HS256, A192CBC-HS384 at A256CBC-HS512, at sinasagot sa A256GCM ang client na nagpangalan ng algorithm pero walang enc. Kapag naka-on, gumagana sila gaya sa development. BABALA: habang naka-on ito, hindi natutugunan ang requirement 11.3.2 ng ASVS 5.0.0, kaya i-on lang para sa partner na hindi makabasa ng AES-GCM."
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "Hayaang mag-sign in nang walang second factor"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, kailangan ng lahat ng second factor, kasama ang mga administrator, anuman ang authentication policy, at nag-e-enrol sa sign-in ang walang hawak. Nananatiling exempt ang mga exempt na service account. Kapag naka-on, ang authentication policy ang magpapasya. BABALA: kapag naka-on, natutugunan lang ang requirement 6.3.3 ng ASVS 5.0.0 kung hinihingi ito ng policy."
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "I-log ang nabuong bootstrap password"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, isinusulat ang password na nabuo para sa unang administrator sa file na bootstrap-admin-password sa persistence.dataDir, na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan. Kapag naka-on, isinusulat ito sa service log. BABALA: kapag naka-on, hindi natutugunan ang requirement 16.2.5 ng ASVS 5.0.0, dahil umaabot sa log ang credential."
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "Hayaang hindi gumamit ng PKCE ang confidential client"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "Sa product mode lang. Kapag naka-off, ang default, tinatanggihan ang authorization request na walang code_challenge para sa bawat client. Kapag naka-on, maaari itong alisin ng confidential client at inilo-log lang ang request. BABALA: kapag naka-on, hindi natutugunan ang requirement 10.4.6 ng ASVS 5.0.0."
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "I-scan ang mga file para sa malware"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "Kapag naka-off, ang default, walang ini-scan. Kapag naka-on, bawat profile photo, logo, photo na kinopya mula sa federation partner at in-upload na risk dataset ay ipinapadala muna sa ICAP service sa malwareScan.url, at tinatanggihan kung na-flag ito ng service o hindi makasagot."
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "Address ng ICAP service"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "Ang service na gagamitin, bilang icap://host:port/service o icaps://host:port/service (RFC 3507). Maaaring gamitin ang anumang antivirus na may ICAP service."
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "Timeout ng scan (milliseconds)"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "Gaano katagal maghihintay sa service. May dagdag na isang segundo bawat mebibyte ang malaking file."
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "CA file para sa icaps service"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "PEM file ng mga CA certificate na maaaring pagkabitan ng icaps service, bukod sa mga public root. Sakop ng security.fileRoots."
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "Payagan ang plain ICAP sa product mode"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "Kapag naka-off, ang default, tinatanggihan ng product mode ang icap:// na address at walang file na tatanggapin hanggang may icaps:// na address. Kapag naka-on, maaaring makarating ang mga file sa scanner nang hindi naka-encrypt. Gamitin lamang sa network na pinagkakatiwalaan."
   }
 }

@@ -354,7 +354,7 @@ function listenersHonourTheBindAddress(t) {
           'and the directory still counts as ' +
           'started', JSON.stringify(o) + off.output.slice(-300));
 
-  const warned = inAChild({ STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', LDAP_PORT: '0',
+  const warned = inAChild({ STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', LDAP_PORT: '0',
                             LDAPS_PORT: '0',
                             STS_HOST: '127.0.0.1', LOG_LEVEL: 'warn' },
     'const ldap = require(R + "/ldap/ldap_server.js");' +

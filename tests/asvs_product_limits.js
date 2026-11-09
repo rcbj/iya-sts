@@ -283,6 +283,8 @@ function childMain() {
         accept: 'application/scim+json' });
     };
     const PASS = 'A-long-enough-probe-passphrase-77';
+    // These rows are about the role, not the second factor (#1490).
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     ['pl-plain', 'pl-reader', 'pl-writer'].forEach(function (name) {
       // Product's attribute policy (#396) requires these of every person.
       ldap.createUser(name, { invent: false, attributes: { cn: name,
@@ -420,6 +422,79 @@ function childMain() {
       note(fs.readFileSync(ROOT_DIR + '/' + file, 'utf8')
         .indexOf('assertNamedFile') >= 0, file + ' asks the rule');
     });
+
+    // --- 17. L2: the push dialer, the issuance gate, PKCE, LDAP (#1492-#1496) -
+    const ssfHttp = require(ROOT_DIR + '/ssf/ssf_http');
+    r = await ssfHttp.pushSet('https://127.0.0.1:9/set', 'token', {});
+    note(!r.ok && /internal|private|loopback|reserved/i.test(String(r.why)),
+         'product: a push to an internal address is refused', JSON.stringify(r));
+    const gate = require(ROOT_DIR + '/common/issuance_gate');
+    gate.setDecider(function () {
+      throw new Error('planted');
+    });
+    let gated = gate.check({ kind: gate.KINDS ? Object.values(gate.KINDS)[0] : '',
+                             application: CLIENT, subject: { name: 'x' } });
+    note(gated.allowed === false,
+         'product: an issuance decider that throws issues nothing',
+         JSON.stringify(gated));
+    gate.setDecider(function () {
+      return null;
+    });
+    gated = gate.check({ kind: gate.KINDS ? Object.values(gate.KINDS)[0] : '',
+                         application: CLIENT, subject: { name: 'x' } });
+    note(gated.allowed === false, 'nor one that answers nothing',
+         JSON.stringify(gated));
+    gate.setDecider(null);
+    const asked = await ask('GET', '/oauth2/authorize?client_id=' + CLIENT +
+      '&redirect_uri=' + encodeURIComponent(REDIRECT) +
+      '&scope=openid&nonce=n&state=s&response_type=code');
+    note(/invalid_request|PKCE/.test(String((asked.headers || {}).location || '') +
+                                     asked.text),
+         'product: a confidential client with no code_challenge is refused',
+         asked.status + ' ' + String((asked.headers || {}).location || ''));
+    note(config.value('ldap.plainListener') === false,
+         'product: the plain LDAP listener is off by default');
+    note(config.value('authn.sessionIdleTimeoutS') === 1800,
+         'product: sessions have a 30-minute idle timeout by default');
+    note(config.value('pki.keyAlgorithm') === 'rsa-3072' &&
+         config.value('tls.selfSignedKeyBits') === 3072 &&
+         mode.defaultRsaBits() === 3072, 'product: new RSA keys are 3072 bits');
+    const bootDir = fs.mkdtempSync(require('os').tmpdir() + '/pl-boot-');
+    const bootValue = config.value;
+    let bootLog = false;
+    config.value = function (key) {
+      return key === 'persistence.dataDir' ? bootDir
+        : (key === 'admin.logBootstrapPassword' ? bootLog : bootValue(key));
+    };
+    const bootCreds = require(ROOT_DIR + '/common/credentials');
+    const held = bootCreds.writeBootstrapPassword('first-admin', 'the-secret');
+    note(held === bootDir + '/bootstrap-admin-password' &&
+         (fs.statSync(held).mode & 0o777) === 0o600 &&
+         fs.readFileSync(held, 'utf8') === 'first-admin:the-secret\n',
+         'the bootstrap password goes to a file only this service can read',
+         held);
+    bootLog = true;
+    note(bootCreds.writeBootstrapPassword('a', 'b') === '',
+         'and the opt-out returns to the log');
+    config.value = bootValue;
+
+    // --- 18. a second factor for everybody, and the doors that cannot ask ----
+    // An app password needs no second factor there, deliberately (#1490).
+    config.clearOverride('authn.allowOptionalSecondFactor');
+    const appPass = credentials.createAppPassword('pl-plain', {
+      name: 'a job', doors: ['scim'], createdBy: 'pl-plain' });
+    note(appPass.ok, 'an app password can be made with no second factor held',
+         JSON.stringify(appPass.errors || []));
+    const own = credentials.verify('pl-plain', PASS,
+                                   { via: 'test', door: 'scim' });
+    note(own.ok === false && own.reason === 'second-factor-required',
+         'product: the person\'s own password is refused at a password-only door',
+         JSON.stringify(own));
+    const viaApp = credentials.verify('pl-plain', appPass.password,
+                                      { via: 'test', door: 'scim' });
+    note(viaApp.ok === true,
+         'and an app password works there with no second factor',
+         JSON.stringify(viaApp).slice(0, 200));
 
     // --- 13. a certificate sign-in from a browser (#1484) --------------------
     const signIn = function (site, dest, fetched) {

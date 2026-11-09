@@ -700,8 +700,8 @@
     "text": "会话空闲超时（秒，0 = 无）"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "3d8175702c053473",
-    "text": "会话在结束前可以闲置不用的时长，叠加在上面的绝对有效期之上。**零（默认）表示没有空闲超时**，这是本服务一贯的行为。设置后，某人停止使用的会话会在其最后一次请求后这么多秒结束，以两个限制中先到者为准——对管理控制台或用户门户的请求算作对其背后单点登录会话的使用，因此在控制台中工作的运维人员不会因为一个他们并未出示的会话上的空闲计时而被注销。此项实时生效：它适用于已存在的会话，因为它是在读取会话时检查的，而不是在创建时写入的。"
+    "en": "8c722efc24fd3b60",
+    "text": "会话在结束前可以闲置不用的时长，叠加在上面的绝对有效期之上。**零（默认）表示没有空闲超时**，这是本服务一贯的行为。设置后，某人停止使用的会话会在其最后一次请求后这么多秒结束，以两个限制中先到者为准——对管理控制台或用户门户的请求算作对其背后单点登录会话的使用，因此在控制台中工作的运维人员不会因为一个他们并未出示的会话上的空闲计时而被注销。此项实时生效：它适用于已存在的会话，因为它是在读取会话时检查的，而不是在创建时写入的。 在产品模式下，如未设置，默认值为 1800。"
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -7068,8 +7068,8 @@
     "text": "明文 LDAP 监听器"
   },
   "ldap.plainListener|description": {
-    "en": "a288e85fa6b7689f",
-    "text": "是否启动 ldap.port 上的未加密监听器。默认开启，这是本服务一贯的行为。关闭后，ldap.tlsPort 上的 LDAPS 成为唯一的入口——这正是绑定会被验证的部署（产品模式）所需要的，因为 389 上的简单绑定会以明文发送密码。产品模式下开启此项时，启动时会记录一条警告，明确说明这一点。"
+    "en": "e0685a195274dbbb",
+    "text": "是否启动 ldap.port 上的未加密监听器。默认开启，这是本服务一贯的行为。关闭后，ldap.tlsPort 上的 LDAPS 成为唯一的入口——这正是绑定会被验证的部署（产品模式）所需要的，因为 389 上的简单绑定会以明文发送密码。产品模式下开启此项时，启动时会记录一条警告，明确说明这一点。 在产品模式下，如未设置，则为关闭。"
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",
@@ -12250,5 +12250,69 @@
   "crypto.allowCbcJwe|description": {
     "en": "20f6a7dc269fe48a",
     "text": "仅限产品模式。默认关闭时，JWE 仅使用和接受 AES-GCM：既不提供也不接受 A128CBC-HS256、A192CBC-HS384 和 A256CBC-HS512，指定了算法但未指定 enc 的客户端将以 A256GCM 应答。开启时，它们的行为与开发模式相同。警告：开启期间不满足 ASVS 5.0.0 要求 11.3.2，仅为无法读取 AES-GCM 的合作方开启。"
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "允许不使用第二因素登录"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "仅限产品模式。默认关闭时，无论身份验证策略如何，所有人（包括管理员）都需要第二因素，未持有的人员在登录时注册。豁免的服务账户仍然豁免。开启时由身份验证策略决定。警告：开启后，除非策略要求，否则不满足 ASVS 5.0.0 要求 6.3.3。"
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "记录生成的引导密码"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "仅限产品模式。默认关闭时，为首位管理员生成的密码写入 persistence.dataDir 中仅此服务可读的 bootstrap-admin-password 文件，日志说明位置。开启时写入服务日志。警告：开启后不满足 ASVS 5.0.0 要求 16.2.5，因为凭据进入了日志。"
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "允许机密客户端省略 PKCE"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "仅限产品模式。默认关闭时，任何客户端不带 code_challenge 的授权请求都会被拒绝。开启时，机密客户端可以省略，请求仅被记录。警告：开启后不满足 ASVS 5.0.0 要求 10.4.6。"
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "扫描文件中的恶意软件"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "默认关闭时不扫描任何内容。开启后，每张头像、徽标、从联合身份合作方复制的照片以及上传的风险数据集都会先发送到 malwareScan.url 中的 ICAP 服务，如果服务标记或无法应答，则拒绝。"
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "ICAP 服务地址"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "用于扫描的服务，格式为 icap://主机:端口/服务 或 icaps://主机:端口/服务（RFC 3507）。可使用任何提供 ICAP 服务的防病毒产品。"
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "扫描超时（毫秒）"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "等待服务的时长。大文件每 MiB 额外增加一秒。"
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "icaps 服务的 CA 文件"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "icaps 服务可链接到的 CA 证书 PEM 文件，作为公共根证书之外的补充。受 security.fileRoots 限制。"
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "在产品模式下允许明文 ICAP"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "默认关闭时，产品模式拒绝 icap:// 地址，在设置 icaps:// 地址之前不接受任何文件。开启后，文件可能以未加密方式到达扫描器。仅在可信网络中使用。"
   }
 }

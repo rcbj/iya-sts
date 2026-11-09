@@ -4069,3 +4069,5 @@ one click from skipped.
   started activity asks its population even where the policy is off.
 * **No protocol test yet**: `tests/post_login.js` drives it over HTTP in
   process; `tests/post_login_started.js` holds #1126's selection.
+
+**An app password at a password-only door needs no second factor, deliberately (rcbj, 2026-11-09).** Those doors cannot ask for one. `mode.requiresSecondFactorOfEveryone()` (#1490) refuses a person's own password there and leaves the app password working; do not extend the requirement to it.

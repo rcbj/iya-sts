@@ -69,6 +69,7 @@
   "title.ldap-roles": "Role entries",
   "title.ldap-spiffe": "SPIFFE entries",
   "title.listeners": "Listeners",
+  "title.malwareScanning": "Malware scanning",
   "title.logout": "Sign-out",
   "title.mail": "Mail",
   "title.mail-outbox": "Mail outbox",

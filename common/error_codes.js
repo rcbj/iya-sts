@@ -1224,6 +1224,15 @@ const CODES = [
     summary: 'A product-mode process was configured with global.https off ' +
       'and did not start (#1457).',
     spec: '' },
+  { code: 'STS-CORE-0168',
+    summary: 'The malware scanner flagged a file (ASVS 5.0.0 5.4.3).',
+    spec: 'HTTP 422' },
+  { code: 'STS-CORE-0169',
+    summary: 'A file could not be scanned because the malware scanner did not answer.',
+    spec: 'HTTP 503' },
+  { code: 'STS-CORE-0170',
+    summary: 'An action on the malware scanning page was not one it has.',
+    spec: 'HTTP 400' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -11429,6 +11438,10 @@ const CODES = [
       'the realm\'s authority that was not issued to its issuer ' +
       '(ASVS 5.0.0 9.1.3).',
     spec: 'invalid_grant' },
+  { code: 'STS-OAUTH-1002',
+    summary: 'A confidential client sent no code_challenge, in product ' +
+      '(ASVS 5.0.0 10.4.6).',
+    spec: 'invalid_request' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -13650,6 +13663,18 @@ const CODES = [
       'was no longer believed: the DID\'s data server no longer names this ' +
       'issuer, or could not be asked (#746).',
     spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0237',
+    summary: 'A federated answer arrived in a browser other than the one ' +
+      'that started the flow, in product (ASVS 5.0.0 10.1.2).',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0238',
+    summary: 'A federated answer names another issuer, or arrived for ' +
+      'another relationship than its state (ASVS 5.0.0 10.2.2).',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0239',
+    summary: 'An unsolicited SAML assertion was presented a second time ' +
+      '(ASVS 5.0.0 6.8.3).',
+    spec: 'HTTP 401' },
   // ===== OIDFED ============================================================
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -19150,6 +19175,10 @@ const CODES = [
     summary: 'A person authenticated by HTTP Basic holds no console role, ' +
       'in product (ASVS 5.0.0 8.2.1).',
     spec: 'HTTP 403' },
+  { code: 'STS-SSF-0158',
+    summary: 'A push delivery address is internal or could not be ' +
+      'resolved, in product (ASVS 5.0.0 1.3.6).',
+    spec: 'the delivery fails' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -22449,6 +22478,10 @@ const CODES = [
       'the call site: refused in product mode, allowed in development ' +
       '(#1450).',
     spec: '' },
+  { code: 'STS-XACML-0183',
+    summary: 'The issuance gate refused because no decision could be ' +
+      'made, in product (ASVS 5.0.0 16.5.3).',
+    spec: 'the token is not issued' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +

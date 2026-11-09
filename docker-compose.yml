@@ -118,6 +118,28 @@ services:
       - ./openbao/seeder.hcl:/usr/src/sts/openbao/seeder.hcl:ro
     command: ["node", "openbao/seed.js"]
 
+  clamav:
+    container_name: ${STS_CLAMAV_CONTAINER_NAME:-sts-clamav}
+    image: ${STS_CLAMAV_IMAGE:-clamav/clamav:1.5.4}
+    volumes:
+      - clamd-socket:/tmp
+    scale: ${STS_CLAMAV_SCALE:-0}
+    entrypoint: ["/bin/sh", "-c", "printf 'StreamMaxLength 2500M\\nMaxFileSize 2500M\\nMaxScanSize 4000M\\n' >> /etc/clamav/clamd.conf && exec /init"]
+    restart: unless-stopped
+
+  icap:
+    container_name: ${STS_ICAP_CONTAINER_NAME:-sts-icap}
+    image: ${STS_ICAP_IMAGE:-iya-sts-icap-clamav}
+    build:
+      context: ./icap-clamav
+    scale: ${STS_ICAP_SCALE:-0}
+    environment:
+      - ICAP_TLS=${STS_ICAP_TLS:-true}
+    volumes:
+      - clamd-socket:/clamd-socket
+      - icap-tls:/icap-tls
+    restart: unless-stopped
+
   sts:
     container_name: ${STS_CONTAINER_NAME:-sts}
     hostname: sts
@@ -168,6 +190,7 @@ services:
       - sts-bao-client:/run/secrets/openbao:ro
       - sts-bao-startup:/run/secrets/openbao-startup
       - sts-db-ca:/run/secrets/database-ca:ro
+      - icap-tls:/etc/ssl/icap:ro
       - sts-data:/usr/src/sts/data
       - sts-risk-uploads:/usr/src/sts/data/risk-uploads
       - ./env:/usr/src/sts/env:ro
@@ -176,6 +199,10 @@ services:
     environment:
       - CONFIG_FILE=${CONFIG_FILE:-./env/local.js}
       - STS_LOG_LEVEL
+      - STS_MALWARE_SCAN_ENABLED
+      - STS_MALWARE_SCAN_URL
+      - STS_MALWARE_SCAN_CA_FILE
+      - STS_MALWARE_SCAN_ALLOW_CLEARTEXT
       - STS_HTTPS=${STS_HTTPS:-true}
       - UV_THREADPOOL_SIZE=${UV_THREADPOOL_SIZE:-32}
       - PKI_DISTRIBUTION_PORT=${STS_PKI_HOST_PORT:-8082}
@@ -294,6 +321,8 @@ networks:
         - subnet: ${STS_NETWORK_SUBNET:-172.29.0.0/24}
 
 volumes:
+  clamd-socket:
+  icap-tls:
   sts-bao-file:
   sts-bao-client:
   sts-bao-startup:

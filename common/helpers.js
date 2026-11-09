@@ -998,8 +998,7 @@ function rsaBitsFor(key) {
   return Number(config.value(key)) || 2048;
 }
 
-// The service signing key is 2048 bits and not a setting.
-const STS_SIGNING_KEY_BITS = 2048;
+// The service signing key's size is not a setting (#1491): the mode decides.
 
 // ---------------------------------------------------------------------------
 // THE TWO RSA SIGNING KEYS' CERTIFICATES, AND WHY THERE ARE TWO (2026-09-22,
@@ -1031,7 +1030,7 @@ function makeRsaSigningKey(useCaseId, privateKeyPem) {
   log.debug("Entering makeRsaSigningKey(). use=" + useCaseId);
   const unit = RSA_SIGNING_UNITS[useCaseId] || RSA_SIGNING_UNITS.jose;
   const made = stsCrypto.selfSignedRsaCertificate({
-    bits: STS_SIGNING_KEY_BITS,
+    bits: require('./mode').defaultRsaBits(),
     rsaPrivateKeyPem: privateKeyPem,
     commonName: unit.commonName,
     serialPrefix: unit.serialPrefix,
@@ -2838,18 +2837,19 @@ function prepareKeySet(realmId) {
   // awaited — `makeStsKeys()` reads the same three settings the same way.
   const bits = realms.run(realm, function () {
     return {
+      signing: require('./mode').defaultRsaBits(),
       vci: rsaBitsFor('oid4vci.requestEncryptionKeyBits'),
       refresh: rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits'),
       requestObject: rsaBitsFor('oauth2.requestObjectEncryptionKeyBits')
     };
   });
   const work = Promise.all([
-    generateRsaPairAsync(STS_SIGNING_KEY_BITS, true),
+    generateRsaPairAsync(bits.signing, true),
     generateRsaPairAsync(bits.vci),
     generateRsaPairAsync(bits.refresh),
     generateRsaPairAsync(bits.requestObject),
     // The XML signing key (#42, D2), a fifth pair.
-    generateRsaPairAsync(STS_SIGNING_KEY_BITS, true)
+    generateRsaPairAsync(bits.signing, true)
   ]).then(function (pairs) {
     // Somebody may have made or adopted the set while the threads worked; the
     // factory's order decides, and a prepared set it does not use is dropped.
@@ -5781,7 +5781,8 @@ async function mintStandbyKey(unitRow, role) {
                  createdAt: Date.now(), retiredAt: 0, retiredUntil: 0,
                  reason: '' };
   if (unitRow.kind === 'rsa') {
-    const pair = await generateRsaPairAsync(STS_SIGNING_KEY_BITS, true);
+    const pair = await generateRsaPairAsync(
+      require('./mode').defaultRsaBits(), true);
     const made = makeRsaSigningKey(unitRow.useCase, pair.privateKey);
     const kid = kidOf(made.certB64);
     log.debug("Leaving mintStandbyKey(). RSA " + kid);

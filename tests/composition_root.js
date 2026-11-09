@@ -163,7 +163,7 @@ function run(t) {
   // both children above and this one now stand on.
   t.log.info('=== the whole stack in PRODUCT mode: still the root\'s ===');
   const product = runChild(t, 'stack', {
-    STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', STS_PERSISTENCE_MODE: 'memory'
+    STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', STS_PERSISTENCE_MODE: 'memory'
   });
   if (product) {
     const early = (product.origins || []).filter(function (row) {

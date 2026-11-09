@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5350** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5359** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,7 +51,7 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 20
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 99
+* [Service core (`STS-CORE`)](#sts-core) — 102
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
 * [Persistence and coordination (`STS-STORE`)](#sts-store) — 107
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
@@ -64,11 +64,11 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 430
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 749
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 750
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 211
+* [Federation (`STS-FED`)](#sts-fed) — 214
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 165
@@ -79,14 +79,14 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 153
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 59
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 136
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 137
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 359
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 104
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 105
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
@@ -256,6 +256,9 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0165` | A request arrived from an address in global.edgeProxies without global.edgeSecret in its X-Origin-Verify header: another customer's CDN distribution pointed at this load balancer, or a distribution or node holding an out-of-date secret. Refused before anything else is decided about it. | none — HTTP 403, with no reason given |
 | `STS-CORE-0166` | GET /favicon.ico found no common/favicon.ico in this image: the file was left out of the build. The browser shows no icon; nothing else is affected. | none — HTTP 404 |
 | `STS-CORE-0167` | A product-mode process was configured with global.https off and did not start (#1457). | — |
+| `STS-CORE-0168` | The malware scanner flagged a file (ASVS 5.0.0 5.4.3). | HTTP 422 |
+| `STS-CORE-0169` | A file could not be scanned because the malware scanner did not answer. | HTTP 503 |
+| `STS-CORE-0170` | An action on the malware scanning page was not one it has. | HTTP 400 |
 
 ## STS-WORKER
 
@@ -2496,6 +2499,7 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0999` | In RFC 9700 mode, with section 2.1.2 waived in the realm, a dynamic client registration or its RFC 7592 update asked for a token response type that oauth2.dynamicRegistrationTokenResponseTypes does not list (#1296). | invalid_client_metadata (HTTP 400) |
 | `STS-OAUTH-1000` | A client assertion was verified by a certificate from the realm's authority that was not issued to that client (ASVS 5.0.0 9.1.3). | invalid_client |
 | `STS-OAUTH-1001` | An RFC 7523 assertion was verified by a certificate from the realm's authority that was not issued to its issuer (ASVS 5.0.0 9.1.3). | invalid_grant |
+| `STS-OAUTH-1002` | A confidential client sent no code_challenge, in product (ASVS 5.0.0 10.4.6). | invalid_request |
 
 ## STS-SAML
 
@@ -2961,6 +2965,9 @@ Raised from: federation/.
 | `STS-FED-0234` | federation/add-value or federation/remove-value named a field that holds one value, so there is no list to change (#747). | HTTP 400 JSON |
 | `STS-FED-0235` | A held Discourse answer returned from its step after the relationship's shared secret was replaced (#746). | HTTP 401 page |
 | `STS-FED-0236` | A held Bluesky answer returned from its step and its subject was no longer believed: the DID's data server no longer names this issuer, or could not be asked (#746). | HTTP 401 page |
+| `STS-FED-0237` | A federated answer arrived in a browser other than the one that started the flow, in product (ASVS 5.0.0 10.1.2). | HTTP 401 |
+| `STS-FED-0238` | A federated answer names another issuer, or arrived for another relationship than its state (ASVS 5.0.0 10.2.2). | HTTP 401 |
+| `STS-FED-0239` | An unsolicited SAML assertion was presented a second time (ASVS 5.0.0 6.8.3). | HTTP 401 |
 
 ## STS-OIDFED
 
@@ -4210,6 +4217,7 @@ Raised from: ssf/.
 | `STS-SSF-0155` | An announcement broadcast could not be sent in a realm: building or queueing its Security Event Token failed (#1086). | none: logged; the answer names the realm |
 | `STS-SSF-0156` | An HTTP Basic credential was refused without being checked: too many recent failures (#1448). | HTTP 401 |
 | `STS-SSF-0157` | A person authenticated by HTTP Basic holds no console role, in product (ASVS 5.0.0 8.2.1). | HTTP 403 |
+| `STS-SSF-0158` | A push delivery address is internal or could not be resolved, in product (ASVS 5.0.0 1.3.6). | the delivery fails |
 
 ## STS-RISK
 
@@ -4930,6 +4938,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0180` | The access policy refused a remote PEP request (/xacml/pep/*, POST /xacml/pip): the client certificate verified and is from an outside certificate authority that is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 403 access_denied |
 | `STS-XACML-0181` | The access gate had no decider, or its decider answered nothing: refused in product mode, allowed in development (#1450). | — |
 | `STS-XACML-0182` | An access check named no resource or no action, a defect at the call site: refused in product mode, allowed in development (#1450). | — |
+| `STS-XACML-0183` | The issuance gate refused because no decision could be made, in product (ASVS 5.0.0 16.5.3). | the token is not issued |
 
 ## STS-XPEP
 

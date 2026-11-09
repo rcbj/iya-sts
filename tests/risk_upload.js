@@ -225,6 +225,30 @@ function nameChecks(t) {
   log.debug("Leaving nameChecks().");
 }
 
+// THE MALWARE SCAN COMES FIRST (#1501): a flagged upload is refused and gone.
+async function scanChecks(t) {
+  log.debug("Entering scanChecks().");
+  const MalwareScan = require('../common/malware_scan');
+  const real = MalwareScan.fileRefusal;
+  MalwareScan.fileRefusal = function () {
+    return Promise.resolve({ status: 422, code: 'STS-CORE-0168',
+                             error: 'flagged.' });
+  };
+  try {
+    const flagged = await riskUpload.receiveRaw(apiRequest(
+      Buffer.from('192.0.2.1\\n'), { dataset: 'iplist.operator-deny',
+                                     format: 'ip-list', realm: 'default' },
+      'application/octet-stream'), apiDoor());
+    t.check(flagged.status === 422 && flagged.code === 'STS-CORE-0168' &&
+            filesIn().length === 0,
+            'a dataset the scanner flags is refused and not kept',
+            JSON.stringify(flagged));
+  } finally {
+    MalwareScan.fileRefusal = real;
+  }
+  log.debug("Leaving scanChecks().");
+}
+
 async function partA(t) {
   log.debug("Entering partA().");
   const gz = zlib.gzipSync(listOf(1200, 'A1'));
@@ -548,6 +572,7 @@ async function run(t) {
   riskDatasets.forget();
   try {
     nameChecks(t);
+    await scanChecks(t);
     await partA(t);
     await partB(t);
     await partC(t);

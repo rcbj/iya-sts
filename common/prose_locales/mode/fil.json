@@ -1262,5 +1262,65 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "para sa development mode lang ang setting."
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "Kailangan ng second factor ang lahat"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "Ang authentication policy ang magpapasya, at bilang default, ang may second factor lang ang hihingan nito."
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "Kailangan ng lahat ng second factor, anuman ang policy, maliban kung naka-on ang authn.allowOptionalSecondFactor."
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "Mas mahigpit ang mga default ng session at RSA key"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "Walang idle timeout ang session, at 2048 bits ang mga bagong RSA key."
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "Natatapos ang session pagkatapos ng 30 minutong walang gamit at 3072 bits ang mga bagong RSA key, maliban kung iba ang sinasabi ng setting."
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "Hindi napupunta sa log ang bootstrap password"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "Isinusulat sa service log ang nabuong password."
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "Isinusulat ito sa file na ang serbisyong ito lang ang makakabasa, at sinasabi ng log kung saan, maliban kung naka-on ang admin.logBootstrapPassword."
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "Dapat gumamit ng PKCE ang bawat client"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "Inilo-log lang ang confidential client na walang ipinadalang code_challenge."
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "Tinatanggihan ito maliban kung naka-on ang oauth2.allowConfidentialWithoutPkce."
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "Naka-encrypt ang mga file patungo sa malware scanner"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "Maaaring gamitin ang icap:// o icaps:// na address."
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "icaps:// na address lamang ang ginagamit, maliban kung naka-on ang malwareScan.allowCleartext."
   }
 }

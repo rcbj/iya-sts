@@ -700,8 +700,8 @@
     "text": "工作階段閒置逾時（秒，0 = 無）"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "3d8175702c053473",
-    "text": "工作階段在結束之前可以「未被使用」多久，這是在上述絕對有效期之外的限制。**零（預設）表示沒有閒置逾時**，這是本服務一直以來的行為。設定後，某人停止使用的工作階段會在其最後一個請求之後的這麼多秒結束，兩個限制以先到者為準——而對管理主控台或使用者入口網站的請求，都算是使用了其背後的登入工作階段，因此在主控台中工作的營運者不會因為一個他並未出示之工作階段的閒置計時而被登出。它是即時的：它也適用於已存在的工作階段，因為它是在讀取工作階段時檢查，而非在建立時蓋章。"
+    "en": "8c722efc24fd3b60",
+    "text": "工作階段在結束之前可以「未被使用」多久，這是在上述絕對有效期之外的限制。**零（預設）表示沒有閒置逾時**，這是本服務一直以來的行為。設定後，某人停止使用的工作階段會在其最後一個請求之後的這麼多秒結束，兩個限制以先到者為準——而對管理主控台或使用者入口網站的請求，都算是使用了其背後的登入工作階段，因此在主控台中工作的營運者不會因為一個他並未出示之工作階段的閒置計時而被登出。它是即時的：它也適用於已存在的工作階段，因為它是在讀取工作階段時檢查，而非在建立時蓋章。 在產品模式下，如未設定，預設值為 1800。"
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -7068,8 +7068,8 @@
     "text": "一般 LDAP 接聽程式"
   },
   "ldap.plainListener|description": {
-    "en": "a288e85fa6b7689f",
-    "text": "是否啟動 ldap.port 上的未加密接聽程式。預設開啟，這是此服務一向的行為。關閉時，ldap.tlsPort 上的 LDAPS 成為唯一入口——這正是繫結會被「驗證」的部署（產品模式）所需要的，因為 389 上的簡單繫結會以明文傳送密碼。產品模式下若開啟此項，啟動時會記錄一則正是說明此事的警告。"
+    "en": "e0685a195274dbbb",
+    "text": "是否啟動 ldap.port 上的未加密接聽程式。預設開啟，這是此服務一向的行為。關閉時，ldap.tlsPort 上的 LDAPS 成為唯一入口——這正是繫結會被「驗證」的部署（產品模式）所需要的，因為 389 上的簡單繫結會以明文傳送密碼。產品模式下若開啟此項，啟動時會記錄一則正是說明此事的警告。 在產品模式下，如未設定，則為關閉。"
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",
@@ -12250,5 +12250,69 @@
   "crypto.allowCbcJwe|description": {
     "en": "20f6a7dc269fe48a",
     "text": "僅限產品模式。預設關閉時，JWE 僅使用與接受 AES-GCM：既不提供也不接受 A128CBC-HS256、A192CBC-HS384 與 A256CBC-HS512，指定了演算法但未指定 enc 的用戶端將以 A256GCM 回應。開啟時，它們的行為與開發模式相同。警告：開啟期間不符合 ASVS 5.0.0 要求 11.3.2，僅為無法讀取 AES-GCM 的合作夥伴開啟。"
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "允許不使用第二因素登入"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "僅限產品模式。預設關閉時，無論驗證原則如何，所有人（包括管理員）都需要第二因素，未持有的人員於登入時註冊。豁免的服務帳戶仍然豁免。開啟時由驗證原則決定。警告：開啟後，除非原則要求，否則不符合 ASVS 5.0.0 要求 6.3.3。"
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "記錄產生的引導密碼"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "僅限產品模式。預設關閉時，為首位管理員產生的密碼寫入 persistence.dataDir 中僅此服務可讀的 bootstrap-admin-password 檔案，日誌說明位置。開啟時寫入服務日誌。警告：開啟後不符合 ASVS 5.0.0 要求 16.2.5，因為憑證進入了日誌。"
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "允許機密用戶端省略 PKCE"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "僅限產品模式。預設關閉時，任何用戶端不帶 code_challenge 的授權要求都會被拒絕。開啟時，機密用戶端可以省略，要求僅被記錄。警告：開啟後不符合 ASVS 5.0.0 要求 10.4.6。"
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "掃描檔案中的惡意軟體"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "預設關閉時不掃描任何內容。開啟後，每張個人相片、標誌、從同盟合作夥伴複製的相片以及上傳的風險資料集都會先傳送至 malwareScan.url 中的 ICAP 服務，若服務標記或無法回應，則拒絕。"
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "ICAP 服務位址"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "用於掃描的服務，格式為 icap://主機:連接埠/服務 或 icaps://主機:連接埠/服務（RFC 3507）。可使用任何提供 ICAP 服務的防毒產品。"
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "掃描逾時（毫秒）"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "等待服務的時間。大型檔案每 MiB 額外增加一秒。"
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "icaps 服務的 CA 檔案"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "icaps 服務可鏈結至的 CA 憑證 PEM 檔案，作為公開根憑證之外的補充。受 security.fileRoots 限制。"
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "在產品模式下允許明文 ICAP"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "預設關閉時，產品模式拒絕 icap:// 位址，在設定 icaps:// 位址之前不接受任何檔案。開啟後，檔案可能以未加密方式到達掃描器。僅在可信任的網路中使用。"
   }
 }

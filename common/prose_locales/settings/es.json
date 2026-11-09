@@ -700,8 +700,8 @@
     "text": "Tiempo de inactividad de la sesión (segundos, 0 = ninguno)"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "3d8175702c053473",
-    "text": "Cuánto tiempo puede pasar una sesión SIN USARSE antes de terminar, además de la vigencia absoluta de arriba. **Cero, el valor predeterminado, significa sin tiempo de inactividad**, que es lo que este servicio ha hecho siempre. Si se define, una sesión que alguien deja de usar termina esa cantidad de segundos después de su última solicitud, sea cual sea el primero de los dos límites en llegar — y una solicitud a la consola de administración o al portal de usuario cuenta como uso de la sesión de inicio de sesión único que hay detrás, de modo que a un operador que trabaja en la consola no le cierra la sesión un reloj de inactividad sobre una sesión que no está presentando. Es en vivo: se aplica a las sesiones que ya existen, porque se comprueba donde se lee una sesión y no se sella donde se crea."
+    "en": "8c722efc24fd3b60",
+    "text": "Cuánto tiempo puede pasar una sesión SIN USARSE antes de terminar, además de la vigencia absoluta de arriba. **Cero, el valor predeterminado, significa sin tiempo de inactividad**, que es lo que este servicio ha hecho siempre. Si se define, una sesión que alguien deja de usar termina esa cantidad de segundos después de su última solicitud, sea cual sea el primero de los dos límites en llegar — y una solicitud a la consola de administración o al portal de usuario cuenta como uso de la sesión de inicio de sesión único que hay detrás, de modo que a un operador que trabaja en la consola no le cierra la sesión un reloj de inactividad sobre una sesión que no está presentando. Es en vivo: se aplica a las sesiones que ya existen, porque se comprueba donde se lee una sesión y no se sella donde se crea. En modo producto, si no se define, el valor predeterminado es 1800."
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -7068,8 +7068,8 @@
     "text": "Escucha LDAP sin cifrar"
   },
   "ldap.plainListener|description": {
-    "en": "a288e85fa6b7689f",
-    "text": "Si se inicia siquiera la escucha sin cifrar en ldap.port. Activado por defecto, que es lo que este servicio siempre hizo. Desactivado deja LDAPS en ldap.tlsPort como única vía de entrada — que es lo que quiere un despliegue cuyos binds se VERIFICAN (modo producto), ya que un bind simple en 389 envía la contraseña en claro. El modo producto con esto activado registra al arrancar una advertencia que dice exactamente eso."
+    "en": "e0685a195274dbbb",
+    "text": "Si se inicia siquiera la escucha sin cifrar en ldap.port. Activado por defecto, que es lo que este servicio siempre hizo. Desactivado deja LDAPS en ldap.tlsPort como única vía de entrada — que es lo que quiere un despliegue cuyos binds se VERIFICAN (modo producto), ya que un bind simple en 389 envía la contraseña en claro. El modo producto con esto activado registra al arrancar una advertencia que dice exactamente eso. En modo producto, si no se define, está desactivado."
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",
@@ -12250,5 +12250,69 @@
   "crypto.allowCbcJwe|description": {
     "en": "20f6a7dc269fe48a",
     "text": "Solo en modo producto. Desactivado, el valor predeterminado, JWE usa y acepta solo AES-GCM: A128CBC-HS256, A192CBC-HS384 y A256CBC-HS512 no se ofrecen ni se aceptan, y un cliente que nombra un algoritmo sin enc recibe la respuesta en A256GCM. Activado, funcionan como en desarrollo. ADVERTENCIA: mientras esté activado no se cumple el requisito 11.3.2 de ASVS 5.0.0; actívelo solo para un socio que no pueda leer AES-GCM."
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "Permitir iniciar sesión sin segundo factor"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, se exige un segundo factor a todos, incluidos los administradores, diga lo que diga la política de autenticación, y quien no tenga uno lo registra al iniciar sesión. Las cuentas de servicio exentas siguen exentas. Activado, decide la política de autenticación. ADVERTENCIA: activado, el requisito 6.3.3 de ASVS 5.0.0 solo se cumple si la política lo exige."
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "Registrar la contraseña de arranque generada"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, la contraseña generada para el primer administrador se escribe en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio, y el registro indica dónde. Activado, se escribe en el registro del servicio. ADVERTENCIA: activado, no se cumple el requisito 16.2.5 de ASVS 5.0.0, porque una credencial llega al registro."
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "Permitir que un cliente confidencial omita PKCE"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, se rechaza una solicitud de autorización sin code_challenge para todo cliente. Activado, un cliente confidencial puede omitirlo y la solicitud solo se registra. ADVERTENCIA: activado, no se cumple el requisito 10.4.6 de ASVS 5.0.0."
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "Analizar archivos en busca de malware"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "Desactivado, el valor predeterminado, no se analiza nada. Activado, cada foto de perfil, logotipo, foto copiada de un socio de federación y conjunto de datos de riesgo subido se envía primero al servicio ICAP de malwareScan.url, y se rechaza si el servicio lo marca o no puede responder."
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "Dirección del servicio ICAP"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "El servicio de análisis, como icap://host:puerto/servicio o icaps://host:puerto/servicio (RFC 3507). Se puede usar cualquier antivirus con servicio ICAP."
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "Tiempo de espera del análisis (milisegundos)"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "Cuánto esperar al servicio. Un archivo grande dispone de un segundo más por mebibyte."
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "Archivo CA para un servicio icaps"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "Un archivo PEM de certificados CA a los que puede encadenar un servicio icaps, además de las raíces públicas. Sujeto a security.fileRoots."
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "Permitir ICAP sin cifrar en modo producto"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "Desactivado, el valor predeterminado, el modo producto rechaza una dirección icap:// y no se aceptan archivos hasta que se defina una dirección icaps://. Activado, los archivos pueden llegar al analizador sin cifrar. Úselo solo en una red de confianza."
   }
 }

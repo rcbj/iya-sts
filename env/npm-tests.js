@@ -8,6 +8,9 @@
 const local = require('./local');
 
 module.exports = Object.assign({}, local, {
+  authn: Object.assign({}, local.authn, { allowOptionalSecondFactor: true }),
+  admin: Object.assign({}, local.admin, { logBootstrapPassword: true }),
+  oauth2: Object.assign({}, local.oauth2, { allowConfidentialWithoutPkce: true }),
   security: Object.assign({}, local.security, {
     rateLimitPerIdentity: 100,
     rateLimitPerAddress: 500

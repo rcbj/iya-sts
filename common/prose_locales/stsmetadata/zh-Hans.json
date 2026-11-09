@@ -3950,5 +3950,13 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一个参数"
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
+    "en": "14ed85bab8488344",
+    "text": "NON-SPEC (#1501). 以 JSON 形式提供 GET /admin/malware-scanning：是否扫描上传的文件以及执行扫描的 ICAP 服务。不做任何更改。"
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
+    "en": "1bf7c4937a9313c4",
+    "text": "NON-SPEC (#1501). 向配置的 ICAP 服务发送 EICAR 测试文件，仅当服务标记该文件时才成功。"
   }
 }

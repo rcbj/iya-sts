@@ -369,10 +369,20 @@ class BrandingApi {
         },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API branding logo upload.");
+          const bytes = BrandingApi.uploadedBytes(req);
+          const scanner = require('../common/malware_scan');
+          const store = function (refused: any): void {
           try {
+            if (refused) {
+              codes.mark(res, refused.code);
+              self.sendJson(res, refused.status,
+                            { ok: false, errors: [refused.error] });
+              log.debug("Leaving the logo upload. The scanner refused it.");
+              return;
+            }
             const q = req.query || {};
             const result = loadBranding().setLogo(
-              BrandingApi.uploadedBytes(req),
+              bytes,
               { alt: typeof q.alt === 'string' ? q.alt : undefined,
                 actor: BrandingApi.callerOf(res) });
             if (!result.ok) {
@@ -389,6 +399,13 @@ class BrandingApi {
             log.debug("Caught in the management API branding logo " +
                       "upload: " + ((e && (e as Error).message) || e));
             failed(res, e, 'a logo upload');
+          }
+          };
+          // At once with no scanner, as this door has always answered.
+          if (scanner.enabled()) {
+            void scanner.refusal(bytes).then(store);
+          } else {
+            store(null);
           }
           log.debug("Leaving the management API branding logo upload.");
         } },

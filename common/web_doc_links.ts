@@ -125,6 +125,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/ldap/roles': 'ldap.html',
   '/admin/ldap/spiffe': 'spiffe.html',
   '/admin/listeners': 'listeners.html',
+  '/admin/malware-scanning': 'malware-scanning.html',
   '/admin/logout': 'signing-out.html',
   '/admin/mail': 'mail.html',
   '/admin/broadcast': 'shared-signals.html#broadcast-announcements',

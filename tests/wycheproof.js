@@ -1517,7 +1517,7 @@ function inAProductChild(t) {
   });
   const run = require('child_process').spawnSync(process.execPath,
     [__filename], {
-      env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_MODE: 'product',
+      env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true',
                                   STS_CRYPTO_ALLOW_CBC_JWE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true',
                                   STS_WYCHEPROOF_DIR: VECTORS,
                                   STS_WYCHEPROOF_ONLY: PRODUCT_FILES }, {

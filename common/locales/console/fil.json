@@ -187,6 +187,7 @@
   "nav.persistence": "Persistence",
   "nav.cluster": "Cluster",
   "nav.listeners": "Mga listener",
+  "nav.malwareScanning": "Pag-scan ng malware",
   "nav.cells": "Mga cell",
   "nav.mail": "Mail",
   "nav.rbac": "Mga admin role",

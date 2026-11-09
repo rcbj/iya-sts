@@ -596,7 +596,7 @@ function inAProductChild(t) {
     'crashed: e.stack || e.message })); process.exit(0); });';
   const run = childProcess.spawnSync(process.execPath, ['-e', script], {
     env: Object.assign(clean, {
-      LOG_LEVEL: 'fatal', KP_OUT: outFile, STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
+      LOG_LEVEL: 'fatal', KP_OUT: outFile, STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
       KRB5_KRBTGT_PASSWORD: 'pkinit-' +
                             nodeCrypto.randomBytes(12).toString('hex'),
       STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',

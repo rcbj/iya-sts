@@ -1276,6 +1276,12 @@ What such a person uses there is an **app password**:
   each make and revoke. Its last use is recorded. A disabled account refuses
   it; a password reset leaves it working.
 
+**An app password works without a second factor, and that is intentional.**
+These doors are for programs and protocols that have no way to ask for one, so
+an app password is what stands in for it, including now that product mode
+requires a second factor of everybody. It is a generated secret, scoped to named
+doors, revocable one at a time, and never accepted at a browser sign-in.
+
 `authn.passwordAloneDoors` lists doors that accept the password alone anyway.
 **Each door listed is one factor for every such person** — use it only for a
 client that cannot be given an app password. `appPasswords.enabled` and

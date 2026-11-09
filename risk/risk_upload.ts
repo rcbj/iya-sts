@@ -563,6 +563,32 @@ class RiskUpload {
   }
 
   // -------------------------------------------------------------------------
+  // THE MALWARE SCAN, BEFORE ANYTHING READS THE FILE (ASVS 5.0.0 5.4.3, #1501).
+  // A refused file is removed here, for both doors.
+  // -------------------------------------------------------------------------
+  private async scannedImport(target: string, stored: Json, fields: Json,
+                              door: UploadDoor): Promise<UploadAnswer> {
+    const { log } = this.deps;
+    log.debug("Entering RiskUpload.scannedImport().");
+    const refused = await require('../common/malware_scan').fileRefusal(
+      target, Number(stored.bytes) || 0);
+    if (!refused) {
+      log.debug("Leaving RiskUpload.scannedImport(). On to the import.");
+      return this.importStored(target, stored, fields, door);
+    }
+    this.held.delete(target);
+    await fs.promises.rm(target, { force: true }).catch(function (e: Json) {
+      log.debug("Caught removing a refused upload: " +
+                ((e && e.message) || e));
+      // The clean-up job removes what is left.
+    });
+    log.debug("Leaving RiskUpload.scannedImport(). Refused.");
+    // error-code: none — the scanner's own, STS-CORE-0168 or STS-CORE-0169
+    return RiskUpload.refusal(refused.status, refused.code,
+                              refused.error + ' Nothing was stored.', true);
+  }
+
+  // -------------------------------------------------------------------------
   // THE STORED FILE, IMPORTED (rule 4): `importVersion()` on its path, with
   // the digest already computed. Resolves when the version is recorded
   // `loading` — the upload's answer — or, if it ends first, with how it
@@ -733,7 +759,7 @@ class RiskUpload {
       return RiskUpload.refusal(400, 'STS-RISK-0031', 'The upload is empty. ' +
                                 'Nothing was stored.');
     }
-    const answer = await this.importStored(target, stored, q, door);
+    const answer = await this.scannedImport(target, stored, q, door);
     log.debug("Leaving RiskUpload.receiveRaw(). " + answer.status);
     return answer;
   }
@@ -846,7 +872,7 @@ class RiskUpload {
                                         'empty. Nothing was stored.');
             });
           }
-          return self.importStored(target, s, fields, door);
+          return self.scannedImport(target, s, fields, door);
         }).then(function (a: UploadAnswer | null): void {
           if (a) {
             finish(a);

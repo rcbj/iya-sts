@@ -1262,5 +1262,65 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "el ajuste es solo para el modo de desarrollo."
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "Se exige un segundo factor a todos"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "La política de autenticación decide y, de forma predeterminada, solo se pide a quienes tienen un segundo factor."
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "Todos necesitan un segundo factor, diga lo que diga la política, salvo que authn.allowOptionalSecondFactor esté activado."
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "Las sesiones y las claves RSA tienen valores predeterminados más estrictos"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "Una sesión no tiene tiempo de inactividad, y las claves RSA nuevas son de 2048 bits."
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "Una sesión termina tras 30 minutos de inactividad y las claves RSA nuevas son de 3072 bits, salvo que un ajuste indique otra cosa."
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "La contraseña de arranque queda fuera del registro"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "La contraseña generada se escribe en el registro del servicio."
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "Se escribe en un archivo que solo este servicio puede leer, y el registro indica dónde, salvo que admin.logBootstrapPassword esté activado."
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "Todo cliente debe usar PKCE"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "Un cliente confidencial que no envía code_challenge solo se registra."
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "Se rechaza salvo que oauth2.allowConfidentialWithoutPkce esté activado."
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "Los archivos llegan cifrados al analizador"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "Se puede usar una dirección icap:// o icaps://."
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "Solo se usa una dirección icaps://, salvo que malwareScan.allowCleartext esté activado."
   }
 }

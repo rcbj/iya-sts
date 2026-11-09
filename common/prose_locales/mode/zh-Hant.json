@@ -1262,5 +1262,65 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "此設定僅適用於開發模式。"
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "要求所有人使用第二因素"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "由驗證原則決定，預設僅要求持有第二因素的人員提供。"
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "無論原則如何，所有人都需要第二因素，除非開啟 authn.allowOptionalSecondFactor。"
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "工作階段與 RSA 金鑰採用更嚴格的預設值"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "工作階段沒有閒置逾時，新 RSA 金鑰為 2048 位元。"
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "工作階段閒置 30 分鐘後結束，新 RSA 金鑰為 3072 位元，除非設定另有規定。"
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "引導密碼不寫入日誌"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "產生的密碼寫入服務日誌。"
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "寫入僅此服務可讀的檔案，日誌說明位置，除非開啟 admin.logBootstrapPassword。"
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "每個用戶端都必須使用 PKCE"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "未傳送 code_challenge 的機密用戶端僅被記錄。"
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "除非開啟 oauth2.allowConfidentialWithoutPkce，否則拒絕。"
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "檔案以加密方式到達惡意軟體掃描器"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "可使用 icap:// 或 icaps:// 位址。"
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "僅使用 icaps:// 位址，除非開啟 malwareScan.allowCleartext。"
   }
 }

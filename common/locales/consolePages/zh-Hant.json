@@ -69,6 +69,7 @@
   "title.ldap-roles": "角色項目",
   "title.ldap-spiffe": "SPIFFE 項目",
   "title.listeners": "接聽程式",
+  "title.malwareScanning": "惡意軟體掃描",
   "title.logout": "登出",
   "title.mail": "郵件",
   "title.mail-outbox": "郵件寄件匣",

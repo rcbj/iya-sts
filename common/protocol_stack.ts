@@ -1438,6 +1438,11 @@ class ProtocolStack {
                require('../admin-ui/listeners_admin'), 'ListenersAdmin');
     this.register(app, require('../admin-ui/listeners_admin'),
                   'admin-ui/listeners_admin');
+    // 18k-iv. MALWARE SCANNING (#1501): 18a's placement and reason.
+    this.build('admin-ui/malware_scan_admin',
+               require('../admin-ui/malware_scan_admin'), 'MalwareScanAdmin');
+    this.register(app, require('../admin-ui/malware_scan_admin'),
+                  'admin-ui/malware_scan_admin');
     // 18k-ii. CELLS (#98, 2026-09-28). `/admin/cells` — the cell map, the
     // store's tiers, the channel, the Cells settings and another cell's
     // residents. 18a's placement and 18a's reason: the console's shell and

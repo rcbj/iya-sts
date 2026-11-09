@@ -69,6 +69,7 @@
   "title.ldap-roles": "Rollposter",
   "title.ldap-spiffe": "SPIFFE-poster",
   "title.listeners": "Lyssnare",
+  "title.malwareScanning": "Skanning efter skadlig kod",
   "title.logout": "Utloggning",
   "title.mail": "E-post",
   "title.mail-outbox": "Utkorg för e-post",

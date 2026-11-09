@@ -2794,6 +2794,40 @@ class Credentials {
   // account with a password that changes nothing and a log line that alarms
   // people.
   /**
+   * Writes a generated bootstrap password to a file only this user can read.
+   *
+   * @param username - the account
+   * @param password - the generated password
+   * @returns the file's path, or '' where the password is to be logged
+   */
+  writeBootstrapPassword(username: string, password: string): string {
+    const { log, config } = this.deps;
+    log.debug("Entering Credentials.writeBootstrapPassword().");
+    if (config.value('admin.logBootstrapPassword') === true) {
+      log.debug("Leaving Credentials.writeBootstrapPassword(). Logged.");
+      return '';
+    }
+    const nodeFs = require('fs');
+    const nodePath = require('path');
+    const dir = nodePath.resolve(String(config.value('persistence.dataDir')));
+    const file = nodePath.join(dir, 'bootstrap-admin-password');
+    try {
+      nodeFs.mkdirSync(dir, { recursive: true });
+      nodeFs.writeFileSync(file, username + ':' + password + '\n',
+                           { mode: 0o600 });
+      nodeFs.chmodSync(file, 0o600);
+    } catch (e) {
+      log.debug("Caught in Credentials.writeBootstrapPassword(): " +
+                ((e && e.message) || e));
+      // A service nobody can sign in to is worse than this line in its log.
+      log.debug("Leaving Credentials.writeBootstrapPassword(). Not written.");
+      return '';
+    }
+    log.debug("Leaving Credentials.writeBootstrapPassword().");
+    return file;
+  }
+
+  /**
    * Creates the bootstrap administrator a fresh product-mode service is
    * reached through, with a generated password announced in the log.
    *
@@ -2919,11 +2953,16 @@ class Credentials {
       log.debug('Leaving Credentials.bootstrap(). A configured password.');
       return { ran: true, username: username, supplied: true };
     }
+    // NOT IN THE LOG (#1493, ASVS 5.0.0 16.2.5): the password goes to a file only
+    // this service's user can read, unless an operator asked for the old way.
+    const held = this.writeBootstrapPassword(username, password);
     log.warn('=======================================================\n' +
              'PRODUCT MODE BOOTSTRAP — THIS IS SHOWN ONCE AND NEVER AGAIN.\n' +
              '\n' +
              '  username: ' + username + '\n' +
-             '  password: ' + password + '\n\nNobody in this realm\'s ' +
+             (held ? '  password: in the file ' + held + '\n'
+                   : '  password: ' + password + '\n') +
+             '\nNobody in this realm\'s ' +
              'directory held a credential, so this one was generated so that ' +
              'the service is reachable. It is stored as a hash and ' +
              'CANNOT be recovered — only reset.\n\nCHANGE IT. Sign in at ' +
@@ -12691,6 +12730,7 @@ export = {
   serviceAccountRefusesDoor: slot.forward('serviceAccountRefusesDoor'),
   rotatesThroughDestination: slot.forward('rotatesThroughDestination'),
   bootstrap: slot.forward('bootstrap'),
+  writeBootstrapPassword: slot.forward('writeBootstrapPassword'),
   PASSWORD_ATTRIBUTE: Credentials.PASSWORD_ATTRIBUTE,
   RESERVED_REFUSAL: Credentials.RESERVED_REFUSAL,
   setDirectory: slot.forward('setDirectory'),

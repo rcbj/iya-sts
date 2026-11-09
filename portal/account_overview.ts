@@ -548,12 +548,18 @@ class AccountOverview {
    * @param body - the checked body
    * @returns nothing
    */
-  setPhoto(ctx: AccountContext, req: Json, res: Json, caller: AccountCaller,
-           body: Json): unknown {
+  async setPhoto(ctx: AccountContext, req: Json, res: Json,
+                 caller: AccountCaller, body: Json): Promise<unknown> {
     const { log } = this.deps;
     log.debug("Entering AccountOverview.setPhoto().");
-    const done = ProfilePhoto.setOwn(req, caller.username,
-      Buffer.from(String(body.image || ''), 'base64'));
+    const bytes = Buffer.from(String(body.image || ''), 'base64');
+    const refused = await require('../common/malware_scan').refusal(bytes);
+    if (refused) {
+      log.debug("Leaving AccountOverview.setPhoto(). " + refused.code);
+      // error-code: none — the scanner's own, STS-CORE-0168 or STS-CORE-0169
+      return ctx.refuse(res, refused.status, refused.code, refused.error);
+    }
+    const done = ProfilePhoto.setOwn(req, caller.username, bytes);
     if (!done.ok) {
       log.debug("Leaving AccountOverview.setPhoto(). " + done.code);
       return ctx.refuse(res, done.status, done.code || 'STS-PORTAL-0633',

@@ -69,6 +69,7 @@
   "title.ldap-roles": "角色条目",
   "title.ldap-spiffe": "SPIFFE 条目",
   "title.listeners": "监听器",
+  "title.malwareScanning": "恶意软件扫描",
   "title.logout": "注销",
   "title.mail": "邮件",
   "title.mail-outbox": "邮件发件箱",

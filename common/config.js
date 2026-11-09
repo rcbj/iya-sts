@@ -870,6 +870,15 @@ function withEventTypeUris(prefix, names) {
  * come from, what it means and whether changing it at runtime does
  * anything.
  */
+// A stricter default in product (#1491, ASVS 5.0.0 7.3.1, 11.2.3): resolved when
+// it is read, in the mode of the ambient realm, and only where nobody set a
+// value. No Entering/Leaving pair, for the reason this reading path has none.
+function strongerInProduct(product, development) {
+  return function () {
+    return value('global.mode') === 'product' ? product : development;
+  };
+}
+
 const SETTINGS = [
   // --- Global --------------------------------------------------------------
   { key: 'global.host', group: 'Global', label: 'HTTP bind address',
@@ -1350,6 +1359,81 @@ const SETTINGS = [
                  'requirements 8.2.1 and 8.2.2 are not met, because any ' +
                  'person could change any account. Use OAuth scopes for ' +
                  'provisioning clients instead.' },
+
+  { key: 'admin.logBootstrapPassword', group: 'Web security',
+    label: 'Log the generated bootstrap password',
+    env: 'STS_ADMIN_LOG_BOOTSTRAP_PASSWORD', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, the password generated ' +
+                 'for the first administrator is written to the file ' +
+                 'bootstrap-admin-password in persistence.dataDir, readable ' +
+                 'only by this service, and the log says where. On, it is ' +
+                 'written to the service log instead. WARNING: on, ASVS 5.0.0 ' +
+                 'requirement 16.2.5 is not met, because a credential reaches ' +
+                 'the log.' },
+
+  { key: 'oauth2.allowConfidentialWithoutPkce', group: 'Web security',
+    label: 'Let a confidential client omit PKCE',
+    env: 'STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, an authorization ' +
+                 'request with no code_challenge is refused for every client. ' +
+                 'On, a confidential client may omit it and the request is ' +
+                 'only logged. WARNING: on, ASVS 5.0.0 requirement 10.4.6 is ' +
+                 'not met.' },
+
+  { key: 'malwareScan.enabled', group: 'Malware scanning',
+    label: 'Scan files for malware',
+    env: 'STS_MALWARE_SCAN_ENABLED', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, nothing is scanned. On, every profile ' +
+                 'photo, logo, photo copied from a federation partner and ' +
+                 'uploaded risk dataset is sent to the ICAP service in ' +
+                 'malwareScan.url first, and refused if the service flags it ' +
+                 'or cannot answer.' },
+
+  { key: 'malwareScan.url', group: 'Malware scanning',
+    label: 'ICAP service address',
+    env: 'STS_MALWARE_SCAN_URL', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The service to scan with, as icap://host:port/service or ' +
+                 'icaps://host:port/service (RFC 3507). Any antivirus product ' +
+                 'with an ICAP service can be used.' },
+
+  { key: 'malwareScan.timeoutMs', group: 'Malware scanning',
+    label: 'Scan timeout (milliseconds)',
+    env: 'STS_MALWARE_SCAN_TIMEOUT_MS', type: 'int', dflt: 30000, min: 100, max: 600000,
+    runtime: true,
+    description: 'How long to wait for the service. A large file is allowed a ' +
+                 'second more per mebibyte.' },
+
+  { key: 'malwareScan.caFile', group: 'Malware scanning',
+    label: 'CA file for an icaps service',
+    env: 'STS_MALWARE_SCAN_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM file of CA certificates an icaps service may chain ' +
+                 'to, beside the public roots. Held to security.fileRoots.' },
+
+  { key: 'malwareScan.allowCleartext', group: 'Malware scanning',
+    label: 'Allow plain ICAP in product mode',
+    env: 'STS_MALWARE_SCAN_ALLOW_CLEARTEXT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode refuses an icap:// address ' +
+                 'and files are not accepted until an icaps:// address is ' +
+                 'set. On, files may reach the scanner unencrypted. Use it ' +
+                 'only on a network you trust.' },
+
+  { key: 'authn.allowOptionalSecondFactor', group: 'Web security',
+    label: 'Let a person sign in without a second factor',
+    env: 'STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, a second factor is ' +
+                 'required of everybody, administrators included, whatever ' +
+                 'the authentication policy says, and a person who holds none ' +
+                 'enrols one at sign-in. Exempt service accounts stay exempt. ' +
+                 'On, the authentication policy decides. WARNING: on, ASVS ' +
+                 '5.0.0 requirement 6.3.3 is not met unless the policy ' +
+                 'requires one.' },
 
   { key: 'crypto.allowCbcJwe', group: 'Web security',
     label: 'Allow JWE CBC-HMAC content encryption',
@@ -2125,19 +2209,21 @@ const SETTINGS = [
   { key: 'authn.sessionIdleTimeoutS', group: 'Web security',
     label: 'Session idle timeout (seconds, 0 = none)',
     env: 'STS_AUTHN_SESSION_IDLE_TIMEOUT_S',
-    type: 'int', dflt: 0, runtime: true, min: 0, max: 2592000,
+    type: 'int', dflt: strongerInProduct(1800, 0), derived: true, runtime: true,
+    min: 0, max: 2592000,
     description: 'How long a session may go UNUSED before it ends, on top of ' +
                  'the absolute lifetime above. **Zero, the default, means no ' +
-                 'idle timeout**, which is what this service has always ' +
-                 'done. Set, a session somebody stops using ends that many ' +
-                 'seconds after its last request, whichever of the two ' +
-                 'limits comes first — and a request to the admin console or ' +
-                 'the user portal counts as use of the sign-on session ' +
-                 'behind it, so an operator working in the console is not ' +
-                 'signed out of it by an idle clock on a session they are ' +
-                 'not presenting. It is live: it applies to sessions that ' +
-                 'already exist, because it is checked where a session is ' +
-                 'read rather than stamped where one is made.' },
+                 'idle timeout**, which is what this service has always done. ' +
+                 'Set, a session somebody stops using ends that many seconds ' +
+                 'after its last request, whichever of the two limits comes ' +
+                 'first — and a request to the admin console or the user ' +
+                 'portal counts as use of the sign-on session behind it, so ' +
+                 'an operator working in the console is not signed out of it ' +
+                 'by an idle clock on a session they are not presenting. It ' +
+                 'is live: it applies to sessions that already exist, because ' +
+                 'it is checked where a session is read rather than stamped ' +
+                 'where one is made. In product mode, where this is left ' +
+                 'unset, the default is 1800.' },
 
   // DEVICE BOUND SESSION CREDENTIALS (#725): the sign-on session bound to a
   // key the browser holds. Off by default, as every new enforcement here is;
@@ -7398,7 +7484,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'pki.keyAlgorithm', group: 'PKI',
     label: 'Default CA key algorithm',
-    env: 'STS_PKI_KEY_ALGORITHM', type: 'enum', dflt: 'rsa-2048',
+    env: 'STS_PKI_KEY_ALGORITHM', type: 'enum', dflt: strongerInProduct('rsa-3072', 'rsa-2048'), derived: true,
     enumValues: PKI_KEY_ALGORITHMS,
     runtime: true,
     description: 'Which key algorithm a new certificate authority is built ' +
@@ -8643,7 +8729,7 @@ const SETTINGS = [
   { key: 'scep.raKeyAlgorithm', group: 'SCEP',
     label: 'RA certificate key algorithm',
     env: 'STS_SCEP_RA_KEY_ALGORITHM', type: 'enum',
-    enumValues: ['rsa-2048', 'rsa-3072', 'rsa-4096'], dflt: 'rsa-2048',
+    enumValues: ['rsa-2048', 'rsa-3072', 'rsa-4096'], dflt: strongerInProduct('rsa-3072', 'rsa-2048'), derived: true,
     runtime: true,
     description: 'SCEP encrypts the request to the RA with RSA key transport ' +
                  '(RFC 8894 section 3.1), so the RA certificate is RSA ' +
@@ -8908,7 +8994,7 @@ const SETTINGS = [
   { key: 'oauth2.refreshTokenEncryptionKeyBits', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token encryption: RSA key size (bits)',
     env: 'STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_KEY_BITS', type: 'int',
-    dflt: 2048,
+    dflt: strongerInProduct(3072, 2048), derived: true,
     min: 2048, max: 4096, step: 1024, runtime: true,
     description: 'The modulus of the RSA key each realm encrypts refresh ' +
                  'tokens to under RSA-OAEP. Each realm has its own, made ' +
@@ -9089,7 +9175,7 @@ const SETTINGS = [
   { key: 'oauth2.requestObjectEncryptionKeyBits', group: 'OAuth 2.0 / OIDC',
     label: 'Request object encryption: RSA key size (bits)',
     env: 'STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_KEY_BITS', type: 'int',
-    dflt: 2048,
+    dflt: strongerInProduct(3072, 2048), derived: true,
     min: 2048, max: 4096, step: 1024, runtime: true,
     description: 'The modulus of the RSA key each realm publishes in ' +
                  '/oauth2/jwks (use: enc) for a client to encrypt a request ' +
@@ -11734,7 +11820,7 @@ const SETTINGS = [
   // carried.
   { key: 'tls.selfSignedKeyBits', group: 'TLS',
     label: 'Self-signed certificate RSA key size',
-    env: 'STS_TLS_SELF_SIGNED_KEY_BITS', type: 'int', dflt: 2048,
+    env: 'STS_TLS_SELF_SIGNED_KEY_BITS', type: 'int', dflt: strongerInProduct(3072, 2048), derived: true,
     min: 2048, max: 8192, step: 1024, runtime: false,
     restartReason: 'the certificate is generated when the process starts',
     description: 'The RSA modulus size of the self-signed listener ' +
@@ -11884,7 +11970,7 @@ const SETTINGS = [
 
   { key: 'oid4vci.requestEncryptionKeyBits', group: 'OID4VCI',
     label: 'Request encryption key size (bits)',
-    env: 'OID4VCI_REQUEST_ENCRYPTION_KEY_BITS', type: 'int', dflt: 2048,
+    env: 'OID4VCI_REQUEST_ENCRYPTION_KEY_BITS', type: 'int', dflt: strongerInProduct(3072, 2048), derived: true,
     min: 2048, max: 4096, step: 1024, runtime: true,
     description: 'The RSA modulus of the key credential_request_encryption ' +
                  'publishes. Each trust realm has its own key, made with the ' +
@@ -13901,15 +13987,17 @@ const SETTINGS = [
                  'before it are the answer, marked incomplete.' },
 
   { key: 'ldap.plainListener', group: 'LDAP', label: 'Plain LDAP listener',
-    env: 'LDAP_PLAIN_LISTENER', type: 'bool', dflt: true, runtime: false,
+    env: 'LDAP_PLAIN_LISTENER', type: 'bool', dflt: strongerInProduct(false, true), derived: true,
+    runtime: false,
     restartReason: 'the socket is bound when the process starts',
-    description: 'Whether the unencrypted listener on ldap.port is started ' +
-                 'at all. On by default, which is what this service always ' +
-                 'did. Off leaves LDAPS on ldap.tlsPort as the only way in — ' +
-                 'which is what a deployment whose binds are VERIFIED ' +
-                 '(product mode) wants, since a simple bind on 389 sends the ' +
-                 'password in the clear. Product mode with it on logs a ' +
-                 'warning at startup saying exactly that.' },
+    description: 'Whether the unencrypted listener on ldap.port is started at ' +
+                 'all. On by default, which is what this service always did. ' +
+                 'Off leaves LDAPS on ldap.tlsPort as the only way in — which ' +
+                 'is what a deployment whose binds are VERIFIED (product ' +
+                 'mode) wants, since a simple bind on 389 sends the password ' +
+                 'in the clear. Product mode with it on logs a warning at ' +
+                 'startup saying exactly that. In product mode, where this is ' +
+                 'left unset, it is off.' },
 
   // WHAT A PERSON MAY CHANGE ON THEIR OWN ENTRY OVER THE SOCKET, in product
   // mode (2026-09-12). An ALLOWLIST because the directory is schemaless and the

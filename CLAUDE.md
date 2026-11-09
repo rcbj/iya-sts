@@ -100,6 +100,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `xacml-pep/` | **Not part of the mock**: the remote XACML PEP container (a Rust binary). `xacml-pep/CLAUDE.md`. |
 | `companion/` | **Not part of the service**: a development-only container for the click-through demonstrations. `companion/CLAUDE.md`. |
 | `openbao/` | **Not part of the mock**: the secret-store container's files. `openbao/CLAUDE.md`. |
+| `icap-clamav/` | **Not part of the service**: a c-icap adapter in front of ClamAV for `common/malware_scan.ts`, off by default. `icap-clamav/CLAUDE.md`. |
 | `deploy/aws/`, `deploy/gcp/`, `deploy/azure/`, `deploy/multicloud/` | **Not part of the mock**: Terraform for the cluster on each cloud (only AWS has been applied). Each directory's `CLAUDE.md`. |
 | `debugger/` | The embedded identity protocol debugger, on a listener of its own. `debugger/embedded/` is build output, never source. `debugger/CLAUDE.md`. |
 | `rust/` | The Rust conversion (#444); `rust/DESIGN.md` is the design. Only the remote PEP runs on it; the Node service runs none of it. |

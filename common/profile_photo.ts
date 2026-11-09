@@ -723,6 +723,11 @@ class ProfilePhoto {
         log.debug("Leaving outcome(). Not fetched.");
         return { copied: false, why: fetched.kind || 'fetch' };
       }
+      const scanned = await require('./malware_scan').refusal(fetched.body);
+      if (scanned) {
+        log.debug("Leaving outcome(). Refused by the scanner.");
+        return { copied: false, why: scanned.code };
+      }
       const checked = ProfilePhoto.checked(fetched.body, SMALLEST_COPY);
       if (!checked.ok) {
         log.info(errorCodes.tag('STS-FED-0221') + 'profile photo: not copied ' +

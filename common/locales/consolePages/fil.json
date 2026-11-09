@@ -69,6 +69,7 @@
   "title.ldap-roles": "Mga entry ng role",
   "title.ldap-spiffe": "Mga entry ng SPIFFE",
   "title.listeners": "Mga listener",
+  "title.malwareScanning": "Pag-scan ng malware",
   "title.logout": "Pag-sign out",
   "title.mail": "Mail",
   "title.mail-outbox": "Mail outbox",

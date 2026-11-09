@@ -67,6 +67,7 @@ import KerberosTrustsPage = require('../kerberos/web_kerberos_trusts');
 import LogoutPage = require('../logout/web_logout');
 import LdapPage = require('../ldap/web_ldap');
 import ListenersPage = require('./web_listeners');
+import MalwareScanPage = require('./web_malware_scan');
 import MailPage = require('./web_mail');
 import MailOutboxPage = require('./web_mail_outbox');
 import MetricsPage = require('./web_metrics');
@@ -750,6 +751,8 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return LdapPage.spiffe(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/malware-scanning', title: 'Malware scanning',
+    operation: '/admin-api/malware-scanning', render: MalwareScanPage.render },
   { path: '/admin/listeners', title: 'Listeners',
     operation: '/admin-api/listeners', render: ListenersPage.render },
   { path: '/admin/logout', title: 'Sign-out',

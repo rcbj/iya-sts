@@ -187,6 +187,7 @@
   "nav.persistence": "Beständighet",
   "nav.cluster": "Kluster",
   "nav.listeners": "Lyssnare",
+  "nav.malwareScanning": "Skanning efter skadlig kod",
   "nav.cells": "Celler",
   "nav.mail": "E-post",
   "nav.rbac": "Administratörsroller",

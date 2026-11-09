@@ -187,6 +187,7 @@
   "nav.persistence": "持久保存",
   "nav.cluster": "叢集",
   "nav.listeners": "接聽程式",
+  "nav.malwareScanning": "惡意軟體掃描",
   "nav.cells": "單元",
   "nav.mail": "郵件",
   "nav.rbac": "管理員角色",

@@ -1262,5 +1262,65 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "inställningen är endast för utvecklingsläge."
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "En andra faktor krävs av alla"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "Autentiseringspolicyn avgör, och som standard frågas bara de som har en andra faktor."
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "Alla behöver en andra faktor, oavsett policy, om inte authn.allowOptionalSecondFactor är på."
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "Sessioner och RSA-nycklar har striktare standardvärden"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "En session har ingen tidsgräns för inaktivitet, och nya RSA-nycklar är 2048 bitar."
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "En session avslutas efter 30 minuters inaktivitet och nya RSA-nycklar är 3072 bitar, om inte en inställning säger annat."
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "Startlösenordet hålls borta från loggen"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "Det genererade lösenordet skrivs till tjänstens logg."
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "Det skrivs till en fil som bara den här tjänsten kan läsa, och loggen säger var, om inte admin.logBootstrapPassword är på."
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "Varje klient måste använda PKCE"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "En konfidentiell klient som inte skickar code_challenge loggas bara."
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "Den avvisas om inte oauth2.allowConfidentialWithoutPkce är på."
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "Filer når skannern krypterade"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "En icap://- eller icaps://-adress kan användas."
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "Endast en icaps://-adress används, om inte malwareScan.allowCleartext är på."
   }
 }

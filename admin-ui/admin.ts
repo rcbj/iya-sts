@@ -2535,6 +2535,10 @@ const SECTIONS = [
                'asks for a client certificate, requires one, or neither. In ' +
                'a realm with a listener of its own, that listener and its ' +
                'settings; otherwise the default listeners it is served on.' },
+      // MALWARE SCANNING (#1501). Drawn by `admin-ui/malware_scan_admin.ts`.
+      { path: '/admin/malware-scanning', label: 'Malware scanning',
+        blurb: 'Whether uploaded files are scanned, and the ICAP service ' +
+               'that scans them.' },
       { path: '/admin/cells', label: 'Cells',
         blurb: 'One service deployed as several cells, each a copy of the ' +
                'whole stack in one legal jurisdiction: which cell this is, ' +
@@ -9026,6 +9030,7 @@ const SETTING_HOMES = [
   // TLS group moved here from /admin/tls, which keeps the truststore and the
   // certificate, and so did the realm listener's rows (#99).
   { group: 'Listeners', pages: ['/admin/listeners'] },
+  { group: 'Malware scanning', pages: ['/admin/malware-scanning'] },
   // ONE GROUP PER TLS LISTENER (#429): its own rows, generated in
   // common/config.js, and its client-certificate pair.
   { group: 'Listener: Main port', pages: ['/admin/listeners'] },

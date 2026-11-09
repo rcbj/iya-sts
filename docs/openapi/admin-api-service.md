@@ -2965,6 +2965,105 @@ Scope: `admin:write`.
 | `row.why` | string, or null |  |  |
 | `verified` | boolean |  |  |
 
+## GET /admin-api/malware-scanning
+
+`getMalwareScanning`
+
+**Whether uploaded files are scanned, and by which ICAP service**
+
+`enabled` and `url` as set; `scanning`, whether files are being scanned now, which needs both; and the settings the page draws.
+
+Scope: `admin:read`.
+
+**200**: The malware scanning view.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `enabled` | boolean | yes |  |
+| `scanning` | boolean | yes |  |
+| `settings` | object |  | The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns. |
+| `settings.context` | object |  |  |
+| `settings.context.configFile` | string, or null |  |  |
+| `settings.context.defaultsFile` | string |  |  |
+| `settings.context.inRealm` | boolean |  |  |
+| `settings.context.persistenceMode` | string |  |  |
+| `settings.context.persistsAppconfig` | boolean |  |  |
+| `settings.context.persistsRealms` | boolean |  |  |
+| `settings.context.realmId` | string |  |  |
+| `settings.editableCount` | integer |  | How many of them can be changed while the service runs. |
+| `settings.groups` | list |  | In the order `config.js` declares them. |
+| `settings.groups[]` | object |  | One group's settings. |
+| `settings.groups[].group` | string |  |  |
+| `settings.groups[].settings` | list |  |  |
+| `settings.groups[].settings[]` | object |  | One setting: what it is, what it is set to, and where that came from. |
+| `settings.groups[].settings[].appconfigPath` | string |  |  |
+| `settings.groups[].settings[].csvValueNotes` | map |  | Present beside `csvValues` where the setting describes each value: the value mapped to one sentence. |
+| `settings.groups[].settings[].csvValueNotes.{key}` | string |  |  |
+| `settings.groups[].settings[].csvValues` | list |  | Present on a `csv` setting whose entries must each be one of these; absent on an open list. |
+| `settings.groups[].settings[].csvValues[]` | string |  |  |
+| `settings.groups[].settings[].default` | list, or string, or number, or boolean, or null |  |  |
+| `settings.groups[].settings[].default[]` | string, or number, or boolean |  |  |
+| `settings.groups[].settings[].description` | string |  | What it does and why the default is the default. |
+| `settings.groups[].settings[].editRefusal` | string |  | Why this row cannot be edited from the realm the reader is in: `realms.maxCount` while a realm other than the default is ambient. Absent on every row of the default realm's answer. |
+| `settings.groups[].settings[].editable` | boolean |  | Whether POST /config/set will take it from the realm this answer was read in. False means either the value was consumed at startup or `editRefusal` is set. It is refused rather than accepted, because an accepted change that does nothing reads as having worked. |
+| `settings.groups[].settings[].enumValues` | list |  | Present on `enum` settings only. |
+| `settings.groups[].settings[].enumValues[]` | string |  |  |
+| `settings.groups[].settings[].env` | string |  | Its environment variable. |
+| `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
+| `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
+| `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
+| `settings.groups[].settings[].max` | number |  | The highest value it will take. |
+| `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
+| `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
+| `settings.groups[].settings[].overridden` | boolean |  | Whether a runtime override is in force. Equal to `source === "override"`, and reported separately so a caller can filter without matching a string. |
+| `settings.groups[].settings[].realmSettable` | boolean |  | Whether a trust realm may hold its own value for it. |
+| `settings.groups[].settings[].restartReason` | string |  | Why it is not editable, when the value was consumed at startup. |
+| `settings.groups[].settings[].selectAll` | object |  | Present on an `ordered` setting whose select-all is narrowed by other settings. `onlyWhileOn`: the values are selected only while that setting is on. `aloneWhileOn`: while that setting is on, only the values are selected. `canBeOn` is false where this mode never lets that setting be on. |
+| `settings.groups[].settings[].selectAll.aloneWhileOn` | list |  |  |
+| `settings.groups[].settings[].selectAll.aloneWhileOn[].canBeOn` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.aloneWhileOn[].on` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.aloneWhileOn[].setting` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.aloneWhileOn[].values` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.onlyWhileOn` | list |  |  |
+| `settings.groups[].settings[].selectAll.onlyWhileOn[].canBeOn` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.onlyWhileOn[].on` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.onlyWhileOn[].setting` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.onlyWhileOn[].values` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].source` | one of `realm`, `override`, `env`, `env-legacy`, `appconfig`, `defaults`, `default` |  | Where the effective value came from, highest first: this trust realm's own value; a runtime override set through this API or the console; the setting's own environment variable; a legacy variable (no row has one since #523); the appconfig file CONFIG_FILE names; `env/defaults.js`, the DEFAULT appconfig file that one is unioned on top of. `default` is reachable only for the DERIVED settings, whose value is a function of a neighbouring setting: for every other setting, no value anywhere stops this service from STARTING. |
+| `settings.groups[].settings[].step` | number |  | The value must be a MULTIPLE of this, counted from `min`. The four token lifetimes use 30. |
+| `settings.groups[].settings[].text` | string |  | The same value on one line: what the console shows in its input and what the environment variable would carry. |
+| `settings.groups[].settings[].type` | string |  | How a value posted for it is coerced and checked: one of `config.js`'s types (string, int, port, bool, csv, enum, color). |
+| `settings.groups[].settings[].value` | list, or string, or number, or boolean, or null |  |  |
+| `settings.groups[].settings[].value[]` | string, or number, or boolean |  |  |
+| `settings.overridden` | list |  | The keys on this page with a runtime override in force. |
+| `settings.overridden[]` | string |  |  |
+| `settings.page` | string |  |  |
+| `settings.setWith` | string |  | The operation that writes them. |
+| `settings.settingCount` | integer |  |  |
+| `settings.sharedWith` | map |  | A group drawn on another page as well, and those pages. |
+| `settings.sharedWith.{key}` | list |  |  |
+| `settings.sharedWith.{key}[].label` | string, or null |  |  |
+| `settings.sharedWith.{key}[].path` | string |  |  |
+| `url` | string | yes |  |
+
+## POST /admin-api/malware-scanning/test
+
+`testMalwareScanning`
+
+**Check that the configured ICAP service really scans**
+
+Sends an ICAP OPTIONS request, then the EICAR test file, which is harmless. It succeeds only if the service flags that file, because a service whose engine failed to load can answer as if every file were clean. A failure is a 400 whose `errors` says what went wrong.
+
+Scope: `admin:write`.
+
+**200**: How the service answered.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+
 ## GET /admin-api/me
 
 `getMe`

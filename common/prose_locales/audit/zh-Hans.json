@@ -1894,5 +1894,9 @@
   "audit.actions.persistence.minted-drop.label": {
     "en": "065f403ac7419f76",
     "text": "已丢弃一条永远无法提交的已签发记录"
+  },
+  "audit.actions.admin.config-dump.label": {
+    "en": "2da852eeb075a014",
+    "text": "配置已导出"
   }
 }
