@@ -300,10 +300,30 @@ function codeMemberSection(t) {
   t.log.debug("Leaving codeMemberSection().");
 }
 
+// A wedged store is answered 503 with Retry-After, which the checks allow, so
+// the kit reads the store's own status at the end of a cell (#1463).
+function storeProblemSection(t) {
+  t.log.debug("Entering storeProblemSection().");
+  t.equal(kit.storeProblemOf({ status: 200, json: { healthy: false,
+    lastError: "unsupported Unicode escape sequence" } }),
+          "unsupported Unicode escape sequence",
+          "a store reporting a failed write is a finding, by its error");
+  t.check(kit.storeProblemOf({ status: 200, json: { healthy: false } }) !== "",
+          "and one reporting no error is still a finding");
+  t.equal(kit.storeProblemOf({ status: 200, json: { healthy: true } }), "",
+          "a healthy store is not");
+  t.equal(kit.storeProblemOf({ status: 200, json: { healthy: null } }), "",
+          "nor one with nothing to persist");
+  t.equal(kit.storeProblemOf({ status: 403, json: { healthy: false } }), "",
+          "and an answer that could not be read says nothing");
+  t.log.debug("Leaving storeProblemSection().");
+}
+
 function run(t) {
   t.log.debug("Entering run().");
   codeMemberSection(t);
   egressRouteSection(t);
+  storeProblemSection(t);
 
   // The plan is internally well-formed.
   const problems = kit.validate();

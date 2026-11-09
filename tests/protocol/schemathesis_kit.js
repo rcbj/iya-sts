@@ -1229,6 +1229,53 @@ async function logDpopSettings(serviceBase, provisioned, surfaceKey, say) {
   log.debug("Leaving logDpopSettings().");
 }
 
+// What a read of `/admin-api/persistence` says is wrong with the store, or
+// '' when nothing is. Only `healthy: false` is a finding: an answer that could
+// not be read says nothing about the store.
+function storeProblemOf(answer) {
+  log.debug("Entering storeProblemOf().");
+  const body = answer && answer.status === 200 ? answer.json : null;
+  if (!body || body.healthy !== false) {
+    log.debug("Leaving storeProblemOf(). Nothing to report.");
+    return "";
+  }
+  log.debug("Leaving storeProblemOf(). Failing.");
+  return String(body.lastError || "the store reports itself unhealthy");
+}
+
+// IS THE STORE STILL WRITING WHEN THE CELL ENDS (#1463). A failed commit is
+// answered 503 with Retry-After, which no_uncaught_server_error allows, so a
+// value that stopped every write in the process passed as a clean cell. One
+// failed flush clears itself, so a failure is asked about three times, five
+// seconds apart, and only one that outlasts them is a finding. The token is
+// the service's, in the default realm: a realm's own may not read this page.
+async function storeFailing(serviceBase, surfaceKey, realmShown, say) {
+  log.debug("Entering storeFailing().");
+  let problem = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 5000);
+      });
+    }
+    try {
+      problem = storeProblemOf(await adminCall(serviceBase, "", "GET",
+        "/admin-api/persistence"));
+    } catch (e) {
+      log.debug("Caught in storeFailing(): " + ((e && e.message) || e));
+      problem = "";
+    }
+    if (!problem) {
+      log.debug("Leaving storeFailing(). Writing.");
+      return "";
+    }
+  }
+  say("[schemathesis] " + surfaceKey + " @ " + realmShown +
+    ": THE STORE IS NOT WRITING at the end of this cell: " + problem);
+  log.debug("Leaving storeFailing(). Failing.");
+  return problem;
+}
+
 // A free loopback TCP port.
 function freePort() {
   log.debug("Entering freePort().");
@@ -1519,8 +1566,11 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     // which is the remaining explanation for a replay cache that filled. A
     // diagnostic only; it changes nothing and never fails the cell.
     await logDpopSettings(serviceBase, provisioned, surface.key, say);
+    const storeProblem = await storeFailing(serviceBase, surface.key,
+      realmShown, say);
     const code = run.status;
-    let status = code === 0 ? "pass" : (code === 1 ? "fail" : "error");
+    let status = storeProblem ? "fail"
+      : (code === 0 ? "pass" : (code === 1 ? "fail" : "error"));
     // WHAT THE DOCUMENT DOES NOT SAY (#1476): the probes Schemathesis cannot
     // make, while this cell's proxy is up. A miss fails the cell.
     let strictFindings = [];
@@ -1550,6 +1600,11 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     } catch (e) {
       log.debug("Caught reading the findings file (none is normal on a " +
                 "clean cell): " + ((e && e.message) || e));
+    }
+    if (storeProblem) {
+      findings.push({ kind: "store_not_writing", realm: realmShown,
+        surface: surface.key, route: "(the persistence store)", status: 503,
+        detail: storeProblem, body: "" });
     }
     // The scope is the four invariants, so a failing run prints only the real
     // findings (a 5xx, a leaked error code, a dropped frame-ancestors clause).
@@ -1751,6 +1806,7 @@ async function run(serviceBase, options) {
 }
 
 module.exports = {
+  storeProblemOf: storeProblemOf,
   PROFILES: PROFILES,
   SURFACES: SURFACES,
   SERVICE_CELL: SERVICE_CELL,
