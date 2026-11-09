@@ -275,7 +275,8 @@ class ScimClientsApi {
         mirrors: 'GET /admin/scim',
         parameters: [
           { name: 'client', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 512 },
+            schema: { type: 'string', maxLength: 512,
+                      examples: ['no-such-client'] },
             description: 'One client\'s identifier, for its page.' }
         ],
         responseDescription: 'The clients.',

@@ -155,7 +155,7 @@ class PostLoginActivitiesApi {
         mirrors: 'GET /admin/post-login-activities',
         parameters: [
           { name: 'groupq', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
+            schema: { type: 'string', maxLength: 256, examples: ['staff'] },
             description: 'The group search: a substring of a group\'s cn ' +
                          'or DN, case-insensitive; empty for every group.' },
           { name: 'groupfrom', in: 'query', required: false,

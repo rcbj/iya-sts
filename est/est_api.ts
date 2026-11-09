@@ -193,10 +193,10 @@ class EstApi {
                      'through POST /admin-api/config/set-many.',
         parameters: [
           { name: 'certificatesPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of enrolled certificates.' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page.' }
         ],
         mirrors: 'GET /admin/cert-issuance',
@@ -221,10 +221,10 @@ class EstApi {
                      'reset: the durable record is GET /admin-api/audit.',
         parameters: [
           { name: 'page', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of recent requests.' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page.' }
         ],
         mirrors: 'GET /admin/est/monitor',

@@ -356,7 +356,8 @@ class BrandingApi {
         handlerOwnsBody: true,
         parameters: [
           { name: 'alt', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 160 },
+            schema: { type: 'string', maxLength: 160,
+                      examples: ['Our company logo'] },
             description: 'The alternative text, written to ' +
                          'branding.logoAlt with the image.' }
         ],

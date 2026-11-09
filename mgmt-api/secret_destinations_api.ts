@@ -182,17 +182,17 @@ class SecretDestinationsApi {
         mirrors: 'GET /admin/secret-destinations',
         parameters: [
           { name: 'q', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
+            schema: { type: 'string', maxLength: 256, examples: ['vault'] },
             description: 'Narrows `destinations` to those whose name, ' +
                          'identifier, DN or provider contains this, ' +
                          'case-insensitively — the person page\'s push ' +
                          'destination search (#602). `matched` counts them.' },
           { name: 'destinationsPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of `destinations` to return, ' +
                          'answered by `destinationsPaging` (#313).' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page. Capped, like every list here.' }
         ],
         responseDescription: 'The register.',
