@@ -300,7 +300,13 @@ function accountContracts(t, docs) {
   accountApi.operations().forEach(function (op) {
     const entry = docs.account.paths[Spec.openApiPath(op.path)][
       op.method.toLowerCase()];
-    sameText(t, canonical(entry.parameters), canonical(Spec.parametersOf(op)),
+    // An example is the model's alone: the routing row has no use for one.
+    const stated = (entry.parameters || []).map(function (one) {
+      const copy = Object.assign({}, one);
+      delete copy.example;
+      return copy;
+    });
+    sameText(t, canonical(stated), canonical(Spec.parametersOf(op)),
       op.operationId + ': the parameters are the ones the model states');
     const body = Spec.bodySchemaOf(op);
     if (body && op.method !== 'GET') {
