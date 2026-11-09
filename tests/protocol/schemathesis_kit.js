@@ -89,7 +89,15 @@ const FUZZ_RISK = Object.freeze({ "risk.assessSignIns": false });
 
 // What every fuzz realm carries beside its mode flag: the DPoP headroom and the
 // sign-in-risk opt-out.
-const FUZZ_REALM = Object.freeze(Object.assign({}, FUZZ_DPOP, FUZZ_RISK));
+// A TOKEN THAT OUTLIVES ITS CELL (#1502). The admin-api cells take over an hour
+// once the realms overlap, past the hour a token lasts by default, and by then
+// the cell's own fuzzing has usually changed who may sign in to the console, so
+// the proxy cannot get another: 230 of 272 re-sign-ins failed, and the rest of
+// the cell "passed" against a 401. Eight hours, the mode's own bound being six.
+const FUZZ_TOKEN = Object.freeze({ "oauth2.accessTokenTtlS": 28800 });
+
+const FUZZ_REALM = Object.freeze(Object.assign({}, FUZZ_DPOP, FUZZ_RISK,
+  FUZZ_TOKEN));
 
 const PROFILES = [
   { key: "base", realm: "fuzz-base", label: "product baseline",
