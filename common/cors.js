@@ -584,7 +584,11 @@ function isNavigation(req) {
 function continuesToRoute(req) {
   log.debug("Entering continuesToRoute().");
   log.debug("Leaving continuesToRoute().");
-  return /(^|\/)gnap$/.test(String(req.path || ''));
+  // `/gnap` and a named server's `/:as/gnap`, and not a published API's page
+  // that happens to end in the word: `/account-api/gnap` is the portal's list
+  // of a person's grants and has no OPTIONS operation (#1503).
+  const path = String(req.path || '');
+  return /(^|\/)gnap$/.test(path) && !/^\/[^/]*-api\//.test(path);
 }
 
 // Every OPTIONS request. Registered as `app.use()` above the body parsers and
