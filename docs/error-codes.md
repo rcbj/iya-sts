@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5331** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5332** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 184
+* [Registries (`STS-REG`)](#sts-reg) — 185
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 * [Reporting (`STS-REPORT`)](#sts-report) — 54
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 14
@@ -5967,6 +5967,7 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0364` | oauthAllowedTokenResponseTypes was given a token response type while the realm does not allow them: RFC 9700 mode is in force and oauth2.allowImplicitTokenResponses is off, or OAuth 2.1 mode or a FAPI profile is on (#1296). A remove is never refused. | none (a console or management API refusal, HTTP 400) |
 | `STS-REG-0365` | A logo_uri, policy_uri or tos_uri (oauthLogoUri, oauthPolicyUri, oauthTosUri) is not an absolute https URL with a host and no credentials: the sign-in and consent screens draw it (OpenID Connect Registration section 2, #1300). At registration, an RFC 7592 update, a create and an attribute write. | HTTP 400 {error: invalid_client_metadata} at registration; a console or management API refusal otherwise |
 | `STS-REG-0366` | A realm's custom attribute is named as a claim of the directory attribute catalogue is (a custom birthdate, say), so it is not offered to the claim sets: the catalogue's claim would be overwritten. An attribute claim can carry it under another name (#700). | log line; the attribute is absent from every claim set |
+| `STS-REG-0367` | An oauthPermission name or description contains an operator error code. Both are returned on every page that lists the permission, and a code is recorded rather than sent. At a create and at an attribute add (#1426). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

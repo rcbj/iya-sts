@@ -193,6 +193,20 @@ function run(t) {
   t.check(!!applications.permissionNameProblem('read|write'),
           'and one carrying the schema\'s own delimiter is refused, because ' +
           'it could never be read back as the name that was written');
+  t.check(!applications.permissionOperatorCodeProblem('write',
+                                                     'Change widgets'),
+          'a permission whose text names no operator code is accepted');
+  const coded = applications.permissionOperatorCodeProblem('write',
+    'refused at sign-in (STS-AUTHN-0294)');
+  t.check(!!coded,
+          'a description that contains an operator error code is refused: ' +
+          'it is returned on every page that lists the permission');
+  t.check(!/STS-[A-Z]+-[0-9]{4}/.test(coded),
+          'and the refusal does not repeat the code, because a 400 body is ' +
+          'scanned raw', coded);
+  t.check(!!applications.permissionOperatorCodeProblem('STS-AUTHN-0294', ''),
+          'a name that is itself a code is refused too — it is a legal ' +
+          'scope token, so the scope-token rule would have accepted it');
   t.check(!!applications.permissionBaseProblem('example.com'),
           'a base that is not absolute is refused: it becomes an access ' +
           'token\'s aud, and a relative audience is one nothing can compare ' +
