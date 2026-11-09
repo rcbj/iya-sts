@@ -14889,6 +14889,14 @@ it:
   `ldap_server.js`'s `groupChoices()`: the group INDEX, a row per group
   rebuilt only when a group may have been written, never the directory's
   entries or anybody's membership.
+* **The `groups` query is at most 4096 characters** (`GROUPS_QUERY_MAX`,
+  #1434). The console's links carry the chosen DNs in that one parameter,
+  and fifty ordinary names fit. A longer value is refused before it is
+  split (STS-AUTHN-0496, HTTP 400): a stock Node parser resets the
+  connection once the incoming bytes pass about 64KiB, and
+  percent-encoding turns one character into twelve, so 4096 stays inside
+  the line the parser accepts. The split walks the characters into a list
+  and joins at each `;`, so a legal value is not copied once per character.
 * **A mail is not an invitation**: `invitedAt`, from which the allotted
   time counts, is still only written at a sign-in.
 * **The message is `post-login-reminder`, a NOTIFICATION** (a person may
