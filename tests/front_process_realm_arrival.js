@@ -62,7 +62,8 @@ function child() {
     };
     const mw = requestPool.middleware({ enterRealm: counting });
     const fakeRes = function () {
-      return { location: function () {}, send: function () {},
+      return { setHeader: function () {},
+               location: function () {}, send: function () {},
                get: function () { return ''; } };
     };
 

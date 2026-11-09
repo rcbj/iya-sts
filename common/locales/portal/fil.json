@@ -545,5 +545,6 @@
   "photo.errSmall": "Ang larawang iyon ay {width} por {height} pixel. Dapat hindi bababa sa {min} ang mas maikling gilid nito.",
   "photo.errRead": "Hindi mabasa ang file na iyon bilang larawan.",
   "done.photo": "Na-save na ang iyong larawan sa profile.",
-  "done.photoRemoved": "Naalis na ang iyong larawan sa profile."
+  "done.photoRemoved": "Naalis na ang iyong larawan sa profile.",
+  "done.endOthers": "Maaari mong tapusin ang iba mong session sa /logout."
 }

@@ -255,9 +255,12 @@ function checkRevocation(t) {
 
   withRealm(t, 'iso-revoke', function (realm) {
     const jti = 'iso-jti-' + Date.now();
-    // Before the revocation, because the default realm is shared by every
-    // file of a single-process run and may already hold some (#1147).
+    // Counted from here: other tests in this process have revoked things in
+    // the default realm.
     const outsideBefore = stats.revokedCount();
+    const insideBefore = realms.run(realm, function () {
+      return stats.revokedCount();
+    });
     realms.run(realm, function () { stats.revoke(jti, 'this test'); });
 
     t.check(!stats.isRevoked(jti),
@@ -272,7 +275,7 @@ function checkRevocation(t) {
     const insideCount = realms.run(realm, function () {
       return stats.revokedCount();
     });
-    t.check(insideCount === 1 && outsideCount === outsideBefore,
+    t.check(insideCount === insideBefore + 1 && outsideCount === outsideBefore,
             'the realm\'s revocation count is its own',
             'realm=' + insideCount + ', default=' + outsideBefore + ' then ' +
             outsideCount);

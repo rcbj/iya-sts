@@ -1322,5 +1322,41 @@
   "mode.requirements.malware-scan-tls.product": {
     "en": "dbcd39f827b0a349",
     "text": "Endast en icaps://-adress används, om inte malwareScan.allowCleartext är på."
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "Att rensa en andra faktor kräver ett angivet identitetsbevis"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "En administratör kan rensa en faktor genom att ange personen."
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "En administratör måste ange hur personens identitet verifierades. Uppgiften skrivs i granskningsloggen."
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "Protokollindata tolkas strikt"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "En upprepad tokenparameter får sitt sista värde, en partners utloggningstoken behöver ingen uttrycklig typ, vidarebefordrade adresser tros från vem som helst när global.trustProxy är på utan lista, och texten i ett internt fel når anroparen."
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "En upprepad tokenparameter avvisas, en partners utloggningstoken måste ha typen logout+jwt om inte federation.allowUntypedLogoutToken är på, vidarebefordrade adresser kräver global.trustedProxies, och texten i ett internt fel stannar i loggen."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Loggar och databas innehåller inga välkända hemligheter"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "På debugnivå innehåller loggen hela förfrågningar och svar, och databasen kan använda ett demonstrationslösenord."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "a037c255a759deb1",
+    "text": "Förfrågningsloggar utelämnar autentiseringsuppgifter och innehåll på alla nivåer, och ett standardlösenord för databasen stoppar tjänsten om inte persistence.allowDefaultDatabasePassword är på."
   }
 }

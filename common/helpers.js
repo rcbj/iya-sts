@@ -181,7 +181,15 @@ function logArtifact(what, stage, value) {
 function headersOf(source) {
   log.debug("Entering headersOf().");
   const out = {};
-  Object.keys(source || {}).forEach(function (k) { out[k] = source[k]; });
+  // Raising the log level must not put a credential in the log (ASVS 5.0.0
+  // 16.2.5), so product mode leaves these out at any level.
+  const redact = require('./mode').redactsRequestLog();
+  Object.keys(source || {}).forEach(function (k) {
+    if (!redact || !/^(?:authorization|cookie|set-cookie|dpop|x-api-key)$/i
+      .test(k)) {
+      out[k] = source[k];
+    }
+  });
   log.debug("Leaving headersOf().");
   return out;
 }
@@ -195,6 +203,10 @@ function headersOf(source) {
  */
 function bodyOf(value) {
   log.debug("Entering bodyOf().");
+  if (require('./mode').redactsRequestLog()) {
+    log.debug("Leaving bodyOf(). Withheld.");
+    return value === undefined || value === null ? '' : '[withheld]';
+  }
   if (value === undefined || value === null) {
     log.debug("Leaving bodyOf().");
     return '';
@@ -3570,7 +3582,10 @@ function signingAlgAllowlist() {
 function signingAlgListed(alg) {
   log.debug("Entering signingAlgListed(). alg=" + alg);
   const list = signingAlgAllowlist();
-  const listed = !list || alg === 'none' || list.indexOf(String(alg)) >= 0;
+  // secp256k1 is outside the approved curves (ASVS 5.0.0 11.6.1), so product
+  // signs with it only where the operator lists it.
+  const listed = list ? alg === 'none' || list.indexOf(String(alg)) >= 0
+    : !(alg === 'ES256K' && require('./mode').omitsUnapprovedSigningCurves());
   log.debug("Leaving signingAlgListed(). " + listed);
   return listed;
 }

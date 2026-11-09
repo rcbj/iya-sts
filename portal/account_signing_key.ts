@@ -640,7 +640,7 @@ class AccountSigningKey {
           return ctx.json(res, 200, self.view(caller, ctx.baseUrlOf(req)));
         } },
       { method: 'POST', path: ctx.BASE + '/signing-key',
-        operationId: 'changeSigningKeys', access: 'person', body: SIGNING_KEY_FORM,
+        operationId: 'changeSigningKeys', access: 'person', recentAuth: true, body: SIGNING_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);

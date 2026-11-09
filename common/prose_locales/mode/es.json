@@ -1322,5 +1322,41 @@
   "mode.requirements.malware-scan-tls.product": {
     "en": "dbcd39f827b0a349",
     "text": "Solo se usa una dirección icaps://, salvo que malwareScan.allowCleartext esté activado."
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "Borrar un segundo factor exige declarar una prueba de identidad"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "Un administrador puede borrar un factor indicando la persona."
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "Un administrador debe indicar cómo se verificó la identidad de la persona. La declaración consta en el registro de auditoría."
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "La entrada de protocolo se interpreta de forma estricta"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "Un parámetro de token repetido toma su último valor, el token de cierre de sesión de un socio no necesita tipo explícito, las direcciones reenviadas se creen de cualquiera cuando global.trustProxy está activo sin lista, y el texto de un error interno llega al llamante."
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "Un parámetro de token repetido se rechaza, el token de cierre de sesión de un socio debe tener el tipo logout+jwt salvo que federation.allowUntypedLogoutToken esté activo, las direcciones reenviadas requieren global.trustedProxies, y el texto de un error interno queda en el registro."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Los registros y la base de datos no contienen secretos conocidos"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "En el nivel debug, el registro incluye solicitudes y respuestas completas, y la base de datos puede usar una contraseña de demostración."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "a037c255a759deb1",
+    "text": "Los registros de solicitudes omiten credenciales y cuerpos en todos los niveles, y una contraseña predeterminada de la base de datos detiene el servicio salvo que persistence.allowDefaultDatabasePassword esté activo."
   }
 }

@@ -545,5 +545,6 @@
   "photo.errSmall": "Bilden är {width} gånger {height} pixlar. Kortsidan måste vara minst {min}.",
   "photo.errRead": "Filen kunde inte läsas som en bild.",
   "done.photo": "Ditt profilfoto har sparats.",
-  "done.photoRemoved": "Ditt profilfoto har tagits bort."
+  "done.photoRemoved": "Ditt profilfoto har tagits bort.",
+  "done.endOthers": "Du kan avsluta dina andra sessioner på /logout."
 }

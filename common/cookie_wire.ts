@@ -43,9 +43,9 @@ const log = helpers.log;
 const MANAGED = /^sts_/;
 const PREFIXED = /^__(Host|Secure)-(sts_.*)$/;
 const SPARED = ['sts_pool', 'sts_pool_surfaces'];
-// The cookies this service writes as `__Secure-` whatever `authn.cookieDomain`
-// says: DBSC's site-scoped one, and the two whose Path is narrower than `/`.
-const SCOPED = /^(?:sts_session_bound|sts_claim_link|sts_est_nonce)/;
+// The cookie this service writes as `__Secure-` whatever `authn.cookieDomain`
+// says: DBSC's site-scoped one.
+const SCOPED = /^sts_session_bound/;
 
 class CookieWire {
   // Hot path: every request and every Set-Cookie line. No Entering/Leaving
@@ -148,7 +148,9 @@ class CookieWire {
         const writeHead = res.writeHead;
         res.writeHead = function () {
           if (hsts) {
-            res.setHeader('Strict-Transport-Security', 'max-age=31536000');
+            res.setHeader('Strict-Transport-Security', 'max-age=31536000' +
+              (config.value('security.hstsIncludeSubDomains')
+                ? '; includeSubDomains' : ''));
           }
           const lines = prefixes ? res.getHeader('Set-Cookie') : undefined;
           if (lines !== undefined) {

@@ -1329,7 +1329,7 @@ See [What is not checked](what-is-not-checked.md).
 | `authn.maxSessions` | `STS_AUTHN_MAX_SESSIONS` | `100000` | yes | The most sessions a realm holds. At the cap a new row is refused; nothing is ended to make room for somebody else. |
 | `authn.maxSessionsPerSubject` | `STS_AUTHN_MAX_SESSIONS_PER_SUBJECT` | `32` | yes | How many countable sessions one subject may hold. At the cap their own oldest countable session is ended. An arrival does not count. |
 | `authn.sessionShedPerSweep` | `STS_AUTHN_SESSION_SHED_PER_SWEEP` | `100` | yes | How many of a subject's own surplus sessions one session-expiry run ends in that realm. |
-| `authn.sessionIdleTimeoutS` | `STS_AUTHN_SESSION_IDLE_TIMEOUT_S` | `0` | yes | How long a session may go unused before it ends; `0` means no idle timeout. |
+| `authn.sessionIdleTimeoutS` | `STS_AUTHN_SESSION_IDLE_TIMEOUT_S` | `1800` in product mode, `0` in development mode | yes | How long a session may go unused before it ends; `0` means no idle timeout. |
 | `authn.sessionSweepS` | `STS_AUTHN_SESSION_SWEEP_S` | `30` | yes | Interval of the scheduler job that ends expired sessions and reports them; `0` switches it off. |
 | `authn.pendingTtlS` | `STS_AUTHN_PENDING_TTL_S` | `600` | yes | How long an interrupted request waits at the sign-in screen. |
 | `authn.mfaStepTtlS` | `STS_AUTHN_MFA_STEP_TTL_S` | `300` | yes | How long a person who passed the password step has to present a second factor. |

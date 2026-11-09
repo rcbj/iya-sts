@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5380** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5387** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -51,9 +51,9 @@ is an ordinary outcome.
 
 * [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 103
+* [Service core (`STS-CORE`)](#sts-core) — 104
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 108
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 109
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
@@ -68,7 +68,7 @@ is an ordinary outcome.
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 214
+* [Federation (`STS-FED`)](#sts-fed) — 215
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 165
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 84
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 153
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 59
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 60
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 137
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
@@ -91,16 +91,16 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 264
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 265
 * [Management API (`STS-API`)](#sts-api) — 94
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 22
-* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 14
+* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 185
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 * [Reporting (`STS-REPORT`)](#sts-report) — 57
-* [Audit export (`STS-AUDIT`)](#sts-audit) — 14
+* [Audit export (`STS-AUDIT`)](#sts-audit) — 15
 
 ## STS-HTTP
 
@@ -261,6 +261,7 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0169` | A file could not be scanned because the malware scanner did not answer. | HTTP 503 |
 | `STS-CORE-0170` | An action on the malware scanning page was not one it has. | HTTP 400 |
 | `STS-CORE-0171` | A setting's value, or a realm's name or description, holds a NUL character or half of a surrogate pair, which the store's columns can never hold; refused before anything is written (#1463). | a refusal naming the setting or field, never the value |
+| `STS-CORE-0172` | A request was refused because its address made too many in a minute. | HTTP 429 |
 
 ## STS-WORKER
 
@@ -438,6 +439,7 @@ Raised from: persistence/.
 | `STS-STORE-0167` | The grantinggroup key backfill (#1311) skipped a directory entry whose sealed attributes do not open in this process, even after the data-key rows were read again; the walk finishes and writes its mark, and the entry is keyed when it is next written. The first few are named, then a count per run. | — |
 | `STS-STORE-0168` | A directory flush dropped one row whose value the database can never store (a NUL byte, or another permanent data error) and committed every other row of the batch (#1391). The entry stays in this process's memory and is absent from the store until the process restarts; the next flush does not send the same value again. | none — logged; the request that wrote it was already answered |
 | `STS-STORE-0169` | A realm or settings save dropped one value the database can never store (a NUL, half of a surrogate pair, or another permanent data error) and committed everything else in the flush (#1463). The value stays in this process's memory and is absent from the store until the process restarts; the next flush does not send it again. | none — logged; the request that wrote it was already answered |
+| `STS-STORE-0170` | The service did not start because the database password is a well-known default. | — |
 
 ## STS-CLUSTER
 
@@ -2978,6 +2980,7 @@ Raised from: federation/.
 | `STS-FED-0237` | A federated answer arrived in a browser other than the one that started the flow, in product (ASVS 5.0.0 10.1.2). | HTTP 401 |
 | `STS-FED-0238` | A federated answer names another issuer, or arrived for another relationship than its state (ASVS 5.0.0 10.2.2). | HTTP 401 |
 | `STS-FED-0239` | An unsolicited SAML assertion was presented a second time (ASVS 5.0.0 6.8.3). | HTTP 401 |
+| `STS-FED-0240` | A federated sign-in was refused because the partner authenticated the person too long ago. | HTTP 401 |
 
 ## STS-OIDFED
 
@@ -3909,6 +3912,7 @@ Raised from: tls/.
 | `STS-TLS-0057` | A block of tls.trustAnchorsFile is one the admission rule refuses under paranoid PKI mode, and was left out of the truststore (#1360). | none (logged) |
 | `STS-TLS-0058` | A resumed TLS session's client certificate was demoted under paranoid PKI mode: its full handshake was refused, or no record of it reached this process within tls.resumedChainWaitMs. The next full handshake settles it (#1360). | none (logged): the certificate is treated as unverified |
 | `STS-TLS-0059` | GET /tls/sign-in was asked for by a browser other than as a navigation typed by the person or sent from this origin, in product (ASVS 5.0.0 3.5.3). | HTTP 403 |
+| `STS-TLS-0060` | A certificate sign-in started no session because the person owes a second factor. | HTTP 200 |
 
 ## STS-VC
 
@@ -5516,6 +5520,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0913` | set-row named something that is not a paranoid PKI setting (#1360). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0914` | set-row was refused by the settings write path, or a use case an add named is not one this service has (#1360). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0915` | A software statement was asked for with a lifetimeSeconds that puts its expiry past the last date this service can write (#1470). | a refusal naming the field |
+| `STS-ADMIN-0916` | A second factor was not cleared because the administrator did not say how the person was verified. | HTTP 400 |
 
 ## STS-API
 
@@ -5803,6 +5808,7 @@ Raised from: logout/.
 | `STS-LOGOUT-0012` | The account chosen at the sign-out's account step (#561) is not signed in in this browser any more — its session ended between the page and the choice, or the key names an account of another browser. Nothing was ended and the step is drawn again. | HTTP 409 from POST /authn-api/logout/accounts |
 | `STS-LOGOUT-0013` | The sign-out's account step (#561) was asked for in a trust realm with authn.multipleAccounts off, where a browser holds one session and there is no account to choose. | HTTP 400 from /authn-api/logout/accounts |
 | `STS-LOGOUT-0014` | POST /logout in its JSON form came from a page of another site (#1442). | HTTP 403 |
+| `STS-LOGOUT-0015` | Ending another session was refused because the sign-in was not recent enough. | HTTP 403 |
 
 ## STS-LAUNCH
 
@@ -6139,6 +6145,7 @@ Raised from: common/audit_export.ts, mgmt-api/audit_export_api.ts.
 | `STS-AUDIT-0012` | auditExport.skipTlsVerification is on and is ignored, because this realm is in product mode: webhook, Splunk HEC and syslog TLS verify the peer. Said once per process (#641). | none (a warning) |
 | `STS-AUDIT-0014` | A webhook or Splunk HEC destination answered a redirect. Audit export does not follow it. The cursor stays and the destination pauses (#641). | none (the destination retries; the audited operation is unaffected) |
 | `STS-AUDIT-0015` | A webhook or Splunk HEC destination rejected the event itself (HTTP 400). That event is counted permanently failed and the cursor moves past it. The destination is not paused for the events after it (#641). | none (that event is dropped; later events are still delivered) |
+| `STS-AUDIT-0016` | A syslog audit destination was refused because product mode needs tls. | HTTP 400 |
 
 ## Adding a code
 

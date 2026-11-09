@@ -545,5 +545,6 @@
   "photo.errSmall": "Esa imagen mide {width} por {height} píxeles. Su lado más corto debe tener al menos {min}.",
   "photo.errRead": "Ese archivo no se pudo leer como imagen.",
   "done.photo": "Su foto de perfil se guardó.",
-  "done.photoRemoved": "Su foto de perfil se quitó."
+  "done.photoRemoved": "Su foto de perfil se quitó.",
+  "done.endOthers": "Puede finalizar sus otras sesiones en /logout."
 }

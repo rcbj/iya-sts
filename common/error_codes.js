@@ -1244,6 +1244,9 @@ const CODES = [
       'a NUL character or half of a surrogate pair, which the store\'s ' +
       'columns can never hold; refused before anything is written (#1463).',
     spec: 'a refusal naming the setting or field, never the value' },
+  { code: 'STS-CORE-0172',
+    summary: 'A request was refused because its address made too many in a minute.',
+    spec: 'HTTP 429' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -2049,6 +2052,8 @@ const CODES = [
       'until the process restarts; the next flush does not send it again.',
     spec: 'none — logged; the request that wrote it was already answered' },
   // ===== CLUSTER ===========================================================
+  { code: 'STS-STORE-0170',
+    summary: 'The service did not start because the database password is a well-known default.' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -13738,6 +13743,9 @@ const CODES = [
       '(ASVS 5.0.0 6.8.3).',
     spec: 'HTTP 401' },
   // ===== OIDFED ============================================================
+  { code: 'STS-FED-0240',
+    summary: 'A federated sign-in was refused because the partner authenticated the person too long ago.',
+    spec: 'HTTP 401' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +
@@ -17720,6 +17728,9 @@ const CODES = [
       'navigation typed by the person or sent from this origin, in ' +
       'product (ASVS 5.0.0 3.5.3).',
     spec: 'HTTP 403' },
+  { code: 'STS-TLS-0060',
+    summary: 'A certificate sign-in started no session because the person owes a second factor.',
+    spec: 'HTTP 200' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -25026,6 +25037,9 @@ const CODES = [
     summary: 'A software statement was asked for with a lifetimeSeconds that ' +
       'puts its expiry past the last date this service can write (#1470).',
     spec: 'a refusal naming the field' },
+  { code: 'STS-ADMIN-0916',
+    summary: 'A second factor was not cleared because the administrator did not say how the person was verified.',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -26220,6 +26234,9 @@ const CODES = [
       'site (#1442).',
     spec: 'HTTP 403' },
   // ===== LAUNCH ============================================================
+  { code: 'STS-LOGOUT-0015',
+    summary: 'Ending another session was refused because the sign-in was not recent enough.',
+    spec: 'HTTP 403' },
   { code: 'STS-LAUNCH-0001',
     summary: 'A /launch/{app} link named no application this realm has ' +
       '(#713).',
@@ -27605,7 +27622,10 @@ const CODES = [
       'itself (HTTP 400). That event is counted permanently failed and the ' +
       'cursor moves past it. The destination is not paused for the events ' +
       'after it (#641).',
-    spec: 'none (that event is dropped; later events are still delivered)' }
+    spec: 'none (that event is dropped; later events are still delivered)' },
+  { code: 'STS-AUDIT-0016',
+    summary: 'A syslog audit destination was refused because product mode needs tls.',
+    spec: 'HTTP 400' }
   // ===== END ===============================================================
 ];
 

@@ -317,7 +317,8 @@ class PortalRuntime extends SpaClient {
                        String(query.error_description || query.error));
       return;
     }
-    if (!saved || !query.code || query.state !== saved.state) {
+    if (!saved || !query.code || query.state !== saved.state ||
+        !await this.issuerMatches(query)) {
       // THE RETURN TAB of a same-device wallet holds no PKCE record. The
       // tab that opened the portal still does, and it redeems the code.
       if (query.code && query.state &&

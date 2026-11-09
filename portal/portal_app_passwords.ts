@@ -309,7 +309,7 @@ class PortalAppPasswords {
           return ctx.json(res, 200, self.view(caller.username, null));
         } },
       { method: 'POST', path: ctx.BASE + '/app-passwords',
-        operationId: 'changeAppPasswords', access: 'person', body: self.formSchema(),
+        operationId: 'changeAppPasswords', access: 'person', recentAuth: true, body: self.formSchema(),
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);

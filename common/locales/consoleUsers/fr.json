@@ -355,6 +355,7 @@
   "mfaSection.lastCode": "Dernier code accepté",
   "mfaSection.lastCodeNote": ". Le pas auquel il appartenait est stocké avec l’enrôlement ; ce code ne peut donc pas être réutilisé (RFC 6238 section 5.2).",
   "mfaSection.clearTotpTitle": "Efface l’enrôlement pour que cette personne puisse en configurer un nouveau. C’est le SEUL moyen de revenir pour quelqu’un qui a perdu son téléphone : le secret est sur cet appareil et ce service ne peut pas l’atteindre.",
+  "mfaSection.evidenceLabel": "Comment avez-vous vérifié l’identité de cette personne ?",
   "mfaSection.clearTotp": "Effacer l’application d’authentification",
   "mfaSection.clearTotpNote": "<strong>C’est le seul moyen de revenir pour quelqu’un qui a perdu son téléphone.</strong> Le secret partagé se trouve sur cet appareil et ce service ne peut pas l’atteindre, et il n’existe délibérément aucune réinitialisation en libre-service — un second facteur que n’importe qui peut retirer n’est pas un second facteur. Effacer ramène le compte à un facteur et ne peut bloquer personne, car un code à usage unique n’est jamais un moyen d’entrer à lui seul. Elle en configure un nouveau sur <code>/portal/mfa</code>.",
   "mfaSection.clearingNeedsWrite": "L’effacement nécessite <strong>Admin Write</strong>.",

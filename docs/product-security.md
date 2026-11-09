@@ -151,7 +151,15 @@ A GNAP user assertion that has expired is refused unless an operator sets
   specifications define.
 * **Malware scanning** of uploaded images and risk datasets is optional and off
   by default. See [Malware scanning](malware-scanning.md).
-* **Second factor.** Required of everybody, administrators included. The
+* **Audit log.** Configure an [audit export](audit-export.md) destination, so that
+  a copy of the log leaves this service as it is written and a compromise here
+  cannot alter it.
+* **Software bill of materials.** The image holds a CycloneDX inventory of its npm
+  dependencies at `/usr/src/sts/sbom.cdx.json`.
+* **Second factor.** Required of everybody who signs in with a browser,
+  administrators included, including with a certificate. A federation partner is
+  the authentication, so federated sign-ins are not asked for one, and nor are
+  programs that present a client certificate. The
   password-only doors (LDAP, WS-Trust, SCIM, Shared Signals and EST Basic) cannot
   ask for one, so a person uses an app password there, with no second factor. This
   is intentional: see [Authentication](authentication.md).

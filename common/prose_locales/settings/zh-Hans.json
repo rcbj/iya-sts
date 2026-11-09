@@ -1072,8 +1072,8 @@
     "text": "容忍的时钟偏差步数"
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "接受当前时间前后各多少个步长。RFC 6238 第 5.2 节建议最多一个，这也是默认值，使一个验证码大约有效九十秒。**此项是实时生效的**，适用于所有现有注册——一个部署对时钟漂移的手机容忍多少，是一项策略，而不是二维码告诉应用的东西。零要求时钟完全同步，用于演示没有容忍时会发生什么。"
+    "en": "16e7e0f293746c98",
+    "text": "接受当前时间前后各多少个步长。RFC 6238 第 5.2 节建议最多一个，这也是默认值，使一个验证码大约有效九十秒。**此项是实时生效的**，适用于所有现有注册——一个部署对时钟漂移的手机容忍多少，是一项策略，而不是二维码告诉应用的东西。零要求时钟完全同步，用于演示没有容忍时会发生什么。 产品模式默认值为 0，因此代码仅在一个 30 秒时间步内有效。"
   },
   "totp.secretBytes|label": {
     "en": "15a7f23cdeca7ba5",
@@ -12314,5 +12314,101 @@
   "malwareScan.allowCleartext|description": {
     "en": "c00ee2f1e34722ff",
     "text": "默认关闭时，产品模式拒绝 icap:// 地址，在设置 icaps:// 地址之前不接受任何文件。开启后，文件可能以未加密方式到达扫描器。仅在可信网络中使用。"
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "密码不得包含的词"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "新密码不得包含的其他词，例如组织、产品、项目或部门名称。以逗号分隔。服务名称以及信任域的名称和域名始终被拒绝。词至少需要四个字母；检查会忽略大小写和常见字符替换（如用 0 代替 o）。"
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "刷新令牌链的最长持续时间（秒）"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "通过刷新令牌续期的授权的绝对上限，从第一个令牌开始计算。超过后用户须重新登录，无论客户端刷新多少次。0 表示无限制，这是开发模式的默认值。产品模式默认 30 天。"
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "接受无显式类型的合作方注销令牌"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "默认关闭时，产品模式仅接受类型为 logout+jwt 的合作方注销令牌。开启后，也接受类型为 jwt 或无类型的令牌，适用于不发送类型的合作方。OpenID 规范仅建议使用该类型。"
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "dfa5936497901458",
+    "text": "更改第二因素所需的登录新近程度（分钟）"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "50ed3d8089739a00",
+    "text": "用户在门户更改第二因素、恢复代码、通行密钥或电子邮件地址时，必须在此分钟数内登录过，否则须先重新登录。0 表示不要求，这是开发模式的默认值。产品模式默认 15。"
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "在产品模式下允许默认数据库密码"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "默认关闭时，产品模式不会使用众所周知的数据库密码（如随附 compose 文件的 sts_app）或与用户名相同的密码启动。开启后仍会启动。仅用于测试环境。"
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "在此时刻之前开始的会话已结束（毫秒）"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "由“会话”页面上的“结束所有会话”设置。在此时刻（自 1970 年起的毫秒数）之前开始的登录会话已结束。0 表示没有。"
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "始终征求公共客户端的同意"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "公共客户端无法证明其身份，因此每次请求访问时都会询问用户，无论之前如何回答。本服务自身的应用程序除外。产品模式默认开启。"
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "接受的最早合作方身份验证（秒）"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "如果合作方根据 auth_time 或 AuthnInstant 表明用户的身份验证早于此时长，则拒绝联合登录。设置限制后，未说明时间的合作方将被拒绝。默认 0 表示不检查。"
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "每个地址每分钟允许的请求数"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "每个进程对单个地址所有请求的上限。这是防滥用的措施，与凭据尝试限制不同。0 表示无上限，这是开发模式的默认值。产品模式默认 6000。在代理后面时，请设置 global.trustedProxies 以正确读取地址。"
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "在产品模式下允许明文 syslog 审计导出"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "默认关闭时，产品模式的 syslog 审计目标仅接受 tls 传输。开启后也接受 tcp 和 udp，审计日志将以未加密方式通过网络。仅在可信网络中使用。"
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "此服务可连接的主机"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "如果设置，合作方、客户端或调用方可影响的出站请求只能访问这些主机。以逗号分隔：精确名称，或以点开头表示整个域，如 .example.com。默认为空，允许任何公共主机。产品模式下始终拒绝内部地址。"
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "将 HSTS 应用于子域"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "向 Strict-Transport-Security 添加 includeSubDomains，使浏览器对此服务主机名的所有子域也使用 HTTPS。产品模式默认开启。如果某个子域仍需通过纯 HTTP 响应，请关闭。"
   }
 }

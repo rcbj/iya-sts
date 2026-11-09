@@ -701,7 +701,8 @@ class AccountKeys {
                 sessionsEnded: ended.sessionsEnded,
                 address: websecurity.addressOf(req) }
     });
-    const said = ctx.translatorFor(username).text('portal.done.passkeyRemoved');
+    const said = ctx.translatorFor(username).text('portal.done.passkeyRemoved') + ' ' +
+      ctx.translatorFor(username).text('portal.done.endOthers');
     log.debug("Leaving AccountKeys.remove(). Removed.");
     return ctx.json(res, 200, { ok: true,
       message: ended.sentence ? said + ' ' + ended.sentence : said,
@@ -769,14 +770,14 @@ class AccountKeys {
           return ctx.json(res, 200, self.view(caller, ctx.baseUrlOf(req)));
         } },
       { method: 'POST', path: ctx.BASE + '/keys', operationId: 'enrolKey',
-        access: 'person',
+        access: 'person', recentAuth: true,
         body: ENROL_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.enrol(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/keys/remove',
-        operationId: 'removeKey', access: 'person',
+        operationId: 'removeKey', access: 'person', recentAuth: true,
         body: REMOVE_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

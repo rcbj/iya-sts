@@ -1072,8 +1072,8 @@
     "text": "容許的時鐘偏差步數"
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "接受目前前後各多少步。RFC 6238 第 5.2 節建議最多一步，這也是預設值，會讓一個代碼有效約九十秒。**這一項是即時生效的**，適用於每個既有註冊——部署對時鐘漂移的手機有多寬容，是一項原則，而不是 QR 碼告訴應用程式的內容。零要求時鐘完全同步，是要示範沒有同步時會發生什麼時可採用的設定。"
+    "en": "16e7e0f293746c98",
+    "text": "接受目前前後各多少步。RFC 6238 第 5.2 節建議最多一步，這也是預設值，會讓一個代碼有效約九十秒。**這一項是即時生效的**，適用於每個既有註冊——部署對時鐘漂移的手機有多寬容，是一項原則，而不是 QR 碼告訴應用程式的內容。零要求時鐘完全同步，是要示範沒有同步時會發生什麼時可採用的設定。 產品模式預設值為 0，因此代碼僅在一個 30 秒時間步內有效。"
   },
   "totp.secretBytes|label": {
     "en": "15a7f23cdeca7ba5",
@@ -12314,5 +12314,101 @@
   "malwareScan.allowCleartext|description": {
     "en": "c00ee2f1e34722ff",
     "text": "預設關閉時，產品模式拒絕 icap:// 位址，在設定 icaps:// 位址之前不接受任何檔案。開啟後，檔案可能以未加密方式到達掃描器。僅在可信任的網路中使用。"
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "密碼不得包含的字詞"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "新密碼不得包含的其他字詞，例如組織、產品、專案或部門名稱。以逗號分隔。服務名稱以及信任領域的名稱和網域一律拒絕。字詞至少需要四個字母；檢查會忽略大小寫和常見字元替換（如以 0 代替 o）。"
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "重新整理權杖鏈的最長持續時間（秒）"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "透過重新整理權杖續期的授權之絕對上限，從第一個權杖起算。超過後使用者須重新登入，無論用戶端重新整理多少次。0 表示無限制，為開發模式預設值。產品模式預設 30 天。"
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "接受無明確類型的合作夥伴登出權杖"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "預設關閉時，產品模式僅接受類型為 logout+jwt 的合作夥伴登出權杖。開啟後，也接受類型為 jwt 或無類型的權杖，適用於不傳送類型的合作夥伴。OpenID 規格僅建議使用該類型。"
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "dfa5936497901458",
+    "text": "變更第二因素所需的登入近期程度（分鐘）"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "50ed3d8089739a00",
+    "text": "使用者在入口網站變更第二因素、復原代碼、通行金鑰或電子郵件地址時，必須在此分鐘數內登入過，否則須先重新登入。0 表示不要求，為開發模式預設值。產品模式預設 15。"
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "在產品模式下允許預設資料庫密碼"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "預設關閉時，產品模式不會使用眾所周知的資料庫密碼（如隨附 compose 檔案的 sts_app）或與使用者名稱相同的密碼啟動。開啟後仍會啟動。僅用於測試環境。"
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "在此時刻之前開始的工作階段已結束（毫秒）"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "由「工作階段」頁面上的「結束所有工作階段」設定。在此時刻（自 1970 年起的毫秒數）之前開始的登入工作階段已結束。0 表示沒有。"
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "一律徵求公用用戶端的同意"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "公用用戶端無法證明其身分，因此每次要求存取時都會詢問使用者，無論先前如何回答。本服務自身的應用程式除外。產品模式預設開啟。"
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "接受的最早合作夥伴驗證（秒）"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "如果合作夥伴依 auth_time 或 AuthnInstant 表示使用者的驗證早於此時長，則拒絕同盟登入。設定限制後，未說明時間的合作夥伴將被拒絕。預設 0 表示不檢查。"
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "每個位址每分鐘允許的要求數"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "每個處理程序對單一位址所有要求的上限。這是防濫用的措施，與認證嘗試限制不同。0 表示無上限，為開發模式預設值。產品模式預設 6000。在 Proxy 後方時，請設定 global.trustedProxies 以正確讀取位址。"
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "在產品模式下允許明文 syslog 稽核匯出"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "預設關閉時，產品模式的 syslog 稽核目的地僅接受 tls 傳輸。開啟後也接受 tcp 和 udp，稽核日誌將以未加密方式通過網路。僅在可信任的網路中使用。"
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "此服務可連線的主機"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "如果設定，合作夥伴、用戶端或呼叫端可影響的傳出要求只能連線至這些主機。以逗號分隔：精確名稱，或以點開頭表示整個網域，如 .example.com。預設為空，允許任何公用主機。產品模式下一律拒絕內部位址。"
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "將 HSTS 套用至子網域"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "在 Strict-Transport-Security 加入 includeSubDomains，使瀏覽器對此服務主機名稱的所有子網域也使用 HTTPS。產品模式預設開啟。若某個子網域仍需透過純 HTTP 回應，請關閉。"
   }
 }

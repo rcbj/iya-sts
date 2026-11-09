@@ -271,8 +271,10 @@ function peerIsTrustedProxy(req) {
   log.debug("Entering peerIsTrustedProxy().");
   const theRanges = ranges();
   if (!theRanges.configured) {
-    log.debug("Leaving peerIsTrustedProxy(). No ranges: the old rule.");
-    return true;
+    // Believing any caller lets anybody name their own address, so product
+    // needs the list (ASVS 5.0.0 15.3.4).
+    log.debug("Leaving peerIsTrustedProxy(). No ranges.");
+    return !require('./mode').requiresTrustedProxyRanges();
   }
   log.debug("Leaving peerIsTrustedProxy().");
   return inRanges(peerOf(req), theRanges);
@@ -392,7 +394,10 @@ function clientAddressOf(req) {
   const theRanges = ranges();
   if (!theRanges.configured) {
     log.debug("Leaving clientAddressOf(). The old rule.");
-    return chain[0] || peer || 'unknown';
+    // A client writes the left-most entry, so product does not believe it with
+    // no list of proxies (ASVS 5.0.0 4.1.3, 15.3.4).
+    return require('./mode').requiresTrustedProxyRanges()
+      ? (peer || 'unknown') : (chain[0] || peer || 'unknown');
   }
   if (!inRanges(peer, theRanges)) {
     log.debug("Leaving clientAddressOf(). An untrusted peer's header is " +
@@ -527,6 +532,7 @@ module.exports = {
   edgeRefused: edgeRefused,
   forwardedBelieved: forwardedBelieved,
   peerIsTrustedProxy: peerIsTrustedProxy,
+  fromFrontProcess: fromFrontProcess,
   trustedProxyRanges: trustedProxyRanges,
   isTrustedProxy: isTrustedProxy,
   normalise: normalise,

@@ -587,6 +587,92 @@ function requiresSecondFactorOfEveryone() {
   return isProduct() && config.value('authn.allowOptionalSecondFactor') !== true;
 }
 
+// Must an administrator state how a person was verified before clearing their
+// second factor (#1504, ASVS 5.0.0 6.4.4)?
+/**
+ * @returns true when clearing a factor needs a stated proof of identity
+ */
+function requiresEvidenceToClearFactor() {
+  log.debug("Entering requiresEvidenceToClearFactor().");
+  log.debug("Leaving requiresEvidenceToClearFactor().");
+  return isProduct();
+}
+
+/**
+ * @returns true when a repeated token parameter is refused
+ */
+function refusesRepeatedTokenParameters() {
+  log.debug("Entering refusesRepeatedTokenParameters().");
+  log.debug("Leaving refusesRepeatedTokenParameters().");
+  return isProduct();
+}
+
+/**
+ * @returns true when forwarded addresses need a list of trusted proxies
+ */
+function requiresTrustedProxyRanges() {
+  log.debug("Entering requiresTrustedProxyRanges().");
+  log.debug("Leaving requiresTrustedProxyRanges().");
+  return isProduct();
+}
+
+/**
+ * @returns true when an internal error's text is kept from the caller
+ */
+function hidesFailureDetail() {
+  log.debug("Entering hidesFailureDetail().");
+  log.debug("Leaving hidesFailureDetail().");
+  return isProduct();
+}
+
+/**
+ * @returns true when a partner's Logout Token must carry logout+jwt
+ */
+function requiresTypedLogoutToken() {
+  log.debug("Entering requiresTypedLogoutToken().");
+  log.debug("Leaving requiresTypedLogoutToken().");
+  return isProduct() &&
+    config.value('federation.allowUntypedLogoutToken') !== true;
+}
+
+/**
+ * @returns true when request logs leave out credentials and bodies
+ */
+function redactsRequestLog() {
+  log.debug("Entering redactsRequestLog().");
+  log.debug("Leaving redactsRequestLog().");
+  return isProduct();
+}
+
+/**
+ * @returns true when a default database password stops the service
+ */
+function refusesDefaultDatabasePassword() {
+  log.debug("Entering refusesDefaultDatabasePassword().");
+  log.debug("Leaving refusesDefaultDatabasePassword().");
+  return isProduct() &&
+    config.value('persistence.allowDefaultDatabasePassword') !== true;
+}
+
+/**
+ * @returns true when a syslog destination must use tls
+ */
+function refusesPlainSyslog() {
+  log.debug("Entering refusesPlainSyslog().");
+  log.debug("Leaving refusesPlainSyslog().");
+  return isProduct() &&
+    config.value('audit.allowPlainSyslog') !== true;
+}
+
+/**
+ * @returns true when ES256K is used only if keys.signingAlgorithms lists it
+ */
+function omitsUnapprovedSigningCurves() {
+  log.debug("Entering omitsUnapprovedSigningCurves().");
+  log.debug("Leaving omitsUnapprovedSigningCurves().");
+  return isProduct();
+}
+
 // Must a malware scanner be reached over TLS (#1501, ASVS 5.0.0 12.3.1)?
 /**
  * @returns true when a plain icap:// address may not be used
@@ -3158,6 +3244,35 @@ const REQUIREMENTS = [
     product: 'Everybody needs a second factor, whatever the policy says, ' +
              'unless authn.allowOptionalSecondFactor is on.',
     where: 'common/authn_policy.ts' },
+  // #1504 (ASVS 5.0.0 6.4.4).
+  { id: 'factor-clear-evidence',
+    what: 'Clearing a second factor needs a stated proof of identity',
+    development: 'An administrator may clear a factor by naming the person.',
+    product: 'An administrator must say how the person\'s identity was ' +
+             'verified. The statement goes on the audit row.',
+    where: 'admin-core/admin_actions.ts' },
+  { id: 'strict-protocol-input',
+    what: 'Protocol input is held to the strict reading',
+    development: 'A repeated token parameter takes its last value, a ' +
+                 'partner\'s Logout Token needs no explicit type, forwarded ' +
+                 'addresses are believed from anyone when global.trustProxy ' +
+                 'is on with no list, and an internal error\'s text reaches ' +
+                 'the caller.',
+    product: 'A repeated token parameter is refused, a partner\'s Logout ' +
+             'Token must be typed logout+jwt unless ' +
+             'federation.allowUntypedLogoutToken is on, forwarded ' +
+             'addresses need global.trustedProxies, and an internal ' +
+             'error\'s text stays in the log.',
+    where: 'common/mode.js' },
+  { id: 'no-known-secrets',
+    what: 'Logs and the database hold no well-known secrets',
+    development: 'At debug level the log carries whole requests and ' +
+                 'responses, and the database may use a demonstration ' +
+                 'password.',
+    product: 'Request logs leave out credentials and bodies at every ' +
+             'level, and a default database password stops the service ' +
+             'unless persistence.allowDefaultDatabasePassword is on.',
+    where: 'common/helpers.js, persistence/persistence.js' },
   // #1501 (ASVS 5.0.0 12.3.1).
   { id: 'malware-scan-tls',
     what: 'Files reach the malware scanner encrypted',
@@ -4750,6 +4865,15 @@ module.exports = {
   requiresPkceOfEveryClient: requiresPkceOfEveryClient,
   requiresSecondFactorOfEveryone: requiresSecondFactorOfEveryone,
   requiresTlsToMalwareScanner: requiresTlsToMalwareScanner,
+  omitsUnapprovedSigningCurves: omitsUnapprovedSigningCurves,
+  refusesPlainSyslog: refusesPlainSyslog,
+  refusesDefaultDatabasePassword: refusesDefaultDatabasePassword,
+  redactsRequestLog: redactsRequestLog,
+  requiresTypedLogoutToken: requiresTypedLogoutToken,
+  hidesFailureDetail: hidesFailureDetail,
+  requiresTrustedProxyRanges: requiresTrustedProxyRanges,
+  refusesRepeatedTokenParameters: refusesRepeatedTokenParameters,
+  requiresEvidenceToClearFactor: requiresEvidenceToClearFactor,
   defaultRsaBits: defaultRsaBits,
   expiredAssertionGraceS: expiredAssertionGraceS,
   hidesStepIds: hidesStepIds,

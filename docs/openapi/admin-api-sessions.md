@@ -191,6 +191,30 @@ Scope: `admin:read`.
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 
+## POST /admin-api/sessions/end-all
+
+`endAllSessions`
+
+**End every sign-on session in this realm**
+
+Every session started before now ends the next time it is read. The cost does not grow with the number of sessions. Issued tokens are not revoked: use /admin-api/tokens/revoke-all as well.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: Every session has ended.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+
 ## POST /admin-api/sessions/revoke
 
 `revokeSession`

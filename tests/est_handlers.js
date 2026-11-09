@@ -447,12 +447,12 @@ async function childMain() {
        'GET /device/nonce: 200, ' + FRESH + ', a 32-octet unpadded ' +
        'base64url nonce and an expiry', gotNonce.status + ' ' +
        String(gotNonce.body).slice(0, 200));
-  note(handle && /Path=\/\.well-known\/est;/.test(cookieLine) &&
+  note(handle && /Path=\/;/.test(cookieLine) &&
        /HttpOnly/.test(cookieLine) && /SameSite=Strict/.test(cookieLine) &&
        /Secure/.test(cookieLine) &&
        cookieLine.indexOf(String(nonceBody.nonce)) < 0,
        'it sets the sts_est_nonce cookie: a handle, never the nonce, ' +
-       'scoped to the EST paths, HttpOnly, Secure, SameSite=Strict',
+       'at the root so it can be __Host-, HttpOnly, Secure, SameSite=Strict',
        cookieLine);
   const spendAs = async function (who, cookie, nonce) {
     log.debug("Entering spendAs().");

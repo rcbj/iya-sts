@@ -355,6 +355,7 @@
   "mfaSection.lastCode": "Huling code na tinanggap",
   "mfaSection.lastCodeNote": ". Ang step na kinabibilangan nito ay naka-store kasama ng enrolment, kaya hindi na magagamit ulit ang code na iyon (RFC 6238 section 5.2).",
   "mfaSection.clearTotpTitle": "Kina-clear ang enrolment para makapag-set up ng bago ang taong ito. Ito ang TANGING daan pabalik para sa taong nawalan ng telepono: nasa device na iyon ang secret at hindi ito maaabot ng serbisyong ito.",
+  "mfaSection.evidenceLabel": "Paano mo na-verify ang pagkakakilanlan ng taong ito?",
   "mfaSection.clearTotp": "I-clear ang authenticator app",
   "mfaSection.clearTotpNote": "<strong>Ito ang tanging daan pabalik para sa taong nawalan ng telepono.</strong> Nasa device na iyon ang shared secret at hindi ito maaabot ng serbisyong ito, at sadyang walang self-service reset — hindi second factor ang second factor na kayang alisin ng kahit sino. Ibinababa ng pag-clear ang account sa iisang factor at hindi nito mai-lock out ang sinuman, dahil hindi kailanman daan papasok ang one-time code nang mag-isa. Magse-set up sila ng bago sa <code>/portal/mfa</code>.",
   "mfaSection.clearingNeedsWrite": "Kailangan ng <strong>Admin Write</strong> para mag-clear.",

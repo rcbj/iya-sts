@@ -295,12 +295,11 @@ class PortalClaimSources {
    * @returns the header line
    */
   bindingCookie(req: Json, secret: string, clear: boolean): string {
-    const { log, baseUrlOf } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering PortalClaimSources.bindingCookie(). clear=" + clear);
-    const path = new URL(baseUrlOf(req)).pathname.replace(/\/+$/, '') +
-                 CALLBACK;
     log.debug("Leaving PortalClaimSources.bindingCookie().");
-    return BINDING_COOKIE + '=' + (clear ? '' : secret) + '; Path=' + path +
+    // Path=/ so that it can carry the __Host- prefix (ASVS 5.0.0 3.3.3).
+    return BINDING_COOKIE + '=' + (clear ? '' : secret) + '; Path=/' +
       '; Max-Age=' + (clear ? 0 : BINDING_MAX_AGE_S) +
       '; HttpOnly; SameSite=Lax' + (this.deps.https() ? '; Secure' : '');
   }

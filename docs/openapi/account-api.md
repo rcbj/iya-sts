@@ -920,6 +920,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.doorLabels` | map |  | Each door's label, by its id. |
 | `view.doorLabels.{key}` | string |  |  |
@@ -1398,6 +1402,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.acme` | object |  |  |
 | `view.acme.keys` | list |  |  |
@@ -4555,6 +4563,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -5359,6 +5371,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -5611,6 +5627,10 @@ Scope: `account:manage`.
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
 | `sessionsEnded` | integer |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -6220,6 +6240,10 @@ Scope: `account:manage`.
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
 | `sessionsEnded` | integer |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.codes` | object |  |  |
 | `view.codes.advised` | boolean |  |  |
@@ -7747,6 +7771,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.didClaim` | boolean |  |  |
 | `view.enabled` | boolean |  |  |
@@ -8022,6 +8050,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.didClaim` | boolean |  |  |
 | `view.enabled` | boolean |  |  |
@@ -9112,6 +9144,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.entry` | boolean |  |  |
 | `view.fresh` | object |  |  |

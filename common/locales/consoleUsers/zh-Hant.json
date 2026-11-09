@@ -355,6 +355,7 @@
   "mfaSection.lastCode": "最後接受的驗證碼",
   "mfaSection.lastCodeNote": "。其所在的時間步會與登記一起儲存，因此該驗證碼無法再次使用（RFC 6238 第 5.2 節）。",
   "mfaSection.clearTotpTitle": "清除登記，讓此人可以設定新的。對遺失手機的人來說，這是唯一的回復途徑：密鑰在那台裝置上，本服務無法觸及。",
+  "mfaSection.evidenceLabel": "您如何驗證此人的身分？",
   "mfaSection.clearTotp": "清除驗證器應用程式",
   "mfaSection.clearTotpNote": "<strong>對遺失手機的人來說，這是唯一的回復途徑。</strong>共用密鑰存在那台裝置上，本服務無法觸及，而且刻意不提供自助重設——任何人都能移除的第二因素就不是第二因素。清除會讓帳戶降為單一因素，不會把任何人鎖在外面，因為一次性驗證碼本身從來不是進入的方式。他們可在 <code>/portal/mfa</code> 設定新的。",
   "mfaSection.clearingNeedsWrite": "清除需要 <strong>Admin Write</strong>。",

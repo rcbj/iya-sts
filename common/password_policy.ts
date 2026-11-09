@@ -234,6 +234,13 @@ interface PolicyResult {
 
 // What this module needs from the rest of the service. Named for what is
 // asked of each, so a test can supply exactly that and nothing more.
+// The shortest word the context check looks for: a shorter one would refuse
+// good passwords by chance.
+const MIN_CONTEXT_WORD = 4;
+
+// What this service is called (#1505).
+const SERVICE_WORDS = ['iya-sts', 'iyasec', 'iya cybersecurity'];
+
 interface PasswordPolicyDeps {
   log: typeof helpers.log;
   mode: { verifiesCredentials(): boolean };
@@ -1112,6 +1119,48 @@ class PasswordPolicy {
     }).length;
   }
 
+  // A name in a password is the first thing guessed (#1505, ASVS 5.0.0
+  // 6.1.2, 6.2.11). The list is the service's own names, this realm's name and
+  // domain, and `security.passwordContextWords`; docs/password-words.md is
+  // the documentation of it. Letters swapped for look-alikes count, and `1`
+  // is tried as both of the letters it stands for.
+  private contextWordIn(password: string): string {
+    const { log } = this.deps;
+    log.debug("Entering PasswordPolicy.contextWordIn().");
+    const squash = function (text: string, one: string): string {
+      return text.normalize('NFKC').toLowerCase()
+        .replace(/0/g, 'o').replace(/1/g, one).replace(/3/g, 'e')
+        .replace(/[4@]/g, 'a').replace(/[5$]/g, 's').replace(/7/g, 't')
+        .replace(/!/g, 'i').replace(/[^\p{L}\p{N}]/gu, '');
+    };
+    const forms = [squash(password, 'i'), squash(password, 'l')];
+    const found = this.contextWords().filter(function (word) {
+      const key = squash(word, 'i');
+      return key.length >= MIN_CONTEXT_WORD && forms.some(function (form) {
+        return form.indexOf(key) >= 0;
+      });
+    })[0];
+    log.debug("Leaving PasswordPolicy.contextWordIn().");
+    return found || '';
+  }
+
+  private contextWords(): string[] {
+    const { log } = this.deps;
+    log.debug("Entering PasswordPolicy.contextWords().");
+    const realms = require('./realms');
+    const realm = realms.current();
+    const listed = require('./config').value('security.passwordContextWords');
+    const labels = String(realms.domainOf(realm) || '').split('.').slice(0, -1);
+    const out = SERVICE_WORDS.concat(
+      Array.isArray(listed) ? listed : String(listed || '').split(','),
+      realm && realm.id !== 'default' ? [realm.id, realm.name] : [],
+      labels).map(function (one) {
+      return String(one || '').trim();
+    }).filter(Boolean);
+    log.debug("Leaving PasswordPolicy.contextWords(). " + out.length);
+    return out;
+  }
+
   // What is wrong with this password under this profile — every rule it
   // breaks, not the first, so that a person fixes it once. INDEPENDENT OF THE
   // MODE: whether to ASK is the caller's decision (`credentials.ts` asks in
@@ -1141,6 +1190,11 @@ class PasswordPolicy {
     if (length < rules.minLength) {
       out.push('at least ' + rules.minLength + ' characters (it has ' +
                length + ')');
+    }
+    const word = this.contextWordIn(text);
+    if (word) {
+      out.push('no word this organization or service is known by (it ' +
+               'contains "' + word + '")');
     }
     log.debug("Leaving PasswordPolicy.problemsWith().");
     return out;

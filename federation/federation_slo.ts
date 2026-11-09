@@ -1870,7 +1870,14 @@ class FederationSlo {
       header = null;
     }
     const typ = String((header && header.typ) || 'jwt').toLowerCase();
-    if (!header || LOGOUT_TYPES.indexOf(typ) < 0) {
+    // The explicit type stops an ID Token being replayed as a Logout Token
+    // (ASVS 5.0.0 10.5.5); the specification only recommends it, so a partner
+    // that omits it is a setting away.
+    const accepted = require('../common/mode').requiresTypedLogoutToken()
+      ? LOGOUT_TYPES.filter(function (one) {
+        return one !== 'jwt';
+      }) : LOGOUT_TYPES;
+    if (!header || accepted.indexOf(typ) < 0) {
       errorCodes.mark(res, 'STS-FED-0129');
       log.debug("Leaving FederationSlo.backchannelEndpoint(). Wrong typ.");
       return this.refuseJson(res, record, 400, header

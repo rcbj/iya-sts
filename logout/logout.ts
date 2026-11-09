@@ -4107,6 +4107,30 @@ class Logout {
   // session this service no longer holds is a browser that looks signed in
   // and is not.
   // ---------------------------------------------------------------------------
+  // Ending somebody's OTHER sessions needs a recent sign-in (ASVS 5.0.0 7.5.2).
+  // Signing yourself out never does, and that includes signing out everywhere:
+  // nothing may stand between a person and leaving.
+  private reauthenticationOwed(subject: any, body: any): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering Logout.reauthenticationOwed().");
+    const limit = Number(config.value('account.recentAuthMinutes')) * 60;
+    const raw = body.select === undefined ? [] : body.select;
+    const own = subject.session ? String(subject.session.id) : '';
+    const others = (Array.isArray(raw) ? raw : [raw]).filter(function (one) {
+      return one && String(one) !== own && String(one) !== 'session:' + own;
+    });
+    if (limit === 0 || String(body.scope || '') === 'global' || !others.length) {
+      log.debug("Leaving Logout.reauthenticationOwed(). Not asked.");
+      return false;
+    }
+    const signOn = subject.session || {};
+    const events = Array.isArray(signOn.events) ? signOn.events : [];
+    const latest = events.length ? events[events.length - 1] : null;
+    const at = Number((latest && latest.at) || signOn.authTime || 0);
+    log.debug("Leaving Logout.reauthenticationOwed().");
+    return !(at > 0 && Date.now() / 1000 - at <= limit);
+  }
+
   private endFor(req?, res?, subject?, body?) {
     const { log, authn, baseUrlOf } = this.deps;
     log.debug("Entering Logout.endFor().");
@@ -4817,6 +4841,16 @@ class Logout {
                                   error_description: String(asked.detail) },
                                 null, 2));
         log.debug("Leaving the logout action endpoint. " + asked.detail);
+        return;
+      }
+      if (this.reauthenticationOwed(subject, body)) {
+        errorCodes.mark(res, 'STS-LOGOUT-0015');
+        res.status(403).type('application/json').set('Cache-Control',
+                                                     'no-store')
+           .send(JSON.stringify({ error: 'reauthentication_required',
+             errors: ['Sign in again at /authn/login, then come back to end ' +
+                      'your other sessions.'] }, null, 2));
+        log.debug("Leaving the logout action endpoint. Sign in again.");
         return;
       }
       const ended = this.endFor(req, res, subject, body);

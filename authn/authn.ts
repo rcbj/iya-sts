@@ -1425,6 +1425,15 @@ class Authn {
       log.debug("Leaving Authn.sessionEnded().");
       return 'expired';
     }
+    // AN ADMINISTRATOR ENDED EVERY SESSION (#1520, ASVS 5.0.0 7.4.5). One
+    // instant rather than a walk of the population, so ending them costs the
+    // same whatever the number of people.
+    const endedBefore = Number(this.deps.config.value(
+      'authn.sessionsEndedBefore'));
+    if (endedBefore > 0 && Number(session.startedAt || 0) < endedBefore) {
+      log.debug("Leaving Authn.sessionEnded(). Ended by an administrator.");
+      return 'expired';
+    }
     const idle = this.sessionIdleTimeoutMs();
     if (idle && session.chosen !== false && session.lastSeenAt &&
         now - session.lastSeenAt > idle) {

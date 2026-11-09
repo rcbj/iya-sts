@@ -661,8 +661,9 @@ function reportAuthenticateToken(req: any, res: any, presentation: any):
     log.debug("Leaving reportAuthenticateToken(). Another audience.");
     return null;
   }
-  const person = String(claims.username ||
-    deps.helpers.nameForSubject(claims.sub) || '');
+  // `sub` first: it cannot be reassigned and a username can (ASVS 5.0.0 10.3.3).
+  const person = String(deps.helpers.nameForSubject(claims.sub) ||
+    claims.username || '');
   if ((claims.jti && deps.stats.isRevoked(String(claims.jti))) ||
       (person && deps.accountState.isDisabled(person))) {
     reportUnauthenticated(res, 'STS-REPORT-0012', 'invalid_token',
@@ -795,6 +796,8 @@ function reportAuthenticateToken(req: any, res: any, presentation: any):
     log.debug("Leaving reportAuthenticateToken(). A role was withdrawn.");
     return null;
   }
+  // The audit row names who the token says this is (#1537).
+  res.locals.apiCaller = { name: person };
   log.debug("Leaving reportAuthenticateToken().");
   return caller.who;
 }

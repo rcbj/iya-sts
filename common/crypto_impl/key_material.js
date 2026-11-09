@@ -715,7 +715,7 @@ async function buildPkcs12(options) {
   await pfx.parsedValue.authenticatedSafe.makeInternalValues({ safeContents: [{
       }, {}] });
   await pfx.makeInternalValues({ password: strBuf(opts.password),
-                               iterations: 100000,
+                               iterations: 600000,
                                pbkdf2HashAlgorithm: 'SHA-256',
                                hmacHashAlgorithm: 'SHA-256' });
   log.debug("Leaving buildPkcs12().");

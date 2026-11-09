@@ -9491,6 +9491,7 @@ op `getConsent`(`parameters/0/schema`: string,
       `base`?: string;
       `client`?: {`id`?: string; `name`?: string};
       `clientDisplay`?: get_authn_api_consent__id__r200_application_json_view_clientDisplay_h149;
+      `resources`?: (string)[];
       `scopes`?: ({
         `scope`?: string;
         `permission`?: get_authn_api_consent__id__r200_application_json_view_scopes_i_permission_h150;

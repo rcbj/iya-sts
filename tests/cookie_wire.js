@@ -91,7 +91,7 @@ function childMain() {
          '__Secure-sts_claim_link=x; Path=/portal/cb; Secure',
          'a narrower Path can only be __Secure-');
     ['sts_claim_link', 'sts_est_nonce'].forEach(function (name) {
-      same(wire.unwrapHeader('__Secure-' + name + '=1', false), name + '=1',
+      same(wire.unwrapHeader('__Host-' + name + '=1', false), name + '=1',
            name + ' comes back, or the feature it carries breaks');
     });
 

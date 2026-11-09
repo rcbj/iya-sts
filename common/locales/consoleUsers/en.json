@@ -355,6 +355,7 @@
   "mfaSection.lastCode": "Last code accepted",
   "mfaSection.lastCodeNote": ". The step it was in is stored with the enrolment, so that code cannot be used again (RFC 6238 section 5.2).",
   "mfaSection.clearTotpTitle": "Clears the enrolment so this person can set up a new one. This is the ONLY way back for somebody who has lost their phone: the secret is on that device and this service cannot reach it.",
+  "mfaSection.evidenceLabel": "How did you verify this person's identity?",
   "mfaSection.clearTotp": "Clear the authenticator app",
   "mfaSection.clearTotpNote": "<strong>This is the only way back for somebody who has lost their phone.</strong> The shared secret lives on that device and this service cannot reach it, and there is deliberately no self-service reset — a second factor anybody can remove is not a second factor. Clearing drops the account to one factor and cannot lock anybody out, because a one-time code is never a way in by itself. They set a new one up at <code>/portal/mfa</code>.",
   "mfaSection.clearingNeedsWrite": "Clearing needs <strong>Admin Write</strong>.",

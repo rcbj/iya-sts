@@ -843,7 +843,7 @@ class SsfTransmitters {
       what = (action === 'add-subject' ? 'subject added'
                                        : 'subject removed');
     } else if (action === 'verify') {
-      state.verifyState = stsCrypto.randomBytes(12).toString('base64url');
+      state.verifyState = stsCrypto.randomBytes(16).toString('base64url');
       answer = await this.call(record, 'POST',
         state.config.verification_endpoint,
         { stream_id: state.streamId, state: state.verifyState });

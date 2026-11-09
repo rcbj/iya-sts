@@ -74,6 +74,8 @@ export interface AccountContext {
 
 // ONE OPERATION, which is both a route and a row of the OpenAPI document.
 export interface AccountOperation {
+  /** Needs a sign-in within `account.recentAuthMinutes` (ASVS 5.0.0 7.5.1). */
+  recentAuth?: boolean;
   method: 'GET' | 'POST';
   // The full path, `/account-api/...`. Express parameters (`:id`) allowed.
   path: string;

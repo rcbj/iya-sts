@@ -35786,6 +35786,7 @@ op `setUserPassword`(@js(#{`examples`:#[#{`user`:"alice",`generate`:true}]}) `re
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearUserAuthenticatorApp`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log."}) `evidence`?: string;
     @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
     @js(#{`description`:"Accepted for `user`."}) `username`?: string
   },
@@ -35819,6 +35820,7 @@ op `clearUserAuthenticatorApp`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestB
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearUserBackupCodes`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log."}) `evidence`?: string;
     @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
     @js(#{`description`:"Accepted for `user`."}) `username`?: string
   },
@@ -35852,6 +35854,7 @@ op `clearUserBackupCodes`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/c
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearUserEmailFactor`(@js(#{`examples`:#[#{`user`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log."}) `evidence`?: string;
     @js(#{`description`:"The person, as /admin-api/users names them."}) `user`: string;
     @js(#{`description`:"Accepted for `user`."}) `username`?: string
   },
@@ -37588,6 +37591,7 @@ op `cancelUserPasskeyUpgrade`(@js(#{`examples`:#[#{`user`:"no-such-person"}]}) `
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearUserSecurityKey`(@js(#{`examples`:#[#{`user`:"alice",`credentialId`:"q1w2e3r4"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log."}) `evidence`?: string;
     `user`: string;
     @js(#{`description`:"Accepted for `user`."}) `username`?: string;
     @js(#{`description`:"base64url, as WebAuthn produced it."}) `credentialId`: string
@@ -39653,6 +39657,7 @@ op `getMultiFactor`(`parameters/0/schema`: string,
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearAuthenticatorApp`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log."}) `evidence`?: string;
     @js(#{`description`:"The name they sign in as."}) `username`: string;
     @js(#{`description`:"Accepted for `username`."}) `user`?: string
   },
@@ -39686,6 +39691,7 @@ op `clearAuthenticatorApp`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestB
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearSecurityKey`(@js(#{`examples`:#[#{`username`:"alice",`credentialId`:"q1w2e3r4"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log."}) `evidence`?: string;
     `username`: string;
     @js(#{`description`:"Accepted for `username`."}) `user`?: string;
     @js(#{`description`:"base64url, as WebAuthn produced it."}) `credentialId`: string
@@ -39720,6 +39726,7 @@ op `clearSecurityKey`(@js(#{`examples`:#[#{`username`:"alice",`credentialId`:"q1
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `clearEmailFactor`(@js(#{`examples`:#[#{`username`:"alice"}]}) `requestBody/content/application~1json/schema`: {
+    @js(#{`description`:"How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log."}) `evidence`?: string;
     @js(#{`description`:"The name they sign in as."}) `username`: string;
     @js(#{`description`:"Accepted for `username`."}) `user`?: string
   },
@@ -68661,6 +68668,31 @@ op `getMalwareScanning`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `testMalwareScanning`(`responses/200/content/application~1json/schema`: {
+    `ok`: boolean;
+    `message`: string
+  },
+  `responses/default/content/application~1json/schema`: `SharedModel1`): void;
+
+@endpoint("/admin-api/sessions/end-all",
+  "post",
+  #{
+    `operationId`:"endAllSessions",
+    `summary`:"End every sign-on session in this realm",
+    `description`:"Every session started before now ends the next time it is read. The cost does not grow with the number of sessions. Issued tokens are not revoked: use /admin-api/tokens/revoke-all as well.",
+    `tags`:#["Sessions"],
+    `responses`:#{
+      `200`:#{
+        `description`:"Every session has ended.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
+  })
+op `endAllSessions`(`responses/200/content/application~1json/schema`: {
     `ok`: boolean;
     `message`: string
   },

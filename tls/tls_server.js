@@ -5495,6 +5495,20 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   const cert = peer.cert;
   const subject = peer.subject;
   const username = peer.username;
+  // A PERSON AT A BROWSER OWES THE SECOND FACTOR THE SCREEN WOULD ASK FOR
+  // (#1516), so product mode starts no one-factor
+  // session here for somebody who needs one; the sign-in screen's certificate
+  // door asks for it. This is the browser's door only. A certificate presented
+  // by a program (WS-Trust, a token exchange, RFC 8705, LDAP EXTERNAL, PKINIT)
+  // has nobody there to answer, and a federated sign-in is the partner's.
+  if (serviceMode.verifiesCredentials() &&
+      require('../common/credentials').mfaRequirementFor(username).required) {
+    errorCodes.mark(res, 'STS-TLS-0060');
+    log.debug('Leaving startCertificateSessionIn(). A second factor is owed.');
+    return { started: false,
+             why: 'a second factor is required, so sign in on the sign-in ' +
+                  'screen and choose your certificate there' };
+  }
   // WHICH OF THE BROWSER'S ACCOUNTS THIS IS (#561), for the answer: the
   // certificate's account live in the set is re-authenticated, any other
   // added.

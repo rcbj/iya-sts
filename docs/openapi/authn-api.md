@@ -176,6 +176,8 @@ The door of the sign-in surface's `GET /oauth2/consent`.
 | `view.limits[].rows[].value` | string |  |  |
 | `view.limits[].type` | string |  |  |
 | `view.protocol` | string |  |  |
+| `view.resources` | list |  |  |
+| `view.resources[]` | string |  |  |
 | `view.scopes` | list |  |  |
 | `view.scopes[].permission` | object |  |  |
 | `view.scopes[].permission.baseUri` | string |  |  |

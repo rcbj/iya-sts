@@ -142,6 +142,11 @@ interface MdocContext {
  * Object, every disclosed element's digest and the device signature over
  * the request's session transcript.
  */
+// A namespace or element name from a credential may not reach an object's
+// prototype (ASVS 5.0.0 15.3.6).
+const SAFE_KEY = (key: unknown): boolean =>
+  ['__proto__', 'constructor', 'prototype'].indexOf(String(key)) < 0;
+
 class VcMdoc {
   /**
    * The COSE signature algorithm identifiers this Verifier accepts.
@@ -615,8 +620,10 @@ class VcMdoc {
                               'signed');
             }
             const name = String(element.get('elementIdentifier'));
-            claims[ns] = claims[ns] || {};
-            claims[ns][name] = this.plain(element.get('elementValue'));
+            if (SAFE_KEY(ns) && SAFE_KEY(name)) {
+              claims[ns] = claims[ns] || {};
+              claims[ns][name] = this.plain(element.get('elementValue'));
+            }
           } catch (e) {
             log.debug("Caught in VcMdoc.verify(): " +
                       ((e && e.message) || e));
@@ -703,8 +710,10 @@ class VcMdoc {
                               ', which the issuer\'s keyAuthorizations do ' +
                               'not authorize');
             }
-            claims[ns] = claims[ns] || {};
-            claims[ns][String(name)] = this.plain(value);
+            if (SAFE_KEY(ns) && SAFE_KEY(String(name))) {
+              claims[ns] = claims[ns] || {};
+              claims[ns][String(name)] = this.plain(value);
+            }
           });
       });
     } catch (e) {

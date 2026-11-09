@@ -397,7 +397,7 @@ class PortalCertificates {
                                               ctx.baseUrlOf(req), null));
         } },
       { method: 'POST', path: ctx.BASE + '/certificates',
-        operationId: 'changeCertificates', access: 'person', body: self.formSchema(),
+        operationId: 'changeCertificates', access: 'person', recentAuth: true, body: self.formSchema(),
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);

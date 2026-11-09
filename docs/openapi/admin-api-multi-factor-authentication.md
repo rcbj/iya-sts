@@ -249,6 +249,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
 | `user` | string |  | Accepted for `username`. |
 | `username` | string | yes | The name they sign in as. |
 
@@ -300,6 +301,7 @@ Scope: `admin:write`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `credentialId` | string | yes | base64url, as WebAuthn produced it. |
+| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
 | `user` | string |  | Accepted for `username`. |
 | `username` | string | yes |  |
 
@@ -362,6 +364,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
 | `user` | string |  | Accepted for `username`. |
 | `username` | string | yes | The name they sign in as. |
 

@@ -2305,6 +2305,13 @@ class AuditExport {
         return this.refusal('STS-AUDIT-0001',
           'The transport must be udp, tcp or tls.');
       }
+      // ASVS 5.0.0 12.3.1: the audit log leaves encrypted in product (#1527).
+      if (dest.transport !== 'tls' &&
+          require('./mode').refusesPlainSyslog()) {
+        logger.debug("Leaving AuditExport.fillTyped(). Plain syslog.");
+        return this.refusal('STS-AUDIT-0016', 'Product mode sends syslog ' +
+          'over tls only, unless audit.allowPlainSyslog is on.');
+      }
       const facility = Number(dest.facility);
       if (!isFinite(facility) || facility < 0 || facility > 23) {
         logger.debug("Leaving AuditExport.fillTyped(). Bad facility.");

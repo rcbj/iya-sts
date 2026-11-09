@@ -7312,6 +7312,12 @@ class FederationSp {
       return this.refuse(res, record, 401, 'The partner\'s session has ' +
                                            'already ended', bound.why);
     }
+    if (this.partnerAuthStale(Date.parse(String(contents.authnInstant)) / 1000)) {
+      errorCodes.mark(res, 'STS-FED-0240');
+      log.debug("Leaving FederationSp.consumeSamlResponse(). Too old.");
+      return this.refuse(res, record, 401, 'The sign-in was refused',
+                         'The partner authenticated this person too long ago.');
+    }
     // AN UNSOLICITED ASSERTION HAS NO CONTEXT TO SPEND (#1499, ASVS 5.0.0 6.8.3),
     // so its own ID is claimed once, for as long as it is valid.
     const signIn = () => this.signerStillAccepted(req, res, record, () => {
@@ -8258,6 +8264,18 @@ class FederationSp {
   // Answers `{ ok: true, payload, jwk, token }` — `token` the signed JWT,
   // opened — or `{ ok: false }` after the refusal has been drawn.
   // ---------------------------------------------------------------------------
+  // Is the partner's authentication older than this realm will accept (ASVS
+  // 5.0.0 6.8.4)? With the setting at 0 it is not asked. A partner that gives
+  // no time (NaN here) is refused while a limit is set, because its age is
+  // unknown; the partner's own strength is judged elsewhere.
+  private partnerAuthStale(seconds: number): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering FederationSp.partnerAuthStale().");
+    const limit = Number(config.value('federation.maxPartnerAuthAgeS'));
+    log.debug("Leaving FederationSp.partnerAuthStale().");
+    return limit > 0 && !(seconds > 0 && Date.now() / 1000 - seconds <= limit);
+  }
+
   private verifyIdToken(res, record, context, sentToken, checks): Promise<any> {
     const { errorCodes, log, stsCrypto, jsonFromB64u } = this.deps;
     log.debug("Entering FederationSp.verifyIdToken(). front=" +
@@ -8393,6 +8411,13 @@ class FederationSp {
             ': without it a ' + one.what + ' substituted on the way here ' +
             'would be accepted as this person\'s.');
         }
+      }
+      if (this.partnerAuthStale(Number(payload.auth_time))) {
+        errorCodes.mark(res, 'STS-FED-0240');
+        log.debug("Leaving FederationSp.verifyIdToken(). Too old.");
+        return { ok: false, answered: this.refuse(res, record, 401,
+          'The sign-in was refused',
+          'The partner authenticated this person too long ago.') };
       }
       log.debug("Leaving FederationSp.verifyIdToken(). Verified.");
       return { ok: true, payload: payload, jwk: verified.jwk, token: idToken };

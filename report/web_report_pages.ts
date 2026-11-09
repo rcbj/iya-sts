@@ -1456,7 +1456,8 @@ class ReportRuntime extends SpaClient {
         String(query.error_description || query.error)));
       return;
     }
-    if (!saved || !query.code || query.state !== saved.state) {
+    if (!saved || !query.code || query.state !== saved.state ||
+        !await this.issuerMatches(query)) {
       this.env.history.replaceState(null, '', this.prefix + BASE);
       await this.beginSignIn(BASE);
       return;

@@ -2365,13 +2365,15 @@ function resolveDatabaseUrl() {
   const raw = databaseUrl();
   if (!secrets.configuredFor(secrets.DATABASE_PASSWORD)) {
     log.debug('Leaving resolveDatabaseUrl(). No provider is configured.');
-    return Promise.resolve(raw);
+    return Promise.resolve().then(function () {
+      return refuseDefaultDatabasePassword(raw);
+    });
   }
   log.debug("Leaving resolveDatabaseUrl().");
   return secrets.readDatabasePassword().then(function (password) {
     if (!password) {
       log.debug('Leaving resolveDatabaseUrl(). Nothing was read.');
-      return raw;
+      return refuseDefaultDatabasePassword(raw);
     }
     let parsed = null;
     try {
@@ -2398,8 +2400,42 @@ function resolveDatabaseUrl() {
                   : '. The connection string carries none, which is the ' +
                     'arrangement to want.'));
     log.debug('Leaving resolveDatabaseUrl(). Injected.');
-    return parsed.toString();
+    return refuseDefaultDatabasePassword(parsed.toString());
   });
+}
+
+// The passwords a shipped example or a habit produces (ASVS 5.0.0 13.2.3).
+const DEFAULT_DATABASE_PASSWORDS = ['sts', 'sts_app', 'postgres', 'mysql',
+  'mariadb', 'root', 'admin', 'password', 'changeme', 'secret'];
+
+/**
+ * Stops the service, in product mode, on a connection string whose password is
+ * a well-known one or the user's own name.
+ *
+ * @param url - the connection string
+ * @returns the connection string
+ */
+function refuseDefaultDatabasePassword(url) {
+  log.debug("Entering refuseDefaultDatabasePassword().");
+  let parsed = null;
+  try {
+    parsed = new URL(url);
+  } catch (e) {
+    log.debug("Caught in refuseDefaultDatabasePassword(): " +
+              ((e && e.message) || e));
+  }
+  const password = parsed ? decodeURIComponent(parsed.password) : '';
+  if (password && require('../common/mode').refusesDefaultDatabasePassword() &&
+      (DEFAULT_DATABASE_PASSWORDS.indexOf(password.toLowerCase()) >= 0 ||
+       password === decodeURIComponent(parsed.username))) {
+    throw new Error(errorCodes.tag('STS-STORE-0170') +
+                    'the database password is a default one, which product ' +
+                    'mode refuses. Set STS_DB_APP_PASSWORD to a password of ' +
+                    'your own, or turn on ' +
+                    'persistence.allowDefaultDatabasePassword.');
+  }
+  log.debug("Leaving refuseDefaultDatabasePassword().");
+  return url;
 }
 
 // ---------------------------------------------------------------------------

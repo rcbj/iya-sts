@@ -87,6 +87,8 @@ var config = {
   security: {
     fileRoots: "/etc/ssl,/etc/pki,/usr/share/ca-certificates,/usr/local/share/ca-certificates,/run/secrets,/var/run/secrets,/etc/sts", // Directories a named file may be read from; restart to apply
     allowUnscopedPeople: false,                                                                                                        // Let a person reach SCIM and Shared Signals with no role
+    passwordContextWords: "",                                                                                                          // Words a password may not contain
+    outboundAllowedHosts: "",                                                                                                          // Hosts this service may dial
     rateLimitWindowS: 60,                                                                                                              // Rate-limit window (seconds)
     rateLimitPerIdentity: 5,                                                                                                           // Attempts per identity per window
     rateLimitPerAddress: 20,                                                                                                           // Attempts per address per window
@@ -288,17 +290,69 @@ var config = {
     backchannelLogoutSummaryS: 60                  // Back-channel logout summary interval (seconds)
   },
 
-  // --- Malware scanning ------------------------------------------------
-  malwareScan: {
-    enabled: false,        // Scan files for malware
-    url: "",               // ICAP service address
-    timeoutMs: 30000,      // Scan timeout (milliseconds)
-    caFile: "",            // CA file for an icaps service
-    allowCleartext: false  // Allow plain ICAP in product mode
+  // --- Federation ------------------------------------------------------
+  federation: {
+    allowUntypedLogoutToken: false,                                          // Accept a partner's Logout Token with no explicit type
+    maxPartnerAuthAgeS: 0,                                                   // Oldest partner authentication accepted (s)
+    enabled: true,                                                           // Federation endpoints answer
+    max: 50,                                                                 // Relationships remembered
+    usernamePrefix: "",                                                      // Prefix for federated usernames
+    loginButtons: true,                                                      // Offer partners at the sign-in screen
+    consumerProviders: false,                                                // Consumer and social identity providers
+    connectRecentAuthMinutes: 10,                                            // Connecting a provider: how recent the sign-in must be (min)
+    consumerProvisionCap: 10000,                                             // Consumer providers: accounts each may create
+    outbound: true,                                                          // Make back-channel requests to partners
+    outboundTimeoutMs: 15000,                                                // Back-channel timeout (ms)
+    outboundAllowHttp: false,                                                // Allow http:// to a partner (development only)
+    outboundSkipTlsVerification: false,                                      // Skip TLS verification to a partner (development only)
+    outboundCaFile: "",                                                      // CA certificates for outbound requests
+    requestTtlMin: 10,                                                       // Outbound request lifetime (minutes)
+    maxContexts: 500,                                                        // Sign-ins in flight per realm
+    maxApplicationLength: 256,                                               // Longest application a sign-in may name
+    maxApplicationUse: 64,                                                   // Per-application counters kept per relationship
+    releaseIndexTtlMs: 5000,                                                 // Release-policy index lifetime (ms)
+    maxResponseBytes: 262144,                                                // Largest back-channel response (bytes)
+    jwtAlgorithms: "RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512",  // Algorithms accepted on a partner's JWT
+    spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified", // NameIDFormat in this service's SP metadata
+    atprotoPlcDirectory: "https://plc.directory",                            // PLC directory for Bluesky sign-ins
+    encryptionKeyGraceS: 86400                                               // Previous encryption key kept for (seconds)
+  },
+
+  // --- Persistence -----------------------------------------------------
+  persistence: {
+    allowDefaultDatabasePassword: false,                   // Allow a default database password in product mode
+    mode: "memory",                                        // Persistence mode; restart to apply
+    sqlDialect: "native",                                  // Cluster SQL dialect; restart to apply
+    metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
+    dataDir: "./data",                                     // Data directory; restart to apply
+    databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply
+    databasePasswordProvider: "none",                      // Where the database password is read from; restart to apply
+    databasePasswordRef: "",                               // The database password's location; restart to apply
+    databasePasswordField: "databasePassword",             // The field the password is in; restart to apply
+    databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
+    databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
+    databasePasswordToken: "",                             // Vault token for the database password; restart to apply
+    databaseTlsRejectUnauthorized: true,                   // Verify the database certificate; restart to apply
+    databaseTlsCaFile: "",                                 // Database CA certificate file; restart to apply
+    globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
+    globalDatabaseReadUrl: "",                             // Global tier database (this cell's replica); restart to apply
+    globalDatabasePasswordProvider: "none",                // Where the global database password is read from; restart to apply
+    globalDatabasePasswordRef: "",                         // The global database password's location; restart to apply
+    globalDatabasePasswordField: "globalDatabasePassword", // The field the global database password is in; restart to apply
+    globalDatabasePasswordRegion: "",                      // AWS region of the global database password; restart to apply
+    writeDelay: 1500,                                      // Write delay (ms)
+    realms: true,                                          // Persist the realm registry; restart to apply
+    appconfig: true,                                       // Persist runtime setting changes; restart to apply
+    minted: true,                                          // Persist sessions, tokens and the audit log; restart to apply
+    mintedRetention: 604800000,                            // Minted state retention (ms)
+    coordinate: true,                                      // Coordinate with other processes; restart to apply
+    pollInterval: 5000,                                    // Change poll interval (ms)
+    changeLogRetentionS: 3600                              // Change log retention (s)
   },
 
   // --- Web security ----------------------------------------------------
   authn: {
+    sessionsEndedBefore: 0,           // Sessions started before this instant have ended (ms)
     allowOptionalSecondFactor: false, // Let a person sign in without a second factor
     sessionSweepS: 30,                // How often expired sessions are ended (seconds)
     cookieDomain: "",                 // Sign-on session cookie domain
@@ -320,6 +374,23 @@ var config = {
     rememberedAccountDays: 30,        // How long a signed-out account is remembered (days)
     passwordAloneDoors: "",           // Password-only doors that accept a password alone
     unauthenticatedSessions: false    // Offer "Continue without signing in"
+  },
+
+  // --- Audit log -------------------------------------------------------
+  audit: {
+    allowPlainSyslog: false,       // Allow plain syslog audit export in product mode
+    maxEvents: 5000,               // Maximum events held
+    protocolCalls: true,           // Record protocol endpoint calls
+    authenticationHistoryDays: 30  // Authentication history (days)
+  },
+
+  // --- Malware scanning ------------------------------------------------
+  malwareScan: {
+    enabled: false,        // Scan files for malware
+    url: "",               // ICAP service address
+    timeoutMs: 30000,      // Scan timeout (milliseconds)
+    caFile: "",            // CA file for an icaps service
+    allowCleartext: false  // Allow plain ICAP in product mode
   },
 
   // --- Web security ----------------------------------------------------
@@ -453,7 +524,6 @@ var config = {
     algorithm: "SHA1",       // HMAC digest
     digits: 6,               // Digits in a code
     period: 30,              // Seconds in a step
-    window: 1,               // Steps of clock skew forgiven
     secretBytes: 20,         // Shared secret length (bytes)
     enrolmentTtlMinutes: 10  // Unconfirmed enrolment lifetime (minutes)
   },
@@ -780,32 +850,6 @@ var config = {
   // --- Applications ----------------------------------------------------
   portal: {
     applicationScanLimit: 1000  // Applications the user portal evaluates for one person
-  },
-
-  // --- Federation ------------------------------------------------------
-  federation: {
-    enabled: true,                                                           // Federation endpoints answer
-    max: 50,                                                                 // Relationships remembered
-    usernamePrefix: "",                                                      // Prefix for federated usernames
-    loginButtons: true,                                                      // Offer partners at the sign-in screen
-    consumerProviders: false,                                                // Consumer and social identity providers
-    connectRecentAuthMinutes: 10,                                            // Connecting a provider: how recent the sign-in must be (min)
-    consumerProvisionCap: 10000,                                             // Consumer providers: accounts each may create
-    outbound: true,                                                          // Make back-channel requests to partners
-    outboundTimeoutMs: 15000,                                                // Back-channel timeout (ms)
-    outboundAllowHttp: false,                                                // Allow http:// to a partner (development only)
-    outboundSkipTlsVerification: false,                                      // Skip TLS verification to a partner (development only)
-    outboundCaFile: "",                                                      // CA certificates for outbound requests
-    requestTtlMin: 10,                                                       // Outbound request lifetime (minutes)
-    maxContexts: 500,                                                        // Sign-ins in flight per realm
-    maxApplicationLength: 256,                                               // Longest application a sign-in may name
-    maxApplicationUse: 64,                                                   // Per-application counters kept per relationship
-    releaseIndexTtlMs: 5000,                                                 // Release-policy index lifetime (ms)
-    maxResponseBytes: 262144,                                                // Largest back-channel response (bytes)
-    jwtAlgorithms: "RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512",  // Algorithms accepted on a partner's JWT
-    spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified", // NameIDFormat in this service's SP metadata
-    atprotoPlcDirectory: "https://plc.directory",                            // PLC directory for Bluesky sign-ins
-    encryptionKeyGraceS: 86400                                               // Previous encryption key kept for (seconds)
   },
 
   // --- SAML 2.0 assertions ---------------------------------------------
@@ -1348,13 +1392,6 @@ var config = {
     authzenPepGroup: "authzen-peps"  // Group granting the AUTHZEN_PEPS role
   },
 
-  // --- Audit log -------------------------------------------------------
-  audit: {
-    maxEvents: 5000,               // Maximum events held
-    protocolCalls: true,           // Record protocol endpoint calls
-    authenticationHistoryDays: 30  // Authentication history (days)
-  },
-
   // --- Audit export ----------------------------------------------------
   auditExport: {
     enabled: true,                                                                                                 // Audit export
@@ -1510,37 +1547,6 @@ var config = {
     serverSocket: "/tmp/spire-server/private/api.sock",                       // SPIRE Server API socket path; restart to apply
     brokerPort: 0,                                                            // SPIFFE Broker API TCP port; restart to apply
     grpcHost: "0.0.0.0"                                                       // gRPC bind address; restart to apply
-  },
-
-  // --- Persistence -----------------------------------------------------
-  persistence: {
-    mode: "memory",                                        // Persistence mode; restart to apply
-    sqlDialect: "native",                                  // Cluster SQL dialect; restart to apply
-    metricsTimeoutMs: 5000,                                // Database metrics statement timeout (ms)
-    dataDir: "./data",                                     // Data directory; restart to apply
-    databaseUrl: "postgres://sts:sts@localhost:5432/sts",  // Database connection string; restart to apply
-    databasePasswordProvider: "none",                      // Where the database password is read from; restart to apply
-    databasePasswordRef: "",                               // The database password's location; restart to apply
-    databasePasswordField: "databasePassword",             // The field the password is in; restart to apply
-    databasePasswordVault: "",                             // Vault or Key Vault URL for the database password; restart to apply
-    databasePasswordRegion: "",                            // AWS region for the database password; restart to apply
-    databasePasswordToken: "",                             // Vault token for the database password; restart to apply
-    databaseTlsRejectUnauthorized: true,                   // Verify the database certificate; restart to apply
-    databaseTlsCaFile: "",                                 // Database CA certificate file; restart to apply
-    globalDatabaseUrl: "",                                 // Global tier database (writer); restart to apply
-    globalDatabaseReadUrl: "",                             // Global tier database (this cell's replica); restart to apply
-    globalDatabasePasswordProvider: "none",                // Where the global database password is read from; restart to apply
-    globalDatabasePasswordRef: "",                         // The global database password's location; restart to apply
-    globalDatabasePasswordField: "globalDatabasePassword", // The field the global database password is in; restart to apply
-    globalDatabasePasswordRegion: "",                      // AWS region of the global database password; restart to apply
-    writeDelay: 1500,                                      // Write delay (ms)
-    realms: true,                                          // Persist the realm registry; restart to apply
-    appconfig: true,                                       // Persist runtime setting changes; restart to apply
-    minted: true,                                          // Persist sessions, tokens and the audit log; restart to apply
-    mintedRetention: 604800000,                            // Minted state retention (ms)
-    coordinate: true,                                      // Coordinate with other processes; restart to apply
-    pollInterval: 5000,                                    // Change poll interval (ms)
-    changeLogRetentionS: 3600                              // Change log retention (s)
   },
 
   // --- Cluster ---------------------------------------------------------

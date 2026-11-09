@@ -1382,6 +1382,124 @@ const SETTINGS = [
                  'only logged. WARNING: on, ASVS 5.0.0 requirement 10.4.6 is ' +
                  'not met.' },
 
+  { key: 'security.passwordContextWords', group: 'Web security',
+    label: 'Words a password may not contain',
+    env: 'STS_SECURITY_PASSWORD_CONTEXT_WORDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Extra words a new password may not contain, such as your ' +
+                 'organization, product, project or department names. Comma ' +
+                 'separated. The service name and the realm\'s name and domain ' +
+                 'are always refused. A word needs at least four letters, and ' +
+                 'the check ignores case and common letter swaps such as 0 ' +
+                 'for o.' },
+
+  { key: 'oauth2.refreshTokenMaxChainS', group: 'OAuth 2.0 / OIDC per-client',
+    label: 'Longest a chain of refresh tokens may last (s)',
+    env: 'STS_OAUTH2_REFRESH_TOKEN_MAX_CHAIN_S', type: 'int', dflt: strongerInProduct(2592000, 0), derived: true,
+    min: 0, max: 31536000,
+    runtime: true,
+    description: 'The absolute limit on a grant renewed by refresh tokens, ' +
+                 'counted from the first one. Once it passes the person signs ' +
+                 'in again, however often the client refreshed. 0 means no ' +
+                 'limit, which is the development default. Product mode ' +
+                 'defaults to 30 days.' },
+
+  { key: 'federation.allowUntypedLogoutToken', group: 'Federation',
+    label: 'Accept a partner\'s Logout Token with no explicit type',
+    env: 'STS_FEDERATION_ALLOW_UNTYPED_LOGOUT_TOKEN', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode accepts a partner\'s Logout ' +
+                 'Token only if it is typed logout+jwt. On, a token typed jwt ' +
+                 'or carrying no type is accepted too, for a partner that ' +
+                 'does not send the type. The OpenID specification only ' +
+                 'recommends it.' },
+
+  { key: 'account.recentAuthMinutes', group: 'Web security',
+    label: 'How recent a sign-in must be to change a second factor (min)',
+    env: 'STS_ACCOUNT_RECENT_AUTH_MINUTES', type: 'int', dflt: strongerInProduct(15, 0), derived: true,
+    min: 0, max: 1440,
+    runtime: true,
+    description: 'A person changing their second factors, recovery codes, ' +
+                 'passkeys or email address on the portal must have signed in ' +
+                 'within this many minutes, or they are sent to sign in again ' +
+                 'first. 0 means it is not asked, which is the development ' +
+                 'default. Product mode defaults to 15.' },
+
+  { key: 'persistence.allowDefaultDatabasePassword', group: 'Persistence',
+    label: 'Allow a default database password in product mode',
+    env: 'STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode will not start with a ' +
+                 'well-known database password, such as the shipped compose ' +
+                 'file\'s sts_app, or a password equal to the user name. On, ' +
+                 'it starts anyway. Use it only for a test stack.' },
+
+  { key: 'authn.sessionsEndedBefore', group: 'Web security',
+    label: 'Sessions started before this instant have ended (ms)',
+    env: 'STS_AUTHN_SESSIONS_ENDED_BEFORE', type: 'int', dflt: 0, min: 0, max: 9007199254740991,
+    runtime: true,
+    description: 'Set by End every session on the Sessions page. A sign-on ' +
+                 'session started before this instant, in milliseconds since ' +
+                 '1970, has ended. 0 means none has.' },
+
+  { key: 'oauth2.consentAlwaysForPublicClients', group: 'OAuth 2.0 / OIDC per-client',
+    label: 'Always ask consent for a public client',
+    env: 'STS_OAUTH2_CONSENT_ALWAYS_FOR_PUBLIC_CLIENTS', type: 'bool', dflt: strongerInProduct(true, false), derived: true,
+    runtime: true,
+    description: 'A public client cannot prove who it is, so a person is ' +
+                 'asked every time it requests access, whatever they answered ' +
+                 'before. This service\'s own applications are not asked. On ' +
+                 'by default in product mode.' },
+
+  { key: 'federation.maxPartnerAuthAgeS', group: 'Federation',
+    label: 'Oldest partner authentication accepted (s)',
+    env: 'STS_FEDERATION_MAX_PARTNER_AUTH_AGE_S', type: 'int', dflt: 0, min: 0, max: 31536000,
+    runtime: true,
+    description: 'Refuses a federated sign-in whose partner says the person ' +
+                 'authenticated longer ago than this, using auth_time or ' +
+                 'AuthnInstant. While a limit is set, a partner that does not ' +
+                 'say when is refused. 0, the default, does not ask.' },
+
+  { key: 'security.requestsPerAddressPerMinute', group: 'Web security',
+    label: 'Requests one address may make per minute',
+    env: 'STS_SECURITY_REQUESTS_PER_ADDRESS_PER_MINUTE', type: 'int', dflt: strongerInProduct(6000, 0), derived: true,
+    min: 0, max: 100000000,
+    runtime: true,
+    description: 'A ceiling on all requests from one address, per process. It ' +
+                 'is a brake on abuse, separate from the limits on credential ' +
+                 'attempts. 0 means no ceiling, which is the development ' +
+                 'default. Product mode defaults to 6000. Behind a proxy, set ' +
+                 'global.trustedProxies so that addresses are read correctly.' },
+
+  { key: 'audit.allowPlainSyslog', group: 'Audit log',
+    label: 'Allow plain syslog audit export in product mode',
+    env: 'STS_AUDIT_ALLOW_PLAIN_SYSLOG', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode accepts only the tls ' +
+                 'transport for a syslog audit destination. On, tcp and udp ' +
+                 'are accepted too, so the audit log crosses the network ' +
+                 'unencrypted. Use it only on a network you trust.' },
+
+  { key: 'security.outboundAllowedHosts', group: 'Web security',
+    label: 'Hosts this service may dial',
+    env: 'STS_SECURITY_OUTBOUND_ALLOWED_HOSTS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'If set, an outbound request a partner, client or caller can ' +
+                 'influence may reach only these hosts. Comma separated: an ' +
+                 'exact name, or a leading dot for a whole domain, such as ' +
+                 '.example.com. Empty, the default, allows any public host. ' +
+                 'Internal addresses are refused either way in product mode.' },
+
+  { key: 'security.hstsIncludeSubDomains', group: 'Web security',
+    label: 'Apply HSTS to subdomains',
+    env: 'STS_SECURITY_HSTS_INCLUDE_SUBDOMAINS', type: 'bool', dflt: strongerInProduct(true, false), derived: true,
+    runtime: true,
+    description: 'Adds includeSubDomains to Strict-Transport-Security, so ' +
+                 'browsers use HTTPS for every subdomain of this service\'s ' +
+                 'host name too. On by default in product mode. Turn it off ' +
+                 'if a subdomain of this host name must still answer over ' +
+                 'plain HTTP.' },
+
   { key: 'malwareScan.enabled', group: 'Malware scanning',
     label: 'Scan files for malware',
     env: 'STS_MALWARE_SCAN_ENABLED', type: 'bool', dflt: false,
@@ -2873,7 +2991,8 @@ const SETTINGS = [
 
   { key: 'totp.window', group: 'TOTP MFA',
     label: 'Steps of clock skew forgiven', path: 'totp.window',
-    env: 'STS_TOTP_WINDOW', type: 'int', dflt: 1, runtime: true,
+    env: 'STS_TOTP_WINDOW', type: 'int', dflt: strongerInProduct(0, 1),
+    derived: true, runtime: true,
     min: 0, max: 10,
     description: 'How many steps either side of now are accepted. RFC 6238 ' +
                  'section 5.2 recommends at most one, which is the default ' +
@@ -2883,7 +3002,9 @@ const SETTINGS = [
                  'is a policy rather than something the QR code told the ' +
                  'app. Zero demands a perfectly synchronised clock and is ' +
                  'the setting to reach for when demonstrating what happens ' +
-                 'without one.' },
+                 'without one.' +
+                 ' In product mode the default is 0, so a code is good ' +
+                 'for one 30-second step.' },
 
   { key: 'totp.secretBytes', group: 'TOTP MFA',
     label: 'Shared secret length (bytes)', path: 'totp.secretBytes',

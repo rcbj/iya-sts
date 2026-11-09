@@ -157,6 +157,10 @@ app.disable('x-powered-by');
 // function and applies it once more after catching up, to a request it had not
 // placed in a realm. It wraps `res.location` and `res.send` only on a match, so
 // asking twice cannot wrap them twice.
+// What a response carries before anything has decided what it is.
+const EARLY_POLICY = "default-src 'none'; frame-ancestors 'none'; " +
+                     "base-uri 'none'; object-src 'none'";
+
 /**
  * Enters the realm a request's path names: strips the `/realm/<id>` prefix,
  * runs the rest of the request in that realm, and puts the prefix back on
@@ -171,6 +175,13 @@ app.disable('x-powered-by');
  */
 function enterRealm(req, res, next) {
   log.debug("Entering enterRealm().");
+  // THE FIRST THING THAT HAPPENS TO A RESPONSE (ASVS 5.0.0 3.4.3, 3.4.4, 3.4.6).
+  // This is the first middleware, so a refusal written before the
+  // security-headers middleware below still carries them, and that middleware
+  // replaces them for everything else.
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', EARLY_POLICY);
   const pathname = String(req.url || '').split('?')[0];
   const match = realms.matchPath(pathname);
   // A REALM'S OWN LISTENER ANSWERS THAT REALM AND NOTHING ELSE (#99,
@@ -645,6 +656,7 @@ app.use(function awaitResumedChainLazily(req, res, next) {
   resumedChainWait(req, res, next);
 });
 
+app.use(require('./request_budget').middleware());
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // ---------------------------------------------------------------------------
@@ -775,7 +787,8 @@ const CSP_DIRECTIVES = {
   'style-src': "'unsafe-inline'",
   'img-src': "'self' data:",
   'base-uri': "'none'",
-  'frame-ancestors': "'none'"
+  'frame-ancestors': "'none'",
+  'object-src': "'none'"
 };
 
 // ---------------------------------------------------------------------------

@@ -108,7 +108,8 @@ function idTokenFor(sub, nonce) {
     return Buffer.from(JSON.stringify(o)).toString('base64url');
   };
   log.debug("Leaving idTokenFor().");
-  return b64u({ alg: 'ES256' }) + '.' + b64u({ sub: sub, nonce: nonce }) +
+  return b64u({ alg: 'ES256' }) + '.' + b64u({ sub: sub, nonce: nonce,
+                   aud: ['sts-admin-console', 'sts-user-portal', 'sts-report'] }) +
     '.sig';
 }
 

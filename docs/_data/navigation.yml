@@ -19,11 +19,21 @@
     - { title: Endpoints, url: /endpoints.html }
     - { title: Trust realms, url: /trust-realms.html }
     - { title: Listeners and hosted applications, url: /listeners.html }
+    - { title: Malware scanning, url: /malware-scanning.html }
+    - { title: Words a password may not contain, url: /password-words.html }
     - { title: Languages and regions, url: /languages.html }
     - { title: User-facing pages, url: /user-facing-pages.html }
     - { title: What is not checked, url: /what-is-not-checked.html }
     - { title: Security in product mode, url: /product-security.html }
     - { title: Input validation, url: /validation.html }
+    - { title: Data classification, url: /data-classification.html }
+    - { title: Logging inventory, url: /logging-inventory.html }
+    - { title: Key management, url: /key-management.html }
+    - { title: Field-level access, url: /field-access.html }
+    - { title: Communication inventory, url: /communications.html }
+    - { title: File uploads, url: /file-uploads.html }
+    - { title: Authentication pathways, url: /authentication-pathways.html }
+    - { title: Availability and resource limits, url: /availability.html }
     - { title: Conformance suites, url: /conformance.html }
     - { title: Departures from the specifications, url: /spec-departures.html }
     - { title: Accepted tokens, url: /accepted-tokens.html }

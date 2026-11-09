@@ -545,5 +545,6 @@
   "photo.errSmall": "該圖片為 {width} × {height} 像素。短邊至少需要 {min} 像素。",
   "photo.errRead": "無法將該檔案作為圖片讀取。",
   "done.photo": "已儲存您的個人資料相片。",
-  "done.photoRemoved": "已移除您的個人資料相片。"
+  "done.photoRemoved": "已移除您的個人資料相片。",
+  "done.endOthers": "您可以在 /logout 結束其他工作階段。"
 }

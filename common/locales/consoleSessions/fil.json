@@ -88,5 +88,6 @@
   "accounts.added": "mga account na idinagdag",
   "accounts.switched": "default na inilipat",
   "accounts.forgotten": "mga account na kinalimutan",
-  "accounts.expired": "mga naaalalang account na nag-expire"
+  "accounts.expired": "mga naaalalang account na nag-expire",
+  "endAll": "Tapusin ang bawat session sa realm na ito"
 }

@@ -716,6 +716,9 @@ const SAML11_RP_KIND = saml11.RP_KIND;
  */
 const MFA_ACTIONS = ['clear-totp', 'clear-key', 'clear-email-factor'];
 
+// The shortest statement of how a person's identity was verified (#1504).
+const MIN_EVIDENCE_LENGTH = 8;
+
 // BUILT FROM THE SWITCH BELOW RATHER THAN TYPED, for the reason
 // PERMISSION_ACTIONS gives at its own site: this repository's own
 // tests/protocol/admin_api.js READS the refusal sentence to check that every
@@ -1817,11 +1820,27 @@ class AdminActions {
     }
     const asked = body || {};
     const action = String(asked.action || '');
+    if (action === 'end-all') {
+      const instant = Date.now();
+      require('../common/config').setOverride('authn.sessionsEndedBefore',
+                                              String(instant));
+      this.deps.auditLog.record({
+        category: 'session', action: 'session.end',
+        actor: (opts && opts.by) || '', target: 'every sign-on session',
+        outcome: 'success',
+        summary: 'ended every sign-on session in this realm',
+        detail: { startedBefore: instant }
+      });
+      log.debug("Leaving AdminActions.sessionsAction(). Ended all.");
+      return { ok: true, message: 'Every sign-on session in this realm has ' +
+        'ended. Issued tokens are not revoked by this: use Revoke all on ' +
+        'the Tokens page as well.' };
+    }
     if (action !== 'revoke') {
       log.debug("Leaving AdminActions.sessionsAction(). Unknown action.");
       return this.refused('STS-ADMIN-0500',
                           { ok: false, errors: ['Unknown action "' + action +
-        '". There is one: revoke.'] });
+        '". There are two: revoke, end-all.'] });
     }
     const key = String(asked.key || '').trim();
     const selected = String(asked.select || '').trim();
@@ -4016,6 +4035,41 @@ class AdminActions {
                  'to is being ended.' };
   }
 
+  // WHAT THE ADMINISTRATOR DID TO PROVE WHO THIS IS (#1504, ASVS 5.0.0
+  // 6.4.4). A factor is cleared for somebody who has lost it, and that request
+  // is how an account is taken over, so product mode refuses to clear one until
+  // the administrator has said how the person's identity was verified.
+  private evidenceRefusal(body: any): any {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.evidenceRefusal().");
+    if (!require('../common/mode').requiresEvidenceToClearFactor() ||
+        this.evidenceOf(body).length >= MIN_EVIDENCE_LENGTH) {
+      log.debug("Leaving AdminActions.evidenceRefusal(). Nothing owed.");
+      return null;
+    }
+    log.debug("Leaving AdminActions.evidenceRefusal(). Refused.");
+    return this.refused('STS-ADMIN-0916', { ok: false, errors: ['Say in ' +
+      '`evidence` how this person\'s identity was verified, in at least ' +
+      MIN_EVIDENCE_LENGTH + ' characters. It is recorded in the audit log.'] });
+  }
+
+  // The evidence as given, bounded because it goes on an audit row.
+  private evidenceOf(body: any): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.evidenceOf().");
+    log.debug("Leaving AdminActions.evidenceOf().");
+    return String((body && body.evidence) || '').trim().slice(0, 500);
+  }
+
+  // The evidence as the end of a sentence, for a module that writes its own row.
+  private evidenceNote(body: any): string {
+    const { log } = this.deps;
+    log.debug("Entering AdminActions.evidenceNote().");
+    const evidence = this.evidenceOf(body);
+    log.debug("Leaving AdminActions.evidenceNote().");
+    return evidence ? '; identity verified by: ' + evidence : '';
+  }
+
   /**
    * Performs a `/admin/users` action on a person: create, set a password or
    * mail address, issue an activation link, clear a second factor, disable or
@@ -4413,6 +4467,11 @@ class AdminActions {
                                      'person whose authenticator app is ' +
                                           'being cleared.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       const result = credentials.removeTotp(who);
       // THE SESSIONS THE APP'S CODES SIGNED IN END (#722) — before the
       // audit row below, which counts them.
@@ -4427,6 +4486,7 @@ class AdminActions {
         summary: (result.ok ? 'cleared' : 'could not clear') +
                  ' the authenticator app enrolment for ' + who,
         detail: { username: who, via: ctx.via,
+                  evidence: this.evidenceOf(body),
                   sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }
       });
@@ -4490,6 +4550,11 @@ class AdminActions {
                                      'the person whose recovery codes are ' +
                                           'being cleared.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       const result = credentials.removeBackupCodes(who);
       // THE SESSIONS A RECOVERY CODE SIGNED IN END (#722).
       const ended = result.ok
@@ -4503,6 +4568,7 @@ class AdminActions {
         summary: (result.ok ? 'cleared' : 'could not clear') +
                  ' the recovery codes for ' + who,
         detail: { username: who, via: ctx.via,
+                  evidence: this.evidenceOf(body),
                   sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }
       });
@@ -4539,8 +4605,13 @@ class AdminActions {
                                      'the person whose emailed second ' +
                                      'factor is being turned off.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       const result = require('../common/mail_factor').clear(who, ctx.actor,
-        ctx.via, 'turned off by an administrator');
+        ctx.via, 'turned off by an administrator' + this.evidenceNote(body));
       // THE SESSIONS THE EMAILED SECOND FACTOR SIGNED IN END (#722), and
       // only when it was on: a person who had none has none to end.
       const ended = result.ok && result.removed
@@ -4727,6 +4798,11 @@ class AdminActions {
                                      'the person whose security key is being ' +
                                           'removed.'] });
       }
+      const unproved = this.evidenceRefusal(body);
+      if (unproved) {
+        log.debug("Leaving AdminActions.usersAction(). No evidence.");
+        return unproved;
+      }
       // THROUGH `removeKey()` AND NOT A WRITE OF ITS OWN — see the header: that
       // function carries the refusal that matters.
       const going = credentials.keysOf(who).filter(function (one) {
@@ -4757,7 +4833,7 @@ class AdminActions {
                                                 'failure',
         summary: (result.ok ? 'removed' : 'could not remove') +
                  ' a security key for ' + who,
-        detail: { username: who, via: ctx.via,
+        detail: { evidence: this.evidenceOf(body), username: who, via: ctx.via,
                   credentialId: String(body.credentialId || ''),
                   sessionsEnded: ended ? ended.sessionsEnded : undefined,
                   errors: result.ok ? undefined : (result.errors || []) }

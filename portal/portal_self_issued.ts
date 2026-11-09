@@ -617,7 +617,7 @@ class PortalSelfIssued {
                                   String(input.query.subject || ''));
         } },
       { method: 'POST', path: ctx.BASE + '/self-issued',
-        operationId: 'removeSelfIssued', access: 'person', body: REMOVE_FORM,
+        operationId: 'removeSelfIssued', access: 'person', recentAuth: true, body: REMOVE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           if (input.body.action === 'prefer' ||
@@ -627,7 +627,7 @@ class PortalSelfIssued {
           return self.remove(ctx, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/self-issued/dids',
-        operationId: 'actOnPublishedDid', access: 'person', body: DID_FORM,
+        operationId: 'actOnPublishedDid', access: 'person', recentAuth: true, body: DID_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.didAct(ctx, req, res, caller, input.body);
