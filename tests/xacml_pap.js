@@ -464,6 +464,93 @@ function checkEdits(t) {
           rootExpr.why);
   t.equal(validate.problemsIn(policy).length, 0,
           'the refused root-expression edit left the policy type-checking');
+
+  // A Match path resolves and has a parent, so the root guard above does
+  // not fire. Replacing the Match with an Apply makes writeTarget() call
+  // writeExpression() on match.value, which throws reading `.kind`
+  // (STS-API-0140, #1419). The fuzzer sent this path with a leading dot;
+  // segmentsOf() drops the empty segment and the path still resolves.
+  const matchPolicy = templates.build('rbac', {}, {
+    name: 'match-slot'
+  }).policy;
+  const matchPath = '.rules.0.target.anyOf.0.allOf.0.matches.0';
+  const beforeMatch = JSON.stringify(matchPolicy);
+  const onMatch = editor.applyEdit(matchPolicy, matchPath,
+                                   'set-expression-apply', {});
+  t.check(!onMatch.ok && /not an expression/.test(onMatch.why),
+          'replacing a Match with an Apply is refused, not a crash',
+          onMatch.why);
+  t.equal(JSON.stringify(matchPolicy), beforeMatch,
+          'the refused Match edit left the policy untouched');
+  let written = null;
+  try {
+    written = xml.writePolicy(matchPolicy);
+  } catch (error) {
+    t.check(false, 'the policy still writes after the refused edit',
+            error.message);
+  }
+  if (written) {
+    t.check(true, 'the policy still writes after the refused edit');
+  }
+
+  // edit-match on the AllOf above that Match. The fuzzer omitted
+  // `value`. An AllOf has no `value`, so `node.value.lexical` threw
+  // (STS-API-0140, #1428). A function with no first argument, and a
+  // Match whose value is missing, are the same read.
+  const allofPath = '.rules.0.target.anyOf.0.allOf.0';
+  const beforeAllof = JSON.stringify(matchPolicy);
+  const onAllof = editor.applyEdit(matchPolicy, allofPath, 'edit-match', {
+    matchId: F1 + 'string-equal',
+    attributeId: 'urn:example:classification',
+    mustBePresent: false
+  });
+  t.check(!onAllof.ok && /not a Match/.test(onAllof.why),
+          'editing an AllOf as a Match is refused, not a crash',
+          onAllof.why);
+  t.check(!/STS-[A-Z]+-[0-9]{4}/.test(onAllof.why || ''),
+          'the AllOf refusal does not name an operator error code',
+          onAllof.why);
+  t.equal(JSON.stringify(matchPolicy), beforeAllof,
+          'the refused AllOf edit left the policy untouched');
+
+  const bag = editor.applyEdit(matchPolicy, matchPath, 'edit-match', {
+    matchId: F1 + 'string-bag'
+  });
+  t.check(!bag.ok && /cannot be a Match/.test(bag.why),
+          'a function with no value argument is refused, not a crash',
+          bag.why);
+  t.check(!/STS-[A-Z]+-[0-9]{4}/.test(bag.why || ''),
+          'the function refusal does not name an operator error code',
+          bag.why);
+  t.equal(JSON.stringify(matchPolicy), beforeAllof,
+          'the refused function edit left the policy untouched');
+
+  const bare = templates.build('rbac', {}, { name: 'bare-match' }).policy;
+  const barePath = 'rules.0.target.anyOf.0.allOf.0.matches.0';
+  const bareNode = editor.nodeAt(bare, barePath).node;
+  delete bareNode.value;
+  const beforeBare = JSON.stringify(bare);
+  const noValue = editor.applyEdit(bare, barePath, 'edit-match', {
+    matchId: F1 + 'string-equal'
+  });
+  t.check(!noValue.ok && /needs a value/.test(noValue.why),
+          'a Match with no value is refused when the body omits one',
+          noValue.why);
+  t.check(!/STS-[A-Z]+-[0-9]{4}/.test(noValue.why || ''),
+          'the empty-Match refusal does not name an operator error code',
+          noValue.why);
+  t.equal(JSON.stringify(bare), beforeBare,
+          'the refused empty Match left the policy untouched');
+
+  const still = editor.applyEdit(matchPolicy, matchPath, 'edit-match', {
+    value: 'kept'
+  });
+  t.check(still.ok, 'a real Match is still edited', still.why || '');
+  const kept = editor.applyEdit(matchPolicy, matchPath, 'edit-match', {});
+  t.check(kept.ok, 'omitting value on a real Match keeps its value',
+          kept.why || '');
+  t.equal(editor.nodeAt(matchPolicy, matchPath).node.value.lexical, 'kept',
+          'the kept value is the one the previous edit wrote');
   log.debug("Leaving checkEdits().");
 }
 

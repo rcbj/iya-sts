@@ -24128,7 +24128,8 @@ namespace IyaSts.Api.Management {
     `certificate`?: `SharedModel280`;
     `reason`?: string;
     `entry`?: `SharedModel281`;
-    `why`?: string
+    `why`?: string;
+    @js(#{`description`:"True when the certificate was already revoked. The earlier entry is kept and its date does not move."}) `already`?: boolean
   }
 
 @hoisted union SharedModel282_changed_h1720 {boolean, (string)[]}
@@ -65572,14 +65573,14 @@ op `recountPasskeyReport`(@js(#{`examples`:#[#{}]}) `requestBody/content/applica
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"The groups chosen so far, cns or DNs separated by `;` (a DN's commas stay intact; a `;` inside a DN value is escaped, `\\;`); resolved into `groupChooser.chosen` and left out of the search."
+        `description`:"The groups chosen so far, cns or DNs separated by `;` (a DN's commas stay intact; a `;` inside a DN value is escaped, `\\;`); resolved into `groupChooser.chosen` and left out of the search. At most 4096 characters, which is as much as one request line can carry; fifty ordinary group names fit."
       }
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
 op `getPostLoginActivities`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
   @js(#{`maxLength`:16}) `parameters/1/schema`: string,
-  @js(#{`maxLength`:65536}) `parameters/2/schema`: string,
+  @js(#{`maxLength`:4096}) `parameters/2/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `realm`?: string;
     `job`?: string;
