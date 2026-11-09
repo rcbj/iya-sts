@@ -7043,6 +7043,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `already` | boolean |  | True when the certificate was already revoked. The earlier entry is kept and its date does not move. |
 | `application` | object, or string, or null |  |  |
 | `application.allowedProtocols` | list |  |  |
 | `application.allowedProtocols[]` | string |  |  |
@@ -7117,6 +7118,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `already` | boolean |  | True when the certificate was already revoked. The earlier entry is kept and its date does not move. |
 | `application` | object, or string, or null |  |  |
 | `application.allowedProtocols` | list |  |  |
 | `application.allowedProtocols[]` | string |  |  |
@@ -7211,6 +7213,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `already` | boolean |  | True when the certificate was already revoked. The earlier entry is kept and its date does not move. |
 | `application` | object, or string, or null |  |  |
 | `application.allowedProtocols` | list |  |  |
 | `application.allowedProtocols[]` | string |  |  |
@@ -7285,6 +7288,7 @@ Scope: `admin:write`.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `already` | boolean |  | True when the certificate was already revoked. The earlier entry is kept and its date does not move. |
 | `application` | object, or string, or null |  |  |
 | `application.allowedProtocols` | list |  |  |
 | `application.allowedProtocols[]` | string |  |  |
