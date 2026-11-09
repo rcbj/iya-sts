@@ -30,6 +30,8 @@ import "./directory/kerberos_trust.tsp";
 import "./directory/trust_anchor.tsp";
 import "./directory/signer_trust_anchor.tsp";
 import "./directory/names.tsp";
+import "./domain/identity.tsp";
+import "./domain/application.tsp";
 import "./persistence/persistence.tsp";
 import "./persistence/persistence_mariadb.tsp";
 import "./api/report.tsp";

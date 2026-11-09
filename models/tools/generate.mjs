@@ -19,6 +19,7 @@ import path from 'path';
 import url from 'url';
 import bunyan from 'bunyan';
 import { documents } from '../lib/api_lib.mjs';
+import { checkDomains, readDomains } from '../lib/domain_lib.mjs';
 import { fieldsOf, linksIn, readDirectory, readPersistence, readSpellings,
   renderScript, schemaOf } from '../lib/model_lib.mjs';
 
@@ -67,6 +68,14 @@ async function generate() {
     JSON.stringify(names));
   fs.writeFileSync(path.join(out, 'directory.links.json'),
     JSON.stringify(linksIn(objects)));
+  const concepts = readDomains(program);
+  const problems = checkDomains(concepts, objects);
+  if (problems.length > 0) {
+    log.debug("Leaving generate(). A domain model is wrong.");
+    throw new Error('The domain models are wrong: ' + problems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'domain.json'),
+    JSON.stringify({ concepts: concepts }));
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects }));
