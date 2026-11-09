@@ -151,6 +151,9 @@ A GNAP user assertion that has expired is refused unless an operator sets
   specifications define.
 * **Malware scanning** of uploaded images and risk datasets is optional and off
   by default. See [Malware scanning](malware-scanning.md).
+* **Administrators changing credentials** must have signed in within
+  `account.recentAuthMinutes`. The console asks them to sign in again and carries
+  on; a program using the API with its own credentials is not asked.
 * **Audit log.** Configure an [audit export](audit-export.md) destination, so that
   a copy of the log leaves this service as it is written and a compromise here
   cannot alter it.

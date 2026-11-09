@@ -132,6 +132,7 @@ class ConsoleRuntime extends SpaClient {
   // (#508): its one-use values, the requests waiting on it and the channel
   // the popup answers on. Null when none is.
   private reauth: Json;
+  private freshSignIn: boolean;
   // The form being sent, so a sign-in that has to leave the page knows
   // which one was pressed (#508).
   private submitting: Json;
@@ -181,6 +182,7 @@ class ConsoleRuntime extends SpaClient {
     this.drawnAt = '';
     this.spec = null;
     this.reauth = null;
+    this.freshSignIn = false;
     this.submitting = null;
     this.dirty = false;
     this.openSection = null;
@@ -499,7 +501,9 @@ class ConsoleRuntime extends SpaClient {
     }
     r.verifier = this.random(32);
     r.state = POPUP_STATE_PREFIX + this.random(16);
-    r.url = await this.authorizeUrl(r.state, r.verifier);
+    r.url = await this.authorizeUrl(r.state, r.verifier,
+      this.freshSignIn ? { prompt: 'login' } : undefined);
+    this.freshSignIn = false;
   }
 
   /**
@@ -1129,6 +1133,11 @@ class ConsoleRuntime extends SpaClient {
       }
       if (/invalid_token/.test(challenge) && await this.refresh()) {
         continue;
+      }
+      // RFC 9470: this change needs a recent sign-in, so the one that comes
+      // next must really ask (#1538).
+      if (/insufficient_user_authentication/.test(challenge)) {
+        this.freshSignIn = true;
       }
       break;
     }

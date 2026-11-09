@@ -25507,6 +25507,9 @@ const CODES = [
       'or tracing family defines, and was refused before the handler ran ' +
       '(#1476).',
     spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-API-0145',
+    summary: 'A change to how somebody signs in was refused because the administrator did not sign in recently enough.',
+    spec: 'HTTP 401 (RFC 9470)' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

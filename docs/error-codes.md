@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5387** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5388** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 265
-* [Management API (`STS-API`)](#sts-api) — 94
+* [Management API (`STS-API`)](#sts-api) — 95
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 22
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
@@ -5624,6 +5624,7 @@ Raised from: mgmt-api/.
 | `STS-API-0142` | A management API request named a query parameter its operation does not declare, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
 | `STS-API-0143` | A query parameter of a management API request held a value its declared type does not, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
 | `STS-API-0144` | A management API request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
+| `STS-API-0145` | A change to how somebody signs in was refused because the administrator did not sign in recently enough. | HTTP 401 (RFC 9470) |
 
 ## STS-PORTAL
 

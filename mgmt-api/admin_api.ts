@@ -661,6 +661,12 @@ type RouteApp = typeof app;
  * operation, over the same action functions and views the console uses, behind
  * an OAuth 2.0 access-token gate.
  */
+// The operations that change how somebody signs in (#1538).
+const REAUTHENTICATED_ACTIONS = ['set-password', 'reset-password',
+  'issue-password-reset', 'clear-totp', 'clear-key', 'clear-backup-codes',
+  'clear-email-factor', 'set-mail', 'create-app-password',
+  'revoke-app-password'];
+
 class AdminApi {
   /**
    * Builds the management API over the given dependencies.
@@ -1651,6 +1657,42 @@ class AdminApi {
    * @param body - the parsed body
    * @returns the new body
    */
+  // A person changing how somebody signs in must have signed in recently
+  // (#1538, ASVS 5.0.0 7.5.1). A program has no person to ask. Answered as RFC
+  // 9470 says, so a client knows to sign in again; the console does that in its
+  // popup and resends.
+  reauthenticationOwed(res, action) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.reauthenticationOwed().");
+    const caller = res && res.locals && res.locals.apiCaller;
+    const limit = Number(require('../common/config')
+      .value('account.recentAuthMinutes')) * 60;
+    if (!limit || !caller || caller.kind !== 'person' ||
+        REAUTHENTICATED_ACTIONS.indexOf(String(action)) < 0) {
+      log.debug("Leaving AdminApi.reauthenticationOwed(). Not asked.");
+      return false;
+    }
+    const at = Number(caller.authTime || 0);
+    log.debug("Leaving AdminApi.reauthenticationOwed().");
+    return !(at > 0 && Date.now() / 1000 - at <= limit);
+  }
+
+  refuseStaleSignIn(req, res) {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AdminApi.refuseStaleSignIn().");
+    const limit = Number(require('../common/config')
+      .value('account.recentAuthMinutes')) * 60;
+    const scheme = /^dpop /i.test(String(req.headers.authorization || ''))
+      ? 'DPoP' : 'Bearer';
+    res.set('WWW-Authenticate', scheme +
+            ' error="insufficient_user_authentication", max_age=' + limit);
+    errorCodes.mark(res, 'STS-API-0145');
+    this.sendJson(res, 401, { ok: false,
+      error: 'insufficient_user_authentication',
+      errors: ['Sign in again to make this change.'] });
+    log.debug("Leaving AdminApi.refuseStaleSignIn().");
+  }
+
   withAction(req, body) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.withAction().");
@@ -5043,6 +5085,11 @@ class AdminApi {
           log.debug("Entering the management API users action endpoint.");
           const body = parseBody(req);
           const request = self.withAction(req, body);
+          if (self.reauthenticationOwed(res, request.action)) {
+            self.refuseStaleSignIn(req, res);
+            log.debug("Leaving the management API users action. Sign in again.");
+            return undefined;
+          }
           // A PASSWORD IN THE REQUEST IS SCREENED AGAINST PWNED PASSWORDS
           // FIRST (#62 P6), for the console route's reason: the action is
           // synchronous and reads the verdict this leaves.
@@ -5973,6 +6020,11 @@ class AdminApi {
           log.debug("Entering the management API multi-factor action " +
                     "endpoint.");
           const body = parseBody(req);
+          if (self.reauthenticationOwed(res, req.params.action)) {
+            self.refuseStaleSignIn(req, res);
+            log.debug("Leaving the management API multi-factor action. Stale.");
+            return undefined;
+          }
           // `via: 'api'` and whatever actor the caller named, for the audit row
           // — `rbacAction`'s caller's rule: the subject of the token the
           // gate verified (#446), and nobody where no token was required.
@@ -12296,6 +12348,8 @@ class AdminApi {
           // The token's own subject (#945), which an administrator's
           // passkey enrolment records beside the name.
           sub: String(claims.sub || ''),
+          // When this person last authenticated, for `refuseStaleSignIn()`.
+          authTime: Number(claims.auth_time) || 0,
           clientId: String(claims.client_id || ''),
           realm: tokenRealm,
           // What the decision above was made on, for `GET /admin-api/me`:

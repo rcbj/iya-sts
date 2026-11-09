@@ -140,6 +140,24 @@ async function run(t) {
   t.equal(returnToOf('/portal/ok'), '/portal/ok', 'a path on this service is kept');
   t.equal(returnToOf('/\\evil.example'), '', 'a backslash path is refused');
   t.equal(returnToOf('//evil.example'), '', 'and so is a protocol-relative one');
+  // #1538: an administrator's credential changes need a recent sign-in.
+  const adminApi = require(ROOT + '/mgmt-api/admin_api');
+  const owed = function (caller, action) {
+    return adminApi.AdminApi.prototype.reauthenticationOwed.call(
+      { deps: { log: require('bunyan').createLogger({ name: 't', level: 60 }) } },
+      { locals: { apiCaller: caller } }, action);
+  };
+  const nowS = Math.floor(Date.now() / 1000);
+  const stale = { kind: 'person', authTime: nowS - 7200 };
+  t.equal(owed(stale, 'clear-totp'), false, 'development does not ask');
+  config.setOverride('account.recentAuthMinutes', '15');
+  t.equal(owed(stale, 'clear-totp'), true, 'a stale sign-in is asked');
+  t.equal(owed(stale, 'list'), false, 'but not for anything else');
+  t.equal(owed({ kind: 'person', authTime: nowS - 60 }, 'set-mail'), false,
+          'a recent sign-in is not asked');
+  t.equal(owed({ kind: 'application' }, 'clear-totp'), false,
+          'and a program, with nobody to ask, is not');
+  config.clearOverride('account.recentAuthMinutes');
   const budget = require(ROOT + '/common/request_budget');
   const at = Date.now();
   t.equal(budget.allowed('198.51.100.7', 2, at), true, 'a first request passes');
