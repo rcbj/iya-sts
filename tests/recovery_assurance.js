@@ -978,6 +978,7 @@ function childMain() {
           // call, which must stay in development like the rest of this
           // file.
           config.setOverride('global.mode', 'product');
+          config.setOverride('authn.allowOptionalSecondFactor', 'true');
           let verified = { ok: true, reason: 'not-run' };
           try {
             verified = credentials.verify(who, password, { via: 'test' });
@@ -986,6 +987,7 @@ function childMain() {
             verified = { ok: false, reason: String((e && e.message) || e) };
           } finally {
             config.clearOverride('global.mode');
+            config.clearOverride('authn.allowOptionalSecondFactor');
           }
           return verified;
         };
