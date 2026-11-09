@@ -177,20 +177,6 @@ class EstApi {
     log.debug("Entering EstApi.buildRoutes().");
     const ROUTES = [
       { method: 'GET', path: BASE + '/est', tag: 'EST', operationId: 'getEst',
-        summary: 'The EST server: endpoints, Issuing CA, profiles, host ' +
-                 'names, enrolled certificates, settings',
-        description: 'Everything /admin/est draws. The six RFC 7030 ' +
-                     'operations at this realm\'s base URL; the EST Issuing ' +
-                     'CA and whether the hierarchy is built; the nine ' +
-                     'profiles with what each needs, whether ' +
-                     '`est.allowedProfiles` allows it and its labelled URLs; ' +
-                     'the five profiles never issued over an enrollment ' +
-                     'protocol and why; the credentials EST accepts; the ' +
-                     'certificate host names registered in the realm; the ' +
-                     'certificates enrolled over EST (paged, ' +
-                     '`certificatesPage`), with no private key; the mode ' +
-                     'note; and the `est.*` settings, which are written ' +
-                     'through POST /admin-api/config/set-many.',
         parameters: [
           { name: 'certificatesPage', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1, examples: [1] },
@@ -200,9 +186,6 @@ class EstApi {
             description: 'Rows per page.' }
         ],
         mirrors: 'GET /admin/cert-issuance',
-        responseDescription: 'The EST server as the page draws it.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: 'The view /admin/est renders.' },
         handler: function (req, res) {
           log.debug("Entering the management API EST endpoint.");
           self.sendJson(res, 200, loadEstConsole().estView(req));
@@ -211,14 +194,6 @@ class EstApi {
 
       { method: 'GET', path: BASE + '/est/monitor', tag: 'EST',
         operationId: 'getEstMonitor',
-        summary: 'What the EST server has done: requests, issuances, refusals',
-        description: 'Everything /admin/est/monitor draws: totals of ' +
-                     'requests, issued, refused and revoked; the ' +
-                     'certificates held by status; counts by operation, ' +
-                     'profile, principal, error code and HTTP status; and ' +
-                     'the most recent requests (paged, `page`). ' +
-                     'Per trust realm, across every process, with no ' +
-                     'reset: the durable record is GET /admin-api/audit.',
         parameters: [
           { name: 'page', in: 'query', required: false,
             schema: { type: 'integer', minimum: 1, examples: [1] },
@@ -228,9 +203,6 @@ class EstApi {
             description: 'Rows per page.' }
         ],
         mirrors: 'GET /admin/est/monitor',
-        responseDescription: 'The counters and recent requests.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: 'The view /admin/est/monitor renders.' },
         handler: function (req, res) {
           log.debug("Entering the management API EST monitor endpoint.");
           self.sendJson(res, 200, loadEstConsole().estMonitorView(req));
@@ -265,111 +237,14 @@ class EstApi {
             });
         },
         actions: [
-          { action: 'issue-server-key', operationId: 'issueEstServerKey',
-            summary:
-              'Issue a certificate with a key pair this service generates',
-            description: 'The console\'s /serverkeygen (RFC 7030 section ' +
-                         '4.4): a key pair of `keyAlg` is generated, ' +
-                         'certified for `profile` by this realm\'s EST ' +
-                         'Issuing CA for the person or application named, ' +
-                         'written onto that entry with a sealed copy of the ' +
-                         'private key, and returned ONCE as ' +
-                         '`privateKeyPem`. A KEM key (ML-KEM) is ' +
-                         'certified only for key-encipherment.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                kind: this.kindProperty(),
-                identifier: { type: 'string', minLength: 1, maxLength: 256,
-                              description: 'The username or application ' +
-                                           'identifier.' },
-                profile: { type: 'string',
-                           description: 'One of the nine profiles; ' +
-                                        '`est.defaultProfile` when omitted.' },
-                keyAlg: { type: 'string', enum: keyMaterial.keyAlgIds(),
-                          description: 'A key algorithm id from GET ' +
-                                       '/admin-api/est `keyAlgorithms`; ' +
-                                       'ec-p256 when omitted.' }
-              },
-              required: ['kind', 'identifier'],
-              examples: [{ kind: 'person', identifier: 'no-such-person-example',
-                           profile: 'tls-client', keyAlg: 'ec-p256' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The certificate, its chain and the private ' +
-                                 'key, once.' },
-          { action: 'revoke-certificate', operationId: 'revokeEstCertificate',
-            summary: 'Revoke a certificate enrolled over EST',
-            description: 'Puts the serial on the EST Issuing CA\'s CRL with ' +
-                         'the RFC 5280 reason given (OCSP answers revoked ' +
-                         'from then on) and marks the record on the entry.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                serial: { type: 'string', minLength: 1, maxLength: 80,
-                             description:
-                               'The serial, from GET /admin-api/est.' },
-                reason: { type: 'string',
-                          enum: ['unspecified', 'keyCompromise', 'cACompromise',
-                                 'affiliationChanged', 'superseded',
-                                 'cessationOfOperation', 'certificateHold',
-                                 'privilegeWithdrawn', 'aACompromise'],
-                          description: 'The RFC 5280 section 5.3.1 reason; ' +
-                                       'unspecified when omitted.' }
-              },
-              required: ['serial'],
-              examples: [{ serial: '00', reason: 'keyCompromise' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The serial, the entry and the reason.' },
-          { action: 'add-host-name', operationId: 'addEstHostName',
-            summary: 'Register a certificate host name on an entry',
-            description: 'A dNSName or iPAddress is issued in a certificate ' +
-                         '— over ACME, EST or SCEP — only when it is ' +
-                         'registered on the entry the certificate names. ' +
-                         'Adding one already there changes nothing.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                kind: this.kindProperty(),
-                identifier: { type: 'string', minLength: 1, maxLength: 256,
-                              description: 'The username or application ' +
-                                           'identifier.' },
-                hostName: { type: 'string', minLength: 1, maxLength: 253,
-                            description: 'A DNS name or an IP address.' }
-              },
-              required: ['kind', 'identifier', 'hostName'],
-              examples: [{ kind: 'application',
-                           identifier: 'no-such-application-example',
-                           hostName: 'host.example.com' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The entry\'s host names afterwards.' },
-          { action: 'remove-host-name', operationId: 'removeEstHostName',
-            summary: 'Remove a certificate host name from an entry',
-            description: 'Certificates already issued for the name keep it; ' +
-                         'the next request naming it is refused.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                kind: this.kindProperty(),
-                identifier: { type: 'string', minLength: 1, maxLength: 256,
-                              description: 'The username or application ' +
-                                           'identifier.' },
-                hostName: { type: 'string', minLength: 1, maxLength: 253,
-                            description: 'The name to remove.' }
-              },
-              required: ['kind', 'identifier', 'hostName'],
-              examples: [{ kind: 'application',
-                           identifier: 'no-such-application-example',
-                           hostName: 'host.example.com' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The entry\'s host names afterwards.' }
+          { action: 'issue-server-key', operationId: 'issueEstServerKey'
+             },
+          { action: 'revoke-certificate', operationId: 'revokeEstCertificate'
+             },
+          { action: 'add-host-name', operationId: 'addEstHostName'
+             },
+          { action: 'remove-host-name', operationId: 'removeEstHostName'
+             }
         ] }
     ];
     log.debug("Leaving EstApi.buildRoutes().");

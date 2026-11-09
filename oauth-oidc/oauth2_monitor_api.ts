@@ -157,32 +157,6 @@ class OAuth2MonitorApi {
       { method: 'GET', path: BASE + '/oauth2/monitor',
         tag: 'OAuth 2.0 / OIDC',
         operationId: 'getOauth2Monitor',
-        summary: 'What the authorization server has done in this realm, ' +
-                 'by mechanism, with the pushed authorization requests ' +
-                 'still held',
-        description: 'Everything /admin/oauth2/monitor draws, in SECTIONS ' +
-          '— one per mechanism counted, RFC 9126 pushed authorization ' +
-          'requests the first. Each section carries its events (the ' +
-          'closed vocabulary with a label and a total each), the ' +
-          'totals, the OAuth errors returned, one row per client_id ' +
-          'with every counter (paged by `clientsPage` and `per`), and ' +
-          '— for RFC 9126 — the pushed requests the store still ' +
-          'holds, newest first: the digest of the request_uri (its ' +
-          'handle; the request_uri itself is not kept), client, ' +
-          'authorization ' +
-          'server, state, created and expiry, reads, whether and how ' +
-          'the client authenticated, form or request object, the ' +
-          'redirect_uri and whether section 2.4 let it in ' +
-          'unregistered, the DPoP key, and the parameters. That ' +
-          'list is paged by `offset` and `limit` (or the ' +
-          'console\'s `page` and `per`) ' +
-          'and filtered by `state` and `client_id`. RFC 9470\'s ' +
-          'step-up is the second section (`stepup`), its clients ' +
-          'paged by `stepUpClientsPage`, carrying the requirement ' +
-          'this service\'s own resource server enforces ' +
-          '(`ownResourceRequirement`) and `acrValuesSupported`. ' +
-          'Per trust realm, ' +
-          'merged across processes, and with no reset.',
         mirrors: 'GET /admin/oauth2/monitor',
         parameters: [
           { name: 'offset', in: 'query', required: false,
@@ -223,18 +197,6 @@ class OAuth2MonitorApi {
             description: 'Which page of the RFC 9470 section\'s ' +
                          'per-client counter rows.' }
         ],
-        responseDescription: 'The sections, their counters and the pushed ' +
-                             'requests held.',
-        responseSchema: self.object(
-          'The OAuth 2.0 / OIDC activity in this realm: ' +
-          '`since`, `actions`, and `sections` — each with ' +
-          '`id`, `title`, `events`, `totals`, `errors`, ' +
-          '`clients`, `clientsPaging`, `clientsParam` and, ' +
-          'for `par`, `pushedRequests` (`filter`, `total`, ' +
-          '`offset`, `limit`, `capacity`, `lifetime_s`, ' +
-          '`paging`, `items`), for `stepup`, ' +
-          '`ownResourceRequirement` and ' +
-          '`acrValuesSupported`.'),
         handler: function (req: Req, res: Res) {
           log.debug("Entering the management API OAuth 2.0 monitor " +
                     "endpoint.");
@@ -287,37 +249,8 @@ class OAuth2MonitorApi {
         },
         actions: [
           { action: 'delete-pushed-request',
-            operationId: 'deletePushedRequest',
-            summary: 'Withdraw a pushed authorization request (RFC 9126)',
-            description: 'Removes one pushed request, named by the ' +
-              'SHA-256 of its request_uri, from this realm\'s store ' +
-              'of pushed authorization requests, live or spent. The ' +
-              'authorization endpoint refuses it from then on with ' +
-              '400 invalid_request_uri, exactly as it refuses one ' +
-              'that expired and was swept; a browser already on the ' +
-              'sign-in or consent screen with it is refused when it ' +
-              'comes back. Counted as `par.deleted` and written to ' +
-              'the audit log. A value that is not a handle (43 ' +
-              'characters of base64url), or one this realm does not ' +
-              'hold, is refused 400. The store keeps no request_uri ' +
-              '(#614), so the handle is the only name it answers to.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object',
-              properties: {
-                request_uri_digest: {
-                  type: 'string', minLength: 1, maxLength: 64,
-                  description: 'The request\'s handle: the base64url ' +
-                               'SHA-256 of its whole request_uri, as ' +
-                               'listed by GET /admin-api/oauth2/monitor.' }
-              },
-              required: ['request_uri_digest'],
-              examples: [{ request_uri_digest:
-                             'Q2dS8m6k1nVv3zJ0bYQm9vX0kq3w8yQ7Zr0aLx5tP2E' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The handle withdrawn, the client it ' +
-                                 'was bound to and the state it was in.' }
+            operationId: 'deletePushedRequest'
+             }
         ] }
     ];
     log.debug("Leaving OAuth2MonitorApi.buildRoutes().");

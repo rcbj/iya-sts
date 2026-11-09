@@ -310,23 +310,7 @@ class BrandingApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/branding',
         tag: 'Configuration', operationId: 'getBranding',
-        summary: 'This realm\'s sign-in appearance (#717)',
-        description: 'Everything Server configuration → Sign-in appearance ' +
-          'draws: the layout and the layouts there are, the four colours ' +
-          'and the tones derived from them, the contrast of the text, the ' +
-          'links and the button text against WCAG 2.2 AA (4.5:1), the ' +
-          'display name, the logo\'s alternative text and link, the ' +
-          'stored logo (its type, sides, size and digest, never its ' +
-          'bytes), and the page\'s settings. `previewUrl` and `logo.src` ' +
-          'are in this realm.',
         mirrors: 'GET ' + PAGE,
-        responseDescription: 'The realm\'s appearance.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`layout`, `layouts`, `colours`, ' +
-                            '`derived`, `contrast`, `displayName`, ' +
-                            '`logoAlt`, `logoLinkUrl`, `logoMaxBytes`, ' +
-                            '`logo`, `customised`, `preview`, ' +
-                            '`previewUrl`, `realm`, `settings`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API branding endpoint.");
           try {
@@ -343,15 +327,6 @@ class BrandingApi {
       // which would otherwise take `logo` as an action it does not know.
       { method: 'POST', path: BASE + '/branding/logo', tag: 'Configuration',
         operationId: 'uploadBrandingLogo',
-        summary: 'Upload this realm\'s sign-in logo',
-        description: 'The request body is the image itself: a PNG, a JPEG ' +
-          'or a WebP, which the bytes decide whatever `Content-Type` ' +
-          'says. Each side 16 to 2048 pixels, at most ' +
-          'branding.logoMaxBytes. It replaces the logo the realm had. A ' +
-          'logo needs alternative text: send it as `alt`, or set ' +
-          'branding.logoAlt first. Served at this realm\'s ' +
-          '/web/branding/logo. Audited, with its digest and never its ' +
-          'bytes.',
         mirrors: 'POST ' + PAGE,
         handlerOwnsBody: true,
         parameters: [
@@ -363,7 +338,6 @@ class BrandingApi {
         ],
         requestBodyTypes: ['image/png', 'image/jpeg', 'image/webp',
                            'application/octet-stream'],
-        responseDescription: 'The stored logo, in `logo`.',
         extraResponses: {
           '413': 'Larger than branding.logoMaxBytes.',
           '415': 'Not a PNG, a JPEG or a WebP, by its bytes.'
@@ -433,31 +407,10 @@ class BrandingApi {
           log.debug("Leaving the management API branding action.");
         },
         actions: [
-          { action: 'save', operationId: 'saveBranding',
-            summary: 'Change this realm\'s sign-in appearance',
-            description: 'Writes the `branding.*` settings named, in this ' +
-              'realm: the default realm\'s are the process\'s overrides, a ' +
-              'realm\'s are its own, as `POST /admin-api/config/set` would ' +
-              'write them. They are judged TOGETHER, so a text colour and a ' +
-              'card colour that pass only as a pair are taken as a pair, ' +
-              'and nothing is written when any is refused: a colour that ' +
-              'is not one, text or links below WCAG 2.2 AA (4.5:1) against ' +
-              'the card, a link that is not https, an empty alternative ' +
-              'text while a logo is set. A key that is not one of these ' +
-              'eight is refused by name. branding.logoMaxBytes is the ' +
-              'process\'s, set with `/config/set`.',
-            requestBodyRequired: true,
-            requestBody: schema,
-            responseDescription: 'The keys written, in `saved`.' },
-          { action: 'remove-logo', operationId: 'removeBrandingLogo',
-            summary: 'Remove this realm\'s sign-in logo',
-            description: 'The sign-in pages show no logo afterwards. The ' +
-              'alternative text stays, so the next upload needs none. ' +
-              'Audited where there was a logo to remove.',
-            requestBodyRequired: false,
-            requestBody: { type: 'object', properties: {},
-                           examples: [{}], additionalProperties: false },
-            responseDescription: '`removed`: whether there was one.' }
+          { action: 'save', operationId: 'saveBranding'
+             },
+          { action: 'remove-logo', operationId: 'removeBrandingLogo'
+             }
         ] }
     ];
     log.debug("Leaving BrandingApi.buildRoutes().");

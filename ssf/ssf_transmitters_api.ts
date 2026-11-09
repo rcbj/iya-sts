@@ -168,21 +168,6 @@ class SsfTransmittersApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/ssf/transmitters',
         tag: 'Shared Signals', operationId: 'getPartnerSignals',
-        summary: 'The federation partners whose Shared Signals this realm ' +
-                 'receives',
-        description: 'Everything /admin/ssf/transmitters draws: each ' +
-          'federation relationship whose signals are on (its kind — ' +
-          '`sign-in` or `signals-only` — SSF issuer, discovered ' +
-          'configuration, delivery, stream, counts and blocks), every ' +
-          'Security Event Token that arrived with whether it verified, the ' +
-          'person it named and what it led to, the sign-ins partners have ' +
-          'blocked and the account locks a signals-only partner put on ' +
-          'people here. Never a secret. `relationship` narrows what ' +
-          'arrived. What arrived, the blocks and the locks are each one ' +
-          'page, moved by `receivedPage`, `blocksPage` and `locksPage` ' +
-          'with `per` shared, and described by `paging`. A partner\'s ' +
-          'stream is configured on its relationship and acted on with ' +
-          '`POST /admin-api/federation/signals-*`.',
         mirrors: 'GET /admin/ssf/transmitters',
         parameters: [
           { name: 'relationship', in: 'query', required: false,
@@ -204,12 +189,6 @@ class SsfTransmittersApi {
             schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page, shared by the three lists.' }
         ],
-        responseDescription: 'The report.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`relationships`, `received`, ' +
-                                       '`blocks`, `locks` (each one page), ' +
-                                       '`counts` (each list\'s whole ' +
-                                       'length), `paging`, `observeOnly`.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API partners' signals " +
                     "endpoint.");

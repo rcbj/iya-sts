@@ -198,18 +198,7 @@ class AuditExportApi {
     const ROUTES = [
       { method: 'GET', path: BASE + '/audit-export',
         tag: 'Monitoring', operationId: 'getAuditExport',
-        summary: 'Where this realm\'s audit events are delivered (#641)',
-        description: 'Everything Monitoring → Audit export draws: each ' +
-          'destination without its secrets, this process\'s queue and ' +
-          'delivery counters, and the page\'s settings. Figures are this ' +
-          'process. Each process delivers its own events.',
         mirrors: 'GET ' + PAGE,
-        responseDescription: 'The destinations and this process\'s ' +
-                             'counters.',
-        responseSchema: { type: 'object', additionalProperties: true,
-                          description: '`destinations`, `stats`, ' +
-                                       '`thisProcess`, `enabled`, `job`, ' +
-                                       '`settings`. Never a token.' },
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API audit export endpoint.");
           const view = loadExport().view();
@@ -248,63 +237,19 @@ class AuditExportApi {
           });
         },
         actions: [
-          { action: 'add', operationId: 'addAuditExportDestination',
-            summary: 'Add an audit export destination',
-            description: 'Creates a destination. A secret that will not ' +
-              'seal is refused. A private address, a cloud metadata ' +
-              'address, a URL with user information, and a filesystem ' +
-              'path outside the allowed roots are refused. Audited, ' +
-              'without the address or the secret.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object', properties: fields,
-              required: ['id', 'type'],
-              examples: [{ id: 'siem', type: 'syslog', host: 'siem.example',
-                           transport: 'tcp' }],
-              additionalProperties: false
-            },
-            responseDescription: 'The destination, without its secrets.' },
-          { action: 'update', operationId: 'updateAuditExportDestination',
-            summary: 'Change an audit export destination',
-            description: 'The members given replace the destination\'s. ' +
-              'An empty token or secret header keeps the stored one. ' +
-              'Plain headers, including empty, replace. Checked as add ' +
-              'is. Audited, without the address or the secret.',
-            requestBodyRequired: true,
-            requestBody: {
-              type: 'object', properties: fields, required: ['id'],
-              examples: [{ id: 'siem', enabled: false }],
-              additionalProperties: false
-            },
-            responseDescription: 'The destination, without its secrets.' },
-          { action: 'remove', operationId: 'removeAuditExportDestination',
-            summary: 'Remove an audit export destination',
-            description: 'Deletes the destination and this process\'s ' +
-              'cursor. Audited.',
-            requestBodyRequired: true, requestBody: idOnly,
-            responseDescription: 'What was removed.' },
-          { action: 'enable', operationId: 'enableAuditExportDestination',
-            summary: 'Enable an audit export destination',
-            description: 'The next run delivers to it. A destination ' +
-              'that was never enabled is backfilled from the ring this ' +
-              'process still holds. One that was disabled continues from ' +
-              'its cursor. Audited.',
-            requestBodyRequired: true, requestBody: idOnly,
-            responseDescription: 'The destination.' },
+          { action: 'add', operationId: 'addAuditExportDestination'
+             },
+          { action: 'update', operationId: 'updateAuditExportDestination'
+             },
+          { action: 'remove', operationId: 'removeAuditExportDestination'
+             },
+          { action: 'enable', operationId: 'enableAuditExportDestination'
+             },
           { action: 'disable',
-            operationId: 'disableAuditExportDestination',
-            summary: 'Disable an audit export destination',
-            description: 'The job stops visiting it and keeps the cursor. ' +
-              'Audited.',
-            requestBodyRequired: true, requestBody: idOnly,
-            responseDescription: 'The destination.' },
-          { action: 'test', operationId: 'testAuditExportDestination',
-            summary: 'Send a synthetic audit export event',
-            description: 'Validates the destination and sends one ' +
-              'synthetic event. That event is not an audit row. The ' +
-              'administrative test is. The delivery cursor does not move.',
-            requestBodyRequired: true, requestBody: idOnly,
-            responseDescription: '`diagnostic.disposition` and `test`.' }
+            operationId: 'disableAuditExportDestination'
+             },
+          { action: 'test', operationId: 'testAuditExportDestination'
+             }
         ] }
     ];
     log.debug("Leaving AuditExportApi.buildRoutes().");
