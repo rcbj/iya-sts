@@ -313,17 +313,26 @@ async function anAlgorithmThatCannotSignIsRefused(t) {
 
 async function aProcessBranchPastTheListenerLimitIsRefused(t) {
   log.debug("Entering aProcessBranchPastTheListenerLimitIsRefused().");
-  t.log.info('=== 7. a process branch whose alternative signatures exceed ' +
-             'a stock TLS client\'s certificate list is refused (#1421) ===');
+  t.log.info('=== 7. a process branch whose signatures exceed a stock ' +
+             'TLS client\'s certificate list is refused (#1421, #1432) ===');
   // Asked without building. ML-DSA-87 is the recommended hybrid and fits.
   // SLH-DSA-256f is 49856 bytes; the leaf and the TLS Issuing CA each carry
-  // one, and that list is past OpenSSL's 102400-byte default.
+  // one, and that list is past OpenSSL's 102400-byte default. The same
+  // size as the signing key is the same two signatures (#1432).
   t.equal(pki.processListenerAltSignatureProblem('ml-dsa-87'), null,
           'ML-DSA-87 still fits the process listener');
   t.equal(pki.processListenerAltSignatureProblem('slh-dsa-shake-128f'), null,
           'SLH-DSA-SHAKE-128f still fits the process listener');
   t.equal(pki.processListenerAltSignatureProblem(null), null,
           'a classical process branch is not a size refusal');
+  t.equal(pki.processListenerAltSignatureProblem(null, 'ec-p256'), null,
+          'a classical signing key adds nothing to the budget');
+  t.equal(pki.processListenerAltSignatureProblem(
+            null, 'slh-dsa-shake-256s'), null,
+          'SLH-DSA-256s as the signing key still fits');
+  t.equal(pki.processListenerAltSignatureProblem(
+            null, 'mldsa87-ecdsa-p521-sha512'), null,
+          'a composite ML-DSA-87 signing key still fits');
   ['slh-dsa-shake-256f', 'slh-dsa-sha2-256f'].forEach(function (id) {
     const problem = pki.processListenerAltSignatureProblem(id);
     t.equal(errorCodes.codeOf(problem), 'STS-PKI-0270',
@@ -331,7 +340,19 @@ async function aProcessBranchPastTheListenerLimitIsRefused(t) {
     t.check(problem && !/STS-/.test((problem.errors || []).join(' ')),
             id + ' names no error code in the sentence',
             (problem && problem.errors || []).join(' '));
+    const primary = pki.processListenerAltSignatureProblem(null, id);
+    t.equal(errorCodes.codeOf(primary), 'STS-PKI-0270',
+            id + ' as the signing key is refused as STS-PKI-0270');
+    t.check(primary && !/STS-/.test((primary.errors || []).join(' ')),
+            id + ' as the signing key names no error code',
+            (primary && primary.errors || []).join(' '));
+    t.check(primary && /signing key/.test((primary.errors || []).join(' ')),
+            id + ' as the signing key says so');
   });
+  const both = pki.processListenerAltSignatureProblem(
+    'slh-dsa-shake-192f', 'slh-dsa-shake-192f');
+  t.equal(errorCodes.codeOf(both), 'STS-PKI-0270',
+          'a 192f signing key plus the same alternative key is refused');
   const before = pki.describeScope(pki.PROCESS_SCOPE);
   const refused = await pki.buildScope(pki.PROCESS_SCOPE, {
     keyAlg: 'ec-p256', altKeyAlg: 'slh-dsa-shake-256f'
@@ -341,11 +362,27 @@ async function aProcessBranchPastTheListenerLimitIsRefused(t) {
           (refused.errors || []).join(' '));
   t.equal(errorCodes.codeOf(refused), 'STS-PKI-0270',
           'and the build carries STS-PKI-0270');
+  const pure = await pki.buildScope(pki.PROCESS_SCOPE, {
+    keyAlg: 'slh-dsa-shake-256f', altKeyAlg: 'none'
+  });
+  t.check(!pure.ok, 'a pure SLH-DSA-256f process branch is refused before ' +
+          'any key is made', (pure.errors || []).join(' '));
+  t.equal(errorCodes.codeOf(pure), 'STS-PKI-0270',
+          'and that build carries STS-PKI-0270');
+  t.check(pure && /signing key/.test((pure.errors || []).join(' ')) &&
+          !/alternative/.test((pure.errors || []).join(' ')),
+          'the pure-key refusal names the signing key and no alternative',
+          (pure.errors || []).join(' '));
+  t.check(pure && !/STS-/.test((pure.errors || []).join(' ')),
+          'the pure-key refusal names no error code',
+          (pure.errors || []).join(' '));
   const after = pki.describeScope(pki.PROCESS_SCOPE);
   t.equal(after.built, before.built,
           'the refused build stored nothing');
   t.equal(after.altKeyAlg, before.altKeyAlg,
           'the process branch\'s alternative key is unchanged');
+  t.equal(after.keyAlg, before.keyAlg,
+          'the process branch\'s signing key is unchanged');
   log.debug("Leaving aProcessBranchPastTheListenerLimitIsRefused().");
 }
 

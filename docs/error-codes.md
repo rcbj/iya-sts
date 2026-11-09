@@ -1056,7 +1056,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0267` | A certificate offered to be accepted by name is a certificate authority (#1360). | none — recorded on the refusal the page or the API makes |
 | `STS-PKI-0268` | A certificate authority was asked for a lifetime a certificate cannot carry. Nothing was generated and nothing was stored (#1409). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0269` | A signing key pair was asked for a subject key that has no JWK this service can publish: a composite ML-DSA key, whose X.509 bytes are not the JOSE composite, or a key-establishment algorithm asked to sign. The certificate was not recorded (#1418). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
-| `STS-PKI-0270` | A process-scope certificate authority was asked for an alternative key whose signatures would make the TLS listener certificate list larger than a stock TLS client accepts (OpenSSL SSL_MAX_CERT_LIST_DEFAULT, 102400 bytes). Nothing was stored, and the listener certificate was left as it is (#1421). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0270` | A process-scope certificate authority was asked for a signing key or an alternative key whose signatures would make the TLS listener certificate list larger than a stock TLS client accepts (OpenSSL SSL_MAX_CERT_LIST_DEFAULT, 102400 bytes). Nothing was stored, and the listener certificate was left as it is (#1421, #1432). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 
 ## STS-ENROLL
 

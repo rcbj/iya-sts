@@ -4964,11 +4964,12 @@ const CODES = [
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-PKI-0270',
-    summary: 'A process-scope certificate authority was asked for an ' +
-      'alternative key whose signatures would make the TLS listener ' +
-      'certificate list larger than a stock TLS client accepts (OpenSSL ' +
-      'SSL_MAX_CERT_LIST_DEFAULT, 102400 bytes). Nothing was stored, and ' +
-      'the listener certificate was left as it is (#1421).',
+    summary: 'A process-scope certificate authority was asked for a ' +
+      'signing key or an alternative key whose signatures would make the ' +
+      'TLS listener certificate list larger than a stock TLS client ' +
+      'accepts (OpenSSL SSL_MAX_CERT_LIST_DEFAULT, 102400 bytes). ' +
+      'Nothing was stored, and the listener certificate was left as it ' +
+      'is (#1421, #1432).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
   { code: 'STS-ENROLL-0001',
