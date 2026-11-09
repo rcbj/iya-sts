@@ -14,6 +14,7 @@ being things this stack wrote into files of its own.
 |---|---|
 | `bao.hcl` | The store's configuration: raft storage, a TLS listener, and `seal "static"` — a real auto-unseal, not dev mode. |
 | `generate-tls.js` | Mints the listener's certificate BEFORE the store starts, with this repository's own encoder. Runs in the image this repository builds. |
+| `generate-seal.js` | Makes the static seal's key once, at first start, on the store's own volume. Run by `openbao-tls`. |
 | `seed.js` | One shot, idempotent: initialise, write the two secrets (**the key is written once, with KV v2 check-and-set, and never replaced** — everything sealed under it would be unreadable), make the Transit key `sts-kek` once (#391), build a CA inside the store, issue this service its client certificate, bind it to the policy — and then PROVE the policy by using it. A second stack against an initialised store proves its credential instead. **The management API secret it generates when nobody pins one is 48 random bytes, base64url (#1212)** — 64 characters, `applications.mintClientSecret()`'s shape; it was 24 letters and digits, the shortest secret on the application list. A stored value is kept, so an existing stack changes only when the field is removed or a new value pinned. It runs `main()` only when executed, so `tests/seeder_admin_secret.js` can require it. |
 | `read-only.hcl` | What that identity may do: read two paths, and USE one Transit key (encrypt, decrypt, read its versions). Everything else is denied, because Vault denies by default. **Not `secret/sts-admin`** (#254), and the seeder proves the refusal. |
 | `admin-secret.hcl` | #254: read on `secret/sts-admin` — the start-up secrets — and nothing else. Carried by the single-use START-UP tokens and the printed OPERATOR token, both from the `sts-admin-secret` token role. |
@@ -75,6 +76,11 @@ with ordinary storage that happens to need no ceremony to start.
 with `invalid key size`, and a failed initialisation leaves the storage dirty
 enough that the next attempt answers *already initialized* with no root token
 anywhere — which reads as a corrupted store and is a mistyped key.
+
+**The key is generated at first start** (`generate-seal.js`, run by `openbao-tls`
+and kept on the store's own volume), so no two stacks share one and none is
+written in `docker-compose.yml`. `STS_BAO_SEAL_KEY` overrides it. The test stack
+(`docker-compose-run-tests.yml`) keeps a fixed key, deliberately.
 
 What it costs is stated rather than hidden: the key that unseals the store
 travels beside it, so the store protects its contents from a reader of the

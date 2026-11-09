@@ -60,10 +60,12 @@ services:
       - STS_BAO_TLS_DIR=/openbao/file/tls
       - STS_BAO_TLS_NAMES=${STS_BAO_TLS_NAMES:-openbao,localhost}
       - STS_BAO_TLS_IPS=${STS_BAO_TLS_IPS:-127.0.0.1}
+      - STS_BAO_SEAL_KEY
     volumes:
       - sts-bao-file:/openbao/file
       - ./openbao/generate-tls.js:/usr/src/sts/openbao/generate-tls.js:ro
-    command: ["node", "openbao/generate-tls.js"]
+      - ./openbao/generate-seal.js:/usr/src/sts/openbao/generate-seal.js:ro
+    command: ["sh", "-c", "node openbao/generate-tls.js && node openbao/generate-seal.js"]
 
   openbao:
     container_name: ${STS_BAO_CONTAINER_NAME:-sts-openbao}
@@ -76,11 +78,11 @@ services:
       - IPC_LOCK
     environment:
       - BAO_STATIC_SEAL_CURRENT_KEY_ID=${STS_BAO_SEAL_KEY_ID:-sts}
-      - BAO_STATIC_SEAL_CURRENT_KEY=${STS_BAO_SEAL_KEY:-KSVmckTNY246XdLbpfIzGbuXvgZqAOPzsrF4itdFTvo=}
+      - STS_BAO_SEAL_KEY
     volumes:
       - ./openbao/bao.hcl:/openbao/config/bao.hcl:ro
       - sts-bao-file:/openbao/file
-    command: ["server", "-config=/openbao/config/bao.hcl"]
+    command: ["sh", "-c", "BAO_STATIC_SEAL_CURRENT_KEY=\"$${STS_BAO_SEAL_KEY:-$$(cat /openbao/file/seal/seal.key)}\" exec docker-entrypoint.sh server -config=/openbao/config/bao.hcl"]
     healthcheck:
       test: ["CMD-SHELL", "bao status -address=https://127.0.0.1:8200 -ca-cert=/openbao/file/tls/server.crt >/dev/null 2>&1 || test -f /openbao/file/seed/seeder.token"]
       interval: 5s
