@@ -393,12 +393,12 @@ function childMain() {
     // --- 15. the SPNEGO step leaves the address (#1487) ----------------------
     r = await ask('GET', '/pl-spnego-redirect');
     note(r.headers.location === '/authn/spnego' &&
-         /sts_spnego_step=the-step/.test(String(r.headers['set-cookie'])),
+         /sts_signin_step=the-step/.test(String(r.headers['set-cookie'])),
          'product: the SPNEGO step goes by cookie, not by address',
          String(r.headers.location) + ' ' + String(r.headers['set-cookie']));
     const stepper = require(ROOT_DIR + '/common/step_address');
-    note(stepper.spnegoStepOf({ headers: {
-      cookie: 'a=b; sts_spnego_step=the-step' } }) === 'the-step',
+    note(stepper.stepOfCookie({ headers: {
+      cookie: 'a=b; sts_signin_step=the-step' } }) === 'the-step',
          'and the door reads it back');
 
     // --- 16. every named file goes through the rule (#1481) -------------------

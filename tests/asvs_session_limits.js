@@ -135,6 +135,53 @@ function childMain() {
     counters.sharesWindows = realShares;
     counters.countInWindow = realCount;
   }
+  // WHOSE CERTIFICATE VERIFIES A CLIENT'S ASSERTION (#1488), through the door.
+  const nodeCrypto = require('crypto');
+  const clientAuth = require(ROOT_DIR + '/oauth-oidc/client_auth');
+  const assertionGrant = require(ROOT_DIR + '/oauth-oidc/assertion_grant');
+  const errorCodes = require(ROOT_DIR + '/common/error_codes');
+  const pair = nodeCrypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const b64 = function (value) {
+    return Buffer.from(JSON.stringify(value)).toString('base64url');
+  };
+  const assertionFor = function (clientId) {
+    const body = b64({ alg: 'RS256', x5c: ['AA'] }) + '.' + b64({
+      iss: clientId, sub: clientId, aud: ['https://as.example/token'],
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 60,
+      jti: nodeCrypto.randomBytes(8).toString('hex') });
+    return body + '.' + nodeCrypto.sign('RSA-SHA256', Buffer.from(body),
+                                        pair.privateKey).toString('base64url');
+  };
+  const realKeyFromChain = assertionGrant.keyFromChain;
+  const presenting = async function (subjectName) {
+    assertionGrant.keyFromChain = function () {
+      return Promise.resolve({ key: pair.publicKey.export(
+        { type: 'spki', format: 'pem' }), subjectKind: 'application',
+      subjectName: subjectName });
+    };
+    return clientAuth.verify({ method: 'private_key_jwt',
+      clientId: 'asvs-client', assertion: assertionFor('asvs-client'),
+      assertionType:
+        'urn:ietf:params:oauth:client-assertion-type:jwt-bearer',
+      audiences: ['https://as.example/token'] });
+  };
+  try {
+    const stolen = await presenting('another-application');
+    t.equal(JSON.stringify({ ok: !!stolen.ok, code: stolen.errorCode ||
+                             errorCodes.codeOf(stolen),
+                             why: stolen.ok ? '' : stolen.description }),
+            JSON.stringify({ ok: false, code: 'STS-OAUTH-1000',
+                             why: 'the certificate in x5c was not issued to ' +
+                                  'this client.' }),
+            'a certificate issued to another application authenticates nobody');
+    const own = await presenting('asvs-client');
+    t.equal(own.errorCode === 'STS-OAUTH-1000' ||
+            errorCodes.codeOf(own) === 'STS-OAUTH-1000', false,
+            'and the client\'s own passes that check');
+  } finally {
+    assertionGrant.keyFromChain = realKeyFromChain;
+  }
   mode.verifiesCredentials = realVerifies;
   const doors = { 'ws-trust/wstrust.ts': 'wstrust',
                   'scim/scim_auth.ts': 'scim-basic',

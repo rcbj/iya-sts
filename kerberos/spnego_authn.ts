@@ -682,7 +682,7 @@ class SpnegoAuthn {
             checksTable, principals, spnego } = this.deps;
     log.debug('Entering SpnegoAuthn.handleSignIn().');
     const record = authn.pendingFor((req.query || {}).authn ||
-      require('../common/step_address').spnegoStepOf(req));
+      require('../common/step_address').stepOfCookie(req));
 
     if (!this.enabled()) {
       // A REFUSAL WITH A REASON, not a 404. The route exists — it is in the

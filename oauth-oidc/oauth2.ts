@@ -14455,6 +14455,15 @@ class OAuth2Server {
     }
     if (!replay.ok || nothingToReplay) {
       if (done.family) {
+        // WHAT WAS REFRESHED FROM IT (#1489, ASVS 5.0.0 10.4.2), through the
+        // same act as the first set below: `stats.revoke()` fills the grant's
+        // CAEP session-revoked and, for a replay, its risk-level-change.
+        self.deps.bcp.grantMembersOf(done.family).forEach(function (jti: string) {
+          stats.revoke(jti, 'RFC 9700 section 4.5: an authorization code was ' +
+                            'presented twice',
+                       { initiatingEntity: 'policy',
+                         replay: 'authorization-code-replay' });
+        });
         self.deps.bcp.revokeFamily(done.family, done.client_id).catch(
           function (e) {
             log.error(errorCodes.tag('STS-OAUTH-0518') + 'oauth2: the refresh ' +

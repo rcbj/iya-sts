@@ -975,7 +975,7 @@ app.use(function (req, res, next) {
       // SPNEGO's has no script to read a fragment (#1487).
       const spnego = stepAddress.spnegoStep(location);
       if (spnego) {
-        res.append('Set-Cookie', stepAddress.spnegoCookie(spnego.id));
+        res.append('Set-Cookie', stepAddress.stepCookie(spnego.id));
         res.setHeader('Location', spnego.location);
       } else {
         res.setHeader('Location', stepAddress.hide(location,

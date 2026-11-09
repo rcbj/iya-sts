@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5348** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5350** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -64,7 +64,7 @@ is an ordinary outcome.
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 430
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 747
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 749
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
@@ -2494,6 +2494,8 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0997` | The KDC could not issue the Kerberos ticket a token exchange asked for (#658); its own code is in the log line beside this one. | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
 | `STS-OAUTH-0998` | In RFC 9700 mode, with section 2.1.2 waived in the realm (oauth2.allowImplicitTokenResponses), an authorization request asked for a token response type the client's oauthAllowedTokenResponseTypes does not list (#1296). | unauthorized_client (RFC 6749 sections 4.1.2.1 and 4.2.2.1, redirected error) |
 | `STS-OAUTH-0999` | In RFC 9700 mode, with section 2.1.2 waived in the realm, a dynamic client registration or its RFC 7592 update asked for a token response type that oauth2.dynamicRegistrationTokenResponseTypes does not list (#1296). | invalid_client_metadata (HTTP 400) |
+| `STS-OAUTH-1000` | A client assertion was verified by a certificate from the realm's authority that was not issued to that client (ASVS 5.0.0 9.1.3). | invalid_client |
+| `STS-OAUTH-1001` | An RFC 7523 assertion was verified by a certificate from the realm's authority that was not issued to its issuer (ASVS 5.0.0 9.1.3). | invalid_grant |
 
 ## STS-SAML
 

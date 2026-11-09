@@ -713,10 +713,10 @@ RUN mkdir -p tests/report
 # service's — run-report.js overrides it per protocol job to ./env/local.js
 # relative to tests/protocol/. This one is for the runner itself.
 ENV CONFIG_FILE=./env/local.js
-# That file carries the shipped rate limits since #1482; the suite signs in far
-# more often than a person does.
-ENV STS_SECURITY_RATE_PER_IDENTITY=100
-ENV STS_SECURITY_RATE_PER_ADDRESS=500
+# That file carries the shipped rate limits since #1482, and the suite signs in
+# far more often than a person does: an appconfig layer, not the environment,
+# so that a test's own setOverride() still decides.
+ENV CONFIG_FILE=./env/npm-tests.js
 # Where the in-process tests write the CA files they name (#1481).
 ENV STS_SECURITY_FILE_ROOTS=/etc/ssl,/usr/share/ca-certificates,/run/secrets,/tmp
 # Where the service is, on the compose network. run-tests-in-container.sh passes

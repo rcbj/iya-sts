@@ -616,7 +616,9 @@ class VcSignin {
     const { log, authn } = this.deps;
     log.debug("Entering VcSignin.waitPathFor().");
     log.debug("Leaving VcSignin.waitPathFor().");
-    return authn.WALLET_WAIT_PATH + '?authn=' +
+    // In the fragment in product (#1487): this page reads it from there.
+    const opener = require('../common/mode').hidesStepIds() ? '#' : '?';
+    return authn.WALLET_WAIT_PATH + opener + 'authn=' +
       encodeURIComponent(ctx.record.id) + '&state=' +
       encodeURIComponent(state) +
       (ctx.mfaId ? '&mfa=' + encodeURIComponent(ctx.mfaId) : '') +

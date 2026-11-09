@@ -407,6 +407,15 @@ function run(t) {
     t.check(good && good.key,
             'a chain this service ISSUED yields a key, which is the point of ' +
             'holding a certificate authority at all');
+    // WHOSE IT IS (#1488, ASVS 5.0.0 9.1.3).
+    t.check(assertionGrant.certificateNamesParty(good, 'signer') === true &&
+            assertionGrant.certificateNamesParty(good, 'somebody-else') === false,
+            'it verifies only the application it names');
+    t.check(assertionGrant.certificateNamesParty(
+      { subjectKind: 'person', subjectName: 'signer' }, 'signer') === false &&
+            assertionGrant.certificateNamesParty(
+              { subjectKind: '', subjectName: '' }, 'signer') === false,
+            'a person\'s certificate, or one naming nobody, verifies no client');
 
     const selfPair = nodeCrypto.generateKeyPairSync('rsa',
                                                     { modulusLength: 2048 });

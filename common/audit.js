@@ -752,6 +752,8 @@ const ACTIONS = [
     label: 'A console page was viewed' },
   { action: 'admin.change', category: 'admin',
     label: 'A console form was posted' },
+  { action: 'admin.config-dump', category: 'admin',
+    label: 'The configuration was exported' },
   // The SUBSTANCE of a claim-set change, as against the HTTP row that says a
   // form was posted to /admin/claims or /admin/saml-attributes — one row shape
   // for both, because there is one store behind the two pages. Both are

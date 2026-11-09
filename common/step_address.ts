@@ -15,7 +15,8 @@
 //
 // `/authn/spnego` cannot use a fragment: RFC 4559's exchange is plain HTTP with
 // no script, so the server has to read the id. In product it travels in a
-// short-lived HttpOnly cookie instead (#1487). Nothing here touches a protocol
+// short-lived HttpOnly cookie instead (#1487), as does the federation link that
+// names the pending sign-in to its partner's return. Nothing here touches a protocol
 // endpoint's own parameters.
 // ---------------------------------------------------------------------------
 
@@ -31,9 +32,9 @@ const STEP = new RegExp('^((?:https?://[^/]+)?(?:/realm/[^/]+)?' +
 
 const SPNEGO = new RegExp('^((?:https?://[^/]+)?(?:/realm/[^/]+)?' +
   '/authn/spnego)\\?authn=([^&#]+)$');
-const SPNEGO_COOKIE = 'sts_spnego_step';
+const STEP_COOKIE = 'sts_signin_step';
 // Longer than a Negotiate exchange and no longer than a pending sign-in.
-const SPNEGO_COOKIE_S = 600;
+const STEP_COOKIE_S = 600;
 
 class StepAddress {
   /**
@@ -51,36 +52,36 @@ class StepAddress {
   }
 
   /**
-   * The Set-Cookie line that carries a step to the SPNEGO door.
+   * The Set-Cookie line that carries a step to a door with no script.
    *
    * @param id - the step's id, as it stands in an address
    * @returns the header value
    */
-  static spnegoCookie(id: string): string {
-    log.debug("Entering StepAddress.spnegoCookie().");
-    log.debug("Leaving StepAddress.spnegoCookie().");
-    return SPNEGO_COOKIE + '=' + encodeURIComponent(decodeURIComponent(id)) +
-      '; Path=/; HttpOnly; SameSite=Lax; Max-Age=' + SPNEGO_COOKIE_S +
+  static stepCookie(id: string): string {
+    log.debug("Entering StepAddress.stepCookie().");
+    log.debug("Leaving StepAddress.stepCookie().");
+    return STEP_COOKIE + '=' + encodeURIComponent(decodeURIComponent(id)) +
+      '; Path=/; HttpOnly; SameSite=Lax; Max-Age=' + STEP_COOKIE_S +
       (config.value('global.https') ? '; Secure' : '');
   }
 
   /**
-   * The step a request to the SPNEGO door carries in its cookie.
+   * The step a request to such a door carries in its cookie.
    *
    * @param req - the request
    * @returns the step's id, or ''
    */
-  static spnegoStepOf(req: any): string {
-    log.debug("Entering StepAddress.spnegoStepOf().");
+  static stepOfCookie(req: any): string {
+    log.debug("Entering StepAddress.stepOfCookie().");
     const header = String((req && req.headers && req.headers.cookie) || '');
     const pair = header.split(';').map(function (one: string) {
       return one.trim();
     }).filter(function (one: string) {
-      return one.indexOf(SPNEGO_COOKIE + '=') === 0;
+      return one.indexOf(STEP_COOKIE + '=') === 0;
     })[0] || '';
-    log.debug("Leaving StepAddress.spnegoStepOf().");
+    log.debug("Leaving StepAddress.stepOfCookie().");
     return pair && mode.hidesStepIds()
-      ? decodeURIComponent(pair.slice(SPNEGO_COOKIE.length + 1)) : '';
+      ? decodeURIComponent(pair.slice(STEP_COOKIE.length + 1)) : '';
   }
 
   /**

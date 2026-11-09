@@ -2151,13 +2151,12 @@ class AuthnApi {
           next();
           return;
         }
-        // THE KERBEROS BUTTON'S STEP (#1487): a link carries no header, so
-        // the page's own view leaves the id in a cookie for it.
+        // A LINK CARRIES NO HEADER (#1487): the page's own view leaves the id
+        // in a cookie for the Kerberos button and the federation links.
         if (kind === 'pending' && req.method === 'GET' &&
-            mode.hidesStepIds() && req.params.id !== '-' &&
-            require('../common/config').value('krb5.spnegoAuthentication')) {
+            mode.hidesStepIds() && req.params.id !== '-') {
           res.append('Set-Cookie', require('../common/step_address')
-            .spnegoCookie(encodeURIComponent(req.params.id)));
+            .stepCookie(encodeURIComponent(req.params.id)));
         }
         const found = authn.cookieSession(req, authn.SESSION_COOKIE);
         const sid = String((found && found.id) || '');

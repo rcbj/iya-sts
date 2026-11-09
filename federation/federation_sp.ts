@@ -5445,14 +5445,16 @@ class FederationSp {
     const returnTo = this.returnToOf(initiated ? initiated.returnTo
       : (req.query.returnTo || req.query.return_to));
     const pkce = this.pkcePair();
+    const pendingStep = String(req.query.authn ||
+      require('../common/step_address').stepOfCookie(req));
     const contextRecord: any = {
       id: record.fedId, protocol: record.fedProtocol, returnTo: returnTo,
       // THE SIGN-IN SCREEN'S PENDING RECORD (#98 D9), named by `authn.ts` in
       // a service deployed as cells: where the flow STARTED, should the
       // partner assert a person homed in another cell (completeSignIn()).
       // Only an id; the record stays in the sign-in service's store.
-      authnPending: /^[A-Za-z0-9_-]{1,64}$/.test(String(req.query.authn || ''))
-        ? String(req.query.authn) : '',
+      authnPending: /^[A-Za-z0-9_-]{1,64}$/.test(pendingStep) ? pendingStep
+                                                              : '',
       // WHAT THE PERSON WAS SIGNING IN TO, carried across the round trip so
       // that completeSignIn() can move the relationship's per-application
       // counts.

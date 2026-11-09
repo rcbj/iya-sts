@@ -13509,7 +13509,9 @@ class Authn {
     // consumer then restarts THIS flow there from the start the record
     // holds (`restartPendingAtHome()`). It names a record and carries
     // nothing else; single-cell mode adds nothing.
-    const forRestart = cells.isMulti() && record && record.id
+    // In product it goes by the step's cookie (#1487).
+    const forRestart = cells.isMulti() && record && record.id &&
+      !this.deps.mode.hidesStepIds()
       ? '&authn=' + encodeURIComponent(String(record.id)) : '';
     const links = options.map(function (one) {
       return { id: String(one.id), label: String(one.label || ''),

@@ -11419,6 +11419,16 @@ const CODES = [
       'response type that oauth2.dynamicRegistrationTokenResponseTypes does ' +
       'not list (#1296).',
     spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-OAUTH-1000',
+    summary: 'A client assertion was verified by a certificate from the ' +
+      'realm\'s authority that was not issued to that client (ASVS ' +
+      '5.0.0 9.1.3).',
+    spec: 'invalid_client' },
+  { code: 'STS-OAUTH-1001',
+    summary: 'An RFC 7523 assertion was verified by a certificate from ' +
+      'the realm\'s authority that was not issued to its issuer ' +
+      '(ASVS 5.0.0 9.1.3).',
+    spec: 'invalid_grant' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +

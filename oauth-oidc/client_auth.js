@@ -456,7 +456,7 @@ async function verifyAssertion(opts) {
     const fromChain = await assertionGrant.keyFromChain(header);
     if (fromChain && fromChain.key) {
       found.push({ kid: header.kid ? String(header.kid) : '',
-                   key: fromChain.key });
+                   key: fromChain.key, chain: fromChain });
     } else if (fromChain && fromChain.error && !found.length) {
       log.debug("Leaving verifyAssertion(). The x5c does not chain here.");
       return { ok: false, errorCode: fromChain.errorCode,
@@ -553,6 +553,14 @@ async function verifyAssertion(opts) {
                           '`sub`, name one of ' + audiences.join(' ' +
                               'or ') + ' ' +
                           'as `aud`, and be unexpired.' };
+  }
+  // WHOSE CERTIFICATE IT IS (#1488, ASVS 5.0.0 9.1.3): chaining to this realm's
+  // authority says nothing about which client it was issued to.
+  if (usedEntry && usedEntry.chain && !assertionGrant.certificateNamesParty(
+    usedEntry.chain, clientId || claims.iss)) {
+    log.debug("Leaving verifyAssertion(). Another party's certificate.");
+    return { ok: false, errorCode: 'STS-OAUTH-1000', description: 'the certificate in ' +
+             'x5c was not issued to this client.' };
   }
   // THE ISSUER AS THE SOLE AUDIENCE, where the caller asks for it (OAuth 2.1
   // mode, 2026-09-13). OAuth 2.1 section 2.4 makes
