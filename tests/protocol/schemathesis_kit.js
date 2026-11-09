@@ -1276,6 +1276,35 @@ async function storeFailing(serviceBase, surfaceKey, realmShown, say) {
   return problem;
 }
 
+// How many realms' cells run at once: STS_SCHEMATHESIS_REALMS, every realm
+// by default, and 1 for the order this mode always had (#1502).
+function realmConcurrency() {
+  log.debug("Entering realmConcurrency().");
+  const asked = parseInt(process.env.STS_SCHEMATHESIS_REALMS || "", 10);
+  log.debug("Leaving realmConcurrency().");
+  return asked > 0 ? asked : PROFILES.length;
+}
+
+// Runs `task` over `items`, at most `width` at once. A task that rejects
+// rejects the whole, after the ones already running have settled.
+async function boundedMap(items, width, task) {
+  log.debug("Entering boundedMap(). " + width);
+  let next = 0;
+  async function lane() {
+    while (next < items.length) {
+      const item = items[next];
+      next += 1;
+      await task(item);
+    }
+  }
+  const lanes = [];
+  for (let i = 0; i < Math.min(width, items.length); i++) {
+    lanes.push(lane());
+  }
+  await Promise.all(lanes);
+  log.debug("Leaving boundedMap().");
+}
+
 // A free loopback TCP port.
 function freePort() {
   log.debug("Entering freePort().");
@@ -1733,8 +1762,12 @@ async function run(serviceBase, options) {
       log.debug("Caught in onResult(): " + ((e && e.message) || e));
     }
   }
-  for (let p = 0; p < PROFILES.length; p++) {
-    const profile = PROFILES[p];
+  // THE REALMS OVERLAP (#1502): they are isolated from each other, so one
+  // realm's cells cannot disturb another's, and `admin-api`'s three cells are
+  // nearly all of this mode's time. A realm's OWN surfaces stay in order: the
+  // ordering above is what stops one surface breaking the next.
+  async function runRealm(profile) {
+    log.debug("Entering runRealm(). " + profile.realm);
     let provisioned = null;
     try {
       provisioned = await provision(serviceBase, profile, say);
@@ -1748,7 +1781,7 @@ async function run(serviceBase, options) {
         code: null, status: "error", findings: [],
         output: "provisioning " + profile.realm + " failed: " +
           ((e && e.message) || e) });
-      continue;
+      return;
     }
     for (let s = 0; s < SURFACES.length; s++) {
       if (only && !only[SURFACES[s].key]) {
@@ -1769,7 +1802,9 @@ async function run(serviceBase, options) {
       }
       record(result);
     }
+    log.debug("Leaving runRealm(). " + profile.realm);
   }
+  await boundedMap(PROFILES, realmConcurrency(), runRealm);
   // THE DEFAULT-REALM SERVICE CELL, LAST (#1299): the admin-api surface against
   // the default realm with a SERVICE admin token, so the ~86 service-level
   // operations every realm cell's realm token is refused (STS-API-0112) are
@@ -1807,6 +1842,8 @@ async function run(serviceBase, options) {
 
 module.exports = {
   storeProblemOf: storeProblemOf,
+  boundedMap: boundedMap,
+  realmConcurrency: realmConcurrency,
   PROFILES: PROFILES,
   SURFACES: SURFACES,
   SERVICE_CELL: SERVICE_CELL,
