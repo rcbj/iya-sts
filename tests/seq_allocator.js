@@ -211,7 +211,6 @@ async function run(t) {
   const delegation = require('../common/delegation');
   const realms = require('../common/realms');
   realms.run(realms.DEFAULT_REALM, function () {
-    const before = audit.list().length;
     audit.audit({ category: 'admin', action: 'admin.test',
                   summary: 'seq_allocator test' });
     const event = audit.list()[0];
@@ -220,7 +219,9 @@ async function run(t) {
       outcome: delegation.OUTCOMES[0], initial: { presented: 'sa-alice' },
       intermediary: { presented: 'sa-front', application: 'sa-front' },
       target: { application: 'sa-back' }, authorizedBy: 'a test' });
-    t.check(audit.list().length === before + 1 &&
+    // By the row itself and not the list's length, which stops growing at
+    // audit.maxEvents when the whole suite has written to this process.
+    t.check(event.action === 'admin.test' &&
             typeof event.seq === 'number' && event.seq > 0 &&
             Object.prototype.hasOwnProperty.call(event, 'origin') &&
             act && typeof act.seq === 'number' && act.seq > 0 &&
