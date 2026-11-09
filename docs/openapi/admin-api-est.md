@@ -46,6 +46,8 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `certificatesPage` | query | integer |  | Which page of enrolled certificates. |
 | `per` | query | integer |  | Rows per page. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The EST server as the page draws it.
 
@@ -240,6 +242,13 @@ A dNSName or iPAddress is issued in a certificate — over ACME, EST or SCEP —
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -295,6 +304,13 @@ The console's /serverkeygen (RFC 7030 section 4.4): a key pair of `keyAlg` is ge
 **Mirrors** `POST /admin/est` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -417,6 +433,8 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `page` | query | integer |  | Which page of recent requests. |
 | `per` | query | integer |  | Rows per page. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The counters and recent requests.
 
@@ -485,6 +503,13 @@ Certificates already issued for the name keep it; the next request naming it is 
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -540,6 +565,13 @@ Puts the serial on the EST Issuing CA's CRL with the RFC 5280 reason given (OCSP
 **Mirrors** `POST /admin/est` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

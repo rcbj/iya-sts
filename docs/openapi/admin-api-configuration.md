@@ -38,6 +38,13 @@ Everything Server configuration → Sign-in appearance draws: the layout and the
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The realm's appearance.
 
 | Member | Type | Required | What it is |
@@ -162,6 +169,8 @@ Scope: `admin:write`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `alt` | query | string |  | The alternative text, written to branding.logoAlt with the image. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -273,6 +282,13 @@ The sign-in pages show no logo afterwards. The alternative text stays, so the ne
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body** (optional)
 
 An empty object.
@@ -316,6 +332,13 @@ Writes the `branding.*` settings named, in this realm: the default realm's are t
 **Mirrors** `POST /admin/sign-in-appearance` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -371,6 +394,13 @@ It also says which settings can be CHANGED while the service runs. The ones that
 **Mirrors** `GET /admin/config` on the admin console.
 
 Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The whole table.
 
@@ -518,6 +548,13 @@ The configuration of this running instance as one document: every parameter in `
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The dump.
 
 | Member | Type | Required | What it is |
@@ -575,6 +612,13 @@ The setting falls back to whatever it would have used had nothing ever been set 
 **Mirrors** `POST /admin/config, POST /admin/xacml#xacml-tab-settings and POST /admin/xacml#xacml-tab-authzen` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -706,6 +750,13 @@ Returns the whole service to the configuration it started with, without restarti
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body** (optional)
 
 An empty object.
@@ -755,6 +806,13 @@ A setting whose `editable` is false is REFUSED with the reason rather than accep
 **Mirrors** `POST /admin/config, POST /admin/xacml#xacml-tab-settings and POST /admin/xacml#xacml-tab-authzen` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -888,6 +946,13 @@ ALL-OR-NOTHING. Every value is checked before any is written, so a body with one
 **Mirrors** `POST /admin/config, POST /admin/xacml#xacml-tab-settings and POST /admin/xacml#xacml-tab-authzen` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

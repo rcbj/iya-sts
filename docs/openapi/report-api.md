@@ -30,6 +30,13 @@ Names the catalog and realms addresses, and carries the service version the appl
 
 Scope: `report:use`, `report:admin`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The index.
 
 | Member | Type | Required | What it is |
@@ -69,6 +76,8 @@ Scope: `report:use`, `report:admin`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `since` | query | integer |  |  |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: `now`, `everyMs` and `announcements`.
 
@@ -102,6 +111,13 @@ Scope: `report:use`, `report:admin`.
 Every source. Each field has an id, a meaning, a type, whether it can be filtered, sorted or grouped, and its operators. paging is limit. relationships is empty. retention is the English sentence for how long the rows last.
 
 Scope: `report:use`, `report:admin`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The sources.
 
@@ -184,6 +200,8 @@ Scope: `report:use`, `report:admin`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The source id. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The source.
 
@@ -264,7 +282,7 @@ Scope: `report:use`, `report:admin`.
 
 **List definitions**
 
-The caller's own definitions, those shared with a group the caller belongs to, and every definition when the token has report:admin. In name order, numbered pages: `page` and `per` (50 unless given, at most 200); the answer carries page, pages, per and total beside the rows.
+The caller's own definitions, those shared with a group the caller belongs to, and every definition when the token has report:admin. In name order, numbered pages: `page` and `per` (50 unless given, at most 200); the answer carries page, pages, per and total beside the rows. `limit` is the older spelling of `per`, read when `per` is absent.
 
 Scope: `report:use`, `report:admin`.
 
@@ -274,6 +292,9 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|---|
 | `page` | query | integer |  |  |
 | `per` | query | integer |  |  |
+| `limit` | query | integer |  | The older spelling of `per`. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The definitions.
 
@@ -350,6 +371,13 @@ Scope: `report:use`, `report:admin`.
 Stores the document. parameters is the bag a schedule runs with. A missing value can still be type-checked; it is not stored as a dummy, and the schedule will not run until the value is saved.
 
 Scope: `report:use`, `report:admin`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body** (optional)
 
@@ -470,6 +498,8 @@ Scope: `report:use`, `report:admin`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The definition id. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The definition.
 
@@ -555,6 +585,8 @@ Scope: `report:use`, `report:admin`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The definition id. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body** (optional)
 
@@ -682,6 +714,8 @@ Scope: `report:use`, `report:admin`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The definition id. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: Deleted.
 
@@ -723,6 +757,8 @@ Scope: `report:use`, `report:admin`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The definition id. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body** (optional)
 
@@ -822,6 +858,8 @@ Scope: `report:use`, `report:admin`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The definition id. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body** (optional)
 
@@ -922,6 +960,8 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|---|
 | `q` | query | string |  |  |
 | `page` | query | integer |  |  |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: One page of groups.
 
@@ -967,6 +1007,8 @@ Scope: `report:use`, `report:admin`.
 | `per` | query | integer |  |  |
 | `after` | query | string |  | The last id of the previous page, for a cursor walk; page and per are then ignored. |
 | `limit` | query | integer |  | How many jobs a cursor page returns. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The page. next is null on the last page.
 
@@ -1036,6 +1078,13 @@ Scope: `report:use`, `report:admin`.
 The same document as a query, forced to a job even when it would have fit in one synchronous call.
 
 Scope: `report:use`, `report:admin`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body** (optional)
 
@@ -1147,6 +1196,8 @@ Scope: `report:use`, `report:admin`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The job id. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The job.
 
@@ -1224,6 +1275,8 @@ Scope: `report:use`, `report:admin`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The job id. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The job.
 
@@ -1301,6 +1354,8 @@ Scope: `report:use`, `report:admin`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The job id. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The artifact. JSON, CSV or PDF.
 
@@ -1364,6 +1419,13 @@ The path of the signed-in person's own profile photo on this realm (#719), empty
 
 Scope: `report:use`, `report:admin`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: `photo`.
 
 | Member | Type | Required | What it is |
@@ -1391,6 +1453,13 @@ Scope: `report:use`, `report:admin`.
 The description of the released routes.
 
 Scope: `report:use`, `report:admin`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: This OpenAPI document.
 
@@ -1425,6 +1494,13 @@ Scope: `report:use`, `report:admin`.
 Synchronous when the source is bounded and the limit fits the sync caps. Otherwise 202 and a job. mode sync over the cap is result_too_large. A body over the byte cap or a sync call over the time cap is refused whole.
 
 Scope: `report:use`, `report:admin`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body** (optional)
 
@@ -1550,6 +1626,13 @@ The realm this request is in, and every realm with its id, name and path prefix 
 
 Scope: `report:use`, `report:admin`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The realms.
 
 | Member | Type | Required | What it is |
@@ -1592,6 +1675,8 @@ Scope: `report:use`, `report:admin`.
 | `owner` | query | string |  |  |
 | `page` | query | integer |  |  |
 | `per` | query | integer |  |  |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The schedules.
 
@@ -1684,6 +1769,8 @@ Scope: `report:use`, `report:admin`.
 |---|---|---|---|---|
 | `page` | query | integer |  |  |
 | `per` | query | integer |  |  |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP &lt;token> requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: One page of the inbox.
 

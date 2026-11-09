@@ -44,6 +44,8 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `sourcesPage` | query | integer |  | Which page of `sources` to return, answered by `sourcesPaging` (#313). |
 | `per` | query | integer |  | Rows per page. Capped, like every list here. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The register.
 
@@ -195,6 +197,13 @@ A database this realm reads people's attributes from. Refused for an attribute a
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -326,6 +335,13 @@ From every source that allows on-demand, or the one named by `id`. Audited.
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -435,6 +451,13 @@ Queues the scheduled refresh for this source, which reads the realm's people a p
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -543,6 +566,13 @@ It leaves the register; what it wrote on people's entries stays. Audited.
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -650,6 +680,13 @@ Reads the row for a person (by `username`, whose key attribute is used) or for a
 **Mirrors** `POST /admin/attribute-sources` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -760,6 +797,13 @@ The members given replace the source's; the rest are kept. Checked as add-source
 **Mirrors** `POST /admin/attribute-sources` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -899,6 +943,8 @@ Scope: `admin:read`.
 | `groupq` | query | string |  | The group search: a substring of a group's cn or DN, case-insensitive; empty for every group. |
 | `groupfrom` | query | string |  | Where the page of the group search starts. |
 | `groups` | query | string |  | The groups chosen so far, cns or DNs separated by `;` (a DN's commas stay intact; a `;` inside a DN value is escaped, `\;`); resolved into `groupChooser.chosen` and left out of the search. At most 4096 characters, which is as much as one request line can carry; fifty ordinary group names fit. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The started activities and the chooser.
 
@@ -977,6 +1023,13 @@ A running or paused post-login activity ends for good: it asks nobody at sign-in
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -1040,6 +1093,13 @@ A running post-login activity stops asking at sign-in and stops mailing, within 
 **Mirrors** `POST /admin/post-login-activities` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -1105,6 +1165,13 @@ A paused post-login activity asks at sign-in again, and mails again from where i
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -1168,6 +1235,13 @@ Starts a post-login activity in this realm. AT SIGN-IN, from now, each person it
 **Mirrors** `POST /admin/post-login-activities` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -1245,6 +1319,8 @@ Scope: `admin:read`.
 | `q` | query | string |  | Narrows `destinations` to those whose name, identifier, DN or provider contains this, case-insensitively — the person page's push destination search (#602). `matched` counts them. |
 | `destinationsPage` | query | integer |  | Which page of `destinations` to return, answered by `destinationsPaging` (#313). |
 | `per` | query | integer |  | Rows per page. Capped, like every list here. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The register.
 
@@ -1301,6 +1377,13 @@ Creates an application entry declared for the secret-destination family, with it
 **Mirrors** `POST /admin/secret-destinations` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -1393,6 +1476,13 @@ Deletes its application entry, credential and all. Nothing at the secrets manage
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -1472,6 +1562,13 @@ Writes a random password nobody uses, as the destination's payload, to `secretNa
 **Mirrors** `POST /admin/secret-destinations` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -1553,6 +1650,13 @@ The members given replace the destination's; the rest are kept, the credential i
 **Mirrors** `POST /admin/secret-destinations` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

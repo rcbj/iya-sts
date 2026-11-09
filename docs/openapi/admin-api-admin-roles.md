@@ -60,6 +60,8 @@ Scope: `admin:read`.
 | `person` | query | string |  | A username to look up among ALL the candidates, not only the page shown. `picked.candidate` is its row, or null when nobody by that name could be picked. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The roster, the settings, and who is asking.
 
@@ -278,6 +280,13 @@ Granting a role somebody already holds answers 200 with `changed: false` rather 
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -384,6 +393,13 @@ Revoking a role somebody does not hold answers 200 with `changed: false`, and so
 **Mirrors** `POST /admin/rbac` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

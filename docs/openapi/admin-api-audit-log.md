@@ -61,6 +61,8 @@ Scope: `admin:read`.
 | `address` | query | string |  | The FRONT of the client's IP address, case-insensitive: a whole address is one client and `10.0.` every client in that range. A prefix rather than a substring, so `10.0.0.1` cannot match inside `110.0.0.12`. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The matching events, with the paging that found them and the vocabulary the filters take.
 
@@ -236,6 +238,8 @@ Scope: `admin:read`.
 | `seen` | query | string |  | `1` for only the codes on at least one held audit row. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The matching codes, the subsystems with their counts, and the paging that found them.
 

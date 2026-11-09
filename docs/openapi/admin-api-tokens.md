@@ -56,6 +56,8 @@ Scope: `admin:read`.
 | `session` | query | string |  | Only what was issued UNDER one browser sign-on session, matched exactly on the id — the `sessionId` every row of GET /admin-api/sessions carries, and the join between the two resources. Only a credential issued under a session records one, so an assertion, a Kerberos ticket, a token from either direct grant and anything an RFC 8693 exchange produced are absent by construction rather than missing. That is a fact about the credential and not a gap in the recording. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The matching sets, with the paging that found them and their credentials flattened beside them.
 
@@ -235,6 +237,8 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `id` | query | string |  | The credential's identifier, as the tokens table shows it. |
 | `format` | query | one of `json`, `svg` |  | `svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The credential, its generations, the graph, every node's look and the drawing.
 
@@ -658,6 +662,13 @@ NON-SPEC, and named as such wherever it appears: no real authorization server ca
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -697,6 +708,13 @@ The opposite of `revoke-artifact`, and NON-SPEC for the reason every restore her
 **Mirrors** `POST /admin/tokens` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -740,6 +758,13 @@ The opposite of `revoke-set`, and NON-SPEC for the reason `restore` is: no real 
 **Mirrors** `POST /admin/tokens` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -798,6 +823,13 @@ This is the SAME revocation set RFC 7009's /oauth2/revoke writes to, so the toke
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -837,6 +869,13 @@ Everything this service has issued and still remembers. Assertions, tickets and 
 **Mirrors** `POST /admin/tokens` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -880,6 +919,13 @@ Until 2026-09-05 this was impossible and every surface said so. What changed is 
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -922,6 +968,13 @@ Only the three JWT kinds can be revoked. Nothing consults this service about a S
 **Mirrors** `POST /admin/tokens` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -968,6 +1021,13 @@ A set holding nothing revocable is REFUSED with 400 rather than answered with "r
 **Mirrors** `POST /admin/tokens` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -1024,6 +1084,13 @@ Matches `sub` or `username` EXACTLY. That is the difference from `revoke-user` b
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -1063,6 +1130,13 @@ The users list's `key`, and every spelling of it — `alice`, her `urn:uuid:<ent
 **Mirrors** `POST /admin/tokens` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -1111,6 +1185,8 @@ Scope: `admin:read`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | query | string | yes | The `setKey` off a row of GET /admin-api/tokens. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The set and its members, or `found: false` and the reason.
 
@@ -1214,6 +1290,8 @@ Scope: `admin:read`.
 | `state` | query | one of `reserved`, `spent` |  | `reserved` (its token request has not finished) or `spent` (tokens were issued). |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: This realm's unexpired used assertions, where the history is held, and the paging that found them.
 

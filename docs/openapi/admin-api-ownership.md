@@ -44,6 +44,8 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `kind` | query | one of `role`, `group`, `service-account`, `application` | yes | Which kind of object. |
 | `name` | query | string | yes | A role's name, a group's cn or DN, a service account's username, an application's identifier. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The object's ownership facts.
 
@@ -82,6 +84,13 @@ Writes `stsOwnerProtected` on the object's own entry (#607, rcbj's decision 4), 
 **Mirrors** `POST /admin/roles/owners, POST /admin/groups/owners, POST /admin/applications/owners, POST /admin/users/service-account` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

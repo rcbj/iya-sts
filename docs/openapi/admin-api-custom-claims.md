@@ -49,6 +49,8 @@ Scope: `admin:read`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `user` | query | string |  | Whose attribute values to preview. Defaults to a person the directory holds from startup, so the preview shows real values on a fresh process. Somebody with no entry gets generated values — the same invented person every time, seeded from the name — and `preview.entryFound` says which of the two happened. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The four sets, the attribute catalogue and the preview.
 
@@ -171,6 +173,13 @@ ADDITIVE ONLY. What the protocol puts in is never displaced — an ID Token's `s
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -243,6 +252,13 @@ The claim's value is `attribute` on the entry of the person the token is about (
 **Mirrors** `POST /admin/claims` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -324,6 +340,13 @@ A TYPED claim of the same name WINS over one of these, and THE PROTOCOL'S OWN be
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -393,6 +416,13 @@ Every attribute type in the catalogue, which is a legitimate thing to test and m
 **Mirrors** `POST /admin/claims` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -464,6 +494,13 @@ Nothing is deleted from the directory: what was written onto an entry stays ther
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -531,6 +568,13 @@ Those tokens then carry only what the protocol puts in them.
 **Mirrors** `POST /admin/claims` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -600,6 +644,13 @@ By name. A name the set does not carry is refused rather than treated as already
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -668,6 +719,13 @@ The array replaces whatever the set held. An EMPTY array is a legitimate call an
 **Mirrors** `POST /admin/claims` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

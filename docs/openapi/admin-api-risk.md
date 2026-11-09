@@ -45,6 +45,8 @@ Scope: `admin:read`.
 | `window` | query | one of `live`, `24h`, `7d`, `30d` |  | Live sessions, or everybody over a span; live when absent. |
 | `continent` | query | one of `africa`, `antarctica`, `asia`, `europe`, `north-america`, `oceania`, `south-america` |  | One continent's countries. |
 | `country` | query | string |  | One country (ISO 3166-1 alpha-2) and its cities. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The counts by place.
 
@@ -178,6 +180,8 @@ Scope: `admin:read`.
 | `assessmentsPage` | query | integer |  | Which page of `assessments` to return, answered by `assessmentsPaging`. The sign-ins assessed in the last 7 days, newest first, 50 by default. |
 | `subjectsPage` | query | integer |  | Which page of `subjects` to return, answered by `subjectsPaging`. The realm's people by current standing, highest score first, twenty-five by default. |
 | `failuresPage` | query | integer |  | Which page of `failures` to return, answered by `failuresPaging`. The refused passwords of the last 7 days, newest first, fifty by default (#313). |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The datasets, the lookup, the failures, the assessments and the standings.
 
@@ -591,6 +595,13 @@ Records that the terms of `provider`, as this build states them (GET /admin-api/
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -680,6 +691,13 @@ The version must have loaded (`ready`) or have been active before (`superseded`)
 **Mirrors** `POST /admin/risk` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -773,6 +791,13 @@ Its record stays, as `deleted`. A version still loading is refused. Removing the
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -864,6 +889,13 @@ Loads `content` as `format` into `dataset` (in `realm` for an operator list). Re
 **Mirrors** `POST /admin/risk` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -971,6 +1003,8 @@ Scope: `admin:read`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `window` | query | one of `1h`, `24h`, `7d`, `30d` |  | How far back the assessments are counted; 24h when absent. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The scoring system's metrics.
 
@@ -1116,6 +1150,13 @@ For a removed (`deleted`) version of a dataset this service downloads itself (th
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -1207,6 +1248,13 @@ Refused when there is no previous version.
 **Mirrors** `POST /admin/risk` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -1315,6 +1363,8 @@ Scope: `admin:write`.
 | `activate` | query | one of `true`, `false` |  | `false` loads without activating. |
 | `acceptTerms` | query | one of `true`, `false`, `on` |  | Accept the provider's current terms as part of this import. |
 | `overrideSignature` | query | one of `true`, `false`, `on` |  | `fido.mds3` only: load the BLOB even if its signature or signing chain does not verify. Its contents are then UNAUTHENTICATED; the version is recorded with `verification: overridden` and the reason, and revocation is not checked. Refused for any other dataset. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
