@@ -290,18 +290,7 @@ class PortalSignIns {
     log.debug("Entering PortalSignIns.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/sign-ins',
-        operationId: 'getSignIns', tag: 'Recent sign-ins', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/sign-ins',
-        summary: 'Your assessed sign-ins, with the application of each',
-        description: 'One page (`paging`, moved by `page`, newest ' +
-          'first) of the assessments of your sign-ins: when, the city, ' +
-          'country and network, the browser and system, the door, the ' +
-          'application (the client the sign-in named), the risk level, ' +
-          'and your answer if you gave one. `days` is how far back the ' +
-          'list looks (`audit.authenticationHistoryDays`, thirty by ' +
-          'default, set per realm). `paging.total` counts every sign-in ' +
-          'of that window. `thisSession` is the assessment of the ' +
-          'session this token was issued on.',
+        operationId: 'getSignIns', access: 'person',
         query: PAGE_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
@@ -311,15 +300,7 @@ class PortalSignIns {
             });
         } },
       { method: 'POST', path: ctx.BASE + '/sign-ins',
-        operationId: 'answerSignIn', tag: 'Recent sign-ins',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/sign-ins',
-        summary: 'Says whether a sign-in was you',
-        description: '`confirm` is recorded, and lowers your standing only ' +
-          'when said from another, low-risk session. `deny` puts your ' +
-          'standing at HIGH: everything you hold is ended, this session ' +
-          'included, and RISC is told the credential is compromised ' +
-          '(`ended: true`).',
-        body: ANSWER_FORM,
+        operationId: 'answerSignIn', access: 'person', body: ANSWER_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.answer(ctx, res, caller, input.body);

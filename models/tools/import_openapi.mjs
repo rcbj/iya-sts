@@ -31,8 +31,9 @@ const log = {
   }
 };
 
-// `report` and `authn` are written by hand now: their `.tsp` is the source.
-const SERVED = ['management', 'console', 'account'];
+// `report`, `authn` and `account` are written by hand now: their `.tsp` is
+// the source.
+const SERVED = ['management', 'console'];
 
 const METHODS = /^(get|put|post|delete|patch|head|options)$/;
 
@@ -533,7 +534,7 @@ function main(from, to) {
     '// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC',
     '// SPDX-License-Identifier: BUSL-1.1',
     ''
-  ].concat(SERVED.concat(['report', 'authn']).map(function (name) {
+  ].concat(SERVED.concat(['report', 'authn', 'account']).map(function (name) {
     return 'import "./' + name + '.tsp";';
   }), ['']).join('\n'));
   log.debug("Leaving main().");

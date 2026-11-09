@@ -573,18 +573,7 @@ class AccountMfa {
     log.debug("Entering AccountMfa.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/mfa', operationId: 'getMfa',
-        tag: 'Authenticator app', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/mfa',
-        summary: 'Your authenticator app, emailed factor and recovery codes',
-        description: '`totp`: whether an authenticator app is set up (and ' +
-          'its algorithm, digits, period, when set up and last used) and ' +
-          'whether one is offered. `setup`: an enrolment in progress — the ' +
-          'QR code as a `data:` image, the secret grouped for typing, the ' +
-          'issuer and the parameters — derived from the pending secret on ' +
-          'every call. `doors`: the password-only doors that refuse your ' +
-          'own password. `emailFactor`: the emailed second factor, or null ' +
-          'where none is offered. `codes`: your recovery codes\' state — ' +
-          'never the codes, of which only hashes are stored.',
+        access: 'person',
         query: vz.object({}),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
@@ -594,21 +583,8 @@ class AccountMfa {
             });
         } },
       { method: 'POST', path: ctx.BASE + '/mfa', operationId: 'changeMfa',
-        tag: 'Authenticator app', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/mfa',
-        summary: 'Sets up, confirms or removes your second factors',
-        description: '`start` mints a secret and holds it (ask the view for ' +
-          'the QR code); `confirm` checks a code from the app (rate ' +
-          'limited) and enrols it; `remove` takes it off, and ends ' +
-          'every session its codes signed in (`sessionsEnded`, #722). ' +
-          '`generate-codes` answers a set of recovery codes ONCE, in ' +
-          '`view.fresh`, and stores nothing; `confirm-codes` stores their ' +
-          'hashes; `discard-codes` throws the pending set away. ' +
-          '`email-factor-on` (with `kind`) and `email-factor-off` opt in ' +
-          'and out of the emailed second factor. A refusal carries the ' +
-          'page\'s `view`.',
+        access: 'person',
         body: MFA_FORM,
-        statuses: { 429: 'Too many codes tried; try again later.' },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);

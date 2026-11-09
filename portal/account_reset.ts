@@ -503,32 +503,14 @@ class AccountReset {
     log.debug("Entering AccountReset.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/reset-password',
-        operationId: 'getPasswordReset', tag: 'Password reset link',
-        access: 'link', mirrors: 'GET ' + ctx.PORTAL + '/reset-password',
-        summary: 'Checks a password reset link, and spends nothing',
-        description: 'Takes no token: the link\'s `user` and `token` are ' +
-          'the credential. Answers the form\'s view — the username, the ' +
-          'service\'s address and the password rules — or one sentence for ' +
-          'every way a link can fail (`view.refused`), so nobody learns ' +
-          'which usernames have a link outstanding. Rate limited.',
-        query: RESET_QUERY,
-        statuses: { 429: 'Too many attempts; `view.refused` says so.' },
+        operationId: 'getPasswordReset', access: 'link', query: RESET_QUERY,
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
           return self.look(ctx, req, res, Object.assign({}, input.query,
             { token: String(req.headers['x-link-token'] || '') }));
         } },
       { method: 'POST', path: ctx.BASE + '/reset-password',
-        operationId: 'spendPasswordReset', tag: 'Password reset link',
-        access: 'link', mirrors: 'POST ' + ctx.PORTAL + '/reset-password',
-        summary: 'Sets a new password from a reset link, and spends it',
-        description: 'Checks the link again, claims it, screens the ' +
-          'password against breached passwords and the password policy, ' +
-          'stores it, clears the must-change flag, and spends the link; ' +
-          'signs nobody in. CAEP credential-change is sent. A refusal ' +
-          'carries the page\'s `view`; success answers `view.done`.',
-        body: RESET_FORM,
-        statuses: { 429: 'Too many attempts; `view.refused` says so.' },
+        operationId: 'spendPasswordReset', access: 'link', body: RESET_FORM,
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
           return self.spend(ctx, req, res, input.body);

@@ -224,106 +224,8 @@ const OFFER_FORM = vz.object({
 });
 
 // The answer's shape, documented.
-const OFFERABLE_ANSWER = {
-  type: 'object',
-  properties: {
-    configurations: { type: 'array', items: { type: 'object', properties: {
-      id: { type: 'string' }, format: { type: 'string' },
-      name: { type: 'string' }, issuerDid: { type: 'boolean' },
-      signingAlgs: { type: 'array', items: { type: 'object', properties: {
-        alg: { type: 'string' }, what: { type: 'string' },
-        spec: { type: 'string' } } },
-        description: 'The algorithms its credential may be signed with, ' +
-                     'the default first.' },
-      defaultSigningAlg: { type: 'string' } } } },
-    modes: { type: 'array', items: { type: 'string', enum: MODES } },
-    lifetimeSeconds: { type: 'integer' },
-    wallet: { type: 'string' },
-    batchSize: { type: 'integer',
-      description: 'How many copies of a credential one issuance gives a ' +
-                   'wallet (`oid4vci.batchSize`).' },
-    issued: { type: 'array', items: { type: 'object', properties: {
-      id: { type: 'string',
-            description: 'The issuance\'s; removes every copy.' },
-      configurationId: { type: 'string' },
-      name: { type: 'string' }, format: { type: 'string' },
-      issuedAt: { type: 'string', format: 'date-time' },
-      expiresAt: { type: 'string', format: 'date-time' },
-      status: { type: 'string', enum: STATES.concat(['mixed']),
-                description: 'The copies\' state where they share one.' },
-      counts: { type: 'object', additionalProperties: { type: 'integer' },
-                description: 'How many copies are in each state.' },
-      removable: { type: 'boolean' },
-      removedAt: { type: 'string', format: 'date-time' },
-      walletEvent: { type: 'string', enum: ['', 'credential_accepted',
-        'credential_failure', 'credential_deleted'] },
-      walletEventAt: { type: 'string', format: 'date-time' },
-      copies: { type: 'array', items: { type: 'object', properties: {
-        id: { type: 'string', description: 'The copy\'s; removes it.' },
-        position: { type: 'integer' }, of: { type: 'integer' },
-        issuedAt: { type: 'string', format: 'date-time' },
-        expiresAt: { type: 'string', format: 'date-time' },
-        status: { type: 'string', enum: STATES },
-        removable: { type: 'boolean' },
-        removedAt: { type: 'string', format: 'date-time' },
-        walletEvent: { type: 'string' },
-        walletEventAt: { type: 'string', format: 'date-time' },
-        keyThumbprint: { type: 'string',
-          description: 'The RFC 7638 thumbprint of the wallet key it is ' +
-                       'bound to.' },
-        holderDid: { type: 'string',
-          description: 'The holder\'s DID, for a DID-bound credential.' },
-        statusIndex: { type: 'string',
-          description: 'Its index in the realm\'s status list.' } } } }
-    } } },
-    paging: { type: 'object', properties: {
-      page: { type: 'integer' }, pages: { type: 'integer' },
-      per: { type: 'integer' }, total: { type: 'integer' } } },
-    offer: { type: 'object', description: 'Present in a POST\'s `view`.' }
-  }
-};
 
-const OFFER_ANSWER = {
-  type: 'object',
-  properties: {
-    ok: { type: 'boolean' },
-    message: { type: 'string' },
-    offer: { type: 'object', properties: {
-      configurationId: { type: 'string' },
-      signingAlg: { type: 'string',
-        description: 'The algorithm the credential will be signed with.' },
-      mode: { type: 'string', enum: MODES },
-      credentialOffer: { type: 'object',
-        description: 'The Credential Offer (OpenID4VCI section 4.1.1).' },
-      txCode: { type: 'string',
-        description: 'The Transaction Code, for the person to type into ' +
-                     'the wallet; it is not in the offer.' },
-      expiresAt: { type: 'string', format: 'date-time' },
-      byValue: { type: 'object', properties: {
-        offerUri: { type: 'string' }, walletUrl: { type: 'string' } } },
-      byReference: { type: 'object', properties: {
-        credentialOfferUri: { type: 'string' },
-        offerUri: { type: 'string' }, walletUrl: { type: 'string' } } } } },
-    view: { type: 'object',
-            description: 'The page\'s view with `offer` in it, drawn in ' +
-                         'place: the Transaction Code never reaches a URL.' }
-  }
-};
 
-const REMOVE_ANSWER = {
-  type: 'object',
-  properties: {
-    ok: { type: 'boolean' },
-    message: { type: 'string' },
-    scope: { type: 'string', enum: ['issuance', 'copy'],
-             description: 'What the `id` named.' },
-    removed: { type: 'integer',
-               description: 'How many copies this act removed.' },
-    view: { type: 'object',
-            description: 'The page\'s view, `issued` showing the credential ' +
-                         'removed.' }
-  }
-};
 
 /**
  * `/portal/wallet`'s account API operations: a pre-authorized Credential
@@ -736,41 +638,7 @@ class PortalWallet {
                          '3q2-7w...');
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/credentials/offerable',
-        operationId: 'getOfferableCredentials', tag: 'Wallet',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/wallet',
-        summary: 'The credentials you can put into your own wallet',
-        description: '`configurations`: each credential configuration this ' +
-          'realm\'s OpenID4VCI issuer offers — its ' +
-          '`credential_configuration_id` (`id`), its format, the name its ' +
-          'metadata gives it, and whether it names the issuer by DID. ' +
-          '`modes`: the two pre-authorized offers, `cross-device` ' +
-          '(Appendix H.2) and `deferred` (H.3). `lifetimeSeconds`: how long ' +
-          'an offer and its code are honoured (`oid4vci.offerTtlS`). ' +
-          '`wallet`: the configured web wallet a link opens, or empty. ' +
-          '`batchSize`: how many copies of a credential one issuance gives ' +
-          'your wallet, each bound to a different key of the wallet\'s ' +
-          '(`oid4vci.batchSize`, OpenID4VCI 1.0 section 8.2). ' +
-          '`issued`: the credentials this realm still records as issued to ' +
-          'you, ONE PER ISSUANCE, newest first — each one\'s `id`, ' +
-          'configuration, when it was issued and expires, its `status` ' +
-          '(`valid`, `suspended`, `revoked`, `removed` by you, `signed-out` ' +
-          'by a global sign-out, `expired`, or `mixed` where its copies ' +
-          'differ, with `counts`), whether you can remove it, the last ' +
-          'event your wallet reported to the Notification Endpoint ' +
-          '(OpenID4VCI 1.0 section 11), and its `copies`: each one\'s own ' +
-          '`id`, `position` of `of`, state, the RFC 7638 thumbprint of the ' +
-          'wallet key it is bound to (`keyThumbprint`), the holder\'s DID ' +
-          'where it is DID-bound, and its `statusIndex`. `issued` is one ' +
-          'page of issuances (`paging`, moved by `page`, 20 to a page); ' +
-          '`paging.total` counts them all. A token whose `sub` and person ' +
-          'do not name each other is refused (STS-PORTAL-0617) rather than ' +
-          'shown somebody else\'s history, or nobody\'s as an empty one.',
-        answer: OFFERABLE_ANSWER,
-        query: PAGE_QUERY,
-        statuses: {
-          403: 'The token\'s `sub` and its person do not name each other ' +
-               '(STS-PORTAL-0617).'
-        },
+        operationId: 'getOfferableCredentials', access: 'person', query: PAGE_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           const refused = self.refuseDisagreement(ctx, res, caller,
@@ -782,80 +650,14 @@ class PortalWallet {
                                               input.query.page || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/credentials/offers',
-        operationId: 'createCredentialOffer', tag: 'Wallet',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/wallet',
-        summary: 'Makes a Credential Offer for your own wallet',
-        description: 'A pre-authorized Credential Offer (OpenID4VCI section ' +
-          '4.1, Appendix H.2 or H.3) of one configuration, about YOU — the ' +
-          'token\'s person; nobody else can be named. Answered once, in ' +
-          'place: `offer.credentialOffer`, the offer by value ' +
-          '(`offer.byValue.offerUri`, an `openid-credential-offer://` URI, ' +
-          'and `walletUrl`, the configured web wallet\'s link) and by ' +
-          'reference (`offer.byReference`, whose `offerUri` is short ' +
-          'enough for a QR code, e.g. `' + example + '`), when the offer ' +
-          'and its code stop being honoured (`expiresAt`), and the ' +
-          'Transaction Code (`txCode`, e.g. `40317`) the wallet will ask ' +
-          'for — shown to you, never carried in the offer. The offer is ' +
-          'made on the sign-on session your token was issued on, which is ' +
-          'reported over CAEP as session-presented (OpenID4VCI). The same ' +
-          '`offer` is in `view`, for the page. `signingAlg`, optional, is ' +
-          'the algorithm the credential is signed with — one of the ' +
-          'configuration\'s `signingAlgs` in the GET, the post-quantum ' +
-          'ML-DSA, SLH-DSA and composite drafts among them for the JOSE ' +
-          'formats; left out, the configured default.',
-        body: OFFER_FORM,
-        answer: OFFER_ANSWER,
-        statuses: {
-          400: 'The configuration is not one this issuer offers ' +
-               '(STS-PORTAL-0589), or its credentials are not signed with ' +
-               'the `signingAlg` asked for (STS-PORTAL-0592).',
-          403: 'The sign-on session the token was issued on is no longer ' +
-               'known, or continued without signing in (STS-PORTAL-0590), ' +
-               'or the token\'s `sub` and its person do not name each ' +
-               'other (STS-PORTAL-0617).'
-        },
+        operationId: 'createCredentialOffer', access: 'person', body: OFFER_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.offer(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/credentials/remove',
-        operationId: 'removeIssuedCredential', tag: 'Wallet',
-        access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/remove-wallet-credential',
-        summary: 'Removes a credential issued to you: every copy, or one',
-        // ONE OPERATION FOR BOTH (#670). The id says which: an issuance's
-        // (`issued[].id`) removes every copy still good, a copy's
-        // (`issued[].copies[].id`) removes that one, and the two are
-        // digests of different strings so neither can be the other. Both
-        // are the same act on the same resource — revoke what this realm
-        // issued you — with the same refusal, the same audit action and the
-        // same answer, and the portal's one Remove path mirrors it; a
-        // `scope` member could only restate what the id already says, and
-        // a mismatch between the two would be one more refusal to define.
-        description: 'The credential named by its `id` is revoked. An ' +
-          'issuance\'s `id` (from `issued`) names every copy of it — with ' +
-          'batch issuance one issuance gives your wallet several copies, ' +
-          'each bound to a different key — and removes each copy still ' +
-          'good; a copy\'s `id` (from that issuance\'s `copies`) removes ' +
-          'that copy alone and leaves the others as they are. Each copy ' +
-          'removed has its Token Status List entry set INVALID, which is ' +
-          'final and what a verifier reads, is marked revoked in the ' +
-          'issued register and no longer signs you in; your relying ' +
-          'parties are told once over CAEP (credential-change, revoke). It ' +
-          'is NOT deleted from your wallet: neither OpenID4VP nor ' +
-          'OpenID4VCI lets an issuer do that, so delete it in the wallet ' +
-          'yourself. Only a credential of yours can be named; removing one ' +
-          'already removed is answered as done. `scope` says what the id ' +
-          'named and `removed` how many copies this act removed; the ' +
-          'page\'s `view` is in the answer.',
+        operationId: 'removeIssuedCredential', access: 'person',
         body: REMOVE_FORM,
-        answer: REMOVE_ANSWER,
-        statuses: {
-          400: 'No credential or issuance of yours has that id ' +
-               '(STS-PORTAL-0591).',
-          403: 'The token\'s `sub` and its person do not name each other ' +
-               '(STS-PORTAL-0617).'
-        },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.remove(ctx, req, res, caller, input.body);

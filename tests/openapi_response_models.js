@@ -391,7 +391,7 @@ function buildDocuments(out) {
     console: spec.buildSpec(adminApi.ROUTES.filter(function (route) {
       return route.kind === 'console';
     }), { authRequired: true, console: true }),
-    account: AccountApiSpec.document(accountApi.operations(), {}),
+    account: AccountApiSpec.document({}),
     authn: authnApi.document({}),
     report: OpenApi.document(new Catalog())
   }));

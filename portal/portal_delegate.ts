@@ -247,57 +247,20 @@ class PortalDelegate {
     log.debug("Entering PortalDelegate.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/delegate',
-        operationId: 'getDelegate', tag: 'Who may act for you',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/delegate',
-        summary: 'Who may act for you',
-        description: '`mayAct`, the DN named in your entry\'s stsMayAct ' +
-          '(every access token about you carries it as RFC 8693 may_act), ' +
-          '`delegate.kind` (`person` or `application`, null where the DN ' +
-          'names no entry any more), and `notDelegated`, whether your ' +
-          'account refuses delegation.',
-        query: vz.object({}),
+        operationId: 'getDelegate', access: 'person', query: vz.object({}),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username));
         } },
       { method: 'GET', path: ctx.BASE + '/delegate/candidates',
-        operationId: 'findDelegateCandidates', tag: 'Who may act for you',
-        access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/delegate/candidates',
-        summary: 'Finds people you may name, by part of their username',
-        description: 'The people of this realm whose username (`uid`, the ' +
-          'RDN value of their entry) contains `q`, at least three ' +
-          'characters: native people only — never one a federation ' +
-          'partner\'s or a consumer provider\'s sign-in created — and ' +
-          'never you, a disabled account, a service account, a group or ' +
-          'an application. At most ten, each `{ uid, cn, dn }` and nothing ' +
-          'else; `more` says more matched, and a narrower `q` finds them. ' +
-          'Naming one is POST /account-api/delegate with its `dn`.',
+        operationId: 'findDelegateCandidates', access: 'person',
         query: SEARCH_QUERY,
-        answer: { type: 'object', properties: {
-          query: { type: 'string' },
-          people: { type: 'array', maxItems: 10, items: {
-            type: 'object', properties: {
-              uid: { type: 'string' }, cn: { type: 'string' },
-              dn: { type: 'string' } } } },
-          more: { type: 'boolean' } } },
-        statuses: {
-          400: 'Fewer than three characters (STS-PORTAL-0620).',
-          429: 'Too many searches in the window (STS-PORTAL-0621, or the ' +
-               'rate limiter\'s own code).',
-          503: 'The directory could not answer (STS-PORTAL-0622).' },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.search(ctx, req, res, caller, input.query);
         } },
       { method: 'POST', path: ctx.BASE + '/delegate',
-        operationId: 'setDelegate', tag: 'Who may act for you',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/delegate',
-        summary: 'Names, or clears, who may act for you',
-        description: 'Writes stsMayAct on your own entry: a person or an ' +
-          'application of this realm, by DN. A token exchange presenting a ' +
-          'token about you is then refused for any other actor.',
-        body: DELEGATE_FORM,
+        operationId: 'setDelegate', access: 'person', body: DELEGATE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.change(ctx, res, caller, input.body);

@@ -981,130 +981,54 @@ class AccountOverview {
     log.debug("Entering AccountOverview.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/overview',
-        operationId: 'getOverview', tag: 'Overview', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL,
-        summary: 'Who you are, this session, and how you sign in',
-        description: 'Your username, subject and directory entry\'s DN; ' +
-          'when the sign-on session began, how it authenticated (amr, acr) ' +
-          'and when it ends; every standard inetOrgPerson attribute your ' +
-          'entry holds, from a fixed list (`directory`, null with no ' +
-          'directory or no entry — then `session` carries what the sign-in ' +
-          'said); a summary of your credentials (`mechanisms`); the ' +
-          'language your entry holds with those offered (`language`); and ' +
-          'the realm\'s custom attributes whose definition shows them on ' +
-          'the portal, with your values and whether you may change them ' +
-          '(`customAttributes`, empty with no entry).',
+        operationId: 'getOverview', access: 'person',
         query: PORTAL_QUERY,
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.overview(caller));
         } },
       { method: 'POST', path: ctx.BASE + '/language',
-        operationId: 'setLanguage', tag: 'Overview', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/language',
-        summary: 'Sets or removes your preferred language',
-        description: 'Writes `preferredLanguage` on your own entry (RFC ' +
-          '2798), which ranks above the browser for every page this ' +
-          'service draws for you, and sets the language cookie; an empty ' +
-          '`lang` removes it and follows the browser. A tag no catalog ' +
-          'answers is refused.',
+        operationId: 'setLanguage', access: 'person',
         body: LANGUAGE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.setLanguage(ctx, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/photo',
-        operationId: 'setProfilePhoto', tag: 'Overview', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/photo',
-        summary: 'Sets your profile photo',
-        description: 'Keeps `image`, a base64-encoded JPEG or PNG, as your ' +
-          'photo: its metadata is removed, it gets a new random address, ' +
-          'and the `picture` claim names that address from now on. The ' +
-          'file\'s bytes decide its type, and the realm\'s limits are on ' +
-          'the Overview\'s `photo.limits`.',
+        operationId: 'setProfilePhoto', access: 'person',
         body: PHOTO_FORM,
-        statuses: { 403: 'This realm does not let people set their own ' +
-                         'photo.',
-                    409: 'Product mode, with no public base URL pinned.',
-                    413: 'The file is larger than the realm keeps.' },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.setPhoto(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/photo/remove',
-        operationId: 'removeProfilePhoto', tag: 'Overview', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/photo/remove',
-        summary: 'Removes your profile photo',
-        description: 'Removes the image and the `picture` claim\'s address. ' +
-          'A copy from a federation partner stays removed: the next ' +
-          'sign-in through them does not bring it back.',
+        operationId: 'removeProfilePhoto', access: 'person',
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return self.removePhoto(ctx, res, caller);
         } },
       { method: 'POST', path: ctx.BASE + '/attributes',
-        operationId: 'setCustomAttribute', tag: 'Overview',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/attributes',
-        summary: 'Replaces your own values of one custom attribute',
-        description: 'Writes `values` as every value the realm\'s custom ' +
-          'attribute `attribute` holds on your own entry, checked against ' +
-          'its syntax; no values clears it. Only an attribute whose ' +
-          'definition shows it on the portal and lets you edit it ' +
-          '(`customAttributes[].editable` on the Overview). A value the ' +
-          'realm\'s attribute policy requires may not be emptied in ' +
-          'product mode.',
-        body: ATTRIBUTE_FORM,
-        statuses: { 403: 'The attribute is not shown to you, or not yours ' +
-                         'to change.' },
+        operationId: 'setCustomAttribute', access: 'person', body: ATTRIBUTE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.setCustomAttribute(ctx, res, caller, input.body);
         } },
       { method: 'GET', path: ctx.BASE + '/applications',
-        operationId: 'getApplications', tag: 'Applications',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/applications',
-        summary: 'The applications you can be signed in to',
-        description: 'Every registered application that is a sign-in ' +
-          'destination (OpenID Connect, OAuth 2.0, SAML 2.0, SAML 1.1, ' +
-          'WS-Federation) for which the issuance policy, asked as a dry ' +
-          'run, permits you at least one family — its home page, the ' +
-          'identity-provider-initiated sign-in links it offers ' +
-          '(`launches`, each /launch/{app}?protocol=…), the families ' +
-          'permitted and withheld. Twenty to a page; the counts ' +
-          'of those refused and not evaluated are carried too.',
-        query: PAGED_QUERY,
+        operationId: 'getApplications', access: 'person', query: PAGED_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return ctx.json(res, 200, self.applicationsView(caller,
             Number(input.query.page || 1), ctx.baseUrlOf(req)));
         } },
       { method: 'GET', path: ctx.BASE + '/signals',
-        operationId: 'getSecurityActivity', tag: 'Security activity',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/signals',
-        summary: 'The security events this portal was told about you',
-        description: 'The CAEP and RISC events this portal received as a ' +
-          'Shared Signals receiver that are about you (an event it cannot ' +
-          'tie to you is left out), twenty to a page, each with whether ' +
-          'its signature verified and what this portal did with it; and ' +
-          'whether events about your account are shared (RISC section ' +
-          '2.8, `participation`, null while RISC is off).',
-        query: PAGED_QUERY,
+        operationId: 'getSecurityActivity', access: 'person', query: PAGED_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return ctx.json(res, 200, self.signalsView(caller,
             Number(input.query.page || 1)));
         } },
       { method: 'POST', path: ctx.BASE + '/signals',
-        operationId: 'moveRiscParticipation', tag: 'Security activity',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/signals',
-        summary: 'Stops, cancels stopping, or resumes sharing security ' +
-          'events about you',
-        description: 'RISC 1.0 section 2.8\'s account-holder moves. ' +
-          'Opting out takes effect only after risc.optOutDelayHours, and ' +
-          'can be cancelled until then.',
-        body: PARTICIPATION_FORM,
-        statuses: { 409: 'That move is not one your account can make now.',
-                    503: 'Shared Signals is off, so nothing was recorded.' },
+        operationId: 'moveRiscParticipation', access: 'person', body: PARTICIPATION_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.moveParticipation(ctx, req, res, caller, input.body);

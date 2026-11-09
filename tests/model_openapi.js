@@ -67,7 +67,7 @@ function buildDocuments(out) {
     console: spec.buildSpec(adminApi.ROUTES.filter(function (route) {
       return route.kind === 'console';
     }), { authRequired: true, console: true }),
-    account: AccountApiSpec.document(accountApi.operations(), {}),
+    account: AccountApiSpec.document({}),
     authn: authnApi.document({}),
     report: OpenApi.document(new Catalog())
   }));
@@ -291,6 +291,27 @@ function authnBodies(t, docs) {
   log.debug("Leaving authnBodies().");
 }
 
+// What an operation accepts is validated from its routing row, and the document
+// states it too, so the two are held equal.
+function accountContracts(t, docs) {
+  log.debug("Entering accountContracts().");
+  const accountApi = require('../account-api/account_api');
+  const Spec = require('../account-api/account_api_spec');
+  accountApi.operations().forEach(function (op) {
+    const entry = docs.account.paths[Spec.openApiPath(op.path)][
+      op.method.toLowerCase()];
+    sameText(t, canonical(entry.parameters), canonical(Spec.parametersOf(op)),
+      op.operationId + ': the parameters are the ones the model states');
+    const body = Spec.bodySchemaOf(op);
+    if (body && op.method !== 'GET') {
+      sameText(t, canonical(entry.requestBody.content[
+        'application/json'].schema), canonical(body),
+        op.operationId + ': the body it accepts is the one the model states');
+    }
+  });
+  log.debug("Leaving accountContracts().");
+}
+
 async function typeSpec(t, docs) {
   log.debug("Entering typeSpec().");
   const compiler = await import(url.pathToFileURL(path.join(__dirname,
@@ -324,6 +345,7 @@ async function run(t) {
   const docs = served(t, OpenApiImport, ModelEmit);
   await typeSpec(t, docs);
   authnBodies(t, docs);
+  accountContracts(t, docs);
   log.debug("Leaving run().");
 }
 

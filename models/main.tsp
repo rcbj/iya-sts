@@ -34,3 +34,4 @@ import "./persistence/persistence.tsp";
 import "./persistence/persistence_mariadb.tsp";
 import "./api/report.tsp";
 import "./api/authn.tsp";
+import "./api/account.tsp";

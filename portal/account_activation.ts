@@ -920,37 +920,16 @@ class AccountActivation {
     log.debug("Entering AccountActivation.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/activation',
-        operationId: 'getActivation', tag: 'Activation', access: 'link',
-        mirrors: 'GET ' + ctx.PORTAL + '/activate',
-        summary: 'Checks an activation link and answers the setup form',
-        description: 'Takes no token: the link\'s `user` and `token` are ' +
-          'the credential. Spends nothing — a link opened by a prefetch or ' +
-          'a mail scanner still works. Rate limited. Every failure answers ' +
-          'the same sentence. The answer is the first step: the password ' +
-          'rules, whether a passkey and an authenticator app are offered, ' +
-          'and whether a passkey may be the only way in (`passkeyAlone`, ' +
-          '#1135).',
+        operationId: 'getActivation', access: 'link',
         query: ACTIVATE_QUERY,
-        statuses: { 429: 'Too many attempts.' },
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
           return self.open(ctx, req, res, Object.assign({}, input.query,
             { token: String(req.headers['x-link-token'] || '') }));
         } },
       { method: 'POST', path: ctx.BASE + '/activation',
-        operationId: 'activate', tag: 'Activation', access: 'link',
-        mirrors: 'POST ' + ctx.PORTAL + '/activate',
-        summary: 'Answers one step of an activation',
-        description: '`setup` sets the password and starts a passkey (the ' +
-          '`key` view) or an authenticator app (the `totp` view) where they ' +
-          'were chosen; `key` answers the passkey\'s ceremony; `totp` the ' +
-          'app\'s code. The link is checked again, claimed before anything ' +
-          'is set, and spent only by the step that finishes, which answers ' +
-          'the `ready` view. Nobody is signed in by it. A passkey carries ' +
-          'no role (#1135): `passkey` asks for one, and `key_role` is ' +
-          'still accepted, `primary` and `mfa` both asking for one.',
+        operationId: 'activate', access: 'link',
         body: ACTIVATE_FORM,
-        statuses: { 429: 'Too many attempts.' },
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
           return self.spend(ctx, req, res, input.body);

@@ -361,16 +361,7 @@ class PortalShared {
     };
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/shared', operationId: 'getShared',
-        tag: 'Sharing', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/shared',
-        summary: 'What you share through User-Managed Access',
-        description: 'One page (`paging`) of `resources`: the resources ' +
-          'resource servers registered on your behalf, each with its ' +
-          'scopes and the `shares` your sharing policy holds for it; the ' +
-          '`custom` rules of your policy the share form did not write, ' +
-          'with their ALFA; the `pending` requests waiting for your ' +
-          'approval; and, where the realm allows it (`alfaEditing`), your ' +
-          'whole policy as `alfa`. `enabled` says whether UMA is on.',
+        access: 'person',
         query: QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
@@ -378,34 +369,14 @@ class PortalShared {
                                              input.query.page || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/shared', operationId: 'actShared',
-        tag: 'Sharing', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/shared',
-        summary: 'Shares a resource, removes a share, or rewrites your ' +
-                 'policy',
-        description: '`action` share writes one rule into your sharing ' +
-          'policy: a resource of yours, its scopes, and who — a person, a ' +
-          'group, anyone signed in to this realm, or anyone whose claim ' +
-          'has a value — with an optional expiry, authentication level and ' +
-          '"ask me each time". `approve` and `refuse` answer a request ' +
-          'waiting for you; an approval adds a share for that person ' +
-          'for a day. `unshare` removes one and revokes the ' +
-          'requesting party tokens that carried it. `alfa` replaces the ' +
-          'whole policy, where the realm allows it, and revokes every ' +
-          'token over your resources. A resource or share that is not ' +
-          'yours is refused.',
+        access: 'person',
         body: SHARE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);
         } },
       { method: 'GET', path: ctx.BASE + '/shared-with-me',
-        operationId: 'getSharedWithMe', tag: 'Sharing', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/shared-with-me',
-        summary: 'What others share with you',
-        description: 'One page (`paging`) of `rows`: each permission a ' +
-          'requesting party token issued to you carries — the resource, ' +
-          'its resource server and owner, the scopes, the client that ' +
-          'holds the token, and until when.',
+        operationId: 'getSharedWithMe', access: 'person',
         query: QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

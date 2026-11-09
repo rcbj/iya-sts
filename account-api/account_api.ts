@@ -64,7 +64,6 @@ import version = require('../common/version');
 import mode = require('../common/mode');
 import AccountApiSpec = require('./account_api_spec');
 import responseChecks = require('../common/response_models');
-import AccountResponseModels = require('./account_response_models');
 import ProfilePhoto = require('../common/profile_photo');
 
 type Json = any;
@@ -443,7 +442,7 @@ class AccountApi {
           rows = rows.concat(mod.accountOperations(ctx) || []);
         }
       });
-      this.table = rows;
+      this.table = AccountApiSpec.named(rows);
     }
     log.debug("Leaving AccountApi.operations(). " + this.table.length);
     return this.table;
@@ -458,7 +457,7 @@ class AccountApi {
   document(req: Json): Json {
     const { log, baseUrlOf } = this.deps;
     log.debug("Entering AccountApi.document().");
-    const doc = AccountApiSpec.document(this.operations(), {
+    const doc = AccountApiSpec.document({
       baseUrl: baseUrlOf(req), version: version.load().version });
     log.debug("Leaving AccountApi.document().");
     return doc;
@@ -515,12 +514,7 @@ class AccountApi {
     log.debug("Entering AccountApi.ownOperations().");
     const z = validation.z;
     const rows: AccountOperation[] = [
-      { method: 'GET', path: BASE, operationId: 'getIndex', tag: 'API',
-        access: 'public',
-        summary: 'Lists every operation of this API',
-        description: 'Each operation\'s method, path, access and the portal ' +
-          'page or form it is the door of. The portal reads it to know ' +
-          'which operation a form goes to.',
+      { method: 'GET', path: BASE, operationId: 'getIndex', access: 'public',
         handler: function (req: Json, res: Json): unknown {
           return self.json(res, 200, {
             api: 'IYA STS Account API', document: BASE + '/openapi.json',
@@ -532,22 +526,13 @@ class AccountApi {
             }) });
         } },
       { method: 'GET', path: BASE + '/openapi.json',
-        operationId: 'getOpenApi', tag: 'API', access: 'public',
-        summary: 'This API\'s OpenAPI 3.1 document',
-        description: 'Built from the operation table at the moment it is ' +
-          'asked, for the realm it is asked in. It carries no secret.',
+        operationId: 'getOpenApi', access: 'public',
         handler: function (req: Json, res: Json): unknown {
           return self.json(res, 200, self.document(req));
         } },
       // NOT A PAGE'S DOOR, so it mirrors nothing: the Overview's is
       // `/account-api/overview`, and a lookup by `mirrors` must find one.
-      { method: 'GET', path: BASE + '/me', operationId: 'getMe', tag: 'API',
-        access: 'person',
-        summary: 'Who is signed in, and what every page is drawn with',
-        description: 'The person (from the token, never the request), the ' +
-          'realm, the language data — the negotiation, the portal\'s ' +
-          'catalogs and the locales offered — and the build. The portal ' +
-          'draws its frame from it.',
+      { method: 'GET', path: BASE + '/me', operationId: 'getMe', access: 'person',
         handler: function (req: Json, res: Json,
                            caller: AccountCaller | null): unknown {
           const who = caller as AccountCaller;
@@ -566,15 +551,9 @@ class AccountApi {
       // AN ANNOUNCEMENT (#1086), collected by every open portal tab. NOT A
       // PAGE'S DOOR either: the banner it feeds is drawn over every page.
       { method: 'GET', path: BASE + '/announcements',
-        operationId: 'getAnnouncements', tag: 'API', access: 'person',
+        operationId: 'getAnnouncements', access: 'person',
         query: z.object({ since: z.string().regex(/^[0-9]{1,16}$/)
           .optional() }),
-        summary: 'Announcements for everybody signed in to the portal',
-        description: 'What an administrator broadcast to the user portal ' +
-          'after `since` — the `now` this operation answered your tab\'s ' +
-          'first ask with — within `ssf.announcementKeepS`, oldest first. ' +
-          'With no `since` it answers only `now`, so a tab shows what ' +
-          'arrived after it signed in. `everyMs` is how often to ask again.',
         handler: function (req: Json, res: Json, caller: AccountCaller | null,
                            input: Json): unknown {
           const since = Number((input && input.query &&
@@ -583,13 +562,8 @@ class AccountApi {
             .announcementsFor('user-portal', since));
         } },
       { method: 'GET', path: BASE + '/locale', operationId: 'getLocale',
-        tag: 'API', access: 'public',
+        access: 'public',
         query: z.object({}),
-        summary: 'The language data a page for nobody is drawn with',
-        description: 'For the pages a person reaches with no sign-in — an ' +
-          'activation or reset link, the forgot-password form, an address ' +
-          'verification: the negotiation from the browser alone, the ' +
-          'portal\'s catalogs, the offered locales and the build.',
         handler: function (req: Json, res: Json): unknown {
           return self.json(res, 200, { locale: self.localeData(''),
                                        version: self.versionData() });
@@ -1115,8 +1089,8 @@ class AccountApi {
     // EVERY ANSWER IS HELD TO ITS MODEL (#1353), this one's first of all:
     // before the placement relays anything and before the gate refuses.
     responseChecks.install(app, BASE, function () {
-      return AccountApiSpec.document(self.operations(), {});
-    }, AccountResponseModels.ERROR);
+      return AccountApiSpec.document({});
+    }, AccountApiSpec.refusalSchema());
     app.use(BASE, function (req: Json, res: Json, next: () => void) {
       log.debug("Entering the account API's cell placement.");
       self.placeRequest(req, res).then(function (relayed) {

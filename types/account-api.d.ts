@@ -79,9 +79,8 @@ export interface AccountOperation {
   path: string;
   operationId: string;
   // The OpenAPI tag: the portal page's name.
-  tag: string;
-  summary: string;
-  description: string;
+  tag?: string;
+  summary?: string;
   // `person`: the gate's access token; `link`: nobody signed in, the request
   // spends a single-use secret it carries (an activation or reset link);
   // `public`: nobody, nothing spent (the forgot-password form, the index).
@@ -89,19 +88,11 @@ export interface AccountOperation {
   // The portal page or form this operation is the door of — rule 7's twin:
   // `GET /portal/keys`, `POST /portal/keys`. The runtime sends a form to the
   // operation that mirrors it.
-  mirrors?: string;
+  mirrors?: string | null;
   // zod object schemas, checked before the handler runs and documented as
   // the operation's parameters and request body.
   query?: any;
   body?: any;
-  // A JSON Schema that DOCUMENTS a body the handler checks itself, where no
-  // zod schema can (CIBA's repeated per-right limit controls): the document
-  // shows it, the wrapper checks nothing with it.
-  bodyDoc?: any;
-  // The JSON Schema of a successful answer, where one is declared.
-  answer?: any;
-  // The HTTP statuses the handler answers besides 200, with what each means.
-  statuses?: Record<string, string>;
   // The access gate's action: `read` for a GET and `manage-own` otherwise,
   // unless said.
   action?: string;

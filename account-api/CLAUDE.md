@@ -1,5 +1,10 @@
 # CLAUDE.md — `account-api/`
 
+**The Account API OpenAPI document is written in `models/api/account.tsp` since #1390.**
+An operation's summary, description, tag, mirrors, statuses and answer model are there;
+its routing row (here and in `portal/`) keeps the path, the handler and the zod schemas,
+and `tests/model_openapi.js` holds those schemas to the model.
+
 ## 3ck. THE USER PORTAL'S ONLY DOOR (#568, 2026-10-12)
 
 `/account-api` is what the user portal draws every page from and sends every

@@ -210,27 +210,15 @@ class AccountPassword {
     log.debug("Entering AccountPassword.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/password',
-        operationId: 'getPassword', tag: 'Password', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/password',
-        summary: 'Whether you have a password, and what one must be',
-        description: '`hasPassword`, and `rules`: the password policy\'s ' +
-          'rules for you (`enforced` false in development mode, where ' +
-          'nothing is checked).',
+        operationId: 'getPassword', access: 'person',
         query: vz.object({}),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username));
         } },
       { method: 'POST', path: ctx.BASE + '/password',
-        operationId: 'changePassword', tag: 'Password', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/password',
-        summary: 'Changes your password',
-        description: 'Re-proves the current password (rate limited, in the ' +
-          'budget the Kerberos keytab shares), screens the new one against ' +
-          'breached passwords, applies the password policy, and tells your ' +
-          'relying parties over CAEP. A refusal carries the page\'s `view`.',
+        operationId: 'changePassword', access: 'person',
         body: PASSWORD_FORM,
-        statuses: { 429: 'Too many attempts; try again later.' },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.change(ctx, req, res, caller, input.body);
