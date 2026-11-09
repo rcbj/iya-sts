@@ -6,16 +6,20 @@
 // File: request_headers.ts
 //
 // ---------------------------------------------------------------------------
-// WHICH REQUEST HEADERS `/admin-api` TAKES (#1476, rcbj 2026-11-09).
+// WHICH REQUEST HEADERS A PUBLISHED API TAKES (#1476, rcbj 2026-11-09), and
+// (#1483) the one check of a request's query and headers those APIs share:
+// `/admin-api`, `/account-api`, `/authn-api` and `/report-api`. Moved here
+// from `mgmt-api/` by #1483, the file's name and its rule unchanged.
 //
 // "If a spec defines it, then it would be allowed." A request header is
-// accepted on an operation when any of these holds, and refused 400 with
-// `STS-API-0144` otherwise:
+// accepted on an operation when any of these holds, and refused 400
+// otherwise, with the code of the API it was sent to:
 //
 //   1. the OpenAPI document declares it for that operation (`in: header`, in
 //      the same `parameters` the query is held to, so there is no second list
-//      of what an operation takes: `DPoP` is the one every operation declares,
-//      added to each by `AdminApi.declareImplicitParameters()`);
+//      of what an operation takes: `DPoP` is the one every operation of the
+//      token-taking APIs declares, on `/admin-api` added to each by
+//      `AdminApi.declareImplicitParameters()`);
 //   2. it is a standard HTTP request header;
 //   3. it is in a family a browser, a proxy, a CDN, a load balancer or a
 //      tracing system adds, which the caller did not choose and could not
@@ -26,15 +30,16 @@
 //      admits nothing; `tests/admin_api_request_names.js` fails on an
 //      `x-sts-` name in the source that is not listed here.
 //
-// FOR `/admin-api` ONLY. A protocol endpoint's headers are its specification's
-// business and nothing here is consulted there.
+// FOR THE PUBLISHED APIS ONLY. A protocol endpoint's headers are its
+// specification's business and nothing here is consulted there.
 //
-// A LEAF (rule 3): it requires nothing of this service but `bunyan`, and it
-// registers nothing.
+// A LEAF (rule 3): it requires `bunyan` and `common/closed_sets.ts`, another
+// leaf, and it registers nothing.
 // ---------------------------------------------------------------------------
 import bunyan = require('bunyan');
+import ClosedSets = require('./closed_sets');
 
-const log = bunyan.createLogger({ name: 'sts-admin-api-headers' });
+const log = bunyan.createLogger({ name: 'sts-request-headers' });
 
 // A check's answer: `ok`, or the header and the sentence to refuse it with.
 interface HeaderCheck {
@@ -47,6 +52,15 @@ interface HeaderCheck {
 interface DeclaredParameter {
   name?: string;
   in?: string;
+  schema?: any;
+}
+
+// `checkRequest()`'s answer: `problem` says which of the three a refusal is,
+// so that each API records its own code for it.
+interface RequestCheck {
+  ok: boolean;
+  problem?: 'unknown-parameter' | 'wrong-type' | 'header';
+  sentence?: string;
 }
 
 // How much of a header's name a refusal repeats.
@@ -150,9 +164,9 @@ const FAMILIES: ReadonlyArray<string> =
   }));
 
 /**
- * The request headers `/admin-api` takes, and the refusal of any other.
+ * The request headers a published API takes, and the refusal of any other.
  */
-class AdminApiRequestHeaders {
+class RequestHeaders {
   /**
    * Whether a header is accepted whatever the operation declares.
    *
@@ -160,7 +174,7 @@ class AdminApiRequestHeaders {
    * @returns true for a standard, in-transit or internal header
    */
   static accepted(name: string): boolean {
-    log.debug("Entering AdminApiRequestHeaders.accepted().");
+    log.debug("Entering RequestHeaders.accepted().");
     const lower = String(name || '').toLowerCase();
     // HTTP/2's pseudo-headers arrive in node's `req.headers` (`:method`).
     const accepted = lower.charAt(0) === ':' || STANDARD.has(lower) ||
@@ -168,7 +182,7 @@ class AdminApiRequestHeaders {
       FAMILIES.some(function (prefix) {
         return lower.indexOf(prefix) === 0;
       });
-    log.debug("Leaving AdminApiRequestHeaders.accepted(). " + accepted);
+    log.debug("Leaving RequestHeaders.accepted(). " + accepted);
     return accepted;
   }
 
@@ -182,7 +196,7 @@ class AdminApiRequestHeaders {
    */
   static check(parameters: DeclaredParameter[] | undefined,
                headers: any): HeaderCheck {
-    log.debug("Entering AdminApiRequestHeaders.check().");
+    log.debug("Entering RequestHeaders.check().");
     const declared = new Set((parameters || []).filter(function (p) {
       return p && p.in === 'header' && p.name;
     }).map(function (p) {
@@ -191,10 +205,10 @@ class AdminApiRequestHeaders {
     const names = Object.keys(headers || {});
     for (let i = 0; i < names.length; i++) {
       const lower = names[i].toLowerCase();
-      if (declared.has(lower) || AdminApiRequestHeaders.accepted(lower)) {
+      if (declared.has(lower) || RequestHeaders.accepted(lower)) {
         continue;
       }
-      log.debug("Leaving AdminApiRequestHeaders.check(). Refused.");
+      log.debug("Leaving RequestHeaders.check(). Refused.");
       return { ok: false, header: lower,
                sentence: 'The request header ' +
                          JSON.stringify(lower.slice(0, MAX_NAME_SAID)) +
@@ -202,9 +216,44 @@ class AdminApiRequestHeaders {
                          'declared in the OpenAPI document and no ' +
                          'specification defines it.' };
     }
-    log.debug("Leaving AdminApiRequestHeaders.check(). Accepted.");
+    log.debug("Leaving RequestHeaders.check(). Accepted.");
+    return { ok: true };
+  }
+
+  // -------------------------------------------------------------------------
+  // THE WHOLE CHECK OF A REQUEST'S SHAPE (#1483): the query against what its
+  // operation declares, then its headers. What `/admin-api`'s route wrapper
+  // does in three steps, because that wrapper records a code of its own for
+  // each; `problem` lets the other APIs do the same with a table.
+  // -------------------------------------------------------------------------
+  /**
+   * Checks a request's query and headers against its operation's parameters.
+   * The sentence names the parameter or header and never its value.
+   *
+   * @param parameters - the operation's parameters
+   * @param query - the request's parsed query
+   * @param headers - the request's headers
+   * @returns `{ ok: true }`, or `{ ok: false, problem, sentence }`
+   */
+  static checkRequest(parameters: DeclaredParameter[] | undefined, query: any,
+                      headers: any): RequestCheck {
+    log.debug("Entering RequestHeaders.checkRequest().");
+    const shape = ClosedSets.checkQueryDeclared(parameters as any, query);
+    if (!shape.ok) {
+      log.debug("Leaving RequestHeaders.checkRequest(). The query.");
+      return { ok: false,
+               problem: shape.problem === 'unknown' ? 'unknown-parameter'
+                                                    : 'wrong-type',
+               sentence: shape.sentence };
+    }
+    const sent = RequestHeaders.check(parameters, headers);
+    if (!sent.ok) {
+      log.debug("Leaving RequestHeaders.checkRequest(). A header.");
+      return { ok: false, problem: 'header', sentence: sent.sentence };
+    }
+    log.debug("Leaving RequestHeaders.checkRequest(). Accepted.");
     return { ok: true };
   }
 }
 
-export = AdminApiRequestHeaders;
+export = RequestHeaders;

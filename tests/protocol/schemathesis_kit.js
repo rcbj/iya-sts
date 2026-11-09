@@ -191,24 +191,33 @@ const CUSTOM_CHECKS = [
 // itself; the per-cell re-assert then has only the earlier cells' doing to fix.
 // A realm's admin-api cannot reach the next realm (each realm is its own tree,
 // keys and policies); if a way is found, it is a finding.
+// `strict` (#1476, #1483) is what the cell's probes hold a GET to: `refuses`
+// (a published API: an undeclared query name, a wrong-typed value and an
+// unknown custom header are 400s) or `tolerates` (a protocol endpoint: an
+// outside specification defines it and several say to ignore what they do
+// not know, so a garbage request only has to answer no 5xx and no leaked
+// code).
 const SURFACES = [
   { key: "account-api", title: "Account API (portal/user)",
     kind: "openapi", schemaPath: "/account-api/openapi.json",
-    schemaAuth: "none", auth: "dpop-portal", checks: INVARIANT_BUILTIN },
+    schemaAuth: "none", auth: "dpop-portal", checks: INVARIANT_BUILTIN,
+    strict: "refuses" },
   { key: "authn-api", title: "Sign-in API",
     kind: "openapi", schemaPath: "/authn-api/openapi.json",
-    schemaAuth: "none", auth: "authn", checks: INVARIANT_BUILTIN },
+    schemaAuth: "none", auth: "authn", checks: INVARIANT_BUILTIN,
+    strict: "refuses" },
   { key: "report-api", title: "Reporting API",
     kind: "openapi", schemaPath: "/report-api/openapi.json",
-    schemaAuth: "dpop-report", auth: "dpop-report", checks: INVARIANT_BUILTIN },
+    schemaAuth: "dpop-report", auth: "dpop-report", checks: INVARIANT_BUILTIN,
+    strict: "refuses" },
   { key: "protocol", title: "Protocol endpoints (synthesized)",
     kind: "synthesized", schemaPath: "/admin-api/sts-metadata",
     schemaAuth: "dpop-console", auth: "per-op",
-    checks: INVARIANT_BUILTIN },
+    checks: INVARIANT_BUILTIN, strict: "tolerates" },
   { key: "admin-api", title: "Management API",
     kind: "openapi", schemaPath: "/admin-api/openapi.json",
     schemaAuth: "dpop-console", auth: "dpop-console",
-    checks: INVARIANT_BUILTIN }
+    checks: INVARIANT_BUILTIN, strict: "refuses" }
 ];
 
 // ---------------------------------------------------------------------------
@@ -305,7 +314,7 @@ const SERVICE_CELL = Object.freeze({
   title: "Management API (service, default realm)",
   kind: "openapi", schemaPath: "/admin-api/openapi.json",
   schemaAuth: "dpop-console", auth: "dpop-console",
-  checks: INVARIANT_BUILTIN, exclusionsKey: "admin-api",
+  checks: INVARIANT_BUILTIN, strict: "refuses", exclusionsKey: "admin-api",
   serviceExclusions: SERVICE_EXCLUSIONS
 });
 
@@ -387,7 +396,8 @@ function exclusionsFor(surfaceKey) {
 }
 
 // ---------------------------------------------------------------------------
-// WHAT A /admin-api GET DOES WITH A NAME IT DOES NOT TAKE (#1476, rcbj
+// WHAT A GET DOES WITH A NAME IT DOES NOT TAKE (#1476 for `/admin-api`, #1483
+// for the other three published APIs and the protocol endpoints, rcbj
 // 2026-11-09). Schemathesis sends what the document declares, so a parameter
 // or header nothing declares is the one request it never makes. These probes
 // make it, on every GET in the document, while the cell's proxy is up:
@@ -400,21 +410,67 @@ function exclusionsFor(surfaceKey) {
 // A refusal carries no error code. A gate's 401 or 403 means the request
 // never reached the check, and is counted rather than called a miss: a realm's
 // administrator is refused the process-wide operations, and that is correct.
+//
+// THE PROTOCOL SURFACE IS THE OTHER CASE (`strict: "tolerates"`): a protocol
+// endpoint is its specification's, and several say to ignore an unknown
+// parameter. The same garbage goes to its GETs and the answer is held only to
+// no 5xx (501, a deliberate Not Implemented, excepted) and no leaked code: a
+// 200 passes. Nothing about those endpoints changes for this.
 // ---------------------------------------------------------------------------
 const STRICT_UNKNOWN_PARAMETER = "sts_garbage";
 const STRICT_GARBAGE_VALUE = "%%%{{<garbage>}}~";
 const STRICT_FINDING = "strict_request_miss";
 const LEAKED_CODE = /STS-[A-Z0-9]+-\d{4}/;
 
+// THE PROTOCOL GETS THAT ARE NOT PROBED (#1483), exact templates of the
+// synthesized document. `{as}` is an embedded authorization server's prefix.
+// A probe carries no credential and no cookie (auth "per-op"), so none of
+// these can end a session on one; they are held back because each is
+// specified to end a browser's sign-on, and a cell that exists to prove it did
+// no damage does not ask a sign-out endpoint for its opinion of a garbage
+// parameter. Everything else in the document is probed.
+const PROTOCOL_PROBE_EXCLUSIONS = [
+  { template: "/oauth2/logout",
+    reason: "RP-Initiated Logout: a GET ends the browser's sign-on session" },
+  { template: "/{as}/oauth2/logout",
+    reason: "RP-Initiated Logout at an embedded authorization server: a GET " +
+      "ends the browser's sign-on session" },
+  { template: "/saml2/slo",
+    reason: "SAML 2.0 Single Logout's GET binding, which ends a session it " +
+      "names" },
+  { template: "/saml2/slo/{sp}",
+    reason: "SAML 2.0 Single Logout's GET binding for one service provider, " +
+      "which ends a session it names" },
+  { template: "/federation/slo/{id}",
+    reason: "a federation partner's Single Logout entry, which ends the " +
+      "session the partner names" },
+  { template: "/federation/frontchannel-logout/{id}",
+    reason: "OpenID Connect Front-Channel Logout's GET at a partner, which " +
+      "ends the session it names" }
+];
+
+function protocolProbeExcluded(template) {
+  log.debug("Entering protocolProbeExcluded().");
+  const excluded = PROTOCOL_PROBE_EXCLUSIONS.some(function (one) {
+    return one.template === template;
+  });
+  log.debug("Leaving protocolProbeExcluded(). " + excluded);
+  return excluded;
+}
+
 // The requests one GET of the document is probed with. Pure, so that
 // tests/schemathesis_plan.js can hold the plan without a stack.
-function strictRequestProbes(document) {
+function strictRequestProbes(document, options) {
   log.debug("Entering strictRequestProbes().");
   const out = [];
+  const opts = options || {};
   const paths = (document && document.paths) || {};
   Object.keys(paths).sort().forEach(function (template) {
     const get = paths[template] && paths[template].get;
     if (!get) {
+      return;
+    }
+    if (opts.tolerates && protocolProbeExcluded(template)) {
       return;
     }
     // A harmless value for a path parameter: the check runs before the
@@ -423,19 +479,25 @@ function strictRequestProbes(document) {
     const id = get.operationId || url;
     const parameters = get.parameters || [];
     out.push({ kind: "unknown-parameter", operationId: id, path: template,
-      url: url + "?" + STRICT_UNKNOWN_PARAMETER + "=1", headers: {} });
+      url: url + "?" + STRICT_UNKNOWN_PARAMETER + "=1", headers: {},
+      named: STRICT_UNKNOWN_PARAMETER });
+    // `integer` or zod's `anyOf` of an empty string and an integer, which is
+    // how `/account-api` documents `vt.opt(vt.integer())` (#1483).
     const integer = parameters.filter(function (p) {
-      return p && p.in === "query" && p.schema &&
-        p.schema.type === "integer" &&
-        p.schema["x-refused-by-handler"] !== true;
+      const schema = (p && p.schema) || {};
+      return p && p.in === "query" && (schema.type === "integer" ||
+        (Array.isArray(schema.anyOf) && schema.anyOf.some(function (one) {
+          return one && one.type === "integer";
+        }))) && schema["x-refused-by-handler"] !== true;
     })[0];
     if (integer) {
       out.push({ kind: "wrong-type", operationId: id, path: template,
         url: url + "?" + encodeURIComponent(integer.name) + "=abc",
-        headers: {} });
+        headers: {}, named: integer.name });
     }
     out.push({ kind: "garbage-header", operationId: id, path: template,
-      url: url, headers: { "X-Sts-Garbage": STRICT_GARBAGE_VALUE } });
+      url: url, headers: { "X-Sts-Garbage": STRICT_GARBAGE_VALUE },
+      named: "x-sts-garbage" });
     out.push({ kind: "standard-header", operationId: id, path: template,
       url: url, headers: { "Accept-Language": STRICT_GARBAGE_VALUE } });
   });
@@ -445,11 +507,19 @@ function strictRequestProbes(document) {
 
 // What one probe's answer means: null for an answer that is right, `gate`
 // for a request a gate stopped, otherwise the finding's detail. Pure.
-function strictRequestVerdict(kind, status, body) {
+function strictRequestVerdict(kind, status, body, options) {
   log.debug("Entering strictRequestVerdict(). " + kind + " " + status);
+  const opts = options || {};
   let verdict = null;
   const text = String(body || "");
-  if (status === 401 || status === 403) {
+  if (opts.tolerates) {
+    // A protocol endpoint (#1483): no 5xx and no leaked code, and that is all.
+    if (status === 0 || (status >= 500 && status !== 501)) {
+      verdict = kind + " answered " + status;
+    } else if (status >= 400 && LEAKED_CODE.test(text)) {
+      verdict = "a refusal carried an error code";
+    }
+  } else if (status === 401 || status === 403) {
     verdict = "gate";
   } else if (status >= 400 && LEAKED_CODE.test(text)) {
     verdict = "a refusal carried an error code";
@@ -457,6 +527,12 @@ function strictRequestVerdict(kind, status, body) {
     verdict = status >= 500 ? "a standard header answered " + status : null;
   } else if (status !== 400) {
     verdict = kind + " answered " + status + ", not 400";
+  } else if (opts.named && text.indexOf(opts.named) < 0) {
+    // A 400 NAMING SOMETHING ELSE IS NOT THE REFUSAL (#1483): a GET of
+    // `/authn-api/pending/fuzz-probe` answers 400 for the id that does not
+    // exist, with or without the garbage, and passing it would be a gate
+    // that checked nothing.
+    verdict = kind + " answered 400 and did not name " + opts.named;
   }
   log.debug("Leaving strictRequestVerdict().");
   return verdict;
@@ -495,9 +571,14 @@ function strictRequest(port, url, headers) {
 // the findings; a document that cannot be read, or one where every probe was
 // stopped by a gate, is itself a finding, because a gate that checked nothing
 // must not read as a gate that passed.
-async function probeStrictRequests(port, surface, say) {
+async function probeStrictRequests(port, surface, say, synthesized) {
   log.debug("Entering probeStrictRequests(). " + surface.key);
-  const documentAnswer = await strictRequest(port, surface.schemaPath, {});
+  const tolerates = surface.strict === "tolerates";
+  // The synthesized document exists only in this process, and the proxy's
+  // `/admin-api/sts-metadata` is not it.
+  const documentAnswer = synthesized
+    ? { status: 200, text: JSON.stringify(synthesized) }
+    : await strictRequest(port, surface.schemaPath, {});
   let document = null;
   try {
     document = JSON.parse(documentAnswer.text);
@@ -505,7 +586,7 @@ async function probeStrictRequests(port, surface, say) {
     log.debug("Caught parsing the cell's document: " +
               ((e && e.message) || e));
   }
-  const probes = strictRequestProbes(document);
+  const probes = strictRequestProbes(document, { tolerates: tolerates });
   if (documentAnswer.status !== 200 || !probes.length) {
     log.debug("Leaving probeStrictRequests(). No document.");
     return [{ kind: STRICT_FINDING, status: documentAnswer.status,
@@ -517,7 +598,7 @@ async function probeStrictRequests(port, surface, say) {
     const probe = probes[i];
     const answer = await strictRequest(port, probe.url, probe.headers);
     const verdict = strictRequestVerdict(probe.kind, answer.status,
-                                         answer.text);
+      answer.text, { tolerates: tolerates, named: probe.named });
     if (verdict === "gate") {
       gated = gated + 1;
     } else if (verdict) {
@@ -527,7 +608,7 @@ async function probeStrictRequests(port, surface, say) {
         body: answer.text.slice(0, 200) });
     }
   }
-  if (gated === probes.length) {
+  if (!tolerates && gated === probes.length) {
     findings.push({ kind: STRICT_FINDING, status: 403,
       route: surface.schemaPath,
       detail: "every probe was stopped by a gate, so nothing was checked" });
@@ -1371,6 +1452,8 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
         output: "the auth proxy did not listen: " + proxyOut.slice(-600) };
     }
     let schemaLocation;
+    // The synthesized protocol document, kept for the probes after the run.
+    let synthesizedDoc = null;
     if (surface.kind === "synthesized") {
       const meta = await metadataAnswer(serviceBase, provisioned, say);
       if (!meta.ok) {
@@ -1382,6 +1465,7 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
             meta.why };
       }
       const doc = synthesizeProtocolDoc(extractRows(meta.json));
+      synthesizedDoc = doc;
       schemaLocation = path.join(workDir, "protocol" +
         provisioned.realmPrefix.replace(/[^A-Za-z0-9]+/g, "_") + ".json");
       fs.writeFileSync(schemaLocation, JSON.stringify(doc));
@@ -1440,8 +1524,9 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     // WHAT THE DOCUMENT DOES NOT SAY (#1476): the probes Schemathesis cannot
     // make, while this cell's proxy is up. A miss fails the cell.
     let strictFindings = [];
-    if (surface.schemaPath === "/admin-api/openapi.json") {
-      strictFindings = await probeStrictRequests(port, surface, say);
+    if (surface.strict) {
+      strictFindings = await probeStrictRequests(port, surface, say,
+        surface.kind === "synthesized" ? synthesizedDoc : null);
       if (strictFindings.length && status === "pass") {
         status = "fail";
       }
@@ -1687,6 +1772,8 @@ module.exports = {
   provision: provision,
   provisionServiceAdmin: provisionServiceAdmin,
   STRICT_FINDING: STRICT_FINDING,
+  PROTOCOL_PROBE_EXCLUSIONS: PROTOCOL_PROBE_EXCLUSIONS,
+  protocolProbeExcluded: protocolProbeExcluded,
   strictRequestProbes: strictRequestProbes,
   strictRequestVerdict: strictRequestVerdict,
   runSurface: runSurface,

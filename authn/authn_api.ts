@@ -67,6 +67,8 @@
 
 import responseChecks = require('../common/response_models');
 import ModelTables = require('../common/model_tables');
+// What a request may name and hold (#1483): a leaf that registers nothing.
+import RequestHeaders = require('../common/request_headers');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
@@ -204,13 +206,41 @@ const MFA_PAGES = ['totp', 'webauthn', 'backup-code', 'password', 'setup',
                    'post-login'];
 
 const MFA_QUERY = vz.object({
-  page: vt.opt(vt.oneOf(MFA_PAGES)),
+  page: vt.opt(vt.oneOf(MFA_PAGES))
+    .describe('Which of the step\'s pages; the step\'s own where left out.'),
   key: vt.opt(vt.base64url)
+    .describe('The passkey a person chose, where the passkey policy offers ' +
+              'them one by one (#534).')
 });
 
 const ID_PARAMS = vz.object({
   id: vt.base64url
 });
+
+// WHAT THE WALLET'S START VIEW IS ASKED WITH (#1483, the names this door has
+// always read): `authn` or `mfa` (what the start is for), `siop`, an
+// enrolment's `enrol`, `login_hint` and `did_act`. The act names the rest of
+// what `oid4vc/vc_signin.ts`'s `QUERY` admits (`state`, `response_code`,
+// `wallet`, `qr`), which belong to that door's shells and are not this API's.
+const WALLET_VIEW_QUERY = vz.object({
+  authn: vt.opt(vt.opaque).describe('A pending sign-in.'),
+  mfa: vt.opt(vt.opaque).describe('A second-factor step.'),
+  siop: vt.opt(vt.oneOf(['1']))
+    .describe('`1` for a self-issued ID Token rather than a presentation.'),
+  enrol: vt.opt(vt.oneOf(['1']))
+    .describe('`1` to enrol a key from a session rather than to sign in.'),
+  login_hint: vt.opt(vt.opaque)
+    .describe('Which of this browser\'s accounts an enrolment is for.'),
+  did_act: vt.opt(vt.opaque)
+    .describe('A published DID\'s wallet act, on an enrolment (#1291).')
+});
+
+// THE CODE OF EACH WAY A REQUEST'S SHAPE IS REFUSED (#1483).
+const SHAPE_CODES: Record<string, string> = {
+  'unknown-parameter': 'STS-AUTHN-0553',
+  'wrong-type': 'STS-AUTHN-0554',
+  header: 'STS-AUTHN-0555'
+};
 
 // ---------------------------------------------------------------------------
 // THE WALLET'S BODIES (#574). The ids an act names beside the transaction
@@ -269,9 +299,16 @@ const LOGOUT_BODY = vz.object({
 }).strict();
 
 const LOGOUT_QUERY = vz.object({
-  username: vt.opt(vt.name),
-  account: vz.string().min(1).max(600).optional(),
+  username: vt.opt(vt.name)
+    .describe('Whom the page is about, where naming somebody is open ' +
+              '(development mode and `logout.anyUser`), or the caller\'s ' +
+              'own name; the browser\'s session otherwise.'),
+  account: vz.string().min(1).max(600).optional()
+    .describe('With authn.multipleAccounts on (#561): one of this ' +
+              'browser\'s signed-in accounts, by its key.'),
   login_hint: vz.string().max(512).optional()
+    .describe('With authn.multipleAccounts on (#561): the account the ' +
+              'sign-out\'s account step preselects.')
 });
 
 // THE SIGN-OUT'S ACCOUNT STEP (#561): an account's key, or `all` — every
@@ -314,6 +351,10 @@ interface Operation {
   action?: string;
   summary?: string;
   body?: Json;
+  // The operation's query, as the zod object its handler checks or (the
+  // wallet's start view) as the names it reads (#1483): the document and the
+  // refusal of a name it does not take read this one declaration.
+  query?: Json;
   handler: string;
   // For a wallet operation (#574): the `oid4vc/vc_signin.ts` method it is.
   walletAct?: string;
@@ -376,7 +417,7 @@ const OPERATIONS: Operation[] = [
     handler: 'passwordChangeStartOver', body: EMPTY_BODY },
   // --- the second-factor and emailed-factor steps (#572, #573) -----------
   { method: 'GET', path: API + '/mfa/:id', operationId: 'getStep',
-    access: 'mfa', handler: 'mfaStep' },
+    access: 'mfa', handler: 'mfaStep', query: MFA_QUERY },
   { method: 'POST', path: API + '/mfa/:id/totp', operationId: 'checkCode',
     access: 'mfa', action: 'totp',
     handler: 'mfaAct', body: CODE_BODY, refusedCode: 'STS-AUTHN-0039' },
@@ -450,7 +491,7 @@ const OPERATIONS: Operation[] = [
 const WALLET_OPERATIONS: Operation[] = [
   { method: 'GET', path: API + '/wallet', operationId: 'getWalletStart',
     access: 'wallet', handler: 'wallet',
-    walletAct: 'startView' },
+    walletAct: 'startView', query: WALLET_VIEW_QUERY },
   { method: 'POST', path: API + '/wallet', operationId: 'startWalletSignIn',
     access: 'wallet', handler: 'wallet',
     walletAct: 'start', body: WALLET_START_BODY, refusedCode: 'STS-VC-0069' },
@@ -480,7 +521,7 @@ OPERATIONS.push.apply(OPERATIONS, WALLET_OPERATIONS);
 
 const LOGOUT_OPERATIONS: Operation[] = [
   { method: 'GET', path: API + '/logout', operationId: 'getSignOut',
-    access: 'session', handler: 'logoutView' },
+    access: 'session', handler: 'logoutView', query: LOGOUT_QUERY },
   { method: 'POST', path: API + '/logout', operationId: 'signOut',
     access: 'session', action: 'logout',
     handler: 'logoutAct', body: LOGOUT_BODY, refusedCode: 'STS-LOGOUT-0003' },
@@ -488,7 +529,7 @@ const LOGOUT_OPERATIONS: Operation[] = [
   // where the browser holds more than one signed-in account.
   { method: 'GET', path: API + '/logout/accounts',
     operationId: 'getSignOutAccounts', access: 'session',
-    handler: 'logoutAccountsView' },
+    handler: 'logoutAccountsView', query: LOGOUT_QUERY },
   { method: 'POST', path: API + '/logout/accounts',
     operationId: 'chooseSignOutAccount', access: 'session',
     action: 'account',
@@ -1643,6 +1684,122 @@ class AuthnApi {
   }
 
   /**
+   * The parameters an operation declares: its path's, its query's and the
+   * headers a caller of this API sends (#1483). The document states the same
+   * list, and `tests/model_openapi.js` holds the two equal.
+   *
+   * @param op - the operation
+   * @returns the parameters
+   */
+  static parametersOf(op: Operation): Json[] {
+    helpers.log.debug("Entering AuthnApi.parametersOf().");
+    const Spec = require('../account-api/account_api_spec');
+    const out: Json[] = [];
+    if (op.access === 'wallet' && op.path.indexOf(':state') >= 0) {
+      out.push({ name: 'state', in: 'path', required: true,
+                 description: 'The wallet sign-in\'s transaction: a bearer ' +
+                   'capability, answered to this browser only (its ' +
+                   '`sts_wallet_binding` cookie).',
+                 schema: { type: 'string' } });
+    } else if (op.path.indexOf(':id') >= 0) {
+      out.push({ name: 'id', in: 'path', required: true,
+                 description: op.access === 'consent'
+                   ? 'The pending consent\'s id: a bearer capability, as the ' +
+                     '`consent` the consent screen was opened with, answered ' +
+                     'only to the browser whose session is the person asked.'
+                   : op.access === 'step'
+                   ? 'The password change step\'s id.'
+                   : op.access === 'mfa'
+                   ? 'The second-factor or emailed-factor step\'s id: a ' +
+                     'bearer capability, as the `mfa` its page was opened ' +
+                     'with.'
+                   : 'The pending sign-in\'s id: a bearer capability, as the ' +
+                     '`authn` the screen was opened with.',
+                 schema: { type: 'string' } });
+    }
+    const query = op.query ? Spec.jsonSchemaOf(op.query) : null;
+    const props = (query && query.properties) || {};
+    Object.keys(props).forEach(function (name) {
+      const prop = Object.assign({}, props[name]);
+      const description = prop.description;
+      delete prop.description;
+      out.push(Object.assign({ name: name, in: 'query', required: false,
+                               schema: prop },
+                             description ? { description: description } : {}));
+    });
+    // WHAT A CALLER OF THIS API SENDS AND NO SPECIFICATION NAMES (#1483):
+    // `X-CSRF-Token`, this API's own binding of an act, and
+    // `X-Requested-With`, which an Android WebView adds to every request of
+    // a page it hosts — a sign-in opened in one must not be refused for it
+    // (`account-api/account_api_spec.ts`, `implicitHeaders()`).
+    if (op.method === 'POST') {
+      out.push({ name: 'X-CSRF-Token', in: 'header', required: false,
+                 description: 'The `csrf` the page\'s view answered, bound ' +
+                   'to the browser\'s `sts_session` cookie.',
+                 schema: { type: 'string' } });
+    }
+    out.push({ name: 'X-Requested-With', in: 'header', required: false,
+               description: 'Added by an Android WebView, naming the ' +
+                 'application that hosts the page. This API reads nothing ' +
+                 'in it.',
+               schema: { type: 'string' } });
+    helpers.log.debug("Leaving AuthnApi.parametersOf(). " + out.length);
+    return out;
+  }
+
+  // The declared parameters of each operation, once (#1483).
+  private readonly declared: Map<Operation, Json[]> = new Map();
+
+  /**
+   * An operation's declared parameters, once.
+   *
+   * @param op - the operation
+   * @returns the OpenAPI parameter list
+   */
+  parametersFor(op: Operation): Json[] {
+    const { log } = this.deps;
+    log.debug("Entering AuthnApi.parametersFor().");
+    let list = this.declared.get(op);
+    if (!list) {
+      list = AuthnApi.parametersOf(op);
+      this.declared.set(op, list);
+    }
+    log.debug("Leaving AuthnApi.parametersFor().");
+    return list;
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT A REQUEST MAY NAME AND HOLD (#1483, `/admin-api`'s #1476 rule). A
+  // query name the operation does not declare, a value its type does not hold
+  // and a custom header nobody defined are refused here, before the handler
+  // and so before an act's binding: the three say nothing about which ids are
+  // live, and the sentence names the parameter or the header, never its value.
+  // ---------------------------------------------------------------------------
+  /**
+   * Refuses a request whose query or headers its operation does not take.
+   *
+   * @param req - the request
+   * @param res - the response
+   * @param op - the operation
+   * @returns true when the request was answered
+   */
+  shapeRefused(req: Json, res: Json, op: Operation): boolean {
+    const { log, errorCodes } = this.deps;
+    log.debug("Entering AuthnApi.shapeRefused().");
+    const shape = RequestHeaders.checkRequest(this.parametersFor(op),
+      req.query || {}, req.headers || {});
+    if (shape.ok) {
+      log.debug("Leaving AuthnApi.shapeRefused(). Accepted.");
+      return false;
+    }
+    errorCodes.mark(res, SHAPE_CODES[String(shape.problem)]);
+    // error-code: none — marked on the line above, SHAPE_CODES's by the kind
+    this.refuse(res, 400, String(shape.sentence));
+    log.debug("Leaving AuthnApi.shapeRefused(). " + shape.problem);
+    return true;
+  }
+
+  /**
    * The OpenAPI 3.1 document of this API, as the model states it.
    *
    * @param options - `baseUrl` (the realm's) and `version`
@@ -1729,6 +1886,10 @@ class AuthnApi {
         // THE ANSWERS ARE JSON: `authn.ts`'s acts read this off the
         // response (`answersJson()`).
         res.locals.authnApi = true;
+        if (self.shapeRefused(req, res, op)) {
+          log.debug('Leaving ' + op.method + ' ' + op.path + '. Its shape.');
+          return;
+        }
         Promise.resolve((self as Json)[op.handler](req, res, op))
           .catch(function (e: Json) {
             log.debug("Caught in AuthnApi route: " +

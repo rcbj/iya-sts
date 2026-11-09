@@ -114,6 +114,10 @@ class PortalRuntime extends SpaClient {
   private nobody: Json;
   private t: Json;
   private formTable: Json;
+  // Each GET operation's declared query names (#1483), read with the table
+  // above: a page's address holds names only it means, and this API refuses
+  // a query name its operation does not declare.
+  private queryNames: Json;
   private view: Json;
   // The announcement banner's poller (#1086), once the person is known.
   private announcements: WebAnnouncements | null = null;
@@ -159,6 +163,7 @@ class PortalRuntime extends SpaClient {
     this.nobody = null;
     this.t = WebMessages.WebTranslator.fromData(null);
     this.formTable = null;
+    this.queryNames = null;
     this.view = null;
     this.flash = null;
     this.drawnAt = '';
@@ -642,13 +647,45 @@ class PortalRuntime extends SpaClient {
       return false;
     }
     const table: Json = {};
+    const queries: Json = {};
     (index.json.operations || []).forEach(function (op: Json) {
       if (op.mirrors) {
         table[op.mirrors] = op;
       }
+      if (op.method === 'GET' && Array.isArray(op.query)) {
+        queries[op.path] = op.query;
+      }
     });
     this.formTable = table;
+    this.queryNames = queries;
     return true;
+  }
+
+  /**
+   * The part of a page's query its operation takes (#1483): the operation
+   * refuses a name it does not declare, and an address holds others. With
+   * no table in hand, everything: the API says what it will not take.
+   *
+   * @param operation - the GET operation's path
+   * @param query - the page's query
+   * @returns the query to send
+   */
+  async operationQuery(operation: string, query: Json): Promise<Json> {
+    if (!Object.keys(query || {}).length) {
+      return query;
+    }
+    await this.ensureFormTable();
+    const declared = this.queryNames && this.queryNames[operation];
+    if (!declared) {
+      return query;
+    }
+    const kept: Json = {};
+    Object.keys(query).forEach(function (name) {
+      if (declared.indexOf(name) >= 0) {
+        kept[name] = query[name];
+      }
+    });
+    return kept;
   }
 
   // --- drawing -------------------------------------------------------------
@@ -855,7 +892,8 @@ class PortalRuntime extends SpaClient {
       this.drawView();
       return;
     }
-    const qs = new URLSearchParams(query).toString();
+    const qs = new URLSearchParams(await this.operationQuery(page.operation,
+                                                             query)).toString();
     const target = page.operation + (qs ? '?' + qs : '');
     // AN EMAILED LINK'S TOKEN IS IN THE FRAGMENT (#1454, ASVS 5.0.0 14.2.1), so
     // it is in no address a server or a log sees: it goes in a header.
@@ -1357,6 +1395,7 @@ class PortalRuntime extends SpaClient {
     this.me = null;
     this.nobody = null;
     this.formTable = null;
+    this.queryNames = null;
     this.view = null;
     this.flash = null;
     this.ownerToken = '';

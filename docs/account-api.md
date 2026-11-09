@@ -129,3 +129,13 @@ link names.
 - [Management API](management-api.md): the administrator's API, `/admin-api`.
 - [Signing out](signing-out.md): the portal's Sign out ends the sign-on
   session, and with it every token issued on it.
+
+## What a request may name
+
+Each operation takes the query parameters its entry in the OpenAPI document
+lists, and the headers it declares (`DPoP`, and `X-Requested-With`, which an
+Android WebView adds) or that a browser, proxy, CDN or tracing system adds. A
+query parameter it does not list, a value that does not fit a listed type, and
+any other custom header are each refused with a 400
+(`STS-ACCOUNT-0020`, `0021`, `0022`), naming the parameter or header and never
+its value. An empty value counts as absent.

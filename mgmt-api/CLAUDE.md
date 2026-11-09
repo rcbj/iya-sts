@@ -2901,7 +2901,7 @@ JSON example to replay. `tests/branding_api.js` holds the rows in process.
 wrapper in `registerRoutes()` refuses, before the handler and after the
 enums, a query name the operation does not declare (`STS-API-0142`), a value
 its type does not hold (`STS-API-0143`, `ClosedSets.checkQueryDeclared()`) and
-a custom header (`STS-API-0144`, `request_headers.ts`, which carries the
+a custom header (`STS-API-0144`, `common/request_headers.ts`, which carries the
 rule and the provider families). **Parsing is the handlers': `parseInt`-shaped
 integers, an empty value as absent, a repeat as each of its values, no range
 check, because the document clamps a page rather than refusing it.**

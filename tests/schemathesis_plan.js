@@ -521,6 +521,21 @@ function strictRequestSection(t) {
     "a path parameter is given a harmless value");
   t.equal(of("bare", "garbage-header")[0].headers["X-Sts-Garbage"],
     "%%%{{<garbage>}}~", "the garbage header is sent as the issue says");
+  t.check(of("paged", "unknown-parameter")[0].named === "sts_garbage" &&
+    of("paged", "wrong-type")[0].named === "page" &&
+    of("bare", "garbage-header")[0].named === "x-sts-garbage",
+    "every refusing probe names what the refusal has to name");
+  const zodPaged = kit.strictRequestProbes({ paths: {
+    "/account-api/paged": { get: { operationId: "zod", parameters: [
+      { name: "page", in: "query", schema: { anyOf: [
+        { type: "string", const: "" }, { type: "integer", minimum: 1 }] } }
+    ] } }
+  } }).filter(function (one) {
+    return one.kind === "wrong-type";
+  });
+  t.check(zodPaged.length === 1 && /\?page=abc$/.test(zodPaged[0].url),
+    "a zod integer (`anyOf` a string and an integer) is sent a word too " +
+    "(#1483)");
   [ ["unknown-parameter", 400, "", null],
     ["unknown-parameter", 200, "", "unknown-parameter answered 200, not 400"],
     ["wrong-type", 400, "", null],
@@ -538,6 +553,73 @@ function strictRequestSection(t) {
     t.equal(kit.strictRequestVerdict(one[0], one[1], one[2]), one[3],
       one[0] + " answered " + one[1] + " is " + one[3]);
   });
+  // A 400 that names something else is not the refusal (#1483): a pending
+  // id that does not exist answers 400 with or without the garbage.
+  t.equal(kit.strictRequestVerdict("unknown-parameter", 400,
+    '{"errors":["There is no sign-in waiting"]}', { named: "sts_garbage" }),
+    "unknown-parameter answered 400 and did not name sts_garbage",
+    "a 400 for the wrong reason is a miss");
+  t.equal(kit.strictRequestVerdict("unknown-parameter", 400,
+    '{"errors":["The query parameter \\"sts_garbage\\" is not one"]}',
+    { named: "sts_garbage" }), null, "a 400 naming the parameter passes");
+  t.equal(kit.strictRequestVerdict("garbage-header", 400,
+    '{"errors":["The request header \\"x-sts-garbage\\" is not one"]}',
+    { named: "x-sts-garbage" }), null, "a 400 naming the header passes");
+  // What the protocol surface is held to (#1483): no 5xx, no leaked code.
+  [ ["unknown-parameter", 200, "ignored", null],
+    ["garbage-header", 200, "ignored", null],
+    ["standard-header", 302, "", null],
+    ["unknown-parameter", 401, "", null],
+    ["unknown-parameter", 400, "bad", null],
+    ["unknown-parameter", 404, "Cannot GET", null],
+    ["unknown-parameter", 501, "Not Implemented", null],
+    ["unknown-parameter", 500, "x", "unknown-parameter answered 500"],
+    ["garbage-header", 503, "x", "garbage-header answered 503"],
+    ["garbage-header", 0, "no answer", "garbage-header answered 0"],
+    ["unknown-parameter", 400, '{"error":"STS-OAUTH-0171"}',
+      "a refusal carried an error code"]
+  ].forEach(function (one) {
+    t.equal(kit.strictRequestVerdict(one[0], one[1], one[2],
+      { tolerates: true }), one[3],
+      "protocol: " + one[0] + " answered " + one[1] + " is " + one[3]);
+  });
+  // Every surface says what its probes hold, and only the protocol one is
+  // tolerant; the service cell refuses like the realm's admin-api.
+  kit.SURFACES.forEach(function (surface) {
+    t.equal(surface.strict,
+      surface.key === "protocol" ? "tolerates" : "refuses",
+      surface.key + " is probed as " + surface.strict);
+  });
+  t.equal(kit.SERVICE_CELL.strict, "refuses",
+    "the service cell is probed as refuses");
+  // Sign-outs are not probed, and every exclusion carries its reason.
+  t.check(kit.PROTOCOL_PROBE_EXCLUSIONS.length >= 5 &&
+    kit.PROTOCOL_PROBE_EXCLUSIONS.every(function (one) {
+      return one.template && one.template.charAt(0) === "/" &&
+        one.reason && one.reason.length > 20;
+    }), "every protocol probe exclusion names a template and a reason");
+  const toleratedDoc = { paths: {
+    "/oauth2/logout": { get: { operationId: "out" } },
+    "/oauth2/token": { get: { operationId: "token" } }
+  } };
+  const tolerated = kit.strictRequestProbes(toleratedDoc, { tolerates: true });
+  t.check(tolerated.every(function (one) {
+    return one.path !== "/oauth2/logout";
+  }) && tolerated.some(function (one) {
+    return one.path === "/oauth2/token";
+  }), "the sign-out is held back from the probes and the rest are not");
+  t.check(kit.strictRequestProbes(toleratedDoc).some(function (one) {
+    return one.path === "/oauth2/logout";
+  }), "the exclusion is the protocol surface's alone");
+  // The fuzz proxy strips what Schemathesis stamps on every request, and a
+  // GET does not get a CSRF header its operation does not declare (#1483).
+  const proxy = fs.readFileSync(path.join(__dirname, "schemathesis",
+    "auth_proxy.js"), "utf8");
+  t.check(/if \(low\.indexOf\("x-schemathesis-"\) === 0\) \{/.test(proxy),
+    "the fuzz proxy does not forward X-Schemathesis-TestCaseId");
+  t.check(new RegExp("if \\(session\\.csrf && req\\.method !== \"GET\" && " +
+    "req\\.method !== \"HEAD\"\\)")
+    .test(proxy), "the proxy adds X-CSRF-Token to a POST and not to a GET");
   t.log.debug("Leaving strictRequestSection().");
 }
 

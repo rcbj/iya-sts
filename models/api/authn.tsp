@@ -191,6 +191,7 @@ import "../lib/api_lib.tsp";
 using IyaSts.ApiLib;
 
 @apiDocument(#{
+  `x-iya-every-operation`:#[#{`name`:"X-Requested-With",`in`:"header",`required`:false,`description`:"Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it.",`schema`:#{`type`:"string"}}],
   `openapi`:"3.1.0",
   `info`:#{
     `title`:"IYA STS Sign-in API",
@@ -215,7 +216,9 @@ namespace IyaSts.Api.Authn {
     `tags`:#["Sign-in"],
     `summary`:"Lists every operation of this API",
     `description`:"Each operation, its method and path, and the sign-in page or control it is the door of.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -272,7 +275,9 @@ op `getIndex`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Sign-in"],
     `summary`:"This API's OpenAPI document",
     `description`:"Generated from the operation table and its body schemas.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -404,7 +409,8 @@ op `getOpenApi`(`responses/200/content/application~1json/schema`: {
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchSignInExample"
       }
     ],
     `responses`:#{
@@ -502,7 +508,8 @@ op `getScreen`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchSignInExample"
       }
     ],
     `responses`:#{
@@ -615,6 +622,14 @@ op `getPartners`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -645,10 +660,11 @@ op `getPartners`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`username`:"nobody-example",`password`:"not-the-password"}}}},
     `x-mirrors`:"POST /authn/login"
   })
 op `signInWithPassword`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     `username`?: post_authn_api_pending__id__password_b_application_json_username_h11;
     @js(#{`maxLength`:1024}) `password`?: string;
@@ -782,6 +798,14 @@ op `signInWithPassword`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -812,10 +836,11 @@ op `signInWithPassword`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/login"
   })
 op `cancelSignIn`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -950,6 +975,14 @@ op `cancelSignIn`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -980,10 +1013,11 @@ op `cancelSignIn`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`remember_browser`:"0"}}}},
     `x-mirrors`:"POST /authn/login"
   })
 op `continueAnonymously`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     `remember_browser`?: post_authn_api_pending__id__anonymous_b_application_json_remember_browser_h19;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
@@ -1121,6 +1155,14 @@ op `continueAnonymously`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -1151,10 +1193,11 @@ op `continueAnonymously`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`remember_browser`:"0"}}}},
     `x-mirrors`:"POST /authn/login"
   })
 op `continueWithCertificate`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     `remember_browser`?: post_authn_api_pending__id__certificate_b_application_json_remember_browser_h21;
     @js(#{`maxLength`:64,`pattern`:"^[A-Za-z0-9]*$"}) `device_fp`?: string
@@ -1303,6 +1346,14 @@ op `continueWithCertificate`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -1333,10 +1384,11 @@ op `continueWithCertificate`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`username`:"nobody-example",`kind`:"code"}}}},
     `x-mirrors`:"POST /authn/login"
   })
 op `signInByEmail`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     `username`?: post_authn_api_pending__id__email_b_application_json_username_h24;
     `kind`: "code" | "link";
@@ -1468,6 +1520,14 @@ op `signInByEmail`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -1498,10 +1558,11 @@ op `signInByEmail`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/login"
   })
 op `passkeyOptions`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -1610,6 +1671,14 @@ op `passkeyOptions`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -1640,10 +1709,11 @@ op `passkeyOptions`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`credential`:"{}"}}}},
     `x-mirrors`:"POST /authn/login"
   })
 op `signInWithPasskey`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     @js(#{`maxLength`:65536}) `credential`?: string;
     `remember_browser`?: post_authn_api_pending__id__passkey_b_application_json_remember_browser_h28;
@@ -1774,7 +1844,8 @@ op `signInWithPasskey`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The password change step's id.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchSignInExample"
       }
     ],
     `responses`:#{
@@ -1835,6 +1906,14 @@ op `getPasswordChange`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The password change step's id.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -1865,10 +1944,11 @@ op `getPasswordChange`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`new_password`:"not",`confirm_password`:"equal"}}}},
     `x-mirrors`:"POST /authn/password-change"
   })
 op `changePassword`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     @js(#{`maxLength`:1024}) `new_password`?: string;
     @js(#{`maxLength`:1024}) `confirm_password`?: string
@@ -1997,6 +2077,14 @@ op `changePassword`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The password change step's id.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -2027,10 +2115,11 @@ op `changePassword`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/password-change"
   })
 op `startOverFromPasswordChange`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -2308,7 +2397,23 @@ op `startOverFromPasswordChange`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which of the step's pages; the step's own where left out.",
+        `example`:"totp"
+      },
+      #{
+        `name`:"key",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The passkey a person chose, where the passkey policy offers them one by one (#534)."
       }
     ],
     `responses`:#{
@@ -2329,6 +2434,8 @@ op `startOverFromPasswordChange`(`parameters/0/schema`: string,
     `x-mirrors`:"GET /authn/totp, /authn/webauthn, /authn/backup-code, /authn/password-factor, /authn/mfa-setup, /authn/email-code, /authn/email-link, /authn/email-link/open, /authn/post-login"
   })
 op `getStep`(`parameters/0/schema`: string,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["totp","webauthn","backup-code","password","setup","email-code","email-link","email-link-open","post-login"]}]}}) `parameters/1/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9_-]+$"}]}}) `parameters/2/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `csrf`?: string;
@@ -2533,6 +2640,14 @@ op `getStep`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -2563,10 +2678,11 @@ op `getStep`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`code`:"000000"}}}},
     `x-mirrors`:"POST /authn/totp"
   })
 op `checkCode`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:32}) `code`?: string},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -2692,6 +2808,14 @@ op `checkCode`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -2722,10 +2846,11 @@ op `checkCode`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`code`:"no-such-code"}}}},
     `x-mirrors`:"POST /authn/backup-code"
   })
 op `spendRecoveryCode`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:64}) `code`?: string},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -2851,6 +2976,14 @@ op `spendRecoveryCode`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -2881,10 +3014,11 @@ op `spendRecoveryCode`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`password`:"not-the-password"}}}},
     `x-mirrors`:"POST /authn/password-factor"
   })
 op `checkFactorPassword`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:1024}) `password`?: string},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -3102,6 +3236,14 @@ op `checkFactorPassword`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -3132,10 +3274,11 @@ op `checkFactorPassword`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`lane`:"classical"}}}},
     `x-mirrors`:"POST /authn/webauthn"
   })
 op `passkeyStepOptions`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     `key`?: post_authn_api_mfa__id__webauthn_options_b_application_json_key_h47;
     `lane`?: post_authn_api_mfa__id__webauthn_options_b_application_json_lane_h49;
@@ -3320,6 +3463,14 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -3350,10 +3501,11 @@ op `passkeyStepOptions`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`credential`:"{}"}}}},
     `x-mirrors`:"POST /authn/webauthn"
   })
 op `finishPasskeyStep`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:65536}) `credential`?: string},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -3479,6 +3631,14 @@ op `finishPasskeyStep`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -3509,10 +3669,11 @@ op `finishPasskeyStep`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/mfa-setup"
   })
 op `beginAppEnrolment`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -3638,6 +3799,14 @@ op `beginAppEnrolment`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -3668,10 +3837,11 @@ op `beginAppEnrolment`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`code`:"000000"}}}},
     `x-mirrors`:"POST /authn/mfa-setup"
   })
 op `confirmAppEnrolment`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:32}) `code`?: string},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -3797,6 +3967,14 @@ op `confirmAppEnrolment`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -3827,10 +4005,11 @@ op `confirmAppEnrolment`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/mfa-setup"
   })
 op `beginKeyEnrolment`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -3956,6 +4135,14 @@ op `beginKeyEnrolment`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -3986,10 +4173,11 @@ op `beginKeyEnrolment`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/mfa-setup"
   })
 op `ignoreOffer`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -4115,6 +4303,14 @@ op `ignoreOffer`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -4145,10 +4341,11 @@ op `ignoreOffer`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/post-login"
   })
 op `registerPostLoginPasskey`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -4274,6 +4471,14 @@ op `registerPostLoginPasskey`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -4304,10 +4509,11 @@ op `registerPostLoginPasskey`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/post-login"
   })
 op `skipPostLoginActivity`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -4433,6 +4639,14 @@ op `skipPostLoginActivity`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -4463,10 +4677,11 @@ op `skipPostLoginActivity`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`kind`:"code"}}}},
     `x-mirrors`:"POST /authn/email-code, /authn/email-link"
   })
 op `sendEmailedFactor`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {`kind`: "code" | "link"},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -4592,6 +4807,14 @@ op `sendEmailedFactor`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -4622,10 +4845,11 @@ op `sendEmailedFactor`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`code`:"000000"}}}},
     `x-mirrors`:"POST /authn/email-code"
   })
 op `checkEmailedCode`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`maxLength`:32}) `code`?: string},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -4762,6 +4986,14 @@ op `checkEmailedCode`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -4792,10 +5024,11 @@ op `checkEmailedCode`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`t`:"noSuchLinkTokenExample"}}}},
     `x-mirrors`:"POST /authn/email-link/open"
   })
 op `spendEmailedLink`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {`t`?: post_authn_api_mfa__id__email_link_open_b_application_json_t_h64},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -4921,6 +5154,14 @@ op `spendEmailedLink`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with.",
+        `schema`:null,
+        `example`:"noSuchStepExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -4951,10 +5192,11 @@ op `spendEmailedLink`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/totp, /authn/webauthn, /authn/backup-code, /authn/password-factor, /authn/mfa-setup, /authn/email-code, /authn/email-link, /authn/email-link/open"
   })
 op `startOver`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -5075,10 +5317,49 @@ op `startOver`(`parameters/0/schema`: string,
     `summary`:"What a wallet sign-in's start page needs",
     `description`:"Takes the start page's query — `authn` (a pending sign-in) or `mfa` (a second-factor step), `siop=1` for a self-issued ID Token, `enrol=1` to enrol one from a session (with `login_hint` naming which of the browser's accounts, and `did_act` one of a published DID's wallet acts, #1291) — and answers what is being started and `csrf`, after the refusals a start would meet. It creates nothing.\n\nThe door of the sign-in surface's `GET /authn/wallet`.",
     `parameters`:#[
-      #{`name`:"authn",`in`:"query",`required`:false,`schema`:null},
-      #{`name`:"mfa",`in`:"query",`required`:false,`schema`:null},
-      #{`name`:"siop",`in`:"query",`required`:false,`schema`:null},
-      #{`name`:"enrol",`in`:"query",`required`:false,`schema`:null}
+      #{
+        `name`:"authn",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"A pending sign-in.",
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"mfa",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"A second-factor step."
+      },
+      #{
+        `name`:"siop",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"`1` for a self-issued ID Token rather than a presentation."
+      },
+      #{
+        `name`:"enrol",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"`1` to enrol a key from a session rather than to sign in."
+      },
+      #{
+        `name`:"login_hint",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"Which of this browser's accounts an enrolment is for."
+      },
+      #{
+        `name`:"did_act",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"A published DID's wallet act, on an enrolment (#1291)."
+      }
     ],
     `responses`:#{
       `200`:#{
@@ -5125,10 +5406,12 @@ op `startOver`(`parameters/0/schema`: string,
     `security`:#[],
     `x-mirrors`:"GET /authn/wallet"
   })
-op `getWalletStart`(`parameters/0/schema`: string,
-  `parameters/1/schema`: string,
-  `parameters/2/schema`: string,
-  `parameters/3/schema`: string,
+op `getWalletStart`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096}]}}) `parameters/0/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096}]}}) `parameters/1/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["1"]}]}}) `parameters/2/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["1"]}]}}) `parameters/3/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096}]}}) `parameters/4/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096}]}}) `parameters/5/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `csrf`?: string;
@@ -5147,7 +5430,9 @@ op `getWalletStart`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/400/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -5167,7 +5452,9 @@ op `getWalletStart`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/401/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -5187,7 +5474,9 @@ op `getWalletStart`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/403/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -5207,7 +5496,9 @@ op `getWalletStart`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/404/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -5227,7 +5518,9 @@ op `getWalletStart`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/409/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -5247,7 +5540,9 @@ op `getWalletStart`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/410/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -5267,7 +5562,9 @@ op `getWalletStart`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/500/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -5287,7 +5584,9 @@ op `getWalletStart`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/503/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -5307,7 +5606,9 @@ op `getWalletStart`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
@@ -5392,7 +5693,15 @@ op `getWalletStart`(`parameters/0/schema`: string,
     `tags`:#["Sign-in"],
     `summary`:"Starts a wallet sign-in",
     `description`:"An OpenID4VP request bound to the pending sign-in (or the step, or the enrolment) and to this browser by the `sts_wallet_binding` cookie this answer sets; `go` names the wait page.\n\nThe door of the sign-in surface's `GET /authn/wallet`.\n\nSent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
-    `parameters`:#[],
+    `parameters`:#[
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+        `schema`:null
+      }
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -5444,10 +5753,11 @@ op `getWalletStart`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`authn`:"noSuchSignInExample"}}}},
     `x-mirrors`:"GET /authn/wallet"
   })
-op `startWalletSignIn`(`requestBody/content/application~1json/schema`: {
+op `startWalletSignIn`(`parameters/0/schema`: string,
+  `requestBody/content/application~1json/schema`: {
     `authn`?: post_authn_api_wallet_b_application_json_authn_h67;
     `mfa`?: post_authn_api_wallet_b_application_json_mfa_h70;
     `enrol`?: post_authn_api_wallet_b_application_json_enrol_h72;
@@ -5938,7 +6248,8 @@ op `startWalletSignIn`(`requestBody/content/application~1json/schema`: {
         `in`:"path",
         `required`:true,
         `description`:"The wallet sign-in's transaction: a bearer capability, answered to this browser only (its `sts_wallet_binding` cookie).",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchWalletStateExample"
       }
     ],
     `responses`:#{
@@ -6017,7 +6328,9 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/400/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -6049,7 +6362,9 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/401/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -6081,7 +6396,9 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/403/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -6113,7 +6430,9 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/404/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -6145,7 +6464,9 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/409/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -6177,7 +6498,9 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/410/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -6209,7 +6532,9 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/500/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -6241,7 +6566,9 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   `responses/503/content/application~1json/schema`: {
     `ok`?: boolean;
@@ -6273,7 +6600,9 @@ op `getWalletWait`(`parameters/0/schema`: string,
       `reissue`?: string
     };
     `next`?: "refused";
-    `errors`?: (string)[]
+    `errors`?: (string)[];
+    `error`?: string;
+    `error_description`?: string
   },
   @js(#{
     `description`:"A refusal or a failure, in English. No error code is ever in it."
@@ -6340,6 +6669,14 @@ op `getWalletWait`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The wallet sign-in's transaction: a bearer capability, answered to this browser only (its `sts_wallet_binding` cookie).",
+        `schema`:null,
+        `example`:"noSuchWalletStateExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -6394,10 +6731,11 @@ op `getWalletWait`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`authn`:"noSuchSignInExample"}}}},
     `x-mirrors`:"GET /authn/wallet/wait"
   })
 op `walletStatus`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     `authn`?: post_authn_api_wallet__state__status_b_application_json_authn_h95;
     `mfa`?: post_authn_api_wallet__state__status_b_application_json_mfa_h98;
@@ -6809,6 +7147,14 @@ op `walletStatus`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The wallet sign-in's transaction: a bearer capability, answered to this browser only (its `sts_wallet_binding` cookie).",
+        `schema`:null,
+        `example`:"noSuchWalletStateExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -6863,10 +7209,11 @@ op `walletStatus`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`authn`:"noSuchSignInExample",`response`:"{}"}}}},
     `x-mirrors`:"GET /authn/wallet/wait"
   })
 op `answerWalletDcApi`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {
     `authn`?: post_authn_api_wallet__state__dc_api_b_application_json_authn_h106;
     `mfa`?: post_authn_api_wallet__state__dc_api_b_application_json_mfa_h109;
@@ -7293,22 +7640,23 @@ op `answerWalletDcApi`(`parameters/0/schema`: string,
         `name`:"username",
         `in`:"query",
         `required`:false,
+        `schema`:null,
         `description`:"Whom the page is about, where naming somebody is open (development mode and `logout.anyUser`), or the caller's own name; the browser's session otherwise.",
-        `schema`:null
+        `example`:"nobody-example"
       },
       #{
         `name`:"account",
         `in`:"query",
         `required`:false,
-        `description`:"With authn.multipleAccounts on (#561): one of this browser's signed-in accounts, by its key.",
-        `schema`:null
+        `schema`:null,
+        `description`:"With authn.multipleAccounts on (#561): one of this browser's signed-in accounts, by its key."
       },
       #{
         `name`:"login_hint",
         `in`:"query",
         `required`:false,
-        `description`:"With authn.multipleAccounts on (#561): the account the sign-out's account step preselects.",
-        `schema`:null
+        `schema`:null,
+        `description`:"With authn.multipleAccounts on (#561): the account the sign-out's account step preselects."
       }
     ],
     `responses`:#{
@@ -7336,9 +7684,9 @@ op `answerWalletDcApi`(`parameters/0/schema`: string,
     `security`:#[],
     `x-mirrors`:"GET /logout"
   })
-op `getSignOut`(`parameters/0/schema`: string,
-  `parameters/1/schema`: string,
-  `parameters/2/schema`: string,
+op `getSignOut`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
+  @js(#{`minLength`:1,`maxLength`:600}) `parameters/1/schema`: string,
+  @js(#{`maxLength`:512}) `parameters/2/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `csrf`?: string;
@@ -7599,7 +7947,15 @@ op `getSignOut`(`parameters/0/schema`: string,
     `tags`:#["Sign-in"],
     `summary`:"Signs out: everything, or what was ticked",
     `description`:"A `scope` of `global`, or no selection, ends everything the person holds; `select` ends those rows only, each looked up again now. The answer is the result, or the signed-out document that carries what the browser must still do.\n\nThe door of the sign-in surface's `POST /logout`.\n\nSent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
-    `parameters`:#[],
+    `parameters`:#[
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+        `schema`:null
+      }
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -7635,10 +7991,11 @@ op `getSignOut`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`scope`:"selected",`select`:#["no-such-row"]}}}},
     `x-mirrors`:"POST /logout"
   })
-op `signOut`(`requestBody/content/application~1json/schema`: {
+op `signOut`(`parameters/0/schema`: string,
+  `requestBody/content/application~1json/schema`: {
     `scope`?: post_authn_api_logout_b_application_json_scope_h144;
     @js(#{`maxItems`:10000}) `select`?: (post_authn_api_logout_b_application_json_select_i_h145)[];
     `username`?: post_authn_api_logout_b_application_json_username_h148;
@@ -7884,22 +8241,23 @@ op `signOut`(`requestBody/content/application~1json/schema`: {
         `name`:"username",
         `in`:"query",
         `required`:false,
-        `description`:"Whom the page is about, where naming somebody is open (development mode and `logout.anyUser`), or the caller's own name; the browser's session otherwise.",
-        `schema`:null
+        `schema`:null,
+        `description`:"Whom the page is about, where naming somebody is open (development mode and `logout.anyUser`), or the caller's own name; the browser's session otherwise."
       },
       #{
         `name`:"account",
         `in`:"query",
         `required`:false,
-        `description`:"With authn.multipleAccounts on (#561): one of this browser's signed-in accounts, by its key.",
-        `schema`:null
+        `schema`:null,
+        `description`:"With authn.multipleAccounts on (#561): one of this browser's signed-in accounts, by its key."
       },
       #{
         `name`:"login_hint",
         `in`:"query",
         `required`:false,
+        `schema`:null,
         `description`:"With authn.multipleAccounts on (#561): the account the sign-out's account step preselects.",
-        `schema`:null
+        `example`:"nobody-example"
       }
     ],
     `responses`:#{
@@ -7919,9 +8277,9 @@ op `signOut`(`requestBody/content/application~1json/schema`: {
     `security`:#[],
     `x-mirrors`:"GET /logout/accounts"
   })
-op `getSignOutAccounts`(`parameters/0/schema`: string,
-  `parameters/1/schema`: string,
-  `parameters/2/schema`: string,
+op `getSignOutAccounts`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
+  @js(#{`minLength`:1,`maxLength`:600}) `parameters/1/schema`: string,
+  @js(#{`maxLength`:512}) `parameters/2/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `csrf`?: string;
@@ -7980,7 +8338,15 @@ op `getSignOutAccounts`(`parameters/0/schema`: string,
     `tags`:#["Sign-in"],
     `summary`:"Chooses the account to sign out, or every account",
     `description`:"An account's key answers `next: inventory` and the address of that person's sign-out page; `all` signs every account in this browser out — each person's own global sign-out — and answers as `POST /authn-api/logout` does. 409 for an account no longer signed in here.\n\nThe door of the sign-in surface's `POST /logout/accounts`.\n\nSent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
-    `parameters`:#[],
+    `parameters`:#[
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
+        `schema`:null
+      }
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -8016,10 +8382,11 @@ op `getSignOutAccounts`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`account`:"name:nobody-example"}}}},
     `x-mirrors`:"POST /logout/accounts"
   })
-op `chooseSignOutAccount`(`requestBody/content/application~1json/schema`: {@js(#{`minLength`:1,`maxLength`:600}) `account`: string},
+op `chooseSignOutAccount`(`parameters/0/schema`: string,
+  `requestBody/content/application~1json/schema`: {@js(#{`minLength`:1,`maxLength`:600}) `account`: string},
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `errors`?: (string)[];
@@ -8261,7 +8628,8 @@ op `chooseSignOutAccount`(`requestBody/content/application~1json/schema`: {@js(#
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchSignInExample"
       }
     ],
     `responses`:#{
@@ -8355,6 +8723,14 @@ op `getAccountChoice`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -8393,10 +8769,11 @@ op `getAccountChoice`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`account`:"name:nobody-example"}}}},
     `x-mirrors`:"POST /authn/accounts"
   })
 op `selectAccount`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`minLength`:1,`maxLength`:600}) `account`: string},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -8562,6 +8939,14 @@ op `selectAccount`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -8600,10 +8985,11 @@ op `selectAccount`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}},
     `x-mirrors`:"POST /authn/accounts"
   })
 op `useAnotherAccount`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -8769,6 +9155,14 @@ op `useAnotherAccount`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with.",
+        `schema`:null,
+        `example`:"noSuchSignInExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -8807,10 +9201,11 @@ op `useAnotherAccount`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`account`:"name:nobody-example"}}}},
     `x-mirrors`:"POST /authn/accounts"
   })
 op `forgetAccount`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   `requestBody/content/application~1json/schema`: {@js(#{`minLength`:1,`maxLength`:600}) `account`: string},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."
@@ -8971,27 +9366,7 @@ op `forgetAccount`(`parameters/0/schema`: string,
     `summary`:"The accounts this browser holds",
     `description`:"Each signed-in and remembered account of the browser's account set — key, subject, names, state, times, and whether it is the browser's default — never a sid or a token; `enabled` false and no accounts where authn.multipleAccounts is off. With it on, `anotherAccount` is where Sign in with another account starts: the user portal, asked to sign in again.",
     `parameters`:#[
-      #{
-        `name`:"username",
-        `in`:"query",
-        `required`:false,
-        `description`:"Whom the page is about, where naming somebody is open (development mode and `logout.anyUser`), or the caller's own name; the browser's session otherwise.",
-        `schema`:null
-      },
-      #{
-        `name`:"account",
-        `in`:"query",
-        `required`:false,
-        `description`:"With authn.multipleAccounts on (#561): one of this browser's signed-in accounts, by its key.",
-        `schema`:null
-      },
-      #{
-        `name`:"login_hint",
-        `in`:"query",
-        `required`:false,
-        `description`:"With authn.multipleAccounts on (#561): the account the sign-out's account step preselects.",
-        `schema`:null
-      }
+
     ],
     `responses`:#{
       `200`:#{
@@ -9009,10 +9384,7 @@ op `forgetAccount`(`parameters/0/schema`: string,
     },
     `security`:#[]
   })
-op `getAccounts`(`parameters/0/schema`: string,
-  `parameters/1/schema`: string,
-  `parameters/2/schema`: string,
-  `responses/200/content/application~1json/schema`: {
+op `getAccounts`(`responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `enabled`?: boolean;
     `accounts`?: ({
@@ -9086,7 +9458,8 @@ op `getAccounts`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending consent's id: a bearer capability, as the `consent` the consent screen was opened with, answered only to the browser whose session is the person asked.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchConsentExample"
       }
     ],
     `responses`:#{
@@ -9178,6 +9551,14 @@ op `getConsent`(`parameters/0/schema`: string,
         `in`:"path",
         `required`:true,
         `description`:"The pending consent's id: a bearer capability, as the `consent` the consent screen was opened with, answered only to the browser whose session is the person asked.",
+        `schema`:null,
+        `example`:"noSuchConsentExample"
+      },
+      #{
+        `name`:"X-CSRF-Token",
+        `in`:"header",
+        `required`:false,
+        `description`:"The `csrf` the page's view answered, bound to the browser's `sts_session` cookie.",
         `schema`:null
       }
     ],
@@ -9208,10 +9589,11 @@ op `getConsent`(`parameters/0/schema`: string,
       }
     },
     `security`:#[],
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}},
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"deny"}}}},
     `x-mirrors`:"POST /oauth2/consent"
   })
 op `answerConsent`(`parameters/0/schema`: string,
+  `parameters/1/schema`: string,
   @js(#{`$open`:true}) `requestBody/content/application~1json/schema`: {`action`: "allow" | "deny"},
   @js(#{
     `description`:"What the act leads to. `redirect`: go to `location` with a GET. `mfa`: the second-factor step `step`, whose page is `location`. `password-change`: the forced change, at `location`. `home-cell`: send `form` as it is. `stay`: draw the page again. `refused`: `errors` says why, in English; with `location` the sign-in screen says it, and with `end` the page ends."

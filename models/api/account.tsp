@@ -173,6 +173,7 @@ import "../lib/api_lib.tsp";
 using IyaSts.ApiLib;
 
 @apiDocument(#{
+  `x-iya-every-operation`:#[#{`name`:"DPoP",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires."},#{`name`:"X-Requested-With",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it."}],
   `openapi`:"3.1.0",
   `info`:#{
     `title`:"IYA STS Account API",
@@ -241,7 +242,9 @@ namespace IyaSts.Api.Account {
     `tags`:#["API"],
     `summary`:"Lists every operation of this API",
     `description`:"Each operation's method, path, access and the portal page or form it is the door of. The portal reads it to know which operation a form goes to.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -269,7 +272,8 @@ op `getIndex`(`responses/200/content/application~1json/schema`: {
       `tag`?: string;
       `access`?: string;
       `mirrors`?: get_account_api_r200_application_json_operations_i_mirrors_h1;
-      `summary`?: string
+      `summary`?: string;
+      `query`?: (string)[]
     })[]
   },
   @js(#{
@@ -297,7 +301,9 @@ op `getIndex`(`responses/200/content/application~1json/schema`: {
     `tags`:#["API"],
     `summary`:"This API's OpenAPI 3.1 document",
     `description`:"Built from the operation table at the moment it is asked, for the realm it is asked in. It carries no secret.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -359,7 +365,9 @@ op `getOpenApi`(`responses/200/content/application~1json/schema`: {
     `tags`:#["API"],
     `summary`:"Who is signed in, and what every page is drawn with",
     `description`:"The person (from the token, never the request), the realm, the language data — the negotiation, the portal's catalogs and the locales offered — and the build. The portal draws its frame from it.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -451,7 +459,15 @@ op `getMe`(`responses/200/content/application~1json/schema`: {
     `tags`:#["API"],
     `summary`:"Announcements for everybody signed in to the portal",
     `description`:"What an administrator broadcast to the user portal after `since` — the `now` this operation answered your tab's first ask with — within `ssf.announcementKeepS`, oldest first. With no `since` it answers only `now`, so a tab shows what arrived after it signed in. `everyMs` is how often to ask again.",
-    `parameters`:#[#{`name`:"since",`in`:"query",`required`:false,`schema`:null}],
+    `parameters`:#[
+      #{
+        `name`:"since",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:"0"
+      }
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -527,7 +543,9 @@ op `getAnnouncements`(@js(#{`pattern`:"^[0-9]{1,16}$"}) `parameters/0/schema`: s
     `tags`:#["API"],
     `summary`:"The language data a page for nobody is drawn with",
     `description`:"For the pages a person reaches with no sign-in — an activation or reset link, the forgot-password form, an address verification: the negotiation from the browser alone, the portal's catalogs, the offered locales and the build.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -658,7 +676,15 @@ op `getLocale`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Overview"],
     `summary`:"Who you are, this session, and how you sign in",
     `description`:"Your username, subject and directory entry's DN; when the sign-on session began, how it authenticated (amr, acr) and when it ends; every standard inetOrgPerson attribute your entry holds, from a fixed list (`directory`, null with no directory or no entry — then `session` carries what the sign-in said); a summary of your credentials (`mechanisms`); the language your entry holds with those offered (`language`); and the realm's custom attributes whose definition shows them on the portal, with your values and whether you may change them (`customAttributes`, empty with no entry).\n\nThe door of the portal's `GET /portal`.",
-    `parameters`:#[#{`name`:"done",`in`:"query",`required`:false,`schema`:null}],
+    `parameters`:#[
+      #{
+        `name`:"done",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:"example"
+      }
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -774,7 +800,9 @@ op `getOverview`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `tags`:#["Overview"],
     `summary`:"Sets or removes your preferred language",
     `description`:"Writes `preferredLanguage` on your own entry (RFC 2798), which ranks above the browser for every page this service draws for you, and sets the language cookie; an empty `lang` removes it and follows the browser. A tag no catalog answers is refused.\n\nThe door of the portal's `POST /portal/language`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -800,7 +828,7 @@ op `getOverview`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/language",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`lang`:""}}}}
   })
 op `setLanguage`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -850,7 +878,9 @@ op `setLanguage`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Overview"],
     `summary`:"Sets your profile photo",
     `description`:"Keeps `image`, a base64-encoded JPEG or PNG, as your photo: its metadata is removed, it gets a new random address, and the `picture` claim names that address from now on. The file's bytes decide its type, and the realm's limits are on the Overview's `photo.limits`.\n\nThe door of the portal's `POST /portal/photo`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -884,7 +914,7 @@ op `setLanguage`(`requestBody/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/photo",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`image`:"not-an-image"}}}}
   })
 op `setProfilePhoto`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -950,7 +980,9 @@ op `setProfilePhoto`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Overview"],
     `summary`:"Removes your profile photo",
     `description`:"Removes the image and the `picture` claim's address. A copy from a federation partner stays removed: the next sign-in through them does not bring it back.\n\nThe door of the portal's `POST /portal/photo/remove`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -1035,7 +1067,9 @@ op `removeProfilePhoto`(`responses/200/content/application~1json/schema`: {`ok`?
     `tags`:#["Overview"],
     `summary`:"Replaces your own values of one custom attribute",
     `description`:"Writes `values` as every value the realm's custom attribute `attribute` holds on your own entry, checked against its syntax; no values clears it. Only an attribute whose definition shows it on the portal and lets you edit it (`customAttributes[].editable` on the Overview). A value the realm's attribute policy requires may not be emptied in product mode.\n\nThe door of the portal's `POST /portal/attributes`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -1061,7 +1095,7 @@ op `removeProfilePhoto`(`responses/200/content/application~1json/schema`: {`ok`?
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/attributes",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`attribute`:"no-such-attribute",`values`:#[]}}}}
   })
 op `setCustomAttribute`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -1126,13 +1160,19 @@ op `setCustomAttribute`(`requestBody/content/application~1json/schema`: {
     `summary`:"The applications you can be signed in to",
     `description`:"Every registered application that is a sign-in destination (OpenID Connect, OAuth 2.0, SAML 2.0, SAML 1.1, WS-Federation) for which the issuance policy, asked as a dry run, permits you at least one family — its home page, the identity-provider-initiated sign-in links it offers (`launches`, each /launch/{app}?protocol=…), the families permitted and withheld. Twenty to a page; the counts of those refused and not evaluated are carried too.\n\nThe door of the portal's `GET /portal/applications`.",
     `parameters`:#[
-      #{`name`:"done",`in`:"query",`required`:false,`schema`:null},
+      #{
+        `name`:"done",
+        `in`:"query",
+        `required`:false,
+        `schema`:null
+      },
       #{
         `name`:"page",
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"The page of the list, 1 for the first."
+        `description`:"The page of the list, 1 for the first.",
+        `example`:1
       }
     ],
     `responses`:#{
@@ -1162,7 +1202,7 @@ op `setCustomAttribute`(`requestBody/content/application~1json/schema`: {
     `x-mirrors`:"GET /portal/applications"
   })
 op `getApplications`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
-  `parameters/1/schema`: get_account_api_applications_p1_h15,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/1/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `rows`?: ({
       `identifier`?: string;
@@ -1249,13 +1289,19 @@ op `getApplications`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `summary`:"The security events this portal was told about you",
     `description`:"The CAEP and RISC events this portal received as a Shared Signals receiver that are about you (an event it cannot tie to you is left out), twenty to a page, each with whether its signature verified and what this portal did with it; and whether events about your account are shared (RISC section 2.8, `participation`, null while RISC is off).\n\nThe door of the portal's `GET /portal/signals`.",
     `parameters`:#[
-      #{`name`:"done",`in`:"query",`required`:false,`schema`:null},
+      #{
+        `name`:"done",
+        `in`:"query",
+        `required`:false,
+        `schema`:null
+      },
       #{
         `name`:"page",
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"The page of the list, 1 for the first."
+        `description`:"The page of the list, 1 for the first.",
+        `example`:1
       }
     ],
     `responses`:#{
@@ -1285,7 +1331,7 @@ op `getApplications`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `x-mirrors`:"GET /portal/signals"
   })
 op `getSecurityActivity`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
-  `parameters/1/schema`: get_account_api_signals_p1_h19,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/1/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `incomplete`?: boolean;
     `rows`?: ({
@@ -1351,7 +1397,9 @@ op `getSecurityActivity`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `tags`:#["Security activity"],
     `summary`:"Stops, cancels stopping, or resumes sharing security events about you",
     `description`:"RISC 1.0 section 2.8's account-holder moves. Opting out takes effect only after risc.optOutDelayHours, and can be cancelled until then.\n\nThe door of the portal's `POST /portal/signals`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -1385,7 +1433,7 @@ op `getSecurityActivity`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/signals",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`move`:"optOutCancelled"}}}}
   })
 op `moveRiscParticipation`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -1468,7 +1516,8 @@ op `moveRiscParticipation`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"Which page of `rows`, newest first. Clamped to the last."
+        `description`:"Which page of `rows`, newest first. Clamped to the last.",
+        `example`:1
       }
     ],
     `responses`:#{
@@ -1497,7 +1546,7 @@ op `moveRiscParticipation`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/sign-ins"
   })
-op `getSignIns`(`parameters/0/schema`: get_account_api_sign_ins_p0_h24,
+op `getSignIns`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `days`?: numeric;
     `thisSession`?: string;
@@ -1567,7 +1616,9 @@ op `getSignIns`(`parameters/0/schema`: get_account_api_sign_ins_p0_h24,
     `tags`:#["Recent sign-ins"],
     `summary`:"Says whether a sign-in was you",
     `description`:"`confirm` is recorded, and lowers your standing only when said from another, low-risk session. `deny` puts your standing at HIGH: everything you hold is ended, this session included, and RISC is told the credential is compromised (`ended: true`).\n\nThe door of the portal's `POST /portal/sign-ins`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -1593,7 +1644,7 @@ op `getSignIns`(`parameters/0/schema`: get_account_api_sign_ins_p0_h24,
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/sign-ins",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"deny",`assessment`:"no-such-id"}}}}
   })
 op `answerSignIn`(`requestBody/content/application~1json/schema`: {
     @js(#{`description`:"`confirm`: this was me. `deny`: this was not me."}) `action`: "confirm" | "deny";
@@ -1682,7 +1733,15 @@ op `answerSignIn`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Consents"],
     `summary`:"What you have agreed each application may ask for",
     `description`:"One page (`paging`) of `groups`, one per application you have consented to, the newest first: its client_id, its name, and each scope with when you agreed (a GeneralizedTime). `administrative` is every scope an application's global consent answered for you that still stands, which is not yours to withdraw.\n\nThe door of the portal's `GET /portal/consents`.",
-    `parameters`:#[#{`name`:"page",`in`:"query",`required`:false,`schema`:null}],
+    `parameters`:#[
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      }
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -1709,7 +1768,7 @@ op `answerSignIn`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/consents"
   })
-op `getConsents`(`parameters/0/schema`: get_account_api_consents_p0_h31,
+op `getConsents`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `paging`?: {
       `page`?: integer;
@@ -1780,7 +1839,9 @@ op `getConsents`(`parameters/0/schema`: get_account_api_consents_p0_h31,
     `tags`:#["Consents"],
     `summary`:"Withdraws a consent of yours",
     `description`:"One scope (`action=scope`) or everything an application holds (`action=application`). Every token that application holds for you under it is revoked, and a refresh token granted before is refused even after you agree again. A consent that is not on your own entry is refused.\n\nThe door of the portal's `POST /portal/consents`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -1806,7 +1867,7 @@ op `getConsents`(`parameters/0/schema`: get_account_api_consents_p0_h31,
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/consents",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"scope",`client`:"no-such-id",`scope`:"no-such-id"}}}}
   })
 op `withdrawConsent`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -1935,7 +1996,15 @@ op `withdrawConsent`(`requestBody/content/application~1json/schema`: {
     `tags`:#["GNAP grants"],
     `summary`:"The GNAP grants you gave",
     `description`:"One page (`paging`) of `rows`: each grant whose resource owner you are — the client, its state or why it ended, its access rights (RFC 9635 objects or references), the tokens issued under it, when it was granted and until when, and whether you may revoke it. The same view an administrator's user page draws. Under cells, `cells` says when another cell may hold more.\n\nThe door of the portal's `GET /portal/gnap`.",
-    `parameters`:#[#{`name`:"page",`in`:"query",`required`:false,`schema`:null}],
+    `parameters`:#[
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      }
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -1962,7 +2031,7 @@ op `withdrawConsent`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/gnap"
   })
-op `getGnapGrants`(`parameters/0/schema`: get_account_api_gnap_p0_h37,
+op `getGnapGrants`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `user`?: string;
     `total`?: integer;
@@ -2113,7 +2182,9 @@ op `getGnapGrants`(`parameters/0/schema`: get_account_api_gnap_p0_h37,
     `tags`:#["GNAP grants"],
     `summary`:"Revokes a GNAP grant you gave",
     `description`:"The client's own RFC 9635 section 5.4 act, performed for you: every token issued under the grant stops working, the grant is finalized as revoked, and CAEP session-revoked is sent. A grant that is not yours is refused.\n\nThe door of the portal's `POST /portal/gnap`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -2139,7 +2210,7 @@ op `getGnapGrants`(`parameters/0/schema`: get_account_api_gnap_p0_h37,
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/gnap",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`grant`:"no-such-id"}}}}
   })
 op `revokeGnapGrant`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -2261,7 +2332,8 @@ op `revokeGnapGrant`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"Which page of `sent`, newest first. Clamped to the last."
+        `description`:"Which page of `sent`, newest first. Clamped to the last.",
+        `example`:1
       }
     ],
     `responses`:#{
@@ -2290,7 +2362,7 @@ op `revokeGnapGrant`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/email"
   })
-op `getEmail`(`parameters/0/schema`: get_account_api_email_p0_h79,
+op `getEmail`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `address`?: string;
     `verified`?: boolean;
@@ -2401,7 +2473,9 @@ op `getEmail`(`parameters/0/schema`: get_account_api_email_p0_h79,
     `tags`:#["Email"],
     `summary`:"Verifies your address, changes it, or saves your choices",
     `description`:"`verify` sends a verification link to your address; `change` sends one to a new address, which takes effect only when that link is used; `preferences` saves whether you are sent notifications. The two that send mail are rate limited. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/email`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -2431,7 +2505,7 @@ op `getEmail`(`parameters/0/schema`: get_account_api_email_p0_h79,
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/email",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"change",`address`:"not-an-address"}}}}
   })
 op `postEmail`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_email_b_application_json_action_h86;
@@ -2549,7 +2623,16 @@ op `postEmail`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"The username the link names."
+        `description`:"The username the link names.",
+        `example`:"nobody-example"
+      },
+      #{
+        `name`:"token",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The link's single-use secret.",
+        `example`:"no-such-token"
       }
     ],
     `responses`:#{
@@ -2574,7 +2657,8 @@ op `postEmail`(`requestBody/content/application~1json/schema`: {
     `x-access`:"link",
     `x-mirrors`:"GET /portal/verify-email"
   })
-op `getEmailVerification`(`parameters/0/schema`: get_account_api_verify_email_p0_h101,
+op `getEmailVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9._~+/=-]+$"}]}}) `parameters/1/schema`: unknown,
   `responses/200/content/application~1json/schema`: {`address`?: string; `username`?: string; `token`?: string},
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
@@ -2627,7 +2711,9 @@ op `getEmailVerification`(`parameters/0/schema`: get_account_api_verify_email_p0
     `tags`:#["Email"],
     `summary`:"Verifies the address an address verification link names",
     `description`:"Spends the link. Answers `view.verified`, or `view.refused`. Rate limited.\n\nThe door of the portal's `POST /portal/verify-email`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -2649,7 +2735,7 @@ op `getEmailVerification`(`parameters/0/schema`: get_account_api_verify_email_p0
     `security`:#[],
     `x-access`:"link",
     `x-mirrors`:"POST /portal/verify-email",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`user`:"nobody-example",`token`:"no-such-token"}}}}
   })
 op `verifyEmail`(`requestBody/content/application~1json/schema`: {
     `user`?: post_account_api_verify_email_b_application_json_user_h104;
@@ -2690,7 +2776,9 @@ op `verifyEmail`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Forgotten password"],
     `summary`:"Whether a forgotten password can be reset here, and how",
     `description`:"`threeFields` when a recovery code is asked for beside the account and its address. 404 where self-service reset is not offered (the setting off, no transport, or development mode).\n\nThe door of the portal's `GET /portal/forgot-password`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -2755,7 +2843,9 @@ op `getForgotPassword`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Forgotten password"],
     `summary`:"Asks for a password reset link",
     `description`:"Answers ONE SENTENCE whatever happened (`view.note`), before the work is done, so neither its words nor its timing say whether the account exists; the link, if any, is mailed to the address on the account. Rate limited per account and address.\n\nThe door of the portal's `POST /portal/forgot-password`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -2781,7 +2871,7 @@ op `getForgotPassword`(`responses/200/content/application~1json/schema`: {
     `security`:#[],
     `x-access`:"public",
     `x-mirrors`:"POST /portal/forgot-password",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`account`:"nobody-example"}}}}
   })
 op `requestPasswordReset`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -2857,7 +2947,9 @@ op `requestPasswordReset`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Sign-in names"],
     `summary`:"The other names you can sign in with",
     `description`:"`pseudonyms` are live. `pending` is an email that is not a name until its link is opened. `cap` is eight. `available` says whether an email can be mailed a link.\n\nThe door of the portal's `GET /portal/pseudonyms`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -2957,7 +3049,9 @@ op `getPseudonyms`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Sign-in names"],
     `summary`:"Adds, removes or cancels one sign-in name",
     `description`:"`add` of an email mails a link to `/portal/verify-pseudonym` and is not a name until that link is used, unless the address is already your verified one. Any other name is live at once. `remove` drops a live name. `cancel-pending` drops a name waiting for its link. Adding is rate limited. The link's secret is not in the answer.\n\nThe door of the portal's `POST /portal/pseudonyms`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -2991,7 +3085,7 @@ op `getPseudonyms`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/pseudonyms",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"remove",`value`:"nobody-example"}}}}
   })
 op `postPseudonyms`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_pseudonyms_b_application_json_action_h110;
@@ -3084,7 +3178,16 @@ op `postPseudonyms`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"The username the link names."
+        `description`:"The username the link names.",
+        `example`:"nobody-example"
+      },
+      #{
+        `name`:"token",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The link's single-use secret.",
+        `example`:"no-such-token"
       }
     ],
     `responses`:#{
@@ -3113,7 +3216,8 @@ op `postPseudonyms`(`requestBody/content/application~1json/schema`: {
     `x-access`:"link",
     `x-mirrors`:"GET /portal/verify-pseudonym"
   })
-op `getPseudonymVerification`(`parameters/0/schema`: get_account_api_verify_pseudonym_p0_h116,
+op `getPseudonymVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9._~+/=-]+$"}]}}) `parameters/1/schema`: unknown,
   `responses/200/content/application~1json/schema`: {`address`?: string; `username`?: string; `token`?: string},
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
@@ -3172,7 +3276,9 @@ op `getPseudonymVerification`(`parameters/0/schema`: get_account_api_verify_pseu
     `tags`:#["Sign-in names"],
     `summary`:"Confirms the sign-in name a link names",
     `description`:"Spends the link. Answers `view.verified`, or `view.refused`. Rate limited. Not the recovery-address link.\n\nThe door of the portal's `POST /portal/verify-pseudonym`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -3198,7 +3304,7 @@ op `getPseudonymVerification`(`parameters/0/schema`: get_account_api_verify_pseu
     `security`:#[],
     `x-access`:"link",
     `x-mirrors`:"POST /portal/verify-pseudonym",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`user`:"nobody-example",`token`:"no-such-token"}}}}
   })
 op `verifyPseudonym`(`requestBody/content/application~1json/schema`: {
     `user`?: post_account_api_verify_pseudonym_b_application_json_user_h119;
@@ -3273,7 +3379,8 @@ op `verifyPseudonym`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"Which page of `rows`. Clamped to the last."
+        `description`:"Which page of `rows`. Clamped to the last.",
+        `example`:1
       }
     ],
     `responses`:#{
@@ -3302,7 +3409,7 @@ op `verifyPseudonym`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/owned/roles"
   })
-op `getOwnedRoles`(`parameters/0/schema`: get_account_api_owned_roles_p0_h125,
+op `getOwnedRoles`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `kind`?: string;
     `paging`?: {
@@ -3389,7 +3496,8 @@ op `getOwnedRoles`(`parameters/0/schema`: get_account_api_owned_roles_p0_h125,
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"Which page of `rows`. Clamped to the last."
+        `description`:"Which page of `rows`. Clamped to the last.",
+        `example`:1
       }
     ],
     `responses`:#{
@@ -3418,7 +3526,7 @@ op `getOwnedRoles`(`parameters/0/schema`: get_account_api_owned_roles_p0_h125,
     `x-access`:"person",
     `x-mirrors`:"GET /portal/owned/groups"
   })
-op `getOwnedGroups`(`parameters/0/schema`: get_account_api_owned_groups_p0_h130,
+op `getOwnedGroups`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `kind`?: string;
     `paging`?: {
@@ -3505,7 +3613,8 @@ op `getOwnedGroups`(`parameters/0/schema`: get_account_api_owned_groups_p0_h130,
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"Which page of `rows`. Clamped to the last."
+        `description`:"Which page of `rows`. Clamped to the last.",
+        `example`:1
       }
     ],
     `responses`:#{
@@ -3534,7 +3643,7 @@ op `getOwnedGroups`(`parameters/0/schema`: get_account_api_owned_groups_p0_h130,
     `x-access`:"person",
     `x-mirrors`:"GET /portal/owned/service-accounts"
   })
-op `getOwnedServiceAccounts`(`parameters/0/schema`: get_account_api_owned_service_accounts_p0_h135,
+op `getOwnedServiceAccounts`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `kind`?: string;
     `paging`?: {
@@ -3621,7 +3730,8 @@ op `getOwnedServiceAccounts`(`parameters/0/schema`: get_account_api_owned_servic
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"Which page of `rows`. Clamped to the last."
+        `description`:"Which page of `rows`. Clamped to the last.",
+        `example`:1
       }
     ],
     `responses`:#{
@@ -3650,7 +3760,7 @@ op `getOwnedServiceAccounts`(`parameters/0/schema`: get_account_api_owned_servic
     `x-access`:"person",
     `x-mirrors`:"GET /portal/owned/applications"
   })
-op `getOwnedApplications`(`parameters/0/schema`: get_account_api_owned_applications_p0_h140,
+op `getOwnedApplications`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `kind`?: string;
     `paging`?: {
@@ -3719,7 +3829,15 @@ op `getOwnedApplications`(`parameters/0/schema`: get_account_api_owned_applicati
     `tags`:#["Sharing"],
     `summary`:"What you share through User-Managed Access",
     `description`:"One page (`paging`) of `resources`: the resources resource servers registered on your behalf, each with its scopes and the `shares` your sharing policy holds for it; the `custom` rules of your policy the share form did not write, with their ALFA; the `pending` requests waiting for your approval; and, where the realm allows it (`alfaEditing`), your whole policy as `alfa`. `enabled` says whether UMA is on.\n\nThe door of the portal's `GET /portal/shared`.",
-    `parameters`:#[#{`name`:"page",`in`:"query",`required`:false,`schema`:null}],
+    `parameters`:#[
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      }
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -3746,7 +3864,7 @@ op `getOwnedApplications`(`parameters/0/schema`: get_account_api_owned_applicati
     `x-access`:"person",
     `x-mirrors`:"GET /portal/shared"
   })
-op `getShared`(`parameters/0/schema`: get_account_api_shared_p0_h145,
+op `getShared`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `enabled`?: boolean;
@@ -3971,7 +4089,9 @@ op `getShared`(`parameters/0/schema`: get_account_api_shared_p0_h145,
     `tags`:#["Sharing"],
     `summary`:"Shares a resource, removes a share, or rewrites your policy",
     `description`:"`action` share writes one rule into your sharing policy: a resource of yours, its scopes, and who — a person, a group, anyone signed in to this realm, or anyone whose claim has a value — with an optional expiry, authentication level and \"ask me each time\". `approve` and `refuse` answer a request waiting for you; an approval adds a share for that person for a day. `unshare` removes one and revokes the requesting party tokens that carried it. `alfa` replaces the whole policy, where the realm allows it, and revokes every token over your resources. A resource or share that is not yours is refused.\n\nThe door of the portal's `POST /portal/shared`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -4001,7 +4121,7 @@ op `getShared`(`parameters/0/schema`: get_account_api_shared_p0_h145,
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/shared",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"unshare",`share`:"no-such-id"}}}}
   })
 op `actShared`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -4208,7 +4328,15 @@ op `actShared`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Sharing"],
     `summary`:"What others share with you",
     `description`:"One page (`paging`) of `rows`: each permission a requesting party token issued to you carries — the resource, its resource server and owner, the scopes, the client that holds the token, and until when.\n\nThe door of the portal's `GET /portal/shared-with-me`.",
-    `parameters`:#[#{`name`:"page",`in`:"query",`required`:false,`schema`:null}],
+    `parameters`:#[
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      }
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -4235,7 +4363,7 @@ op `actShared`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/shared-with-me"
   })
-op `getSharedWithMe`(`parameters/0/schema`: get_account_api_shared_with_me_p0_h189,
+op `getSharedWithMe`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `paging`?: {`page`?: integer; `pages`?: integer; `total`?: integer};
@@ -4290,7 +4418,9 @@ op `getSharedWithMe`(`parameters/0/schema`: get_account_api_shared_with_me_p0_h1
     `tags`:#["Password"],
     `summary`:"Whether you have a password, and what one must be",
     `description`:"`hasPassword`, and `rules`: the password policy's rules for you (`enforced` false in development mode, where nothing is checked).\n\nThe door of the portal's `GET /portal/password`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -4362,7 +4492,9 @@ op `getPassword`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Password"],
     `summary`:"Changes your password",
     `description`:"Re-proves the current password (rate limited, in the budget the Kerberos keytab shares), screens the new one against breached passwords, applies the password policy, and tells your relying parties over CAEP. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/password`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -4392,7 +4524,7 @@ op `getPassword`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/password",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`current`:"not-the-password",`next`:"not",`confirm`:"equal"}}}}
   })
 op `changePassword`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -4543,7 +4675,9 @@ op `changePassword`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Passkeys"],
     `summary`:"Your passkeys, and adding one",
     `description`:"Each passkey you hold (`keys`), grouped `device` or `security-key`, with its name, provider, dates, algorithm, what its attestation proved and whether the realm's passkey policy refuses it at sign-in. `enrol` says whether you may add one and, while a registration is waiting, the ceremony to run (`enrol.pending`) and the lanes a passkey may be created in (`enrol.lanes`, #643). `signals` is the WebAuthn Signal API's data, one entry per lane whose user handle you hold.\n\nThe door of the portal's `GET /portal/keys`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -4890,7 +5024,9 @@ op `getKeys`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Passkeys"],
     `summary`:"Begins, finishes or cancels adding a passkey",
     `description`:"`begin` mints a challenge and holds it (the policy and the `lane`, #643, checked at the door; `algorithms: classical`, #944, the classical retry, refused where the realm forbids a classical passkey); `finish` verifies the browser's registration with the sign-in screen's address rules and answers `go` naming the new passkey; `cancel` drops the waiting one. A refusal carries the page's `view`, except a browser error reported with its own `capabilities` property while the classical retry is offered (#961): that enrolment stays and the answer carries no view. `role` is accepted and ignored since #1135: a passkey carries no role, and the realm decides how every key may be used. `enrol.allowed` says whether the realm accepts a new passkey for any use.\n\nThe door of the portal's `POST /portal/keys`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -4920,7 +5056,7 @@ op `getKeys`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/keys",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"cancel"}}}}
   })
 op `enrolKey`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_keys_b_application_json_action_h198;
@@ -5166,7 +5302,9 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Passkeys"],
     `summary`:"Removes one of your passkeys",
     `description`:"Refused where it would leave you no way to sign in. Your relying parties are told over CAEP, and every session the passkey signed in ends (`sessionsEnded` counts them, #722); your other sessions stay.\n\nThe door of the portal's `POST /portal/remove-key`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -5192,7 +5330,7 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/remove-key",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`credentialId`:"no-such-id"}}}}
   })
 op `removeKey`(`requestBody/content/application~1json/schema`: {
     `credentialId`?: post_account_api_keys_remove_b_application_json_credentialId_h226
@@ -5385,7 +5523,9 @@ op `removeKey`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Passkeys"],
     `summary`:"Renames one of your passkeys",
     `description`:"At most 60 characters, no control characters; an empty name puts the default back.\n\nThe door of the portal's `POST /portal/rename-key`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -5411,7 +5551,7 @@ op `removeKey`(`requestBody/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/rename-key",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`credentialId`:"no-such-id",`label`:"example"}}}}
   })
 op `renameKey`(`requestBody/content/application~1json/schema`: {
     `credentialId`?: post_account_api_keys_rename_b_application_json_credentialId_h236;
@@ -5573,7 +5713,9 @@ op `renameKey`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Authenticator app"],
     `summary`:"Your authenticator app, emailed factor and recovery codes",
     `description`:"`totp`: whether an authenticator app is set up (and its algorithm, digits, period, when set up and last used) and whether one is offered. `setup`: an enrolment in progress — the QR code as a `data:` image, the secret grouped for typing, the issuer and the parameters — derived from the pending secret on every call. `doors`: the password-only doors that refuse your own password. `emailFactor`: the emailed second factor, or null where none is offered. `codes`: your recovery codes' state — never the codes, of which only hashes are stored.\n\nThe door of the portal's `GET /portal/mfa`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -5897,7 +6039,9 @@ op `getMfa`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Authenticator app"],
     `summary`:"Sets up, confirms or removes your second factors",
     `description`:"`start` mints a secret and holds it (ask the view for the QR code); `confirm` checks a code from the app (rate limited) and enrols it; `remove` takes it off, and ends every session its codes signed in (`sessionsEnded`, #722). `generate-codes` answers a set of recovery codes ONCE, in `view.fresh`, and stores nothing; `confirm-codes` stores their hashes; `discard-codes` throws the pending set away. `email-factor-on` (with `kind`) and `email-factor-off` opt in and out of the emailed second factor. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/mfa`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -5927,7 +6071,7 @@ op `getMfa`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/mfa",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"confirm",`code`:"000000"}}}}
   })
 op `changeMfa`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_mfa_b_application_json_action_h255;
@@ -6125,7 +6269,9 @@ op `changeMfa`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Signing keys"],
     `summary`:"Your signing key pairs and TLS client certificates",
     `description`:"`profiles`: RFC 7523's JWT and RFC 7522's SAML key pairs — for each, `held.keys` (every key pair you hold, newest first: its `handle` — kid or thumbprint —, label, state, expiry and certificate), the issuers you may assert as, and `atCap` (you hold `maxPerPerson` valid ones, `pki.personSigningKeyMax`). `tls`: your TLS client certificates, where one signs you in, and what the form offers. `offered` (`pki.personSelfService`) and `issuable` (a certificate authority exists) say whether you may generate. No private key is ever in this answer.\n\nThe door of the portal's `GET /portal/signing-key`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -6535,7 +6681,9 @@ op `getSigningKeys`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Signing keys"],
     `summary`:"Generates or revokes a signing key or TLS certificate",
     `description`:"`generate` ADDS a key pair for `purpose` from this realm's Issuing CA, named by `label` (refused at the cap); `revoke` revokes one of yours by `handle`, with `reason`: its certificate goes on the CRL and the key stops being accepted. `generate-tls-client` issues a TLS client certificate; `revoke-tls-client` revokes one of yours. Both generations answer the private key (unencrypted PKCS#8 PEM) and the certificate chain ONCE, in `view.fresh.files.key` and `view.fresh.files.chain` (base64). Both generations are refused (403) where self-service is off, and rate limited. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/signing-key`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -6569,7 +6717,7 @@ op `getSigningKeys`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/signing-key",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"revoke",`handle`:"no-such-id"}}}}
   })
 op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_signing_key_b_application_json_action_h291;
@@ -6964,7 +7112,9 @@ op `changeSigningKeys`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Certificates"],
     `summary`:"Your certificates and the enrollment credentials you hold",
     `description`:"The certificates ACME, EST and SCEP issued for your entry, your ACME account binding keys and SCEP challenge passwords (never their secrets), the EST and SCEP profiles you may ask for, the host names registered on your entry, and the addresses of each family in this realm. A family turned off is null.\n\nThe door of the portal's `GET /portal/certificates`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -7710,7 +7860,9 @@ op `getCertificates`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Certificates"],
     `summary`:"Makes or deletes an enrollment credential, or revokes a certificate",
     `description`:"`create-eab` and `create-challenge` (rate limited) make an ACME account binding key or a SCEP challenge password for your entry; its secret is in the answer's `view.fresh`, ONCE. `delete-eab` and `delete-challenge` remove an unused one of yours; `revoke` revokes a certificate issued for you. Anything that is not yours is answered as not found.\n\nThe door of the portal's `POST /portal/certificates`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -7756,7 +7908,7 @@ op `getCertificates`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/certificates",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"delete-eab",`kid`:"no-such-id"}}}}
   })
 op `changeCertificates`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_certificates_b_application_json_action_h315;
@@ -8222,7 +8374,9 @@ op `changeCertificates`(`requestBody/content/application~1json/schema`: {
     `tags`:#["App passwords"],
     `summary`:"Your app passwords, and the doors that need one",
     `description`:"Which of the five password-only doors refuse your own password (`doors`), the door table, the app passwords you hold (never their values), and whether making one is on.\n\nThe door of the portal's `GET /portal/app-passwords`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -8377,7 +8531,9 @@ op `getAppPasswords`(`responses/200/content/application~1json/schema`: {
     `tags`:#["App passwords"],
     `summary`:"Makes or revokes one of your app passwords",
     `description`:"`create` (rate limited) makes one for the doors whose `door_<id>` is on; the password is in the answer's `view.fresh`, ONCE. `revoke` ends the one `id` names; an id that is not yours is answered as not found.\n\nThe door of the portal's `POST /portal/app-passwords`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -8411,7 +8567,7 @@ op `getAppPasswords`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/app-passwords",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"revoke",`id`:"NOSUCHID"}}}}
   })
 op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_app_passwords_b_application_json_action_h377;
@@ -8594,7 +8750,9 @@ op `changeAppPasswords`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Kerberos"],
     `summary`:"Your Kerberos principal and its keys",
     `description`:"Whether this realm has a KDC and you are a principal in it, the principal, and in product mode the keys' kvno and encryption types; `disabled` for an account no keytab is made for.\n\nThe door of the portal's `GET /portal/kerberos`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -8740,7 +8898,9 @@ op `getKerberos`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Kerberos"],
     `summary`:"Makes you a keytab from your own password",
     `description`:"Re-proves the password (rate limited in the budget the password change shares), derives the keys from it and checks them against the KDC's. The keytab is in the answer's `view.made`, base64, ONCE: nothing can show it again. Nothing about the account changes.\n\nThe door of the portal's `POST /portal/kerberos`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -8770,7 +8930,7 @@ op `getKerberos`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/kerberos",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"keytab",`current`:"not-the-password"}}}}
   })
 op `makeKeytab`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_kerberos_b_application_json_action_h399;
@@ -8881,7 +9041,9 @@ op `makeKeytab`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Who may act for you"],
     `summary`:"Who may act for you",
     `description`:"`mayAct`, the DN named in your entry's stsMayAct (every access token about you carries it as RFC 8693 may_act), `delegate.kind` (`person` or `application`, null where the DN names no entry any more), and `notDelegated`, whether your account refuses delegation.\n\nThe door of the portal's `GET /portal/delegate`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -8968,7 +9130,9 @@ op `getDelegate`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Who may act for you"],
     `summary`:"Names, or clears, who may act for you",
     `description`:"Writes stsMayAct on your own entry: a person or an application of this realm, by DN. A token exchange presenting a token about you is then refused for any other actor.\n\nThe door of the portal's `POST /portal/delegate`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -8994,7 +9158,7 @@ op `getDelegate`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/delegate",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"clear"}}}}
   })
 op `setDelegate`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_delegate_b_application_json_action_h408;
@@ -9053,7 +9217,8 @@ op `setDelegate`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:true,
         `schema`:null,
-        `description`:"Part of a username (`uid`), at least three characters. Matched as a contains against the RDN value of the people in this realm's `ou=users`."
+        `description`:"Part of a username (`uid`), at least three characters. Matched as a contains against the RDN value of the people in this realm's `ou=users`.",
+        `example`:"nob"
       }
     ],
     `responses`:#{
@@ -9289,7 +9454,8 @@ op `findDelegateCandidates`(@js(#{`maxLength`:256}) `parameters/0/schema`: strin
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"`1` when the wallet sign-in has just enrolled a subject."
+        `description`:"`1` when the wallet sign-in has just enrolled a subject.",
+        `example`:"1"
       },
       #{
         `name`:"did",
@@ -9336,9 +9502,9 @@ op `findDelegateCandidates`(@js(#{`maxLength`:256}) `parameters/0/schema`: strin
     `x-access`:"person",
     `x-mirrors`:"GET /portal/self-issued"
   })
-op `getSelfIssued`(`parameters/0/schema`: get_account_api_self_issued_p0_h411,
-  `parameters/1/schema`: get_account_api_self_issued_p1_h413,
-  `parameters/2/schema`: get_account_api_self_issued_p2_h416,
+op `getSelfIssued`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["1"]}]}}) `parameters/0/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`enum`:#["published","authorized","changed"]}]}}) `parameters/1/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`pattern`:"^[A-Za-z0-9_-]{22}(?:[A-Za-z0-9_-]{12})?$"}]}}) `parameters/2/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `enabled`?: boolean;
     `turnOn`?: get_account_api_self_issued_r200_application_json_turnOn_h417;
@@ -9635,7 +9801,9 @@ op `getSelfIssued`(`parameters/0/schema`: get_account_api_self_issued_p0_h411,
     `tags`:#["Self-issued IDs"],
     `summary`:"Removes a self-issued subject of yours, or marks one as your preferred DID",
     `description`:"`remove` (the default): the subject no longer signs you in. One that is not enrolled for you is refused. `prefer` (#693): marks one DID you PROVED with your wallet as your preferred one — the one a client you consent to may be told as the `did` claim, where the realm releases it (`oauth2.didClaim`); a subject an administrator added, or a JWK thumbprint, is refused (STS-PORTAL-0615). `unprefer` clears the mark. Removing the preferred subject clears it too.\n\nThe door of the portal's `POST /portal/self-issued`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -9661,7 +9829,7 @@ op `getSelfIssued`(`parameters/0/schema`: get_account_api_self_issued_p0_h411,
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/self-issued",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"remove",`subject`:"did:jwk:no-such-subject"}}}}
   })
 op `removeSelfIssued`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_self_issued_b_application_json_action_h422;
@@ -9777,7 +9945,8 @@ op `removeSelfIssued`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"One of your enrolled self-issued subjects: a did:jwk or a did:key. Left out, the page says to choose one."
+        `description`:"One of your enrolled self-issued subjects: a did:jwk or a did:key. Left out, the page says to choose one.",
+        `example`:"did:jwk:no-such-subject"
       }
     ],
     `responses`:#{
@@ -9810,7 +9979,7 @@ op `removeSelfIssued`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/self-issued/did"
   })
-op `getSelfIssuedDidDocument`(`parameters/0/schema`: get_account_api_self_issued_did_p0_h433,
+op `getSelfIssuedDidDocument`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`maxLength`:2048}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `ok`?: boolean;
     `subject`?: string;
@@ -10093,7 +10262,9 @@ op `getSelfIssuedDidDocument`(`parameters/0/schema`: get_account_api_self_issued
     `tags`:#["Self-issued IDs"],
     `summary`:"Publishes a did:web for you, changes its key, or deactivates it",
     `description`:"A did:web this realm publishes for you (#1291), where it does (`did.personPublishing`). `publish`: a new DID whose key this realm generates — kept sealed in `realm` custody, or answered ONCE as `view.fresh.file` (a private JWK) in `download` custody and never kept. In `wallet` custody a DID is published, and its key changed, by proving keys with your wallet at /authn/wallet?siop=1&enrol=1&did_act=…, and this act refuses those (STS-VC-0173). `add-key` and `rotate-key` of a `realm`-custody DID append a version with a newly generated key, beside or instead of the current ones. `deactivate` ends one: its address answers 410 Gone for good, its history stays resolvable, and it no longer signs you in, nor is it preferred or released. Refusals carry the library's code (STS-VC-0167 to STS-VC-0176).\n\nThe door of the portal's `POST /portal/self-issued/dids`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -10119,7 +10290,7 @@ op `getSelfIssuedDidDocument`(`parameters/0/schema`: get_account_api_self_issued
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/self-issued/dids",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"deactivate",`rid`:"AAAAAAAAAAAAAAAAAAAAAA"}}}}
   })
 op `actOnPublishedDid`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -10265,7 +10436,8 @@ op `actOnPublishedDid`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"Which page of `issued`, newest first. Clamped to the last."
+        `description`:"Which page of `issued`, newest first. Clamped to the last.",
+        `example`:1
       }
     ],
     `responses`:#{
@@ -10294,7 +10466,7 @@ op `actOnPublishedDid`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/wallet"
   })
-op `getOfferableCredentials`(`parameters/0/schema`: get_account_api_credentials_offerable_p0_h447,
+op `getOfferableCredentials`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `configurations`?: ({
       `id`?: string;
@@ -10514,7 +10686,9 @@ op `getOfferableCredentials`(`parameters/0/schema`: get_account_api_credentials_
     `tags`:#["Wallet"],
     `summary`:"Makes a Credential Offer for your own wallet",
     `description`:"A pre-authorized Credential Offer (OpenID4VCI section 4.1, Appendix H.2 or H.3) of one configuration, about YOU — the token's person; nobody else can be named. Answered once, in place: `offer.credentialOffer`, the offer by value (`offer.byValue.offerUri`, an `openid-credential-offer://` URI, and `walletUrl`, the configured web wallet's link) and by reference (`offer.byReference`, whose `offerUri` is short enough for a QR code, e.g. `openid-credential-offer://?credential_offer_uri=https%3A%2F%2Fsts.example%2Foid4vci%2Fcredential-offer%2F3q2-7w...`), when the offer and its code stop being honoured (`expiresAt`), and the Transaction Code (`txCode`, e.g. `40317`) the wallet will ask for — shown to you, never carried in the offer. The offer is made on the sign-on session your token was issued on, which is reported over CAEP as session-presented (OpenID4VCI). The same `offer` is in `view`, for the page. `signingAlg`, optional, is the algorithm the credential is signed with — one of the configuration's `signingAlgs` in the GET, the post-quantum ML-DSA, SLH-DSA and composite drafts among them for the JOSE formats; left out, the configured default.\n\nThe door of the portal's `POST /portal/wallet`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -10540,7 +10714,7 @@ op `getOfferableCredentials`(`parameters/0/schema`: get_account_api_credentials_
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/wallet",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`configuration`:"no-such-id",`mode`:"cross-device"}}}}
   })
 op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -10893,7 +11067,9 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Wallet"],
     `summary`:"Removes a credential issued to you: every copy, or one",
     `description`:"The credential named by its `id` is revoked. An issuance's `id` (from `issued`) names every copy of it — with batch issuance one issuance gives your wallet several copies, each bound to a different key — and removes each copy still good; a copy's `id` (from that issuance's `copies`) removes that copy alone and leaves the others as they are. Each copy removed has its Token Status List entry set INVALID, which is final and what a verifier reads, is marked revoked in the issued register and no longer signs you in; your relying parties are told once over CAEP (credential-change, revoke). It is NOT deleted from your wallet: neither OpenID4VP nor OpenID4VCI lets an issuer do that, so delete it in the wallet yourself. Only a credential of yours can be named; removing one already removed is answered as done. `scope` says what the id named and `removed` how many copies this act removed; the page's `view` is in the answer.\n\nThe door of the portal's `POST /portal/remove-wallet-credential`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -10919,7 +11095,7 @@ op `createCredentialOffer`(`requestBody/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/remove-wallet-credential",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`id`:"no-such-id"}}}}
   })
 op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -11144,7 +11320,9 @@ op `removeIssuedCredential`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Devices"],
     `summary`:"Your devices, and how to register one",
     `description`:"Each device you own: its applications, whether its Native SSO secret is live, its keys and their attestation, how it was registered and when it was last used. Then the key-proof step (`proof`: the challenge held, with the `audience` and `proofTyp` a proof names), the passkeys built into a device that can be linked (`link`) or the link ceremony armed (`linking`), and whether this browser may be remembered.\n\nThe door of the portal's `GET /portal/devices`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -11276,7 +11454,9 @@ op `getDevices`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Devices"],
     `summary`:"Registers, links, remembers or removes a device",
     `description`:"`challenge` then `prove` registers a device by a key proof (or an App Attest object); `link-begin` then `link-finish` links a passkey built into it by a fresh assertion; `remember-browser` remembers this browser (a cookie on the answer); `remove` removes a device and its Native SSO secret. A refusal carries the page's `view`.\n\nThe door of the portal's `POST /portal/devices`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -11302,7 +11482,7 @@ op `getDevices`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/devices",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"remove",`id`:"no-such-id"}}}}
   })
 op `actOnDevices`(`requestBody/content/application~1json/schema`: {
     `action`?: post_account_api_devices_b_application_json_action_h520;
@@ -11406,7 +11586,9 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Devices"],
     `summary`:"A key-proof challenge, for a device app",
     `description`:"Issues a challenge bound to the sign-on session this token was issued on: `{ ok, challenge, audience, typ, expires_at, proof_endpoint }`. The device signs a JWS of type `typ` over `{ nonce: challenge, aud: audience, iat }` with the key it registers, and posts it to `proof_endpoint`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -11431,7 +11613,7 @@ op `actOnDevices`(`requestBody/content/application~1json/schema`: {
     },
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`purpose`:"key"}}}}
   })
 op `deviceChallenge`(`requestBody/content/application~1json/schema`: {
     @js(#{`description`:"What the challenge is for; `key`, the only one."}) `purpose`?: "key"
@@ -11913,7 +12095,9 @@ op `deviceChallenge`(`requestBody/content/application~1json/schema`: {
     `tags`:#["Devices"],
     `summary`:"A device app's key proof",
     `description`:"Answers a challenge with a key proof or an Apple App Attest object, registering the device (or adding the key to `device_id`). Answers 201 `{ ok, device, key }`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -11942,7 +12126,7 @@ op `deviceChallenge`(`requestBody/content/application~1json/schema`: {
     },
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`challenge`:"no-such-id",`proof`:"not-a-proof"}}}}
   })
 op `deviceProof`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -12043,7 +12227,8 @@ op `deviceProof`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"A CIBA request id: answered `stepUp`, the sign-in again its acr values need."
+        `description`:"A CIBA request id: answered `stepUp`, the sign-in again its acr values need.",
+        `example`:"no-such-id"
       },
       #{
         `name`:"gnapstepup",
@@ -12155,7 +12340,9 @@ op `getSignInRequests`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
     `tags`:#["Sign-in requests"],
     `summary`:"Sets your user code, or answers a request",
     `description`:"A JSON body: `action` — `set-code` (with `code`), `clear-code`, `approve` / `deny` (with the CIBA request's `id`), or `gnap-approve` / `gnap-deny` (with the GNAP request's `id`, the ticked `right` values, `subject: \"yes\"`, and any `lim_t<k>r<r>_<member>` limit controls lowered). An approval stronger than the sign-on session proved is refused 403 with `stepUp`.\n\nThe door of the portal's `POST /portal/ciba`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -12181,7 +12368,7 @@ op `getSignInRequests`(@js(#{`maxLength`:256}) `parameters/0/schema`: string,
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/ciba",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"deny",`id`:"no-such-id"}}}}
   })
 op `answerSignInRequest`(@js(#{
     `patternProperties`:#{
@@ -12263,7 +12450,9 @@ op `answerSignInRequest`(@js(#{
     `tags`:#["Access requests"],
     `summary`:"The AuthZEN access requests waiting for you to decide",
     `description`:"The pending access requests (#1180) whose denying policy named you an approver — its approver role, its approver group, or the application's owners — and that the access-control policy lets you decide: each with who it is about, what it asks to do to what, through which PEP and application, and until when it waits. `enabled` is false where the realm has the profile off.\n\nThe door of the portal's `GET /portal/access-requests`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -12393,7 +12582,9 @@ op `getAccessRequests`(`responses/200/content/application~1json/schema`: {
     `tags`:#["Access requests"],
     `summary`:"Approves or denies an AuthZEN access request",
     `description`:"Decides one request as you, after the access-control policy (action approve-access-request on resource authzen-access-request) said you may: an approval is handed to the PEP to carry on its next evaluation, which the realm's policy decides afresh; a denial ends the request. Refused for a request you may not decide, your own included where the policy forbids self-approval, and for one no longer pending.\n\nThe door of the portal's `POST /portal/access-requests`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -12419,7 +12610,7 @@ op `getAccessRequests`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/access-requests",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`request`:"no-such-id",`action`:"deny"}}}}
   })
 op `decideAccessRequest`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -12545,7 +12736,8 @@ op `decideAccessRequest`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"The code the device shows; brings up its request."
+        `description`:"The code the device shows; brings up its request.",
+        `example`:"NOSUCHCODE"
       }
     ],
     `responses`:#{
@@ -12673,7 +12865,9 @@ op `getDeviceRequest`(@js(#{`maxLength`:32}) `parameters/0/schema`: string,
     `tags`:#["Sign in a device"],
     `summary`:"Approves or denies a device sign-in",
     `description`:"An approval issues the device tokens for you, on the sign-on session this token was issued on, which ends them when it ends.\n\nThe door of the portal's `POST /portal/device`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -12703,7 +12897,7 @@ op `getDeviceRequest`(@js(#{`maxLength`:32}) `parameters/0/schema`: string,
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/device",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"deny",`user_code`:"NOSUCHCODE"}}}}
   })
 op `answerDeviceRequest`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -12808,7 +13002,8 @@ op `answerDeviceRequest`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"What a finished link said, from the callback."
+        `description`:"What a finished link said, from the callback.",
+        `example`:"example"
       },
       #{
         `name`:"problem",
@@ -12844,7 +13039,7 @@ op `answerDeviceRequest`(`requestBody/content/application~1json/schema`: {
     `x-access`:"person",
     `x-mirrors`:"GET /portal/claim-sources"
   })
-op `getClaimSources`(`parameters/0/schema`: get_account_api_claim_sources_p0_h558,
+op `getClaimSources`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"integer",`minimum`:1,`maximum`:100000}]}}) `parameters/0/schema`: unknown,
   @js(#{`maxLength`:200}) `parameters/1/schema`: string,
   @js(#{`maxLength`:400}) `parameters/2/schema`: string,
   `responses/200/content/application~1json/schema`: {
@@ -12922,7 +13117,9 @@ op `getClaimSources`(`parameters/0/schema`: get_account_api_claim_sources_p0_h55
     `tags`:#["Claim sources"],
     `summary`:"Links or unlinks a Claims Provider",
     `description`:"`link` answers `location`, the provider's authorization endpoint (code flow with PKCE): send the browser there. The answer sets the `sts_claim_link` cookie, scoped to /portal/claim-sources/callback, which finishes the link only in the browser holding it, while the sign-on session this token was issued on is live. `unlink` removes the link.\n\nThe door of the portal's `POST /portal/claim-sources`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -12948,7 +13145,7 @@ op `getClaimSources`(`parameters/0/schema`: get_account_api_claim_sources_p0_h55
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/claim-sources",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"unlink",`id`:"no-such-id"}}}}
   })
 op `linkClaimSource`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -13026,7 +13223,8 @@ op `linkClaimSource`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"The provider a finished connect connected, from its return."
+        `description`:"The provider a finished connect connected, from its return.",
+        `example`:"example"
       },
       #{
         `name`:"problem",
@@ -13135,7 +13333,9 @@ op `getConnectedAccounts`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `tags`:#["Connected accounts"],
     `summary`:"Connects or disconnects a consumer provider",
     `description`:"`connect` answers `location`, the provider's authorization address: send the browser there. It needs a sign-on session whose risk is LOW or unscored, and an authentication within federation.connectRecentAuthMinutes — otherwise the answer is `stepUp`, a sign-in again. The answer sets the `sts_fed_link` cookie, which finishes the connect only in the browser holding it. `disconnect` removes your connection and ends the sessions it started; it is refused (409) while the connection is your only way to sign in — no password, passkey or other connection.\n\nThe door of the portal's `POST /portal/connected-accounts`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -13165,7 +13365,7 @@ op `getConnectedAccounts`(@js(#{`maxLength`:200}) `parameters/0/schema`: string,
     `security`:#[#{`portal`:#["account:manage"]}],
     `x-access`:"person",
     `x-mirrors`:"POST /portal/connected-accounts",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`action`:"disconnect",`id`:"no-such-id"}}}}
   })
 op `connectAccount`(`requestBody/content/application~1json/schema`: {
     @js(#{
@@ -13273,7 +13473,16 @@ op `connectAccount`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"The username the link names."
+        `description`:"The username the link names.",
+        `example`:"nobody-example"
+      },
+      #{
+        `name`:"token",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The link's single-use token.",
+        `example`:"no-such-token"
       }
     ],
     `responses`:#{
@@ -13298,7 +13507,8 @@ op `connectAccount`(`requestBody/content/application~1json/schema`: {
     `x-access`:"link",
     `x-mirrors`:"GET /portal/activate"
   })
-op `getActivation`(`parameters/0/schema`: get_account_api_activation_p0_h581,
+op `getActivation`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9._~+/=-]+$"}]}}) `parameters/1/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `step`?: string;
     `user`?: string;
@@ -13594,7 +13804,9 @@ op `getActivation`(`parameters/0/schema`: get_account_api_activation_p0_h581,
     `tags`:#["Activation"],
     `summary`:"Answers one step of an activation",
     `description`:"`setup` sets the password and starts a passkey (the `key` view) or an authenticator app (the `totp` view) where they were chosen; `key` answers the passkey's ceremony; `totp` the app's code. The link is checked again, claimed before anything is set, and spent only by the step that finishes, which answers the `ready` view. Nobody is signed in by it. A passkey carries no role (#1135): `passkey` asks for one, and `key_role` is still accepted, `primary` and `mfa` both asking for one.\n\nThe door of the portal's `POST /portal/activate`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -13616,7 +13828,7 @@ op `getActivation`(`parameters/0/schema`: get_account_api_activation_p0_h581,
     `security`:#[],
     `x-access`:"link",
     `x-mirrors`:"POST /portal/activate",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`user`:"nobody-example",`token`:"no-such-token",`password`:"not",`confirm`:"equal"}}}}
   })
 op `activate`(`requestBody/content/application~1json/schema`: {
     `user`?: post_account_api_activation_b_application_json_user_h584;
@@ -13871,7 +14083,16 @@ op `activate`(`requestBody/content/application~1json/schema`: {
         `in`:"query",
         `required`:false,
         `schema`:null,
-        `description`:"The username the link names."
+        `description`:"The username the link names.",
+        `example`:"nobody-example"
+      },
+      #{
+        `name`:"token",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `description`:"The link's single-use secret.",
+        `example`:"no-such-token"
       }
     ],
     `responses`:#{
@@ -13900,7 +14121,8 @@ op `activate`(`requestBody/content/application~1json/schema`: {
     `x-access`:"link",
     `x-mirrors`:"GET /portal/reset-password"
   })
-op `getPasswordReset`(`parameters/0/schema`: get_account_api_reset_password_p0_h605,
+op `getPasswordReset`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
+  @js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:4096,`pattern`:"^[A-Za-z0-9._~+/=-]+$"}]}}) `parameters/1/schema`: unknown,
   `responses/200/content/application~1json/schema`: {
     `username`?: string;
     `token`?: string;
@@ -13995,7 +14217,9 @@ op `getPasswordReset`(`parameters/0/schema`: get_account_api_reset_password_p0_h
     `tags`:#["Password reset link"],
     `summary`:"Sets a new password from a reset link, and spends it",
     `description`:"Checks the link again, claims it, screens the password against breached passwords and the password policy, stores it, clears the must-change flag, and spends the link; signs nobody in. CAEP credential-change is sent. A refusal carries the page's `view`; success answers `view.done`.\n\nThe door of the portal's `POST /portal/reset-password`.",
-    `parameters`:#[],
+    `parameters`:#[
+
+    ],
     `responses`:#{
       `200`:#{
         `description`:"The answer.",
@@ -14025,7 +14249,7 @@ op `getPasswordReset`(`parameters/0/schema`: get_account_api_reset_password_p0_h
     `security`:#[],
     `x-access`:"link",
     `x-mirrors`:"POST /portal/reset-password",
-    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`required`:true,`content`:#{`application/json`:#{`schema`:null,`example`:#{`user`:"nobody-example",`token`:"no-such-token",`password`:"not",`confirm`:"equal"}}}}
   })
 op `spendPasswordReset`(`requestBody/content/application~1json/schema`: {
     `user`?: post_account_api_reset_password_b_application_json_user_h608;

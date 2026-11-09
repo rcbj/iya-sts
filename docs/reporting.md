@@ -1378,3 +1378,12 @@ and schedules on its own.
 
 A running job's fence is held in the process that claimed it. If that
 process is gone, the job is failed. Another node does not finish it.
+
+## What a request may name
+
+Each operation takes the query parameters its entry in the OpenAPI document
+lists, and the headers it declares (`DPoP`, and `X-Requested-With`) or that a
+browser, proxy, CDN or tracing system adds. A query parameter it does not list,
+a value that does not fit a listed type, and any other custom header are each
+refused with a 400 and `error: invalid_query`, naming the parameter or header
+and never its value. An empty value counts as absent.

@@ -482,6 +482,17 @@ class ClosedSets {
       log.debug("Leaving ClosedSets.fitsQueryType(). Absent.");
       return true;
     }
+    // zod's `opt()` and a union document as `anyOf` (`/account-api` and
+    // `/authn-api`, #1483): a value fits when it fits a branch, so a nested
+    // value is refused here while the value of a branch is left to its zod
+    // schema, which runs next.
+    if (!type && schema && Array.isArray(schema.anyOf)) {
+      const anyBranch = schema.anyOf.some(function (branch: any) {
+        return ClosedSets.fitsQueryType(branch, raw);
+      });
+      log.debug("Leaving ClosedSets.fitsQueryType(). A branch: " + anyBranch);
+      return anyBranch;
+    }
     if (!type || type === 'object') {
       log.debug("Leaving ClosedSets.fitsQueryType(). Not a scalar type.");
       return true;

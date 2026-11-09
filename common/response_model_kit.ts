@@ -232,6 +232,40 @@ class ResponseModelKit {
    * @param error - the API's refusal
    * @returns the operation
    */
+  // ---------------------------------------------------------------------------
+  // AN OPERATION'S EXAMPLE (#1475's rules, extended by #1483). `example` is
+  // `{ query, path, body }`, each member optional: a query or path parameter
+  // takes its value as `example`, a body as the media type's `example`, what
+  // Schemathesis's Examples phase and the public reference both read. An
+  // operation with no parameter and no body has nothing an example could
+  // fill in and is left alone.
+  // ---------------------------------------------------------------------------
+  /**
+   * Writes an operation's example onto its parameters and request body.
+   *
+   * @param operation - the OpenAPI operation
+   * @param example - its example, or nothing
+   * @returns the operation
+   */
+  static applyExample(operation: Json, example: Json): Json {
+    if (!example) {
+      return operation;
+    }
+    (operation.parameters || []).forEach(function (one: Json) {
+      const values = one.in === 'query' ? example.query
+        : (one.in === 'path' ? example.path : null);
+      if (values && Object.prototype.hasOwnProperty.call(values, one.name)) {
+        one.example = values[one.name];
+      }
+    });
+    const media = operation.requestBody && operation.requestBody.content &&
+      operation.requestBody.content['application/json'];
+    if (media && example.body !== undefined) {
+      media.example = example.body;
+    }
+    return operation;
+  }
+
   static applyModels(operation: Json, models: Json, error: Json): Json {
     const own = models || {};
     Object.keys(own).forEach(function (status) {

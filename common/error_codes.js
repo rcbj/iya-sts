@@ -7941,6 +7941,21 @@ const CODES = [
     summary: 'A sign-in step was asked about from a browser other than the ' +
       'one that holds it (#1454).',
     spec: 'HTTP 400' },
+  { code: 'STS-AUTHN-0553',
+    summary: 'A /authn-api request named a query parameter its operation ' +
+      'does not declare, and was refused before the handler ran (#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-AUTHN-0554',
+    summary: 'A query parameter of a /authn-api request held a value its ' +
+      'declared type does not, and was refused before the handler ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-AUTHN-0555',
+    summary: 'A /authn-api request carried a custom header that its ' +
+      'operation does not declare and no specification or known proxy, CDN ' +
+      'or tracing family defines, and was refused before the handler ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -26092,6 +26107,21 @@ const CODES = [
   { code: 'STS-ACCOUNT-0019',
     summary: 'An /account-api operation threw; answered 500.',
     spec: 'HTTP 500' },
+  { code: 'STS-ACCOUNT-0020',
+    summary: 'An /account-api request named a query parameter its operation ' +
+      'does not declare, and was refused before the handler ran (#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ACCOUNT-0021',
+    summary: 'A query parameter of an /account-api request held a value its ' +
+      'declared type does not, and was refused before the handler ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ACCOUNT-0022',
+    summary: 'An /account-api request carried a custom header that its ' +
+      'operation does not declare and no specification or known proxy, CDN ' +
+      'or tracing family defines, and was refused before the handler ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -27457,6 +27487,21 @@ const CODES = [
       'owner is not a person of the realm it runs in, and a search runs ' +
       'as its owner (#1176).',
     spec: 'unavailable or forbidden (the job fails)' },
+  { code: 'STS-REPORT-0056',
+    summary: 'A /report-api request named a query parameter its operation ' +
+      'does not declare, and was refused before the operation ran (#1483).',
+    spec: 'HTTP 400 {error:invalid_query, error_description}' },
+  { code: 'STS-REPORT-0057',
+    summary: 'A query parameter of a /report-api request held a value its ' +
+      'declared type does not, and was refused before the operation ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 {error:invalid_query, error_description}' },
+  { code: 'STS-REPORT-0058',
+    summary: 'A /report-api request carried a custom header that its ' +
+      'operation does not declare and no specification or known proxy, CDN ' +
+      'or tracing family defines, and was refused before the operation ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 {error:invalid_query, error_description}' },
   { code: 'STS-AUDIT-0001',
     summary: 'An audit export destination was refused because its ' +
       'configuration is not usable: an unknown action or type, a missing ' +

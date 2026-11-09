@@ -119,8 +119,47 @@ class AccountApiSpec {
                                schema: prop },
                              description ? { description: description } : {}));
     });
+    AccountApiSpec.implicitHeaders().forEach(function (one) {
+      out.push(one);
+    });
     log.debug("Leaving AccountApiSpec.parametersOf(). " + out.length);
     return out;
+  }
+
+  // -------------------------------------------------------------------------
+  // WHAT EVERY OPERATION TAKES WITHOUT SAYING SO (#1483, `/admin-api`'s
+  // #1476 rule): the headers a real caller of this API sends and no
+  // specification names, declared once for the whole document so that the
+  // document and the refusal read the same list. `DPoP` is RFC 9449's, on
+  // every `person` operation's call and sent by the portal's runtime; a
+  // `public` or `link` operation is declared it too, because a fuzz cell's
+  // proxy and a caller reusing one client send it on everything. And
+  // `X-Requested-With`, which an Android WebView adds to every request of a
+  // page it hosts, carrying the host app's package name: the portal and the
+  // sign-in pages are opened in WebViews, the page did not choose the header
+  // and cannot remove it, and refusing it would turn away a working sign-in.
+  // It is the one member of `common/request_headers.ts`'s "looks like its
+  // neighbour" pair that a browser, not a client, adds.
+  // -------------------------------------------------------------------------
+  /**
+   * The headers every operation takes.
+   *
+   * @returns the OpenAPI parameter objects
+   */
+  static implicitHeaders(): Json[] {
+    log.debug("Entering AccountApiSpec.implicitHeaders().");
+    log.debug("Leaving AccountApiSpec.implicitHeaders().");
+    return [
+      { name: 'DPoP', in: 'header', required: false,
+        schema: { type: 'string' },
+        description: 'RFC 9449: the proof of possession for the DPoP-bound ' +
+                     'access token, which `Authorization: DPoP <token>` ' +
+                     'requires.' },
+      { name: 'X-Requested-With', in: 'header', required: false,
+        schema: { type: 'string' },
+        description: 'Added by an Android WebView, naming the application ' +
+                     'that hosts the page. This API reads nothing in it.' }
+    ];
   }
 
   /**

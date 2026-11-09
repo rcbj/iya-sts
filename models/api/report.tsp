@@ -59,6 +59,7 @@ import "../lib/api_lib.tsp";
 using IyaSts.ApiLib;
 
 @apiDocument(#{
+  `x-iya-every-operation`:#[#{`name`:"DPoP",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"RFC 9449: the proof of possession for the DPoP-bound access token, which Authorization: DPoP <token> requires."},#{`name`:"X-Requested-With",`in`:"header",`required`:false,`schema`:#{`type`:"string"},`description`:"Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it."}],
   `openapi`:"3.0.3",
   `info`:#{
     `title`:"IYA STS reports",
@@ -534,8 +535,20 @@ op `get__report_api_realms`(`responses/200/content/application~1json/schema`: `R
       }
     },
     `parameters`:#[
-      #{`name`:"q",`in`:"query",`required`:false,`schema`:null},
-      #{`name`:"page",`in`:"query",`required`:false,`schema`:null}
+      #{
+        `name`:"q",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:"no-such-group"
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      }
     ]
   })
 op `get__report_api_groups`(`parameters/0/schema`: string,
@@ -571,8 +584,20 @@ op `get__report_api_groups`(`parameters/0/schema`: string,
       }
     },
     `parameters`:#[
-      #{`name`:"page",`in`:"query",`required`:false,`schema`:null},
-      #{`name`:"per",`in`:"query",`required`:false,`schema`:null}
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:20
+      }
     ]
   })
 op `get__report_api_signals`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
@@ -638,7 +663,15 @@ op `get__report_api_me`(`responses/200/content/application~1json/schema`: `Me`,
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `parameters`:#[#{`name`:"since",`in`:"query",`required`:false,`schema`:null}]
+    `parameters`:#[
+      #{
+        `name`:"since",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:0
+      }
+    ]
   })
 op `get__report_api_announcements`(@js(#{`minimum`:0}) `parameters/0/schema`: integer,
   `responses/200/content/application~1json/schema`: `AnnouncementPage`,
@@ -672,9 +705,26 @@ op `get__report_api_announcements`(@js(#{`minimum`:0}) `parameters/0/schema`: in
       }
     },
     `parameters`:#[
-      #{`name`:"owner",`in`:"query",`required`:false,`schema`:null},
-      #{`name`:"page",`in`:"query",`required`:false,`schema`:null},
-      #{`name`:"per",`in`:"query",`required`:false,`schema`:null}
+      #{
+        `name`:"owner",
+        `in`:"query",
+        `required`:false,
+        `schema`:null
+      },
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:20
+      }
     ]
   })
 op `get__report_api_schedules`(`parameters/0/schema`: string,
@@ -751,7 +801,8 @@ op `get__report_api_catalog`(`responses/200/content/application~1json/schema`: `
         `in`:"path",
         `required`:true,
         `description`:"The source id.",
-        `schema`:null
+        `schema`:null,
+        `example`:"users"
       }
     ]
   })
@@ -803,7 +854,7 @@ op `get__report_api_catalog__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: 
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`source`:"users",`select`:#["username"],`limit`:1,`mode`:"sync",`format`:"json"}}}}
   })
 op `post__report_api_queries`(`requestBody/content/application~1json/schema`: `QueryDocument`,
   `responses/200/content/application~1json/schema`: `QueryResult`,
@@ -821,7 +872,7 @@ op `post__report_api_queries`(`requestBody/content/application~1json/schema`: `Q
   "get",
   #{
     `summary`:"List definitions",
-    `description`:"The caller's own definitions, those shared with a group the caller belongs to, and every definition when the token has report:admin. In name order, numbered pages: `page` and `per` (50 unless given, at most 200); the answer carries page, pages, per and total beside the rows.",
+    `description`:"The caller's own definitions, those shared with a group the caller belongs to, and every definition when the token has report:admin. In name order, numbered pages: `page` and `per` (50 unless given, at most 200); the answer carries page, pages, per and total beside the rows. `limit` is the older spelling of `per`, read when `per` is absent.",
     `security`:#[#{`dpop`:#["report:use","report:admin"]}],
     `responses`:#{
       `200`:#{
@@ -842,12 +893,32 @@ op `post__report_api_queries`(`requestBody/content/application~1json/schema`: `Q
       }
     },
     `parameters`:#[
-      #{`name`:"page",`in`:"query",`required`:false,`schema`:null},
-      #{`name`:"per",`in`:"query",`required`:false,`schema`:null}
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:20
+      },
+      #{
+        `name`:"limit",
+        `in`:"query",
+        `required`:false,
+        `description`:"The older spelling of `per`.",
+        `schema`:null
+      }
     ]
   })
 op `get__report_api_definitions`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
   @js(#{`minimum`:1,`maximum`:200}) `parameters/1/schema`: integer,
+  @js(#{`minimum`:1,`maximum`:200}) `parameters/2/schema`: integer,
   `responses/200/content/application~1json/schema`: `DefinitionList`,
   `responses/401/content/application~1json/schema`: `Error`,
   `responses/403/content/application~1json/schema`: `Error`,
@@ -882,7 +953,7 @@ op `get__report_api_definitions`(@js(#{`minimum`:1}) `parameters/0/schema`: inte
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`name`:"example",`document`:#{`source`:"no-such-source",`limit`:1}}}}}
   })
 op `post__report_api_definitions`(`requestBody/content/application~1json/schema`: `DefinitionWrite`,
   `responses/200/content/application~1json/schema`: `DefinitionEnvelope`,
@@ -926,7 +997,8 @@ op `post__report_api_definitions`(`requestBody/content/application~1json/schema`
         `in`:"path",
         `required`:true,
         `description`:"The definition id.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchDefinition"
       }
     ]
   })
@@ -976,10 +1048,11 @@ op `get__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schem
         `in`:"path",
         `required`:true,
         `description`:"The definition id.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchDefinition"
       }
     ],
-    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`name`:"example",`document`:#{`source`:"no-such-source",`limit`:1}}}}}
   })
 op `post__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: `DefinitionWrite`,
@@ -1025,7 +1098,8 @@ op `post__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/sche
         `in`:"path",
         `required`:true,
         `description`:"The definition id.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchDefinition"
       }
     ]
   })
@@ -1075,10 +1149,11 @@ op `delete__report_api_definitions__id_`(@js(#{`maxLength`:64}) `parameters/0/sc
         `in`:"path",
         `required`:true,
         `description`:"The definition id.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchDefinition"
       }
     ],
-    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`groups`:#[]}}}}
   })
 op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: `ShareWrite`,
@@ -1132,10 +1207,11 @@ op `post__report_api_definitions__id__share`(@js(#{`maxLength`:64}) `parameters/
         `in`:"path",
         `required`:true,
         `description`:"The definition id.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchDefinition"
       }
     ],
-    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{}}}}
   })
 op `post__report_api_definitions__id__run`(@js(#{`maxLength`:64}) `parameters/0/schema`: string,
   `requestBody/content/application~1json/schema`: `ParameterBag`,
@@ -1173,8 +1249,20 @@ op `post__report_api_definitions__id__run`(@js(#{`maxLength`:64}) `parameters/0/
       }
     },
     `parameters`:#[
-      #{`name`:"page",`in`:"query",`required`:false,`schema`:null},
-      #{`name`:"per",`in`:"query",`required`:false,`schema`:null},
+      #{
+        `name`:"page",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:1
+      },
+      #{
+        `name`:"per",
+        `in`:"query",
+        `required`:false,
+        `schema`:null,
+        `example`:20
+      },
       #{
         `name`:"after",
         `in`:"query",
@@ -1233,7 +1321,7 @@ op `get__report_api_jobs`(@js(#{`minimum`:1}) `parameters/0/schema`: integer,
         `content`:#{`application/json`:#{`schema`:null}}
       }
     },
-    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null}}}
+    `requestBody`:#{`content`:#{`application/json`:#{`schema`:null,`example`:#{`source`:"no-such-source",`limit`:1}}}}
   })
 op `post__report_api_jobs`(`requestBody/content/application~1json/schema`: `QueryDocument`,
   `responses/202/content/application~1json/schema`: `JobEnvelope`,
@@ -1278,7 +1366,8 @@ op `post__report_api_jobs`(`requestBody/content/application~1json/schema`: `Quer
         `in`:"path",
         `required`:true,
         `description`:"The job id.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchJob"
       }
     ]
   })
@@ -1324,7 +1413,8 @@ op `get__report_api_jobs__id_`(@js(#{`maxLength`:64}) `parameters/0/schema`: str
         `in`:"path",
         `required`:true,
         `description`:"The job id.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchJob"
       }
     ]
   })
@@ -1382,7 +1472,8 @@ op `post__report_api_jobs__id__cancel`(@js(#{`maxLength`:64}) `parameters/0/sche
         `in`:"path",
         `required`:true,
         `description`:"The job id.",
-        `schema`:null
+        `schema`:null,
+        `example`:"noSuchJob"
       }
     ]
   })
