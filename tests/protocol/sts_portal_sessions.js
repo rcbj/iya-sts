@@ -744,14 +744,39 @@ async function oneUserCannotReachAnother(owner) {
   // name in it. A handler that grew `req.query.user` would fail here on the
   // day it was written rather than on the day somebody noticed.
   // Since #568 these go to the page's operation, `GET /account-api/overview`,
-  // which is where a handler could grow the bug now.
+  // which is where a handler could grow the bug now. SINCE #1483 THE ACCOUNT
+  // API REFUSES A QUERY NAME AN OPERATION DOES NOT TAKE, the query's twin of
+  // the write's refusal below: each name is asked ALONE, because the first
+  // undeclared name would otherwise answer for all eight. To be declared at
+  // all, one of them would have to be added to the API document, and this
+  // then fails on the day it is.
   const q = { user: OWNER, username: OWNER, id: OWNER, uid: OWNER,
               sub: OWNER, dn: "uid=" + OWNER + ",ou=users,dc=example,dc=com",
               account: OWNER, as: OWNER };
-  const page = await b.draw("/portal", q);
-  check("the portal answers the intruder's own page, not a refusal — the " +
-        "parameters are IGNORED rather than obeyed or rejected, which is " +
-        "what reading the identity from the session means", function () {
+  for (const name of Object.keys(q)) {
+    const asked = {};
+    asked[name] = q[name];
+    const refused = await b.draw("/portal", asked);
+    check("naming the owner in `" + name + "` is refused 400, and the " +
+          "refusal carries nothing of anybody's account", function () {
+        assert.strictEqual(refused.status, 400, JSON.stringify(refused.json));
+        assert.strictEqual(refused.json.ok, false,
+                           JSON.stringify(refused.json));
+        assert.deepStrictEqual(Object.keys(refused.json).sort(),
+                               ["errors", "ok"],
+                               JSON.stringify(refused.json));
+        assert.ok(String(refused.json.errors).indexOf('"' + name + '"') >= 0,
+          "the refusal does not name `" + name + "`: " +
+          JSON.stringify(refused.json));
+        assert.ok(JSON.stringify(refused.json).indexOf(OWNER) < 0,
+          "the refusal repeats " + OWNER + ": " +
+          JSON.stringify(refused.json));
+      });
+  }
+  // WHAT THE IDENTITY IS THEN READ FROM: nothing the request can name.
+  const page = await b.draw("/portal");
+  check("the portal answers the intruder's own page, and the only person " +
+        "it can be about is the token's", function () {
       assert.strictEqual(page.status, 200, JSON.stringify(page.json));
     });
   check("IT NAMES THE INTRUDER", function () {
@@ -953,8 +978,14 @@ async function anActivationLinkEndsAtAUsableSignIn() {
         "the link did not answer the portal's document: " +
         String(r.text).slice(0, 200));
     });
+  // THE TOKEN IS IN THE LINK'S FRAGMENT (#1454, ASVS 5.0.0 14.2.1), so in no
+  // address a server or a log sees: the page reads it there and sends it in a
+  // header.
+  const token = new URLSearchParams(linked.hash.slice(1)).get("token");
+  assert.ok(token, "the activation link carries no token.");
   const opened = await portalSignin.nobody(base, "GET",
-    "/account-api/activation" + linked.search);
+    "/account-api/activation" + linked.search, undefined,
+    { "X-Link-Token": token });
   check("and its operation answers the setup form — nobody following a " +
         "password-set link can be signed in, and none is asked for",
     function () {
@@ -974,8 +1005,6 @@ async function anActivationLinkEndsAtAUsableSignIn() {
         "the authorization endpoint answered " + notSignedIn.status + " -> " +
         notSignedIn.location + ". The jar holds " + b.cookie);
     });
-  const token = new URLSearchParams(linked.hash.slice(1)).get("token");
-  assert.ok(token, "the activation link carries no token.");
 
   const password = "Activated-Pw1!-" + Date.now();
   r = await portalSignin.nobody(base, "POST", "/account-api/activation",

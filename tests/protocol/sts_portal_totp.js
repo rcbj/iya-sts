@@ -902,9 +902,10 @@ async function anActivationLinkCanSetOneUp() {
   const linked = new URL(url, base);
   const linkQuery = "?user=" +
     encodeURIComponent(linked.searchParams.get("user") || "");
+  const linkHeader =
+    { "X-Link-Token": new URLSearchParams(linked.hash.slice(1)).get("token") };
   const opened = await portal.nobody(base, "GET",
-    "/account-api/activation" + linkQuery, undefined,
-    { "X-Link-Token": new URLSearchParams(linked.hash.slice(1)).get("token") });
+    "/account-api/activation" + linkQuery, undefined, linkHeader);
   let page = { status: opened.status,
                text: opened.json
                  ? await drawForNobody("/portal/activate", opened.json) : "" };
@@ -943,7 +944,7 @@ async function anActivationLinkCanSetOneUp() {
   // reading a flag: what somebody who abandons this step actually does is open
   // the link a second time.
   const reopened = await portal.nobody(base, "GET",
-                                      "/account-api/activation" + linkQuery);
+    "/account-api/activation" + linkQuery, undefined, linkHeader);
   check("AND THE ACTIVATION LINK IS STILL LIVE — somebody who ticks the box " +
         "and then cannot find their phone is not stranded with a spent link " +
         "and half an account", function () {
@@ -966,7 +967,7 @@ async function anActivationLinkCanSetOneUp() {
   });
 
   const spent = await portal.nobody(base, "GET",
-                                    "/account-api/activation" + linkQuery);
+    "/account-api/activation" + linkQuery, undefined, linkHeader);
   check("and NOW the link is spent", function () {
     assert.strictEqual(spent.status, 400,
       "the link still works after the setup finished; it answered " +
