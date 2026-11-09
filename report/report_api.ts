@@ -794,6 +794,8 @@ function reportAuthenticateToken(req: any, res: any, presentation: any):
     log.debug("Leaving reportAuthenticateToken(). A role was withdrawn.");
     return null;
   }
+  // The audit row names who the token says this is (#1537).
+  res.locals.apiCaller = { name: person };
   log.debug("Leaving reportAuthenticateToken().");
   return caller.who;
 }

@@ -971,6 +971,8 @@ class AccountApi {
         log.debug("Leaving AccountApi.run(). Refused at the gate.");
         return undefined;
       }
+      // The audit row names who the token says this is (#1537).
+      res.locals.apiCaller = { name: (caller as Json).username };
       if (op.recentAuth && !this.signedInRecently(caller)) {
         log.debug("Leaving AccountApi.run(). Sign in again.");
         return this.json(res, 200, { ok: false, stepUp: {

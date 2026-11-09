@@ -1023,7 +1023,9 @@ class RolePermissions {
       ? { kind: 'application', name: String(c.client_id || ''),
           authenticated: true }
       : { kind: 'user', authenticated: true,
-          name: String(c.username || c.preferred_username || c.sub || '') };
+          // `sub` first: it cannot be reassigned and a username can (#1536).
+          name: String(require('./helpers').nameForSubject(c.sub) ||
+                       c.username || c.preferred_username || c.sub || '') };
     return this.inRealm(tokenRealm, function () {
       const held = self.heldRoles(subject);
       // THE CLIENT'S CONFERRED ROLES, MIXED WITH THE PERSON'S OWN (#454),

@@ -2526,7 +2526,7 @@ function recordHttp(req, res, detail) {
   // 2026-10-05): `mgmt-api/admin_api.ts`'s gate leaves the subject it
   // verified on `res.locals.apiCaller`, and that is who made this call —
   // not whoever's sign-on cookie the request happened to carry, which is
-  // what the resolver reads. Nothing but that gate writes the member.
+  // what the resolver reads. Only the token gates of the three APIs write it.
   const caller = res.locals && res.locals.apiCaller;
   const actor = (caller && String(caller.name || '')) || actorOfRequest(req);
   // WHICH SESSION (#561): named only where the resolver names one — with

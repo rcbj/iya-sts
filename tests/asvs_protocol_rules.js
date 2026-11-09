@@ -80,6 +80,56 @@ async function run(t) {
   t.equal(inProduct(function () {
     return mode.refusesPlainSyslog();
   }), true, 'product refuses plain syslog');
+  // A client writes the left-most hop.
+  const forwarded = { headers: { 'x-forwarded-for': '192.0.2.1' },
+                      socket: { remoteAddress: '203.0.113.9' } };
+  config.setOverride('global.trustProxy', 'true');
+  t.equal(address.clientAddressOf(forwarded), '192.0.2.1',
+          'development believes the header with no list');
+  t.equal(inProduct(function () {
+    return address.clientAddressOf(forwarded);
+  }), '203.0.113.9', 'product uses the socket with no list');
+  config.clearOverride('global.trustProxy');
+  const helpers = require(ROOT + '/common/helpers');
+  t.equal(inProduct(function () {
+    return helpers.signingAlgListed('ES256K');
+  }), false, 'product does not sign with ES256K unless it is listed');
+  t.equal(inProduct(function () {
+    return helpers.signingAlgListed('ES256');
+  }), true, 'and does sign with an approved curve');
+  t.equal(inProduct(function () {
+    return config.value('security.hstsIncludeSubDomains');
+  }), true, 'product applies HSTS to subdomains');
+  // The browser applications' checks.
+  const SpaClient = require(ROOT + '/common/web_spa_client');
+  const spa = SpaClient.SpaClient || SpaClient;
+  const jwt = function (claims) {
+    return 'e30.' + Buffer.from(JSON.stringify(claims)).toString('base64') +
+      '.s';
+  };
+  const client = {
+    clientId: 'sts-user-portal', metadata: { issuer: 'https://idp.test' },
+    nonceFor: async function () {
+      return 'n';
+    },
+    asMetadata: async function () {
+      return { issuer: 'https://idp.test' };
+    }
+  };
+  const good = { nonce: 'n', aud: 'sts-user-portal', iss: 'https://idp.test' };
+  const check = function (claims) {
+    return spa.prototype.nonceMatches.call(client, jwt(claims), 'v');
+  };
+  t.equal(await check(good), true, 'a browser application accepts its own token');
+  t.equal(await check(Object.assign({}, good, { aud: 'another' })), false,
+          'and refuses one for another client');
+  t.equal(await check(Object.assign({}, good, { iss: 'https://evil.test' })),
+          false, 'or from another server');
+  t.equal(await spa.prototype.issuerMatches.call(client,
+    { iss: 'https://evil.test' }), false,
+          'an authorization response naming another server is refused');
+  t.equal(await spa.prototype.issuerMatches.call(client, {}), true,
+          'and one naming none is allowed');
   const budget = require(ROOT + '/common/request_budget');
   const at = Date.now();
   t.equal(budget.allowed('198.51.100.7', 2, at), true, 'a first request passes');
