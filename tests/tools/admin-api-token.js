@@ -77,8 +77,8 @@ async function secretFor(base) {
     log.debug("Leaving secretFor().");
     return process.env.STS_ADMIN_API_CLIENT_SECRET;
   }
-  const reply = await request(base + '/admin-api/applications?identifier=' +
-                              encodeURIComponent('sts-api-client'));
+  // The list and a filter below: the operation takes no `identifier` (#1476).
+  const reply = await request(base + '/admin-api/applications');
   if (reply.status !== 200) {
     log.debug("Leaving secretFor().");
     return '';

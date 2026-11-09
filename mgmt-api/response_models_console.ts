@@ -647,7 +647,7 @@ const CLIENT_SECRET: Json = Kit.closed({
 
 const OPERATION_ROW: Json = Kit.closed({
   method: STR, path: STR, operationId: STR, summary: STR, mirrors: STR,
-  kind: STR, drawnOn: STRS
+  kind: STR, drawnOn: STRS, query: STRS
 });
 
 const CONSOLE_OPERATIONS: Json = Kit.closed({

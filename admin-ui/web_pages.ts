@@ -1232,14 +1232,20 @@ class WebPages {
    *
    * @param path - the console path
    * @param query - the page's query
+   * @param declared - the names the operation declares (#1476), when known;
+   *   a name of the page's own, which it would refuse, is left out
    * @returns the query the page's operation is asked with
    */
-  static operationQuery(path: string, query: Json): Json {
+  static operationQuery(path: string, query: Json,
+                        declared?: string[]): Json {
     const page = WebPages.pageFor(path);
     const out: Json = {};
     Object.keys(query || {}).forEach(function (name) {
       const mapped = page && page.params && page.params[name];
-      out[mapped || name] = query[name];
+      const asked = mapped || name;
+      if (!declared || declared.indexOf(asked) >= 0) {
+        out[asked] = query[name];
+      }
     });
     // What the page always asks its operation, whatever its own query.
     Object.keys((page && page.fixed) || {}).forEach(function (name) {

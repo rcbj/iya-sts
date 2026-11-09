@@ -25319,6 +25319,22 @@ const CODES = [
     summary: 'An action of /admin-api/pki/trust threw rather than answering ' +
       '(#1360).',
     spec: 'HTTP 500 with {ok:false, errors}' },
+  { code: 'STS-API-0142',
+    summary: 'A management API request named a query parameter its ' +
+      'operation does not declare, and was refused before the handler ran ' +
+      '(#1476).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-API-0143',
+    summary: 'A query parameter of a management API request held a value ' +
+      'its declared type does not, and was refused before the handler ran ' +
+      '(#1476).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-API-0144',
+    summary: 'A management API request carried a custom header that its ' +
+      'operation does not declare and no specification or known proxy, CDN ' +
+      'or tracing family defines, and was refused before the handler ran ' +
+      '(#1476).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +

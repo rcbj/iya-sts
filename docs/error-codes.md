@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5333** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5336** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -92,7 +92,7 @@ is an ordinary outcome.
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
 * [Admin console (`STS-ADMIN`)](#sts-admin) — 263
-* [Management API (`STS-API`)](#sts-api) — 91
+* [Management API (`STS-API`)](#sts-api) — 94
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
@@ -5579,6 +5579,9 @@ Raised from: mgmt-api/.
 | `STS-API-0139` | An answer of an API this service publishes an OpenAPI document for (the management, account, sign-in or report API) did not match the model its operation declares for that status, so it was not sent and the caller was answered 500. A member no model declares, a value of the wrong type, a status or media type the operation does not declare, or an operation the document does not have. The log line names the operation, the status and where in the body; it is a defect in the model or in the handler, never in the request. | HTTP 500 |
 | `STS-API-0140` | A handler of an API this service publishes an OpenAPI document for threw and nothing caught it. The caller was answered 500 in JSON, the sentence a refused answer gets, rather than an HTML page. The log line names the path and the message once per distinct failure. | HTTP 500 |
 | `STS-API-0141` | An action of /admin-api/pki/trust threw rather than answering (#1360). | HTTP 500 with {ok:false, errors} |
+| `STS-API-0142` | A management API request named a query parameter its operation does not declare, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
+| `STS-API-0143` | A query parameter of a management API request held a value its declared type does not, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
+| `STS-API-0144` | A management API request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
 
 ## STS-PORTAL
 

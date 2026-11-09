@@ -813,6 +813,7 @@ class AdminApi {
     log.debug("Entering AdminApi.wire().");
     PROTOCOL_SETTINGS_OPERATIONS = instance.buildProtocolSettingsOperations();
     ROUTES = instance.buildRoutes();
+    instance.declareImplicitParameters(ROUTES);
     instance.compileRequestSchemas();
     instance.registerConsoleClosedSets();
     log.info(startupBanner(instance.operationSummaries().length));
@@ -1154,16 +1155,70 @@ class AdminApi {
   checkQueryEnums(entry, req) {
     const { log, closedSets } = this.deps;
     log.debug("Entering AdminApi.checkQueryEnums().");
-    const action = String((req.params && req.params.action) || '');
-    const row = (entry.actions || []).filter(function (a) {
-      return a.action === action;
-    })[0];
-    const parameters = (entry.parameters || [])
-      .concat((row && row.parameters) || []);
+    const parameters = this.parametersOf(entry, req);
     const checked = closedSets.checkQuery(parameters, req.query);
     log.debug("Leaving AdminApi.checkQueryEnums(). " +
               (checked.ok ? "Accepted." : "Refused."));
     return checked;
+  }
+
+  /**
+   * The parameters a request's operation declares: its route's and, for an
+   * action resource, the action's.
+   *
+   * @param entry - the route table entry
+   * @param req - the request
+   * @returns the parameters
+   */
+  parametersOf(entry, req) {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.parametersOf().");
+    const action = String((req.params && req.params.action) || '');
+    const row = (entry.actions || []).filter(function (a) {
+      return a.action === action;
+    })[0];
+    log.debug("Leaving AdminApi.parametersOf().");
+    return (entry.parameters || []).concat((row && row.parameters) || []);
+  }
+
+  // ---------------------------------------------------------------------------
+  // WHAT EVERY OPERATION TAKES WITHOUT SAYING SO (#1476). Declared here, once
+  // for the whole table, so that the document and the refusals read the same
+  // `parameters`: `DPoP` (RFC 9449), which the console sends on every call,
+  // and `cell`, which `common/cell_placement.ts` reads for every path under
+  // `/admin-api` before any handler runs (`/admin-api/...?cell=<id>`). The
+  // console twins made in `buildRoutes()` have their own row and are covered
+  // by the same walk.
+  // ---------------------------------------------------------------------------
+  /**
+   * Adds to every operation the parameters every operation takes.
+   *
+   * @param routes - the route table
+   */
+  declareImplicitParameters(routes: any[]): void {
+    const { log } = this.deps;
+    log.debug("Entering AdminApi.declareImplicitParameters().");
+    const implicit = [
+      { name: 'DPoP', in: 'header', required: false,
+        schema: { type: 'string' },
+        description: 'RFC 9449: the proof of possession for a DPoP-bound ' +
+                     'access token, as `Authorization: DPoP <token>` ' +
+                     'requires.' },
+      { name: 'cell', in: 'query', required: false,
+        schema: { type: 'string' },
+        description: 'The cell to answer this request, where this service ' +
+                     'runs as several. Ignored in a service that runs as ' +
+                     'one.' }
+    ];
+    routes.forEach(function (entry) {
+      const own = entry.parameters || [];
+      entry.parameters = own.concat(implicit.filter(function (one) {
+        return !own.some(function (p) {
+          return p.in === one.in && p.name === one.name;
+        });
+      }));
+    });
+    log.debug("Leaving AdminApi.declareImplicitParameters().");
   }
 
   // ---------------------------------------------------------------------------
@@ -3102,6 +3157,37 @@ class AdminApi {
     // THE DELEGATION FILTER, declared once: the acts (`/delegation`) and
     // the picture of them (`/delegation/map`, #446) take the same five
     // parameters, as the two console pages do.
+    // THE DELEGATION PAGES' ONE SHARED QUERY (#1476). Every view of that
+    // family is built by `AdminViews` over one query (`delegationPageModel()`
+    // and the models that call it), and the console carries a reader's
+    // searches, offsets and pages from one view to the next so a drill-down
+    // comes back to the page it left. These were read and never declared.
+    // `withDelegationQuery()`, below the table, adds them to each row.
+    const delegationPageQuery: any[] = ([
+      ['permq', 'Part of a permission\'s resource.'],
+      ['grantq', 'Part of a grant\'s client or resource.'],
+      ['appq', 'The application chooser\'s search.'],
+      ['userq', 'The person chooser\'s search.']
+    ] as string[][]).map(function (row) {
+      return { name: row[0], in: 'query', required: false,
+               schema: { type: 'string' } as any, description: row[1] };
+    }).concat(([
+      ['appfrom', 'Where the application chooser\'s page starts.'],
+      ['userfrom', 'Where the person chooser\'s page starts.']
+    ] as string[][]).map(function (row) {
+      return { name: row[0], in: 'query', required: false,
+               schema: { type: 'integer', minimum: 0 } as any,
+               description: row[1] };
+    })).concat(([
+      'chains', 'permissions', 'grants', 'pairs', 'flags', 'mechanisms',
+      'policyPairs', 'intermediaries', 'people', 'groups', 'groupGrants',
+      'groupPermissions'
+    ] as string[]).map(function (name) {
+      return { name: name + 'Page', in: 'query', required: false,
+               schema: { type: 'integer', minimum: 1 } as any,
+               description: 'Which page of `' + name + '` to return, ' +
+                            'clamped as `page` is.' };
+    }) as any[]);
     const delegationFilter: any[] = [
       { name: 'type', in: 'query', required: false,
         schema: { type: 'string',
@@ -3135,6 +3221,20 @@ class AdminApi {
                      'fields, because the fact a caller has names one of ' +
                      'them and not which column it is in.' }
     ];
+    const withDelegationQuery = function (own: any[]): any[] {
+      log.debug("Entering withDelegationQuery().");
+      const seen: Record<string, boolean> = {};
+      const out = own.concat(delegationFilter, self.pagingParameters(),
+                             delegationPageQuery).filter(function (one) {
+        if (seen[one.name]) {
+          return false;
+        }
+        seen[one.name] = true;
+        return true;
+      });
+      log.debug("Leaving withDelegationQuery().");
+      return out;
+    };
     const ROUTES: any[] = [
       { method: 'GET', path: BASE, tag: 'Service',
         operationId: 'getIndex',
@@ -5529,6 +5629,10 @@ class AdminApi {
                      'read-only and their own realm\'s rows only.',
         mirrors: 'GET /admin/scheduler',
         parameters: [
+          { name: 'jobsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of the job register to return, answered ' +
+                         'by `jobsPaging`.' },
           { name: 'run', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'A run id, to answer that run.' },
@@ -7144,6 +7248,10 @@ class AdminApi {
                      '`doors` is the catalogue a scope is chosen from.',
         mirrors: 'GET /admin/users',
         parameters: [
+          { name: 'username', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The older spelling of `user`, read when `user` ' +
+                         'is absent.' },
           { name: 'user', in: 'query', required: true,
             schema: { type: 'string' },
             description: 'The person, as /admin-api/users names them.' }
@@ -7198,6 +7306,10 @@ class AdminApi {
                      'used. Never the secret or its hash.',
         mirrors: 'GET /admin/users',
         parameters: [
+          { name: 'username', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The older spelling of `user`, read when `user` ' +
+                         'is absent.' },
           { name: 'user', in: 'query', required: true,
             schema: { type: 'string' },
             description: 'The person, as /admin-api/users names them.' }
@@ -7232,6 +7344,10 @@ class AdminApi {
                      'hold, and the subject syntaxes accepted.',
         mirrors: 'GET /admin/users',
         parameters: [
+          { name: 'username', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The older spelling of `user`, read when `user` ' +
+                         'is absent.' },
           { name: 'user', in: 'query', required: true,
             schema: { type: 'string' },
             description: 'The person, as /admin-api/users names them.' }
@@ -7269,6 +7385,10 @@ class AdminApi {
                      'never create or change one.',
         mirrors: 'GET /admin/users',
         parameters: [
+          { name: 'username', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The older spelling of `user`, read when `user` ' +
+                         'is absent.' },
           { name: 'user', in: 'query', required: true,
             schema: { type: 'string' },
             description: 'The person, as /admin-api/users names them.' }
@@ -7298,6 +7418,10 @@ class AdminApi {
                      'record is made from.',
         mirrors: 'GET /admin/users',
         parameters: [
+          { name: 'username', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The older spelling of `user`, read when `user` ' +
+                         'is absent.' },
           { name: 'user', in: 'query', required: true,
             schema: { type: 'string' },
             description: 'The person, as /admin-api/users names them.' }
@@ -7338,6 +7462,10 @@ class AdminApi {
                      'is invisible to every other realm.',
         mirrors: 'GET /admin/users/new',
         parameters: [
+          { name: 'user', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A username to open the form for, which the form ' +
+                         'starts from when the request gives no body.' },
           { name: 'invent', in: 'query', required: false,
             schema: { type: 'string', maxLength: 256 },
             description: 'A username: the answer carries `invented`, the ' +
@@ -11953,6 +12081,7 @@ class AdminApi {
                      'cannot turn an existing realm into a shadow ' +
                      'over the console or the authorization server.',
         mirrors: 'GET /admin/realms',
+        parameters: this.pagingParameters(),
         responseDescription: 'The realms, and the support table.',
         handler: function (req, res, next) {
           log.debug("Entering the management API trust realms endpoint.");
@@ -14321,6 +14450,10 @@ class AdminApi {
                      'its metadata registered (`metadata`).',
         mirrors: 'GET /admin/saml2',
         parameters: [
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Part of a service provider\'s entityID, ' +
+                         'case-insensitive, narrowing the list.' },
           { name: 'sp', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'One service provider, by its entityID.' }
@@ -14780,6 +14913,10 @@ class AdminApi {
                      'flow would still be answered.',
         mirrors: 'GET /admin/saml2',
         parameters: [
+          { name: 'q', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Part of a relying party\'s identifier, ' +
+                         'case-insensitive, narrowing the list.' },
           { name: 'rp', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'One relying party, by its identifier.' }
@@ -15204,6 +15341,10 @@ class AdminApi {
                      'can read this reply can authenticate as that client.',
         mirrors: 'GET /admin/applications',
         parameters: [
+          { name: 'claimsUser', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'On one application, the person the claims preview ' +
+                         'is drawn for. Defaults to the signed-in person.' },
           { name: 'application', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'One application, by its identifier exactly — the ' +
@@ -15253,7 +15394,26 @@ class AdminApi {
                          '`?application=` reply only. Named rather than the ' +
                          'bare `page` so it does not move the attribute ' +
                          'list.' }
-        ].concat(this.pagingParameters()),
+        ].concat(this.pagingParameters()).concat(this.detailPagingParameters([
+          { name: 'observed',
+            description: 'On the `?application=` reply only: the claims ' +
+                         'observed on its tokens.' },
+          { name: 'held',
+            description: 'On the `?application=` reply only: the ' +
+                         'delegated permissions it holds.' },
+          { name: 'exposed',
+            description: 'On the `?application=` reply only: the ' +
+                         'permissions it exposes.' },
+          { name: 'grantedOut',
+            description: 'On the `?application=` reply only: the ' +
+                         'permissions it has granted out.' },
+          { name: 'enrolled',
+            description: 'On the `?application=` reply only: the ' +
+                         'certificates on its entry.' },
+          { name: 'enrolledConfig',
+            description: 'On the `?application=` reply only: those ' +
+                         'certificates on its configuration tab.' }
+        ])),
         responseDescription: 'The matching applications with the paging that ' +
                              'found them, or one application with its ' +
                              'directory entry when `application` was given.',
@@ -17392,6 +17552,11 @@ class AdminApi {
                      'the tree, read the legal moves, and POST ' +
                      'one, without a second copy of the grammar.',
         mirrors: 'GET /admin/xacml',
+        parameters: [
+          { name: 'policy', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The name of one policy. Without it, the root.' }
+        ],
         responseDescription:
           'The policy as a tree of editable nodes, with the ' +
                              'stored XML and the same policy rendered as ALFA.',
@@ -17423,6 +17588,17 @@ class AdminApi {
                      'this builds a three-category request out of three ' +
                      'parameters and is what a person asks.',
         mirrors: 'GET /admin/xacml',
+        parameters: [
+          { name: 'subject', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Who the decision is asked about.' },
+          { name: 'action', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'What they would do.' },
+          { name: 'resource', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'What they would do it to.' }
+        ],
         responseDescription: 'The decision, what applied, and what the ' +
                              'embedded PEP would do.',
         responseSchema: { $ref: '#/components/schemas/XacmlDecision' },
@@ -17472,6 +17648,20 @@ class AdminApi {
                      'and the `gnap.*` settings, which are ' +
                      'written through POST /admin-api/config/set-many.',
         mirrors: 'GET /admin/gnap',
+        parameters: [
+          { name: 'state', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A grant state, narrowing the grants; any other ' +
+                         'value is no filter at all.' }
+        ].concat(this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        })).concat(this.detailPagingParameters([
+          { name: 'grants', description: 'The grants, newest first.' },
+          { name: 'resources',
+            description: 'The registered resource sets.' },
+          { name: 'servers',
+            description: 'The named authorization servers.' }
+        ])),
         responseDescription: 'The authorization server as the page draws it.',
         responseSchema: { $ref: '#/components/schemas/GnapServer' },
         handler: function (req, res) {
@@ -17495,6 +17685,7 @@ class AdminApi {
                      'Per trust realm, and with no reset: the ' +
                      'durable record is GET /admin-api/audit.',
         mirrors: 'GET /admin/gnap/monitor',
+        parameters: this.pagingParameters(),
         responseDescription: 'The totals, and one row per application.',
         responseSchema: { $ref: '#/components/schemas/GnapMonitor' },
         handler: function (req, res) {
@@ -20697,7 +20888,12 @@ class AdminApi {
                      'use case\'s row, this realm\'s signer truststore, and ' +
                      'what the realm pins as the daily audit last found it.',
         mirrors: 'GET /admin/pki/trust',
-        parameters: this.detailPagingParameters(['pins']),
+        parameters: this.detailPagingParameters([
+          { name: 'pins', description: 'The pinned certificates, newest ' +
+                                       'first.' }
+        ]).concat(this.pagingParameters().filter(function (one) {
+          return one.name === 'per';
+        })),
         responseDescription: 'The trust view of this realm.',
         responseSchema: { type: 'object',
                           description: 'The trust view of this realm.' },
@@ -23473,7 +23669,7 @@ class AdminApi {
                      'reused, and rises within each process, but it is ' +
                      'not one order across processes (#465).',
         mirrors: 'GET /admin/delegation',
-        parameters: delegationFilter.concat(this.pagingParameters()),
+        parameters: withDelegationQuery([]),
         responseDescription: 'The matching acts, the distinct chains among ' +
                              'them, the configured Kerberos policy, and the ' +
                              'vocabulary the filters take.',
@@ -23513,13 +23709,13 @@ class AdminApi {
                      '\n\nWith `format=svg` the answer is the SVG document ' +
                      'alone, with no links in it, as `image/svg+xml`.',
         mirrors: 'GET /admin/delegation/map',
-        parameters: delegationFilter.concat([
+        parameters: withDelegationQuery(delegationFilter.concat([
           { name: 'format', in: 'query', required: false,
             schema: { type: 'string', enum: ['json', 'svg'] },
             description: '`svg` answers the drawing alone, as a document ' +
                          'with no links in it. `json`, the default, ' +
                          'answers everything.' }
-        ]),
+        ])),
         responseDescription: 'The graph, every node\'s look, the counts ' +
                              'and the drawing.',
         handler: function (req, res) {
@@ -23605,7 +23801,7 @@ class AdminApi {
                      'the SVG document alone, with no links in it, as ' +
                      '`image/svg+xml`.',
         mirrors: 'GET /admin/delegation/cluster',
-        parameters: ([] as any[]).concat([
+        parameters: withDelegationQuery(([] as any[]).concat([
           { name: 'application', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'The application\'s identifier, exactly.' },
@@ -23614,7 +23810,7 @@ class AdminApi {
             description: '`svg` answers the drawing alone, as a document ' +
                          'with no links in it. `json`, the default, ' +
                          'answers everything.' }
-        ], self.pagingParameters()),
+        ], self.pagingParameters())),
         responseDescription: 'The group, its pages, the chooser\'s data ' +
                              'and the drawing.',
         handler: function (req, res) {
@@ -23653,13 +23849,14 @@ class AdminApi {
                      'answer is the SVG document alone, with no links in ' +
                      'it, as `image/svg+xml`.',
         mirrors: 'GET /admin/delegation/allowed',
-        parameters: ([] as any[]).concat(self.pagingParameters(), [
+        parameters: withDelegationQuery(([] as any[]).concat(
+          self.pagingParameters(), [
           { name: 'format', in: 'query', required: false,
             schema: { type: 'string', enum: ['json', 'svg'] },
             description: '`svg` answers the drawing alone, as a document ' +
                          'with no links in it. `json`, the default, ' +
                          'answers everything.' }
-        ]),
+        ])),
         responseDescription: 'The graph, the groups, the register and the ' +
                              'drawing.',
         handler: function (req, res) {
@@ -23697,14 +23894,14 @@ class AdminApi {
                      'with its filter and paging, as the page answered it ' +
                      'before.',
         mirrors: 'GET /admin/delegation-settings',
-        parameters: [
+        parameters: withDelegationQuery([
           { name: 'permq', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'Part of a permission\'s resource.' },
           { name: 'grantq', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'Part of a grant\'s client or resource.' }
-        ].concat(this.pagingParameters()),
+        ].concat(this.pagingParameters())),
         responseDescription: 'The register, its list state, the ' +
                              'applications and the settings block.',
         handler: function (req, res) {
@@ -23735,7 +23932,7 @@ class AdminApi {
                      'answer is the SVG document alone, with no links in ' +
                      'it, as `image/svg+xml`.',
         mirrors: 'GET /admin/delegation/user',
-        parameters: [
+        parameters: withDelegationQuery([
           { name: 'user', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'The person, under any spelling this service has ' +
@@ -23745,7 +23942,7 @@ class AdminApi {
             description: '`svg` answers the drawing alone, as a document ' +
                          'with no links in it. `json`, the default, ' +
                          'answers everything.' }
-        ],
+        ]),
         responseDescription: 'The person, their credentials, flows and ' +
                              'acts, the graph, every node\'s look and the ' +
                              'drawing.',
@@ -23784,7 +23981,7 @@ class AdminApi {
                      '`format=svg` the answer is the SVG document alone, ' +
                      'with no links in it, as `image/svg+xml`.',
         mirrors: 'GET /admin/delegation/application',
-        parameters: [
+        parameters: withDelegationQuery([
           { name: 'application', in: 'query', required: false,
             schema: { type: 'string' },
             description: 'The application, as a protocol presented it or ' +
@@ -23794,7 +23991,7 @@ class AdminApi {
             description: '`svg` answers the drawing alone, as a document ' +
                          'with no links in it. `json`, the default, ' +
                          'answers everything.' }
-        ],
+        ]),
         responseDescription: 'The application, its acts, the graph, every ' +
                              'node\'s look and the drawing.',
         handler: function (req, res) {
@@ -24491,6 +24688,10 @@ class AdminApi {
                      'would hand back a Permit meaning "you did not ask".',
         mirrors: 'GET /admin/roles',
         parameters: [
+          { name: 'username', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The older spelling of `subject`, read when ' +
+                         '`subject` is absent.' },
           { name: 'application', in: 'query',
             schema: { type: 'string' },
             description: 'What something would be issued FOR — a ' +
@@ -26633,6 +26834,16 @@ class AdminApi {
         if (entry.drawnOn) {
           row.drawnOn = entry.drawnOn.slice(0);
         }
+        // WHAT THE CONSOLE MAY FORWARD TO THIS OPERATION (#1476): a page's
+        // own query holds names only its address means (`notice`, `view`)
+        // and the runtime asks each operation only what it declares.
+        if (wanted === 'all' && entry.method === 'GET') {
+          row.query = (entry.parameters || []).filter(function (one) {
+            return one.in === 'query';
+          }).map(function (one) {
+            return one.name;
+          });
+        }
         out.push(row);
         return;
       }
@@ -28459,7 +28670,7 @@ class AdminApi {
    * @param app - the express app
    */
   registerRoutes(app: RouteApp): void {
-    const { log, errorCodes, protocolEndpoints } = this.deps;
+    const { log, errorCodes, protocolEndpoints, closedSets } = this.deps;
     const self = this;
     log.debug("Entering AdminApi.registerRoutes().");
     // -------------------------------------------------------------------------
@@ -28484,16 +28695,42 @@ class AdminApi {
       const proseRoute = entry.proseRoute || path;
       // A query parameter outside its declared set is refused before the
       // handler runs, on a GET and a POST alike (#86).
+      // THE REST OF THE QUERY, AND THE HEADERS (#1476): a name the operation
+      // does not declare, a value its declared type does not hold, and a
+      // custom header nobody defined are each refused, because answering
+      // 200 with the question ignored tells the caller it was understood.
       const queryRefused = function (req, res) {
         const asked = self.checkQueryEnums(entry, req);
-        if (asked.ok) {
-          return false;
+        if (!asked.ok) {
+          log.debug("The management API refused a query parameter against " +
+                    (entry.operationId || path) + "'s declared set.");
+          errorCodes.mark(res, 'STS-API-0124');
+          self.sendJson(res, 400, { ok: false, errors: [asked.sentence] });
+          return true;
         }
-        log.debug("The management API refused a query parameter against " +
-                  (entry.operationId || path) + "'s declared set.");
-        errorCodes.mark(res, 'STS-API-0124');
-        self.sendJson(res, 400, { ok: false, errors: [asked.sentence] });
-        return true;
+        const shape = closedSets.checkQueryDeclared(
+          self.parametersOf(entry, req), req.query);
+        if (!shape.ok) {
+          log.debug("The management API refused a query parameter of " +
+                    (entry.operationId || path) + ": " + shape.problem + ".");
+          if (shape.problem === 'unknown') {
+            errorCodes.mark(res, 'STS-API-0142');
+          } else {
+            errorCodes.mark(res, 'STS-API-0143');
+          }
+          self.sendJson(res, 400, { ok: false, errors: [shape.sentence] });
+          return true;
+        }
+        const headers = adminApiRequestHeaders.check(
+          self.parametersOf(entry, req), req.headers);
+        if (!headers.ok) {
+          log.debug("The management API refused a request header on " +
+                    (entry.operationId || path) + ".");
+          errorCodes.mark(res, 'STS-API-0144');
+          self.sendJson(res, 400, { ok: false, errors: [headers.sentence] });
+          return true;
+        }
+        return false;
       };
       // A MANAGEMENT ANSWER WITH A CONSOLE TWIN (#454) leaves the console's
       // members out, and refuses the twin's drawing rather than answering
@@ -28525,7 +28762,7 @@ class AdminApi {
         if (!page) {
           app.get(path, function (req, res) {
             res.locals.proseRoute = proseRoute;
-            if (queryRefused(req, res) || consoleOnly(req, res)) {
+            if (consoleOnly(req, res) || queryRefused(req, res)) {
               return undefined;
             }
             return entry.handler(req, res);
@@ -28534,7 +28771,7 @@ class AdminApi {
         }
         app.get(path, function (req, res) {
           res.locals.proseRoute = proseRoute;
-          if (queryRefused(req, res) || consoleOnly(req, res)) {
+          if (consoleOnly(req, res) || queryRefused(req, res)) {
             return undefined;
           }
           res.locals.protocolEndpoints = protocolEndpoints.forPage(req, page);
@@ -28625,6 +28862,8 @@ void docs;
 // (It was first required for the explorer, which moved to the console on
 // 2026-09-09; `docs` above is no longer read in this file.)
 import realms = require('../common/realms');
+// What request headers this API takes (#1476). A leaf that registers nothing.
+import adminApiRequestHeaders = require('./request_headers');
 // RFC 9068 (2026-09-13): what an access token's type and issuer must be, read
 // the way the other resource servers here read them. A library that registers
 // no route; `oauth2.js` already required it, so this is a cache hit.
