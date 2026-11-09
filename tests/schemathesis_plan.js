@@ -381,6 +381,9 @@ function run(t) {
     base.settings["oauth2.oauth21"] === undefined,
     "the baseline profile turns no mode switch on");
   kit.PROFILES.forEach(function (one) {
+    t.check(Number(one.settings["oauth2.accessTokenTtlS"]) >= 21600,
+            one.key + ": a cell's token outlives the mode's six-hour bound",
+            String(one.settings["oauth2.accessTokenTtlS"]));
     t.check(Number(one.settings["oauth2.dpopReplayCacheSize"]) > 10000 &&
       Number(one.settings["oauth2.dpopIatSkewS"]) < 300,
       "the " + one.key + " profile raises the DPoP replay-cache headroom " +
