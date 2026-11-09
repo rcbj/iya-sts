@@ -109,6 +109,13 @@ function run(t) {
   const img = element('img', { src: 'data:image/png;base64,AA',
                                onerror: 'x()' }, tree);
   const data = element('a', { href: 'data:text/html,x' }, tree);
+  const keytab = element('a', {
+    download: 'host.keytab',
+    href: 'data:application/octet-stream;base64,BQI=' }, tree);
+  const savedPage = element('a', { download: 'x.html',
+                                   href: 'data:text/html;base64,AA==' }, tree);
+  const opened = element('a', {
+    href: 'data:application/octet-stream;base64,BQI=' }, tree);
   const frame = element('div', { srcdoc: 'x' }, tree);
   WebSafeDom.clean({ querySelectorAll: function () {
     return tree.slice();
@@ -120,7 +127,8 @@ function run(t) {
   };
   t.equal(tree.map(function (one) {
     return one.localName;
-  }).join(','), 'a,form,svg,a,img,a,div', 'script and iframe are removed');
+  }).join(','), 'a,form,svg,a,img,a,a,a,a,div',
+          'script and iframe are removed');
   t.check(has(safe, 'href') && has(safe, 'class') && has(safe, 'data-script'),
           'ordinary attributes stay');
   t.check(has(form, 'action') && has(svg, 'viewBox'), 'and forms and SVG');
@@ -129,6 +137,11 @@ function run(t) {
   t.check(has(img, 'src') && !has(img, 'onerror'),
           'a data: image stays, without its handler');
   t.check(!has(data, 'href'), 'a data: document does not');
+  t.check(has(keytab, 'href'), 'a key file handed over as a download stays');
+  t.check(!has(savedPage, 'href'),
+          'a data: document is removed even with `download`');
+  t.check(!has(opened, 'href'),
+          'and a key file\'s data: address without `download` is removed');
   t.check(!has(frame, 'srcdoc'), 'srcdoc is removed');
 
   const node = {};

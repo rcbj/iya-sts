@@ -27,6 +27,13 @@ const REMOVED = ['script', 'iframe', 'frame', 'frameset', 'object', 'embed',
 const URL_ATTRIBUTES = ['href', 'xlink:href', 'src', 'action', 'formaction',
   'poster', 'background'];
 const SAFE_URL = /^(?:https?:|mailto:|tel:|blob:|data:image\/|[^:]*$)/i;
+// A KEY OR A CERTIFICATE HANDED OVER ONCE is drawn as a link with `download`
+// and a `data:` address, so that it is never at a URL anything could log: a
+// keytab, a key pair, a PKCS#12. A browser saves such a link and renders
+// nothing, and only these file types qualify, so a `data:` document is still
+// taken out, with or without `download`.
+const DOWNLOAD_URL = new RegExp('^data:application/(?:octet-stream|json|' +
+  'jwk\\+json|jose|pkcs8|x-pem-file|x-pkcs12);base64,', 'i');
 
 class WebSafeDom {
   /**
@@ -52,11 +59,17 @@ class WebSafeDom {
         node.remove();
         return;
       }
-      Array.prototype.slice.call(node.attributes).forEach(function (a: any) {
+      const attributes = Array.prototype.slice.call(node.attributes);
+      const saved = attributes.some(function (a: any): boolean {
+        return String(a.name).toLowerCase() === 'download';
+      });
+      attributes.forEach(function (a: any) {
         const name = String(a.name).toLowerCase();
         const value = String(a.value).replace(/[\u0000- ]/g, '');
+        const safeUrl = SAFE_URL.test(value) ||
+          (saved && name === 'href' && DOWNLOAD_URL.test(value));
         if (name.indexOf('on') === 0 || name === 'srcdoc' ||
-            (URL_ATTRIBUTES.indexOf(name) >= 0 && !SAFE_URL.test(value))) {
+            (URL_ATTRIBUTES.indexOf(name) >= 0 && !safeUrl)) {
           node.removeAttribute(a.name);
         }
       });
