@@ -8815,7 +8815,12 @@ async function certifyPqKeys(realmId, pqKeys, keepKids) {
       continue;
     }
     const held = certificateFor(id, 'jose', alg);
-    const issuingNow = (rawRowFor(id).issuing.jose || {}).certificatePem;
+    // Asked again after each `await`, and the branch may have gone by now: an
+    // administrator's removal was a TypeError and a 500 here (#1472). With no
+    // Issuing CA, `certify()` below reports the key as failed.
+    const rowNow = rawRowFor(id);
+    const issuingNow = ((rowNow && rowNow.issuing && rowNow.issuing.jose) ||
+                        {}).certificatePem;
     if (held && !held.pinned && held.subjectKeyFingerprint === fingerprint &&
         (held.chainPem || [])[0] === issuingNow && scopeChainsToRoot(id)) {
       unchanged += 1;
