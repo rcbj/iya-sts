@@ -1688,6 +1688,14 @@ class FederationSp {
                       'one minted for somebody else as readily as for this ' +
                       'service' };
       }
+      if (require('../common/mode').refusesAssertionWithoutAudience()) {
+        log.debug("Leaving FederationSp.audienceCheck(). None, in product.");
+        return { ok: false, errorCode: 'STS-FED-0241',
+                 why: 'the assertion carries no audience restriction, so it ' +
+                      'is not addressed to this service. Turn on ' +
+                      'federation.allowAssertionWithoutAudience for a ' +
+                      'partner that cannot send one' };
+      }
       log.warn('federation: the assertion from ' + record.fedId + ' carries ' +
                'no audience restriction. It is ACCEPTED, because this ' +
                'profile makes one optional — but it is not addressed to this ' +
@@ -7345,12 +7353,21 @@ class FederationSp {
         authnPending: this.fromContext(context).authnPending
       });
     });
-    if (context) {
-      return signIn();
-    }
+    return this.claimAssertionOnce(req, res, record, assertion, version,
+                                   issuer, contents, signIn);
+  }
+
+  // AN ASSERTION IS GOOD ONCE (#1541, ASVS 5.0.0 6.8.3). A request context stops
+  // a response being replayed only where the response names it, which SAML 1.1
+  // and WS-Federation may not, so the assertion's own ID is claimed every time.
+  private claimAssertionOnce(req, res, record, assertion, version, issuer,
+                             contents, signIn) {
+    const { log, errorCodes, firstByLocal } = this.deps;
+    log.debug("Entering FederationSp.claimAssertionOnce().");
     const conditions = firstByLocal(assertion, 'Conditions');
     const until = Date.parse(String(
       (conditions && conditions.getAttribute('NotOnOrAfter')) || ''));
+    log.debug("Leaving FederationSp.claimAssertionOnce().");
     return usedAssertions.claim({
       format: version === '1.1' ? 'saml11' : 'saml', use: 'federated-sign-in',
       issuer: String(issuer),
@@ -7361,7 +7378,7 @@ class FederationSp {
       request: req
     }).then((spent) => {
       if (!spent.ok) {
-        log.debug("Leaving FederationSp.consumeSamlResponse(). Replayed.");
+        log.debug("Leaving FederationSp.claimAssertionOnce(). Replayed.");
         errorCodes.mark(res, 'STS-FED-0239');
         return this.refuse(res, record, 401, 'The sign-in was refused',
                            'This assertion has already been used.');
@@ -7577,7 +7594,7 @@ class FederationSp {
     log.debug("Leaving FederationSp.consumeWsFedResponse(). Verified; " +
               'completing the sign-in once the signing certificate is known ' +
               'not to be revoked.');
-    return this.signerStillAccepted(req, res, record, () => {
+    const signIn = () => this.signerStillAccepted(req, res, record, () => {
       return this.completeSignIn(req, res, record, {
         subject: contents.subject, bag: contents.bag,
         issuer: issuer, nameFormat: contents.nameFormat,
@@ -7593,6 +7610,8 @@ class FederationSp {
         authnPending: this.fromContext(context).authnPending
       });
     });
+    return this.claimAssertionOnce(req, res, record, assertion, version,
+                                   issuer, contents, signIn);
   }
 
   // ---------------------------------------------------------------------------

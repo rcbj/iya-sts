@@ -386,6 +386,32 @@ function warmPeopleAsync(names) {
  * @param sub - the subject
  * @returns the username, or '' for a subject this service did not issue
  */
+// Has this subject's entry gone (#1543, ASVS 5.0.0 10.3.3)? True only when the
+// resolver answered and found nobody: a spent budget or a failure is not an
+// answer, and a sub this service did not mint is not its business.
+/**
+ * Tells whether a subject this service minted no longer names anybody.
+ *
+ * @param sub - the subject
+ * @returns true when its entry is gone
+ */
+function subjectIsGone(sub) {
+  log.debug("Entering subjectIsGone().");
+  const text = String(sub == null ? '' : sub).trim();
+  if (!/^urn:uuid:/i.test(text) || !subjectResolver) {
+    log.debug("Leaving subjectIsGone(). Not a question for here.");
+    return false;
+  }
+  try {
+    const gone = !subjectResolver.nameFor(text);
+    log.debug("Leaving subjectIsGone(). " + gone);
+    return gone;
+  } catch (e) {
+    log.debug("Caught in subjectIsGone(): " + ((e && e.message) || e));
+    return false;
+  }
+}
+
 function nameForSubject(sub) {
   log.debug("Entering nameForSubject().");
   const text = String(sub == null ? '' : sub).trim();
@@ -9412,6 +9438,7 @@ module.exports = {
   hasSubjectResolver: hasSubjectResolver,
   subjectForName: subjectForName,
   nameForSubject: nameForSubject,
+  subjectIsGone: subjectIsGone,
   warmPeopleAsync: warmPeopleAsync,
   namesForSubjects: namesForSubjects,
   namesForSubjectsAsync: namesForSubjectsAsync,

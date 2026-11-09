@@ -517,6 +517,9 @@ const PIN_FOR_MS = 24 * 60 * 60 * 1000;
  * runs in every process that holds the state it cleans. Every run is a row in
  * the store, so any process reports the same figures.
  */
+// How far a node's clock may drift from the database's before it is said.
+const MAX_CLOCK_SKEW_MS = 5000;
+
 class Scheduler {
   /**
    * The leader's lease name.
@@ -783,6 +786,27 @@ class Scheduler {
    *
    * @returns a promise of the time in milliseconds
    */
+  // Is this node's clock near the database's (#1546, ASVS 5.0.0 16.2.2)? Audit
+  // rows take their time from this clock. Said when it departs and when it
+  // returns, as the state it is, not at every reading.
+  private static clockFar = false;
+
+  static noteClockSkew(databaseMs: number): void {
+    helpers.log.debug("Entering Scheduler.noteClockSkew().");
+    if (databaseMs > 0) {
+      const far = Math.abs(Date.now() - databaseMs) > MAX_CLOCK_SKEW_MS;
+      if (far !== Scheduler.clockFar) {
+        Scheduler.clockFar = far;
+        helpers.log.warn(far ? require('../common/error_codes')
+          .tag('STS-SCHED-0022') + 'this node\'s clock differs from the ' +
+          'database\'s by more than ' + (MAX_CLOCK_SKEW_MS / 1000) +
+          ' seconds, so its audit timestamps are out of step. Check NTP.'
+          : 'this node\'s clock agrees with the database\'s again.');
+      }
+    }
+    helpers.log.debug("Leaving Scheduler.noteClockSkew().");
+  }
+
   static databaseNow(): Promise<number> {
     helpers.log.debug("Entering Scheduler.databaseNow().");
     const persistence = require('../persistence/persistence');
@@ -795,6 +819,7 @@ class Scheduler {
     return Promise.resolve().then(function (): Promise<number> {
       return store.clusterClock();
     }).then(function (ms: number): number {
+      Scheduler.noteClockSkew(Number(ms));
       return Number(ms) || Date.now();
     }, function (e: Json): number {
       helpers.log.debug("Caught in Scheduler.databaseNow(): " +

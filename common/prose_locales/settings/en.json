@@ -83,6 +83,8 @@
   "security.outboundAllowedHosts|description": "If set, an outbound request a partner, client or caller can influence may reach only these hosts. Comma separated: an exact name, or a leading dot for a whole domain, such as .example.com. Empty, the default, allows any public host. Internal addresses are refused either way in product mode.",
   "security.hstsIncludeSubDomains|label": "Apply HSTS to subdomains",
   "security.hstsIncludeSubDomains|description": "Adds includeSubDomains to Strict-Transport-Security, so browsers use HTTPS for every subdomain of this service's host name too. On by default in product mode. Turn it off if a subdomain of this host name must still answer over plain HTTP.",
+  "federation.allowAssertionWithoutAudience|label": "Accept an assertion that names no audience",
+  "federation.allowAssertionWithoutAudience|description": "Off, the default, product mode refuses a partner's SAML 1.1 or WS-Federation assertion that carries no audience restriction, because nothing says it was meant for this service. On, it is accepted with a warning, for a partner that cannot send one.",
   "malwareScan.enabled|label": "Scan files for malware",
   "malwareScan.enabled|description": "Off, the default, nothing is scanned. On, every profile photo, logo, photo copied from a federation partner and uploaded risk dataset is sent to the ICAP service in malwareScan.url first, and refused if the service flags it or cannot answer.",
   "malwareScan.url|label": "ICAP service address",

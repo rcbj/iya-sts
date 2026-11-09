@@ -2732,6 +2732,8 @@ const CODES = [
       'takes the run over, decides the run.',
     spec: '' },
   // ===== KEYS ==============================================================
+  { code: 'STS-SCHED-0022',
+    summary: 'The clock of this node differs from the database clock.' },
   { code: 'STS-KEYS-0001',
     summary: 'The artifact logger handed to an XML encryption threw and was ' +
       'ignored.',
@@ -13745,6 +13747,9 @@ const CODES = [
   // ===== OIDFED ============================================================
   { code: 'STS-FED-0240',
     summary: 'A federated sign-in was refused because the partner authenticated the person too long ago.',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0241',
+    summary: 'A federated assertion was refused because it names no audience.',
     spec: 'HTTP 401' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
@@ -26166,6 +26171,9 @@ const CODES = [
       'or tracing family defines, and was refused before the handler ran ' +
       '(#1483).',
     spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ACCOUNT-0023',
+    summary: 'A token was refused because the person it names no longer exists.',
+    spec: 'HTTP 401' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -27549,6 +27557,9 @@ const CODES = [
       'or tracing family defines, and was refused before the operation ran ' +
       '(#1483).',
     spec: 'HTTP 400 {error:invalid_query, error_description}' },
+  { code: 'STS-REPORT-0059',
+    summary: 'A token was refused because the person it names no longer exists.',
+    spec: 'HTTP 401' },
   { code: 'STS-AUDIT-0001',
     summary: 'An audit export destination was refused because its ' +
       'configuration is not usable: an unknown action or type, a missing ' +

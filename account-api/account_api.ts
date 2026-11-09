@@ -811,6 +811,12 @@ class AccountApi {
     // ENDED (the admin API's three checks, #36 and #446): each is a
     // credential that stopped being one.
     const stats = lazy.stats();
+    if (helpers.subjectIsGone(claims.sub) &&
+        require('../common/mode').refusesTokenForGoneSubject()) {
+      log.debug("Leaving AccountApi.authenticate(). The subject is gone.");
+      return this.unauthorized(res, 'STS-ACCOUNT-0023', 'invalid_token',
+        'The person this access token names no longer exists.');
+    }
     // `sub` first: it cannot be reassigned and a username can (ASVS 5.0.0
     // 10.3.3).
     const person = String(helpers.nameForSubject(claims.sub) ||

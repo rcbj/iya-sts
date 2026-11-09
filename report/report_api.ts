@@ -661,6 +661,13 @@ function reportAuthenticateToken(req: any, res: any, presentation: any):
     log.debug("Leaving reportAuthenticateToken(). Another audience.");
     return null;
   }
+  if (deps.helpers.subjectIsGone(claims.sub) &&
+      require('../common/mode').refusesTokenForGoneSubject()) {
+    reportUnauthenticated(res, 'STS-REPORT-0059', 'invalid_token',
+      'The person this access token names no longer exists.');
+    log.debug("Leaving reportAuthenticateToken(). The subject is gone.");
+    return null;
+  }
   // `sub` first: it cannot be reassigned and a username can (ASVS 5.0.0 10.3.3).
   const person = String(deps.helpers.nameForSubject(claims.sub) ||
     claims.username || '');
