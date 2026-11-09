@@ -334,6 +334,14 @@ missing `value` and throw reading `.kind`, which the fault boundary answers
 as HTTP 500 (`STS-API-0140`, #1419). The document root was already that
 refusal (#1356). A Match is edited by `edit-match`.
 
+**An `edit-match` names a Match.** The action reads the Match's value.
+A path `kindAt()` calls `allOf` (the fuzzer sent
+`.rules.0.target.anyOf.0.allOf.0` and omitted `value`) has no `value`,
+so the read throws (`STS-API-0140`, #1428). The edit is refused
+(`STS-XACML-0035`) before anything is written. A function with no first
+argument, and a Match that has no value when the body supplies none,
+are the same refusal: both are the next read that would throw.
+
 ## What the editor can build, and the three things it cannot
 
 **Since 2026-09-05 the guided editor reaches the whole of the XACML 3.0 policy
