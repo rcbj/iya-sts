@@ -137,6 +137,16 @@ HELP_TEXT_BY_ROUTE = {
         ".notes.mail-smtp-password.without",
         ".notes.previous-kek.without",
     ),
+    # The editor draws the same seeded policy documents the two rows above
+    # list: an obligation value in xacml/xacml_templates.ts names the code the
+    # door records. Each member is that document or a rendering of it.
+    "/admin-api/xacml/editor": (
+        ".alfa",
+        ".document",
+        ".tree[].detail",
+        ".tree[].edit.node.lexical",
+        ".tree[].label",
+    ),
     "/admin-api/sts-metadata": (
         ".endpoints[].description",
         ".rows[].what",
