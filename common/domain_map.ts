@@ -34,6 +34,9 @@ const log = bunyan.createLogger({
 const GENERALIZED_TIME =
   /^(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)(\d\d)?(?:\.\d+)?Z$/;
 
+// Read once: a concept is made per entry, and a report walks every entry.
+let concepts: Map<string, any> | null = null;
+
 interface FromOptions {
   // Asked for by name: `{ secrets: ['oauth.clientSecrets'] }`.
   secrets?: string[];
@@ -54,12 +57,14 @@ class DomainMap {
    */
   static catalogue(): Map<string, any> {
     log.debug("Entering DomainMap.catalogue().");
-    const concepts = ModelTables.file('domain.json').concepts;
-    const byName = new Map<string, any>(concepts.map(function (one: any) {
-      return [one.name, one] as [string, any];
-    }));
+    if (concepts === null) {
+      concepts = new Map<string, any>(ModelTables.file('domain.json').concepts
+        .map(function (one: any) {
+          return [one.name, one] as [string, any];
+        }));
+    }
     log.debug("Leaving DomainMap.catalogue().");
-    return byName;
+    return concepts;
   }
 
   /**
