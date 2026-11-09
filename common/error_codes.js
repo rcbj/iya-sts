@@ -4963,6 +4963,14 @@ const CODES = [
       'asked to sign. The certificate was not recorded (#1418).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0270',
+    summary: 'A process-scope certificate authority was asked for an ' +
+      'alternative key whose signatures would make the TLS listener ' +
+      'certificate list larger than a stock TLS client accepts (OpenSSL ' +
+      'SSL_MAX_CERT_LIST_DEFAULT, 102400 bytes). Nothing was stored, and ' +
+      'the listener certificate was left as it is (#1421).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

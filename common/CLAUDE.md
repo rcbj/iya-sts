@@ -8400,6 +8400,17 @@ ML-DSA-87. `docs/pki.md` says what that does to a TLS handshake and to an
 either, so nothing could verify one. `tests/pki_hybrid.js` holds all of it,
 including OpenSSL verifying the classical chain untouched.
 
+**A process branch is also held to the listener's certificate list** (#1421).
+The main port presents that branch's leaf, its TLS Issuing CA, the
+Intermediate and the Root. OpenSSL's default certificate list is 102400
+bytes. A scope build does not replace the Root, so a hybrid process branch
+puts the alternative signature on the leaf and on the Issuing CA. When those
+two signatures plus the certificates would exceed 102400 bytes,
+`buildScope()` refuses before anything is stored (`STS-PKI-0270`) and the
+socket keeps the chain it is already presenting. SLH-DSA-256f (49856 bytes)
+is past the limit. ML-DSA-87 is not. A realm branch is not that chain and is
+not refused for size.
+
 ### 3w, CONTINUED: SIGNER GROUPS, COLLAPSED BY ALGORITHM (2026-09-26, #68 phase 2a)
 
 `keys.signerModel = hybrid-groups` gives a realm a second family of signing

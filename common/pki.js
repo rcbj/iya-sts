@@ -1899,6 +1899,65 @@ function realmRemovedDuringBuild(id, kind, since) {
   return true;
 }
 
+// OpenSSL's default maximum certificate list is 102400 bytes
+// (SSL_MAX_CERT_LIST_DEFAULT). The process listener presents four
+// certificates: the leaf, the TLS Issuing CA, the Intermediate and the
+// Root (#1064). A scope build does not replace the Root. The Intermediate
+// is signed by that Root, so a hybrid process branch puts the alternative
+// signature on the leaf and on each Issuing CA — two signatures — and the
+// classical bodies still have to fit. 16384 bytes is that headroom.
+// ML-DSA-87 (4627) stays inside the limit. SLH-DSA-256f (49856) does not,
+// and the listener then fails every handshake (#1421).
+const LISTENER_CERT_LIST_MAX = 102400;
+const LISTENER_CLASSICAL_CHAIN_BUDGET = 16384;
+const PROCESS_LISTENER_ALT_SIGNATURES = 2;
+
+function processListenerAltSignatureProblem(altKeyAlg) {
+  log.debug('Entering processListenerAltSignatureProblem().');
+  if (!altKeyAlg) {
+    log.debug('Leaving processListenerAltSignatureProblem(). Classical.');
+    return null;
+  }
+  const desc = keyMaterial.keyAlg(altKeyAlg);
+  let signatureBytes = 0;
+  try {
+    const found = desc && desc.pqc ? pqc.signatureAlg(desc.pqc) : null;
+    signatureBytes = (found && found.lengths &&
+                      found.lengths.signature) || 0;
+  } catch (e) {
+    // NAMED rather than swallowed: an alternative key the size table does
+    // not know is not evidence it is small, but alternativeKeyAlgFrom()
+    // has already refused an id this table does not hold. Falling through
+    // leaves that refusal's own answer in place.
+    log.debug('Caught in processListenerAltSignatureProblem(): ' +
+              ((e && e.message) || e));
+    signatureBytes = 0;
+  }
+  if (!signatureBytes) {
+    log.debug('Leaving processListenerAltSignatureProblem(). No size.');
+    return null;
+  }
+  const bytes = signatureBytes * PROCESS_LISTENER_ALT_SIGNATURES +
+                LISTENER_CLASSICAL_CHAIN_BUDGET;
+  if (bytes <= LISTENER_CERT_LIST_MAX) {
+    log.debug('Leaving processListenerAltSignatureProblem(). Fits.');
+    return null;
+  }
+  log.error(errorCodes.tag('STS-PKI-0270') + 'pki: an alternative ' +
+            altKeyAlg + ' key on the process branch would put ' +
+            signatureBytes + '-byte signatures on the listener chain, past ' +
+            'the ' + LISTENER_CERT_LIST_MAX + '-byte certificate list a ' +
+            'stock TLS client accepts. The branch was not built.');
+  log.debug('Leaving processListenerAltSignatureProblem(). Too large.');
+  return errorCodes.mark({ ok: false,
+           errors: ['An alternative ' + altKeyAlg + ' key on the process ' +
+                    'branch would make the TLS listener certificate list ' +
+                    'larger than a stock TLS client can receive. The ' +
+                    'process branch was not rebuilt, and the listener ' +
+                    'certificate was left as it is.'] },
+                         'STS-PKI-0270');
+}
+
 async function buildScopeNow(scopeId, opts) {
   log.debug('Entering buildScope(). scope=' + scopeId);
   const id = String(scopeId);
@@ -1911,6 +1970,18 @@ async function buildScopeNow(scopeId, opts) {
   if (!chosen.ok) {
     log.debug('Leaving buildScope(). ' + chosen.errors.join(' '));
     return chosen;
+  }
+  // BEFORE the Root and BEFORE any tier is made, for the same reason as the
+  // algorithm refusal above. A process branch is the main listener's chain.
+  // An alternative key whose signatures do not fit in a stock TLS client's
+  // certificate list would be installed and then every handshake would fail
+  // (#1421). Refusing here leaves the branch, and the listener, as they are.
+  if (kind === 'process') {
+    const handshake = processListenerAltSignatureProblem(chosen.altKeyAlg);
+    if (handshake) {
+      log.debug('Leaving buildScope(). The listener chain.');
+      return handshake;
+    }
   }
   const intermediateYears = tierYearsFrom(options.years, 'intermediate');
   const issuingYears = tierYearsFrom(options.years, 'issuing');
@@ -14491,6 +14562,10 @@ module.exports = {
   keyAlgorithms: keyAlgorithms,
   signatureAlgorithms: signatureAlgorithms,
   alternativeKeyAlgs: alternativeKeyAlgs,
+  // Whether an alternative key's signatures fit the process listener's
+  // certificate list (#1421). Null when they do. Exported so a test can
+  // ask without building a branch.
+  processListenerAltSignatureProblem: processListenerAltSignatureProblem,
   certifySignerGroups: certifySignerGroups,
   alternativeProblem: alternativeProblem,
   defaultSignatureAlgorithmFor: defaultSignatureAlgorithmFor,

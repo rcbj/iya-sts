@@ -207,6 +207,13 @@ carries the whole chain in `x5c` grows by the same amount, base64-encoded,
 which can exceed an HTTP server's header limit when the token is sent as a
 bearer. `x5u`, the default, does not carry the chain.
 
+A process branch is held to one more limit. That handshake also carries the
+Root, and a stock TLS client accepts a certificate list of 102400 bytes.
+Choosing an alternative key whose signatures do not fit (SLH-DSA-256f is
+49856 bytes, and the leaf and the TLS Issuing CA each carry one) is refused
+and the branch is left as it was. ML-DSA-87 fits. A realm branch is not the
+listener's chain and is not refused for this reason.
+
 **CRLs and OCSP responses are signed classically only, on purpose.** No
 published profile defines an alternative signature on either, so no client
 could check one, and a second signature nothing verifies would add size and
