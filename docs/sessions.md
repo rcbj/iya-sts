@@ -155,13 +155,43 @@ Logout, and SPNEGO and federation add none because neither defines one.
 
 Fixed when the session is created, from **`authn.sessionLifetimeS`** (3600 by
 default); changing it reaches the next session and leaves live ones as they
-were. **There is no idle timeout by default**, so a session in constant use dies
-at the same instant as one nobody has touched — set
-**`authn.sessionIdleTimeoutS`** to end a session that many seconds after it was
-last used, whichever limit comes first. The idle timeout is checked whenever a
-session is read, so it applies to sessions that already exist, and a request to
-the admin console or the user portal counts as use of the sign-on session behind
-it.
+were. **In product mode a session also ends after 30 idle minutes**
+(**`authn.sessionIdleTimeoutS`**: 1800 by default in product mode, and 0, meaning
+none, in development mode), whichever limit comes first. The idle timeout is
+checked whenever a session is read, so it applies to sessions that already
+exist, and a request to the admin console or the user portal counts as use of
+the sign-on session behind it.
+
+### How long a session may last, and why
+
+Product mode ends a sign-on session one hour after it starts, and after 30
+minutes without use, whichever comes first. NIST SP 800-63B-4 sets these limits
+for reauthentication:
+
+| Level | Overall limit | Inactivity limit |
+|---|---|---|
+| AAL1 | SHOULD be no more than 30 days | MAY apply, not required |
+| AAL2 | SHOULD be no more than 24 hours | SHOULD be no more than 1 hour |
+| AAL3 | SHALL be no more than 12 hours | SHOULD be no more than 15 minutes |
+
+Product mode requires a second factor at the sign-in screen, so its sessions are
+meant for AAL2. One hour and 30 minutes are well inside both limits. The shorter
+overall limit is deliberate: a stolen session is useful for at most an hour, and
+a person who is still working signs in again. A deployment that needs AAL3 sets
+`authn.sessionIdleTimeoutS` to 900.
+
+These do not follow the two numbers:
+
+| Case | What applies, and why |
+|---|---|
+| A management API, SCIM or SPIRE Server API client session | Extended by `authn.sessionLifetimeS` on each call. No person is involved, and it exists only while the client calls |
+| A refresh token (`oauth2.refreshTokenTtlS`, 24 hours) | Ends with the session it came from. An `offline_access` refresh token outlives the session by design, up to its own lifetime |
+| An access token (`oauth2.accessTokenTtlS`, one hour) | Ends with the session at this service's own endpoints. A resource server that checks only the signature accepts it until it expires |
+| A SAML assertion or a Kerberos ticket | Cannot be recalled and lasts its own lifetime. See [What ending a session stops](#what-ending-a-session-stops) |
+| A federated session | Ends at the partner's `SessionNotOnOrAfter`, if that is sooner |
+
+Reauthentication uses the sign-in itself: `prompt=login`, `max_age`, `acr_values`
+or SAML `ForceAuthn` adds an authentication to the same session.
 
 **An expiry ends the session properly**, not *lazily* when something next
 looks the session up — somebody who closed their browser would never be looked

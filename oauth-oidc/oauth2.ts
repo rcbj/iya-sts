@@ -3438,7 +3438,9 @@ class OAuth2Server {
                 'could not publish the JWKS: ' + e.message);
       errorCodes.mark(res, 'STS-OAUTH-0184');
       res.status(500).type('application/json')
-        .send(JSON.stringify({ error: e.message }));
+        .send(JSON.stringify({ error:
+          require('../common/mode').hidesFailureDetail()
+            ? 'server_error' : e.message }));
       log.debug("Leaving the JWKS endpoint. The keys could not be made.");
     });
     log.debug("Leaving the JWKS endpoint. Answering.");
@@ -3599,7 +3601,9 @@ class OAuth2Server {
       errorCodes.mark(res, 'STS-OAUTH-0184');
       res.status(500)
          .type('application/json')
-         .send(JSON.stringify({ error: e.message }));
+         .send(JSON.stringify({ error:
+           require('../common/mode').hidesFailureDetail()
+             ? 'server_error' : e.message }));
       log.debug("Leaving OAuth2Server.sendJwks(). It failed.");
     }
     log.debug("Leaving OAuth2Server.sendJwks().");
@@ -3672,6 +3676,18 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.idTokenTtl().");
     return applications.settingFor(clientId || '', 'oauth2.idTokenTtlS',
                                    config);
+  }
+
+  // A refresh token's `exp`: its own lifetime, but never past the chain's
+  // absolute limit (ASVS 5.0.0 10.4.8). Past that the token has expired like any
+  // other, so the person signs in again.
+  private refreshExpiry(clientId: Json, iat: number, chainIat: number): number {
+    const { log, config } = this.deps;
+    log.debug("Entering OAuth2Server.refreshExpiry().");
+    const own = iat + Number(this.refreshTokenTtl(clientId));
+    const limit = Number(config.value('oauth2.refreshTokenMaxChainS'));
+    log.debug("Leaving OAuth2Server.refreshExpiry().");
+    return limit > 0 ? Math.min(own, chainIat + limit) : own;
   }
 
   private refreshTokenTtl(clientId: Json): Json {
@@ -4555,7 +4571,11 @@ class OAuth2Server {
       // being renewed.
       resources: (opts.resources && opts.resources.length) ? opts.resources :
                   undefined,
-      iat: iat, nbf: iat, exp: iat + self.refreshTokenTtl(opts.client_id),
+      iat: iat, nbf: iat,
+      // ASVS 5.0.0 10.4.8: when this chain of renewals began, carried from each
+      // token to the next so renewing cannot outrun the absolute limit.
+      chain_iat: opts.chainIat || iat,
+      exp: self.refreshExpiry(opts.client_id, iat, opts.chainIat || iat),
       // RFC 9449 section 5: a refresh token issued to a PUBLIC client alongside
       // a DPoP-bound access token is itself bound to the same key — and one
       // issued to a CONFIDENTIAL client is NOT: "they are already
@@ -5944,6 +5964,7 @@ class OAuth2Server {
         Object.assign({}, issuing, {
           access_jti: self.jtiOf(access),
           access_exp: this.deps.nowSec() + Number(body.expires_in || 0),
+          chainIat: opts.chainIat,
           scope: hasGrantScope ? String(opts.grantScope || '') :
                  (opts.scope || ''),
           resources: hasGrantResources ? opts.grantResources :
@@ -15175,6 +15196,20 @@ class OAuth2Server {
     // OAUTH 2.1 — two refusals about the SHAPE of the request, before anything
     // in it is believed: a repeated parameter (sections 3.1 and 3.2) and more
     // than one client authentication method (section 2.4).
+    // RFC 6749 section 3.2: a parameter MUST NOT appear more than once. Product
+    // refuses it outright, as OAuth 2.1 mode does below (ASVS 5.0.0 15.3.7).
+    if (!oauth21.enabled() &&
+        require('../common/mode').refusesRepeatedTokenParameters()) {
+      const repeated = oauth21.repeatedParameterRefusal(
+          oauth21.repeatedNames(null, typeof req.body === 'string' ? req.body :
+                                      ''), 'token request', true);
+      if (repeated) {
+        log.debug("Leaving the token endpoint. A repeated parameter.");
+        errorCodes.mark(res, repeated.errorCode || 'STS-OAUTH-0285');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 400, repeated.error, repeated.description);
+      }
+    }
     if (oauth21.enabled()) {
       const repeated = oauth21.repeatedParameterRefusal(
           oauth21.repeatedNames(null, typeof req.body === 'string' ? req.body :
@@ -17195,6 +17230,7 @@ class OAuth2Server {
         // the paragraph on refreshToken() in tokenSet() — RFC 6749 section 6.
         grantScope: claims.scope || '',
         grantResources: grantedResources,
+        chainIat: claims.chain_iat,
         // The session the REFRESHED token came from, looked up by the refresh
         // token's own jti. Nothing on the wire carries it — a refresh token
         // names no session — so without this every second-generation token

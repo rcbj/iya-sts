@@ -1072,8 +1072,8 @@
     "text": "Pas de décalage d’horloge tolérés"
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "Combien de pas de part et d’autre du moment présent sont acceptés. RFC 6238 section 5.2 recommande au plus un, ce qui est la valeur par défaut et rend un code valable environ quatre-vingt-dix secondes. **Celui-ci s’applique EN DIRECT** et vaut pour chaque enrôlement existant — la tolérance d’un déploiement envers un téléphone dont l’horloge dérive est une politique plutôt que quelque chose que le code QR a indiqué à l’application. Zéro exige une horloge parfaitement synchronisée et c’est le réglage à utiliser pour montrer ce qui se passe sans."
+    "en": "16e7e0f293746c98",
+    "text": "Combien de pas de part et d’autre du moment présent sont acceptés. RFC 6238 section 5.2 recommande au plus un, ce qui est la valeur par défaut et rend un code valable environ quatre-vingt-dix secondes. **Celui-ci s’applique EN DIRECT** et vaut pour chaque enrôlement existant — la tolérance d’un déploiement envers un téléphone dont l’horloge dérive est une politique plutôt que quelque chose que le code QR a indiqué à l’application. Zéro exige une horloge parfaitement synchronisée et c’est le réglage à utiliser pour montrer ce qui se passe sans. En mode produit, la valeur par défaut est 0 : un code vaut pour une seule période de 30 secondes."
   },
   "totp.secretBytes|label": {
     "en": "15a7f23cdeca7ba5",
@@ -12314,5 +12314,37 @@
   "malwareScan.allowCleartext|description": {
     "en": "c00ee2f1e34722ff",
     "text": "Désactivé, par défaut, le mode produit refuse une adresse icap:// et aucun fichier n’est accepté tant qu’une adresse icaps:// n’est pas définie. Activé, les fichiers peuvent atteindre l’analyseur sans chiffrement. À n’utiliser que sur un réseau de confiance."
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "Mots interdits dans un mot de passe"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "Mots supplémentaires qu’un nouveau mot de passe ne peut pas contenir, comme les noms de votre organisation, produit, projet ou service. Séparés par des virgules. Le nom du service, ainsi que le nom et le domaine du domaine de confiance, sont toujours refusés. Un mot doit comporter au moins quatre lettres ; la vérification ignore la casse et les substitutions courantes, comme 0 pour o."
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "Durée maximale d’une chaîne de jetons d’actualisation (s)"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "Limite absolue d’une autorisation renouvelée par jetons d’actualisation, comptée depuis le premier. Une fois dépassée, la personne se reconnecte, quelle que soit la fréquence d’actualisation. 0 signifie aucune limite, valeur par défaut en développement. Le mode produit utilise 30 jours par défaut."
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "Accepter un jeton de déconnexion partenaire sans type explicite"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "Désactivé, par défaut, le mode produit n’accepte le jeton de déconnexion d’un partenaire que s’il est de type logout+jwt. Activé, un jeton de type jwt ou sans type est aussi accepté, pour un partenaire qui n’envoie pas le type. La spécification OpenID ne fait que le recommander."
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "dfa5936497901458",
+    "text": "Ancienneté maximale de la connexion pour changer un second facteur (min)"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "50ed3d8089739a00",
+    "text": "Une personne qui modifie ses seconds facteurs, codes de récupération, clés d’accès ou adresse e-mail sur le portail doit s’être connectée depuis moins de ce nombre de minutes, sinon elle doit d’abord se reconnecter. 0 signifie que ce n’est pas demandé, valeur par défaut en développement. Le mode produit utilise 15 par défaut."
   }
 }

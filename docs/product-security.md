@@ -151,7 +151,10 @@ A GNAP user assertion that has expired is refused unless an operator sets
   specifications define.
 * **Malware scanning** of uploaded images and risk datasets is optional and off
   by default. See [Malware scanning](malware-scanning.md).
-* **Second factor.** Required of everybody, administrators included. The
+* **Second factor.** Required of everybody who signs in with a browser,
+  administrators included, including with a certificate. A federation partner is
+  the authentication, so federated sign-ins are not asked for one, and nor are
+  programs that present a client certificate. The
   password-only doors (LDAP, WS-Trust, SCIM, Shared Signals and EST Basic) cannot
   ask for one, so a person uses an app password there, with no second factor. This
   is intentional: see [Authentication](authentication.md).

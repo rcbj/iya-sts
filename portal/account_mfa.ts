@@ -583,7 +583,7 @@ class AccountMfa {
             });
         } },
       { method: 'POST', path: ctx.BASE + '/mfa', operationId: 'changeMfa',
-        access: 'person',
+        access: 'person', recentAuth: true,
         body: MFA_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

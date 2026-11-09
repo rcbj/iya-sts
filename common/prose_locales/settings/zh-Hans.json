@@ -1072,8 +1072,8 @@
     "text": "容忍的时钟偏差步数"
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "接受当前时间前后各多少个步长。RFC 6238 第 5.2 节建议最多一个，这也是默认值，使一个验证码大约有效九十秒。**此项是实时生效的**，适用于所有现有注册——一个部署对时钟漂移的手机容忍多少，是一项策略，而不是二维码告诉应用的东西。零要求时钟完全同步，用于演示没有容忍时会发生什么。"
+    "en": "16e7e0f293746c98",
+    "text": "接受当前时间前后各多少个步长。RFC 6238 第 5.2 节建议最多一个，这也是默认值，使一个验证码大约有效九十秒。**此项是实时生效的**，适用于所有现有注册——一个部署对时钟漂移的手机容忍多少，是一项策略，而不是二维码告诉应用的东西。零要求时钟完全同步，用于演示没有容忍时会发生什么。 产品模式默认值为 0，因此代码仅在一个 30 秒时间步内有效。"
   },
   "totp.secretBytes|label": {
     "en": "15a7f23cdeca7ba5",
@@ -12314,5 +12314,37 @@
   "malwareScan.allowCleartext|description": {
     "en": "c00ee2f1e34722ff",
     "text": "默认关闭时，产品模式拒绝 icap:// 地址，在设置 icaps:// 地址之前不接受任何文件。开启后，文件可能以未加密方式到达扫描器。仅在可信网络中使用。"
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "密码不得包含的词"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "新密码不得包含的其他词，例如组织、产品、项目或部门名称。以逗号分隔。服务名称以及信任域的名称和域名始终被拒绝。词至少需要四个字母；检查会忽略大小写和常见字符替换（如用 0 代替 o）。"
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "刷新令牌链的最长持续时间（秒）"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "通过刷新令牌续期的授权的绝对上限，从第一个令牌开始计算。超过后用户须重新登录，无论客户端刷新多少次。0 表示无限制，这是开发模式的默认值。产品模式默认 30 天。"
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "接受无显式类型的合作方注销令牌"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "默认关闭时，产品模式仅接受类型为 logout+jwt 的合作方注销令牌。开启后，也接受类型为 jwt 或无类型的令牌，适用于不发送类型的合作方。OpenID 规范仅建议使用该类型。"
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "dfa5936497901458",
+    "text": "更改第二因素所需的登录新近程度（分钟）"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "50ed3d8089739a00",
+    "text": "用户在门户更改第二因素、恢复代码、通行密钥或电子邮件地址时，必须在此分钟数内登录过，否则须先重新登录。0 表示不要求，这是开发模式的默认值。产品模式默认 15。"
   }
 }

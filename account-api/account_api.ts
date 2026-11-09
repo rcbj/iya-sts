@@ -388,6 +388,29 @@ class AccountApi {
    * @param body - the answer
    * @returns nothing
    */
+  // How recent a sign-in must be to change how somebody signs in (#1515, ASVS
+  // 5.0.0 7.5.1), in seconds. Zero means it is not asked.
+  private recentAuthSeconds(): number {
+    const { log, config } = this.deps;
+    log.debug("Entering AccountApi.recentAuthSeconds().");
+    log.debug("Leaving AccountApi.recentAuthSeconds().");
+    return Number(config.value('account.recentAuthMinutes')) * 60;
+  }
+
+  // The latest authentication event of the session this token came from.
+  private signedInRecently(caller: AccountCaller): boolean {
+    const { log } = this.deps;
+    log.debug("Entering AccountApi.signedInRecently().");
+    const limit = this.recentAuthSeconds();
+    const signOn: Json = (caller as Json).signOn;
+    const events = signOn && Array.isArray(signOn.events) ? signOn.events : [];
+    const latest = events.length ? events[events.length - 1] : null;
+    const at = Number((latest && latest.at) || (signOn && signOn.authTime) || 0);
+    log.debug("Leaving AccountApi.signedInRecently().");
+    return limit === 0 ||
+      (at > 0 && Date.now() / 1000 - at <= limit);
+  }
+
   json(res: Json, status: number, body: Json): unknown {
     const { log } = this.deps;
     log.debug("Entering AccountApi.json(). " + status);
@@ -732,8 +755,10 @@ class AccountApi {
     // ENDED (the admin API's three checks, #36 and #446): each is a
     // credential that stopped being one.
     const stats = lazy.stats();
-    const person = String(claims.username ||
-                          helpers.nameForSubject(claims.sub) || '');
+    // `sub` first: it cannot be reassigned and a username can (ASVS 5.0.0
+    // 10.3.3).
+    const person = String(helpers.nameForSubject(claims.sub) ||
+                          claims.username || '');
     if ((claims.jti && stats.isRevoked(String(claims.jti))) ||
         (person && lazy.accountState().isDisabled(person))) {
       log.debug("Leaving AccountApi.authenticate(). Revoked or disabled.");
@@ -946,6 +971,11 @@ class AccountApi {
         log.debug("Leaving AccountApi.run(). Refused at the gate.");
         return undefined;
       }
+      if (op.recentAuth && !this.signedInRecently(caller)) {
+        log.debug("Leaving AccountApi.run(). Sign in again.");
+        return this.json(res, 200, { ok: false, stepUp: {
+          prompt: 'login', maxAge: this.recentAuthSeconds() } });
+      }
     }
     const input = { query: req.query || {}, body: {} };
     if (op.query) {
@@ -1054,8 +1084,8 @@ class AccountApi {
       try {
         const claims = JSON.parse(Buffer.from(parts[1], 'base64url')
                                     .toString('utf8'));
-        named = String(claims.username ||
-                       helpers.nameForSubject(claims.sub) || '');
+        named = String(helpers.nameForSubject(claims.sub) ||
+                       claims.username || '');
       } catch (e) {
         // Not a JWT this cell can read: answered here, where the gate says
         // why it is no token.

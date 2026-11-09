@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5359** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5361** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -77,7 +77,7 @@ is an ordinary outcome.
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
 * [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 84
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 153
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 59
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 60
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
 * [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 137
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
@@ -91,7 +91,7 @@ is an ordinary outcome.
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 263
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 264
 * [Management API (`STS-API`)](#sts-api) — 91
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 19
@@ -3899,6 +3899,7 @@ Raised from: tls/.
 | `STS-TLS-0057` | A block of tls.trustAnchorsFile is one the admission rule refuses under paranoid PKI mode, and was left out of the truststore (#1360). | none (logged) |
 | `STS-TLS-0058` | A resumed TLS session's client certificate was demoted under paranoid PKI mode: its full handshake was refused, or no record of it reached this process within tls.resumedChainWaitMs. The next full handshake settles it (#1360). | none (logged): the certificate is treated as unverified |
 | `STS-TLS-0059` | GET /tls/sign-in was asked for by a browser other than as a navigation typed by the person or sent from this origin, in product (ASVS 5.0.0 3.5.3). | HTTP 403 |
+| `STS-TLS-0060` | A certificate sign-in started no session because the person owes a second factor. | HTTP 200 |
 
 ## STS-VC
 
@@ -5505,6 +5506,7 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0912` | A signer truststore remove named nothing this realm holds, or an entry that comes from pki.signerTrustAnchorsFile (#1360). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0913` | set-row named something that is not a paranoid PKI setting (#1360). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0914` | set-row was refused by the settings write path, or a use case an add named is not one this service has (#1360). | HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0915` | A second factor was not cleared because the administrator did not say how the person was verified. | HTTP 400 |
 
 ## STS-API
 

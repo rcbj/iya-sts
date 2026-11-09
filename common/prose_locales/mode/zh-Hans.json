@@ -1322,5 +1322,29 @@
   "mode.requirements.malware-scan-tls.product": {
     "en": "dbcd39f827b0a349",
     "text": "仅使用 icaps:// 地址，除非开启 malwareScan.allowCleartext。"
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "清除第二因素需要说明身份证明"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "管理员只需指定用户即可清除因素。"
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "管理员必须说明如何验证了此人的身份。该说明会记录在审计日志中。"
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "严格解读协议输入"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "重复的令牌参数取最后一个值，合作方的注销令牌无需显式类型，开启 global.trustProxy 且无列表时相信任何人转发的地址，内部错误文本会返回给调用方。"
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "重复的令牌参数被拒绝，合作方的注销令牌必须为 logout+jwt 类型（除非开启 federation.allowUntypedLogoutToken），转发地址需要 global.trustedProxies，内部错误文本只保留在日志中。"
   }
 }

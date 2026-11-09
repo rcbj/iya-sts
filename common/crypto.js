@@ -6327,7 +6327,10 @@ const PBES2_HASH = { 'PBES2-HS256+A128KW': 'sha256',
 // blocks: PBKDF2 is synchronous here, and 2^31 iterations on the token
 // endpoint is a denial of service with a specification citation attached.
 const PBES2_MAX_ITERATIONS = 1000000;
-const PBES2_DEFAULT_ITERATIONS = 8192;
+// OWASP's current figure for PBKDF2-HMAC-SHA256 (ASVS 5.0.0 11.4.4).
+const PBES2_DEFAULT_ITERATIONS = 600000;
+// RFC 7518 section 4.8.1.2: "A minimum iteration count of 1000 is RECOMMENDED."
+const PBES2_MIN_ITERATIONS = 1000;
 // JWK curve name -> the name node's OpenSSL knows it by.
 const EC_CURVES = { 'P-256': 'prime256v1', 'P-384': 'secp384r1',
                     'P-521': 'secp521r1' };
@@ -6687,7 +6690,7 @@ function symmetricKek(alg, secret, header, forEncrypt) {
       }
       salt = Buffer.from(String(header.p2s), 'base64url');
       iterations = Math.floor(Number(header.p2c));
-      if (!isFinite(iterations) || iterations < 1) {
+      if (!isFinite(iterations) || iterations < PBES2_MIN_ITERATIONS) {
         throw new Error('a ' + alg + ' JWE carries its PBKDF2 iteration ' +
           'count in the header as `p2c` and this one says ' +
           '"' + header.p2c + '".');

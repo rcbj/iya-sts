@@ -271,8 +271,10 @@ function peerIsTrustedProxy(req) {
   log.debug("Entering peerIsTrustedProxy().");
   const theRanges = ranges();
   if (!theRanges.configured) {
-    log.debug("Leaving peerIsTrustedProxy(). No ranges: the old rule.");
-    return true;
+    // Believing any caller lets anybody name their own address, so product
+    // needs the list (ASVS 5.0.0 15.3.4).
+    log.debug("Leaving peerIsTrustedProxy(). No ranges.");
+    return !require('./mode').requiresTrustedProxyRanges();
   }
   log.debug("Leaving peerIsTrustedProxy().");
   return inRanges(peerOf(req), theRanges);

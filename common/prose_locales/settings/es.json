@@ -1072,8 +1072,8 @@
     "text": "Pasos de desfase de reloj tolerados"
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "Cuántos pasos a cada lado del momento actual se aceptan. La sección 5.2 de RFC 6238 recomienda como máximo uno, que es el valor predeterminado y hace que un código valga unos noventa segundos. **Este SÍ es en vivo** y se aplica a cada registro existente — cuánto perdona un despliegue a un teléfono con el reloj desfasado es una política y no algo que el código QR comunicó a la aplicación. Cero exige un reloj perfectamente sincronizado y es el ajuste al que recurrir para demostrar qué ocurre sin uno."
+    "en": "16e7e0f293746c98",
+    "text": "Cuántos pasos a cada lado del momento actual se aceptan. La sección 5.2 de RFC 6238 recomienda como máximo uno, que es el valor predeterminado y hace que un código valga unos noventa segundos. **Este SÍ es en vivo** y se aplica a cada registro existente — cuánto perdona un despliegue a un teléfono con el reloj desfasado es una política y no algo que el código QR comunicó a la aplicación. Cero exige un reloj perfectamente sincronizado y es el ajuste al que recurrir para demostrar qué ocurre sin uno. En modo producto el valor predeterminado es 0, así que un código vale para un solo intervalo de 30 segundos."
   },
   "totp.secretBytes|label": {
     "en": "15a7f23cdeca7ba5",
@@ -12314,5 +12314,37 @@
   "malwareScan.allowCleartext|description": {
     "en": "c00ee2f1e34722ff",
     "text": "Desactivado, el valor predeterminado, el modo producto rechaza una dirección icap:// y no se aceptan archivos hasta que se defina una dirección icaps://. Activado, los archivos pueden llegar al analizador sin cifrar. Úselo solo en una red de confianza."
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "Palabras que una contraseña no puede contener"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "Palabras adicionales que una contraseña nueva no puede contener, como los nombres de su organización, producto, proyecto o departamento. Separadas por comas. El nombre del servicio y el nombre y dominio del dominio de confianza siempre se rechazan. Una palabra necesita al menos cuatro letras; la comprobación ignora mayúsculas y sustituciones habituales, como 0 por o."
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "Duración máxima de una cadena de tokens de actualización (s)"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "Límite absoluto de una autorización renovada con tokens de actualización, contado desde el primero. Superado, la persona vuelve a iniciar sesión, por mucho que el cliente haya actualizado. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 30 días por defecto."
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "Aceptar un token de cierre de sesión de un socio sin tipo explícito"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "Desactivado, el valor predeterminado, el modo producto solo acepta el token de cierre de sesión de un socio si tiene el tipo logout+jwt. Activado, también se acepta un token de tipo jwt o sin tipo, para un socio que no envía el tipo. La especificación OpenID solo lo recomienda."
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "dfa5936497901458",
+    "text": "Antigüedad máxima del inicio de sesión para cambiar un segundo factor (min)"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "50ed3d8089739a00",
+    "text": "Una persona que cambie sus segundos factores, códigos de recuperación, llaves de acceso o dirección de correo en el portal debe haber iniciado sesión en estos minutos; de lo contrario, se la envía a iniciar sesión de nuevo. 0 significa que no se pide, el valor predeterminado en desarrollo. El modo producto usa 15 por defecto."
   }
 }

@@ -1072,8 +1072,8 @@
     "text": "Förlåtna steg av klockavvikelse"
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "Hur många steg på vardera sidan om nu som godtas. RFC 6238 avsnitt 5.2 rekommenderar högst ett, vilket är standard och gör en kod giltig i ungefär nittio sekunder. **Den här GÄLLER direkt** och tillämpas på varje befintlig registrering — hur mycket en driftsättning förlåter en telefon med en klocka som driver är en policy snarare än något som QR-koden berättade för appen. Noll kräver en perfekt synkroniserad klocka och är inställningen att ta till för att demonstrera vad som händer utan en."
+    "en": "16e7e0f293746c98",
+    "text": "Hur många steg på vardera sidan om nu som godtas. RFC 6238 avsnitt 5.2 rekommenderar högst ett, vilket är standard och gör en kod giltig i ungefär nittio sekunder. **Den här GÄLLER direkt** och tillämpas på varje befintlig registrering — hur mycket en driftsättning förlåter en telefon med en klocka som driver är en policy snarare än något som QR-koden berättade för appen. Noll kräver en perfekt synkroniserad klocka och är inställningen att ta till för att demonstrera vad som händer utan en. I produktläget är standardvärdet 0, så en kod gäller för ett steg på 30 sekunder."
   },
   "totp.secretBytes|label": {
     "en": "15a7f23cdeca7ba5",
@@ -12314,5 +12314,37 @@
   "malwareScan.allowCleartext|description": {
     "en": "c00ee2f1e34722ff",
     "text": "Av, standardvärdet, avvisar produktläget en icap://-adress och inga filer tas emot förrän en icaps://-adress är angiven. På kan filer nå skannern okrypterade. Använd bara på ett nätverk du litar på."
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "Ord som ett lösenord inte får innehålla"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "Extra ord som ett nytt lösenord inte får innehålla, till exempel namn på din organisation, produkt, projekt eller avdelning. Kommaseparerade. Tjänstens namn och sfärens namn och domän avvisas alltid. Ett ord måste ha minst fyra bokstäver, och kontrollen ignorerar skiftläge och vanliga teckenbyten som 0 för o."
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "Längsta tid en kedja av uppdateringstoken får vara (s)"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "Den absoluta gränsen för en behörighet som förnyas med uppdateringstoken, räknat från den första. När den passerats loggar personen in igen, hur ofta klienten än uppdaterat. 0 betyder ingen gräns, standardvärdet i utveckling. Produktläget använder 30 dagar som standard."
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "Acceptera en partners utloggningstoken utan uttrycklig typ"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "Av, standardvärdet, accepterar produktläget en partners utloggningstoken bara om typen är logout+jwt. På accepteras även en token med typen jwt eller utan typ, för en partner som inte skickar typen. OpenID-specifikationen rekommenderar den bara."
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "dfa5936497901458",
+    "text": "Hur nyligen inloggningen måste ha skett för att ändra en andra faktor (min)"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "50ed3d8089739a00",
+    "text": "En person som ändrar sina andra faktorer, återställningskoder, nycklar eller e-postadress på portalen måste ha loggat in inom så många minuter, annars skickas personen till inloggning först. 0 betyder att det inte krävs, standardvärdet i utveckling. Produktläget använder 15 som standard."
   }
 }

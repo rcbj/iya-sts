@@ -1307,7 +1307,9 @@ class AdminApi {
     // The rejection's own code, or `fallback` (STS-LDAP-0176).
     errorCodes.mark(res, code || fallback);
     this.sendJson(res, 500, { error: 'server_error',
-      error_description: String((e && e.message) || e) });
+      error_description: require('../common/mode').hidesFailureDetail()
+        ? 'The request could not be completed.'
+        : String((e && e.message) || e) });
     log.debug("Leaving AdminApi.answerDirectoryFailure(). A failure.");
     return false;
   }
@@ -1351,6 +1353,14 @@ class AdminApi {
   sendJson(res, status, body) {
     const { log } = this.deps;
     log.debug("Entering AdminApi.sendJson(). status=" + status);
+    // A 500 is by definition something nobody planned to say, so product mode
+    // says nothing of it to the caller (ASVS 5.0.0 16.5.1). The sites that send
+    // one log it.
+    if (status === 500 && body && Array.isArray(body.errors) &&
+        require('../common/mode').hidesFailureDetail()) {
+      body = Object.assign({}, body,
+                           { errors: ['The request could not be completed.'] });
+    }
     // The realm's endpoints for a Protocols page, when this is the GET that
     // mirrors one: the registration loop computed them onto `res.locals`, and
     // the member is added to a successful object answer the way the console's

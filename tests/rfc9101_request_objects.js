@@ -829,6 +829,7 @@ function childMain() {
     });
     config.setOverride('federation.outboundCaFile', roCaFile);
     config.setOverride('global.mode', 'product');
+    config.setOverride('oauth2.allowConfidentialWithoutPkce', 'true');
     try {
       r = await byRef(SRO + '/ro/signed');
       note(toSignIn(r) && secureHits['/ro/signed'] === 1,
@@ -847,6 +848,7 @@ function childMain() {
            r.status + ' hits=' + secureHits['/ro/unsigned'] + ' ' +
            r.text.slice(0, 240));
     } finally {
+      config.clearOverride('oauth2.allowConfidentialWithoutPkce');
       config.clearOverride('global.mode');
       config.clearOverride('pki.paranoidOutboundTls');
       config.clearOverride('federation.outboundCaFile');

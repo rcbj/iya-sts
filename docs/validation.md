@@ -43,6 +43,37 @@ client, a person or a password is known or correct is a separate question, and
 | Compressed messages | Inflated up to a fixed limit, so a small message cannot expand without bound. |
 | Passwords | The realm's [password policy](authentication.md#passwords). |
 
+## Checks across fields
+
+Some values are valid alone and wrong together. These are the combinations the
+service checks. A failure is refused, with the error the specification names,
+if it names one, and otherwise `400`.
+
+| Where | The rule |
+|---|---|
+| Client registration | `grant_types` and `response_types` must agree. `jwks` and `jwks_uri` are not both accepted, and a `jwks_uri` must be https. A `native` client's redirect URIs must be loopback `http` or a private-use scheme, and a `web` client using the implicit grant must use `https` and not `localhost` |
+| An authorization request | `request` and `request_uri` are not both accepted |
+| A code redeemed | A code issued with PKCE needs its `code_verifier`. A code is bound to the client and redirect URI it was issued for |
+| A refresh grant | A DPoP-bound refresh token needs a DPoP proof with the same key |
+| Rich authorization | An `amount` needs its `currency` |
+| An OpenID4VCI request | `credential_identifier` and `credential_configuration_id` are not both accepted. A proof may not carry both a `jwk` and a `kid` |
+| An ACME request | A JWS carries exactly one of `jwk` and `kid`, the one the resource takes |
+| HTTP/2 | `:authority` and `Host` must name the same host |
+| WS-Trust | `OnBehalfOf` and `ActAs` are not both accepted |
+| Kerberos | `PA-FOR-USER` and `cname-in-addl-tkt` are not both accepted |
+| WebAuthn settings | `webauthn.pqcAlongsideClassical` and `webauthn.pqcOnly` cannot both be on. A passkey policy's `lanes` must be consistent with its algorithms |
+| Certificate authoring | Reusing a key pair needs both key boxes filled in |
+| Settings for cells | A cell's id needs a jurisdiction, and `cells.peers` may not name this cell |
+| Listeners | Applications that share the sign-on cookie on different host names need `authn.cookieDomain`. `oidfed` must be on the listener `oauth-oidc` is advertised on |
+| Risk datasets | A file's extension must fit the format chosen |
+| Custom attributes | Portal-editable implies portal-visible, and the two are stored that way |
+| A person's values | Each custom attribute's value is checked against its syntax, and the realm's attribute policy says which attributes a person must hold |
+
+The service does not check that free-form values in a person's profile agree
+with each other: a postal code against a city, for example. It stores what the
+directory is given. If your deployment needs that, enforce it in the system that
+provisions the data.
+
 ## The rules for each operation
 
 The [OpenAPI reference](openapi/) gives, for every operation of the management,

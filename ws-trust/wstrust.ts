@@ -5220,8 +5220,10 @@ class WsTrust {
          .type(failedVersion === '1.1' ? 'text/xml; charset=utf-8'
                                        : 'application/soap+xml; charset=utf-8')
          .send(this.receiverFault(failedVersion,
-                         'STS error: ' +
-                         (e && e.message ? e.message : String(e))));
+                         require('../common/mode').hidesFailureDetail()
+                           ? 'The service could not process this request.'
+                           : 'STS error: ' +
+                             (e && e.message ? e.message : String(e))));
       log.debug("Leaving the WS-Trust STS endpoint. It failed.");
     }
   }

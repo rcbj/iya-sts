@@ -4369,6 +4369,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -5122,6 +5126,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -5367,6 +5375,10 @@ Scope: `account:manage`.
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
 | `sessionsEnded` | integer |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -5934,6 +5946,10 @@ Scope: `account:manage`.
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
 | `sessionsEnded` | integer |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.codes` | object |  |  |
 | `view.codes.advised` | boolean |  |  |

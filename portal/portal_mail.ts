@@ -460,7 +460,7 @@ class PortalMail {
             self.emailView(caller.username, input.query.sentPage || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/email', operationId: 'postEmail',
-        access: 'person', body: EMAIL_FORM,
+        access: 'person', recentAuth: true, body: EMAIL_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.postEmail(ctx, req, res, caller, input.body);

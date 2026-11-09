@@ -1072,8 +1072,8 @@
     "text": "容許的時鐘偏差步數"
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "接受目前前後各多少步。RFC 6238 第 5.2 節建議最多一步，這也是預設值，會讓一個代碼有效約九十秒。**這一項是即時生效的**，適用於每個既有註冊——部署對時鐘漂移的手機有多寬容，是一項原則，而不是 QR 碼告訴應用程式的內容。零要求時鐘完全同步，是要示範沒有同步時會發生什麼時可採用的設定。"
+    "en": "16e7e0f293746c98",
+    "text": "接受目前前後各多少步。RFC 6238 第 5.2 節建議最多一步，這也是預設值，會讓一個代碼有效約九十秒。**這一項是即時生效的**，適用於每個既有註冊——部署對時鐘漂移的手機有多寬容，是一項原則，而不是 QR 碼告訴應用程式的內容。零要求時鐘完全同步，是要示範沒有同步時會發生什麼時可採用的設定。 產品模式預設值為 0，因此代碼僅在一個 30 秒時間步內有效。"
   },
   "totp.secretBytes|label": {
     "en": "15a7f23cdeca7ba5",
@@ -12314,5 +12314,37 @@
   "malwareScan.allowCleartext|description": {
     "en": "c00ee2f1e34722ff",
     "text": "預設關閉時，產品模式拒絕 icap:// 位址，在設定 icaps:// 位址之前不接受任何檔案。開啟後，檔案可能以未加密方式到達掃描器。僅在可信任的網路中使用。"
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "密碼不得包含的字詞"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "新密碼不得包含的其他字詞，例如組織、產品、專案或部門名稱。以逗號分隔。服務名稱以及信任領域的名稱和網域一律拒絕。字詞至少需要四個字母；檢查會忽略大小寫和常見字元替換（如以 0 代替 o）。"
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "重新整理權杖鏈的最長持續時間（秒）"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "透過重新整理權杖續期的授權之絕對上限，從第一個權杖起算。超過後使用者須重新登入，無論用戶端重新整理多少次。0 表示無限制，為開發模式預設值。產品模式預設 30 天。"
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "接受無明確類型的合作夥伴登出權杖"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "預設關閉時，產品模式僅接受類型為 logout+jwt 的合作夥伴登出權杖。開啟後，也接受類型為 jwt 或無類型的權杖，適用於不傳送類型的合作夥伴。OpenID 規格僅建議使用該類型。"
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "dfa5936497901458",
+    "text": "變更第二因素所需的登入近期程度（分鐘）"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "50ed3d8089739a00",
+    "text": "使用者在入口網站變更第二因素、復原代碼、通行金鑰或電子郵件地址時，必須在此分鐘數內登入過，否則須先重新登入。0 表示不要求，為開發模式預設值。產品模式預設 15。"
   }
 }

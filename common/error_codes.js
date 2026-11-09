@@ -17658,6 +17658,9 @@ const CODES = [
       'navigation typed by the person or sent from this origin, in ' +
       'product (ASVS 5.0.0 3.5.3).',
     spec: 'HTTP 403' },
+  { code: 'STS-TLS-0060',
+    summary: 'A certificate sign-in started no session because the person owes a second factor.',
+    spec: 'HTTP 200' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -24960,6 +24963,9 @@ const CODES = [
     summary: 'set-row was refused by the settings write path, or a use case ' +
       'an add named is not one this service has (#1360).',
     spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0915',
+    summary: 'A second factor was not cleared because the administrator did not say how the person was verified.',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

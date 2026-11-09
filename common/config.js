@@ -1382,6 +1382,49 @@ const SETTINGS = [
                  'only logged. WARNING: on, ASVS 5.0.0 requirement 10.4.6 is ' +
                  'not met.' },
 
+  { key: 'security.passwordContextWords', group: 'Web security',
+    label: 'Words a password may not contain',
+    env: 'STS_SECURITY_PASSWORD_CONTEXT_WORDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Extra words a new password may not contain, such as your ' +
+                 'organization, product, project or department names. Comma ' +
+                 'separated. The service name and the realm\'s name and domain ' +
+                 'are always refused. A word needs at least four letters, and ' +
+                 'the check ignores case and common letter swaps such as 0 ' +
+                 'for o.' },
+
+  { key: 'oauth2.refreshTokenMaxChainS', group: 'OAuth 2.0 / OIDC per-client',
+    label: 'Longest a chain of refresh tokens may last (s)',
+    env: 'STS_OAUTH2_REFRESH_TOKEN_MAX_CHAIN_S', type: 'int', dflt: strongerInProduct(2592000, 0), derived: true,
+    min: 0, max: 31536000,
+    runtime: true,
+    description: 'The absolute limit on a grant renewed by refresh tokens, ' +
+                 'counted from the first one. Once it passes the person signs ' +
+                 'in again, however often the client refreshed. 0 means no ' +
+                 'limit, which is the development default. Product mode ' +
+                 'defaults to 30 days.' },
+
+  { key: 'federation.allowUntypedLogoutToken', group: 'Federation',
+    label: 'Accept a partner\'s Logout Token with no explicit type',
+    env: 'STS_FEDERATION_ALLOW_UNTYPED_LOGOUT_TOKEN', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode accepts a partner\'s Logout ' +
+                 'Token only if it is typed logout+jwt. On, a token typed jwt ' +
+                 'or carrying no type is accepted too, for a partner that ' +
+                 'does not send the type. The OpenID specification only ' +
+                 'recommends it.' },
+
+  { key: 'account.recentAuthMinutes', group: 'Web security',
+    label: 'How recent a sign-in must be to change a second factor (min)',
+    env: 'STS_ACCOUNT_RECENT_AUTH_MINUTES', type: 'int', dflt: strongerInProduct(15, 0), derived: true,
+    min: 0, max: 1440,
+    runtime: true,
+    description: 'A person changing their second factors, recovery codes, ' +
+                 'passkeys or email address on the portal must have signed in ' +
+                 'within this many minutes, or they are sent to sign in again ' +
+                 'first. 0 means it is not asked, which is the development ' +
+                 'default. Product mode defaults to 15.' },
+
   { key: 'malwareScan.enabled', group: 'Malware scanning',
     label: 'Scan files for malware',
     env: 'STS_MALWARE_SCAN_ENABLED', type: 'bool', dflt: false,
@@ -2873,7 +2916,8 @@ const SETTINGS = [
 
   { key: 'totp.window', group: 'TOTP MFA',
     label: 'Steps of clock skew forgiven', path: 'totp.window',
-    env: 'STS_TOTP_WINDOW', type: 'int', dflt: 1, runtime: true,
+    env: 'STS_TOTP_WINDOW', type: 'int', dflt: strongerInProduct(0, 1),
+    derived: true, runtime: true,
     min: 0, max: 10,
     description: 'How many steps either side of now are accepted. RFC 6238 ' +
                  'section 5.2 recommends at most one, which is the default ' +
@@ -2883,7 +2927,9 @@ const SETTINGS = [
                  'is a policy rather than something the QR code told the ' +
                  'app. Zero demands a perfectly synchronised clock and is ' +
                  'the setting to reach for when demonstrating what happens ' +
-                 'without one.' },
+                 'without one.' +
+                 ' In product mode the default is 0, so a code is good ' +
+                 'for one 30-second step.' },
 
   { key: 'totp.secretBytes', group: 'TOTP MFA',
     label: 'Shared secret length (bytes)', path: 'totp.secretBytes',

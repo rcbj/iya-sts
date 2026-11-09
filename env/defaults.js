@@ -87,6 +87,7 @@ var config = {
   security: {
     fileRoots: "/etc/ssl,/etc/pki,/usr/share/ca-certificates,/usr/local/share/ca-certificates,/run/secrets,/var/run/secrets,/etc/sts", // Directories a named file may be read from; restart to apply
     allowUnscopedPeople: false,                                                                                                        // Let a person reach SCIM and Shared Signals with no role
+    passwordContextWords: "",                                                                                                          // Words a password may not contain
     rateLimitWindowS: 60,                                                                                                              // Rate-limit window (seconds)
     rateLimitPerIdentity: 5,                                                                                                           // Attempts per identity per window
     rateLimitPerAddress: 20,                                                                                                           // Attempts per address per window
@@ -288,6 +289,33 @@ var config = {
     backchannelLogoutSummaryS: 60                  // Back-channel logout summary interval (seconds)
   },
 
+  // --- Federation ------------------------------------------------------
+  federation: {
+    allowUntypedLogoutToken: false,                                          // Accept a partner's Logout Token with no explicit type
+    enabled: true,                                                           // Federation endpoints answer
+    max: 50,                                                                 // Relationships remembered
+    usernamePrefix: "",                                                      // Prefix for federated usernames
+    loginButtons: true,                                                      // Offer partners at the sign-in screen
+    consumerProviders: false,                                                // Consumer and social identity providers
+    connectRecentAuthMinutes: 10,                                            // Connecting a provider: how recent the sign-in must be (min)
+    consumerProvisionCap: 10000,                                             // Consumer providers: accounts each may create
+    outbound: true,                                                          // Make back-channel requests to partners
+    outboundTimeoutMs: 15000,                                                // Back-channel timeout (ms)
+    outboundAllowHttp: false,                                                // Allow http:// to a partner (development only)
+    outboundSkipTlsVerification: false,                                      // Skip TLS verification to a partner (development only)
+    outboundCaFile: "",                                                      // CA certificates for outbound requests
+    requestTtlMin: 10,                                                       // Outbound request lifetime (minutes)
+    maxContexts: 500,                                                        // Sign-ins in flight per realm
+    maxApplicationLength: 256,                                               // Longest application a sign-in may name
+    maxApplicationUse: 64,                                                   // Per-application counters kept per relationship
+    releaseIndexTtlMs: 5000,                                                 // Release-policy index lifetime (ms)
+    maxResponseBytes: 262144,                                                // Largest back-channel response (bytes)
+    jwtAlgorithms: "RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512",  // Algorithms accepted on a partner's JWT
+    spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified", // NameIDFormat in this service's SP metadata
+    atprotoPlcDirectory: "https://plc.directory",                            // PLC directory for Bluesky sign-ins
+    encryptionKeyGraceS: 86400                                               // Previous encryption key kept for (seconds)
+  },
+
   // --- Malware scanning ------------------------------------------------
   malwareScan: {
     enabled: false,        // Scan files for malware
@@ -453,7 +481,6 @@ var config = {
     algorithm: "SHA1",       // HMAC digest
     digits: 6,               // Digits in a code
     period: 30,              // Seconds in a step
-    window: 1,               // Steps of clock skew forgiven
     secretBytes: 20,         // Shared secret length (bytes)
     enrolmentTtlMinutes: 10  // Unconfirmed enrolment lifetime (minutes)
   },
@@ -780,32 +807,6 @@ var config = {
   // --- Applications ----------------------------------------------------
   portal: {
     applicationScanLimit: 1000  // Applications the user portal evaluates for one person
-  },
-
-  // --- Federation ------------------------------------------------------
-  federation: {
-    enabled: true,                                                           // Federation endpoints answer
-    max: 50,                                                                 // Relationships remembered
-    usernamePrefix: "",                                                      // Prefix for federated usernames
-    loginButtons: true,                                                      // Offer partners at the sign-in screen
-    consumerProviders: false,                                                // Consumer and social identity providers
-    connectRecentAuthMinutes: 10,                                            // Connecting a provider: how recent the sign-in must be (min)
-    consumerProvisionCap: 10000,                                             // Consumer providers: accounts each may create
-    outbound: true,                                                          // Make back-channel requests to partners
-    outboundTimeoutMs: 15000,                                                // Back-channel timeout (ms)
-    outboundAllowHttp: false,                                                // Allow http:// to a partner (development only)
-    outboundSkipTlsVerification: false,                                      // Skip TLS verification to a partner (development only)
-    outboundCaFile: "",                                                      // CA certificates for outbound requests
-    requestTtlMin: 10,                                                       // Outbound request lifetime (minutes)
-    maxContexts: 500,                                                        // Sign-ins in flight per realm
-    maxApplicationLength: 256,                                               // Longest application a sign-in may name
-    maxApplicationUse: 64,                                                   // Per-application counters kept per relationship
-    releaseIndexTtlMs: 5000,                                                 // Release-policy index lifetime (ms)
-    maxResponseBytes: 262144,                                                // Largest back-channel response (bytes)
-    jwtAlgorithms: "RS256,RS384,RS512,PS256,PS384,PS512,ES256,ES384,ES512",  // Algorithms accepted on a partner's JWT
-    spNameIdFormat: "urn:oasis:names:tc:SAML:2.0:nameid-format:unspecified", // NameIDFormat in this service's SP metadata
-    atprotoPlcDirectory: "https://plc.directory",                            // PLC directory for Bluesky sign-ins
-    encryptionKeyGraceS: 86400                                               // Previous encryption key kept for (seconds)
   },
 
   // --- SAML 2.0 assertions ---------------------------------------------

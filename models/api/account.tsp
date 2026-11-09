@@ -2438,7 +2438,7 @@ op `postEmail`(`requestBody/content/application~1json/schema`: {
     @js(#{`description`:"The new address, for `change`.",`maxLength`:254}) `address`?: string;
     `notification`?: post_account_api_email_b_application_json_notification_h88
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
+  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; `ok`?: boolean; `message`?: string; `go`?: string},
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
@@ -4934,7 +4934,7 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
       `maxLength`:65536
     }) `credential`?: string
   },
-  `responses/200/content/application~1json/schema`: {`ok`?: boolean; `message`?: string; `go`?: string},
+  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; `ok`?: boolean; `message`?: string; `go`?: string},
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
     `errors`: (string)[];
@@ -5197,7 +5197,7 @@ op `enrolKey`(`requestBody/content/application~1json/schema`: {
 op `removeKey`(`requestBody/content/application~1json/schema`: {
     `credentialId`?: post_account_api_keys_remove_b_application_json_credentialId_h226
   },
-  `responses/200/content/application~1json/schema`: {
+  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;
@@ -5938,7 +5938,7 @@ op `changeMfa`(`requestBody/content/application~1json/schema`: {
       `maxLength`:128
     }) `handle`?: string
   },
-  `responses/200/content/application~1json/schema`: {
+  `responses/200/content/application~1json/schema`: {`stepUp`?: {`acrValues`?: string; `prompt`?: string; `maxAge`?: numeric}; 
     `ok`?: boolean;
     `message`?: string;
     `go`?: string;

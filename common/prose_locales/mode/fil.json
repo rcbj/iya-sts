@@ -1322,5 +1322,29 @@
   "mode.requirements.malware-scan-tls.product": {
     "en": "dbcd39f827b0a349",
     "text": "icaps:// na address lamang ang ginagamit, maliban kung naka-on ang malwareScan.allowCleartext."
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "Kailangan ng nakasaad na patunay ng pagkakakilanlan para i-clear ang second factor"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "Maaaring i-clear ng administrator ang factor sa pamamagitan ng pagpapangalan sa tao."
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "Dapat sabihin ng administrator kung paano na-verify ang pagkakakilanlan ng tao. Itinatala ang pahayag sa audit log."
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "Mahigpit ang pagbasa sa protocol input"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "Kinukuha ng paulit-ulit na token parameter ang huling value, hindi kailangan ng tahasang type ang Logout Token ng partner, pinaniniwalaan ang mga forwarded address mula sa kahit sino kapag naka-on ang global.trustProxy nang walang listahan, at umaabot sa tumawag ang text ng internal error."
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "Tinatanggihan ang paulit-ulit na token parameter, dapat logout+jwt ang type ng Logout Token ng partner maliban kung naka-on ang federation.allowUntypedLogoutToken, kailangan ng global.trustedProxies ang mga forwarded address, at nananatili sa log ang text ng internal error."
   }
 }

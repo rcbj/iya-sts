@@ -325,6 +325,17 @@ async function childBody() {
           JSON.stringify({ sessions: held.length, amr: event.amr,
                            acr: event.acr,
                            credential: (event.context || {}).credential }));
+
+  // #1516: a person in a browser owes the second factor at this door too.
+  const countBefore = sessionsOf(PERSON).length;
+  config.setOverride('global.mode', 'product');
+  const owed = await get(port, {}, '/realm/' + REALM + '/tls/sign-in', pem(mine),
+                         mine.issued.privateKeyPem);
+  config.clearOverride('global.mode');
+  t.check(owed.status === 200 && sessionsOf(PERSON).length === countBefore,
+          'A6: in product GET /tls/sign-in starts no one-factor session for ' +
+          'a person who needs a second factor',
+          JSON.stringify(owed).slice(0, 300));
   const back = await get(port, b.jar, done.location, pem(mine),
                          mine.issued.privateKeyPem);
   const landed = String(back.headers.location || '');

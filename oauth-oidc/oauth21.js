@@ -920,11 +920,12 @@ function loopbackAnyPort() {
  *
  * @param repeated - the names found more than once
  * @param where - the endpoint, named in the refusal
+ * @param always - ask whether or not this mode is on
  * @returns null, or an `invalid_request` refusal
  */
-function repeatedParameterRefusal(repeated, where) {
+function repeatedParameterRefusal(repeated, where, always) {
   log.debug("Entering repeatedParameterRefusal().");
-  if (!enabled()) {
+  if (!enabled() && !always) {
     log.debug("Leaving repeatedParameterRefusal(). The mode is off.");
     return null;
   }

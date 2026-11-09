@@ -1590,11 +1590,9 @@ class Est {
   nonceCookie(req, handle: string, seconds: number): string {
     const { log } = this.deps;
     log.debug("Entering Est.nonceCookie().");
-    const url = String(req.originalUrl || req.url || '').split('?')[0];
-    const at = url.indexOf(BASE);
-    const path = at >= 0 ? url.slice(0, at + BASE.length) : BASE;
     log.debug("Leaving Est.nonceCookie().");
-    return NONCE_COOKIE + '=' + handle + '; Path=' + path + '; Max-Age=' +
+    // Path=/ so that it can carry the __Host- prefix (ASVS 5.0.0 3.3.3).
+    return NONCE_COOKIE + '=' + handle + '; Path=/; Max-Age=' +
       Math.max(1, Math.floor(seconds)) + '; HttpOnly; SameSite=Strict' +
       (req.secure ? '; Secure' : '');
   }
