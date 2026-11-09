@@ -11889,7 +11889,11 @@ class Credentials {
     }
     // #64: the authentication policy's `requireSecondFactor`, which replaced
     // `authn.mfaRequired`. `always` is the old `true`.
-    const byRealm = this.deps.authnPolicy.requireSecondFactor() === 'always';
+    // A SERVICE ACCOUNT has nobody to answer one, so product mode's "everybody"
+    // (#1490) means people; what the realm configured still applies to it.
+    const byRealm = (name && this.deps.serviceAccounts.isServiceAccountName(name)
+      ? this.deps.authnPolicy.configuredSecondFactor()
+      : this.deps.authnPolicy.requireSecondFactor()) === 'always';
     // #246: ADMINISTRATORS, by the same policy's own field — `offer` (the
     // default for now) shows the set-up step with an Ignore button, `always`
     // requires it. The default realm's built-in administrator is only ever
