@@ -884,6 +884,23 @@ of the few declaration attributes a PROTOCOL also writes, because a receiver
 authenticating and being agreed a stream is exactly the kind of event this
 registry exists to hold.
 
+## A permission name or description may not carry an operator error code (#1426)
+
+`oauthPermission` is `name` or `name|description`, and both halves are returned
+on every page that lists the permission: the register, the delegation picture,
+and the directory read. A code stored in either half is sent. `STS-AUTHN-0294`
+is a legal scope token, so `permissionNameProblem()` accepts it, and a
+description has no grammar at all — a setting description, which may name a
+code, pastes straight in.
+
+`permissionOperatorCodeProblem()` refuses both, at the add in
+`updateApplication()` and on the create walk (a create never reaches the
+update). The sentence quotes neither value: a 400 body is scanned raw, and a
+quoted code is the same finding. The check runs before
+`permissionNameProblem()`, whose illegal-token sentence quotes the name.
+`STS-REG-0367`. An `ldapmodify` still writes the attribute unchecked, as the
+schema row says.
+
 ## A SAML SIGNING CERTIFICATE HAS A PROVENANCE TOO (2026-09-17, #37)
 
 `samlSigningCertificate` became the trust anchor a service provider's request

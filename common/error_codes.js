@@ -26940,6 +26940,14 @@ const CODES = [
       'overwritten. An attribute claim can carry it under another name ' +
       '(#700).',
     spec: 'log line; the attribute is absent from every claim set' },
+  // #1426: a permission name or description is returned wherever the
+  // permission is listed, so a code stored in one would be sent.
+  { code: 'STS-REG-0367',
+    summary: 'An oauthPermission name or description contains an operator ' +
+      'error code. Both are returned on every page that lists the ' +
+      'permission, and a code is recorded rather than sent. At a create ' +
+      'and at an attribute add (#1426).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +
