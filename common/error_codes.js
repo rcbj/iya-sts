@@ -25048,6 +25048,9 @@ const CODES = [
   { code: 'STS-ADMIN-0916',
     summary: 'A second factor was not cleared because the administrator did not say how the person was verified.',
     spec: 'HTTP 400' },
+  { code: 'STS-ADMIN-0917',
+    summary: 'An application was not created because the metadata document given with it was refused.',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',

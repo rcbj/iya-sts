@@ -6206,12 +6206,41 @@ class AdminActions {
       }
     });
     if (errors.length) {
+      // ALL OR NOTHING (#1555, ASVS 5.0.0 2.3.3): a save that is partly refused
+      // puts back what it had already changed.
+      const notRestored = changed.filter(function (name) {
+        const held = rows[name.toLowerCase()].values.map(String);
+        const now = (personEditor.editorFor(who).attributes
+          .filter(function (one) {
+            return one.name === name;
+          })[0] || { values: [] }).values.map(String);
+        const results = rows[name.toLowerCase()].multi
+          ? held.filter(function (one) {
+            return now.indexOf(one) < 0;
+          }).map(function (value) {
+            return personEditor.update(who, { attribute: name, mode: 'add',
+                                              value: value }, context);
+          }).concat(now.filter(function (one) {
+            return held.indexOf(one) < 0;
+          }).map(function (value) {
+            return personEditor.update(who, { attribute: name, mode: 'remove',
+                                              value: value }, context);
+          }))
+          : [personEditor.update(who, { attribute: name, mode: 'set',
+                                        value: held[0] || '' }, context)];
+        return !results.every(function (one) {
+          return one.ok;
+        });
+      });
       log.debug("Leaving AdminActions.updatePersonFields(). " +
                 errors.length + " refusal(s).");
-      return this.refused('STS-ADMIN-0839', { ok: false, changed: changed,
-        errors: (changed.length
-          ? ['Saved ' + changed.join(', ') + '; the rest was refused:']
-          : []).concat(errors) });
+      return this.refused('STS-ADMIN-0839', { ok: false,
+        changed: notRestored,
+        errors: (notRestored.length
+          ? ['Part of this was refused, and these could not be put back: ' +
+             notRestored.join(', ') + '.']
+          : ['Nothing was saved, because part of it was refused:'])
+          .concat(errors) });
     }
     log.debug("Leaving AdminActions.updatePersonFields(). " +
               changed.length + " attribute(s) changed.");
@@ -6845,8 +6874,8 @@ class AdminActions {
       // A METADATA DOCUMENT GIVEN WITH THE CREATE IS CONSUMED (#37), exactly
       // as an upload on the SAML 2.0 page is, so the form's promise — paste
       // it here to configure a service provider this service cannot reach —
-      // is kept. A document that is refused leaves the entry created and says
-      // why; the create itself is not undone.
+      // is kept. A document that is refused undoes the create (#1555, ASVS 5.0.0
+      // 2.3.3): the application asked for was one configured by that document.
       const created = this.applicationFieldsFrom(body);
       const pasted = String(created.samlSpMetadata || '');
       let consumed = null;
@@ -6854,14 +6883,17 @@ class AdminActions {
         consumed = spMetadata.consume(result.application.identifier, pasted,
                                       'upload');
       }
-      const consumedSentence = !consumed ? ''
-        : consumed.ok
-          ? ' ' + consumed.message
-          : ' The metadata document given with it was stored and NOT ' +
-            'consumed: ' + (consumed.errors || []).join(' ');
+      if (consumed && !consumed.ok) {
+        applications.deleteApplication(result.application.identifier);
+        log.debug("Leaving AdminActions.applicationsAction(). Undone.");
+        return this.refused('STS-ADMIN-0917', { ok: false, errors: ['Nothing was ' +
+          'created, because the metadata document was refused: ' +
+          (consumed.errors || []).join(' ')] });
+      }
+      const consumedSentence = consumed ? ' ' + consumed.message : '';
       log.debug("Leaving AdminActions.applicationsAction().");
       return { ok: true,
-               application: consumed && consumed.ok
+               application: consumed
                  ? (applications.get(result.application.identifier) ||
                     result.application)
                  : result.application,
