@@ -25011,6 +25011,10 @@ const CODES = [
     summary: 'set-row was refused by the settings write path, or a use case ' +
       'an add named is not one this service has (#1360).',
     spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0915',
+    summary: 'A software statement was asked for with a lifetimeSeconds that ' +
+      'puts its expiry past the last date this service can write (#1470).',
+    spec: 'a refusal naming the field' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
