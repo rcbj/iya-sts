@@ -7754,6 +7754,14 @@ const CODES = [
     summary: 'A post-login activity is running in a realm with no ' +
       'mail transport: its run mailed nobody and moved no cursor (#1111).',
     spec: 'none (logged; the scheduler run row)' },
+  { code: 'STS-AUTHN-0496',
+    summary: 'GET /admin-api/post-login-activities refused its groups ' +
+      'query: longer than 4096 characters, which is as much as one ' +
+      'request line can carry. The activities were not read (#1111, ' +
+      '#1434). A stock parser resets the connection once the incoming ' +
+      'bytes pass about 64KiB, and a schema that allowed 65536 characters ' +
+      'reached that reset during fuzzing.',
+    spec: 'none (HTTP 400 from GET /admin-api/post-login-activities)' },
   { code: 'STS-AUTHN-0500',
     summary: 'A settings write was refused (#1114): it would leave ' +
       'webauthn.attestation `enterprise` with ' +

@@ -162,12 +162,16 @@ class PostLoginActivitiesApi {
             schema: { type: 'string', maxLength: 16 },
             description: 'Where the page of the group search starts.' },
           { name: 'groups', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 65536 },
+            schema: { type: 'string',
+                      maxLength: activities.GROUPS_QUERY_MAX },
             description: 'The groups chosen so far, cns or DNs separated ' +
                          'by `;` (a DN\'s commas stay intact; a `;` inside ' +
                          'a DN value is escaped, `\\;`); ' +
                          'resolved into `groupChooser.chosen` and left out ' +
-                         'of the search.' }
+                         'of the search. At most ' +
+                         activities.GROUPS_QUERY_MAX + ' characters, which ' +
+                         'is as much as one request line can carry; fifty ' +
+                         'ordinary group names fit.' }
         ],
         responseDescription: 'The started activities and the chooser.',
         responseSchema: { type: 'object', additionalProperties: true,
@@ -179,6 +183,14 @@ class PostLoginActivitiesApi {
         handler: function (req: Req, res: Res): void {
           log.debug("Entering the management API post-login activities " +
                     "endpoint.");
+          const problem = activities.groupsQueryProblem(req.query || {});
+          if (problem) {
+            errorCodes.mark(res, 'STS-AUTHN-0496');
+            self.sendJson(res, 400, problem);
+            log.debug("Leaving the management API post-login activities " +
+                      "endpoint.");
+            return;
+          }
           try {
             self.sendJson(res, 200, loadActivities().view(req.query || {}));
           } catch (e) {
