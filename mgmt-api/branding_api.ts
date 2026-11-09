@@ -407,10 +407,8 @@ class BrandingApi {
           log.debug("Leaving the management API branding action.");
         },
         actions: [
-          { action: 'save', operationId: 'saveBranding'
-             },
-          { action: 'remove-logo', operationId: 'removeBrandingLogo'
-             }
+          { action: 'save', operationId: 'saveBranding' },
+          { action: 'remove-logo', operationId: 'removeBrandingLogo' }
         ] }
     ];
     log.debug("Leaving BrandingApi.buildRoutes().");

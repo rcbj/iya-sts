@@ -320,27 +320,17 @@ class ScimClientsApi {
           });
         },
         actions: [
-          { action: 'add-client', operationId: 'addScimClient'
-             },
-          { action: 'update-client', operationId: 'updateScimClient'
-             },
-          { action: 'remove-client', operationId: 'removeScimClient'
-             },
+          { action: 'add-client', operationId: 'addScimClient' },
+          { action: 'update-client', operationId: 'updateScimClient' },
+          { action: 'remove-client', operationId: 'removeScimClient' },
           { action: 'issue-certificate',
-            operationId: 'issueScimClientCertificate'
-             },
-          { action: 'test-connection', operationId: 'testScimClient'
-             },
-          { action: 'reconcile', operationId: 'reconcileScimClient'
-             },
-          { action: 'deliver-now', operationId: 'deliverScimClientNow'
-             },
-          { action: 'retry-delivery', operationId: 'retryScimDelivery'
-             },
-          { action: 'retry-dead', operationId: 'retryScimDeadLetters'
-             },
-          { action: 'purge-dead', operationId: 'purgeScimDeadLetters'
-             }
+            operationId: 'issueScimClientCertificate' },
+          { action: 'test-connection', operationId: 'testScimClient' },
+          { action: 'reconcile', operationId: 'reconcileScimClient' },
+          { action: 'deliver-now', operationId: 'deliverScimClientNow' },
+          { action: 'retry-delivery', operationId: 'retryScimDelivery' },
+          { action: 'retry-dead', operationId: 'retryScimDeadLetters' },
+          { action: 'purge-dead', operationId: 'purgeScimDeadLetters' }
         ] }
     ];
     log.debug("Leaving ScimClientsApi.buildRoutes().");

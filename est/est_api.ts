@@ -237,14 +237,10 @@ class EstApi {
             });
         },
         actions: [
-          { action: 'issue-server-key', operationId: 'issueEstServerKey'
-             },
-          { action: 'revoke-certificate', operationId: 'revokeEstCertificate'
-             },
-          { action: 'add-host-name', operationId: 'addEstHostName'
-             },
-          { action: 'remove-host-name', operationId: 'removeEstHostName'
-             }
+          { action: 'issue-server-key', operationId: 'issueEstServerKey' },
+          { action: 'revoke-certificate', operationId: 'revokeEstCertificate' },
+          { action: 'add-host-name', operationId: 'addEstHostName' },
+          { action: 'remove-host-name', operationId: 'removeEstHostName' }
         ] }
     ];
     log.debug("Leaving EstApi.buildRoutes().");

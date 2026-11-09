@@ -2170,21 +2170,11 @@ class AdminApi {
     const noun = family.noun;
     const setField = { type: 'string', enum: family.sets.slice() };
     const rows = [
-      { action: 'add', operationId: family.ids.add
-         },
-
-      { action: 'add-attribute-claim', operationId: family.ids.addAttribute
-         },
-
-      { action: 'remove', operationId: family.ids.remove
-         },
-
-      { action: 'clear', operationId: family.ids.clear
-         },
-
-      { action: 'replace', operationId: family.ids.replace
-         },
-
+      { action: 'add', operationId: family.ids.add },
+      { action: 'add-attribute-claim', operationId: family.ids.addAttribute },
+      { action: 'remove', operationId: family.ids.remove },
+      { action: 'clear', operationId: family.ids.clear },
+      { action: 'replace', operationId: family.ids.replace },
       // --- the directory-attribute half of a set ----------------------------
       //
       // Three operations rather than one with a mode, mirroring the console's
@@ -2192,14 +2182,9 @@ class AdminApi {
       // `attributes` array would otherwise be ambiguous between "clear it" and
       // "my HTTP client dropped an empty array", which is a real behaviour of
       // real clients and the kind of ambiguity that silently empties a set.
-      { action: 'attributes', operationId: family.ids.attributes
-         },
-
-      { action: 'attributes-all', operationId: family.ids.all
-         },
-
-      { action: 'attributes-clear', operationId: family.ids.none
-         }
+      { action: 'attributes', operationId: family.ids.attributes },
+      { action: 'attributes-all', operationId: family.ids.all },
+      { action: 'attributes-clear', operationId: family.ids.none }
     ];
     log.debug("Leaving AdminApi.claimSetActions(). " + rows.length +
               " action(s).");
@@ -5673,7 +5658,6 @@ class AdminApi {
 
           { action: 'revoke', operationId: 'revokeAdminRole' }
         ] },
-
 
       // ---------------------------------------------------------------------
       // MULTI-FACTOR AUTHENTICATION (2026-09-10).

@@ -204,26 +204,17 @@ class UmaApi {
         },
         actions: [
           { action: 'enable-resource-server',
-            operationId: 'enableUmaResourceServer'
-             },
+            operationId: 'enableUmaResourceServer' },
           { action: 'disable-resource-server',
-            operationId: 'disableUmaResourceServer'
-             },
+            operationId: 'disableUmaResourceServer' },
           { action: 'set-owns-resources',
-            operationId: 'setUmaOwnsResources'
-             },
-          { action: 'delete-resource', operationId: 'deleteUmaResource'
-             },
-          { action: 'revoke-rpt', operationId: 'revokeUmaRpt'
-             },
-          { action: 'owner-share', operationId: 'shareUmaResource'
-             },
-          { action: 'owner-unshare', operationId: 'unshareUmaResource'
-             },
-          { action: 'owner-approve', operationId: 'approveUmaRequest'
-             },
-          { action: 'owner-refuse', operationId: 'refuseUmaRequest'
-             }
+            operationId: 'setUmaOwnsResources' },
+          { action: 'delete-resource', operationId: 'deleteUmaResource' },
+          { action: 'revoke-rpt', operationId: 'revokeUmaRpt' },
+          { action: 'owner-share', operationId: 'shareUmaResource' },
+          { action: 'owner-unshare', operationId: 'unshareUmaResource' },
+          { action: 'owner-approve', operationId: 'approveUmaRequest' },
+          { action: 'owner-refuse', operationId: 'refuseUmaRequest' }
         ] }
     ];
     log.debug("Leaving UmaApi.buildRoutes().");

@@ -221,8 +221,7 @@ class GrantManagementApi {
                     result.ok);
         },
         actions: [
-          { action: 'revoke-grant', operationId: 'revokeGrant'
-             }
+          { action: 'revoke-grant', operationId: 'revokeGrant' }
         ] }
     ];
     log.debug("Leaving GrantManagementApi.buildRoutes().");

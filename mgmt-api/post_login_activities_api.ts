@@ -206,14 +206,10 @@ class PostLoginActivitiesApi {
           });
         },
         actions: [
-          { action: 'start', operationId: 'startPostLoginActivity'
-             },
-          { action: 'pause', operationId: 'pausePostLoginActivity'
-             },
-          { action: 'resume', operationId: 'resumePostLoginActivity'
-             },
-          { action: 'end', operationId: 'endPostLoginActivity'
-             }
+          { action: 'start', operationId: 'startPostLoginActivity' },
+          { action: 'pause', operationId: 'pausePostLoginActivity' },
+          { action: 'resume', operationId: 'resumePostLoginActivity' },
+          { action: 'end', operationId: 'endPostLoginActivity' }
         ] }
     ];
     log.debug("Leaving PostLoginActivitiesApi.buildRoutes().");

@@ -234,18 +234,12 @@ class AcmeApi {
           log.debug("Leaving the management API ACME action endpoint.");
         },
         actions: [
-          { action: 'create-eab', operationId: 'createAcmeEab'
-             },
-          { action: 'delete-eab', operationId: 'deleteAcmeEab'
-             },
-          { action: 'deactivate-account', operationId: 'deactivateAcmeAccount'
-             },
-          { action: 'revoke-certificate', operationId: 'revokeAcmeCertificate'
-             },
-          { action: 'add-host-name', operationId: 'addAcmeHostName'
-             },
-          { action: 'remove-host-name', operationId: 'removeAcmeHostName'
-             }
+          { action: 'create-eab', operationId: 'createAcmeEab' },
+          { action: 'delete-eab', operationId: 'deleteAcmeEab' },
+          { action: 'deactivate-account', operationId: 'deactivateAcmeAccount' },
+          { action: 'revoke-certificate', operationId: 'revokeAcmeCertificate' },
+          { action: 'add-host-name', operationId: 'addAcmeHostName' },
+          { action: 'remove-host-name', operationId: 'removeAcmeHostName' }
         ] }
     ];
     log.debug("Leaving AcmeApi.buildRoutes().");

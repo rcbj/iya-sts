@@ -277,12 +277,9 @@ class ProviderCommandsApi {
                     result.ok);
         },
         actions: [
-          { action: 'send-account', operationId: 'sendAccountCommand'
-             },
-          { action: 'send-tenant', operationId: 'sendTenantCommand'
-             },
-          { action: 'retry-delivery', operationId: 'retryCommandDelivery'
-             }
+          { action: 'send-account', operationId: 'sendAccountCommand' },
+          { action: 'send-tenant', operationId: 'sendTenantCommand' },
+          { action: 'retry-delivery', operationId: 'retryCommandDelivery' }
         ] },
 
       { method: 'GET', path: BASE + '/deliveries',
@@ -332,8 +329,7 @@ class ProviderCommandsApi {
                     result.ok);
         },
         actions: [
-          { action: 'retry', operationId: 'retryOutboundDelivery'
-             }
+          { action: 'retry', operationId: 'retryOutboundDelivery' }
         ] }
     ];
     log.debug("Leaving ProviderCommandsApi.buildRoutes().");

@@ -249,16 +249,12 @@ class SecretDestinationsApi {
           });
         },
         actions: [
-          { action: 'add-destination', operationId: 'addSecretDestination'
-             },
+          { action: 'add-destination', operationId: 'addSecretDestination' },
           { action: 'update-destination',
-            operationId: 'updateSecretDestination'
-             },
+            operationId: 'updateSecretDestination' },
           { action: 'remove-destination',
-            operationId: 'removeSecretDestination'
-             },
-          { action: 'test-push', operationId: 'testSecretDestination'
-             }
+            operationId: 'removeSecretDestination' },
+          { action: 'test-push', operationId: 'testSecretDestination' }
         ] }
     ];
     log.debug("Leaving SecretDestinationsApi.buildRoutes().");

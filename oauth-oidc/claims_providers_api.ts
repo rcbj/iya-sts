@@ -244,14 +244,10 @@ class ClaimsProvidersApi {
           });
         },
         actions: [
-          { action: 'add-provider', operationId: 'addClaimProvider'
-             },
-          { action: 'update-provider', operationId: 'updateClaimProvider'
-             },
-          { action: 'remove-provider', operationId: 'removeClaimProvider'
-             },
-          { action: 'revoke-link', operationId: 'revokeClaimSourceLink'
-             }
+          { action: 'add-provider', operationId: 'addClaimProvider' },
+          { action: 'update-provider', operationId: 'updateClaimProvider' },
+          { action: 'remove-provider', operationId: 'removeClaimProvider' },
+          { action: 'revoke-link', operationId: 'revokeClaimSourceLink' }
         ] }
     ];
     log.debug("Leaving ClaimsProvidersApi.buildRoutes().");

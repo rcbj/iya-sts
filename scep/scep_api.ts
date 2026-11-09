@@ -252,18 +252,12 @@ class ScepApi {
             });
         },
         actions: [
-          { action: 'create-challenge', operationId: 'createScepChallenge'
-             },
-          { action: 'delete-challenge', operationId: 'deleteScepChallenge'
-             },
-          { action: 'reissue-ra', operationId: 'reissueScepRa'
-             },
-          { action: 'revoke-certificate', operationId: 'revokeScepCertificate'
-             },
-          { action: 'add-host-name', operationId: 'addScepHostName'
-             },
-          { action: 'remove-host-name', operationId: 'removeScepHostName'
-             }
+          { action: 'create-challenge', operationId: 'createScepChallenge' },
+          { action: 'delete-challenge', operationId: 'deleteScepChallenge' },
+          { action: 'reissue-ra', operationId: 'reissueScepRa' },
+          { action: 'revoke-certificate', operationId: 'revokeScepCertificate' },
+          { action: 'add-host-name', operationId: 'addScepHostName' },
+          { action: 'remove-host-name', operationId: 'removeScepHostName' }
         ] }
     ];
     log.debug("Leaving ScepApi.buildRoutes().");

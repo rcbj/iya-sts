@@ -192,26 +192,18 @@ class AuthzenApi {
                     result.ok);
         },
         actions: [
-          { action: 'set-attribute', operationId: 'setAuthzenAttribute'
-             },
-          { action: 'remove-attribute', operationId: 'removeAuthzenAttribute'
-             },
-          { action: 'set-scope', operationId: 'setAuthzenScope'
-             },
-          { action: 'set-callbacks', operationId: 'setAuthzenCallbacks'
-             },
+          { action: 'set-attribute', operationId: 'setAuthzenAttribute' },
+          { action: 'remove-attribute', operationId: 'removeAuthzenAttribute' },
+          { action: 'set-scope', operationId: 'setAuthzenScope' },
+          { action: 'set-callbacks', operationId: 'setAuthzenCallbacks' },
           { action: 'approve-access-request',
-            operationId: 'approveAuthzenAccessRequest'
-             },
+            operationId: 'approveAuthzenAccessRequest' },
           { action: 'deny-access-request',
-            operationId: 'denyAuthzenAccessRequest'
-             },
+            operationId: 'denyAuthzenAccessRequest' },
           { action: 'revoke-access-request',
-            operationId: 'revokeAuthzenAccessRequest'
-             },
+            operationId: 'revokeAuthzenAccessRequest' },
           { action: 'cancel-access-request',
-            operationId: 'cancelAuthzenAccessRequest'
-             }
+            operationId: 'cancelAuthzenAccessRequest' }
         ] }
     ];
     log.debug("Leaving AuthzenApi.buildRoutes().");

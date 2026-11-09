@@ -237,19 +237,13 @@ class AuditExportApi {
           });
         },
         actions: [
-          { action: 'add', operationId: 'addAuditExportDestination'
-             },
-          { action: 'update', operationId: 'updateAuditExportDestination'
-             },
-          { action: 'remove', operationId: 'removeAuditExportDestination'
-             },
-          { action: 'enable', operationId: 'enableAuditExportDestination'
-             },
+          { action: 'add', operationId: 'addAuditExportDestination' },
+          { action: 'update', operationId: 'updateAuditExportDestination' },
+          { action: 'remove', operationId: 'removeAuditExportDestination' },
+          { action: 'enable', operationId: 'enableAuditExportDestination' },
           { action: 'disable',
-            operationId: 'disableAuditExportDestination'
-             },
-          { action: 'test', operationId: 'testAuditExportDestination'
-             }
+            operationId: 'disableAuditExportDestination' },
+          { action: 'test', operationId: 'testAuditExportDestination' }
         ] }
     ];
     log.debug("Leaving AuditExportApi.buildRoutes().");

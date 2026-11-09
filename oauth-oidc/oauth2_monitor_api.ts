@@ -249,8 +249,7 @@ class OAuth2MonitorApi {
         },
         actions: [
           { action: 'delete-pushed-request',
-            operationId: 'deletePushedRequest'
-             }
+            operationId: 'deletePushedRequest' }
         ] }
     ];
     log.debug("Leaving OAuth2MonitorApi.buildRoutes().");

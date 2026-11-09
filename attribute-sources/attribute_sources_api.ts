@@ -231,19 +231,13 @@ class AttributeSourcesApi {
           });
         },
         actions: [
-          { action: 'add-source', operationId: 'addAttributeSource'
-             },
-          { action: 'update-source', operationId: 'updateAttributeSource'
-             },
-          { action: 'remove-source', operationId: 'removeAttributeSource'
-             },
-          { action: 'test-source', operationId: 'testAttributeSource'
-             },
-          { action: 'refresh-source', operationId: 'refreshAttributeSource'
-             },
+          { action: 'add-source', operationId: 'addAttributeSource' },
+          { action: 'update-source', operationId: 'updateAttributeSource' },
+          { action: 'remove-source', operationId: 'removeAttributeSource' },
+          { action: 'test-source', operationId: 'testAttributeSource' },
+          { action: 'refresh-source', operationId: 'refreshAttributeSource' },
           { action: 'refresh-person',
-            operationId: 'refreshAttributeSourcePerson'
-             }
+            operationId: 'refreshAttributeSourcePerson' }
         ] }
     ];
     log.debug("Leaving AttributeSourcesApi.buildRoutes().");
