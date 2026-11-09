@@ -1,5 +1,10 @@
 # CLAUDE.md — `report/`
 
+**The Reports API OpenAPI document is written in `models/api/report.tsp` since #1390.**
+`report/openapi.ts` serves what the image build generates and binds the catalog's
+source ids. Change an operation or a schema there, and it reaches the served document
+and the response checks.
+
 ## A STATIC APPLICATION (#956) — READ THIS FIRST
 
 `/report` and every path under it answer one document (`report_app.ts`),

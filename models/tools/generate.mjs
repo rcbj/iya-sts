@@ -18,6 +18,7 @@ import fs from 'fs';
 import path from 'path';
 import url from 'url';
 import bunyan from 'bunyan';
+import { documents } from '../lib/api_lib.mjs';
 import { fieldsOf, linksIn, readDirectory, readPersistence, readSpellings,
   renderScript, schemaOf } from '../lib/model_lib.mjs';
 
@@ -72,6 +73,11 @@ async function generate() {
   fs.writeFileSync(path.join(out, 'schema.sql'), renderScript(
     fs.readFileSync(path.join(ROOT, 'models', 'persistence',
       'schema.template.sql'), 'utf8'), persistence));
+  const served = documents(program);
+  Object.keys(served).forEach(function (name) {
+    fs.writeFileSync(path.join(out, 'openapi.' + name + '.json'),
+      JSON.stringify(served[name]));
+  });
   const mariadb = readPersistence(program, 'mariadb');
   fs.writeFileSync(path.join(out, 'persistence.mariadb.json'),
     JSON.stringify({ objects: mariadb.objects }));

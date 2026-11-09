@@ -31,7 +31,8 @@ const log = {
   }
 };
 
-const SERVED = ['management', 'console', 'account', 'authn', 'report'];
+// `report` is written by hand now: `models/api/report.tsp` is its source.
+const SERVED = ['management', 'console', 'account', 'authn'];
 
 const METHODS = /^(get|put|post|delete|patch|head|options)$/;
 
@@ -532,7 +533,7 @@ function main(from, to) {
     '// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC',
     '// SPDX-License-Identifier: BUSL-1.1',
     ''
-  ].concat(SERVED.map(function (name) {
+  ].concat(SERVED.concat(['report']).map(function (name) {
     return 'import "./' + name + '.tsp";';
   }), ['']).join('\n'));
   log.debug("Leaving main().");

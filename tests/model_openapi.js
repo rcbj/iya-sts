@@ -264,6 +264,15 @@ function canonical(value) {
   return text;
 }
 
+function bindReport(generated) {
+  log.debug("Entering bindReport().");
+  const OpenApi = require('../report/openapi');
+  const Catalog = require('../report/catalog');
+  const bound = OpenApi.bind(generated, new Catalog());
+  log.debug("Leaving bindReport().");
+  return bound;
+}
+
 async function typeSpec(t, docs) {
   log.debug("Entering typeSpec().");
   const compiler = await import(url.pathToFileURL(path.join(__dirname,
@@ -280,7 +289,9 @@ async function typeSpec(t, docs) {
   const built = lib.documents(program);
   ['management', 'console', 'account', 'authn', 'report'].forEach(
     function (name) {
-      sameText(t, canonical(built[name]), canonical(docs[name]),
+      const compiled = name === 'report' ? bindReport(built[name]) :
+        built[name];
+      sameText(t, canonical(compiled), canonical(docs[name]),
         name + ' from the compiled model is the served document. A change ' +
         'to the API owes tests/tools/regenerate-model-docs.sh');
     });

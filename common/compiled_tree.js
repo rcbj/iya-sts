@@ -53,7 +53,8 @@ const GENERATED = ['application', 'role', 'device', 'serviceAccount', 'spiffe',
     return 'models/generated/' + id + '.fields.json';
   })).concat(['models/generated/directory.names.json',
     'models/generated/persistence.postgres.json',
-    'models/generated/persistence.mariadb.json']);
+    'models/generated/persistence.mariadb.json',
+    'models/generated/openapi.report.json']);
 
 /**
  * The top-level directories that are not the service's own sources, as the
