@@ -350,6 +350,9 @@ function createReplication(label) {
   // is
   // a request waiting to be answered correctly. See syncNow().
   let runningPull = null;
+  // WHAT THE LATEST PULL HAS COST, read by STS-STORE-0039's line: the two
+  // things it waits on, and the rows it is applying.
+  let pullCost = null;
   let pendingWake = false;
   let stopped = false;
 
@@ -757,7 +760,8 @@ function createReplication(label) {
         log.warn(errorCodes.tag('STS-STORE-0039') +
                  'persistence: a read barrier gave up at ' + highest +
                  ': no change pull started after it completed. The request ' +
-                 'is being answered from what this process has.');
+                 'is being answered from what this process has.' +
+                 pullCostText());
         log.debug("Leaving step(). Gave up.");
         return Promise.resolve({ caughtUp: false, applied: applied,
                                  target: highest, coordinating: true });
@@ -798,6 +802,28 @@ function createReplication(label) {
    * logged and counted, not thrown, and the next pull retries the same rows.
    * @returns a promise of `{ applied }`, with `error` when the pull failed
    */
+  /**
+   * Says what the latest pull has cost, for the line a barrier that gave up
+   * writes: whether the time went to the store, to applying rows, or neither.
+   * @returns the sentence, starting with a space, or an empty string
+   */
+  function pullCostText() {
+    log.debug("Entering pullCostText().");
+    if (!pullCost) {
+      log.debug("Leaving pullCostText(). No pull.");
+      return '';
+    }
+    const kinds = Object.keys(pullCost.kinds).map(function (kind) {
+      return kind + '=' + pullCost.kinds[kind];
+    }).join(',');
+    log.debug("Leaving pullCostText().");
+    return ' The ' + (runningPull ? 'pull in flight' : 'latest pull') +
+           ' began ' + (Date.now() - pullCost.startedAt) + ' ms ago: ' +
+           pullCost.queryMs + ' ms reading pages, ' + pullCost.applyMs +
+           ' ms applying ' + pullCost.rows + ' row(s)' +
+           (kinds ? ' (' + kinds + ')' : '') + '.';
+  }
+
   function pull() {
     log.debug("Entering pull().");
     if (!enabled() || running) {
@@ -813,6 +839,9 @@ function createReplication(label) {
     // pull that STARTED after it read its target, because only such a pull's
     // queries could see every row committed before that read.
     const startNo = ++pullsStarted;
+    const cost = { startedAt: Date.now(), queryMs: 0, applyMs: 0, rows: 0,
+                   kinds: {} };
+    pullCost = cost;
 
     function page() {
       log.debug("Entering page().");
@@ -839,7 +868,9 @@ function createReplication(label) {
       // asks for the holes again on every pull, and gives a hole up only after
       // HOLE_EXPIRE_MS — ten minutes, not four seconds.
       // -----------------------------------------------------------------------
+      const asked = Date.now();
       return driver.changesSince(highest, PAGE).then(function (rows) {
+        cost.queryMs += Date.now() - asked;
         if (!rows.length) {
           return 0;
         }
@@ -858,7 +889,13 @@ function createReplication(label) {
           }
           expect = row.seq + 1;
         });
+        rows.forEach(function (row) {
+          cost.kinds[row.kind] = (cost.kinds[row.kind] || 0) + 1;
+        });
+        cost.rows += rows.length;
+        const applying = Date.now();
         return applyRows(rows).then(function () {
+          cost.applyMs += Date.now() - applying;
           // ADVANCED ONLY AFTER THE APPLY, so a failure part-way re-reads the
           // same page rather than skipping it. Applying a row twice is
           // harmless — every applier is idempotent by construction, because it
@@ -2309,6 +2346,7 @@ function createReplication(label) {
     stopped = false;
     running = false;
     runningPull = null;
+    pullCost = null;
     pendingWake = false;
     contributions.clear();
     staleContributions.clear();
