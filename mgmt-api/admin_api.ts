@@ -129,6 +129,7 @@
 // ---------------------------------------------------------------------------
 
 import app = require('../common/app');
+import ModelTables = require('../common/model_tables');
 // The error-code registry, a leaf. A refusal here is MARKED on the response for
 // the call log and never written into the JSON a caller receives.
 import errorCodes = require('../common/error_codes');
@@ -1204,18 +1205,7 @@ class AdminApi {
   declareImplicitParameters(routes: any[]): void {
     const { log } = this.deps;
     log.debug("Entering AdminApi.declareImplicitParameters().");
-    const implicit = [
-      { name: 'DPoP', in: 'header', required: false,
-        schema: { type: 'string' },
-        description: 'RFC 9449: the proof of possession for a DPoP-bound ' +
-                     'access token, as `Authorization: DPoP <token>` ' +
-                     'requires.' },
-      { name: 'cell', in: 'query', required: false,
-        schema: { type: 'string' },
-        description: 'The cell to answer this request, where this service ' +
-                     'runs as several. Ignored in a service that runs as ' +
-                     'one.' }
-    ];
+    const implicit = ModelTables.file('openapi.every.json').management;
     routes.forEach(function (entry) {
       const own = entry.parameters || [];
       entry.parameters = own.concat(implicit.filter(function (one) {

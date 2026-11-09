@@ -324,3 +324,20 @@ export function documents(program) {
   log.debug("Leaving documents().");
   return out;
 }
+
+/**
+ * What every operation of each document takes, for the code that refuses
+ * what an operation does not declare.
+ *
+ * @param program - the compiled program
+ * @returns the parameters, by document name
+ */
+export function everyOperation(program) {
+  log.debug("Entering everyOperation().");
+  const out = {};
+  program.stateMap(DOCUMENT).forEach(function (top) {
+    out[top['x-iya-doc']] = top['x-iya-every-operation'] || [];
+  });
+  log.debug("Leaving everyOperation().");
+  return out;
+}

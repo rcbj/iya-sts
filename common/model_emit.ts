@@ -41,8 +41,7 @@ import directory = require('./directory_model');
 import PostgresImport = require('./postgres_import');
 import MariaDbImport = require('./mariadb_import');
 import OpenApiImport = require('./openapi_import');
-import ApplicationOverlay = require(
-  '../models/directory/application.overlay');
+import ModelTables = require('./model_tables');
 
 const log = bunyan.createLogger({
   name: 'sts-model-emit',
@@ -662,33 +661,37 @@ class ModelEmit {
    */
   static applicationReading(lines: string[]): void {
     log.debug("Entering ModelEmit.applicationReading().");
+    const facts = ModelTables.facts('application');
     lines.push('### Names and the subject');
     lines.push('');
     lines.push('| | |');
     lines.push('|---|---|');
-    lines.push('| Key | `' + ApplicationOverlay.key + '` |');
+    lines.push('| Key | `' + facts.key + '` |');
     lines.push('| Filing name | `' +
-      ApplicationOverlay.naming.attribute + '`. ' +
-      ModelEmit.tableCell(ApplicationOverlay.naming.what) + ' |');
-    ApplicationOverlay.derived.forEach(function (field: any) {
+      facts.naming.attribute + '`. ' +
+      ModelEmit.tableCell(facts.naming.what) + ' |');
+    facts.derived.forEach(function (field: any) {
       lines.push('| Derived | `' + field.name + '`. ' +
         ModelEmit.tableCell(field.what) + ' |');
     });
     lines.push('| Registration | ' +
-      ApplicationOverlay.registration.map(function (name: string) {
+      facts.registration.map(function (name: string) {
         return '`' + name + '`';
       }).join(', ') + ' |');
     lines.push('| Declared families | `' +
-      ApplicationOverlay.declaration + '` |');
+      facts.declaration + '` |');
     lines.push('| Seen families | `' +
-      ApplicationOverlay.observation + '` |');
+      facts.observation + '` |');
     lines.push('');
     lines.push('### Relationships');
     lines.push('');
     lines.push('| Link | Values | Owns the target | Held by | What it is |');
     lines.push('|---|---|---|---|---|');
-    ApplicationOverlay.relationships.forEach(function (link: any) {
-      const held = link.incoming ? String(link.on) : 'this application';
+    ModelTables.links().filter(function (link: any) {
+      return link.from === 'application' || link.to === 'application';
+    }).forEach(function (link: any) {
+      const held = link.from === 'application' ? 'this application' :
+        String(link.from);
       lines.push('| `' + link.name + '` | ' +
         ModelEmit.valueLabel(link.cardinality) + ' | ' +
         (link.owns ? 'yes' : 'no') + ' | ' + held + ' | ' +

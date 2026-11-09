@@ -1738,11 +1738,7 @@ class AuthnApi {
                    'to the browser\'s `sts_session` cookie.',
                  schema: { type: 'string' } });
     }
-    out.push({ name: 'X-Requested-With', in: 'header', required: false,
-               description: 'Added by an Android WebView, naming the ' +
-                 'application that hosts the page. This API reads nothing ' +
-                 'in it.',
-               schema: { type: 'string' } });
+    out.push.apply(out, ModelTables.file('openapi.every.json').authn);
     helpers.log.debug("Leaving AuthnApi.parametersOf(). " + out.length);
     return out;
   }

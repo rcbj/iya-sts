@@ -38,8 +38,6 @@ import ModelIr = require('./model_ir');
 import DirectorySpellings = require('./directory_spellings');
 import DirectoryModelCatalog = require('./directory_model_catalog');
 import ModelTables = require('./model_tables');
-import ApplicationOverlay = require(
-  '../models/directory/application.overlay');
 
 const log = bunyan.createLogger({
   name: 'sts-directory-model',
@@ -483,7 +481,7 @@ class DirectoryModel {
     object.note = 'An application entry that has these attributes set.';
     object.objectClasses = application.objectClasses.slice();
     object.attributes = application.attributes.filter(function (attribute) {
-      return attribute.name === ApplicationOverlay.key ||
+      return attribute.name === ModelTables.facts('application').key ||
         attribute.name.indexOf('secretDest') === 0;
     });
     objects.push(object);

@@ -947,57 +947,29 @@
     "en": "02f30171dcced882",
     "text": "Enkel LDAP-bindning"
   },
-  "serviceAccount.DOORS.allowLdapBind.what": {
-    "en": "3a8c8bfe4923e585",
-    "text": "En bindning på 389 eller 636 (RFC 4513)."
-  },
   "serviceAccount.DOORS.allowWsTrust.label": {
     "en": "a1d8fa9805648e7d",
     "text": "WS-Trust UsernameToken"
-  },
-  "serviceAccount.DOORS.allowWsTrust.what": {
-    "en": "4d920a20f96a19a1",
-    "text": "En WS-Security UsernameToken som skickas till säkerhetstokentjänsten."
   },
   "serviceAccount.DOORS.allowScim.label": {
     "en": "13441836ceee258a",
     "text": "SCIM HTTP Basic"
   },
-  "serviceAccount.DOORS.allowScim.what": {
-    "en": "506c021bbd796caa",
-    "text": "HTTP Basic på /scim/v2 (RFC 7617)."
-  },
   "serviceAccount.DOORS.allowSsf.label": {
     "en": "5f0a37c29c6be8ab",
     "text": "Shared Signals HTTP Basic"
-  },
-  "serviceAccount.DOORS.allowSsf.what": {
-    "en": "41e56e2806f5f363",
-    "text": "HTTP Basic på /ssf-slutpunkterna (RFC 7617)."
   },
   "serviceAccount.DOORS.allowEst.label": {
     "en": "90892c78280ab239",
     "text": "EST HTTP Basic"
   },
-  "serviceAccount.DOORS.allowEst.what": {
-    "en": "a40e0a702c1600f6",
-    "text": "HTTP Basic på /.well-known/est (RFC 7030 avsnitt 3.2.3)."
-  },
   "serviceAccount.DOORS.allowKerberos.label": {
     "en": "b707a90f8fd22d69",
     "text": "Kerberos AS-utbyte"
   },
-  "serviceAccount.DOORS.allowKerberos.what": {
-    "en": "22fac9e9e9e7d0a8",
-    "text": "En AS-REQ vars förautentisering bevisar lösenordets nyckel (RFC 4120), samt MS-KKDCP."
-  },
   "serviceAccount.DOORS.allowPasswordGrant.label": {
     "en": "a55abf2085020a8c",
     "text": "OAuth 2.0 password grant"
-  },
-  "serviceAccount.DOORS.allowPasswordGrant.what": {
-    "en": "7fe8d96fec703361",
-    "text": "grant_type=password vid tokenslutpunkten (RFC 6749 avsnitt 4.3), där sfären över huvud taget tillåter beviljandetypen."
   },
   "serviceAccount.SELECTORS.precedence.what": {
     "en": "3bc40f48dcc93e91",

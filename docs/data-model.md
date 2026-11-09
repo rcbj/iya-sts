@@ -116,11 +116,10 @@ is one JSON value, `stsAttributeSourceData`.
 
 The directory does not load a schema when it answers.
 
-### The application overlay
+### What the application's entry states as structure
 
-`models/directory/application.overlay.ts` is written by hand. The
-generator does not change it. It names what the SCHEMA table does not
-call out as structure:
+The `@entry` in `models/directory/application.tsp` names what the attribute
+rows do not call out as structure:
 
 * the key, `appIdentifier`
 * the derived subject, `urn:sts:application:<appIdentifier>`, which is

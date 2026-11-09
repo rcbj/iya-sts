@@ -100,8 +100,6 @@ function run(t) {
   const directory = require('../common/directory_model');
   const DirectorySpellings = require('../common/directory_spellings');
   const ModelEmit = require('../common/model_emit');
-  const ApplicationOverlay = require(
-    '../models/directory/application.overlay');
   const applications = require('../common/applications');
 
   const collector = new directory.DirectoryModel(
@@ -247,16 +245,12 @@ function run(t) {
   const names = applications.SCHEMA.attributes.map(function (row) {
     return row.name;
   });
-  t.equal(ApplicationOverlay.problems(names).join('\n'), '',
-    'the overlay names attributes the SCHEMA publishes');
-  const sensitive = applications.SCHEMA.attributes.filter(function (row) {
-    return row.sensitive === true || row.secret === true;
-  }).map(function (row) {
-    return row.name;
-  }).sort();
-  t.equal(ApplicationOverlay.withheld.slice().sort().join(','),
-    sensitive.join(','),
-    'withheld names are the SCHEMA sensitive and secret names');
+  const facts = require('../common/model_tables').facts('application');
+  [facts.key, facts.naming.attribute, facts.declaration, facts.observation]
+    .concat(facts.registration).forEach(function (name) {
+      t.check(names.indexOf(name) >= 0,
+        name + ' is an attribute the SCHEMA publishes');
+    });
   t.check(names.indexOf('subject') < 0 &&
     !attribute(application, 'subject'),
     'subject is derived and is not an attribute');

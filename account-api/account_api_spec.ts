@@ -158,17 +158,7 @@ class AccountApiSpec {
   static implicitHeaders(): Json[] {
     log.debug("Entering AccountApiSpec.implicitHeaders().");
     log.debug("Leaving AccountApiSpec.implicitHeaders().");
-    return [
-      { name: 'DPoP', in: 'header', required: false,
-        schema: { type: 'string' },
-        description: 'RFC 9449: the proof of possession for the DPoP-bound ' +
-                     'access token, which `Authorization: DPoP <token>` ' +
-                     'requires.' },
-      { name: 'X-Requested-With', in: 'header', required: false,
-        schema: { type: 'string' },
-        description: 'Added by an Android WebView, naming the application ' +
-                     'that hosts the page. This API reads nothing in it.' }
-    ];
+    return ModelTables.file('openapi.every.json').account;
   }
 
   /**

@@ -436,14 +436,14 @@ Recorded in `./applications`.
 | Link | Values | Owns the target | Held by | What it is |
 |---|---|---|---|---|
 | `appRequiredRole` | several | no | this application | Roles whose holders may use this application. |
+| `appFederationRelationship` | several | no | this application | Federation relationships this application is tied to. |
 | `appAuthnPolicy` | one | no | this application | The named authentication policy it signs in under. |
 | `appPasskeyPolicy` | one | no | this application | The named passkey policy a sign-in is held to. |
 | `appLocalePolicy` | one | no | this application | The named locale policy it falls back to. |
 | `appPasswordPolicy` | one | no | this application | The named password policy a password set here uses. |
 | `appPostLoginPolicy` | one | no | this application | The named post-login profile a sign-in follows. |
 | `appFgaPolicy` | one | yes | this application | The fine-grained policy entry in ou=policies that it owns. |
-| `appFederationRelationship` | several | no | this application | Federation relationships this application is tied to. |
-| `stsDeviceApplication` | several | no | device | Devices name the application. The application does not store the reverse link. |
+| `stsDeviceApplication` | several | no | device | The applications that used this device. |
 
 ## Attribute source
 

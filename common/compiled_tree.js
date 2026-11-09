@@ -53,6 +53,8 @@ const GENERATED = ['application', 'role', 'device', 'serviceAccount', 'spiffe',
     return 'models/generated/' + id + '.fields.json';
   })).concat(['models/generated/directory.names.json',
     'models/generated/domain.json',
+    'models/generated/openapi.every.json',
+    'models/generated/directory.facts.json',
     'models/generated/persistence.postgres.json',
     'models/generated/persistence.mariadb.json',
     'models/generated/openapi.report.json',

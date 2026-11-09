@@ -15,6 +15,16 @@ namespace IyaSts.Directory;
 
 @entry(#{
   id: "federationRelationship",
+  lists: #{
+    subjectPolicies: #["link-at-first-sign-in", "pre-linked", "jit-namespaced", "any-existing"],
+    classicalKeyTypes: #["rsa-3072", "ec-p256"],
+    joseOnlyKeyTypes: #["x-wing", "ml-kem-768"],
+    xmlKeyManagement: #["rsa-oaep", "ecdh-es"],
+    joseKeyManagement: #["RSA-OAEP-256", "RSA-OAEP", "ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A256KW", "HPKE-10-KE", "ML-KEM-768"],
+    xmlContentEncryption: #["aes256-gcm", "aes128-gcm"],
+    joseContentEncryption: #["A256GCM", "A128GCM"],
+    mechanisms: #["password", "password-mfa", "webauthn", "federation", "spnego", "wallet"]
+  },
   source: "../federation/federation",
   container: "ou=federations",
   ownContainer: false,
@@ -422,7 +432,7 @@ model FederationRelationship {
     kind: "single",
     role: "service-provider",
     from: "this register",
-    allowed: #["link-at-first-sign-in", "pre-linked", "jit-namespaced", "any-existing"],
+    allowedFrom: #["subjectPolicies"],
     what: "HOW THE PARTNER'S SUBJECT BECOMES A LOCAL PERSON. The subject is the partner's own stable identifier — iss + sub, a persistent NameID and the partner's entity ID — and a person carries it as a federationLink. link-at-first-sign-in (the default; empty means it): a linked subject signs in; an unlinked one naming an existing person must first sign in HERE as that person — password, and a second factor where one is held or required — and only then is the link recorded and the partner's attributes written; one naming nobody gets a new entry namespaced to this relationship where provisioning is on. pre-linked: only a link signs anybody in. jit-namespaced: an unlinked subject always gets a NEW entry, <relationship>~<subject>, never an existing person. The subject is the partner's stable identifier, with a urn:uuid: folded to sub-<uuid>; it is not the mapped username. any-existing: the name the partner sent is matched straight onto a local person, as this service did before #109 — DEVELOPMENT ONLY, refused in product, and it lets this partner sign in any account it can name."
   })
   fedSubjectPolicy?: string;
@@ -590,7 +600,7 @@ model FederationRelationship {
     kind: "single",
     role: "service-provider",
     from: "this register",
-    allowed: #["rsa-3072", "ec-p256", "x-wing", "ml-kem-768"],
+    allowedFrom: #["classicalKeyTypes", "joseOnlyKeyTypes"],
     what: "THE KIND OF KEY A PARTNER ENCRYPTS TO: rsa-3072 (the default for SAML 2.0 and WS-Federation) or ec-p256 (the default for OpenID Connect) — or, for OpenID Connect only, a post-quantum one (#82): x-wing (HPKE-10-KE, ML-KEM-768 + X25519) or ml-kem-768 (ML-KEM-768), an AKP key published in the relationship's JWKS with no certificate, from Internet-Drafts few partners implement yet. Changing it issues a new key of that kind at once and keeps the old one for federation.encryptionKeyGraceS, as a rotation does."
   })
   fedEncryptionKeyType?: string;
@@ -598,7 +608,7 @@ model FederationRelationship {
     kind: "single",
     role: "service-provider",
     from: "this register",
-    allowed: #["rsa-oaep", "ecdh-es", "RSA-OAEP-256", "RSA-OAEP", "ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A256KW", "HPKE-10-KE", "ML-KEM-768"],
+    allowedFrom: #["xmlKeyManagement", "joseKeyManagement"],
     what: "HOW THE PARTNER WRAPS OR AGREES THE CONTENT KEY, and the only one accepted. XML (SAML 2.0, WS-Federation): rsa-oaep — XML Encryption 1.1's RSA-OAEP with SHA-256 and MGF1-SHA-256 — for an RSA key, ecdh-es (ConcatKDF, kw-aes256) for an EC one. JOSE (an OpenID Connect ID Token): RSA-OAEP-256 or RSA-OAEP for an RSA key, ECDH-ES, ECDH-ES+A128KW or ECDH-ES+A256KW for an EC one. WARNING: RSA-OAEP is OAEP over SHA-1, offered for a partner that has nothing newer; RSA-OAEP-256 is the one to use. rsa-1_5 and RSA1_5 are refused in every mode (Bleichenbacher). Empty means the default for the key type."
   })
   fedKeyManagementAlgorithm?: string;
@@ -606,7 +616,7 @@ model FederationRelationship {
     kind: "single",
     role: "service-provider",
     from: "this register",
-    allowed: #["aes256-gcm", "aes128-gcm", "A256GCM", "A128GCM"],
+    allowedFrom: #["xmlContentEncryption", "joseContentEncryption"],
     what: "THE CIPHER OVER THE ASSERTION OR THE ID TOKEN, and the only one accepted: aes256-gcm (the default) or aes128-gcm for XML, A256GCM (the default) or A128GCM for JOSE. AES-CBC — XML Encryption's aes*-cbc and JOSE's A*CBC-HS* — is refused in every mode: the XML form is the padding oracle of Jager and Somorovsky (2011), and a partner that can do GCM in one can in the other."
   })
   fedContentEncryptionAlgorithm?: string;
@@ -644,7 +654,7 @@ model FederationRelationship {
     kind: "single",
     role: "identity-provider",
     from: "this register",
-    allowed: #["password", "password-mfa", "webauthn", "federation", "spnego", "wallet"],
+    allowedFrom: #["mechanisms"],
     what: "HOW THIS SERVICE AUTHENTICATES THE PERSON when this partner asks it to: password, password-mfa, webauthn, spnego — a Kerberos ticket the browser already holds, with no screen at all — wallet — a credential this realm issued, presented from the person's wallet — or federation, which sends them on to another relationship and is what makes this service an identity BRIDGE between two protocols. EMPTY MEANS THIS RELATIONSHIP SAYS NOTHING, which is not the same as password: it falls through to appFederationRelationship on the application entry and then to the sign-in screen, which is exactly what every relationship did before this attribute existed."
   })
   fedAuthnMechanism?: string;

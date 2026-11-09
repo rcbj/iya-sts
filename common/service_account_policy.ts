@@ -251,41 +251,36 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
 });
 
 const DOORS = [
-  { id: 'ldap', key: 'allowLdapBind', label: 'LDAP simple bind',
-    what: 'A bind on 389 or 636 (RFC 4513).' },
-  { id: 'wstrust', key: 'allowWsTrust', label: 'WS-Trust UsernameToken',
-    what: 'A WS-Security UsernameToken sent to the security token service.' },
-  { id: 'scim', key: 'allowScim', label: 'SCIM HTTP Basic',
-    what: 'HTTP Basic at /scim/v2 (RFC 7617).' },
-  { id: 'ssf', key: 'allowSsf', label: 'Shared Signals HTTP Basic',
-    what: 'HTTP Basic at the /ssf endpoints (RFC 7617).' },
-  { id: 'est', key: 'allowEst', label: 'EST HTTP Basic',
-    what: 'HTTP Basic at /.well-known/est (RFC 7030 section 3.2.3).' },
-  { id: 'kerberos', key: 'allowKerberos', label: 'Kerberos AS exchange',
-    what: 'An AS-REQ whose pre-authentication proves the password\'s key ' +
-          '(RFC 4120), and MS-KKDCP.' },
-  { id: 'ropc', key: 'allowPasswordGrant', label: 'OAuth 2.0 password grant',
-    what: 'grant_type=password at the token endpoint (RFC 6749 section ' +
-          '4.3), where the realm allows the grant at all.' }
+  { id: 'ldap', key: 'allowLdapBind', label: 'LDAP simple bind' },
+  { id: 'wstrust', key: 'allowWsTrust', label: 'WS-Trust UsernameToken' },
+  { id: 'scim', key: 'allowScim', label: 'SCIM HTTP Basic' },
+  { id: 'ssf', key: 'allowSsf', label: 'Shared Signals HTTP Basic' },
+  { id: 'est', key: 'allowEst', label: 'EST HTTP Basic' },
+  { id: 'kerberos', key: 'allowKerberos', label: 'Kerberos AS exchange' },
+  { id: 'ropc', key: 'allowPasswordGrant', label: 'OAuth 2.0 password grant' }
 ];
 
 /**
  * The policy's fields: one table read as the schema, the console form, the API
  * body, the validation of a save and the parse of an entry.
  */
+// What each computed row says is written once, on its attribute in the model.
+const TABLE_WHAT = new Map<string, string>(ModelTables.schema('policy.serviceAccount').attributes
+  .map(function (row: any) {
+    return [row.name, row.what] as [string, string];
+  }));
+
 const FIELDS: PolicyField[] =
   // Written in models/directory/policy_service_account.tsp (#1390). What is passed here is
   // what the code computes, so it has no second writing there.
   ModelTables.fields('policy.serviceAccount', {}, {
     before: 'rotationEnabled',
     rows: DOORS.map(function (door) {
-  return { key: door.key,
-           attribute: 'stsSvcAcct' + door.key.charAt(0).toUpperCase() +
-                      door.key.slice(1),
+  const attribute = 'stsSvcAcct' + door.key.charAt(0).toUpperCase() +
+    door.key.slice(1);
+  return { key: door.key, attribute: attribute,
            type: 'bool' as const, dflt: true, door: door.id,
-           label: 'Door: ' + door.label, what: door.what +
-             ' Off, a service account\'s right password is refused there ' +
-             'as a wrong one is.' };
+           label: 'Door: ' + door.label, what: TABLE_WHAT.get(attribute) };
 })
   });
 

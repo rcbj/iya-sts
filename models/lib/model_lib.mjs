@@ -142,6 +142,13 @@ export function readDirectory(program) {
       personAttributes: [],
       relationships: []
     };
+    attributes.forEach(function (attribute) {
+      if (attribute.allowedFrom) {
+        attribute.allowed = attribute.allowedFrom.reduce(function (out, name) {
+          return out.concat(options.lists[name]);
+        }, []);
+      }
+    });
     if (options.onPerson) {
       object.personAttributes = attributes;
     } else {
@@ -237,6 +244,32 @@ export function schemaOf(object) {
   }
   log.debug("Leaving schemaOf().");
   return schema;
+}
+
+// What an entry states as structure, kept out of its SCHEMA table because
+// that table's sentences are console prose and these are not.
+const FACT_KEYS = ['key', 'naming', 'derived', 'registration', 'declaration',
+  'observation', 'lists'];
+
+/**
+ * What each object states about itself beyond its rows.
+ *
+ * @param objects - objects from `readDirectory()`
+ * @returns the facts, by object id, for an object that has any
+ */
+export function factsOf(objects) {
+  log.debug("Entering factsOf().");
+  const out = {};
+  objects.forEach(function (object) {
+    FACT_KEYS.forEach(function (name) {
+      if (object[name] !== undefined) {
+        out[object.id] = out[object.id] || {};
+        out[object.id][name] = object[name];
+      }
+    });
+  });
+  log.debug("Leaving factsOf().");
+  return out;
 }
 
 /**

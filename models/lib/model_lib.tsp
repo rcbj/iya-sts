@@ -53,6 +53,39 @@ model EntryOptions {
   onPerson?: boolean;
   projectionOf?: string;
   objectClasses?: ClassRow[];
+
+  /** The attribute the entry is keyed by. Case-sensitive. */
+  key?: string;
+
+  /** The RDN attribute, and why it may differ from the key. */
+  naming?: NamingOptions;
+
+  /** Names that are worked out and are not LDAP attributes. */
+  derived?: DerivedName[];
+
+  /** The attributes saying an entry was registered. */
+  registration?: string[];
+
+  /** The attribute holding what the entry is declared for. */
+  declaration?: string;
+
+  /** The attribute holding what has been seen. */
+  observation?: string;
+
+  /** Closed lists a row's `allowedFrom` and the owning module both read. */
+  lists?: Record<string[]>;
+}
+
+/** The attribute an entry is filed under. */
+model NamingOptions {
+  attribute: string;
+  what: string;
+}
+
+/** A name that is worked out and is not an LDAP attribute. */
+model DerivedName {
+  name: string;
+  what: string;
 }
 
 /**
@@ -78,6 +111,7 @@ model AttributeOptions {
   strictOverride?: boolean;
   role?: string;
   allowed?: string[];
+  allowedFrom?: string[];
   section?: string;
   jsonBlob?: boolean;
   oid?: string;

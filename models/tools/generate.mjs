@@ -18,10 +18,10 @@ import fs from 'fs';
 import path from 'path';
 import url from 'url';
 import bunyan from 'bunyan';
-import { documents } from '../lib/api_lib.mjs';
+import { documents, everyOperation } from '../lib/api_lib.mjs';
 import { checkDomains, readDomains, renderTypes }
   from '../lib/domain_lib.mjs';
-import { fieldsOf, linksIn, readDirectory, readPersistence, readSpellings,
+import { factsOf, fieldsOf, linksIn, readDirectory, readPersistence, readSpellings,
   renderScript, schemaOf } from '../lib/model_lib.mjs';
 
 const log = bunyan.createLogger({
@@ -67,6 +67,8 @@ async function generate() {
   fs.mkdirSync(out, { recursive: true });
   fs.writeFileSync(path.join(out, 'directory.names.json'),
     JSON.stringify(names));
+  fs.writeFileSync(path.join(out, 'directory.facts.json'),
+    JSON.stringify(factsOf(objects)));
   fs.writeFileSync(path.join(out, 'directory.links.json'),
     JSON.stringify(linksIn(objects)));
   const concepts = readDomains(program);
@@ -89,6 +91,8 @@ async function generate() {
     fs.writeFileSync(path.join(out, 'openapi.' + name + '.json'),
       JSON.stringify(served[name]));
   });
+  fs.writeFileSync(path.join(out, 'openapi.every.json'),
+    JSON.stringify(everyOperation(program)));
   const mariadb = readPersistence(program, 'mariadb');
   fs.writeFileSync(path.join(out, 'persistence.mariadb.json'),
     JSON.stringify({ objects: mariadb.objects }));
