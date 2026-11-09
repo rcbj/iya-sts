@@ -492,6 +492,16 @@ async function run(t) {
   t.check(R.authnWalletOk.status === 200,
           'the wallet start takes every name its runtime sends',
           JSON.stringify(R.authnWalletOk));
+  // The operation's own closed model has to admit the refusal, or the answer
+  // becomes a 500 (#1483; the first full fuzz run).
+  const authnDocument = require('../common/model_tables')
+    .file('openapi.authn.json');
+  ['/authn-api/wallet', '/authn-api/wallet/{state}'].forEach(function (path) {
+    const members = JSON.stringify(authnDocument.paths[path].get
+      .responses['400'].content['application/json'].schema);
+    t.check(members.indexOf('"error_description"') >= 0,
+            path + '\'s 400 model admits the shape refusal', '');
+  });
   t.check(refusedRow(R.authnWalletUnknown, 'state', 'STS-AUTHN-0553'),
           'and refuses a name its view does not take',
           JSON.stringify(R.authnWalletUnknown));
