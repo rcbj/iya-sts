@@ -94,7 +94,14 @@ const FUZZ_RISK = Object.freeze({ "risk.assessSignIns": false });
 // the cell's own fuzzing has usually changed who may sign in to the console, so
 // the proxy cannot get another: 230 of 272 re-sign-ins failed, and the rest of
 // the cell "passed" against a 401. Eight hours, the mode's own bound being six.
-const FUZZ_TOKEN = Object.freeze({ "oauth2.accessTokenTtlS": 28800 });
+//
+// AND A SIGN-IN THAT STAYS RECENT (#1538). Product mode asks for a sign-in within
+// 15 minutes before a credential-changing operation, and answers 401
+// insufficient_user_authentication after that. The proxy re-signs only on
+// invalid_token, so those operations would go untested for most of a cell while
+// the cell passed. 1440 is the row's maximum.
+const FUZZ_TOKEN = Object.freeze({ "oauth2.accessTokenTtlS": 28800,
+                                   "account.recentAuthMinutes": 1440 });
 
 const FUZZ_REALM = Object.freeze(Object.assign({}, FUZZ_DPOP, FUZZ_RISK,
   FUZZ_TOKEN));
