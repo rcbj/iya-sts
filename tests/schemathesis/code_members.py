@@ -80,6 +80,11 @@ HELP_TEXT_BY_ROUTE = {
         ".fields[].described.description",
         ".fields[].what",
     ),
+    # Literal text a store declares about its bound: `bound` is sent only when
+    # literalOnly() has read it as one (common/cache_registry.js).
+    "/admin-api/caches": (
+        ".caches[].bound",
+    ),
     "/admin-api/crypto": (
         ".families[].algorithms[].how",
     ),
@@ -126,6 +131,11 @@ HELP_TEXT_BY_ROUTE = {
     ),
     "/admin-api/scim/monitor": (
         ".schemes[].description",
+    ),
+    # admin-ui/secrets_admin.ts's constant sentences on each primordial secret.
+    "/admin-api/secrets": (
+        ".notes.mail-smtp-password.without",
+        ".notes.previous-kek.without",
     ),
     "/admin-api/sts-metadata": (
         ".endpoints[].description",
