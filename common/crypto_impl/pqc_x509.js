@@ -1199,6 +1199,14 @@ async function generateKeyPair(algId) {
     log.debug("Leaving generateKeyPair(). ML-KEM.");
     return { alg: algId, pub: asBytes(kem.publicKey), priv: seed };
   }
+  if (entry.family === 'SLH-DSA') {
+    // On libuv (#1464): this function is awaited by the certificate
+    // authority, and only a genuinely asynchronous call lets the thread turn.
+    var slhPair = await pqc.signatureAlg(entry.id).keygenAsync();
+    log.debug("Leaving generateKeyPair(). SLH-DSA.");
+    return { alg: algId, pub: asBytes(slhPair.publicKey),
+             priv: asBytes(slhPair.secretKey) };
+  }
   var pair = pqc.generateAkpKeyPair(entry.id);
   log.debug("Leaving generateKeyPair(). " + entry.family + ".");
   return { alg: algId, pub: asBytes(pair.pub), priv: asBytes(pair.priv) };
@@ -1273,7 +1281,7 @@ async function sign(algId, message, priv) {
     log.debug("Leaving sign(). ML-DSA.");
     return asBytes(sig);
   }
-  var slh = pqc.signatureAlg(entry.id).sign(asBytes(message),
+  var slh = await pqc.signatureAlg(entry.id).signAsync(asBytes(message),
       asBytes(priv));
   log.debug("Leaving sign(). SLH-DSA.");
   return asBytes(slh);
