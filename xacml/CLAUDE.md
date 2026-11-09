@@ -326,6 +326,14 @@ is nothing to lose when a browser closes and no second copy that could disagree
 with the stored one. The cost is that editing is LIVE, so the page says so and
 puts the disable control one click away.
 
+**An expression edit names an expression.** The six `set-expression-*` actions
+replace the node at the path. A path that resolves to a Match, a rule, a
+target, an AnyOf or an AllOf is refused (`STS-XACML-0035`) rather than
+written: `writeTarget()` would then call `writeExpression()` on the Match's
+missing `value` and throw reading `.kind`, which the fault boundary answers
+as HTTP 500 (`STS-API-0140`, #1419). The document root was already that
+refusal (#1356). A Match is edited by `edit-match`.
+
 ## What the editor can build, and the three things it cannot
 
 **Since 2026-09-05 the guided editor reaches the whole of the XACML 3.0 policy

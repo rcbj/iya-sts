@@ -464,6 +464,34 @@ function checkEdits(t) {
           rootExpr.why);
   t.equal(validate.problemsIn(policy).length, 0,
           'the refused root-expression edit left the policy type-checking');
+
+  // A Match path resolves and has a parent, so the root guard above does
+  // not fire. Replacing the Match with an Apply makes writeTarget() call
+  // writeExpression() on match.value, which throws reading `.kind`
+  // (STS-API-0140, #1419). The fuzzer sent this path with a leading dot;
+  // segmentsOf() drops the empty segment and the path still resolves.
+  const matchPolicy = templates.build('rbac', {}, {
+    name: 'match-slot'
+  }).policy;
+  const matchPath = '.rules.0.target.anyOf.0.allOf.0.matches.0';
+  const beforeMatch = JSON.stringify(matchPolicy);
+  const onMatch = editor.applyEdit(matchPolicy, matchPath,
+                                   'set-expression-apply', {});
+  t.check(!onMatch.ok && /not an expression/.test(onMatch.why),
+          'replacing a Match with an Apply is refused, not a crash',
+          onMatch.why);
+  t.equal(JSON.stringify(matchPolicy), beforeMatch,
+          'the refused Match edit left the policy untouched');
+  let written = null;
+  try {
+    written = xml.writePolicy(matchPolicy);
+  } catch (error) {
+    t.check(false, 'the policy still writes after the refused edit',
+            error.message);
+  }
+  if (written) {
+    t.check(true, 'the policy still writes after the refused edit');
+  }
   log.debug("Leaving checkEdits().");
 }
 
