@@ -21,6 +21,7 @@
   "title.commands": "OpenID Provider Commands",
   "title.claims": "Revendications personnalisées",
   "title.config": "Configuration",
+  "title.config-dump": "Export de la configuration",
   "title.consent": "Consentement",
   "title.crypto-metadata": "Cryptographie",
   "title.home": "Console d’administration",

@@ -218,6 +218,37 @@ function configuredOrigins() {
  * @param req - the express request
  * @returns the normalised origins
  */
+/**
+ * Tells whether a state-changing request carrying a browser's cookies came
+ * from a page that is not this service's (#1442, ASVS 5.0.0 3.5.1).
+ *
+ * `Origin` decides when it names one. `null` is not a verdict: this service
+ * sends `Referrer-Policy: no-referrer`, under which a browser serializes the
+ * Origin of its own same-origin form POST as `null`, so `Sec-Fetch-Site`
+ * decides then. A request with neither did not come from a browser, and a
+ * cookie a program presents on purpose is not a forgery.
+ *
+ * @param req - the request
+ * @returns true when the request must be refused
+ */
+function crossSiteBrowserRequest(req) {
+  log.debug("Entering crossSiteBrowserRequest().");
+  const headers = (req && req.headers) || {};
+  const origin = String(headers.origin || '');
+  const site = String(headers['sec-fetch-site'] || '').toLowerCase();
+  let foreign;
+  if (origin && origin !== 'null') {
+    foreign = ownOrigins(req).indexOf(origin) < 0;
+  } else if (site) {
+    foreign = site !== 'same-origin' &&
+      !(site === 'same-site' && !!config.value('authn.cookieDomain'));
+  } else {
+    foreign = origin === 'null';
+  }
+  log.debug("Leaving crossSiteBrowserRequest(). " + foreign);
+  return foreign;
+}
+
 function ownOrigins(req) {
   log.debug("Entering ownOrigins().");
   const out = [];
@@ -683,5 +714,6 @@ module.exports = {
   decide: decide,
   namedClients: namedClients,
   ownOrigins: ownOrigins,
+  crossSiteBrowserRequest: crossSiteBrowserRequest,
   EXPOSED_HEADERS: EXPOSED_HEADERS
 };

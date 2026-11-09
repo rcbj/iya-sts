@@ -1092,7 +1092,7 @@ async function test() {
   const firstBack = await signInAt(rp, hopped.location);
   hopped = await rp.go("GET", authorizePath({
     acr_values: "urn:sts:acr:compliant-device" }));
-  const sentBack = /\/authn\/login\?authn=/.test(hopped.location);
+  const sentBack = /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(hopped.location);
   const back = sentBack ? await signInAt(rp, hopped.location) : "";
   hopped = back ? await rp.go("GET", back) : hopped;
   const answered = hopped.location.indexOf(REDIRECT) === 0

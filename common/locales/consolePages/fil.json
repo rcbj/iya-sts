@@ -21,6 +21,7 @@
   "title.commands": "OpenID Provider Commands",
   "title.claims": "Mga custom claim",
   "title.config": "Configuration",
+  "title.config-dump": "Dump ng configuration",
   "title.consent": "Consent",
   "title.crypto-metadata": "Cryptography",
   "title.home": "Admin console",

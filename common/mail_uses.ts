@@ -427,7 +427,7 @@ class MailUses {
                 expiresMinutes: String(config.value(
                   'security.passwordResetTtlMinutes')) },
       links: { link: RESET_PATH + '?user=' + encodeURIComponent(username) +
-                     '&token=' + encodeURIComponent(issued.token) },
+                     '#token=' + encodeURIComponent(issued.token) },
       via: via || 'the forgot-password form', actor: username
     });
     if (!sent.ok) {
@@ -495,7 +495,7 @@ class MailUses {
       values: { username: username, address: who.address,
                 expiresMinutes: String(ttl) },
       links: { link: VERIFY_PATH + '?user=' + encodeURIComponent(username) +
-                     '&token=' + encodeURIComponent(token) },
+                     '#token=' + encodeURIComponent(token) },
       via: via, actor: actor || username
     });
     if (!sent.ok) {
@@ -683,7 +683,7 @@ class MailUses {
       values: { username: username, address: wanted,
                 expiresMinutes: String(ttl) },
       links: { link: VERIFY_PATH + '?user=' + encodeURIComponent(username) +
-                     '&token=' + encodeURIComponent(token) },
+                     '#token=' + encodeURIComponent(token) },
       via: via, actor: actor || username
     });
     if (!sent.ok) {
@@ -733,7 +733,7 @@ class MailUses {
                   ? 'security.passwordResetTtlMinutes'
                   : 'security.activationTtlMinutes')) },
       links: { link: (reset ? RESET_PATH : ACTIVATE_PATH) + '?user=' +
-                     encodeURIComponent(username) + '&token=' +
+                     encodeURIComponent(username) + '#token=' +
                      encodeURIComponent(token) },
       via: via, actor: actor
     });

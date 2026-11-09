@@ -734,7 +734,7 @@ class AdminRbac {
     const { log, config } = this.deps;
     log.debug("Entering AdminRbac.bootstrapName().");
     log.debug("Leaving AdminRbac.bootstrapName().");
-    return String(config.value('admin.bootstrapUsername') || '').trim();
+    return require('../common/bootstrap_name').current();
   }
 
   /**

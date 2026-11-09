@@ -328,7 +328,7 @@ function childMain() {
       '&redirect_uri=' + encodeURIComponent('https://rp.mfa.example/cb');
     const reprompt = await w.request('GET', authorize, { browser: fayWho });
     note(reprompt.status === 302 &&
-         /\/authn\/login\?authn=/.test(String(reprompt.headers.location)) &&
+         /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(reprompt.headers.location)) &&
          reprompt.code === 'STS-OAUTH-0952',
          'F. an authorization request on an authenticator-app session, for ' +
          'a client allowing only a security key, is sent to sign in again',
@@ -365,7 +365,7 @@ function childMain() {
       '&wreply=' + encodeURIComponent('https://rp.mfa.example/wsfed');
     const wsfed = await w.request('GET', signIn, { browser: fayWho });
     note(wsfed.status === 303 &&
-         /\/authn\/login\?authn=/.test(String(wsfed.headers.location)) &&
+         /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(wsfed.headers.location)) &&
          wsfed.code === 'STS-WSFED-0022',
          'G. a WS-Federation sign-in on an authenticator-app session is sent ' +
          'to sign in again', wsfed.status + ' ' + wsfed.headers.location +

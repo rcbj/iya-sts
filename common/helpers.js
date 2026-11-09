@@ -3187,7 +3187,11 @@ function decryptableJweAlgs(base) {
 function offeredJweAlgs(base) {
   log.debug("Entering offeredJweAlgs().");
   const offered = config.value('keys.offerKemEncryption') === true;
-  const out = (base || stsCrypto.JWE_ASYMMETRIC_ALGS).filter(function (alg) {
+  // Not advertised where it would be refused (#1469).
+  const legacy = require('./mode').allowsLegacyHashes();
+  const out = (base || stsCrypto.JWE_ASYMMETRIC_ALGS).filter(function (one) {
+    return legacy || one !== 'RSA-OAEP';
+  }).filter(function (alg) {
     return offered || !stsCrypto.describeJweKemAlg(alg);
   });
   log.debug("Leaving offeredJweAlgs(). " + out.length);

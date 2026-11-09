@@ -21,6 +21,7 @@
   "title.commands": "OpenID 提供方命令",
   "title.claims": "自定义声明",
   "title.config": "配置",
+  "title.config-dump": "配置转储",
   "title.consent": "同意",
   "title.crypto-metadata": "密码学",
   "title.home": "管理控制台",

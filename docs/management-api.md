@@ -790,6 +790,9 @@ not asked there.
 
 ## Configuration
 
+To export every parameter at once, with sensitive values masked, see
+[Configuration dump](configuration-dump.md).
+
 `adminApi.*` and `admin.*` apply to the whole process: a trust realm cannot
 override them, because they decide who administers the service.
 

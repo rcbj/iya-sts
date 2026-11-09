@@ -111,6 +111,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings.groups[].settings[].max` | number |  | The highest value it will take. |
 | `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -399,6 +400,7 @@ Scope: `admin:read`.
 | `groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `groups[].settings[].label` | string |  |  |
+| `groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `groups[].settings[].max` | number |  | The highest value it will take. |
 | `groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -470,6 +472,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings.groups[].settings[].max` | number |  | The highest value it will take. |
 | `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -502,6 +505,64 @@ Scope: `admin:read`.
 | `settings.sharedWith.{key}` | list |  |  |
 | `settings.sharedWith.{key}[].label` | string, or null |  |  |
 | `settings.sharedWith.{key}[].path` | string |  |  |
+
+## GET /admin-api/config-dump
+
+`getConfigDump`
+
+**Every configuration parameter, with sensitive values masked**
+
+The configuration of this running instance as one document: every parameter in `settings` with its effective value and source and, in the default realm, what each other trust realm sets in `realms`. Under a realm's prefix it is that realm's effective parameters. Every sensitive value is replaced by `masking.mask` before it is answered. Directory objects are not part of it. Each read is audited as `admin.config-dump`.
+
+**Mirrors** `GET /admin/config-dump` on the admin console.
+
+Scope: `admin:read`.
+
+**200**: The dump.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `configFile` | string, or null |  |  |
+| `defaultsFile` | string |  |  |
+| `format` | string |  | The format of this document. |
+| `generatedAt` | string |  |  |
+| `masking` | object |  |  |
+| `masking.mask` | string |  | The text that replaces a sensitive value. |
+| `masking.maskedValues` | integer |  | How many parameters had a value replaced. |
+| `realm` | string |  | The realm `settings` was read in. |
+| `realms` | list |  | Every other realm. Empty under a realm's prefix. |
+| `realms[].id` | string |  |  |
+| `realms[].settings` | list |  | The parameters this realm sets itself. |
+| `realms[].settings[]` | object |  | One parameter, its sensitive values masked. |
+| `realms[].settings[].default` | list, or string, or number, or boolean, or null |  |  |
+| `realms[].settings[].default[]` | string, or number, or boolean |  |  |
+| `realms[].settings[].editable` | boolean |  |  |
+| `realms[].settings[].env` | string |  | The environment variable that sets it. |
+| `realms[].settings[].group` | string |  |  |
+| `realms[].settings[].key` | string |  | The parameter's dot path. |
+| `realms[].settings[].masked` | boolean |  | Present, true, when a sensitive value was replaced. |
+| `realms[].settings[].overridden` | boolean |  |  |
+| `realms[].settings[].source` | string |  | Where the effective value came from, as `GET /config` says. |
+| `realms[].settings[].type` | string |  |  |
+| `realms[].settings[].value` | list, or string, or number, or boolean, or null |  |  |
+| `realms[].settings[].value[]` | string, or number, or boolean |  |  |
+| `scope` | one of `service`, `realm` |  | `service` from the default realm, `realm` under a realm's prefix. |
+| `settingCount` | integer |  |  |
+| `settings` | list |  | Every parameter, in table order. |
+| `settings[]` | object |  | One parameter, its sensitive values masked. |
+| `settings[].default` | list, or string, or number, or boolean, or null |  |  |
+| `settings[].default[]` | string, or number, or boolean |  |  |
+| `settings[].editable` | boolean |  |  |
+| `settings[].env` | string |  | The environment variable that sets it. |
+| `settings[].group` | string |  |  |
+| `settings[].key` | string |  | The parameter's dot path. |
+| `settings[].masked` | boolean |  | Present, true, when a sensitive value was replaced. |
+| `settings[].overridden` | boolean |  |  |
+| `settings[].source` | string |  | Where the effective value came from, as `GET /config` says. |
+| `settings[].type` | string |  |  |
+| `settings[].value` | list, or string, or number, or boolean, or null |  |  |
+| `settings[].value[]` | string, or number, or boolean |  |  |
+| `version` | string |  | This service's version. |
 
 ## POST /admin-api/config/reset
 
@@ -550,6 +611,7 @@ Scope: `admin:write`.
 | `setting.group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `setting.key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `setting.label` | string |  |  |
+| `setting.masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `setting.max` | number |  | The highest value it will take. |
 | `setting.min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `setting.ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -605,6 +667,7 @@ Scope: `admin:write`.
 | `setting.group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `setting.key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `setting.label` | string |  |  |
+| `setting.masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `setting.max` | number |  | The highest value it will take. |
 | `setting.min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `setting.ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -729,6 +792,7 @@ Scope: `admin:write`.
 | `setting.group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `setting.key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `setting.label` | string |  |  |
+| `setting.masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `setting.max` | number |  | The highest value it will take. |
 | `setting.min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `setting.ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -784,6 +848,7 @@ Scope: `admin:write`.
 | `setting.group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `setting.key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `setting.label` | string |  |  |
+| `setting.masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `setting.max` | number |  | The highest value it will take. |
 | `setting.min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `setting.ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -860,6 +925,7 @@ An empty object.
 | `settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings[].label` | string |  |  |
+| `settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings[].max` | number |  | The highest value it will take. |
 | `settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -918,6 +984,7 @@ An empty object.
 | `settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings[].label` | string |  |  |
+| `settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings[].max` | number |  | The highest value it will take. |
 | `settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |

@@ -24,8 +24,10 @@ has one space; nothing else may differ. Proved on 11.8 (2026-11-03) by loading
 the script into one empty database and `SCHEMA_OBJECTS` into another, and
 comparing every `SHOW CREATE TABLE`, `information_schema.COLUMNS`,
 `STATISTICS`, `CHECK_CONSTRAINTS` and each table's engine and collation:
-identical. **No test holds them together yet** — `tests/postgres_schema.js` is
-PostgreSQL's; a MariaDB counterpart is owed.
+identical. `tests/mariadb_schema.js` holds the two copies together.
+`common/mariadb_import.ts` emits this file's own bytes. A statement the
+two copies do not share, whitespace aside, is a gap. The file is not
+rebuilt from the column list.
 
 The schema version is PostgreSQL's (30), so there is one `SCHEMA_VERSION`. A
 change to `postgres/schema.sql` owes this directory the same change.

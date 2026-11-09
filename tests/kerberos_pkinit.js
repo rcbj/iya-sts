@@ -440,6 +440,20 @@ async function throughTheKdc(t) {
           'KDC_ERR_DH_KEY_PARAMETERS_NOT_ACCEPTED', JSON.stringify(weak));
   const noKdf = await asReq(ALICE, alice, { token: first.token,
                                             noKdf: true });
+  // RFC 4556's OWN KDF IS SHA-1, SO ITS OPT-IN ALONE DOES NOT ADMIT IT IN
+  // PRODUCT (ASVS 5.0.0 11.4.1).
+  if (require('../common/mode').isProduct()) {
+    const pkinitConfig = require('../common/config');
+    pkinitConfig.setOverride('crypto.allowLegacyHashes', false);
+    pkinitConfig.setOverride('krb5.pkinitLegacyKdf', true);
+    const legacyOnly = await asReq(ALICE, alice, { token: first.token,
+                                                   noKdf: true });
+    pkinitConfig.clearOverride('krb5.pkinitLegacyKdf');
+    pkinitConfig.clearOverride('crypto.allowLegacyHashes');
+    t.check(!legacyOnly.ok && legacyOnly.code === 100,
+            'pkinitLegacyKdf alone does not admit a SHA-1 KDF in product',
+            JSON.stringify(legacyOnly));
+  }
   t.check(!noKdf.ok && noKdf.code === 100, 'no RFC 8636 KDF, with ' +
           'krb5.pkinitLegacyKdf off, is KDC_ERR_NO_ACCEPTABLE_KDF',
           JSON.stringify(noKdf));
@@ -582,7 +596,7 @@ function inAProductChild(t) {
     'crashed: e.stack || e.message })); process.exit(0); });';
   const run = childProcess.spawnSync(process.execPath, ['-e', script], {
     env: Object.assign(clean, {
-      LOG_LEVEL: 'fatal', KP_OUT: outFile, STS_MODE: 'product',
+      LOG_LEVEL: 'fatal', KP_OUT: outFile, STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
       KRB5_KRBTGT_PASSWORD: 'pkinit-' +
                             nodeCrypto.randomBytes(12).toString('hex'),
       STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',

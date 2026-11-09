@@ -1922,6 +1922,7 @@ function pemFileOf(settingKey) {
   let stat;
   let text;
   try {
+    require('./outbound_tls').assertNamedFile(file);
     stat = fs.statSync(file);
     const held = pemFiles.get(settingKey);
     if (held && held.file === file && held.mtimeMs === stat.mtimeMs) {

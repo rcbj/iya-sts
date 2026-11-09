@@ -159,7 +159,7 @@ async function theRestart(cells, realm) {
         "sign-in screen", function () {
           assert.ok(first.status >= 300 && first.status < 400,
             first.status + " " + kit.said(first.text));
-          assert.ok(/\/authn\/login\?authn=/.test(first.location),
+          assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(first.location),
             first.location);
         });
   const screen = await kit.browse(jar, first.location);
@@ -197,7 +197,7 @@ async function theRestart(cells, realm) {
         "a sign-in screen again", function () {
           assert.ok(again.status >= 300 && again.status < 400,
             again.status + " " + kit.said(again.text));
-          assert.ok(/\/authn\/login\?authn=/.test(again.location),
+          assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(again.location),
             again.location);
         });
   // SINCE #571 THE SCREEN IS A SHELL, answered only for a sign-in the
@@ -318,7 +318,7 @@ async function thePushedRequest(cells, realm) {
         "only have refused it", function () {
           assert.ok(started.status >= 300 && started.status < 400,
             started.status + " " + kit.said(started.text));
-          assert.ok(/\/authn\/login\?authn=/.test(started.location),
+          assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(started.location),
             started.location);
         });
   const atHome = await kit.browse(new kit.Jar(),

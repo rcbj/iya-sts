@@ -231,7 +231,8 @@ async function run(t) {
               'refused', r.why);
       set(f.t.caFileKey, path.join(dir, 'missing.crt'));
       r = await dial[f.name](TRUSTED);
-      t.check(!r.ok && /could not be read/.test(r.why) &&
+      // A missing file answers as one outside the directories since #1481.
+      t.check(!r.ok && /fileRoots/.test(r.why) &&
               (f.name === 'XACML' || r.code === 'STS-CORE-0104'),
               f.name + ': a CA file that cannot be read refuses the request ' +
               '(STS-CORE-0104)', r.code + ' ' + r.why);

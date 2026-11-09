@@ -836,6 +836,7 @@ Scope: `admin:read`.
 | `page.config.fields[].described.key` | string |  |  |
 | `page.config.fields[].described.label` | string |  |  |
 | `page.config.fields[].described.legacyEnv` | string, or null |  |  |
+| `page.config.fields[].described.masked` | boolean |  |  |
 | `page.config.fields[].described.max` | number |  |  |
 | `page.config.fields[].described.min` | number |  |  |
 | `page.config.fields[].described.ordered` | boolean |  |  |
@@ -2038,6 +2039,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].key` | string |  |  |
 | `settings.groups[].settings[].label` | string |  |  |
 | `settings.groups[].settings[].legacyEnv` | string, or null |  |  |
+| `settings.groups[].settings[].masked` | boolean |  |  |
 | `settings.groups[].settings[].max` | number |  |  |
 | `settings.groups[].settings[].min` | number |  |  |
 | `settings.groups[].settings[].ordered` | boolean |  |  |
@@ -5476,6 +5478,7 @@ Scope: `admin:read`.
 | `fields[].described.key` | string |  |  |
 | `fields[].described.label` | string |  |  |
 | `fields[].described.legacyEnv` | string, or null |  |  |
+| `fields[].described.masked` | boolean |  |  |
 | `fields[].described.max` | number |  |  |
 | `fields[].described.min` | number |  |  |
 | `fields[].described.ordered` | boolean |  |  |

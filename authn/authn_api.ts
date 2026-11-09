@@ -2120,6 +2120,59 @@ class AuthnApi {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AuthnApi.registerRoutes().");
+    // A SIGN-IN STEP BELONGS TO ONE BROWSER (#1454), in product. An emailed
+    // link is exempt: it opens in whichever browser the mail client picks, and
+    // has a binding of its own (`authn/email_factor.ts`).
+    // THE ID IN A HEADER (#1454): the sign-in pages send `-` in the path and
+    // the id in `X-Step-Id`, so no address carries it.
+    (app as any).use(API, (req: Json, res: Json, next: any) => {
+      const id = String(req.headers['x-step-id'] || '');
+      if (id && /^\/(?:mfa|pending|password-change|consent)\/-(?:[/?]|$)/
+        .test(String(req.url))) {
+        req.url = String(req.url).replace('/-', '/' + encodeURIComponent(id));
+      }
+      const asked = new URLSearchParams(String(req.headers['x-step-query'] ||
+                                               ''));
+      ['authn', 'mfa', 'enrol'].forEach(function (name) {
+        if (asked.has(name)) {
+          req.query[name] = asked.get(name);
+        }
+      });
+      next();
+    });
+    ['mfa', 'pending', 'password-change', 'consent'].forEach((kind) => {
+      (app as any).use(API + '/' + kind + '/:id',
+                       (req: Json, res: Json, next: any) => {
+        const { authn, errorCodes } = this.deps;
+        const mode = require('../common/mode');
+        const opened = /\/email-link\/open$/.test(String(req.path || '')) ||
+          String((req.query || {}).page || '') === 'email-link-open';
+        if (opened || !mode.bindsSignInSteps()) {
+          next();
+          return;
+        }
+        // THE KERBEROS BUTTON'S STEP (#1487): a link carries no header, so
+        // the page's own view leaves the id in a cookie for it.
+        if (kind === 'pending' && req.method === 'GET' &&
+            mode.hidesStepIds() && req.params.id !== '-' &&
+            require('../common/config').value('krb5.spnegoAuthentication')) {
+          res.append('Set-Cookie', require('../common/step_address')
+            .spnegoCookie(encodeURIComponent(req.params.id)));
+        }
+        const found = authn.cookieSession(req, authn.SESSION_COOKIE);
+        const sid = String((found && found.id) || '');
+        const held = kind === 'consent'
+          ? require('../oauth-oidc/consent_screen')
+            .claimForBrowser(req.params.id, sid)
+          : authn.claimStepForBrowser(req.params.id, sid, kind);
+        if (!held) {
+          errorCodes.mark(res, 'STS-AUTHN-0552');
+          this.refuse(res, 400, 'That sign-in was started in another browser.');
+          return;
+        }
+        next();
+      });
+    });
     // EVERY ANSWER IS HELD TO ITS MODEL (#1353), before any route answers.
     responseChecks.install(app, API, function () {
       return AuthnApi.document({});

@@ -403,7 +403,7 @@ function childMain() {
         // THE PARTNER'S SIGN-IN SCREEN, a static surface over `/authn-api`
         // since #571: signed in as its page does, its answer followed.
         if (r.status >= 300 && r.status < 400 &&
-            /\/authn\/login\?authn=/.test(String(r.headers.location))) {
+            /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(r.headers.location))) {
           const at = new URL(r.headers.location, base);
           const sent = await authnScreen.submit({ port: port, ca: caPem,
             jar: jar, at: at.pathname + at.search,
@@ -1026,6 +1026,7 @@ function runMode(t, modeName) {
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean, { LOG_LEVEL: 'fatal', FSO_ROOT: ROOT,
+        STS_SECURITY_FILE_ROOTS: os.tmpdir(),
                                   FSO_OUT: out, FSO_MODE: modeName }),
       encoding: 'utf8', timeout: 300000, cwd: ROOT
     });

@@ -328,9 +328,9 @@ Its attributes are:
 |---|---|---|
 | `pwdMinLength` | 12 | minimum length |
 | `pwdInHistory` | 5 | how many previous passwords may not be reused (the current one is refused as well) |
-| `stsPwdMinSymbols` | 1 | how many symbols are required |
-| `stsPwdRequireUppercase` | TRUE | an uppercase letter is required |
-| `stsPwdRequireDigit` | TRUE | a digit is required |
+| `stsPwdMinSymbols` | 0 | always 0: a policy may not ask for symbols (ASVS 5.0.0 6.2.5) |
+| `stsPwdRequireUppercase` | FALSE | always FALSE, for the same reason |
+| `stsPwdRequireDigit` | FALSE | always FALSE, for the same reason |
 | `stsPwdGeneratedLength` | 20 | the length of a generated password |
 
 The `pwd*` names are those of

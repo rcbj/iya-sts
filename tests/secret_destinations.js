@@ -396,11 +396,9 @@ async function registerAndHide(t, base) {
             'add-destination,update-destination,remove-destination,' +
             'test-push',
           'B5. the action resource mirrors the page with its four acts');
-  const ldapSource = fs.readFileSync(path.join(__dirname, '..', 'ldap',
-                                               'ldap_server.js'), 'utf8');
-  const list = ldapSource.slice(
-    ldapSource.indexOf('const SECRET_ATTRIBUTES = ['),
-    ldapSource.indexOf('];', ldapSource.indexOf('const SECRET_ATTRIBUTES')));
+  const list = JSON.stringify(JSON.parse(fs.readFileSync(
+    path.join(__dirname, '..', 'models', 'generated',
+      'directory.names.json'), 'utf8')).secret).replace(/"/g, "'");
   t.check(list.indexOf("'secretdestcredential'") >= 0 &&
           applications.WITHHELD_FIELDS.indexOf('secretDestCredential') >= 0 &&
           applications.SEALED_FIELDS.indexOf('secretDestCredential') >= 0,

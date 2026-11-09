@@ -168,7 +168,7 @@ async function signIn(b) {
     scope: "openid", state: "st", nonce: "n-" + STAMP,
     code_challenge: nodeCrypto.createHash("sha256").update("v".repeat(43))
       .digest("base64url"), code_challenge_method: "S256" }).toString());
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
             "the authorization request goes to the sign-in screen: " +
             r.status + " " + r.location);
   const answer = await authnSignin.submit(base + R, absolute(r.location),
@@ -245,7 +245,7 @@ async function test() {
   check("the sign-in is held at /authn/post-login",
     function () {
       assert.strictEqual(answer.next, "mfa", JSON.stringify(answer.json));
-      assert.ok(/\/authn\/post-login\?mfa=/.test(answer.location),
+      assert.ok(/\/authn\/post-login(?:\?app=[^#]*)?[?#]mfa=/.test(answer.location),
                 answer.location);
     });
   const opened = await authnSignin.step(absolute(answer.location),
@@ -270,7 +270,7 @@ async function test() {
       .digest("base64url"), code_challenge_method: "S256" }).toString());
   check("while it is held there is no session: the application is sent " +
         "to the sign-in screen again", function () {
-    assert.ok(/\/authn\/login\?authn=/.test(probe.location),
+    assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(probe.location),
               probe.status + " " + probe.location);
   });
 

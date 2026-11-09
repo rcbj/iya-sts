@@ -126,6 +126,10 @@ single most misleading thing this endpoint could do. They are rows with no
 checkbox and a sentence — the same decision `/admin/sts-metadata` makes about
 coverage notes.
 
+**IN PRODUCT A SIGN-OUT REVOKES THE ACCESS TOKENS OF ITS SESSION (#1449, ASVS
+5.0.0 7.4.1)**, in `Authn.dropSession()`: this service is what consults them, so
+that much can be recalled. The rest of this paragraph stands.
+
 **THIS SERVICE DOES NOT RECALL ANYTHING IT HAS ALREADY ISSUED** — a SAML
 assertion, a Kerberos service ticket, an X509-SVID. **Still true, and QUALIFIED
 since 2026-09-05: it now DISOWNS them.** A sign-out marks each revoked in this

@@ -12170,5 +12170,85 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Solo para la escucha del depurador de protocolos: http.http2MaxConcurrentStreams. -1, el predeterminado, sigue a http.http2MaxConcurrentStreams; cualquier otro valor decide solo para esta escucha. Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
+  },
+  "krb5.allowSha1Enctypes|label": {
+    "en": "15146ba7e398f699",
+    "text": "Ofrecer AES con SHA-1 en producción"
+  },
+  "krb5.allowSha1Enctypes|description": {
+    "en": "bc316355cf713a02",
+    "text": "Solo en modo producto. Activado, este KDC también puede usar los enctypes 17 y 18 (AES con HMAC-SHA1-96, RFC 3962). Desactivado, el valor predeterminado, el modo producto usa solo 19 y 20 (RFC 8009). ADVERTENCIA: el requisito 11.4.1 de ASVS 5.0.0 no acepta SHA-1 aquí, así que actívelo solo para clientes Kerberos que no admitan nada más reciente."
+  },
+  "krb5.allowSha1Enctypes|restartReason": {
+    "en": "8bca2d2d03148c2a",
+    "text": "las claves de cada principal se crean al iniciar"
+  },
+  "scep.allowInProduct|label": {
+    "en": "5a40ad7af32c5eb7",
+    "text": "Responder a SCEP en producción"
+  },
+  "scep.allowInProduct|description": {
+    "en": "ad9779aeb9ac6587",
+    "text": "Solo en modo producto. Activado, /enroll/scep responde en modo producto. Desactivado, el valor predeterminado, responde 503. ADVERTENCIA: RFC 8894 exige RSAES-PKCS1-v1.5 y AES-CBC, que los requisitos 11.3.1 y 11.3.2 de ASVS 5.0.0 no aceptan, así que actívelo solo para dispositivos que no admitan nada más reciente."
+  },
+  "oauth2.allowUndeclaredGrants|label": {
+    "en": "48f3e420ff8f61c0",
+    "text": "Permitir cualquier concesión a un cliente sin lista"
+  },
+  "oauth2.allowUndeclaredGrants|description": {
+    "en": "22bb986fa3711e13",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un cliente que no declara tipos de concesión solo puede usar authorization_code y refresh_token. Activado, puede usar cualquier concesión que ofrezca este servicio. ADVERTENCIA: el requisito 10.4.4 de ASVS 5.0.0 limita un cliente a las concesiones que necesita, así que déjelo desactivado fuera de un entorno de pruebas."
+  },
+  "admin.allowDefaultUsername|label": {
+    "en": "0ab7a95a721ff350",
+    "text": "Permitir un nombre de administrador predeterminado en producción"
+  },
+  "admin.allowDefaultUsername|description": {
+    "en": "261e7a2bb89b22e2",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un administrador de arranque llamado admin, root, sa o administrator, o sin nombre, recibe un nombre generado impredecible, mostrado con su contraseña en el primer inicio. Activado, se usa el nombre configurado tal cual. ADVERTENCIA: el requisito 6.3.2 de ASVS 5.0.0 prohíbe un nombre de cuenta predeterminado, así que déjelo desactivado fuera de un entorno de pruebas."
+  },
+  "admin.allowDefaultUsername|restartReason": {
+    "en": "0191948468332113",
+    "text": "el arranque inicial se ejecuta una sola vez, entre la apertura del almacén de persistencia y el enlace de la escucha, así que un cambio posterior ya no tiene nada que nombrar"
+  },
+  "crypto.allowLegacyHashes|label": {
+    "en": "e64b3dc98c254326",
+    "text": "Permitir SHA-1 y MD5 donde un protocolo aún los usa"
+  },
+  "crypto.allowLegacyHashes|description": {
+    "en": "21064646f0ea0387",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, este servicio no usa OAEP sobre SHA-1 en cifrado XML ni JWE, la derivación de claves PKINIT SHA-1 ni la suma de comprobación HMAC-MD5 de S4U2Self. Activado, los usa. ADVERTENCIA: el requisito 11.4.1 de ASVS 5.0.0 no permite esas funciones hash, así que actívelo solo para socios o clientes que no admitan nada más reciente."
+  },
+  "security.allowUnscopedPeople|label": {
+    "en": "502e12a150357d63",
+    "text": "Permitir a una persona sin rol acceder a SCIM y Shared Signals"
+  },
+  "security.allowUnscopedPeople|description": {
+    "en": "2bf5565da47abb33",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, quien se autentica en /scim/v2 o Shared Signals con un esquema sin ámbito, como HTTP Basic o la cookie de sesión, necesita Admin Read para leer y Admin Write para escribir. Activado, cualquier persona autenticada puede. ADVERTENCIA: activado, no se cumplen los requisitos 8.2.1 y 8.2.2 de ASVS 5.0.0, porque cualquiera podría cambiar cualquier cuenta. Use ámbitos OAuth para los clientes de aprovisionamiento."
+  },
+  "security.fileRoots|label": {
+    "en": "7f144086ba380c16",
+    "text": "Directorios desde los que se puede leer un archivo nombrado"
+  },
+  "security.fileRoots|description": {
+    "en": "a378a866f9204d53",
+    "text": "Solo en modo producto. Una lista de directorios absolutos separados por comas. Un archivo nombrado por un administrador en un ajuste o una solicitud (un archivo CA, un archivo de token o clave SPIFFE, un archivo Sigstore, un certificado o clave de correo) solo se lee si su ruta real, tras seguir los enlaces simbólicos, está dentro de uno de ellos. Se define en el entorno o en el archivo appconfig y no se puede cambiar desde la consola ni la API, para que la solicitud de un administrador no pueda ampliarlo. ADVERTENCIA: añadir / u otro directorio amplio significa que no se cumple el requisito 5.3.2 de ASVS 5.0.0."
+  },
+  "risk.maxSkippedLinesPercent|label": {
+    "en": "f299cbec779c44e8",
+    "text": "Parte máxima de las líneas de un conjunto de datos que puede no analizarse (porcentaje)"
+  },
+  "risk.maxSkippedLinesPercent|description": {
+    "en": "ff816ae98311e5a5",
+    "text": "Se rechaza un archivo de conjunto de datos en el que más de este porcentaje de sus líneas sin comentario no son filas del formato, y no se conserva nada de él. 100 acepta cualquier archivo con al menos una fila, que es lo que hacía antes este servicio. ADVERTENCIA: con 100 se puede cargar un archivo de otro tipo siempre que una línea se analice."
+  },
+  "crypto.allowCbcJwe|label": {
+    "en": "47b44d2ca23a7a17",
+    "text": "Permitir el cifrado de contenido JWE CBC-HMAC"
+  },
+  "crypto.allowCbcJwe|description": {
+    "en": "20f6a7dc269fe48a",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, JWE usa y acepta solo AES-GCM: A128CBC-HS256, A192CBC-HS384 y A256CBC-HS512 no se ofrecen ni se aceptan, y un cliente que nombra un algoritmo sin enc recibe la respuesta en A256GCM. Activado, funcionan como en desarrollo. ADVERTENCIA: mientras esté activado no se cumple el requisito 11.3.2 de ASVS 5.0.0; actívelo solo para un socio que no pueda leer AES-GCM."
   }
 }

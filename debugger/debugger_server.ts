@@ -1216,6 +1216,9 @@ class DebuggerServer {
     app.use(function inDefaultRealm(req, res, next) {
       realms.run(realms.get(realms.DEFAULT_ID), next);
     });
+    // A cookie is scoped to a host and not a port, so this listener reads the
+    // main port's by the same wire names (#1441).
+    app.use(require('../common/cookie_wire').middleware());
 
     // THE CROSS-NODE `jti` RESERVATION FOR A DPoP PROOF (#34, 2026-09-15), the
     // same middleware `oauth2.js` registers above every route on the main app.

@@ -421,7 +421,7 @@ async function signIn(door, who, onSecondFactor) {
     "the portal's shell should answer " + PORTAL_DOOR + "; it answered " +
     r.status + " -> " + r.location);
   r = await b.go("GET", portalAuthorizeUrl());
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
     "the authorization endpoint should send a browser with no sign-on " +
     "session to the sign-in screen; it answered " + r.status + " -> " +
     r.location);

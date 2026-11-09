@@ -325,6 +325,16 @@ async function keytabChild() {
   out.typedPasswordAfterRandom = await asWithPassword('ktowner', PW2);
   out.randomText = JSON.stringify(random);
 
+  // --- E-ii. a password that must be changed gets no ticket (#1446) ---
+  directory.createUser('kttemp', person('kttemp'));
+  credentials.setPassword('kttemp', PW);
+  await personKeys.idle();
+  out.tempBefore = await asWithPassword('kttemp', PW);
+  credentials.setPasswordResetRequired('kttemp', true);
+  out.tempFlagged = await asWithPassword('kttemp', PW);
+  credentials.setPasswordResetRequired('kttemp', false);
+  out.tempAfter = await asWithPassword('kttemp', PW);
+
   // --- F. refusals that change nothing ---
   const kvnoBeforeRefusals = kvnoOf('ktowner');
   const storedHash = function () {
@@ -438,7 +448,7 @@ function inAChild(t, mode) {
   });
   if (mode === 'product') {
     Object.assign(env, {
-      STS_MODE: 'product',
+      STS_MODE: 'product', STS_SECURITY_RATE_PER_IDENTITY: '1000', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
       KRB5_KRBTGT_PASSWORD: 'not-the-published-krbtgt-secret',
       STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
       STS_KEYS_KEK_FILE: kekFile
@@ -486,6 +496,11 @@ function everyEtypeSignedIn(results) {
 function productAssertions(t, r) {
   log.debug("Entering productAssertions().");
   t.log.info('=== product: the keytab from a password in hand ===');
+  t.check(r.tempBefore.ok && !r.tempFlagged.ok &&
+          r.tempFlagged.code === 23 && r.tempAfter.ok,
+          'product: a password that must be changed gets KDC_ERR_KEY_EXPIRED, ' +
+          'and the same password works once it need not be',
+          JSON.stringify([r.tempBefore, r.tempFlagged, r.tempAfter]));
   t.check(r.productKdc === true, 'the child is a product KDC');
   const own = r.own.keytab
     ? independentKeytabRead(Buffer.from(r.own.keytab, 'base64')) : [];

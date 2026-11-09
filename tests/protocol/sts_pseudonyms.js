@@ -284,7 +284,7 @@ function linkParams(link) {
   try {
     const u = new URL(link);
     out = { user: u.searchParams.get("user") || "",
-            token: u.searchParams.get("token") || "" };
+            token: new URLSearchParams(u.hash.slice(1)).get("token") || "" };
   } catch (e) {
     log.debug("Caught in linkParams(): " + ((e && e.message) || e));
     out = { user: "", token: "" };
@@ -553,8 +553,8 @@ async function theMailedLink(aliceSubject, bobSubject) {
   const params = linkParams(link);
   const looked = await call("GET", realmBase() +
     "/account-api/verify-pseudonym?user=" +
-    encodeURIComponent(params.user) + "&token=" +
-    encodeURIComponent(params.token));
+    encodeURIComponent(params.user), undefined,
+    { "X-Link-Token": params.token });
   const still = await listed(alice);
   check("9. opening the link spends nothing", function () {
     assert.strictEqual(looked.status, 200, looked.text.slice(0, 300));

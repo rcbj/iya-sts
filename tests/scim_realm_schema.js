@@ -122,7 +122,8 @@ function childMain() {
     try {
       const product = realms.create({ id: 'srsp-' + tag, name: 'srsp-' + tag,
         description: 'Created by tests/scim_realm_schema.js',
-        overrides: { 'global.mode': 'product' } });
+        overrides: { 'global.mode': 'product',
+                     'security.allowUnscopedPeople': true } });
       const dev = realms.create({ id: 'srsd-' + tag, name: 'srsd-' + tag,
         description: 'Created by tests/scim_realm_schema.js' });
       made.push(product.realm ? product.realm.id : '',

@@ -12170,5 +12170,85 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Pour l’écouteur du débogueur de protocoles uniquement : http.http2MaxConcurrentStreams. -1, la valeur par défaut, suit http.http2MaxConcurrentStreams ; toute autre valeur ne s’applique qu’à cet écouteur. Combien de requêtes une connexion HTTP/2 peut avoir ouvertes simultanément (SETTINGS_MAX_CONCURRENT_STREAMS) ; un flux au-delà est refusé jusqu’à ce qu’un autre se termine. 100, la valeur par défaut, est la plus petite valeur que recommande la RFC 9113 ; celle de node est illimitée, ce qui permettrait à une seule connexion de porter le travail de milliers. Elle borne le travail d’une connexion comme http.maxConnections borne les connexions. Une nouvelle connexion suit un changement immédiatement, et la nouvelle valeur est envoyée à une connexion ouverte."
+  },
+  "krb5.allowSha1Enctypes|label": {
+    "en": "15146ba7e398f699",
+    "text": "Proposer AES avec SHA-1 en production"
+  },
+  "krb5.allowSha1Enctypes|description": {
+    "en": "bc316355cf713a02",
+    "text": "Mode produit uniquement. Activé, ce KDC peut aussi utiliser les enctypes 17 et 18 (AES avec HMAC-SHA1-96, RFC 3962). Désactivé, par défaut, le mode produit utilise seulement 19 et 20 (RFC 8009). AVERTISSEMENT : l’exigence 11.4.1 d’ASVS 5.0.0 n’accepte pas SHA-1 ici ; activez ce réglage uniquement pour des clients Kerberos qui ne parlent rien de plus récent."
+  },
+  "krb5.allowSha1Enctypes|restartReason": {
+    "en": "8bca2d2d03148c2a",
+    "text": "les clés de chaque principal sont créées au démarrage"
+  },
+  "scep.allowInProduct|label": {
+    "en": "5a40ad7af32c5eb7",
+    "text": "Répondre à SCEP en production"
+  },
+  "scep.allowInProduct|description": {
+    "en": "ad9779aeb9ac6587",
+    "text": "Mode produit uniquement. Activé, /enroll/scep répond en mode produit. Désactivé, par défaut, il répond 503. AVERTISSEMENT : RFC 8894 impose RSAES-PKCS1-v1.5 et AES-CBC, que les exigences 11.3.1 et 11.3.2 d’ASVS 5.0.0 n’acceptent pas ; activez ce réglage uniquement pour des appareils qui ne parlent rien de plus récent."
+  },
+  "oauth2.allowUndeclaredGrants|label": {
+    "en": "48f3e420ff8f61c0",
+    "text": "Laisser un client sans liste utiliser tout type d’autorisation"
+  },
+  "oauth2.allowUndeclaredGrants|description": {
+    "en": "22bb986fa3711e13",
+    "text": "Mode produit uniquement. Désactivé, par défaut, un client qui ne déclare aucun type d’autorisation ne peut utiliser que authorization_code et refresh_token. Activé, il peut utiliser tout type proposé par ce service. AVERTISSEMENT : l’exigence 10.4.4 d’ASVS 5.0.0 limite un client aux types dont il a besoin ; laissez ce réglage désactivé hors d’une pile de test."
+  },
+  "admin.allowDefaultUsername|label": {
+    "en": "0ab7a95a721ff350",
+    "text": "Autoriser un nom d’administrateur par défaut en production"
+  },
+  "admin.allowDefaultUsername|description": {
+    "en": "261e7a2bb89b22e2",
+    "text": "Mode produit uniquement. Désactivé, par défaut, un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, affiché avec son mot de passe au premier démarrage. Activé, le nom configuré est utilisé tel quel. AVERTISSEMENT : l’exigence 6.3.2 d’ASVS 5.0.0 interdit un nom de compte par défaut ; laissez ce réglage désactivé hors d’une pile de test."
+  },
+  "admin.allowDefaultUsername|restartReason": {
+    "en": "0191948468332113",
+    "text": "l’amorçage s’exécute une seule fois, entre l’ouverture du stockage persistant et la liaison de l’écouteur ; une modification ultérieure n’a donc plus rien à nommer"
+  },
+  "crypto.allowLegacyHashes|label": {
+    "en": "e64b3dc98c254326",
+    "text": "Autoriser SHA-1 et MD5 là où un protocole les utilise encore"
+  },
+  "crypto.allowLegacyHashes|description": {
+    "en": "21064646f0ea0387",
+    "text": "Mode produit uniquement. Désactivé, par défaut, ce service n’utilise ni OAEP sur SHA-1 dans le chiffrement XML ou JWE, ni la dérivation de clé PKINIT SHA-1, ni la somme de contrôle HMAC-MD5 de S4U2Self. Activé, il les utilise. AVERTISSEMENT : l’exigence 11.4.1 d’ASVS 5.0.0 interdit ces hachages ; activez ce réglage uniquement pour des partenaires ou clients qui ne prennent en charge rien de plus récent."
+  },
+  "security.allowUnscopedPeople|label": {
+    "en": "502e12a150357d63",
+    "text": "Laisser une personne sans rôle accéder à SCIM et Shared Signals"
+  },
+  "security.allowUnscopedPeople|description": {
+    "en": "2bf5565da47abb33",
+    "text": "Mode produit uniquement. Désactivé, par défaut, une personne authentifiée sur /scim/v2 ou Shared Signals par un schéma sans portée, comme HTTP Basic ou le cookie de session, doit détenir Admin Read pour lire et Admin Write pour écrire. Activé, toute personne authentifiée le peut. AVERTISSEMENT : activé, les exigences 8.2.1 et 8.2.2 d’ASVS 5.0.0 ne sont pas respectées, car n’importe qui pourrait modifier n’importe quel compte. Utilisez plutôt des portées OAuth pour les clients de provisionnement."
+  },
+  "security.fileRoots|label": {
+    "en": "7f144086ba380c16",
+    "text": "Répertoires depuis lesquels un fichier nommé peut être lu"
+  },
+  "security.fileRoots|description": {
+    "en": "a378a866f9204d53",
+    "text": "Mode produit uniquement. Une liste de répertoires absolus séparés par des virgules. Un fichier nommé par un administrateur dans un paramètre ou une requête (un fichier CA, un fichier de jeton ou de clé SPIFFE, un fichier Sigstore, un certificat ou une clé de messagerie) n’est lu que si son chemin réel, après résolution des liens symboliques, se trouve dans l’un d’eux. Il se définit dans l’environnement ou le fichier appconfig et ne peut pas être modifié par la console ou l’API, afin qu’une requête d’administrateur ne puisse pas l’élargir. AVERTISSEMENT : ajouter / ou un autre répertoire large signifie que l’exigence 5.3.2 d’ASVS 5.0.0 n’est pas respectée."
+  },
+  "risk.maxSkippedLinesPercent|label": {
+    "en": "f299cbec779c44e8",
+    "text": "Part maximale des lignes d’un jeu de données pouvant échouer à l’analyse (pourcentage)"
+  },
+  "risk.maxSkippedLinesPercent|description": {
+    "en": "ff816ae98311e5a5",
+    "text": "Un fichier de jeu de données dont plus de ce pourcentage de lignes hors commentaires ne sont pas des enregistrements du format est refusé, et rien n’en est conservé. 100 accepte tout fichier contenant au moins un enregistrement, ce que faisait ce service auparavant. AVERTISSEMENT : à 100, un fichier du mauvais type peut être chargé dès qu’une ligne est analysée."
+  },
+  "crypto.allowCbcJwe|label": {
+    "en": "47b44d2ca23a7a17",
+    "text": "Autoriser le chiffrement de contenu JWE CBC-HMAC"
+  },
+  "crypto.allowCbcJwe|description": {
+    "en": "20f6a7dc269fe48a",
+    "text": "Mode produit uniquement. Désactivé, par défaut, JWE utilise et accepte AES-GCM seul : A128CBC-HS256, A192CBC-HS384 et A256CBC-HS512 ne sont ni proposés ni acceptés, et un client qui nomme un algorithme sans enc reçoit une réponse en A256GCM. Activé, ils fonctionnent comme en développement. AVERTISSEMENT : tant que ce paramètre est activé, l’exigence 11.3.2 d’ASVS 5.0.0 n’est pas respectée ; ne l’activez que pour un partenaire incapable de lire AES-GCM."
   }
 }

@@ -1461,7 +1461,10 @@ class WsTrust {
     const ut = this.firstOwnedByRequester(scope, 'UsernameToken');
     if (ut) {
       const user = textByLocal(ut, 'Username');
-      const pass = textByLocal(ut, 'Password');
+      // VERBATIM (#1466, ASVS 5.0.0 6.2.8): `textByLocal()` trims, and a
+      // password is what the person typed, spaces included.
+      const passwordElement = helpers.firstByLocal(ut, 'Password');
+      const pass = passwordElement ? (passwordElement.textContent || '') : '';
       if (!user || !pass) {
         log.debug("Leaving WsTrust.messageCredential(). Incomplete " +
                   "UsernameToken.");
@@ -1494,10 +1497,18 @@ class WsTrust {
       // person with a second factor is refused their password here — with
       // this same fault — and an app password scoped to `wstrust` is
       // accepted instead.
+      const websecurity = require('../common/websecurity');
+      if (websecurity.doorBlocked('wstrust', null, user)) {
+        log.debug("Leaving WsTrust.messageCredential(). Too many failures.");
+        return { ok: false, errorCode: 'STS-WSTRUST-0070',
+                 trustFault: 'FailedAuthentication',
+                 reason: 'Authentication failed for user ' + user + '.' };
+      }
       const checked = credentials.verify(user, pass, {
         via: 'a WS-Security UsernameToken', door: 'wstrust'
       });
       if (!checked.ok) {
+        websecurity.doorFailed('wstrust', null, user);
         log.info('wstrust: the UsernameToken for "' + user + '" was refused (' +
                  checked.reason + '): ' + checked.detail);
         log.debug("Leaving WsTrust.messageCredential(). The credential was " +
@@ -1506,6 +1517,7 @@ class WsTrust {
                  trustFault: 'FailedAuthentication',
                  reason: 'Authentication failed for user ' + user + '.' };
       }
+      websecurity.doorSucceeded('wstrust', null, user);
       log.debug("Leaving WsTrust.messageCredential(). A UsernameToken " +
                 "for " + user + ".");
       // AN APP PASSWORD IS SAID SO (#101): one factor, and the row names it.

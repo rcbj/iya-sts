@@ -484,8 +484,8 @@ class SpnegoAuthn {
     const framing = {
       htmlAttributes: PageLocale.htmlAttributes(t),
       top: PageLocale.chooser(t, prefix, PageLocale.herePath(prefix +
-        SPNEGO_PATH + (record ? '?authn=' + encodeURIComponent(record.id)
-                              : ''))),
+        SPNEGO_PATH + (record && !require('../common/mode').hidesStepIds()
+          ? '?authn=' + encodeURIComponent(record.id) : ''))),
       style: CHOOSER_CSS
     };
     log.debug('Leaving SpnegoAuthn.framed(). ' + t.locale);
@@ -681,7 +681,8 @@ class SpnegoAuthn {
     const { log, authn, errorCodes, page, exchange, SPNEGO_PATH, xmlEscape,
             checksTable, principals, spnego } = this.deps;
     log.debug('Entering SpnegoAuthn.handleSignIn().');
-    const record = authn.pendingFor((req.query || {}).authn);
+    const record = authn.pendingFor((req.query || {}).authn ||
+      require('../common/step_address').spnegoStepOf(req));
 
     if (!this.enabled()) {
       // A REFUSAL WITH A REASON, not a 404. The route exists — it is in the

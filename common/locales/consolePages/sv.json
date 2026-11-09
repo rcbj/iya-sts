@@ -21,6 +21,7 @@
   "title.commands": "OpenID Provider Commands",
   "title.claims": "Anpassade anspråk",
   "title.config": "Konfiguration",
+  "title.config-dump": "Konfigurationsdump",
   "title.consent": "Medgivande",
   "title.crypto-metadata": "Kryptografi",
   "title.home": "Administratörskonsol",

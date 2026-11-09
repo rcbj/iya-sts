@@ -326,7 +326,7 @@ function childMain() {
       // the sign-in screen with the sentence on its view (#571): the screen
       // is a static page, so the form's POST cannot draw it.
       const at = String(r.headers.location || '');
-      if (r.status === 303 && /\/authn\/login\?authn=/.test(at)) {
+      if (r.status === 303 && /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(at)) {
         r.screenView = (await authnScreen.open({ port: port, jar: f.s.b.jar,
                                                  at: at })).view || null;
       }

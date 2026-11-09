@@ -1386,3 +1386,5 @@ caller, and stays as a library: `gnap_spend.ts` (the reference for a
 resource server's totals, `gnap.spend-purge`, capability `gnap.limits`) and
 `gnap_rs.ts`'s `authenticate()` (the whole judgement of a presented token —
 record and format). `tests/registered_targets.js` (T6) holds the refusal in both modes.
+
+**The grace on an expired user assertion is 0 in product unless an operator set one (#1474, ASVS 5.0.0 9.2.1)**: `mode.expiredAssertionGraceS()` reads the setting's source. RFC 9635 permits a grace and does not ask for one.

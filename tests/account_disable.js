@@ -753,7 +753,7 @@ function productEnvironment(mode, dir) {
                    require('crypto').randomBytes(32).toString('base64'),
                    { encoding: 'utf8', mode: 0o600 });
   log.debug("Leaving productEnvironment().");
-  return { STS_MODE: 'product',
+  return { STS_MODE: 'product', KRB5_ALLOW_SHA1_ENCTYPES: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true',
            KRB5_KRBTGT_PASSWORD: 'ad-' +
              require('crypto').randomBytes(12).toString('hex'),
            STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',

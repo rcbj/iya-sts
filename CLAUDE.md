@@ -79,6 +79,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `oidfed/` | OpenID Federation 1.1. `oidfed/CLAUDE.md`. |
 | `kerberos/` | The KDC, the acceptor, SPNEGO, and the eight codec modules (copies of the parent's until #1280). `kerberos/CLAUDE.md`. |
 | `ldap/` | The embedded directory, the store for people, groups and applications. `ldap/CLAUDE.md`. |
+| `models/` | **The abstract model (#1390), in TypeSpec**, with its decorators and the RFC definitions it records. Compiled by `tests/model_typespec.js`. **The whole directory namespace has switched**, a policy's `FIELDS` and the directory's name lists with it: their `models/directory/*.tsp` is the source and the module reads what the image build generates, so a new attribute goes there. `models/CLAUDE.md`. |
 | `cluster/` | Several containers against one postgres store, and the scheduler every periodic job runs on. `cluster/CLAUDE.md`. |
 | `persistence/` | The one place this service writes anything down. `persistence/CLAUDE.md`. |
 | `scim/` | `/scim/v2`, and the outbound SCIM client. `scim/CLAUDE.md`. |
@@ -1215,7 +1216,7 @@ the file the row names.
 | Dial its database in the clear (#273); ~~or authenticate that server by default~~ — reversed 2026-10-12 | `persistence/CLAUDE.md` |
 | Send mail to an address a request supplies, through a relay a caller names, or in the clear (#63) | `common/CLAUDE.md` (`mail.ts`) |
 | ~~Coordinate several processes through that store~~ — reversed 2026-09-06 | `persistence/CLAUDE.md`, `common/CLAUDE.md` |
-| Recall anything it has already ISSUED — it DISOWNS them | `logout/CLAUDE.md`, `common/CLAUDE.md` |
+| Recall anything it has already ISSUED — it DISOWNS them, except that in product a sign-out revokes the session's access tokens (#1449) | `logout/CLAUDE.md`, `common/CLAUDE.md` |
 | ~~Perform back-channel logout~~ — reversed 2026-09-17 (#36) | `oauth-oidc/CLAUDE.md` (3aq), `logout/CLAUDE.md`, `authn/CLAUDE.md`, `federation/CLAUDE.md` |
 | ~~Fake WS-Federation's `wauth`~~ — reversed 2026-09-17 (#36), as a step-up | `ws-federation/CLAUDE.md`, `authn/CLAUDE.md` |
 | Dereference WS-Federation's `wreqptr` | `ws-federation/CLAUDE.md` |

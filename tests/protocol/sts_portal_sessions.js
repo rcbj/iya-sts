@@ -338,13 +338,13 @@ function sessionIdOf(b) {
   log.debug("Leaving sessionIdOf().");
   return sidOfCookie(b.jar[SURFACE_COOKIES.admin] ||
                      b.jar[SURFACE_COOKIES.portal] ||
-                     b.jar[SIGN_ON_COOKIE]);
+                     (b.jar[SIGN_ON_COOKIE] || b.jar["__Host-" + SIGN_ON_COOKIE]));
 }
 
 function signOnIdOf(b) {
   log.debug("Entering signOnIdOf().");
   log.debug("Leaving signOnIdOf().");
-  return sidOfCookie(b.jar[SIGN_ON_COOKIE]);
+  return sidOfCookie((b.jar[SIGN_ON_COOKIE] || b.jar["__Host-" + SIGN_ON_COOKIE]));
 }
 
 // NARROWED WITH `q` AND NEVER READ AS PAGE ONE OF EVERYTHING (2026-09-27).
@@ -620,7 +620,7 @@ async function theConsoleSignOutEndsIt(b, who) {
   check("and the surface's next authorization request ends at the SIGN-IN " +
         "SCREEN: the authorization endpoint has no session to answer with",
     function () {
-      assert.ok(/\/authn\/login\?authn=/.test(authorize.location),
+      assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(authorize.location),
         "the authorization endpoint answered " + authorize.status + " to " +
         authorize.location + " rather than sending the browser to the " +
         "sign-in screen");
@@ -871,7 +871,7 @@ async function signingOutInvalidatesIt(b, who) {
   check("AND THE COOKIE NO LONGER WORKS — the portal's next authorization " +
         "request ends at the sign-in screen rather than with a code",
     function () {
-      assert.ok(/\/authn\/login\?authn=/.test(again.location),
+      assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(again.location),
         "the authorization endpoint answered " + again.status + " -> " +
         again.location + " to a signed-out cookie");
     });
@@ -970,11 +970,11 @@ async function anActivationLinkEndsAtAUsableSignIn() {
   check("and that browser is signed in to NOBODY — the cookie it now holds " +
         "names an anonymous arrival session and not a person",
     function () {
-      assert.ok(/\/authn\/login\?authn=/.test(notSignedIn.location),
+      assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(notSignedIn.location),
         "the authorization endpoint answered " + notSignedIn.status + " -> " +
         notSignedIn.location + ". The jar holds " + b.cookie);
     });
-  const token = linked.searchParams.get("token");
+  const token = new URLSearchParams(linked.hash.slice(1)).get("token");
   assert.ok(token, "the activation link carries no token.");
 
   const password = "Activated-Pw1!-" + Date.now();
@@ -996,7 +996,7 @@ async function anActivationLinkEndsAtAUsableSignIn() {
   check("and it establishes NO session — the last step of setup is to go and " +
         "use the credential, not to be let in by the link that set it",
     function () {
-      assert.ok(/\/authn\/login\?authn=/.test(stillNobody.location),
+      assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(stillNobody.location),
         "spending the activation link signed this browser in: the " +
         "authorization endpoint answered " + stillNobody.status + " -> " +
         stillNobody.location + ". The jar holds " + b.cookie);

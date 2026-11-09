@@ -84,7 +84,7 @@ const SETTING = Kit.closed({
   min: NUM, max: NUM, step: NUM,
   value: SETTING_VALUE, text: STR, source: STR, editable: BOOL,
   restartReason: STR, editRefusal: STR, env: NULL_STR, legacyEnv: NULL_STR,
-  appconfigPath: STR, default: SETTING_VALUE, realmSettable: BOOL,
+  appconfigPath: STR, default: SETTING_VALUE, masked: BOOL, realmSettable: BOOL,
   overridden: BOOL
 });
 

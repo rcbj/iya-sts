@@ -93,8 +93,7 @@ const RESET_REFUSAL =
   'whoever manages your account.';
 
 const RESET_QUERY = vz.object({
-  user: vt.opt(vt.name).describe('The username the link names.'),
-  token: vt.opt(vt.token).describe('The link\'s single-use secret.')
+  user: vt.opt(vt.name).describe('The username the link names.')
 });
 
 // THE TOKEN RIDES IN THE BODY, for the activation form's reason: nobody is
@@ -516,7 +515,8 @@ class AccountReset {
         statuses: { 429: 'Too many attempts; `view.refused` says so.' },
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
-          return self.look(ctx, req, res, input.query);
+          return self.look(ctx, req, res, Object.assign({}, input.query,
+            { token: String(req.headers['x-link-token'] || '') }));
         } },
       { method: 'POST', path: ctx.BASE + '/reset-password',
         operationId: 'spendPasswordReset', tag: 'Password reset link',

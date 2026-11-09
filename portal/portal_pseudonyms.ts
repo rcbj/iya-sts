@@ -55,6 +55,11 @@ const FORM = vz.object({
     .describe('The name, for `add` and `remove`.')
 });
 
+// THE GET'S QUERY (#1454): the token arrives in `X-Link-Token`, never in a URL.
+const LINK_QUERY = vz.object({
+  user: vt.opt(vt.name).describe('The username the link names.')
+});
+
 const LINK = vz.object({
   user: vt.opt(vt.name).describe('The username the link names.'),
   token: vt.opt(vt.token).describe('The link\'s single-use secret.')
@@ -247,7 +252,7 @@ class PortalPseudonyms {
         values: { username: written.username, address: written.address,
                   expiresMinutes: String(minutes) },
         links: { link: VERIFY_PATH + '?user=' +
-          encodeURIComponent(written.username) + '&token=' +
+          encodeURIComponent(written.username) + '#token=' +
           encodeURIComponent(written.token) },
         via: 'the portal', actor: who
       });
@@ -392,11 +397,12 @@ class PortalPseudonyms {
           'the credential. Answers the name the link would confirm. ' +
           'Opening it spends nothing. This is not `/portal/verify-email`. ' +
           'Rate limited.',
-        query: LINK,
+        query: LINK_QUERY,
         statuses: { 429: 'Too many attempts; `view.refused` says so.' },
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
-          return self.verify(ctx, req, res, input.query, false);
+          return self.verify(ctx, req, res, Object.assign({}, input.query,
+            { token: String(req.headers['x-link-token'] || '') }), false);
         } },
       { method: 'POST', path: ctx.BASE + '/verify-pseudonym',
         operationId: 'verifyPseudonym', tag: 'Sign-in names',

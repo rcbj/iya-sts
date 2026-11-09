@@ -83,8 +83,29 @@ var config = {
     http2MaxConcurrentStreams: 100  // Streams per HTTP/2 connection
   },
 
+  // --- Web security ----------------------------------------------------
+  security: {
+    fileRoots: "/etc/ssl,/etc/pki,/usr/share/ca-certificates,/usr/local/share/ca-certificates,/run/secrets,/var/run/secrets,/etc/sts", // Directories a named file may be read from; restart to apply
+    allowUnscopedPeople: false,                                                                                                        // Let a person reach SCIM and Shared Signals with no role
+    rateLimitWindowS: 60,                                                                                                              // Rate-limit window (seconds)
+    rateLimitPerIdentity: 5,                                                                                                           // Attempts per identity per window
+    rateLimitPerAddress: 20,                                                                                                           // Attempts per address per window
+    activationTtlMinutes: 1440,                                                                                                        // Activation link lifetime (minutes)
+    passwordResetTtlMinutes: 60,                                                                                                       // Password reset link lifetime (minutes)
+    passwordHashLogN: 15,                                                                                                              // Password hash cost (log2 of scrypt N)
+    passwordHashR: 8,                                                                                                                  // Password hash block size (scrypt r)
+    passwordHashP: 1                                                                                                                   // Password hash parallelism (scrypt p)
+  },
+
+  // --- Web security ----------------------------------------------------
+  crypto: {
+    allowCbcJwe: false,       // Allow JWE CBC-HMAC content encryption
+    allowLegacyHashes: false  // Allow SHA-1 and MD5 where a protocol still uses them
+  },
+
   // --- Admin console ---------------------------------------------------
   admin: {
+    allowDefaultUsername: false,     // Allow a default administrator name in product; restart to apply
     bootstrapUsername: "admin",      // Bootstrap administrator account; restart to apply
     bootstrapPassword: "",           // Bootstrap administrator password; restart to apply
     readGroup: "admin-read",         // Admin Read role
@@ -168,18 +189,6 @@ var config = {
     signalResponsePolicy: "signal-response", // The policy a received signal is answered with
     riskResponsePolicy: "risk-response",     // The policy a change of risk is answered with
     issuancePolicy: "role-issuance"          // The policy issuance decisions are made with
-  },
-
-  // --- Web security ----------------------------------------------------
-  security: {
-    rateLimitWindowS: 60,        // Rate-limit window (seconds)
-    rateLimitPerIdentity: 5,     // Attempts per identity per window
-    rateLimitPerAddress: 20,     // Attempts per address per window
-    activationTtlMinutes: 1440,  // Activation link lifetime (minutes)
-    passwordResetTtlMinutes: 60, // Password reset link lifetime (minutes)
-    passwordHashLogN: 15,        // Password hash cost (log2 of scrypt N)
-    passwordHashR: 8,            // Password hash block size (scrypt r)
-    passwordHashP: 1             // Password hash parallelism (scrypt p)
   },
 
   // --- Web security ----------------------------------------------------
@@ -524,6 +533,7 @@ var config = {
     maxPendingTransactions: 500,                   // RFC 9700: remembered transactions (per realm)
     maxRefreshTokenFamilies: 2000,                 // RFC 9700: remembered refresh tokens (per realm)
     maxOpaqueAccessTokens: 100000,                 // Opaque access tokens remembered (per realm)
+    allowUndeclaredGrants: false,                  // Let a client with no grant list use any grant
     signedMetadataAlgorithm: "RS256",              // Algorithm signed_metadata is signed with
     accessTokenCertificateHeader: "x5u",           // Access token certificate header
     idTokenCertificateHeader: "x5u",               // ID Token certificate header
@@ -721,6 +731,7 @@ var config = {
   // --- SCEP ------------------------------------------------------------
   scep: {
     enabled: true,                                                                                                                                        // Run the SCEP server
+    allowInProduct: false,                                                                                                                                // Answer SCEP in product
     allowedProfiles: "tls-server,tls-client,tls-server-client,digital-signature,key-encipherment,code-signing,email,timestamping,smartcard-logon,device", // Certificate profiles SCEP may issue
     defaultProfile: "tls-client",                                                                                                                         // Profile a new challenge defaults to
     certificateLifetimeDays: 365,                                                                                                                         // Certificate lifetime (days)
@@ -884,22 +895,22 @@ var config = {
 
   // --- Listener: LDAPS -------------------------------------------------
   ldap: {
-    ldapsDisableOptionalClientCertificate: true,                                                                                                // LDAPS: do not ask for a client certificate
-    ldapsRequireClientCertificate: false,                                                                                                       // LDAPS: require a client certificate
-    port: 389,                                                                                                                                  // LDAP port; restart to apply
-    tlsPort: 636,                                                                                                                               // LDAPS port; restart to apply
-    autocreateUsers: true,                                                                                                                      // Auto-create users
-    maxEntries: 2000,                                                                                                                           // Maximum entries
-    workerDirectory: "auto",                                                                                                                    // Directory held in memory, or as a window; restart to apply
-    workerCacheEntries: 10000,                                                                                                                  // Directory window size (entries)
-    workerDirectoryTimeoutMs: 2000,                                                                                                             // Worker directory read timeout (ms)
-    workerDirectoryBudgetMs: 5000,                                                                                                              // Worker directory budget per request (ms)
-    sizeLimit: 500,                                                                                                                             // Search size limit
-    timeLimit: 30,                                                                                                                              // Search time limit (s)
-    plainListener: true,                                                                                                                        // Plain LDAP listener; restart to apply
-    selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode,userPassword", // Attributes a person may change on their own entry
-    directoryReadableAttributes: "",                                                                                                            // Attributes a person may read of other people
-    groupMembersReadable: false                                                                                                                 // Members may read their group's member list
+    ldapsDisableOptionalClientCertificate: true,                                                                                   // LDAPS: do not ask for a client certificate
+    ldapsRequireClientCertificate: false,                                                                                          // LDAPS: require a client certificate
+    port: 389,                                                                                                                     // LDAP port; restart to apply
+    tlsPort: 636,                                                                                                                  // LDAPS port; restart to apply
+    autocreateUsers: true,                                                                                                         // Auto-create users
+    maxEntries: 2000,                                                                                                              // Maximum entries
+    workerDirectory: "auto",                                                                                                       // Directory held in memory, or as a window; restart to apply
+    workerCacheEntries: 10000,                                                                                                     // Directory window size (entries)
+    workerDirectoryTimeoutMs: 2000,                                                                                                // Worker directory read timeout (ms)
+    workerDirectoryBudgetMs: 5000,                                                                                                 // Worker directory budget per request (ms)
+    sizeLimit: 500,                                                                                                                // Search size limit
+    timeLimit: 30,                                                                                                                 // Search time limit (s)
+    plainListener: true,                                                                                                           // Plain LDAP listener; restart to apply
+    selfWritableAttributes: "telephoneNumber,mobile,homePhone,displayName,preferredLanguage,postalAddress,street,l,st,postalCode", // Attributes a person may change on their own entry
+    directoryReadableAttributes: "",                                                                                               // Attributes a person may read of other people
+    groupMembersReadable: false                                                                                                    // Members may read their group's member list
   },
 
   // --- OID4VCI ---------------------------------------------------------
@@ -1039,6 +1050,7 @@ var config = {
     servicePrincipal: "HTTP/web.example.com",              // Service principal; restart to apply
     servicePassword: "service-account-password",           // Service principal password; restart to apply
     serviceSalt: "",                                       // Service principal salt; restart to apply
+    allowSha1Enctypes: false,                              // Offer AES with SHA-1 in product; restart to apply
     enctypes: "18,17,20,19,23",                            // Encryption types; restart to apply
     kvno: 3,                                               // Key version number; restart to apply
     ticketLifetimeSeconds: 36000,                          // Ticket lifetime (s)
@@ -1250,6 +1262,7 @@ var config = {
     datasetsDirectoryScanS: 300,                           // Dataset directory scan interval (seconds)
     uploadDirectory: "./data/risk-uploads",                // Dataset upload directory
     uploadMaxBytes: 2147483648,                            // Largest dataset upload (bytes)
+    maxSkippedLinesPercent: 10,                            // Largest share of a dataset's lines that may fail to parse (percent)
     expandedMaxBytes: 8589934592,                          // Largest expanded dataset (bytes)
     expansionMaxRatio: 100,                                // Largest expansion ratio
     importStallMinutes: 15,                                // An import with no progress is abandoned after (minutes)

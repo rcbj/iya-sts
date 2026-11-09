@@ -303,6 +303,7 @@ Scope: `admin:console`.
 | `fields[].described.label` | string |  |  |
 | `fields[].described.legacyEnv` | list, or string, or null |  |  |
 | `fields[].described.legacyEnv[]` | string |  |  |
+| `fields[].described.masked` | boolean |  |  |
 | `fields[].described.max` | number |  |  |
 | `fields[].described.min` | number |  |  |
 | `fields[].described.ordered` | boolean |  |  |
@@ -657,6 +658,7 @@ Scope: `admin:console`.
 | `settings.groups[].settings[].label` | string |  |  |
 | `settings.groups[].settings[].legacyEnv` | list, or string, or null |  |  |
 | `settings.groups[].settings[].legacyEnv[]` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  |  |
 | `settings.groups[].settings[].max` | number |  |  |
 | `settings.groups[].settings[].min` | number |  |  |
 | `settings.groups[].settings[].ordered` | boolean |  |  |

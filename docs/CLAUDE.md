@@ -42,6 +42,18 @@ which the rule above refuses; rcbj asked for it because a reader of this site
 has no running service to ask, and generating it removes the reason for the rule.
 A changed operation or model owes a regeneration in the same commit.
 
+**AND THE MODEL READING PAGES ARE THE THIRD (#1390).**
+`data-model-directory.md` and `data-model-persistence.md` are written by
+`node common/model_emit.js --docs` from the directory catalogue and the
+PostgreSQL model, the same model the TypeSpec emitter writes. A host
+runs that as `tests/tools/regenerate-model-docs.sh`, because the emitter
+is compiled only in an image. They must not be edited by hand.
+`tests/model_directory.js` and `tests/model_postgres.js` fail when they
+differ. The API models are not another copy of this kind: their reading
+form is `openapi/`, above. `postgres-schema.md` stays the explanation of
+the tables and is not regenerated. `ldap-schema.md` stays the explanation
+of the names.
+
 Adding a page: write the markdown, add it to the right section of
 `_data/navigation.yml` so it appears in the sidebar, and link it from
 `index.md`. A console or portal screen that page explains gets its row in

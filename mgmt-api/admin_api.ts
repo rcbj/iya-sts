@@ -179,6 +179,7 @@ import admin = require('../admin-ui/admin');
 // table, asked of a realm's own token and a realm's own session here. A
 // library with no route.
 import adminScope = require('../admin-ui/admin_scope');
+import configDump = require('../admin-core/config_dump');
 // ---------------------------------------------------------------------------
 // THE ACTION LAYER (2026-09-12). Every operation below that CHANGES something
 // calls a function here rather than one on the console module.
@@ -1633,9 +1634,10 @@ class AdminApi {
       password: {
         save: 'Writes `cn=<profile>,ou=passwordPolicies` in this realm\'s ' +
               'directory, REPLACING what is there: `default`, or a named ' +
-              'policy, created by its first save (#1236). Two rules relate ' +
-              'fields: `generatedLength` must be at least `minLength`, and ' +
-              'at least twice `minSymbols` plus two. An application ' +
+              'policy, created by its first save (#1236). ' +
+              '`generatedLength` must be at least `minLength`, and ' +
+              '`minSymbols`, `requireUppercase` and `requireDigit` may only ' +
+              'be 0 or false (ASVS 5.0.0 6.2.5). An application ' +
               '(`appPasswordPolicy`) and a group (`stsPasswordPolicy`) name ' +
               'a named policy; of those naming one for a person the lowest ' +
               '`precedence` applies (ties by name), else `default`, and a ' +
@@ -12217,6 +12219,28 @@ class AdminApi {
           log.debug("Entering the management API configuration endpoint.");
           self.sendJson(res, 200, admin.configJson());
           log.debug("Leaving the management API configuration endpoint.");
+        } },
+
+      { method: 'GET', path: BASE + '/config-dump', tag: 'Configuration',
+        operationId: 'getConfigDump',
+        summary: 'Every configuration parameter, with sensitive values masked',
+        description: 'The configuration of this running instance as one ' +
+                     'document: every parameter in `settings` with its ' +
+                     'effective value and source and, in the default ' +
+                     'realm, what each other trust realm sets in `realms`. ' +
+                     'Under a realm\'s prefix it is that realm\'s effective ' +
+                     'parameters. Every sensitive value is replaced by ' +
+                     '`masking.mask` before it is answered. Directory ' +
+                     'objects are not part of it. Each read is audited as ' +
+                     '`admin.config-dump`.',
+        mirrors: 'GET /admin/config-dump',
+        responseDescription: 'The dump.',
+        responseSchema: { type: 'object', additionalProperties: true,
+                          description: 'The configuration dump.' },
+        handler: function (req, res) {
+          log.debug("Entering the management API configuration dump.");
+          self.sendJson(res, 200, configDump.build(self.callerNameOf(res)));
+          log.debug("Leaving the management API configuration dump.");
         } },
 
       { method: 'POST', route: BASE + '/config/:action', tag: 'Configuration',

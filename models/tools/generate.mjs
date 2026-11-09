@@ -1,0 +1,94 @@
+#!/usr/bin/env node
+// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
+// SPDX-License-Identifier: BUSL-1.1
+//
+// File: models/tools/generate.mjs
+//
+// ---------------------------------------------------------------------------
+// WRITES WHAT THE SERVICE READS FROM THE MODEL (#1390).
+//
+// Compiles `models/main.tsp` and writes `models/generated/<id>.schema.json`
+// for each directory object written by hand (`authored`). Run by
+// `build-typescript.sh` inside an image build only, for the reason that
+// script gives: nothing generated is written to the host. A model that does
+// not compile fails the build.
+// ---------------------------------------------------------------------------
+
+import fs from 'fs';
+import path from 'path';
+import url from 'url';
+import bunyan from 'bunyan';
+import { fieldsOf, linksIn, readDirectory, readSpellings, schemaOf } from
+  '../lib/model_lib.mjs';
+
+const log = bunyan.createLogger({
+  name: 'sts-model-generate',
+  level: process.env.LOG_LEVEL || process.env.STS_LOG_LEVEL || 'info'
+});
+
+const ROOT = path.join(path.dirname(url.fileURLToPath(import.meta.url)),
+  '..', '..');
+
+/**
+ * Compiles the model and writes each authored object's table.
+ *
+ * @returns how many files were written
+ */
+async function generate() {
+  log.debug("Entering generate().");
+  const compiler = await import(url.pathToFileURL(path.join(ROOT, 'tests',
+    'node_modules', '@typespec', 'compiler', 'dist', 'src', 'index.js')).href);
+  const program = await compiler.compile(compiler.NodeHost,
+    path.join(ROOT, 'models', 'main.tsp'), { noEmit: true });
+  const errors = program.diagnostics.filter(function (one) {
+    return one.severity === 'error';
+  });
+  if (errors.length > 0) {
+    log.debug("Leaving generate(). The model did not compile.");
+    throw new Error('The model does not compile: ' +
+      errors.map(function (one) {
+        return one.code + ': ' + one.message;
+      }).join('; '));
+  }
+  const out = path.join(ROOT, 'models', 'generated');
+  fs.mkdirSync(out, { recursive: true });
+  const objects = readDirectory(program);
+  const authored = objects.filter(function (object) {
+    return object.authored === true;
+  });
+  const names = readSpellings(program);
+  if (!names) {
+    log.debug("Leaving generate(). No name lists.");
+    throw new Error('The model does not declare the directory\'s name lists.');
+  }
+  fs.mkdirSync(out, { recursive: true });
+  fs.writeFileSync(path.join(out, 'directory.names.json'),
+    JSON.stringify(names));
+  fs.writeFileSync(path.join(out, 'directory.links.json'),
+    JSON.stringify(linksIn(objects)));
+  if (authored.length === 0) {
+    log.debug("Leaving generate(). Nothing to write.");
+    throw new Error('The model has no object written by hand, so the ' +
+      'service would have no table to read.');
+  }
+  authored.forEach(function (object) {
+    fs.writeFileSync(path.join(out, object.id + '.schema.json'),
+      JSON.stringify(schemaOf(object)));
+    const declared = fieldsOf(object);
+    if (declared.fields.length > 0 || declared.selectors.length > 0) {
+      fs.writeFileSync(path.join(out, object.id + '.fields.json'),
+        JSON.stringify(declared));
+    }
+  });
+  log.debug("Leaving generate().");
+  return authored.length;
+}
+
+try {
+  const written = await generate();
+  log.info('Wrote ' + written + ' table(s) from the model.');
+} catch (e) {
+  log.debug("Caught in generate.mjs: " + ((e && e.message) || e));
+  console.error((e && e.message) || e);
+  process.exit(1);
+}

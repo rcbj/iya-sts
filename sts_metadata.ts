@@ -7008,6 +7008,12 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. Every setting, its effective value, and the source of ' +
           'that value — override, environment variable, the appconfig file ' +
           'or env/defaults.js under it. Mirrors GET /admin/config.' },
+  { path: '/admin-api/config-dump', group: 'Management API',
+    name: 'Configuration dump',
+    specs: [],
+    what: 'NON-SPEC. Every configuration parameter, global and per realm, ' +
+          'with every sensitive value masked. Mirrors GET ' +
+          '/admin/config-dump.' },
   { path: '/admin-api/config/:action', group: 'Management API',
     name: 'Configuration actions',
     specs: [],

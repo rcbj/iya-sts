@@ -3019,3 +3019,5 @@ application and rotates its secret over the wire.
 ## The description page is a static surface's shell (#584, 2026-10-12)
 
 `GET /ssf` is this service's own documentation, at a path no specification defines, so #584 made it the description pages' shell (`common/description_pages.ts`, `common/CLAUDE.md` 3cl): the view in `data-sts-state`, drawn in the browser by `ssf/web_ssf_description.ts` from the `describeSsf` catalogs, with `/ssf/description.js` — the one bundle the six description pages share — served on this family's own path. `?format=json`, or an `Accept` preferring JSON where the query names no format, answers the JSON form. The JSON form is the description document, to the byte as before; the shell's view adds each stream's delivery method by name. The protocol endpoints beneath are not converted (#569's rule). `tests/description_pages.js` holds it.
+
+**HTTP Basic needs Admin Write in product (#1473, ASVS 5.0.0 8.2.1)**: it grants both scopes and a password carries neither. `STS-SSF-0157`.

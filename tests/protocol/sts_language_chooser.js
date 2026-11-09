@@ -187,7 +187,7 @@ async function test() {
   check("the chooser answers 303 to the page and sets sts_lang", function () {
     assert.strictEqual(r.status, 303, r.status + " " + r.raw.slice(0, 200));
     assert.strictEqual(r.location, chooser.back);
-    assert.ok(/(^|,\s*)sts_lang=sv-SE;/.test(cookie), cookie);
+    assert.ok(/(^|,\s*)(?:__Host-)?sts_lang=sv-SE;/.test(cookie), cookie);
   });
   r = await send(base + r.location,
                  { headers: { Cookie: cookie.split(";")[0] } });

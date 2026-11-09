@@ -143,6 +143,9 @@ filtering (#430).
 
 ### SPNEGO over HTTP
 
+In product mode the sign-in step reaches `/authn/spnego` in a short-lived
+HttpOnly cookie rather than in the address.
+
 The negotiation `/authn/spnego` performs, before it signs anybody in:
 
 * **`401 WWW-Authenticate: Negotiate`** to an unauthenticated request and the
@@ -923,6 +926,11 @@ is not in the allowlist; the browser was not started from the shell holding
 holds); the person has no key yet (step 1).
 
 ## Development and product mode
+
+Product mode uses enctypes 19 and 20 (RFC 8009). Enctypes 17 and 18 use
+HMAC-SHA1-96, which ASVS 5.0.0 does not accept, so they are offered only with
+`krb5.allowSha1Enctypes` on. **Many Kerberos clients speak only 17 and 18**, so
+check yours before moving to product mode, and turn this on only for those.
 
 | | Development | Product |
 |---|---|---|

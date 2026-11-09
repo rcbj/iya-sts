@@ -436,7 +436,11 @@ function childMain() {
       r = await paula.go('GET', link(RP_OPEN, { wctx: 'risk' }));
       const stepToP = String(r.headers.location || '');
       let recordP = null;
-      new URL(stepToP, 'http://127.0.0.1').searchParams.forEach(function (v) {
+      // Product carries the step in the fragment (#1454), development in the
+      // query.
+      const stepUrlP = new URL(stepToP, 'http://127.0.0.1');
+      new URLSearchParams(stepUrlP.search.slice(1) + '&' +
+                          stepUrlP.hash.slice(1)).forEach(function (v) {
         recordP = recordP || authn.pendingFor(v);
       });
       note(heldP && r.status === 303 && /\/authn\/login/.test(stepToP) &&

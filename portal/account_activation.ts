@@ -80,8 +80,7 @@ const ACTIVATION_REFUSAL =
   'account for a new one.';
 
 const ACTIVATE_QUERY = vz.object({
-  user: vt.opt(vt.name).describe('The username the link names.'),
-  token: vt.opt(vt.token).describe('The link\'s single-use token.')
+  user: vt.opt(vt.name).describe('The username the link names.')
 });
 
 const ACTIVATE_FORM = vz.object({
@@ -935,7 +934,8 @@ class AccountActivation {
         statuses: { 429: 'Too many attempts.' },
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
-          return self.open(ctx, req, res, input.query);
+          return self.open(ctx, req, res, Object.assign({}, input.query,
+            { token: String(req.headers['x-link-token'] || '') }));
         } },
       { method: 'POST', path: ctx.BASE + '/activation',
         operationId: 'activate', tag: 'Activation', access: 'link',

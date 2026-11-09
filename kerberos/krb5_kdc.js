@@ -1775,6 +1775,17 @@ async function resolveS4u(ctx) {
       // built this padata holds the TGT's session key. It is integrity, not
       // authorization. [MS-SFU] section 2.2.1 fixes the algorithm as HMAC-MD5
       // at key usage 17 whatever the session key's etype.
+      if (!mode.allowsLegacyHashes()) {
+        log.debug("Leaving resolveS4u(). HMAC-MD5 is not allowed.");
+        return refuseS4u(intent, 12, {
+          errorCode: 'STS-KRB-0256',
+          crealm: ticketPart.crealm, cname: ticketPart.cname,
+          realm: ctx.answeringRealm,
+          sname: body.sname,
+          eText: 'S4U2Self is checksummed with HMAC-MD5, which this realm ' +
+                 'does not use unless crypto.allowLegacyHashes is on.'
+        });
+      }
       const arcfour = kcrypto.etypeById(23);
       const expected = await arcfour.checksum(ctx.sessionKey,
         kcrypto.KEY_USAGE.PA_FOR_USER_CKSUM,
@@ -3420,6 +3431,25 @@ async function answerAsReq(request, fast) {
         : null
     });
   };
+  // A LIMIT ON GUESSES AT A PRINCIPAL (#1448, ASVS 5.0.0 6.3.1), for each way
+  // a password-derived key is proved: PA-ENC-TIMESTAMP and, inside FAST,
+  // PA-ENCRYPTED-CHALLENGE and PA-OTP-REQUEST.
+  const websecurity = require('../common/websecurity');
+  const preauthPrincipal = client.name.join('/') + '@' + asRealm;
+  const preauthLimit = {
+    failed: function () {
+      websecurity.doorFailed('krb5-preauth', null, preauthPrincipal);
+    },
+    succeeded: function () {
+      websecurity.doorSucceeded('krb5-preauth', null, preauthPrincipal);
+    }
+  };
+  if ((encTimestamp || encChallenge || otpRequest) &&
+      websecurity.doorBlocked('krb5-preauth', null, preauthPrincipal)) {
+    log.debug("Leaving answerAsReq(). Too many failures.");
+    return preauthFailed({ code: 24, errorCode: 'STS-KRB-0255',
+                           eText: 'PREAUTH_FAILED' });
+  }
   if (pkAsReq) {
     // PKINIT (#179) — the strongest method present, so it is the one checked:
     // the certificate's signature, its path to this realm's authorities, its
@@ -3447,9 +3477,13 @@ async function answerAsReq(request, fast) {
     const result = await provider.checkOtpRequest(client, etype, otpRequest,
                                                   fast);
     if (!result.ok) {
+      if (result.code === 24) {
+        preauthLimit.failed();
+      }
       log.debug("Leaving answerAsReq().");
       return preauthFailed(result);
     }
+    preauthLimit.succeeded();
     preauth = { method: 'PA-OTP-REQUEST inside FAST (password and an ' +
                         'authenticator code)',
                 indicators: result.indicators || [],
@@ -3458,20 +3492,41 @@ async function answerAsReq(request, fast) {
     const result = await provider.checkEncryptedChallenge(client, etype,
                                                           encChallenge, fast);
     if (!result.ok) {
+      if (result.code === 24) {
+        preauthLimit.failed();
+      }
       log.debug("Leaving answerAsReq().");
       return preauthFailed(result);
     }
+    preauthLimit.succeeded();
     preauth = { method: 'PA-ENCRYPTED-CHALLENGE inside FAST',
                 indicators: [], replyEtype: result.etype,
                 replyKey: null, kdcPadata: result.kdcPadata || [] };
   } else if (encTimestamp) {
     const failure = await checkEncTimestamp(client, etype, encTimestamp);
     if (failure) {
+      if (failure.errorCode === 'STS-KRB-0016') {
+        preauthLimit.failed();
+      }
       log.debug("Leaving answerAsReq().");
       return preauthFailed(failure);
     }
+    preauthLimit.succeeded();
     preauth = { method: 'PA-ENC-TIMESTAMP' + (fast ? ' inside FAST' : ''),
                 indicators: [], replyKey: null, kdcPadata: [] };
+  }
+
+  // A TEMPORARY PASSWORD IS NOT A WAY TO A TICKET (#1446, ASVS 5.0.0 6.4.1):
+  // it has to be changed first, and Kerberos has nowhere to change it.
+  if (preauth && !preauth.pkinit && mode.verifiesCredentials() &&
+      require('../common/credentials')
+        .passwordResetRequired(client.name.join('/'))) {
+    log.debug("Leaving answerAsReq(). The password must be changed.");
+    return errorReply(23, {
+      errorCode: 'STS-KRB-0257',
+      crealm: body.realm, cname: body.cname, sname: body.sname,
+      eText: 'this password has to be changed at the sign-in screen first'
+    });
   }
 
   // ---------------------------------------------------------------------

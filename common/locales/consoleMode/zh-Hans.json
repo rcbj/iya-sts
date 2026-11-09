@@ -28,6 +28,7 @@
   "ignoredMark": " — 已忽略",
   "notYetHeading": "product 模式仍不检查的内容",
   "waivedBy": "管理员已在此领域豁免：<code>{requirement}</code>（{section}，{level}），因为 <code>{setting}</code> 已开启。BCP 的其他所有要求仍然有效。",
+  "requirementNotMet": "此处未满足：<code>{requirement}</code>（{section}），原因是 <code>{setting}</code>。",
   "waivedPerApplication": "按应用程序：只有当应用程序的 <code>{attribute}</code> 列出其请求的响应类型时，它才能使用这些响应类型；该属性由管理员或应用程序的所有者设置。自行注册的客户端只能启用 <code>{setting}</code> 所列的类型：{value}。",
   "waivedPerApplicationNone": "按应用程序：只有当应用程序的 <code>{attribute}</code> 列出其请求的响应类型时，它才能使用这些响应类型；该属性由管理员或应用程序的所有者设置。自行注册的客户端无法启用其中任何一种，因为 <code>{setting}</code> 为空。"
 }

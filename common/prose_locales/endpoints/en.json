@@ -307,6 +307,7 @@
   "endpoints.route./admin-api/cells/:action.name": "Re-home a person",
   "endpoints.route./admin-api/cells/people.name": "Cell residents",
   "endpoints.route./admin-api/listeners/:action.name": "Define custom listeners, or map applications to them",
+  "endpoints.route./admin-api/config-dump.name": "Configuration dump",
   "endpoints.route./admin-api/config/:action.name": "Configuration actions",
   "endpoints.route./admin-api/oauth2.name": "OAuth 2.0 / OIDC settings",
   "endpoints.route./admin-api/oid4vci-settings.name": "OpenID4VCI settings",

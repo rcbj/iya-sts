@@ -404,8 +404,152 @@
     "text": "krb5.enctypes vaut 18,17,20,19,23 par défaut : chaque compte a une clé rc4-hmac à côté de ses clés AES, la fixture rc4only n’a rien d’autre, et un client ne proposant que 23 obtient un ticket — afin qu’un client RC4 puisse être exercé."
   },
   "mode.requirements.kerberos-deprecated-enctypes.product": {
-    "en": "f781591fe2d565a1",
-    "text": "La liste est lue SANS 23 (journalisé une fois, STS-CORE-0106) et une écriture le nommant est refusée (STS-CORE-0103). Aucune clé RC4 n’est dérivée, stockée ou placée dans un keytab pour krbtgt, un service ou une personne ; une clé ou un ticket de cet enctype n’est jamais utilisé ; un AS-REQ ou un TGS-REQ ne proposant rien d’autre est refusé avec KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156) ; une clé de session ou une sous-clé RC4 dans un TGS-REQ, un AP-REQ ou une armure FAST est refusée (STS-KRB-0157, 0158, 0159). AES (17, 18, 19, 20) est ce qui reste."
+    "en": "7bb2840e2f96210a",
+    "text": "La liste est lue SANS 23 (journalisé une fois, STS-CORE-0106) et une écriture le nommant est refusée (STS-CORE-0103). Aucune clé RC4 n’est dérivée, stockée ou placée dans un keytab pour krbtgt, un service ou une personne ; une clé ou un ticket de cet enctype n’est jamais utilisé ; un AS-REQ ou un TGS-REQ ne proposant rien d’autre est refusé avec KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156) ; une clé de session ou une sous-clé RC4 dans un TGS-REQ, un AP-REQ ou une armure FAST est refusée (STS-KRB-0157, 0158, 0159). AES est ce qui reste."
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "Une personne a besoin d’un rôle pour SCIM et Shared Signals"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "Toute personne authentifiée peut lire et écrire, quel que soit le schéma utilisé."
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "Un schéma sans portée exige Admin Read pour lire et Admin Write pour écrire, sauf si security.allowUnscopedPeople est activé. Les portées OAuth et le certificat d’une application fonctionnent comme avant."
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "Un fichier nommé doit se trouver dans un répertoire autorisé"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "Un fichier nommé par un administrateur est lu là où il l’indique."
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "Un fichier n’est lu que si son chemin réel se trouve dans un répertoire listé par security.fileRoots, et la réponse n’indique pas pourquoi un chemin a échoué."
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "Le chiffrement de contenu JWE est AES-GCM uniquement"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "A128CBC-HS256, A192CBC-HS384 et A256CBC-HS512 sont proposés et acceptés, et A128CBC-HS256 est la valeur par défaut."
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "Seul AES-GCM est proposé ou accepté, et il est utilisé lorsqu’un client ne nomme pas d’enc, sauf si crypto.allowCbcJwe est activé."
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "Les hachages interdits ne sont pas utilisés"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "OAEP sur SHA-1, la dérivation PKINIT SHA-1 et la somme de contrôle HMAC-MD5 de S4U2Self sont disponibles."
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "Ils sont désactivés sauf si crypto.allowLegacyHashes est activé. TOTP reste HMAC-SHA-1 par défaut, pour la compatibilité des applications d’authentification, et PKINIT conserve le paChecksum SHA-1 défini par RFC 4556."
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "Aucun compte ne porte un nom d’administrateur par défaut"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "L’administrateur d’amorçage est admin, sous lequel se connectent tous les tests et procédures."
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "Un administrateur d’amorçage nommé admin, root, sa ou administrator, ou sans nom, reçoit un nom généré imprévisible, affiché avec son mot de passe au premier démarrage, sauf si admin.allowDefaultUsername est activé."
+  },
+  "mode.requirements.main-port-https.what": {
+    "en": "6469fbe1118f7dc7",
+    "text": "Le port principal est en HTTPS"
+  },
+  "mode.requirements.main-port-https.development": {
+    "en": "87bcf933b05d0ab4",
+    "text": "STS_HTTPS=false fait fonctionner le port principal en clair."
+  },
+  "mode.requirements.main-port-https.product": {
+    "en": "064bd0e9c6300f83",
+    "text": "Un processus avec global.https désactivé ne démarre pas (STS-CORE-0167). L’écouteur HTTP en clair de révocation et SCEP reste, comme l’attendent RFC 5280, RFC 5019 et RFC 8894."
+  },
+  "mode.requirements.public-certificate.what": {
+    "en": "5a7a979998d1c228",
+    "text": "Le certificat de l’écouteur est publiquement approuvé"
+  },
+  "mode.requirements.public-certificate.development": {
+    "en": "306ab4dd61adc58f",
+    "text": "L’autorité de certification de ce service le délivre."
+  },
+  "mode.requirements.public-certificate.product": {
+    "en": "6071a82728577fff",
+    "text": "Définissez tls.certificateFile sur une chaîne publiquement approuvée. Un certificat délivré par ce service n’empêche pas le démarrage et est affiché sur cette ligne."
+  },
+  "mode.requirements.legacy-ciphers.what": {
+    "en": "8afeedbfdbbba221",
+    "text": "SCEP, le chiffrement XML et Kerberos évitent les chiffrements anciens"
+  },
+  "mode.requirements.legacy-ciphers.development": {
+    "en": "66885aac9214f230",
+    "text": "SCEP répond, le chiffrement XML peut utiliser AES-CBC et Kerberos propose les enctypes 17 et 18."
+  },
+  "mode.requirements.legacy-ciphers.product": {
+    "en": "0515d1605d6ccd1f",
+    "text": "SCEP ne répond qu’avec scep.allowInProduct activé (STS-SCEP-0067). Le chiffrement XML choisit et accepte uniquement AES-GCM (STS-KEYS-0195). Kerberos utilise 19 et 20 sauf si krb5.allowSha1Enctypes est activé."
+  },
+  "mode.requirements.declared-grants.what": {
+    "en": "cd33b5ef6c585827",
+    "text": "Un client n’utilise que les types d’autorisation dont il a besoin"
+  },
+  "mode.requirements.declared-grants.development": {
+    "en": "77b6bd6b92513433",
+    "text": "Un client qui ne déclare aucun type d’autorisation peut en utiliser n’importe lequel."
+  },
+  "mode.requirements.declared-grants.product": {
+    "en": "636b38aec05ad6d5",
+    "text": "Un client qui ne déclare aucun type d’autorisation ne peut utiliser que authorization_code et refresh_token, sauf si oauth2.allowUndeclaredGrants est activé (STS-OAUTH-0598)."
+  },
+  "mode.requirements.prefixed-cookies.what": {
+    "en": "d3919ebba2136f69",
+    "text": "Chaque cookie porte un préfixe __Host- ou __Secure-"
+  },
+  "mode.requirements.prefixed-cookies.development": {
+    "en": "0dd3f83e4dc57f69",
+    "text": "Les cookies gardent leurs noms simples (sts_session et les autres), lisibles dans les outils du navigateur."
+  },
+  "mode.requirements.prefixed-cookies.product": {
+    "en": "48f9c0318f104300",
+    "text": "Sur TLS, chaque cookie est préfixé __Host-, ou __Secure- lorsqu’il porte un Domain, et un cookie sans préfixe est ignoré. Le préfixe est appliqué une seule fois, par le processus qui détient le socket."
+  },
+  "mode.requirements.access-decisions-fail-closed.what": {
+    "en": "e0e941b53824cae6",
+    "text": "Une décision d’accès impossible à prendre vaut refus"
+  },
+  "mode.requirements.access-decisions-fail-closed.development": {
+    "en": "7e18ee029324d928",
+    "text": "Un décideur qui lève une exception, une réponse vide ou une vérification sans ressource ni action autorise la requête et est journalisé, afin qu’un processus de développement partiellement chargé réponde encore."
+  },
+  "mode.requirements.access-decisions-fail-closed.product": {
+    "en": "905a335779a6c533",
+    "text": "Chacun de ces cas est un refus (STS-XACML-0051, 0181, 0182). xacml.enforceAccess et roles.enforceIssuance restent le moyen de revenir d’une politique qui empêche sa propre réparation, et un réglage désactivé apparaît sur cette ligne."
+  },
+  "mode.requirements.strict-transport-security.what": {
+    "en": "161b93a2d80010e9",
+    "text": "Chaque réponse sur TLS indique au navigateur de n’utiliser que HTTPS (Strict-Transport-Security)"
+  },
+  "mode.requirements.strict-transport-security.development": {
+    "en": "915a47de70ff3589",
+    "text": "L’en-tête n’est pas envoyé : HSTS lie tous les ports d’un nom d’hôte et supprime la possibilité de passer outre un certificat non fiable, ce qui, sur localhost, survivrait au conteneur."
+  },
+  "mode.requirements.strict-transport-security.product": {
+    "en": "c36ea27a011458e7",
+    "text": "Chaque réponse arrivée sur TLS porte Strict-Transport-Security: max-age=31536000 (RFC 6797). Une réponse sur l’écouteur HTTP en clair de révocation et SCEP ne le porte jamais."
   },
   "mode.requirements.signed-assertions.what": {
     "en": "61c90b75f7b0a5e3",

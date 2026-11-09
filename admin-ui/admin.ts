@@ -454,6 +454,7 @@ import persistence = require('../persistence/persistence');
 // persistence.js, app.js or service_state.js, so these are cache hits.
 import cluster = require('../cluster/cluster');
 import clusterSecrets = require('../cluster/cluster_secrets');
+import configDump = require('../admin-core/config_dump');
 import clusterBarrier = require('../cluster/cluster_barrier');
 // WHERE THE TWO PRIMORDIAL SECRETS COME FROM, and whether the keystore is
 // reading one at all — for the runtime line at the foot of every page
@@ -2475,6 +2476,10 @@ const SECTIONS = [
                'certificate the main port and LDAPS 636 present, and ' +
                'SPIFFE\'s four sockets, because a socket has no path to put ' +
                'a realm segment in.' },
+      { path: '/admin/config-dump', label: 'Configuration dump',
+        blurb: 'Every configuration parameter of this running instance, ' +
+               'global and per realm, as one JSON download with every ' +
+               'sensitive value masked.' },
       { path: '/admin/config', label: 'Configuration',
         blurb: 'Every setting this service has, grouped by the protocol it ' +
                'belongs to, with where each value came from: a runtime ' +
@@ -7161,9 +7166,10 @@ class AdminConsole {
     const { log } = this.deps;
     const self = this;
     log.debug("Entering AdminConsole.configSettingsJson(). path=" + path);
-    const groups = this.settingsGroupsFor(path).filter(function (group) {
-      return !Array.isArray(only) || only.indexOf(group.group) >= 0;
-    });
+    const groups = configDump.maskGroups(this.settingsGroupsFor(path).filter(
+      function (group) {
+        return !Array.isArray(only) || only.indexOf(group.group) >= 0;
+      }));
     const all = groups.reduce(function (rows, group) {
       return rows.concat(group.settings);
     }, []);
@@ -7326,6 +7332,8 @@ class AdminConsole {
     const self = this;
     log.debug("Entering AdminConsole.configJson().");
     const json = config.snapshot();
+    // A sensitive parameter's value never leaves in an answer (#1478).
+    json.groups = configDump.maskGroups(json.groups);
     json.homes = SETTING_HOMES.map(function (row) {
       return { group: row.group, pages: row.pages,
                labels: row.pages.map(self.labelOfPath.bind(self)) };

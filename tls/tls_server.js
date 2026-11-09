@@ -6508,8 +6508,36 @@ function observeConnectionsOn(server, label) {
 // STARTS A SESSION, and in active-active mode an answer sent before the
 // session committed left a sign-out on another node unable to see it.
 // ---------------------------------------------------------------------------
+// **HELD TO Sec-Fetch-* IN PRODUCT (#1484, ASVS 5.0.0 3.5.3)**, the requirement's
+// own alternative to another method: this is a GET that starts a session, so
+// that a person can sign in by opening an address. A browser's request must be
+// a top-level navigation, typed by the person (`none`) or from this origin; a
+// link from another site, an iframe or an image starts nothing. A program sends
+// no Sec-Fetch-* and holds the certificate itself, and is unaffected.
+function foreignCertificateSignIn(req) {
+  log.debug('Entering foreignCertificateSignIn().');
+  const site = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  const dest = String(req.headers['sec-fetch-dest'] || '').toLowerCase();
+  const fetched = String(req.headers['sec-fetch-mode'] || '').toLowerCase();
+  const foreign = !!(site || dest || fetched) &&
+    require('../common/mode').bindsSignInSteps() &&
+    !((site === 'none' || site === 'same-origin') && dest === 'document' &&
+      fetched === 'navigate');
+  log.debug('Leaving foreignCertificateSignIn(). ' + foreign);
+  return foreign;
+}
+
 app.get('/tls/sign-in', function (req, res) {
   log.debug('Entering GET /tls/sign-in.');
+  if (foreignCertificateSignIn(req)) {
+    errorCodes.mark(res, 'STS-TLS-0059');
+    res.set('Cache-Control', 'no-store');
+    res.status(403).json({ signedIn: false, error: 'access_denied',
+      error_description: 'Open this address directly to sign in with a ' +
+                         'certificate.' });
+    log.debug('Leaving GET /tls/sign-in. Not a navigation from here.');
+    return;
+  }
   // WHICH CELL SIGNS THE HOLDER IN (#98 D10), BEFORE the revocation check,
   // the identity gate and the session: a session is started where its person
   // is homed. `placeCertificateSignIn()` argues it; single-cell mode answers

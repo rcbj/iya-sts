@@ -329,8 +329,8 @@ async function consentAt(cookies, url) {
 function startsSession(r) {
   log.debug("Entering startsSession().");
   const started = (r.setCookies || []).some(function (line) {
-    return /^sts_session=[^;]+/.test(line) &&
-           !/^sts_session=;/.test(line) && !/Max-Age=0/i.test(line);
+    return /^(?:__Host-)?sts_session=[^;]+/.test(line) &&
+           !/^(?:__Host-)?sts_session=;/.test(line) && !/Max-Age=0/i.test(line);
   });
   log.debug("Leaving startsSession(). " + started);
   return started;
@@ -395,7 +395,7 @@ async function toTheDoor(cookies, startUrl, username) {
       }
       // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
       // answered through the one helper where the walk is sent to it.
-      if (/\/authn\/login\?authn=/.test(next)) {
+      if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(next)) {
         trail.screens.push({ kind: "sign-in", at: next });
         r = await signInAt(cookies, next, username);
         continue;

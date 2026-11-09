@@ -67,7 +67,8 @@ class ModePage {
     return list.map(function (one: Json): string {
       return '<tr class="waived" id="waived-' + WebKit.esc(row.id) + '-' +
         WebKit.esc(one.requirement) + '"><td colspan="4">' +
-        WebKit.warn('<p>' + t.html('consoleMode.waivedBy', {
+        WebKit.warn('<p>' + t.html(/^ASVS /.test(String(one.section || ''))
+          ? 'consoleMode.requirementNotMet' : 'consoleMode.waivedBy', {
           requirement: String(one.requirement || ''),
           section: String(one.section || ''),
           level: String(one.level || ''),

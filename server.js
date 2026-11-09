@@ -243,6 +243,15 @@ const spMetadata = require('./saml/sp_metadata');
 // derivation exists to prevent.
 // ---------------------------------------------------------------------------
 const useHttps = config.value('global.https');
+// NOT IN PRODUCT (#1457, ASVS 5.0.0 12.2.1): a process that would serve its
+// main port in cleartext does not start.
+const cleartextProblem = require('./common/mode')
+  .cleartextStartupProblem(useHttps);
+if (cleartextProblem) {
+  log.fatal(errorCodes.tag('STS-CORE-0167') + 'sts: NOT STARTING. ' +
+            cleartextProblem);
+  process.exit(1);
+}
 
 function announce() {
   log.debug('Entering announce().');
@@ -860,7 +869,7 @@ serviceState.start({
   // wins does them after catching up with the store, and every other node
   // does neither and says which node is. It is awaited below, before the
   // request workers start, so the listener still binds only after it ran.
-  const bootstrapUsername = config.value('admin.bootstrapUsername');
+  const bootstrapUsername = require('./common/bootstrap_name').current();
   const otherRealms = realms.list().filter(function (realm) {
     return realm.id !== realms.DEFAULT_ID;
   });

@@ -1207,6 +1207,10 @@
     "en": "bfc05d15d7d40bc2",
     "text": "非規格端點，且刻意「不設閘門」。此程序正在執行的每個信任領域——信任領域是本服務完整的邏輯複本，透過路徑最前面的一個區段存取，擁有自己的設定、簽署金鑰、工作階段與權杖。它攜帶每個領域的 id、名稱、基礎 URL 與路徑前置字串、前置「區段」本身（這是一項設定，因此用戶端無法猜到），以及領域實際區隔了哪些協定系列。最後一項是其他任何地方都無法回答的部分：大多數系列以路徑區隔，但目錄以 DN 區隔、Kerberos 以請求中的領域「名稱」區隔、SPIFFE 以通訊端位址區隔，而 TLS 憑證完全沒有區隔——因此認為路徑區段在每個地方都是邊界的人，會在其中四項上判斷錯誤。被指向某個領域的用戶端沒有它就無法建構任何一個 URL，這就是它不在主控台閘門之後的原因——與此處每份探索文件所依據的論點相同。"
   },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC。瀏覽器在每個頁面上自行請求的圖示：標誌的方形標記（common/favicon.ico）。在每個接聽程式上提供；快取一天。"
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登入畫面卡片與語言選擇器的規則，合為一個樣式表，供靜態公開介面的外殼連結（common/web_card_css.ts）。在每個接聽程式上提供；帶有此組建 ?v= 的位址會被永久快取。"
@@ -2170,6 +2174,10 @@
   "stsmetadata.endpoints./admin-api/config.what": {
     "en": "de1ba6721d3df738",
     "text": "非規範。每個設定、其有效值，以及該值的來源——覆寫值、環境變數、appconfig 檔案或其下的 env/defaults.js。對應 GET /admin/config。"
+  },
+  "stsmetadata.endpoints./admin-api/config-dump.what": {
+    "en": "56a8ec7f8dbef7bb",
+    "text": "NON-SPEC. 所有設定參數（全域及每個領域），每個敏感值均已遮罩。對應 GET /admin/config-dump。"
   },
   "stsmetadata.endpoints./admin-api/config/:action.what": {
     "en": "0493cb479489bbd8",
@@ -3942,9 +3950,5 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一個參數"
-  },
-  "stsmetadata.endpoints./favicon.ico.what": {
-    "en": "18aea3253b0f21a8",
-    "text": "NON-SPEC。瀏覽器在每個頁面上自行請求的圖示：標誌的方形標記（common/favicon.ico）。在每個接聽程式上提供；快取一天。"
   }
 }

@@ -212,7 +212,7 @@ async function authorize(b, state) {
       .digest("base64url"), code_challenge_method: "S256" };
   let r = await b.go("GET", R + "/oauth2/authorize?" + form(params));
   if ((r.status === 302 || r.status === 303) &&
-      /\/authn\/login\?authn=/.test(r.location)) {
+      /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location)) {
     // THE SCREEN OVER `/authn-api` (#571), with this browser's jar and
     // User-Agent; the answer is read as the form's 303 was.
     const posted = await authnSignin.signInWithJar(base + R, r.location,

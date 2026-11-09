@@ -404,8 +404,152 @@
     "text": "krb5.enctypes 預設為 18,17,20,19,23：每個帳戶在其 AES 金鑰旁都有一把 rc4-hmac 金鑰，rc4only 測試帳戶只有這一把，而只提供 23 的用戶端也能取得票證——因此可以測試 RC4 用戶端。"
   },
   "mode.requirements.kerberos-deprecated-enctypes.product": {
-    "en": "f781591fe2d565a1",
-    "text": "讀取清單時「不含」23（記錄一次，STS-CORE-0106），指名它的寫入會被拒絕（STS-CORE-0103）。不會為 krbtgt、服務或人員推導、儲存或放入 keytab 任何 RC4 金鑰；絕不使用該 enctype 的金鑰或票證；只提供該 enctype 的 AS-REQ 或 TGS-REQ 會以 KDC_ERR_ETYPE_NOSUPP 拒絕（STS-KRB-0156）；TGS-REQ、AP-REQ 或 FAST armor 中的 RC4 工作階段金鑰或子金鑰會被拒絕（STS-KRB-0157、0158、0159）。剩下的是 AES（17、18、19、20）。"
+    "en": "7bb2840e2f96210a",
+    "text": "讀取清單時「不含」23（記錄一次，STS-CORE-0106），指名它的寫入會被拒絕（STS-CORE-0103）。不會為 krbtgt、服務或人員推導、儲存或放入 keytab 任何 RC4 金鑰；絕不使用該 enctype 的金鑰或票證；只提供該 enctype 的 AS-REQ 或 TGS-REQ 會以 KDC_ERR_ETYPE_NOSUPP 拒絕（STS-KRB-0156）；TGS-REQ、AP-REQ 或 FAST armor 中的 RC4 工作階段金鑰或子金鑰會被拒絕（STS-KRB-0157、0158、0159）。剩下的是 AES。"
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "存取 SCIM 與 Shared Signals 需要角色"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "任何已通過驗證的人員都可讀寫，無論使用哪種配置。"
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "不帶範圍的配置需要 Admin Read 才能讀取、Admin Write 才能寫入，除非開啟 security.allowUnscopedPeople。OAuth 範圍與應用程式憑證照常運作。"
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "指定的檔案必須位於允許的目錄中"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "管理員指定的檔案依其給定的路徑讀取。"
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "僅當檔案的實際路徑位於 security.fileRoots 列出的目錄內時才讀取，且回應不說明路徑失敗的原因。"
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "JWE 內容加密僅使用 AES-GCM"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "提供並接受 A128CBC-HS256、A192CBC-HS384 與 A256CBC-HS512，預設值為 A128CBC-HS256。"
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "僅提供或接受 AES-GCM，用戶端未指定 enc 時也使用它，除非開啟 crypto.allowCbcJwe。"
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "不使用遭禁止的雜湊函式"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "可使用基於 SHA-1 的 OAEP、SHA-1 PKINIT 金鑰衍生與 S4U2Self 的 HMAC-MD5 總和檢查碼。"
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "除非開啟 crypto.allowLegacyHashes，否則它們處於關閉狀態。為相容驗證器應用程式，TOTP 預設仍為 HMAC-SHA-1；PKINIT 保留 RFC 4556 定義的 SHA-1 paChecksum。"
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "沒有帳戶使用預設管理員名稱"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "啟動管理員為 admin，所有測試與逐步操作都以此登入。"
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "名為 admin、root、sa 或 administrator 或沒有名稱的啟動管理員會取得一個無法預測的產生名稱，並在首次啟動時與其密碼一併顯示，除非開啟 admin.allowDefaultUsername。"
+  },
+  "mode.requirements.main-port-https.what": {
+    "en": "6469fbe1118f7dc7",
+    "text": "主要連接埠使用 HTTPS"
+  },
+  "mode.requirements.main-port-https.development": {
+    "en": "87bcf933b05d0ab4",
+    "text": "STS_HTTPS=false 會讓主要連接埠以明文執行。"
+  },
+  "mode.requirements.main-port-https.product": {
+    "en": "064bd0e9c6300f83",
+    "text": "global.https 關閉的程序不會啟動（STS-CORE-0167）。明文 HTTP 的撤銷與 SCEP 接聽程式保留，符合 RFC 5280、RFC 5019 與 RFC 8894 的預期。"
+  },
+  "mode.requirements.public-certificate.what": {
+    "en": "5a7a979998d1c228",
+    "text": "接聽程式憑證受公眾信任"
+  },
+  "mode.requirements.public-certificate.development": {
+    "en": "306ab4dd61adc58f",
+    "text": "由本服務自己的憑證授權單位簽發。"
+  },
+  "mode.requirements.public-certificate.product": {
+    "en": "6071a82728577fff",
+    "text": "請將 tls.certificateFile 設定為受公眾信任的憑證鏈。本服務簽發的憑證不會阻止啟動，並顯示在此列。"
+  },
+  "mode.requirements.legacy-ciphers.what": {
+    "en": "8afeedbfdbbba221",
+    "text": "SCEP、XML 加密與 Kerberos 避免使用舊式密碼"
+  },
+  "mode.requirements.legacy-ciphers.development": {
+    "en": "66885aac9214f230",
+    "text": "SCEP 會回應，XML 加密可使用 AES-CBC，Kerberos 提供 enctype 17 與 18。"
+  },
+  "mode.requirements.legacy-ciphers.product": {
+    "en": "0515d1605d6ccd1f",
+    "text": "僅在 scep.allowInProduct 開啟時 SCEP 才回應（STS-SCEP-0067）。XML 加密只選擇並接受 AES-GCM（STS-KEYS-0195）。除非開啟 krb5.allowSha1Enctypes，否則 Kerberos 使用 19 與 20。"
+  },
+  "mode.requirements.declared-grants.what": {
+    "en": "cd33b5ef6c585827",
+    "text": "用戶端只使用其所需的授權類型"
+  },
+  "mode.requirements.declared-grants.development": {
+    "en": "77b6bd6b92513433",
+    "text": "未宣告授權類型的用戶端可使用任何授權類型。"
+  },
+  "mode.requirements.declared-grants.product": {
+    "en": "636b38aec05ad6d5",
+    "text": "未宣告授權類型的用戶端只能使用 authorization_code 與 refresh_token，除非開啟 oauth2.allowUndeclaredGrants（STS-OAUTH-0598）。"
+  },
+  "mode.requirements.prefixed-cookies.what": {
+    "en": "d3919ebba2136f69",
+    "text": "每個 Cookie 都帶有 __Host- 或 __Secure- 前置詞"
+  },
+  "mode.requirements.prefixed-cookies.development": {
+    "en": "0dd3f83e4dc57f69",
+    "text": "Cookie 保留其一般名稱（sts_session 等），便於在瀏覽器工具中檢視。"
+  },
+  "mode.requirements.prefixed-cookies.product": {
+    "en": "48f9c0318f104300",
+    "text": "透過 TLS 時，每個 Cookie 都帶 __Host- 前置詞，帶 Domain 者則帶 __Secure- 前置詞，沒有前置詞的 Cookie 會遭忽略。前置詞由持有通訊端的程序統一套用一次。"
+  },
+  "mode.requirements.access-decisions-fail-closed.what": {
+    "en": "e0e941b53824cae6",
+    "text": "無法作出的存取決定視為拒絕"
+  },
+  "mode.requirements.access-decisions-fail-closed.development": {
+    "en": "7e18ee029324d928",
+    "text": "決策器擲回例外、傳回空回應，或檢查未指明資源或動作時，要求會被允許並記錄，讓部分載入的開發程序仍能回應。"
+  },
+  "mode.requirements.access-decisions-fail-closed.product": {
+    "en": "905a335779a6c533",
+    "text": "上述每種情況都會遭拒絕（STS-XACML-0051、0181、0182）。xacml.enforceAccess 與 roles.enforceIssuance 仍可用於從阻止自身修復的原則中復原，其中任一項關閉時都會顯示在此列。"
+  },
+  "mode.requirements.strict-transport-security.what": {
+    "en": "161b93a2d80010e9",
+    "text": "透過 TLS 的每個回應都告知瀏覽器只使用 HTTPS（Strict-Transport-Security）"
+  },
+  "mode.requirements.strict-transport-security.development": {
+    "en": "915a47de70ff3589",
+    "text": "不傳送此標頭：HSTS 會綁定主機名稱的所有連接埠，並取消對不受信任憑證的手動放行；在 localhost 上，這項影響會在容器結束後仍然存在。"
+  },
+  "mode.requirements.strict-transport-security.product": {
+    "en": "c36ea27a011458e7",
+    "text": "透過 TLS 抵達的每個回應都帶有 Strict-Transport-Security: max-age=31536000（RFC 6797）。明文 HTTP 的撤銷與 SCEP 接聽程式上的回應絕不帶此標頭。"
   },
   "mode.requirements.signed-assertions.what": {
     "en": "61c90b75f7b0a5e3",

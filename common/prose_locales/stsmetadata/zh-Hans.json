@@ -1207,6 +1207,10 @@
     "en": "bfc05d15d7d40bc2",
     "text": "非规范，并且刻意不设关卡。本进程正在运行的每个信任领域——信任领域是本服务的一个完整逻辑副本，通过路径开头的一个段访问，拥有自己的配置、签名密钥、会话和令牌。它携带每个领域的 id、名称、基础 URL 和路径前缀、前缀段本身（这是一项设置，因此客户端无法猜到），以及一个领域实际分隔了哪些协议系列。最后一项是其他任何地方都无法回答的部分：大多数系列按路径分隔，但目录按 DN 分隔，Kerberos 按请求中的领域名称分隔，SPIFFE 按套接字地址分隔，而 TLS 证书根本不分隔——因此以为路径段在所有地方都是边界的人，会在其中四个上出错。被指向某个领域的客户端没有它就无法构造任何一个 URL，这就是它不在控制台关卡之后的原因——与此处每份发现文档所依据的论证相同。"
   },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC。浏览器在每个页面上自行请求的图标：徽标的方形标记（common/favicon.ico）。在每个侦听器上提供；缓存一天。"
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC（#570）。登录屏幕卡片和语言选择器的规则，合为一个样式表，供静态公共界面的外壳链接（common/web_card_css.ts）。在每个监听器上提供；带有本构建 ?v= 的地址会被永久缓存。"
@@ -2170,6 +2174,10 @@
   "stsmetadata.endpoints./admin-api/config.what": {
     "en": "de1ba6721d3df738",
     "text": "NON-SPEC。每个设置、其有效值以及该值的来源——覆盖值、环境变量、appconfig 文件或其下的 env/defaults.js。对应 GET /admin/config。"
+  },
+  "stsmetadata.endpoints./admin-api/config-dump.what": {
+    "en": "56a8ec7f8dbef7bb",
+    "text": "NON-SPEC. 所有配置参数（全局及每个领域），每个敏感值均已屏蔽。对应 GET /admin/config-dump。"
   },
   "stsmetadata.endpoints./admin-api/config/:action.what": {
     "en": "0493cb479489bbd8",
@@ -3942,9 +3950,5 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "一个参数"
-  },
-  "stsmetadata.endpoints./favicon.ico.what": {
-    "en": "18aea3253b0f21a8",
-    "text": "NON-SPEC。浏览器在每个页面上自行请求的图标：徽标的方形标记（common/favicon.ico）。在每个侦听器上提供；缓存一天。"
   }
 }

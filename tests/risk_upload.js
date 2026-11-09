@@ -203,6 +203,28 @@ async function drained() {
   return filesIn();
 }
 
+// A FILE'S NAME AGAINST ITS FORMAT (#1480, ASVS 5.0.0 5.2.2).
+function nameChecks(t) {
+  log.debug("Entering nameChecks().");
+  const refused = riskUpload.RiskUpload.nameRefusal;
+  const bad = refused('dbip-city-csv', 'dataset.exe');
+  t.check(bad && bad.status === 400, 'a name that does not fit is refused',
+          JSON.stringify(bad));
+  t.check(refused('dbip-city-csv', 'cities.csv') === null,
+          'one that does is not');
+  t.check(refused('dbip-city-csv', 'cities.csv.gz') === null,
+          'a compression suffix is set aside');
+  t.check(!!refused('dbip-city-csv', 'cities.gz'),
+          'and a compressed file still needs the format\'s own name');
+  t.check(refused('ip-list', 'torbulkexitlist') === null,
+          'a list published with no extension may have none');
+  t.check(!!refused('dbip-city-csv', 'noextension'),
+          'a CSV format may not');
+  t.check(refused('dbip-city-csv', '') === null,
+          'the API door has no name to compare');
+  log.debug("Leaving nameChecks().");
+}
+
 async function partA(t) {
   log.debug("Entering partA().");
   const gz = zlib.gzipSync(listOf(1200, 'A1'));
@@ -525,6 +547,7 @@ async function run(t) {
   riskStore.reset();
   riskDatasets.forget();
   try {
+    nameChecks(t);
     await partA(t);
     await partB(t);
     await partC(t);

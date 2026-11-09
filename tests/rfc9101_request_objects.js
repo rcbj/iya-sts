@@ -1210,7 +1210,7 @@ function inAChild(t) {
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
       env: Object.assign(clean,
-                         { LOG_LEVEL: 'fatal', R91_ROOT: ROOT, R91_OUT: out }),
+                         { STS_SECURITY_FILE_ROOTS: require('os').tmpdir(), LOG_LEVEL: 'fatal', R91_ROOT: ROOT, R91_OUT: out }),
       encoding: 'utf8', timeout: 240000, cwd: ROOT
     });
   let findings = null;

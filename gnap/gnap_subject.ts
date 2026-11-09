@@ -708,7 +708,7 @@ class GnapSubject {
                   "does not verify: " + e.message);
         return { ok: false };
       }
-      const grace = Number(config.value('gnap.assertionMaxAgeS')) || 0;
+      const grace = require('../common/mode').expiredAssertionGraceS();
       // WHAT MAKES IT AN ID TOKEN. Every JWT this service signs is signed
       // with the same key; an access token carries `typ: 'Bearer'` and a
       // refresh token `typ: 'Refresh'`, and an ID Token carries NO `typ`

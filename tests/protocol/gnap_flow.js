@@ -394,7 +394,7 @@ function harness(options) {
       " " + r.text.slice(0, 200));
     const approve = r.location;
     r = await b.go("GET", approve);
-    if (r.status === 303 && /\/authn\/login\?authn=/.test(r.location)) {
+    if (r.status === 303 && /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location)) {
       // THE SCREEN OVER `/authn-api` (#571), through the one helper, with
       // this browser's cookies kept in its jar.
       const signedIn = await authnSignin.submit(realmBase, r.location,

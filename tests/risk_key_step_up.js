@@ -268,7 +268,7 @@ function childMain() {
       const at = String((answered.headers &&
                          answered.headers.location) || '');
       if (answered.status === 303 &&
-          /\/authn\/[a-z-]+\?mfa=/.test(at)) {
+          /\/authn\/[a-z-]+(?:\?app=[^#]*)?[?#]mfa=/.test(at)) {
         const opened = await authnScreen.openStep({
           port: w.port, jar: who.cookies, userAgent: ua, at: at });
         opened.answer = answered;

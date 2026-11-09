@@ -317,8 +317,12 @@ class EmailFactor {
           dedupKey: 'sign-in:' + mfaId + ':' + state.sends, via: 'authn' }
       : { username: step.username, template: 'sign-in-link',
           values: { username: step.username, minutes: String(minutes) },
-          links: { signin: authn.EMAIL_LINK_OPEN_PATH + '?mfa=' +
-                           encodeURIComponent(mfaId) + '&t=' +
+          links: { signin: authn.EMAIL_LINK_OPEN_PATH +
+                           (require('../common/mode').hidesStepIds()
+                             ? '#mfa=' : '?mfa=') +
+                           encodeURIComponent(mfaId) +
+                           (require('../common/mode').hidesStepIds()
+                             ? '&t=' : '#t=') +
                            encodeURIComponent(secret) },
           dedupKey: 'sign-in:' + mfaId + ':' + state.sends, via: 'authn' });
     const refused = !sent || !sent.ok;

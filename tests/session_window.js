@@ -1279,7 +1279,7 @@ function accountSetCase(t) {
       protocol: 'OAuth 2.0 / OIDC', application: '',
       request: { headers: req.headers, query: {}, url: '/oauth2/authorize' }
     });
-    t.check(/^\/authn\/accounts\?authn=/.test(begun),
+    t.check(/^\/authn\/accounts(?:\?app=[^#]*)?[?#]authn=/.test(begun),
             'and a sign-in that needs the set goes to that picker, not to ' +
             'the sign-in screen', begun);
   } finally {

@@ -611,7 +611,7 @@ async function test() {
   });
   check("the browser holds the account set's cookie", function () {
     assert.ok(Object.keys(b.jar).some(function (one) {
-      return /^sts_accounts/.test(one);
+      return /^(?:__Host-)?sts_accounts/.test(one);
     }), Object.keys(b.jar).join(","));
   });
   let list = await accountsList(b);
@@ -680,7 +680,7 @@ async function test() {
   const onward = await pickerAct(b, opened, "another", {});
   check("use another account goes on to the sign-in screen", function () {
     assert.ok(onward.status === 200 && onward.next === "redirect" &&
-              /\/authn\/login\?authn=/.test(onward.location),
+              /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(onward.location),
               onward.status + " " + String(onward.text).slice(0, 300));
   });
 

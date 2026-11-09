@@ -168,6 +168,7 @@
   "nav.encryption": "Encryption",
   "nav.secrets": "Secret store",
   "nav.caches": "Caches",
+  "nav.config-dump": "Configuration dump",
   "nav.worker-pools": "Worker pools",
   "nav.node-health": "Node health",
   "nav.scheduler": "Scheduler",

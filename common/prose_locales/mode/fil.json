@@ -404,8 +404,152 @@
     "text": "Ang krb5.enctypes ay 18,17,20,19,23 bilang default: ang bawat account ay may rc4-hmac key katabi ng mga AES key nito, walang iba ang rc4only fixture, at ang client na nag-aalok lang ng 23 ay nakakakuha ng ticket — kaya masusubok ang RC4 client."
   },
   "mode.requirements.kerberos-deprecated-enctypes.product": {
-    "en": "f781591fe2d565a1",
-    "text": "Binabasa ang listahan nang WALA ang 23 (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan ang pagsulat na nagpapangalan nito (STS-CORE-0103). Walang RC4 key na hinahango, iniimbak o inilalagay sa keytab para sa krbtgt, isang serbisyo o isang tao; hindi kailanman ginagamit ang key o ticket ng enctype na iyon; ang AS-REQ o TGS-REQ na walang ibang iniaalok ay tinatanggihan nang KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); tinatanggihan ang RC4 session key o subkey sa TGS-REQ, AP-REQ o FAST armor (STS-KRB-0157, 0158, 0159). AES (17, 18, 19, 20) ang natitira."
+    "en": "7bb2840e2f96210a",
+    "text": "Binabasa ang listahan nang WALA ang 23 (nilo-log nang isang beses, STS-CORE-0106) at tinatanggihan ang pagsulat na nagpapangalan nito (STS-CORE-0103). Walang RC4 key na hinahango, iniimbak o inilalagay sa keytab para sa krbtgt, isang serbisyo o isang tao; hindi kailanman ginagamit ang key o ticket ng enctype na iyon; ang AS-REQ o TGS-REQ na walang ibang iniaalok ay tinatanggihan nang KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); tinatanggihan ang RC4 session key o subkey sa TGS-REQ, AP-REQ o FAST armor (STS-KRB-0157, 0158, 0159). AES ang natitira."
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "Kailangan ng tungkulin ang tao sa SCIM at Shared Signals"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "Maaaring magbasa at magsulat ang sinumang na-authenticate, anumang scheme ang gamit."
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "Kailangan ng scheme na walang scope ang Admin Read para magbasa at Admin Write para magsulat, maliban kung naka-on ang security.allowUnscopedPeople. Gumagana pa rin ang mga OAuth scope at ang certificate ng application."
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "Dapat nasa pinapayagang direktoryo ang pinangalanang file"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "Binabasa ang file na pinangalanan ng administrator kung saan man nito sabihin."
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "Binabasa lang ang file kung ang tunay nitong path ay nasa loob ng direktoryong nakalista sa security.fileRoots, at hindi sinasabi ng sagot kung bakit nabigo ang path."
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "AES-GCM lang ang JWE content encryption"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "Iniaalok at tinatanggap ang A128CBC-HS256, A192CBC-HS384 at A256CBC-HS512, at A128CBC-HS256 ang default."
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "AES-GCM lang ang iniaalok o tinatanggap, at ito ang ginagamit kapag walang enc na pinangalanan ang client, maliban kung naka-on ang crypto.allowCbcJwe."
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "Hindi ginagamit ang mga ipinagbabawal na hash"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "Available ang OAEP sa SHA-1, ang SHA-1 PKINIT key derivation at ang HMAC-MD5 checksum ng S4U2Self."
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "Naka-off ang mga ito maliban kung naka-on ang crypto.allowLegacyHashes. HMAC-SHA-1 pa rin ang default ng TOTP, para sa compatibility ng authenticator app, at pinananatili ng PKINIT ang SHA-1 paChecksum na itinakda ng RFC 4556."
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "Walang account na may default na pangalan ng administrator"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "Ang bootstrap administrator ay admin, na ginagamit ng bawat test at walkthrough sa pag-sign in."
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "Ang bootstrap administrator na pinangalanang admin, root, sa o administrator, o walang pangalan, ay binibigyan ng hindi mahulaang nabuong pangalan, na ipinapakita kasama ng password nito sa unang pagsisimula, maliban kung naka-on ang admin.allowDefaultUsername."
+  },
+  "mode.requirements.main-port-https.what": {
+    "en": "6469fbe1118f7dc7",
+    "text": "HTTPS ang pangunahing port"
+  },
+  "mode.requirements.main-port-https.development": {
+    "en": "87bcf933b05d0ab4",
+    "text": "Pinapatakbo ng STS_HTTPS=false ang pangunahing port nang walang encryption."
+  },
+  "mode.requirements.main-port-https.product": {
+    "en": "064bd0e9c6300f83",
+    "text": "Hindi nagsisimula ang process na naka-off ang global.https (STS-CORE-0167). Nananatili ang plain-HTTP na listener ng revocation at SCEP, gaya ng inaasahan ng RFC 5280, RFC 5019 at RFC 8894."
+  },
+  "mode.requirements.public-certificate.what": {
+    "en": "5a7a979998d1c228",
+    "text": "Pinagkakatiwalaan ng publiko ang certificate ng listener"
+  },
+  "mode.requirements.public-certificate.development": {
+    "en": "306ab4dd61adc58f",
+    "text": "Ang sariling certificate authority ng serbisyong ito ang gumagawa nito."
+  },
+  "mode.requirements.public-certificate.product": {
+    "en": "6071a82728577fff",
+    "text": "Itakda ang tls.certificateFile sa chain na pinagkakatiwalaan ng publiko. Hindi hinaharang ng certificate na gawa ng serbisyong ito ang pagsisimula, at ipinapakita ito sa row na ito."
+  },
+  "mode.requirements.legacy-ciphers.what": {
+    "en": "8afeedbfdbbba221",
+    "text": "Iniiwasan ng SCEP, XML encryption at Kerberos ang mga lumang cipher"
+  },
+  "mode.requirements.legacy-ciphers.development": {
+    "en": "66885aac9214f230",
+    "text": "Sumasagot ang SCEP, maaaring gumamit ng AES-CBC ang XML encryption, at nag-aalok ang Kerberos ng enctype 17 at 18."
+  },
+  "mode.requirements.legacy-ciphers.product": {
+    "en": "0515d1605d6ccd1f",
+    "text": "Sumasagot lang ang SCEP kapag naka-on ang scep.allowInProduct (STS-SCEP-0067). AES-GCM lang ang pinipili at tinatanggap ng XML encryption (STS-KEYS-0195). 19 at 20 ang gamit ng Kerberos maliban kung naka-on ang krb5.allowSha1Enctypes."
+  },
+  "mode.requirements.declared-grants.what": {
+    "en": "cd33b5ef6c585827",
+    "text": "Ang mga grant lang na kailangan ng client ang ginagamit nito"
+  },
+  "mode.requirements.declared-grants.development": {
+    "en": "77b6bd6b92513433",
+    "text": "Maaaring gumamit ng anumang grant ang client na walang idineklarang grant type."
+  },
+  "mode.requirements.declared-grants.product": {
+    "en": "636b38aec05ad6d5",
+    "text": "authorization_code at refresh_token lang ang magagamit ng client na walang idineklarang grant type, maliban kung naka-on ang oauth2.allowUndeclaredGrants (STS-OAUTH-0598)."
+  },
+  "mode.requirements.prefixed-cookies.what": {
+    "en": "d3919ebba2136f69",
+    "text": "Bawat cookie ay may prefix na __Host- o __Secure-"
+  },
+  "mode.requirements.prefixed-cookies.development": {
+    "en": "0dd3f83e4dc57f69",
+    "text": "Pinananatili ng mga cookie ang mga simpleng pangalan nila (sts_session at iba pa), na nababasa sa browser tools."
+  },
+  "mode.requirements.prefixed-cookies.product": {
+    "en": "48f9c0318f104300",
+    "text": "Sa TLS, may prefix na __Host- ang bawat cookie, o __Secure- kung may Domain ito, at binabalewala ang walang prefix. Isang beses inilalapat ang prefix, ng process na may hawak ng socket."
+  },
+  "mode.requirements.access-decisions-fail-closed.what": {
+    "en": "e0e941b53824cae6",
+    "text": "Pagtanggi ang desisyon sa access na hindi magawa"
+  },
+  "mode.requirements.access-decisions-fail-closed.development": {
+    "en": "7e18ee029324d928",
+    "text": "Ang decider na nag-throw, walang laman na sagot, o check na walang resource o action ay pinapayagan ang request at inilo-log, para makasagot pa rin ang bahagyang na-load na development process."
+  },
+  "mode.requirements.access-decisions-fail-closed.product": {
+    "en": "905a335779a6c533",
+    "text": "Pagtanggi ang bawat isa sa mga iyon (STS-XACML-0051, 0181, 0182). Nananatili ang xacml.enforceAccess at roles.enforceIssuance bilang daan pabalik mula sa patakarang humaharang sa sarili nitong pag-aayos, at ipinapakita sa row na ito ang alinmang naka-off."
+  },
+  "mode.requirements.strict-transport-security.what": {
+    "en": "161b93a2d80010e9",
+    "text": "Sinasabi ng bawat tugon sa TLS sa browser na HTTPS lang ang gamitin (Strict-Transport-Security)"
+  },
+  "mode.requirements.strict-transport-security.development": {
+    "en": "915a47de70ff3589",
+    "text": "Hindi ipinapadala ang header: itinatali ng HSTS ang bawat port ng isang host name at inaalis ang pagtanggap sa hindi pinagkakatiwalaang certificate, na sa localhost ay mananatili kahit wala na ang container."
+  },
+  "mode.requirements.strict-transport-security.product": {
+    "en": "c36ea27a011458e7",
+    "text": "Bawat tugon na dumating sa TLS ay may Strict-Transport-Security: max-age=31536000 (RFC 6797). Hindi kailanman ito dala ng tugon sa plain-HTTP na listener ng revocation at SCEP."
   },
   "mode.requirements.signed-assertions.what": {
     "en": "61c90b75f7b0a5e3",

@@ -787,7 +787,7 @@ function run(t) {
     '(' + bindChild.toString() + ')()'], {
     cwd: ROOT, encoding: 'utf8', timeout: 180000,
     env: Object.assign(bindEnv, { CLCR_OUT: bindOut, CLCR_ROOT: ROOT,
-                                  STS_MODE: 'product', LOG_LEVEL: 'fatal',
+                                  STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', LOG_LEVEL: 'fatal',
                                   STS_LOG_LEVEL: 'fatal' }) });
   let bindFindings = null;
   try {

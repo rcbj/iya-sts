@@ -1318,6 +1318,77 @@ const SETTINGS = [
                  'appCorsOrigin. A value that is not an origin is ignored ' +
                  'and logged, never widened.' },
 
+  { key: 'security.fileRoots', group: 'Web security',
+    label: 'Directories a named file may be read from',
+    env: 'STS_SECURITY_FILE_ROOTS', type: 'csv',
+    // NOT `runtime`: the setting exists to bound what an administrator's
+    // request may name, so that request must not be able to widen it (#1481).
+    dflt: '/etc/ssl,/etc/pki,/usr/share/ca-certificates,' +
+          '/usr/local/share/ca-certificates,/run/secrets,/var/run/secrets,' +
+          '/etc/sts',
+    runtime: false,
+    description: 'Product mode only. A comma-separated list of absolute ' +
+                 'directories. A file an administrator names in a setting or ' +
+                 'a request (a CA file, a SPIFFE token or key file, a ' +
+                 'Sigstore file, a mail certificate or key) is read only if ' +
+                 'its real path, after following symbolic links, is inside ' +
+                 'one of them. It is set in the environment or the appconfig ' +
+                 'file and cannot be changed through the console or the API, ' +
+                 'so that an administrator\'s request cannot widen it. ' +
+                 'WARNING: adding / or another broad directory means ASVS ' +
+                 '5.0.0 requirement 5.3.2 is not met.' },
+
+  { key: 'security.allowUnscopedPeople', group: 'Web security',
+    label: 'Let a person reach SCIM and Shared Signals with no role',
+    env: 'STS_SECURITY_ALLOW_UNSCOPED_PEOPLE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, somebody authenticated ' +
+                 'to /scim/v2 or Shared Signals by a scheme that carries no ' +
+                 'scope, such as HTTP Basic or the session cookie, needs ' +
+                 'Admin Read to read and Admin Write to write. On, any ' +
+                 'authenticated person may. WARNING: on, ASVS 5.0.0 ' +
+                 'requirements 8.2.1 and 8.2.2 are not met, because any ' +
+                 'person could change any account. Use OAuth scopes for ' +
+                 'provisioning clients instead.' },
+
+  { key: 'crypto.allowCbcJwe', group: 'Web security',
+    label: 'Allow JWE CBC-HMAC content encryption',
+    env: 'STS_CRYPTO_ALLOW_CBC_JWE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, JWE uses and accepts ' +
+                 'AES-GCM alone: A128CBC-HS256, A192CBC-HS384 and ' +
+                 'A256CBC-HS512 are neither offered nor accepted, and a ' +
+                 'client that names an algorithm and no enc is answered in ' +
+                 'A256GCM. On, they work as in development. WARNING: while ' +
+                 'this is on, ASVS 5.0.0 requirement 11.3.2 is not met, so ' +
+                 'turn it on only for a partner that cannot read AES-GCM.' },
+
+  { key: 'crypto.allowLegacyHashes', group: 'Web security',
+    label: 'Allow SHA-1 and MD5 where a protocol still uses them',
+    env: 'STS_CRYPTO_ALLOW_LEGACY_HASHES', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, this service does not ' +
+                 'use OAEP over SHA-1 in XML encryption or JWE, the SHA-1 ' +
+                 'PKINIT key derivation, or the HMAC-MD5 checksum of ' +
+                 'S4U2Self. On, it does. WARNING: ASVS 5.0.0 requirement ' +
+                 '11.4.1 disallows those hashes, so turn this on only for ' +
+                 'partners or clients that support nothing newer.' },
+
+  { key: 'admin.allowDefaultUsername', group: 'Admin console',
+    label: 'Allow a default administrator name in product',
+    env: 'STS_ADMIN_ALLOW_DEFAULT_USERNAME', type: 'bool', dflt: false,
+    runtime: false, perProcess: true,
+    restartReason: 'the bootstrap runs once, between the persistence store ' +
+                   'opening and the listener binding, so a change after that ' +
+                   'has nothing left to name',
+    description: 'Product mode only. Off, the default, a bootstrap ' +
+                 'administrator named admin, root, sa or administrator, or ' +
+                 'with no name at all, is given an unpredictable generated ' +
+                 'name, printed with its password at first start. On, the ' +
+                 'configured name is used as it is. WARNING: ASVS 5.0.0 ' +
+                 'requirement 6.3.2 forbids a default account name, so leave ' +
+                 'this off outside a test stack.' },
+
   { key: 'admin.bootstrapUsername', group: 'Admin console',
     label: 'Bootstrap administrator account',
     path: 'admin.bootstrapUsername', env: 'STS_ADMIN_BOOTSTRAP_USERNAME',
@@ -1824,6 +1895,9 @@ const SETTINGS = [
     enumValues: ['A128GCM', 'A192GCM', 'A256GCM', 'A128CBC-HS256',
                  'A192CBC-HS384', 'A256CBC-HS512'],
     dflt: 'A256GCM', runtime: true,
+    // A CBC-HMAC value is held to crypto.allowCbcJwe (#1486).
+    onlyWhile: 'allowsCbcJwe',
+    onlyWhileValues: ['A128CBC-HS256', 'A192CBC-HS384', 'A256CBC-HS512'],
     description: 'The enc of a jwt-encrypted token encrypted to a resource ' +
                  'server\'s own key. A token encrypted to this authorization ' +
                  'server is always dir with A256GCM.' },
@@ -6505,6 +6579,15 @@ const SETTINGS = [
                  'live token. Applies when oauth2.accessTokenFormat is ' +
                  'opaque.' },
 
+  { key: 'oauth2.allowUndeclaredGrants', group: 'OAuth 2.0 / OIDC',
+    label: 'Let a client with no grant list use any grant',
+    env: 'STS_OAUTH2_ALLOW_UNDECLARED_GRANTS', type: 'bool', dflt: false, runtime: true,
+    description: 'Product mode only. Off, the default, a client that declares ' +
+                 'no grant types may use authorization_code and refresh_token ' +
+                 'alone. On, it may use any grant this service offers. ' +
+                 'WARNING: ASVS 5.0.0 requirement 10.4.4 limits a client to ' +
+                 'the grants it needs, so leave this off outside a test stack.' },
+
   { key: 'oauth2.signedMetadataAlgorithm', group: 'OAuth 2.0 / OIDC',
     label: 'Algorithm signed_metadata is signed with',
     env: 'STS_OAUTH2_SIGNED_METADATA_ALGORITHM', type: 'enum',
@@ -8496,6 +8579,15 @@ const SETTINGS = [
     env: 'STS_SCEP_ENABLED', type: 'bool', dflt: true, runtime: true,
     description: 'Off makes every /enroll/scep request answer 503 in this ' +
                  'realm. Certificates already issued are kept.' },
+  { key: 'scep.allowInProduct', group: 'SCEP',
+    label: 'Answer SCEP in product',
+    env: 'STS_SCEP_ALLOW_IN_PRODUCT', type: 'bool', dflt: false, runtime: true,
+    description: 'Product mode only. On, /enroll/scep answers in product ' +
+                 'mode. Off, the default, it answers 503. WARNING: RFC 8894 ' +
+                 'requires RSAES-PKCS1-v1.5 and AES-CBC, which ASVS 5.0.0 ' +
+                 'requirements 11.3.1 and 11.3.2 do not accept, so turn this ' +
+                 'on only for devices that speak nothing newer.' },
+
   { key: 'scep.allowedProfiles', group: 'SCEP',
     label: 'Certificate profiles SCEP may issue',
     env: 'STS_SCEP_ALLOWED_PROFILES', type: 'csv',
@@ -8806,6 +8898,9 @@ const SETTINGS = [
     enumValues: ['A128GCM', 'A192GCM', 'A256GCM', 'A128CBC-HS256',
                  'A192CBC-HS384', 'A256CBC-HS512'],
     dflt: 'A256GCM', runtime: true,
+    // A CBC-HMAC value is held to crypto.allowCbcJwe (#1486).
+    onlyWhile: 'allowsCbcJwe',
+    onlyWhileValues: ['A128CBC-HS256', 'A192CBC-HS384', 'A256CBC-HS512'],
     description: 'The JWE content encryption algorithm for refresh tokens. ' +
                  'Like the alg above, it is read on every issuance and a ' +
                  'change strands no token already issued.' },
@@ -10443,6 +10538,9 @@ const SETTINGS = [
     env: 'STS_SAML2_ENCRYPTION_ALGORITHM', type: 'enum',
     enumValues: ['aes256-gcm', 'aes128-gcm', 'aes256-cbc', 'aes128-cbc'],
     dflt: 'aes256-gcm', runtime: true,
+    // AES-CBC is DEVELOPMENT ONLY since #1455 (ASVS 5.0.0 11.3.2).
+    onlyWhile: 'usesBrokenAlgorithms',
+    onlyWhileValues: ['aes256-cbc', 'aes128-cbc'],
     description: 'The block cipher every encrypted element is encrypted ' +
                  'with. The two GCM ones are AUTHENTICATED: an altered ' +
                  'ciphertext fails its tag and is refused. The two CBC ones ' +
@@ -13092,12 +13190,27 @@ const SETTINGS = [
   // realm reads the list without it. 1, 2, 3 (DES, RFC 6649), 16 (3DES) and
   // 24 (rc4-hmac-exp, RFC 8429) are named beside it for the day the codec
   // implements them; today it refuses them at startup anyway.
+  { key: 'krb5.allowSha1Enctypes', group: 'Kerberos',
+    label: 'Offer AES with SHA-1 in product',
+    env: 'KRB5_ALLOW_SHA1_ENCTYPES', type: 'bool', dflt: false, runtime: false,
+    restartReason: 'every principal\'s keys are made at startup',
+    description: 'Product mode only. On, this KDC may also use enctypes 17 ' +
+                 'and 18 (AES with HMAC-SHA1-96, RFC 3962). Off, the default, ' +
+                 'product uses 19 and 20 (RFC 8009) alone. WARNING: ASVS ' +
+                 '5.0.0 requirement 11.4.1 does not accept SHA-1 here, so ' +
+                 'turn this on only for Kerberos clients that speak nothing ' +
+                 'newer.' },
+
   { key: 'krb5.enctypes', group: 'Kerberos', label: 'Encryption types',
     env: 'KRB5_ENCTYPES', type: 'csv', dflt: '18,17,20,19,23',
     runtime: false,
     realmRuntime: true,
     onlyWhile: 'usesBrokenAlgorithms',
     onlyWhileValues: ['1', '2', '3', '16', '23', '24'],
+    // AES with HMAC-SHA1-96 (#1456, ASVS 5.0.0 11.4.1): marked too, unless the
+    // operator opts in.
+    onlyWhileValuesUnless: { setting: 'krb5.allowSha1Enctypes',
+                             values: ['17', '18'] },
     restartReason: 'every principal\'s supported encryption types are fixed ' +
                    'at startup' +
                    REALM_BUILDS_ITS_OWN,
@@ -13808,8 +13921,10 @@ const SETTINGS = [
   { key: 'ldap.selfWritableAttributes', group: 'LDAP',
     label: 'Attributes a person may change on their own entry',
     env: 'LDAP_SELF_WRITABLE_ATTRIBUTES', type: 'csv',
+    // NOT `userPassword` SINCE #1465 (ASVS 5.0.0 6.2.3): an LDAP modify presents
+    // no current password, and a bind by certificate proved none.
     dflt: 'telephoneNumber,mobile,homePhone,displayName,preferredLanguage,' +
-          'postalAddress,street,l,st,postalCode,userPassword',
+          'postalAddress,street,l,st,postalCode',
     runtime: true,
     description: 'In PRODUCT mode, the attributes a connection bound as a ' +
                  'person may change on that person\'s OWN entry with an LDAP ' +
@@ -15880,6 +15995,18 @@ const SETTINGS = [
                  'request declares more, and stopped where it passes this ' +
                  'otherwise. DB-IP Lite\'s city file is a few hundred ' +
                  'megabytes compressed.' },
+
+  { key: 'risk.maxSkippedLinesPercent', group: 'Risk',
+    label: 'Largest share of a dataset\'s lines that may fail to parse ' +
+           '(percent)',
+    env: 'STS_RISK_MAX_SKIPPED_LINES_PERCENT',
+    type: 'int', dflt: 10, min: 0, max: 100, runtime: true,
+    description: 'A dataset file in which more than this percentage of its ' +
+                 'non-comment lines are not rows of the format is refused, ' +
+                 'and nothing of it is kept. 100 accepts any file that holds ' +
+                 'at least one row, which is what this service did before. ' +
+                 'WARNING: at 100 a file of the wrong kind can be loaded as ' +
+                 'long as one line happens to parse.' },
 
   { key: 'risk.expandedMaxBytes', group: 'Risk',
     label: 'Largest expanded dataset (bytes)',
@@ -22228,6 +22355,39 @@ function groups() {
 }
 
 /**
+ * Describes the named settings, in the ambient realm, in table order. A key
+ * no row has is left out: a realm's stored value can outlive its setting.
+ *
+ * @param keys - the setting keys
+ * @returns one description per known key
+ */
+function describeKeys(keys) {
+  log.debug("Entering describeKeys().");
+  const wanted = new Set(keys);
+  const out = SETTINGS.filter(function (setting) {
+    return wanted.has(setting.key);
+  }).map(describe);
+  log.debug("Leaving describeKeys(). " + out.length + " row(s).");
+  return out;
+}
+
+/**
+ * Returns the keys of the settings the table marks `secret: true`.
+ *
+ * @returns the keys
+ */
+function secretKeys() {
+  log.debug("Entering secretKeys().");
+  const out = SETTINGS.filter(function (setting) {
+    return !!setting.secret;
+  }).map(function (setting) {
+    return setting.key;
+  });
+  log.debug("Leaving secretKeys(). " + out.length + " key(s).");
+  return out;
+}
+
+/**
  * Returns what this service is configured with: the realm the snapshot is
  * of and what it sets, the appconfig files, the counts, what is overridden,
  * and every group of settings described.
@@ -22685,6 +22845,8 @@ module.exports = {
   persistableOverrides: persistableOverrides,
   applyPersistedOverrides: applyPersistedOverrides,
   describe: describe,
+  describeKeys: describeKeys,
+  secretKeys: secretKeys,
   groups: groups,
   snapshot: snapshot,
   auditAppconfig: auditAppconfig,

@@ -884,3 +884,10 @@ Every failure is recorded under an `STS-SSF-NNNN` code. See
 * [OAuth 2.0 & OpenID Connect](oauth-oidc.md): getting an `ssf:*` token
 * [Trust realms](trust-realms.md), [What is not checked](what-is-not-checked.md),
   [Configuration](configuration.md)
+
+## HTTP Basic in product mode
+
+A password carries no scope, and Basic grants both the read and the write scope.
+In product mode the person must therefore hold Admin Write, or the request is
+refused with 403. Use an OAuth access token for a receiver or a transmitter.
+`security.allowUnscopedPeople` lifts the check.

@@ -418,7 +418,7 @@ async function signInToTheConsole(base, user, log2, options) {
       .digest("base64url") }).toString();
   const toScreen = await fetchKeeping(authorize);
   const where = toScreen.headers.get("location") || "";
-  const authn = (where.match(/[?&]authn=([^&]+)/) || [])[1];
+  const authn = (where.match(/[?&#]authn=([^&]+)/) || [])[1];
   assert.ok(authn,
     "the console's authorization request should send a browser with no " +
     "sign-on session to the sign-in screen carrying the id of the request " +
@@ -437,7 +437,7 @@ async function signInToTheConsole(base, user, log2, options) {
   if (signedIn.ignored) {
     say("[console] " + user + " was offered a second factor and ignored it.");
   }
-  assert.ok(signedIn.next === "redirect" && cookies.get("sts_session"),
+  assert.ok(signedIn.next === "redirect" && (cookies.get("sts_session") || cookies.get("__Host-sts_session")),
     "signing in at /authn/login should set the sign-on session cookie and " +
     "answer where to go; it answered " + signedIn.status + " " +
     signedIn.next + " " + JSON.stringify(signedIn.errors));

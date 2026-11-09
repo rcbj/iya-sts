@@ -239,7 +239,7 @@ async function authorizeSignedIn(prefix, query) {
   log.debug("Entering authorizeSignedIn().");
   const b = browser();
   let r = await b.go("GET", prefix + "/oauth2/authorize?" + form(query));
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
     "an unauthenticated authorization request should go to the sign-in " +
     "screen; it answered " + r.status + " " + r.location + " " +
     r.text.slice(0, 300));

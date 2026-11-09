@@ -125,6 +125,21 @@ jobs:
         run: .github/scripts/mirror-images.sh missing
 
   # ---------------------------------------------------------------------------
+  # THE ADVISORY WINDOWS OF SECURITY.md (#1458). No install: `npm audit` reads
+  # the lockfile.
+  # ---------------------------------------------------------------------------
+  dependency-windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+      - name: Fail on an advisory past its window
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tests/tools/dependency-windows.js
+
+  # ---------------------------------------------------------------------------
   # THE PLAIN SUITE. Every job, service and runner both in
   # containers, nothing instrumented. This is the one whose status means "the
   # tree is green".

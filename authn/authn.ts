@@ -9060,9 +9060,14 @@ class Authn {
     // wsignout1.0, SAML 2.0 Single Logout and /logout are four words for one
     // act, and a revocation at each would be four that could come to disagree.
     //
-    // Only the REFRESH tokens. An access token issued on this session expires
-    // in an hour and revoking it would take away the evidence of what the
-    // session did; the refresh token is the thirty-day credential a sign-out is
+    // AND IN PRODUCT THE ACCESS TOKENS (#1449, ASVS 5.0.0 7.4.1): a sign-out has
+    // to stop what this service would still accept, and the register keeps the
+    // row, so the evidence survives. An ID Token is not revoked: RP-Initiated
+    // Logout accepts one as `id_token_hint` after the session has ended.
+    //
+    // In development only the REFRESH tokens: an access token issued on this
+    // session expires in an hour, and the refresh token is the thirty-day
+    // credential a sign-out is
     // supposed to be about, and leaving it live is what made signing out mean
     // nothing to the back channel. A GLOBAL logout revokes the access tokens
     // too — but it does that itself, as a separate stated act, rather than by
@@ -9084,10 +9089,16 @@ class Authn {
     // so an offline token of theirs would be a live credential nobody holds
     // (`applications.HOSTED_SURFACE_CLIENT_IDS`).
     if (id) {
+      const revokesAccess = this.deps.mode.revokesAccessTokensAtSignOut();
       const revoked = stats.revokeWhere(function (record) {
         const clientId = String(record.client_id || '');
-        return record.sessionId === id &&
-               String(record.typ || '') === 'Refresh' &&
+        if (record.sessionId !== id) {
+          return false;
+        }
+        if (String(record.typ || '') === 'Bearer') {
+          return revokesAccess;
+        }
+        return String(record.typ || '') === 'Refresh' &&
                (String(record.scope || '').split(/\s+/)
                  .indexOf('offline_access') < 0 ||
                 applications.HOSTED_SURFACE_CLIENT_IDS
@@ -9106,7 +9117,7 @@ class Authn {
         log.info('Back-Channel Logout section 2.7: signing out of session ' +
                  id + ' ' +
             'revoked ' + revoked +
-                 ' refresh token(s) issued on it. Without that, a sign-out ' +
+                 ' token(s) issued on it. Without that, a sign-out ' +
                  'drops a cookie and leaves a thirty-day credential in the ' +
                  'client\'s hands.');
       }
@@ -10231,6 +10242,35 @@ class Authn {
    * @param req - the request
    * @returns the accounts, in the order they joined the set
    */
+  /**
+   * Tells the browser to drop this origin's storage when a sign-out left no
+   * account in it (#1440, ASVS 5.0.0 14.3.1). Only `"storage"`, and only then:
+   * `"cookies"` reaches every cookie of the registrable domain, so it would
+   * end every other realm's sessions, and storage belongs to every tab. So it
+   * is withheld while another account is signed in here OR this browser has
+   * an account set for another realm, whose tabs share this origin. Each
+   * application still clears its own tab before it leaves.
+   *
+   * @param req - the request the sign-out came in on
+   * @param res - its response
+   * @returns nothing
+   */
+  clearSiteDataAfterSignOut(req, res) {
+    const { log } = this.deps;
+    log.debug("Entering Authn.clearSiteDataAfterSignOut().");
+    const own = AccountSets.cookieName();
+    const elsewhere = String((req && req.headers && req.headers.cookie) || '')
+      .split(';').map(function (part) {
+        return part.trim().split('=')[0];
+      }).some(function (name) {
+        return /^sts_accounts(?:_|$)/.test(name) && name !== own;
+      });
+    if (!elsewhere && !this.signedInAccounts(req).length) {
+      res.setHeader('Clear-Site-Data', '"storage"');
+    }
+    log.debug("Leaving Authn.clearSiteDataAfterSignOut().");
+  }
+
   signedInAccounts(req) {
     const { log } = this.deps;
     const self = this;
@@ -12101,6 +12141,77 @@ class Authn {
    * @param id - the step id
    * @returns the step, or null
    */
+  /**
+   * Ties a sign-in step to the first browser that asks about it (#1454, ASVS
+   * 5.0.0 14.2.1). The step's id travels in an address, so an id that leaks
+   * from a log or a history must not be usable from another browser.
+   *
+   * @param id - the step's id
+   * @param sessionId - the session of the browser asking
+   * @returns false where another browser holds the step
+   */
+  /**
+   * The application a sign-in step belongs to, for its shell's branding.
+   *
+   * @param name - the address's parameter
+   * @param id - the step's id
+   * @returns the application, or ''
+   */
+  stepApplication(name: string, id: string): string {
+    const { log } = this.deps;
+    log.debug("Entering Authn.stepApplication().");
+    let out = '';
+    if (name === 'authn') {
+      const record: any = pending.get(id);
+      out = String((record && record.application) || '');
+    } else if (name === 'mfa' || name === 'change') {
+      const step: any = (name === 'mfa' ? pendingMfa : pendingPasswordChange)
+        .get(id);
+      out = String((step && step.authn && step.authn.application) || '');
+    }
+    log.debug("Leaving Authn.stepApplication().");
+    return out;
+  }
+
+  private isOwnersBrowser(req: any, username: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Authn.isOwnersBrowser().");
+    let seen: any = null;
+    try {
+      seen = require('../common/browser_devices').recognize(req, username);
+    } catch (e) {
+      log.debug("Caught in Authn.isOwnersBrowser(): " +
+                ((e && e.message) || e));
+      seen = null;
+    }
+    log.debug("Leaving Authn.isOwnersBrowser().");
+    return !!(seen && seen.device && seen.flags && !seen.flags.replayed &&
+              !seen.flags.foreign && seen.device.status !== 'compromised');
+  }
+
+  claimStepForBrowser(id: unknown, sessionId: string,
+                      kind?: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering Authn.claimStepForBrowser().");
+    const store: any = kind === 'pending' ? pending
+      : kind === 'password-change' ? pendingPasswordChange : pendingMfa;
+    const step = store.get(String(id || ''));
+    if (!step) {
+      log.debug("Leaving Authn.claimStepForBrowser(). No step.");
+      return true;
+    }
+    if (!sessionId) {
+      log.debug("Leaving Authn.claimStepForBrowser(). No session.");
+      return !step.browserSession;
+    }
+    if (!step.browserSession) {
+      step.browserSession = sessionId;
+      store.set(String(id), step);
+    }
+    log.debug("Leaving Authn.claimStepForBrowser().");
+    return step.browserSession === sessionId;
+  }
+
   mfaStepFor(id: unknown, accepts?: string): any {
     const { log } = this.deps;
     log.debug("Entering Authn.mfaStepFor().");
@@ -13468,8 +13579,10 @@ class Authn {
       return { state: 'withheld-mfa', href: '' };
     }
     log.debug("Leaving Authn.kerberosOption(). Offered.");
+    // In product the id goes by cookie, set with this page's view (#1487).
     return { state: 'offered',
-             href: SPNEGO_PATH + '?authn=' + encodeURIComponent(record.id) };
+             href: SPNEGO_PATH + (this.deps.mode.hidesStepIds() ? ''
+               : '?authn=' + encodeURIComponent(record.id)) };
   }
 
   // ---------------------------------------------------------------------------
@@ -14256,7 +14369,9 @@ class Authn {
     const shown = this.clientDisplay(application);
     const html = ShellDocument.document({
       title: 'Sign in — IYA STS',
-      attributes: ([['data-sts-prefix', realms.currentPrefix()]] as
+      attributes: ([['data-sts-prefix', realms.currentPrefix()],
+                    ['data-sts-step-fragment',
+                     this.deps.mode.hidesStepIds() ? '1' : '']] as
                    Array<[string, string]>)
         .concat(PageLocale.shellAttributes(req, application || '',
                                            person || '')),
@@ -17973,7 +18088,13 @@ class Authn {
       // `attempt()` where none is shared.
       const allowed = await websecurity.attemptShared('sign-in', req,
                                                       username);
-      if (!allowed.ok) {
+      // THE OWNER'S OWN BROWSER IS NOT REFUSED BY SOMEBODY ELSE'S FLOOD (#1448,
+      // ASVS 5.0.0 6.1.1): anybody can fill the identity bucket, so a browser
+      // this person has already signed in from goes on to the password, still
+      // under the address limit and the growing wait.
+      if (!allowed.ok && !(allowed.kind === 'identity' &&
+                           this.isOwnersBrowser(req, username) &&
+                           !websecurity.blocked('sign-in', req, ''))) {
         log.warn('authn: too many sign-in attempts for "' + username + '" (' +
                  allowed.kind + ' bucket). Refusing for ' +
                  allowed.retryAfterS +
@@ -17992,6 +18113,7 @@ class Authn {
       // factor right after, so the password-only-door refusal does not
       // apply. It passes no `door`, so an app password is NEVER accepted
       // here.
+      await websecurity.waitAfterFailures(username);
       // ON LIBUV'S THREAD POOL (#756): the synchronous door held a request
       // worker for the whole scrypt (about 70 ms), a fifth of a worker under
       // a sign-in load. The answer is `verify()`'s; the rate limit above was
@@ -18001,6 +18123,7 @@ class Authn {
         { via: 'the sign-in screen', allowPasswordReset: true,
           secondFactor: 'asked-next' });
       if (!credential.ok) {
+        websecurity.noteFailure(username);
         log.info('authn: the sign-in for "' + username + '" was refused (' +
                  credential.reason + '): ' + credential.detail);
         log.debug("Leaving Authn.screenAct(). The credential was " +
@@ -18018,6 +18141,7 @@ class Authn {
       // their password four times is not one attempt from a lockout the
       // moment they get it right.
       await websecurity.succeededShared('sign-in', req, username);
+      websecurity.forgetFailures(username);
       // A PASSWORD KNOWN FROM A DATA BREACH MUST BE CHANGED BEFORE THIS
       // SIGN-IN FINISHES (#62 P6, `risk.breachCheckAtSignIn`). It verified,
       // so it is this person's — and it is on a list people guess from.
@@ -18413,10 +18537,12 @@ class Authn {
       return;
     }
     // On the thread pool, as the sign-in screen's check (#756).
+    await websecurity.waitAfterFailures(step.username);
     const credential = await credentials.verifyAsync(step.username,
       String(body.password || ''),
       { via: 'the password-factor screen', secondFactor: 'asked-next' });
     if (!credential.ok) {
+      websecurity.noteFailure(step.username);
       log.info('authn: the password second factor for "' + step.username +
                '" was refused (' + credential.reason + ').');
       errorCodes.mark(res, errorCodes.codeOf(credential) ||
@@ -18426,6 +18552,7 @@ class Authn {
       return;
     }
     await websecurity.succeededShared('sign-in', req, step.username);
+    websecurity.forgetFailures(step.username);
     pendingMfa.delete(mfaId);
     const amr = this.firstAmrOf(step).concat(['pwd']);
     // A PROOF BEFORE AN ENROLMENT (#475): no session yet; the set-up step.
@@ -19505,6 +19632,24 @@ class Authn {
       next();
     });
 
+    // A SHELL WHOSE STEP IS IN THE FRAGMENT (#1454), in product: the server
+    // never sees the id, so it draws the shell and the page finds the step.
+    [SELECT_IDP_PATH, ACCOUNTS_PATH, LOGIN_PATH, PASSWORD_CHANGE_PATH,
+      EMAIL_CODE_PATH, EMAIL_LINK_PATH, EMAIL_LINK_OPEN_PATH]
+      .concat(Object.keys(STEP_PAGES).map(function (page) {
+        return STEP_PAGES[page];
+      })).forEach((path) => {
+        app.get(path, (req, res, next) => {
+          const q = req.query || {};
+          if (!this.deps.mode.hidesStepIds() || q.authn || q.mfa || q.change) {
+            return next();
+          }
+          const asked = String(q.app || '');
+          return this.signInShell(req, res,
+            /^[A-Za-z0-9_.:~-]{1,256}$/.test(asked) ? asked : '', '');
+        });
+      });
+
     app.get(SELECT_IDP_PATH, (req, res) => {
       log.debug("Entering the federation chooser.");
       const asked = validation.check(req, 'query', PENDING_ID_QUERY);
@@ -19654,12 +19799,18 @@ class Authn {
     // which outranks the cookie, so a choice that did not reach the entry
     // would change nothing for them — and sends the browser back with a 303
     // to a LOCAL path (`PageLocale.safeReturn()`), never to one a request
-    // named elsewhere. No CSRF token: the session cookie is SameSite=Lax, so a
-    // cross-site POST carries no session and writes no entry, and a cookie
-    // choosing a language is not worth defending. A tag no catalog answers
+    // named elsewhere. A page of another site may not write it (#1442): a
+    // static shell has no token to bake in, so the browser's own Origin and
+    // Sec-Fetch-Site are the check. A tag no catalog answers
     // is refused in English (rcbj's decision on #539: errors stay English).
     app.post(LANGUAGE_PATH, (req, res) => {
       log.debug('Entering the language chooser endpoint.');
+      if (require('../common/cors').crossSiteBrowserRequest(req)) {
+        errorCodes.mark(res, 'STS-I18N-0015');
+        log.debug('Leaving the language chooser endpoint. Another site.');
+        return res.status(403).type('text/plain').send('The language is ' +
+          'chosen from a page of this service.');
+      }
       const posted = validation.checkParsed(parseBody(req), 'body',
                                             LANGUAGE_FORM);
       if (!posted.ok) {
@@ -20001,6 +20152,7 @@ export = {
   afterAccountSignOut: slot.forward('afterAccountSignOut'),
   hintAccountKey: slot.forward('hintAccountKey'),
   signedInAccounts: slot.forward('signedInAccounts'),
+  clearSiteDataAfterSignOut: slot.forward('clearSiteDataAfterSignOut'),
   accountChoiceNeeded: slot.forward('accountChoiceNeeded'),
   accountTicketFor: slot.forward('accountTicketFor'),
   spendAccountTicket: slot.forward('spendAccountTicket'),
@@ -20142,6 +20294,8 @@ export = {
   // The wallet as a factor (#38's follow-ups): read a second-factor step,
   // finish one with a presentation, and ask for a second factor after one.
   mfaStepFor: slot.forward('mfaStepFor'),
+  claimStepForBrowser: slot.forward('claimStepForBrowser'),
+  stepApplication: slot.forward('stepApplication'),
   finishWithWallet: slot.forward('finishWithWallet'),
   beginSecondFactorAfterWallet: slot.forward('beginSecondFactorAfterWallet'),
   beginSecondFactorAfterFederation:

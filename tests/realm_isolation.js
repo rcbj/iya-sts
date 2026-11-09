@@ -772,20 +772,23 @@ function checkGnapStores(t) {
             'nor the monitor\'s counters');
     // The validation door's counts, in the same shape (#1360).
     const door = require('../common/certificate_trust');
+    // The door takes a realm's id; a record would be looked up as no realm.
+    const doorRealm = typeof realm === 'string' ? realm : realm.id;
     const doorConfig = require('../common/config');
     const inDefault = door.counters('default')['jose-signer'].assessed;
-    const inRealm = door.counters(realm)['jose-signer'].assessed;
+    const inRealm = door.counters(doorRealm)['jose-signer'].assessed;
     doorConfig.setOverride('pki.paranoid', 'on');
     try {
       door.assessSync('jose-signer', { leaf: 'not a certificate' },
-                      { realmId: realm });
+                      { realmId: doorRealm });
     } finally {
       doorConfig.clearOverride('pki.paranoid');
     }
-    t.check(door.counters(realm)['jose-signer'].assessed === inRealm + 1 &&
+    t.check(door.counters(doorRealm)['jose-signer'].assessed === inRealm + 1 &&
             door.counters('default')['jose-signer'].assessed === inDefault,
             'nor what the validation door answered inside the realm',
-            JSON.stringify(door.counters(realm)['jose-signer']));
+            JSON.stringify([inRealm, inDefault, door.counters(doorRealm)['jose-signer'],
+                            door.counters('default')['jose-signer']]));
     t.check(realms.run(realm, function () {
       return !!store.getGrant(ids.grant) &&
              !!store.tokenByValue('iso-gnap-token-value') &&

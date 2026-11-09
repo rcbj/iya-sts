@@ -1579,6 +1579,8 @@ const JOBS = [
   // (and on an application's override), ignored where they are read once a
   // realm holding them is switched; and GET /admin/mode and /admin-api/mode.
   { file: 'sts_mode_weak_settings.js',   browser: false },
+  // The configuration dump shows every parameter and no secret.
+  { file: 'sts_config_dump.js', browser: false, local: true },
   // #293 WP1 (2026-10-13): clients an administrator created through
   // /admin-api, in a development and a product realm — the device grant
   // for a client declaring it (and refused one that does not), PAR required

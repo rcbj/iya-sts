@@ -87,6 +87,11 @@ const EMAIL_FORM = vz.object({
 
 // THE LINK'S TWO VALUES, in the query of the GET and the body of the POST.
 // The token rides in the body, for the activation form's reason.
+// THE GET'S QUERY (#1454): the token arrives in `X-Link-Token`, never in a URL.
+const LINK_QUERY = vz.object({
+  user: vt.opt(vt.name).describe('The username the link names.')
+});
+
 const LINK = vz.object({
   user: vt.opt(vt.name).describe('The username the link names.'),
   token: vt.opt(vt.token).describe('The link\'s single-use secret.')
@@ -486,11 +491,12 @@ class PortalMail {
           'the credential. Answers the address the link would verify, or ' +
           '`view.refused`. Opening it spends nothing, so a mail scanner ' +
           'cannot verify an address nobody read. Rate limited.',
-        query: LINK,
+        query: LINK_QUERY,
         statuses: { 429: 'Too many attempts; `view.refused` says so.' },
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
-          return self.verify(ctx, req, res, input.query, false);
+          return self.verify(ctx, req, res, Object.assign({}, input.query,
+            { token: String(req.headers['x-link-token'] || '') }), false);
         } },
       { method: 'POST', path: ctx.BASE + '/verify-email',
         operationId: 'verifyEmail', tag: 'Email', access: 'link',

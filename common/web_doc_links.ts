@@ -66,6 +66,7 @@ const CONSOLE: Record<string, string> = {
   '/admin/authorization-servers':
     'oauth-oidc.html#multiple-authorization-servers--adminauthorization-servers',
   '/admin/caches': 'caches.html',
+  '/admin/config-dump': 'configuration-dump.html',
   '/admin/cert-issuance': 'configure-enrollment.html',
   '/admin/audit': 'admin-console.html#audit-log--adminaudit',
   '/admin/audit-export': 'audit-export.html',

@@ -169,6 +169,7 @@ interface SsfAuthDeps {
   config: { value(key: string): any };
   mode: {
     gatesSharedSignals(): boolean;
+    restrictsUnscopedPeople(): boolean;
     verifiesCredentials(): boolean;
   };
   credentials: {
@@ -945,9 +946,16 @@ class SsfAuth {
         { 'WWW-Authenticate': this.challenges() });
     }
     // `door: 'ssf'` (#101): a password-only door — see credentials.ts.
+    const websecurity = require('../common/websecurity');
+    if (websecurity.doorBlocked('ssf-basic', req, user)) {
+      log.debug("Leaving SsfAuth.attemptBasic(). Too many failures.");
+      return this.refusal('STS-SSF-0156', 401, 'Too many failed attempts. Wait and ' +
+        'try again.', { 'WWW-Authenticate': this.challenges() });
+    }
     const checked = credentials.verify(user, password,
                                        { via: 'SSF HTTP Basic', door: 'ssf' });
     if (!checked.ok) {
+      websecurity.doorFailed('ssf-basic', req, user);
       log.debug("Leaving SsfAuth.attemptBasic(). Refused: " + checked.reason);
       return this.refusal(checked.reason === 'reserved-refusal'
         ? 'STS-SSF-0008' : 'STS-SSF-0009', 401,
@@ -964,6 +972,21 @@ class SsfAuth {
           'directory entry, and a person with none cannot authenticate at ' +
           'all.',
         { 'WWW-Authenticate': this.challenges() });
+    }
+    websecurity.doorSucceeded('ssf-basic', req, user);
+    // A PASSWORD CARRIES NO SCOPE (#1473, ASVS 5.0.0 8.2.1): both scopes are
+    // granted below, so in product the person must hold Admin Write.
+    if (mode.restrictsUnscopedPeople()) {
+      const held = (require('../admin-ui/admin_rbac').rolesOf(user) || {}).groups;
+      const writes = Array.isArray(held) && held.some(function (one: any) {
+        return one.role === 'write';
+      });
+      if (!writes) {
+        log.debug("Leaving SsfAuth.attemptBasic(). No console role.");
+        return this.refusal('STS-SSF-0157', 403, 'This credential carries no scope, ' +
+          'and the person it names does not hold Admin Write. Use an OAuth ' +
+          'access token.', {});
+      }
     }
     log.debug("Leaving SsfAuth.attemptBasic(). Accepted " + user + '.');
     return { ok: true, status: 200, scheme: 'basic', principal: user,

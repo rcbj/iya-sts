@@ -110,10 +110,10 @@ function childMain() {
                     detail: detail === undefined ? '' : String(detail) });
   }
 
-  function request(port, method, urlPath, body) {
+  function request(port, method, urlPath, body, extra) {
     return new Promise(function (resolve) {
       const text = body ? JSON.stringify(body) : '';
-      const headers = {};
+      const headers = Object.assign({}, extra || {});
       if (method !== 'GET') {
         headers['content-type'] = 'application/json';
         headers['content-length'] = Buffer.byteLength(text);
@@ -275,7 +275,7 @@ function childMain() {
         const issued = actions.usersAction({ action: 'issue-password-reset',
                                              user: user }, context);
         const link = String(issued.resetUrl || '');
-        return decodeURIComponent((link.match(/[?&]token=([^&]+)/) ||
+        return decodeURIComponent((link.match(/[?&#]token=([^&]+)/) ||
                                    [])[1] || '');
       };
       const startSignIn = async function () {
@@ -285,7 +285,7 @@ function childMain() {
                                 redirect_uri: 'https://rp.ra.example/cb',
                                 scope: 'openid', state: 's' }).toString());
         const location = String(got.headers.location || '');
-        return (location.match(/[?&]authn=([^&]+)/) || [])[1] || '';
+        return (location.match(/[?&#]authn=([^&]+)/) || [])[1] || '';
       };
       const signInAt = async function (fields) {
         const jar = {};
@@ -608,6 +608,14 @@ function childMain() {
                   setup.recovery === true && offered.webauthn === true &&
                   offered.totp === false && noSession(page));
       };
+      // A generated password is asked to be changed first (#1446); a recovery
+      // hold is still pending behind that step.
+      const asksNewPassword = function (page) {
+        return !!(page && noSession(page) &&
+                  (page.page === 'password-change' ||
+                   /password-change/.test(String(page.at || page.location ||
+                                                 ''))));
+      };
       // C2's reading: the password went on to the application.
       const signedIn = function (page) {
         return !!(page && page.next === 'redirect' && !noSession(page) &&
@@ -673,13 +681,13 @@ function childMain() {
            stsCrypto.verifySecret(generated.password,
                                   passwordHash(GEN)) &&
            doorOf(GEN) === 'admin-password' &&
-           credentials.passwordResetRequired(GEN) === false &&
+           credentials.passwordResetRequired(GEN) === true &&
            !!(heldSession && authn.sessionById(heldSession.id)) &&
-           recoveryStep(genPage),
+           asksNewPassword(genPage),
            'H2. a generated set-password on a primary-passkey holder ' +
-           'notes admin-password, leaves pwdReset clear and the session ' +
-           'they held, and the password sign-in draws the recovery ' +
-           'set-up step and starts no session',
+           'notes admin-password, sets pwdReset (#1446), keeps the session ' +
+           'they held, and the password sign-in asks for a new password ' +
+           'and starts no session',
            JSON.stringify({ ok: generated.ok,
              door: doorOf(GEN),
              pwdReset: credentials.passwordResetRequired(GEN),
@@ -719,9 +727,9 @@ function childMain() {
       note(anyGen.ok === true &&
            passkeyPolicy.read().recoveryAssurance === 'any' &&
            credentials.recoveryPending(ANYG) === null &&
-           signedIn(anyGenPage),
+           asksNewPassword(anyGenPage),
            'H4. under any, a generated set-password leaves nothing ' +
-           'pending and the password signs in',
+           'pending, and signing in asks for a new password (#1446)',
            (anyGenPage.next || anyGenPage.status) + ' ' +
            String(anyGenPage.location || anyGenPage.text).slice(0, 160));
 
@@ -1109,7 +1117,7 @@ function childMain() {
           const issued = actions.usersAction({
             action: 'issue-activation', user: user }, context);
           const link = String((issued && issued.activationUrl) || '');
-          const found = (link.match(/[?&]token=([^&]+)/) || [])[1] || '';
+          const found = (link.match(/[?&#]token=([^&]+)/) || [])[1] || '';
           const token = decodeURIComponent(found);
           const errors = (issued && issued.errors) || [];
           return { ok: !!(issued && issued.ok === true && token),
@@ -1137,8 +1145,8 @@ function childMain() {
           let reopened = null;
           if (linkToken) {
             reopened = await request(port, 'GET',
-              '/account-api/activation?user=' + encodeURIComponent(who) +
-              '&token=' + encodeURIComponent(linkToken));
+              '/account-api/activation?user=' + encodeURIComponent(who),
+              undefined, { 'x-link-token': linkToken });
           }
           const again = reopened ? json(reopened) : {};
           const live = !!(reopened && reopened.status === 200 &&

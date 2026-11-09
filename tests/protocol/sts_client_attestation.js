@@ -233,7 +233,7 @@ async function follow(b, first, who) {
     if (where.indexOf(base) !== 0) {
       break;
     }
-    if (/\/authn\/login\?authn=/.test(where) && who) {
+    if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(where) && who) {
       r = await signIn(b, where, who);
       continue;
     }

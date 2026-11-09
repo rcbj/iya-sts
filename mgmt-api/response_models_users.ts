@@ -73,7 +73,7 @@ const SETTING_ROW = Kit.closed({
   value: SETTING_VALUE, text: NSTR, source: STR, editable: BOOL,
   restartReason: STR, editRefusal: STR, env: Kit.oneOrMany(STR),
   legacyEnv: Kit.oneOrMany(STR), appconfigPath: STR, default: SETTING_VALUE,
-  realmSettable: BOOL, overridden: BOOL
+  masked: BOOL, realmSettable: BOOL, overridden: BOOL
 });
 // `AdminConsole.configSettingsJson()`: a page's settings, or null where the
 // console has not filled the slot. A `sharedWith` value is the pages that also

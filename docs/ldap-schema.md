@@ -546,18 +546,25 @@ identity, and only a person may bind: see
 
 This page is a copy of tables that live in code, so it can drift. The sources:
 
-* `ldap/ldap_server.js`: `STANDARD_NAMES`, `OWN_NAMES`, `SECRET_ATTRIBUTES`,
-  and `seed()` for the containers
-* `common/applications.js`: the application field table
-* `federation/federation.js`, `spiffe/spiffe_registry.ts`,
-  `xacml/xacml_store.ts`, `xacml/xacml_pep_registry.ts`, `common/roles.js`,
-  `common/password_policy.ts`, `common/devices.ts`
+* `models/directory/names.tsp`: the standard and own spellings, and the
+  attributes withheld from every reader
+* `ldap/ldap_server.js`: `seed()` for the containers
+* `models/directory/application.tsp`: the application field table
+* `models/directory/`: the role, device, service account, SPIFFE, XACML,
+  federation and policy tables
+
+`models/directory/` holds these names as TypeSpec.
+[Directory models](data-model-directory.md) is that inventory in reading
+form, rewritten when the model is written. This page stays the
+explanation. The directory still enforces nothing.
 
 A running service describes its own containers: `/admin/ldap/directory` shows
 any entry, and `/admin/ldap/federations` shows the federation schema.
 
 ## Related
 
+* [Abstract data model](data-model.md): the directory, API, and
+  persistence namespaces, and where each generated file lives.
 * [LDAP](ldap.md): the protocol, the sockets, the five rules and the settings.
 * [PostgreSQL schema](postgres-schema.md): where these entries are stored.
 * [SCIM 2.0](scim.md): how SCIM attributes map onto these.

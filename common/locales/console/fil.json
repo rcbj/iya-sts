@@ -168,6 +168,7 @@
   "nav.encryption": "Encryption",
   "nav.secrets": "Secret store",
   "nav.caches": "Mga cache",
+  "nav.config-dump": "Dump ng configuration",
   "nav.worker-pools": "Mga worker pool",
   "nav.node-health": "Kalusugan ng node",
   "nav.scheduler": "Scheduler",

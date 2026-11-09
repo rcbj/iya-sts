@@ -16,6 +16,11 @@ Every certificate names a directory entry — a person or an application — in 
 `urn:sts:person:` or `urn:sts:application:` subjectAltName, and is kept on that
 entry.
 
+> **Product mode does not answer SCEP unless you turn it on.** Every request
+> answers 503 until `scep.allowInProduct` is on. RFC 8894 requires
+> RSAES-PKCS1-v1.5 and AES-CBC, which ASVS 5.0.0 does not accept, so turn it on
+> only for devices that speak nothing newer.
+
 ## Endpoints
 
 Every trust realm has its own server, under its own prefix:

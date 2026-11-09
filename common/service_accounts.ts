@@ -78,6 +78,7 @@
 // the policy (a leaf) and the destination register.
 // ---------------------------------------------------------------------------
 
+import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
@@ -87,7 +88,6 @@ const { log } = helpers;
 /**
  * The auxiliary object class that carries a service account's attributes.
  */
-const OBJECT_CLASS = 'stsServiceAccount';
 
 /**
  * Every attribute this module writes on a person, in the order the schema
@@ -121,52 +121,9 @@ const MAX_OWNERS = 25;
 /**
  * The directory schema a service account adds to a person entry.
  */
-const SCHEMA = {
-  objectClasses: [
-    { name: OBJECT_CLASS,
-      what: 'AUXILIARY. This service\'s class for a SERVICE ACCOUNT: a ' +
-            'person entry used by a program, governed by the realm\'s ' +
-            'service-account policy (ou=serviceAccountPolicies) (#221).' }
-  ],
-  personAttributes: [
-    { name: 'stsServiceAccount',
-      what: 'TRUE on a service account. Absent: an ordinary person. Asked ' +
-            'through common/service_accounts.ts\'s isServiceAccount(), ' +
-            'never read directly.' },
-    { name: 'stsServiceAccountOwner',
-      what: 'The DN of a person or group answerable for the account; one ' +
-            'value per owner.' },
-    { name: 'stsSecretDestination',
-      what: 'The DN of the application entry (a push destination) a rotated ' +
-            'password is written to.' },
-    { name: 'stsSecretName',
-      what: 'The name or path of the secret at that destination. It must ' +
-            'already exist: a push never creates one.' },
-    { name: 'stsPasswordRotatedAt',
-      what: 'When the password was last rotated (GeneralizedTime).' },
-    { name: 'stsPreviousPassword',
-      what: 'The previous password\'s scrypt hash, accepted until ' +
-            'stsPreviousPasswordExpires. Withheld from every read.' },
-    { name: 'stsPreviousPasswordExpires',
-      what: 'When the previous password stops being accepted (ms since the ' +
-            'epoch).' },
-    { name: 'stsRotationFailures',
-      what: 'Consecutive failed rotations, reset by a success.' },
-    { name: 'stsRotationLastError',
-      what: 'The error code of the last failed rotation.' },
-    { name: 'stsRotationLastAttempt',
-      what: 'When the rotation job last tried this account (ms).' },
-    { name: 'stsOwnerProtected',
-      what: 'TRUE: the account\'s owners may not administer it through ' +
-            '/admin-api (#607) — an administrator\'s mark, read by the ' +
-            'access-control policy\'s owner rule. Absent is FALSE.' },
-    { name: 'stsServiceAccountPolicy',
-      what: 'The named service-account policy that governs this account ' +
-            '(#1240): `default` or a policy in ou=serviceAccountPolicies ' +
-            'of this realm. Absent is `default`. Only a service account ' +
-            'may hold it, and it is cleared with stsServiceAccount.' }
-  ]
-};
+// The table is written in models/directory/service_account.tsp (#1390).
+const SCHEMA = ModelTables.schema('serviceAccount');
+const OBJECT_CLASS: string = SCHEMA.objectClasses[0].name;
 
 interface DirectoryHooks {
   readServiceAccount?(key: string): {

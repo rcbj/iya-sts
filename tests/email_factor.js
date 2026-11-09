@@ -128,7 +128,7 @@ function childMain() {
                                 redirect_uri: 'https://rp.ef.example/cb',
                                 scope: 'openid', state: 's' }).toString());
         const location = String(got.headers.location || '');
-        return (location.match(/[?&]authn=([^&]+)/) || [])[1] || '';
+        return (location.match(/[?&#]authn=([^&]+)/) || [])[1] || '';
       };
       const cookieOf = function (res, name) {
         return [].concat(res.headers['set-cookie'] || []).map(function (one) {

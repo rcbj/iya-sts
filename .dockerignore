@@ -22,6 +22,9 @@
 # not something a build needs.
 .git
 .gitignore
+**/.git
+**/.gitignore
+node-ldapjs/.github
 
 # The runtime artefacts .gitignore already keeps out of commits: the signing keys
 # are regenerated on every start by design, so a stray copy is stale as well as
@@ -58,7 +61,6 @@ apidocs
 CLAUDE.md
 **/CLAUDE.md
 COVERAGE.md
-SECURITY.md
 LICENSE.md
 clean.sh
 
@@ -208,3 +210,5 @@ kerberos/spnego-pages-spa.js*
 # Load and soak scripts run against a service from outside it (utilities/
 # README.md); nothing in the image reads them.
 utilities
+# The configuration dump's command-line client ships with the service.
+!utilities/config-dump.js

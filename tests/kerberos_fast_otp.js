@@ -540,7 +540,7 @@ async function productChild() {
   const PW = 'Correct-Horse-Battery-9!';
   // The realm's attribute policy (#396) requires givenName, sn and mail of
   // every person in product mode.
-  ['kfotp', 'kfreq', 'kfrealm', 'kfnone'].forEach(function (who) {
+  ['kfotp', 'kfreq', 'kfrealm', 'kfnone', 'kflimit'].forEach(function (who) {
     directory.createUser(who, { invent: false, attributes: {
       givenName: 'Fast', sn: who, mail: who + '@example.test' } });
     credentials.setPassword(who, PW);
@@ -616,6 +616,16 @@ async function productChild() {
                                    } }));
   out.fastWrongPw = brief(await fastReq('kfotp',
                                         encChallenge('kfotp', PW + 'x')));
+  // THE LIMIT ON GUESSES REACHES INSIDE FAST (#1448, ASVS 5.0.0 6.3.1): the
+  // default is five failures, and after them the RIGHT password is refused.
+  const guesses = [];
+  for (let i = 0; i < 6; i++) {
+    guesses.push(brief(await fastReq('kflimit',
+                                     encChallenge('kflimit', PW + 'x'))));
+  }
+  out.fastGuesses = guesses;
+  out.fastLimited = brief(await fastReq('kflimit',
+                                        encChallenge('kflimit', PW)));
   out.fastHidden = brief(await fastReq('kfnone', async function () {
     return [];
   }, { fastOptions: [1] }));
@@ -808,7 +818,7 @@ function inAProductChild(t) {
   const run = childProcess.spawnSync(process.execPath, ['-e', script], {
     env: Object.assign(clean, {
       LOG_LEVEL: 'fatal', KF_ROOT: ROOT, KF_OUT: outFile,
-      STS_MODE: 'product',
+      STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
       KRB5_KRBTGT_PASSWORD: 'fast-otp-' +
                             nodeCrypto.randomBytes(12).toString('hex'),
       STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
@@ -924,6 +934,11 @@ function fastArmor(t, r) {
           'KDC_ERR_POLICY too, armored', JSON.stringify(r.fastPw));
   t.check(!r.fastWrongPw.ok && r.fastWrongPw.code === 24,
           'and a wrong one PREAUTH_FAILED', JSON.stringify(r.fastWrongPw));
+  t.check(r.fastGuesses.every(function (g) {
+    return !g.ok && g.code === 24;
+  }) && !r.fastLimited.ok && r.fastLimited.code === 24,
+          'after five wrong challenges the right password is refused too',
+          JSON.stringify([r.fastGuesses, r.fastLimited]));
   t.check(r.fastNone.ok && r.fastNone.finishedOk && r.fastNone.nonceOk &&
           r.fastNone.strengthened && r.fastNone.kdcChallenge &&
           r.fastNone.flags.indexOf('pre-authent') !== -1,

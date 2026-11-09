@@ -616,6 +616,13 @@ class SpaClient extends WebPage {
         (modes.indexOf('jwt') >= 0 || modes.indexOf('query.jwt') >= 0)) {
       params.response_mode = modes.indexOf('jwt') >= 0 ? 'jwt' : 'query.jwt';
     }
+    // THE CODE COMES BACK IN THE FRAGMENT (#1454, ASVS 5.0.0 14.2.1), which a
+    // browser does not send to any server. A static application has no route
+    // that could read a `form_post` body.
+    if (!params.response_mode && Array.isArray(modes) &&
+        modes.indexOf('fragment') >= 0) {
+      params.response_mode = 'fragment';
+    }
     if (meta.require_pushed_authorization_requests !== true) {
       return authorize + '?' + SpaClient.formOf(params);
     }
@@ -729,6 +736,19 @@ class SpaClient extends WebPage {
    * @param query - the callback's query
    * @returns `{ code, state, error, error_description, iss }`
    */
+  /**
+   * The parameters of the authorization response this page was loaded with,
+   * from the fragment or, for a realm that offers only the query, the query.
+   *
+   * @returns the parameters
+   */
+  callbackParameters(): Json {
+    const hash = String(this.env.location.hash || '').replace(/^#/, '');
+    return /(^|&)(code|error|response)=/.test(hash)
+      ? SpaClient.queryOf('?' + hash)
+      : SpaClient.queryOf(this.env.location.search);
+  }
+
   async openAuthorizationResponse(query: Json): Promise<Json> {
     if (!query || !query.response) {
       return query || {};

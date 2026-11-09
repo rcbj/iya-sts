@@ -313,6 +313,15 @@ async function run(t) {
       try {
         // A clear password is hashed on the thread pool first and answers
         // a tick later (#756).
+        // NOT BY DEFAULT SINCE #1465 (ASVS 5.0.0 6.2.3): an LDAP modify proves
+        // no current password. The rows below are the operator's opt-in.
+        const byDefault = await modify(personDn, personDn,
+                            [['replace', 'userPassword', 'A-long-passphrase-9']]);
+        t.check(byDefault.ok === false &&
+                byDefault.errorName === 'InsufficientAccessRightsError',
+                'by default a person may not set their password over LDAP',
+                JSON.stringify(byDefault));
+        config.setOverride('ldap.selfWritableAttributes', 'userPassword,mail');
         const weak = await modify(personDn, personDn,
                             [['replace', 'userPassword', 'short']]);
         t.check(weak.ok === false &&
@@ -335,6 +344,7 @@ async function run(t) {
                 'Kerberos key register',
                 JSON.stringify(announced.map(function (a) { return a.name; })));
       } finally {
+        config.clearOverride('ldap.selfWritableAttributes');
         credentials.passwordWritten = realWritten;
       }
 

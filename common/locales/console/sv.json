@@ -168,6 +168,7 @@
   "nav.encryption": "Kryptering",
   "nav.secrets": "Hemlighetslager",
   "nav.caches": "Cacheminnen",
+  "nav.config-dump": "Konfigurationsdump",
   "nav.worker-pools": "Arbetarpooler",
   "nav.node-health": "Nodhälsa",
   "nav.scheduler": "Schemaläggare",

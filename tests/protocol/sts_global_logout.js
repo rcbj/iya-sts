@@ -281,7 +281,7 @@ function jar() {
     value: function () {
       log.debug("Entering value().");
       log.debug("Leaving value().");
-      return store.sts_session || "";
+      return (store.sts_session || store["__Host-sts_session"]) || "";
     }
   };
 }

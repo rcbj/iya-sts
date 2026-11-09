@@ -219,7 +219,7 @@ function childMain() {
          stateOf(r).view.kind === 'problem',
          '3c. an unknown link is the same 400 page', r.status);
     r = await get(jar, one.approve);
-    note(r.status === 303 && /\/authn\/login\?authn=/.test(
+    note(r.status === 303 && /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(
       r.headers.location),
          '3d. the approval page sends a browser with no session to the ' +
          'sign-in screen', r.status + ' ' + r.headers.location);

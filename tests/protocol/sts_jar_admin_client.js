@@ -295,7 +295,7 @@ function sentToSignIn(r) {
   log.debug("Entering sentToSignIn().");
   log.debug("Leaving sentToSignIn().");
   return (r.status === 302 || r.status === 303) &&
-    /\/authn\/login\?authn=/.test(r.location);
+    /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location);
 }
 
 // The error a refused authorization request carries, wherever it is: a

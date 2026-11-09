@@ -1294,6 +1294,9 @@ function runEncryption(t, stsCrypto, config, root, counts) {
                    want.expect = 'STS-KEYS-0023';
                    want.exception = 'binaryPlaintext';
                  }
+                 if (product) {
+                   productEncryptionRefusal(c.doc, want);
+                 }
                  const got = stsCrypto.decryptElement(c.xml, c.key);
                  judgeDecryption(t, stsCrypto, counts, c.name + ' [' +
                    (product ? 'product' : 'development') + ']', want, got,
@@ -1302,6 +1305,39 @@ function runEncryption(t, stsCrypto, config, root, counts) {
              });
   });
   log.debug("Leaving runEncryption().");
+}
+
+// What product refuses before anything a vector was written to exercise: CBC
+// content (STS-KEYS-0195) and key transport over SHA-1 (STS-KEYS-0196), both
+// since ASVS 5.0.0 11.3.2 and 11.4.1. Development still reads every vector.
+function productEncryptionRefusal(doc, want) {
+  log.debug("Entering productEncryptionRefusal().");
+  const methodOf = function (element) {
+    return element ? childElements(element).filter(function (el) {
+      return el.localName === 'EncryptionMethod';
+    })[0] : null;
+  };
+  const cipher = methodOf(byLocal(doc, 'EncryptedData')[0]);
+  if (cipher &&
+      /aes[0-9]+-cbc$/.test(String(cipher.getAttribute('Algorithm')))) {
+    want.expect = 'STS-KEYS-0195';
+    want.exception = '';
+    log.debug("Leaving productEncryptionRefusal(). CBC.");
+    return;
+  }
+  const transport = methodOf(byLocal(doc, 'EncryptedKey')[0]);
+  const named = transport ? String(transport.getAttribute('Algorithm')) : '';
+  const digest = transport ? childElements(transport).filter(function (el) {
+    return el.localName === 'DigestMethod';
+  })[0] : null;
+  const sha1 = /rsa-oaep/.test(named) && (/mgf1p$/.test(named) || !digest ||
+    /#sha1$/.test(String(digest.getAttribute('Algorithm'))));
+  if (sha1 && (want.expect === 'decrypted' ||
+               want.exception === 'binaryPlaintext')) {
+    want.expect = 'STS-KEYS-0196';
+    want.exception = '';
+  }
+  log.debug("Leaving productEncryptionRefusal().");
 }
 
 function judgeDecryption(t, stsCrypto, counts, label, want, got, code,

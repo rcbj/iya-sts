@@ -440,7 +440,7 @@ function isRedirect(r) {
 function sentToSignIn(r) {
   log.debug("Entering sentToSignIn().");
   log.debug("Leaving sentToSignIn().");
-  return isRedirect(r) && /\/authn\/login\?authn=/.test(r.location);
+  return isRedirect(r) && /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location);
 }
 
 function shown(r) {

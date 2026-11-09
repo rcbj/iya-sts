@@ -208,6 +208,29 @@ function templates(t) {
        html: '<a href="{{link}}" onclick="x()">x</a>' }, 'an event handler'],
     [{ subject: 's', text: 'x {{link}}', html: '<script>x</script>' },
      'a script'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<svg onload="x()"></svg><a href="{{link}}">x</a>' },
+     'an element no list thought of'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<meta http-equiv="refresh" content="0"><a href="{{link}}">x</a>' },
+     'a meta refresh'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<!-- x --><a href="{{link}}">x</a>' }, 'a comment'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<p class="x"><a href="{{link}}">x</a></p>' },
+     'an attribute outside the allow-list'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<a/onclick="x()" href="{{link}}">x</a>' },
+     'an event handler after a slash'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<a title=">"/onclick="x()" href="{{link}}">x</a>' },
+     'an event handler after a quoted bracket'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<a href="{{link}}"onclick="x()">x</a>' },
+     'an event handler straight after a quote'],
+    [{ subject: 's', text: 'x {{link}}',
+       html: '<img/src="https://x.test/p.png"><a href="{{link}}">x</a>' },
+     'a remote image after a slash'],
     [{ subject: 's', text: 'x {{link}} {{password}}',
        html: '<a href="{{link}}">x</a>' }, 'an unknown placeholder'],
     [{ subject: 's', text: 'no link here',
@@ -1123,8 +1146,8 @@ async function uses(t) {
       return /Confirm your address/.test(x.subject);
     })[0];
     const link = /(https:\/\/idp\.example\S+)/.exec(mailed.text)[1];
-    const token = new URL(link).searchParams.get('token');
-    t.check(link.indexOf('/portal/verify-email?user=jan&token=') > 0,
+    const token = new URLSearchParams(new URL(link).hash.slice(1)).get('token');
+    t.check(link.indexOf('/portal/verify-email?user=jan#token=') > 0,
             '11b. the link is the pinned origin and /portal/verify-email',
             link);
     t.check(u.checkVerification('jan', 'wrong').ok === false &&
@@ -1166,7 +1189,7 @@ async function uses(t) {
     })[0];
     t.check(resetMail && resetMail.to === 'jan@example.com' &&
             resetMail.text.indexOf('https://idp.example/realm/') >= 0 &&
-            resetMail.text.indexOf('/portal/reset-password?user=jan&token=' +
+            resetMail.text.indexOf('/portal/reset-password?user=jan#token=' +
                                    'tok-jan') > 0,
             '11i. the reset link goes to the entry\'s address on the pinned ' +
             'origin', resetMail && resetMail.text);
@@ -1653,8 +1676,9 @@ async function addressChange(t) {
     t.check(mailed && mailed.to === 'uma.new@example.com',
             '16c. the link goes to the NEW address — the entry\'s pending ' +
             'one, never a request\'s', mailed && mailed.to);
-    const token = new URL(/(https:\/\/idp\.example\S+)/.exec(mailed.text)[1])
-      .searchParams.get('token');
+    const token = new URLSearchParams(new URL(
+      /(https:\/\/idp\.example\S+)/.exec(mailed.text)[1]).hash.slice(1))
+      .get('token');
     const done = await u.completeVerification('uma', token);
     t.check(done.ok && done.changed &&
             written[0].join(',') === 'uma,uma.new@example.com,link' &&
@@ -1673,8 +1697,9 @@ async function addressChange(t) {
     const third = transports.sent.filter(function (x) {
       return x.to === 'uma.third@example.com';
     })[0];
-    const thirdToken = new URL(/(https:\/\/idp\.example\S+)/
-      .exec(third.text)[1]).searchParams.get('token');
+    const thirdToken = new URLSearchParams(new URL(
+      /(https:\/\/idp\.example\S+)/.exec(third.text)[1]).hash.slice(1))
+      .get('token');
     // Somebody else changes the address before the link is followed.
     dir.people.uma.mail = ['uma.admin@example.com'];
     t.check(second.ok && !u.checkVerification('uma', thirdToken).ok,

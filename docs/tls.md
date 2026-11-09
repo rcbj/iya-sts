@@ -525,6 +525,11 @@ only a leaf from a TLS client Issuing CA with `clientAuth` signs anybody in.
 
 ### Signing in with a certificate: `GET /tls/sign-in`
 
+In product mode a browser must reach this address as a page: typed by the
+person, or by a link on this same origin. A link from another site, a frame or
+an image gets 403. A program such as `curl` sends no `Sec-Fetch-*` headers and is
+not affected.
+
 A request with a verified certificate starts a sign-on session — the same
 session the password screen, the KDC and the SAML profiles start, so the holder
 is signed in to every surface on the port. In order:
@@ -672,6 +677,26 @@ See [Configuration](configuration.md) for how a value is resolved and where it
 is changed: on Server configuration → Listeners (`/admin/listeners`, or
 `/admin/config` for `global.*`), through
 `POST /admin-api/config/set`, or in an appconfig file.
+
+## Product mode and the main port
+
+Product mode serves its main port over TLS only: with `global.https` off the
+process does not start. The plain-HTTP revocation and SCEP listener stays,
+because RFC 5280, RFC 5019 and RFC 8894 expect it there.
+
+Set `tls.certificateFile` to a publicly trusted chain before people use a
+product deployment. A certificate this service minted does not stop it starting,
+so a new install still works, but it does not meet ASVS 5.0.0 requirement 12.2.2
+and `/admin/mode` says so.
+
+## Strict-Transport-Security
+
+In product mode, every response that arrives over TLS carries
+`Strict-Transport-Security: max-age=31536000`. It applies to the whole host
+name, every port included, and a browser that has seen it refuses an untrusted
+certificate with no way to click through, so give the service a certificate
+browsers trust before people use it in product mode. The plain-HTTP revocation
+and SCEP listener never sends the header. Development mode does not send it.
 
 ## Design decisions
 

@@ -266,6 +266,7 @@ Scope: `admin:read`.
 | `settingsForms.groups[].settings[].label` | string |  |  |
 | `settingsForms.groups[].settings[].legacyEnv` | list, or string |  |  |
 | `settingsForms.groups[].settings[].legacyEnv[]` | object |  | Nested deeper than this page draws. |
+| `settingsForms.groups[].settings[].masked` | boolean |  |  |
 | `settingsForms.groups[].settings[].max` | number |  |  |
 | `settingsForms.groups[].settings[].min` | number |  |  |
 | `settingsForms.groups[].settings[].ordered` | boolean |  |  |

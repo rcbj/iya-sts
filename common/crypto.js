@@ -2329,8 +2329,11 @@ function encryptElement(xml, certPem, opts) {
   opts = opts || {};
   const wrapper = opts.wrapper || 'saml:EncryptedAssertion';
   const cipher = BLOCK_CIPHERS[opts.algorithm] || BLOCK_CIPHERS['aes256-gcm'];
-  const transportName = KEY_TRANSPORTS[opts.keyTransport]
+  const named = KEY_TRANSPORTS[opts.keyTransport]
     ? opts.keyTransport : 'rsa-oaep-mgf1p';
+  // OAEP OVER SHA-1 ONLY WHERE AN OPERATOR ALLOWS IT (#1469, ASVS 5.0.0 11.4.1).
+  const transportName = named === 'rsa-oaep-mgf1p' &&
+    !mode.allowsLegacyHashes() ? 'rsa-oaep' : named;
   const transport = KEY_TRANSPORTS[transportName];
   const wrapName = KEY_WRAPS[opts.keyWrap] ? opts.keyWrap : 'kw-aes256';
   artifact(opts, 'SAML 2.0 ' + wrapper, 'before encryption', xml);
@@ -2887,6 +2890,14 @@ function decryptElement(xml, privateKeyPem, opts) {
               cipher.name + ".");
     return cipherRefused;
   }
+  // AES-CBC IS NOT AUTHENTICATED (#1455, ASVS 5.0.0 11.3.2): product reads only
+  // AES-GCM, and refuses before any key is unwrapped.
+  if (cipher.mode === 'AES-CBC' && !mode.usesBrokenAlgorithms()) {
+    log.debug("Leaving decryptElement(). AES-CBC, in product.");
+    return errorCodes.mark({ ok: false, refused: true, algorithm: cipher.name,
+             why: 'the data is encrypted with ' + cipher.name + ', and this ' +
+             'realm reads only AES-GCM in product mode' }, 'STS-KEYS-0195');
+  }
   // WHERE THE CONTENT KEY IS. Inside the EncryptedData's KeyInfo (what this
   // service writes), or — SAML 2.0 core section 2.3.4 allows it — an
   // EncryptedKey BESIDE the EncryptedData inside the same wrapper, or an
@@ -3011,6 +3022,13 @@ function decryptElement(xml, privateKeyPem, opts) {
                   "OAEP digest " + digest + ".");
         return digestRefused;
       }
+    }
+    if ((mgf1p || digest === 'sha1') && !mode.allowsLegacyHashes()) {
+      log.debug("Leaving decryptElement(). OAEP over SHA-1.");
+      return errorCodes.mark({ ok: false, refused: true,
+        algorithm: transport.name, why: 'the key is wrapped with OAEP over ' +
+        'SHA-1, which this realm does not unwrap unless ' +
+        'crypto.allowLegacyHashes is on' }, 'STS-KEYS-0196');
     }
     oaepHash = digest;
   }
@@ -6432,8 +6450,22 @@ function openContent(spec, cek, iv, aad, ciphertext, tag) {
 // same two functions rather than node's cipher directly. A compact JWE
 // cannot carry those vectors itself: its AAD is always the protected header.
 // ---------------------------------------------------------------------------
+// AES-CBC IS WITHDRAWN FROM JWE IN PRODUCT (#1486, ASVS 5.0.0 11.3.2), behind
+// `crypto.allowCbcJwe`, at the one door every JWE passes through.
+function refuseCbcJwe(enc) {
+  log.debug('Entering refuseCbcJwe().');
+  const cbc = /CBC/.test(String(enc));
+  if (cbc && !mode.allowsCbcJwe()) {
+    log.debug('Leaving refuseCbcJwe(). Refused.');
+    throw new Error('enc "' + enc + '" is AES-CBC, which needs ' +
+                    'crypto.allowCbcJwe on.');
+  }
+  log.debug('Leaving refuseCbcJwe().');
+}
+
 function jweContentSpec(enc) {
   log.debug('Entering jweContentSpec(). enc=' + enc);
+  refuseCbcJwe(enc);
   const spec = JWE_ENCS[String(enc)];
   if (!spec) {
     log.debug('Leaving jweContentSpec(). Unknown.');
@@ -6747,6 +6779,10 @@ function wrapCek(alg, recipientJwk, cek, header, options) {
   const publicKey = nodeCrypto.createPublicKey({ key: recipientJwk,
                                                  format: 'jwk' });
 
+  if (alg === 'RSA-OAEP' && !mode.allowsLegacyHashes()) {
+    throw new Error('alg "RSA-OAEP" is OAEP over SHA-1, which needs ' +
+      'crypto.allowLegacyHashes on.');
+  }
   if (alg === 'RSA-OAEP' || alg === 'RSA-OAEP-256') {
     const wrapped = nodeCrypto.publicEncrypt({
       key: publicKey,
@@ -6807,6 +6843,7 @@ function encryptJweCompact(plaintext, opts) {
     log.debug('Leaving encryptJweCompact(). HPKE Integrated Encryption.');
     return out;
   }
+  refuseCbcJwe(options.enc);
   const spec = JWE_ENCS[options.enc];
   if (!spec) {
     log.debug('Leaving encryptJweCompact(). Unknown enc.');
@@ -6980,6 +7017,10 @@ function unwrapCek(header, encryptedKey, options, spec) {
       'this caller was given none.');
   }
 
+  if (alg === 'RSA-OAEP' && !mode.allowsLegacyHashes()) {
+    throw new Error('alg "RSA-OAEP" is OAEP over SHA-1, which needs ' +
+      'crypto.allowLegacyHashes on.');
+  }
   if (JWE_RSA_ALGS.indexOf(alg) >= 0) {
     // The OAEP digest is what the `alg` says and NOT node's default, which is
     // SHA-1 — an unwrap under the wrong digest fails, and it fails in the way
@@ -7126,6 +7167,7 @@ function decryptJweCompact(compact, opts) {
     log.debug('Leaving decryptJweCompact(). HPKE Integrated Encryption.');
     return integrated;
   }
+  refuseCbcJwe(header.enc);
   const allowed = options.allowedEnc || Object.keys(JWE_ENCS);
   if (allowed.indexOf(header.enc) === -1) {
     log.debug('Leaving decryptJweCompact(). Unsupported enc.');
@@ -14910,6 +14952,10 @@ const SHA1_PURPOSES = Object.freeze({
   // RFC 6960 section 4.1.1: an OCSP CertID's issuerNameHash and
   // issuerKeyHash under the hash it names; SHA-1 is what every client sends.
   'ocsp-cert-id': 'RFC 6960 section 4.1.1',
+  // RFC 4556 section 3.2.1 item 6: PKINIT's paChecksum MUST be present and is
+  // SHA-1, and RFC 8636 section 9 leaves it so. `kerberos/krb5_pkinit.ts` says
+  // what the request's security rests on instead.
+  'pkinit-pachecksum': 'RFC 4556 section 3.2.1, RFC 8636 section 9',
   // RFC 5019 section 6.2 RECOMMENDS an OCSP response's ETag be the hex
   // SHA-1 of the response. Opaque to the client, which only compares it.
   'ocsp-etag': 'RFC 5019 section 6.2',
@@ -17421,8 +17467,8 @@ function pkinitDigestAlgorithms() {
  */
 function pkinitPaChecksumMatches(reqBodyBytes, claimed) {
   log.debug("Entering pkinitPaChecksumMatches().");
-  const computed = nodeCrypto.createHash('sha1')
-    .update(Buffer.from(reqBodyBytes || [])).digest();
+  const computed = sha1Digest('pkinit-pachecksum',
+                              Buffer.from(reqBodyBytes || []));
   const given = Buffer.from(claimed || []);
   log.debug("Leaving pkinitPaChecksumMatches().");
   return given.length === computed.length &&

@@ -451,7 +451,7 @@ const SETTING_ROW: Json = Kit.closed({
   value: SETTING_VALUE, text: NULL_STR, source: STR,
   editable: BOOL, restartReason: STR, editRefusal: STR,
   env: NULL_STR, legacyEnv: NULL_STR, appconfigPath: STR,
-  default: SETTING_VALUE, realmSettable: BOOL, overridden: BOOL
+  default: SETTING_VALUE, masked: BOOL, realmSettable: BOOL, overridden: BOOL
 });
 
 // `AdminConsole.configSettingsJson()`.

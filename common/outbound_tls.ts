@@ -683,6 +683,75 @@ class OutboundTls {
 
   // The certificates in a PEM file, or a sentence saying why there are none.
   /**
+   * Says whether a CA file an administrator named may be read (#1481, ASVS
+   * 5.0.0 5.3.2). In product its real path, symbolic links followed, must be
+   * inside a directory `security.fileRoots` lists. A path that does not
+   * exist answers the same as one outside them, so this says nothing about
+   * what is on the disk.
+   *
+   * @param file - the path as configured
+   * @returns whether it may be read
+   */
+  static namedFileAllowed(file: string): boolean {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.namedFileAllowed().");
+    if (!mode.confinesNamedFiles()) {
+      log.debug("Leaving OutboundTls.namedFileAllowed(). Not confined here.");
+      return true;
+    }
+    const nodePath = require('path');
+    const named = String(file || '');
+    let real = '';
+    try {
+      real = nodePath.isAbsolute(named) ? fs.realpathSync(named) : '';
+    } catch (e) {
+      log.debug("Caught in OutboundTls.namedFileAllowed(): " +
+                ((e && e.code) || (e && e.message) || e));
+      // No such file, or none this process may see: the same answer as a
+      // file outside the directories.
+      real = '';
+    }
+    const listed: unknown = config.value('security.fileRoots');
+    const roots = (Array.isArray(listed) ? listed : String(listed || '')
+      .split(',')).map(function (one: unknown) {
+      return String(one).trim();
+    }).filter(Boolean);
+    const allowed = !!real && roots.some(function (root: string) {
+      let base = root;
+      try {
+        base = fs.realpathSync(root);
+      } catch (e) {
+        log.debug("Caught in OutboundTls.namedFileAllowed(): " +
+                  ((e && e.code) || (e && e.message) || e));
+        // A listed directory this image does not have is compared as written.
+      }
+      return real === base || real.indexOf(base + nodePath.sep) === 0;
+    });
+    log.debug("Leaving OutboundTls.namedFileAllowed(). " + allowed);
+    return allowed;
+  }
+
+  /**
+   * Refuses a named file that may not be read, before a caller reads it. The
+   * sentence names the setting and not the path, and is the same whether the
+   * file is outside the directories or does not exist.
+   *
+   * @param file - the path as configured
+   * @returns nothing
+   * @throws when the file may not be read
+   */
+  static assertNamedFile(file: string): void {
+    const log = helpers.log;
+    log.debug("Entering OutboundTls.assertNamedFile().");
+    if (!OutboundTls.namedFileAllowed(file)) {
+      log.debug("Leaving OutboundTls.assertNamedFile(). Refused.");
+      throw new Error('that is not a file in a directory security.fileRoots ' +
+                      'lists');
+    }
+    log.debug("Leaving OutboundTls.assertNamedFile().");
+  }
+
+  /**
    * Reads the certificates in a PEM file.
    *
    * @param file - the file's path
@@ -691,6 +760,10 @@ class OutboundTls {
   static caFilePems(file: string): string[] | string {
     const log = helpers.log;
     log.debug("Entering OutboundTls.caFilePems(). " + file);
+    if (!OutboundTls.namedFileAllowed(file)) {
+      log.debug("Leaving OutboundTls.caFilePems(). Not a permitted path.");
+      return 'it is not a file in a directory security.fileRoots lists';
+    }
     let text = '';
     try {
       text = fs.readFileSync(file, 'utf8');

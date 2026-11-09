@@ -39,6 +39,11 @@ session anywhere in this service. The person it belongs to is a
 
 ### The cookie
 
+In product mode over TLS the browser holds it as `__Host-sts_session`, or
+`__Secure-sts_session` where `authn.cookieDomain` is set, and every other cookie
+this service sets is prefixed the same way. An unprefixed one is ignored. See
+[Security in product mode](product-security.md).
+
 `sts_session`, `Path=/`, `HttpOnly`, `SameSite=Lax`, and `Secure` **only
 when the port is TLS** (`global.https`). That last one is conditional rather than
 always on for a reason worth knowing: a browser silently *drops* a `Secure`
@@ -247,6 +252,18 @@ a token that outlived it would verify against nothing. See
 [persistence](persistence.md) for the three things that *are* written down.
 
 ---
+
+### What ending a session stops
+
+In product mode, ending a session revokes its refresh tokens (except
+`offline_access` ones) and its access tokens, so introspection, UserInfo and this
+service's own APIs refuse them at once. The record of each token is kept.
+
+Some things cannot be recalled. A SAML assertion already held by a service
+provider stays valid until it expires, and a Kerberos ticket stays valid until
+its own end time, because neither is checked with this service when it is used.
+An ID Token is not revoked, since RP-Initiated Logout accepts one as
+`id_token_hint` after the session has ended.
 
 ## 2. The Kerberos ticket-granting ticket
 

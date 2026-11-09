@@ -183,7 +183,7 @@ function childMain() {
         .toString('utf8') : '';
     }
     function pendingOf(location) {
-      const m = /[?&]authn=([^&]+)/.exec(location || '');
+      const m = /[?&#]authn=([^&]+)/.exec(location || '');
       if (!m) {
         return null;
       }

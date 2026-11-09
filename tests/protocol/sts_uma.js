@@ -251,7 +251,7 @@ async function signInThrough(startUrl, who) {
   log.debug("Entering signInThrough(). " + who);
   const first = await fetch(startUrl, { redirect: "manual", headers: AGENT });
   const screenAt = first.headers.get("location") || "";
-  assert.ok(/\/authn\/login\?authn=/.test(screenAt), "the request should " +
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(screenAt), "the request should " +
     "reach the sign-in screen; it answered " + first.status + " " + screenAt +
     " " + String(await first.text()).slice(0, 300));
   const screenUrl = new URL(screenAt, base);

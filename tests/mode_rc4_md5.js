@@ -255,8 +255,10 @@ async function developmentChild() {
   out.md5SetInDevelopment = on.ok;
   await observe('development');
   config.setOverride('global.mode', 'product');
+  config.setOverride('krb5.allowSha1Enctypes', 'true');
   await observe('product');
   await observe('productAgain');
+  config.clearOverride('krb5.allowSha1Enctypes');
   config.setOverride('global.mode', 'development');
   await observe('developmentAgain');
   return out;
@@ -317,7 +319,7 @@ function inProduct(t) {
   const got = inAChild(productChild, function (kekFile) {
     log.debug("Entering env().");
     log.debug("Leaving env().");
-    return { STS_MODE: 'product',
+    return { STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
              KRB5_KRBTGT_PASSWORD: 'not-the-published-krbtgt-secret-182',
              KRB5_SERVICE_PASSWORD: 'not-the-published-service-secret-182',
              STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',

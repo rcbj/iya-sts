@@ -188,6 +188,29 @@ async function partB(t) {
 
 async function partC(t) {
   log.debug("Entering partC().");
+  // A FILE OF THE WRONG KIND (#1480, ASVS 5.0.0 5.2.2).
+  const junk = ['192.0.2.9'].concat(new Array(9).fill('not an address'))
+    .join('\n');
+  config.clearOverride('risk.maxSkippedLinesPercent');
+  t.check(Number(config.value('risk.maxSkippedLinesPercent')) === 10,
+          'C0-0. the default share of lines that may fail is ten percent');
+  const skippedOut = await riskDatasets.importVersion({
+    dataset: 'iplist.operator-allow', realm: 'default', format: 'ip-list',
+    content: junk, version: 'skip-1', source: 'upload', activate: false });
+  const skippedRows = await riskStore.listVersions('default',
+                                                   'iplist.operator-allow');
+  t.check(!skippedOut.ok && skippedRows.some(function (one) {
+    return one.version === 'skip-1' && one.state === 'refused' &&
+      one.errorCode === 'STS-RISK-0056';
+  }), 'C0. a file mostly of lines that are not rows is refused',
+  JSON.stringify(skippedOut));
+  config.setOverride('risk.maxSkippedLinesPercent', '100');
+  const skippedIn = await riskDatasets.importVersion({
+    dataset: 'iplist.operator-allow', realm: 'default', format: 'ip-list',
+    content: junk, version: 'skip-2', source: 'upload', activate: false });
+  config.setOverride('risk.maxSkippedLinesPercent', '100');
+  t.check(skippedIn.ok, 'C0-ii. at 100 it is accepted, as before',
+          JSON.stringify(skippedIn));
   const wrong = await riskDatasets.importVersion({
     dataset: 'iplist.reputation', format: 'ip-list', content: '192.0.2.1',
     version: 'rep-bad', sha256: 'a'.repeat(64), source: 'upload' });
@@ -649,6 +672,9 @@ async function run(t) {
   if (!realms.get('acme')) {
     realms.create({ id: 'acme', name: 'risk datasets test' });
   }
+  // The fixtures below hold a few lines each, some of them on purpose not rows;
+  // C0 restores the shipped share to test it (#1480).
+  config.setOverride('risk.maxSkippedLinesPercent', '100');
   riskStore.reset();
   riskDatasets.forget();
   await partK(t);
@@ -664,6 +690,7 @@ async function run(t) {
   await partI(t);
   await partJ(t);
   await partL(t);
+  config.clearOverride('risk.maxSkippedLinesPercent');
   log.debug("Leaving run().");
 }
 

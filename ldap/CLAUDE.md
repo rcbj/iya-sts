@@ -10,6 +10,11 @@ directory is also the STORE for four other things: people, groups, applications
 below, for the submodule's placement rules, which have already cost something
 three times.
 
+**These names are modelled in TypeSpec in `models/directory/` (#1390).** The
+switched objects' tables are written there and generated for the service; the
+others are still read from their modules and from this file's spelling lists. The
+directory still enforces nothing.
+
 **636 RE-KEYS WHEN THE LISTENER CERTIFICATE IS RE-ISSUED (2026-09-21)** — `rekeyLdaps()`,
 registered on `tls_server.onServerCertificateChange()`, runs at bind and again after
 every `build-root`; before that a replaced Root left 636 on a dead chain until a

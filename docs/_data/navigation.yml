@@ -15,12 +15,15 @@
     - { title: Architecture, url: /architecture.html }
     - { title: Where a request waits, url: /request-path.html }
     - { title: Configuration, url: /configuration.html }
+    - { title: Configuration dump, url: /configuration-dump.html }
     - { title: Endpoints, url: /endpoints.html }
     - { title: Trust realms, url: /trust-realms.html }
     - { title: Listeners and hosted applications, url: /listeners.html }
     - { title: Languages and regions, url: /languages.html }
     - { title: User-facing pages, url: /user-facing-pages.html }
     - { title: What is not checked, url: /what-is-not-checked.html }
+    - { title: Security in product mode, url: /product-security.html }
+    - { title: Input validation, url: /validation.html }
     - { title: Conformance suites, url: /conformance.html }
     - { title: Departures from the specifications, url: /spec-departures.html }
     - { title: Accepted tokens, url: /accepted-tokens.html }
@@ -104,6 +107,9 @@
     - { title: Service accounts, url: /service-accounts.html }
     - { title: LDAP, url: /ldap.html }
     - { title: LDAP schema, url: /ldap-schema.html }
+    - { title: Abstract data model, url: /data-model.html }
+    - { title: Directory models, url: /data-model-directory.html }
+    - { title: Persistence models, url: /data-model-persistence.html }
     - { title: "Configuring LDAP", url: /configure-ldap.html }
     - { title: SCIM 2.0, url: /scim.html }
     - { title: "Configuring SCIM 2.0", url: /configure-scim.html }

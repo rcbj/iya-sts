@@ -207,6 +207,22 @@ unless a group exists that no page draws. `admin-ui/CLAUDE.md` argues the whole
 move; this file's half of it is the paragraph above.
 
 
+### `GET /admin-api/config-dump`: one masked export of the parameters
+
+Every parameter, global and per realm, for the console page, `utilities/config-dump.js`
+and any other caller. **The masking is in `admin-core/config_dump.ts`, on the
+server, once**, so no door can show what another hides. A name that says it
+holds a secret is masked unless its suffix says it only points at one, which
+errs towards hiding for a parameter added later. Directory objects are not in
+it, by rcbj's scope.
+
+**`GET /config`, `GET /realms`, `GET /mode`, every page's settings block and the
+`/config` acts' answers mask the same values (#1478).** A section's Save posts every field, so a posted
+value equal to the row's mask means "leave it" (`isEchoOfMask()`).
+`config.describe()` stays exact. A job needing a development fixture password
+reads `tests/protocol/service_facts.js`' table.
+
+
 ### `/admin-api/users/new` is the same shape, and the users resource is the first to mirror TWO console paths
 
 `/admin/users/new` arrived on 2026-09-06 and cost the same two things the

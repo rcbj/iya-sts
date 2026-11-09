@@ -380,7 +380,7 @@ function childMain() {
                               code_challenge: CHALLENGE,
                               code_challenge_method: 'S256' }).toString());
       const location = String(r.headers.location || '');
-      return (location.match(/[?&]authn=([^&]+)/) || [])[1] || '';
+      return (location.match(/[?&#]authn=([^&]+)/) || [])[1] || '';
     };
     const cookieOf = function (r) {
       return [].concat(r.headers['set-cookie'] || []).map(function (one) {
@@ -425,7 +425,7 @@ function childMain() {
     let r = await signInAt(authnId, 'anything-at-all');
     const changeLocation = r.next === 'password-change' ? r.location : '';
     note(r.next === 'password-change' &&
-         /^\/authn\/password-change\?change=/.test(changeLocation) &&
+         /^\/authn\/password-change(?:\?app=[^#]*)?[?#]change=/.test(changeLocation) &&
          !cookieOf(r),
          '7a. the sign-in screen answers the change step (next: ' +
          'password-change) and starts no session',

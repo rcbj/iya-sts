@@ -94,7 +94,7 @@ function childMain() {
     let r = await screen.call({ port: port, jar: jar, method: 'GET',
                                 path: at });
     const csp = String(r.headers['content-security-policy'] || '');
-    note(/^\/authn\/login\?authn=/.test(at) && r.status === 200 &&
+    note(/^\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(at) && r.status === 200 &&
          /no-store/.test(String(r.headers['cache-control'])) &&
          r.text.indexOf('<script src="/authn/signin.js" defer></script>') >
            0 &&
@@ -297,7 +297,7 @@ function childMain() {
     r = await screen.submit({ port: port, jar: tj, at: at,
       fields: { action: 'login', username: 'aa-tom', password: 'x' } });
     note(r.next === 'mfa' && r.step === 'totp' &&
-         /^\/authn\/totp\?mfa=/.test(r.location) &&
+         /^\/authn\/totp(?:\?app=[^#]*)?[?#]mfa=/.test(r.location) &&
          !/sts_session=/.test(String(r.headers['set-cookie'] || '')),
          '5j. a person holding an authenticator app is answered next: mfa, ' +
          'the code page\'s address', r.text);
@@ -316,7 +316,7 @@ function childMain() {
     r = await screen.submit({ port: port, jar: pj, at: at,
       fields: { action: 'login', username: 'aa-pat', password: 'x' } });
     note(r.next === 'password-change' &&
-         /^\/authn\/password-change\?change=/.test(r.location),
+         /^\/authn\/password-change(?:\?app=[^#]*)?[?#]change=/.test(r.location),
          '5l. pwdReset answers next: password-change', r.text);
     const changeAt = r.location;
     const pc = await screen.open({ port: port, jar: pj, at: changeAt });

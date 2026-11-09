@@ -678,7 +678,7 @@ async function authorizationCode(base, opts) {
   }, opts.extra || {})).toString();
   const first = await fetch(url, { redirect: "manual", headers: agent });
   const screenAt = first.headers.get("location") || "";
-  assert.ok(/\/authn\/login\?authn=/.test(screenAt), "the authorization " +
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(screenAt), "the authorization " +
     "request for " + opts.clientId + " should reach the sign-in screen; it " +
     "answered " + first.status + " " + screenAt + " " +
     String(await first.text()).slice(0, 300));

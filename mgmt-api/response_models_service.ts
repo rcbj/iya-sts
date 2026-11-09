@@ -104,6 +104,7 @@ const SETTING: Json = closed({
   enumValues: listOf(str(), 'Present on `enum` settings only.'),
   csvValues: listOf(str(), 'Present on a `csv` setting whose entries must ' +
                            'each be one of these; absent on an open list.'),
+  masked: bool('Present, true, when a sensitive value here was replaced.'),
   ordered: bool('Present, true, on a `csv` setting whose order is a ' +
                 'preference: the first value is the most preferred.'),
   csvValueNotes: mapOf(str(), 'Present beside `csvValues` where the setting ' +
@@ -553,6 +554,44 @@ const PAGE_SETTINGS: Json = closed({
 }, { description: 'One console page, and the settings it draws: the same ' +
                   'described rows GET /config returns, filtered to the ones ' +
                   'that page owns.' });
+
+// ---------------------------------------------------------------------------
+// `GET /config-dump`: `admin-core/config_dump.ts`.
+// ---------------------------------------------------------------------------
+const DUMP_ROW: Json = closed({
+  key: str('The parameter\'s dot path.'),
+  group: str(),
+  type: str(),
+  value: SETTING_VALUE,
+  default: SETTING_VALUE,
+  source: str('Where the effective value came from, as `GET /config` says.'),
+  env: str('The environment variable that sets it.'),
+  overridden: bool(),
+  editable: bool(),
+  masked: bool('Present, true, when a sensitive value was replaced.')
+}, { description: 'One parameter, its sensitive values masked.' });
+
+const CONFIG_DUMP: Json = closed({
+  format: str('The format of this document.'),
+  generatedAt: str(),
+  version: str('This service\'s version.'),
+  scope: Kit.strEnum(['service', 'realm'],
+                     '`service` from the default realm, `realm` under a ' +
+                     'realm\'s prefix.'),
+  realm: str('The realm `settings` was read in.'),
+  configFile: nullable(str()),
+  defaultsFile: str(),
+  settingCount: int(),
+  masking: closed({
+    mask: str('The text that replaces a sensitive value.'),
+    maskedValues: int('How many parameters had a value replaced.')
+  }),
+  settings: listOf(DUMP_ROW, 'Every parameter, in table order.'),
+  realms: listOf(closed({
+    id: str(),
+    settings: listOf(DUMP_ROW, 'The parameters this realm sets itself.')
+  }), 'Every other realm. Empty under a realm\'s prefix.')
+}, { description: 'The configuration dump.' });
 
 // ---------------------------------------------------------------------------
 // `GET /config`: `admin.ts`'s `configJson()` over `config.js`'s `snapshot()`.
@@ -3870,6 +3909,7 @@ export = {
     exportPasskeyAttestationEvidence: { '200': PASSKEY_EVIDENCE,
                                         '400': REFUSAL },
     recountPasskeyReport: { '200': PASSKEY_ACTION },
+    getConfigDump: { '200': CONFIG_DUMP },
     getAuditExport: { '200': AUDIT_EXPORT },
     addAuditExportDestination: { '200': AUDIT_EXPORT_ACTION },
     updateAuditExportDestination: { '200': AUDIT_EXPORT_ACTION },

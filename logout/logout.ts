@@ -4146,6 +4146,9 @@ class Logout {
     } else if (endedOwn) {
       authn.clearSessionCookie(res);
     }
+    if (res && (endedOwn || result.terminated.length)) {
+      authn.clearSiteDataAfterSignOut(req, res);
+    }
     log.debug("Leaving Logout.endFor(). " + result.terminated.length +
               " ended.");
     return { result: result, endedOwn: endedOwn };
@@ -4274,6 +4277,7 @@ class Logout {
             'the browser', spareCredentials: true });
     });
     authn.afterAccountSignOut(req, res);
+    authn.clearSiteDataAfterSignOut(req, res);
     const result = Logout.mergedResult(results);
     const answer: Loose = { ok: true, next: 'signed-out',
       username: accounts.map(function (one) {
@@ -4745,6 +4749,18 @@ class Logout {
         errorCodes.mark(res, 'STS-LOGOUT-0010');
         res.redirect(303, realms.currentPrefix() + LOGOUT_PATH);
         log.debug("Leaving the logout action endpoint. A form: the page.");
+        return;
+      }
+      // THE JSON DOOR READS THE COOKIE, so a page of another site may not
+      // reach it (#1442, ASVS 5.0.0 3.5.1). A program sends no Origin.
+      if (cors.crossSiteBrowserRequest(req)) {
+        errorCodes.mark(res, 'STS-LOGOUT-0014');
+        res.status(403).type('application/json').set('Cache-Control',
+                                                     'no-store')
+           .send(JSON.stringify({ error: 'cross_site_request',
+             error_description: 'This request came from a page of another ' +
+                                'site.' }, null, 2));
+        log.debug("Leaving the logout action endpoint. Another site.");
         return;
       }
       const body = parseBody(req);

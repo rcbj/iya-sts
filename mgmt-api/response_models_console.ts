@@ -282,7 +282,7 @@ const SETTING: Json = Kit.closed({
   min: NUM, max: NUM, step: NUM, value: SETTING_VALUE, text: NSTR,
   source: STR, editable: BOOL, restartReason: NSTR, editRefusal: NSTR,
   env: NSTR, legacyEnv: Kit.nullable(Kit.oneOrMany(STR)), appconfigPath: STR,
-  default: SETTING_VALUE, realmSettable: BOOL, overridden: BOOL
+  default: SETTING_VALUE, masked: BOOL, realmSettable: BOOL, overridden: BOOL
 });
 
 // `admin.ts`'s `configSettingsJson()`, or null with no filler installed.

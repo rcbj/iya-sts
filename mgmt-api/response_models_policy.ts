@@ -109,7 +109,7 @@ const SETTING: Json = Kit.closed({
   restartReason: NSTR, editRefusal: NSTR,
   env: Kit.nullable(Kit.oneOrMany(STR)),
   legacyEnv: Kit.nullable(Kit.oneOrMany(STR)),
-  appconfigPath: STR, default: VALUE, realmSettable: BOOL, overridden: BOOL
+  appconfigPath: STR, default: VALUE, masked: BOOL, realmSettable: BOOL, overridden: BOOL
 });
 
 const SETTINGS: Json = Kit.nullable(Kit.closed({

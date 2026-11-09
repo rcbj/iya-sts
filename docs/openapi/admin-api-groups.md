@@ -144,6 +144,7 @@ Scope: `admin:read`.
 | `(shape 1).settings.groups[].settings[].label` | string |  |  |
 | `(shape 1).settings.groups[].settings[].legacyEnv` | list, or string |  |  |
 | `(shape 1).settings.groups[].settings[].legacyEnv[]` | object |  | Nested deeper than this page draws. |
+| `(shape 1).settings.groups[].settings[].masked` | boolean |  |  |
 | `(shape 1).settings.groups[].settings[].max` | number |  |  |
 | `(shape 1).settings.groups[].settings[].min` | number |  |  |
 | `(shape 1).settings.groups[].settings[].ordered` | boolean |  |  |

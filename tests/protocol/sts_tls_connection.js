@@ -252,7 +252,7 @@ async function test() {
       });
       check("and it started no session: no cookie came back", function () {
         assert.ok(!(withCert.headers["set-cookie"] || []).some(function (c) {
-          return /^sts_session=/.test(c);
+          return /^(?:__Host-)?sts_session=/.test(c);
         }), JSON.stringify(withCert.headers["set-cookie"]));
       });
     } finally {

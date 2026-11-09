@@ -1220,6 +1220,10 @@ const CODES = [
       'the file was left out of the build. The browser shows no icon; nothing ' +
       'else is affected.',
     spec: 'none — HTTP 404' },
+  { code: 'STS-CORE-0167',
+    summary: 'A product-mode process was configured with global.https off ' +
+      'and did not start (#1457).',
+    spec: '' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -3629,6 +3633,14 @@ const CODES = [
     summary: 'A write to tls.signatureAlgorithms names a signature algorithm ' +
       'this service has no row for.',
     spec: 'none — a write refused at the console or the API (#1368)' },
+  { code: 'STS-KEYS-0195',
+    summary: 'An XML element encrypted with AES-CBC was refused in ' +
+      'product mode (#1455).',
+    spec: '' },
+  { code: 'STS-KEYS-0196',
+    summary: 'An XML element whose key is wrapped with OAEP over SHA-1 ' +
+      'was refused: crypto.allowLegacyHashes is off (#1469).',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -5608,6 +5620,10 @@ const CODES = [
       'process; node 24 or later is required.',
     spec: 'SCEP CertRep FAILURE badMessageCheck (the content does not ' +
       'decrypt)' },
+  { code: 'STS-SCEP-0067',
+    summary: 'A SCEP request reached a product-mode realm with ' +
+      'scep.allowInProduct off (#1455).',
+    spec: 'HTTP 503' },
   // ===== AUTHN =============================================================
   { code: 'STS-AUTHN-0001',
     summary: 'A request to the sign-in screen or the federation chooser ' +
@@ -7888,6 +7904,10 @@ const CODES = [
     summary: 'A sign-in logo\'s link (branding.logoLinkUrl) was not saved: ' +
       'it is not an absolute https URL (#717).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0552',
+    summary: 'A sign-in step was asked about from a browser other than the ' +
+      'one that holds it (#1454).',
+    spec: 'HTTP 400' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -12420,6 +12440,10 @@ const CODES = [
       '#Kerberosv5APREQSHA1 key identifier (#658).',
     spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
+  { code: 'STS-WSTRUST-0070',
+    summary: 'A UsernameToken was refused without being checked: too many ' +
+      'recent failures for that identity (#1448).',
+    spec: 'SOAP FailedAuthentication' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -15098,6 +15122,18 @@ const CODES = [
       'realm (#658) and reaching it took more crossings than ' +
       'krb5.maxReferralHops allows.',
     spec: 'none (the caller answers its own protocol\'s refusal)' },
+  { code: 'STS-KRB-0255',
+    summary: 'Pre-authentication was refused without being checked: too ' +
+      'many recent failures for that principal (#1448).',
+    spec: 'KDC_ERR_PREAUTH_FAILED' },
+  { code: 'STS-KRB-0256',
+    summary: 'An S4U2Self request was refused: its PA-FOR-USER checksum ' +
+      'is HMAC-MD5 and crypto.allowLegacyHashes is off (#1469).',
+    spec: 'KDC_ERR_POLICY' },
+  { code: 'STS-KRB-0257',
+    summary: 'A person whose password must be changed asked for a ticket, ' +
+      'in product (ASVS 5.0.0 6.4.1).',
+    spec: 'KDC_ERR_KEY_EXPIRED' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -16547,6 +16583,10 @@ const CODES = [
     summary: 'The identity gate threw on a verified client certificate, so it ' +
       'was not taken as a SCIM credential (#1360).',
     spec: 'the caller\'s 401: another scheme, or none' },
+  { code: 'STS-SCIM-0089',
+    summary: 'An HTTP Basic credential was refused without being checked: ' +
+      'too many recent failures (#1448).',
+    spec: 'HTTP 401' },
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
       'gRPC status, which is a defect in this service (or the request ' +
@@ -17578,6 +17618,11 @@ const CODES = [
       'reached this process within tls.resumedChainWaitMs. The next full ' +
       'handshake settles it (#1360).',
     spec: 'none (logged): the certificate is treated as unverified' },
+  { code: 'STS-TLS-0059',
+    summary: 'GET /tls/sign-in was asked for by a browser other than as a ' +
+      'navigation typed by the person or sent from this origin, in ' +
+      'product (ASVS 5.0.0 3.5.3).',
+    spec: 'HTTP 403' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -19087,6 +19132,14 @@ const CODES = [
     summary: 'An announcement broadcast could not be sent in a realm: ' +
       'building or queueing its Security Event Token failed (#1086).',
     spec: 'none: logged; the answer names the realm' },
+  { code: 'STS-SSF-0156',
+    summary: 'An HTTP Basic credential was refused without being checked: ' +
+      'too many recent failures (#1448).',
+    spec: 'HTTP 401' },
+  { code: 'STS-SSF-0157',
+    summary: 'A person authenticated by HTTP Basic holds no console role, ' +
+      'in product (ASVS 5.0.0 8.2.1).',
+    spec: 'HTTP 403' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -19376,6 +19429,14 @@ const CODES = [
       'read it again could not be recorded. The others keep the standing ' +
       'they hold until risk.standingValidMinutes runs out (#666).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-RISK-0055',
+    summary: 'A dataset upload\'s file name does not fit the format it was ' +
+      'sent as (ASVS 5.0.0 5.2.2).',
+    spec: 'HTTP 400' },
+  { code: 'STS-RISK-0056',
+    summary: 'Too many lines of a dataset file were not rows of its ' +
+      'format (ASVS 5.0.0 5.2.2).',
+    spec: 'the version is refused' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +
@@ -19627,6 +19688,9 @@ const CODES = [
       '(appLocalePolicy) or a group (stsLocalePolicy) of this realm still ' +
       'names it (#1238).',
     spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0015',
+    summary: 'POST /authn/language came from a page of another site (#1442).',
+    spec: 'HTTP 403' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -22113,8 +22177,8 @@ const CODES = [
       'function; every access decision is allowed.',
     spec: '' },
   { code: 'STS-XACML-0051',
-    summary: 'The access gate\'s decider threw; access was ALLOWED because a ' +
-      'throw is a defect rather than a decision.',
+    summary: 'The access gate\'s decider threw: refused in product mode, ' +
+      'allowed in development (#1450).',
     spec: '' },
   { code: 'STS-XACML-0052',
     summary: 'The issuance gate\'s decider threw; issuance was ALLOWED ' +
@@ -22366,6 +22430,15 @@ const CODES = [
       'outside certificate authority that is stored in userCertificate ' +
       'on more than one entry of the realm (#1061).',
     spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0181',
+    summary: 'The access gate had no decider, or its decider answered ' +
+      'nothing: refused in product mode, allowed in development (#1450).',
+    spec: '' },
+  { code: 'STS-XACML-0182',
+    summary: 'An access check named no resource or no action, a defect at ' +
+      'the call site: refused in product mode, allowed in development ' +
+      '(#1450).',
+    spec: '' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -26002,6 +26075,10 @@ const CODES = [
       'realm with authn.multipleAccounts off, where a browser holds one ' +
       'session and there is no account to choose.',
     spec: 'HTTP 400 from /authn-api/logout/accounts' },
+  { code: 'STS-LOGOUT-0014',
+    summary: 'POST /logout in its JSON form came from a page of another ' +
+      'site (#1442).',
+    spec: 'HTTP 403' },
   // ===== LAUNCH ============================================================
   { code: 'STS-LAUNCH-0001',
     summary: 'A /launch/{app} link named no application this realm has ' +

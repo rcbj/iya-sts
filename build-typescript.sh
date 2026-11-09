@@ -85,6 +85,11 @@ sources() {
          -o -type f -name '*.ts' ! -name '*.d.ts' -print
 }
 
+# The tables the service reads from the model (#1390). This is before the
+# type check so that a model that does not compile says so first.
+echo "build-typescript.sh: generating from the model (models/tools/generate.mjs)"
+node models/tools/generate.mjs
+
 echo "build-typescript.sh: type-checking (tsc -p tsconfig.json)"
 "$TSC" -p tsconfig.json --pretty false
 
@@ -275,6 +280,9 @@ if [ "$STRIP" = true ]; then
   STRIPPED="$(sources | wc -l | tr -d ' ')"
   sources | xargs -r rm -f
   rm -rf ./types ./tsconfig.json ./tsconfig.build.json
+  # The model's own sources: what the service reads is models/generated/.
+  rm -rf ./models/lib ./models/tools ./models/main.tsp
+  find ./models -type f -name '*.tsp' -delete
   echo "build-typescript.sh: stripped $STRIPPED .ts source(s), types/ and" \
        "the tsconfig files"
   # The comments, from what is left (#365). Its parser is a dependency of

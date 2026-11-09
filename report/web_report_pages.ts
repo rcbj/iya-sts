@@ -20,6 +20,7 @@
 // ---------------------------------------------------------------------------
 
 import SpaClient = require('../common/web_spa_client');
+import WebSafeDom = require('../common/web_safe_dom');
 import WebI18n = require('../common/web_i18n');
 import WebAccounts = require('../common/web_accounts');
 import WebMessages = require('../common/web_messages');
@@ -1441,7 +1442,7 @@ class ReportRuntime extends SpaClient {
    */
   async finishSignIn(): Promise<void> {
     const query = await this.openAuthorizationResponse(
-      SpaClient.queryOf(this.env.location.search));
+      this.callbackParameters());
     let saved: any = null;
     try {
       saved = JSON.parse(this.env.sessionStorage.getItem(SIGNIN_KEY) ||
@@ -1694,7 +1695,8 @@ class ReportRuntime extends SpaClient {
       body + footerHtml(this.t, chrome.version);
     const main = this.env.document.getElementById('report');
     if (main) {
-      main.innerHTML = html;
+      WebSafeDom.render(main,
+        html);
     }
   }
 
@@ -1849,7 +1851,8 @@ class ReportRuntime extends SpaClient {
           ReportRuntime.accountItems(page) + '</div>'
         : '') +
       '<div class="usermenuaccounts usermenusignout">' +
-      '<a class="linklike" href="' + esc(page.prefix + '/logout') + '">' +
+      '<a class="linklike" data-sign-out="1" href="' +
+      esc(page.prefix + '/logout') + '">' +
       esc(t.text('report.signOut')) + '</a></div></div></details>';
   }
 
@@ -1899,7 +1902,8 @@ class ReportRuntime extends SpaClient {
     const el = doc && doc.getElementById
       ? doc.getElementById(ACCOUNTS_ID) : null;
     if (el) {
-      el.innerHTML = ReportRuntime.accountItems(this);
+      WebSafeDom.render(el,
+        ReportRuntime.accountItems(this));
     }
   }
 
@@ -2133,7 +2137,8 @@ class ReportRuntime extends SpaClient {
     const template = form.querySelector('template[data-field-options]');
     const fieldSel = next.querySelector('select[name^="filterField"]');
     if (template && fieldSel) {
-      fieldSel.innerHTML = template.innerHTML;
+      WebSafeDom.render(fieldSel,
+        template.innerHTML);
       fieldSel.removeAttribute('title');
     }
     const controls = next.querySelectorAll('select, input');
@@ -2152,7 +2157,8 @@ class ReportRuntime extends SpaClient {
     // values.
     const valueEl = next.querySelector('[name="filterValue' + n + '"]');
     if (valueEl && valueEl.tagName === 'SELECT') {
-      valueEl.outerHTML = filterValueHtml(n, [], '', '', '');
+      WebSafeDom.replace(valueEl,
+        filterValueHtml(n, [], '', '', ''));
     }
     const plus = row.querySelector('.addfilter');
     if (plus && plus.parentNode) {
@@ -2190,7 +2196,8 @@ class ReportRuntime extends SpaClient {
       }
       const valueEl = row.querySelector('[name="filterValue0"]');
       if (valueEl && valueEl.tagName === 'SELECT') {
-        valueEl.outerHTML = filterValueHtml(0, [], '', '', '');
+        WebSafeDom.replace(valueEl,
+          filterValueHtml(0, [], '', '', ''));
       }
       return;
     }
@@ -2209,7 +2216,7 @@ class ReportRuntime extends SpaClient {
     if (hadPlus && rows.length) {
       const last = rows[rows.length - 1];
       if (!last.querySelector('.addfilter')) {
-        last.insertAdjacentHTML('beforeend', addFilterButtonHtml(this.t));
+        WebSafeDom.insert(last, 'beforeend', addFilterButtonHtml(this.t));
       }
     }
   }
@@ -2255,7 +2262,8 @@ class ReportRuntime extends SpaClient {
       if (ops.indexOf(op) < 0) {
         op = '';
       }
-      opEl.outerHTML = opSelectHtml(this.t, n, ops, op);
+      WebSafeDom.replace(opEl,
+        opSelectHtml(this.t, n, ops, op));
     }
     const html = filterValueHtml(n, fields, fieldId, op,
       String(valueEl.value || ''), anchored && n === 0);
@@ -2266,7 +2274,8 @@ class ReportRuntime extends SpaClient {
     if (wasPlain && html.indexOf('<input name=') === 0) {
       return;
     }
-    valueEl.outerHTML = html;
+    WebSafeDom.replace(valueEl,
+      html);
   }
 
   /**
@@ -2352,8 +2361,9 @@ class ReportRuntime extends SpaClient {
       // empty, as the New Query page starts.
       const block = el.closest('form').querySelector('[data-query-block]');
       if (block) {
-        block.innerHTML = queryFormHtml(this.t, this.catalogSources,
-          { source: String(el.value || '') });
+        WebSafeDom.render(block,
+          queryFormHtml(this.t, this.catalogSources,
+          { source: String(el.value || '') }));
       }
       return;
     }
@@ -2521,7 +2531,8 @@ class ReportRuntime extends SpaClient {
     for (let i = 0; i < held.length; i++) {
       chosen.push(String(held[i].getAttribute('data-dn') || ''));
     }
-    pane.innerHTML = groupResultsHtml(this.t, answer && answer.json, chosen);
+    WebSafeDom.render(pane,
+      groupResultsHtml(this.t, answer && answer.json, chosen));
   }
 
   /**
@@ -2544,7 +2555,7 @@ class ReportRuntime extends SpaClient {
         return;
       }
     }
-    list.insertAdjacentHTML('beforeend', chosenGroupHtml(this.t, {
+    WebSafeDom.insert(list, 'beforeend', chosenGroupHtml(this.t, {
       dn: dn,
       name: String(button.getAttribute('data-name') || dn),
       mail: String(button.getAttribute('data-mail') || '')
@@ -2777,7 +2788,7 @@ class ReportRuntime extends SpaClient {
     if (old && old.parentNode) {
       old.parentNode.removeChild(old);
     }
-    main.insertAdjacentHTML('afterbegin', flashHtml(this.t, kind, text));
+    WebSafeDom.insert(main, 'afterbegin', flashHtml(this.t, kind, text));
   }
 
   /**
@@ -3123,6 +3134,17 @@ class ReportRuntime extends SpaClient {
   async start(): Promise<void> {
     const self = this;
     this.env.document.addEventListener('click', function (event: any): void {
+      // THE TAB'S OWN STORAGE GOES FIRST (#1440, ASVS 5.0.0 14.3.1): the
+      // link then navigates as it always did.
+      const leaving = event.target && event.target.closest &&
+        event.target.closest('[data-sign-out]');
+      if (leaving) {
+        try {
+          event.view.sessionStorage.clear();
+        } catch (e) {
+          // Storage refused (a private window): nothing is held in it.
+        }
+      }
       self.onClick(event);
     });
     this.env.document.addEventListener('submit', function (event: any):

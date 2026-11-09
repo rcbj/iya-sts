@@ -428,7 +428,7 @@ function toSignIn(r) {
   log.debug("Entering toSignIn().");
   log.debug("Leaving toSignIn().");
   return (r.status === 302 || r.status === 303) &&
-         /\/authn\/login\?authn=/.test(r.location);
+         /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location);
 }
 
 // The redirect to the client's registered address, as its parameters, or

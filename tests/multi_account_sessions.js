@@ -396,7 +396,7 @@ function partOn(t) {
   const path = authn.beginAuthentication({
     returnTo: '/oauth2/authorize?client_id=c', details: [],
     protocol: 'OAuth 2.0 / OIDC', application: '', request: start });
-  t.check(/^\/authn\/accounts\?authn=/.test(path), 'an ambiguous request ' +
+  t.check(/^\/authn\/accounts(?:\?app=[^#]*)?[?#]authn=/.test(path), 'an ambiguous request ' +
           'is sent to the account picker', path);
   const id = decodeURIComponent(path.split('authn=')[1]);
   const record = authn.pendingForAccounts(id);
@@ -500,7 +500,7 @@ function partOn(t) {
                                                account: bobKey });
   const deadAnswer = answerOf(dead.res) || {};
   t.check(deadAnswer.next === 'redirect' &&
-          /^\/authn\/login\?authn=/.test(String(deadAnswer.location)) &&
+          /^\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(deadAnswer.location)) &&
           !ticketIn(deadAnswer.location),
           'choosing bob, whose session ran out meanwhile, does not continue ' +
           'as him: it goes to the sign-in, with no ticket',
@@ -707,7 +707,7 @@ function partUnread(t) {
       returnTo: '/oauth2/authorize?client_id=c', details: [],
       protocol: 'OAuth 2.0 / OIDC', application: '',
       request: b.req('/oauth2/authorize') });
-    t.check(/^\/authn\/accounts\?authn=/.test(path),
+    t.check(/^\/authn\/accounts(?:\?app=[^#]*)?[?#]authn=/.test(path),
             'a sign-in that needs the set goes to the picker, not to the ' +
             'sign-in screen', path);
     const id = decodeURIComponent(path.split('authn=')[1]);

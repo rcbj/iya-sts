@@ -58,8 +58,10 @@ const ROOT = path.join(__dirname, '..');
 
 // The OP iframe's script as it was before #561, by its SHA-256: what a realm
 // with `authn.multipleAccounts` off must still be served, byte for byte.
+// Moved once on purpose (#1441): the script reads a cookie by name, and over
+// TLS in product that name carries a prefix it has to take off.
 const SCRIPT_BEFORE_561 =
-  '7b356d56cec3d3ed6acfcd4c18ce3a83c1b20ad43efc19809058cbbd498ddb0d';
+  'a1d2dd635433c09291ca125a9e9392e7f82213c306cd6d46e0656d62931e2817';
 
 function childMain() {
   /* eslint-disable no-console */
@@ -183,7 +185,7 @@ function childMain() {
           picker = to;
           break;
         }
-        if (r.status >= 300 && r.status < 400 && /\/authn\/login\?authn=/
+        if (r.status >= 300 && r.status < 400 && /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/
             .test(to)) {
           screens += 1;
           screenAt = to;
@@ -211,7 +213,7 @@ function childMain() {
     };
     // Continues a flow from the picker as one of its signed-in accounts.
     const pick = async function (jar, at, username) {
-      const id = decodeURIComponent(/[?&]authn=([^&]+)/.exec(at)[1]);
+      const id = decodeURIComponent(/[?&#]authn=([^&]+)/.exec(at)[1]);
       await get(jar, at);
       const view = await json(jar, 'GET', '/authn-api/pending/' +
                               encodeURIComponent(id) + '/accounts');
@@ -351,7 +353,7 @@ function childMain() {
     f = await drive(jar, authnRequest({ subject: CAROL }), '');
     const carolRecord = f.screenAt ? inRealm(function () {
       return authn.pendingFor(decodeURIComponent(
-        /[?&]authn=([^&]+)/.exec(f.screenAt)[1]));
+        /[?&#]authn=([^&]+)/.exec(f.screenAt)[1]));
     }) : null;
     note(!f.picker && !!f.screenAt && !f.saml && carolRecord &&
          carolRecord.hint === CAROL,

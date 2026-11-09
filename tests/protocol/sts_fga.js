@@ -394,7 +394,7 @@ async function authorize(actions) {
     authorization_details: JSON.stringify([detail(actions)]) }).toString();
   const first = await fetch(url, { redirect: "manual", headers: agent });
   const screenAt = first.headers.get("location") || "";
-  assert.ok(/\/authn\/login\?authn=/.test(screenAt), "the authorization " +
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(screenAt), "the authorization " +
     "request should reach the sign-in screen; it answered " + first.status +
     " " + screenAt + " " + String(await first.text()).slice(0, 300));
   const screenUrl = new URL(screenAt, base);

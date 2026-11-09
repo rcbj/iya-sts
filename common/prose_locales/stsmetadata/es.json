@@ -1207,6 +1207,10 @@
     "en": "bfc05d15d7d40bc2",
     "text": "NO ESTÁNDAR, y deliberadamente SIN CONTROL DE ACCESO. Cada dominio de confianza que ejecuta este proceso; un dominio de confianza es una copia lógica completa de este servicio, accesible bajo un segmento al principio de la ruta y con su propia configuración, clave de firma, sesiones y tokens. Lleva el id, el nombre, la URL base y el prefijo de ruta de cada dominio, el propio SEGMENTO del prefijo (que es un ajuste, así que un cliente no puede adivinarlo) y qué familias de protocolos separa realmente un dominio. Lo último es la parte que nada más responde: la mayoría de las familias se separan por la ruta, pero el directorio se separa por DN, Kerberos por el NOMBRE del dominio en la solicitud, SPIFFE por la dirección del socket, y el certificado TLS no se separa en absoluto; así que quien supusiera que el segmento de ruta es el límite en todas partes se equivocaría en cuatro de ellas. Un cliente al que se dirige a un dominio no puede construir ni una sola URL sin esto, razón por la cual no está detrás del control de acceso de la consola: el mismo argumento en el que se basa cada documento de descubrimiento de aquí."
   },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC. El icono que un navegador solicita por sí solo en cada página: la marca cuadrada del logotipo (common/favicon.ico). Se responde en cada escucha; se conserva un día."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Las reglas de la tarjeta de la pantalla de inicio de sesión y del selector de idioma, como una sola hoja de estilo que enlaza el shell de una superficie pública estática (common/web_card_css.ts). Se sirve en cada escucha; una dirección que lleva el ?v= de esta compilación se almacena en caché para siempre."
@@ -2170,6 +2174,10 @@
   "stsmetadata.endpoints./admin-api/config.what": {
     "en": "de1ba6721d3df738",
     "text": "NON-SPEC. Cada ajuste, su valor efectivo y el origen de ese valor: anulación, variable de entorno, el archivo appconfig o env/defaults.js debajo de él. Refleja GET /admin/config."
+  },
+  "stsmetadata.endpoints./admin-api/config-dump.what": {
+    "en": "56a8ec7f8dbef7bb",
+    "text": "NON-SPEC. Todos los parámetros de configuración, globales y por dominio, con cada valor sensible enmascarado. Refleja GET /admin/config-dump."
   },
   "stsmetadata.endpoints./admin-api/config/:action.what": {
     "en": "0493cb479489bbd8",
@@ -3942,9 +3950,5 @@
   "stsmetadata.param.aParameter": {
     "en": "24ece2f78749cf6a",
     "text": "un parámetro"
-  },
-  "stsmetadata.endpoints./favicon.ico.what": {
-    "en": "18aea3253b0f21a8",
-    "text": "NON-SPEC. El icono que un navegador solicita por sí solo en cada página: la marca cuadrada del logotipo (common/favicon.ico). Se responde en cada escucha; se conserva un día."
   }
 }

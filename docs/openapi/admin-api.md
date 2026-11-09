@@ -32,7 +32,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Authorization servers](admin-api-authorization-servers.html) | 6 |  |
 | [CAEP](admin-api-caep.html) | 5 |  |
 | [Cluster](admin-api-cluster.html) | 1 |  |
-| [Configuration](admin-api-configuration.html) | 9 |  |
+| [Configuration](admin-api-configuration.html) | 10 |  |
 | [Credential claims](admin-api-credential-claims.html) | 6 | What an issued Verifiable Credential carries. |
 | [Credential status](admin-api-credential-status.html) | 5 | The status lists every issued Verifiable Credential names, and suspending, reinstating or revoking one: Monitoring → Verifiable Credentials (`/admin/vc/monitor`) in the console. |
 | [Custom SAML attributes](admin-api-custom-saml-attributes.html) | 9 | What to add to every SAML 2.0 and SAML 1.1 assertion issued from now on — WS-Trust's and WS-Federation's alike. The same store the custom claims are in, and the same two halves: a typed attribute and a directory one. |

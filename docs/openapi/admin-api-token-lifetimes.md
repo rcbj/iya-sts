@@ -85,6 +85,7 @@ Scope: `admin:read`.
 | `settings[].key` | string |  |  |
 | `settings[].label` | string |  |  |
 | `settings[].legacyEnv` | string, or null |  |  |
+| `settings[].masked` | boolean |  |  |
 | `settings[].max` | number |  |  |
 | `settings[].min` | number |  |  |
 | `settings[].ordered` | boolean |  |  |
@@ -173,6 +174,7 @@ An empty object.
 | `settings[].key` | string |  |  |
 | `settings[].label` | string |  |  |
 | `settings[].legacyEnv` | string, or null |  |  |
+| `settings[].masked` | boolean |  |  |
 | `settings[].max` | number |  |  |
 | `settings[].min` | number |  |  |
 | `settings[].ordered` | boolean |  |  |
@@ -227,6 +229,7 @@ An empty object.
 | `settings[].key` | string |  |  |
 | `settings[].label` | string |  |  |
 | `settings[].legacyEnv` | string, or null |  |  |
+| `settings[].masked` | boolean |  |  |
 | `settings[].max` | number |  |  |
 | `settings[].min` | number |  |  |
 | `settings[].ordered` | boolean |  |  |
@@ -314,6 +317,7 @@ Scope: `admin:write`.
 | `settings[].key` | string |  |  |
 | `settings[].label` | string |  |  |
 | `settings[].legacyEnv` | string, or null |  |  |
+| `settings[].masked` | boolean |  |  |
 | `settings[].max` | number |  |  |
 | `settings[].min` | number |  |  |
 | `settings[].ordered` | boolean |  |  |
@@ -370,6 +374,7 @@ Scope: `admin:write`.
 | `settings[].key` | string |  |  |
 | `settings[].label` | string |  |  |
 | `settings[].legacyEnv` | string, or null |  |  |
+| `settings[].masked` | boolean |  |  |
 | `settings[].max` | number |  |  |
 | `settings[].min` | number |  |  |
 | `settings[].ordered` | boolean |  |  |

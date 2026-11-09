@@ -181,13 +181,13 @@ function childMain() {
         // `/authn-api`, and its answer names where the browser goes next,
         // as the form's 303 did.
         const screenAt = r.status >= 300 && r.status < 400 && r.location &&
-          /\/authn\/login\?authn=/.test(r.location) ? String(r.location) : '';
+          /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location) ? String(r.location) : '';
         if (screenAt) {
           screens += 1;
           if (atScreen === 'skip') {
             // The return address the sign-in would have sent the browser to,
             // off the pending record — presented without authenticating.
-            const authnId = /[?&]authn=([^&]+)/.exec(screenAt)[1];
+            const authnId = /[?&#]authn=([^&]+)/.exec(screenAt)[1];
             const pending = realms.run(realms.DEFAULT_REALM, function () {
               return authn.pendingFor(decodeURIComponent(authnId));
             });
@@ -199,7 +199,7 @@ function childMain() {
             atScreen = 'done';
             continue;
           }
-          const authnId = /[?&]authn=([^&]+)/.exec(screenAt)[1];
+          const authnId = /[?&#]authn=([^&]+)/.exec(screenAt)[1];
           const pending = realms.run(realms.DEFAULT_REALM, function () {
             return authn.pendingFor(decodeURIComponent(authnId));
           });

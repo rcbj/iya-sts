@@ -168,6 +168,7 @@
   "nav.encryption": "加密",
   "nav.secrets": "机密存储",
   "nav.caches": "缓存",
+  "nav.config-dump": "配置转储",
   "nav.worker-pools": "工作线程池",
   "nav.node-health": "节点健康",
   "nav.scheduler": "调度器",

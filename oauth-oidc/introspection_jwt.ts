@@ -386,7 +386,7 @@ class IntrospectionJwt {
       return errorCodes.mark({ ok: false, description: problem.description },
                              'STS-OAUTH-0293');
     }
-    const encEnc = encAlg ? (encEncRaw || DEFAULT_ENC) : '';
+    const encEnc = encAlg ? (encEncRaw || applications.defaultJweEnc()) : '';
     const offered = advertised || {};
     const outside = [
       ['introspection_signed_response_alg', signAlg, offered.signing,

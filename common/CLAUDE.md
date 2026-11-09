@@ -52,6 +52,15 @@ more than one family needs it, not because it felt general.
 | `security_operations.ts` | **WHICH WRITES ARE THE SECURITY ADMINISTRATOR'S (#645, 2026-11-02).** One answer for the management API's gate, the LDAP socket and SCIM: a Directory → Policies save, reset or act (read off `admin-core/policy_kinds.ts`, so a new kind is covered), a policy REFERENCE that changes (each kind's `REFERENCES` and `PolicySelection`'s declarations; a grid posting it unchanged is not a change, `''` and `default` are one value), a grant of the role by any door (the roster, `SECURITY_ADMIN`, `cn=security-admin`, `admin.securityGroup`), and an act on a holder's account. XACML, FGA, AuthZEN, delegation policy and the `xacml.*` switches stay Admin Write's (rcbj's decision). It reads nothing itself: the caller hands it `SecurityHooks` (`admin_rbac.ts`'s `holdsSecurity()`, `personValues()`, `groupValues()`, `applications.get()`). A static utility class, `policy_kinds` required lazily. `tests/security_admin.js`. |
 | `secret_destinations.ts` | **WHERE A SERVICE ACCOUNT'S ROTATED PASSWORD IS PUSHED (#221 P3, 2026-10-06) — rule 3ce.** The register of secret push destinations, which is the realm's application entries declared for `secret-destination` and not a store of its own; `list()`, `get()`, `push()`, `testPush()`, `isDestination()`, the console's and the API's `act()`. The write path itself is `secrets.js`'s `pushSecret()`. |
 | `revocation_status.js` | **REVOCATION, CONSULTED (2026-09-12)** — the one function that answers whether a PRESENTED certificate chain is revoked: from the register for one this service issued, from the OCSP responder and the CRL (delta and indirect included) it names for anybody else's. `pki_revocation.js` publishes; this checks. A LIBRARY (rule 3ad). |
+| `model_ir.ts` | **THE JSON THE MODEL'S IMPORTERS AND EMITTERS SHARE (#1390).** `stable()` sorts keys for the directory and persistence catalogues. An OpenAPI document is never passed through it. A library, no route. |
+| `directory_spellings.ts` | **`STANDARD_NAMES` AND `OWN_NAMES`, READ AS TEXT (#1390).** The directory server registers routes when it is required, so the lists are taken from the source. |
+| `directory_model_catalog.ts` | **THE DIRECTORY OBJECTS WITH NO `SCHEMA` TABLE (#1390).** People, groups, attribute sources, the operational attributes, the OpenID Federation, claims provider, Kerberos trust and trust anchor registers, and the links between objects. A name the directory's spelling list describes takes that list's comment as its sentence. |
+| `directory_model.ts` | **THE DIRECTORY NAMESPACE (#1390).** Collects each `SCHEMA` and the catalogue, and adds what the RFCs publish from `models/directory/rfc_schema.json`. The directory still enforces nothing. |
+| `postgres_import.ts` | **THE PERSISTENCE NAMESPACE (#1390).** Reads both DDL copies into tables, columns and each statement's place. `emit()` returns the file's own bytes, so comparing it to that file proves nothing; `tests/model_typespec.js` is the comparison that does. |
+| `mariadb_import.ts` | **THE MARIADB SCRIPT (#1390).** Reads `mariadb/schema.sql` and `persistence/schema_mariadb.js`. `emit()` returns the SQL file's own bytes. |
+| `openapi_import.ts` | **THE API NAMESPACE (#1390).** Captures a built OpenAPI document's bytes and indexes every operation. `emit()` returns those bytes. |
+| `model_emit.ts` | **TYPESPEC, CLASSES, RFC 4512 DEFINITIONS AND THE READING PAGES (#1390).** `tests/model_typespec.js` compiles what it writes. It does not write an object whose TypeSpec is the source (`AUTHORED`; `models/CLAUDE.md`). |
+| `model_tables.ts` | **WHAT THE SERVICE READS FROM THE MODEL (#1390).** `schema(id)` returns the table the image build generated. A leaf, so it can be required from anywhere. |
 | `crypto_impl/` | The crypto engines `crypto.js` rests on; copies of the parent project's files until #1280, this service's own since — see `common/crypto_impl/CLAUDE.md`. |
 
 **`config_file.js` is new with the 2026-08-23 reorganisation and it exists
@@ -4427,7 +4436,7 @@ with `Cannot find module` naming a file the operator never mentioned.
    has no schema subsystem (its whole `lib/` mentions objectClass three times: a
    default filter and two result-code names) and it is a submodule this repo does
    not modify, so there was nothing to register with. `SCHEMA.attributes` is the
-   definition: the entry is built by WALKING it, `/admin/ldap/applications` publishes
+   definition (written in `models/directory/application.tsp` since #1390): the entry is built by WALKING it, `/admin/ldap/applications` publishes
    it, and an attribute not in it is REFUSED rather than written. `multi`
    accumulates and `single` is assigned — get that backwards on a counter and the
    entry grows a value per sign-in, which is `applyVcAttributes()`'s second rule.
@@ -5658,7 +5667,8 @@ they get looks like.
 `OVERRIDE_ATTRIBUTES` is derived from the rows' own `overrides` members at
 require time; `settingFor()` reads it, `overridableSettings()` publishes it, and
 `/admin/saml-assertions` and `/admin/applications/new` both draw from that.
-Adding an eleventh override is a row in `SCHEMA.attributes` and nothing else — a
+Adding an eleventh override is a row in `models/directory/application.tsp` and
+nothing else — a
 map written by hand here would be the first thing to disagree with the schema.
 
 **`config` IS PASSED IN**, which keeps the resolver testable with a stub. (It
@@ -5673,7 +5683,8 @@ a list would be a question with no rule for which value won.
 **IT IS TWENTY-ONE ATTRIBUTES ACROSS FOUR PROTOCOLS SINCE THE SECOND PASS**, and
 the mechanism did not change to take them: SIX OAuth 2.0 / OIDC per-client
 settings, the SAML ten, WS-Federation's assertion lifetime, and the group
-claim's four. Each is a row in `SCHEMA.attributes` carrying `overrides`, and
+claim's four. Each is a row in `models/directory/application.tsp` carrying
+`overrides`, and
 that is the whole of what adding one costs — `settingFor()`, the New Application
 form, both defaults pages and `GET /admin-api/saml-assertions` all read the same
 derived table.
@@ -9421,8 +9432,10 @@ realm, and rcbj chose that over a settings group for the reasons every register
 here is in the directory: per realm, persisted and replicated with it, visible
 to `ldapsearch`, and a container that can hold a second profile the day one can
 be assigned. Six fields — `pwdMinLength` (12), `pwdInHistory` (5),
-`stsPwdMinSymbols` (1), `stsPwdRequireUppercase` (TRUE), `stsPwdRequireDigit`
-(TRUE), `stsPwdGeneratedLength` (20). **The `pwd*` names are
+`stsPwdMinSymbols` (0), `stsPwdRequireUppercase` (FALSE), `stsPwdRequireDigit`
+(FALSE) — those three may hold no other value since #1444 (ASVS 5.0.0 6.2.5), and
+the row stays only so the entry's shape does not change —
+`stsPwdGeneratedLength` (20). **The `pwd*` names are
 draft-behera-ldap-password-policy's**, which is what OpenLDAP's ppolicy overlay
 reads, and `pwdInHistory` keeps the draft's meaning: PREVIOUS passwords, with the
 current one refused beside them. The draft defines no composition rule, so those
@@ -15264,3 +15277,34 @@ response is validated against it, always.** There is no setting, in either mode.
   own members).
 
 `tests/tools/openapi_inventory.js` prints the state of every operation and status.
+
+## ASVS 5.0.0 Level 1 (#1438-#1460)
+
+Three modules exist for it. `docs/product-security.md` is the user's account.
+
+**`cookie_wire.ts` runs in the main thread only**, right after `enterRealm` and
+before the request pool routes on a cookie's name: a worker is behind a unix
+socket and cannot see TLS. Inside the service a cookie keeps its plain name; on
+the wire, in product over TLS, it is `__Host-` or `__Secure-`. So a new cookie
+needs nothing, and a cookie whose NAME a document must state asks
+`CookieWire.wireName()` (DBSC does). HSTS is there for the same reason.
+
+**`bootstrap_name.ts` derives a generated name and stores nothing**: an HMAC under
+the cluster's `csrf` key, so nodes and restarts agree. Read the name through
+`BootstrapName.current()`, never `admin.bootstrapUsername`.
+
+**`web_safe_dom.ts` is the one `.innerHTML =` in a browser runtime**
+(`tests/web_safe_dom.js`). It is a second layer behind escaping and the CSP.
+
+**`step_address.ts` keeps a sign-in step's id out of what a server is sent**, in
+product: a redirect's `?authn=`, `?mfa=`, `?change=` or `?consent=` moves to the
+fragment, the shell tells the page (`data-sts-step-fragment`), and the page sends
+`-` in the API path with the id in `X-Step-Id`. A server-read hop stays in the
+query: SPNEGO (RFC 4559) and the start of a federated sign-in. The API still
+accepts an id in the path, for a program.
+
+**Five settings exist so product test stacks can run**, and
+`docker-compose-run-tests.yml` turns all of them on: `krb5.allowSha1Enctypes`,
+`scep.allowInProduct`, `oauth2.allowUndeclaredGrants`,
+`admin.allowDefaultUsername`, `crypto.allowLegacyHashes`. So those defaults are held by in-process tests
+(`tests/asvs_product_limits.js`), not by a product run of the protocol half.

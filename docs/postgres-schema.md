@@ -882,5 +882,8 @@ tables, `sts_report_artifacts`, `sts_report_artifact_pieces` and
 * [Encryption at rest](encryption-at-rest.md): the key-encryption key and the
   data keys behind every sealed value.
 * [LDAP schema](ldap-schema.md): what is inside `sts_ldap_entries.attrs`.
+* [Abstract data model](data-model.md): the same tables as one namespace
+  of the common model. [Persistence models](data-model-persistence.md)
+  lists the columns. This page stays the explanation.
 * [A cluster in AWS](aws-cluster.md): the same schema on RDS.
 * `postgres/CLAUDE.md` and `persistence/CLAUDE.md`, for maintainers.

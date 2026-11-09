@@ -168,6 +168,7 @@
   "nav.encryption": "Chiffrement",
   "nav.secrets": "Magasin de secrets",
   "nav.caches": "Caches",
+  "nav.config-dump": "Export de la configuration",
   "nav.worker-pools": "Pools de workers",
   "nav.node-health": "Santé des nœuds",
   "nav.scheduler": "Planificateur",

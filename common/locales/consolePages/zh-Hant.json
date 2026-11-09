@@ -21,6 +21,7 @@
   "title.commands": "OpenID Provider Commands",
   "title.claims": "自訂宣告",
   "title.config": "設定",
+  "title.config-dump": "設定傾印",
   "title.consent": "同意",
   "title.crypto-metadata": "密碼學",
   "title.home": "管理主控台",

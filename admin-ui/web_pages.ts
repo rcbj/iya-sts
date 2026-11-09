@@ -44,6 +44,7 @@ import CaepRiscPage = require('../ssf/web_caep_risc');
 import CellsPage = require('./web_cells');
 import ClaimsPage = require('./web_claims');
 import ConfigPage = require('./web_config');
+import ConfigDumpPage = require('./web_config_dump');
 import ConsentPage = require('../oauth-oidc/web_consent');
 import ClaimsProvidersPage =
   require('../oauth-oidc/web_claims_providers');
@@ -525,6 +526,9 @@ const PAGES: WebPage[] = [
     render: function (view: Json, ctx?: Json): string {
       return ConfigPage.body(ctx || WebKit.context(), view);
     } },
+  { path: '/admin/config-dump', title: 'Configuration dump',
+    operation: '/admin-api/config-dump',
+    render: ConfigDumpPage.render },
   { path: '/admin/consent', title: 'Consent',
     operation: '/admin-api/consent',
     render: function (view: Json, ctx?: Json): string {

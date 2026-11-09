@@ -312,6 +312,7 @@ class SigstoreVerifier {
     for (let i = 0; i < files.length; i++) {
       let spki = null;
       try {
+        require('../common/outbound_tls').assertNamedFile(files[i]);
         spki = stsCrypto.spkiFromPublicKeyPem(fs.readFileSync(files[i],
                                                               'utf8'));
       } catch (e) {
@@ -345,6 +346,7 @@ class SigstoreVerifier {
         'spiffe.dockerSigstoreTrustedRootFile') || '');
       if (pinned) {
         try {
+          require('../common/outbound_tls').assertNamedFile(pinned);
           root = JSON.parse(fs.readFileSync(pinned, 'utf8'));
           source = pinned;
         } catch (e) {
@@ -461,6 +463,7 @@ class SigstoreVerifier {
       return '';
     }
     try {
+      require('../common/outbound_tls').assertNamedFile(file);
       const auths = (JSON.parse(fs.readFileSync(file, 'utf8')) || {}).auths ||
                     {};
       const names = registry === DOCKER_HUB

@@ -338,7 +338,8 @@ function inAChild(t) {
       // `info`, and not the `fatal` a quieter child would run at: section 8
       // asserts what the report PRINTS, and a silenced logger would pass it
       // without testing anything.
-      env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_LOG_LEVEL: 'info',
+      env: Object.assign(clean, { LOG_LEVEL: 'fatal',
+        STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', STS_LOG_LEVEL: 'info',
                                   CB_ROOT: ROOT, CB_OUT: out }),
       encoding: 'utf8', timeout: 240000, cwd: ROOT,
       maxBuffer: 256 * 1024 * 1024

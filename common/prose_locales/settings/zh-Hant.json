@@ -12170,5 +12170,85 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "僅適用於協定偵錯工具監聽器：http.http2MaxConcurrentStreams。預設值 -1 依循 http.http2MaxConcurrentStreams；其他任何值只對此監聽器生效。一條 HTTP/2 連線可同時開啟的請求數（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的串流會被拒絕，直到有串流結束。預設值 100 是 RFC 9113 建議的最小值；node 自己的值沒有上限，這會讓一條連線承載成千上萬條連線的工作量。它限制一條連線上的工作量，正如 http.maxConnections 限制連線數。新連線會立即依循變更，已開啟的連線會收到新值。"
+  },
+  "krb5.allowSha1Enctypes|label": {
+    "en": "15146ba7e398f699",
+    "text": "在產品模式下提供帶 SHA-1 的 AES"
+  },
+  "krb5.allowSha1Enctypes|description": {
+    "en": "bc316355cf713a02",
+    "text": "僅限產品模式。開啟時，此 KDC 也可使用 enctype 17 與 18（帶 HMAC-SHA1-96 的 AES，RFC 3962）。預設關閉時，產品模式只使用 19 與 20（RFC 8009）。警告：ASVS 5.0.0 要求 11.4.1 在此不接受 SHA-1，因此僅為不支援較新演算法的 Kerberos 用戶端開啟。"
+  },
+  "krb5.allowSha1Enctypes|restartReason": {
+    "en": "8bca2d2d03148c2a",
+    "text": "每個主體的金鑰在啟動時產生"
+  },
+  "scep.allowInProduct|label": {
+    "en": "5a40ad7af32c5eb7",
+    "text": "在產品模式下回應 SCEP"
+  },
+  "scep.allowInProduct|description": {
+    "en": "ad9779aeb9ac6587",
+    "text": "僅限產品模式。開啟時，/enroll/scep 在產品模式下回應。預設關閉時傳回 503。警告：RFC 8894 要求 RSAES-PKCS1-v1.5 與 AES-CBC，而 ASVS 5.0.0 要求 11.3.1 與 11.3.2 不接受它們，因此僅為不支援較新演算法的裝置開啟。"
+  },
+  "oauth2.allowUndeclaredGrants|label": {
+    "en": "48f3e420ff8f61c0",
+    "text": "允許未列出授權類型的用戶端使用任何授權"
+  },
+  "oauth2.allowUndeclaredGrants|description": {
+    "en": "22bb986fa3711e13",
+    "text": "僅限產品模式。預設關閉時，未宣告授權類型的用戶端只能使用 authorization_code 與 refresh_token。開啟時，可使用本服務提供的任何授權。警告：ASVS 5.0.0 要求 10.4.4 將用戶端限制為其所需的授權，因此除測試環境外請保持關閉。"
+  },
+  "admin.allowDefaultUsername|label": {
+    "en": "0ab7a95a721ff350",
+    "text": "在產品模式下允許預設管理員名稱"
+  },
+  "admin.allowDefaultUsername|description": {
+    "en": "261e7a2bb89b22e2",
+    "text": "僅限產品模式。預設關閉時，名為 admin、root、sa 或 administrator 或沒有名稱的啟動管理員會取得一個無法預測的產生名稱，並在首次啟動時與其密碼一併顯示。開啟時按設定的名稱使用。警告：ASVS 5.0.0 要求 6.3.2 禁止預設帳戶名稱，因此除測試環境外請保持關閉。"
+  },
+  "admin.allowDefaultUsername|restartReason": {
+    "en": "0191948468332113",
+    "text": "初始化只在持久化儲存區開啟與接聽程式繫結之間執行一次，因此在那之後的變更已無對象可指名"
+  },
+  "crypto.allowLegacyHashes|label": {
+    "en": "e64b3dc98c254326",
+    "text": "在協定仍使用時允許 SHA-1 與 MD5"
+  },
+  "crypto.allowLegacyHashes|description": {
+    "en": "21064646f0ea0387",
+    "text": "僅限產品模式。預設關閉時，本服務不在 XML 加密或 JWE 中使用基於 SHA-1 的 OAEP，也不使用 SHA-1 PKINIT 金鑰衍生或 S4U2Self 的 HMAC-MD5 總和檢查碼。開啟時則使用。警告：ASVS 5.0.0 要求 11.4.1 禁止這些雜湊函式，因此僅為不支援較新演算法的合作夥伴或用戶端開啟。"
+  },
+  "security.allowUnscopedPeople|label": {
+    "en": "502e12a150357d63",
+    "text": "允許無角色的人員存取 SCIM 與 Shared Signals"
+  },
+  "security.allowUnscopedPeople|description": {
+    "en": "2bf5565da47abb33",
+    "text": "僅限產品模式。預設關閉時，透過不帶範圍的配置（如 HTTP Basic 或工作階段 Cookie）向 /scim/v2 或 Shared Signals 驗證的人員，需要 Admin Read 才能讀取、Admin Write 才能寫入。開啟時，任何已通過驗證的人員皆可。警告：開啟後不符合 ASVS 5.0.0 要求 8.2.1 與 8.2.2，因為任何人都可變更任何帳戶。請改用 OAuth 範圍供佈建用戶端使用。"
+  },
+  "security.fileRoots|label": {
+    "en": "7f144086ba380c16",
+    "text": "可讀取指定檔案的目錄"
+  },
+  "security.fileRoots|description": {
+    "en": "a378a866f9204d53",
+    "text": "僅限產品模式。以逗號分隔的絕對目錄清單。管理員在設定或要求中指定的檔案（CA 檔案、SPIFFE 權杖或金鑰檔案、Sigstore 檔案、郵件憑證或金鑰）僅當其跟隨符號連結後的實際路徑位於其中某個目錄內時才讀取。此項在環境或 appconfig 檔案中設定，不能透過主控台或 API 變更，因此管理員的要求無法擴大其範圍。警告：加入 / 或其他寬泛目錄將不符合 ASVS 5.0.0 要求 5.3.2。"
+  },
+  "risk.maxSkippedLinesPercent|label": {
+    "en": "f299cbec779c44e8",
+    "text": "資料集中允許剖析失敗的行的最大比例（百分比）"
+  },
+  "risk.maxSkippedLinesPercent|description": {
+    "en": "ff816ae98311e5a5",
+    "text": "資料集檔案中若超過此百分比的非註解行不是該格式的記錄，則拒絕該檔案，且不保留任何內容。100 表示接受至少含一筆記錄的任何檔案，這是此服務以前的行為。警告：設為 100 時，只要有一行能剖析，錯誤類型的檔案也可能被載入。"
+  },
+  "crypto.allowCbcJwe|label": {
+    "en": "47b44d2ca23a7a17",
+    "text": "允許 JWE CBC-HMAC 內容加密"
+  },
+  "crypto.allowCbcJwe|description": {
+    "en": "20f6a7dc269fe48a",
+    "text": "僅限產品模式。預設關閉時，JWE 僅使用與接受 AES-GCM：既不提供也不接受 A128CBC-HS256、A192CBC-HS384 與 A256CBC-HS512，指定了演算法但未指定 enc 的用戶端將以 A256GCM 回應。開啟時，它們的行為與開發模式相同。警告：開啟期間不符合 ASVS 5.0.0 要求 11.3.2，僅為無法讀取 AES-GCM 的合作夥伴開啟。"
   }
 }

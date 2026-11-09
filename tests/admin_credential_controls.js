@@ -74,10 +74,10 @@ function childMain() {
                     detail: detail === undefined ? '' : String(detail) });
   }
 
-  function request(port, method, urlPath, form, cookie) {
+  function request(port, method, urlPath, form, cookie, extra) {
     return new Promise(function (resolve) {
       const body = form ? new URLSearchParams(form).toString() : '';
-      const headers = {};
+      const headers = Object.assign({}, extra || {});
       if (cookie) {
         headers.cookie = cookie;
       }
@@ -234,6 +234,19 @@ function childMain() {
            '1b. pwdReset is set on the entry');
       note(credentials.verify('ctl-alice', reset.password).ok,
            '1c. the returned password is the one stored');
+      ldapServer.createUser('ctl-gen', {});
+      const generatedSet = actions.usersAction({ action: 'set-password',
+        user: 'ctl-gen', generate: true }, context);
+      note(generatedSet.ok && generatedSet.password &&
+           credentials.passwordResetRequired('ctl-gen'),
+           '1b-ii. a generated set-password must be changed at first use',
+           JSON.stringify(generatedSet.errors || []));
+      ldapServer.createUser('ctl-typed', {});
+      const typed = actions.usersAction({ action: 'set-password',
+        user: 'ctl-typed', password: 'A-long-typed-passphrase' }, context);
+      note(typed.ok && !credentials.passwordResetRequired('ctl-typed'),
+           '1b-iii. and one an administrator typed need not be',
+           JSON.stringify(typed.errors || []));
       let sets = await waitFor('ctl-alice', 2);
       const change1 = sets.map(function (c) {
         return payloadOf(c, CAEP + 'credential-change');
@@ -257,7 +270,7 @@ function childMain() {
       const linked = actions.usersAction({ action: 'issue-password-reset',
                                            user: 'ctl-alice' }, context);
       const linkShape =
-        /^https:\/\/sts\.test\/portal\/reset-password\?user=ctl-alice&token=./;
+        /^https:\/\/sts\.test\/portal\/reset-password\?user=ctl-alice#token=./;
       note(linked.ok && linkShape.test(String(linked.resetUrl || '')),
            '2a. the reset link is absolute on the base the action was given',
            String(linked.resetUrl));
@@ -310,14 +323,14 @@ function childMain() {
           return {};
         }
       };
-      let r = await request(port, 'GET', resetPath + '?user=ctl-alice&token=' +
-                            encodeURIComponent(token));
+      let r = await request(port, 'GET', resetPath + '?user=ctl-alice', null,
+                            null, { 'x-link-token': token });
       note(r.status === 200 && !json(r).refused &&
            json(r).username === 'ctl-alice',
            '3a. a good link answers the form\'s view', r.status + ' ' +
            r.text.slice(0, 200));
-      r = await request(port, 'GET', resetPath + '?user=ctl-alice&token=' +
-                        encodeURIComponent(token.slice(0, -2) + 'zz'));
+      r = await request(port, 'GET', resetPath + '?user=ctl-alice', null, null,
+                        { 'x-link-token': token.slice(0, -2) + 'zz' });
       note(r.status === 400 && /not valid/.test(r.text),
            '3b. a bad link answers the one sentence', r.status);
       r = await requestJson(port, 'POST', resetPath,
@@ -497,7 +510,7 @@ function childMain() {
                                 redirect_uri: 'https://rp.acc.example/cb',
                                 scope: 'openid', state: 's' }).toString());
         const location = String(got.headers.location || '');
-        return (location.match(/[?&]authn=([^&]+)/) || [])[1] || '';
+        return (location.match(/[?&#]authn=([^&]+)/) || [])[1] || '';
       };
       const cookieOf = function (res) {
         // A step's opened page (#572) carries no headers of its own.
@@ -639,8 +652,23 @@ function childMain() {
       // for anybody, so product enrolled keys for nobody. Found by the
       // protocol suite against a product-mode deployment.
       ldapServer.createUser('ctl-erin', {});
+      const madeInDevelopment = actions.usersAction({ action: 'create',
+        username: 'ctl-gendev', invent: false, credential: 'generate' },
+      context);
+      note(madeInDevelopment.ok && madeInDevelopment.password &&
+           !credentials.passwordResetRequired('ctl-gendev'),
+           '8-i. development: a person created with a generated password ' +
+           'may use it', JSON.stringify(madeInDevelopment.errors || []));
       config.setOverride('global.mode', 'product');
       try {
+        const madeInProduct = actions.usersAction({ action: 'create',
+          username: 'ctl-genprod', invent: false, credential: 'generate',
+          attributes: { cn: 'ctl', givenName: 'ctl', sn: 'genprod',
+                        mail: 'ctl-genprod@example.test' } }, context);
+        note(madeInProduct.ok && madeInProduct.password &&
+             credentials.passwordResetRequired('ctl-genprod'),
+             '8-ii. product: a generated password at creation must be changed',
+             JSON.stringify(madeInProduct.errors || []));
         const erinTotp = credentials.beginTotpEnrolment('ctl-erin', {});
         note(erinTotp.ok, '8a. product mode enrols an authenticator app ' +
              'for somebody who exists', JSON.stringify(erinTotp.errors));

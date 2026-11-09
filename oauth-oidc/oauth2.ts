@@ -2094,7 +2094,8 @@ class OAuth2Server {
       authorization_signing_alg_values_supported: jarm.SIGNING_ALGS,
       authorization_encryption_alg_values_supported:
         helpers.offeredJweAlgs(jarm.ENCRYPTION_ALGS),
-      authorization_encryption_enc_values_supported: jarm.ENCRYPTION_ENCS,
+      authorization_encryption_enc_values_supported:
+        applications.permittedEncs(jarm.ENCRYPTION_ENCS),
       // Only what the token endpoint below actually implements — the metadata
       // should not promise a grant this server would refuse. The device_code
       // grant (#150) is added below only where its endpoint is on.
@@ -2167,7 +2168,7 @@ class OAuth2Server {
       assertion_encryption_alg_values_supported:
         helpers.decryptableJweAlgs(stsCrypto.JWE_DECRYPT_ALGS),
       assertion_encryption_enc_values_supported:
-        Object.keys(stsCrypto.JWE_ENCS),
+        applications.permittedEncs(Object.keys(stsCrypto.JWE_ENCS)),
       // RFC 9396. OID4VCI's openid_credential — its other way of saying which
       // credential is wanted — and every type an application in this realm
       // declares as a resource server (`oauthAuthorizationDetailsType`).
@@ -2244,7 +2245,7 @@ class OAuth2Server {
       introspection_encryption_alg_values_supported:
         helpers.offeredJweAlgs(introspectionJwt.ENCRYPTION_ALGS),
       introspection_encryption_enc_values_supported:
-        introspectionJwt.ENCRYPTION_ENCS,
+        applications.permittedEncs(introspectionJwt.ENCRYPTION_ENCS),
       // RFC 9101 AND OPENID CONNECT DISCOVERY (2026-09-13). A request object by
       // value and by reference; a request_uri fetched only when the client
       // registered it, which is exactly what require_request_uri_registration
@@ -2265,7 +2266,7 @@ class OAuth2Server {
       request_object_encryption_alg_values_supported:
         helpers.decryptableJweAlgs(applications.REQUEST_OBJECT_ENCRYPTION_ALGS),
       request_object_encryption_enc_values_supported:
-        applications.REQUEST_OBJECT_ENCRYPTION_ENCS,
+        applications.permittedEncs(applications.REQUEST_OBJECT_ENCRYPTION_ENCS),
       // RFC 9126 SECTION 5 (2026-09-13). The endpoint, and the global policy.
       // `pushed_authorization_request_endpoint` is removed below where
       // `oauth2.pushedAuthorizationRequests` is off, because the endpoint then
@@ -3149,7 +3150,8 @@ class OAuth2Server {
       // The ML-KEM and HPKE algorithms only where `keys.offerKemEncryption`
       // is on (helpers.offeredJweAlgs(), 2026-09-28), for all four lists.
       userinfo_encryption_alg_values_supported: helpers.offeredJweAlgs(),
-      userinfo_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
+      userinfo_encryption_enc_values_supported:
+        applications.permittedEncs(Object.keys(stsCrypto.JWE_ENCS)),
       //
       // `public`: the `sub` userFor() gives — the person's urn:uuid:<entryUUID>
       // since 2026-09-14 — the same value for every client that asks. And
@@ -3164,7 +3166,8 @@ class OAuth2Server {
       // argues the rest. A Logout Token follows the same registration.
       id_token_encryption_alg_values_supported:
         helpers.offeredJweAlgs(idTokenEncryption.ALGS),
-      id_token_encryption_enc_values_supported: idTokenEncryption.ENCS,
+      id_token_encryption_enc_values_supported:
+        applications.permittedEncs(idTokenEncryption.ENCS),
       // OIDC Core section 3.1.3.7: a client may register
       // `id_token_signed_response_alg`. This service holds a key for every
       // asymmetric algorithm in the table and can use a client's own secret for
@@ -11597,6 +11600,20 @@ class OAuth2Server {
         JSON.stringify(declaredFlows.response_types) + ', and this ' +
         'request asks for "' + q.response_type + '" (RFC 7591 section 2).');
     }
+    // A CLIENT THAT DECLARES NO RESPONSE TYPES (#1479, ASVS 5.0.0 10.4.4): in
+    // product it has RFC 7591 section 2's default, `code`, as the token
+    // endpoint holds it to the code flow. One that declared the `implicit`
+    // grant asked for the response types that grant answers with.
+    if (askedType && askedType !== 'code' && mode.narrowsUndeclaredGrants() &&
+        !(declaredFlows && declaredFlows.response_types) &&
+        !(declaredFlows && declaredFlows.grant_types &&
+          declaredFlows.grant_types.indexOf('implicit') >= 0)) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). No response " +
+                "types declared.");
+      return redirectable('STS-OAUTH-0597', 'unauthorized_client',
+        'Client "' + q.client_id + '" declares no response_types, so it may ' +
+        'use response_type=code alone (RFC 7591 section 2).');
+    }
     const requestCheck = bcp.checkAuthorizationRequest({ query: q, types: types,
                                                          client:
                                                            registeredClient });
@@ -13177,7 +13194,17 @@ class OAuth2Server {
     }
     const hintIsThisSession = !!(hinted && session && hinted.sid &&
                                  String(hinted.sid) === String(session.id));
+    // A GET THAT IS NOT A TOP-LEVEL NAVIGATION ENDS NOTHING (#1443, ASVS 5.0.0
+    // 3.5.3): an image or a script is asked, as a request with no verified
+    // hint is. A client that sends no Sec-Fetch-* is unaffected, and
+    // RP-Initiated Logout's own flow is a navigation.
+    const fetchDest = String((req.headers || {})['sec-fetch-dest'] || '');
+    const fetchMode = String((req.headers || {})['sec-fetch-mode'] || '');
+    const notNavigating = req.method === 'GET' &&
+      ((!!fetchDest && fetchDest !== 'document') ||
+       (!!fetchMode && fetchMode !== 'navigate'));
     const mustAsk = !confirmed && (
+      (session && notNavigating) ||
       (session && !(hintIsThisSession &&
                     self.logoutHintMatches(session, q.logout_hint))) ||
       (!session && req.method === 'POST' && !cookiePresented));
@@ -13201,6 +13228,9 @@ class OAuth2Server {
     // The session the request resolved to, where the browser holds several
     // (#561); `endSession()` ignores it with the setting off.
     const ended = endSession(req, res, several && session ? session.id : '');
+    if (session) {
+      authn.clearSiteDataAfterSignOut(req, res);
+    }
     // WHAT THE PAGE'S ENDING SHOWS where the return was refused (#1326).
     const partly = unfollowed ? {
       clientId: clientId, uri: unfollowed.uri, state: q.state,
@@ -13701,8 +13731,8 @@ class OAuth2Server {
     // refusing is the difference between reading the registration as written
     // and making every client spell out something the spec already decided.
     const encEnc = encAlg
-      ? String(registered.userinfo_encrypted_response_enc || 'A128CBC-HS256') :
-                   '';
+      ? String(registered.userinfo_encrypted_response_enc ||
+               applications.defaultJweEnc()) : '';
 
     if (signAlg === 'none' && !encAlg) {
       log.debug("Leaving OAuth2Server.protectUserinfo(). Plain JSON.");
@@ -14140,6 +14170,9 @@ class OAuth2Server {
       client_id: fingerprint.client_id,
       fingerprint: fingerprint,
       jtis: jtis,
+      // The refresh family this code began (#1467, ASVS 5.0.0 10.4.2): a
+      // replay ends what was refreshed from it too, not only the first set.
+      family: self.familyOfIssued(issued),
       // Only under `oauth2.codeReplayIdempotent` (#614): nothing else reads
       // the tokens again, and the replay refusal revokes by jti.
       ...(self.deps.bcp.codeRedemptionRelaxed() ? { response: issued } : {})
@@ -14247,6 +14280,27 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.spendPresentedCode(). Spent; claim " +
               (claim.ok ? 'held' : 'refused (' + claim.reason + ')') + ".");
     return { code: code, record: record, claim: claim };
+  }
+
+  // The refresh family of a token set, or '' where it has no refresh token.
+  private familyOfIssued(response: Json): string {
+    const { log, stsCrypto, refreshTokenCrypto, bcp } = this.deps;
+    log.debug("Entering OAuth2Server.familyOfIssued().");
+    const token = response && response.refresh_token;
+    let family = '';
+    try {
+      const claims = !token ? null
+        : (refreshTokenCrypto.isEncrypted(token)
+          ? refreshTokenCrypto.claimsOfIssued(token)
+          : stsCrypto.decodeJws(token));
+      family = claims ? String(bcp.familyOfRefresh(claims) || '') : '';
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.familyOfIssued(): " +
+                ((e && e.message) || e));
+      family = '';
+    }
+    log.debug("Leaving OAuth2Server.familyOfIssued().");
+    return family;
   }
 
   // The jtis of a token set this service issued, to revoke it later: read
@@ -14400,6 +14454,14 @@ class OAuth2Server {
                'the repeat is refused and what the code bought revoked.');
     }
     if (!replay.ok || nothingToReplay) {
+      if (done.family) {
+        self.deps.bcp.revokeFamily(done.family, done.client_id).catch(
+          function (e) {
+            log.error(errorCodes.tag('STS-OAUTH-0518') + 'oauth2: the refresh ' +
+                      'family of a replayed code could not be revoked: ' +
+                      ((e && e.message) || e));
+          });
+      }
       (replay.ok ? done.jtis : (replay.revoke || [])).forEach(function (jti) {
         // A POLICY's act and a security event (#239): the grant is reported
         // ended by `policy`, with the risk it was replayed under.
@@ -15679,6 +15741,20 @@ class OAuth2Server {
     // that declares no list is not.
     const declaredFlows = client.client_id
       ? applications.declaredFlowsOf(client.client_id) : null;
+    // A CLIENT THAT DECLARES NOTHING (#1453, ASVS 5.0.0 10.4.4): in product it
+    // has the RFC 7591 section 2 default, the code flow, and its refresh.
+    const undeclared = !!client.client_id &&
+      !(declaredFlows && declaredFlows.grant_types);
+    if (undeclared && mode.narrowsUndeclaredGrants() &&
+        ['authorization_code', 'refresh_token'].indexOf(
+          String(body.grant_type || '')) < 0) {
+      log.debug("Leaving the token endpoint. A grant no list declares.");
+      errorCodes.mark(res, 'STS-OAUTH-0598');
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      return self.oauthError(res, 400, 'unauthorized_client',
+        'Client "' + client.client_id + '" declares no grant_types, so it ' +
+        'may use authorization_code and refresh_token alone.');
+    }
     if (declaredFlows && declaredFlows.grant_types &&
         declaredFlows.grant_types.indexOf(
           String(body.grant_type || '')) < 0) {

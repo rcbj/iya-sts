@@ -537,7 +537,7 @@ async function test() {
         }
         // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE
         // #571: signed in through the one helper, with this browser's jar.
-        if (/\/authn\/login\?authn=/.test(res.location)) {
+        if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(res.location)) {
           res = await authnSignin.signInWithJar(h.realmBase,
             h.absolute(res.location),
             { action: "login", username: OWNER, password: PASSWORD },

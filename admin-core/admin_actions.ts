@@ -133,6 +133,7 @@
 // of thing only a test that drives the surface can find, and
 // tests/protocol/sts_admin_api_operations.js did, on the first run after.
 import helpers = require('../common/helpers');
+import configDump = require('./config_dump');
 import InstanceSlot = require('../common/instance_slot');
 // A policy save's or reset's message is filled from `policy_kinds.ts`'s
 // templates, so the server can translate it (#543).
@@ -3117,7 +3118,7 @@ class AdminActions {
       const signedOut = this.signOutEverywhere(who, ctx,
                                                'a password reset link');
       const path = '/portal/reset-password?user=' + encodeURIComponent(who) +
-                   '&token=' + encodeURIComponent(issued.token);
+                   '#token=' + encodeURIComponent(issued.token);
       audited('admin.password.reset-link',
               'an administrator issued a password reset link for ' + who,
               { expiresAt: issued.expiresAt, passwordRemoved: removed.removed,
@@ -4361,7 +4362,7 @@ class AdminActions {
                mailError: mailed ? (mailed.errors || []).join(' ') : undefined,
                // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE PERSON'S BROWSER.
                activationUrl: '/portal/activate?user=' +
-                              encodeURIComponent(who) + '&token=' +
+                              encodeURIComponent(who) + '#token=' +
                               encodeURIComponent(issued.token),
                message: 'An activation link for ' + who + ' is valid until ' +
                         issued.expiresAt +
@@ -5009,8 +5010,10 @@ class AdminActions {
     //
     // It is `credentials.setPassword()`: hashed there, never here, and never
     // written as an attribute — which is also why `userPassword` is refused
-    // by the attribute door on `create`. It does NOT set `pwdReset` and it
-    // does NOT sign the person out, which is what `reset-password` does
+    // by the attribute door on `create`. A GENERATED password sets `pwdReset`
+    // (#1446, ASVS 5.0.0 6.4.1): it may be used once, to choose another, and
+    // cannot become the long-term password. One the administrator typed does
+    // not. Neither signs the person out, which is what `reset-password` does
     // besides the password. What it shares with that door, since #960, is
     // the recovery note: a passkey holder's next password sign-in is held
     // by `recoveryAssurance` until a passkey signs them in.
@@ -5053,6 +5056,9 @@ class AdminActions {
                   "refused.");
         return this.refusedBy('STS-ADMIN-0525', set);
       }
+      if (generate) {
+        credentials.setPasswordResetRequired(who, true);
+      }
       // A passkey holder's recovery, noted the way `reset-password` notes
       // it (#960). False — no passkey, assurance `any`, or a write already
       // logged — does not fail the action: the password is set either way.
@@ -5081,7 +5087,8 @@ class AdminActions {
                message: generate
                  ? 'A password for ' + who + ' has been generated and set. ' +
                    'IT IS SHOWN ONCE — this service stores a scrypt hash and ' +
-                   'cannot produce it again, only replace it.'
+                   'cannot produce it again, only replace it. It must be ' +
+                   'changed at the next sign-in.'
                  : 'The password for ' + who + ' is set. It is stored as a ' +
                    'hash and cannot be shown again.' };
     }
@@ -5251,6 +5258,11 @@ class AdminActions {
             answer.passwordSet = true;
             answer.generated = generated;
             if (generated) {
+              // MUST BE CHANGED AT FIRST USE (#1446, ASVS 5.0.0 6.4.1), in
+              // product; development keeps it, as every fixture signs in with it.
+              if (mode.verifiesCredentials()) {
+                credentials.setPasswordResetRequired(result.username, true);
+              }
               // THE ONLY TIME THIS VALUE EXISTS OUTSIDE THE HASH.
               answer.password = password;
               credentialSaid = ' A password has been GENERATED for them and ' +
@@ -5289,7 +5301,7 @@ class AdminActions {
           } else {
             answer.activationUrl = '/portal/activate?user=' +
                                    encodeURIComponent(result.username) +
-                                   '&token=' +
+                                   '#token=' +
                                    encodeURIComponent(issued.token);
             if (mailed) {
               answer.mailError = (mailed.errors || []).join(' ');
@@ -10086,15 +10098,27 @@ class AdminActions {
 
     if (action === 'set') {
       const key = String(body.key || '').trim();
+      // The mask posted back says "leave it" (#1478): writing it would make
+      // it the password.
+      if (this.configKnows(key) &&
+          configDump.isEchoOfMask(config.describe(this.configSettingFor(key)),
+                                  body.value)) {
+        log.debug("Leaving AdminActions.configAction(). set kept a secret.");
+        return { ok: true, key: key,
+                 setting: this.maskedSettingFor(key),
+                 message: key + ' is unchanged: the value posted was its ' +
+                          'mask.' };
+      }
       const result = config.setOverride(key, body.value);
       if (!result.ok) {
         log.debug("Leaving AdminActions.configAction(). set refused.");
         return this.refusedBy('STS-ADMIN-0564', result);
       }
       log.debug("Leaving AdminActions.configAction(). set ok.");
+      const shown = this.maskedSettingFor(key);
       return { ok: true, key: key,
-               setting: config.describe(this.configSettingFor(key)),
-               message: key + ' is now "' + config.text(key) + '". It ' +
+               setting: shown,
+               message: key + ' is now "' + shown.text + '". It ' +
                         'applies to the next token, assertion, ticket or ' +
                         'search. ' + this.overrideDurability([key]) };
     }
@@ -10105,10 +10129,15 @@ class AdminActions {
       // rows submits the editable ones and nothing else — which is why an
       // absent key is silently skipped rather than treated as an attempt to
       // clear it.
-      const wanted = Object.keys(body).filter(function (name) {
+      const posted = Object.keys(body).filter(function (name) {
         return name !== 'action' && self.configKnows(name);
       });
-      if (!wanted.length) {
+      // A section's Save posts every field, its masked ones included (#1478).
+      const wanted = posted.filter(function (name) {
+        return !configDump.isEchoOfMask(
+          config.describe(self.configSettingFor(name)), body[name]);
+      });
+      if (!posted.length) {
         log.debug("Leaving AdminActions.configAction(). set-many named " +
                   "nothing.");
         return this.refused('STS-ADMIN-0565', { ok: false, errors: ['No ' +
@@ -10162,7 +10191,7 @@ class AdminActions {
           "changed.");
       return { ok: true, applied: wanted, changed: changed,
                settings: wanted.map(function (key) {
-                 return config.describe(self.configSettingFor(key));
+                 return self.maskedSettingFor(key);
                }),
                message: changed.length
                  ? changed.length + ' setting(s) changed: ' +
@@ -10180,11 +10209,12 @@ class AdminActions {
         return this.refusedBy('STS-ADMIN-0564', result);
       }
       log.debug("Leaving AdminActions.configAction(). reset ok.");
+      const shown = this.maskedSettingFor(key);
       return { ok: true, key: key,
-               setting: config.describe(this.configSettingFor(key)),
+               setting: shown,
                message: key + ' is back to its ' + config.sourceOf(key) + ' ' +
                    'value, "' +
-                        config.text(key) + '".' };
+                        shown.text + '".' };
     }
 
     if (action === 'reset-all') {
@@ -10207,6 +10237,19 @@ class AdminActions {
     return this.refused('STS-ADMIN-0500',
                    { ok: false, errors: ['Unknown action "' + action + '". ' +
       'The four are: set, set-many, reset, reset-all.'] });
+  }
+
+  /**
+   * One setting as an operation's answer shows it, its secrets masked.
+   *
+   * @param key - the setting's name
+   * @returns the described setting
+   */
+  maskedSettingFor(key) {
+    const { log, config } = this.deps;
+    log.debug("Entering AdminActions.maskedSettingFor().");
+    log.debug("Leaving AdminActions.maskedSettingFor().");
+    return configDump.maskRow(config.describe(this.configSettingFor(key)));
   }
 
   // Whether this service has a setting of that name. Asked before `describe()`,

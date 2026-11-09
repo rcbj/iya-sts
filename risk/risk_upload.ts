@@ -98,6 +98,18 @@ const RESERVE_BYTES = StagingDirectory.RESERVE_BYTES;
 // The fields an upload may carry, whichever door it came through. The
 // console's form adds `csrf_token`, which the door checks.
 /** The fields an upload may carry, whichever door it came through. */
+// The extensions a console upload of each format may carry (#1480). '' is no
+// extension: FIDO and the Tor Project publish theirs under names with none.
+const EXTENSIONS: Record<string, string[]> = {
+  'dbip-city-csv': ['csv'],
+  'dbip-country-csv': ['csv'],
+  'dbip-asn-csv': ['csv'],
+  'ipinfo-lite-csv': ['csv'],
+  'fido-mds3-jwt': ['jwt', 'jws', 'txt', ''],
+  'android-attestation-status-json': ['json'],
+  'ip-list': ['txt', 'list', 'lst', 'netset', 'ipset', '']
+};
+
 const FIELDS = ['dataset', 'format', 'realm', 'version', 'sha256',
                 'publishedAt', 'provider', 'licence', 'attribution',
                 'activate', 'acceptTerms', 'overrideSignature'];
@@ -327,6 +339,41 @@ class RiskUpload {
     }
     log.debug("Leaving RiskUpload.before().");
     return null;
+  }
+
+  // THE FILE'S NAME AGAINST ITS FORMAT (#1480, ASVS 5.0.0 5.2.2). Asked of
+  // the console's form, which is the door that has a name; the API's body is
+  // the file and has none. One compression suffix is set aside, since the
+  // contents decide that. The two formats whose publishers serve them under
+  // no extension at all may have none.
+  /**
+   * The refusal for a file name that does not fit the format, or null.
+   *
+   * @param format - the format the upload names
+   * @param filename - the file name the form sent, if any
+   * @returns the refusal, or null
+   */
+  static nameRefusal(format: unknown, filename: unknown): Json {
+    log.debug("Entering RiskUpload.nameRefusal().");
+    const allowed = EXTENSIONS[String(format || '')];
+    const name = String(filename || '').trim().toLowerCase()
+      .replace(/^.*[\\/]/, '').replace(/\.(?:gz|gzip|zip)$/, '');
+    if (!allowed || !name) {
+      log.debug("Leaving RiskUpload.nameRefusal(). Nothing to compare.");
+      return null;
+    }
+    const cut = name.lastIndexOf('.');
+    const extension = cut < 0 ? '' : name.slice(cut + 1);
+    if (allowed.indexOf(extension) >= 0) {
+      log.debug("Leaving RiskUpload.nameRefusal(). It fits.");
+      return null;
+    }
+    log.debug("Leaving RiskUpload.nameRefusal(). It does not fit.");
+    return RiskUpload.refusal(400, 'STS-RISK-0055', 'A file of the format ' +
+      String(format) + ' is named ' + allowed.filter(Boolean).map(
+        function (one: string): string {
+          return '.' + one;
+        }).join(', ') + ', optionally compressed. Nothing was stored.', true);
   }
 
   // The fields as the importer takes them: strings, trimmed, the three flags
@@ -829,7 +876,8 @@ class RiskUpload {
         }
         fields[name] = value;
       });
-      parser.on('file', function (name: string, file: stream.Readable): void {
+      parser.on('file', function (name: string, file: stream.Readable,
+                                  info: Json): void {
         if (fileSeen || done) {
           file.resume();
           refuse(400, 'STS-RISK-0031', 'An upload carries one file. ' +
@@ -841,7 +889,9 @@ class RiskUpload {
         // the request while this stream is not consumed.
         file.pause();
         target = self.newTarget();
-        self.fieldsRefusal(fields, door, target).then(function (wrong: Json) {
+        self.fieldsRefusal(fields, door, target).then(function (asked: Json) {
+          const wrong = asked || RiskUpload.nameRefusal(fields.format,
+                                                        info && info.filename);
           if (wrong) {
             file.resume();
             finish(wrong);

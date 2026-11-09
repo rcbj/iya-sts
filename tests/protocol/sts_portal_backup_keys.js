@@ -631,7 +631,7 @@ async function startSignIn(b, root) {
     code_challenge: sha256(Buffer.from(verifier)).toString("base64url"),
     code_challenge_method: "S256", resource: root + "/account-api"
   }).toString());
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
     "the portal's authorization request did not ask for a sign-in: " +
     r.status + " -> " + r.location);
   const screenAt = r.location;

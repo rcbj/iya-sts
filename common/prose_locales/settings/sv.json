@@ -12170,5 +12170,85 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Gäller bara protokollfelsökarens lyssnare: http.http2MaxConcurrentStreams. -1, standardvärdet, följer http.http2MaxConcurrentStreams; allt annat avgör bara för den här lyssnaren. Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
+  },
+  "krb5.allowSha1Enctypes|label": {
+    "en": "15146ba7e398f699",
+    "text": "Erbjud AES med SHA-1 i produktläge"
+  },
+  "krb5.allowSha1Enctypes|description": {
+    "en": "bc316355cf713a02",
+    "text": "Endast produktläge. På kan denna KDC också använda enctypes 17 och 18 (AES med HMAC-SHA1-96, RFC 3962). Av, standardvärdet, använder produktläget bara 19 och 20 (RFC 8009). VARNING: krav 11.4.1 i ASVS 5.0.0 accepterar inte SHA-1 här, så slå bara på detta för Kerberos-klienter som inte klarar något nyare."
+  },
+  "krb5.allowSha1Enctypes|restartReason": {
+    "en": "8bca2d2d03148c2a",
+    "text": "varje huvudmans nycklar skapas vid start"
+  },
+  "scep.allowInProduct|label": {
+    "en": "5a40ad7af32c5eb7",
+    "text": "Svara på SCEP i produktläge"
+  },
+  "scep.allowInProduct|description": {
+    "en": "ad9779aeb9ac6587",
+    "text": "Endast produktläge. På svarar /enroll/scep i produktläge. Av, standardvärdet, svarar det 503. VARNING: RFC 8894 kräver RSAES-PKCS1-v1.5 och AES-CBC, som krav 11.3.1 och 11.3.2 i ASVS 5.0.0 inte accepterar, så slå bara på detta för enheter som inte klarar något nyare."
+  },
+  "oauth2.allowUndeclaredGrants|label": {
+    "en": "48f3e420ff8f61c0",
+    "text": "Låt en klient utan lista använda valfri behörighetstyp"
+  },
+  "oauth2.allowUndeclaredGrants|description": {
+    "en": "22bb986fa3711e13",
+    "text": "Endast produktläge. Av, standardvärdet, får en klient som inte deklarerar några behörighetstyper bara använda authorization_code och refresh_token. På får den använda alla behörighetstyper tjänsten erbjuder. VARNING: krav 10.4.4 i ASVS 5.0.0 begränsar en klient till de behörighetstyper den behöver, så låt detta vara av utanför en testmiljö."
+  },
+  "admin.allowDefaultUsername|label": {
+    "en": "0ab7a95a721ff350",
+    "text": "Tillåt ett administratörsnamn som är standard i produktläge"
+  },
+  "admin.allowDefaultUsername|description": {
+    "en": "261e7a2bb89b22e2",
+    "text": "Endast produktläge. Av, standardvärdet, får en startadministratör som heter admin, root, sa eller administrator, eller saknar namn, ett oförutsägbart genererat namn som visas med lösenordet vid första start. På används det konfigurerade namnet som det är. VARNING: krav 6.3.2 i ASVS 5.0.0 förbjuder ett kontonamn som är standard, så låt detta vara av utanför en testmiljö."
+  },
+  "admin.allowDefaultUsername|restartReason": {
+    "en": "0191948468332113",
+    "text": "initieringen körs en gång, mellan att det beständiga lagret öppnas och att lyssnaren binds, så en ändring efter det har inget kvar att namnge"
+  },
+  "crypto.allowLegacyHashes|label": {
+    "en": "e64b3dc98c254326",
+    "text": "Tillåt SHA-1 och MD5 där ett protokoll fortfarande använder dem"
+  },
+  "crypto.allowLegacyHashes|description": {
+    "en": "21064646f0ea0387",
+    "text": "Endast produktläge. Av, standardvärdet, använder tjänsten inte OAEP över SHA-1 i XML-kryptering eller JWE, SHA-1-nyckelhärledning för PKINIT eller HMAC-MD5-kontrollsumman för S4U2Self. På används de. VARNING: krav 11.4.1 i ASVS 5.0.0 tillåter inte de hashfunktionerna, så slå bara på detta för partner eller klienter som inte klarar något nyare."
+  },
+  "security.allowUnscopedPeople|label": {
+    "en": "502e12a150357d63",
+    "text": "Låt en person utan roll nå SCIM och Shared Signals"
+  },
+  "security.allowUnscopedPeople|description": {
+    "en": "2bf5565da47abb33",
+    "text": "Endast produktläge. Av, standardvärdet, behöver den som autentiserar sig mot /scim/v2 eller Shared Signals med ett schema utan omfång, som HTTP Basic eller sessionscookien, Admin Read för att läsa och Admin Write för att skriva. På får varje autentiserad person det. VARNING: på uppfylls inte krav 8.2.1 och 8.2.2 i ASVS 5.0.0, eftersom vem som helst kan ändra vilket konto som helst. Använd OAuth-omfång för etableringsklienter i stället."
+  },
+  "security.fileRoots|label": {
+    "en": "7f144086ba380c16",
+    "text": "Kataloger som en namngiven fil får läsas från"
+  },
+  "security.fileRoots|description": {
+    "en": "a378a866f9204d53",
+    "text": "Endast produktläge. En kommaseparerad lista över absoluta kataloger. En fil som en administratör namnger i en inställning eller begäran (en CA-fil, en SPIFFE-token- eller nyckelfil, en Sigstore-fil, ett e-postcertifikat eller en e-postnyckel) läses bara om dess verkliga sökväg, efter symboliska länkar, ligger i någon av dem. Den anges i miljön eller appconfig-filen och kan inte ändras via konsolen eller API:et, så att en administratörs begäran inte kan vidga den. VARNING: att lägga till / eller en annan bred katalog innebär att krav 5.3.2 i ASVS 5.0.0 inte uppfylls."
+  },
+  "risk.maxSkippedLinesPercent|label": {
+    "en": "f299cbec779c44e8",
+    "text": "Största andel av en datamängds rader som får misslyckas vid tolkning (procent)"
+  },
+  "risk.maxSkippedLinesPercent|description": {
+    "en": "ff816ae98311e5a5",
+    "text": "En datamängdsfil där mer än denna procentandel av raderna som inte är kommentarer inte är poster i formatet avvisas, och inget av den behålls. 100 godtar varje fil med minst en post, vilket är vad tjänsten gjorde tidigare. VARNING: vid 100 kan en fil av fel slag läsas in så länge en rad går att tolka."
+  },
+  "crypto.allowCbcJwe|label": {
+    "en": "47b44d2ca23a7a17",
+    "text": "Tillåt JWE CBC-HMAC-innehållskryptering"
+  },
+  "crypto.allowCbcJwe|description": {
+    "en": "20f6a7dc269fe48a",
+    "text": "Endast produktläge. Av, standardvärdet, använder och godtar JWE enbart AES-GCM: A128CBC-HS256, A192CBC-HS384 och A256CBC-HS512 varken erbjuds eller godtas, och en klient som namnger en algoritm men inget enc besvaras med A256GCM. På fungerar de som i utveckling. VARNING: medan detta är på uppfylls inte krav 11.3.2 i ASVS 5.0.0, så slå på det bara för en partner som inte kan läsa AES-GCM."
   }
 }

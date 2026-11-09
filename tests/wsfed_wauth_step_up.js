@@ -297,7 +297,7 @@ function childMain() {
       }).length;
     };
     const pendingOf = function (location) {
-      const found = /[?&]authn=([^&]+)/.exec(String(location || ''));
+      const found = /[?&#]authn=([^&]+)/.exec(String(location || ''));
       if (!found) {
         return null;
       }

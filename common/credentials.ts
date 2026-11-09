@@ -11865,8 +11865,7 @@ class Credentials {
       const roles = this.deps.consoleRolesOf(name);
       if (roles.read || roles.write) {
         const builtIn = this.deps.realms.currentId() === 'default' &&
-          name === String(config.value('admin.bootstrapUsername') || '')
-            .trim();
+          name === require('./bootstrap_name').current();
         byAdministrator = forAdmins === 'always' && !builtIn;
         offered = !byAdministrator;
       }

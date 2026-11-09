@@ -239,7 +239,6 @@ The door of the portal's `GET /portal/activate`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `user` | query |  |  | The username the link names. |
-| `token` | query |  |  | The link's single-use token. |
 
 **200**: The answer.
 
@@ -7019,7 +7018,6 @@ The door of the portal's `GET /portal/reset-password`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `user` | query |  |  | The username the link names. |
-| `token` | query |  |  | The link's single-use secret. |
 
 **200**: The answer.
 
@@ -9110,7 +9108,6 @@ The door of the portal's `GET /portal/verify-email`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `user` | query |  |  | The username the link names. |
-| `token` | query |  |  | The link's single-use secret. |
 
 **200**: The answer.
 
@@ -9208,7 +9205,6 @@ The door of the portal's `GET /portal/verify-pseudonym`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `user` | query |  |  | The username the link names. |
-| `token` | query |  |  | The link's single-use secret. |
 
 **200**: The answer.
 

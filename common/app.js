@@ -63,6 +63,7 @@ const stats = require('./admin_stats');
 // requires this file — so the require closes no cycle and moves no route.
 // Below the realm module because the registry it reads is the ambient realm's.
 const corsPolicy = require('./cors');
+const cookieWire = require('./cookie_wire');
 // The service's account of WHAT HAPPENED, as against how much of it. Required
 // here for the same reason admin_stats.js is and with the same consequence: the
 // call log below is the single place every answered request passes through, so
@@ -316,6 +317,10 @@ function enterMatchedRealm(req, res, next, match) {
 }
 
 app.use(enterRealm);
+
+// HSTS AND COOKIE NAMES, in the process holding the socket, before anything
+// routes on a cookie's name (#1438, #1441): `common/cookie_wire.ts`.
+app.use(cookieWire.middleware());
 
 // ---------------------------------------------------------------------------
 // WHICH HOSTED APPLICATION A LISTENER ANSWERS (#472, 2026-10-07).
@@ -914,6 +919,12 @@ function framedContentSecurityPolicy(origins, overrides) {
   }).join('; ');
 }
 
+// THE TYPES ASVS 5.0.0 4.1.1 NAMES (#1439): `text/*`, `application/xml` and
+// `*/*+xml`. JSON is left out on purpose: RFC 8259 section 11 registers no
+// charset parameter for it, and `application/jrd+json` is a JSON type.
+const CHARSET_TYPES =
+  /^\s*(?:text\/[^\s;]+|application\/xml|[^\s;/]+\/[^\s;]+\+xml)\s*(?:;|$)/i;
+
 app.use(function (req, res, next) {
   log.debug("Entering the security-headers middleware.");
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -955,6 +966,26 @@ app.use(function (req, res, next) {
     if (current.indexOf('frame-ancestors') < 0) {
       res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
       res.setHeader('X-Frame-Options', 'DENY');
+    }
+    // A SIGN-IN STEP'S ID LEAVES THE ADDRESS (#1454): `common/step_address.ts`.
+    const location = res.getHeader('Location');
+    if (typeof location === 'string' && location.indexOf('?') > 0) {
+      const authn = require('../authn/authn');
+      const stepAddress = require('./step_address');
+      // SPNEGO's has no script to read a fragment (#1487).
+      const spnego = stepAddress.spnegoStep(location);
+      if (spnego) {
+        res.append('Set-Cookie', stepAddress.spnegoCookie(spnego.id));
+        res.setHeader('Location', spnego.location);
+      } else {
+        res.setHeader('Location', stepAddress.hide(location,
+          authn.stepApplication));
+      }
+    }
+    const type = res.getHeader('Content-Type');
+    if (typeof type === 'string' && CHARSET_TYPES.test(type) &&
+        !/;\s*charset=/i.test(type)) {
+      res.setHeader('Content-Type', type + '; charset=utf-8');
     }
     log.debug("Leaving writeHead().");
     return writeHead.apply(res, arguments);

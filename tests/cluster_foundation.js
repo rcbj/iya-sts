@@ -305,7 +305,7 @@ function resolution(t) {
   log.debug("Entering resolution().");
   t.log.info('=== 3. what cluster.mode resolves to ===');
   cluster.reset();
-  setEnv({ STS_MODE: 'product', STS_PERSISTENCE_MODE: 'postgres' });
+  setEnv({ STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', STS_PERSISTENCE_MODE: 'postgres' });
   t.equal(cluster.resolve().mode, 'active-passive',
           'auto is ACTIVE-PASSIVE in product mode on a postgres store — ' +
           'rcbj\'s default: a second container is a standby, not a second ' +
@@ -313,7 +313,7 @@ function resolution(t) {
   setEnv({ STS_MODE: 'development', STS_PERSISTENCE_MODE: 'postgres' });
   t.equal(cluster.resolve().mode, 'off',
           'and off in development mode, which changes nothing that ran before');
-  setEnv({ STS_MODE: 'product', STS_PERSISTENCE_MODE: 'ldif' });
+  setEnv({ STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', STS_PERSISTENCE_MODE: 'ldif' });
   t.equal(cluster.resolve().mode, 'off',
           'and off on a store that cannot be shared');
   setEnv({ STS_CLUSTER_MODE: 'active-passive', STS_PERSISTENCE_MODE: 'ldif' });
@@ -332,7 +332,7 @@ function resolution(t) {
 async function failStop(t) {
   log.debug("Entering failStop().");
   t.log.info('=== 4. a node that may no longer act exits ===');
-  setEnv({ STS_MODE: 'product', STS_PERSISTENCE_MODE: 'postgres',
+  setEnv({ STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', STS_PERSISTENCE_MODE: 'postgres',
            STS_CLUSTER_HEARTBEAT_MS: '250', STS_CLUSTER_NODE_TTL_MS: '1000' });
 
   // A standby waits, then serves.
@@ -430,7 +430,7 @@ async function failStop(t) {
 async function activeActiveGate(t) {
   log.debug("Entering activeActiveGate().");
   t.log.info('=== 5. active-active refuses what it cannot yet do ===');
-  setEnv({ STS_CLUSTER_MODE: 'active-active', STS_MODE: 'product',
+  setEnv({ STS_CLUSTER_MODE: 'active-active', STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true',
            STS_PERSISTENCE_MODE: 'postgres',
            STS_PUBLIC_BASE_URL: 'https://cluster.example' });
   cluster.reset({ exit: function () {} });
@@ -446,7 +446,7 @@ async function activeActiveGate(t) {
           'ACTIVE-ACTIVE WITH CAPABILITIES MISSING DOES NOT START — the ' +
           'failure #46 opens with is a cluster that starts healthy and ' +
           'answers wrongly', refusal ? refusal.message.slice(0, 160) : 'none');
-  setEnv({ STS_CLUSTER_MODE: 'active-active', STS_MODE: 'product',
+  setEnv({ STS_CLUSTER_MODE: 'active-active', STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true',
            STS_PERSISTENCE_MODE: 'postgres',
            STS_PUBLIC_BASE_URL: 'https://cluster.example',
            STS_CLUSTER_ACCEPT_MISSING_CAPABILITIES: missing.slice(1).join(',') });
@@ -460,7 +460,7 @@ async function activeActiveGate(t) {
   t.check(refusal && refusal.message.indexOf(missing[0]) >= 0,
           'accepting all but one still refuses, and names the one',
           refusal ? '' : 'it started');
-  setEnv({ STS_CLUSTER_MODE: 'active-active', STS_MODE: 'product',
+  setEnv({ STS_CLUSTER_MODE: 'active-active', STS_MODE: 'product', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true',
            STS_PERSISTENCE_MODE: 'postgres',
            STS_PUBLIC_BASE_URL: 'https://cluster.example',
            STS_CLUSTER_ACCEPT_MISSING_CAPABILITIES: missing.join(',') });

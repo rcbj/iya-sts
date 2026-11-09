@@ -148,6 +148,7 @@
 // and the universe asks the names, so a read from the choices never returns.
 // ---------------------------------------------------------------------------
 
+import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
@@ -353,11 +354,7 @@ const REFERENCES = Object.freeze({ group: 'stsAttributePolicy',
 /**
  * A named profile's one selector: its precedence. What it covers names it.
  */
-const SELECTORS = [
-  { key: 'precedence', attribute: 'stsAttributePolicyPrecedence',
-    what: 'Which named attribute policy applies where the person and their ' +
-          'groups name several: the lowest, from 1 to 1000.' }
-];
+const SELECTORS = ModelTables.selectors('policy.attributes');
 
 // An RFC 4512 section 1.4 `descr`: a letter, then letters, digits and
 // hyphens. At most 64 here.
@@ -399,18 +396,10 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
  * The policy's fields: one table read as the schema, the console form, the
  * API body, the validation of a save and the parse of an entry.
  */
-const FIELDS: PolicyField[] = [
-  { key: 'requiredAttributes', attribute: 'stsAttributeRequired',
-    type: 'attributeList', dflt: 'givenName, sn, mail',
-    label: 'Required attributes',
-    what: 'The attributes every person in this realm must hold a value of, ' +
-          'besides uid, cn and sn, which are always required. A list, or ' +
-          'comma-separated. Any attribute a person may be given a value ' +
-          'for: the inetOrgPerson schema, the credential catalogue, mail, ' +
-          'and this realm\'s custom attributes. Enforced in product mode: a ' +
-          'create without one is refused at every door, and an edit may not ' +
-          'take one away. Default givenName, sn and mail.' }
-];
+const FIELDS: PolicyField[] =
+  // Written in models/directory/policy_attributes.tsp (#1390). What is passed here is
+  // what the code computes, so it has no second writing there.
+  ModelTables.fields('policy.attributes');
 
 /**
  * The fields, by key.
@@ -433,51 +422,8 @@ const DEFAULTS: Readonly<Record<string, string>> =
  * The directory schema of `ou=attributePolicies` and
  * `ou=attributeDefinitions`: their containers, object classes and attributes.
  */
-const SCHEMA = {
-  container: 'ou=attributePolicies',
-  definitionContainer: 'ou=attributeDefinitions',
-  objectClasses: [
-    { name: 'stsAttributePolicy',
-      what: 'This service\'s class for an attribute policy: the attributes ' +
-            'every person in a realm must hold. Named by the PROFILE ' +
-            '(`cn=default`, or a named profile of the realm\'s own).' },
-    { name: 'stsAttributeDefinition',
-      what: 'This service\'s class for a custom attribute of a realm, in ' +
-            'ou=attributeDefinitions, named by the attribute (`cn=<name>`).' }
-  ],
-  attributes: [
-    { name: 'stsAttributeRequired',
-      what: FIELDS[0].what },
-    { name: 'description',
-      what: 'What the profile or the custom attribute is for, for the ' +
-            'next person.' },
-    { name: 'stsAttributeLabel',
-      what: 'A custom attribute\'s label, drawn beside its name.' },
-    { name: 'stsAttributeSyntax',
-      what: 'A custom attribute\'s syntax: string, integer, boolean, date, ' +
-            'email, uri or dn. Its values are checked against it.' },
-    { name: 'stsAttributeSingleValued',
-      what: 'TRUE where a custom attribute holds one value, FALSE where it ' +
-            'holds several.' },
-    { name: 'stsAttributePortalVisible',
-      what: 'TRUE where a person sees their own values of a custom ' +
-            'attribute on the user portal\'s Overview. FALSE, or absent, by ' +
-            'default.' },
-    { name: 'stsAttributePortalEditable',
-      what: 'TRUE where a person may change their own values of a custom ' +
-            'attribute on the user portal. Implies ' +
-            'stsAttributePortalVisible. FALSE, or absent, by default.' },
-    { name: 'stsAttributePolicyPrecedence',
-      what: SELECTORS[0].what }
-  ],
-  // THE REFERENCE (#1241): on a person's entry and on a group's, the
-  // profile it names. The directory is schemaless; listed for the reader.
-  personAttributes: [
-    { name: 'stsAttributePolicy',
-      what: 'On a person or a group: the attribute policy it names, ' +
-            '`default` or a named profile of the realm. One value.' }
-  ]
-};
+// The table is written in models/directory/policy_attributes.tsp (#1390).
+const SCHEMA = ModelTables.schema('policy.attributes');
 
 /**
  * The attribute policy: the attributes every person in a realm must hold,

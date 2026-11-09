@@ -1515,7 +1515,7 @@ async function theGateBehaves(driver) {
   });
   check("and the page sends a browser with no session to sign in, carrying " +
         "the request waiting behind it", function () {
-    assert.ok(/\/authn\/login\?authn=/.test(landed),
+    assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(landed),
       "the browser should have landed on the sign-in screen carrying an " +
       "`authn` id — that id is what sends the person back to /admin/tokens " +
       "afterwards instead of to the top of the console. It landed on " +
