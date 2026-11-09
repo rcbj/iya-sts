@@ -95,8 +95,7 @@ var config = {
     activationTtlMinutes: 1440,                                                                                                        // Activation link lifetime (minutes)
     passwordResetTtlMinutes: 60,                                                                                                       // Password reset link lifetime (minutes)
     passwordHashLogN: 15,                                                                                                              // Password hash cost (log2 of scrypt N)
-    passwordHashR: 8,                                                                                                                  // Password hash block size (scrypt r)
-    passwordHashP: 1                                                                                                                   // Password hash parallelism (scrypt p)
+    passwordHashR: 8                                                                                                                   // Password hash block size (scrypt r)
   },
 
   // --- Web security ----------------------------------------------------
@@ -294,6 +293,7 @@ var config = {
   federation: {
     allowUntypedLogoutToken: false,                                          // Accept a partner's Logout Token with no explicit type
     maxPartnerAuthAgeS: 0,                                                   // Oldest partner authentication accepted (s)
+    allowAssertionWithoutAudience: false,                                    // Accept an assertion that names no audience
     enabled: true,                                                           // Federation endpoints answer
     max: 50,                                                                 // Relationships remembered
     usernamePrefix: "",                                                      // Prefix for federated usernames

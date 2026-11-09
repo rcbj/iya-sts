@@ -12410,5 +12410,13 @@
   "security.hstsIncludeSubDomains|description": {
     "en": "26b0298f1a2bd460",
     "text": "Idinaragdag ang includeSubDomains sa Strict-Transport-Security, para gumamit ang mga browser ng HTTPS sa bawat subdomain ng host name ng service na ito. Naka-on bilang default sa product mode. I-off kung kailangan pang sumagot ng subdomain sa plain HTTP."
+  },
+  "federation.allowAssertionWithoutAudience|label": {
+    "en": "ed95d7ca4d1f2354",
+    "text": "Tanggapin ang assertion na walang audience"
+  },
+  "federation.allowAssertionWithoutAudience|description": {
+    "en": "af262d18fe96916b",
+    "text": "Kapag naka-off, ang default, tinatanggihan ng product mode ang SAML 1.1 o WS-Federation assertion ng partner na walang audience restriction, dahil walang nagsasabing para ito sa service na ito. Kapag naka-on, tinatanggap ito nang may babala, para sa partner na hindi makapagpadala nito."
   }
 }

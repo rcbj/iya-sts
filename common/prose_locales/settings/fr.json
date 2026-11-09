@@ -12410,5 +12410,13 @@
   "security.hstsIncludeSubDomains|description": {
     "en": "26b0298f1a2bd460",
     "text": "Ajoute includeSubDomains à Strict-Transport-Security, afin que les navigateurs utilisent HTTPS pour tous les sous-domaines du nom d’hôte de ce service. Activé par défaut en mode produit. Désactivez-le si un sous-domaine doit encore répondre en HTTP simple."
+  },
+  "federation.allowAssertionWithoutAudience|label": {
+    "en": "ed95d7ca4d1f2354",
+    "text": "Accepter une assertion sans audience"
+  },
+  "federation.allowAssertionWithoutAudience|description": {
+    "en": "af262d18fe96916b",
+    "text": "Désactivé, par défaut, le mode produit refuse une assertion SAML 1.1 ou WS-Federation d’un partenaire sans restriction d’audience, car rien n’indique qu’elle était destinée à ce service. Activé, elle est acceptée avec un avertissement, pour un partenaire qui ne peut pas en envoyer."
   }
 }

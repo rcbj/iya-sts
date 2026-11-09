@@ -158,6 +158,18 @@ async function run(t) {
   t.equal(owed({ kind: 'application' }, 'clear-totp'), false,
           'and a program, with nobody to ask, is not');
   config.clearOverride('account.recentAuthMinutes');
+  t.equal(inProduct(function () {
+    return config.value('security.passwordHashP');
+  }), 3, 'product stores scrypt at p=3');
+  t.equal(inProduct(function () {
+    return mode.refusesAssertionWithoutAudience();
+  }), true, 'product needs an assertion to name its audience');
+  const scheduler = require(ROOT + '/cluster/scheduler');
+  const Sched = scheduler.Scheduler || scheduler;
+  Sched.noteClockSkew(Date.now() + 60000);
+  t.equal(Sched.clockFar, true, 'a clock a minute off the database is noted');
+  Sched.noteClockSkew(Date.now());
+  t.equal(Sched.clockFar, false, 'and its return');
   const budget = require(ROOT + '/common/request_budget');
   const at = Date.now();
   t.equal(budget.allowed('198.51.100.7', 2, at), true, 'a first request passes');

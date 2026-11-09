@@ -12410,5 +12410,13 @@
   "security.hstsIncludeSubDomains|description": {
     "en": "26b0298f1a2bd460",
     "text": "在 Strict-Transport-Security 加入 includeSubDomains，使瀏覽器對此服務主機名稱的所有子網域也使用 HTTPS。產品模式預設開啟。若某個子網域仍需透過純 HTTP 回應，請關閉。"
+  },
+  "federation.allowAssertionWithoutAudience|label": {
+    "en": "ed95d7ca4d1f2354",
+    "text": "接受未指定受眾的判斷提示"
+  },
+  "federation.allowAssertionWithoutAudience|description": {
+    "en": "af262d18fe96916b",
+    "text": "預設關閉時，產品模式拒絕合作夥伴不含受眾限制的 SAML 1.1 或 WS-Federation 判斷提示，因為沒有資訊表明它是發給此服務的。開啟後，會接受並記錄警告，適用於無法傳送受眾限制的合作夥伴。"
   }
 }

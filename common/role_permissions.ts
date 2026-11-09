@@ -1024,8 +1024,10 @@ class RolePermissions {
           authenticated: true }
       : { kind: 'user', authenticated: true,
           // `sub` first: it cannot be reassigned and a username can (#1536).
-          name: String(require('./helpers').nameForSubject(c.sub) ||
-                       c.username || c.preferred_username || c.sub || '') };
+          name: require('./helpers').subjectIsGone(c.sub) &&
+                require('./mode').refusesTokenForGoneSubject()
+            ? '' : String(require('./helpers').nameForSubject(c.sub) ||
+                          c.username || c.preferred_username || c.sub || '') };
     return this.inRealm(tokenRealm, function () {
       const held = self.heldRoles(subject);
       // THE CLIENT'S CONFERRED ROLES, MIXED WITH THE PERSON'S OWN (#454),

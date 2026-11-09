@@ -12410,5 +12410,13 @@
   "security.hstsIncludeSubDomains|description": {
     "en": "26b0298f1a2bd460",
     "text": "Lägger till includeSubDomains i Strict-Transport-Security, så att webbläsare använder HTTPS för alla underdomäner till tjänstens värdnamn. På som standard i produktläge. Stäng av om en underdomän fortfarande måste svara över okrypterad HTTP."
+  },
+  "federation.allowAssertionWithoutAudience|label": {
+    "en": "ed95d7ca4d1f2354",
+    "text": "Acceptera ett påstående utan målgrupp"
+  },
+  "federation.allowAssertionWithoutAudience|description": {
+    "en": "af262d18fe96916b",
+    "text": "Av, standardvärdet, avvisar produktläget en partners SAML 1.1- eller WS-Federation-påstående utan målgruppsbegränsning, eftersom inget säger att det var avsett för den här tjänsten. På accepteras det med en varning, för en partner som inte kan skicka en."
   }
 }
