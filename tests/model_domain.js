@@ -83,6 +83,12 @@ function refusals(t, checkDomains) {
   'and says several');
   t.check(/exactly one/.test(one(field({ derived: 'x' }), {})),
     'a field with two sources is refused');
+  t.check(/held on a record/.test(checkDomains([{ name: 'C', area: 'Area',
+    record: 'r', fields: [field()], invariants: [] }], directory({})).join(';')),
+  'an attribute on a concept held on a record is refused');
+  t.check(/entry and record/.test(checkDomains([{ name: 'C', area: 'Area',
+    fields: [], invariants: [] }], directory({})).join(';')),
+  'a concept held nowhere is refused');
   t.check(/exactly one/.test(one({ name: 'f', type: 'string' }, {})),
     'a field with no source is refused');
   t.check(/may not have/.test(one(field({ type: 'unknown' }), {})),
@@ -99,7 +105,8 @@ function catalogue(t) {
   ['User', 'Credential', 'Group', 'ServiceAccount', 'Device', 'Application',
     'OAuthClient', 'SamlServiceProvider', 'WsFederationRelyingParty', 'Role',
     'XacmlPolicy', 'FederationRelationship', 'TrustAnchor',
-    'SignerTrustAnchor'].forEach(function (name) {
+    'SignerTrustAnchor', 'Session', 'AuthenticationEvent', 'IssuedToken',
+    'AuditEvent'].forEach(function (name) {
     t.check(names.indexOf(name) >= 0, name + ' is in the catalogue');
   });
   concepts.forEach(function (one) {
@@ -159,6 +166,63 @@ function mapping(t) {
   log.debug("Leaving mapping().");
 }
 
+// A concept held on a record has no directory object to be checked against
+// at build time, so it is held to REAL records here: every field that says
+// where it lives must find a value of its type on one.
+function heldToReal(t, name, record) {
+  log.debug("Entering heldToReal().");
+  const value = DomainMap.fromRecord(name, record);
+  const fields = DomainMap.catalogue().get(name).fields;
+  fields.filter(function (one) {
+    return !one.optional;
+  }).forEach(function (one) {
+    t.check(value[one.name] !== undefined, name + '.' + one.name +
+      ' is on a real record', JSON.stringify(Object.keys(record)));
+  });
+  log.debug("Leaving heldToReal().");
+  return value;
+}
+
+async function records(t) {
+  log.debug("Entering records().");
+  const realms = require('../common/realms');
+  const audit = require('../common/audit');
+  const stats = require('../common/admin_stats');
+  const authn = require('../authn/authn');
+  const res = { req: null };
+  ['set', 'append', 'status', 'type', 'send'].forEach(function (name) {
+    res[name] = function () {
+      return res;
+    };
+  });
+  await realms.run(realms.DEFAULT_REALM, async function () {
+    audit.audit({ category: 'admin', action: 'admin.test', actor: 'a',
+      target: 't', summary: 'model_domain' });
+    const event = heldToReal(t, 'AuditEvent', audit.list()[0]);
+    t.equal(event.action, 'admin.test', 'an audit event maps');
+    const now = Math.floor(Date.now() / 1000);
+    stats.recordJwt({ iss: 'i', sub: 's', aud: 'a', exp: now + 60, iat: now,
+      jti: 'model-domain-jti', typ: 'Bearer', scope: 'x' }, 'h.p.s',
+    { kind: 'access_token', client: 'c' });
+    const row = stats.tokenList().filter(function (one) {
+      return one.jti === 'model-domain-jti';
+    })[0];
+    const token = heldToReal(t, 'IssuedToken', row);
+    t.equal(token.subject, 's', 'an issued token maps');
+    const session = await authn.startSession(res, 'domain-probe', ['pwd'],
+      'urn:x', 'OAuth 2.0 / OIDC', { credential: { kind: 'password' } });
+    const mapped = heldToReal(t, 'Session', session);
+    t.equal(mapped.username, 'domain-probe', 'a nested member is reached');
+    t.equal(mapped.events.length, 1, 'a list of concepts is mapped');
+    t.equal(mapped.events[0].protocol, 'OAuth 2.0 / OIDC',
+      'and each one is the concept');
+    heldToReal(t, 'AuthenticationEvent', session.events[0]);
+    t.check(JSON.stringify(mapped).indexOf(session.handleHash) < 0,
+      'the browser handle\'s hash is not part of a Session');
+  });
+  log.debug("Leaving records().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const lib = await import(url.pathToFileURL(path.join(ROOT, 'models', 'lib',
@@ -166,6 +230,7 @@ async function run(t) {
   refusals(t, lib.checkDomains);
   catalogue(t);
   mapping(t);
+  await records(t);
   log.debug("Leaving run().");
 }
 

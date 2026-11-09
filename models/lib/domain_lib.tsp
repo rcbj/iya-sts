@@ -12,11 +12,16 @@ using TypeSpec.Reflection;
 
 namespace IyaSts.DomainLib;
 
-/** A domain concept: its area of the catalogue and the entry it reads. */
+/**
+ * A domain concept: its area of the catalogue, and what holds it. `entry` is
+ * a directory object; `record` is a record this service's own code keeps,
+ * named by its owner, for what is not in the directory at all.
+ */
 model DomainOptions {
   area: string;
   what: string;
-  entry: string;
+  entry?: string;
+  record?: string;
 }
 
 /** Where a field is stored. */
@@ -34,6 +39,15 @@ model FieldSource {
   secret?: boolean;
 }
 
+/** Where a field is held on a code-owned record. */
+model RecordField {
+  /** The member, dotted when it is nested: `user.username`. */
+  key: string;
+
+  /** Stated, because no directory marking stands behind a record. */
+  secret?: boolean;
+}
+
 /** A field no attribute holds, and how it is worked out. */
 model DerivedOptions {
   how: string;
@@ -47,6 +61,7 @@ model InvariantOptions {
 
 extern dec domain(target: Model, options: valueof DomainOptions);
 extern dec fromAttr(target: ModelProperty, options: valueof FieldSource);
+extern dec fromRecord(target: ModelProperty, options: valueof RecordField);
 extern dec derived(target: ModelProperty, options: valueof DerivedOptions);
 extern dec embedded(target: ModelProperty);
 extern dec invariant(target: Model, options: valueof InvariantOptions);

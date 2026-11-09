@@ -25,6 +25,7 @@ const log = bunyan.createLogger({
 
 const DOMAIN = Symbol.for('iya.domain.domain');
 const FROM = Symbol.for('iya.domain.from');
+const RECORD = Symbol.for('iya.domain.record');
 const DERIVED = Symbol.for('iya.domain.derived');
 const EMBEDDED = Symbol.for('iya.domain.embedded');
 const INVARIANT = Symbol.for('iya.domain.invariant');
@@ -41,6 +42,9 @@ export const $decorators = {
     },
     fromAttr: function (context, target, options) {
       context.program.stateMap(FROM).set(target, options);
+    },
+    fromRecord: function (context, target, options) {
+      context.program.stateMap(RECORD).set(target, options);
     },
     derived: function (context, target, options) {
       context.program.stateMap(DERIVED).set(target, options);
@@ -113,12 +117,16 @@ export function readDomains(program) {
     const fields = [];
     model.properties.forEach(function (property) {
       const from = program.stateMap(FROM).get(property);
+      const held = program.stateMap(RECORD).get(property);
       const derived = program.stateMap(DERIVED).get(property);
       const row = Object.assign({ name: property.name,
         optional: property.optional === true },
       shapeOf(program, property.type));
       if (from) {
         row.from = from;
+      }
+      if (held) {
+        row.held = held;
       }
       if (derived) {
         row.derived = derived.how;
@@ -129,7 +137,7 @@ export function readDomains(program) {
       fields.push(row);
     });
     concepts.push({ name: model.name, area: options.area, what: options.what,
-      entry: options.entry, fields: fields,
+      entry: options.entry, record: options.record, fields: fields,
       invariants: program.stateMap(INVARIANT).get(model) || [] });
   });
   concepts.sort(function (a, b) {
@@ -167,12 +175,18 @@ function attributesOf(object) {
 function fieldProblems(concept, field, objects, withheld) {
   log.debug("Entering fieldProblems().");
   const where = concept.name + '.' + field.name;
-  const states = [field.from, field.derived, field.embedded]
+  const states = [field.from, field.held, field.derived, field.embedded]
     .filter(Boolean).length;
   if (states !== 1) {
     log.debug("Leaving fieldProblems(). Not one source.");
-    return [where + ' must say exactly one of @fromAttr, @derived and ' +
-      '@embedded'];
+    return [where + ' must say exactly one of @fromAttr, @fromRecord, ' +
+      '@derived and @embedded'];
+  }
+  if ((field.from && concept.record) || (field.held && concept.entry)) {
+    log.debug("Leaving fieldProblems(). The wrong kind of source.");
+    return [where + (field.from ? ' reads an attribute and the concept is ' +
+      'held on a record' : ' reads a record and the concept is held in the ' +
+      'directory')];
   }
   if (field.type === 'unknown') {
     log.debug("Leaving fieldProblems(). An unknown type.");
@@ -240,7 +254,12 @@ export function checkDomains(concepts, directory, secretNames) {
   }));
   const problems = [];
   concepts.forEach(function (concept) {
-    if (!objects.has(concept.entry)) {
+    if (Boolean(concept.entry) === Boolean(concept.record)) {
+      problems.push(concept.name + ' must say exactly one of entry and ' +
+        'record');
+      return;
+    }
+    if (concept.entry && !objects.has(concept.entry)) {
       problems.push(concept.name + ' reads directory object ' +
         concept.entry + ', which is not one');
       return;

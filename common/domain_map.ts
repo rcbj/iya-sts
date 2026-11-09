@@ -170,6 +170,68 @@ class DomainMap {
   }
 
   /**
+   * A concept from a record this service's own code keeps. Unlike an entry a
+   * record already holds typed values, so a value of another type is left out
+   * and nothing is converted.
+   *
+   * @param name - the concept
+   * @param record - the record
+   * @param options - what the record alone cannot say
+   * @param path - the field path so far, for a nested concept
+   * @returns the concept
+   */
+  static fromRecord(name: string, record: any, options?: FromOptions,
+      path?: string): any {
+    log.debug("Entering DomainMap.fromRecord().");
+    const concept = DomainMap.catalogue().get(name);
+    if (!concept) {
+      log.debug("Leaving DomainMap.fromRecord(). No such concept.");
+      throw new TypeError('No domain model is named ' + name);
+    }
+    const asked = (options && options.secrets) || [];
+    const out: Record<string, unknown> = {};
+    const fits = function (field: any, value: unknown): boolean {
+      const wanted = field.type === 'integer' ? 'number' : field.type;
+      return field.type === 'concept' ?
+        !!value && typeof value === 'object' : typeof value === wanted;
+    };
+    concept.fields.forEach(function (field: any) {
+      const here = (path ? path + '.' : '') + field.name;
+      if (field.derived) {
+        const given = options && options.derived &&
+          options.derived[field.name];
+        if (given !== undefined) {
+          out[field.name] = given;
+        }
+        return;
+      }
+      if (field.held.secret && asked.indexOf(here) < 0) {
+        return;
+      }
+      const value = String(field.held.key).split('.')
+        .reduce(function (holder: any, key: string) {
+          return holder === undefined || holder === null ?
+            undefined : holder[key];
+        }, record);
+      const convert = function (one: unknown): unknown {
+        return field.type === 'concept' ?
+          DomainMap.fromRecord(field.concept, one, options, here) : one;
+      };
+      if (field.array) {
+        if (Array.isArray(value)) {
+          out[field.name] = value.filter(function (one) {
+            return fits(field, one);
+          }).map(convert);
+        }
+      } else if (fits(field, value)) {
+        out[field.name] = convert(value);
+      }
+    });
+    log.debug("Leaving DomainMap.fromRecord().");
+    return out;
+  }
+
+  /**
    * The required fields a concept came out without.
    *
    * @param name - the concept
