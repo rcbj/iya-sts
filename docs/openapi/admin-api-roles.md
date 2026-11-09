@@ -59,6 +59,8 @@ Scope: `admin:read`.
 | `rolesPage` | query | integer |  | Which page of the configured roles the search matched, answered by `paging` and `shownRoles`; twenty-five by default. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
 | `requiringPage` | query | integer |  | Which page of `requiring` to return, answered by `requiringPaging`. The applications that narrowed the roles they require (#313); `requiringPaging` says where the page is and `counts.requiring` counts them all. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The six built-in roles, every configured role with its three membership lists, every application that has been narrowed, and whether the decision is being asked for at all.
 
@@ -340,6 +342,13 @@ Adds one value to the role's `roleConferredBy` (#454): every PERSON who signs in
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -389,6 +398,13 @@ A BUILT-IN role is refused by name: those six are computed and have no membershi
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -436,6 +452,13 @@ An owner must name somebody: one that names no person and no group here is refus
 **Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -494,6 +517,13 @@ Adds one value to the role's `rolePermission` (#303). **A scope is a request and
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -538,6 +568,13 @@ The name becomes an LDAP RDN and a value in a token claim, so it is up to 64 cha
 **Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -584,6 +621,13 @@ Nothing already ISSUED is touched. A token minted while somebody held the role i
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -625,6 +669,13 @@ Replaces the `description` — and, where given, the `displayName` and `memberTy
 **Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -680,10 +731,13 @@ Scope: `admin:read`.
 
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
+| `username` | query | string |  | The older spelling of `subject`, read when `subject` is absent. |
 | `application` | query | string |  | What something would be issued FOR — a `client_id`, a wtrealm, a SAML entityID, an SPN. An application no entry names requires EVERYBODY, because this service registers one on first sight and refusing the first request from a new client is precisely the permissiveness it is for. |
 | `subject` | query | string |  | Who it would be issued to — a username, or a client_id where `subjectKind` is `application`. |
 | `subjectKind` | query | one of `user`, `application` |  | Whether the subject is a person or a client authenticating as itself. Defaults to `user`. |
 | `kind` | query | one of `start-session`, `issue-access-token`, `issue-id-token`, `issue-refresh-token`, `issue-authorization-code`, `issue-saml-assertion`, `issue-wsfed-token`, `issue-wstrust-token`, `issue-kerberos-ticket`, `issue-certificate`, `create-account` |  | Which issuance. It becomes the XACML `action-id`, so a policy may permit an access token and refuse a refresh token. `GET /admin-api/roles` lists the nine in `issuanceKinds`; the default is `issue-access-token`. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The decision, the sentence explaining it, the roles the subject holds and the roles the application requires.
 
@@ -767,6 +821,13 @@ Removes one value from the role's `roleConferredBy` (#454). The client's tokens 
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -809,6 +870,13 @@ Removes one value from the role entry. Matched case-insensitively, for the reaso
 **Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -853,6 +921,13 @@ Takes one `owner` value off the role and writes at once (#604). `owner` is the D
 **Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -906,6 +981,13 @@ Removes one value from the role's `rolePermission` (#303). The next issuance is 
 **Mirrors** `POST /admin/roles and POST /admin/roles/owners` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

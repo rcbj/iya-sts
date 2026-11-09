@@ -54,6 +54,13 @@ THERE IS NO POST BESIDE THIS ONE and that is not a gap: every form on the consol
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: What the page says, and the settings it draws — described rows carrying each value's source and whether it can be changed while the service runs.
 
 | Member | Type | Required | What it is |

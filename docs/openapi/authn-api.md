@@ -34,6 +34,12 @@ Unless an operation below says otherwise, any status it does not list answers th
 
 Each operation, its method and path, and the sign-in page or control it is the door of.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The answer.
 
 | Member | Type | Required | What it is |
@@ -72,9 +78,7 @@ Each signed-in and remembered account of the browser's account set — key, subj
 
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
-| `username` | query | string |  | Whom the page is about, where naming somebody is open (development mode and `logout.anyUser`), or the caller's own name; the browser's session otherwise. |
-| `account` | query | string |  | With authn.multipleAccounts on (#561): one of this browser's signed-in accounts, by its key. |
-| `login_hint` | query | string |  | With authn.multipleAccounts on (#561): the account the sign-out's account step preselects. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -122,6 +126,7 @@ The door of the sign-in surface's `GET /oauth2/consent`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending consent's id: a bearer capability, as the `consent` the consent screen was opened with, answered only to the browser whose session is the person asked. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -209,6 +214,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending consent's id: a bearer capability, as the `consent` the consent screen was opened with, answered only to the browser whose session is the person asked. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -355,9 +362,10 @@ The door of the sign-in surface's `GET /logout`.
 
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
-| `username` | query | string |  | Whom the page is about, where naming somebody is open (development mode and `logout.anyUser`), or the caller's own name; the browser's session otherwise. |
+| `username` | query |  |  | Whom the page is about, where naming somebody is open (development mode and `logout.anyUser`), or the caller's own name; the browser's session otherwise. |
 | `account` | query | string |  | With authn.multipleAccounts on (#561): one of this browser's signed-in accounts, by its key. |
 | `login_hint` | query | string |  | With authn.multipleAccounts on (#561): the account the sign-out's account step preselects. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -598,6 +606,13 @@ A `scope` of `global`, or no selection, ends everything the person holds; `selec
 The door of the sign-in surface's `POST /logout`.
 
 Sent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -924,9 +939,10 @@ The door of the sign-in surface's `GET /logout/accounts`.
 
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
-| `username` | query | string |  | Whom the page is about, where naming somebody is open (development mode and `logout.anyUser`), or the caller's own name; the browser's session otherwise. |
+| `username` | query |  |  | Whom the page is about, where naming somebody is open (development mode and `logout.anyUser`), or the caller's own name; the browser's session otherwise. |
 | `account` | query | string |  | With authn.multipleAccounts on (#561): one of this browser's signed-in accounts, by its key. |
 | `login_hint` | query | string |  | With authn.multipleAccounts on (#561): the account the sign-out's account step preselects. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -987,6 +1003,13 @@ An account's key answers `next: inventory` and the address of that person's sign
 The door of the sign-in surface's `POST /logout/accounts`.
 
 Sent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -1310,6 +1333,9 @@ The door of the sign-in surface's `GET /authn/totp, /authn/webauthn, /authn/back
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `page` | query |  |  | Which of the step's pages; the step's own where left out. |
+| `key` | query |  |  | The passkey a person chose, where the passkey policy offers them one by one (#534). |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -1572,6 +1598,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -1721,6 +1749,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -1870,6 +1900,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -2019,6 +2051,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -2168,6 +2202,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -2317,6 +2353,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -2464,6 +2502,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -2611,6 +2651,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -2760,6 +2802,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -2907,6 +2951,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -3054,6 +3100,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -3201,6 +3249,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -3348,6 +3398,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -3497,6 +3549,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -3646,6 +3700,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The second-factor or emailed-factor step's id: a bearer capability, as the `mfa` its page was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -3893,6 +3949,12 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 
 Generated from the operation table and its body schemas.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The answer.
 
 | Member | Type | Required | What it is |
@@ -3935,6 +3997,7 @@ The door of the sign-in surface's `GET /authn/password-change`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The password change step's id. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -3979,6 +4042,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The password change step's id. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -4129,6 +4194,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The password change step's id. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -4274,6 +4341,7 @@ The door of the sign-in surface's `GET /authn/login`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -4375,6 +4443,7 @@ The door of the sign-in surface's `GET /authn/accounts`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -4449,6 +4518,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -4646,6 +4717,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -4845,6 +4918,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -5044,6 +5119,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -5198,6 +5275,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -5349,6 +5428,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -5503,6 +5584,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -5657,6 +5740,7 @@ The door of the sign-in surface's `GET /authn/select-idp`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -5717,6 +5801,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -5872,6 +5958,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -5989,6 +6077,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `id` | path | string | yes | The pending sign-in's id: a bearer capability, as the `authn` the screen was opened with. |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -6144,16 +6234,21 @@ The door of the sign-in surface's `GET /authn/wallet`.
 
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
-| `authn` | query | string |  |  |
-| `mfa` | query | string |  |  |
-| `siop` | query | string |  |  |
-| `enrol` | query | string |  |  |
+| `authn` | query |  |  | A pending sign-in. |
+| `mfa` | query |  |  | A second-factor step. |
+| `siop` | query |  |  | `1` for a self-issued ID Token rather than a presentation. |
+| `enrol` | query |  |  | `1` to enrol a key from a session rather than to sign in. |
+| `login_hint` | query |  |  | Which of this browser's accounts an enrolment is for. |
+| `did_act` | query |  |  | A published DID's wallet act, on an enrolment (#1291). |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -6182,6 +6277,8 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -6210,6 +6307,8 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -6238,6 +6337,8 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -6266,6 +6367,8 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -6294,6 +6397,8 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -6322,6 +6427,8 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -6350,6 +6457,8 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -6378,6 +6487,8 @@ The door of the sign-in surface's `GET /authn/wallet`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -6412,6 +6523,13 @@ An OpenID4VP request bound to the pending sign-in (or the step, or the enrolment
 The door of the sign-in surface's `GET /authn/wallet`.
 
 Sent with `Content-Type: application/json`, an `Origin` of this service and `X-CSRF-Token` — the `csrf` the page's view answered, bound to the browser's `sts_session` cookie.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -6880,12 +6998,15 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `state` | path | string | yes | The wallet sign-in's transaction: a bearer capability, answered to this browser only (its `sts_wallet_binding` cookie). |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -6929,6 +7050,8 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -6972,6 +7095,8 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -7015,6 +7140,8 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -7058,6 +7185,8 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -7101,6 +7230,8 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -7144,6 +7275,8 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -7187,6 +7320,8 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -7230,6 +7365,8 @@ The door of the sign-in surface's `GET /authn/wallet/wait`.
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `csrf` | string |  |  |
+| `error` | string |  |  |
+| `error_description` | string |  |  |
 | `errors` | list |  |  |
 | `errors[]` | string |  |  |
 | `next` | one of `refused` |  |  |
@@ -7285,6 +7422,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `state` | path | string | yes | The wallet sign-in's transaction: a bearer capability, answered to this browser only (its `sts_wallet_binding` cookie). |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -7754,6 +7893,8 @@ Sent with `Content-Type: application/json`, an `Origin` of this service and `X-C
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `state` | path | string | yes | The wallet sign-in's transaction: a bearer capability, answered to this browser only (its `sts_wallet_binding` cookie). |
+| `X-CSRF-Token` | header | string |  | The `csrf` the page's view answered, bound to the browser's `sts_session` cookie. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 

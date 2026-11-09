@@ -38,6 +38,24 @@ Everything /admin/uma draws: whether UMA answers in this realm, its endpoints, t
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `resourceServer` | query | string |  | Narrows the registered resources to one resource server. |
+| `owner` | query | string |  | A username or application: adds that owner's resources, document and waiting requests. |
+| `resource` | query | string |  | With `scope`, asks the what-if about this resource. |
+| `scope` | query | string |  | The scope the what-if asks about. |
+| `party` | query | string |  | The requesting party of the what-if. |
+| `client` | query | string |  | The client of the what-if. |
+| `per` | query | integer |  | Rows per page, shared by the four lists. |
+| `resourcesPage` | query | integer |  | Which page of `resources` to return. |
+| `ticketsPage` | query | integer |  | Which page of `tickets` to return. |
+| `rptsPage` | query | integer |  | Which page of `rpts` to return. |
+| `pendingPage` | query | integer |  | Which page of `pending` to return. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: `enabled`, `endpoints`, `resourceServers`, `resources`, `tickets`, `rpts`, `pending`, `owner`, `whatIf`, `monitor`, `actions`, `settings`.
 
 | Member | Type | Required | What it is |
@@ -354,6 +372,13 @@ Removes the resource as its resource server's DELETE would, and revokes every li
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -393,6 +418,13 @@ Takes uma and the uma_protection grant off the application, and revokes every li
 **Mirrors** `POST /admin/uma` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -438,6 +470,13 @@ Adds uma to the application's appAllowedProtocol and the delegated permission gr
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -481,6 +520,13 @@ The uma row of /admin/xacml/monitor (decisions, allowed, refused, since the proc
 **Mirrors** `GET /admin/uma#uma-tab-servers` on the admin console.
 
 Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: `pep`, `resourceServers`, `totals`.
 
@@ -546,6 +592,13 @@ Approves a request_submitted waiting for an application that owns resources: a r
 **Mirrors** `POST /admin/uma` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -620,6 +673,13 @@ Refuses a request_submitted waiting for an application that owns resources. Audi
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -692,6 +752,13 @@ Adds a share to the document of an application that owns UMA resources, as a per
 **Mirrors** `POST /admin/uma` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -768,6 +835,13 @@ Removes one share and revokes the RPTs it permitted. Audited.
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -835,6 +909,13 @@ Revokes a live RPT by its jti: introspection answers inactive from then on. Audi
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -874,6 +955,13 @@ Sets umaOwnsResources (rcbj's decision 5): TRUE lets a PAT the application obtai
 **Mirrors** `POST /admin/uma` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

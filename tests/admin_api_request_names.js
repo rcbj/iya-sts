@@ -154,7 +154,8 @@ function childMain() {
       const paths = Spec.merged().paths;
       const shape = function (list) {
         return JSON.stringify((list || []).map(function (one) {
-          return [one.in, one.name, !!one.required].join(' ');
+          return [one.in, one.name, !!one.required,
+                  (one.schema && one.schema.enum || []).join(',')].join(' ');
         }).sort());
       };
       const drift = [];

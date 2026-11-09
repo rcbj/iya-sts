@@ -2625,6 +2625,13 @@ op `postEmail`(`requestBody/content/application~1json/schema`: {
         `schema`:null,
         `description`:"The username the link names.",
         `example`:"nobody-example"
+      },
+      #{
+        `name`:"X-Link-Token",
+        `in`:"header",
+        `required`:false,
+        `schema`:null,
+        `description`:"The single-use secret the link carried in its fragment."
       }
     ],
     `responses`:#{
@@ -2650,6 +2657,7 @@ op `postEmail`(`requestBody/content/application~1json/schema`: {
     `x-mirrors`:"GET /portal/verify-email"
   })
 op `getEmailVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
+  `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {`address`?: string; `username`?: string; `token`?: string},
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
@@ -3171,6 +3179,13 @@ op `postPseudonyms`(`requestBody/content/application~1json/schema`: {
         `schema`:null,
         `description`:"The username the link names.",
         `example`:"nobody-example"
+      },
+      #{
+        `name`:"X-Link-Token",
+        `in`:"header",
+        `required`:false,
+        `schema`:null,
+        `description`:"The single-use secret the link carried in its fragment."
       }
     ],
     `responses`:#{
@@ -3200,6 +3215,7 @@ op `postPseudonyms`(`requestBody/content/application~1json/schema`: {
     `x-mirrors`:"GET /portal/verify-pseudonym"
   })
 op `getPseudonymVerification`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
+  `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {`address`?: string; `username`?: string; `token`?: string},
   `responses/400/content/application~1json/schema`: {
     `ok`: boolean;
@@ -13457,6 +13473,13 @@ op `connectAccount`(`requestBody/content/application~1json/schema`: {
         `schema`:null,
         `description`:"The username the link names.",
         `example`:"nobody-example"
+      },
+      #{
+        `name`:"X-Link-Token",
+        `in`:"header",
+        `required`:false,
+        `schema`:null,
+        `description`:"The single-use secret the link carried in its fragment."
       }
     ],
     `responses`:#{
@@ -13482,6 +13505,7 @@ op `connectAccount`(`requestBody/content/application~1json/schema`: {
     `x-mirrors`:"GET /portal/activate"
   })
 op `getActivation`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
+  `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `step`?: string;
     `user`?: string;
@@ -14058,6 +14082,13 @@ op `activate`(`requestBody/content/application~1json/schema`: {
         `schema`:null,
         `description`:"The username the link names.",
         `example`:"nobody-example"
+      },
+      #{
+        `name`:"X-Link-Token",
+        `in`:"header",
+        `required`:false,
+        `schema`:null,
+        `description`:"The single-use secret the link carried in its fragment."
       }
     ],
     `responses`:#{
@@ -14087,6 +14118,7 @@ op `activate`(`requestBody/content/application~1json/schema`: {
     `x-mirrors`:"GET /portal/reset-password"
   })
 op `getPasswordReset`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`type`:"string",`minLength`:1,`maxLength`:256}]}}) `parameters/0/schema`: unknown,
+  `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: {
     `username`?: string;
     `token`?: string;
