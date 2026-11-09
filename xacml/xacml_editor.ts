@@ -1363,6 +1363,21 @@ class XacmlEditor {
                       'expression — point the edit at an expression inside ' +
                       'the document.' };
       }
+      // A MATCH IS NOT AN EXPRESSION. These six actions replace the node
+      // at the path. A path that names a Match still resolves, and
+      // writing an Apply into that slot makes writeTarget() call
+      // writeExpression() on match.value, which is now absent, so it
+      // throws reading `.kind` (STS-API-0140, #1419). A rule, a target,
+      // an AnyOf and an AllOf are the same kind of miss. A Match is
+      // edited by edit-match.
+      const slot = self.kindAt(path, node);
+      if (slot !== 'expression' && slot !== 'variable') {
+        log.debug('Leaving XacmlEditor.applyEdit(). Not an expression.');
+        return { ok: false,
+                 why: 'That path is not an expression. These actions ' +
+                      'replace an expression, and a Match, a rule or a ' +
+                      'target is edited by its own action.' };
+      }
       const replacement = self.newExpression(action, given,
                                         self.variablesInScope(policy, path));
       if (!replacement.ok) {
