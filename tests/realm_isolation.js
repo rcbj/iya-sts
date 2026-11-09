@@ -255,6 +255,9 @@ function checkRevocation(t) {
 
   withRealm(t, 'iso-revoke', function (realm) {
     const jti = 'iso-jti-' + Date.now();
+    // Before the revocation, because the default realm is shared by every
+    // file of a single-process run and may already hold some (#1147).
+    const outsideBefore = stats.revokedCount();
     realms.run(realm, function () { stats.revoke(jti, 'this test'); });
 
     t.check(!stats.isRevoked(jti),
@@ -269,9 +272,10 @@ function checkRevocation(t) {
     const insideCount = realms.run(realm, function () {
       return stats.revokedCount();
     });
-    t.check(insideCount > outsideCount,
+    t.check(insideCount === 1 && outsideCount === outsideBefore,
             'the realm\'s revocation count is its own',
-            'realm=' + insideCount + ', default=' + outsideCount);
+            'realm=' + insideCount + ', default=' + outsideBefore + ' then ' +
+            outsideCount);
 
     // Restoring is per realm too, and it is worth its own line: `restore()`
     // deletes from the set and clears a flag on the token record, and a

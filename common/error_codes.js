@@ -5005,6 +5005,11 @@ const CODES = [
       'is (#1421, #1432).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0271',
+    summary: 'A certificate was asked to be validated for a realm that does ' +
+      'not exist, one removed a moment ago included; refused rather than ' +
+      'judged by the policy of whichever realm was ambient (#1147).',
+    spec: 'the caller\'s own refusal' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

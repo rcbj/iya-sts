@@ -565,15 +565,49 @@ class CertificateTrust {
   }
 
   // Runs `fn` with the realm named as the ambient one.
-  private static inRealm(realmId: string | undefined, fn: () => Json): Json {
+  private static inRealm(realmId: string | Json | undefined,
+                         fn: () => Json): Json {
     helpers.log.debug("Entering CertificateTrust.inRealm().");
     if (!realmId || realmId === realms.currentId()) {
       helpers.log.debug("Leaving CertificateTrust.inRealm().");
       return fn();
     }
-    const realm = realms.get(realmId);
+    // A record is taken as it is. `realms.get()` finds nothing for one, and
+    // the fallback below then answered about the AMBIENT realm: a realm's
+    // counts landed in the default realm with nothing failing (#1147).
+    const realm = typeof realmId === 'string' ? realms.get(realmId) : realmId;
+    // FAIL CLOSED (#1147). A realm that does not exist, one removed a moment
+    // ago included, used to be answered about the ambient realm, whose
+    // policy is somebody else's. The doors that answer ask `noSuchRealm()`
+    // first, so this throw is what is left for the audit's paths.
+    if (!realm) {
+      helpers.log.debug("Leaving CertificateTrust.inRealm(). No such realm.");
+      throw new Error(errorCodes.tag('STS-PKI-0271') + 'certificate trust: ' +
+                      'no such realm');
+    }
     helpers.log.debug("Leaving CertificateTrust.inRealm().");
-    return realm ? realms.run(realm, fn) : fn();
+    return realms.run(realm, fn);
+  }
+
+  // Whether a realm was named that does not exist. Omitted is the ambient
+  // realm, which does.
+  private static noSuchRealm(realmId: string | Json | undefined): boolean {
+    helpers.log.debug("Entering CertificateTrust.noSuchRealm().");
+    helpers.log.debug("Leaving CertificateTrust.noSuchRealm().");
+    return typeof realmId === 'string' && realmId !== '' &&
+           realmId !== realms.currentId() && !realms.get(realmId);
+  }
+
+  // The refusal a door answers for a realm that does not exist. Quiet: no
+  // realm is there to count it against.
+  private static refusedNoRealm(purpose: Purpose, id: string): TrustVerdict {
+    helpers.log.debug("Entering CertificateTrust.refusedNoRealm().");
+    const verdict = CertificateTrust.blank(id, true);
+    verdict.checks.path = 'failed';
+    helpers.log.debug("Leaving CertificateTrust.refusedNoRealm().");
+    return CertificateTrust.compose(purpose, verdict,
+      { path: 'STS-PKI-0271' },
+      { path: 'the realm this was asked about does not exist' }, '', true);
   }
 
   /**
@@ -584,6 +618,10 @@ class CertificateTrust {
    */
   static inForce(realmId?: string): Json {
     helpers.log.debug("Entering CertificateTrust.inForce().");
+    if (CertificateTrust.noSuchRealm(realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.inForce(). No such realm.");
+      return { master: 'on', inForce: true, decidedBy: 'no such realm' };
+    }
     const answer = CertificateTrust.inRealm(realmId, function () {
       const master = String(config.value('pki.paranoid') || 'auto');
       const product = mode.enforcesParanoidPki();
@@ -609,6 +647,10 @@ class CertificateTrust {
   static rowOn(id: string, realmId?: string): boolean {
     helpers.log.debug("Entering CertificateTrust.rowOn().");
     const setting = CertificateTrust.purpose(id).setting;
+    if (CertificateTrust.noSuchRealm(realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.rowOn(). No such realm.");
+      return true;
+    }
     const on = CertificateTrust.inRealm(realmId, function () {
       return config.value(setting) !== false;
     });
@@ -636,6 +678,10 @@ class CertificateTrust {
   // setting, with nothing refused.
   private static announceIfOff(id: string, realmId?: string): void {
     helpers.log.debug("Entering CertificateTrust.announceIfOff().");
+    if (CertificateTrust.noSuchRealm(realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.announceIfOff().");
+      return;
+    }
     CertificateTrust.inRealm(realmId, function () {
       if (!mode.isProduct()) {
         return;
@@ -1117,6 +1163,10 @@ class CertificateTrust {
     const opts = options || {};
     const realmId = opts.realmId || realms.currentId();
     const quiet = !!opts.force;
+    if (CertificateTrust.noSuchRealm(realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.assess(). No such realm.");
+      return CertificateTrust.refusedNoRealm(purpose, id);
+    }
     const verdict = await CertificateTrust.inRealm(realmId, async function () {
       const inForce = quiet || CertificateTrust.applies(id, realmId);
       const certs = CertificateTrust.certificatesOf(material);
@@ -1340,6 +1390,11 @@ class CertificateTrust {
     const purpose = CertificateTrust.purpose(id);
     const opts = options || {};
     const realmId = opts.realmId || realms.currentId();
+    if (CertificateTrust.noSuchRealm(realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.assessSync(). " +
+                        "No such realm.");
+      return CertificateTrust.refusedNoRealm(purpose, id);
+    }
     const verdict = CertificateTrust.inRealm(realmId, function () {
       const inForce = CertificateTrust.applies(id, realmId);
       const answer = CertificateTrust.blank(id, inForce);
@@ -1635,6 +1690,11 @@ class CertificateTrust {
     const opts = options || {};
     const purpose = CertificateTrust.purpose(id);
     const realmId = opts.realmId || realms.currentId();
+    if (CertificateTrust.noSuchRealm(realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.assessPeer(). " +
+                        "No such realm.");
+      return CertificateTrust.refusedNoRealm(purpose, id);
+    }
     const answer = await CertificateTrust.inRealm(realmId, async function () {
       const verdict = CertificateTrust.blank(id, true);
       const codes: Json = {};
@@ -2203,6 +2263,14 @@ class CertificateTrust {
     // Lazily: the store's reader stands on modules that stand on this one.
     const replication = require('../persistence/persistence_replication');
     const out: Json = {};
+    if (CertificateTrust.noSuchRealm(realmId)) {
+      PURPOSES.forEach(function (one) {
+        out[one.id] = { assessed: 0, refused: 0, lastRefusal: null };
+      });
+      helpers.log.debug("Leaving CertificateTrust.counters(). " +
+                        "No such realm.");
+      return out;
+    }
     // Omitted means the ambient realm. `run(currentId())` stored the id
     // string (#1398); `inRealm` stays on the record already ambient.
     CertificateTrust.inRealm(realmId, function () {
@@ -2350,6 +2418,11 @@ class CertificateTrust {
    */
   static lastAudit(realmId?: string): Json {
     helpers.log.debug("Entering CertificateTrust.lastAudit().");
+    if (CertificateTrust.noSuchRealm(realmId)) {
+      helpers.log.debug("Leaving CertificateTrust.lastAudit(). " +
+                        "No such realm.");
+      return { assessedAt: 0, pins: [], truststore: [] };
+    }
     const held = CertificateTrust.inRealm(realmId, function () {
       return lastAudit.get('last');
     });

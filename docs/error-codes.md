@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5378** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5379** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -58,7 +58,7 @@ is an ordinary outcome.
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
 * [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 185
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 257
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 258
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
@@ -1065,6 +1065,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0268` | A certificate authority was asked for a lifetime a certificate cannot carry. Nothing was generated and nothing was stored (#1409). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0269` | A signing key pair was asked for a subject key that has no JWK this service can publish: a composite ML-DSA key, whose X.509 bytes are not the JOSE composite, or a key-establishment algorithm asked to sign. The certificate was not recorded (#1418). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0270` | A process-scope certificate authority was asked for a signing key or an alternative key whose signatures would make the TLS listener certificate list larger than a stock TLS client accepts (OpenSSL SSL_MAX_CERT_LIST_DEFAULT, 102400 bytes). Nothing was stored, and the listener certificate was left as it is (#1421, #1432). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0271` | A certificate was asked to be validated for a realm that does not exist, one removed a moment ago included; refused rather than judged by the policy of whichever realm was ambient (#1147). | the caller's own refusal |
 
 ## STS-ENROLL
 
