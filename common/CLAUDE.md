@@ -8329,7 +8329,17 @@ neither.
 SHA-384 chain signs RS384 — the certificate's digest decides. An EC key does
 NOT: RFC 7518 pins ES256 to P-256, ES384 to P-384 and ES512 to P-521, so a P-256
 key under a SHA-512 chain is still ES256, and naming it ES512 would produce
-assertions nothing can verify. `tests/pki.js` asserts both readings.
+assertions nothing can verify. `tests/pki.js` asserts both readings. A
+post-quantum subject key names its own JOSE algorithm (`ML-DSA-65` on an
+ML-DSA-65 leaf), whichever key signed the certificate (#1418). The public JWK
+comes from `keyMaterial.pubToJwk()`, because Node's decoder throws
+`error:03000072` on these SPKIs and that throw was an uncaught 500 on
+`POST /admin-api/pki/issue`. `alg` is assigned before the RFC 7638 thumbprint,
+because an AKP thumbprint hashes `alg`. A composite ML-DSA key, and a
+key-establishment algorithm asked to sign, are refused as STS-PKI-0269 before
+that thumbprint. The composite has no JWK form here (the X.509 bytes and the
+JOSE bytes differ), and the refusal is the same `{ok:false, errors}` the other
+issuance refusals already are, so the management API answers 400.
 
 ### 3w, CONTINUED: HYBRID AUTHORITIES, OFF BY DEFAULT (2026-09-26, #68 phase 1)
 

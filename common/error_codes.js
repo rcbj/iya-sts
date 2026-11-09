@@ -4956,6 +4956,13 @@ const CODES = [
       'cannot carry. Nothing was generated and nothing was stored (#1409).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0269',
+    summary: 'A signing key pair was asked for a subject key that has no ' +
+      'JWK this service can publish: a composite ML-DSA key, whose X.509 ' +
+      'bytes are not the JOSE composite, or a key-establishment algorithm ' +
+      'asked to sign. The certificate was not recorded (#1418).',
+    spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
+      'errors}' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },

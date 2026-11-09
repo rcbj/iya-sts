@@ -2987,14 +2987,51 @@ async function issueSigningKeyPair(realmId, opts) {
   // same rule every kid in this service follows, and for the same reason: two
   // keys under one name is a verifier reporting a bad signature about a key it
   // fetched from the wrong place.
-  const publicJwk = publicJwkOf(pair.publicPem);
+  //
+  // A CLASSICAL PEM goes through Node's decoder. A post-quantum one does not:
+  // OpenSSL has no decoder for these OIDs, and `createPublicKey` throws
+  // `error:03000072`, which left this call as an uncaught 500 on
+  // `POST /admin-api/pki/issue` (#1418). `pubToJwk()` is the AKP conversion
+  // already used everywhere else, and it refuses a composite ML-DSA key on
+  // purpose — the X.509 bytes and the JOSE bytes are not the same key.
+  let publicJwk;
+  try {
+    if (keyDesc.kind === 'pqc') {
+      publicJwk = await keyMaterial.pubToJwk(pair.publicPem, keyDesc);
+    } else {
+      publicJwk = publicJwkOf(pair.publicPem);
+    }
+  } catch (e) {
+    // The composite refusal, or a PEM this build cannot read. The sentence
+    // the caller sees names neither the key nor the OpenSSL text: both are
+    // an operator's, and the code is recorded rather than sent.
+    log.debug('Caught in issueSigningKeyPair(): ' +
+              ((e && e.message) || e));
+    log.debug('Leaving issueSigningKeyPair(). No JWK.');
+    return unpublishedJwk(identifier, (e && e.message) || e);
+  }
   const jwsAlg = jwsAlgFor(keyDesc, sigAlgId);
-  publicJwk.kid = subjectKind.kidPrefix +
-                  stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
-  publicJwk.use = encryption ? 'enc' : 'sig';
+  // `alg` is set BEFORE the thumbprint. It is not a member of a classical
+  // thumbprint, so moving it changes no RSA, EC or OKP kid. It IS a member
+  // of an AKP thumbprint (RFC 9964), and computing one without it throws.
   if (jwsAlg && !encryption) {
     publicJwk.alg = jwsAlg;
   }
+  if (!encryption && keyDesc.kind === 'pqc' && !jwsAlg) {
+    // A KEM, or a parameter set JOSE has no name for. A signing JWK with no
+    // `alg` is not a key a verifier can use, and an AKP thumbprint cannot
+    // be computed without one when pubToJwk did not set it either.
+    log.debug('Leaving issueSigningKeyPair(). No JOSE algorithm.');
+    return unpublishedJwk(identifier,
+                          'no JOSE signature algorithm for ' + keyDesc.id);
+  }
+  if (publicJwk.kty === 'AKP' && !publicJwk.alg) {
+    log.debug('Leaving issueSigningKeyPair(). AKP without alg.');
+    return unpublishedJwk(identifier, 'an AKP key is missing alg');
+  }
+  publicJwk.kid = subjectKind.kidPrefix +
+                  stsCrypto.jwkThumbprint(publicJwk, { truncate: 16 });
+  publicJwk.use = encryption ? 'enc' : 'sig';
   // `x5c` is the certificate chain in the JWK itself (RFC 7517 section 4.7):
   // base64 DER, leaf first, NOT base64url. A client that registers this JWKS
   // therefore registers the chain as well, which is what lets `client_auth.js`
@@ -6377,6 +6414,21 @@ function publicJwkOf(publicPem) {
   return stsCrypto.publicKeyOf(publicPem).export({ format: 'jwk' });
 }
 
+// The refusal `issueSigningKeyPair()` returns when the subject key has no
+// JWK this service can publish (#1418). The sentence is fixed: it does not
+// repeat the key, the OpenSSL text, or the code, which is recorded here.
+function unpublishedJwk(identifier, why) {
+  log.debug('Entering unpublishedJwk().');
+  log.error(errorCodes.tag('STS-PKI-0269') + 'pki: the public key for "' +
+            identifier + '" has no JWK this service can publish: ' + why);
+  log.debug('Leaving unpublishedJwk().');
+  return errorCodes.mark({ ok: false,
+           errors: ['That key cannot be published as a JWK. A composite ' +
+                    'ML-DSA key is kept as PEM, and a key-establishment ' +
+                    'algorithm is not a signing key.'] },
+                         'STS-PKI-0269');
+}
+
 // The JWS `alg` a key of this kind signs with, so that the JWK this module
 // hands out names one. The signature algorithm chosen for the CERTIFICATE
 // decides the digest — an RSA key issued under a SHA-384 chain gets RS384 —
@@ -6412,10 +6464,19 @@ function jwsAlgFor(keyDesc, sigAlgId) {
     log.debug('Leaving jwsAlgFor(). RSA.');
     return (sig.pss ? 'PS' : 'RS') + digit;
   }
-  // A POST-QUANTUM KEY HAS THE ONE ALGORITHM, where JOSE has a name for it
-  // (#1368). `null` for a parameter set it has none for, and for a KEM, which
-  // signs nothing. Until then every leaf under a post-quantum authority was
-  // `null`, and `/admin-api/pki/issue` could not answer at all.
+  // A POST-QUANTUM SUBJECT KEY HAS THE ONE ALGORITHM, where JOSE has a name
+  // for it (#1368). The name is the SUBJECT's, not the issuer's signature:
+  // a classical Issuing CA can certify an ML-DSA leaf, and the JWK's `alg`
+  // is the leaf's (#1418). `null` for a parameter set JOSE has none for, and
+  // for a KEM, which signs nothing. A composite ML-DSA key never reaches
+  // here with a JWK: `pubToJwk()` refuses it, because the X.509 bytes and
+  // the JOSE bytes are not the same key.
+  if (keyDesc.kind === 'pqc') {
+    const subject = algorithmRegistry.byId(keyDesc.pqc);
+    log.debug('Leaving jwsAlgFor(). ' +
+              ((subject && subject.jose) || 'None') + '.');
+    return (subject && subject.jose) || null;
+  }
   const row = sig.kind === 'pqc'
     ? algorithmRegistry.bySpelling('x509', sigAlgId) : null;
   log.debug('Leaving jwsAlgFor(). ' + ((row && row.jose) || 'None') + '.');
