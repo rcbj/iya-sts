@@ -1279,7 +1279,7 @@ function accountSetCase(t) {
       protocol: 'OAuth 2.0 / OIDC', application: '',
       request: { headers: req.headers, query: {}, url: '/oauth2/authorize' }
     });
-    t.check(/^\/authn\/accounts\?authn=/.test(begun),
+    t.check(/^\/authn\/accounts(?:\?app=[^#]*)?[?#]authn=/.test(begun),
             'and a sign-in that needs the set goes to that picker, not to ' +
             'the sign-in screen', begun);
   } finally {
@@ -1951,7 +1951,18 @@ async function body(t, dir) {
   log.debug("Leaving body().");
 }
 
+// The fixtures' sessions were last used long ago, and product mode's default idle
+// timeout would end them before the read each case is about.
 async function run(t) {
+  config.setOverride('authn.sessionIdleTimeoutS', '0');
+  try {
+    return await runCases(t);
+  } finally {
+    config.clearOverride('authn.sessionIdleTimeoutS');
+  }
+}
+
+async function runCases(t) {
   log.debug("Entering run().");
   log.debug("Leaving run().");
   return withTempDir(function (dir) {

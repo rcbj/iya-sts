@@ -439,7 +439,7 @@ async function sectionC(product) {
   check("c1. with no session the link goes to the sign-in screen (303)",
         function () {
     assert.strictEqual(first.status, 303, first.text.slice(0, 300));
-    assert.ok(/\/authn\/login\?authn=/.test(first.location), first.location);
+    assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(first.location), first.location);
   });
   const signedIn = await authnSignin.signInWithJar(realmBase(),
     new URL(first.location, base).toString(),

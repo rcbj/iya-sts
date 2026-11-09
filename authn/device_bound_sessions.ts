@@ -917,7 +917,12 @@ class DeviceBoundSessions {
       refresh_url: realms.currentPrefix() + REFRESH_PATH,
       continue: true,
       scope: { include_site: site, scope_specification: spec },
-      credentials: [{ type: 'cookie', name: this.cookieNameOf(session),
+      // THE NAME THE BROWSER WILL HOLD IT BY (#1441), since it is the browser
+      // that matches this against the cookie it was sent.
+      credentials: [{ type: 'cookie',
+                      name: require('../common/cookie_wire').wireName(
+                        this.cookieNameOf(session),
+                        this.cookieAttributes(req)),
                       attributes: this.cookieAttributes(req) }],
       allowed_refresh_initiators: []
     };

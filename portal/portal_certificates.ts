@@ -390,36 +390,14 @@ class PortalCertificates {
     log.debug("Entering PortalCertificates.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/certificates',
-        operationId: 'getCertificates', tag: 'Certificates',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/certificates',
-        summary: 'Your certificates and the enrollment credentials you hold',
-        description: 'The certificates ACME, EST and SCEP issued for your ' +
-          'entry, your ACME account binding keys and SCEP challenge ' +
-          'passwords (never their secrets), the EST and SCEP profiles you ' +
-          'may ask for, the host names registered on your entry, and the ' +
-          'addresses of each family in this realm. A family turned off is ' +
-          'null.',
-        query: vz.object({}),
+        operationId: 'getCertificates', access: 'person', query: vz.object({}),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(ctx, caller,
                                               ctx.baseUrlOf(req), null));
         } },
       { method: 'POST', path: ctx.BASE + '/certificates',
-        operationId: 'changeCertificates', tag: 'Certificates',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/certificates',
-        summary: 'Makes or deletes an enrollment credential, or revokes a ' +
-                 'certificate',
-        description: '`create-eab` and `create-challenge` (rate limited) ' +
-          'make an ACME account binding key or a SCEP challenge password for ' +
-          'your entry; its secret is in the answer\'s `view.fresh`, ONCE. ' +
-          '`delete-eab` and `delete-challenge` remove an unused one of ' +
-          'yours; `revoke` revokes a certificate issued for you. Anything ' +
-          'that is not yours is answered as not found.',
-        body: self.formSchema(),
-        statuses: { 403: 'The family is turned off in this realm.',
-                    404: 'You hold no such credential or certificate.',
-                    429: 'Too many made; try again later.' },
+        operationId: 'changeCertificates', access: 'person', recentAuth: true, body: self.formSchema(),
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);

@@ -28,6 +28,7 @@
 // ---------------------------------------------------------------------------
 
 import kit = require('./web_portal_kit');
+import WebSafeDom = require('../common/web_safe_dom');
 
 type Json = any;
 type PortalPage = import('../types/account-api').PortalPage;
@@ -254,7 +255,8 @@ class DelegatePages {
     const search = new DelegateSearch(function (q: string): Promise<Json> {
       return ask(SEARCH_OPERATION + '?q=' + encodeURIComponent(q));
     }, function (q: string, answer: Json): void {
-      out.innerHTML = answer ? DelegatePages.results(q, answer, t) : '';
+      WebSafeDom.render(out,
+        answer ? DelegatePages.results(q, answer, t) : '');
     }, {
       set: function (fn: () => void, ms: number): unknown {
         return win.setTimeout(fn, ms);

@@ -3924,11 +3924,17 @@ class VcVerifier {
     }
     log.debug("Leaving VcVerifier.afterResponseUri(). A sign-in.");
     const path = String(record.signIn.completePath);
-    return base + path + (path.indexOf('?') >= 0 ? '&' : '?') +
-      'authn=' + encodeURIComponent(record.signIn.authnId) +
+    // THE STEP'S ID STAYS OUT OF THE ADDRESS IN PRODUCT (#1487): the wait page
+    // reads these from the fragment, and a wallet follows the address whole.
+    const cut = path.indexOf('?');
+    const page = cut < 0 ? path : path.slice(0, cut);
+    const asked = cut < 0 ? '' : path.slice(cut + 1) + '&';
+    const carried = asked + 'authn=' +
+      encodeURIComponent(record.signIn.authnId) +
       '&state=' + encodeURIComponent(record.state) +
-      (responseCode ? '&response_code=' + encodeURIComponent(responseCode) :
-                      '');
+      (responseCode ? '&response_code=' + encodeURIComponent(responseCode) : '');
+    return base + page +
+      (require('../common/mode').hidesStepIds() ? '#' : '?') + carried;
   }
 
   // ---------------------------------------------------------------------------

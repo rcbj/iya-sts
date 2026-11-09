@@ -1753,6 +1753,10 @@ class ScimClients {
     add(c.caCertificates);
     const file = String(config.value('scimClient.caFile') || '').trim();
     if (file) {
+      if (!OutboundTls.namedFileAllowed(file)) {
+        throw new Error('scimClient.caFile is not a file in a directory ' +
+                        'security.fileRoots lists');
+      }
       add(fs.readFileSync(file, 'utf8'));
     }
     const out: Json = OutboundTls.verifiedOptions(pems.length ? pems : null);

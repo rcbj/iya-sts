@@ -6980,6 +6980,17 @@ const ENDPOINTS: EndpointEntry[] = [
     specs: ['openapi'],
     what: 'NON-SPEC (#98 D11). A page of another cell\'s residents, ' +
           'answered by that cell only where its release policy permits.' },
+  { path: '/admin-api/malware-scanning', group: 'Management API',
+    name: 'Malware scanning',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#1501). GET /admin/malware-scanning over JSON: ' +
+          'whether uploaded files are scanned and the ICAP service that ' +
+          'scans them. It changes nothing.' },
+  { path: '/admin-api/malware-scanning/:action', group: 'Management API',
+    name: 'Test the malware scanner',
+    specs: ['openapi'],
+    what: 'NON-SPEC (#1501). Sends the configured ICAP service the EICAR ' +
+          'test file and succeeds only if the service flags it.' },
   { path: '/admin-api/listeners', group: 'Management API',
     name: 'Listeners',
     specs: ['openapi'],
@@ -7008,6 +7019,12 @@ const ENDPOINTS: EndpointEntry[] = [
     what: 'NON-SPEC. Every setting, its effective value, and the source of ' +
           'that value — override, environment variable, the appconfig file ' +
           'or env/defaults.js under it. Mirrors GET /admin/config.' },
+  { path: '/admin-api/config-dump', group: 'Management API',
+    name: 'Configuration dump',
+    specs: [],
+    what: 'NON-SPEC. Every configuration parameter, global and per realm, ' +
+          'with every sensitive value masked. Mirrors GET ' +
+          '/admin/config-dump.' },
   { path: '/admin-api/config/:action', group: 'Management API',
     name: 'Configuration actions',
     specs: [],

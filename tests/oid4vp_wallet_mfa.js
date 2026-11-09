@@ -120,7 +120,7 @@ function childMain() {
     // which is opened as the browser opens it — its shell, then its view.
     async function stepAt(who, page) {
       const at = String((page.headers && page.headers.location) || '');
-      if (page.status !== 303 || !/\/authn\/[a-z-]+\?mfa=/.test(at)) {
+      if (page.status !== 303 || !/\/authn\/[a-z-]+(?:\?app=[^#]*)?[?#]mfa=/.test(at)) {
         return { status: 0, view: null, id: '', text: '' };
       }
       return authnScreen.openStep({ port: w.port, jar: who.cookies, at: at });
@@ -484,7 +484,7 @@ function childMain() {
       return m.authn.beginAuthentication({ returnTo: '/wsi/after',
         protocol: 'wsi-probe', application: 'wsi-wallet' });
     });
-    note(set.ok && /^\/authn\/wallet\?authn=/.test(where),
+    note(set.ok && /^\/authn\/wallet(?:\?app=[^#]*)?[?#]authn=/.test(where),
          '5a. a policy allowing wallet — named through the function the ' +
          'console and /admin-api both go through — sends that ' +
          'application\'s people straight to the wallet door',
@@ -499,7 +499,7 @@ function childMain() {
     // A static page since #571: what it says is its view's `error`.
     const screen = await authnScreen.open({ port: w.port, jar: {},
                                             at: shut });
-    note(/^\/authn\/login\?authn=/.test(shut) && screen.view &&
+    note(/^\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(shut) && screen.view &&
          /oid4vp\.signIn is off/.test(String(screen.view.error)),
          '5b. and with oid4vp.signIn off it falls back to the screen and ' +
          'says why, rather than sending somebody to a door that is shut',

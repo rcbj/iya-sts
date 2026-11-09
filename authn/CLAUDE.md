@@ -141,6 +141,20 @@ foundation (`common/CLAUDE.md` 3cl), and the sign-in screen is the largest:
 | `GET`/`POST /authn-api/password-change/{id}` | the forced change's view and act |
 | `GET /authn-api/pending/{id}/accounts`, `POST …/accounts/select`, `…/another`, `…/forget`, `GET /authn-api/accounts` | the account picker's view and acts, and a browser's account list (#561): *Several signed-in accounts in one browser*, below |
 
+**WHAT A REQUEST MAY NAME (#1483, `/admin-api`'s #1476 rule)**: the route
+wrapper asks `RequestHeaders.checkRequest()` over the operation's own
+parameters (`AuthnApi.parametersOf()`, which reads each operation's `query`
+zod) before any handler and before an act's binding: an undeclared query name
+(`STS-AUTHN-0553`), a wrong-typed or nested value (`0554`) and a custom header
+(`0555`), English, naming the name and never the value, no code in the answer.
+A POST declares `X-CSRF-Token`; every operation declares `X-Requested-With`,
+which an Android WebView adds to a sign-in opened in one, so a WebView sign-in
+is not refused for a header the page did not choose. A runtime names exactly
+what it sends (`stepOperation()`, the wallet's and the sign-out's lists), so a
+sign-in in a browser meets none of these. `models/api/authn.tsp` holds the
+examples (#1475's rules; every act names an id nothing holds).
+`tests/api_request_names.js` holds it.
+
 **UNAUTHENTICATED, KEYED BY THE PENDING ID** — a bearer capability, as
 `authn_id` was. It is never logged here, and `common/audit.js`'s
 `redactedPath()` takes it out of an HTTP row's target and the call log
@@ -4069,3 +4083,5 @@ one click from skipped.
   started activity asks its population even where the policy is off.
 * **No protocol test yet**: `tests/post_login.js` drives it over HTTP in
   process; `tests/post_login_started.js` holds #1126's selection.
+
+**An app password at a password-only door needs no second factor, deliberately (rcbj, 2026-11-09).** Those doors cannot ask for one. `mode.requiresSecondFactorOfEveryone()` (#1490) refuses a person's own password there and leaves the app password working; do not extend the requirement to it.

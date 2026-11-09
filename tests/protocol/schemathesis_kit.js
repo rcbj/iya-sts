@@ -42,6 +42,7 @@ const bunyan = require("bunyan");
 const childProcess = require("child_process");
 const crypto = require("crypto");
 const fs = require("fs");
+const http = require("http");
 const net = require("net");
 const os = require("os");
 const path = require("path");
@@ -88,7 +89,22 @@ const FUZZ_RISK = Object.freeze({ "risk.assessSignIns": false });
 
 // What every fuzz realm carries beside its mode flag: the DPoP headroom and the
 // sign-in-risk opt-out.
-const FUZZ_REALM = Object.freeze(Object.assign({}, FUZZ_DPOP, FUZZ_RISK));
+// A TOKEN THAT OUTLIVES ITS CELL (#1502). The admin-api cells take over an hour
+// once the realms overlap, past the hour a token lasts by default, and by then
+// the cell's own fuzzing has usually changed who may sign in to the console, so
+// the proxy cannot get another: 230 of 272 re-sign-ins failed, and the rest of
+// the cell "passed" against a 401. Eight hours, the mode's own bound being six.
+//
+// AND A SIGN-IN THAT STAYS RECENT (#1538). Product mode asks for a sign-in within
+// 15 minutes before a credential-changing operation, and answers 401
+// insufficient_user_authentication after that. The proxy re-signs only on
+// invalid_token, so those operations would go untested for most of a cell while
+// the cell passed. 1440 is the row's maximum.
+const FUZZ_TOKEN = Object.freeze({ "oauth2.accessTokenTtlS": 28800,
+                                   "account.recentAuthMinutes": 1440 });
+
+const FUZZ_REALM = Object.freeze(Object.assign({}, FUZZ_DPOP, FUZZ_RISK,
+  FUZZ_TOKEN));
 
 const PROFILES = [
   { key: "base", realm: "fuzz-base", label: "product baseline",
@@ -190,24 +206,33 @@ const CUSTOM_CHECKS = [
 // itself; the per-cell re-assert then has only the earlier cells' doing to fix.
 // A realm's admin-api cannot reach the next realm (each realm is its own tree,
 // keys and policies); if a way is found, it is a finding.
+// `strict` (#1476, #1483) is what the cell's probes hold a GET to: `refuses`
+// (a published API: an undeclared query name, a wrong-typed value and an
+// unknown custom header are 400s) or `tolerates` (a protocol endpoint: an
+// outside specification defines it and several say to ignore what they do
+// not know, so a garbage request only has to answer no 5xx and no leaked
+// code).
 const SURFACES = [
   { key: "account-api", title: "Account API (portal/user)",
     kind: "openapi", schemaPath: "/account-api/openapi.json",
-    schemaAuth: "none", auth: "dpop-portal", checks: INVARIANT_BUILTIN },
+    schemaAuth: "none", auth: "dpop-portal", checks: INVARIANT_BUILTIN,
+    strict: "refuses" },
   { key: "authn-api", title: "Sign-in API",
     kind: "openapi", schemaPath: "/authn-api/openapi.json",
-    schemaAuth: "none", auth: "authn", checks: INVARIANT_BUILTIN },
+    schemaAuth: "none", auth: "authn", checks: INVARIANT_BUILTIN,
+    strict: "refuses" },
   { key: "report-api", title: "Reporting API",
     kind: "openapi", schemaPath: "/report-api/openapi.json",
-    schemaAuth: "dpop-report", auth: "dpop-report", checks: INVARIANT_BUILTIN },
+    schemaAuth: "dpop-report", auth: "dpop-report", checks: INVARIANT_BUILTIN,
+    strict: "refuses" },
   { key: "protocol", title: "Protocol endpoints (synthesized)",
     kind: "synthesized", schemaPath: "/admin-api/sts-metadata",
     schemaAuth: "dpop-console", auth: "per-op",
-    checks: INVARIANT_BUILTIN },
+    checks: INVARIANT_BUILTIN, strict: "tolerates" },
   { key: "admin-api", title: "Management API",
     kind: "openapi", schemaPath: "/admin-api/openapi.json",
     schemaAuth: "dpop-console", auth: "dpop-console",
-    checks: INVARIANT_BUILTIN }
+    checks: INVARIANT_BUILTIN, strict: "refuses" }
 ];
 
 // ---------------------------------------------------------------------------
@@ -304,7 +329,7 @@ const SERVICE_CELL = Object.freeze({
   title: "Management API (service, default realm)",
   kind: "openapi", schemaPath: "/admin-api/openapi.json",
   schemaAuth: "dpop-console", auth: "dpop-console",
-  checks: INVARIANT_BUILTIN, exclusionsKey: "admin-api",
+  checks: INVARIANT_BUILTIN, strict: "refuses", exclusionsKey: "admin-api",
   serviceExclusions: SERVICE_EXCLUSIONS
 });
 
@@ -383,6 +408,231 @@ function exclusionsFor(surfaceKey) {
   });
   log.debug("Leaving exclusionsFor().");
   return list;
+}
+
+// ---------------------------------------------------------------------------
+// WHAT A GET DOES WITH A NAME IT DOES NOT TAKE (#1476 for `/admin-api`, #1483
+// for the other three published APIs and the protocol endpoints, rcbj
+// 2026-11-09). Schemathesis sends what the document declares, so a parameter
+// or header nothing declares is the one request it never makes. These probes
+// make it, on every GET in the document, while the cell's proxy is up:
+//
+//   unknown-parameter   one query parameter nothing declares        400
+//   wrong-type          a declared integer holding a word            400
+//   garbage-header      a custom header no specification defines     400
+//   standard-header     a garbage value in a standard header         no 5xx
+//
+// A refusal carries no error code. A gate's 401 or 403 means the request
+// never reached the check, and is counted rather than called a miss: a realm's
+// administrator is refused the process-wide operations, and that is correct.
+//
+// THE PROTOCOL SURFACE IS THE OTHER CASE (`strict: "tolerates"`): a protocol
+// endpoint is its specification's, and several say to ignore an unknown
+// parameter. The same garbage goes to its GETs and the answer is held only to
+// no 5xx (501, a deliberate Not Implemented, excepted) and no leaked code: a
+// 200 passes. Nothing about those endpoints changes for this.
+// ---------------------------------------------------------------------------
+const STRICT_UNKNOWN_PARAMETER = "sts_garbage";
+const STRICT_GARBAGE_VALUE = "%%%{{<garbage>}}~";
+const STRICT_FINDING = "strict_request_miss";
+const LEAKED_CODE = /STS-[A-Z0-9]+-\d{4}/;
+
+// THE PROTOCOL GETS THAT ARE NOT PROBED (#1483), exact templates of the
+// synthesized document. `{as}` is an embedded authorization server's prefix.
+// A probe carries no credential and no cookie (auth "per-op"), so none of
+// these can end a session on one; they are held back because each is
+// specified to end a browser's sign-on, and a cell that exists to prove it did
+// no damage does not ask a sign-out endpoint for its opinion of a garbage
+// parameter. Everything else in the document is probed.
+const PROTOCOL_PROBE_EXCLUSIONS = [
+  { template: "/oauth2/logout",
+    reason: "RP-Initiated Logout: a GET ends the browser's sign-on session" },
+  { template: "/{as}/oauth2/logout",
+    reason: "RP-Initiated Logout at an embedded authorization server: a GET " +
+      "ends the browser's sign-on session" },
+  { template: "/saml2/slo",
+    reason: "SAML 2.0 Single Logout's GET binding, which ends a session it " +
+      "names" },
+  { template: "/saml2/slo/{sp}",
+    reason: "SAML 2.0 Single Logout's GET binding for one service provider, " +
+      "which ends a session it names" },
+  { template: "/federation/slo/{id}",
+    reason: "a federation partner's Single Logout entry, which ends the " +
+      "session the partner names" },
+  { template: "/federation/frontchannel-logout/{id}",
+    reason: "OpenID Connect Front-Channel Logout's GET at a partner, which " +
+      "ends the session it names" }
+];
+
+function protocolProbeExcluded(template) {
+  log.debug("Entering protocolProbeExcluded().");
+  const excluded = PROTOCOL_PROBE_EXCLUSIONS.some(function (one) {
+    return one.template === template;
+  });
+  log.debug("Leaving protocolProbeExcluded(). " + excluded);
+  return excluded;
+}
+
+// The requests one GET of the document is probed with. Pure, so that
+// tests/schemathesis_plan.js can hold the plan without a stack.
+function strictRequestProbes(document, options) {
+  log.debug("Entering strictRequestProbes().");
+  const out = [];
+  const opts = options || {};
+  const paths = (document && document.paths) || {};
+  Object.keys(paths).sort().forEach(function (template) {
+    const get = paths[template] && paths[template].get;
+    if (!get) {
+      return;
+    }
+    if (opts.tolerates && protocolProbeExcluded(template)) {
+      return;
+    }
+    // A harmless value for a path parameter: the check runs before the
+    // handler, so the route only has to match.
+    const url = template.replace(/\{[^}]+\}/g, "fuzz-probe");
+    const id = get.operationId || url;
+    const parameters = get.parameters || [];
+    out.push({ kind: "unknown-parameter", operationId: id, path: template,
+      url: url + "?" + STRICT_UNKNOWN_PARAMETER + "=1", headers: {},
+      named: STRICT_UNKNOWN_PARAMETER });
+    // `integer` or zod's `anyOf` of an empty string and an integer, which is
+    // how `/account-api` documents `vt.opt(vt.integer())` (#1483).
+    const integer = parameters.filter(function (p) {
+      const schema = (p && p.schema) || {};
+      return p && p.in === "query" && (schema.type === "integer" ||
+        (Array.isArray(schema.anyOf) && schema.anyOf.some(function (one) {
+          return one && one.type === "integer";
+        }))) && schema["x-refused-by-handler"] !== true;
+    })[0];
+    if (integer) {
+      out.push({ kind: "wrong-type", operationId: id, path: template,
+        url: url + "?" + encodeURIComponent(integer.name) + "=abc",
+        headers: {}, named: integer.name });
+    }
+    out.push({ kind: "garbage-header", operationId: id, path: template,
+      url: url, headers: { "X-Sts-Garbage": STRICT_GARBAGE_VALUE },
+      named: "x-sts-garbage" });
+    out.push({ kind: "standard-header", operationId: id, path: template,
+      url: url, headers: { "Accept-Language": STRICT_GARBAGE_VALUE } });
+  });
+  log.debug("Leaving strictRequestProbes(). " + out.length + ".");
+  return out;
+}
+
+// What one probe's answer means: null for an answer that is right, `gate`
+// for a request a gate stopped, otherwise the finding's detail. Pure.
+function strictRequestVerdict(kind, status, body, options) {
+  log.debug("Entering strictRequestVerdict(). " + kind + " " + status);
+  const opts = options || {};
+  let verdict = null;
+  const text = String(body || "");
+  if (opts.tolerates) {
+    // A protocol endpoint (#1483): no 5xx and no leaked code, and that is all.
+    if (status === 0 || (status >= 500 && status !== 501)) {
+      verdict = kind + " answered " + status;
+    } else if (status >= 400 && LEAKED_CODE.test(text)) {
+      verdict = "a refusal carried an error code";
+    }
+  } else if (status === 401 || status === 403) {
+    verdict = "gate";
+  } else if (status >= 400 && LEAKED_CODE.test(text)) {
+    verdict = "a refusal carried an error code";
+  } else if (kind === "standard-header") {
+    verdict = status >= 500 ? "a standard header answered " + status : null;
+  } else if (status !== 400) {
+    verdict = kind + " answered " + status + ", not 400";
+  } else if (opts.named && text.indexOf(opts.named) < 0) {
+    // A 400 NAMING SOMETHING ELSE IS NOT THE REFUSAL (#1483): a GET of
+    // `/authn-api/pending/fuzz-probe` answers 400 for the id that does not
+    // exist, with or without the garbage, and passing it would be a gate
+    // that checked nothing.
+    verdict = kind + " answered 400 and did not name " + opts.named;
+  }
+  log.debug("Leaving strictRequestVerdict().");
+  return verdict;
+}
+
+// One request to the cell's proxy; the proxy signs it.
+function strictRequest(port, url, headers) {
+  log.debug("Entering strictRequest().");
+  return new Promise(function (resolve) {
+    const req = http.request({ host: "127.0.0.1", port: port, path: url,
+      method: "GET", headers: Object.assign({ accept: "application/json" },
+        headers), timeout: 60000 }, function (res) {
+      let text = "";
+      res.setEncoding("utf8");
+      res.on("data", function (chunk) {
+        text += chunk;
+      });
+      res.on("end", function () {
+        log.debug("Leaving strictRequest(). " + res.statusCode);
+        resolve({ status: res.statusCode || 0, text: text });
+      });
+    });
+    req.on("timeout", function () {
+      req.destroy(new Error("timed out"));
+    });
+    req.on("error", function (e) {
+      log.debug("Caught in strictRequest(): " + ((e && e.message) || e));
+      log.debug("Leaving strictRequest(). No answer.");
+      resolve({ status: 0, text: String((e && e.message) || e) });
+    });
+    req.end();
+  });
+}
+
+// Every GET in the cell's document, probed through the cell's proxy. Answers
+// the findings; a document that cannot be read, or one where every probe was
+// stopped by a gate, is itself a finding, because a gate that checked nothing
+// must not read as a gate that passed.
+async function probeStrictRequests(port, surface, say, synthesized) {
+  log.debug("Entering probeStrictRequests(). " + surface.key);
+  const tolerates = surface.strict === "tolerates";
+  // The synthesized document exists only in this process, and the proxy's
+  // `/admin-api/sts-metadata` is not it.
+  const documentAnswer = synthesized
+    ? { status: 200, text: JSON.stringify(synthesized) }
+    : await strictRequest(port, surface.schemaPath, {});
+  let document = null;
+  try {
+    document = JSON.parse(documentAnswer.text);
+  } catch (e) {
+    log.debug("Caught parsing the cell's document: " +
+              ((e && e.message) || e));
+  }
+  const probes = strictRequestProbes(document, { tolerates: tolerates });
+  if (documentAnswer.status !== 200 || !probes.length) {
+    log.debug("Leaving probeStrictRequests(). No document.");
+    return [{ kind: STRICT_FINDING, status: documentAnswer.status,
+      route: surface.schemaPath, detail: "the document could not be read" }];
+  }
+  const findings = [];
+  let gated = 0;
+  for (let i = 0; i < probes.length; i++) {
+    const probe = probes[i];
+    const answer = await strictRequest(port, probe.url, probe.headers);
+    const verdict = strictRequestVerdict(probe.kind, answer.status,
+      answer.text, { tolerates: tolerates, named: probe.named });
+    if (verdict === "gate") {
+      gated = gated + 1;
+    } else if (verdict) {
+      findings.push({ kind: STRICT_FINDING, status: answer.status,
+        method: "GET", route: probe.path, operationId: probe.operationId,
+        probe: probe.kind, detail: verdict,
+        body: answer.text.slice(0, 200) });
+    }
+  }
+  if (!tolerates && gated === probes.length) {
+    findings.push({ kind: STRICT_FINDING, status: 403,
+      route: surface.schemaPath,
+      detail: "every probe was stopped by a gate, so nothing was checked" });
+  }
+  say("[schemathesis] " + surface.key + ": " + probes.length +
+      " strict-request probe(s), " + gated + " stopped by a gate, " +
+      findings.length + " finding(s) (#1476)");
+  log.debug("Leaving probeStrictRequests(). " + findings.length + ".");
+  return findings;
 }
 
 // Every check name the plan may name, built-in or custom.
@@ -994,6 +1244,82 @@ async function logDpopSettings(serviceBase, provisioned, surfaceKey, say) {
   log.debug("Leaving logDpopSettings().");
 }
 
+// What a read of `/admin-api/persistence` says is wrong with the store, or
+// '' when nothing is. Only `healthy: false` is a finding: an answer that could
+// not be read says nothing about the store.
+function storeProblemOf(answer) {
+  log.debug("Entering storeProblemOf().");
+  const body = answer && answer.status === 200 ? answer.json : null;
+  if (!body || body.healthy !== false) {
+    log.debug("Leaving storeProblemOf(). Nothing to report.");
+    return "";
+  }
+  log.debug("Leaving storeProblemOf(). Failing.");
+  return String(body.lastError || "the store reports itself unhealthy");
+}
+
+// IS THE STORE STILL WRITING WHEN THE CELL ENDS (#1463). A failed commit is
+// answered 503 with Retry-After, which no_uncaught_server_error allows, so a
+// value that stopped every write in the process passed as a clean cell. One
+// failed flush clears itself, so a failure is asked about three times, five
+// seconds apart, and only one that outlasts them is a finding. The token is
+// the service's, in the default realm: a realm's own may not read this page.
+async function storeFailing(serviceBase, surfaceKey, realmShown, say) {
+  log.debug("Entering storeFailing().");
+  let problem = "";
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 5000);
+      });
+    }
+    try {
+      problem = storeProblemOf(await adminCall(serviceBase, "", "GET",
+        "/admin-api/persistence"));
+    } catch (e) {
+      log.debug("Caught in storeFailing(): " + ((e && e.message) || e));
+      problem = "";
+    }
+    if (!problem) {
+      log.debug("Leaving storeFailing(). Writing.");
+      return "";
+    }
+  }
+  say("[schemathesis] " + surfaceKey + " @ " + realmShown +
+    ": THE STORE IS NOT WRITING at the end of this cell: " + problem);
+  log.debug("Leaving storeFailing(). Failing.");
+  return problem;
+}
+
+// How many realms' cells run at once: STS_SCHEMATHESIS_REALMS, every realm
+// by default, and 1 for the order this mode always had (#1502).
+function realmConcurrency() {
+  log.debug("Entering realmConcurrency().");
+  const asked = parseInt(process.env.STS_SCHEMATHESIS_REALMS || "", 10);
+  log.debug("Leaving realmConcurrency().");
+  return asked > 0 ? asked : PROFILES.length;
+}
+
+// Runs `task` over `items`, at most `width` at once. A task that rejects
+// rejects the whole, after the ones already running have settled.
+async function boundedMap(items, width, task) {
+  log.debug("Entering boundedMap(). " + width);
+  let next = 0;
+  async function lane() {
+    while (next < items.length) {
+      const item = items[next];
+      next += 1;
+      await task(item);
+    }
+  }
+  const lanes = [];
+  for (let i = 0; i < Math.min(width, items.length); i++) {
+    lanes.push(lane());
+  }
+  await Promise.all(lanes);
+  log.debug("Leaving boundedMap().");
+}
+
 // A free loopback TCP port.
 function freePort() {
   log.debug("Entering freePort().");
@@ -1217,6 +1543,8 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
         output: "the auth proxy did not listen: " + proxyOut.slice(-600) };
     }
     let schemaLocation;
+    // The synthesized protocol document, kept for the probes after the run.
+    let synthesizedDoc = null;
     if (surface.kind === "synthesized") {
       const meta = await metadataAnswer(serviceBase, provisioned, say);
       if (!meta.ok) {
@@ -1228,6 +1556,7 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
             meta.why };
       }
       const doc = synthesizeProtocolDoc(extractRows(meta.json));
+      synthesizedDoc = doc;
       schemaLocation = path.join(workDir, "protocol" +
         provisioned.realmPrefix.replace(/[^A-Za-z0-9]+/g, "_") + ".json");
       fs.writeFileSync(schemaLocation, JSON.stringify(doc));
@@ -1281,8 +1610,21 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
     // which is the remaining explanation for a replay cache that filled. A
     // diagnostic only; it changes nothing and never fails the cell.
     await logDpopSettings(serviceBase, provisioned, surface.key, say);
+    const storeProblem = await storeFailing(serviceBase, surface.key,
+      realmShown, say);
     const code = run.status;
-    const status = code === 0 ? "pass" : (code === 1 ? "fail" : "error");
+    let status = storeProblem ? "fail"
+      : (code === 0 ? "pass" : (code === 1 ? "fail" : "error"));
+    // WHAT THE DOCUMENT DOES NOT SAY (#1476): the probes Schemathesis cannot
+    // make, while this cell's proxy is up. A miss fails the cell.
+    let strictFindings = [];
+    if (surface.strict) {
+      strictFindings = await probeStrictRequests(port, surface, say,
+        surface.kind === "synthesized" ? synthesizedDoc : null);
+      if (strictFindings.length && status === "pass") {
+        status = "fail";
+      }
+    }
     // A null status means the binary could not be spawned (ENOENT, EACCES) or
     // was killed by a signal; `run.error` names which, so carry it.
     const spawnError = run.error
@@ -1303,12 +1645,17 @@ async function runSurface(serviceBase, provisioned, surface, workDir, say) {
       log.debug("Caught reading the findings file (none is normal on a " +
                 "clean cell): " + ((e && e.message) || e));
     }
+    if (storeProblem) {
+      findings.push({ kind: "store_not_writing", realm: realmShown,
+        surface: surface.key, route: "(the persistence store)", status: 503,
+        detail: storeProblem, body: "" });
+    }
     // The scope is the four invariants, so a failing run prints only the real
     // findings (a 5xx, a leaked error code, a dropped frame-ancestors clause).
     // Keep a generous slice so each finding's endpoint and the custom check's
     // message — which names the leaked code — survive into the host log.
     return { surface: surface.key, realm: realmShown,
-      code: code, status: status, findings: findings,
+      code: code, status: status, findings: findings.concat(strictFindings),
       output: (((run.stdout || "") + (run.stderr || "")).slice(-40000)) +
         spawnError };
   } finally {
@@ -1430,8 +1777,12 @@ async function run(serviceBase, options) {
       log.debug("Caught in onResult(): " + ((e && e.message) || e));
     }
   }
-  for (let p = 0; p < PROFILES.length; p++) {
-    const profile = PROFILES[p];
+  // THE REALMS OVERLAP (#1502): they are isolated from each other, so one
+  // realm's cells cannot disturb another's, and `admin-api`'s three cells are
+  // nearly all of this mode's time. A realm's OWN surfaces stay in order: the
+  // ordering above is what stops one surface breaking the next.
+  async function runRealm(profile) {
+    log.debug("Entering runRealm(). " + profile.realm);
     let provisioned = null;
     try {
       provisioned = await provision(serviceBase, profile, say);
@@ -1445,7 +1796,7 @@ async function run(serviceBase, options) {
         code: null, status: "error", findings: [],
         output: "provisioning " + profile.realm + " failed: " +
           ((e && e.message) || e) });
-      continue;
+      return;
     }
     for (let s = 0; s < SURFACES.length; s++) {
       if (only && !only[SURFACES[s].key]) {
@@ -1466,7 +1817,9 @@ async function run(serviceBase, options) {
       }
       record(result);
     }
+    log.debug("Leaving runRealm(). " + profile.realm);
   }
+  await boundedMap(PROFILES, realmConcurrency(), runRealm);
   // THE DEFAULT-REALM SERVICE CELL, LAST (#1299): the admin-api surface against
   // the default realm with a SERVICE admin token, so the ~86 service-level
   // operations every realm cell's realm token is refused (STS-API-0112) are
@@ -1503,6 +1856,9 @@ async function run(serviceBase, options) {
 }
 
 module.exports = {
+  storeProblemOf: storeProblemOf,
+  boundedMap: boundedMap,
+  realmConcurrency: realmConcurrency,
   PROFILES: PROFILES,
   SURFACES: SURFACES,
   SERVICE_CELL: SERVICE_CELL,
@@ -1523,6 +1879,11 @@ module.exports = {
   synthesizeProtocolDoc: synthesizeProtocolDoc,
   provision: provision,
   provisionServiceAdmin: provisionServiceAdmin,
+  STRICT_FINDING: STRICT_FINDING,
+  PROTOCOL_PROBE_EXCLUSIONS: PROTOCOL_PROBE_EXCLUSIONS,
+  protocolProbeExcluded: protocolProbeExcluded,
+  strictRequestProbes: strictRequestProbes,
+  strictRequestVerdict: strictRequestVerdict,
   runSurface: runSurface,
   run: run
 };

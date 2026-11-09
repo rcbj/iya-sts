@@ -404,8 +404,152 @@
     "text": "krb5.enctypes är 18,17,20,19,23 som standard: varje konto har en rc4-hmac-nyckel bredvid sina AES-nycklar, rc4only-fixturen har inget annat, och en klient som bara erbjuder 23 får en biljett — så att en RC4-klient kan testas."
   },
   "mode.requirements.kerberos-deprecated-enctypes.product": {
-    "en": "f781591fe2d565a1",
-    "text": "Listan läses UTAN 23 (loggas en gång, STS-CORE-0106) och en skrivning som anger den avvisas (STS-CORE-0103). Ingen RC4-nyckel härleds, lagras eller läggs i en keytab för krbtgt, en tjänst eller en person; en nyckel eller en biljett av den enctypen används aldrig; en AS-REQ eller TGS-REQ som inte erbjuder något annat avvisas med KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); en RC4-sessionsnyckel eller -undernyckel i en TGS-REQ, en AP-REQ eller FAST-armering avvisas (STS-KRB-0157, 0158, 0159). AES (17, 18, 19, 20) är det som återstår."
+    "en": "7bb2840e2f96210a",
+    "text": "Listan läses UTAN 23 (loggas en gång, STS-CORE-0106) och en skrivning som anger den avvisas (STS-CORE-0103). Ingen RC4-nyckel härleds, lagras eller läggs i en keytab för krbtgt, en tjänst eller en person; en nyckel eller en biljett av den enctypen används aldrig; en AS-REQ eller TGS-REQ som inte erbjuder något annat avvisas med KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); en RC4-sessionsnyckel eller -undernyckel i en TGS-REQ, en AP-REQ eller FAST-armering avvisas (STS-KRB-0157, 0158, 0159). AES är det som återstår."
+  },
+  "mode.requirements.unscoped-people.what": {
+    "en": "313033517d6bf954",
+    "text": "En person behöver en roll för SCIM och Shared Signals"
+  },
+  "mode.requirements.unscoped-people.development": {
+    "en": "0be4a760d6eebbf0",
+    "text": "Varje autentiserad person får läsa och skriva, oavsett vilket schema som används."
+  },
+  "mode.requirements.unscoped-people.product": {
+    "en": "b88ebd1ed2325b97",
+    "text": "Ett schema utan omfång kräver Admin Read för att läsa och Admin Write för att skriva, om inte security.allowUnscopedPeople är på. OAuth-omfång och ett programs certifikat fungerar som tidigare."
+  },
+  "mode.requirements.named-file-roots.what": {
+    "en": "947df8a88522b407",
+    "text": "En namngiven fil måste ligga i en tillåten katalog"
+  },
+  "mode.requirements.named-file-roots.development": {
+    "en": "249a8365ea4fdbfc",
+    "text": "En fil som en administratör namnger läses varifrån den anger."
+  },
+  "mode.requirements.named-file-roots.product": {
+    "en": "027759d02863b752",
+    "text": "En fil läses bara om dess verkliga sökväg ligger i en katalog som security.fileRoots listar, och svaret säger inte varför en sökväg misslyckades."
+  },
+  "mode.requirements.jwe-cbc.what": {
+    "en": "a9e47c5b53e70f9e",
+    "text": "JWE-innehållskryptering är endast AES-GCM"
+  },
+  "mode.requirements.jwe-cbc.development": {
+    "en": "cca6834a267241c9",
+    "text": "A128CBC-HS256, A192CBC-HS384 och A256CBC-HS512 erbjuds och godtas, och A128CBC-HS256 är standard."
+  },
+  "mode.requirements.jwe-cbc.product": {
+    "en": "b8bdc8b82bb08a9e",
+    "text": "Endast AES-GCM erbjuds eller godtas, och det används när en klient inte namnger enc, om inte crypto.allowCbcJwe är på."
+  },
+  "mode.requirements.legacy-hashes.what": {
+    "en": "06838227a6e37c56",
+    "text": "Otillåtna hashfunktioner används inte"
+  },
+  "mode.requirements.legacy-hashes.development": {
+    "en": "5019d7e87d32f630",
+    "text": "OAEP över SHA-1, SHA-1-nyckelhärledning för PKINIT och HMAC-MD5-kontrollsumman för S4U2Self är tillgängliga."
+  },
+  "mode.requirements.legacy-hashes.product": {
+    "en": "eb55e63c70e4152c",
+    "text": "De är av om inte crypto.allowLegacyHashes är på. TOTP är fortfarande HMAC-SHA-1 som standard, för kompatibilitet med autentiseringsappar, och PKINIT behåller den SHA-1-paChecksum som RFC 4556 definierar."
+  },
+  "mode.requirements.no-default-admin-name.what": {
+    "en": "be402fb23aecd2d4",
+    "text": "Inget konto har ett administratörsnamn som är standard"
+  },
+  "mode.requirements.no-default-admin-name.development": {
+    "en": "ca263c05dbdb69a5",
+    "text": "Startadministratören är admin, som alla tester och genomgångar loggar in som."
+  },
+  "mode.requirements.no-default-admin-name.product": {
+    "en": "35dface5441235f5",
+    "text": "En startadministratör som heter admin, root, sa eller administrator, eller saknar namn, får ett oförutsägbart genererat namn som visas med lösenordet vid första start, om inte admin.allowDefaultUsername är på."
+  },
+  "mode.requirements.main-port-https.what": {
+    "en": "6469fbe1118f7dc7",
+    "text": "Huvudporten använder HTTPS"
+  },
+  "mode.requirements.main-port-https.development": {
+    "en": "87bcf933b05d0ab4",
+    "text": "STS_HTTPS=false kör huvudporten okrypterat."
+  },
+  "mode.requirements.main-port-https.product": {
+    "en": "064bd0e9c6300f83",
+    "text": "En process med global.https avstängd startar inte (STS-CORE-0167). Den okrypterade HTTP-lyssnaren för återkallelse och SCEP finns kvar, som RFC 5280, RFC 5019 och RFC 8894 förväntar sig."
+  },
+  "mode.requirements.public-certificate.what": {
+    "en": "5a7a979998d1c228",
+    "text": "Lyssnarens certifikat är offentligt betrott"
+  },
+  "mode.requirements.public-certificate.development": {
+    "en": "306ab4dd61adc58f",
+    "text": "Tjänstens egen certifikatutfärdare skapar det."
+  },
+  "mode.requirements.public-certificate.product": {
+    "en": "6071a82728577fff",
+    "text": "Ange en offentligt betrodd kedja i tls.certificateFile. Ett certifikat som tjänsten själv skapat hindrar inte start och visas på den här raden."
+  },
+  "mode.requirements.legacy-ciphers.what": {
+    "en": "8afeedbfdbbba221",
+    "text": "SCEP, XML-kryptering och Kerberos undviker äldre chiffer"
+  },
+  "mode.requirements.legacy-ciphers.development": {
+    "en": "66885aac9214f230",
+    "text": "SCEP svarar, XML-kryptering kan använda AES-CBC och Kerberos erbjuder enctypes 17 och 18."
+  },
+  "mode.requirements.legacy-ciphers.product": {
+    "en": "0515d1605d6ccd1f",
+    "text": "SCEP svarar bara med scep.allowInProduct på (STS-SCEP-0067). XML-kryptering väljer och accepterar bara AES-GCM (STS-KEYS-0195). Kerberos använder 19 och 20 om inte krb5.allowSha1Enctypes är på."
+  },
+  "mode.requirements.declared-grants.what": {
+    "en": "cd33b5ef6c585827",
+    "text": "En klient använder bara de behörighetstyper den behöver"
+  },
+  "mode.requirements.declared-grants.development": {
+    "en": "77b6bd6b92513433",
+    "text": "En klient som inte deklarerar några behörighetstyper får använda vilken som helst."
+  },
+  "mode.requirements.declared-grants.product": {
+    "en": "636b38aec05ad6d5",
+    "text": "En klient som inte deklarerar några behörighetstyper får bara använda authorization_code och refresh_token, om inte oauth2.allowUndeclaredGrants är på (STS-OAUTH-0598)."
+  },
+  "mode.requirements.prefixed-cookies.what": {
+    "en": "d3919ebba2136f69",
+    "text": "Varje cookie har prefixet __Host- eller __Secure-"
+  },
+  "mode.requirements.prefixed-cookies.development": {
+    "en": "0dd3f83e4dc57f69",
+    "text": "Cookies behåller sina vanliga namn (sts_session och de andra), som går att läsa i webbläsarens verktyg."
+  },
+  "mode.requirements.prefixed-cookies.product": {
+    "en": "48f9c0318f104300",
+    "text": "Över TLS får varje cookie prefixet __Host-, eller __Secure- om den har Domain, och en cookie utan prefix ignoreras. Prefixet läggs på en gång, av processen som håller socketen."
+  },
+  "mode.requirements.access-decisions-fail-closed.what": {
+    "en": "e0e941b53824cae6",
+    "text": "Ett åtkomstbeslut som inte kan fattas är ett avslag"
+  },
+  "mode.requirements.access-decisions-fail-closed.development": {
+    "en": "7e18ee029324d928",
+    "text": "En beslutsfattare som kastar ett fel, ett tomt svar eller en kontroll utan resurs eller åtgärd tillåter begäran och loggas, så att en delvis inläst utvecklingsprocess ändå svarar."
+  },
+  "mode.requirements.access-decisions-fail-closed.product": {
+    "en": "905a335779a6c533",
+    "text": "Vart och ett av dessa är ett avslag (STS-XACML-0051, 0181, 0182). xacml.enforceAccess och roles.enforceIssuance finns kvar som vägen tillbaka från en policy som hindrar sin egen reparation, och en som är avstängd visas på den här raden."
+  },
+  "mode.requirements.strict-transport-security.what": {
+    "en": "161b93a2d80010e9",
+    "text": "Varje svar över TLS säger åt webbläsaren att bara använda HTTPS (Strict-Transport-Security)"
+  },
+  "mode.requirements.strict-transport-security.development": {
+    "en": "915a47de70ff3589",
+    "text": "Huvudet skickas inte: HSTS binder alla portar för ett värdnamn och tar bort möjligheten att godkänna ett certifikat som inte är betrott, vilket på localhost skulle överleva behållaren."
+  },
+  "mode.requirements.strict-transport-security.product": {
+    "en": "c36ea27a011458e7",
+    "text": "Varje svar som kommit över TLS bär Strict-Transport-Security: max-age=31536000 (RFC 6797). Ett svar på den okrypterade HTTP-lyssnaren för återkallelse och SCEP gör det aldrig."
   },
   "mode.requirements.signed-assertions.what": {
     "en": "61c90b75f7b0a5e3",
@@ -1118,5 +1262,101 @@
   "mode.why.default": {
     "en": "108a941d7ea44a81",
     "text": "inställningen är endast för utvecklingsläge."
+  },
+  "mode.requirements.second-factor-everyone.what": {
+    "en": "0fd5536cd700c440",
+    "text": "En andra faktor krävs av alla"
+  },
+  "mode.requirements.second-factor-everyone.development": {
+    "en": "8816e275bdf92a96",
+    "text": "Autentiseringspolicyn avgör, och som standard frågas bara de som har en andra faktor."
+  },
+  "mode.requirements.second-factor-everyone.product": {
+    "en": "1eb106bd8b0a4050",
+    "text": "Alla behöver en andra faktor, oavsett policy, om inte authn.allowOptionalSecondFactor är på."
+  },
+  "mode.requirements.session-key-defaults.what": {
+    "en": "2f8e8efd319d1e4f",
+    "text": "Sessioner och RSA-nycklar har striktare standardvärden"
+  },
+  "mode.requirements.session-key-defaults.development": {
+    "en": "274bb878f654b30c",
+    "text": "En session har ingen tidsgräns för inaktivitet, och nya RSA-nycklar är 2048 bitar."
+  },
+  "mode.requirements.session-key-defaults.product": {
+    "en": "acb90dc0f26a16ec",
+    "text": "En session avslutas efter 30 minuters inaktivitet och nya RSA-nycklar är 3072 bitar, om inte en inställning säger annat."
+  },
+  "mode.requirements.bootstrap-password-file.what": {
+    "en": "e57fcd5b373e9128",
+    "text": "Startlösenordet hålls borta från loggen"
+  },
+  "mode.requirements.bootstrap-password-file.development": {
+    "en": "2181a0af41a41ab3",
+    "text": "Det genererade lösenordet skrivs till tjänstens logg."
+  },
+  "mode.requirements.bootstrap-password-file.product": {
+    "en": "e12d4ddc2b4d4724",
+    "text": "Det skrivs till en fil som bara den här tjänsten kan läsa, och loggen säger var, om inte admin.logBootstrapPassword är på."
+  },
+  "mode.requirements.pkce-every-client.what": {
+    "en": "7e2c6f1869e39287",
+    "text": "Varje klient måste använda PKCE"
+  },
+  "mode.requirements.pkce-every-client.development": {
+    "en": "66e8ff75c554aad0",
+    "text": "En konfidentiell klient som inte skickar code_challenge loggas bara."
+  },
+  "mode.requirements.pkce-every-client.product": {
+    "en": "2c34add4c2d2718f",
+    "text": "Den avvisas om inte oauth2.allowConfidentialWithoutPkce är på."
+  },
+  "mode.requirements.malware-scan-tls.what": {
+    "en": "926957ee32cf2309",
+    "text": "Filer når skannern krypterade"
+  },
+  "mode.requirements.malware-scan-tls.development": {
+    "en": "6d81d272e763db8d",
+    "text": "En icap://- eller icaps://-adress kan användas."
+  },
+  "mode.requirements.malware-scan-tls.product": {
+    "en": "dbcd39f827b0a349",
+    "text": "Endast en icaps://-adress används, om inte malwareScan.allowCleartext är på."
+  },
+  "mode.requirements.factor-clear-evidence.what": {
+    "en": "d4453639b3500b23",
+    "text": "Att rensa en andra faktor kräver ett angivet identitetsbevis"
+  },
+  "mode.requirements.factor-clear-evidence.development": {
+    "en": "9c5d644b822f24b9",
+    "text": "En administratör kan rensa en faktor genom att ange personen."
+  },
+  "mode.requirements.factor-clear-evidence.product": {
+    "en": "e473fffee1f00eaa",
+    "text": "En administratör måste ange hur personens identitet verifierades. Uppgiften skrivs i granskningsloggen."
+  },
+  "mode.requirements.strict-protocol-input.what": {
+    "en": "4c536228d39a5730",
+    "text": "Protokollindata tolkas strikt"
+  },
+  "mode.requirements.strict-protocol-input.development": {
+    "en": "da9c69e7fe603705",
+    "text": "En upprepad tokenparameter får sitt sista värde, en partners utloggningstoken behöver ingen uttrycklig typ, vidarebefordrade adresser tros från vem som helst när global.trustProxy är på utan lista, och texten i ett internt fel når anroparen."
+  },
+  "mode.requirements.strict-protocol-input.product": {
+    "en": "85fca28b66faee87",
+    "text": "En upprepad tokenparameter avvisas, en partners utloggningstoken måste ha typen logout+jwt om inte federation.allowUntypedLogoutToken är på, vidarebefordrade adresser kräver global.trustedProxies, och texten i ett internt fel stannar i loggen."
+  },
+  "mode.requirements.no-known-secrets.what": {
+    "en": "f3805d37f47556e7",
+    "text": "Loggar och databas innehåller inga välkända hemligheter"
+  },
+  "mode.requirements.no-known-secrets.development": {
+    "en": "bd225788d94d084d",
+    "text": "På debugnivå innehåller loggen hela förfrågningar och svar, och databasen kan använda ett demonstrationslösenord."
+  },
+  "mode.requirements.no-known-secrets.product": {
+    "en": "a037c255a759deb1",
+    "text": "Förfrågningsloggar utelämnar autentiseringsuppgifter och innehåll på alla nivåer, och ett standardlösenord för databasen stoppar tjänsten om inte persistence.allowDefaultDatabasePassword är på."
   }
 }

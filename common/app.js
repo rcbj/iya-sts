@@ -63,6 +63,7 @@ const stats = require('./admin_stats');
 // requires this file — so the require closes no cycle and moves no route.
 // Below the realm module because the registry it reads is the ambient realm's.
 const corsPolicy = require('./cors');
+const cookieWire = require('./cookie_wire');
 // The service's account of WHAT HAPPENED, as against how much of it. Required
 // here for the same reason admin_stats.js is and with the same consequence: the
 // call log below is the single place every answered request passes through, so
@@ -156,6 +157,10 @@ app.disable('x-powered-by');
 // function and applies it once more after catching up, to a request it had not
 // placed in a realm. It wraps `res.location` and `res.send` only on a match, so
 // asking twice cannot wrap them twice.
+// What a response carries before anything has decided what it is.
+const EARLY_POLICY = "default-src 'none'; frame-ancestors 'none'; " +
+                     "base-uri 'none'; object-src 'none'";
+
 /**
  * Enters the realm a request's path names: strips the `/realm/<id>` prefix,
  * runs the rest of the request in that realm, and puts the prefix back on
@@ -170,6 +175,13 @@ app.disable('x-powered-by');
  */
 function enterRealm(req, res, next) {
   log.debug("Entering enterRealm().");
+  // THE FIRST THING THAT HAPPENS TO A RESPONSE (ASVS 5.0.0 3.4.3, 3.4.4, 3.4.6).
+  // This is the first middleware, so a refusal written before the
+  // security-headers middleware below still carries them, and that middleware
+  // replaces them for everything else.
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', EARLY_POLICY);
   const pathname = String(req.url || '').split('?')[0];
   const match = realms.matchPath(pathname);
   // A REALM'S OWN LISTENER ANSWERS THAT REALM AND NOTHING ELSE (#99,
@@ -316,6 +328,10 @@ function enterMatchedRealm(req, res, next, match) {
 }
 
 app.use(enterRealm);
+
+// HSTS AND COOKIE NAMES, in the process holding the socket, before anything
+// routes on a cookie's name (#1438, #1441): `common/cookie_wire.ts`.
+app.use(cookieWire.middleware());
 
 // ---------------------------------------------------------------------------
 // WHICH HOSTED APPLICATION A LISTENER ANSWERS (#472, 2026-10-07).
@@ -640,6 +656,7 @@ app.use(function awaitResumedChainLazily(req, res, next) {
   resumedChainWait(req, res, next);
 });
 
+app.use(require('./request_budget').middleware());
 app.use(requestPool.middleware({ enterRealm: enterRealm }));
 
 // ---------------------------------------------------------------------------
@@ -770,7 +787,8 @@ const CSP_DIRECTIVES = {
   'style-src': "'unsafe-inline'",
   'img-src': "'self' data:",
   'base-uri': "'none'",
-  'frame-ancestors': "'none'"
+  'frame-ancestors': "'none'",
+  'object-src': "'none'"
 };
 
 // ---------------------------------------------------------------------------
@@ -914,6 +932,12 @@ function framedContentSecurityPolicy(origins, overrides) {
   }).join('; ');
 }
 
+// THE TYPES ASVS 5.0.0 4.1.1 NAMES (#1439): `text/*`, `application/xml` and
+// `*/*+xml`. JSON is left out on purpose: RFC 8259 section 11 registers no
+// charset parameter for it, and `application/jrd+json` is a JSON type.
+const CHARSET_TYPES =
+  /^\s*(?:text\/[^\s;]+|application\/xml|[^\s;/]+\/[^\s;]+\+xml)\s*(?:;|$)/i;
+
 app.use(function (req, res, next) {
   log.debug("Entering the security-headers middleware.");
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -955,6 +979,26 @@ app.use(function (req, res, next) {
     if (current.indexOf('frame-ancestors') < 0) {
       res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
       res.setHeader('X-Frame-Options', 'DENY');
+    }
+    // A SIGN-IN STEP'S ID LEAVES THE ADDRESS (#1454): `common/step_address.ts`.
+    const location = res.getHeader('Location');
+    if (typeof location === 'string' && location.indexOf('?') > 0) {
+      const authn = require('../authn/authn');
+      const stepAddress = require('./step_address');
+      // SPNEGO's has no script to read a fragment (#1487).
+      const spnego = stepAddress.spnegoStep(location);
+      if (spnego) {
+        res.append('Set-Cookie', stepAddress.stepCookie(spnego.id));
+        res.setHeader('Location', spnego.location);
+      } else {
+        res.setHeader('Location', stepAddress.hide(location,
+          authn.stepApplication));
+      }
+    }
+    const type = res.getHeader('Content-Type');
+    if (typeof type === 'string' && CHARSET_TYPES.test(type) &&
+        !/;\s*charset=/i.test(type)) {
+      res.setHeader('Content-Type', type + '; charset=utf-8');
     }
     log.debug("Leaving writeHead().");
     return writeHead.apply(res, arguments);

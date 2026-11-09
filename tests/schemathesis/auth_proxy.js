@@ -170,6 +170,13 @@ function outboundHeaders(req, url) {
         low === "transfer-encoding") {
       return;
     }
+    // SCHEMATHESIS STAMPS EVERY REQUEST WITH `X-Schemathesis-TestCaseId`
+    // (`transport/prepare.py`), and the published APIs refuse a custom header
+    // nobody defined (#1476, #1483): forwarded, every generated request would
+    // be refused for the harness's own header and the cell would fuzz nothing.
+    if (low.indexOf("x-schemathesis-") === 0) {
+      return;
+    }
     headers[name] = req.headers[name];
   });
   headers.host = SERVICE.host;
@@ -184,7 +191,9 @@ function outboundHeaders(req, url) {
         (req.headers.cookie ? "; " + req.headers.cookie : "");
     }
     headers.origin = session.origin;
-    if (session.csrf) {
+    // A POST's binding (#571). Added to a GET it is a header that operation
+    // does not declare, which `/authn-api` refuses (#1483).
+    if (session.csrf && req.method !== "GET" && req.method !== "HEAD") {
       headers["x-csrf-token"] = session.csrf;
     }
   }
@@ -531,7 +540,10 @@ async function main() {
       "STS_SCHEMA_SERVICE_BASE and STS_SCHEMA_SURFACE");
   }
   await signIn();
-  const server = http.createServer(function (req, res) {
+  // Well past node's default, so that an oversized request reaches the
+  // service and it is the service's answer the run judges (#1500).
+  const server = http.createServer({ maxHeaderSize: 1048576 },
+    function (req, res) {
     handle(req, res).catch(function (e) {
       log.error("Unhandled in handle(): " + ((e && e.message) || e));
       try {

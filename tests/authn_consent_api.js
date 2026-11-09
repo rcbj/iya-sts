@@ -135,7 +135,7 @@ function childMain() {
     let r = await screen.call({ port: port, jar: alice, method: 'GET',
                                 path: at });
     const csp = String(r.headers['content-security-policy'] || '');
-    note(/^\/oauth2\/consent\?consent=/.test(at) && r.status === 200 &&
+    note(/^\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(at) && r.status === 200 &&
          /no-store/.test(String(r.headers['cache-control'])) &&
          r.text.indexOf('<script src="/oauth2/consent.js" defer></script>') >
            0 &&

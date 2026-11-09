@@ -48,24 +48,24 @@
     "text": "símbolos"
   },
   "password.FIELDS.minSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "Cuántos caracteres que no sean ni letra, ni dígito, ni espacio en blanco debe contener una contraseña. 0 desactiva la regla."
+    "en": "1121ccc1580b0c86",
+    "text": "Siempre 0. Se rechaza una política que exija símbolos: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición, de modo que esta política solo pide longitud."
   },
   "password.FIELDS.requireUppercase.label": {
     "en": "41d8365a4b5a8473",
     "text": "Exigir una letra mayúscula"
   },
   "password.FIELDS.requireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "Si una contraseña debe contener al menos una letra mayúscula, en cualquier sistema de escritura."
+    "en": "9ab7a52d3b16949e",
+    "text": "Siempre desactivado. Se rechaza una política que exija una mayúscula: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición."
   },
   "password.FIELDS.requireDigit.label": {
     "en": "eaa0c73c3cc00f02",
     "text": "Exigir un número"
   },
   "password.FIELDS.requireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "Si una contraseña debe contener al menos un dígito decimal."
+    "en": "9d7cd7fdbca971d9",
+    "text": "Siempre desactivado. Se rechaza una política que exija un número: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición."
   },
   "password.FIELDS.generatedLength.label": {
     "en": "9a6d2215cc16392c",
@@ -168,16 +168,16 @@
     "text": "Cuántas contraseñas ANTERIORES de una persona se recuerdan y se rechazan. La contraseña actual también se rechaza siempre mientras este valor sea mayor que 0, así que 5 significa que una contraseña nueva no puede ser ninguna de las seis últimas. 0 desactiva la regla. El atributo del borrador, con el significado del borrador. Cada contraseña recordada se guarda como el hash con el que ya estaba almacenada (argon2id o scrypt), en pwdHistory en la propia entrada de la persona, y comprobar una contraseña nueva cuesta una comparación de hash por cada contraseña recordada."
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "Cuántos caracteres que no sean ni letra, ni dígito, ni espacio en blanco debe contener una contraseña. 0 desactiva la regla."
+    "en": "1121ccc1580b0c86",
+    "text": "Siempre 0. Se rechaza una política que exija símbolos: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición, de modo que esta política solo pide longitud."
   },
   "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "Si una contraseña debe contener al menos una letra mayúscula, en cualquier sistema de escritura."
+    "en": "9ab7a52d3b16949e",
+    "text": "Siempre desactivado. Se rechaza una política que exija una mayúscula: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición."
   },
   "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "Si una contraseña debe contener al menos un dígito decimal."
+    "en": "9d7cd7fdbca971d9",
+    "text": "Siempre desactivado. Se rechaza una política que exija un número: ASVS 5.0.0 6.2.5 requiere aceptar una contraseña de cualquier composición."
   },
   "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
     "en": "9abc8e368dbfdf05",
@@ -234,22 +234,6 @@
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",
     "text": "al menos {{n}} caracteres"
-  },
-  "password.sentences.minSymbolsOne": {
-    "en": "bcd5d7597e2d9c28",
-    "text": "al menos {{n}} símbolo (un carácter que no sea una letra, un número ni un espacio)"
-  },
-  "password.sentences.minSymbolsMany": {
-    "en": "59951161d553809a",
-    "text": "al menos {{n}} símbolos (caracteres que no sean una letra, un número ni un espacio)"
-  },
-  "password.sentences.uppercase": {
-    "en": "4a27754133d00695",
-    "text": "una letra mayúscula"
-  },
-  "password.sentences.digit": {
-    "en": "d24f1fa16d122006",
-    "text": "un número"
   },
   "password.sentences.history": {
     "en": "524e6c7233b4e109",

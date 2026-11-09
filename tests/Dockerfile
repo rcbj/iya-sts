@@ -590,9 +590,9 @@ RUN if [ ! -f node-ldapjs/package.json ]; then \
       echo "load the directory die with Cannot find module 'ldapjs'." >&2; \
       exit 1; \
     fi
-RUN npm install --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
 COPY tests/package*.json ./tests/
-RUN npm install --prefix ./tests && npm cache clean --force
+RUN npm ci --prefix ./tests && npm cache clean --force
 
 # ---------------------------------------------------------------------------
 # C2SP x509-LIMBO FOR tests/x509_limbo.js (#201), FETCHED HERE AND NEVER
@@ -713,6 +713,12 @@ RUN mkdir -p tests/report
 # service's — run-report.js overrides it per protocol job to ./env/local.js
 # relative to tests/protocol/. This one is for the runner itself.
 ENV CONFIG_FILE=./env/local.js
+# That file carries the shipped rate limits since #1482, and the suite signs in
+# far more often than a person does: an appconfig layer, not the environment,
+# so that a test's own setOverride() still decides.
+ENV CONFIG_FILE=./env/npm-tests.js
+# Where the in-process tests write the CA files they name (#1481).
+ENV STS_SECURITY_FILE_ROOTS=/etc/ssl,/usr/share/ca-certificates,/run/secrets,/tmp
 # Where the service is, on the compose network. run-tests-in-container.sh passes
 # it to run-report.js as --service-url and waits for it first; the compose file
 # sets it too, and this default is what makes a hand-run `docker run` on the

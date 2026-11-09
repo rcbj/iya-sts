@@ -48,24 +48,24 @@
     "text": "个符号"
   },
   "password.FIELDS.minSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "密码必须包含多少个既非字母、非数字也非空白的字符。0 关闭此规则。"
+    "en": "1121ccc1580b0c86",
+    "text": "始终为 0。要求包含符号的策略会被拒绝：ASVS 5.0.0 6.2.5 要求接受任意组成的密码，因此本策略只要求长度。"
   },
   "password.FIELDS.requireUppercase.label": {
     "en": "41d8365a4b5a8473",
     "text": "要求包含大写字母"
   },
   "password.FIELDS.requireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "密码是否必须包含至少一个大写字母（任何文字均可）。"
+    "en": "9ab7a52d3b16949e",
+    "text": "始终关闭。要求包含大写字母的策略会被拒绝：ASVS 5.0.0 6.2.5 要求接受任意组成的密码。"
   },
   "password.FIELDS.requireDigit.label": {
     "en": "eaa0c73c3cc00f02",
     "text": "要求包含数字"
   },
   "password.FIELDS.requireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "密码是否必须包含至少一个十进制数字。"
+    "en": "9d7cd7fdbca971d9",
+    "text": "始终关闭。要求包含数字的策略会被拒绝：ASVS 5.0.0 6.2.5 要求接受任意组成的密码。"
   },
   "password.FIELDS.generatedLength.label": {
     "en": "9a6d2215cc16392c",
@@ -168,16 +168,16 @@
     "text": "记住并拒绝一个人以前的多少个密码。只要此值大于 0，当前密码也总是被拒绝，所以 5 表示新密码不能是最近六个中的任何一个。0 关闭此规则。草案的属性，取草案的含义。每个记住的密码都按其原来存储时的哈希（argon2id 或 scrypt）保存在此人自己条目的 pwdHistory 中，检查一个新密码对每个记住的密码各需一次哈希比较。"
   },
   "password.SCHEMA.attributes.stsPwdMinSymbols.what": {
-    "en": "f9154c103bc3422d",
-    "text": "密码必须包含多少个既非字母、非数字也非空白的字符。0 关闭此规则。"
+    "en": "1121ccc1580b0c86",
+    "text": "始终为 0。要求包含符号的策略会被拒绝：ASVS 5.0.0 6.2.5 要求接受任意组成的密码，因此本策略只要求长度。"
   },
   "password.SCHEMA.attributes.stsPwdRequireUppercase.what": {
-    "en": "70ccd590e00b4a7e",
-    "text": "密码是否必须包含至少一个大写字母（任何文字均可）。"
+    "en": "9ab7a52d3b16949e",
+    "text": "始终关闭。要求包含大写字母的策略会被拒绝：ASVS 5.0.0 6.2.5 要求接受任意组成的密码。"
   },
   "password.SCHEMA.attributes.stsPwdRequireDigit.what": {
-    "en": "d81cc8aab04ad1c9",
-    "text": "密码是否必须包含至少一个十进制数字。"
+    "en": "9d7cd7fdbca971d9",
+    "text": "始终关闭。要求包含数字的策略会被拒绝：ASVS 5.0.0 6.2.5 要求接受任意组成的密码。"
   },
   "password.SCHEMA.attributes.stsPwdGeneratedLength.what": {
     "en": "9abc8e368dbfdf05",
@@ -234,22 +234,6 @@
   "password.sentences.minLength": {
     "en": "68a35ccf19e404fb",
     "text": "至少 {{n}} 个字符"
-  },
-  "password.sentences.minSymbolsOne": {
-    "en": "bcd5d7597e2d9c28",
-    "text": "至少 {{n}} 个符号（既非字母、非数字也非空格的字符）"
-  },
-  "password.sentences.minSymbolsMany": {
-    "en": "59951161d553809a",
-    "text": "至少 {{n}} 个符号（既非字母、非数字也非空格的字符）"
-  },
-  "password.sentences.uppercase": {
-    "en": "4a27754133d00695",
-    "text": "一个大写字母"
-  },
-  "password.sentences.digit": {
-    "en": "d24f1fa16d122006",
-    "text": "一个数字"
   },
   "password.sentences.history": {
     "en": "524e6c7233b4e109",

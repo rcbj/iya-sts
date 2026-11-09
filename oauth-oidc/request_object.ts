@@ -716,7 +716,7 @@ class RequestObject {
     const registeredAlg = String(client.request_object_encryption_alg || '');
     const registeredEnc = registeredAlg && !integrated
       ? String(client.request_object_encryption_enc || '') ||
-        applications.REQUEST_OBJECT_DEFAULT_ENC
+        applications.defaultJweEnc()
       : '';
     if (registeredAlg && (alg !== registeredAlg || enc !== registeredEnc)) {
       log.debug("Leaving RequestObject.decrypt(). Not what the client " +

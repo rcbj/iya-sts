@@ -167,7 +167,7 @@ function productModeHoldsNoFixtures(t) {
           'are fixtures',
           JSON.stringify(bare.report.served));
 
-  const configured = inAChild({ STS_MODE: 'product',
+  const configured = inAChild({ STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
                                 KRB5_KRBTGT_PASSWORD: 'not-the-published-one',
                                 KRB5_SERVICE_PASSWORD: 'the-keytab-secret',
                                 KRB5_SERVICE_SALT: 'EXAMPLE.COMsvc-web' },
@@ -492,7 +492,7 @@ function theAcceptorExplainsAMissingAccount(t) {
     ', JSON.stringify(r.checks)); process.exit(0); });';
   const run = childProcess.spawnSync(process.execPath, ['-e', script], {
     env: Object.assign({}, process.env,
-                       { STS_MODE: 'product', LOG_LEVEL: 'fatal' }),
+                       { STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true', LOG_LEVEL: 'fatal' }),
     encoding: 'utf8', timeout: 60000
   });
   let checks = null;

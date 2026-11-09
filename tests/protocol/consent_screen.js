@@ -150,7 +150,7 @@ function sameOrigin(base, location) {
 function consentIdOf(where) {
   log.debug("Entering consentIdOf().");
   log.debug("Leaving consentIdOf().");
-  const m = String(where || "").match(/[?&]consent=([^&#]+)/);
+  const m = String(where || "").match(/[?&#]consent=([^&#]+)/);
   return m ? decodeURIComponent(m[1]) : "";
 }
 

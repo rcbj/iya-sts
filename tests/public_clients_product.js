@@ -214,6 +214,7 @@ function childMain() {
     };
 
     config.setOverride('global.mode', 'product');
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     try {
       // =====================================================================
       // 0. THE PREMISE: the BCP is on with its own settings off.
@@ -487,6 +488,7 @@ function childMain() {
       // In a `finally` so that a throw above cannot leave product mode on for
       // whatever runs next in this process.
       config.clearOverride('global.mode');
+      config.clearOverride('authn.allowOptionalSecondFactor');
       config.clearOverride('oauth2.consentRequired');
     }
 

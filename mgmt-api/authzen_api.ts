@@ -157,6 +157,12 @@ class AuthzenApi {
                      '`?caller=<name or DN>` looks one caller up, in the ' +
                      'group or not.',
         mirrors: 'GET /admin/xacml',
+        parameters: [
+          { name: 'caller', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Looks one caller up by name or DN, in the group ' +
+                         'or not.' }
+        ],
         responseDescription: '`enabled`, `callerAuthentication`, ' +
                              '`settings`, `catalogue` (`rows`, `problems`, ' +
                              'and the choices), `callers`, `looked`, ' +

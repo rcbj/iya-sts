@@ -272,6 +272,7 @@ function childMain() {
     const late = await passwordless('pfu-late');
 
     config.setOverride('global.mode', 'product');
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     try {
       // 2. The attack.
       s = await passwordless('pfu-victim');
@@ -323,6 +324,7 @@ function childMain() {
            JSON.stringify(s.view.verifiesCredentials));
     } finally {
       config.clearOverride('global.mode');
+      config.clearOverride('authn.allowOptionalSecondFactor');
     }
     server.close();
   })().catch(function (e) {

@@ -167,6 +167,7 @@
 // loading.
 // ---------------------------------------------------------------------------
 
+import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
 import mode = require('./mode');
 // The one random-value section (#65): every generated password's characters.
@@ -233,6 +234,13 @@ interface PolicyResult {
 
 // What this module needs from the rest of the service. Named for what is
 // asked of each, so a test can supply exactly that and nothing more.
+// The shortest word the context check looks for: a shorter one would refuse
+// good passwords by chance.
+const MIN_CONTEXT_WORD = 4;
+
+// What this service is called (#1505).
+const SERVICE_WORDS = ['iya-sts', 'iyasec', 'iya cybersecurity'];
+
 interface PasswordPolicyDeps {
   log: typeof helpers.log;
   mode: { verifiesCredentials(): boolean };
@@ -247,11 +255,7 @@ const DEFAULT_PROFILE = 'default';
 
 // WHAT A NAMED POLICY CARRIES BESIDE ITS ROWS (#1236): its precedence, and
 // nothing else — what it covers names it (rule 3cx).
-const SELECTORS = [
-  { key: 'precedence', attribute: 'stsPasswordPrecedence',
-    what: 'Which named password policy wins where several are named for ' +
-          'one person: the lowest, from 1 to 1000.' }
-];
+const SELECTORS = ModelTables.selectors('policy.password');
 /**
  * How `common/policy_selection.ts` reads a named password policy (#1236).
  */
@@ -357,136 +361,18 @@ const MAX_DRAWS = 1000;
 // parse of an entry. Five readers of one list is the shape that keeps a new
 // rule from being added to four of them.
 // ---------------------------------------------------------------------------
-const FIELDS: PolicyField[] = [
-  { key: 'minLength', attribute: 'pwdMinLength', type: 'int',
-    dflt: 12, min: 1, max: 1024,
-    label: 'Minimum length',
-    unit: 'characters',
-    what: 'The shortest password this service will set, counted in ' +
-          'characters (Unicode code points, so an emoji is one). The ' +
-          'attribute is draft-behera-ldap-password-policy\'s. Twelve is the ' +
-          'default; NIST SP 800-63B asks for at least 8, and 15 where a ' +
-          'password is the only factor.' },
-  { key: 'history', attribute: 'pwdInHistory', type: 'int',
-    dflt: 5, min: 0, max: 24,
-    label: 'Previous passwords that may not be reused',
-    unit: 'passwords',
-    what: 'How many of a person\'s PREVIOUS passwords are remembered and ' +
-          'refused. The current password is always refused as well while ' +
-          'this is above 0, so 5 means a new password may be none of the ' +
-          'last six. 0 turns the rule off. The draft\'s attribute, with the ' +
-          'draft\'s meaning. Each remembered password is kept as the hash it ' +
-          'was already stored as (argon2id or scrypt), in pwdHistory on the ' +
-          'person\'s own entry, and checking a new password costs one hash ' +
-          'comparison per one remembered.' },
-  { key: 'minSymbols', attribute: 'stsPwdMinSymbols', type: 'int',
-    dflt: 1, min: 0, max: 16,
-    label: 'Minimum number of symbols',
-    unit: 'symbols',
-    what: 'How many characters that are neither a letter, a digit nor ' +
-          'whitespace a password must contain. 0 turns the rule off.' },
-  { key: 'requireUppercase', attribute: 'stsPwdRequireUppercase', type: 'bool',
-    dflt: true,
-    label: 'Require an uppercase letter',
-    what: 'Whether a password must contain at least one uppercase letter, in ' +
-          'any script.' },
-  { key: 'requireDigit', attribute: 'stsPwdRequireDigit', type: 'bool',
-    dflt: true,
-    label: 'Require a number',
-    what: 'Whether a password must contain at least one decimal digit.' },
-  { key: 'generatedLength', attribute: 'stsPwdGeneratedLength', type: 'int',
-    dflt: 20, min: 12, max: 128,
-    label: 'Length of a generated password',
-    unit: 'characters',
-    what: 'How long a password this service MAKES UP is — for a new user ' +
-          'created from the console or /admin-api, an operator\'s Generate, ' +
-          'and the product-mode bootstrap account. It must be at least the ' +
-          'minimum length and at least twice the symbol count plus two. ' +
-          'Twenty characters from a 90-character alphabet is about 130 bits.' },
-  // -------------------------------------------------------------------------
-  // HOW A PASSWORD IS STORED (2026-10-22, #847). The algorithm a NEWLY
-  // stored password is hashed with, and both algorithms' parameters. Every
-  // bound is OWASP's Password Storage Cheat Sheet minimum or above, in both
-  // modes (rcbj's decision 2), and `common/crypto.js` clamps to the same
-  // floors whatever this table says. A stored hash names its own algorithm
-  // and parameters, so changing these reaches the NEXT password set and, at
-  // a person's next verified sign-in, their stored hash (`credentials.ts`'s
-  // upgrade). OPTIONAL: a save written before these rows existed keeps them.
-  // -------------------------------------------------------------------------
-  //
-  // THE DEFAULT IS scrypt AT THE PRE-#847 PARAMETERS (rcbj, 2026-10-22,
-  // #820), which every stored password already is; argon2id is selectable.
-  // OWASP's scrypt pairs are reported, not enforced, until #872 makes
-  // OWASP's minimum the default.
-  // -------------------------------------------------------------------------
-  { key: 'hashAlgorithm', attribute: 'stsPwdHashAlgorithm', type: 'enum',
-    dflt: 'scrypt', values: stsCrypto.PASSWORD_HASH_ALGORITHMS.slice(),
-    optional: true,
-    label: 'Password hash algorithm',
-    what: 'The algorithm a newly stored password is hashed with: scrypt ' +
-          '(RFC 7914), the default, or argon2id (RFC 9106, the OWASP ' +
-          'Password Storage Cheat Sheet\'s first choice). A stored hash ' +
-          'names its own algorithm and parameters and keeps verifying; ' +
-          'one that is not in this algorithm with these parameters is ' +
-          'hashed again at the ' +
-          'person\'s next verified sign-in. Client secrets, activation ' +
-          'tokens, recovery codes and app passwords are not passwords and ' +
-          'stay scrypt.' },
-  { key: 'argon2Memory', attribute: 'stsPwdArgon2Memory', type: 'int',
-    dflt: stsCrypto.ARGON2_LIMITS.memory.dflt,
-    min: stsCrypto.ARGON2_LIMITS.memory.min,
-    max: stsCrypto.ARGON2_LIMITS.memory.max, optional: true,
-    label: 'argon2id memory',
-    unit: 'KiB',
-    what: 'The memory one argon2id hash uses, in kibibytes (m). 19456 KiB ' +
-          '(19 MiB) is OWASP\'s minimum and the least this service will ' +
-          'write. Raising it makes a stolen store slower to attack, and ' +
-          'every sign-in uses that much more memory.' },
-  { key: 'argon2Iterations', attribute: 'stsPwdArgon2Iterations',
-    type: 'int', dflt: stsCrypto.ARGON2_LIMITS.passes.dflt,
-    min: stsCrypto.ARGON2_LIMITS.passes.min,
-    max: stsCrypto.ARGON2_LIMITS.passes.max, optional: true,
-    label: 'argon2id iterations',
-    unit: 'passes',
-    what: 'How many passes argon2id makes over its memory (t). 2 is ' +
-          'OWASP\'s minimum at 19 MiB; each pass adds the same time again.' },
-  { key: 'argon2Parallelism', attribute: 'stsPwdArgon2Parallelism',
-    type: 'int', dflt: stsCrypto.ARGON2_LIMITS.parallelism.dflt,
-    min: stsCrypto.ARGON2_LIMITS.parallelism.min,
-    max: stsCrypto.ARGON2_LIMITS.parallelism.max, optional: true,
-    label: 'argon2id parallelism',
-    unit: 'lanes',
-    what: 'How many lanes argon2id divides its memory into (p). It is part ' +
-          'of the hash, not a thread count: node computes a hash on one ' +
-          'thread whatever this says. 1 is OWASP\'s figure.' },
-  { key: 'scryptLogN', attribute: 'stsPwdScryptLogN', type: 'int',
-    dflt: stsCrypto.SCRYPT_PASSWORD_LIMITS.logN.dflt,
-    min: stsCrypto.SCRYPT_PASSWORD_LIMITS.logN.min,
-    max: stsCrypto.SCRYPT_PASSWORD_LIMITS.logN.max, optional: true,
-    label: 'scrypt cost (log2 of N)',
-    what: 'scrypt\'s CPU and memory cost for a newly stored password while ' +
-          'the algorithm is scrypt, as a power of two: 15 (the default) is ' +
-          'N=32768. OWASP\'s table pairs it with the parallelism: 2^17 ' +
-          'with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 ' +
-          'with p=10. The default, 2^15 with p=1, is below it.' },
-  { key: 'scryptBlockSize', attribute: 'stsPwdScryptBlockSize', type: 'int',
-    dflt: stsCrypto.SCRYPT_PASSWORD_LIMITS.r.dflt,
-    min: stsCrypto.SCRYPT_PASSWORD_LIMITS.r.min,
-    max: stsCrypto.SCRYPT_PASSWORD_LIMITS.r.max, optional: true,
-    label: 'scrypt block size (r)',
-    what: 'scrypt\'s block size for a newly stored password while the ' +
-          'algorithm is scrypt. Memory is about 128 × N × r bytes; 8 is ' +
-          'the figure RFC 7914 and OWASP give.' },
-  { key: 'scryptParallelism', attribute: 'stsPwdScryptParallelism',
-    type: 'int', dflt: stsCrypto.SCRYPT_PASSWORD_LIMITS.p.dflt,
-    min: stsCrypto.SCRYPT_PASSWORD_LIMITS.p.min,
-    max: stsCrypto.SCRYPT_PASSWORD_LIMITS.p.max, optional: true,
-    label: 'scrypt parallelism (p)',
-    what: 'scrypt\'s parallelism for a newly stored password while the ' +
-          'algorithm is scrypt. Node computes it on one thread, so a higher ' +
-          'value costs time rather than cores; the cost\'s description ' +
-          'lists the pairs OWASP accepts.' }
-];
+const FIELDS: PolicyField[] =
+  // Written in models/directory/policy_password.tsp (#1390). What is passed here is
+  // what the code computes, so it has no second writing there.
+  ModelTables.fields('policy.password', {
+  hashAlgorithm: { values: stsCrypto.PASSWORD_HASH_ALGORITHMS.slice() },
+  argon2Memory: { dflt: stsCrypto.ARGON2_LIMITS.memory.dflt, min: stsCrypto.ARGON2_LIMITS.memory.min, max: stsCrypto.ARGON2_LIMITS.memory.max },
+  argon2Iterations: { dflt: stsCrypto.ARGON2_LIMITS.passes.dflt, min: stsCrypto.ARGON2_LIMITS.passes.min, max: stsCrypto.ARGON2_LIMITS.passes.max },
+  argon2Parallelism: { dflt: stsCrypto.ARGON2_LIMITS.parallelism.dflt, min: stsCrypto.ARGON2_LIMITS.parallelism.min, max: stsCrypto.ARGON2_LIMITS.parallelism.max },
+  scryptLogN: { dflt: stsCrypto.SCRYPT_PASSWORD_LIMITS.logN.dflt, min: stsCrypto.SCRYPT_PASSWORD_LIMITS.logN.min, max: stsCrypto.SCRYPT_PASSWORD_LIMITS.logN.max },
+  scryptBlockSize: { dflt: stsCrypto.SCRYPT_PASSWORD_LIMITS.r.dflt, min: stsCrypto.SCRYPT_PASSWORD_LIMITS.r.min, max: stsCrypto.SCRYPT_PASSWORD_LIMITS.r.max },
+  scryptParallelism: { dflt: stsCrypto.SCRYPT_PASSWORD_LIMITS.p.dflt, min: stsCrypto.SCRYPT_PASSWORD_LIMITS.p.min, max: stsCrypto.SCRYPT_PASSWORD_LIMITS.p.max }
+});
 
 const FIELD_BY_KEY: Record<string, PolicyField> = {};
 FIELDS.forEach(function (field) {
@@ -504,47 +390,8 @@ const DEFAULTS: Readonly<Record<string, number | boolean | string>> =
 // because this directory is schemaless and a container of entries carrying
 // invented attributes has to say what they mean somewhere.
 // ---------------------------------------------------------------------------
-const SCHEMA = {
-  container: 'ou=passwordPolicies',
-  objectClasses: [
-    { name: 'pwdPolicy',
-      what: 'draft-behera-ldap-password-policy\'s class for a password ' +
-            'policy entry. `pwdAttribute` names the attribute the policy ' +
-            'governs, and here that is always `userPassword`.' },
-    { name: 'stsPasswordPolicy',
-      what: 'This service\'s own class, carrying the composition rules and ' +
-            'the generated length the draft has no attribute for. The entry ' +
-            'is named by the PROFILE: `cn=default`, or a named policy\'s ' +
-            'name.' }
-  ],
-  attributes: [
-    { name: 'pwdAttribute',
-      what: 'The attribute this policy governs: `userPassword`.' }
-  ].concat(FIELDS.map(function (field) {
-    return { name: field.attribute, what: field.what };
-  })).concat(SELECTORS.map(function (one) {
-    return { name: one.attribute, what: one.what };
-  })).concat([
-    { name: 'description',
-      what: 'What the profile is for, for the next person.' }
-  ]),
-  // THE TWO THAT GO ON A PERSON rather than on the policy. Listed here
-  // because this module is what gives them their meaning, and in
-  // `ldap/ldap_server.js`'s own list because that is where an attribute a
-  // person's entry carries is named.
-  personAttributes: [
-    { name: 'pwdHistory',
-      what: 'One value per remembered previous password, in the draft\'s ' +
-            'form `time#syntaxOID#length#data` — the data being the hash ' +
-            'that password was stored under, never the password. ' +
-            'Maintained by this service and refused on an LDAP add or ' +
-            'modify, because a history anybody can edit is a history ' +
-            'anybody can empty.' },
-    { name: 'pwdChangedTime',
-      what: 'When the password was last set, as a GeneralizedTime. ' +
-            'Maintained by this service.' }
-  ]
-};
+// The table is written in models/directory/policy_password.tsp (#1390).
+const SCHEMA = ModelTables.schema('policy.password');
 
 // ---------------------------------------------------------------------------
 // THE SENTENCES `describe()` MAKES, as templates (#543 phase 2). One copy:
@@ -555,12 +402,6 @@ const SCHEMA = {
 // ---------------------------------------------------------------------------
 const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
   minLength: 'at least {{n}} characters',
-  minSymbolsOne: 'at least {{n}} symbol (a character that is not a ' +
-    'letter, a number or a space)',
-  minSymbolsMany: 'at least {{n}} symbols (a character that is not a ' +
-    'letter, a number or a space)',
-  uppercase: 'an uppercase letter',
-  digit: 'a number',
   history: 'not your current password or any of the {{n}} before it'
 });
 
@@ -782,11 +623,12 @@ class PasswordPolicy {
                'its own policy refuses. Raise the generated length to at ' +
                'least ' + values.minLength + '.');
     }
-    if (values.generatedLength < values.minSymbols * 2 + 2) {
-      out.push('A generated password of ' + values.generatedLength +
-               ' characters cannot reliably carry ' + values.minSymbols +
-               ' symbols; it must be at least ' + (values.minSymbols * 2 + 2) +
-               ' (twice the symbol count plus two).');
+    if (values.minSymbols > 0 || values.requireUppercase ||
+        values.requireDigit) {
+      out.push('A password policy may not require symbols, an uppercase ' +
+               'letter or a number. ASVS 5.0.0 requirement 6.2.5 accepts a ' +
+               'password of any composition; set a longer minimum length ' +
+               'instead.');
     }
     // OWASP's scrypt table (#847): the parallelism a cost needs. Asked
     // whichever algorithm is chosen, because the values are stored either
@@ -1277,6 +1119,48 @@ class PasswordPolicy {
     }).length;
   }
 
+  // A name in a password is the first thing guessed (#1505, ASVS 5.0.0
+  // 6.1.2, 6.2.11). The list is the service's own names, this realm's name and
+  // domain, and `security.passwordContextWords`; docs/password-words.md is
+  // the documentation of it. Letters swapped for look-alikes count, and `1`
+  // is tried as both of the letters it stands for.
+  private contextWordIn(password: string): string {
+    const { log } = this.deps;
+    log.debug("Entering PasswordPolicy.contextWordIn().");
+    const squash = function (text: string, one: string): string {
+      return text.normalize('NFKC').toLowerCase()
+        .replace(/0/g, 'o').replace(/1/g, one).replace(/3/g, 'e')
+        .replace(/[4@]/g, 'a').replace(/[5$]/g, 's').replace(/7/g, 't')
+        .replace(/!/g, 'i').replace(/[^\p{L}\p{N}]/gu, '');
+    };
+    const forms = [squash(password, 'i'), squash(password, 'l')];
+    const found = this.contextWords().filter(function (word) {
+      const key = squash(word, 'i');
+      return key.length >= MIN_CONTEXT_WORD && forms.some(function (form) {
+        return form.indexOf(key) >= 0;
+      });
+    })[0];
+    log.debug("Leaving PasswordPolicy.contextWordIn().");
+    return found || '';
+  }
+
+  private contextWords(): string[] {
+    const { log } = this.deps;
+    log.debug("Entering PasswordPolicy.contextWords().");
+    const realms = require('./realms');
+    const realm = realms.current();
+    const listed = require('./config').value('security.passwordContextWords');
+    const labels = String(realms.domainOf(realm) || '').split('.').slice(0, -1);
+    const out = SERVICE_WORDS.concat(
+      Array.isArray(listed) ? listed : String(listed || '').split(','),
+      realm && realm.id !== 'default' ? [realm.id, realm.name] : [],
+      labels).map(function (one) {
+      return String(one || '').trim();
+    }).filter(Boolean);
+    log.debug("Leaving PasswordPolicy.contextWords(). " + out.length);
+    return out;
+  }
+
   // What is wrong with this password under this profile — every rule it
   // breaks, not the first, so that a person fixes it once. INDEPENDENT OF THE
   // MODE: whether to ASK is the caller's decision (`credentials.ts` asks in
@@ -1307,19 +1191,10 @@ class PasswordPolicy {
       out.push('at least ' + rules.minLength + ' characters (it has ' +
                length + ')');
     }
-    if (rules.minSymbols > 0) {
-      const symbols = this.countMatching(text, /[^\p{L}\p{N}\s]/u);
-      if (symbols < rules.minSymbols) {
-        out.push('at least ' + rules.minSymbols + ' symbol' +
-                 (rules.minSymbols === 1 ? '' : 's') + ' (it has ' + symbols +
-                 ')');
-      }
-    }
-    if (rules.requireUppercase && this.countMatching(text, /\p{Lu}/u) === 0) {
-      out.push('an uppercase letter');
-    }
-    if (rules.requireDigit && this.countMatching(text, /\p{Nd}/u) === 0) {
-      out.push('a number');
+    const word = this.contextWordIn(text);
+    if (word) {
+      out.push('no word this organization or service is known by (it ' +
+               'contains "' + word + '")');
     }
     log.debug("Leaving PasswordPolicy.problemsWith().");
     return out;
@@ -1339,17 +1214,6 @@ class PasswordPolicy {
     const rules = profile || this.read(DEFAULT_PROFILE);
     const fill = serverProse.fill;
     const out = [fill(SENTENCES.minLength, { n: rules.minLength })];
-    if (rules.minSymbols > 0) {
-      out.push(fill(rules.minSymbols === 1 ? SENTENCES.minSymbolsOne
-                                           : SENTENCES.minSymbolsMany,
-                    { n: rules.minSymbols }));
-    }
-    if (rules.requireUppercase) {
-      out.push(SENTENCES.uppercase);
-    }
-    if (rules.requireDigit) {
-      out.push(SENTENCES.digit);
-    }
     if (rules.history > 0) {
       out.push(fill(SENTENCES.history, { n: rules.history }));
     }
@@ -1429,8 +1293,7 @@ class PasswordPolicy {
     const { log, generator, errorCodes } = this.deps;
     log.debug('Entering PasswordPolicy.generate().');
     const rules = profile || this.read(DEFAULT_PROFILE);
-    const length = Math.max(rules.generatedLength, rules.minLength,
-                            rules.minSymbols * 2 + 2);
+    const length = Math.max(rules.generatedLength, rules.minLength);
     for (let draw = 1; draw <= MAX_DRAWS; draw++) {
       const candidate = generator.generate({
         length: length,

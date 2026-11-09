@@ -20,5 +20,7 @@
   "meta.nothingIssued": "目前尚未核發任何內容。此畫面由 <code>oauth2.consentRequired</code> 控制，預設開啟；在 /admin/consent 可以檢視並撤回在此作出的每一個答覆。",
   "meta.consentingFor": "同意的對象：<code>{protocol}</code>",
   "client.policy": "隱私權政策",
-  "client.tos": "服務條款"
+  "client.tos": "服務條款",
+  "resources": "將用於：",
+  "duration": "此授權在您從帳戶中撤銷之前持續有效。"
 }

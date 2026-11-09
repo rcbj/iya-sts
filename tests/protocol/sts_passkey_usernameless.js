@@ -489,7 +489,7 @@ async function theSignInScreen() {
     client_id: CLIENT, redirect_uri: REDIRECT, response_type: "code",
     scope: "openid", code_challenge: challenge.challenge,
     code_challenge_method: challenge.method }));
-  assert.ok(/\/authn\/login\?authn=/.test(started.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(started.location),
     "the authorization endpoint did not send us to the sign-in screen: " +
     started.status + " " + started.location);
   // THE SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571: the shell

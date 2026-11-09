@@ -89,7 +89,8 @@ function withSettings(pairs, fn) {
 function product(fn) {
   log.debug("Entering product().");
   log.debug("Leaving product().");
-  return withSettings({ 'global.mode': 'product' }, fn);
+  return withSettings({ 'global.mode': 'product',
+                        'authn.allowOptionalSecondFactor': 'true' }, fn);
 }
 
 function bind(dn, password, channel, address) {

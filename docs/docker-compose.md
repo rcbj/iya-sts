@@ -374,3 +374,8 @@ log (`docker compose logs postgres`).
 * [Management API](management-api.md): the first token on this stack
 * [Remote PEP](remote-pep.md): the `xacml` profile
 * [OpenID4VCI](oid4vci.md), [OpenID4VP](oid4vp.md) and [Kerberos](kerberos.md): what the companion demonstrates
+
+## Malware scanning
+
+The `clamav` and `icap` services are off by default. See
+[Malware scanning](malware-scanning.md) to start them.

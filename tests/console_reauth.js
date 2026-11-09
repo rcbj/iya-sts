@@ -56,7 +56,8 @@ function idTokenFor(sub, nonce) {
   const b64u = function (o) {
     return Buffer.from(JSON.stringify(o)).toString('base64url');
   };
-  const claims = { sub: sub };
+  const claims = { sub: sub,
+                   aud: ['sts-admin-console', 'sts-user-portal', 'sts-report'] };
   if (nonce) {
     claims.nonce = nonce;
   }
@@ -337,13 +338,14 @@ async function run(t) {
   await c.rt.leaveToSignIn();
   const savedText = c.store['sts-console-restore'] || '';
   const signin = JSON.parse(c.store['sts-console-signin'] || '{}');
-  t.check(/rcbj0002/.test(savedText) && !/hunter2|s3cret/.test(savedText) &&
+  t.check(/"advanced"/.test(savedText) && !/hunter2|s3cret/.test(savedText) &&
           !/"present"/.test(savedText) && /"pending":true/.test(savedText) &&
           signin.returnTo === '/admin/applications?application=rcbj0002' +
                               '#tab-config' &&
           /\/oauth2\/authorize\?/.test(c.env.location.assigned),
-          '5. signing in on the page keeps the values, never a password, a ' +
-          'hidden field or a secret, and comes back to the tab', savedText);
+          '5. signing in on the page keeps the choices, never what was typed, ' +
+          'a password, a hidden field or a secret, and comes back to the tab',
+          savedText);
   const fresh = [form('/admin/applications/edit#cfg-oauth', [
     control('field.oauthClientId', 'text', ''),
     control('view', 'radio', 'simple', true),
@@ -353,11 +355,11 @@ async function run(t) {
   d.store['sts-console-restore'] = savedText;
   d.env.location.hash = '';
   d.rt.restorePageState();
-  t.check(fresh[0].elements[0].value === 'rcbj0002' &&
+  t.check(String(savedText).indexOf('oauthClientId') < 0 &&
           fresh[0].elements[2].checked === true &&
           !('sts-console-restore' in d.store),
-          '5. and they are put back after, for the same page and person, ' +
-          'and the kept copy is spent');
+          '5. choices are put back after, for the same page and person, ' +
+          'what was typed was never stored, and the kept copy is spent');
   const other = [form('/admin/applications/edit#cfg-oauth', [
     control('field.oauthClientId', 'text', '')])];
   const e = onAPage('urn:uuid:alice', other);

@@ -634,42 +634,13 @@ class AccountSigningKey {
     log.debug("Entering AccountSigningKey.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/signing-key',
-        operationId: 'getSigningKeys', tag: 'Signing keys',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/signing-key',
-        summary: 'Your signing key pairs and TLS client certificates',
-        description: '`profiles`: RFC 7523\'s JWT and RFC 7522\'s SAML key ' +
-          'pairs — for each, `held.keys` (every key pair you hold, newest ' +
-          'first: its `handle` — kid or thumbprint —, label, state, expiry ' +
-          'and certificate), the issuers you may assert as, and `atCap` ' +
-          '(you hold `maxPerPerson` valid ones, `pki.personSigningKeyMax`). ' +
-          '`tls`: your TLS client certificates, where one signs you in, and ' +
-          'what the form offers. `offered` (`pki.personSelfService`) and ' +
-          '`issuable` (a certificate authority exists) say whether you may ' +
-          'generate. No private key is ever in this answer.',
-        query: vz.object({}),
+        operationId: 'getSigningKeys', access: 'person', query: vz.object({}),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller, ctx.baseUrlOf(req)));
         } },
       { method: 'POST', path: ctx.BASE + '/signing-key',
-        operationId: 'changeSigningKeys', tag: 'Signing keys',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/signing-key',
-        summary: 'Generates or revokes a signing key or TLS certificate',
-        description: '`generate` ADDS a key pair for `purpose` from this ' +
-          'realm\'s Issuing CA, named by `label` (refused at the cap); ' +
-          '`revoke` revokes one of yours by `handle`, with `reason`: its ' +
-          'certificate goes on the CRL and the key stops being accepted. ' +
-          '`generate-tls-client` issues a TLS client certificate; ' +
-          '`revoke-tls-client` revokes one of yours. Both generations answer ' +
-          'the private key (unencrypted PKCS#8 PEM) and the certificate ' +
-          'chain ONCE, in `view.fresh.files.key` and ' +
-          '`view.fresh.files.chain` (base64). Both generations are ' +
-          'refused (403) where self-service is off, and rate limited. A ' +
-          'refusal carries the page\'s `view`.',
-        body: SIGNING_KEY_FORM,
-        statuses: { 403: 'Self-service issue is off in this service.',
-                    429: 'Too many generations; try again later.',
-                    500: 'Issued and then lost; nothing usable was kept.' },
+        operationId: 'changeSigningKeys', access: 'person', recentAuth: true, body: SIGNING_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);

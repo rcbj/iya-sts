@@ -187,6 +187,8 @@ const USES = {
   'steam-assertion': 'a sign-in through Steam',
   'client-authentication': 'client authentication (RFC 7521 section 4.2)',
   'authorization-grant': 'authorization grant (RFC 7521 section 4.1)',
+  // An unsolicited assertion at a federation endpoint (#1499).
+  'federated-sign-in': 'an unsolicited assertion at a federation endpoint',
   // RFC 9101 (#35, 2026-09-17). A request object is a JWT its CLIENT signs,
   // so it is keyed exactly as a client assertion is — format `jwt`, the
   // client as issuer, and its `jti` — and the two share one namespace, which

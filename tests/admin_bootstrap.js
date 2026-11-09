@@ -112,6 +112,7 @@ function childMain() {
     // ======================================================================
     if (process.env.AB_PART === 'configured') {
       config.setOverride('global.mode', 'product');
+      config.setOverride('authn.allowOptionalSecondFactor', 'true');
 
       // WHAT THE PROCESS PRINTED WHILE THE BOOTSTRAP RAN. bunyan writes to
       // stdout, so this is the whole of what an operator would find in
@@ -167,6 +168,7 @@ function childMain() {
     // ======================================================================
     if (process.env.AB_PART === 'refused') {
       config.setOverride('global.mode', 'product');
+      config.setOverride('authn.allowOptionalSecondFactor', 'true');
       let printed = '';
       const realWrite = process.stdout.write.bind(process.stdout);
       process.stdout.write = function (chunk) {
@@ -324,6 +326,7 @@ function childMain() {
     // 6. PRODUCT MODE: A FLAGGED PASSWORD AT A DOOR THAT CANNOT ASK
     // ======================================================================
     config.setOverride('global.mode', 'product');
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     const strong = 'Bootstrap-Strong-Pass-9!';
     const set = inDefault(function () {
       return credentials.setPassword('admin', strong, { generated: true });
@@ -380,7 +383,7 @@ function childMain() {
                               code_challenge: CHALLENGE,
                               code_challenge_method: 'S256' }).toString());
       const location = String(r.headers.location || '');
-      return (location.match(/[?&]authn=([^&]+)/) || [])[1] || '';
+      return (location.match(/[?&#]authn=([^&]+)/) || [])[1] || '';
     };
     const cookieOf = function (r) {
       return [].concat(r.headers['set-cookie'] || []).map(function (one) {
@@ -425,7 +428,7 @@ function childMain() {
     let r = await signInAt(authnId, 'anything-at-all');
     const changeLocation = r.next === 'password-change' ? r.location : '';
     note(r.next === 'password-change' &&
-         /^\/authn\/password-change\?change=/.test(changeLocation) &&
+         /^\/authn\/password-change(?:\?app=[^#]*)?[?#]change=/.test(changeLocation) &&
          !cookieOf(r),
          '7a. the sign-in screen answers the change step (next: ' +
          'password-change) and starts no session',
@@ -468,6 +471,7 @@ function childMain() {
     // That is the rule working; what this section tests is the change step,
     // so the URI is registered the way the refusal itself says to.
     config.setOverride('global.mode', 'product');
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     config.setOverride('oauth2.redirectUris', ['https://rp.ab.example/cb']);
     inDefault(function () {
       credentials.setPassword('admin', strong, { generated: true });

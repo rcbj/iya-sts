@@ -244,7 +244,7 @@ which is how a directory moves between two instances. Product mode refuses one.
 In product mode a person bound as themselves may modify only the attributes
 in `ldap.selfWritableAttributes`, on their own entry. The default list is
 `telephoneNumber`, `mobile`, `homePhone`, `displayName`, `preferredLanguage`,
-`postalAddress`, `street`, `l`, `st`, `postalCode` and `userPassword`.
+`postalAddress`, `street`, `l`, `st` and `postalCode`. `userPassword` is not on it, because an LDAP modify doesn't prove the current password. Adding it lets a connection change its own password unproved, so people should use the portal instead.
 Taken from the in-process test `tests/directory_write_authorization.js`.
 
 ```bash
@@ -271,7 +271,7 @@ change on their own entry** and click **Save LDAP**.
 
 **API:**
 ```bash
-api config/set '{"key":"ldap.selfWritableAttributes","value":"telephoneNumber,mobile,userPassword"}'
+api config/set '{"key":"ldap.selfWritableAttributes","value":"telephoneNumber,mobile"}'
 ```
 
 Think before adding an attribute a token carries (`mail`, `cn`, `givenName`,
@@ -394,8 +394,8 @@ password over LDAP.
 
 **API:**
 ```bash
-api policies/save-password-policy '{"minLength":8,"history":1,"minSymbols":0,
-  "requireUppercase":false,"requireDigit":true,"generatedLength":16}'
+api policies/save-password-policy '{"minLength":8,"history":1,
+  "generatedLength":16}'
 api policies/reset-password-policy '{}'    # delete the entry; the built-in defaults apply
 ```
 

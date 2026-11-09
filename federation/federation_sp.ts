@@ -3942,6 +3942,42 @@ class FederationSp {
   }
 
   // The SHA-256 of a linking cookie's value, which is what the context holds.
+  // THE BROWSER THAT STARTED A FLOW (#1497, ASVS 5.0.0 10.1.2, 10.2.1): a cookie
+  // per flow, so that two tabs do not undo each other. SameSite=None because a
+  // SAML or form_post answer arrives as a cross-site POST, which a Lax cookie
+  // would not ride.
+  private bindFlowToBrowser(res, contextRecord) {
+    const { log, randomId } = this.deps;
+    log.debug("Entering FederationSp.bindFlowToBrowser().");
+    if (!require('../common/mode').bindsSignInSteps()) {
+      log.debug("Leaving FederationSp.bindFlowToBrowser(). Not in this mode.");
+      return;
+    }
+    const binding = randomId(24);
+    const name = 'sts_fed_flow_' + randomId(8);
+    contextRecord.browserCookie = name;
+    contextRecord.browserBinding = this.bindingHashOf(binding);
+    res.append('Set-Cookie', name + '=' + binding + '; Path=/; HttpOnly; ' +
+               'Secure; SameSite=None; Max-Age=' +
+               Math.max(60, Math.floor(this.contextTtlMs() / 1000)));
+    log.debug("Leaving FederationSp.bindFlowToBrowser().");
+  }
+
+  // Whether this browser started the flow. A context with no binding is one
+  // the mode did not bind.
+  private flowIsThisBrowsers(req, context) {
+    const { log, authn } = this.deps;
+    log.debug("Entering FederationSp.flowIsThisBrowsers().");
+    if (!context || !context.browserCookie) {
+      log.debug("Leaving FederationSp.flowIsThisBrowsers(). Not bound.");
+      return true;
+    }
+    const presented = String(authn.cookiesOf(req)[context.browserCookie] || '');
+    log.debug("Leaving FederationSp.flowIsThisBrowsers().");
+    return !!presented && this.sameBinding(this.bindingHashOf(presented),
+                                           context.browserBinding);
+  }
+
   private bindingHashOf(value) {
     const { log } = this.deps;
     log.debug("Entering FederationSp.bindingHashOf().");
@@ -4660,7 +4696,10 @@ class FederationSp {
       log.debug("Leaving FederationSp.returnToOf().");
       return '';
     }
-    if (text.charAt(0) !== '/' || text.charAt(1) === '/') {
+    // A backslash and a control character too: a browser reads `/\\host` as
+    // another host (ASVS 5.0.0 3.7.2).
+    if (text.charAt(0) !== '/' || text.charAt(1) === '/' ||
+        /[\\\u0000-\u001f\u007f]/.test(text)) {
       log.warn('federation: refused a returnTo of "' + text + '" — it must ' +
                'be a path on this service. The sign-in continues and ends on ' +
                'the result page instead.');
@@ -5445,14 +5484,16 @@ class FederationSp {
     const returnTo = this.returnToOf(initiated ? initiated.returnTo
       : (req.query.returnTo || req.query.return_to));
     const pkce = this.pkcePair();
+    const pendingStep = String(req.query.authn ||
+      require('../common/step_address').stepOfCookie(req));
     const contextRecord: any = {
       id: record.fedId, protocol: record.fedProtocol, returnTo: returnTo,
       // THE SIGN-IN SCREEN'S PENDING RECORD (#98 D9), named by `authn.ts` in
       // a service deployed as cells: where the flow STARTED, should the
       // partner assert a person homed in another cell (completeSignIn()).
       // Only an id; the record stays in the sign-in service's store.
-      authnPending: /^[A-Za-z0-9_-]{1,64}$/.test(String(req.query.authn || ''))
-        ? String(req.query.authn) : '',
+      authnPending: /^[A-Za-z0-9_-]{1,64}$/.test(pendingStep) ? pendingStep
+                                                              : '',
       // WHAT THE PERSON WAS SIGNING IN TO, carried across the round trip so
       // that completeSignIn() can move the relationship's per-application
       // counts.
@@ -5478,6 +5519,7 @@ class FederationSp {
       nonce: 'n-' + randomId(16),
       pkceVerifier: pkce.verifier, pkceChallenge: pkce.challenge
     };
+    this.bindFlowToBrowser(res, contextRecord);
 
     if (record.fedProtocol === 'saml2') {
       const built = this.authnRequestXml(base, record);
@@ -7214,6 +7256,12 @@ class FederationSp {
     let context = null;
     const handle = String(params.RelayState || params.fedctx || '');
     if (handle) context = this.takeContext(handle);
+    if (context && !this.flowIsThisBrowsers(req, context)) {
+      log.debug("Leaving FederationSp.consumeSamlResponse(). Another browser.");
+      errorCodes.mark(res, 'STS-FED-0237');
+      return this.refuse(res, record, 401, 'This sign-in was started in ' +
+                         'another browser', 'Start the sign-in again here.');
+    }
     if (version === '2.0' &&
         !federation.boolOf(record.fedAllowUnsolicited, false)) {
       const scd = firstByLocal(assertion, 'SubjectConfirmationData');
@@ -7267,7 +7315,15 @@ class FederationSp {
       return this.refuse(res, record, 401, 'The partner\'s session has ' +
                                            'already ended', bound.why);
     }
-    return this.signerStillAccepted(req, res, record, () => {
+    if (this.partnerAuthStale(Date.parse(String(contents.authnInstant)) / 1000)) {
+      errorCodes.mark(res, 'STS-FED-0240');
+      log.debug("Leaving FederationSp.consumeSamlResponse(). Too old.");
+      return this.refuse(res, record, 401, 'The sign-in was refused',
+                         'The partner authenticated this person too long ago.');
+    }
+    // AN UNSOLICITED ASSERTION HAS NO CONTEXT TO SPEND (#1499, ASVS 5.0.0 6.8.3),
+    // so its own ID is claimed once, for as long as it is valid.
+    const signIn = () => this.signerStillAccepted(req, res, record, () => {
       return this.completeSignIn(req, res, record, {
         subject: contents.subject,
         // THE PARTNER'S STABLE SUBJECT (#109) is the NameID qualified by the
@@ -7288,6 +7344,29 @@ class FederationSp {
         application: this.fromContext(context).application,
         authnPending: this.fromContext(context).authnPending
       });
+    });
+    if (context) {
+      return signIn();
+    }
+    const conditions = firstByLocal(assertion, 'Conditions');
+    const until = Date.parse(String(
+      (conditions && conditions.getAttribute('NotOnOrAfter')) || ''));
+    return usedAssertions.claim({
+      format: version === '1.1' ? 'saml11' : 'saml', use: 'federated-sign-in',
+      issuer: String(issuer),
+      identifier: String(assertion.getAttribute('ID') ||
+                         assertion.getAttribute('AssertionID') || ''),
+      subject: String(contents.subject || ''),
+      expiresAt: isFinite(until) ? until : Date.now() + this.contextTtlMs(),
+      request: req
+    }).then((spent) => {
+      if (!spent.ok) {
+        log.debug("Leaving FederationSp.consumeSamlResponse(). Replayed.");
+        errorCodes.mark(res, 'STS-FED-0239');
+        return this.refuse(res, record, 401, 'The sign-in was refused',
+                           'This assertion has already been used.');
+      }
+      return signIn();
     });
   }
 
@@ -7773,6 +7852,22 @@ class FederationSp {
             'response without one did not come from a flow it started.');
     }
 
+    if (!this.flowIsThisBrowsers(req, context)) {
+      log.debug("Leaving FederationSp.consumeOauthResponse(). Another browser.");
+      errorCodes.mark(res, 'STS-FED-0237');
+      return this.refuse(res, record, 401, 'This sign-in was started in ' +
+                         'another browser', 'Start the sign-in again here.');
+    }
+    // THE ANSWER IS THE PARTNER'S THE FLOW WAS STARTED FOR (#1498, ASVS 5.0.0
+    // 10.2.2): the relationship the state names, and RFC 9207's iss wherever
+    // the partner sends one.
+    if (context.id && String(context.id) !== String(record.fedId)) {
+      log.debug("Leaving FederationSp.consumeOauthResponse(). Other partner.");
+      errorCodes.mark(res, 'STS-FED-0238');
+      return this.refuse(res, record, 401, 'The sign-in was refused',
+                         'This answer belongs to another partner\'s sign-in.');
+    }
+
     // DISCOURSE AND BLUESKY (#746), each with an answer of its own.
     if (consumerProviders.adapts(record, 'discourse-connect')) {
       log.debug("Leaving FederationSp.consumeOauthResponse(). Discourse.");
@@ -7811,6 +7906,16 @@ class FederationSp {
     // sign-in was started with, never what the document says by now.
     if (context.discovered && federation.discovers(record)) {
       record = Object.assign({}, record, context.discovered);
+    }
+    // A tenant-templated issuer is only known from the token, checked there.
+    if (params.iss !== undefined &&
+        String(record.fedPeer || '').indexOf('{tenantid}') < 0 &&
+        [].concat(consumerProviders.issuersFor(record))
+          .indexOf(String(params.iss)) < 0) {
+      log.debug("Leaving FederationSp.consumeOauthResponse(). Wrong iss.");
+      errorCodes.mark(res, 'STS-FED-0238');
+      return this.refuse(res, record, 401, 'The sign-in was refused',
+                         'The answer names an issuer this partner is not.');
     }
     const responseType = federation.responseTypeOf(record);
     const parts = federation.responseTypeParts(record);
@@ -8162,6 +8267,18 @@ class FederationSp {
   // Answers `{ ok: true, payload, jwk, token }` — `token` the signed JWT,
   // opened — or `{ ok: false }` after the refusal has been drawn.
   // ---------------------------------------------------------------------------
+  // Is the partner's authentication older than this realm will accept (ASVS
+  // 5.0.0 6.8.4)? With the setting at 0 it is not asked. A partner that gives
+  // no time (NaN here) is refused while a limit is set, because its age is
+  // unknown; the partner's own strength is judged elsewhere.
+  private partnerAuthStale(seconds: number): boolean {
+    const { log, config } = this.deps;
+    log.debug("Entering FederationSp.partnerAuthStale().");
+    const limit = Number(config.value('federation.maxPartnerAuthAgeS'));
+    log.debug("Leaving FederationSp.partnerAuthStale().");
+    return limit > 0 && !(seconds > 0 && Date.now() / 1000 - seconds <= limit);
+  }
+
   private verifyIdToken(res, record, context, sentToken, checks): Promise<any> {
     const { errorCodes, log, stsCrypto, jsonFromB64u } = this.deps;
     log.debug("Entering FederationSp.verifyIdToken(). front=" +
@@ -8297,6 +8414,13 @@ class FederationSp {
             ': without it a ' + one.what + ' substituted on the way here ' +
             'would be accepted as this person\'s.');
         }
+      }
+      if (this.partnerAuthStale(Number(payload.auth_time))) {
+        errorCodes.mark(res, 'STS-FED-0240');
+        log.debug("Leaving FederationSp.verifyIdToken(). Too old.");
+        return { ok: false, answered: this.refuse(res, record, 401,
+          'The sign-in was refused',
+          'The partner authenticated this person too long ago.') };
       }
       log.debug("Leaving FederationSp.verifyIdToken(). Verified.");
       return { ok: true, payload: payload, jwk: verified.jwk, token: idToken };

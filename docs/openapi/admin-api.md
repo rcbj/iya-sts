@@ -32,7 +32,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [Authorization servers](admin-api-authorization-servers.html) | 6 |  |
 | [CAEP](admin-api-caep.html) | 5 |  |
 | [Cluster](admin-api-cluster.html) | 1 |  |
-| [Configuration](admin-api-configuration.html) | 9 |  |
+| [Configuration](admin-api-configuration.html) | 10 |  |
 | [Credential claims](admin-api-credential-claims.html) | 6 | What an issued Verifiable Credential carries. |
 | [Credential status](admin-api-credential-status.html) | 5 | The status lists every issued Verifiable Credential names, and suspending, reinstating or revoking one: Monitoring → Verifiable Credentials (`/admin/vc/monitor`) in the console. |
 | [Custom SAML attributes](admin-api-custom-saml-attributes.html) | 9 | What to add to every SAML 2.0 and SAML 1.1 assertion issued from now on — WS-Trust's and WS-Federation's alike. The same store the custom claims are in, and the same two halves: a typed attribute and a directory one. |
@@ -67,8 +67,8 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [SCEP](admin-api-scep.html) | 8 | The Simple Certificate Enrolment Protocol (RFC 8894) server of this realm: its Issuing CA and RA certificate, the single-use challenge passwords that authorize an enrollment, registered host names, the certificates issued over it, and what it has done. |
 | [SCIM](admin-api-scim.html) | 13 | The SCIM 2.0 provisioning endpoints under /scim/v2 — what they have been asked to do, and what they will and will not do. READ-ONLY here, and that is the parity rule holding rather than a gap: the console page has no form on it either, because everything about SCIM that can be changed is a configuration row. What SCIM WROTE is under Users and Groups, since it provisions into the same directory and has no store of its own. |
 | [SPIFFE](admin-api-spiffe.html) | 16 |  |
-| [Service](admin-api-service.html) | 42 | What this API is, its document, and the explorer that calls it. |
-| [Sessions](admin-api-sessions.html) | 2 |  |
+| [Service](admin-api-service.html) | 44 | What this API is, its document, and the explorer that calls it. |
+| [Sessions](admin-api-sessions.html) | 3 |  |
 | [Shared Signals](admin-api-shared-signals.html) | 14 |  |
 | [Sign-out](admin-api-sign-out.html) | 6 |  |
 | [TLS](admin-api-tls.html) | 5 |  |

@@ -584,8 +584,8 @@ async function spnegoCountsIt(tcp, otpTgt) {
   const body = await r.text();
   const cookie = ((r.headers.getSetCookie ? r.headers.getSetCookie() : [])
     .filter(function (one) {
-      return /^sts_session=/.test(one);
-    })[0] || "").replace(/^sts_session=([^;.]*).*$/, "$1");
+      return /^(?:__Host-)?sts_session=/.test(one);
+    })[0] || "").replace(/^(?:__Host-)?sts_session=([^;.]*).*$/, "$1");
   check("the SPNEGO sign-in succeeds and the page says two factors: amr " +
         "pwd and otp, acr mfa", function () {
           assert.strictEqual(r.status, 200, body.slice(0, 300));

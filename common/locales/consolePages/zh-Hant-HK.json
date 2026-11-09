@@ -4,5 +4,6 @@
   "title.database": "數據庫",
   "title.tls-trust": "客戶端證書信任存放區",
   "title.users": "用戶",
-  "title.users-new": "新增用戶"
+  "title.users-new": "新增用戶",
+  "title.malwareScanning": "惡意軟體掃描"
 }

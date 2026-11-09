@@ -83,6 +83,7 @@ async function run(t) {
     });
   };
   config.setOverride('global.mode', 'product');
+  config.setOverride('authn.allowOptionalSecondFactor', 'true');
   config.setOverride('risk.breachCheck', 'on');
   try {
     // The realm's attribute policy (#396) requires givenName, sn and mail of
@@ -159,6 +160,8 @@ async function run(t) {
                     modification: { type: 'userPassword',
                                     values: [password] } }] });
     };
+    // An operator's opt-in since #1465: an LDAP modify proves no current password.
+    config.setOverride('ldap.selfWritableAttributes', 'userPassword');
     const askedBefore = asked.length;
     const breachedModify = await Promise.resolve(modify(BREACHED));
     t.check(breachedModify.ok === false && asked.length > askedBefore &&
@@ -177,7 +180,9 @@ async function run(t) {
   } finally {
     late = false;
     federationHttp.fetchPublished = original;
+    config.clearOverride('ldap.selfWritableAttributes');
     config.clearOverride('global.mode');
+    config.clearOverride('authn.allowOptionalSecondFactor');
     config.clearOverride('risk.breachCheck');
     breached.forget();
   }

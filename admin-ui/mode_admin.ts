@@ -43,6 +43,7 @@
 // ===========================================================================
 
 import admin = require('./admin');
+import configDump = require('../admin-core/config_dump');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import mode = require('../common/mode');
@@ -107,6 +108,15 @@ class ModeAdmin {
     const { log, mode } = this.deps;
     log.debug("Entering ModeAdmin.modeView().");
     const report = mode.report();
+    // A sensitive parameter's value never leaves in an answer (#1478).
+    report.developmentOnlySettings = report.developmentOnlySettings.map(
+      function (row) {
+        return Object.assign({}, row, {
+          default: configDump.maskKeyed(row.key, row.default),
+          value: configDump.maskKeyed(row.key, row.value),
+          inForce: configDump.maskKeyed(row.key, row.inForce)
+        });
+      });
     log.debug("Leaving ModeAdmin.modeView(). " + report.mode + ", " +
               report.requirements.length + " requirement(s).");
     return report;

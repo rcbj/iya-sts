@@ -204,6 +204,7 @@ class MailTransports {
       },
       secrets: secrets,
       readFile: function (path: string): string {
+        require('./outbound_tls').assertNamedFile(path);
         return fs.readFileSync(path, 'utf8');
       },
       dkimSign: crypto.dkimSign

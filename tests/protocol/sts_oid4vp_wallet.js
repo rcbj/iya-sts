@@ -403,7 +403,7 @@ function setsSession(r) {
   log.debug("Entering setsSession().");
   log.debug("Leaving setsSession().");
   return (r.setCookie || []).some(function (line) {
-    return /^sts_session=[^;]+/.test(line) && !/Max-Age=0/i.test(line);
+    return /^(?:__Host-)?sts_session=[^;]+/.test(line) && !/Max-Age=0/i.test(line);
   });
 }
 
@@ -931,7 +931,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
   const s = await startSignIn(browser);
   check("the sign-in screen offers the wallet for this pending " +
         "authorization request", function () {
-          assert.ok(/\/authn\/login\?authn=/.test(s.authorized.location),
+          assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(s.authorized.location),
                     "the authorization request went to " +
                     s.authorized.location);
           assert.strictEqual(s.walletLink, "/authn/wallet?authn=" +
@@ -1032,7 +1032,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
   check("the response_code does not let another browser collect it: 403, " +
         "no session", function () {
           assert.strictEqual(r.status, 403, r.text.slice(0, 200));
-          assert.ok(!setsSession(r) && !stranger.cookies.sts_session,
+          assert.ok(!setsSession(r) && !(stranger.cookies.sts_session || stranger.cookies["__Host-sts_session"]),
                     JSON.stringify(r.setCookie));
         });
   r = await walletSignin.collect(base, null, redirect);
@@ -1053,13 +1053,13 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
 
   // The arrival cookie the authorization endpoint set, which a sign-in must
   // REPLACE rather than upgrade in place (session fixation, authn/CLAUDE.md).
-  const arrival = browser.cookies.sts_session || "";
+  const arrival = (browser.cookies.sts_session || browser.cookies["__Host-sts_session"]) || "";
   r = await walletSignin.collect(base, browser, redirect);
   check("the browser that started it collects: a NEW session cookie, and " +
         "back to the authorization request that was waiting", function () {
           assert.strictEqual(r.status, 303, r.text.slice(0, 300));
-          assert.ok(setsSession(r) && browser.cookies.sts_session &&
-                    browser.cookies.sts_session !== arrival,
+          assert.ok(setsSession(r) && (browser.cookies.sts_session || browser.cookies["__Host-sts_session"]) &&
+                    (browser.cookies.sts_session || browser.cookies["__Host-sts_session"]) !== arrival,
                     r.setCookie.join(" "));
           assert.ok(/\/oauth2\/authorize/.test(r.location), r.location);
         });
@@ -1181,7 +1181,7 @@ async function signInSections(formats, sdKey, sd, jwtKey, jwtVc,
         function () {
           assert.strictEqual(r.status, 303, r.text.replace(/\s+/g, " ")
             .slice(0, 400));
-          assert.ok(second.cookies.sts_session);
+          assert.ok((second.cookies.sts_session || second.cookies["__Host-sts_session"]));
           assert.strictEqual(finished2.idToken.sub, holderSub);
           assert.deepStrictEqual(finished2.idToken.amr, ["pop"]);
         });

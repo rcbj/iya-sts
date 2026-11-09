@@ -49,6 +49,8 @@ Scope: `admin:read`.
 | `accountsPage` | query | integer |  | Which page of the accounts. |
 | `certificatesPage` | query | integer |  | Which page of the certificates. |
 | `hostNamesPage` | query | integer |  | Which page of the entries with host names. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The ACME server as the page draws it.
 
@@ -249,6 +251,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].label` | string |  |  |
 | `settings.groups[].settings[].legacyEnv` | list, or string |  |  |
 | `settings.groups[].settings[].legacyEnv[]` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].masked` | boolean |  |  |
 | `settings.groups[].settings[].max` | number |  |  |
 | `settings.groups[].settings[].min` | number |  |  |
 | `settings.groups[].settings[].ordered` | boolean |  |  |
@@ -290,6 +293,13 @@ A dns or ip identifier is authorized for an ACME account only when it is registe
 **Mirrors** `POST /admin/acme` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -334,6 +344,13 @@ Creates an EAB key for ONE entry in this realm and answers the key id and the HM
 **Mirrors** `POST /admin/acme` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -392,6 +409,13 @@ The account authorizes nothing more — every request it signs is answered unaut
 **Mirrors** `POST /admin/acme` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -457,6 +481,13 @@ Removes the key from its entry. An account it already bound keeps its binding; a
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -501,6 +532,8 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `page` | query | integer |  | Which page of the recent requests. |
 | `per` | query | integer |  | Rows per page. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The totals, the tables and the recent requests.
 
@@ -568,6 +601,13 @@ Certificates already issued for it are untouched; a new order for it is refused 
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -611,6 +651,13 @@ Puts the certificate on the ACME Issuing CA's CRL (/pki/crl/{realm}/acme) with t
 **Mirrors** `POST /admin/acme` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

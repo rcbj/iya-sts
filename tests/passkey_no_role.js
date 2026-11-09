@@ -218,7 +218,7 @@ function secondFactor(t) {
     'D2. and secondFactorDemand() says the same, so the doors that cannot ' +
     'ask for one agree with the screen that can', JSON.stringify(d));
   websecurity.reset();
-  withSettings({ 'global.mode': 'product' }, function () {
+  withSettings({ 'global.mode': 'product', 'authn.allowOptionalSecondFactor': 'true' }, function () {
     const refused = credentials.verify(bea, PASSWORD,
       { via: 'test ldap', door: 'ldap' });
     t.check(refused.ok === false &&
@@ -237,7 +237,8 @@ function secondFactor(t) {
                        demand: offDemand }));
   });
   websecurity.reset();
-  withSettings({ 'global.mode': 'product', 'webauthn.mfaAllowed': false },
+  withSettings({ 'global.mode': 'product', 'webauthn.mfaAllowed': false,
+                 'authn.allowOptionalSecondFactor': 'true' },
     function () {
       const admitted = credentials.verify(bea, PASSWORD,
         { via: 'test ldap', door: 'ldap' });

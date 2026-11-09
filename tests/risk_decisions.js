@@ -757,7 +757,7 @@ function childMain() {
                             signals: ['automated-client'],
                             assessmentId: 'rd-g2' };
       const stepUp = await authorize(carol);
-      note(/\/authn\/login\?authn=/.test(String(stepUp.headers.location ||
+      note(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(stepUp.headers.location ||
                                                  '')),
            'G2. a session at MEDIUM with a device signal, holding a code ' +
            'and no key, is sent to sign in again with a security key',

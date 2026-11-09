@@ -40,6 +40,13 @@ Endpoint calls by matched route and status class, tokens and artifacts by kind w
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The snapshot.
 
 | Member | Type | Required | What it is |

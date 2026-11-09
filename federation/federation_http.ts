@@ -650,6 +650,22 @@ class FederationHttp {
       log.debug("Leaving FederationHttp.vetHost(). Development: not pinned.");
       return Promise.resolve({ ok: true, address: '', family: 0 });
     }
+    // THE HOSTS THIS SERVICE MAY DIAL, where the operator names them (#1526,
+    // ASVS 5.0.0 13.2.4). Empty allows any public host, as before.
+    const allowed: string[] = [].concat(
+      this.deps.config.value('security.outboundAllowedHosts') || [])
+      .join(',').split(',').map(function (one: string) {
+        return one.trim().toLowerCase();
+      }).filter(Boolean);
+    const named = host.toLowerCase();
+    if (allowed.length && !allowed.some(function (one) {
+      return one.charAt(0) === '.' ? named.endsWith(one) : named === one;
+    })) {
+      log.debug("Leaving FederationHttp.vetHost(). Not on the list.");
+      return Promise.resolve({ ok: false, address: '', family: 0,
+        kind: 'internal',
+        why: '"' + host + '" is not in security.outboundAllowedHosts.' });
+    }
     const judge = function (addresses): VettedHost {
       log.debug("Entering judge().");
       const bad = addresses.map(function (one) {

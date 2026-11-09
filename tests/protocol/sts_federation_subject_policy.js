@@ -282,7 +282,7 @@ async function federatedSignIn(idpUser, opts) {
       const next = new URL(r.location, r.url).toString();
       // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
       // its view is what it offers, and its acts are the API's.
-      if (/\/authn\/login\?authn=/.test(next)) {
+      if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(next)) {
         const at = new URL(next);
         const screenBase = at.origin +
           at.pathname.replace(/\/authn\/login$/, "");

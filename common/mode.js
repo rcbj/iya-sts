@@ -439,6 +439,375 @@ function usesBrokenAlgorithms() {
   return !isProduct();
 }
 
+// Are this service's cookies `__Host-` / `__Secure-` on the wire (#1441, ASVS
+// 5.0.0 3.3.1)? `common/cookie_wire.ts` asks. Development keeps the plain names
+// a person reads in a browser's tools and a test reads out of a jar.
+/**
+ * Tells whether cookies carry a `__Host-` or `__Secure-` prefix over TLS.
+ *
+ * @returns true in product mode
+ */
+function prefixesCookies() {
+  log.debug("Entering prefixesCookies().");
+  log.debug("Leaving prefixesCookies().");
+  return isProduct();
+}
+
+// May the main port run in cleartext (#1457, ASVS 5.0.0 12.2.1)?
+/**
+ * Answers why this process must not start, where product mode has the main
+ * port in cleartext.
+ *
+ * @param useHttps - whether the main port is HTTPS
+ * @returns the reason, or '' where it may start
+ */
+function cleartextStartupProblem(useHttps) {
+  log.debug("Entering cleartextStartupProblem().");
+  log.debug("Leaving cleartextStartupProblem().");
+  return isProduct() && !useHttps
+    ? 'global.https is off, and product mode serves its main port over TLS ' +
+      'only (ASVS 5.0.0 12.2.1). Unset STS_HTTPS, or use development mode.'
+    : '';
+}
+
+// May a client that declares no grant types use any grant (#1453, ASVS 5.0.0
+// 10.4.4)? RFC 7591 section 2 makes authorization_code the default.
+/**
+ * Tells whether a client with no grant list is limited to the code flow.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function narrowsUndeclaredGrants() {
+  log.debug("Entering narrowsUndeclaredGrants().");
+  log.debug("Leaving narrowsUndeclaredGrants().");
+  return isProduct() && config.value('oauth2.allowUndeclaredGrants') !== true;
+}
+
+// Does SCEP answer here (#1455, ASVS 5.0.0 11.3.1)? RFC 8894 needs ciphers
+// product otherwise refuses.
+/**
+ * Tells whether SCEP may answer in the ambient realm.
+ *
+ * @returns true in development, and in product where an operator opted in
+ */
+function answersScep() {
+  log.debug("Entering answersScep().");
+  log.debug("Leaving answersScep().");
+  return !isProduct() || config.value('scep.allowInProduct') === true;
+}
+
+// Does ending a session revoke the access tokens issued on it (#1449, ASVS
+// 5.0.0 7.4.1)? Development leaves them, so a client can be exercised against
+// a token that outlives its session.
+/**
+ * Tells whether a sign-out revokes the access tokens issued on the session.
+ *
+ * @returns true in product mode
+ */
+function revokesAccessTokensAtSignOut() {
+  log.debug("Entering revokesAccessTokensAtSignOut().");
+  log.debug("Leaving revokesAccessTokensAtSignOut().");
+  return isProduct();
+}
+
+// Is a default-named bootstrap administrator replaced by a generated name
+// (#1447, ASVS 5.0.0 6.3.2)? `common/bootstrap_name.ts` asks.
+/**
+ * Tells whether a default bootstrap name gives way to a generated one.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function generatesBootstrapName() {
+  log.debug("Entering generatesBootstrapName().");
+  log.debug("Leaving generatesBootstrapName().");
+  return isProduct() && config.value('admin.allowDefaultUsername') !== true;
+}
+
+// Is a sign-in step tied to the browser that first asks about it (#1454, ASVS
+// 5.0.0 14.2.1)? `authn/authn_api.ts` asks.
+/**
+ * Tells whether a sign-in step answers only one browser.
+ *
+ * @returns true in product mode
+ */
+function bindsSignInSteps() {
+  log.debug("Entering bindsSignInSteps().");
+  log.debug("Leaving bindsSignInSteps().");
+  return isProduct();
+}
+
+// May a disallowed hash be used where a protocol still calls for one (#1469,
+// ASVS 5.0.0 11.4.1)? The capability stays, behind a setting, for compatibility.
+/**
+ * Tells whether SHA-1 and MD5 may be used in OAEP, PKINIT and S4U2Self.
+ *
+ * @returns true in development, and in product where an operator opted in
+ */
+function allowsLegacyHashes() {
+  log.debug("Entering allowsLegacyHashes().");
+  log.debug("Leaving allowsLegacyHashes().");
+  return !isProduct() || config.value('crypto.allowLegacyHashes') === true;
+}
+
+// Are sign-in step ids kept out of what a server is sent (#1454, ASVS 5.0.0
+// 14.2.1)? `common/step_address.ts` and the sign-in pages ask.
+/**
+ * Tells whether a sign-in step's id travels in the fragment and a header.
+ *
+ * @returns true in product mode
+ */
+function hidesStepIds() {
+  log.debug("Entering hidesStepIds().");
+  log.debug("Leaving hidesStepIds().");
+  return isProduct();
+}
+
+// Does a credential with no scope need a console role at SCIM and Shared
+// Signals (#1473, ASVS 5.0.0 8.2.1, 8.2.2)?
+/**
+ * Tells whether a person with no scope needs a role at SCIM and SSF.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function restrictsUnscopedPeople() {
+  log.debug("Entering restrictsUnscopedPeople().");
+  log.debug("Leaving restrictsUnscopedPeople().");
+  return isProduct() && config.value('security.allowUnscopedPeople') !== true;
+}
+
+// Is a second factor required of everybody (#1490, ASVS 5.0.0 6.3.3)?
+/**
+ * Tells whether everybody needs a second factor, whatever the policy says.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function requiresSecondFactorOfEveryone() {
+  log.debug("Entering requiresSecondFactorOfEveryone().");
+  log.debug("Leaving requiresSecondFactorOfEveryone().");
+  return isProduct() && config.value('authn.allowOptionalSecondFactor') !== true;
+}
+
+// Must an administrator state how a person was verified before clearing their
+// second factor (#1504, ASVS 5.0.0 6.4.4)?
+/**
+ * @returns true when clearing a factor needs a stated proof of identity
+ */
+function requiresEvidenceToClearFactor() {
+  log.debug("Entering requiresEvidenceToClearFactor().");
+  log.debug("Leaving requiresEvidenceToClearFactor().");
+  return isProduct();
+}
+
+/**
+ * @returns true when a repeated token parameter is refused
+ */
+function refusesRepeatedTokenParameters() {
+  log.debug("Entering refusesRepeatedTokenParameters().");
+  log.debug("Leaving refusesRepeatedTokenParameters().");
+  return isProduct();
+}
+
+/**
+ * @returns true when forwarded addresses need a list of trusted proxies
+ */
+function requiresTrustedProxyRanges() {
+  log.debug("Entering requiresTrustedProxyRanges().");
+  log.debug("Leaving requiresTrustedProxyRanges().");
+  return isProduct();
+}
+
+/**
+ * @returns true when an internal error's text is kept from the caller
+ */
+function hidesFailureDetail() {
+  log.debug("Entering hidesFailureDetail().");
+  log.debug("Leaving hidesFailureDetail().");
+  return isProduct();
+}
+
+/**
+ * @returns true when a partner's Logout Token must carry logout+jwt
+ */
+function requiresTypedLogoutToken() {
+  log.debug("Entering requiresTypedLogoutToken().");
+  log.debug("Leaving requiresTypedLogoutToken().");
+  return isProduct() &&
+    config.value('federation.allowUntypedLogoutToken') !== true;
+}
+
+/**
+ * @returns true when request logs leave out credentials and bodies
+ */
+function redactsRequestLog() {
+  log.debug("Entering redactsRequestLog().");
+  log.debug("Leaving redactsRequestLog().");
+  return isProduct();
+}
+
+/**
+ * @returns true when a default database password stops the service
+ */
+function refusesDefaultDatabasePassword() {
+  log.debug("Entering refusesDefaultDatabasePassword().");
+  log.debug("Leaving refusesDefaultDatabasePassword().");
+  return isProduct() &&
+    config.value('persistence.allowDefaultDatabasePassword') !== true;
+}
+
+/**
+ * @returns true when a syslog destination must use tls
+ */
+function refusesPlainSyslog() {
+  log.debug("Entering refusesPlainSyslog().");
+  log.debug("Leaving refusesPlainSyslog().");
+  return isProduct() &&
+    config.value('audit.allowPlainSyslog') !== true;
+}
+
+/**
+ * @returns true when ES256K is used only if keys.signingAlgorithms lists it
+ */
+function omitsUnapprovedSigningCurves() {
+  log.debug("Entering omitsUnapprovedSigningCurves().");
+  log.debug("Leaving omitsUnapprovedSigningCurves().");
+  return isProduct();
+}
+
+// Must a malware scanner be reached over TLS (#1501, ASVS 5.0.0 12.3.1)?
+/**
+ * @returns true when a plain icap:// address may not be used
+ */
+function requiresTlsToMalwareScanner() {
+  log.debug("Entering requiresTlsToMalwareScanner().");
+  log.debug("Leaving requiresTlsToMalwareScanner().");
+  return isProduct() && config.value('malwareScan.allowCleartext') !== true;
+}
+
+// Are new RSA keys made at 3072 bits where no setting says (#1491, ASVS 5.0.0
+// 11.2.3)?
+/**
+ * The size of a new RSA key that no setting names.
+ *
+ * @returns 3072 in product mode, 2048 otherwise
+ */
+function defaultRsaBits() {
+  log.debug("Entering defaultRsaBits().");
+  log.debug("Leaving defaultRsaBits().");
+  return isProduct() ? 3072 : 2048;
+}
+
+// Must every code-flow client use PKCE (#1495, ASVS 5.0.0 10.4.6)?
+/**
+ * Tells whether a confidential client must also use PKCE.
+ *
+ * @returns true in product mode unless an operator opted out
+ */
+function requiresPkceOfEveryClient() {
+  log.debug("Entering requiresPkceOfEveryClient().");
+  log.debug("Leaving requiresPkceOfEveryClient().");
+  return isProduct() &&
+    config.value('oauth2.allowConfidentialWithoutPkce') !== true;
+}
+
+// May JWE use AES-CBC with HMAC (#1486, ASVS 5.0.0 11.3.2)?
+/**
+ * Tells whether JWE's CBC-HMAC content encryption is available.
+ *
+ * @returns true in development, and in product where an operator opted in
+ */
+function allowsCbcJwe() {
+  log.debug("Entering allowsCbcJwe().");
+  log.debug("Leaving allowsCbcJwe().");
+  return !isProduct() || config.value('crypto.allowCbcJwe') === true;
+}
+
+// Is a file an administrator names held to `security.fileRoots` (#1481,
+// ASVS 5.0.0 5.3.2)? `common/outbound_tls.ts` asks.
+/**
+ * Tells whether a named CA file is confined to the certificate directories.
+ *
+ * @returns true in product mode
+ */
+function confinesNamedFiles() {
+  log.debug("Entering confinesNamedFiles().");
+  log.debug("Leaving confinesNamedFiles().");
+  return isProduct();
+}
+
+// How long past `exp` a GNAP user assertion is honoured (#1474, ASVS 5.0.0
+// 9.2.1). RFC 9635 section 2.4 permits a grace and does not ask for one, so
+// product takes none unless an operator set one.
+/**
+ * The grace on an expired GNAP user assertion, in seconds.
+ *
+ * @returns the setting, or 0 in product where nobody set it
+ */
+function expiredAssertionGraceS() {
+  log.debug("Entering expiredAssertionGraceS().");
+  const key = 'gnap.assertionMaxAgeS';
+  const source = String(config.sourceOf(key));
+  log.debug("Leaving expiredAssertionGraceS().");
+  return isProduct() && /^default/.test(source)
+    ? 0 : (Number(config.value(key)) || 0);
+}
+
+// May a request be allowed when no access decision could be made (#1450, ASVS
+// 5.0.0 8.2.1)? `common/access_gate.ts` asks at each such fault.
+/**
+ * Tells whether a fault in the access gate allows the request.
+ *
+ * @returns true in development mode
+ */
+function failsOpenOnPolicyFault() {
+  log.debug("Entering failsOpenOnPolicyFault().");
+  log.debug("Leaving failsOpenOnPolicyFault().");
+  return !isProduct();
+}
+
+// A listener certificate this service minted, as the data `report()` carries
+// on its row (#1457, ASVS 5.0.0 12.2.2). It does not stop the service, so a new
+// install stays self-contained; it must show.
+function certificateWaivers() {
+  log.debug("Entering certificateWaivers().");
+  log.debug("Leaving certificateWaivers().");
+  return config.value('tls.certificateFile') ? [] : [
+    { requirement: 'public-certificate', section: 'ASVS 5.0.0 12.2.2',
+      level: 'MUST', setting: 'tls.certificateFile' }];
+}
+
+// The switches that turn access decisions off in this process, as the data
+// `report()` carries on the row they qualify: a product operator may need one
+// to recover from a policy that denies its own repair, and it must show.
+function accessEnforcementWaivers() {
+  log.debug("Entering accessEnforcementWaivers().");
+  const off = ['xacml.enforceAccess', 'roles.enforceIssuance'].filter(
+    function (key) {
+      return config.value(key) === false;
+    });
+  log.debug("Leaving accessEnforcementWaivers().");
+  return off.map(function (key) {
+    return { requirement: 'access-by-policy', section: 'ASVS 5.0.0 8.2.1',
+             level: 'MUST', setting: key };
+  });
+}
+
+// May a response over TLS go out without Strict-Transport-Security (#1438,
+// ASVS 5.0.0 3.4.1)? HSTS binds a whole host name, every port of it, and takes
+// away the click-through on a certificate a browser does not trust. On a
+// development machine that host is `localhost` and the certificate is this
+// service's own, and the pin would outlast the container, so development does
+// not send it.
+/**
+ * Tells whether a response over TLS may omit Strict-Transport-Security.
+ *
+ * @returns true in development mode
+ */
+function omitsStrictTransportSecurity() {
+  log.debug("Entering omitsStrictTransportSecurity().");
+  log.debug("Leaving omitsStrictTransportSecurity().");
+  return !isProduct();
+}
+
 // May a SAML assertion or a SAML 1.1 Response go out UNSIGNED (#181,
 // 2026-09-23)? Development says yes where `saml2.signAssertion`,
 // `saml11.signAssertion` or `saml11.signResponse` is off, or an application
@@ -2802,10 +3171,190 @@ const REQUIREMENTS = [
              'AS-REQ or TGS-REQ offering nothing else is refused ' +
              'KDC_ERR_ETYPE_NOSUPP (STS-KRB-0156); an RC4 session key or ' +
              'subkey in a TGS-REQ, an AP-REQ or FAST armor is refused ' +
-             '(STS-KRB-0157, 0158, 0159). AES (17, 18, 19, 20) is what is ' +
-             'left.',
+             '(STS-KRB-0157, 0158, 0159). AES is what is left.',
     where: 'kerberos/krb5_principals.js, kerberos/krb5_kdc.js, ' +
            'kerberos/krb5_service.js, kerberos/krb5_fast.ts' },
+  // #1453, #1455, #1456, #1457 (ASVS 5.0.0 Level 1).
+  { id: 'main-port-https',
+    what: 'The main port is HTTPS',
+    development: 'STS_HTTPS=false runs the main port in cleartext.',
+    product: 'A process with global.https off does not start ' +
+             '(STS-CORE-0167). The plain-HTTP revocation and SCEP ' +
+             'listener stays, as RFC 5280, RFC 5019 and RFC 8894 expect.',
+    where: 'server.js' },
+  // #1453, #1455, #1456, #1457 (ASVS 5.0.0 Level 1).
+  { id: 'public-certificate',
+    what: 'The listener certificate is publicly trusted',
+    development: 'This service\'s own certificate authority mints it.',
+    product: 'Set tls.certificateFile to a publicly trusted chain. A ' +
+             'certificate this service minted does not stop it starting, ' +
+             'and is shown on this row.',
+    where: 'common/mode.js' },
+  // #1453, #1455, #1456, #1457 (ASVS 5.0.0 Level 1).
+  { id: 'legacy-ciphers',
+    what: 'SCEP, XML encryption and Kerberos avoid legacy ciphers',
+    development: 'SCEP answers, and XML encryption may use AES-CBC, and ' +
+                 'Kerberos offers enctypes 17 and 18.',
+    product: 'SCEP answers only with scep.allowInProduct on ' +
+             '(STS-SCEP-0067). XML encryption selects and accepts AES-GCM ' +
+             'only (STS-KEYS-0195). Kerberos uses 19 and 20 unless ' +
+             'krb5.allowSha1Enctypes is on.',
+    where: 'scep/scep.ts, common/crypto.js, common/config.js' },
+  // #1453, #1455, #1456, #1457 (ASVS 5.0.0 Level 1).
+  { id: 'declared-grants',
+    what: 'A client uses only the grants it needs',
+    development: 'A client that declares no grant types may use any grant.',
+    product: 'A client that declares no grant types may use ' +
+             'authorization_code and refresh_token alone, unless ' +
+             'oauth2.allowUndeclaredGrants is on (STS-OAUTH-0598).',
+    where: 'oauth-oidc/oauth2.ts' },
+  // #1447 (ASVS 5.0.0 6.3.2).
+  { id: 'no-default-admin-name',
+    what: 'No account carries a default administrator name',
+    development: 'The bootstrap administrator is admin, which every test and ' +
+                 'walkthrough signs in as.',
+    product: 'A bootstrap administrator named admin, root, sa or ' +
+             'administrator, or with no name, is given an unpredictable ' +
+             'generated name, printed with its password at first start, ' +
+             'unless admin.allowDefaultUsername is on.',
+    where: 'common/bootstrap_name.ts' },
+  // #1469 (ASVS 5.0.0 11.4.1).
+  { id: 'legacy-hashes',
+    what: 'Disallowed hashes are not used',
+    development: 'OAEP over SHA-1, the SHA-1 PKINIT key derivation and the ' +
+                 'HMAC-MD5 checksum of S4U2Self are available.',
+    product: 'They are off unless crypto.allowLegacyHashes is on. TOTP ' +
+             'remains HMAC-SHA-1 by default, for authenticator ' +
+             'compatibility, and PKINIT keeps the SHA-1 paChecksum RFC ' +
+             '4556 defines.',
+    where: 'common/crypto.js, kerberos/krb5_pkinit.ts, kerberos/krb5_kdc.js' },
+  // #1481 (ASVS 5.0.0 5.3.2).
+  { id: 'named-file-roots',
+    what: 'A named file must be in an allowed directory',
+    development: 'A file an administrator names is read from wherever it says.',
+    product: 'A file is read only if its real path is inside a directory ' +
+             'security.fileRoots lists, and the answer does not say why a ' +
+             'path failed.',
+    where: 'common/outbound_tls.ts' },
+  // #1490 (ASVS 5.0.0 6.3.3).
+  { id: 'second-factor-everyone',
+    what: 'A second factor is required of everybody',
+    development: 'The authentication policy decides, and by default only ' +
+                 'those who hold a second factor are asked for it.',
+    product: 'Everybody needs a second factor, whatever the policy says, ' +
+             'unless authn.allowOptionalSecondFactor is on.',
+    where: 'common/authn_policy.ts' },
+  // #1504 (ASVS 5.0.0 6.4.4).
+  { id: 'factor-clear-evidence',
+    what: 'Clearing a second factor needs a stated proof of identity',
+    development: 'An administrator may clear a factor by naming the person.',
+    product: 'An administrator must say how the person\'s identity was ' +
+             'verified. The statement goes on the audit row.',
+    where: 'admin-core/admin_actions.ts' },
+  { id: 'strict-protocol-input',
+    what: 'Protocol input is held to the strict reading',
+    development: 'A repeated token parameter takes its last value, a ' +
+                 'partner\'s Logout Token needs no explicit type, forwarded ' +
+                 'addresses are believed from anyone when global.trustProxy ' +
+                 'is on with no list, and an internal error\'s text reaches ' +
+                 'the caller.',
+    product: 'A repeated token parameter is refused, a partner\'s Logout ' +
+             'Token must be typed logout+jwt unless ' +
+             'federation.allowUntypedLogoutToken is on, forwarded ' +
+             'addresses need global.trustedProxies, and an internal ' +
+             'error\'s text stays in the log.',
+    where: 'common/mode.js' },
+  { id: 'no-known-secrets',
+    what: 'Logs and the database hold no well-known secrets',
+    development: 'At debug level the log carries whole requests and ' +
+                 'responses, and the database may use a demonstration ' +
+                 'password.',
+    product: 'Request logs leave out credentials and bodies at every ' +
+             'level, and a default database password stops the service ' +
+             'unless persistence.allowDefaultDatabasePassword is on.',
+    where: 'common/helpers.js, persistence/persistence.js' },
+  // #1501 (ASVS 5.0.0 12.3.1).
+  { id: 'malware-scan-tls',
+    what: 'Files reach the malware scanner encrypted',
+    development: 'An icap:// or icaps:// address may be used.',
+    product: 'Only an icaps:// address is used, unless ' +
+             'malwareScan.allowCleartext is on.',
+    where: 'common/malware_scan.ts' },
+  // #1491 (ASVS 5.0.0 7.3.1, 11.2.3).
+  { id: 'session-key-defaults',
+    what: 'Sessions and RSA keys have stricter defaults',
+    development: 'A session has no idle timeout, and new RSA keys are 2048 ' +
+                 'bits.',
+    product: 'A session ends after 30 idle minutes and new RSA keys are ' +
+             '3072 bits, unless a setting says otherwise.',
+    where: 'common/config.js, common/helpers.js' },
+  // #1493 (ASVS 5.0.0 16.2.5).
+  { id: 'bootstrap-password-file',
+    what: 'The bootstrap password stays out of the log',
+    development: 'The generated password is written to the service log.',
+    product: 'It is written to a file only this service can read, and the ' +
+             'log says where, unless admin.logBootstrapPassword is on.',
+    where: 'common/credentials.ts' },
+  // #1495 (ASVS 5.0.0 10.4.6).
+  { id: 'pkce-every-client',
+    what: 'Every client must use PKCE',
+    development: 'A confidential client that sends no code_challenge is only ' +
+                 'logged.',
+    product: 'It is refused unless oauth2.allowConfidentialWithoutPkce is ' +
+             'on.',
+    where: 'oauth-oidc/oauth2_bcp.js' },
+  // #1486 (ASVS 5.0.0 11.3.2).
+  { id: 'jwe-cbc',
+    what: 'JWE content encryption is AES-GCM only',
+    development: 'A128CBC-HS256, A192CBC-HS384 and A256CBC-HS512 are offered ' +
+                 'and accepted, and A128CBC-HS256 is the default.',
+    product: 'Only AES-GCM is offered or accepted, and it is used where a ' +
+             'client names no enc, unless crypto.allowCbcJwe is on.',
+    where: 'common/crypto.js, common/applications.js' },
+  // #1473 (ASVS 5.0.0 8.2.1, 8.2.2).
+  { id: 'unscoped-people',
+    what: 'A person needs a role at SCIM and Shared Signals',
+    development: 'Any authenticated person may read and write, whatever ' +
+                 'scheme they used.',
+    product: 'A scheme that carries no scope needs Admin Read to read and ' +
+             'Admin Write to write, unless security.allowUnscopedPeople ' +
+             'is on. OAuth scopes and an application certificate work as ' +
+             'before.',
+    where: 'scim/scim_auth.ts, ssf/ssf_auth.ts' },
+  // #1441 (ASVS 5.0.0 3.3.1).
+  { id: 'prefixed-cookies',
+    what: 'Every cookie carries a __Host- or __Secure- prefix',
+    development: 'Cookies keep their plain names (sts_session and the rest), ' +
+                 'which a person reads in browser tools.',
+    product: 'Over TLS every cookie is __Host- prefixed, or __Secure- ' +
+             'where it carries a Domain, and an unprefixed one is ' +
+             'ignored. The prefix is applied once, by the process holding ' +
+             'the socket.',
+    where: 'common/cookie_wire.ts' },
+  // #1450 (ASVS 5.0.0 8.2.1).
+  { id: 'access-decisions-fail-closed',
+    what: 'An access decision that cannot be made is a refusal',
+    development: 'A decider that throws, an empty answer, or a check naming ' +
+                 'no resource or action allows the request and is logged, so ' +
+                 'a half-loaded development process still answers.',
+    product: 'Each of those is a refusal (STS-XACML-0051, 0181, 0182). ' +
+             'xacml.enforceAccess and roles.enforceIssuance remain as the ' +
+             'way back from a policy that denies its own repair, and one ' +
+             'turned off is shown on this row.',
+    where: 'common/access_gate.ts' },
+  // #1438 (ASVS 5.0.0 3.4.1).
+  { id: 'strict-transport-security',
+    what: 'Every response over TLS tells a browser to use only HTTPS ' +
+          '(Strict-Transport-Security)',
+    development: 'The header is not sent: HSTS binds every port of a host ' +
+                 'name and removes the click-through on an untrusted ' +
+                 'certificate, and on localhost that would outlast the ' +
+                 'container.',
+    product: 'Every response that arrived over TLS carries ' +
+             'Strict-Transport-Security: max-age=31536000 (RFC 6797). A ' +
+             'response on the plain-HTTP revocation and SCEP listener ' +
+             'never does.',
+    where: 'common/app.js' },
   { id: 'signed-assertions',
     what: 'Every SAML assertion is signed, and every SAML 1.1 Response',
     development: 'saml2.signAssertion, saml11.signAssertion and ' +
@@ -3996,7 +4545,10 @@ function inForce(key, value, source) {
 // asking about one enctype passes a number.
 function marked(row, list) {
   log.debug("Entering marked(). key=" + row.key);
-  const names = (row.onlyWhileValues || []).map(String);
+  const unless = row.onlyWhileValuesUnless;
+  const names = (row.onlyWhileValues || []).concat(
+    unless && config.value(unless.setting) !== true ? unless.values : []
+  ).map(String);
   log.debug("Leaving marked().");
   return list.filter(function (one) {
     return names.indexOf(String(one)) >= 0;
@@ -4138,12 +4690,18 @@ function report() {
   // reader's language. `oauth2_bcp.js` is required LAZILY: it requires this
   // file at load.
   const waived = require('../oauth-oidc/oauth2_bcp').waivers();
+  const accessOff = product ? accessEnforcementWaivers() : [];
+  const certificate = product ? certificateWaivers() : [];
   return {
     mode: current(),
     isProduct: product,
     requirements: REQUIREMENTS.map(function (row) {
       const extra = row.id === 'oauth-security-bcp' && waived.length
-        ? { waived: waived } : {};
+        ? { waived: waived }
+        : row.id === 'access-decisions-fail-closed' && accessOff.length
+          ? { waived: accessOff }
+          : row.id === 'public-certificate' && certificate.length
+            ? { waived: certificate } : {};
       return Object.assign({ inForce: product ? row.product :
                                       row.development },
                            row, extra);
@@ -4299,6 +4857,36 @@ module.exports = {
   observesSignalsOnly: observesSignalsOnly,
   refusesUnverifiedSignals: refusesUnverifiedSignals,
   usesBrokenAlgorithms: usesBrokenAlgorithms,
+  omitsStrictTransportSecurity: omitsStrictTransportSecurity,
+  failsOpenOnPolicyFault: failsOpenOnPolicyFault,
+  restrictsUnscopedPeople: restrictsUnscopedPeople,
+  confinesNamedFiles: confinesNamedFiles,
+  allowsCbcJwe: allowsCbcJwe,
+  requiresPkceOfEveryClient: requiresPkceOfEveryClient,
+  requiresSecondFactorOfEveryone: requiresSecondFactorOfEveryone,
+  requiresTlsToMalwareScanner: requiresTlsToMalwareScanner,
+  omitsUnapprovedSigningCurves: omitsUnapprovedSigningCurves,
+  refusesPlainSyslog: refusesPlainSyslog,
+  refusesDefaultDatabasePassword: refusesDefaultDatabasePassword,
+  redactsRequestLog: redactsRequestLog,
+  requiresTypedLogoutToken: requiresTypedLogoutToken,
+  hidesFailureDetail: hidesFailureDetail,
+  requiresTrustedProxyRanges: requiresTrustedProxyRanges,
+  refusesRepeatedTokenParameters: refusesRepeatedTokenParameters,
+  requiresEvidenceToClearFactor: requiresEvidenceToClearFactor,
+  defaultRsaBits: defaultRsaBits,
+  expiredAssertionGraceS: expiredAssertionGraceS,
+  hidesStepIds: hidesStepIds,
+  allowsLegacyHashes: allowsLegacyHashes,
+  bindsSignInSteps: bindsSignInSteps,
+  generatesBootstrapName: generatesBootstrapName,
+  revokesAccessTokensAtSignOut: revokesAccessTokensAtSignOut,
+  cleartextStartupProblem: cleartextStartupProblem,
+  narrowsUndeclaredGrants: narrowsUndeclaredGrants,
+  answersScep: answersScep,
+  certificateWaivers: certificateWaivers,
+  prefixesCookies: prefixesCookies,
+  accessEnforcementWaivers: accessEnforcementWaivers,
   issuesUnsignedAssertions: issuesUnsignedAssertions,
   servesWithoutSecurityHeader: servesWithoutSecurityHeader,
   allowsValue: allowsValue,

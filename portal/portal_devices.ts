@@ -618,57 +618,29 @@ class PortalDevices {
     log.debug("Entering PortalDevices.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/devices',
-        operationId: 'getDevices', tag: 'Devices', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/devices',
-        summary: 'Your devices, and how to register one',
-        description: 'Each device you own: its applications, whether its ' +
-          'Native SSO secret is live, its keys and their attestation, how ' +
-          'it was registered and when it was last used. Then the key-proof ' +
-          'step (`proof`: the challenge held, with the `audience` and ' +
-          '`proofTyp` a proof names), the passkeys built into a device that ' +
-          'can be linked (`link`) or the link ceremony armed (`linking`), ' +
-          'and whether this browser may be remembered.',
+        operationId: 'getDevices', access: 'person',
         query: vz.object({}),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(ctx, req, caller));
         } },
       { method: 'POST', path: ctx.BASE + '/devices',
-        operationId: 'actOnDevices', tag: 'Devices', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/devices',
-        summary: 'Registers, links, remembers or removes a device',
-        description: '`challenge` then `prove` registers a device by a key ' +
-          'proof (or an App Attest object); `link-begin` then `link-finish` ' +
-          'links a passkey built into it by a fresh assertion; ' +
-          '`remember-browser` remembers this browser (a cookie on the ' +
-          'answer); `remove` removes a device and its Native SSO secret. A ' +
-          'refusal carries the page\'s `view`.',
+        operationId: 'actOnDevices', access: 'person',
         body: FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/devices/challenge',
-        operationId: 'deviceChallenge', tag: 'Devices', access: 'person',
-        summary: 'A key-proof challenge, for a device app',
-        description: 'Issues a challenge bound to the sign-on session this ' +
-          'token was issued on: `{ ok, challenge, audience, typ, ' +
-          'expires_at, proof_endpoint }`. The device signs a JWS of type ' +
-          '`typ` over `{ nonce: challenge, aud: audience, iat }` with the ' +
-          'key it registers, and posts it to `proof_endpoint`.',
+        operationId: 'deviceChallenge', access: 'person',
         body: JSON_CHALLENGE,
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return self.challenge(ctx, req, res, caller);
         } },
       { method: 'POST', path: ctx.BASE + '/devices/proof',
-        operationId: 'deviceProof', tag: 'Devices', access: 'person',
-        summary: 'A device app\'s key proof',
-        description: 'Answers a challenge with a key proof or an Apple App ' +
-          'Attest object, registering the device (or adding the key to ' +
-          '`device_id`). Answers 201 `{ ok, device, key }`.',
+        operationId: 'deviceProof', access: 'person',
         body: JSON_PROOF,
-        statuses: { 201: 'The device is registered: `{ ok, device, key }`.' },
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.proof(ctx, req, res, caller, input.body);

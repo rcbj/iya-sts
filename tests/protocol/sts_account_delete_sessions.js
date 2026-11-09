@@ -243,7 +243,7 @@ async function authorize(b, params, who) {
   log.debug("Entering authorize().");
   let r = await b.go("GET", R + "/oauth2/authorize?" + form(params));
   if ((r.status === 302 || r.status === 303) &&
-      /\/authn\/login\?authn=/.test(r.location) && who) {
+      /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location) && who) {
     const signed = await signIn(b, r.location, who);
     r = await b.go("GET", signed.location);
   }
@@ -428,7 +428,7 @@ async function test() {
   for (let i = 0; i < 20 && !refused; i++) {
     const again = await b.go("GET", R + "/oauth2/authorize?" + form(params()));
     if ((again.status === 302 || again.status === 303) &&
-        /\/authn\/login\?authn=/.test(again.location)) {
+        /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(again.location)) {
       refused = again;
     } else {
       await new Promise(function (res) { setTimeout(res, 250); });

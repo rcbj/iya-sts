@@ -209,7 +209,7 @@ async function signInToReport(base, user, log2, options) {
 
   let at = await fetchKeeping(authorizeUrl);
   let location = at.headers.get("location") || "";
-  const authn = (location.match(/[?&]authn=([^&]+)/) || [])[1];
+  const authn = (location.match(/[?&#]authn=([^&]+)/) || [])[1];
   // The body of a refusal at a hop fetchKeeping did not make, for the
   // diagnostic: the sign-in and consent steps go through authn_signin (not
   // fetchKeeping), so without this a 400 there left `lastRefusal` empty and the

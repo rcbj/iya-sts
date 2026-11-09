@@ -104,11 +104,13 @@ function historyOf(username) {
 async function inProduct(fn) {
   log.debug("Entering inProduct().");
   config.setOverride('global.mode', 'product');
+  config.setOverride('authn.allowOptionalSecondFactor', 'true');
   config.setOverride('risk.breachCheck', 'off');
   try {
     return await fn();
   } finally {
     config.clearOverride('global.mode');
+    config.clearOverride('authn.allowOptionalSecondFactor');
     config.clearOverride('risk.breachCheck');
     log.debug("Leaving inProduct().");
   }

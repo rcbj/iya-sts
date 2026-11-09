@@ -355,6 +355,7 @@
   "mfaSection.lastCode": "Senast godtagna kod",
   "mfaSection.lastCodeNote": ". Steget den låg i lagras med registreringen, så den koden kan inte användas igen (RFC 6238 avsnitt 5.2).",
   "mfaSection.clearTotpTitle": "Rensar registreringen så att personen kan sätta upp en ny. Det är den ENDA vägen tillbaka för den som har tappat bort sin telefon: hemligheten finns på den enheten och tjänsten kan inte nå den.",
+  "mfaSection.evidenceLabel": "Hur verifierade du personens identitet?",
   "mfaSection.clearTotp": "Rensa autentiseringsappen",
   "mfaSection.clearTotpNote": "<strong>Det här är den enda vägen tillbaka för den som har tappat bort sin telefon.</strong> Den delade hemligheten finns på den enheten och tjänsten kan inte nå den, och det finns avsiktligt ingen självbetjäningsåterställning — en andra faktor som vem som helst kan ta bort är ingen andra faktor. Att rensa sänker kontot till en faktor och kan inte låsa ute någon, eftersom en engångskod aldrig är en väg in på egen hand. De sätter upp en ny på <code>/portal/mfa</code>.",
   "mfaSection.clearingNeedsWrite": "Att rensa kräver <strong>Admin Write</strong>.",

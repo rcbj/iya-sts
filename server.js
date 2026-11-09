@@ -243,6 +243,15 @@ const spMetadata = require('./saml/sp_metadata');
 // derivation exists to prevent.
 // ---------------------------------------------------------------------------
 const useHttps = config.value('global.https');
+// NOT IN PRODUCT (#1457, ASVS 5.0.0 12.2.1): a process that would serve its
+// main port in cleartext does not start.
+const cleartextProblem = require('./common/mode')
+  .cleartextStartupProblem(useHttps);
+if (cleartextProblem) {
+  log.fatal(errorCodes.tag('STS-CORE-0167') + 'sts: NOT STARTING. ' +
+            cleartextProblem);
+  process.exit(1);
+}
 
 function announce() {
   log.debug('Entering announce().');
@@ -860,7 +869,7 @@ serviceState.start({
   // wins does them after catching up with the store, and every other node
   // does neither and says which node is. It is awaited below, before the
   // request workers start, so the listener still binds only after it ran.
-  const bootstrapUsername = config.value('admin.bootstrapUsername');
+  const bootstrapUsername = require('./common/bootstrap_name').current();
   const otherRealms = realms.list().filter(function (realm) {
     return realm.id !== realms.DEFAULT_ID;
   });
@@ -1142,6 +1151,8 @@ function customListener(label, certificate, certificateOf, listenerId) {
     require('./common/http2_framing').markFramedBody);
   // A CONNECT is answered 501 here, as on the main port (#1304).
   require('./common/connect_refusal').install(server, label);
+  // A request the parser refuses keeps its answer (#1500).
+  require('./common/parser_refusal').install(server, label);
   tlsServer.trustClientCertificatesOn(server, label, certificateOf,
                                       { kind: 'custom', realm: listenerId });
   tlsServer.observeConnectionsOn(server, label);
@@ -1249,6 +1260,8 @@ if (useHttps) {
   // application — common/connect_refusal.ts.
   require('./common/connect_refusal').install(mainServer,
     'the main port (' + PORT + ')');
+  require('./common/parser_refusal').install(mainServer,
+    'the main port (' + PORT + ')');
   // REGISTERED SO THAT A LATER TRUSTSTORE CHANGE REACHES THIS LISTENER TOO.
   // `tls_server.js` owns the anchors and applies them to every listener it
   // knows about; this is how the one it did not create becomes one of them. It
@@ -1316,6 +1329,8 @@ if (useHttps) {
   const plainServer = http.createServer(app);
   // A CONNECT is answered 501 here too (#1304).
   require('./common/connect_refusal').install(plainServer,
+    'the main port (' + PORT + ')');
+  require('./common/parser_refusal').install(plainServer,
     'the main port (' + PORT + ')');
   proxyProtocol.install(plainServer, { label: 'the main port (' + PORT + ')',
                                        channel: 'http' });

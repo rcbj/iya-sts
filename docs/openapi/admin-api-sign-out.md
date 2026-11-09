@@ -55,6 +55,8 @@ Scope: `admin:read`.
 | `backchannelDeliveriesPage` | query | integer |  | Which page of the deliveries. Clamped, like every page parameter here; `per` is shared with the live rows. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The family list, or one identity's live state.
 
@@ -188,6 +190,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].label` | string |  |  |
 | `settings.groups[].settings[].legacyEnv` | list, or string |  |  |
 | `settings.groups[].settings[].legacyEnv[]` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  |  |
 | `settings.groups[].settings[].max` | number |  |  |
 | `settings.groups[].settings[].min` | number |  |  |
 | `settings.groups[].settings[].ordered` | boolean |  |  |
@@ -250,6 +253,13 @@ Ids are re-resolved against what is live NOW rather than trusted, so an id that 
 **Mirrors** `POST /admin/logout` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -447,6 +457,13 @@ The default a person gets from `POST /logout` with an empty body, driven by name
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -637,6 +654,13 @@ Clears the instant a logout stamped on the principal, so a ticket-granting ticke
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -672,6 +696,13 @@ Scope: `admin:write`.
 **Mirrors** `POST /admin/logout` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -711,6 +742,13 @@ A delivery that ended as a DEAD LETTER — refused with 400, refused by the outb
 **Mirrors** `POST /admin/logout` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

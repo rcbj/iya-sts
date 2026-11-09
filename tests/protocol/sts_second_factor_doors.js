@@ -636,7 +636,7 @@ async function test() {
   if (product) {
     const s = browser("app-at-login");
     let r = await s.go("GET", portalAuthorizeUrl());
-    for (let hop = 0; hop < 6 && !/\/authn\/login\?authn=/.test(r.location);
+    for (let hop = 0; hop < 6 && !/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location);
          hop++) {
       r = await s.go("GET", r.location);
     }

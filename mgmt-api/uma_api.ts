@@ -139,6 +139,44 @@ class UmaApi {
           'answer for that permission, asked as a dry run that is neither ' +
           'audited nor counted.',
         mirrors: 'GET /admin/uma',
+        parameters: [
+          { name: 'resourceServer', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'Narrows the registered resources to one resource ' +
+                         'server.' },
+          { name: 'owner', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'A username or application: adds that owner\'s ' +
+            'resources, document and waiting requests.' },
+          { name: 'resource', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'With `scope`, asks the what-if about this ' +
+                         'resource.' },
+          { name: 'scope', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The scope the what-if asks about.' },
+          { name: 'party', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The requesting party of the what-if.' },
+          { name: 'client', in: 'query', required: false,
+            schema: { type: 'string' },
+            description: 'The client of the what-if.' },
+          { name: 'per', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Rows per page, shared by the four lists.' },
+          { name: 'resourcesPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `resources` to return.' },
+          { name: 'ticketsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `tickets` to return.' },
+          { name: 'rptsPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `rpts` to return.' },
+          { name: 'pendingPage', in: 'query', required: false,
+            schema: { type: 'integer', minimum: 1 },
+            description: 'Which page of `pending` to return.' }
+        ],
         responseDescription: '`enabled`, `endpoints`, `resourceServers`, ' +
           '`resources`, `tickets`, `rpts`, `pending`, `owner`, `whatIf`, ' +
           '`monitor`, `actions`, `settings`.',

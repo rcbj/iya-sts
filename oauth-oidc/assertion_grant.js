@@ -756,6 +756,31 @@ function issuerEntry(iss) {
 // key pair by `/admin/pki` can present its certificate instead of registering
 // a JWKS, and this service can tell that it issued it.
 // ---------------------------------------------------------------------------
+// A CERTIFICATE IS ONLY ITS OWN HOLDER'S KEY (#1488, ASVS 5.0.0 9.1.3). That a
+// leaf chains to this realm's authority says this service issued it to
+// somebody; which application it is for is in its `urn:sts:application:` name,
+// and it verifies nobody else's assertion.
+/**
+ * Says whether a certificate from this realm's authority was issued to a party.
+ *
+ * @param held - `keyFromChain()`'s answer, or a candidate carrying its names
+ * @param named - the party's application identifier or client_id
+ * @returns true when the certificate names that application
+ */
+function certificateNamesParty(held, named) {
+  log.debug('Entering certificateNamesParty().');
+  const wanted = String(named || '');
+  let names = false;
+  if (held && held.subjectKind === 'application' && held.subjectName &&
+      wanted) {
+    const entry = applications.forClientId(wanted);
+    names = held.subjectName === wanted ||
+            (!!entry && entry.identifier === held.subjectName);
+  }
+  log.debug('Leaving certificateNamesParty(). ' + names);
+  return names;
+}
+
 /**
  * Returns the key an `x5c` header carries, only after the chain has been shown
  * to reach this realm's own Root CA.
@@ -1250,6 +1275,14 @@ async function verify(opts) {
                           'thing an operator did, and is exactly the ' +
                           'difference.' };
   }
+  if (usedKey && usedKey.source === 'x5c' && !signedByPerson &&
+      !certificateNamesParty(usedKey, party ? party.identifier : iss)) {
+    log.debug('Leaving verify(). The certificate is not the issuer\'s.');
+    return { ok: false, errorCode: 'STS-OAUTH-1001', error: GRANT_ERROR,
+             description: 'the certificate in x5c was not issued to "' + iss +
+                          '". A certificate from this realm\'s authority ' +
+                          'verifies only the application it names.' };
+  }
   if (claims.exp === undefined || claims.exp === null) {
     log.debug("Leaving verify().");
     // The library only checks an `exp` that is present. Section 3 claim 4
@@ -1514,6 +1547,7 @@ function extraClaimsFrom(claims) {
  * @namespace
  */
 module.exports = {
+  certificateNamesParty: certificateNamesParty,
   GRANT_TYPE: GRANT_TYPE,
   PROTOCOL_CLAIMS: PROTOCOL_CLAIMS,
   enabled: enabled,

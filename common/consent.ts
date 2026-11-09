@@ -1055,6 +1055,22 @@ class Consent {
    * @returns `{ clientId, scopes, outstanding, names }`, `names` being the
    *   outstanding scopes
    */
+  // A public client's identity cannot be assured, so a person's earlier answer
+  // does not speak for it (ASVS 5.0.0 10.7.1). This service's own applications
+  // are the exception: they are not third parties asking for anything.
+  private alwaysAsks(clientId: string): boolean {
+    const { log, applications } = this.deps;
+    log.debug("Entering Consent.alwaysAsks().");
+    if (/^sts-/.test(clientId) ||
+        !require('./config').value('oauth2.consentAlwaysForPublicClients')) {
+      log.debug("Leaving Consent.alwaysAsks(). Not asked.");
+      return false;
+    }
+    const meta: any = (applications as any).clientConfigOf(clientId) || {};
+    log.debug("Leaving Consent.alwaysAsks().");
+    return String(meta.token_endpoint_auth_method || '') === 'none';
+  }
+
   outstanding(request): any {
     const { log, applications } = this.deps;
     const self = this;
@@ -1062,7 +1078,7 @@ class Consent {
     const asked = request || {};
     const clientId = String(asked.clientId || '').trim();
     const wanted = self.scopesOf(asked.scope);
-    const all = !!asked.all;
+    const all = !!asked.all || self.alwaysAsks(clientId);
     // AN ADMINISTRATOR'S GLOBAL CONSENT IS NOT THE USER'S APPROVAL under a
     // FAPI profile (#138, section 5.2.2 item 12) — this service's own console
     // and portal included, by rcbj's decision: the person approves each

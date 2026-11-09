@@ -237,7 +237,7 @@ async function authorize(b, params, who) {
   log.debug("Entering authorize().");
   let r = await b.go("GET", R + "/oauth2/authorize?" + form(params));
   if ((r.status === 302 || r.status === 303) &&
-      /\/authn\/login\?authn=/.test(r.location) && who) {
+      /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location) && who) {
     const signed = await signIn(b, r.location, who);
     r = await b.go("GET", signed.location);
   }
@@ -289,7 +289,7 @@ async function signedInThroughNamedServer(client) {
   let r = await b.go("GET", R + "/" + AS + "/oauth2/authorize?" +
                      form(params));
   if ((r.status === 302 || r.status === 303) &&
-      /\/authn\/login\?authn=/.test(r.location)) {
+      /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location)) {
     // THE SCREEN OVER `/authn-api` (#571).
     const posted = await authnSignin.signInWithJar(base + R, r.location,
       { action: "login", username: ALICE, password: PASSWORD }, b.jar);

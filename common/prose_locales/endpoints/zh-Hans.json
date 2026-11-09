@@ -435,6 +435,10 @@
     "en": "3bc74315dcf2fb5e",
     "text": "信任领域目录"
   },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "服务的图标"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "公共界面的卡片样式表"
@@ -1226,6 +1230,10 @@
   "endpoints.route./admin-api/listeners/:action.name": {
     "en": "f35429cc1bbc09a8",
     "text": "定义自定义监听器，或将应用映射到它们"
+  },
+  "endpoints.route./admin-api/config-dump.name": {
+    "en": "9d414a56d337e804",
+    "text": "配置转储"
   },
   "endpoints.route./admin-api/config/:action.name": {
     "en": "7e8873a02dca9738",
@@ -2455,8 +2463,12 @@
     "en": "f09855213e0c9733",
     "text": "TLS（请求客户端证书，但从不强制要求）"
   },
-  "endpoints.route./favicon.ico.name": {
-    "en": "6a36418727489219",
-    "text": "服务的图标"
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "恶意软件扫描"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "测试恶意软件扫描器"
   }
 }

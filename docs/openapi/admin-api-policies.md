@@ -61,6 +61,8 @@ Scope: `admin:read`.
 | `missing` | query | one of `count` |  | `count` answers `attributes.missing`: how many people in this realm lack a value of an attribute the attribute policy requires. A walk of the realm's people, so asked only on request, and null where the directory is held in the store (`attributes.missingFilter` is the LDAP filter that finds them there). |
 | `clientsPage` | query | integer |  | Which page of `passkey.clients.rows`, the learned passkey clients. Defaults to 1. |
 | `clientsPer` | query | integer |  | Rows per page of `passkey.clients.rows`. Defaults to 25. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The kinds of policy, each kind's profile in force with its field table and schema, and the paged profiles.
 
@@ -1120,6 +1122,13 @@ Removes one entry from this realm's learned clients (`webauthn.clientLearning`):
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -1166,6 +1175,13 @@ Removes every entry from this realm's learned clients, and the failures being co
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 An empty object.
@@ -1209,6 +1225,13 @@ Writes `cn=<name>,ou=attributeDefinitions` in this realm's directory: an attribu
 **Mirrors** `POST /admin/policies` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -1280,6 +1303,13 @@ Deletes `cn=<name>,ou=authnPolicies` in this realm. Refused while an application
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -1341,6 +1371,13 @@ Deletes `cn=<name>,ou=attributeDefinitions`. Refused while any person in the rea
 **Mirrors** `POST /admin/policies` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -1405,6 +1442,13 @@ Deletes this realm's stored profile, after which the default realm's profile whe
 **Mirrors** `POST /admin/policies` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -1485,6 +1529,13 @@ Deletes this realm's stored profile, after which the default realm's profile whe
 **Mirrors** `POST /admin/policies` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -1650,6 +1701,13 @@ Deletes this realm's stored profile, after which the default realm's profile whe
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body** (optional)
 
 | Member | Type | Required | What it is |
@@ -1729,6 +1787,13 @@ Deletes this realm's stored profile, after which the default realm's profile whe
 **Mirrors** `POST /admin/policies` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -1906,6 +1971,13 @@ Deletes this realm's stored profile, after which the built-in defaults are in fo
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body** (optional)
 
 | Member | Type | Required | What it is |
@@ -2030,6 +2102,13 @@ Deletes this realm's stored profile, after which the default realm's profile whe
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body** (optional)
 
 | Member | Type | Required | What it is |
@@ -2133,6 +2212,13 @@ Deletes this realm's stored profile, after which the default realm's profile whe
 **Mirrors** `POST /admin/policies` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -2268,6 +2354,13 @@ Writes `cn=default,ou=attributePolicies` in this realm's directory, REPLACING wh
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -2353,6 +2446,13 @@ Writes `cn=default,ou=authnPolicies` in this realm's directory, REPLACING what i
 **Mirrors** `POST /admin/policies` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -2544,6 +2644,13 @@ Writes `cn=<profile>,ou=localePolicies` in this realm's directory, REPLACING wha
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -2628,6 +2735,13 @@ Writes `cn=<name>,ou=authnPolicies` in this realm's directory: the first-factor 
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -2697,6 +2811,13 @@ Writes `cn=default,ou=passkeyPolicies` in this realm's directory, REPLACING what
 **Mirrors** `POST /admin/policies` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -2896,13 +3017,20 @@ Scope: `admin:write`.
 
 **Set the password policy profile**
 
-Writes `cn=<profile>,ou=passwordPolicies` in this realm's directory, REPLACING what is there: `default`, or a named policy, created by its first save (#1236). Two rules relate fields: `generatedLength` must be at least `minLength`, and at least twice `minSymbols` plus two. An application (`appPasswordPolicy`) and a group (`stsPasswordPolicy`) name a named policy; of those naming one for a person the lowest `precedence` applies (ties by name), else `default`, and a reference to a policy the realm does not hold names nothing, and the rest still rank (STS-AUTHN-0539). A named policy still named is not removed (STS-AUTHN-0540). **A change applies to the NEXT password set in this realm and to nothing already stored**, which is a hash and cannot be re-checked.
+Writes `cn=<profile>,ou=passwordPolicies` in this realm's directory, REPLACING what is there: `default`, or a named policy, created by its first save (#1236). `generatedLength` must be at least `minLength`, and `minSymbols`, `requireUppercase` and `requireDigit` may only be 0 or false (ASVS 5.0.0 6.2.5). An application (`appPasswordPolicy`) and a group (`stsPasswordPolicy`) name a named policy; of those naming one for a person the lowest `precedence` applies (ties by name), else `default`, and a reference to a policy the realm does not hold names nothing, and the rest still rank (STS-AUTHN-0539). A named policy still named is not removed (STS-AUTHN-0540). **A change applies to the NEXT password set in this realm and to nothing already stored**, which is a hash and cannot be re-checked.
 
 **Every field is required** and one left out is refused by name rather than reset to a default, because a save that quietly loosened a rule nobody mentioned is the mistake nobody sees.
 
 **Mirrors** `POST /admin/policies` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -2916,11 +3044,11 @@ Scope: `admin:write`.
 | `hashAlgorithm` | one of `scrypt`, `argon2id` |  | The algorithm a newly stored password is hashed with: scrypt (RFC 7914), the default, or argon2id (RFC 9106, the OWASP Password Storage Cheat Sheet's first choice). A stored hash names its own algorithm and parameters and keeps verifying; one that is not in this algorithm with these parameters is hashed again at the person's next verified sign-in. Client secrets, activation tokens, recovery codes and app passwords are not passwords and stay scrypt. Default `scrypt`. |
 | `history` | integer, or string | yes | How many of a person's PREVIOUS passwords are remembered and refused. The current password is always refused as well while this is above 0, so 5 means a new password may be none of the last six. 0 turns the rule off. The draft's attribute, with the draft's meaning. Each remembered password is kept as the hash it was already stored as (argon2id or scrypt), in pwdHistory on the person's own entry, and checking a new password costs one hash comparison per one remembered. Between 0 and 24. Default 5. |
 | `minLength` | integer, or string | yes | The shortest password this service will set, counted in characters (Unicode code points, so an emoji is one). The attribute is draft-behera-ldap-password-policy's. Twelve is the default; NIST SP 800-63B asks for at least 8, and 15 where a password is the only factor. Between 1 and 1024. Default 12. |
-| `minSymbols` | integer, or string | yes | How many characters that are neither a letter, a digit nor whitespace a password must contain. 0 turns the rule off. Between 0 and 16. Default 1. |
+| `minSymbols` | integer, or string | yes | Always 0. A policy that asks for symbols is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted, so length is what this policy asks for. Between 0 and 16. Default 0. |
 | `precedence` | integer, or string |  | A named profile only: the lowest matching precedence wins. Default 100. |
 | `profile` | string |  | Which profile: `default`, or a named profile (lower-case letters, digits and hyphens), which is created by its first save. |
-| `requireDigit` | boolean, or string | yes | Whether a password must contain at least one decimal digit. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
-| `requireUppercase` | boolean, or string | yes | Whether a password must contain at least one uppercase letter, in any script. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default true. |
+| `requireDigit` | boolean, or string | yes | Always off. A policy that requires a number is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
+| `requireUppercase` | boolean, or string | yes | Always off. A policy that requires an uppercase letter is refused: ASVS 5.0.0 6.2.5 requires that a password of any composition be accepted. (`true`/`false`, or `TRUE`/`FALSE` from a form.) Default false. |
 | `scryptBlockSize` | integer, or string |  | scrypt's block size for a newly stored password while the algorithm is scrypt. Memory is about 128 × N × r bytes; 8 is the figure RFC 7914 and OWASP give. Between 8 and 16. Default 8. |
 | `scryptLogN` | integer, or string |  | scrypt's CPU and memory cost for a newly stored password while the algorithm is scrypt, as a power of two: 15 (the default) is N=32768. OWASP's table pairs it with the parallelism: 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10. The default, 2^15 with p=1, is below it. Between 13 and 20. Default 15. |
 | `scryptParallelism` | integer, or string |  | scrypt's parallelism for a newly stored password while the algorithm is scrypt. Node computes it on one thread, so a higher value costs time rather than cores; the cost's description lists the pairs OWASP accepts. Between 1 and 16. Default 1. |
@@ -3045,6 +3173,13 @@ Writes `cn=<profile>,ou=postLoginPolicies` in this realm's directory, REPLACING 
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -3161,6 +3296,13 @@ Writes `cn=default,ou=serviceAccountPolicies` in this realm's directory, REPLACI
 **Mirrors** `POST /admin/policies` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -3310,6 +3452,13 @@ Rewrites `cn=<name>,ou=attributeDefinitions` with the label, description and por
 **Mirrors** `POST /admin/policies` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

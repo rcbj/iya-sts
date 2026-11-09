@@ -771,9 +771,23 @@ function childMain() {
     // operator's Signals page answered 500 once a partner sent one.
     {
       const Ajv = require('ajv');
-      const validateRow = new Ajv({ strict: false, allErrors: true }).compile(
-        require(ROOT + '/mgmt-api/response_models_trust').operations
-          .getPartnerSignals['200'].properties.received.items);
+      const spec = require(ROOT + '/mgmt-api/admin_api_spec');
+      const adminApi = require(ROOT + '/mgmt-api/admin_api');
+      const document = spec.buildSpec(adminApi.ROUTES, { authRequired: true });
+      const resolve = function (one) {
+        return one.$ref ? document.components.schemas[
+          one.$ref.split('/').pop()] : one;
+      };
+      let answer = null;
+      Object.keys(document.paths).forEach(function (one) {
+        const get = document.paths[one].get;
+        if (get && get.operationId === 'getPartnerSignals') {
+          answer = get.responses['200'].content['application/json'].schema;
+        }
+      });
+      const validateRow = new Ajv({ strict: false, allErrors: true }).compile({
+        allOf: [resolve(resolve(answer).properties.received).items],
+        components: document.components });
       const seen = rx.arrivals();
       const refused = seen.filter(function (row) {
         return !validateRow(row);

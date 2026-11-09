@@ -584,8 +584,8 @@
     "text": "「此應用程式定義之每個權限所依附的基礎 URI」，也是讓權限名稱在此全域唯一的東西。權限由此值加上其名稱識別——基礎 `https://example.com/` 加名稱 `write` 即為權限 `https://example.com/write`——這是用戶端放在 `scope` 中的值，存取權杖也隨之以它為「對象」。Entra ID 稱之為 Application ID URI，拼寫為 `api://<guid>`；形式相同，而此處並不要求該配置。\n\n透過此模組寫入時，「它會被正規化為以分隔符號結尾」——結尾沒有 `/`、`#` 或 `:` 時會加上 `/`——因為基礎 + 名稱是單純的串接，否則 `https://example.com` + `write` 會產生 `https://example.comwrite`。`ldapmodify` 與其他屬性一樣可寫入此屬性且不會正規化，因此手動寫入的基礎就完全照字面意思。\n\n「單一值」，它是這一組中唯一無法在不做出決定的情況下擴充的屬性：兩個基礎意味著項目上的每個權限都有兩個識別碼，而將範圍轉為對象的查詢必須挑一個放進 `aud`。"
   },
   "applications.schema.attributes.oauthPermission.what": {
-    "en": "0c47fe049bbc6c7b",
-    "text": "「此應用程式公開的一個權限」，每個權限一個值。值是權限的「名稱」——`read`、`write`、`Widgets.ReadWrite.All`——可選擇性地接著 `|` 與描述：`write|Change widgets on somebody's behalf`。「第一個」`|` 是分隔符號，之後的每個都屬於描述，因此描述可包含該字元，名稱則不可。\n\n名稱必須是合法的 OAuth 範圍權杖（RFC 6749 section 3.3——不含空格、雙引號或反斜線），因為這是用戶端會放在 `scope` 參數中、並會出現在權杖 `scope` 宣告中的內容。以 `ldapmodify` 寫入時不會強制檢查；此模組與兩個主控台會檢查。\n\n「權限必須先存在，才能授予任何東西該權限」，這是此功能唯一的順序規則，在 updateApplication() 中檢查，讓主控台表單與管理 API 不會對此產生分歧。它是在「授予」時檢查，而不是在這裡：此屬性是定義，而尚未被任何人使用的定義是正常的第一步，而不是錯誤。"
+    "en": "7eb690e390462f2d",
+    "text": "「此應用程式公開的一個權限」，每個權限一個值。值是權限的「名稱」——`read`、`write`、`Widgets.ReadWrite.All`——可選擇性地接著 `|` 與描述：`write|Change widgets on somebody's behalf`。「第一個」`|` 是分隔符號，之後的每個都屬於描述，因此描述可包含該字元，名稱則不可。\n\n名稱必須是合法的 OAuth 範圍權杖（RFC 6749 section 3.3——不含空格、雙引號或反斜線），因為這是用戶端會放在 `scope` 參數中、並會出現在權杖 `scope` 宣告中的內容。包含操作員錯誤代碼的名稱或描述也會被拒絕：兩者都會在列出此權限的每個頁面上傳回，而錯誤代碼只記錄、不傳送。以 `ldapmodify` 寫入此值時不會強制檢查這兩項規則；此模組與兩個主控台會檢查。\n\n「權限必須先存在，才能授予任何東西該權限」，這是此功能唯一的順序規則，在 updateApplication() 中檢查，讓主控台表單與管理 API 不會對此產生分歧。它是在「授予」時檢查，而不是在這裡：此屬性是定義，而尚未被任何人使用的定義是正常的第一步，而不是錯誤。"
   },
   "applications.schema.attributes.oauthRoleGatedPermission.what": {
     "en": "fa1c86d8fb8ce2fb",

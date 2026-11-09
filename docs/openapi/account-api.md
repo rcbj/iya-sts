@@ -33,6 +33,13 @@ Unless an operation below says otherwise, any status it does not list answers th
 
 Each operation's method, path, access and the portal page or form it is the door of. The portal reads it to know which operation a form goes to.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The answer.
 
 | Member | Type | Required | What it is |
@@ -45,6 +52,8 @@ Each operation's method, path, access and the portal page or form it is the door
 | `operations[].mirrors` | string, or null |  |  |
 | `operations[].operationId` | string |  |  |
 | `operations[].path` | string |  |  |
+| `operations[].query` | list |  |  |
+| `operations[].query[]` | string |  |  |
 | `operations[].summary` | string |  |  |
 | `operations[].tag` | string |  |  |
 
@@ -69,6 +78,13 @@ The pending access requests (#1180) whose denying policy named you an approver �
 The door of the portal's `GET /portal/access-requests`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -147,6 +163,13 @@ Decides one request as you, after the access-control policy (action approve-acce
 The door of the portal's `POST /portal/access-requests`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -239,7 +262,9 @@ The door of the portal's `GET /portal/activate`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `user` | query |  |  | The username the link names. |
-| `token` | query |  |  | The link's single-use token. |
+| `X-Link-Token` | header | string |  | The single-use secret the link carried in its fragment. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -467,6 +492,13 @@ The door of the portal's `GET /portal/activate`.
 `setup` sets the password and starts a passkey (the `key` view) or an authenticator app (the `totp` view) where they were chosen; `key` answers the passkey's ceremony; `totp` the app's code. The link is checked again, claimed before anything is set, and spent only by the step that finishes, which answers the `ready` view. Nobody is signed in by it. A passkey carries no role (#1135): `passkey` asks for one, and `key_role` is still accepted, `primary` and `mfa` both asking for one.
 
 The door of the portal's `POST /portal/activate`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -722,6 +754,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `since` | query | string |  |  |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -775,6 +809,13 @@ Which of the five password-only doors refuse your own password (`doors`), the do
 The door of the portal's `GET /portal/app-passwords`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -852,6 +893,13 @@ The door of the portal's `POST /portal/app-passwords`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -872,6 +920,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.doorLabels` | map |  | Each door's label, by its id. |
 | `view.doorLabels.{key}` | string |  |  |
@@ -1058,6 +1110,8 @@ Scope: `account:manage`.
 |---|---|---|---|---|
 | `done` | query | string |  |  |
 | `page` | query |  |  | The page of the list, 1 for the first. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -1131,6 +1185,13 @@ The door of the portal's `POST /portal/attributes`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -1188,6 +1249,13 @@ The certificates ACME, EST and SCEP issued for your entry, your ACME account bin
 The door of the portal's `GET /portal/certificates`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -1309,6 +1377,13 @@ The door of the portal's `POST /portal/certificates`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -1327,6 +1402,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.acme` | object |  |  |
 | `view.acme.keys` | list |  |  |
@@ -2084,6 +2163,8 @@ Scope: `account:manage`.
 |---|---|---|---|---|
 | `stepup` | query | string |  | A CIBA request id: answered `stepUp`, the sign-in again its acr values need. |
 | `gnapstepup` | query | string |  | A waiting GNAP request id: answered `stepUp`, the sign-in again its rights need. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -2165,6 +2246,13 @@ The door of the portal's `POST /portal/ciba`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -2236,6 +2324,8 @@ Scope: `account:manage`.
 | `page` | query |  |  | Which page of `providers`. Clamped to the last. |
 | `done` | query | string |  | What a finished link said, from the callback. |
 | `problem` | query | string |  | Why a link could not be finished, from the callback. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -2301,6 +2391,13 @@ Scope: `account:manage`.
 The door of the portal's `POST /portal/claim-sources`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -2384,6 +2481,8 @@ Scope: `account:manage`.
 |---|---|---|---|---|
 | `done` | query | string |  | The provider a finished connect connected, from its return. |
 | `problem` | query | string |  | Why a connect could not be finished, from its return. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -2440,6 +2539,13 @@ Scope: `account:manage`.
 The door of the portal's `POST /portal/connected-accounts`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -2545,6 +2651,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `page` | query |  |  |  |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -2609,6 +2717,13 @@ One scope (`action=scope`) or everything an application holds (`action=applicati
 The door of the portal's `POST /portal/consents`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -2691,6 +2806,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `page` | query |  |  | Which page of `issued`, newest first. Clamped to the last. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -2812,6 +2929,13 @@ A pre-authorized Credential Offer (OpenID4VCI section 4.1, Appendix H.2 or H.3) 
 The door of the portal's `POST /portal/wallet`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -3121,6 +3245,13 @@ The door of the portal's `POST /portal/remove-wallet-credential`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -3329,6 +3460,13 @@ The door of the portal's `GET /portal/delegate`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The answer.
 
 | Member | Type | Required | What it is |
@@ -3379,6 +3517,13 @@ Writes stsMayAct on your own entry: a person or an application of this realm, by
 The door of the portal's `POST /portal/delegate`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -3446,6 +3591,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `q` | query | string | yes | Part of a username (`uid`), at least three characters. Matched as a contains against the RDN value of the people in this realm's `ou=users`. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -3525,6 +3672,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `user_code` | query | string |  | The code the device shows; brings up its request. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -3617,6 +3766,13 @@ The door of the portal's `POST /portal/device`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -3699,6 +3855,13 @@ Each device you own: its applications, whether its Native SSO secret is live, it
 The door of the portal's `GET /portal/devices`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -3786,6 +3949,13 @@ Scope: `account:manage`.
 The door of the portal's `POST /portal/devices`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -3894,6 +4064,13 @@ Issues a challenge bound to the sign-on session this token was issued on: `{ ok,
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -3950,6 +4127,13 @@ Scope: `account:manage`.
 Answers a challenge with a key proof or an Apple App Attest object, registering the device (or adding the key to `device_id`). Answers 201 `{ ok, device, key }`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -4286,6 +4470,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `sentPage` | query |  |  | Which page of `sent`, newest first. Clamped to the last. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -4355,6 +4541,13 @@ The door of the portal's `POST /portal/email`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -4370,6 +4563,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -4463,6 +4660,13 @@ Scope: `account:manage`.
 
 The door of the portal's `GET /portal/forgot-password`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The answer.
 
 | Member | Type | Required | What it is |
@@ -4505,6 +4709,13 @@ The door of the portal's `GET /portal/forgot-password`.
 Answers ONE SENTENCE whatever happened (`view.note`), before the work is done, so neither its words nor its timing say whether the account exists; the link, if any, is mailed to the address on the account. Rate limited per account and address.
 
 The door of the portal's `POST /portal/forgot-password`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -4582,6 +4793,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `page` | query |  |  |  |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -4676,6 +4889,13 @@ The client's own RFC 9635 section 5.4 act, performed for you: every token issued
 The door of the portal's `POST /portal/gnap`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -4781,6 +5001,13 @@ The door of the portal's `GET /portal/kerberos`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The answer.
 
 | Member | Type | Required | What it is |
@@ -4845,6 +5072,13 @@ Re-proves the password (rate limited in the budget the password change shares), 
 The door of the portal's `POST /portal/kerberos`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -4967,6 +5201,13 @@ Each passkey you hold (`keys`), grouped `device` or `security-key`, with its nam
 The door of the portal's `GET /portal/keys`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -5104,6 +5345,13 @@ The door of the portal's `POST /portal/keys`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -5123,6 +5371,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -5354,6 +5606,13 @@ The door of the portal's `POST /portal/remove-key`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -5368,6 +5627,10 @@ Scope: `account:manage`.
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
 | `sessionsEnded` | integer |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 
 **400**: The request did not validate, or was refused: `{ ok: false, errors: [...] }`.
 
@@ -5499,6 +5762,13 @@ At most 60 characters, no control characters; an empty name puts the default bac
 The door of the portal's `POST /portal/rename-key`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -5646,6 +5916,13 @@ The door of the portal's `POST /portal/language`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -5698,6 +5975,13 @@ Scope: `account:manage`.
 
 For the pages a person reaches with no sign-in — an activation or reset link, the forgot-password form, an address verification: the negotiation from the browser alone, the portal's catalogs, the offered locales and the build.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The answer.
 
 | Member | Type | Required | What it is |
@@ -5739,6 +6023,13 @@ For the pages a person reaches with no sign-in — an activation or reset link, 
 The person (from the token, never the request), the realm, the language data — the negotiation, the portal's catalogs and the locales offered — and the build. The portal draws its frame from it.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -5815,6 +6106,13 @@ Scope: `account:manage`.
 The door of the portal's `GET /portal/mfa`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -5918,6 +6216,13 @@ The door of the portal's `POST /portal/mfa`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -5935,6 +6240,10 @@ Scope: `account:manage`.
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
 | `sessionsEnded` | integer |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.codes` | object |  |  |
 | `view.codes.advised` | boolean |  |  |
@@ -6150,6 +6459,13 @@ Scope: `account:manage`.
 
 Built from the operation table at the moment it is asked, for the realm it is asked in. It carries no secret.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The answer.
 
 | Member | Type | Required | What it is |
@@ -6193,6 +6509,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `done` | query | string |  |  |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -6329,6 +6647,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `page` | query |  |  | Which page of `rows`. Clamped to the last. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -6398,6 +6718,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `page` | query |  |  | Which page of `rows`. Clamped to the last. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -6467,6 +6789,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `page` | query |  |  | Which page of `rows`. Clamped to the last. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -6536,6 +6860,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `page` | query |  |  | Which page of `rows`. Clamped to the last. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -6600,6 +6926,13 @@ The door of the portal's `GET /portal/password`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The answer.
 
 | Member | Type | Required | What it is |
@@ -6651,6 +6984,13 @@ Re-proves the current password (rate limited, in the budget the Kerberos keytab 
 The door of the portal's `POST /portal/password`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -6730,6 +7070,13 @@ The door of the portal's `POST /portal/photo`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -6807,6 +7154,13 @@ The door of the portal's `POST /portal/photo/remove`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **200**: The answer.
 
 | Member | Type | Required | What it is |
@@ -6857,6 +7211,13 @@ Scope: `account:manage`.
 The door of the portal's `GET /portal/pseudonyms`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -6920,6 +7281,13 @@ Scope: `account:manage`.
 The door of the portal's `POST /portal/pseudonyms`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -7019,7 +7387,9 @@ The door of the portal's `GET /portal/reset-password`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `user` | query |  |  | The username the link names. |
-| `token` | query |  |  | The link's single-use secret. |
+| `X-Link-Token` | header | string |  | The single-use secret the link carried in its fragment. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -7109,6 +7479,13 @@ The door of the portal's `GET /portal/reset-password`.
 Checks the link again, claims it, screens the password against breached passwords and the password policy, stores it, clears the must-change flag, and spends the link; signs nobody in. CAEP credential-change is sent. A refusal carries the page's `view`; success answers `view.done`.
 
 The door of the portal's `POST /portal/reset-password`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -7242,6 +7619,8 @@ Scope: `account:manage`.
 | `enrolled` | query |  |  | `1` when the wallet sign-in has just enrolled a subject. |
 | `did` | query |  |  | A published DID's wallet act that has just finished (#1291): `published`, `authorized` (the change's first proof; prove the new key next) or `changed`. |
 | `rid` | query |  |  | The published DID that act was about. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -7371,6 +7750,13 @@ The door of the portal's `POST /portal/self-issued`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -7385,6 +7771,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.didClaim` | boolean |  |  |
 | `view.enabled` | boolean |  |  |
@@ -7576,6 +7966,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `subject` | query |  |  | One of your enrolled self-issued subjects: a did:jwk or a did:key. Left out, the page says to choose one. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -7637,6 +8029,13 @@ The door of the portal's `POST /portal/self-issued/dids`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -7651,6 +8050,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.didClaim` | boolean |  |  |
 | `view.enabled` | boolean |  |  |
@@ -7842,6 +8245,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `page` | query |  |  |  |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -7933,6 +8338,13 @@ Scope: `account:manage`.
 The door of the portal's `POST /portal/shared`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -8195,6 +8607,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `page` | query |  |  |  |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -8262,6 +8676,8 @@ Scope: `account:manage`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `page` | query |  |  | Which page of `rows`, newest first. Clamped to the last. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -8329,6 +8745,13 @@ Scope: `account:manage`.
 The door of the portal's `POST /portal/sign-ins`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -8415,6 +8838,8 @@ Scope: `account:manage`.
 |---|---|---|---|---|
 | `done` | query | string |  |  |
 | `page` | query |  |  | The page of the list, 1 for the first. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -8486,6 +8911,13 @@ RISC 1.0 section 2.8's account-holder moves. Opting out takes effect only after 
 The door of the portal's `POST /portal/signals`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -8562,6 +8994,13 @@ Scope: `account:manage`.
 The door of the portal's `GET /portal/signing-key`.
 
 Scope: `account:manage`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -8679,6 +9118,13 @@ The door of the portal's `POST /portal/signing-key`.
 
 Scope: `account:manage`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -8698,6 +9144,10 @@ Scope: `account:manage`.
 | `go` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+| `stepUp` | object |  |  |
+| `stepUp.acrValues` | string |  |  |
+| `stepUp.maxAge` | number |  |  |
+| `stepUp.prompt` | string |  |  |
 | `view` | object |  |  |
 | `view.entry` | boolean |  |  |
 | `view.fresh` | object |  |  |
@@ -9110,7 +9560,9 @@ The door of the portal's `GET /portal/verify-email`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `user` | query |  |  | The username the link names. |
-| `token` | query |  |  | The link's single-use secret. |
+| `X-Link-Token` | header | string |  | The single-use secret the link carried in its fragment. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -9151,6 +9603,13 @@ The door of the portal's `GET /portal/verify-email`.
 Spends the link. Answers `view.verified`, or `view.refused`. Rate limited.
 
 The door of the portal's `POST /portal/verify-email`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 
@@ -9208,7 +9667,9 @@ The door of the portal's `GET /portal/verify-pseudonym`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `user` | query |  |  | The username the link names. |
-| `token` | query |  |  | The link's single-use secret. |
+| `X-Link-Token` | header | string |  | The single-use secret the link carried in its fragment. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **200**: The answer.
 
@@ -9260,6 +9721,13 @@ The door of the portal's `GET /portal/verify-pseudonym`.
 Spends the link. Answers `view.verified`, or `view.refused`. Rate limited. Not the recovery-address link.
 
 The door of the portal's `POST /portal/verify-pseudonym`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for the DPoP-bound access token, which `Authorization: DPoP <token>` requires. |
+| `X-Requested-With` | header | string |  | Added by an Android WebView, naming the application that hosts the page. This API reads nothing in it. |
 
 **Request body**
 

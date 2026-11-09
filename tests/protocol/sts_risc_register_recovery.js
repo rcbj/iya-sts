@@ -419,7 +419,7 @@ async function signInWithRecoveryCode(who, code) {
     code_challenge_method: "S256", resource: base + R + "/account-api" }));
   let spent = false;
   for (let i = 0; i < 10 && (r.status === 302 || r.status === 303); i++) {
-    if (/\/authn\/login\?authn=/.test(r.location)) {
+    if (/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location)) {
       // THE SCREEN OVER `/authn-api` (#571), through the one helper; its
       // answer read as the form's POST was — the code page fetched from
       // the address it names.

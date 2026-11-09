@@ -87,6 +87,11 @@ const EMAIL_FORM = vz.object({
 
 // THE LINK'S TWO VALUES, in the query of the GET and the body of the POST.
 // The token rides in the body, for the activation form's reason.
+// THE GET'S QUERY (#1454): the token arrives in `X-Link-Token`, never in a URL.
+const LINK_QUERY = vz.object({
+  user: vt.opt(vt.name).describe('The username the link names.')
+});
+
 const LINK = vz.object({
   user: vt.opt(vt.name).describe('The username the link names.'),
   token: vt.opt(vt.token).describe('The link\'s single-use secret.')
@@ -448,72 +453,35 @@ class PortalMail {
     log.debug("Entering PortalMail.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/email', operationId: 'getEmail',
-        tag: 'Email', access: 'person', mirrors: 'GET ' + ctx.PORTAL +
-                                                 '/email',
-        summary: 'Your email address, its messages, and what was sent',
-        description: '`address` and whether it is `verified`, a change ' +
-          'waiting for its link (`changing`), whether mail can be sent ' +
-          '(`available`), the message `categories` (only `notification` ' +
-          'is `optional`; `sent` says whether you are sent it), and one ' +
-          'page of the messages `sent` to you, newest first — never their ' +
-          'bodies — moved by `sentPage` and described by `sentPaging`.',
-        query: EMAIL_QUERY,
+        access: 'person', query: EMAIL_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return ctx.json(res, 200,
             self.emailView(caller.username, input.query.sentPage || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/email', operationId: 'postEmail',
-        tag: 'Email', access: 'person', mirrors: 'POST ' + ctx.PORTAL +
-                                                 '/email',
-        summary: 'Verifies your address, changes it, or saves your choices',
-        description: '`verify` sends a verification link to your address; ' +
-          '`change` sends one to a new address, which takes effect only ' +
-          'when that link is used; `preferences` saves whether you are ' +
-          'sent notifications. The two that send mail are rate limited. A ' +
-          'refusal carries the page\'s `view`.',
-        body: EMAIL_FORM,
-        statuses: { 429: 'Too many attempts; try again later.' },
+        access: 'person', recentAuth: true, body: EMAIL_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.postEmail(ctx, req, res, caller, input.body);
         } },
       { method: 'GET', path: ctx.BASE + '/verify-email',
-        operationId: 'getEmailVerification', tag: 'Email', access: 'link',
-        mirrors: 'GET ' + ctx.PORTAL + '/verify-email',
-        summary: 'Checks an address verification link, and spends nothing',
-        description: 'Takes no token: the link\'s `user` and `token` are ' +
-          'the credential. Answers the address the link would verify, or ' +
-          '`view.refused`. Opening it spends nothing, so a mail scanner ' +
-          'cannot verify an address nobody read. Rate limited.',
-        query: LINK,
-        statuses: { 429: 'Too many attempts; `view.refused` says so.' },
+        operationId: 'getEmailVerification', access: 'link',
+        query: LINK_QUERY,
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
-          return self.verify(ctx, req, res, input.query, false);
+          return self.verify(ctx, req, res, Object.assign({}, input.query,
+            { token: String(req.headers['x-link-token'] || '') }), false);
         } },
       { method: 'POST', path: ctx.BASE + '/verify-email',
-        operationId: 'verifyEmail', tag: 'Email', access: 'link',
-        mirrors: 'POST ' + ctx.PORTAL + '/verify-email',
-        summary: 'Verifies the address an address verification link names',
-        description: 'Spends the link. Answers `view.verified`, or ' +
-          '`view.refused`. Rate limited.',
+        operationId: 'verifyEmail', access: 'link',
         body: LINK,
-        statuses: { 429: 'Too many attempts; `view.refused` says so.' },
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
           return self.verify(ctx, req, res, input.body, true);
         } },
       { method: 'GET', path: ctx.BASE + '/forgot-password',
-        operationId: 'getForgotPassword', tag: 'Forgotten password',
-        access: 'public', mirrors: 'GET ' + ctx.PORTAL + '/forgot-password',
-        summary: 'Whether a forgotten password can be reset here, and how',
-        description: '`threeFields` when a recovery code is asked for ' +
-          'beside the account and its address. 404 where self-service ' +
-          'reset is not offered (the setting off, no transport, or ' +
-          'development mode).',
-        query: vz.object({}),
-        statuses: { 404: 'Not offered here; `view.notOffered` says so.' },
+        operationId: 'getForgotPassword', access: 'public', query: vz.object({}),
         handler: function (req: Json, res: Json): unknown {
           if (!mailUses.resetOffered()) {
             return self.notOffered(ctx, res);
@@ -521,16 +489,7 @@ class PortalMail {
           return ctx.json(res, 200, self.forgotView());
         } },
       { method: 'POST', path: ctx.BASE + '/forgot-password',
-        operationId: 'requestPasswordReset', tag: 'Forgotten password',
-        access: 'public', mirrors: 'POST ' + ctx.PORTAL + '/forgot-password',
-        summary: 'Asks for a password reset link',
-        description: 'Answers ONE SENTENCE whatever happened (`view.note`), ' +
-          'before the work is done, so neither its words nor its timing say ' +
-          'whether the account exists; the link, if any, is mailed to the ' +
-          'address on the account. Rate limited per account and address.',
-        body: FORGOT_FORM,
-        statuses: { 404: 'Not offered here.',
-                    429: 'Too many attempts; `view.tooMany` says so.' },
+        operationId: 'requestPasswordReset', access: 'public', body: FORGOT_FORM,
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
           return self.postForgot(ctx, req, res, input.body);

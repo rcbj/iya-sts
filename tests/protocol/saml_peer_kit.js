@@ -576,7 +576,7 @@ function create(name) {
         }
         // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
         // answered through the one helper where the walk is sent to it.
-        if (o.username && /\/authn\/login\?authn=/.test(next)) {
+        if (o.username && /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(next)) {
           r = await kit.signInAt(b, next, o.username, o.password);
           continue;
         }

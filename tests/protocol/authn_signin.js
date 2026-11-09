@@ -542,7 +542,8 @@ async function step(where, options) {
   })[0] || "";
   const base = url.origin + url.pathname.slice(0, url.pathname.length -
                                                 path.length);
-  const id = url.searchParams.get("mfa") || "";
+  const id = url.searchParams.get("mfa") ||
+    new URLSearchParams(url.hash.slice(1)).get("mfa") || "";
   const key = url.searchParams.get("key") || "";
   const page = opts.page || STEP_PAGES[path] || "totp";
   let cookie = String(opts.cookie || "");
@@ -577,7 +578,7 @@ async function step(where, options) {
            text: text, view: json && json.view,
            csrf: (json && json.csrf) || "", cookie: cookie,
            setCookies: setCookies, id: id, page: page, key: key,
-           t: url.searchParams.get("t") || "", base: base };
+           t: new URLSearchParams(url.hash.slice(1)).get("t") || "", base: base };
 }
 
 /**
@@ -960,7 +961,8 @@ async function consentPage(where, options) {
   const opts = options || {};
   const url = new URL(String(where));
   const base = url.origin + url.pathname.replace(/\/oauth2\/consent$/, "");
-  const id = url.searchParams.get("consent") || "";
+  const id = url.searchParams.get("consent") ||
+    new URLSearchParams(url.hash.slice(1)).get("consent") || "";
   let cookie = String(opts.cookie || "");
   const setCookies = [];
   const extra = opts.headers || {};

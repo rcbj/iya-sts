@@ -182,16 +182,7 @@ class PortalGnap {
     log.debug("Entering PortalGnap.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/gnap',
-        operationId: 'getGnapGrants', tag: 'GNAP grants', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/gnap',
-        summary: 'The GNAP grants you gave',
-        description: 'One page (`paging`) of `rows`: each grant whose ' +
-          'resource owner you are — the client, its state or why it ended, ' +
-          'its access rights (RFC 9635 objects or references), the tokens ' +
-          'issued under it, when it was granted and until when, and ' +
-          'whether you may revoke it. The same view an administrator\'s ' +
-          'user page draws. Under cells, `cells` says when another cell ' +
-          'may hold more.',
+        operationId: 'getGnapGrants', access: 'person',
         query: GNAP_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
@@ -199,14 +190,7 @@ class PortalGnap {
                           self.view(caller.username, input.query.page || 1));
         } },
       { method: 'POST', path: ctx.BASE + '/gnap',
-        operationId: 'revokeGnapGrant', tag: 'GNAP grants',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/gnap',
-        summary: 'Revokes a GNAP grant you gave',
-        description: 'The client\'s own RFC 9635 section 5.4 act, performed ' +
-          'for you: every token issued under the grant stops working, the ' +
-          'grant is finalized as revoked, and CAEP session-revoked is ' +
-          'sent. A grant that is not yours is refused.',
-        body: REVOKE_FORM,
+        operationId: 'revokeGnapGrant', access: 'person', body: REVOKE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.revoke(ctx, req, res, caller, input.body);

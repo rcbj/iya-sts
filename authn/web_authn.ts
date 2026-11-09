@@ -149,7 +149,9 @@ const STEP_ACTS: Json = {
     } } },
   '/authn/email-link/open': {
     open: { op: 'email-link/open', body: function (f: Json, q: Json): Json {
-      return { t: q.t || undefined };
+      // FROM THE FRAGMENT (#1454): a browser does not send it to any server.
+      const hash = String(window.location.hash || '').replace(/^#/, '');
+      return { t: new URLSearchParams(hash).get('t') || q.t || undefined };
     } } }
 };
 
@@ -246,6 +248,16 @@ class AuthnSurface extends WebSurface {
       }
     }
     super.put(title, body, ctx);
+    if (this.stepsHidden()) {
+      const links = this.env.document.querySelectorAll('a[href]');
+      for (let i = 0; i < links.length; i++) {
+        const href = String(links[i].getAttribute('href'));
+        const moved = WebPage.stepToFragment(href);
+        if (moved !== href) {
+          links[i].setAttribute('href', moved);
+        }
+      }
+    }
     this.actError = '';
     this.notice = '';
     if (this.pollTimer && this.env.window) {
@@ -361,7 +373,7 @@ class AuthnSurface extends WebSurface {
     }
     const path = this.surfacePath(this.env.location.pathname) || '';
     const page: Json = this.find(path);
-    const query = WebPage.queryOf(this.env.location.search);
+    const query = this.pageQuery();
     const state = AuthnSurface.embeddedState(this.env);
     const ui = query.ui_locales ||
       String((state && state.uiLocales) || '');
@@ -503,9 +515,46 @@ class AuthnSurface extends WebSurface {
    * @returns the id
    */
   idHere(): string {
-    const query = WebPage.queryOf(this.env.location.search);
+    const query = this.pageQuery();
     return String(query.authn || query.change || query.mfa ||
                   query.consent || '');
+  }
+
+  // WHETHER THIS SHELL WANTS STEP IDS KEPT OUT OF ADDRESSES (#1454): the
+  // server's answer, on the shell, in product mode.
+  private stepsHidden(): boolean {
+    const root = this.env.document && this.env.document.documentElement;
+    return !!(root && root.getAttribute &&
+              root.getAttribute('data-sts-step-fragment') === '1');
+  }
+
+  /**
+   * The parameters this page was reached with, the fragment's included.
+   *
+   * @returns them
+   */
+  pageQuery(): Json {
+    const query = WebPage.queryOf(this.env.location.search);
+    const hash = String(this.env.location.hash || '').replace(/^#/, '');
+    return this.stepsHidden() && hash
+      ? Object.assign(query, WebPage.queryOf('?' + hash)) : query;
+  }
+
+  /**
+   * An operation that takes no token, its step id in a header where asked.
+   *
+   * @param method - the HTTP method
+   * @param path - the address
+   * @param body - the body
+   * @param headers - further headers
+   * @returns the answer
+   */
+  async publicJson(method: string, path: string, body?: Json,
+                   headers?: Json): Promise<Json> {
+    const hidden = this.stepsHidden() ? WebPage.stepToHeaders(path)
+      : { path: path, headers: {} };
+    return super.publicJson(method, hidden.path, body,
+                            Object.assign({}, headers || {}, hidden.headers));
   }
 
   /**
@@ -517,11 +566,13 @@ class AuthnSurface extends WebSurface {
    */
   async send(path: string, body: Json): Promise<Json> {
     const csrf = String((this.lastAnswer && this.lastAnswer.csrf) || '');
-    const res = await this.env.fetch(this.url(path), {
+    const hidden = this.stepsHidden() ? WebPage.stepToHeaders(path)
+      : { path: path, headers: {} };
+    const res = await this.env.fetch(this.url(hidden.path), {
       method: 'POST', credentials: 'same-origin',
-      headers: { 'Accept': 'application/json',
-                 'Content-Type': 'application/json',
-                 'X-CSRF-Token': csrf },
+      headers: Object.assign({ 'Accept': 'application/json',
+                               'Content-Type': 'application/json',
+                               'X-CSRF-Token': csrf }, hidden.headers),
       body: JSON.stringify(body) });
     const json = await res.json().catch(function () {
       return null;
@@ -682,7 +733,7 @@ class AuthnSurface extends WebSurface {
       this.drawProblem('Nobody was signed in', error);
       return;
     }
-    this.view = { page: page, query: WebPage.queryOf(this.env.location.search),
+    this.view = { page: page, query: this.pageQuery(),
                   json: json };
     this.flash = error ? { error: error } : null;
     this.drawView();
@@ -791,11 +842,14 @@ class AuthnSurface extends WebSurface {
     const url = new URL(location, this.env.location.href);
     const path = url.origin === this.env.location.origin
       ? this.surfacePath(url.pathname) : null;
+    const to = this.stepsHidden() ? WebPage.stepToFragment(url.toString())
+      : url.toString();
+    const moved = new URL(to);
     if (path && this.find(path) && this.env.history) {
-      await this.go(path + url.search);
+      await this.go(path + moved.search + moved.hash);
       return;
     }
-    this.env.location.assign(url.toString());
+    this.env.location.assign(to);
   }
 
   /**
@@ -882,7 +936,7 @@ class AuthnSurface extends WebSurface {
                    action + '), so the page refuses it rather than guess.');
       return;
     }
-    const query = WebPage.queryOf(this.env.location.search);
+    const query = this.pageQuery();
     const answer = await this.send('/authn-api/mfa/' +
       encodeURIComponent(this.idHere()) + '/' + act.op,
       act.body(fields, query));
@@ -898,7 +952,7 @@ class AuthnSurface extends WebSurface {
    * @returns nothing
    */
   async startOver(): Promise<void> {
-    const query = WebPage.queryOf(this.env.location.search);
+    const query = this.pageQuery();
     const path = query.mfa
       ? '/authn-api/mfa/' + encodeURIComponent(String(query.mfa)) +
         '/start-over'

@@ -55,6 +55,11 @@ const FORM = vz.object({
     .describe('The name, for `add` and `remove`.')
 });
 
+// THE GET'S QUERY (#1454): the token arrives in `X-Link-Token`, never in a URL.
+const LINK_QUERY = vz.object({
+  user: vt.opt(vt.name).describe('The username the link names.')
+});
+
 const LINK = vz.object({
   user: vt.opt(vt.name).describe('The username the link names.'),
   token: vt.opt(vt.token).describe('The link\'s single-use secret.')
@@ -247,7 +252,7 @@ class PortalPseudonyms {
         values: { username: written.username, address: written.address,
                   expiresMinutes: String(minutes) },
         links: { link: VERIFY_PATH + '?user=' +
-          encodeURIComponent(written.username) + '&token=' +
+          encodeURIComponent(written.username) + '#token=' +
           encodeURIComponent(written.token) },
         via: 'the portal', actor: who
       });
@@ -351,13 +356,7 @@ class PortalPseudonyms {
     log.debug("Entering PortalPseudonyms.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/pseudonyms',
-        operationId: 'getPseudonyms', tag: 'Sign-in names',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/pseudonyms',
-        summary: 'The other names you can sign in with',
-        description: '`pseudonyms` are live. `pending` is an email that ' +
-          'is not a name until its link is opened. `cap` is eight. ' +
-          '`available` says whether an email can be mailed a link.',
-        query: vz.object({}),
+        operationId: 'getPseudonyms', access: 'person', query: vz.object({}),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           const view = self.listView(caller.username);
@@ -368,45 +367,22 @@ class PortalPseudonyms {
           return ctx.json(res, 200, view);
         } },
       { method: 'POST', path: ctx.BASE + '/pseudonyms',
-        operationId: 'postPseudonyms', tag: 'Sign-in names',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/pseudonyms',
-        summary: 'Adds, removes or cancels one sign-in name',
-        description: '`add` of an email mails a link to ' +
-          '`/portal/verify-pseudonym` and is not a name until that link ' +
-          'is used, unless the address is already your verified one. Any ' +
-          'other name is live at once. `remove` drops a live name. ' +
-          '`cancel-pending` drops a name waiting for its link. Adding is ' +
-          'rate limited. The link\'s secret is not in the answer.',
-        body: FORM,
-        statuses: { 429: 'Too many attempts; try again later.' },
+        operationId: 'postPseudonyms', access: 'person', body: FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.post(ctx, req, res, caller, input.body);
         } },
       { method: 'GET', path: ctx.BASE + '/verify-pseudonym',
-        operationId: 'getPseudonymVerification', tag: 'Sign-in names',
-        access: 'link',
-        mirrors: 'GET ' + ctx.PORTAL + '/verify-pseudonym',
-        summary: 'Checks a sign-in-name link, and spends nothing',
-        description: 'Takes no token: the link\'s `user` and `token` are ' +
-          'the credential. Answers the name the link would confirm. ' +
-          'Opening it spends nothing. This is not `/portal/verify-email`. ' +
-          'Rate limited.',
-        query: LINK,
-        statuses: { 429: 'Too many attempts; `view.refused` says so.' },
+        operationId: 'getPseudonymVerification', access: 'link',
+        query: LINK_QUERY,
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
-          return self.verify(ctx, req, res, input.query, false);
+          return self.verify(ctx, req, res, Object.assign({}, input.query,
+            { token: String(req.headers['x-link-token'] || '') }), false);
         } },
       { method: 'POST', path: ctx.BASE + '/verify-pseudonym',
-        operationId: 'verifyPseudonym', tag: 'Sign-in names',
-        access: 'link',
-        mirrors: 'POST ' + ctx.PORTAL + '/verify-pseudonym',
-        summary: 'Confirms the sign-in name a link names',
-        description: 'Spends the link. Answers `view.verified`, or ' +
-          '`view.refused`. Rate limited. Not the recovery-address link.',
+        operationId: 'verifyPseudonym', access: 'link',
         body: LINK,
-        statuses: { 429: 'Too many attempts; `view.refused` says so.' },
         handler: function (req: Json, res: Json, caller: Json,
                            input: Json): unknown {
           return self.verify(ctx, req, res, input.body, true);

@@ -198,10 +198,10 @@ function sessionCookieOf(res) {
   log.debug("Entering sessionCookieOf().");
   const lines = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
   const line = lines.filter(function (one) {
-    return /^sts_session=[^;]+/.test(one);
+    return /^(?:__Host-)?sts_session=[^;]+/.test(one);
   })[0] || "";
   log.debug("Leaving sessionCookieOf().");
-  return (/^sts_session=([^;]*)/.exec(line) || [])[1] || "";
+  return (/^(?:__Host-)?sts_session=([^;]*)/.exec(line) || [])[1] || "";
 }
 
 // One GET of the sign-in door, with an optional Authorization header, read

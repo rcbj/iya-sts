@@ -1259,6 +1259,24 @@ function refusedForCount() {
  *   `restored` marks a realm read back from the store or another process
  * @returns `{ ok: true, errors: [], realm }`, or a refusal
  */
+// A realm's `name` and `description` are free text, and the registry's row
+// is written in the flush that also carries the directory, so a NUL here
+// stops every later write in the process (#1463). Refused at both doors; the
+// sentence quotes nothing a caller sent.
+function realmTextErrors(spec) {
+  log.debug("Entering realmTextErrors().");
+  const errors = [];
+  ['name', 'description'].forEach(function (field) {
+    if (config.unstorableText((spec || {})[field])) {
+      errors.push('A realm\'s ' + field + ' may not hold a NUL character ' +
+                  'or half of a surrogate pair.');
+      firstCode(errors, 'STS-CORE-0171');
+    }
+  });
+  log.debug("Leaving realmTextErrors(). " + errors.length);
+  return errors;
+}
+
 function create(spec) {
   log.debug("Entering create(). id=" + (spec || {}).id);
   const id = String((spec || {}).id || '').trim().toLowerCase();
@@ -1277,6 +1295,12 @@ function create(spec) {
     log.debug("Leaving create(). Refused for its domain.");
     return errorCodes.mark({ ok: false, errors: domainErrors },
                            errorCodes.codeOf(domainErrors));
+  }
+  const textErrors = realmTextErrors(spec);
+  if (textErrors.length) {
+    log.debug("Leaving create(). Refused for its text.");
+    return errorCodes.mark({ ok: false, errors: textErrors },
+                           errorCodes.codeOf(textErrors));
   }
   const overrideErrors = checkOverrides((spec || {}).overrides);
   if (overrideErrors.length) {
@@ -1373,6 +1397,12 @@ function update(id, changes) {
         'authority issued and every key its KDC holds. Remove the realm and ' +
         'create it again under the new domain.'] },
                            'STS-CORE-0101');
+  }
+  const textErrors = realmTextErrors(spec);
+  if (textErrors.length) {
+    log.debug("Leaving update(). Refused for its text.");
+    return errorCodes.mark({ ok: false, errors: textErrors },
+                           errorCodes.codeOf(textErrors));
   }
   if (spec.overrides !== undefined) {
     const overrideErrors = checkOverrides(spec.overrides);

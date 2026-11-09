@@ -419,10 +419,11 @@ function check(request) {
               'this is a defect in the embedded PEP rather than a decision. ' +
               error.message);
     log.debug("Leaving check().");
-    return allow('The embedded PEP threw, which is a defect rather than a ' +
-                 'decision: ' + error.message);
+    return noDecision(allow('The embedded PEP threw, which is a defect ' +
+                            'rather than a decision: ' + error.message));
   }
-  const result = answer || allow('The embedded PEP answered nothing.');
+  const result = answer || noDecision(allow('The embedded PEP answered ' +
+                                            'nothing.'));
   log.debug('Leaving check(). ' + (result.allowed ? 'Allowed.' : 'REFUSED: ' +
             result.why));
   return result;
@@ -561,7 +562,9 @@ function mechanismFactsOf(asked) {
               'application registry could not be read for "' + name +
               '"\'s sign-in mechanisms, so none was required: ' +
               ((e && e.message) || e));
-    allowed = [];
+    // A mechanism nothing holds, in product, so that a sign-in that cannot be
+    // judged is refused rather than waved through (#1494).
+    allowed = require('./mode').failsOpenOnPolicyFault() ? [] : ['unreadable'];
   }
   if (!allowed.length) {
     log.debug('Leaving mechanismFactsOf(). Every mechanism is allowed.');
@@ -623,7 +626,7 @@ function mfaFactsOf(asked) {
               'application registry could not be read for "' + name +
               '"\'s second factors, so none was required: ' +
               ((e && e.message) || e));
-    allowed = [];
+    allowed = require('./mode').failsOpenOnPolicyFault() ? [] : ['unreadable'];
   }
   if (!allowed.length) {
     log.debug('Leaving mfaFactsOf(). The realm\'s second factors apply.');
@@ -1427,6 +1430,19 @@ function disabledSubject(name) {
   }
   log.debug("Leaving disabledSubject(). " + disabled);
   return disabled;
+}
+
+// NO DECISION IS NO TOKEN, IN PRODUCT (#1494, ASVS 5.0.0 16.5.3), as at the
+// access gate; development keeps the answer it is handed.
+function noDecision(answer) {
+  log.debug("Entering noDecision().");
+  if (require('./mode').failsOpenOnPolicyFault()) {
+    log.debug("Leaving noDecision(). Development.");
+    return answer;
+  }
+  log.debug("Leaving noDecision(). Refused.");
+  return errorCodes.mark({ allowed: false, decision: 'Indeterminate',
+    why: 'No issuance decision could be made.' }, 'STS-XACML-0183');
 }
 
 function allow(why) {

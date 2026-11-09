@@ -303,28 +303,13 @@ class PortalAppPasswords {
     log.debug("Entering PortalAppPasswords.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/app-passwords',
-        operationId: 'getAppPasswords', tag: 'App passwords',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/app-passwords',
-        summary: 'Your app passwords, and the doors that need one',
-        description: 'Which of the five password-only doors refuse your own ' +
-          'password (`doors`), the door table, the app passwords you hold ' +
-          '(never their values), and whether making one is on.',
-        query: vz.object({}),
+        operationId: 'getAppPasswords', access: 'person', query: vz.object({}),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username, null));
         } },
       { method: 'POST', path: ctx.BASE + '/app-passwords',
-        operationId: 'changeAppPasswords', tag: 'App passwords',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/app-passwords',
-        summary: 'Makes or revokes one of your app passwords',
-        description: '`create` (rate limited) makes one for the doors whose ' +
-          '`door_<id>` is on; the password is in the answer\'s ' +
-          '`view.fresh`, ONCE. `revoke` ends the one `id` names; an id ' +
-          'that is not yours is answered as not found.',
-        body: self.formSchema(),
-        statuses: { 404: 'You hold no app password with that id.',
-                    429: 'Too many made; try again later.' },
+        operationId: 'changeAppPasswords', access: 'person', recentAuth: true, body: self.formSchema(),
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);

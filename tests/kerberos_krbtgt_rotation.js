@@ -570,7 +570,7 @@ function inAChild(t, phase, extra, label) {
 function productEnv(dir, kekFile) {
   log.debug("Entering productEnv().");
   log.debug("Leaving productEnv().");
-  return { STS_MODE: 'product',
+  return { STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', KRB5_ALLOW_SHA1_ENCTYPES: 'true',
            // Set, and IGNORED in product since #169.
            KRB5_KRBTGT_PASSWORD: 'krbtgt-rotation-ignored-169',
            KRB5_SERVICE_PASSWORD: 'service-rotation-169',

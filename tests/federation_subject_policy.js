@@ -244,9 +244,17 @@ function childMain() {
       let linkAt = '';
       let opened = null;
       for (let hop = 0; hop < 30; hop += 1) {
+        // The flow's cookie gone: a different browser (#1497).
+        if (opts.dropFlowCookie) {
+          Object.keys(jar).filter(function (k) {
+            return /sts_fed_flow_/.test(k);
+          }).forEach(function (k) {
+            delete jar[k];
+          });
+        }
         const at = String(r.headers.location || '');
         const screenAt = r.status >= 300 && r.status < 400 &&
-          /\/authn\/login\?authn=/.test(at)
+          /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(at)
           ? new URL(at, base) : null;
         // A SECOND-FACTOR STEP IS A PAGE OF THE SAME SURFACE SINCE #572:
         // opened as the browser opens it (its shell, then its view), and
@@ -255,12 +263,13 @@ function childMain() {
             /\/authn\/(totp|webauthn|mfa-setup|backup-code|password-factor|email-code|email-link)\?/
               .test(at)) {
           r = await authnScreen.openStep({ port: port, ca: caPem, jar: jar,
-            at: new URL(at, base).pathname + new URL(at, base).search });
+            at: new URL(at, base).pathname + new URL(at, base).search +
+              new URL(at, base).hash });
           r.isStep = true;
         }
         if (screenAt &&
             screenAt.pathname.indexOf('/realm/' + SP + '/') === 0) {
-          linkAt = screenAt.pathname + screenAt.search;
+          linkAt = screenAt.pathname + screenAt.search + screenAt.hash;
           opened = await authnScreen.open({ port: port, ca: caPem, jar: jar,
                                            at: linkAt });
           trail.linkScreens += 1;
@@ -272,7 +281,7 @@ function childMain() {
           }
         } else if (screenAt) {
           r = await authnScreen.submit({ port: port, ca: caPem, jar: jar,
-            at: screenAt.pathname + screenAt.search,
+            at: screenAt.pathname + screenAt.search + screenAt.hash,
             fields: { action: 'login', username: idpUser,
                       password: IDP_PASSWORD } });
           if (r.next !== 'redirect') {
@@ -395,6 +404,9 @@ function childMain() {
       config.setOverride('security.rateLimitPerIdentity', '100000');
       if (MODE === 'product') {
         config.setOverride('global.mode', 'product');
+        config.setOverride('security.allowUnscopedPeople', 'true');
+        config.setOverride('authn.allowOptionalSecondFactor', 'true');
+        config.setOverride('totp.window', '1');
       }
     });
     const created = inSp(function () {
@@ -561,14 +573,33 @@ function childMain() {
          hop += 1) {
       other = await request('GET', other.headers.location);
     }
-    note(handedOver && other.status === 403 && viewOf(other) &&
-         viewOf(other).kind === 'refused' &&
-         /different browser/.test(viewOf(other).why) &&
-         codesSince(mark).indexOf('STS-FED-0111') >= 0 &&
+    // Product binds every sign-in step to its browser (#1454), so there the
+    // second browser is stopped before the federation's own check is reached.
+    const refusedElsewhere = MODE === 'product'
+      ? other.status === 400 &&
+        codesSince(mark).indexOf('STS-AUTHN-0552') >= 0
+      : other.status === 403 && viewOf(other) &&
+        viewOf(other).kind === 'refused' &&
+        /different browser/.test(viewOf(other).why) &&
+        codesSince(mark).indexOf('STS-FED-0111') >= 0;
+    note(handedOver && refusedElsewhere &&
          attr(entryOf(VICTIM), 'federationLink').length === 0,
          '1i-0. the linking screen completed in ANOTHER browser is refused ' +
-         '(STS-FED-0111) and links nothing', other.status + ' ' +
+         'and links nothing', other.status + ' ' +
          JSON.stringify(codesSince(mark)));
+
+    // A FLOW FINISHED IN ANOTHER BROWSER THAN STARTED IT (#1497).
+    if (MODE === 'product') {
+      const WANDERER = 'fsp-wander-' + MODE;
+      makePerson(WANDERER, 'local-wander@sp.example');
+      mark = auditCount();
+      got = await signIn(WANDERER, { dropFlowCookie: true });
+      note(got.r.status === 401 &&
+           codesSince(mark).indexOf('STS-FED-0237') >= 0,
+           '1i-00. a federated answer that arrives in another browser is ' +
+           'refused (STS-FED-0237)', got.r.status + ' ' +
+           JSON.stringify(codesSince(mark)));
+    }
 
     // CANCEL
     const CAROL = 'fsp-carol-' + MODE;
@@ -1098,7 +1129,9 @@ function runMode(t, modeName) {
   }
   const result = childProcess.spawnSync(process.execPath,
     ['-e', '(' + childMain.toString() + ')()'], {
-      env: Object.assign(clean, { LOG_LEVEL: 'fatal', FSP_ROOT: ROOT,
+      env: Object.assign(clean, {
+        STS_SECURITY_FILE_ROOTS: os.tmpdir(),
+        LOG_LEVEL: 'fatal', FSP_ROOT: ROOT,
                                   FSP_OUT: out, FSP_MODE: modeName }),
       encoding: 'utf8', timeout: 300000, cwd: ROOT
     });

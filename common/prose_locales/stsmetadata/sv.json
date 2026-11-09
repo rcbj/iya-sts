@@ -1207,6 +1207,10 @@
     "en": "bfc05d15d7d40bc2",
     "text": "ICKE-SPEC, och avsiktligt OGRINDAD. Varje förtroendesfär som den här processen kör — en förtroendesfär är en hel logisk kopia av den här tjänsten, nådd under ett segment längst fram i sökvägen och med sin egen konfiguration, signeringsnyckel, sessioner och tokens. Den bär varje sfärs id, namn, bas-URL och sökvägsprefix, själva prefixSEGMENTET (som är en inställning, så en klient kan inte gissa det), och vilka protokollfamiljer en sfär faktiskt separerar. Det sista är den del som inget annat besvarar: de flesta familjer separeras av sökvägen, men katalogen separeras av DN, Kerberos av sfärens NAMN i begäran, SPIFFE av socketadress, och TLS-certifikatet separeras inte alls — så den som antog att sökvägssegmentet var gränsen överallt skulle ha fel om fyra av dem. En klient som riktas mot en sfär kan inte konstruera en enda URL utan detta, vilket är varför det inte ligger bakom konsolens grind — samma argument som varje upptäcktsdokument här vilar på."
   },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC. Ikonen som en webbläsare självmant begär på varje sida: logotypens kvadratiska märke (common/favicon.ico). Besvaras på varje lyssnare; sparas i en dag."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Inloggningsskärmens kort och språkväljarens regler, som en enda formatmall som en statisk offentlig ytas skal länkar (common/web_card_css.ts). Besvaras på varje lyssnare; en adress med denna builds ?v= cachas för gott."
@@ -2170,6 +2174,10 @@
   "stsmetadata.endpoints./admin-api/config.what": {
     "en": "de1ba6721d3df738",
     "text": "NON-SPEC. Varje inställning, dess gällande värde och källan till det värdet — åsidosättning, miljövariabel, appconfig-filen eller env/defaults.js under den. Speglar GET /admin/config."
+  },
+  "stsmetadata.endpoints./admin-api/config-dump.what": {
+    "en": "56a8ec7f8dbef7bb",
+    "text": "NON-SPEC. Alla konfigurationsparametrar, globala och per realm, med varje känsligt värde maskerat. Speglar GET /admin/config-dump."
   },
   "stsmetadata.endpoints./admin-api/config/:action.what": {
     "en": "0493cb479489bbd8",
@@ -3943,8 +3951,12 @@
     "en": "24ece2f78749cf6a",
     "text": "en parameter"
   },
-  "stsmetadata.endpoints./favicon.ico.what": {
-    "en": "18aea3253b0f21a8",
-    "text": "NON-SPEC. Ikonen som en webbläsare självmant begär på varje sida: logotypens kvadratiska märke (common/favicon.ico). Besvaras på varje lyssnare; sparas i en dag."
+  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
+    "en": "14ed85bab8488344",
+    "text": "NON-SPEC (#1501). GET /admin/malware-scanning som JSON: om uppladdade filer skannas och ICAP-tjänsten som skannar dem. Ändrar ingenting."
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
+    "en": "1bf7c4937a9313c4",
+    "text": "NON-SPEC (#1501). Skickar EICAR-testfilen till den konfigurerade ICAP-tjänsten och lyckas bara om tjänsten flaggar den."
   }
 }

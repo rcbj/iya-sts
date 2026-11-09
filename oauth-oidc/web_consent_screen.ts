@@ -179,6 +179,13 @@ class WebConsentScreen {
         ? '<p class="app">' + t.html('consent.detailsNote',
             { count: details.length }) + '</p>'
         : '') +
+      (Array.isArray(v.resources) && v.resources.length
+        ? '<p class="app">' + t.html('consent.resources') + '<br>' +
+          v.resources.map(function (one: Json): string {
+            return '<code>' + esc(one) + '</code>';
+          }).join('<br>') + '</p>'
+        : '') +
+      '<p class="app">' + t.html('consent.duration') + '</p>' +
       WebConsentScreen.already(Array.isArray(v.already) ? v.already : [], t) +
       '<form method="post" action="' + WebConsentScreen.PATH + '">' +
       WebConsentScreen.limits(Array.isArray(v.limits) ? v.limits : []) +

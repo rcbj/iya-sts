@@ -606,7 +606,7 @@ async function browse(cookies, startUrl, username, stopAt) {
       }
       // THE SIGN-IN SCREEN, A STATIC PAGE OVER `/authn-api` SINCE #571:
       // answered through the one helper, its answer read as the form's 303.
-      if (username && /\/authn\/login\?authn=/.test(next)) {
+      if (username && /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(next)) {
         const at = new URL(next);
         const answer = await authnSignin.submit(at.origin +
           at.pathname.replace(/\/authn\/login$/, ""), next,

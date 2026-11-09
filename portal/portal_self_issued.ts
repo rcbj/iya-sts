@@ -603,91 +603,21 @@ class PortalSelfIssued {
     log.debug("Entering PortalSelfIssued.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/self-issued',
-        operationId: 'getSelfIssued', tag: 'Self-issued IDs',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/self-issued',
-        summary: 'The wallet keys that sign you in with SIOPv2',
-        description: '`subjects`: each enrolled self-issued subject (a DID ' +
-          'or a JWK thumbprint), its label, when and by whom it was ' +
-          'enrolled, and how (`proof`: `wallet`, proved by you, or ' +
-          '`admin`, by an administrator), whether it is your ' +
-          'preferred DID (`preferred`, #693), and where the key came ' +
-          'from (`location`: `{ kind, value }` — `web`, the web wallet ' +
-          'at that address; `app`, a wallet app, by the name it ' +
-          'reported or \'\'; `dc_api`, your browser, by its origin or ' +
-          '\'\'; `admin`; or null, not recorded), and where its DID ' +
-          'document is (`didDocumentUrl`, a did:web\'s published ' +
-          'address, or `didResolved`, a did:jwk or did:key resolved from ' +
-          'the identifier at /portal/self-issued/did). `enabled`: whether ' +
-          'the self-issued sign-in is on; `turnOn`, where it is off: the ' +
-          'setting (`setting`) and environment variable (`env`) that turn ' +
-          'it on, whether you may change it (`administrator`: you hold ' +
-          'Admin Write in this realm) and, if you may, the console page ' +
-          'that does (`page`); null where it is on. `didClaim`: whether ' +
-          'the preferred ' +
-          'DID may be released as the `did` claim here. A ' +
-          'key is enrolled by proving it, at /authn/wallet?siop=1&enrol=1, ' +
-          'which comes back with `enrolled=1`; `notice` then says so. ' +
-          'Where the directory holds no entry for the person the token ' +
-          'names it is refused (STS-PORTAL-0616) rather than answered as ' +
-          'an empty list. `published` (#1291): whether this realm ' +
-          'publishes a did:web for you (`enabled`), who holds its key ' +
-          '(`custody`: `wallet`, `realm` or `download`), how many you may ' +
-          'hold (`maxPerPerson`) and hold now (`active`), whether you may ' +
-          'publish one more (`canPublish`), and each one you hold (`dids`): ' +
-          'its `rid`, `did`, `documentUrl`, `custody`, `state` (`active`, ' +
-          '`deactivated`), `proof`, `preferred`, `currentVersion`, any ' +
-          'change waiting for its new key (`pending`) and its `versions`, ' +
-          'each with its keys and what authorized it. A wallet act that ' +
-          'just finished comes back with `did` (`published`, `authorized` ' +
-          'or `changed`), and `notice` says so.',
-        query: SELF_ISSUED_QUERY,
-        statuses: {
-          404: 'The directory holds no entry for the token\'s person ' +
-               '(STS-PORTAL-0616).'
-        },
+        operationId: 'getSelfIssued', access: 'person', query: SELF_ISSUED_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.answer(ctx, res, caller, input.query.enrolled === '1',
                              String(input.query.did || ''));
         } },
       { method: 'GET', path: ctx.BASE + '/self-issued/did',
-        operationId: 'getSelfIssuedDidDocument', tag: 'Self-issued IDs',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/self-issued/did',
-        summary: 'The DID document of one of your enrolled did:jwk or ' +
-                 'did:key subjects',
-        description: '`document`: the DID document of `subject`, resolved ' +
-          'from the identifier itself — a did:jwk or did:key is its own ' +
-          'document, so nothing is published and nothing is fetched. Only ' +
-          'a subject enrolled for you: any other is refused ' +
-          '(STS-PORTAL-0618), and a did:web (its document is the one ' +
-          'published at its address, linked from the list) or a JWK ' +
-          'thumbprint (no DID) is refused (STS-PORTAL-0619). With no ' +
-          '`subject`, `{ subject: \'\', document: null }`.',
-        query: DID_QUERY,
-        statuses: {
-          400: 'A did:web or a JWK thumbprint, whose document is not the ' +
-               'identifier (STS-PORTAL-0619).',
-          404: 'Not one of your enrolled subjects (STS-PORTAL-0618).'
-        },
+        operationId: 'getSelfIssuedDidDocument', access: 'person', query: DID_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.didDocument(ctx, req, res, caller,
                                   String(input.query.subject || ''));
         } },
       { method: 'POST', path: ctx.BASE + '/self-issued',
-        operationId: 'removeSelfIssued', tag: 'Self-issued IDs',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/self-issued',
-        summary: 'Removes a self-issued subject of yours, or marks one ' +
-                 'as your preferred DID',
-        description: '`remove` (the default): the subject no longer signs ' +
-          'you in. One that is not enrolled for you is refused. `prefer` ' +
-          '(#693): marks one DID you PROVED with your wallet as your ' +
-          'preferred one — the one a client you consent to may be told as ' +
-          'the `did` claim, where the realm releases it ' +
-          '(`oauth2.didClaim`); a subject an administrator added, or a ' +
-          'JWK thumbprint, is refused (STS-PORTAL-0615). `unprefer` clears ' +
-          'the mark. Removing the preferred subject clears it too.',
-        body: REMOVE_FORM,
+        operationId: 'removeSelfIssued', access: 'person', recentAuth: true, body: REMOVE_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           if (input.body.action === 'prefer' ||
@@ -697,30 +627,7 @@ class PortalSelfIssued {
           return self.remove(ctx, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/self-issued/dids',
-        operationId: 'actOnPublishedDid', tag: 'Self-issued IDs',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/self-issued/dids',
-        summary: 'Publishes a did:web for you, changes its key, or ' +
-                 'deactivates it',
-        description: 'A did:web this realm publishes for you (#1291), ' +
-          'where it does (`did.personPublishing`). `publish`: a new DID ' +
-          'whose key this realm generates — kept sealed in `realm` custody, ' +
-          'or answered ONCE as `view.fresh.file` (a private JWK) in ' +
-          '`download` custody and never kept. In `wallet` custody a DID is ' +
-          'published, and its key changed, by proving keys with your ' +
-          'wallet at /authn/wallet?siop=1&enrol=1&did_act=…, and this act ' +
-          'refuses those (STS-VC-0173). `add-key` and `rotate-key` of a ' +
-          '`realm`-custody DID append a version with a newly generated ' +
-          'key, beside or instead of the current ones. `deactivate` ends ' +
-          'one: its address answers 410 Gone for good, its history stays ' +
-          'resolvable, and it no longer signs you in, nor is it preferred ' +
-          'or released. Refusals carry the library\'s code ' +
-          '(STS-VC-0167 to STS-VC-0176).',
-        body: DID_FORM,
-        statuses: {
-          400: 'Refused: publishing is off, no pinned base in product ' +
-               'mode, the cap, the custody, no such DID, or not stored ' +
-               '(STS-VC-0167 to STS-VC-0176).'
-        },
+        operationId: 'actOnPublishedDid', access: 'person', recentAuth: true, body: DID_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.didAct(ctx, req, res, caller, input.body);

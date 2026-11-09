@@ -181,7 +181,15 @@ function logArtifact(what, stage, value) {
 function headersOf(source) {
   log.debug("Entering headersOf().");
   const out = {};
-  Object.keys(source || {}).forEach(function (k) { out[k] = source[k]; });
+  // Raising the log level must not put a credential in the log (ASVS 5.0.0
+  // 16.2.5), so product mode leaves these out at any level.
+  const redact = require('./mode').redactsRequestLog();
+  Object.keys(source || {}).forEach(function (k) {
+    if (!redact || !/^(?:authorization|cookie|set-cookie|dpop|x-api-key)$/i
+      .test(k)) {
+      out[k] = source[k];
+    }
+  });
   log.debug("Leaving headersOf().");
   return out;
 }
@@ -195,6 +203,10 @@ function headersOf(source) {
  */
 function bodyOf(value) {
   log.debug("Entering bodyOf().");
+  if (require('./mode').redactsRequestLog()) {
+    log.debug("Leaving bodyOf(). Withheld.");
+    return value === undefined || value === null ? '' : '[withheld]';
+  }
   if (value === undefined || value === null) {
     log.debug("Leaving bodyOf().");
     return '';
@@ -998,8 +1010,7 @@ function rsaBitsFor(key) {
   return Number(config.value(key)) || 2048;
 }
 
-// The service signing key is 2048 bits and not a setting.
-const STS_SIGNING_KEY_BITS = 2048;
+// The service signing key's size is not a setting (#1491): the mode decides.
 
 // ---------------------------------------------------------------------------
 // THE TWO RSA SIGNING KEYS' CERTIFICATES, AND WHY THERE ARE TWO (2026-09-22,
@@ -1031,7 +1042,7 @@ function makeRsaSigningKey(useCaseId, privateKeyPem) {
   log.debug("Entering makeRsaSigningKey(). use=" + useCaseId);
   const unit = RSA_SIGNING_UNITS[useCaseId] || RSA_SIGNING_UNITS.jose;
   const made = stsCrypto.selfSignedRsaCertificate({
-    bits: STS_SIGNING_KEY_BITS,
+    bits: require('./mode').defaultRsaBits(),
     rsaPrivateKeyPem: privateKeyPem,
     commonName: unit.commonName,
     serialPrefix: unit.serialPrefix,
@@ -2838,18 +2849,19 @@ function prepareKeySet(realmId) {
   // awaited — `makeStsKeys()` reads the same three settings the same way.
   const bits = realms.run(realm, function () {
     return {
+      signing: require('./mode').defaultRsaBits(),
       vci: rsaBitsFor('oid4vci.requestEncryptionKeyBits'),
       refresh: rsaBitsFor('oauth2.refreshTokenEncryptionKeyBits'),
       requestObject: rsaBitsFor('oauth2.requestObjectEncryptionKeyBits')
     };
   });
   const work = Promise.all([
-    generateRsaPairAsync(STS_SIGNING_KEY_BITS, true),
+    generateRsaPairAsync(bits.signing, true),
     generateRsaPairAsync(bits.vci),
     generateRsaPairAsync(bits.refresh),
     generateRsaPairAsync(bits.requestObject),
     // The XML signing key (#42, D2), a fifth pair.
-    generateRsaPairAsync(STS_SIGNING_KEY_BITS, true)
+    generateRsaPairAsync(bits.signing, true)
   ]).then(function (pairs) {
     // Somebody may have made or adopted the set while the threads worked; the
     // factory's order decides, and a prepared set it does not use is dropped.
@@ -3187,7 +3199,11 @@ function decryptableJweAlgs(base) {
 function offeredJweAlgs(base) {
   log.debug("Entering offeredJweAlgs().");
   const offered = config.value('keys.offerKemEncryption') === true;
-  const out = (base || stsCrypto.JWE_ASYMMETRIC_ALGS).filter(function (alg) {
+  // Not advertised where it would be refused (#1469).
+  const legacy = require('./mode').allowsLegacyHashes();
+  const out = (base || stsCrypto.JWE_ASYMMETRIC_ALGS).filter(function (one) {
+    return legacy || one !== 'RSA-OAEP';
+  }).filter(function (alg) {
     return offered || !stsCrypto.describeJweKemAlg(alg);
   });
   log.debug("Leaving offeredJweAlgs(). " + out.length);
@@ -3566,7 +3582,10 @@ function signingAlgAllowlist() {
 function signingAlgListed(alg) {
   log.debug("Entering signingAlgListed(). alg=" + alg);
   const list = signingAlgAllowlist();
-  const listed = !list || alg === 'none' || list.indexOf(String(alg)) >= 0;
+  // secp256k1 is outside the approved curves (ASVS 5.0.0 11.6.1), so product
+  // signs with it only where the operator lists it.
+  const listed = list ? alg === 'none' || list.indexOf(String(alg)) >= 0
+    : !(alg === 'ES256K' && require('./mode').omitsUnapprovedSigningCurves());
   log.debug("Leaving signingAlgListed(). " + listed);
   return listed;
 }
@@ -5777,7 +5796,8 @@ async function mintStandbyKey(unitRow, role) {
                  createdAt: Date.now(), retiredAt: 0, retiredUntil: 0,
                  reason: '' };
   if (unitRow.kind === 'rsa') {
-    const pair = await generateRsaPairAsync(STS_SIGNING_KEY_BITS, true);
+    const pair = await generateRsaPairAsync(
+      require('./mode').defaultRsaBits(), true);
     const made = makeRsaSigningKey(unitRow.useCase, pair.privateKey);
     const kid = kidOf(made.certB64);
     log.debug("Leaving mintStandbyKey(). RSA " + kid);

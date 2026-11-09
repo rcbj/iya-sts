@@ -444,12 +444,21 @@ docker compose up -d --wait
 `--wait` returns once `sts` is healthy, a minute or two on a first start.
 
 * **Signing in.** The console's first account is `admin`, with a password
-  generated on the first start and printed once in the log; it has to be
-  changed at the first sign-in. To choose it instead, put
+  generated on the first start and written to `data/bootstrap-admin-password`,
+  which only the service can read; the log says where. It has to be changed at
+  the first sign-in. To choose it instead, put
   `STS_ADMIN_BOOTSTRAP_PASSWORD=...` in `.env` before the first start.
 
   ```bash
-  docker compose logs sts | grep -A6 'PRODUCT MODE BOOTSTRAP'
+  docker compose exec sts cat data/bootstrap-admin-password
+  ```
+
+  Product mode requires a second factor, so you enrol one at that first
+  sign-in. To script a sign-in with an authenticator app's secret, generate the
+  code with `oathtool`:
+
+  ```bash
+  oathtool --totp -b "$TOTP_SECRET"
   ```
 
   Then open `https://localhost:8081/admin` and accept the certificate.

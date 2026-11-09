@@ -40,6 +40,18 @@ Everything /admin/gnap draws. The endpoints of this realm's GNAP authorization s
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `state` | query | string |  | A grant state, narrowing the grants; any other value is no filter at all. |
+| `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `grantsPage` | query | integer |  | Which page of `grants` to return, answered by `grantsPaging`. The grants, newest first. |
+| `resourcesPage` | query | integer |  | Which page of `resources` to return, answered by `resourcesPaging`. The registered resource sets. |
+| `serversPage` | query | integer |  | Which page of `servers` to return, answered by `serversPaging`. The named authorization servers. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The authorization server as the page draws it.
 
 | Member | Type | Required | What it is |
@@ -197,6 +209,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].label` | string |  |  |
 | `settings.groups[].settings[].legacyEnv` | list, or string |  |  |
 | `settings.groups[].settings[].legacyEnv[]` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  |  |
 | `settings.groups[].settings[].max` | number |  |  |
 | `settings.groups[].settings[].min` | number |  |  |
 | `settings.groups[].settings[].ordered` | boolean |  |  |
@@ -288,6 +301,13 @@ Removes the resource set, after which its reference no longer resolves in a gran
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -325,6 +345,15 @@ Everything /admin/gnap/monitor draws: one row per application declared for GNAP,
 **Mirrors** `GET /admin/gnap/monitor` on the admin console.
 
 Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
+| `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The totals, and one row per application.
 
@@ -384,6 +413,13 @@ Finalizes the grant and revokes every access token issued under it, through the 
 **Mirrors** `POST /admin/gnap` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

@@ -2135,7 +2135,7 @@ function notifyCertificateObservers(algorithm) {
     useCase: 'tls',
     slot: 'server',
     alg: 'RS256',
-    keyAlg: 'rsa-2048',
+    keyAlg: 'rsa-' + require('../common/mode').defaultRsaBits(),
     label: 'TLS server certificate',
     commonName: rsaIssuance.commonName,
     profile: 'tls-server',
@@ -5495,6 +5495,20 @@ function startCertificateSessionIn(req, res, mode, revocation, gated) {
   const cert = peer.cert;
   const subject = peer.subject;
   const username = peer.username;
+  // A PERSON AT A BROWSER OWES THE SECOND FACTOR THE SCREEN WOULD ASK FOR
+  // (#1516), so product mode starts no one-factor
+  // session here for somebody who needs one; the sign-in screen's certificate
+  // door asks for it. This is the browser's door only. A certificate presented
+  // by a program (WS-Trust, a token exchange, RFC 8705, LDAP EXTERNAL, PKINIT)
+  // has nobody there to answer, and a federated sign-in is the partner's.
+  if (serviceMode.verifiesCredentials() &&
+      require('../common/credentials').mfaRequirementFor(username).required) {
+    errorCodes.mark(res, 'STS-TLS-0060');
+    log.debug('Leaving startCertificateSessionIn(). A second factor is owed.');
+    return { started: false,
+             why: 'a second factor is required, so sign in on the sign-in ' +
+                  'screen and choose your certificate there' };
+  }
   // WHICH OF THE BROWSER'S ACCOUNTS THIS IS (#561), for the answer: the
   // certificate's account live in the set is re-authenticated, any other
   // added.
@@ -6508,8 +6522,36 @@ function observeConnectionsOn(server, label) {
 // STARTS A SESSION, and in active-active mode an answer sent before the
 // session committed left a sign-out on another node unable to see it.
 // ---------------------------------------------------------------------------
+// **HELD TO Sec-Fetch-* IN PRODUCT (#1484, ASVS 5.0.0 3.5.3)**, the requirement's
+// own alternative to another method: this is a GET that starts a session, so
+// that a person can sign in by opening an address. A browser's request must be
+// a top-level navigation, typed by the person (`none`) or from this origin; a
+// link from another site, an iframe or an image starts nothing. A program sends
+// no Sec-Fetch-* and holds the certificate itself, and is unaffected.
+function foreignCertificateSignIn(req) {
+  log.debug('Entering foreignCertificateSignIn().');
+  const site = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+  const dest = String(req.headers['sec-fetch-dest'] || '').toLowerCase();
+  const fetched = String(req.headers['sec-fetch-mode'] || '').toLowerCase();
+  const foreign = !!(site || dest || fetched) &&
+    require('../common/mode').bindsSignInSteps() &&
+    !((site === 'none' || site === 'same-origin') && dest === 'document' &&
+      fetched === 'navigate');
+  log.debug('Leaving foreignCertificateSignIn(). ' + foreign);
+  return foreign;
+}
+
 app.get('/tls/sign-in', function (req, res) {
   log.debug('Entering GET /tls/sign-in.');
+  if (foreignCertificateSignIn(req)) {
+    errorCodes.mark(res, 'STS-TLS-0059');
+    res.set('Cache-Control', 'no-store');
+    res.status(403).json({ signedIn: false, error: 'access_denied',
+      error_description: 'Open this address directly to sign in with a ' +
+                         'certificate.' });
+    log.debug('Leaving GET /tls/sign-in. Not a navigation from here.');
+    return;
+  }
   // WHICH CELL SIGNS THE HOLDER IN (#98 D10), BEFORE the revocation check,
   // the identity gate and the session: a session is started where its person
   // is homed. `placeCertificateSignIn()` argues it; single-cell mode answers

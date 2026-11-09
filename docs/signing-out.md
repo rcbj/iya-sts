@@ -68,6 +68,9 @@ posted here ends nothing and is sent to the page with a `303`, because the
 page's own sign-out is `POST /authn-api/logout`, bound to your browser's
 session.
 
+A request from a page of another site is refused with `403`. A program that
+sends no `Origin` or `Sec-Fetch-Site` header is not affected.
+
 ```bash
 # global logout for whoever holds this cookie
 curl -k -b cookies.txt -X POST https://localhost:8081/logout \
@@ -269,6 +272,17 @@ What to expect:
   `id_token_encrypted_response_alg` (and `_enc`) with a public key in an inline
   `jwks`, and the Logout Token arrives as a Nested JWT, encrypted to that key
   exactly as your ID Tokens are.
+
+## What the browser is told to clear
+
+When a sign-out leaves no other account signed in to this browser, in this realm
+or any other, the answer carries `Clear-Site-Data: "storage"`. Other accounts and
+other realms share this origin's storage, so while one is signed in the header is
+not sent. The console, the portal and the report
+application also clear their own tab's storage before they leave for `/logout`,
+so a sign-out that never gets an answer still leaves nothing behind. Cookies
+are expired one by one instead of through `Clear-Site-Data`, which would reach
+every other realm's cookies on the same domain.
 
 ## The Sign out button on the console and the portal
 

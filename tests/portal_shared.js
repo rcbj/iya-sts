@@ -74,7 +74,8 @@ async function run(t) {
     SharedPages.PAGES.length === 2,
   'A1. Sharing is one section of the column, two pages under it');
   const module = new shared.PortalShared(shared.PortalShared.defaultDeps());
-  const ops = module.accountOperations(ctx);
+  const ops = require('../account-api/account_api_spec').named(
+    module.accountOperations(ctx));
   t.check(ops.length === 3 && ops.every(function (op) {
     return op.access === 'person' &&
       op.mirrors === op.method + ' ' + op.path.replace('/account-api',

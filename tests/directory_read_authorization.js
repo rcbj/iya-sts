@@ -112,7 +112,8 @@ function withSettings(pairs, fn) {
 function product(fn) {
   log.debug("Entering product().");
   log.debug("Leaving product().");
-  return withSettings({ 'global.mode': 'product' }, fn);
+  return withSettings({ 'global.mode': 'product',
+                        'authn.allowOptionalSecondFactor': 'true' }, fn);
 }
 
 function search(boundDn, base, filter, scope, attributes) {
@@ -487,6 +488,7 @@ function inAChild(mode) {
   const result = childProcess.spawnSync(process.execPath, ['-e',
     'require(' + JSON.stringify(__filename) + ').overTheSocket()'], {
     env: Object.assign(clean, { LOG_LEVEL: 'fatal', STS_MODE: mode,
+                                STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true',
                                 STS_HOST: '127.0.0.1', LDAP_PORT: '0',
                                 LDAPS_PORT: '0', READAUTH_REPORT: out }),
     encoding: 'utf8', timeout: 120000, cwd: ROOT

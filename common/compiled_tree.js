@@ -39,6 +39,27 @@ const ROOT = path.join(__dirname, '..');
 
 // Top-level directories that are not the service's own sources — the
 // exclusions `build-typescript.sh` and `tsconfig.build.json` use.
+// What the image build writes from the model (#1390). A tree without these
+// is not built, whatever its `.js` files say.
+const POLICY_KINDS = ['password', 'authn', 'passkey', 'locale', 'attributes',
+  'postLogin', 'serviceAccount'].map(function (kind) {
+  return 'policy.' + kind;
+});
+const GENERATED = ['application', 'role', 'device', 'serviceAccount', 'spiffe',
+  'xacmlPolicy', 'xacmlPep', 'federationRelationship'].concat(POLICY_KINDS)
+  .map(function (id) {
+    return 'models/generated/' + id + '.schema.json';
+  }).concat(POLICY_KINDS.map(function (id) {
+    return 'models/generated/' + id + '.fields.json';
+  })).concat(['models/generated/directory.names.json',
+    'models/generated/persistence.postgres.json',
+    'models/generated/persistence.mariadb.json',
+    'models/generated/openapi.report.json',
+    'models/generated/openapi.authn.json',
+    'models/generated/openapi.account.json',
+    'models/generated/openapi.management.json',
+    'models/generated/openapi.console.json']);
+
 /**
  * The top-level directories that are not the service's own sources, as the
  * TypeScript build excludes them.
@@ -118,13 +139,19 @@ function uncompiledSources(root) {
  */
 function refuseUncompiledTree(what) {
   const answer = uncompiledSources(ROOT);
+  GENERATED.forEach(function (relative) {
+    if (!fs.existsSync(path.join(ROOT, relative))) {
+      answer.found.push(relative);
+    }
+  });
   if (!answer.found.length) {
     return;
   }
   console.error(
     '[STS-CORE-0093] ' + (what || 'this process') + ' cannot run from this ' +
-    'tree: ' + answer.found.length + ' TypeScript source(s) have no compiled ' +
-    '.js beside them (' + answer.found.slice(0, 5).join(', ') +
+    'tree: ' + answer.found.length + ' file(s) were not built: TypeScript ' +
+    'with no compiled .js beside it, or a file generated from the model (' +
+    answer.found.slice(0, 5).join(', ') +
     (answer.found.length > 5 ? ', ...' : '') + '). TypeScript here is ' +
     'compiled only inside an image build (issue #50), so the service and its ' +
     'in-process suite run in containers: ./docker-npm-test.sh for npm test, ' +
@@ -144,6 +171,7 @@ function refuseUncompiledTree(what) {
  */
 module.exports = {
   NOT_SOURCES: NOT_SOURCES,
+  GENERATED: GENERATED,
   uncompiledSources: uncompiledSources,
   refuseUncompiledTree: refuseUncompiledTree
 };

@@ -1,5 +1,10 @@
 # CLAUDE.md — `account-api/`
 
+**The Account API OpenAPI document is written in `models/api/account.tsp` since #1390.**
+An operation's summary, description, tag, mirrors, statuses and answer model are there;
+its routing row (here and in `portal/`) keeps the path, the handler and the zod schemas,
+and `tests/model_openapi.js` holds those schemas to the model.
+
 ## 3ck. THE USER PORTAL'S ONLY DOOR (#568, 2026-10-12)
 
 `/account-api` is what the user portal draws every page from and sends every
@@ -127,6 +132,24 @@ parameter documented and a parameter refused are one declaration.
   reach an operation that takes no token (activation, reset, a forgotten
   password) with a CORS-safelisted `text/plain; x=json` and no preflight.
   `tests/account_api.js` section 6.
+
+**What a request may name (#1483, `/admin-api`'s #1476 rule).** After the
+gate and before the zod query, `run()` asks
+`common/request_headers.ts`'s `checkRequest()`, over the very parameter list
+the document publishes (`AccountApiSpec.parametersOf()`, cached per
+operation): an undeclared query name (`STS-ACCOUNT-0020`), a value its
+declared type does not hold (`0021`; a `vt.integer()` page documents as an
+`anyOf` and is left to zod, `0016`), a custom header (`0022`). Every operation
+declares `DPoP` and `X-Requested-With` (`implicitHeaders()`). `GET
+/account-api` carries `query` on each GET, the names its operation declares,
+and the portal's runtime sends a page's query filtered through them
+(`web_portal_runtime.ts`, `operationQuery()`): a page's address holds names
+only it means. `tests/api_request_names.js` holds it.
+
+**Examples (#1483, on #1475's rules).** In `models/api/account.tsp`, on each
+operation, replayed by Schemathesis's Examples phase with the fuzz
+person's real token: each is valid against its schema and names a thing that
+does not exist, or a page, so nothing is created, changed or signed out.
 
 ## WHAT AN ANSWER IS
 

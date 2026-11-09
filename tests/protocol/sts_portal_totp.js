@@ -394,7 +394,7 @@ async function signIn(door, who, onSecondFactor) {
     "the portal's shell should answer " + PORTAL_DOOR + "; it answered " +
     r.status + " -> " + r.location);
   r = await b.go("GET", portalAuthorizeUrl());
-  assert.ok(/\/authn\/login\?authn=/.test(r.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
     "the authorization endpoint should send a browser with no sign-on " +
     "session to the sign-in screen; it answered " + r.status + " -> " +
     r.location);
@@ -901,10 +901,11 @@ async function anActivationLinkCanSetOneUp() {
   // token (#568). Opening the link is asking that.
   const linked = new URL(url, base);
   const linkQuery = "?user=" +
-    encodeURIComponent(linked.searchParams.get("user") || "") + "&token=" +
-    encodeURIComponent(linked.searchParams.get("token") || "");
+    encodeURIComponent(linked.searchParams.get("user") || "");
+  const linkHeader =
+    { "X-Link-Token": new URLSearchParams(linked.hash.slice(1)).get("token") };
   const opened = await portal.nobody(base, "GET",
-                                     "/account-api/activation" + linkQuery);
+    "/account-api/activation" + linkQuery, undefined, linkHeader);
   let page = { status: opened.status,
                text: opened.json
                  ? await drawForNobody("/portal/activate", opened.json) : "" };
@@ -943,7 +944,7 @@ async function anActivationLinkCanSetOneUp() {
   // reading a flag: what somebody who abandons this step actually does is open
   // the link a second time.
   const reopened = await portal.nobody(base, "GET",
-                                      "/account-api/activation" + linkQuery);
+    "/account-api/activation" + linkQuery, undefined, linkHeader);
   check("AND THE ACTIVATION LINK IS STILL LIVE — somebody who ticks the box " +
         "and then cannot find their phone is not stranded with a spent link " +
         "and half an account", function () {
@@ -966,7 +967,7 @@ async function anActivationLinkCanSetOneUp() {
   });
 
   const spent = await portal.nobody(base, "GET",
-                                    "/account-api/activation" + linkQuery);
+    "/account-api/activation" + linkQuery, undefined, linkHeader);
   check("and NOW the link is spent", function () {
     assert.strictEqual(spent.status, 400,
       "the link still works after the setup finished; it answered " +

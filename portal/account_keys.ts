@@ -701,7 +701,8 @@ class AccountKeys {
                 sessionsEnded: ended.sessionsEnded,
                 address: websecurity.addressOf(req) }
     });
-    const said = ctx.translatorFor(username).text('portal.done.passkeyRemoved');
+    const said = ctx.translatorFor(username).text('portal.done.passkeyRemoved') + ' ' +
+      ctx.translatorFor(username).text('portal.done.endOthers');
     log.debug("Leaving AccountKeys.remove(). Removed.");
     return ctx.json(res, 200, { ok: true,
       message: ended.sentence ? said + ' ' + ended.sentence : said,
@@ -762,63 +763,28 @@ class AccountKeys {
     log.debug("Entering AccountKeys.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/keys', operationId: 'getKeys',
-        tag: 'Passkeys', access: 'person',
-        mirrors: 'GET ' + ctx.PORTAL + '/keys',
-        summary: 'Your passkeys, and adding one',
-        description: 'Each passkey you hold (`keys`), grouped `device` or ' +
-          '`security-key`, with its name, provider, dates, algorithm, ' +
-          'what its attestation proved and whether the realm\'s passkey ' +
-          'policy refuses it at sign-in. `enrol` says whether you may add ' +
-          'one and, while a registration is waiting, the ceremony to run ' +
-          '(`enrol.pending`) and the lanes a passkey may be created in ' +
-          '(`enrol.lanes`, #643). `signals` is the WebAuthn Signal API\'s ' +
-          'data, one entry per lane whose user handle you hold.',
+        access: 'person',
         query: KEYS_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return ctx.json(res, 200, self.view(caller, ctx.baseUrlOf(req)));
         } },
       { method: 'POST', path: ctx.BASE + '/keys', operationId: 'enrolKey',
-        tag: 'Passkeys', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/keys',
-        summary: 'Begins, finishes or cancels adding a passkey',
-        description: '`begin` mints a challenge and holds it (the policy ' +
-          'and the `lane`, #643, checked at the door; `algorithms: ' +
-          'classical`, #944, the classical retry, refused where the realm ' +
-          'forbids a classical passkey); `finish` verifies the browser\'s ' +
-          'registration with the sign-in screen\'s address rules and ' +
-          'answers `go` naming the new passkey; `cancel` drops the waiting ' +
-          'one. A refusal carries the page\'s `view`, except a browser ' +
-          'error reported with its own `capabilities` property while the ' +
-          'classical retry is offered (#961): that enrolment stays and the ' +
-          'answer carries no view. `role` is accepted and ignored since ' +
-          '#1135: a passkey carries no role, and the realm decides how ' +
-          'every key may be used. `enrol.allowed` says whether the realm ' +
-          'accepts a new passkey for any use.',
+        access: 'person', recentAuth: true,
         body: ENROL_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.enrol(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/keys/remove',
-        operationId: 'removeKey', tag: 'Passkeys', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/remove-key',
-        summary: 'Removes one of your passkeys',
-        description: 'Refused where it would leave you no way to sign in. ' +
-          'Your relying parties are told over CAEP, and every session the ' +
-          'passkey signed in ends (`sessionsEnded` counts them, #722); ' +
-          'your other sessions stay.',
+        operationId: 'removeKey', access: 'person', recentAuth: true,
         body: REMOVE_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.remove(ctx, req, res, caller, input.body);
         } },
       { method: 'POST', path: ctx.BASE + '/keys/rename',
-        operationId: 'renameKey', tag: 'Passkeys', access: 'person',
-        mirrors: 'POST ' + ctx.PORTAL + '/rename-key',
-        summary: 'Renames one of your passkeys',
-        description: 'At most 60 characters, no control characters; an ' +
-          'empty name puts the default back.',
+        operationId: 'renameKey', access: 'person',
         body: RENAME_KEY_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {

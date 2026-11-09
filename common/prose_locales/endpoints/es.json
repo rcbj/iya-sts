@@ -435,6 +435,10 @@
     "en": "3bc74315dcf2fb5e",
     "text": "El directorio de dominios de confianza"
   },
+  "endpoints.route./favicon.ico.name": {
+    "en": "6a36418727489219",
+    "text": "El icono del servicio"
+  },
   "endpoints.route./web/card.css.name": {
     "en": "96ed2387e40a779a",
     "text": "La hoja de estilo de tarjeta de las superficies públicas"
@@ -1226,6 +1230,10 @@
   "endpoints.route./admin-api/listeners/:action.name": {
     "en": "f35429cc1bbc09a8",
     "text": "Definir escuchas personalizadas, o asignarles aplicaciones"
+  },
+  "endpoints.route./admin-api/config-dump.name": {
+    "en": "9d414a56d337e804",
+    "text": "Volcado de la configuración"
   },
   "endpoints.route./admin-api/config/:action.name": {
     "en": "7e8873a02dca9738",
@@ -2455,8 +2463,12 @@
     "en": "f09855213e0c9733",
     "text": "TLS (se pide un certificado de cliente, nunca se exige)"
   },
-  "endpoints.route./favicon.ico.name": {
-    "en": "6a36418727489219",
-    "text": "El icono del servicio"
+  "endpoints.route./admin-api/malware-scanning.name": {
+    "en": "48adceb89b5e59c8",
+    "text": "Análisis de malware"
+  },
+  "endpoints.route./admin-api/malware-scanning/:action.name": {
+    "en": "5fea7fc18a3a67b9",
+    "text": "Probar el analizador"
   }
 }

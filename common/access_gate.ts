@@ -74,6 +74,7 @@
 
 import helpers = require('./helpers');
 import config = require('./config');
+import mode = require('./mode');
 // The error-code registry. A LEAF that requires nothing here, so this file
 // stays one; the two failures below are tagged in the log rather than audited,
 // because `audit.js` is a heavier require than a leaf gate should carry.
@@ -339,6 +340,7 @@ type AccessDecider =
 
 // What the gate needs from the rest of the service.
 interface AccessGateDeps {
+  mode: { failsOpenOnPolicyFault(): boolean };
   log: {
     debug(message: string): void;
     warn(message: string): void;
@@ -384,6 +386,7 @@ class AccessGate {
     return {
       log: helpers.log,
       config: config,
+      mode: mode,
       errorCodes: errorCodes
     };
   }
@@ -482,8 +485,8 @@ class AccessGate {
    *
    * Allowed without asking when no decider is installed, when
    * `xacml.enforceAccess` is off, or when the request names no resource or
-   * action. A decider that throws is a defect: the request is allowed and the
-   * fault logged under STS-XACML-0051.
+   * action. In product mode a fault (no decider, a throw, an empty answer, a
+   * check naming nothing) is a refusal; development allows it. Each is logged.
    *
    * @param request - the resource, action, subject (from the security context,
    *   never the request), owner, required roles and context
@@ -496,11 +499,23 @@ class AccessGate {
     const asked: AccessRequest = request || {};
     log.debug('Entering AccessGate.check(). resource=' + asked.resource +
               ', action=' + asked.action);
+    // A DECISION THAT CANNOT BE MADE (#1450, ASVS 5.0.0 8.2.1): product refuses
+    // and development allows, so a half-loaded development process still
+    // answers. Every case below goes through here; each is logged.
+    const fault = (code: string, why: string): AccessAnswer => {
+      const open = this.deps.mode.failsOpenOnPolicyFault();
+      // error-code: none — each caller of fault() names its literal code.
+      log.error(errorCodes.tag(code) + 'access_gate: ' + why +
+                (open ? ' Access was ALLOWED, in development mode.'
+                      : ' Access was REFUSED.'));
+      log.debug("Leaving AccessGate.check(). A fault.");
+      return open ? this.allow(why)
+                  : { allowed: false, decision: 'Indeterminate', why: why,
+                      policy: '' };
+    };
     if (!this.decider) {
-      log.debug("Leaving AccessGate.check(). No decider, so nothing is " +
-                "gated.");
-      return this.allow('The XACML access subsystem is not loaded in this ' +
-                        'process, so access is not gated by policy.');
+      return fault('STS-XACML-0181', 'no decider is installed in this ' +
+                   'process, so no decision could be asked for.');
     }
     if (config.value('xacml.enforceAccess') === false) {
       log.debug("Leaving AccessGate.check(). Enforcement is off.");
@@ -508,15 +523,9 @@ class AccessGate {
                         'not asked for.');
     }
     if (!asked.resource || !asked.action) {
-      // A caller that does not know what it is asking about. Allowed rather
-      // than refused, and logged, because the alternative is a gate that
-      // refuses because of a bug in the code that called it.
-      log.warn('access_gate: a check named ' +
-               (asked.resource ? 'no action' : 'no resource') +
-               ', so it was allowed. That is a defect at the call site ' +
-               'rather than a decision.');
-      log.debug("Leaving AccessGate.check().");
-      return this.allow('The check named no resource or no action.');
+      return fault('STS-XACML-0182', 'a check named ' +
+                   (asked.resource ? 'no action' : 'no resource') +
+                   ', which is a defect at the call site.');
     }
     let answer: AccessAnswer | null | undefined;
     try {
@@ -524,19 +533,16 @@ class AccessGate {
     } catch (error) {
       log.debug("Caught in AccessGate.check(): " +
                 ((error && error.message) || error));
-      // See the header: a THROW is a defect, not a Deny.
-      log.error(errorCodes.tag('STS-XACML-0051') +
-                'access_gate: the decider threw and access was ALLOWED; ' +
-                'this is a defect in the embedded PEP rather than a ' +
-                'decision. ' + error.message);
-      log.debug("Leaving AccessGate.check().");
-      return this.allow('The embedded PEP threw, which is a defect rather ' +
-                        'than a decision: ' + error.message);
+      return fault('STS-XACML-0051', 'the decider threw, which is a defect ' +
+                   'in the embedded PEP rather than a decision: ' +
+                   error.message);
     }
-    const result = answer || this.allow('The embedded PEP answered nothing.');
+    if (!answer) {
+      return fault('STS-XACML-0181', 'the embedded PEP answered nothing.');
+    }
     log.debug("Leaving AccessGate.check(). " +
-              (result.allowed ? 'Allowed.' : 'REFUSED: ' + result.why));
-    return result;
+              (answer.allowed ? 'Allowed.' : 'REFUSED: ' + answer.why));
+    return answer;
   }
 }
 

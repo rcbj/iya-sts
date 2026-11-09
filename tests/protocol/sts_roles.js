@@ -891,7 +891,7 @@ async function theAuthorizationEndpointRefuses() {
   let step = await refusedBrowser.go("GET", authorizeUrl(NARROWED));
   check("an unauthenticated authorization request goes to the sign-in screen",
     function () {
-      assert.ok(/\/authn\/login\?authn=/.test(step.location),
+      assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(step.location),
         "it went to " + step.location);
     });
   const refusedSignIn = await screenSignIn(refusedBrowser, step.location,
@@ -929,7 +929,7 @@ async function theAuthorizationEndpointRefuses() {
   const afterRefusal = await refusedBrowser.go("GET", authorizeUrl(NARROWED));
   check("and no session was established — the same browser is sent BACK to " +
         "the sign-in screen rather than through it", function () {
-    assert.ok(/\/authn\/login\?authn=/.test(afterRefusal.location),
+    assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(afterRefusal.location),
       "a refused sign-in must leave the browser signed in to nothing. This " +
       "one was answered " + afterRefusal.status + " -> " +
       afterRefusal.location + " instead of being sent back to the screen. " +
@@ -994,7 +994,7 @@ async function theAuthorizationEndpointRefuses() {
     authorizeUrl("roles-second-app"));
   check("the consent screen is drawn BEFORE the refusal, not after",
     function () {
-      assert.ok(/\/oauth2\/consent\?consent=/.test(asksFirst.location),
+      assert.ok(/\/oauth2\/consent(?:\?app=[^#]*)?[?#]consent=/.test(asksFirst.location),
         "it went to " + asksFirst.location);
     });
   await setSetting("oauth2.consentRequired", false);

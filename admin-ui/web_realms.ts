@@ -119,8 +119,8 @@ class RealmsPage {
       'class="num">' + t.html('consoleRealms.settings') + '</th></tr>' +
       rows + '</table>' +
       kit.pageNavPair('/admin/realms', kit.pageParamsOf(ctx.query), pg).head +
-      kit.perPageForm('/admin/realms', 'per', ctx.query.per, pg.perPage, '',
-                       listView) +
+      kit.perPageForm('/admin/realms', '', '', pg.perPage, '',
+                       kit.filterOnly(listView)) +
 
       '<h2 data-tab="define">' + t.html('consoleRealms.defineHeading') +
       '</h2>' +

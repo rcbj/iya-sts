@@ -23,6 +23,9 @@ ws-trust/            WS-Trust 1.0-1.4
 ws-federation/       WS-Federation 1.2
 kerberos/            the KDC, the acceptor, SPNEGO, and the codec
 ldap/                the embedded directory
+models/              the common-model overlay, and where an emit writes
+                     TypeSpec. See docs/data-model.md. The directory still
+                     enforces nothing
 persistence/         the only place this service writes anything down:
                      memory | ldif (RFC 2849) | postgres
 scim/                /scim/v2, its authentication, its attribute mapping

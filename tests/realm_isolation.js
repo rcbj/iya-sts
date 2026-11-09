@@ -255,6 +255,12 @@ function checkRevocation(t) {
 
   withRealm(t, 'iso-revoke', function (realm) {
     const jti = 'iso-jti-' + Date.now();
+    // Counted from here: other tests in this process have revoked things in
+    // the default realm.
+    const outsideBefore = stats.revokedCount();
+    const insideBefore = realms.run(realm, function () {
+      return stats.revokedCount();
+    });
     realms.run(realm, function () { stats.revoke(jti, 'this test'); });
 
     t.check(!stats.isRevoked(jti),
@@ -269,9 +275,10 @@ function checkRevocation(t) {
     const insideCount = realms.run(realm, function () {
       return stats.revokedCount();
     });
-    t.check(insideCount > outsideCount,
+    t.check(insideCount === insideBefore + 1 && outsideCount === outsideBefore,
             'the realm\'s revocation count is its own',
-            'realm=' + insideCount + ', default=' + outsideCount);
+            'realm=' + insideCount + ', default=' + outsideBefore + ' then ' +
+            outsideCount);
 
     // Restoring is per realm too, and it is worth its own line: `restore()`
     // deletes from the set and clears a flag on the token record, and a
@@ -772,20 +779,23 @@ function checkGnapStores(t) {
             'nor the monitor\'s counters');
     // The validation door's counts, in the same shape (#1360).
     const door = require('../common/certificate_trust');
+    // The door takes a realm's id; a record would be looked up as no realm.
+    const doorRealm = typeof realm === 'string' ? realm : realm.id;
     const doorConfig = require('../common/config');
     const inDefault = door.counters('default')['jose-signer'].assessed;
-    const inRealm = door.counters(realm)['jose-signer'].assessed;
+    const inRealm = door.counters(doorRealm)['jose-signer'].assessed;
     doorConfig.setOverride('pki.paranoid', 'on');
     try {
       door.assessSync('jose-signer', { leaf: 'not a certificate' },
-                      { realmId: realm });
+                      { realmId: doorRealm });
     } finally {
       doorConfig.clearOverride('pki.paranoid');
     }
-    t.check(door.counters(realm)['jose-signer'].assessed === inRealm + 1 &&
+    t.check(door.counters(doorRealm)['jose-signer'].assessed === inRealm + 1 &&
             door.counters('default')['jose-signer'].assessed === inDefault,
             'nor what the validation door answered inside the realm',
-            JSON.stringify(door.counters(realm)['jose-signer']));
+            JSON.stringify([inRealm, inDefault, door.counters(doorRealm)['jose-signer'],
+                            door.counters('default')['jose-signer']]));
     t.check(realms.run(realm, function () {
       return !!store.getGrant(ids.grant) &&
              !!store.tokenByValue('iso-gnap-token-value') &&

@@ -57,6 +57,10 @@ client may be issued are `oauthAllowedScope`.
 ## Two things to know first
 
 **A client is held to the response types and grant types it declares.**
+In product mode, a client with no `oauthGrantType` may use `authorization_code`
+and `refresh_token` alone, unless `oauth2.allowUndeclaredGrants` is on. List
+every other grant a client needs.
+
 `oauthResponseType` and `oauthGrantType` are the lists, whether a dynamic
 registration wrote them (`POST /oauth2/register`, RFC 7591 `response_types`
 and `grant_types`) or an administrator set them in the console or through
@@ -519,6 +523,10 @@ states; its client registers with `"scope":"openid offline_access bound_key"`.
 
 The RP sends the person to `GET` or `POST /oauth2/logout` with
 `post_logout_redirect_uri`, `id_token_hint` or `client_id`, and `state`.
+
+Send it as a top-level navigation. A `GET` the browser marks as something else,
+such as an image or a script, ends nothing and is asked to confirm, whatever hint
+it carries.
 
 **The return address must be registered.** In the console, it is the
 `oauthPostLogoutRedirectUri` field, on the new-application form or on the

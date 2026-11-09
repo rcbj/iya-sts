@@ -700,8 +700,8 @@
     "text": "Tiempo de inactividad de la sesión (segundos, 0 = ninguno)"
   },
   "authn.sessionIdleTimeoutS|description": {
-    "en": "3d8175702c053473",
-    "text": "Cuánto tiempo puede pasar una sesión SIN USARSE antes de terminar, además de la vigencia absoluta de arriba. **Cero, el valor predeterminado, significa sin tiempo de inactividad**, que es lo que este servicio ha hecho siempre. Si se define, una sesión que alguien deja de usar termina esa cantidad de segundos después de su última solicitud, sea cual sea el primero de los dos límites en llegar — y una solicitud a la consola de administración o al portal de usuario cuenta como uso de la sesión de inicio de sesión único que hay detrás, de modo que a un operador que trabaja en la consola no le cierra la sesión un reloj de inactividad sobre una sesión que no está presentando. Es en vivo: se aplica a las sesiones que ya existen, porque se comprueba donde se lee una sesión y no se sella donde se crea."
+    "en": "8c722efc24fd3b60",
+    "text": "Cuánto tiempo puede pasar una sesión SIN USARSE antes de terminar, además de la vigencia absoluta de arriba. **Cero, el valor predeterminado, significa sin tiempo de inactividad**, que es lo que este servicio ha hecho siempre. Si se define, una sesión que alguien deja de usar termina esa cantidad de segundos después de su última solicitud, sea cual sea el primero de los dos límites en llegar — y una solicitud a la consola de administración o al portal de usuario cuenta como uso de la sesión de inicio de sesión único que hay detrás, de modo que a un operador que trabaja en la consola no le cierra la sesión un reloj de inactividad sobre una sesión que no está presentando. Es en vivo: se aplica a las sesiones que ya existen, porque se comprueba donde se lee una sesión y no se sella donde se crea. En modo producto, si no se define, el valor predeterminado es 1800."
   },
   "authn.deviceBoundSessions|label": {
     "en": "454fe488dcb65a89",
@@ -1072,8 +1072,8 @@
     "text": "Pasos de desfase de reloj tolerados"
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "Cuántos pasos a cada lado del momento actual se aceptan. La sección 5.2 de RFC 6238 recomienda como máximo uno, que es el valor predeterminado y hace que un código valga unos noventa segundos. **Este SÍ es en vivo** y se aplica a cada registro existente — cuánto perdona un despliegue a un teléfono con el reloj desfasado es una política y no algo que el código QR comunicó a la aplicación. Cero exige un reloj perfectamente sincronizado y es el ajuste al que recurrir para demostrar qué ocurre sin uno."
+    "en": "16e7e0f293746c98",
+    "text": "Cuántos pasos a cada lado del momento actual se aceptan. La sección 5.2 de RFC 6238 recomienda como máximo uno, que es el valor predeterminado y hace que un código valga unos noventa segundos. **Este SÍ es en vivo** y se aplica a cada registro existente — cuánto perdona un despliegue a un teléfono con el reloj desfasado es una política y no algo que el código QR comunicó a la aplicación. Cero exige un reloj perfectamente sincronizado y es el ajuste al que recurrir para demostrar qué ocurre sin uno. En modo producto el valor predeterminado es 0, así que un código vale para un solo intervalo de 30 segundos."
   },
   "totp.secretBytes|label": {
     "en": "15a7f23cdeca7ba5",
@@ -7068,8 +7068,8 @@
     "text": "Escucha LDAP sin cifrar"
   },
   "ldap.plainListener|description": {
-    "en": "a288e85fa6b7689f",
-    "text": "Si se inicia siquiera la escucha sin cifrar en ldap.port. Activado por defecto, que es lo que este servicio siempre hizo. Desactivado deja LDAPS en ldap.tlsPort como única vía de entrada — que es lo que quiere un despliegue cuyos binds se VERIFICAN (modo producto), ya que un bind simple en 389 envía la contraseña en claro. El modo producto con esto activado registra al arrancar una advertencia que dice exactamente eso."
+    "en": "e0685a195274dbbb",
+    "text": "Si se inicia siquiera la escucha sin cifrar en ldap.port. Activado por defecto, que es lo que este servicio siempre hizo. Desactivado deja LDAPS en ldap.tlsPort como única vía de entrada — que es lo que quiere un despliegue cuyos binds se VERIFICAN (modo producto), ya que un bind simple en 389 envía la contraseña en claro. El modo producto con esto activado registra al arrancar una advertencia que dice exactamente eso. En modo producto, si no se define, está desactivado."
   },
   "ldap.plainListener|restartReason": {
     "en": "e92026b5264f72ad",
@@ -12170,5 +12170,245 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Solo para la escucha del depurador de protocolos: http.http2MaxConcurrentStreams. -1, el predeterminado, sigue a http.http2MaxConcurrentStreams; cualquier otro valor decide solo para esta escucha. Cuántas solicitudes puede tener abiertas a la vez una conexión HTTP/2 (SETTINGS_MAX_CONCURRENT_STREAMS); un flujo por encima se rechaza hasta que termine otro. 100, el predeterminado, es el valor más pequeño que recomienda RFC 9113; el propio de node no tiene límite, lo que permitiría a una sola conexión llevar el trabajo de miles. Limita el trabajo de una conexión como http.maxConnections limita las conexiones. Una conexión nueva sigue un cambio de inmediato, y a una abierta se le envía el nuevo valor."
+  },
+  "krb5.allowSha1Enctypes|label": {
+    "en": "15146ba7e398f699",
+    "text": "Ofrecer AES con SHA-1 en producción"
+  },
+  "krb5.allowSha1Enctypes|description": {
+    "en": "bc316355cf713a02",
+    "text": "Solo en modo producto. Activado, este KDC también puede usar los enctypes 17 y 18 (AES con HMAC-SHA1-96, RFC 3962). Desactivado, el valor predeterminado, el modo producto usa solo 19 y 20 (RFC 8009). ADVERTENCIA: el requisito 11.4.1 de ASVS 5.0.0 no acepta SHA-1 aquí, así que actívelo solo para clientes Kerberos que no admitan nada más reciente."
+  },
+  "krb5.allowSha1Enctypes|restartReason": {
+    "en": "8bca2d2d03148c2a",
+    "text": "las claves de cada principal se crean al iniciar"
+  },
+  "scep.allowInProduct|label": {
+    "en": "5a40ad7af32c5eb7",
+    "text": "Responder a SCEP en producción"
+  },
+  "scep.allowInProduct|description": {
+    "en": "ad9779aeb9ac6587",
+    "text": "Solo en modo producto. Activado, /enroll/scep responde en modo producto. Desactivado, el valor predeterminado, responde 503. ADVERTENCIA: RFC 8894 exige RSAES-PKCS1-v1.5 y AES-CBC, que los requisitos 11.3.1 y 11.3.2 de ASVS 5.0.0 no aceptan, así que actívelo solo para dispositivos que no admitan nada más reciente."
+  },
+  "oauth2.allowUndeclaredGrants|label": {
+    "en": "48f3e420ff8f61c0",
+    "text": "Permitir cualquier concesión a un cliente sin lista"
+  },
+  "oauth2.allowUndeclaredGrants|description": {
+    "en": "22bb986fa3711e13",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un cliente que no declara tipos de concesión solo puede usar authorization_code y refresh_token. Activado, puede usar cualquier concesión que ofrezca este servicio. ADVERTENCIA: el requisito 10.4.4 de ASVS 5.0.0 limita un cliente a las concesiones que necesita, así que déjelo desactivado fuera de un entorno de pruebas."
+  },
+  "admin.allowDefaultUsername|label": {
+    "en": "0ab7a95a721ff350",
+    "text": "Permitir un nombre de administrador predeterminado en producción"
+  },
+  "admin.allowDefaultUsername|description": {
+    "en": "261e7a2bb89b22e2",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, un administrador de arranque llamado admin, root, sa o administrator, o sin nombre, recibe un nombre generado impredecible, mostrado con su contraseña en el primer inicio. Activado, se usa el nombre configurado tal cual. ADVERTENCIA: el requisito 6.3.2 de ASVS 5.0.0 prohíbe un nombre de cuenta predeterminado, así que déjelo desactivado fuera de un entorno de pruebas."
+  },
+  "admin.allowDefaultUsername|restartReason": {
+    "en": "0191948468332113",
+    "text": "el arranque inicial se ejecuta una sola vez, entre la apertura del almacén de persistencia y el enlace de la escucha, así que un cambio posterior ya no tiene nada que nombrar"
+  },
+  "crypto.allowLegacyHashes|label": {
+    "en": "e64b3dc98c254326",
+    "text": "Permitir SHA-1 y MD5 donde un protocolo aún los usa"
+  },
+  "crypto.allowLegacyHashes|description": {
+    "en": "21064646f0ea0387",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, este servicio no usa OAEP sobre SHA-1 en cifrado XML ni JWE, la derivación de claves PKINIT SHA-1 ni la suma de comprobación HMAC-MD5 de S4U2Self. Activado, los usa. ADVERTENCIA: el requisito 11.4.1 de ASVS 5.0.0 no permite esas funciones hash, así que actívelo solo para socios o clientes que no admitan nada más reciente."
+  },
+  "security.allowUnscopedPeople|label": {
+    "en": "502e12a150357d63",
+    "text": "Permitir a una persona sin rol acceder a SCIM y Shared Signals"
+  },
+  "security.allowUnscopedPeople|description": {
+    "en": "2bf5565da47abb33",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, quien se autentica en /scim/v2 o Shared Signals con un esquema sin ámbito, como HTTP Basic o la cookie de sesión, necesita Admin Read para leer y Admin Write para escribir. Activado, cualquier persona autenticada puede. ADVERTENCIA: activado, no se cumplen los requisitos 8.2.1 y 8.2.2 de ASVS 5.0.0, porque cualquiera podría cambiar cualquier cuenta. Use ámbitos OAuth para los clientes de aprovisionamiento."
+  },
+  "security.fileRoots|label": {
+    "en": "7f144086ba380c16",
+    "text": "Directorios desde los que se puede leer un archivo nombrado"
+  },
+  "security.fileRoots|description": {
+    "en": "a378a866f9204d53",
+    "text": "Solo en modo producto. Una lista de directorios absolutos separados por comas. Un archivo nombrado por un administrador en un ajuste o una solicitud (un archivo CA, un archivo de token o clave SPIFFE, un archivo Sigstore, un certificado o clave de correo) solo se lee si su ruta real, tras seguir los enlaces simbólicos, está dentro de uno de ellos. Se define en el entorno o en el archivo appconfig y no se puede cambiar desde la consola ni la API, para que la solicitud de un administrador no pueda ampliarlo. ADVERTENCIA: añadir / u otro directorio amplio significa que no se cumple el requisito 5.3.2 de ASVS 5.0.0."
+  },
+  "risk.maxSkippedLinesPercent|label": {
+    "en": "f299cbec779c44e8",
+    "text": "Parte máxima de las líneas de un conjunto de datos que puede no analizarse (porcentaje)"
+  },
+  "risk.maxSkippedLinesPercent|description": {
+    "en": "ff816ae98311e5a5",
+    "text": "Se rechaza un archivo de conjunto de datos en el que más de este porcentaje de sus líneas sin comentario no son filas del formato, y no se conserva nada de él. 100 acepta cualquier archivo con al menos una fila, que es lo que hacía antes este servicio. ADVERTENCIA: con 100 se puede cargar un archivo de otro tipo siempre que una línea se analice."
+  },
+  "crypto.allowCbcJwe|label": {
+    "en": "47b44d2ca23a7a17",
+    "text": "Permitir el cifrado de contenido JWE CBC-HMAC"
+  },
+  "crypto.allowCbcJwe|description": {
+    "en": "20f6a7dc269fe48a",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, JWE usa y acepta solo AES-GCM: A128CBC-HS256, A192CBC-HS384 y A256CBC-HS512 no se ofrecen ni se aceptan, y un cliente que nombra un algoritmo sin enc recibe la respuesta en A256GCM. Activado, funcionan como en desarrollo. ADVERTENCIA: mientras esté activado no se cumple el requisito 11.3.2 de ASVS 5.0.0; actívelo solo para un socio que no pueda leer AES-GCM."
+  },
+  "authn.allowOptionalSecondFactor|label": {
+    "en": "54d27fb9494e1370",
+    "text": "Permitir iniciar sesión sin segundo factor"
+  },
+  "authn.allowOptionalSecondFactor|description": {
+    "en": "4f841a3ff50e4a00",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, se exige un segundo factor a todos, incluidos los administradores, diga lo que diga la política de autenticación, y quien no tenga uno lo registra al iniciar sesión. Las cuentas de servicio exentas siguen exentas. Activado, decide la política de autenticación. ADVERTENCIA: activado, el requisito 6.3.3 de ASVS 5.0.0 solo se cumple si la política lo exige."
+  },
+  "admin.logBootstrapPassword|label": {
+    "en": "02a3293594ba0523",
+    "text": "Registrar la contraseña de arranque generada"
+  },
+  "admin.logBootstrapPassword|description": {
+    "en": "577ec7c125546cdb",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, la contraseña generada para el primer administrador se escribe en el archivo bootstrap-admin-password de persistence.dataDir, legible solo por este servicio, y el registro indica dónde. Activado, se escribe en el registro del servicio. ADVERTENCIA: activado, no se cumple el requisito 16.2.5 de ASVS 5.0.0, porque una credencial llega al registro."
+  },
+  "oauth2.allowConfidentialWithoutPkce|label": {
+    "en": "c33a0a31a1d623b1",
+    "text": "Permitir que un cliente confidencial omita PKCE"
+  },
+  "oauth2.allowConfidentialWithoutPkce|description": {
+    "en": "87599e0feb7aa8e3",
+    "text": "Solo en modo producto. Desactivado, el valor predeterminado, se rechaza una solicitud de autorización sin code_challenge para todo cliente. Activado, un cliente confidencial puede omitirlo y la solicitud solo se registra. ADVERTENCIA: activado, no se cumple el requisito 10.4.6 de ASVS 5.0.0."
+  },
+  "malwareScan.enabled|label": {
+    "en": "d0834826933c0682",
+    "text": "Analizar archivos en busca de malware"
+  },
+  "malwareScan.enabled|description": {
+    "en": "bb893f03ed99dd0c",
+    "text": "Desactivado, el valor predeterminado, no se analiza nada. Activado, cada foto de perfil, logotipo, foto copiada de un socio de federación y conjunto de datos de riesgo subido se envía primero al servicio ICAP de malwareScan.url, y se rechaza si el servicio lo marca o no puede responder."
+  },
+  "malwareScan.url|label": {
+    "en": "08acec5549f532ea",
+    "text": "Dirección del servicio ICAP"
+  },
+  "malwareScan.url|description": {
+    "en": "03fc5c265603704f",
+    "text": "El servicio de análisis, como icap://host:puerto/servicio o icaps://host:puerto/servicio (RFC 3507). Se puede usar cualquier antivirus con servicio ICAP."
+  },
+  "malwareScan.timeoutMs|label": {
+    "en": "e616aee1107e9402",
+    "text": "Tiempo de espera del análisis (milisegundos)"
+  },
+  "malwareScan.timeoutMs|description": {
+    "en": "59a643baa5f14b91",
+    "text": "Cuánto esperar al servicio. Un archivo grande dispone de un segundo más por mebibyte."
+  },
+  "malwareScan.caFile|label": {
+    "en": "15e0140ac004309d",
+    "text": "Archivo CA para un servicio icaps"
+  },
+  "malwareScan.caFile|description": {
+    "en": "5ab91aec22f02c61",
+    "text": "Un archivo PEM de certificados CA a los que puede encadenar un servicio icaps, además de las raíces públicas. Sujeto a security.fileRoots."
+  },
+  "malwareScan.allowCleartext|label": {
+    "en": "5538ba47a0743bd0",
+    "text": "Permitir ICAP sin cifrar en modo producto"
+  },
+  "malwareScan.allowCleartext|description": {
+    "en": "c00ee2f1e34722ff",
+    "text": "Desactivado, el valor predeterminado, el modo producto rechaza una dirección icap:// y no se aceptan archivos hasta que se defina una dirección icaps://. Activado, los archivos pueden llegar al analizador sin cifrar. Úselo solo en una red de confianza."
+  },
+  "security.passwordContextWords|label": {
+    "en": "6951c2a585da99f7",
+    "text": "Palabras que una contraseña no puede contener"
+  },
+  "security.passwordContextWords|description": {
+    "en": "fac6e61cb1da6802",
+    "text": "Palabras adicionales que una contraseña nueva no puede contener, como los nombres de su organización, producto, proyecto o departamento. Separadas por comas. El nombre del servicio y el nombre y dominio del dominio de confianza siempre se rechazan. Una palabra necesita al menos cuatro letras; la comprobación ignora mayúsculas y sustituciones habituales, como 0 por o."
+  },
+  "oauth2.refreshTokenMaxChainS|label": {
+    "en": "fd72d81940ff8ab9",
+    "text": "Duración máxima de una cadena de tokens de actualización (s)"
+  },
+  "oauth2.refreshTokenMaxChainS|description": {
+    "en": "48b5a77555c81355",
+    "text": "Límite absoluto de una autorización renovada con tokens de actualización, contado desde el primero. Superado, la persona vuelve a iniciar sesión, por mucho que el cliente haya actualizado. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 30 días por defecto."
+  },
+  "federation.allowUntypedLogoutToken|label": {
+    "en": "6ef2596a6d379cfa",
+    "text": "Aceptar un token de cierre de sesión de un socio sin tipo explícito"
+  },
+  "federation.allowUntypedLogoutToken|description": {
+    "en": "5d58103a9e255bdf",
+    "text": "Desactivado, el valor predeterminado, el modo producto solo acepta el token de cierre de sesión de un socio si tiene el tipo logout+jwt. Activado, también se acepta un token de tipo jwt o sin tipo, para un socio que no envía el tipo. La especificación OpenID solo lo recomienda."
+  },
+  "account.recentAuthMinutes|label": {
+    "en": "dfa5936497901458",
+    "text": "Antigüedad máxima del inicio de sesión para cambiar un segundo factor (min)"
+  },
+  "account.recentAuthMinutes|description": {
+    "en": "50ed3d8089739a00",
+    "text": "Una persona que cambie sus segundos factores, códigos de recuperación, llaves de acceso o dirección de correo en el portal debe haber iniciado sesión en estos minutos; de lo contrario, se la envía a iniciar sesión de nuevo. 0 significa que no se pide, el valor predeterminado en desarrollo. El modo producto usa 15 por defecto."
+  },
+  "persistence.allowDefaultDatabasePassword|label": {
+    "en": "24634837693652d6",
+    "text": "Permitir una contraseña predeterminada de la base de datos en modo producto"
+  },
+  "persistence.allowDefaultDatabasePassword|description": {
+    "en": "b7b661b267c62aa2",
+    "text": "Desactivado, el valor predeterminado, el modo producto no se inicia con una contraseña de base de datos conocida, como sts_app del archivo compose incluido, o una contraseña igual al nombre de usuario. Activado, se inicia de todos modos. Úselo solo en una pila de pruebas."
+  },
+  "authn.sessionsEndedBefore|label": {
+    "en": "174234a42e8c3da2",
+    "text": "Las sesiones iniciadas antes de este instante han finalizado (ms)"
+  },
+  "authn.sessionsEndedBefore|description": {
+    "en": "c11569be4873c007",
+    "text": "Lo define «Finalizar todas las sesiones» en la página Sesiones. Una sesión iniciada antes de este instante, en milisegundos desde 1970, ha finalizado. 0 significa que ninguna."
+  },
+  "oauth2.consentAlwaysForPublicClients|label": {
+    "en": "b2f544167d0f1309",
+    "text": "Pedir siempre consentimiento para un cliente público"
+  },
+  "oauth2.consentAlwaysForPublicClients|description": {
+    "en": "147cce1b272c536f",
+    "text": "Un cliente público no puede demostrar quién es, así que se pregunta a la persona cada vez que solicita acceso, sea cual sea su respuesta anterior. Las aplicaciones de este servicio no se preguntan. Activado por defecto en modo producto."
+  },
+  "federation.maxPartnerAuthAgeS|label": {
+    "en": "7994b4352961110b",
+    "text": "Autenticación de socio más antigua aceptada (s)"
+  },
+  "federation.maxPartnerAuthAgeS|description": {
+    "en": "c67a42c14975e328",
+    "text": "Rechaza un inicio de sesión federado cuyo socio indique que la persona se autenticó hace más tiempo que este, usando auth_time o AuthnInstant. Mientras haya un límite, se rechaza a un socio que no lo indique. 0, el valor predeterminado, no lo pide."
+  },
+  "security.requestsPerAddressPerMinute|label": {
+    "en": "6e933f6a681d3968",
+    "text": "Solicitudes por dirección y minuto"
+  },
+  "security.requestsPerAddressPerMinute|description": {
+    "en": "7324a27b3b761012",
+    "text": "Límite de todas las solicitudes de una dirección, por proceso. Es un freno al abuso, distinto de los límites de intentos de credenciales. 0 significa sin límite, el valor predeterminado en desarrollo. El modo producto usa 6000 por defecto. Detrás de un proxy, defina global.trustedProxies para que las direcciones se lean correctamente."
+  },
+  "audit.allowPlainSyslog|label": {
+    "en": "1401e9d7380768e3",
+    "text": "Permitir la exportación de auditoría syslog sin cifrar en modo producto"
+  },
+  "audit.allowPlainSyslog|description": {
+    "en": "cc8beb8a652a3752",
+    "text": "Desactivado, el valor predeterminado, el modo producto solo acepta el transporte tls para un destino de auditoría syslog. Activado, también se aceptan tcp y udp, y el registro de auditoría cruza la red sin cifrar. Úselo solo en una red de confianza."
+  },
+  "security.outboundAllowedHosts|label": {
+    "en": "48109be8cdfd0972",
+    "text": "Hosts a los que este servicio puede conectarse"
+  },
+  "security.outboundAllowedHosts|description": {
+    "en": "f1d0447a0b56f74e",
+    "text": "Si se define, una solicitud saliente en la que pueda influir un socio, cliente o llamante solo puede llegar a estos hosts. Separados por comas: un nombre exacto, o un punto inicial para todo un dominio, como .example.com. Vacío, el valor predeterminado, permite cualquier host público. Las direcciones internas se rechazan siempre en modo producto."
+  },
+  "security.hstsIncludeSubDomains|label": {
+    "en": "1ac0e6ab8c38092f",
+    "text": "Aplicar HSTS a los subdominios"
+  },
+  "security.hstsIncludeSubDomains|description": {
+    "en": "26b0298f1a2bd460",
+    "text": "Añade includeSubDomains a Strict-Transport-Security, para que los navegadores usen HTTPS en todos los subdominios del nombre de host de este servicio. Activado por defecto en modo producto. Desactívelo si un subdominio debe seguir respondiendo por HTTP sin cifrar."
   }
 }

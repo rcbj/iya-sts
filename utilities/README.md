@@ -1,11 +1,12 @@
 # Utilities
 
-Load and soak scripts used against a running iya-sts (8081 by default). They
+Load and soak scripts used against a running iya-sts (8081 by default). Apart from `config-dump.js`, they
 are not part of the service: `.dockerignore` keeps them out of the image, and
 no test runs them.
 
 | Script | What it does |
 |---|---|
+| `config-dump.js` | Saves the masked configuration dump (`docs/configuration-dump.md`). The one script here that ships in the image. |
 | `load-users.js` (`run.sh`) | Adds people to a realm's directory over LDAPS, resumably, through a bind identity it creates and then takes Admin Write back from. |
 | `bulk-import.sh` | Loads people with the offline bulk import (`persistence/bulk_import.js`), one generated LDIF file at a time, with the `sts` container stopped. |
 | `sessions-1m/setup.js` | Prepares the realm for the session test: raises the session, refresh-family and revocation limits, and creates the relying party `sessions-1m-rp`. |

@@ -1894,5 +1894,9 @@
   "audit.actions.persistence.minted-drop.label": {
     "en": "065f403ac7419f76",
     "text": "Une ligne frappée qui ne pouvait jamais être validée a été abandonnée"
+  },
+  "audit.actions.admin.config-dump.label": {
+    "en": "2da852eeb075a014",
+    "text": "La configuration a été exportée"
   }
 }

@@ -202,12 +202,12 @@ class OidfedApi {
           ['policiesPage', 'the Trust Mark policies']
         ].map(function (one: string[]): Json {
           return { name: one[0], in: 'query', required: false,
-                   schema: { type: 'integer', minimum: 1 },
+                   schema: { type: 'integer', minimum: 1, examples: [1] },
                    description: 'Which page of ' + one[1] + '. Clamped, ' +
                                 'like every page parameter here.' };
         }).concat([
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page, shared by the seven lists.' }
         ]),
         responseDescription: 'The realm as a federation entity.',

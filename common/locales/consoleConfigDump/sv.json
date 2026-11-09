@@ -1,0 +1,7 @@
+{
+  "about": "Alla konfigurationsparametrar för den här körande instansen: de globala värdena och vad varje förtroenderealm anger. Servern maskerar lösenord, token, nycklar och andra känsliga värden innan de når den här sidan. Katalogobjekt ingår inte.",
+  "summary": "{total} parametrar, {masked} maskerade värden, {realms} andra realmer.",
+  "download": "Ladda ner JSON",
+  "thRealm": "Realm",
+  "thOwn": "Parametrar som den anger"
+}

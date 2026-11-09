@@ -1583,6 +1583,16 @@ class UsersPage {
   // what moved it, and a link to the assessments behind it. No script: a
   // styled block, as every tile on this page is.
   // -------------------------------------------------------------------------
+  // The statement a product deployment refuses to clear a factor without
+  // (#1504). `required` is asked in both modes: it is good practice
+  // anywhere, and the server is what enforces it.
+  static evidenceField(t: any): string {
+    return '<div class="formrow"><label>' +
+      t.html('consoleUsers.mfaSection.evidenceLabel') + ' ' +
+      '<input type="text" name="evidence" required minlength="8" ' +
+      'maxlength="500"></label></div>';
+  }
+
   static riskBadge(t: any, standing: any): string {
     const level = standing ? String(standing.level || 'UNSCORED')
                            : 'UNKNOWN';
@@ -1887,6 +1897,7 @@ class UsersPage {
       (mech.totp && state.write
         ? '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="clear-totp">' +
+          UsersPage.evidenceField(t) +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           carryBack +
           '<div class="formrow"><button class="danger" title="' +
@@ -1992,6 +2003,7 @@ class UsersPage {
         '</td><td>' + (state.write
           ? '<form method="post" action="/admin/users">' +
             '<input type="hidden" name="action" value="clear-key">' +
+            UsersPage.evidenceField(t) +
             '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
             '<input type="hidden" name="credentialId" value="' +
             kit.esc(one.credentialId || '') + '">' + carryBack +
@@ -2137,6 +2149,7 @@ class UsersPage {
       (b.present && state.write
         ? '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="clear-backup-codes">' +
+          UsersPage.evidenceField(t) +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           carryBack +
           '<div class="formrow"><button class="danger" title="' +
@@ -2948,6 +2961,7 @@ class UsersPage {
       (state.write && mf.optedIn
         ? '<form method="post" action="/admin/users">' +
           '<input type="hidden" name="action" value="clear-email-factor">' +
+          UsersPage.evidenceField(t) +
           '<input type="hidden" name="user" value="' + kit.esc(key) + '">' +
           carryBack + '<div class="formrow"><button class="danger"' +
           kit.tip(t.text('consoleUsers.emailFactorBlock.turnOffTip')) + '>' +

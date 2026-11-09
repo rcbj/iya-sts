@@ -395,6 +395,7 @@ function childMain() {
       mail: 'paula@wsfed-initiation.example' } });
     credentials.setPassword(PERSON_P, PASSWORD_P);
     config.setOverride('global.mode', 'product');
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     config.setOverride('risk.assessSignIns', false);
     try {
       note(config.value('global.mode') === 'product',
@@ -436,7 +437,11 @@ function childMain() {
       r = await paula.go('GET', link(RP_OPEN, { wctx: 'risk' }));
       const stepToP = String(r.headers.location || '');
       let recordP = null;
-      new URL(stepToP, 'http://127.0.0.1').searchParams.forEach(function (v) {
+      // Product carries the step in the fragment (#1454), development in the
+      // query.
+      const stepUrlP = new URL(stepToP, 'http://127.0.0.1');
+      new URLSearchParams(stepUrlP.search.slice(1) + '&' +
+                          stepUrlP.hash.slice(1)).forEach(function (v) {
         recordP = recordP || authn.pendingFor(v);
       });
       note(heldP && r.status === 303 && /\/authn\/login/.test(stepToP) &&
@@ -467,6 +472,7 @@ function childMain() {
       }
     } finally {
       config.clearOverride('risk.assessSignIns');
+      config.clearOverride('authn.allowOptionalSecondFactor');
       config.clearOverride('global.mode');
     }
 

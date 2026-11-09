@@ -1,0 +1,7 @@
+{
+  "about": "Todos los parámetros de configuración de esta instancia en ejecución: los valores globales y lo que establece cada dominio de confianza. El servidor enmascara las contraseñas, los tokens, las claves y cualquier otro valor sensible antes de que lleguen a esta página. Los objetos del directorio no se incluyen.",
+  "summary": "{total} parámetros, {masked} valor(es) enmascarado(s), {realms} dominio(s) más.",
+  "download": "Descargar JSON",
+  "thRealm": "Dominio",
+  "thOwn": "Parámetros que establece"
+}

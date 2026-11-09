@@ -825,6 +825,19 @@ class RiskDatasets {
                           o.format + ' (' + skipped + ' line(s) were not).',
                           o, version);
     }
+    // A FILE OF THE WRONG KIND (#1480, ASVS 5.0.0 5.2.2): one line that
+    // happens to parse is not a file of this format.
+    const tolerated = Number(config.value('risk.maxSkippedLinesPercent'));
+    if (skipped * 100 > tolerated * (rows + skipped)) {
+      const why = skipped + ' of ' + (rows + skipped) + ' lines are not rows ' +
+        'of ' + o.format + ', more than risk.maxSkippedLinesPercent allows';
+      await this.dropRows(entry.kind, realm, o.dataset, version);
+      await store.finishVersion(realm, o.dataset, version, {
+        state: 'refused', rowCount: rows, loadedAt: now(), refusal: why,
+        errorCode: 'STS-RISK-0056', parameters: counted });
+      log.debug("Leaving RiskDatasets.importVersion(). Not this format.");
+      return this.refused('STS-RISK-0056', why + '.', o, version);
+    }
     const shrink = await this.shrinkRefusal(realm, o.dataset, rows);
     if (shrink) {
       await this.dropRows(entry.kind, realm, o.dataset, version);

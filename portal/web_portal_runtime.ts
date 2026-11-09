@@ -59,6 +59,7 @@
 // ---------------------------------------------------------------------------
 
 import SpaClient = require('../common/web_spa_client');
+import WebSafeDom = require('../common/web_safe_dom');
 import WebMessages = require('../common/web_messages');
 import kit = require('./web_portal_kit');
 import PortalShell = require('./web_portal_shell');
@@ -113,6 +114,10 @@ class PortalRuntime extends SpaClient {
   private nobody: Json;
   private t: Json;
   private formTable: Json;
+  // Each GET operation's declared query names (#1483), read with the table
+  // above: a page's address holds names only it means, and this API refuses
+  // a query name its operation does not declare.
+  private queryNames: Json;
   private view: Json;
   // The announcement banner's poller (#1086), once the person is known.
   private announcements: WebAnnouncements | null = null;
@@ -158,6 +163,7 @@ class PortalRuntime extends SpaClient {
     this.nobody = null;
     this.t = WebMessages.WebTranslator.fromData(null);
     this.formTable = null;
+    this.queryNames = null;
     this.view = null;
     this.flash = null;
     this.drawnAt = '';
@@ -296,7 +302,7 @@ class PortalRuntime extends SpaClient {
   async finishSignIn(): Promise<void> {
     // A JARM answer is opened and checked first (`SpaClient`).
     const query = await this.openAuthorizationResponse(
-      SpaClient.queryOf(this.env.location.search));
+      this.callbackParameters());
     let saved: Json = null;
     try {
       saved = JSON.parse(this.env.sessionStorage.getItem(SIGNIN_KEY) ||
@@ -311,7 +317,8 @@ class PortalRuntime extends SpaClient {
                        String(query.error_description || query.error));
       return;
     }
-    if (!saved || !query.code || query.state !== saved.state) {
+    if (!saved || !query.code || query.state !== saved.state ||
+        !await this.issuerMatches(query)) {
       // THE RETURN TAB of a same-device wallet holds no PKCE record. The
       // tab that opened the portal still does, and it redeems the code.
       if (query.code && query.state &&
@@ -641,13 +648,45 @@ class PortalRuntime extends SpaClient {
       return false;
     }
     const table: Json = {};
+    const queries: Json = {};
     (index.json.operations || []).forEach(function (op: Json) {
       if (op.mirrors) {
         table[op.mirrors] = op;
       }
+      if (op.method === 'GET' && Array.isArray(op.query)) {
+        queries[op.path] = op.query;
+      }
     });
     this.formTable = table;
+    this.queryNames = queries;
     return true;
+  }
+
+  /**
+   * The part of a page's query its operation takes (#1483): the operation
+   * refuses a name it does not declare, and an address holds others. With
+   * no table in hand, everything: the API says what it will not take.
+   *
+   * @param operation - the GET operation's path
+   * @param query - the page's query
+   * @returns the query to send
+   */
+  async operationQuery(operation: string, query: Json): Promise<Json> {
+    if (!Object.keys(query || {}).length) {
+      return query;
+    }
+    await this.ensureFormTable();
+    const declared = this.queryNames && this.queryNames[operation];
+    if (!declared) {
+      return query;
+    }
+    const kept: Json = {};
+    Object.keys(query).forEach(function (name) {
+      if (declared.indexOf(name) >= 0) {
+        kept[name] = query[name];
+      }
+    });
+    return kept;
   }
 
   // --- drawing -------------------------------------------------------------
@@ -687,8 +726,9 @@ class PortalRuntime extends SpaClient {
     // every shell of a realm that set nothing.
     const brand = WebSurface.brandOf(doc.documentElement);
     doc.title = title + ' — ' + (brand.name || 'IYA STS');
-    doc.body.innerHTML = PortalRuntime.realmLinks(
-      WebSurface.brandHeader(brand) + html, this.prefix);
+    WebSafeDom.render(doc.body,
+      PortalRuntime.realmLinks(
+      WebSurface.brandHeader(brand) + html, this.prefix));
     // A page just drawn holds nothing typed (#561's unsaved-changes test).
     this.dirty = false;
     this.drawnAt = this.env.location.pathname + this.env.location.search;
@@ -853,10 +893,17 @@ class PortalRuntime extends SpaClient {
       this.drawView();
       return;
     }
-    const qs = new URLSearchParams(query).toString();
+    const qs = new URLSearchParams(await this.operationQuery(page.operation,
+                                                             query)).toString();
     const target = page.operation + (qs ? '?' + qs : '');
-    const answer = forNobody ? await this.publicJson('GET', target)
-                             : await this.apiJson('GET', target);
+    // AN EMAILED LINK'S TOKEN IS IN THE FRAGMENT (#1454, ASVS 5.0.0 14.2.1), so
+    // it is in no address a server or a log sees: it goes in a header.
+    const linkToken = new URLSearchParams(
+      String(this.env.location.hash || '').replace(/^#/, '')).get('token');
+    const answer = forNobody
+      ? await this.publicJson('GET', target, undefined,
+                              linkToken ? { 'X-Link-Token': linkToken } : {})
+      : await this.apiJson('GET', target);
     if (!answer) {
       return;
     }
@@ -1299,6 +1346,13 @@ class PortalRuntime extends SpaClient {
     this.accessToken = '';
     this.refreshToken = '';
     this.ownerToken = '';
+    // THE TAB'S OWN STORAGE GOES FIRST (#1440, ASVS 5.0.0 14.3.1), so a
+    // sign-out that never answers still leaves nothing behind.
+    try {
+      this.env.sessionStorage.clear();
+    } catch (e) {
+      // Storage refused (a private window): there is nothing held in it.
+    }
     this.env.location.assign(this.url('/logout') +
       (kept && kept.username
         ? '?login_hint=' + encodeURIComponent(kept.username) : ''));
@@ -1342,6 +1396,7 @@ class PortalRuntime extends SpaClient {
     this.me = null;
     this.nobody = null;
     this.formTable = null;
+    this.queryNames = null;
     this.view = null;
     this.flash = null;
     this.ownerToken = '';
@@ -1415,9 +1470,10 @@ class PortalRuntime extends SpaClient {
     const el = doc && doc.getElementById
       ? doc.getElementById(PortalShell.ACCOUNTS_ID) : null;
     if (el) {
-      el.innerHTML = PortalRuntime.realmLinks(
+      WebSafeDom.render(el,
+        PortalRuntime.realmLinks(
         PortalShell.accountItems(this.accounts, this.subject, this.t),
-        this.prefix);
+        this.prefix));
     }
   }
 

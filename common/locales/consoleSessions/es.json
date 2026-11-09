@@ -88,5 +88,6 @@
   "accounts.added": "cuentas añadidas",
   "accounts.switched": "predeterminada cambiada",
   "accounts.forgotten": "cuentas olvidadas",
-  "accounts.expired": "cuentas recordadas caducadas"
+  "accounts.expired": "cuentas recordadas caducadas",
+  "endAll": "Finalizar todas las sesiones de este dominio"
 }

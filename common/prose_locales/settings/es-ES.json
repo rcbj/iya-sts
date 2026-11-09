@@ -4,8 +4,8 @@
     "text": "El nombre que muestra una aplicación de autenticación junto a la cuenta — el `issuer` del formato Key Uri de otpauth, escrito a la vez como prefijo de la etiqueta y como parámetro porque las aplicaciones antiguas leen uno y las nuevas el otro. **Vacío significa el propio host de este dominio**, seguido del id del dominio cuando lo hay, y es a propósito: dos dominios de un mismo proceso son dos proveedores de identidad, y un móvil que muestra dos cuentas con el mismo nombre al lado es una lista que nadie puede usar."
   },
   "totp.window|description": {
-    "en": "fb24e80574c56ed5",
-    "text": "Cuántos pasos a cada lado del momento actual se aceptan. La sección 5.2 de RFC 6238 recomienda como máximo uno, que es el valor predeterminado y hace que un código valga unos noventa segundos. **Este SÍ es en vivo** y se aplica a cada registro existente — cuánto perdona un despliegue a un móvil con el reloj desfasado es una política y no algo que el código QR comunicó a la aplicación. Cero exige un reloj perfectamente sincronizado y es el ajuste al que recurrir para demostrar qué ocurre sin uno."
+    "en": "16e7e0f293746c98",
+    "text": "Cuántos pasos a cada lado del momento actual se aceptan. La sección 5.2 de RFC 6238 recomienda como máximo uno, que es el valor predeterminado y hace que un código valga unos noventa segundos. **Este SÍ es en vivo** y se aplica a cada registro existente — cuánto perdona un despliegue a un móvil con el reloj desfasado es una política y no algo que el código QR comunicó a la aplicación. Cero exige un reloj perfectamente sincronizado y es el ajuste al que recurrir para demostrar qué ocurre sin uno. En modo producto el valor predeterminado es 0, así que un código vale para un solo intervalo de 30 segundos."
   },
   "totp.enrolmentTtlMinutes|description": {
     "en": "f034b2f597ec08a5",

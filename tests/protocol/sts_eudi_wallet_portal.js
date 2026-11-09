@@ -653,17 +653,17 @@ async function prepare(wallet) {
     await ok(api + "/config/set", { key: one[0], value: one[1] },
              "set " + one[0]);
   }
-  // A PASSWORD THE SERVICE GENERATES, as an administrator's create gives a
-  // person one; product mode checks it.
-  const made = await ok(api + "/users/create", { username: HOLDER,
-    invent: false, credential: "generate",
+  // A PASSWORD THIS JOB CHOOSES: one the service generates must be changed at
+  // first use in product (#1446), and this job signs in with it.
+  const password = "Eudi-" +
+    require("crypto").randomBytes(18).toString("base64url");
+  await ok(api + "/users/create", { username: HOLDER,
+    invent: false, credential: "password", password: password,
     attributes: { cn: "eudi " + HOLDER, givenName: "Eudi", sn: "Holder",
                   mail: HOLDER + "@eudi668.test" } }, "created " + HOLDER);
-  assert.ok(made.password, "the create generated no password: " +
-            JSON.stringify(made).slice(0, 300));
   const batch = Number(await facts.setting(api, "oid4vci.batchSize")) || 1;
   log.debug("Leaving prepare(). batch=" + batch);
-  return { password: made.password, batch: batch };
+  return { password: password, batch: batch };
 }
 
 async function addCredential(driver, wallet, state) {

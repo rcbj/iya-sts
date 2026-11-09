@@ -39,10 +39,23 @@ each.
 [Architecture](architecture.md) ·
 [Where a request waits](request-path.md) ·
 [Configuration](configuration.md) ·
+[Configuration dump](configuration-dump.md) ·
 [Endpoints](endpoints.md) ·
 [Trust realms](trust-realms.md) ·
 [Listeners and hosted applications](listeners.md) ·
+[Words a password may not contain](password-words.md) ·
+[Malware scanning](malware-scanning.md) ·
 [What is not checked](what-is-not-checked.md) ·
+[Security in product mode](product-security.md) ·
+[Input validation](validation.md) ·
+[Data classification](data-classification.md) ·
+[Logging inventory](logging-inventory.md) ·
+[Key management](key-management.md) ·
+[Field-level access](field-access.md) ·
+[Communication inventory](communications.md) ·
+[File uploads](file-uploads.md) ·
+[Authentication pathways](authentication-pathways.md) ·
+[Availability and resource limits](availability.md) ·
 [Conformance suites](conformance.md) ·
 [Departures from the specifications](spec-departures.md) ·
 [Accepted tokens](accepted-tokens.md) ·
@@ -76,6 +89,9 @@ spoke ·
 [Service accounts](service-accounts.md) ·
 [LDAP](ldap.md) ·
 [LDAP schema](ldap-schema.md) ·
+[Abstract data model](data-model.md) ·
+[Directory models](data-model-directory.md) ·
+[Persistence models](data-model-persistence.md) ·
 [Configuring LDAP](configure-ldap.md) ·
 [SCIM 2.0](scim.md) ·
 [Bulk directory import](bulk-import.md).

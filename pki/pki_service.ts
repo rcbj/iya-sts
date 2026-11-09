@@ -455,6 +455,10 @@ class PkiService {
     res.statusCode = 404;
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; " +
+                  "frame-ancestors 'none'; base-uri 'none'; object-src 'none'");
     res.end('This plain-HTTP listener serves the revocation endpoints under ' +
             '/pki/, SCEP under /enroll/scep, and /healthcheck, and nothing ' +
             'else. Everything else this service answers is on its main ' +

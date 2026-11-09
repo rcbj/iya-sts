@@ -723,6 +723,11 @@ class ProfilePhoto {
         log.debug("Leaving outcome(). Not fetched.");
         return { copied: false, why: fetched.kind || 'fetch' };
       }
+      const scanned = await require('./malware_scan').refusal(fetched.body);
+      if (scanned) {
+        log.debug("Leaving outcome(). Refused by the scanner.");
+        return { copied: false, why: scanned.code };
+      }
       const checked = ProfilePhoto.checked(fetched.body, SMALLEST_COPY);
       if (!checked.ok) {
         log.info(errorCodes.tag('STS-FED-0221') + 'profile photo: not copied ' +
@@ -818,13 +823,16 @@ class ProfilePhoto {
          .set('Content-Security-Policy',
               require('./app').contentSecurityPolicy(SERVED_POLICY))
          .set('Cross-Origin-Resource-Policy', 'cross-origin')
-         .set('Cache-Control', 'public, max-age=300');
+         // Personal data: a browser may keep it, a shared cache may not (ASVS
+         // 5.0.0 14.2.2).
+         .set('Cache-Control', 'private, max-age=300');
       if (req.headers && req.headers['if-none-match'] === etag) {
         res.status(304).end();
         log.debug("Leaving GET " + ROUTE + ". Not modified.");
         return;
       }
       res.status(200).type(String(row.type))
+         .set('Content-Disposition', 'inline; filename="profile-photo"')
          .send(Buffer.from(String(row.data), 'base64'));
       log.debug("Leaving GET " + ROUTE + ".");
     });

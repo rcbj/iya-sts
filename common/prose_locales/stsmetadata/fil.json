@@ -1207,6 +1207,10 @@
     "en": "bfc05d15d7d40bc2",
     "text": "NON-SPEC, at sadyang WALANG GATE. Bawat trust realm na pinapatakbo ng process na ito — ang trust realm ay isang buong lohikal na kopya ng serbisyong ito, naaabot sa ilalim ng isang segment sa harap ng path at may hawak na sariling configuration, signing key, mga session at token. May dala itong id, pangalan, base URL at path prefix ng bawat realm, ang mismong prefix SEGMENT (na isang setting, kaya hindi ito mahuhulaan ng client), at kung aling mga protocol family ang talagang pinaghihiwalay ng isang realm. Ang huli sa mga iyon ang bahaging walang ibang sumasagot: karamihan ng family ay pinaghihiwalay ng path, pero ang directory ay pinaghihiwalay ng DN, ang Kerberos ng PANGALAN ng realm sa request, ang SPIFFE ng socket address, at ang TLS certificate ay hindi pinaghihiwalay — kaya ang taong nag-akalang ang path segment ang hangganan saanman ay mali tungkol sa apat sa mga ito. Hindi makakabuo ng kahit isang URL ang client na itinuturo sa isang realm nang wala ito, kaya wala ito sa likod ng gate ng console — ang parehong argumentong pinagbabatayan ng bawat discovery document dito."
   },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC. Ang icon na kusang hinihingi ng browser sa bawat pahina: ang parisukat na marka ng logo (common/favicon.ico). Sinasagot sa bawat listener; itinatago nang isang araw."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Ang mga patakaran ng card ng sign-in screen at ng language chooser, bilang iisang stylesheet na nili-link ng shell ng isang static na pampublikong surface (common/web_card_css.ts). Sinasagot sa bawat listener; ang address na may ?v= ng build na ito ay naka-cache nang permanente."
@@ -2170,6 +2174,10 @@
   "stsmetadata.endpoints./admin-api/config.what": {
     "en": "de1ba6721d3df738",
     "text": "NON-SPEC. Bawat setting, ang effective value nito, at ang pinagmulan ng value na iyon — override, environment variable, ang appconfig file o ang env/defaults.js sa ilalim nito. Kapareho ng GET /admin/config."
+  },
+  "stsmetadata.endpoints./admin-api/config-dump.what": {
+    "en": "56a8ec7f8dbef7bb",
+    "text": "NON-SPEC. Bawat configuration parameter, global at bawat realm, na nakatakip ang bawat sensitibong value. Sumasalamin sa GET /admin/config-dump."
   },
   "stsmetadata.endpoints./admin-api/config/:action.what": {
     "en": "0493cb479489bbd8",
@@ -3943,8 +3951,12 @@
     "en": "24ece2f78749cf6a",
     "text": "isang parameter"
   },
-  "stsmetadata.endpoints./favicon.ico.what": {
-    "en": "18aea3253b0f21a8",
-    "text": "NON-SPEC. Ang icon na kusang hinihingi ng browser sa bawat pahina: ang parisukat na marka ng logo (common/favicon.ico). Sinasagot sa bawat listener; itinatago nang isang araw."
+  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
+    "en": "14ed85bab8488344",
+    "text": "NON-SPEC (#1501). GET /admin/malware-scanning sa JSON: kung ini-scan ang mga in-upload na file at ang ICAP service na nag-i-scan. Walang binabago."
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
+    "en": "1bf7c4937a9313c4",
+    "text": "NON-SPEC (#1501). Ipinapadala sa naka-configure na ICAP service ang EICAR test file at nagtatagumpay lamang kung na-flag ito ng service."
   }
 }

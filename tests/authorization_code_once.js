@@ -283,6 +283,35 @@ function childMain() {
          'use and revokes what the first bought',
          tail(differing) + ' | ' + tail(intro2));
 
+    // --- 6e. what was refreshed from a replayed code (#1489) ----------------
+    const statsModule = require(ROOT_DIR + '/common/admin_stats');
+    const told = [];
+    statsModule.setRevocationObserver(function (record, via, how) {
+      told.push(how || {});
+    });
+    code = await newCode();
+    const firstSet = await redeem(code);
+    const refreshed = await request(port, 'POST', '/oauth2/token', {
+      cookies: false, headers: { authorization: basic() },
+      form: { grant_type: 'refresh_token',
+              refresh_token: (firstSet.json &&
+                              firstSet.json.refresh_token) || '' } });
+    await redeem(code);
+    await settle();
+    const refreshedIntro = await request(port, 'POST', '/oauth2/introspect', {
+      cookies: false, headers: { authorization: basic() },
+      form: { token: (refreshed.json && refreshed.json.access_token) || '' } });
+    note(refreshed.status === 200 && refreshedIntro.json &&
+         refreshedIntro.json.active === false,
+         '6e. an access token refreshed from a replayed code is revoked too',
+         tail(refreshed) + ' | ' + tail(refreshedIntro));
+    note(told.some(function (how) {
+      return how.replay === 'authorization-code-replay' &&
+        how.initiatingEntity === 'policy';
+    }), '6f. and each is reported as a replay, which is what sends the ' +
+         'grant\'s CAEP risk-level-change and session-revoked',
+    JSON.stringify(told.slice(0, 2)));
+
     // --- 7. two presentations at once ------------------------------------
     code = await newCode();
     const both = await Promise.all([redeem(code), redeem(code)]);

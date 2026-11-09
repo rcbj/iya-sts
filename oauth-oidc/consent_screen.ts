@@ -337,6 +337,7 @@ class ConsentScreen {
       // render time, so that what the person is shown is what was decided —
       // the same rule `authn.js`'s record follows for `forcePasswordless`.
       scopes: Array.isArray(info.scopes) ? info.scopes : [],
+      resources: Array.isArray(info.resources) ? info.resources : [],
       // What the whole request asked for, including the scopes already
       // agreed. Shown under a fold, because "you already agreed to these
       // three" is the answer to the question somebody asks when a screen they
@@ -407,6 +408,26 @@ class ConsentScreen {
    * @param id - the record's id
    * @returns the record, or null
    */
+  claimForBrowser(id: unknown, sessionId: string): boolean {
+    const { log } = this.deps;
+    log.debug("Entering ConsentScreen.claimForBrowser().");
+    const record = pending.get(String(id || ''));
+    if (!record) {
+      log.debug("Leaving ConsentScreen.claimForBrowser(). No record.");
+      return true;
+    }
+    if (!sessionId) {
+      log.debug("Leaving ConsentScreen.claimForBrowser(). No session.");
+      return !record.browserSession;
+    }
+    if (!record.browserSession) {
+      record.browserSession = sessionId;
+      pending.set(String(id), record);
+    }
+    log.debug("Leaving ConsentScreen.claimForBrowser().");
+    return record.browserSession === sessionId;
+  }
+
   pendingFor(id: unknown): Json {
     const { log } = this.deps;
     log.debug("Entering ConsentScreen.pendingFor(). id=" + (id || '(none)'));
@@ -534,6 +555,8 @@ class ConsentScreen {
       // where it registered any of them, drawn above the card's body by
       // the sign-in surface's frame as on the sign-in pages; null otherwise.
       clientDisplay: this.deps.authn.clientDisplay(record.clientId),
+      // ASVS 5.0.0 10.7.2: where the access will be used.
+      resources: record.resources || [],
       scopes: record.scopes.map(function (one: Json): Json {
         const p = one.permission;
         return { scope: String(one.scope),
@@ -872,7 +895,10 @@ class ConsentScreen {
     const html = ShellDocument.document({
       title: 'Allow access? — IYA STS',
       attributes: ([['data-sts-prefix', realms.currentPrefix()],
-                    ['data-sts-authn', authnAt]] as Array<[string, string]>)
+                    ['data-sts-authn', authnAt],
+                    ['data-sts-step-fragment',
+                     require('../common/mode').hidesStepIds() ? '1' : '']] as
+                   Array<[string, string]>)
         .concat(PageLocale.shellAttributes(req,
                                            String(record.clientId || ''),
                                            String(record.username || ''))),
@@ -917,6 +943,13 @@ class ConsentScreen {
     // -----------------------------------------------------------------------
     app.get(CONSENT_PATH, function (req, res) {
       log.debug("Entering the consent screen.");
+      // THE ID IS IN THE FRAGMENT (#1454), in product: the shell, for nobody
+      // yet; the page finds the step.
+      if (require('../common/mode').hidesStepIds() &&
+          !(req.query && req.query.consent)) {
+        self.shell(req, res, {});
+        return;
+      }
       const asked = validation.check(req, 'query', CONSENT_QUERY);
       if (!asked.ok) {
         log.debug("Leaving the consent screen. The request is malformed.");
@@ -1004,6 +1037,7 @@ export = {
   CONSENT_PATH: ConsentScreen.CONSENT_PATH,
   beginConsent: slot.forward('beginConsent'),
   pendingFor: slot.forward('pendingFor'),
+  claimForBrowser: slot.forward('claimForBrowser'),
   // `/authn-api/consent/{id}`'s view and act (#576), for `authn_api.ts`.
   askedOf: slot.forward('askedOf'),
   consentView: slot.forward('consentView'),

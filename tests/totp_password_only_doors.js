@@ -216,6 +216,8 @@ function childMain() {
 
     // --- B. product -----------------------------------------------------
     config.setOverride('global.mode', 'product');
+      // The control below is a person with no second factor (#1490).
+      config.setOverride('authn.allowOptionalSecondFactor', 'true');
     try {
       for (const door of DOORS) {
         const plain = await DOOR[door](PLAIN, PASSWORD);

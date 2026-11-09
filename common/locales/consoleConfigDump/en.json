@@ -1,0 +1,7 @@
+{
+  "about": "Every configuration parameter of this running instance, the global values and what each trust realm sets. Passwords, tokens, keys and any other sensitive value are masked by the server before they reach this page. Directory objects are not part of it.",
+  "summary": "{total} parameters, {masked} value(s) masked, {realms} other realm(s).",
+  "download": "Download JSON",
+  "thRealm": "Realm",
+  "thOwn": "Parameters it sets"
+}

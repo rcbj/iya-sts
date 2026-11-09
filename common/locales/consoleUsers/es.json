@@ -355,6 +355,7 @@
   "mfaSection.lastCode": "Último código aceptado",
   "mfaSection.lastCodeNote": ". El paso en el que estaba se guarda con la inscripción, así que ese código no se puede volver a usar (RFC 6238 sección 5.2).",
   "mfaSection.clearTotpTitle": "Borra la inscripción para que esta persona pueda configurar una nueva. Es la ÚNICA forma de recuperarse para alguien que perdió su teléfono: el secreto está en ese dispositivo y este servicio no puede llegar a él.",
+  "mfaSection.evidenceLabel": "¿Cómo verificó la identidad de esta persona?",
   "mfaSection.clearTotp": "Borrar la app de autenticación",
   "mfaSection.clearTotpNote": "<strong>Es la única forma de recuperarse para alguien que perdió su teléfono.</strong> El secreto compartido está en ese dispositivo y este servicio no puede llegar a él, y a propósito no hay restablecimiento por autoservicio — un segundo factor que cualquiera puede quitar no es un segundo factor. Borrarla deja la cuenta con un solo factor y no puede bloquear a nadie, porque un código de un solo uso nunca es por sí solo una forma de entrar. Configura una nueva en <code>/portal/mfa</code>.",
   "mfaSection.clearingNeedsWrite": "Borrar requiere <strong>Admin Write</strong>.",

@@ -90,6 +90,37 @@ sign-in whose person has none is refused (`STS-AUTHN-0180`).
 timeout and where it is visible. [Signing out](signing-out.md) covers how one
 ends.
 
+### How repeated password guesses are slowed
+
+Three controls apply where passwords are checked, and none of them locks anyone
+out:
+
+* **Rate limits.** `security.rateLimitPerIdentity` and
+  `security.rateLimitPerAddress` limit attempts per
+  `security.rateLimitWindowS`, shared across the cluster. Over a limit, the
+  answer is 429 until the window ends. The defaults are 5 per identity and 20
+  per address. At SCIM, Shared Signals, WS-Trust and Kerberos only refused
+  attempts count, and across N nodes the limit can be passed by at most N - 1,
+  because those doors learn of a cluster-wide refusal from their own next
+  failure. If many people sign in from one address, raise the address limit.
+* **A growing wait.** Each refused password makes the next attempt for that
+  person wait longer, doubling from 0.25 s to at most 4 s. A successful sign-in
+  or 15 quiet minutes clears it.
+* **Risk scoring.** A refused password raises the account's
+  [risk score](risk-scoring.md).
+
+An account is never disabled for failed attempts. The per-identity limit counts
+attempts, so somebody flooding one name can make it answer 429 while they keep
+going. A browser that has already signed in as that person is not refused by that
+limit, and a passkey is not subject to it, so the owner keeps a way in. A browser
+the service has not seen before has to wait until the flood stops.
+
+The doors programs use (WS-Trust UsernameToken, SCIM and SSF Basic, and Kerberos
+pre-authentication) count failed attempts only, under the same limits.
+
+A password made by `reset-password`, or by `set-password` with `generate: true`,
+must be changed at the next sign-in.
+
 ### Other ways to establish a session
 
 Other doors end in the same session:
@@ -154,8 +185,9 @@ in. Attempts are rate-limited per identity and per address, across the
 cluster (`security.rateLimit*`).
 
 * **Password policy.** A realm's policy is a directory entry drawn at
-  *Directory → Policies* (`/admin/policies`): minimum length (12), symbols (1),
-  an uppercase letter, a digit, and none of the last five passwords. It is
+  *Directory → Policies* (`/admin/policies`): minimum length (12) and none of the
+  last five passwords. A policy may not ask for symbols, an uppercase letter or
+  a number, because a password of any composition is accepted. It is
   enforced in product mode wherever a password is set, and it shapes every
   password the service generates. See
   [Different password rules for different applications or
@@ -208,7 +240,6 @@ than `default`:
 curl -s -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
   https://sts.example.com/admin-api/policies/save-password-policy \
   -d '{"profile":"admins","precedence":10,"minLength":20,"history":10,
-       "minSymbols":1,"requireUppercase":true,"requireDigit":true,
        "generatedLength":32}'
 ```
 
@@ -1245,6 +1276,12 @@ What such a person uses there is an **app password**:
   each make and revoke. Its last use is recorded. A disabled account refuses
   it; a password reset leaves it working.
 
+**An app password works without a second factor, and that is intentional.**
+These doors are for programs and protocols that have no way to ask for one, so
+an app password is what stands in for it, including now that product mode
+requires a second factor of everybody. It is a generated secret, scoped to named
+doors, revocable one at a time, and never accepted at a browser sign-in.
+
 `authn.passwordAloneDoors` lists doors that accept the password alone anyway.
 **Each door listed is one factor for every such person** — use it only for a
 client that cannot be given an app password. `appPasswords.enabled` and
@@ -1292,7 +1329,7 @@ See [What is not checked](what-is-not-checked.md).
 | `authn.maxSessions` | `STS_AUTHN_MAX_SESSIONS` | `100000` | yes | The most sessions a realm holds. At the cap a new row is refused; nothing is ended to make room for somebody else. |
 | `authn.maxSessionsPerSubject` | `STS_AUTHN_MAX_SESSIONS_PER_SUBJECT` | `32` | yes | How many countable sessions one subject may hold. At the cap their own oldest countable session is ended. An arrival does not count. |
 | `authn.sessionShedPerSweep` | `STS_AUTHN_SESSION_SHED_PER_SWEEP` | `100` | yes | How many of a subject's own surplus sessions one session-expiry run ends in that realm. |
-| `authn.sessionIdleTimeoutS` | `STS_AUTHN_SESSION_IDLE_TIMEOUT_S` | `0` | yes | How long a session may go unused before it ends; `0` means no idle timeout. |
+| `authn.sessionIdleTimeoutS` | `STS_AUTHN_SESSION_IDLE_TIMEOUT_S` | `1800` in product mode, `0` in development mode | yes | How long a session may go unused before it ends; `0` means no idle timeout. |
 | `authn.sessionSweepS` | `STS_AUTHN_SESSION_SWEEP_S` | `30` | yes | Interval of the scheduler job that ends expired sessions and reports them; `0` switches it off. |
 | `authn.pendingTtlS` | `STS_AUTHN_PENDING_TTL_S` | `600` | yes | How long an interrupted request waits at the sign-in screen. |
 | `authn.mfaStepTtlS` | `STS_AUTHN_MFA_STEP_TTL_S` | `300` | yes | How long a person who passed the password step has to present a second factor. |

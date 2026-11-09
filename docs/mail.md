@@ -229,6 +229,7 @@ saved** (`STS-MAIL-0016`):
   **The link is built on `global.publicBaseUrl`**, never on the address a
   request arrived at. In product mode a message with a link is refused until
   that setting is set (`STS-MAIL-0015`).
+- **The HTML part is held to an allow-list**: text formatting, tables and links, checked by a sanitization library. A template the library would change is refused.
 - **The HTML part loads nothing and runs nothing**: no image, stylesheet,
   frame, form, script, event handler, `src`, `style`, CSS `url()`, or `data:`
   or `javascript:` URI. A message that loads nothing when it is opened tells

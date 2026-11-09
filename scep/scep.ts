@@ -101,6 +101,7 @@ import helpers = require('../common/helpers');
 const { log } = helpers;
 import audit = require('../common/audit');
 import config = require('../common/config');
+import mode = require('../common/mode');
 import errorCodes = require('../common/error_codes');
 import realms = require('../common/realms');
 import validation = require('../common/validation');
@@ -1569,6 +1570,15 @@ class Scep {
       this.scepError(res, 400, 'STS-SCEP-0013', 'The path segment after ' +
                      '/enroll/scep/ names a certificate profile.');
       log.debug("Leaving Scep.handle(). Malformed profile.");
+      return;
+    }
+    if (!mode.answersScep()) {
+      this.record({ operation: 'disabled', outcome: 'refused', status: 503,
+                    errorCode: 'STS-SCEP-0067' });
+      this.scepError(res, 503, 'STS-SCEP-0067',
+                     'SCEP is not offered in product mode unless ' +
+                     'scep.allowInProduct is on.');
+      log.debug("Leaving Scep.handle(). Not offered in product.");
       return;
     }
     if (!this.enabled()) {

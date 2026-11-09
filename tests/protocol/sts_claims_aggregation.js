@@ -233,7 +233,7 @@ async function follow(who, first) {
     // each realm's own, signed in through the one helper as the person that
     // realm knows, where the flow is sent to it.
     if ((r.status === 302 || r.status === 303) &&
-        /\/authn\/login\?authn=/.test(r.location)) {
+        /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location)) {
       at = r.location;
       const realmBase = realmBaseOf(at);
       const answer = await authnSignin.submit(realmBase, at,

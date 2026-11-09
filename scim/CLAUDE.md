@@ -1344,3 +1344,4 @@ in two halves, and its header argues both:
   schema's description, since a create here cannot satisfy it. The User
   resource type marks the extension `required` where a custom attribute is.
 
+**A credential with no scope needs a console role in product (#1473, ASVS 5.0.0 8.2.1).** `settleDecision` passes `requiredRoles` through the access gate, so it stays a policy decision; `mode.restrictsUnscopedPeople()` is the switch.

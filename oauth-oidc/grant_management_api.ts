@@ -178,18 +178,19 @@ class GrantManagementApi {
         mirrors: 'GET /admin/grants',
         parameters: [
           { name: 'client_id', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
+            schema: { type: 'string', maxLength: 256,
+                      examples: ['no-such-client'] },
             description: 'Only this client\'s grants.' },
           { name: 'grantq', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
+            schema: { type: 'string', maxLength: 256, examples: ['alice'] },
             description: 'Narrows the grants to those whose grant_id, ' +
                          'client or subject contains this.' },
           { name: 'grantsPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of the matched grants. Clamped, like ' +
                          'every page parameter here.' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Grants per page, capped.' }
         ],
         responseDescription: 'The grants.',

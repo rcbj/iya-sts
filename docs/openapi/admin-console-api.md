@@ -55,6 +55,8 @@ Scope: `admin:console`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `catalogs` | query | one of `files` |  | files: name the static catalog files instead of carrying the catalogs. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The shell answer.
 
@@ -175,6 +177,13 @@ The `scope` member is what the CONSOLE SESSION's roles would grant — it is wha
 
 Scope: `admin:console`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: Where the explorer reads from, and what the caller may drive.
 
 | Member | Type | Required | What it is |
@@ -203,6 +212,13 @@ Mints a secret exactly as `regenerate-secret` and `POST /oauth2/register` do —
 **Mirrors** `POST /admin/applications, POST /admin/applications/new, POST /admin/applications/edit and POST /admin/applications/owners` on the admin console.
 
 Scope: `admin:console`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -241,6 +257,13 @@ The vocabulary `GET /admin-api/applications/new` answers, with how the form lays
 **Mirrors** `GET /admin/applications/new` on the admin console.
 
 Scope: `admin:console`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The two vocabularies, the fields a create may carry, the container and the realm.
 
@@ -303,6 +326,7 @@ Scope: `admin:console`.
 | `fields[].described.label` | string |  |  |
 | `fields[].described.legacyEnv` | list, or string, or null |  |  |
 | `fields[].described.legacyEnv[]` | string |  |  |
+| `fields[].described.masked` | boolean |  |  |
 | `fields[].described.max` | number |  |  |
 | `fields[].described.min` | number |  |  |
 | `fields[].described.ordered` | boolean |  |  |
@@ -387,6 +411,13 @@ The totals `GET /admin-api/status` answers, with the base URL, what is persisted
 
 Scope: `admin:console`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The current totals.
 
 | Member | Type | Required | What it is |
@@ -454,6 +485,29 @@ Scope: `admin:console`.
 | `grantq` | query | string |  | Part of a grant's client or resource. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `type` | query | one of `krb5-s4u2self`, `krb5-s4u2proxy-classic`, `krb5-s4u2proxy-rbcd`, `krb5-forwarded`, `wstrust-onbehalfof`, `wstrust-actas`, `oauth-impersonation`, `oauth-delegation`, `oauth-assertion-grant`, `oauth-saml-assertion-grant`, `gnap-impersonation`, `gnap-derivation` |  | One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it. |
+| `mode` | query | one of `impersonation`, `delegation` |  | The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing. |
+| `outcome` | query | one of `issued`, `refused` |  | Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to. |
+| `protocol` | query | string |  | The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is. |
+| `q` | query | string |  | Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in. |
+| `appq` | query | string |  | The application chooser's search. |
+| `userq` | query | string |  | The person chooser's search. |
+| `appfrom` | query | integer |  | Where the application chooser's page starts. |
+| `userfrom` | query | integer |  | Where the person chooser's page starts. |
+| `chainsPage` | query | integer |  | Which page of `chains` to return, clamped as `page` is. |
+| `permissionsPage` | query | integer |  | Which page of `permissions` to return, clamped as `page` is. |
+| `grantsPage` | query | integer |  | Which page of `grants` to return, clamped as `page` is. |
+| `pairsPage` | query | integer |  | Which page of `pairs` to return, clamped as `page` is. |
+| `flagsPage` | query | integer |  | Which page of `flags` to return, clamped as `page` is. |
+| `mechanismsPage` | query | integer |  | Which page of `mechanisms` to return, clamped as `page` is. |
+| `policyPairsPage` | query | integer |  | Which page of `policyPairs` to return, clamped as `page` is. |
+| `intermediariesPage` | query | integer |  | Which page of `intermediaries` to return, clamped as `page` is. |
+| `peoplePage` | query | integer |  | Which page of `people` to return, clamped as `page` is. |
+| `groupsPage` | query | integer |  | Which page of `groups` to return, clamped as `page` is. |
+| `groupGrantsPage` | query | integer |  | Which page of `groupGrants` to return, clamped as `page` is. |
+| `groupPermissionsPage` | query | integer |  | Which page of `groupPermissions` to return, clamped as `page` is. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The register, its list state, the applications and the settings block.
 
@@ -657,6 +711,7 @@ Scope: `admin:console`.
 | `settings.groups[].settings[].label` | string |  |  |
 | `settings.groups[].settings[].legacyEnv` | list, or string, or null |  |  |
 | `settings.groups[].settings[].legacyEnv[]` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  |  |
 | `settings.groups[].settings[].max` | number |  |  |
 | `settings.groups[].settings[].min` | number |  |  |
 | `settings.groups[].settings[].ordered` | boolean |  |  |
@@ -711,6 +766,31 @@ Scope: `admin:console`.
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
 | `format` | query | one of `json`, `svg` |  | `svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything. |
+| `type` | query | one of `krb5-s4u2self`, `krb5-s4u2proxy-classic`, `krb5-s4u2proxy-rbcd`, `krb5-forwarded`, `wstrust-onbehalfof`, `wstrust-actas`, `oauth-impersonation`, `oauth-delegation`, `oauth-assertion-grant`, `oauth-saml-assertion-grant`, `gnap-impersonation`, `gnap-derivation` |  | One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it. |
+| `mode` | query | one of `impersonation`, `delegation` |  | The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing. |
+| `outcome` | query | one of `issued`, `refused` |  | Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to. |
+| `protocol` | query | string |  | The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is. |
+| `q` | query | string |  | Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in. |
+| `permq` | query | string |  | Part of a permission's resource. |
+| `grantq` | query | string |  | Part of a grant's client or resource. |
+| `appq` | query | string |  | The application chooser's search. |
+| `userq` | query | string |  | The person chooser's search. |
+| `appfrom` | query | integer |  | Where the application chooser's page starts. |
+| `userfrom` | query | integer |  | Where the person chooser's page starts. |
+| `chainsPage` | query | integer |  | Which page of `chains` to return, clamped as `page` is. |
+| `permissionsPage` | query | integer |  | Which page of `permissions` to return, clamped as `page` is. |
+| `grantsPage` | query | integer |  | Which page of `grants` to return, clamped as `page` is. |
+| `pairsPage` | query | integer |  | Which page of `pairs` to return, clamped as `page` is. |
+| `flagsPage` | query | integer |  | Which page of `flags` to return, clamped as `page` is. |
+| `mechanismsPage` | query | integer |  | Which page of `mechanisms` to return, clamped as `page` is. |
+| `policyPairsPage` | query | integer |  | Which page of `policyPairs` to return, clamped as `page` is. |
+| `intermediariesPage` | query | integer |  | Which page of `intermediaries` to return, clamped as `page` is. |
+| `peoplePage` | query | integer |  | Which page of `people` to return, clamped as `page` is. |
+| `groupsPage` | query | integer |  | Which page of `groups` to return, clamped as `page` is. |
+| `groupGrantsPage` | query | integer |  | Which page of `groupGrants` to return, clamped as `page` is. |
+| `groupPermissionsPage` | query | integer |  | Which page of `groupPermissions` to return, clamped as `page` is. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The graph, the groups, the register and the drawing.
 
@@ -1109,6 +1189,33 @@ Scope: `admin:console`.
 |---|---|---|---|---|
 | `application` | query | string |  | The application, as a protocol presented it or normalised. |
 | `format` | query | one of `json`, `svg` |  | `svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything. |
+| `type` | query | one of `krb5-s4u2self`, `krb5-s4u2proxy-classic`, `krb5-s4u2proxy-rbcd`, `krb5-forwarded`, `wstrust-onbehalfof`, `wstrust-actas`, `oauth-impersonation`, `oauth-delegation`, `oauth-assertion-grant`, `oauth-saml-assertion-grant`, `gnap-impersonation`, `gnap-derivation` |  | One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it. |
+| `mode` | query | one of `impersonation`, `delegation` |  | The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing. |
+| `outcome` | query | one of `issued`, `refused` |  | Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to. |
+| `protocol` | query | string |  | The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is. |
+| `q` | query | string |  | Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in. |
+| `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
+| `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `permq` | query | string |  | Part of a permission's resource. |
+| `grantq` | query | string |  | Part of a grant's client or resource. |
+| `appq` | query | string |  | The application chooser's search. |
+| `userq` | query | string |  | The person chooser's search. |
+| `appfrom` | query | integer |  | Where the application chooser's page starts. |
+| `userfrom` | query | integer |  | Where the person chooser's page starts. |
+| `chainsPage` | query | integer |  | Which page of `chains` to return, clamped as `page` is. |
+| `permissionsPage` | query | integer |  | Which page of `permissions` to return, clamped as `page` is. |
+| `grantsPage` | query | integer |  | Which page of `grants` to return, clamped as `page` is. |
+| `pairsPage` | query | integer |  | Which page of `pairs` to return, clamped as `page` is. |
+| `flagsPage` | query | integer |  | Which page of `flags` to return, clamped as `page` is. |
+| `mechanismsPage` | query | integer |  | Which page of `mechanisms` to return, clamped as `page` is. |
+| `policyPairsPage` | query | integer |  | Which page of `policyPairs` to return, clamped as `page` is. |
+| `intermediariesPage` | query | integer |  | Which page of `intermediaries` to return, clamped as `page` is. |
+| `peoplePage` | query | integer |  | Which page of `people` to return, clamped as `page` is. |
+| `groupsPage` | query | integer |  | Which page of `groups` to return, clamped as `page` is. |
+| `groupGrantsPage` | query | integer |  | Which page of `groupGrants` to return, clamped as `page` is. |
+| `groupPermissionsPage` | query | integer |  | Which page of `groupPermissions` to return, clamped as `page` is. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The application, its acts, the graph, every node's look and the drawing.
 
@@ -1436,6 +1543,8 @@ Scope: `admin:console`.
 |---|---|---|---|---|
 | `chain` | query | string |  | The chain's key, `chainKey` on a chain of `GET /admin-api/delegation`. |
 | `format` | query | one of `json`, `svg` |  | `svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The chain, its acts, the graph, every node's look and the drawing.
 
@@ -1730,6 +1839,31 @@ Scope: `admin:console`.
 | `format` | query | one of `json`, `svg` |  | `svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `type` | query | one of `krb5-s4u2self`, `krb5-s4u2proxy-classic`, `krb5-s4u2proxy-rbcd`, `krb5-forwarded`, `wstrust-onbehalfof`, `wstrust-actas`, `oauth-impersonation`, `oauth-delegation`, `oauth-assertion-grant`, `oauth-saml-assertion-grant`, `gnap-impersonation`, `gnap-derivation` |  | One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it. |
+| `mode` | query | one of `impersonation`, `delegation` |  | The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing. |
+| `outcome` | query | one of `issued`, `refused` |  | Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to. |
+| `protocol` | query | string |  | The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is. |
+| `q` | query | string |  | Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in. |
+| `permq` | query | string |  | Part of a permission's resource. |
+| `grantq` | query | string |  | Part of a grant's client or resource. |
+| `appq` | query | string |  | The application chooser's search. |
+| `userq` | query | string |  | The person chooser's search. |
+| `appfrom` | query | integer |  | Where the application chooser's page starts. |
+| `userfrom` | query | integer |  | Where the person chooser's page starts. |
+| `chainsPage` | query | integer |  | Which page of `chains` to return, clamped as `page` is. |
+| `permissionsPage` | query | integer |  | Which page of `permissions` to return, clamped as `page` is. |
+| `grantsPage` | query | integer |  | Which page of `grants` to return, clamped as `page` is. |
+| `pairsPage` | query | integer |  | Which page of `pairs` to return, clamped as `page` is. |
+| `flagsPage` | query | integer |  | Which page of `flags` to return, clamped as `page` is. |
+| `mechanismsPage` | query | integer |  | Which page of `mechanisms` to return, clamped as `page` is. |
+| `policyPairsPage` | query | integer |  | Which page of `policyPairs` to return, clamped as `page` is. |
+| `intermediariesPage` | query | integer |  | Which page of `intermediaries` to return, clamped as `page` is. |
+| `peoplePage` | query | integer |  | Which page of `people` to return, clamped as `page` is. |
+| `groupsPage` | query | integer |  | Which page of `groups` to return, clamped as `page` is. |
+| `groupGrantsPage` | query | integer |  | Which page of `groupGrants` to return, clamped as `page` is. |
+| `groupPermissionsPage` | query | integer |  | Which page of `groupPermissions` to return, clamped as `page` is. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The group, its pages, the chooser's data and the drawing.
 
@@ -2261,6 +2395,28 @@ Scope: `admin:console`.
 | `protocol` | query | string |  | The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is. |
 | `q` | query | string |  | Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in. |
 | `format` | query | one of `json`, `svg` |  | `svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything. |
+| `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
+| `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `permq` | query | string |  | Part of a permission's resource. |
+| `grantq` | query | string |  | Part of a grant's client or resource. |
+| `appq` | query | string |  | The application chooser's search. |
+| `userq` | query | string |  | The person chooser's search. |
+| `appfrom` | query | integer |  | Where the application chooser's page starts. |
+| `userfrom` | query | integer |  | Where the person chooser's page starts. |
+| `chainsPage` | query | integer |  | Which page of `chains` to return, clamped as `page` is. |
+| `permissionsPage` | query | integer |  | Which page of `permissions` to return, clamped as `page` is. |
+| `grantsPage` | query | integer |  | Which page of `grants` to return, clamped as `page` is. |
+| `pairsPage` | query | integer |  | Which page of `pairs` to return, clamped as `page` is. |
+| `flagsPage` | query | integer |  | Which page of `flags` to return, clamped as `page` is. |
+| `mechanismsPage` | query | integer |  | Which page of `mechanisms` to return, clamped as `page` is. |
+| `policyPairsPage` | query | integer |  | Which page of `policyPairs` to return, clamped as `page` is. |
+| `intermediariesPage` | query | integer |  | Which page of `intermediaries` to return, clamped as `page` is. |
+| `peoplePage` | query | integer |  | Which page of `people` to return, clamped as `page` is. |
+| `groupsPage` | query | integer |  | Which page of `groups` to return, clamped as `page` is. |
+| `groupGrantsPage` | query | integer |  | Which page of `groupGrants` to return, clamped as `page` is. |
+| `groupPermissionsPage` | query | integer |  | Which page of `groupPermissions` to return, clamped as `page` is. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The graph, every node's look, the counts and the drawing.
 
@@ -2522,6 +2678,33 @@ Scope: `admin:console`.
 |---|---|---|---|---|
 | `user` | query | string |  | The person, under any spelling this service has seen them under. |
 | `format` | query | one of `json`, `svg` |  | `svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything. |
+| `type` | query | one of `krb5-s4u2self`, `krb5-s4u2proxy-classic`, `krb5-s4u2proxy-rbcd`, `krb5-forwarded`, `wstrust-onbehalfof`, `wstrust-actas`, `oauth-impersonation`, `oauth-delegation`, `oauth-assertion-grant`, `oauth-saml-assertion-grant`, `gnap-impersonation`, `gnap-derivation` |  | One mechanism. The reply's `types` member describes each of them, with the specification it comes from and whether this service polices it. |
+| `mode` | query | one of `impersonation`, `delegation` |  | The protocol-independent axis: whether what came out carries the chain. ANDed with `type`, so a mode that does not match the mechanism matches nothing. |
+| `outcome` | query | one of `issued`, `refused` |  | Two rather than the audit log's three: a delegation is DECIDED rather than performed, so there is no third answer between issuing the credential and refusing to. |
+| `protocol` | query | string |  | The family, spelled as /admin-api/users spells it — `Kerberos v5`, `WS-Trust`, `OAuth 2.0`. Free text rather than an enum, for the reason the audit log's `protocol` is. |
+| `q` | query | string |  | Substring of ANY party of the chain (normalised name, presented form or application) or of either explanation, case-insensitive. One box over six fields, because the fact a caller has names one of them and not which column it is in. |
+| `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
+| `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `permq` | query | string |  | Part of a permission's resource. |
+| `grantq` | query | string |  | Part of a grant's client or resource. |
+| `appq` | query | string |  | The application chooser's search. |
+| `userq` | query | string |  | The person chooser's search. |
+| `appfrom` | query | integer |  | Where the application chooser's page starts. |
+| `userfrom` | query | integer |  | Where the person chooser's page starts. |
+| `chainsPage` | query | integer |  | Which page of `chains` to return, clamped as `page` is. |
+| `permissionsPage` | query | integer |  | Which page of `permissions` to return, clamped as `page` is. |
+| `grantsPage` | query | integer |  | Which page of `grants` to return, clamped as `page` is. |
+| `pairsPage` | query | integer |  | Which page of `pairs` to return, clamped as `page` is. |
+| `flagsPage` | query | integer |  | Which page of `flags` to return, clamped as `page` is. |
+| `mechanismsPage` | query | integer |  | Which page of `mechanisms` to return, clamped as `page` is. |
+| `policyPairsPage` | query | integer |  | Which page of `policyPairs` to return, clamped as `page` is. |
+| `intermediariesPage` | query | integer |  | Which page of `intermediaries` to return, clamped as `page` is. |
+| `peoplePage` | query | integer |  | Which page of `people` to return, clamped as `page` is. |
+| `groupsPage` | query | integer |  | Which page of `groups` to return, clamped as `page` is. |
+| `groupGrantsPage` | query | integer |  | Which page of `groupGrants` to return, clamped as `page` is. |
+| `groupPermissionsPage` | query | integer |  | Which page of `groupPermissions` to return, clamped as `page` is. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The person, their credentials, flows and acts, the graph, every node's look and the drawing.
 
@@ -2894,6 +3077,8 @@ Scope: `admin:console`.
 | `protocol` | query | string |  | Only relationships in this protocol. |
 | `q` | query | string |  | Text anywhere in a relationship. |
 | `format` | query | one of `json`, `svg` |  | `svg` answers the drawing alone, as a document with no links in it. `json`, the default, answers everything. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The relationships, the graph and the drawing.
 
@@ -3030,6 +3215,13 @@ Writes the signed-in person's own `preferredLanguage` (RFC 2798), or removes it 
 
 Scope: `admin:console`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body** (optional)
 
 | Member | Type | Required | What it is |
@@ -3096,6 +3288,13 @@ The operations under `/admin-api/console`, built from the same table as `GET /ad
 
 Scope: `admin:console`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The document.
 
 | Member | Type | Required | What it is |
@@ -3132,6 +3331,13 @@ Every operation this API registers, management and console alike, with the conso
 
 Scope: `admin:console`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: Every operation.
 
 | Member | Type | Required | What it is |
@@ -3144,6 +3350,8 @@ Scope: `admin:console`.
 | `operations[].mirrors` | string |  |  |
 | `operations[].operationId` | string |  |  |
 | `operations[].path` | string |  |  |
+| `operations[].query` | list |  |  |
+| `operations[].query[]` | string |  |  |
 | `operations[].summary` | string |  |  |
 
 ## POST /admin-api/console/pki/apply-profile
@@ -3161,6 +3369,13 @@ Post the whole form back; anything omitted falls to its default rather than bein
 **Mirrors** `POST /admin/pki, POST /admin/pki/certificate and POST /admin/pki/person` on the admin console.
 
 Scope: `admin:console`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -3393,6 +3608,13 @@ The second key of a hybrid certificate — ITU-T X.509 (2019) clause 9.8’s `su
 **Mirrors** `POST /admin/pki, POST /admin/pki/certificate and POST /admin/pki/person` on the admin console.
 
 Scope: `admin:console`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -3628,6 +3850,13 @@ Puts a fresh pair in `pki_private_key` and `pki_public_key`, in the algorithm na
 
 Scope: `admin:console`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body** (optional)
 
 An empty object.
@@ -3859,6 +4088,13 @@ What a CA renewing its own certificate does. It ticks `pki_reuse_key` itself, be
 **Mirrors** `POST /admin/pki, POST /admin/pki/certificate and POST /admin/pki/person` on the admin console.
 
 Scope: `admin:console`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

@@ -57,6 +57,8 @@ Scope: `admin:read`.
 | `anonymousPage` | query | integer |  | Which page of `unauthenticatedSessions`, the sessions that authenticated nobody. They are never filtered, and `unauthenticatedHeld` counts them all. It shares `per` with the live list. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The live sessions, filtered and paged.
 
@@ -189,6 +191,30 @@ Scope: `admin:read`.
 | `message` | string |  |  |
 | `ok` | boolean | yes |  |
 
+## POST /admin-api/sessions/end-all
+
+`endAllSessions`
+
+**End every sign-on session in this realm**
+
+Every session started before now ends the next time it is read. The cost does not grow with the number of sessions. Issued tokens are not revoked: use /admin-api/tokens/revoke-all as well.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: Every session has ended.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+
 ## POST /admin-api/sessions/revoke
 
 `revokeSession`
@@ -204,6 +230,13 @@ A row that names nothing any more â€” it ended between the read and the write â€
 **Mirrors** `POST /admin/sessions` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

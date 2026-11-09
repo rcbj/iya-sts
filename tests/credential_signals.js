@@ -645,7 +645,7 @@ function childMain() {
                 .update(verifier).digest('base64url'),
               code_challenge_method: 'S256' }).toString(), null, jar);
           const location = String(first.headers.location || '');
-          const authnId = (location.match(/[?&]authn=([^&]+)/) || [])[1] ||
+          const authnId = (location.match(/[?&#]authn=([^&]+)/) || [])[1] ||
             '';
           // THE SCREEN OVER `/authn-api` (#571), with this browser's
           // cookies as the in-process helper keeps them (name to value).

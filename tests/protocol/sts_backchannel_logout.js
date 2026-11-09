@@ -228,7 +228,7 @@ async function signIn(realm) {
       .digest("base64url"),
     code_challenge_method: "S256" }));
   assert.ok((r.status === 302 || r.status === 303) &&
-            /\/authn\/login\?authn=/.test(r.location),
+            /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
             "the authorization endpoint should send the browser to sign in; " +
             "it answered " + r.status + " " + r.location);
   r = await authnSignin.signInWithJar(rb, r.location,

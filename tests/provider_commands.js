@@ -38,6 +38,23 @@ const log = require('bunyan').createLogger({ name: 'provider_commands',
 
 const ENDPOINT = 'https://rp.test/commands';
 
+// A response model, as the service holds an answer to it.
+function modelOf(operationId, status) {
+  const spec = require('../mgmt-api/admin_api_spec');
+  const adminApi = require('../mgmt-api/admin_api');
+  const document = spec.buildSpec(adminApi.ROUTES, { authRequired: true });
+  let found = null;
+  Object.keys(document.paths).forEach(function (one) {
+    Object.keys(document.paths[one]).forEach(function (method) {
+      if (document.paths[one][method].operationId === operationId) {
+        found = document.paths[one][method];
+      }
+    });
+  });
+  return { schema: found.responses[status].content['application/json'].schema,
+           components: document.components };
+}
+
 function decode(jwt) {
   log.debug("Entering decode().");
   const parts = String(jwt).split('.');
@@ -405,9 +422,9 @@ async function body(t) {
           P.lastAccessFrom({ at: 1 }) === null && P.lastAccessFrom([1]) === null,
           '9b. last_access is kept only where it is a time');
   const Ajv = require('ajv');
-  const model = require('../mgmt-api/response_models_applications')
-    .operations.getProviderCommands['200'];
-  const validate = new Ajv({ strict: false, allErrors: true }).compile(model);
+  const held = modelOf('getProviderCommands', '200');
+  const validate = new Ajv({ strict: false, allErrors: true }).compile(
+    { allOf: [held.schema], components: held.components });
   const report = c.report();
   const row = report.clients.filter(function (one) {
     return one.clientId === 'cmd-app';
@@ -462,10 +479,9 @@ async function body(t) {
     return JSON.parse(answer.text);
   };
   const { ProviderCommandsApi } = require('../oauth-oidc/provider_commands_api');
-  const actModel = require('../mgmt-api/response_models_applications')
-    .operations.sendTenantCommand['200'];
+  const heldAct = modelOf('sendTenantCommand', '200');
   const validateAct = new Ajv({ strict: false, allErrors: true })
-    .compile(actModel);
+    .compile({ allOf: [heldAct.schema], components: heldAct.components });
   const answered = sentThrough(ProviderCommandsApi, { ok: true, row: deadRow });
   t.check(deadRow.errorCode === 'STS-OAUTH-0771' && validateAct(answered),
           '9g. the real dead row, as this API sends it, meets the act\'s model',

@@ -176,7 +176,8 @@ async function checkThePolicy(t, who) {
 
   // The Pwned Passwords screen off: this file is about the policy, and the
   // screen is tests/breached_passwords.js's (#62 P6).
-  await withSettings({ 'global.mode': 'product', 'risk.breachCheck': 'off' },
+  await withSettings({ 'global.mode': 'product', 'risk.breachCheck': 'off',
+                       'authn.allowOptionalSecondFactor': 'true' },
                      async function () {
     // ---------------------------------------------------------------------
     t.log.info('=== 1b. product mode: the composition rules ===');
@@ -184,20 +185,20 @@ async function checkThePolicy(t, who) {
     t.check(!short.ok && short.reason === 'password-policy',
             'PRODUCT mode REFUSES a password that breaks the profile',
             JSON.stringify(short));
-    t.equal((short.problems || []).length, 4,
-            'and names EVERY rule it breaks, not the first — length, symbol, ' +
-            'uppercase and digit — so a person fixes it once');
+    t.equal((short.problems || []).length, 1,
+            'and length is the one rule a password can break');
     t.check(/\/admin\/policies/.test((short.errors || []).join(' ')),
             'with a sentence naming where the rules are',
             (short.errors || []).join(' '));
     t.check(!credentials.setPassword(who, 'Abcdefghij1').ok,
             'eleven characters with an uppercase letter, a digit and no ' +
             'symbol is refused');
-    t.equal(credentials.passwordProblem('Abcdefghijk1'),
-            'That password does not meet this realm\'s password policy, ' +
-            'which asks for at least 1 symbol (it has 0). The rules are on ' +
-            '/admin/policies (profile "default").',
-            'and twelve with no symbol is refused for the symbol ALONE');
+    t.equal(credentials.passwordProblem('Abcdefghijk1'), '',
+            'and twelve with no symbol is accepted (ASVS 5.0.0 6.2.5)');
+    t.equal(credentials.passwordProblem('alllowercaseletters'), '',
+            'and so is a password of letters of one case alone');
+    t.check(passwordPolicy.describe().join(' ').indexOf('symbol') < 0,
+            'and the rules a person is shown ask for no symbol');
     t.check(credentials.passwordProblem('Abcdefghij1!') === '',
             'twelve with a symbol, an uppercase letter and a digit passes — ' +
             'the length boundary is "at least", not "more than"');
@@ -208,8 +209,8 @@ async function checkThePolicy(t, who) {
             credentials.passwordProblem('😀😀😀😀😀A1') !== '',
             'twelve code points are twelve characters — an emoji is one, and ' +
             'it is a symbol — and seven are seven, not fourteen UTF-16 units');
-    t.check(credentials.passwordProblem('Abc def ghij1') !== '',
-            'a SPACE is not a symbol, so a passphrase has to carry one');
+    t.equal(credentials.passwordProblem('a plain long passphrase'), '',
+            'a passphrase of words and spaces is accepted as it stands');
 
     // ---------------------------------------------------------------------
     t.log.info('=== 1c. product mode: the history ===');
@@ -268,11 +269,22 @@ async function checkThePolicy(t, who) {
     t.check(!passwordPolicy.save('default', Object.assign({},
               passwordPolicy.DEFAULTS,
               { minSymbols: 12, generatedLength: 20 })).ok,
-            'a generated length that cannot reliably carry the symbol count ' +
-            'is refused');
+            'a policy that asks for symbols is refused (ASVS 5.0.0 6.2.5)');
+    ['requireUppercase', 'requireDigit'].forEach(function (rule) {
+      const asks = {};
+      asks[rule] = true;
+      t.check(!passwordPolicy.save('default', Object.assign({},
+                passwordPolicy.DEFAULTS, asks)).ok,
+              'a policy that sets ' + rule + ' is refused');
+    });
+    t.check(passwordPolicy.problemsWith('all lower case and long enough',
+              Object.assign({}, passwordPolicy.DEFAULTS, { minLength: 12 }))
+              .length === 0,
+            'a password of any composition is accepted once it is long ' +
+            'enough');
     const saved = passwordPolicy.save('default', {
       minLength: '8', history: '1', minSymbols: '0', requireUppercase: 'FALSE',
-      requireDigit: true, generatedLength: 16 });
+      requireDigit: false, generatedLength: 16 });
     t.check(saved.ok, 'a whole profile is saved, from form strings and JSON ' +
             'values alike', JSON.stringify(saved.errors));
     const stored = passwordPolicy.read('default');

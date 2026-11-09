@@ -870,6 +870,15 @@ function withEventTypeUris(prefix, names) {
  * come from, what it means and whether changing it at runtime does
  * anything.
  */
+// A stricter default in product (#1491, ASVS 5.0.0 7.3.1, 11.2.3): resolved when
+// it is read, in the mode of the ambient realm, and only where nobody set a
+// value. No Entering/Leaving pair, for the reason this reading path has none.
+function strongerInProduct(product, development) {
+  return function () {
+    return value('global.mode') === 'product' ? product : development;
+  };
+}
+
 const SETTINGS = [
   // --- Global --------------------------------------------------------------
   { key: 'global.host', group: 'Global', label: 'HTTP bind address',
@@ -1317,6 +1326,270 @@ const SETTINGS = [
                  'origin is allowed only where an application lists it in ' +
                  'appCorsOrigin. A value that is not an origin is ignored ' +
                  'and logged, never widened.' },
+
+  { key: 'security.fileRoots', group: 'Web security',
+    label: 'Directories a named file may be read from',
+    env: 'STS_SECURITY_FILE_ROOTS', type: 'csv',
+    // NOT `runtime`: the setting exists to bound what an administrator's
+    // request may name, so that request must not be able to widen it (#1481).
+    dflt: '/etc/ssl,/etc/pki,/usr/share/ca-certificates,' +
+          '/usr/local/share/ca-certificates,/run/secrets,/var/run/secrets,' +
+          '/etc/sts',
+    runtime: false,
+    description: 'Product mode only. A comma-separated list of absolute ' +
+                 'directories. A file an administrator names in a setting or ' +
+                 'a request (a CA file, a SPIFFE token or key file, a ' +
+                 'Sigstore file, a mail certificate or key) is read only if ' +
+                 'its real path, after following symbolic links, is inside ' +
+                 'one of them. It is set in the environment or the appconfig ' +
+                 'file and cannot be changed through the console or the API, ' +
+                 'so that an administrator\'s request cannot widen it. ' +
+                 'WARNING: adding / or another broad directory means ASVS ' +
+                 '5.0.0 requirement 5.3.2 is not met.' },
+
+  { key: 'security.allowUnscopedPeople', group: 'Web security',
+    label: 'Let a person reach SCIM and Shared Signals with no role',
+    env: 'STS_SECURITY_ALLOW_UNSCOPED_PEOPLE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, somebody authenticated ' +
+                 'to /scim/v2 or Shared Signals by a scheme that carries no ' +
+                 'scope, such as HTTP Basic or the session cookie, needs ' +
+                 'Admin Read to read and Admin Write to write. On, any ' +
+                 'authenticated person may. WARNING: on, ASVS 5.0.0 ' +
+                 'requirements 8.2.1 and 8.2.2 are not met, because any ' +
+                 'person could change any account. Use OAuth scopes for ' +
+                 'provisioning clients instead.' },
+
+  { key: 'admin.logBootstrapPassword', group: 'Web security',
+    label: 'Log the generated bootstrap password',
+    env: 'STS_ADMIN_LOG_BOOTSTRAP_PASSWORD', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, the password generated ' +
+                 'for the first administrator is written to the file ' +
+                 'bootstrap-admin-password in persistence.dataDir, readable ' +
+                 'only by this service, and the log says where. On, it is ' +
+                 'written to the service log instead. WARNING: on, ASVS 5.0.0 ' +
+                 'requirement 16.2.5 is not met, because a credential reaches ' +
+                 'the log.' },
+
+  { key: 'oauth2.allowConfidentialWithoutPkce', group: 'Web security',
+    label: 'Let a confidential client omit PKCE',
+    env: 'STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, an authorization ' +
+                 'request with no code_challenge is refused for every client. ' +
+                 'On, a confidential client may omit it and the request is ' +
+                 'only logged. WARNING: on, ASVS 5.0.0 requirement 10.4.6 is ' +
+                 'not met.' },
+
+  { key: 'security.passwordContextWords', group: 'Web security',
+    label: 'Words a password may not contain',
+    env: 'STS_SECURITY_PASSWORD_CONTEXT_WORDS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'Extra words a new password may not contain, such as your ' +
+                 'organization, product, project or department names. Comma ' +
+                 'separated. The service name and the realm\'s name and domain ' +
+                 'are always refused. A word needs at least four letters, and ' +
+                 'the check ignores case and common letter swaps such as 0 ' +
+                 'for o.' },
+
+  { key: 'oauth2.refreshTokenMaxChainS', group: 'OAuth 2.0 / OIDC per-client',
+    label: 'Longest a chain of refresh tokens may last (s)',
+    env: 'STS_OAUTH2_REFRESH_TOKEN_MAX_CHAIN_S', type: 'int', dflt: strongerInProduct(2592000, 0), derived: true,
+    min: 0, max: 31536000,
+    runtime: true,
+    description: 'The absolute limit on a grant renewed by refresh tokens, ' +
+                 'counted from the first one. Once it passes the person signs ' +
+                 'in again, however often the client refreshed. 0 means no ' +
+                 'limit, which is the development default. Product mode ' +
+                 'defaults to 30 days.' },
+
+  { key: 'federation.allowUntypedLogoutToken', group: 'Federation',
+    label: 'Accept a partner\'s Logout Token with no explicit type',
+    env: 'STS_FEDERATION_ALLOW_UNTYPED_LOGOUT_TOKEN', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode accepts a partner\'s Logout ' +
+                 'Token only if it is typed logout+jwt. On, a token typed jwt ' +
+                 'or carrying no type is accepted too, for a partner that ' +
+                 'does not send the type. The OpenID specification only ' +
+                 'recommends it.' },
+
+  { key: 'account.recentAuthMinutes', group: 'Web security',
+    label: 'How recent a sign-in must be to change a second factor (min)',
+    env: 'STS_ACCOUNT_RECENT_AUTH_MINUTES', type: 'int', dflt: strongerInProduct(15, 0), derived: true,
+    min: 0, max: 1440,
+    runtime: true,
+    description: 'A person changing their second factors, recovery codes, ' +
+                 'passkeys or email address on the portal must have signed in ' +
+                 'within this many minutes, or they are sent to sign in again ' +
+                 'first. 0 means it is not asked, which is the development ' +
+                 'default. Product mode defaults to 15.' },
+
+  { key: 'persistence.allowDefaultDatabasePassword', group: 'Persistence',
+    label: 'Allow a default database password in product mode',
+    env: 'STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode will not start with a ' +
+                 'well-known database password, such as the shipped compose ' +
+                 'file\'s sts_app, or a password equal to the user name. On, ' +
+                 'it starts anyway. Use it only for a test stack.' },
+
+  { key: 'authn.sessionsEndedBefore', group: 'Web security',
+    label: 'Sessions started before this instant have ended (ms)',
+    env: 'STS_AUTHN_SESSIONS_ENDED_BEFORE', type: 'int', dflt: 0, min: 0, max: 9007199254740991,
+    runtime: true,
+    description: 'Set by End every session on the Sessions page. A sign-on ' +
+                 'session started before this instant, in milliseconds since ' +
+                 '1970, has ended. 0 means none has.' },
+
+  { key: 'oauth2.consentAlwaysForPublicClients', group: 'OAuth 2.0 / OIDC per-client',
+    label: 'Always ask consent for a public client',
+    env: 'STS_OAUTH2_CONSENT_ALWAYS_FOR_PUBLIC_CLIENTS', type: 'bool', dflt: strongerInProduct(true, false), derived: true,
+    runtime: true,
+    description: 'A public client cannot prove who it is, so a person is ' +
+                 'asked every time it requests access, whatever they answered ' +
+                 'before. This service\'s own applications are not asked. On ' +
+                 'by default in product mode.' },
+
+  { key: 'federation.maxPartnerAuthAgeS', group: 'Federation',
+    label: 'Oldest partner authentication accepted (s)',
+    env: 'STS_FEDERATION_MAX_PARTNER_AUTH_AGE_S', type: 'int', dflt: 0, min: 0, max: 31536000,
+    runtime: true,
+    description: 'Refuses a federated sign-in whose partner says the person ' +
+                 'authenticated longer ago than this, using auth_time or ' +
+                 'AuthnInstant. While a limit is set, a partner that does not ' +
+                 'say when is refused. 0, the default, does not ask.' },
+
+  { key: 'security.requestsPerAddressPerMinute', group: 'Web security',
+    label: 'Requests one address may make per minute',
+    env: 'STS_SECURITY_REQUESTS_PER_ADDRESS_PER_MINUTE', type: 'int', dflt: strongerInProduct(6000, 0), derived: true,
+    min: 0, max: 100000000,
+    runtime: true,
+    description: 'A ceiling on all requests from one address, per process. It ' +
+                 'is a brake on abuse, separate from the limits on credential ' +
+                 'attempts. 0 means no ceiling, which is the development ' +
+                 'default. Product mode defaults to 6000. Behind a proxy, set ' +
+                 'global.trustedProxies so that addresses are read correctly.' },
+
+  { key: 'audit.allowPlainSyslog', group: 'Audit log',
+    label: 'Allow plain syslog audit export in product mode',
+    env: 'STS_AUDIT_ALLOW_PLAIN_SYSLOG', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode accepts only the tls ' +
+                 'transport for a syslog audit destination. On, tcp and udp ' +
+                 'are accepted too, so the audit log crosses the network ' +
+                 'unencrypted. Use it only on a network you trust.' },
+
+  { key: 'security.outboundAllowedHosts', group: 'Web security',
+    label: 'Hosts this service may dial',
+    env: 'STS_SECURITY_OUTBOUND_ALLOWED_HOSTS', type: 'csv', dflt: '',
+    runtime: true,
+    description: 'If set, an outbound request a partner, client or caller can ' +
+                 'influence may reach only these hosts. Comma separated: an ' +
+                 'exact name, or a leading dot for a whole domain, such as ' +
+                 '.example.com. Empty, the default, allows any public host. ' +
+                 'Internal addresses are refused either way in product mode.' },
+
+  { key: 'security.hstsIncludeSubDomains', group: 'Web security',
+    label: 'Apply HSTS to subdomains',
+    env: 'STS_SECURITY_HSTS_INCLUDE_SUBDOMAINS', type: 'bool', dflt: strongerInProduct(true, false), derived: true,
+    runtime: true,
+    description: 'Adds includeSubDomains to Strict-Transport-Security, so ' +
+                 'browsers use HTTPS for every subdomain of this service\'s ' +
+                 'host name too. On by default in product mode. Turn it off ' +
+                 'if a subdomain of this host name must still answer over ' +
+                 'plain HTTP.' },
+
+  { key: 'malwareScan.enabled', group: 'Malware scanning',
+    label: 'Scan files for malware',
+    env: 'STS_MALWARE_SCAN_ENABLED', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, nothing is scanned. On, every profile ' +
+                 'photo, logo, photo copied from a federation partner and ' +
+                 'uploaded risk dataset is sent to the ICAP service in ' +
+                 'malwareScan.url first, and refused if the service flags it ' +
+                 'or cannot answer.' },
+
+  { key: 'malwareScan.url', group: 'Malware scanning',
+    label: 'ICAP service address',
+    env: 'STS_MALWARE_SCAN_URL', type: 'string', dflt: '',
+    runtime: true,
+    description: 'The service to scan with, as icap://host:port/service or ' +
+                 'icaps://host:port/service (RFC 3507). Any antivirus product ' +
+                 'with an ICAP service can be used.' },
+
+  { key: 'malwareScan.timeoutMs', group: 'Malware scanning',
+    label: 'Scan timeout (milliseconds)',
+    env: 'STS_MALWARE_SCAN_TIMEOUT_MS', type: 'int', dflt: 30000, min: 100, max: 600000,
+    runtime: true,
+    description: 'How long to wait for the service. A large file is allowed a ' +
+                 'second more per mebibyte.' },
+
+  { key: 'malwareScan.caFile', group: 'Malware scanning',
+    label: 'CA file for an icaps service',
+    env: 'STS_MALWARE_SCAN_CA_FILE', type: 'string', dflt: '',
+    runtime: true,
+    description: 'A PEM file of CA certificates an icaps service may chain ' +
+                 'to, beside the public roots. Held to security.fileRoots.' },
+
+  { key: 'malwareScan.allowCleartext', group: 'Malware scanning',
+    label: 'Allow plain ICAP in product mode',
+    env: 'STS_MALWARE_SCAN_ALLOW_CLEARTEXT', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Off, the default, product mode refuses an icap:// address ' +
+                 'and files are not accepted until an icaps:// address is ' +
+                 'set. On, files may reach the scanner unencrypted. Use it ' +
+                 'only on a network you trust.' },
+
+  { key: 'authn.allowOptionalSecondFactor', group: 'Web security',
+    label: 'Let a person sign in without a second factor',
+    env: 'STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, a second factor is ' +
+                 'required of everybody, administrators included, whatever ' +
+                 'the authentication policy says, and a person who holds none ' +
+                 'enrols one at sign-in. Exempt service accounts stay exempt. ' +
+                 'On, the authentication policy decides. WARNING: on, ASVS ' +
+                 '5.0.0 requirement 6.3.3 is not met unless the policy ' +
+                 'requires one.' },
+
+  { key: 'crypto.allowCbcJwe', group: 'Web security',
+    label: 'Allow JWE CBC-HMAC content encryption',
+    env: 'STS_CRYPTO_ALLOW_CBC_JWE', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, JWE uses and accepts ' +
+                 'AES-GCM alone: A128CBC-HS256, A192CBC-HS384 and ' +
+                 'A256CBC-HS512 are neither offered nor accepted, and a ' +
+                 'client that names an algorithm and no enc is answered in ' +
+                 'A256GCM. On, they work as in development. WARNING: while ' +
+                 'this is on, ASVS 5.0.0 requirement 11.3.2 is not met, so ' +
+                 'turn it on only for a partner that cannot read AES-GCM.' },
+
+  { key: 'crypto.allowLegacyHashes', group: 'Web security',
+    label: 'Allow SHA-1 and MD5 where a protocol still uses them',
+    env: 'STS_CRYPTO_ALLOW_LEGACY_HASHES', type: 'bool', dflt: false,
+    runtime: true,
+    description: 'Product mode only. Off, the default, this service does not ' +
+                 'use OAEP over SHA-1 in XML encryption or JWE, the SHA-1 ' +
+                 'PKINIT key derivation, or the HMAC-MD5 checksum of ' +
+                 'S4U2Self. On, it does. WARNING: ASVS 5.0.0 requirement ' +
+                 '11.4.1 disallows those hashes, so turn this on only for ' +
+                 'partners or clients that support nothing newer.' },
+
+  { key: 'admin.allowDefaultUsername', group: 'Admin console',
+    label: 'Allow a default administrator name in product',
+    env: 'STS_ADMIN_ALLOW_DEFAULT_USERNAME', type: 'bool', dflt: false,
+    runtime: false, perProcess: true,
+    restartReason: 'the bootstrap runs once, between the persistence store ' +
+                   'opening and the listener binding, so a change after that ' +
+                   'has nothing left to name',
+    description: 'Product mode only. Off, the default, a bootstrap ' +
+                 'administrator named admin, root, sa or administrator, or ' +
+                 'with no name at all, is given an unpredictable generated ' +
+                 'name, printed with its password at first start. On, the ' +
+                 'configured name is used as it is. WARNING: ASVS 5.0.0 ' +
+                 'requirement 6.3.2 forbids a default account name, so leave ' +
+                 'this off outside a test stack.' },
 
   { key: 'admin.bootstrapUsername', group: 'Admin console',
     label: 'Bootstrap administrator account',
@@ -1824,6 +2097,9 @@ const SETTINGS = [
     enumValues: ['A128GCM', 'A192GCM', 'A256GCM', 'A128CBC-HS256',
                  'A192CBC-HS384', 'A256CBC-HS512'],
     dflt: 'A256GCM', runtime: true,
+    // A CBC-HMAC value is held to crypto.allowCbcJwe (#1486).
+    onlyWhile: 'allowsCbcJwe',
+    onlyWhileValues: ['A128CBC-HS256', 'A192CBC-HS384', 'A256CBC-HS512'],
     description: 'The enc of a jwt-encrypted token encrypted to a resource ' +
                  'server\'s own key. A token encrypted to this authorization ' +
                  'server is always dir with A256GCM.' },
@@ -2051,19 +2327,21 @@ const SETTINGS = [
   { key: 'authn.sessionIdleTimeoutS', group: 'Web security',
     label: 'Session idle timeout (seconds, 0 = none)',
     env: 'STS_AUTHN_SESSION_IDLE_TIMEOUT_S',
-    type: 'int', dflt: 0, runtime: true, min: 0, max: 2592000,
+    type: 'int', dflt: strongerInProduct(1800, 0), derived: true, runtime: true,
+    min: 0, max: 2592000,
     description: 'How long a session may go UNUSED before it ends, on top of ' +
                  'the absolute lifetime above. **Zero, the default, means no ' +
-                 'idle timeout**, which is what this service has always ' +
-                 'done. Set, a session somebody stops using ends that many ' +
-                 'seconds after its last request, whichever of the two ' +
-                 'limits comes first — and a request to the admin console or ' +
-                 'the user portal counts as use of the sign-on session ' +
-                 'behind it, so an operator working in the console is not ' +
-                 'signed out of it by an idle clock on a session they are ' +
-                 'not presenting. It is live: it applies to sessions that ' +
-                 'already exist, because it is checked where a session is ' +
-                 'read rather than stamped where one is made.' },
+                 'idle timeout**, which is what this service has always done. ' +
+                 'Set, a session somebody stops using ends that many seconds ' +
+                 'after its last request, whichever of the two limits comes ' +
+                 'first — and a request to the admin console or the user ' +
+                 'portal counts as use of the sign-on session behind it, so ' +
+                 'an operator working in the console is not signed out of it ' +
+                 'by an idle clock on a session they are not presenting. It ' +
+                 'is live: it applies to sessions that already exist, because ' +
+                 'it is checked where a session is read rather than stamped ' +
+                 'where one is made. In product mode, where this is left ' +
+                 'unset, the default is 1800.' },
 
   // DEVICE BOUND SESSION CREDENTIALS (#725): the sign-on session bound to a
   // key the browser holds. Off by default, as every new enforcement here is;
@@ -2713,7 +2991,8 @@ const SETTINGS = [
 
   { key: 'totp.window', group: 'TOTP MFA',
     label: 'Steps of clock skew forgiven', path: 'totp.window',
-    env: 'STS_TOTP_WINDOW', type: 'int', dflt: 1, runtime: true,
+    env: 'STS_TOTP_WINDOW', type: 'int', dflt: strongerInProduct(0, 1),
+    derived: true, runtime: true,
     min: 0, max: 10,
     description: 'How many steps either side of now are accepted. RFC 6238 ' +
                  'section 5.2 recommends at most one, which is the default ' +
@@ -2723,7 +3002,9 @@ const SETTINGS = [
                  'is a policy rather than something the QR code told the ' +
                  'app. Zero demands a perfectly synchronised clock and is ' +
                  'the setting to reach for when demonstrating what happens ' +
-                 'without one.' },
+                 'without one.' +
+                 ' In product mode the default is 0, so a code is good ' +
+                 'for one 30-second step.' },
 
   { key: 'totp.secretBytes', group: 'TOTP MFA',
     label: 'Shared secret length (bytes)', path: 'totp.secretBytes',
@@ -6505,6 +6786,15 @@ const SETTINGS = [
                  'live token. Applies when oauth2.accessTokenFormat is ' +
                  'opaque.' },
 
+  { key: 'oauth2.allowUndeclaredGrants', group: 'OAuth 2.0 / OIDC',
+    label: 'Let a client with no grant list use any grant',
+    env: 'STS_OAUTH2_ALLOW_UNDECLARED_GRANTS', type: 'bool', dflt: false, runtime: true,
+    description: 'Product mode only. Off, the default, a client that declares ' +
+                 'no grant types may use authorization_code and refresh_token ' +
+                 'alone. On, it may use any grant this service offers. ' +
+                 'WARNING: ASVS 5.0.0 requirement 10.4.4 limits a client to ' +
+                 'the grants it needs, so leave this off outside a test stack.' },
+
   { key: 'oauth2.signedMetadataAlgorithm', group: 'OAuth 2.0 / OIDC',
     label: 'Algorithm signed_metadata is signed with',
     env: 'STS_OAUTH2_SIGNED_METADATA_ALGORITHM', type: 'enum',
@@ -7315,7 +7605,7 @@ const SETTINGS = [
   // ---------------------------------------------------------------------
   { key: 'pki.keyAlgorithm', group: 'PKI',
     label: 'Default CA key algorithm',
-    env: 'STS_PKI_KEY_ALGORITHM', type: 'enum', dflt: 'rsa-2048',
+    env: 'STS_PKI_KEY_ALGORITHM', type: 'enum', dflt: strongerInProduct('rsa-3072', 'rsa-2048'), derived: true,
     enumValues: PKI_KEY_ALGORITHMS,
     runtime: true,
     description: 'Which key algorithm a new certificate authority is built ' +
@@ -8496,6 +8786,15 @@ const SETTINGS = [
     env: 'STS_SCEP_ENABLED', type: 'bool', dflt: true, runtime: true,
     description: 'Off makes every /enroll/scep request answer 503 in this ' +
                  'realm. Certificates already issued are kept.' },
+  { key: 'scep.allowInProduct', group: 'SCEP',
+    label: 'Answer SCEP in product',
+    env: 'STS_SCEP_ALLOW_IN_PRODUCT', type: 'bool', dflt: false, runtime: true,
+    description: 'Product mode only. On, /enroll/scep answers in product ' +
+                 'mode. Off, the default, it answers 503. WARNING: RFC 8894 ' +
+                 'requires RSAES-PKCS1-v1.5 and AES-CBC, which ASVS 5.0.0 ' +
+                 'requirements 11.3.1 and 11.3.2 do not accept, so turn this ' +
+                 'on only for devices that speak nothing newer.' },
+
   { key: 'scep.allowedProfiles', group: 'SCEP',
     label: 'Certificate profiles SCEP may issue',
     env: 'STS_SCEP_ALLOWED_PROFILES', type: 'csv',
@@ -8551,7 +8850,7 @@ const SETTINGS = [
   { key: 'scep.raKeyAlgorithm', group: 'SCEP',
     label: 'RA certificate key algorithm',
     env: 'STS_SCEP_RA_KEY_ALGORITHM', type: 'enum',
-    enumValues: ['rsa-2048', 'rsa-3072', 'rsa-4096'], dflt: 'rsa-2048',
+    enumValues: ['rsa-2048', 'rsa-3072', 'rsa-4096'], dflt: strongerInProduct('rsa-3072', 'rsa-2048'), derived: true,
     runtime: true,
     description: 'SCEP encrypts the request to the RA with RSA key transport ' +
                  '(RFC 8894 section 3.1), so the RA certificate is RSA ' +
@@ -8806,6 +9105,9 @@ const SETTINGS = [
     enumValues: ['A128GCM', 'A192GCM', 'A256GCM', 'A128CBC-HS256',
                  'A192CBC-HS384', 'A256CBC-HS512'],
     dflt: 'A256GCM', runtime: true,
+    // A CBC-HMAC value is held to crypto.allowCbcJwe (#1486).
+    onlyWhile: 'allowsCbcJwe',
+    onlyWhileValues: ['A128CBC-HS256', 'A192CBC-HS384', 'A256CBC-HS512'],
     description: 'The JWE content encryption algorithm for refresh tokens. ' +
                  'Like the alg above, it is read on every issuance and a ' +
                  'change strands no token already issued.' },
@@ -8813,7 +9115,7 @@ const SETTINGS = [
   { key: 'oauth2.refreshTokenEncryptionKeyBits', group: 'OAuth 2.0 / OIDC',
     label: 'Refresh token encryption: RSA key size (bits)',
     env: 'STS_OAUTH2_REFRESH_TOKEN_ENCRYPTION_KEY_BITS', type: 'int',
-    dflt: 2048,
+    dflt: strongerInProduct(3072, 2048), derived: true,
     min: 2048, max: 4096, step: 1024, runtime: true,
     description: 'The modulus of the RSA key each realm encrypts refresh ' +
                  'tokens to under RSA-OAEP. Each realm has its own, made ' +
@@ -8994,7 +9296,7 @@ const SETTINGS = [
   { key: 'oauth2.requestObjectEncryptionKeyBits', group: 'OAuth 2.0 / OIDC',
     label: 'Request object encryption: RSA key size (bits)',
     env: 'STS_OAUTH2_REQUEST_OBJECT_ENCRYPTION_KEY_BITS', type: 'int',
-    dflt: 2048,
+    dflt: strongerInProduct(3072, 2048), derived: true,
     min: 2048, max: 4096, step: 1024, runtime: true,
     description: 'The modulus of the RSA key each realm publishes in ' +
                  '/oauth2/jwks (use: enc) for a client to encrypt a request ' +
@@ -10443,6 +10745,9 @@ const SETTINGS = [
     env: 'STS_SAML2_ENCRYPTION_ALGORITHM', type: 'enum',
     enumValues: ['aes256-gcm', 'aes128-gcm', 'aes256-cbc', 'aes128-cbc'],
     dflt: 'aes256-gcm', runtime: true,
+    // AES-CBC is DEVELOPMENT ONLY since #1455 (ASVS 5.0.0 11.3.2).
+    onlyWhile: 'usesBrokenAlgorithms',
+    onlyWhileValues: ['aes256-cbc', 'aes128-cbc'],
     description: 'The block cipher every encrypted element is encrypted ' +
                  'with. The two GCM ones are AUTHENTICATED: an altered ' +
                  'ciphertext fails its tag and is refused. The two CBC ones ' +
@@ -11636,7 +11941,7 @@ const SETTINGS = [
   // carried.
   { key: 'tls.selfSignedKeyBits', group: 'TLS',
     label: 'Self-signed certificate RSA key size',
-    env: 'STS_TLS_SELF_SIGNED_KEY_BITS', type: 'int', dflt: 2048,
+    env: 'STS_TLS_SELF_SIGNED_KEY_BITS', type: 'int', dflt: strongerInProduct(3072, 2048), derived: true,
     min: 2048, max: 8192, step: 1024, runtime: false,
     restartReason: 'the certificate is generated when the process starts',
     description: 'The RSA modulus size of the self-signed listener ' +
@@ -11786,7 +12091,7 @@ const SETTINGS = [
 
   { key: 'oid4vci.requestEncryptionKeyBits', group: 'OID4VCI',
     label: 'Request encryption key size (bits)',
-    env: 'OID4VCI_REQUEST_ENCRYPTION_KEY_BITS', type: 'int', dflt: 2048,
+    env: 'OID4VCI_REQUEST_ENCRYPTION_KEY_BITS', type: 'int', dflt: strongerInProduct(3072, 2048), derived: true,
     min: 2048, max: 4096, step: 1024, runtime: true,
     description: 'The RSA modulus of the key credential_request_encryption ' +
                  'publishes. Each trust realm has its own key, made with the ' +
@@ -13092,12 +13397,27 @@ const SETTINGS = [
   // realm reads the list without it. 1, 2, 3 (DES, RFC 6649), 16 (3DES) and
   // 24 (rc4-hmac-exp, RFC 8429) are named beside it for the day the codec
   // implements them; today it refuses them at startup anyway.
+  { key: 'krb5.allowSha1Enctypes', group: 'Kerberos',
+    label: 'Offer AES with SHA-1 in product',
+    env: 'KRB5_ALLOW_SHA1_ENCTYPES', type: 'bool', dflt: false, runtime: false,
+    restartReason: 'every principal\'s keys are made at startup',
+    description: 'Product mode only. On, this KDC may also use enctypes 17 ' +
+                 'and 18 (AES with HMAC-SHA1-96, RFC 3962). Off, the default, ' +
+                 'product uses 19 and 20 (RFC 8009) alone. WARNING: ASVS ' +
+                 '5.0.0 requirement 11.4.1 does not accept SHA-1 here, so ' +
+                 'turn this on only for Kerberos clients that speak nothing ' +
+                 'newer.' },
+
   { key: 'krb5.enctypes', group: 'Kerberos', label: 'Encryption types',
     env: 'KRB5_ENCTYPES', type: 'csv', dflt: '18,17,20,19,23',
     runtime: false,
     realmRuntime: true,
     onlyWhile: 'usesBrokenAlgorithms',
     onlyWhileValues: ['1', '2', '3', '16', '23', '24'],
+    // AES with HMAC-SHA1-96 (#1456, ASVS 5.0.0 11.4.1): marked too, unless the
+    // operator opts in.
+    onlyWhileValuesUnless: { setting: 'krb5.allowSha1Enctypes',
+                             values: ['17', '18'] },
     restartReason: 'every principal\'s supported encryption types are fixed ' +
                    'at startup' +
                    REALM_BUILDS_ITS_OWN,
@@ -13788,15 +14108,17 @@ const SETTINGS = [
                  'before it are the answer, marked incomplete.' },
 
   { key: 'ldap.plainListener', group: 'LDAP', label: 'Plain LDAP listener',
-    env: 'LDAP_PLAIN_LISTENER', type: 'bool', dflt: true, runtime: false,
+    env: 'LDAP_PLAIN_LISTENER', type: 'bool', dflt: strongerInProduct(false, true), derived: true,
+    runtime: false,
     restartReason: 'the socket is bound when the process starts',
-    description: 'Whether the unencrypted listener on ldap.port is started ' +
-                 'at all. On by default, which is what this service always ' +
-                 'did. Off leaves LDAPS on ldap.tlsPort as the only way in — ' +
-                 'which is what a deployment whose binds are VERIFIED ' +
-                 '(product mode) wants, since a simple bind on 389 sends the ' +
-                 'password in the clear. Product mode with it on logs a ' +
-                 'warning at startup saying exactly that.' },
+    description: 'Whether the unencrypted listener on ldap.port is started at ' +
+                 'all. On by default, which is what this service always did. ' +
+                 'Off leaves LDAPS on ldap.tlsPort as the only way in — which ' +
+                 'is what a deployment whose binds are VERIFIED (product ' +
+                 'mode) wants, since a simple bind on 389 sends the password ' +
+                 'in the clear. Product mode with it on logs a warning at ' +
+                 'startup saying exactly that. In product mode, where this is ' +
+                 'left unset, it is off.' },
 
   // WHAT A PERSON MAY CHANGE ON THEIR OWN ENTRY OVER THE SOCKET, in product
   // mode (2026-09-12). An ALLOWLIST because the directory is schemaless and the
@@ -13808,8 +14130,10 @@ const SETTINGS = [
   { key: 'ldap.selfWritableAttributes', group: 'LDAP',
     label: 'Attributes a person may change on their own entry',
     env: 'LDAP_SELF_WRITABLE_ATTRIBUTES', type: 'csv',
+    // NOT `userPassword` SINCE #1465 (ASVS 5.0.0 6.2.3): an LDAP modify presents
+    // no current password, and a bind by certificate proved none.
     dflt: 'telephoneNumber,mobile,homePhone,displayName,preferredLanguage,' +
-          'postalAddress,street,l,st,postalCode,userPassword',
+          'postalAddress,street,l,st,postalCode',
     runtime: true,
     description: 'In PRODUCT mode, the attributes a connection bound as a ' +
                  'person may change on that person\'s OWN entry with an LDAP ' +
@@ -15880,6 +16204,18 @@ const SETTINGS = [
                  'request declares more, and stopped where it passes this ' +
                  'otherwise. DB-IP Lite\'s city file is a few hundred ' +
                  'megabytes compressed.' },
+
+  { key: 'risk.maxSkippedLinesPercent', group: 'Risk',
+    label: 'Largest share of a dataset\'s lines that may fail to parse ' +
+           '(percent)',
+    env: 'STS_RISK_MAX_SKIPPED_LINES_PERCENT',
+    type: 'int', dflt: 10, min: 0, max: 100, runtime: true,
+    description: 'A dataset file in which more than this percentage of its ' +
+                 'non-comment lines are not rows of the format is refused, ' +
+                 'and nothing of it is kept. 100 accepts any file that holds ' +
+                 'at least one row, which is what this service did before. ' +
+                 'WARNING: at 100 a file of the wrong kind can be loaded as ' +
+                 'long as one line happens to parse.' },
 
   { key: 'risk.expandedMaxBytes', group: 'Risk',
     label: 'Largest expanded dataset (bytes)',
@@ -21431,6 +21767,43 @@ function maxCountRealmProblem(key) {
     '/admin-api/config/set with no realm prefix.';
 }
 
+// ---------------------------------------------------------------------------
+// A VALUE THE STORE CAN NEVER HOLD (#1463).
+//
+// A realm's overrides and the process's are `jsonb`, and PostgreSQL refuses
+// two things a JSON string can spell: `\u0000` (22P05) and half of a
+// surrogate pair (22P02). Until #1463 a `string` setting accepted either, and
+// the flush that wrote it failed for good: a fuzzed `saml11.nameIdFormat`
+// stopped every later store write in the process. So every door that writes
+// a setting asks here, through `checkOverride()`. The sentence quotes no
+// value. `persistence.js` keeps a backstop for anything else in that class.
+// ---------------------------------------------------------------------------
+const LONE_SURROGATE =
+  /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+/**
+ * Whether a value holds text the store's JSON columns can never hold.
+ *
+ * @param value - a string, or a list or object of them, at any depth
+ * @returns true when a string in it carries a NUL or a lone surrogate
+ */
+function unstorableText(value) {
+  log.debug("Entering unstorableText().");
+  if (typeof value === 'string') {
+    log.debug("Leaving unstorableText(). A string.");
+    return value.indexOf('\u0000') >= 0 || LONE_SURROGATE.test(value);
+  }
+  if (value && typeof value === 'object') {
+    const found = Object.keys(value).some(function (key) {
+      return unstorableText(key) || unstorableText(value[key]);
+    });
+    log.debug("Leaving unstorableText(). A container.");
+    return found;
+  }
+  log.debug("Leaving unstorableText(). Neither.");
+  return false;
+}
+
 // Whether this value WOULD be accepted, without accepting it. Separate from
 // setOverride() for one caller: the console's Save posts a whole section, and a
 // section that applied its first three fields and then refused the fourth would
@@ -21499,6 +21872,11 @@ function checkOverride(key, raw, forRealm) {
   if (realmLocked) {
     log.debug("Leaving checkOverride().");
     return realmLocked;
+  }
+  if (unstorableText(raw)) {
+    log.debug("Leaving checkOverride(). Text the store cannot hold.");
+    return '"' + key + '" holds a NUL character or half of a surrogate ' +
+      'pair, which this service cannot store.';
   }
   const problem = TYPES[setting.type].check(raw, setting);
   if (problem) {
@@ -21645,6 +22023,10 @@ function checkOverrideCode(key, raw, forRealm) {
   if (maxCountOutsideDefault(key)) {
     log.debug("Leaving checkOverrideCode().");
     return 'STS-CORE-0162';
+  }
+  if (unstorableText(raw)) {
+    log.debug("Leaving checkOverrideCode().");
+    return 'STS-CORE-0171';
   }
   if (TYPES[setting.type].check(raw, setting)) {
     log.debug("Leaving checkOverrideCode().");
@@ -22228,6 +22610,39 @@ function groups() {
 }
 
 /**
+ * Describes the named settings, in the ambient realm, in table order. A key
+ * no row has is left out: a realm's stored value can outlive its setting.
+ *
+ * @param keys - the setting keys
+ * @returns one description per known key
+ */
+function describeKeys(keys) {
+  log.debug("Entering describeKeys().");
+  const wanted = new Set(keys);
+  const out = SETTINGS.filter(function (setting) {
+    return wanted.has(setting.key);
+  }).map(describe);
+  log.debug("Leaving describeKeys(). " + out.length + " row(s).");
+  return out;
+}
+
+/**
+ * Returns the keys of the settings the table marks `secret: true`.
+ *
+ * @returns the keys
+ */
+function secretKeys() {
+  log.debug("Entering secretKeys().");
+  const out = SETTINGS.filter(function (setting) {
+    return !!setting.secret;
+  }).map(function (setting) {
+    return setting.key;
+  });
+  log.debug("Leaving secretKeys(). " + out.length + " key(s).");
+  return out;
+}
+
+/**
  * Returns what this service is configured with: the realm the snapshot is
  * of and what it sets, the appconfig files, the counts, what is overridden,
  * and every group of settings described.
@@ -22668,6 +23083,7 @@ module.exports = {
   managementApiBaseUrl: managementApiBaseUrl,
   registerLogger: registerLogger,
   checkOverride: checkOverride,
+  unstorableText: unstorableText,
   checkOverrideCode: checkOverrideCode,
   checkWrite: checkWrite,
   modeWriteCode: modeWriteCode,
@@ -22685,6 +23101,8 @@ module.exports = {
   persistableOverrides: persistableOverrides,
   applyPersistedOverrides: applyPersistedOverrides,
   describe: describe,
+  describeKeys: describeKeys,
+  secretKeys: secretKeys,
   groups: groups,
   snapshot: snapshot,
   auditAppconfig: auditAppconfig,

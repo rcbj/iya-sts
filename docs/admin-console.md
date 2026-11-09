@@ -122,6 +122,10 @@ administrators cannot reach anything about the process as a whole.
 
 ### The bootstrap administrator
 
+In product mode a default name (`admin`, `root`, `sa`, `administrator`, or none)
+is replaced by an unpredictable generated name, printed once with the generated
+password at first start. Set `admin.bootstrapUsername` to choose your own.
+
 At startup the service makes **`admin`** (`admin.bootstrapUsername`) in the
 default realm if it is absent, puts it in both role groups, and marks a newly
 created account `pwdReset: TRUE`, so its first sign-in asks for a new password
@@ -1710,6 +1714,12 @@ refused when that setting is on. A filesystem path is absolute, and when
 settings take effect on the next run.
 
 ## Server configuration pages worth explaining
+
+### Configuration dump — `/admin/config-dump`
+
+Downloads every configuration parameter, global and per realm, as one JSON
+file with every sensitive value masked. See
+[Configuration dump](configuration-dump.md).
 
 ### Sign-in appearance — `/admin/sign-in-appearance`
 

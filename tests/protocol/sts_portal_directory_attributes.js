@@ -716,10 +716,26 @@ async function oneUserCannotReadAnother() {
   const intruder = await signIn(INTRUDER);
   // Since #568 the page's view is `GET /account-api/overview`, asked here
   // with another person's name in every parameter it could plausibly read.
-  const theirs = await intruder.draw("/portal",
-    { user: OWNER, username: OWNER });
-  check("a signed-in person naming somebody else in the query gets THEIR OWN " +
-        "entry", function () {
+  // SINCE #1483 THE ACCOUNT API REFUSES A QUERY NAME AN OPERATION DOES NOT
+  // TAKE, so each is refused, carrying nothing; the page is then drawn with
+  // nothing naming anybody, and can only be the token's person's.
+  for (const name of ["user", "username"]) {
+    const asked = {};
+    asked[name] = OWNER;
+    const refused = await intruder.draw("/portal", asked);
+    check("a signed-in person naming somebody else in `" + name + "` is " +
+          "refused, and is shown nothing of theirs", function () {
+      assert.strictEqual(refused.status, 400,
+        "/portal answered " + refused.status);
+      assert.deepStrictEqual(Object.keys(refused.json).sort(),
+                             ["errors", "ok"],
+                             JSON.stringify(refused.json));
+      assert.ok(JSON.stringify(refused.json).indexOf(OWNER) < 0,
+        "the refusal repeats " + OWNER + ": " + JSON.stringify(refused.json));
+    });
+  }
+  const theirs = await intruder.draw("/portal");
+  check("and with nothing named they get THEIR OWN entry", function () {
     assert.strictEqual(theirs.status, 200,
       "/portal answered " + theirs.status);
     assert.ok(String(theirs.text).indexOf(INTRUDER) >= 0,

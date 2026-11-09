@@ -40,6 +40,13 @@ The index. Every operation with the console control it mirrors, and where the Op
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The index.
 
 | Member | Type | Required | What it is |
@@ -77,6 +84,13 @@ The OpenAPI 3.1 document of `/account-api` — the user portal's API — for the
 **Mirrors** `GET /admin/account-api` on the admin console.
 
 Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The document and where it is published.
 
@@ -117,6 +131,8 @@ Scope: `admin:read`.
 | `cache` | query | string |  | A cache `name`, to answer its entries rather than the list. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The list, or one cache.
 
@@ -250,6 +266,8 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `people` | query | string |  | A cell whose residents to list, under its release policy. |
 | `after` | query | string |  | With `people`: the last name of the previous page. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The cell map.
 
@@ -328,6 +346,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings.groups[].settings[].max` | number |  | The highest value it will take. |
 | `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -427,6 +446,7 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `cell` | query | string | yes | The other cell's id. |
 | `after` | query | string |  | The last login name of the previous page. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
 
 **200**: `{ cell, people, next }` or `{ cell, refused }`.
 
@@ -451,6 +471,13 @@ Re-homing (#98): everything the person holds is ended first — here and in ever
 **Mirrors** `POST /admin/cells (action=rehome)` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -500,6 +527,13 @@ NOTHING HERE IS A SECRET: key types, key identifiers, curve names, certificate f
 **Mirrors** `GET /admin/crypto-metadata` on the admin console.
 
 Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The whole report.
 
@@ -837,6 +871,13 @@ NOTHING HERE CHANGES ANYTHING and no connection string is in the reply: `target`
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The whole report.
 
 | Member | Type | Required | What it is |
@@ -936,6 +977,13 @@ Nothing here opens the debugger: its gate is the permission, which the authoriza
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The debugger report.
 
 | Member | Type | Required | What it is |
@@ -1005,6 +1053,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings.groups[].settings[].max` | number |  | The highest value it will take. |
 | `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -1069,6 +1118,8 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `dataKeysPage` | query | integer |  | Which page of `dataKeys.keys` to return, clamped as every page is; `dataKeys.paging` says which page it is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The whole report.
 
@@ -1224,6 +1275,13 @@ Queues a run of `keys.data-key-count` and answers **202**: the values sealed und
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body** (optional)
 
 An empty object.
@@ -1282,6 +1340,13 @@ Queues a run of `keys.data-key-reencrypt` and answers **202**: what is still sea
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body** (optional)
 
 An empty object.
@@ -1339,6 +1404,13 @@ Queues a run of the scheduler job `keys.data-key-rotate-now` and answers **202**
 **Mirrors** `POST /admin/encryption/data-keys` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -1401,6 +1473,13 @@ Queues a run of `keys.kek-rotate-now` and answers **202**: the key management se
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body** (optional)
 
 An empty object.
@@ -1460,6 +1539,13 @@ Nothing here is key material. POST /admin-api/keys/export is the operation that 
 **Mirrors** `GET /admin/keys` on the admin console.
 
 Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The key pairs.
 
@@ -1564,6 +1650,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings.groups[].settings[].max` | number |  | The highest value it will take. |
 | `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -1610,6 +1697,13 @@ For keys presumed compromised. Queues `signing.rotate-now` with the emergency fl
 **Mirrors** `POST /admin/keys/export and POST /admin/keys/rotate` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -1686,6 +1780,13 @@ It is defensible because of what these keys are in development mode: generated a
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -1747,6 +1848,8 @@ Scope: `admin:read`.
 | `unit` | query | string |  | One signing unit (`jose:RS256`, `xml:RS256`, `jose:ES256:P-256`, `bbs:BBS`, …). Omitted, the answer is the index of units and their counts. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The units, and one unit's generations.
 
@@ -1832,6 +1935,8 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `unit` | query | string | yes | The signing unit, `jose:RS256` and the like. |
 | `kid` | query | string | yes | The key's identifier. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The chain, as application/pem-certificate-chain.
 
@@ -1848,6 +1953,13 @@ Queues a run of the scheduler job `signing.rotate-now` and answers **202** with 
 **Mirrors** `POST /admin/keys/export and POST /admin/keys/rotate` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -1918,6 +2030,13 @@ For the realm the call is in: `realm`; `listeners`, the built-in ones (each `id`
 **Mirrors** `GET /admin/listeners` on the admin console.
 
 Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The listeners view.
 
@@ -2064,6 +2183,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings.groups[].settings[].max` | number |  | The highest value it will take. |
 | `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -2111,6 +2231,13 @@ Replaces `listeners.applications` in the realm the call is in — the service's 
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -2155,6 +2282,13 @@ In the default realm, the service's listeners (`listeners.custom`), which answer
 **Mirrors** `POST /admin/listeners` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -2206,6 +2340,8 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `template` | query | one of `password-reset`, `account-activation`, `address-verification`, `pseudonym-verification`, `password-changed`, `account-disabled`, `sessions-ended`, `credential-compromised`, `recovery-started`, `address-changed`, `account-connected`, `access-request`, `uma-approval`, `authzen-access-request`, `authzen-emergency-access`, `pki-pin-status`, `administrator-alert`, `sign-in-code`, `sign-in-link`, `report-ready`, `post-login-reminder`, `reset-refused-attempt`, `layout`, `test-message` |  | A message id, to answer its wording. |
 | `lang` | query | string |  | The language of `template`; `en` by default. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The mail channel's state in this realm.
 
@@ -2271,6 +2407,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings.groups[].settings[].max` | number |  | The highest value it will take. |
 | `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -2362,6 +2499,8 @@ Scope: `admin:read`.
 | `message` | query | string |  | One message's id. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The outbox.
 
@@ -2467,6 +2606,13 @@ A new generation of `message` — a fresh attempt budget, the same body and Mess
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -2566,6 +2712,13 @@ Removes this realm's wording of `template` in `lang`; the built-in English is us
 **Mirrors** `POST /admin/mail` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -2667,6 +2820,13 @@ The subject, the text part and the HTML part of `template` in `lang` (a BCP 47 t
 **Mirrors** `POST /admin/mail` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -2772,6 +2932,13 @@ Queues the `test-message` message for `user` — a person in this realm's direct
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -2872,6 +3039,13 @@ A single-use link to `/portal/verify-email`, mailed to the address on `user`'s e
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -2960,6 +3134,119 @@ Scope: `admin:write`.
 | `row.why` | string, or null |  |  |
 | `verified` | boolean |  |  |
 
+## GET /admin-api/malware-scanning
+
+`getMalwareScanning`
+
+**Whether uploaded files are scanned, and by which ICAP service**
+
+`enabled` and `url` as set; `scanning`, whether files are being scanned now, which needs both; and the settings the page draws.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The malware scanning view.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `enabled` | boolean | yes |  |
+| `scanning` | boolean | yes |  |
+| `settings` | object |  | The settings this page draws, described: the same rows GET /config returns, filtered to the ones this page owns. |
+| `settings.context` | object |  |  |
+| `settings.context.configFile` | string, or null |  |  |
+| `settings.context.defaultsFile` | string |  |  |
+| `settings.context.inRealm` | boolean |  |  |
+| `settings.context.persistenceMode` | string |  |  |
+| `settings.context.persistsAppconfig` | boolean |  |  |
+| `settings.context.persistsRealms` | boolean |  |  |
+| `settings.context.realmId` | string |  |  |
+| `settings.editableCount` | integer |  | How many of them can be changed while the service runs. |
+| `settings.groups` | list |  | In the order `config.js` declares them. |
+| `settings.groups[]` | object |  | One group's settings. |
+| `settings.groups[].group` | string |  |  |
+| `settings.groups[].settings` | list |  |  |
+| `settings.groups[].settings[]` | object |  | One setting: what it is, what it is set to, and where that came from. |
+| `settings.groups[].settings[].appconfigPath` | string |  |  |
+| `settings.groups[].settings[].csvValueNotes` | map |  | Present beside `csvValues` where the setting describes each value: the value mapped to one sentence. |
+| `settings.groups[].settings[].csvValueNotes.{key}` | string |  |  |
+| `settings.groups[].settings[].csvValues` | list |  | Present on a `csv` setting whose entries must each be one of these; absent on an open list. |
+| `settings.groups[].settings[].csvValues[]` | string |  |  |
+| `settings.groups[].settings[].default` | list, or string, or number, or boolean, or null |  |  |
+| `settings.groups[].settings[].default[]` | string, or number, or boolean |  |  |
+| `settings.groups[].settings[].description` | string |  | What it does and why the default is the default. |
+| `settings.groups[].settings[].editRefusal` | string |  | Why this row cannot be edited from the realm the reader is in: `realms.maxCount` while a realm other than the default is ambient. Absent on every row of the default realm's answer. |
+| `settings.groups[].settings[].editable` | boolean |  | Whether POST /config/set will take it from the realm this answer was read in. False means either the value was consumed at startup or `editRefusal` is set. It is refused rather than accepted, because an accepted change that does nothing reads as having worked. |
+| `settings.groups[].settings[].enumValues` | list |  | Present on `enum` settings only. |
+| `settings.groups[].settings[].enumValues[]` | string |  |  |
+| `settings.groups[].settings[].env` | string |  | Its environment variable. |
+| `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
+| `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
+| `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
+| `settings.groups[].settings[].max` | number |  | The highest value it will take. |
+| `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
+| `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
+| `settings.groups[].settings[].overridden` | boolean |  | Whether a runtime override is in force. Equal to `source === "override"`, and reported separately so a caller can filter without matching a string. |
+| `settings.groups[].settings[].realmSettable` | boolean |  | Whether a trust realm may hold its own value for it. |
+| `settings.groups[].settings[].restartReason` | string |  | Why it is not editable, when the value was consumed at startup. |
+| `settings.groups[].settings[].selectAll` | object |  | Present on an `ordered` setting whose select-all is narrowed by other settings. `onlyWhileOn`: the values are selected only while that setting is on. `aloneWhileOn`: while that setting is on, only the values are selected. `canBeOn` is false where this mode never lets that setting be on. |
+| `settings.groups[].settings[].selectAll.aloneWhileOn` | list |  |  |
+| `settings.groups[].settings[].selectAll.aloneWhileOn[].canBeOn` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.aloneWhileOn[].on` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.aloneWhileOn[].setting` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.aloneWhileOn[].values` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.onlyWhileOn` | list |  |  |
+| `settings.groups[].settings[].selectAll.onlyWhileOn[].canBeOn` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.onlyWhileOn[].on` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.onlyWhileOn[].setting` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].selectAll.onlyWhileOn[].values` | object |  | Nested deeper than this page draws. |
+| `settings.groups[].settings[].source` | one of `realm`, `override`, `env`, `env-legacy`, `appconfig`, `defaults`, `default` |  | Where the effective value came from, highest first: this trust realm's own value; a runtime override set through this API or the console; the setting's own environment variable; a legacy variable (no row has one since #523); the appconfig file CONFIG_FILE names; `env/defaults.js`, the DEFAULT appconfig file that one is unioned on top of. `default` is reachable only for the DERIVED settings, whose value is a function of a neighbouring setting: for every other setting, no value anywhere stops this service from STARTING. |
+| `settings.groups[].settings[].step` | number |  | The value must be a MULTIPLE of this, counted from `min`. The four token lifetimes use 30. |
+| `settings.groups[].settings[].text` | string |  | The same value on one line: what the console shows in its input and what the environment variable would carry. |
+| `settings.groups[].settings[].type` | string |  | How a value posted for it is coerced and checked: one of `config.js`'s types (string, int, port, bool, csv, enum, color). |
+| `settings.groups[].settings[].value` | list, or string, or number, or boolean, or null |  |  |
+| `settings.groups[].settings[].value[]` | string, or number, or boolean |  |  |
+| `settings.overridden` | list |  | The keys on this page with a runtime override in force. |
+| `settings.overridden[]` | string |  |  |
+| `settings.page` | string |  |  |
+| `settings.setWith` | string |  | The operation that writes them. |
+| `settings.settingCount` | integer |  |  |
+| `settings.sharedWith` | map |  | A group drawn on another page as well, and those pages. |
+| `settings.sharedWith.{key}` | list |  |  |
+| `settings.sharedWith.{key}[].label` | string, or null |  |  |
+| `settings.sharedWith.{key}[].path` | string |  |  |
+| `url` | string | yes |  |
+
+## POST /admin-api/malware-scanning/test
+
+`testMalwareScanning`
+
+**Check that the configured ICAP service really scans**
+
+Sends an ICAP OPTIONS request, then the EICAR test file, which is harmless. It succeeds only if the service flags that file, because a service whose engine failed to load can answer as if every file were clean. A failure is a 400 whose `errors` says what went wrong.
+
+Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: How the service answered.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `message` | string | yes |  |
+| `ok` | boolean | yes |  |
+
 ## GET /admin-api/me
 
 `getMe`
@@ -2973,6 +3260,13 @@ A role granted or revoked since the token was minted shows here at once, because
 **Mirrors** `no console page — what the gate decided for the caller; the console draws its banner and its navigation from it` on the admin console.
 
 Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The caller, the authority, the roles and the pages.
 
@@ -3023,6 +3317,13 @@ The mode of the realm the call is in (`mode`, `isProduct`) and everything it dec
 **Mirrors** `GET /admin/mode` on the admin console.
 
 Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The mode report.
 
@@ -3083,6 +3384,8 @@ Scope: `admin:read`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `node` | query | string |  | A cluster node's NAME (`cluster.nodeName`, node-a, node-b, …), to answer about that node alone: its view at the top, `nodes` holding its one section. An unknown name is 404 with the names there are (#332). |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The container and its processes.
 
@@ -3366,6 +3669,13 @@ THIS NODE only — the front process that answers and its own request and hosted
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body** (optional)
 
 | Member | Type | Required | What it is |
@@ -3552,6 +3862,13 @@ Built from the same table that registers the routes, so it describes what is act
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The document.
 
 | Member | Type | Required | What it is |
@@ -3580,11 +3897,14 @@ Scope: `admin:read`.
 
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
+| `jobsPage` | query | integer |  | Which page of the job register to return, answered by `jobsPaging`. |
 | `run` | query | string |  | A run id, to answer that run. |
 | `job` | query | string |  | Only the runs of this job. |
 | `outcome` | query | one of `succeeded`, `failed`, `abandoned`, `running`, `queued` |  | Only the runs in this state. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The scheduler's report, or one run.
 
@@ -3907,6 +4227,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings.groups[].settings[].max` | number |  | The highest value it will take. |
 | `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -3965,6 +4286,13 @@ Writes a queued run of `job` (in `realm`, for a realm-scoped job) that the sched
 **Mirrors** `POST /admin/scheduler` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -4138,6 +4466,13 @@ Writes a command the leader obeys at its next tick: it gives up the `ops.schedul
 **Mirrors** `POST /admin/scheduler` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 
@@ -4314,6 +4649,13 @@ The two primordial secrets this service READS and never writes: the key-encrypti
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The whole report.
 
 | Member | Type | Required | What it is |
@@ -4401,6 +4743,13 @@ The issuer, when it started, and the running totals. The cheapest call here and 
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The current totals.
 
 | Member | Type | Required | What it is |
@@ -4430,6 +4779,13 @@ Every protocol family, every endpoint the running router registers (read from th
 **Mirrors** `GET /admin/sts-metadata` on the admin console.
 
 Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The metadata.
 
@@ -4544,6 +4900,8 @@ Scope: `admin:read`.
 | Name | In | Type | Required | What it is |
 |---|---|---|---|---|
 | `node` | query | string |  | A cluster node's NAME (`cluster.nodeName`, node-a, node-b, …), to answer about that node alone: its view at the top, `nodes` holding its one section. An unknown name is 404 with the names there are (#332). |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The two pools.
 

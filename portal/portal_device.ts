@@ -310,30 +310,13 @@ class PortalDevice {
     log.debug("Entering PortalDevice.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/device',
-        operationId: 'getDeviceRequest', tag: 'Sign in a device',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/device',
-        summary: 'The device request a user code brings up',
-        description: 'RFC 8628 section 3.3. With no `user_code`, only ' +
-          'whether the flow is on. With one, the waiting request — the ' +
-          'client and the scopes — so that you see what you would approve ' +
-          'before approving it (section 5.4). Five codes that match nothing ' +
-          'lock the sign-on session out for ten minutes (section 5.1).',
-        query: QUERY,
-        statuses: { 404: 'No device is waiting with that code.',
-                    429: 'Too many codes that matched nothing.' },
+        operationId: 'getDeviceRequest', access: 'person', query: QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.getView(ctx, res, caller, input.query);
         } },
       { method: 'POST', path: ctx.BASE + '/device',
-        operationId: 'answerDeviceRequest', tag: 'Sign in a device',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/device',
-        summary: 'Approves or denies a device sign-in',
-        description: 'An approval issues the device tokens for you, on the ' +
-          'sign-on session this token was issued on, which ends them when ' +
-          'it ends.',
-        body: FORM,
-        statuses: { 429: 'Too many codes that matched nothing.' },
+        operationId: 'answerDeviceRequest', access: 'person', body: FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.answer(ctx, res, caller, input.body);

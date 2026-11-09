@@ -960,6 +960,9 @@ it then publishes is what its grant endpoint enforces.
 | `gnap.caepEvents` | `STS_GNAP_CAEP_EVENTS` | `true` | yes | Sends CAEP `session-revoked` on a revoked grant or token and `token-claims-change` on a modified grant. |
 | `gnap.scopedSignals` | `STS_GNAP_SCOPED_SIGNALS` | `true` | yes | Scopes a GNAP web application's Shared Signals stream to people who approved a grant to it; `gnapScopedSignals` FALSE opts one out. A stream owned by a GNAP resource server hears only `session-revoked` for the GNAP tokens and grants audienced to it (#432). |
 
+In product mode an expired user assertion gets no grace unless an operator sets
+`gnap.assertionMaxAgeS`, in the environment or on the console.
+
 Every setting is on `/admin/gnap` and in [*Every setting*](configuration.md#every-setting). See
 [Configuration](configuration.md) for how a value resolves and where it is
 changed — the console page, or `POST /admin-api/config/set`.

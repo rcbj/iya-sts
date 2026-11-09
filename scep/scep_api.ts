@@ -190,13 +190,14 @@ class ScepApi {
         mirrors: 'GET /admin/cert-issuance',
         parameters: [
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1, maximum: 1000 },
+            schema: { type: 'integer', minimum: 1, maximum: 1000,
+                      examples: [10] },
             description: 'Rows per page, for both lists.' },
           { name: 'certificatesPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'The page of the enrolled certificates.' },
           { name: 'credentialsPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'The page of the challenge passwords.' }
         ],
         responseDescription: 'The SCEP server as the page draws it.',
@@ -231,10 +232,11 @@ class ScepApi {
         mirrors: 'GET /admin/scep/monitor',
         parameters: [
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1, maximum: 1000 },
+            schema: { type: 'integer', minimum: 1, maximum: 1000,
+                      examples: [10] },
             description: 'Rows per page of the recent requests.' },
           { name: 'page', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'The page of the recent requests.' }
         ],
         responseDescription: 'The counters and the recent requests.',

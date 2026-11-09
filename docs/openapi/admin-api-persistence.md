@@ -54,6 +54,13 @@ THERE IS NO POST BESIDE THIS ONE and that is not a gap: every form on the consol
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: What the page says, and the settings it draws — described rows carrying each value's source and whether it can be changed while the service runs.
 
 | Member | Type | Required | What it is |
@@ -99,6 +106,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings.groups[].settings[].max` | number |  | The highest value it will take. |
 | `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |

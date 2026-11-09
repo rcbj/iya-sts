@@ -177,6 +177,7 @@ function childMain() {
 
     // --- B. and C. product -----------------------------------------------
     config.setOverride('global.mode', 'product');
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     try {
       r = await bind(PERSON, PASSWORD);
       note(r.ok === true, 'B1. PRODUCT: an LDAP bind with the person\'s ' +
@@ -224,6 +225,7 @@ function childMain() {
            'C2. PRODUCT: and a WS-Trust Issue with it', brief(r));
     } finally {
       config.clearOverride('global.mode');
+      config.clearOverride('authn.allowOptionalSecondFactor');
     }
     require('fs').writeFileSync(OUT, JSON.stringify(findings));
     process.exit(0);

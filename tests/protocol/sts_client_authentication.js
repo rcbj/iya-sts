@@ -419,7 +419,7 @@ async function codeFor(realm, clientId) {
     nonce: "n-" + nodeCrypto.randomBytes(9).toString("base64url"),
     code_challenge: challenge, code_challenge_method: "S256" }));
   assert.ok((r.status === 302 || r.status === 303) &&
-            /\/authn\/login\?authn=/.test(r.location),
+            /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location),
             "the authorization endpoint should send the browser to sign in; " +
             "it answered " + r.status + " " + r.location + " " +
             r.text.slice(0, 300));

@@ -545,5 +545,6 @@
   "photo.errSmall": "该图片为 {width} × {height} 像素。短边至少需要 {min} 像素。",
   "photo.errRead": "无法将该文件作为图片读取。",
   "done.photo": "您的个人资料照片已保存。",
-  "done.photoRemoved": "您的个人资料照片已移除。"
+  "done.photoRemoved": "您的个人资料照片已移除。",
+  "done.endOthers": "您可以在 /logout 结束其他会话。"
 }

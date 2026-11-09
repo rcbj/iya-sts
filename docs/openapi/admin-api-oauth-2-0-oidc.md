@@ -48,6 +48,8 @@ Scope: `admin:read`.
 | `linkq` | query | string |  | Narrows the links to those whose person, provider or subject there contains this. |
 | `linksPage` | query | integer |  | Which page of the matched links. It shares `per` with the providers. |
 | `per` | query | integer |  | Rows per page of each list, capped. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The register and the links.
 
@@ -128,6 +130,13 @@ A provider this realm aggregates claims from. `discover` fills the endpoints lef
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -178,6 +187,13 @@ It leaves the register; people's links to it stay on their entries and are never
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -213,6 +229,13 @@ Their tokens at that provider are removed from their entry, so its claims are no
 **Mirrors** `POST /admin/claim-providers` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -250,6 +273,13 @@ The members given replace the provider's; the secret is kept unless one is given
 **Mirrors** `POST /admin/claim-providers` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -314,6 +344,8 @@ Scope: `admin:read`.
 | `state` | query | string |  | Only deliveries in this state: pending, sent or dead. |
 | `q` | query | string |  | Narrows the deliveries. |
 | `per` | query | integer |  | Rows per page of each list, capped. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The report.
 
@@ -458,6 +490,13 @@ A new generation: a fresh attempt budget and the client's current command_endpoi
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -571,6 +610,13 @@ One of activate, maintain, suspend, reactivate, archive, restore, delete, audit,
 **Mirrors** `POST /admin/commands` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -687,6 +733,13 @@ metadata (a JSON answer, recorded as what the client supports), or one of audit_
 **Mirrors** `POST /admin/commands` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -811,6 +864,8 @@ Scope: `admin:read`.
 | `grantq` | query | string |  | Narrows the grants to those whose grant_id, client or subject contains this. |
 | `grantsPage` | query | integer |  | Which page of the matched grants. Clamped, like every page parameter here. |
 | `per` | query | integer |  | Grants per page, capped. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The grants.
 
@@ -865,6 +920,13 @@ What a client's DELETE /oauth2/grants/{grant_id} does, done by an administrator:
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -908,6 +970,13 @@ THERE IS NO POST BESIDE THIS ONE and that is not a gap: every form on the consol
 The reply also carries `protocolEndpoints`: every endpoint of this family in the realm the call arrived in, as `{ name, methods, url }` (plus `route` for an HTTP endpoint, `transport` for a socket, and `registered: false` for a route the router no longer has).
 
 Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: What the page says, and the settings it draws — described rows carrying each value's source and whether it can be changed while the service runs.
 
@@ -961,6 +1030,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].key` | string |  |  |
 | `settings.groups[].settings[].label` | string |  |  |
 | `settings.groups[].settings[].legacyEnv` | string, or null |  |  |
+| `settings.groups[].settings[].masked` | boolean |  |  |
 | `settings.groups[].settings[].max` | number |  |  |
 | `settings.groups[].settings[].min` | number |  |  |
 | `settings.groups[].settings[].ordered` | boolean |  |  |
@@ -1020,6 +1090,8 @@ Scope: `admin:read`.
 | `per` | query | integer |  | Rows per page, for `page` and `clientsPage`. |
 | `clientsPage` | query | integer |  | Which page of the RFC 9126 section's per-client counter rows. |
 | `stepUpClientsPage` | query | integer |  | Which page of the RFC 9470 section's per-client counter rows. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The sections, their counters and the pushed requests held.
 
@@ -1134,6 +1206,13 @@ Removes one pushed request, named by the SHA-256 of its request_uri, from this r
 **Mirrors** `POST /admin/oauth2/monitor` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

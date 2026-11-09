@@ -167,11 +167,11 @@ async function mirroring(base, method, path) {
 
 // AN OPERATION THAT TAKES NO TOKEN, as the portal calls one for a page drawn
 // for nobody: `{ status, json, text, headers }`.
-async function nobody(base, method, path, body) {
+async function nobody(base, method, path, body, extra) {
   log.debug("Entering nobody().");
   const url = /^https?:/.test(path) ? path : base + path;
-  const init = { method: method, headers: { accept: "application/json",
-                                            "User-Agent": AGENT } };
+  const init = { method: method, headers: Object.assign(
+    { accept: "application/json", "User-Agent": AGENT }, extra || {}) };
   if (body !== undefined) {
     init.headers["content-type"] = "application/json";
     init.body = JSON.stringify(body);
@@ -334,7 +334,7 @@ async function signInToThePortal(base, user, log2, options) {
   }
   let at = await fetchKeeping(authorizeUrl);
   let location = at.headers.get("location") || "";
-  const authn = (location.match(/[?&]authn=([^&]+)/) || [])[1];
+  const authn = (location.match(/[?&#]authn=([^&]+)/) || [])[1];
   if (authn) {
     assert.ok(password, "the portal's authorization request asked for a " +
       "sign-in, and this walk was given a session rather than a password");

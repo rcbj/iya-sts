@@ -380,6 +380,7 @@ class AzureImdsAttestor {
       log.debug("Leaving AzureImdsAttestor.credential(). Token file.");
       return new sdk.ClientAssertionCredential(tenantId,
         String(tenant.tokenAuth.appId), function () {
+          require('../common/outbound_tls').assertNamedFile(path);
           return Promise.resolve(fs.readFileSync(path, 'utf8').trim());
         });
     }

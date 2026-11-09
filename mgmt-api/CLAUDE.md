@@ -1,5 +1,12 @@
 # mgmt-api/
 
+**The Management API and Admin Console API OpenAPI documents are written in
+`models/api/management.tsp` and `console.tsp` since #1390**, and `response_models*.ts`
+and the schemas in `admin_api_spec.ts` are gone. A route row keeps the path, the
+handler, what it mirrors and its parameters; `AdminApiSpec.named()` gives it the
+summary and the request-body schema from the model when the table is built. To change
+an operation or a schema, edit the `.tsp`.
+
 The management API at `/admin-api`, its generated OpenAPI document, and the
 browser-side explorer.
 
@@ -205,6 +212,22 @@ to fetch twenty-one resources and assemble one — and it gained `homes`, which
 says which console page draws each group, and `homeProblems`, which is empty
 unless a group exists that no page draws. `admin-ui/CLAUDE.md` argues the whole
 move; this file's half of it is the paragraph above.
+
+
+### `GET /admin-api/config-dump`: one masked export of the parameters
+
+Every parameter, global and per realm, for the console page, `utilities/config-dump.js`
+and any other caller. **The masking is in `admin-core/config_dump.ts`, on the
+server, once**, so no door can show what another hides. A name that says it
+holds a secret is masked unless its suffix says it only points at one, which
+errs towards hiding for a parameter added later. Directory objects are not in
+it, by rcbj's scope.
+
+**`GET /config`, `GET /realms`, `GET /mode`, every page's settings block and the
+`/config` acts' answers mask the same values (#1478).** A section's Save posts every field, so a posted
+value equal to the row's mask means "leave it" (`isEchoOfMask()`).
+`config.describe()` stays exact. A job needing a development fixture password
+reads `tests/protocol/service_facts.js`' table.
 
 
 ### `/admin-api/users/new` is the same shape, and the users resource is the first to mirror TWO console paths
@@ -2871,3 +2894,32 @@ logo carry the core's codes (`STS-AUTHN-0544`–`0548`, `0551`,
 `STS-CORE-0004`, `STS-CORE-0006`). The walk drives `logo` with a real PNG in
 its throwaway realm (`theSignInLogoRoundTrips()`), since a bytes body has no
 JSON example to replay. `tests/branding_api.js` holds the rows in process.
+
+## WHAT A REQUEST MAY NAME (#1476, rcbj 2026-11-09)
+
+**The table's `parameters` are the whole of what an operation takes.** The
+wrapper in `registerRoutes()` refuses, before the handler and after the
+enums, a query name the operation does not declare (`STS-API-0142`), a value
+its type does not hold (`STS-API-0143`, `ClosedSets.checkQueryDeclared()`) and
+a custom header (`STS-API-0144`, `common/request_headers.ts`, which carries the
+rule and the provider families). **Parsing is the handlers': `parseInt`-shaped
+integers, an empty value as absent, a repeat as each of its values, no range
+check, because the document clamps a page rather than refusing it.**
+
+**A handler reading a query name it does not declare is a bug now**, and
+#1476's audit was the reason this was safe to turn on: a static taint of every
+handler, a live read of `req.query` through a Proxy with a filled query, and
+every name the console and `tests/` send. Reads it found no meaning for were
+deliberately left undeclared: `ldap/directory`'s `format` (a debug line),
+`mfa`'s `protocol` and `kind` (`AdminViews.unfiltered()`, a shared reader
+that decides a cache), `passkey-report/export`'s `page`, `per` and `from`
+(`listOf()` parses them for the list and the export ignores them), and
+`format` on the management halves of the delegation drawings, which
+`consoleOnly()` refuses first.
+
+`declareImplicitParameters()` adds `DPoP` and `cell` to every row once, in
+`wire()`. **`consoleOnly()` now runs before the query check**, so `format=svg`
+at a management address is still told where the drawing is rather than called
+an unknown name. `tests/admin_api_request_names.js` holds the rules, the
+wrapper and every `x-sts-` name; `schemathesis_kit.js`'s
+`probeStrictRequests()` holds the running service.

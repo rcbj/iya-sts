@@ -79,6 +79,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `oidfed/` | OpenID Federation 1.1. `oidfed/CLAUDE.md`. |
 | `kerberos/` | The KDC, the acceptor, SPNEGO, and the eight codec modules (copies of the parent's until #1280). `kerberos/CLAUDE.md`. |
 | `ldap/` | The embedded directory, the store for people, groups and applications. `ldap/CLAUDE.md`. |
+| `models/` | **The abstract model (#1390), in TypeSpec**, with its decorators and the RFC definitions it records. Compiled by `tests/model_typespec.js`. **The whole directory namespace has switched**, a policy's `FIELDS` and the directory's name lists with it: their `models/directory/*.tsp` is the source and the module reads what the image build generates, so a new attribute goes there. `models/CLAUDE.md`. |
 | `cluster/` | Several containers against one postgres store, and the scheduler every periodic job runs on. `cluster/CLAUDE.md`. |
 | `persistence/` | The one place this service writes anything down. `persistence/CLAUDE.md`. |
 | `scim/` | `/scim/v2`, and the outbound SCIM client. `scim/CLAUDE.md`. |
@@ -99,6 +100,7 @@ directory's `CLAUDE.md` is the documentation of what is in it.
 | `xacml-pep/` | **Not part of the mock**: the remote XACML PEP container (a Rust binary). `xacml-pep/CLAUDE.md`. |
 | `companion/` | **Not part of the service**: a development-only container for the click-through demonstrations. `companion/CLAUDE.md`. |
 | `openbao/` | **Not part of the mock**: the secret-store container's files. `openbao/CLAUDE.md`. |
+| `icap-clamav/` | **Not part of the service**: a c-icap adapter in front of ClamAV for `common/malware_scan.ts`, off by default. `icap-clamav/CLAUDE.md`. |
 | `deploy/aws/`, `deploy/gcp/`, `deploy/azure/`, `deploy/multicloud/` | **Not part of the mock**: Terraform for the cluster on each cloud (only AWS has been applied). Each directory's `CLAUDE.md`. |
 | `debugger/` | The embedded identity protocol debugger, on a listener of its own. `debugger/embedded/` is build output, never source. `debugger/CLAUDE.md`. |
 | `rust/` | The Rust conversion (#444); `rust/DESIGN.md` is the design. Only the remote PEP runs on it; the Node service runs none of it. |
@@ -901,9 +903,9 @@ routes do not exist, and the drift check below reports every description of
 them as a path that is not registered.
 
 **A new operation on `/admin-api`, `/account-api`, `/authn-api` or `/report-api`
-also owes a closed response model, and a new member of an answer owes a line in
-it in the same commit** (#1353): every answer is validated against its model,
-always, and one that does not match is a 500 (`common/CLAUDE.md` 3dc;
+also owes its entry in `models/api/*.tsp`, and a new member of an answer owes a
+line there in the same commit** (#1353, #1390): every answer is validated against
+that model, always, and one that does not match is a 500 (`common/CLAUDE.md` 3dc;
 `tests/openapi_response_models.js`). **Either one also owes
 `tests/tools/regenerate-openapi-pages.sh`** (`docs/openapi/`, the public
 reference); `tests/openapi_pages.js` fails otherwise.
@@ -1215,7 +1217,7 @@ the file the row names.
 | Dial its database in the clear (#273); ~~or authenticate that server by default~~ — reversed 2026-10-12 | `persistence/CLAUDE.md` |
 | Send mail to an address a request supplies, through a relay a caller names, or in the clear (#63) | `common/CLAUDE.md` (`mail.ts`) |
 | ~~Coordinate several processes through that store~~ — reversed 2026-09-06 | `persistence/CLAUDE.md`, `common/CLAUDE.md` |
-| Recall anything it has already ISSUED — it DISOWNS them | `logout/CLAUDE.md`, `common/CLAUDE.md` |
+| Recall anything it has already ISSUED — it DISOWNS them, except that in product a sign-out revokes the session's access tokens (#1449) | `logout/CLAUDE.md`, `common/CLAUDE.md` |
 | ~~Perform back-channel logout~~ — reversed 2026-09-17 (#36) | `oauth-oidc/CLAUDE.md` (3aq), `logout/CLAUDE.md`, `authn/CLAUDE.md`, `federation/CLAUDE.md` |
 | ~~Fake WS-Federation's `wauth`~~ — reversed 2026-09-17 (#36), as a step-up | `ws-federation/CLAUDE.md`, `authn/CLAUDE.md` |
 | Dereference WS-Federation's `wreqptr` | `ws-federation/CLAUDE.md` |

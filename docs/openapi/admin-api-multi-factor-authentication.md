@@ -54,6 +54,8 @@ Scope: `admin:read`.
 | `factor` | query | one of `any`, `totp`, `key`, `none`, `unreadable` |  | `any` is anybody holding a second factor of either kind; `none` is the complement of it; `unreadable` is a factor whose sealed secret this service can no longer open. |
 | `page` | query | integer |  | Which page of the match to return. CLAMPED rather than refused: a page past the end returns the last one, and the reply says which page it actually is. |
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The roster, the counts, and the RFC 6238 settings.
 
@@ -236,10 +238,18 @@ The same switch as `POST /admin-api/users/clear-email-factor` (#64): clears the 
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
 | `user` | string |  | Accepted for `username`. |
 | `username` | string | yes | The name they sign in as. |
 
@@ -279,11 +289,19 @@ The credential id is the base64url one on `GET /admin-api/mfa`'s rows and on `/p
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
 | `credentialId` | string | yes | base64url, as WebAuthn produced it. |
+| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
 | `user` | string |  | Accepted for `username`. |
 | `username` | string | yes |  |
 
@@ -335,10 +353,18 @@ Clearing an enrolment nobody holds answers 400 rather than 200, because unlike a
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
 |---|---|---|---|
+| `evidence` | string |  | How the person's identity was verified, in at least 8 characters. Product mode requires it, and it is recorded in the audit log. |
 | `user` | string |  | Accepted for `username`. |
 | `username` | string | yes | The name they sign in as. |
 

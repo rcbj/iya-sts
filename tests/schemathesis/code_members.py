@@ -80,6 +80,11 @@ HELP_TEXT_BY_ROUTE = {
         ".fields[].described.description",
         ".fields[].what",
     ),
+    # Literal text a store declares about its bound: `bound` is sent only when
+    # literalOnly() has read it as one (common/cache_registry.js).
+    "/admin-api/caches": (
+        ".caches[].bound",
+    ),
     "/admin-api/crypto": (
         ".families[].algorithms[].how",
     ),
@@ -126,6 +131,21 @@ HELP_TEXT_BY_ROUTE = {
     ),
     "/admin-api/scim/monitor": (
         ".schemes[].description",
+    ),
+    # admin-ui/secrets_admin.ts's constant sentences on each primordial secret.
+    "/admin-api/secrets": (
+        ".notes.mail-smtp-password.without",
+        ".notes.previous-kek.without",
+    ),
+    # The editor draws the same seeded policy documents the two rows above
+    # list: an obligation value in xacml/xacml_templates.ts names the code the
+    # door records. Each member is that document or a rendering of it.
+    "/admin-api/xacml/editor": (
+        ".alfa",
+        ".document",
+        ".tree[].detail",
+        ".tree[].edit.node.lexical",
+        ".tree[].label",
     ),
     "/admin-api/sts-metadata": (
         ".endpoints[].description",

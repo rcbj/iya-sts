@@ -198,6 +198,7 @@
 // other per-person store in `common/` is.
 // ===========================================================================
 
+import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
 import InstanceSlot = require('./instance_slot');
 import config = require('./config');
@@ -3544,81 +3545,8 @@ class Devices {
    * The object classes and attributes of a device entry, for
    * `/admin/ldap/devices`.
    */
-  static readonly SCHEMA = {
-    objectClasses: [
-      { name: 'device', where: 'RFC 4519 section 3.4', standard: true,
-        what: 'cn, and the standard owner and description.' },
-      { name: 'stsDevice', where: 'this service (#130, #164)',
-        standard: false,
-        what: 'Every stsDevice* attribute below: the owner\'s kind, the ' +
-              'applications, the keys, attestation, compliance, status, ' +
-              'the descriptive labels, the enrolment and Native SSO.' }
-    ],
-    attributes: [
-      { name: 'cn', kind: 'single', what: 'The device id, a UUID.' },
-      { name: 'owner', kind: 'single',
-        what: 'The DN of its one owner: a person or an application.' },
-      { name: 'stsDeviceOwnerKind', kind: 'single',
-        what: 'person or application.' },
-      { name: 'description', kind: 'single', what: 'Its label.' },
-      { name: 'stsDeviceApplication', kind: 'multi',
-        what: 'The DN of every application that used it.' },
-      { name: 'stsDeviceKey', kind: 'multi',
-        what: 'One JSON value per key: id, kind (x509, jwk, webauthn), ' +
-              'thumbprint, label, added, addedBy, proof, attestation and ' +
-              'the public material. Never a secret.' },
-      { name: 'stsDeviceKeyThumbprint', kind: 'multi',
-        what: '<kind>:<thumbprint> per key, derived from stsDeviceKey on ' +
-              'every write so an LDAP filter can find a device by its key.' },
-      { name: 'stsDeviceCredentialId', kind: 'multi',
-        what: 'The credential id of each linked WebAuthn key, derived from ' +
-              'stsDeviceKey on every write so a sign-in finds its device ' +
-              'by index.' },
-      { name: 'stsDeviceAndroidKey', kind: 'multi',
-        what: 'The id of each key attested by an Android chain whose ' +
-              'serials were kept, derived from stsDeviceKey on every write ' +
-              'so the Android attestation recheck reads only the devices ' +
-              'holding one (#615).' },
-      { name: 'stsDeviceAttestation', kind: 'single',
-        what: 'attested when any key\'s attestation was verified, else ' +
-              'self-asserted. Derived on every write.' },
-      { name: 'stsDeviceCompliance', kind: 'single',
-        what: 'compliant or not-compliant; absent is unknown.' },
-      { name: 'stsDeviceComplianceChange', kind: 'single',
-        what: 'JSON: the last compliance change — status, previous, at, ' +
-              'source (admin, mdm, test-control, caep), actor, reason.' },
-      { name: 'stsDeviceStatus', kind: 'single',
-        what: 'compromised; absent is active.' },
-      { name: 'stsDeviceStatusChange', kind: 'single',
-        what: 'JSON: the last status change.' },
-      { name: 'stsDeviceRiskLevel', kind: 'single',
-        what: 'LOW, MEDIUM or HIGH (CAEP\'s risk levels); absent is ' +
-              'unassessed. Set by risk scoring and by a compromise.' },
-      { name: 'stsDeviceRiskChange', kind: 'single',
-        what: 'JSON: the last risk level change — level, previous, at, ' +
-              'source (risk, compromise, admin), actor, reason.' },
-      { name: 'stsDeviceBrowser', kind: 'single',
-        what: 'JSON: a remembered browser\'s state (#265) — the token ' +
-              'generation, when it and the one before were issued, the ' +
-              'browser it was bound to, and when the second factor was ' +
-              'last given on it. No token and no secret.' },
-      { name: 'stsDevicePlatform', kind: 'single',
-        what: 'ios, ipados, android, macos, windows, linux, chromeos or ' +
-              'other.' },
-      { name: 'stsDeviceModel', kind: 'single', what: 'Descriptive.' },
-      { name: 'stsDeviceOs', kind: 'single', what: 'Descriptive.' },
-      { name: 'stsDeviceEnrolment', kind: 'single',
-        what: 'JSON: method (native-sso, admin, portal, est, scep), at, ' +
-              'actor.' },
-      { name: 'stsDeviceSecretHash', kind: 'single', sensitive: true,
-        what: 'SHA-256 of its Native SSO device_secret. Withheld from ' +
-              'every LDAP read.' },
-      { name: 'stsDeviceSession', kind: 'single',
-        what: 'The sign-on session the secret is good for.' },
-      { name: 'stsDeviceLastUsed', kind: 'single',
-        what: 'When it was last used, ISO 8601.' }
-    ]
-  };
+  // The table is written in models/directory/device.tsp (#1390).
+  static readonly SCHEMA = ModelTables.schema('device');
 
   /**
    * The `/admin-api` route whose answer carries this module's prose (#543

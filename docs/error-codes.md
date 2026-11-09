@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5333** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5388** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -49,58 +49,58 @@ is an ordinary outcome.
 
 ## Contents
 
-* [HTTP front door (`STS-HTTP`)](#sts-http) — 20
+* [HTTP front door (`STS-HTTP`)](#sts-http) — 21
 * [PROXY protocol (`STS-PROXY`)](#sts-proxy) — 9
-* [Service core (`STS-CORE`)](#sts-core) — 98
+* [Service core (`STS-CORE`)](#sts-core) — 104
 * [Worker pools (`STS-WORKER`)](#sts-worker) — 51
-* [Persistence and coordination (`STS-STORE`)](#sts-store) — 107
+* [Persistence and coordination (`STS-STORE`)](#sts-store) — 109
 * [Cluster membership and agreement (`STS-CLUSTER`)](#sts-cluster) — 32
 * [Cells and residency (`STS-CELL`)](#sts-cell) — 88
 * [Scheduler (`STS-SCHED`)](#sts-sched) — 21
-* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 183
-* [Certificate authority (`STS-PKI`)](#sts-pki) — 257
+* [Cryptography, keys and secrets (`STS-KEYS`)](#sts-keys) — 185
+* [Certificate authority (`STS-PKI`)](#sts-pki) — 258
 * [Certificate enrollment core (`STS-ENROLL`)](#sts-enroll) — 56
 * [ACME (RFC 8555) (`STS-ACME`)](#sts-acme) — 72
 * [EST (RFC 7030) (`STS-EST`)](#sts-est) — 29
-* [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 47
-* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 430
-* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 747
+* [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
+* [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 434
+* [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 750
 * [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
-* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 69
+* [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
 * [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
-* [Federation (`STS-FED`)](#sts-fed) — 211
+* [Federation (`STS-FED`)](#sts-fed) — 215
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
-* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 254
+* [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
 * [LDAP directory (`STS-LDAP`)](#sts-ldap) — 165
 * [Attribute sources (`STS-ATTR`)](#sts-attr) — 15
 * [Secret push destinations (`STS-SECDEST`)](#sts-secdest) — 16
 * [Outbound SCIM client (`STS-SCIMC`)](#sts-scimc) — 34
-* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 83
+* [SCIM 2.0 (`STS-SCIM`)](#sts-scim) — 84
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 153
-* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 58
+* [TLS and client certificates (`STS-TLS`)](#sts-tls) — 60
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 134
-* [Risk scoring (`STS-RISK`)](#sts-risk) — 52
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 137
+* [Risk scoring (`STS-RISK`)](#sts-risk) — 54
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
-* [Languages and locales (`STS-I18N`)](#sts-i18n) — 14
+* [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
 * [GNAP (RFC 9635 / RFC 9767) (`STS-GNAP`)](#sts-gnap) — 359
 * [Device register (`STS-DEVICE`)](#sts-device) — 52
 * [Service accounts (`STS-SVCACCT`)](#sts-svcacct) — 33
-* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 102
+* [XACML and access policy (`STS-XACML`)](#sts-xacml) — 105
 * [Remote XACML PEP (container) (`STS-XPEP`)](#sts-xpep) — 59
 * [AuthZEN Authorization API (`STS-AUTHZEN`)](#sts-authzen) — 92
 * [Fine-grained authorization (`STS-FGA`)](#sts-fga) — 34
 * [User-Managed Access 2.0 (`STS-UMA`)](#sts-uma) — 73
-* [Admin console (`STS-ADMIN`)](#sts-admin) — 263
-* [Management API (`STS-API`)](#sts-api) — 91
+* [Admin console (`STS-ADMIN`)](#sts-admin) — 265
+* [Management API (`STS-API`)](#sts-api) — 95
 * [User portal (`STS-PORTAL`)](#sts-portal) — 121
-* [Account API (`STS-ACCOUNT`)](#sts-account) — 19
-* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 13
+* [Account API (`STS-ACCOUNT`)](#sts-account) — 22
+* [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
 * [Registries (`STS-REG`)](#sts-reg) — 185
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
-* [Reporting (`STS-REPORT`)](#sts-report) — 54
-* [Audit export (`STS-AUDIT`)](#sts-audit) — 14
+* [Reporting (`STS-REPORT`)](#sts-report) — 57
+* [Audit export (`STS-AUDIT`)](#sts-audit) — 15
 
 ## STS-HTTP
 
@@ -130,6 +130,7 @@ Raised from: common/app.js, common/cors.js, common/validation.js, common/websecu
 | `STS-HTTP-0023` | A value of global.corsOrigins is not an origin, and was ignored rather than widened. | — |
 | `STS-HTTP-0024` | An HTTP/2 request carried both :authority and a Host header naming different hosts, which makes it malformed (RFC 9113 section 8.3.1); it was refused before any endpoint saw it. | HTTP 400 text/plain |
 | `STS-HTTP-0025` | A CONNECT request reached one of this service's HTTP listeners. This service is an origin server, not a proxy, and implements no CONNECT, so it was answered 501 before any endpoint saw it. The first is logged, and the rest are counted into one line a minute at most. | HTTP 501 text/plain (HTTP/2, or HTTP/1.1 with the connection closed) |
+| `STS-HTTP-0026` | HTTP parsing refused a request before any route saw it: its request line or headers were past the limit (431), or it was not well-formed HTTP (400). The first is logged, and the rest are counted into one line a minute at most (#1500). | HTTP 431, 408 or 400, then the connection closes |
 
 ## STS-PROXY
 
@@ -255,6 +256,12 @@ Raised from: server.js, common/protocol_stack.ts, common/config.js, common/confi
 | `STS-CORE-0164` | The build stamp (common/version.js --stamp, or xacml-pep --stamp) was refused: STS_RELEASE=true marks a release build, which must name its BUILD_NUMBER as a non-negative integer with no leading zero, and it did not — or STS_RELEASE was neither true nor false. Nothing is written and the image build fails. | none — the image build exits non-zero |
 | `STS-CORE-0165` | A request arrived from an address in global.edgeProxies without global.edgeSecret in its X-Origin-Verify header: another customer's CDN distribution pointed at this load balancer, or a distribution or node holding an out-of-date secret. Refused before anything else is decided about it. | none — HTTP 403, with no reason given |
 | `STS-CORE-0166` | GET /favicon.ico found no common/favicon.ico in this image: the file was left out of the build. The browser shows no icon; nothing else is affected. | none — HTTP 404 |
+| `STS-CORE-0167` | A product-mode process was configured with global.https off and did not start (#1457). | — |
+| `STS-CORE-0168` | The malware scanner flagged a file (ASVS 5.0.0 5.4.3). | HTTP 422 |
+| `STS-CORE-0169` | A file could not be scanned because the malware scanner did not answer. | HTTP 503 |
+| `STS-CORE-0170` | An action on the malware scanning page was not one it has. | HTTP 400 |
+| `STS-CORE-0171` | A setting's value, or a realm's name or description, holds a NUL character or half of a surrogate pair, which the store's columns can never hold; refused before anything is written (#1463). | a refusal naming the setting or field, never the value |
+| `STS-CORE-0172` | A request was refused because its address made too many in a minute. | HTTP 429 |
 
 ## STS-WORKER
 
@@ -431,6 +438,8 @@ Raised from: persistence/.
 | `STS-STORE-0166` | A run of the persistence.granting-key-backfill job, which gives the directory entries written before #1306 their grantinggroup index keys, stopped on a store error (#1311); the pages it finished are kept, and the next run resumes after the last one. | none — logged; federated provisioning's store question still misses the entries not yet reached |
 | `STS-STORE-0167` | The grantinggroup key backfill (#1311) skipped a directory entry whose sealed attributes do not open in this process, even after the data-key rows were read again; the walk finishes and writes its mark, and the entry is keyed when it is next written. The first few are named, then a count per run. | — |
 | `STS-STORE-0168` | A directory flush dropped one row whose value the database can never store (a NUL byte, or another permanent data error) and committed every other row of the batch (#1391). The entry stays in this process's memory and is absent from the store until the process restarts; the next flush does not send the same value again. | none — logged; the request that wrote it was already answered |
+| `STS-STORE-0169` | A realm or settings save dropped one value the database can never store (a NUL, half of a surrogate pair, or another permanent data error) and committed everything else in the flush (#1463). The value stays in this process's memory and is absent from the store until the process restarts; the next flush does not send it again. | none — logged; the request that wrote it was already answered |
+| `STS-STORE-0170` | The service did not start because the database password is a well-known default. | — |
 
 ## STS-CLUSTER
 
@@ -791,6 +800,8 @@ Raised from: common/crypto.js, common/pq_jose.js, common/keystore.js, common/sec
 | `STS-KEYS-0192` | A write names the one algorithm a use case signs with, outside the list that governs it. | none — a write refused at the console or the API (#1368) |
 | `STS-KEYS-0193` | A write would leave keys.pqcOnly on with keys.postQuantumSigning off, when nothing could sign. | none — a write refused at the console or the API (#1368) |
 | `STS-KEYS-0194` | A write to tls.signatureAlgorithms names a signature algorithm this service has no row for. | none — a write refused at the console or the API (#1368) |
+| `STS-KEYS-0195` | An XML element encrypted with AES-CBC was refused in product mode (#1455). | — |
+| `STS-KEYS-0196` | An XML element whose key is wrapped with OAEP over SHA-1 was refused: crypto.allowLegacyHashes is off (#1469). | — |
 
 ## STS-PKI
 
@@ -1057,6 +1068,7 @@ Raised from: common/pki.js, common/pki_authoring.ts, common/pki_revocation.js, c
 | `STS-PKI-0268` | A certificate authority was asked for a lifetime a certificate cannot carry. Nothing was generated and nothing was stored (#1409). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0269` | A signing key pair was asked for a subject key that has no JWK this service can publish: a composite ML-DSA key, whose X.509 bytes are not the JOSE composite, or a key-establishment algorithm asked to sign. The certificate was not recorded (#1418). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
 | `STS-PKI-0270` | A process-scope certificate authority was asked for a signing key or an alternative key whose signatures would make the TLS listener certificate list larger than a stock TLS client accepts (OpenSSL SSL_MAX_CERT_LIST_DEFAULT, 102400 bytes). Nothing was stored, and the listener certificate was left as it is (#1421, #1432). | Console refusal banner; /admin-api HTTP 400 with {ok:false, errors} |
+| `STS-PKI-0271` | A certificate was asked to be validated for a realm that does not exist, one removed a moment ago included; refused rather than judged by the policy of whichever realm was ambient (#1147). | the caller's own refusal |
 
 ## STS-ENROLL
 
@@ -1297,6 +1309,7 @@ Raised from: scep/.
 | `STS-SCEP-0064` | A SCEP message was refused because another request with the same transactionID was still being answered, on this node or another, when the wait ran out. | SCEP CertRep FAILURE badRequest |
 | `STS-SCEP-0065` | A SCEP message was refused because its transaction could not be claimed: the cluster store could not be asked. | SCEP CertRep FAILURE badRequest |
 | `STS-SCEP-0066` | This node runtime refuses PKCS#1 v1.5 private decryption (its OpenSSL has no implicit rejection), so no SCEP request whose content key is wrapped with rsaEncryption can be decrypted. Logged once per process; node 24 or later is required. | SCEP CertRep FAILURE badMessageCheck (the content does not decrypt) |
+| `STS-SCEP-0067` | A SCEP request reached a product-mode realm with scep.allowInProduct off (#1455). | HTTP 503 |
 
 ## STS-AUTHN
 
@@ -1736,6 +1749,10 @@ Raised from: authn/, common/credentials.ts, common/totp.ts, common/backup_codes.
 | `STS-AUTHN-0549` | A realm's sign-in logo was asked for (GET /web/branding/logo) and the realm has none (#717). | none (HTTP 404) |
 | `STS-AUTHN-0550` | A sign-in appearance preview was refused: a colour or layout it was asked to show is not one the settings would accept (#717). | none (HTTP 400) |
 | `STS-AUTHN-0551` | A sign-in logo's link (branding.logoLinkUrl) was not saved: it is not an absolute https URL (#717). | none (a console or management API refusal, HTTP 400) |
+| `STS-AUTHN-0552` | A sign-in step was asked about from a browser other than the one that holds it (#1454). | HTTP 400 |
+| `STS-AUTHN-0553` | A /authn-api request named a query parameter its operation does not declare, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0554` | A query parameter of a /authn-api request held a value its declared type does not, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
+| `STS-AUTHN-0555` | A /authn-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 
 ## STS-OAUTH
 
@@ -2492,6 +2509,9 @@ Raised from: oauth-oidc/, common/person_assertions.js.
 | `STS-OAUTH-0997` | The KDC could not issue the Kerberos ticket a token exchange asked for (#658); its own code is in the log line beside this one. | invalid_request (RFC 8693 section 2.2.2), HTTP 400 |
 | `STS-OAUTH-0998` | In RFC 9700 mode, with section 2.1.2 waived in the realm (oauth2.allowImplicitTokenResponses), an authorization request asked for a token response type the client's oauthAllowedTokenResponseTypes does not list (#1296). | unauthorized_client (RFC 6749 sections 4.1.2.1 and 4.2.2.1, redirected error) |
 | `STS-OAUTH-0999` | In RFC 9700 mode, with section 2.1.2 waived in the realm, a dynamic client registration or its RFC 7592 update asked for a token response type that oauth2.dynamicRegistrationTokenResponseTypes does not list (#1296). | invalid_client_metadata (HTTP 400) |
+| `STS-OAUTH-1000` | A client assertion was verified by a certificate from the realm's authority that was not issued to that client (ASVS 5.0.0 9.1.3). | invalid_client |
+| `STS-OAUTH-1001` | An RFC 7523 assertion was verified by a certificate from the realm's authority that was not issued to its issuer (ASVS 5.0.0 9.1.3). | invalid_grant |
+| `STS-OAUTH-1002` | A confidential client sent no code_challenge, in product (ASVS 5.0.0 10.4.6). | invalid_request |
 
 ## STS-SAML
 
@@ -2697,6 +2717,7 @@ Raised from: ws-trust/.
 | `STS-WSTRUST-0067` | A Renew or Cancel named a Kerberos token, which WS-Trust neither renews nor cancels: its ticket is renewed at the KDC and the AP-REQ was good once (#658). | SOAP Fault wst:InvalidRequest (HTTP 500), WS-Trust 1.4 section 11 |
 | `STS-WSTRUST-0068` | A Validate named a Kerberos token the acceptor did not accept, or that was not checked because wstrust.acceptKerberos is off (#658). | HTTP 200 RSTR with wst:Status invalid, WS-Trust 1.4 section 7 |
 | `STS-WSTRUST-0069` | A WS-Security signature's KeyInfo names a Kerberos token that the security header does not carry, by Reference or by its #Kerberosv5APREQSHA1 key identifier (#658). | SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 section 11 |
+| `STS-WSTRUST-0070` | A UsernameToken was refused without being checked: too many recent failures for that identity (#1448). | SOAP FailedAuthentication |
 
 ## STS-WSFED
 
@@ -2956,6 +2977,10 @@ Raised from: federation/.
 | `STS-FED-0234` | federation/add-value or federation/remove-value named a field that holds one value, so there is no list to change (#747). | HTTP 400 JSON |
 | `STS-FED-0235` | A held Discourse answer returned from its step after the relationship's shared secret was replaced (#746). | HTTP 401 page |
 | `STS-FED-0236` | A held Bluesky answer returned from its step and its subject was no longer believed: the DID's data server no longer names this issuer, or could not be asked (#746). | HTTP 401 page |
+| `STS-FED-0237` | A federated answer arrived in a browser other than the one that started the flow, in product (ASVS 5.0.0 10.1.2). | HTTP 401 |
+| `STS-FED-0238` | A federated answer names another issuer, or arrived for another relationship than its state (ASVS 5.0.0 10.2.2). | HTTP 401 |
+| `STS-FED-0239` | An unsolicited SAML assertion was presented a second time (ASVS 5.0.0 6.8.3). | HTTP 401 |
+| `STS-FED-0240` | A federated sign-in was refused because the partner authenticated the person too long ago. | HTTP 401 |
 
 ## STS-OIDFED
 
@@ -3295,6 +3320,9 @@ Raised from: kerberos/.
 | `STS-KRB-0252` | A Kerberos token was asked for a service in another Kerberos realm (#658) and a realm on the way is served by no trust realm of this process; no trust record carries a KDC address to send to, and none is dialled. | none (the caller answers its own protocol's refusal) |
 | `STS-KRB-0253` | A Kerberos token was asked for a service in another Kerberos realm (#658) and a KDC on the way refused the security token service's TGS-REQ with an uncoded error. | none (the caller answers its own protocol's refusal) |
 | `STS-KRB-0254` | A Kerberos token was asked for a service in another Kerberos realm (#658) and reaching it took more crossings than krb5.maxReferralHops allows. | none (the caller answers its own protocol's refusal) |
+| `STS-KRB-0255` | Pre-authentication was refused without being checked: too many recent failures for that principal (#1448). | KDC_ERR_PREAUTH_FAILED |
+| `STS-KRB-0256` | An S4U2Self request was refused: its PA-FOR-USER checksum is HMAC-MD5 and crypto.allowLegacyHashes is off (#1469). | KDC_ERR_POLICY |
+| `STS-KRB-0257` | A person whose password must be changed asked for a ticket, in product (ASVS 5.0.0 6.4.1). | KDC_ERR_KEY_EXPIRED |
 
 ## STS-LDAP
 
@@ -3653,6 +3681,7 @@ Raised from: scim/.
 | `STS-SCIM-0086` | A SCIM write that only a Security Administrator may make — the Security Administrator's group created, changed or deleted, or the User of a person who holds the role changed or deleted — was asked by a caller that does not hold SECURITY_ADMIN (a person on the roster, or an application that is a member of the role). | HTTP 403 |
 | `STS-SCIM-0087` | A SCIM User write carried a value of one of the realm's custom attributes (the CustomAttributes extension) that its syntax refuses, several values for a single-valued one, or an integer past what a JSON number carries exactly; nothing was written (#699). | SCIM invalidValue (HTTP 400) |
 | `STS-SCIM-0088` | The identity gate threw on a verified client certificate, so it was not taken as a SCIM credential (#1360). | the caller's 401: another scheme, or none |
+| `STS-SCIM-0089` | An HTTP Basic credential was refused without being checked: too many recent failures (#1448). | HTTP 401 |
 
 ## STS-SPIFFE
 
@@ -3882,6 +3911,8 @@ Raised from: tls/.
 | `STS-TLS-0056` | A stored client-truststore anchor is one the admission rule now refuses. It is kept, reported as unadmittable on /admin/tls/trust and logged once at restore; an operator removes it (#1360). | none (logged) |
 | `STS-TLS-0057` | A block of tls.trustAnchorsFile is one the admission rule refuses under paranoid PKI mode, and was left out of the truststore (#1360). | none (logged) |
 | `STS-TLS-0058` | A resumed TLS session's client certificate was demoted under paranoid PKI mode: its full handshake was refused, or no record of it reached this process within tls.resumedChainWaitMs. The next full handshake settles it (#1360). | none (logged): the certificate is treated as unverified |
+| `STS-TLS-0059` | GET /tls/sign-in was asked for by a browser other than as a navigation typed by the person or sent from this origin, in product (ASVS 5.0.0 3.5.3). | HTTP 403 |
+| `STS-TLS-0060` | A certificate sign-in started no session because the person owes a second factor. | HTTP 200 |
 
 ## STS-VC
 
@@ -4198,6 +4229,9 @@ Raised from: ssf/.
 | `STS-SSF-0153` | An announcement broadcast was refused: no message, a message longer than ssf.announcementMaxChars, no application chosen or one this service does not have, or every realm asked for by somebody who is not a service administrator in the default realm (#1086). | HTTP 400 {ok: false, errors} from /admin-api/broadcast/send |
 | `STS-SSF-0154` | An announcement broadcast reached no stream: Shared Signals is off, ssf.internalReceivers is off, or the chosen applications' receiver streams are disabled or do not take the announcement event (#1086). | HTTP 200 {ok: true, sent: 0, why} — nothing was sent |
 | `STS-SSF-0155` | An announcement broadcast could not be sent in a realm: building or queueing its Security Event Token failed (#1086). | none: logged; the answer names the realm |
+| `STS-SSF-0156` | An HTTP Basic credential was refused without being checked: too many recent failures (#1448). | HTTP 401 |
+| `STS-SSF-0157` | A person authenticated by HTTP Basic holds no console role, in product (ASVS 5.0.0 8.2.1). | HTTP 403 |
+| `STS-SSF-0158` | A push delivery address is internal or could not be resolved, in product (ASVS 5.0.0 1.3.6). | the delivery fails |
 
 ## STS-RISK
 
@@ -4259,6 +4293,8 @@ Raised from: risk/, admin-ui/risk_admin.ts.
 | `STS-RISK-0052` | A Reload could not download the removed version again from the dataset's configured address; nothing was loaded (#1157). | none (an administrator's act on Monitoring → Risk) |
 | `STS-RISK-0053` | A Reload downloaded a file whose SHA-256 is not the removed version's: the address serves a newer version, which the scheduled download loads, and nothing was loaded (#1157). | none (an administrator's act on Monitoring → Risk) |
 | `STS-RISK-0054` | A person's risk level moved and the standing was written, but the risk-standing change row that tells every other process to read it again could not be recorded. The others keep the standing they hold until risk.standingValidMinutes runs out (#666). | none — a warning in the log |
+| `STS-RISK-0055` | A dataset upload's file name does not fit the format it was sent as (ASVS 5.0.0 5.2.2). | HTTP 400 |
+| `STS-RISK-0056` | Too many lines of a dataset file were not rows of its format (ASVS 5.0.0 5.2.2). | the version is refused |
 
 ## STS-MAIL
 
@@ -4331,6 +4367,7 @@ Raised from: common/i18n.ts, common/locale_policy.ts, common/page_locale.ts, aut
 | `STS-I18N-0012` | GET /web/locales/<namespace>/<catalog>.json named a namespace or a catalog this service does not have, or a file name that is not <catalog>.json; nothing is read from disk by a requested name (#570). | HTTP 404 |
 | `STS-I18N-0013` | An application (appLocalePolicy) or a group (stsLocalePolicy) names a locale policy that this realm does not hold — written past the console, or the policy deleted by hand. The reference selects nothing and `default` applies where nothing else names a profile: the locale policy decides only a fallback language, so it does not fail closed (#1238). | none — a warning in the log |
 | `STS-I18N-0014` | A named locale policy was not deleted: an application (appLocalePolicy) or a group (stsLocalePolicy) of this realm still names it (#1238). | HTTP 400 (management API) |
+| `STS-I18N-0015` | POST /authn/language came from a page of another site (#1442). | HTTP 403 |
 
 ## STS-GNAP
 
@@ -4861,7 +4898,7 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0048` | The access policy named by xacml.accessPolicy does not load, so access to every gated surface is ALLOWED without a policy decision. | — |
 | `STS-XACML-0049` | The built-in access-control policy could not be built from its template (a defect), so access to every gated surface is ALLOWED without a policy decision. | — |
 | `STS-XACML-0050` | common/access_gate.ts was given a decider that is not a function; every access decision is allowed. | — |
-| `STS-XACML-0051` | The access gate's decider threw; access was ALLOWED because a throw is a defect rather than a decision. | — |
+| `STS-XACML-0051` | The access gate's decider threw: refused in product mode, allowed in development (#1450). | — |
 | `STS-XACML-0052` | The issuance gate's decider threw; issuance was ALLOWED because a throw is a defect rather than a decision. | — |
 | `STS-XACML-0053` | The role register threw while resolving a party's roles; only the built-in roles were used. | — |
 | `STS-XACML-0054` | The role register threw while building the roles claim; the token or assertion was issued without it. | — |
@@ -4913,6 +4950,9 @@ Raised from: xacml/, common/access_gate.ts, common/issuance_gate.js, common/role
 | `STS-XACML-0178` | The access policy refused a request to GET /xacml, POST /xacml/pdp or GET /xacml/policies: the client certificate verified and is from an outside certificate authority that is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 403 access_denied |
 | `STS-XACML-0179` | The access policy refused a remote PEP request (/xacml/pep/*, POST /xacml/pip): the client certificate verified and is from an outside certificate authority that is not stored in userCertificate on any entry of the realm, so it resolved to nobody (#1061). | HTTP 403 access_denied |
 | `STS-XACML-0180` | The access policy refused a remote PEP request (/xacml/pep/*, POST /xacml/pip): the client certificate verified and is from an outside certificate authority that is stored in userCertificate on more than one entry of the realm (#1061). | HTTP 403 access_denied |
+| `STS-XACML-0181` | The access gate had no decider, or its decider answered nothing: refused in product mode, allowed in development (#1450). | — |
+| `STS-XACML-0182` | An access check named no resource or no action, a defect at the call site: refused in product mode, allowed in development (#1450). | — |
+| `STS-XACML-0183` | The issuance gate refused because no decision could be made, in product (ASVS 5.0.0 16.5.3). | the token is not issued |
 
 ## STS-XPEP
 
@@ -5479,6 +5519,8 @@ Raised from: admin-ui/ (except pki_admin.js), admin-core/.
 | `STS-ADMIN-0912` | A signer truststore remove named nothing this realm holds, or an entry that comes from pki.signerTrustAnchorsFile (#1360). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0913` | set-row named something that is not a paranoid PKI setting (#1360). | HTTP 400 with {ok:false, errors} |
 | `STS-ADMIN-0914` | set-row was refused by the settings write path, or a use case an add named is not one this service has (#1360). | HTTP 400 with {ok:false, errors} |
+| `STS-ADMIN-0915` | A software statement was asked for with a lifetimeSeconds that puts its expiry past the last date this service can write (#1470). | a refusal naming the field |
+| `STS-ADMIN-0916` | A second factor was not cleared because the administrator did not say how the person was verified. | HTTP 400 |
 
 ## STS-API
 
@@ -5579,6 +5621,10 @@ Raised from: mgmt-api/.
 | `STS-API-0139` | An answer of an API this service publishes an OpenAPI document for (the management, account, sign-in or report API) did not match the model its operation declares for that status, so it was not sent and the caller was answered 500. A member no model declares, a value of the wrong type, a status or media type the operation does not declare, or an operation the document does not have. The log line names the operation, the status and where in the body; it is a defect in the model or in the handler, never in the request. | HTTP 500 |
 | `STS-API-0140` | A handler of an API this service publishes an OpenAPI document for threw and nothing caught it. The caller was answered 500 in JSON, the sentence a refused answer gets, rather than an HTML page. The log line names the path and the message once per distinct failure. | HTTP 500 |
 | `STS-API-0141` | An action of /admin-api/pki/trust threw rather than answering (#1360). | HTTP 500 with {ok:false, errors} |
+| `STS-API-0142` | A management API request named a query parameter its operation does not declare, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
+| `STS-API-0143` | A query parameter of a management API request held a value its declared type does not, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
+| `STS-API-0144` | A management API request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1476). | HTTP 400 with {ok:false, errors} |
+| `STS-API-0145` | A change to how somebody signs in was refused because the administrator did not sign in recently enough. | HTTP 401 (RFC 9470) |
 
 ## STS-PORTAL
 
@@ -5737,6 +5783,9 @@ Raised from: account-api/.
 | `STS-ACCOUNT-0017` | An /account-api request body was not JSON. | HTTP 415 |
 | `STS-ACCOUNT-0018` | An /account-api request body did not validate against its operation's schema. | HTTP 400 |
 | `STS-ACCOUNT-0019` | An /account-api operation threw; answered 500. | HTTP 500 |
+| `STS-ACCOUNT-0020` | An /account-api request named a query parameter its operation does not declare, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
+| `STS-ACCOUNT-0021` | A query parameter of an /account-api request held a value its declared type does not, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
+| `STS-ACCOUNT-0022` | An /account-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the handler ran (#1483). | HTTP 400 with {ok:false, errors} |
 
 ## STS-LOGOUT
 
@@ -5759,6 +5808,8 @@ Raised from: logout/.
 | `STS-LOGOUT-0011` | A sign-out at the JSON door of /logout came from a browser holding several signed-in accounts (authn.multipleAccounts, #561) and named none of them, so nothing was ended; the answer lists the accounts by key. | HTTP 409, error account_choice_required |
 | `STS-LOGOUT-0012` | The account chosen at the sign-out's account step (#561) is not signed in in this browser any more — its session ended between the page and the choice, or the key names an account of another browser. Nothing was ended and the step is drawn again. | HTTP 409 from POST /authn-api/logout/accounts |
 | `STS-LOGOUT-0013` | The sign-out's account step (#561) was asked for in a trust realm with authn.multipleAccounts off, where a browser holds one session and there is no account to choose. | HTTP 400 from /authn-api/logout/accounts |
+| `STS-LOGOUT-0014` | POST /logout in its JSON form came from a page of another site (#1442). | HTTP 403 |
+| `STS-LOGOUT-0015` | Ending another session was refused because the sign-in was not recent enough. | HTTP 403 |
 
 ## STS-LAUNCH
 
@@ -6069,6 +6120,9 @@ Raised from: report/.
 | `STS-REPORT-0053` | The store would not take a finished report (the database refused or went away while its pieces were written), so the job failed and nothing of it was kept (#1045). Until #1045 this read as STS-REPORT-0042, could not be sealed. | none (the job fails as unavailable) |
 | `STS-REPORT-0054` | A query on an AuthZEN search source (authzenSubjects, authzenResources, authzenActions) does not give every input the search is asked with as an eq filter of the top-level "and", so it was refused rather than run (#1176). | invalid_query (the job fails) |
 | `STS-REPORT-0055` | An AuthZEN search source could not be asked: the search APIs are off in the realm (authzen.searchEnabled), or the report's owner is not a person of the realm it runs in, and a search runs as its owner (#1176). | unavailable or forbidden (the job fails) |
+| `STS-REPORT-0056` | A /report-api request named a query parameter its operation does not declare, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
+| `STS-REPORT-0057` | A query parameter of a /report-api request held a value its declared type does not, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
+| `STS-REPORT-0058` | A /report-api request carried a custom header that its operation does not declare and no specification or known proxy, CDN or tracing family defines, and was refused before the operation ran (#1483). | HTTP 400 {error:invalid_query, error_description} |
 
 ## STS-AUDIT
 
@@ -6092,6 +6146,7 @@ Raised from: common/audit_export.ts, mgmt-api/audit_export_api.ts.
 | `STS-AUDIT-0012` | auditExport.skipTlsVerification is on and is ignored, because this realm is in product mode: webhook, Splunk HEC and syslog TLS verify the peer. Said once per process (#641). | none (a warning) |
 | `STS-AUDIT-0014` | A webhook or Splunk HEC destination answered a redirect. Audit export does not follow it. The cursor stays and the destination pauses (#641). | none (the destination retries; the audited operation is unaffected) |
 | `STS-AUDIT-0015` | A webhook or Splunk HEC destination rejected the event itself (HTTP 400). That event is counted permanently failed and the cursor moves past it. The destination is not paused for the events after it (#641). | none (that event is dropped; later events are still delivered) |
+| `STS-AUDIT-0016` | A syslog audit destination was refused because product mode needs tls. | HTTP 400 |
 
 ## Adding a code
 

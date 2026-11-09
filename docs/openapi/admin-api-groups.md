@@ -55,6 +55,8 @@ Scope: `admin:read`.
 | `per` | query | integer |  | Rows per page. Defaults to 50 and is capped at 300. On a drill-down it is SHARED by every list in the reply, which each carry a page number of their own. |
 | `membersPage` | query | integer |  | Which page of `members` to return, answered by `membersPaging`. The membership values of the group named by `group`, resolved. `group.memberCount`, `presentCount` and `danglingCount` beside them are counts of the WHOLE list and not of the page — a group whose seven members resolve to five is the fact this resource exists to report, and a per-page count would not be an answer to it. |
 | `claimedPage` | query | integer |  | Which page of `claimed` to return, answered by `claimedPaging`. Entries whose own memberOf names this group while it does not list them back. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The list, or one group.
 
@@ -144,6 +146,7 @@ Scope: `admin:read`.
 | `(shape 1).settings.groups[].settings[].label` | string |  |  |
 | `(shape 1).settings.groups[].settings[].legacyEnv` | list, or string |  |  |
 | `(shape 1).settings.groups[].settings[].legacyEnv[]` | object |  | Nested deeper than this page draws. |
+| `(shape 1).settings.groups[].settings[].masked` | boolean |  |  |
 | `(shape 1).settings.groups[].settings[].max` | number |  |  |
 | `(shape 1).settings.groups[].settings[].min` | number |  |  |
 | `(shape 1).settings.groups[].settings[].ordered` | boolean |  |  |
@@ -392,6 +395,13 @@ One membership value onto one group. `group` is its `cn` or its whole DN; `membe
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -493,6 +503,13 @@ Adds a person or a group of this realm to the group's `owner` values (RFC 4519 s
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -553,6 +570,13 @@ An entry under `ou=groups`, as a `groupOfNames` — so it is counted as a group 
 **Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -659,6 +683,13 @@ Takes one `owner` value off the group and writes at once (#603). `owner` is the 
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -711,6 +742,13 @@ Writes one `mail` value onto the group's own entry, or removes it when `mail` is
 **Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -800,6 +838,13 @@ Writes one value of `attribute` — the attribute by which a group names its pol
 **Mirrors** `POST /admin/groups and POST /admin/groups/owners` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 

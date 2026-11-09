@@ -229,7 +229,7 @@ async function follow(who, first) {
     // THE SIGN-IN SCREEN IS A STATIC PAGE OVER `/authn-api` SINCE #571:
     // signed in through the one helper where the flow is sent to it.
     if ((r.status === 302 || r.status === 303) &&
-        /\/authn\/login\?authn=/.test(r.location)) {
+        /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(r.location)) {
       r = await signInHere(who, r.location, PERSON);
       continue;
     }

@@ -1207,6 +1207,10 @@
     "en": "bfc05d15d7d40bc2",
     "text": "NON-SPEC, et délibérément SANS CONTRÔLE D’ACCÈS. Chaque domaine de confiance que ce processus exécute — un domaine de confiance étant une copie logique complète de ce service, atteinte sous un segment en tête du chemin et détenant sa propre configuration, sa clé de signature, ses sessions et ses jetons. Il porte l’identifiant, le nom, l’URL de base et le préfixe de chemin de chaque domaine, le SEGMENT de préfixe lui-même (qui est un paramètre ; un client ne peut donc pas le deviner), et les familles de protocoles qu’un domaine sépare réellement. Ce dernier point est celui auquel rien d’autre ne répond : la plupart des familles sont séparées par le chemin, mais l’annuaire est séparé par DN, Kerberos par le NOM de domaine dans la requête, SPIFFE par adresse de socket, et le certificat TLS n’est pas séparé du tout — de sorte que quelqu’un qui supposerait que le segment de chemin est partout la frontière se tromperait pour quatre d’entre elles. Un client dirigé vers un domaine ne peut construire aucune URL sans ceci, ce qui explique qu’il ne soit pas derrière le contrôle d’accès de la console — le même argument sur lequel repose chaque document de découverte ici."
   },
+  "stsmetadata.endpoints./favicon.ico.what": {
+    "en": "18aea3253b0f21a8",
+    "text": "NON-SPEC. L’icône qu’un navigateur demande de lui-même sur chaque page : la marque carrée du logo (common/favicon.ico). Servie sur chaque écouteur ; conservée un jour."
+  },
   "stsmetadata.endpoints./web/card.css.what": {
     "en": "cda1eca2f0c4392c",
     "text": "NON-SPEC (#570). Les règles de la carte de l’écran de connexion et du sélecteur de langue, en une seule feuille de style que lie le shell d’une surface publique statique (common/web_card_css.ts). Servie sur chaque écouteur ; une adresse portant le ?v= de ce build est mise en cache définitivement."
@@ -2170,6 +2174,10 @@
   "stsmetadata.endpoints./admin-api/config.what": {
     "en": "de1ba6721d3df738",
     "text": "NON-SPEC. Chaque paramètre, sa valeur effective et la source de cette valeur — surcharge, variable d’environnement, le fichier appconfig ou env/defaults.js en dessous. Équivalent de GET /admin/config."
+  },
+  "stsmetadata.endpoints./admin-api/config-dump.what": {
+    "en": "56a8ec7f8dbef7bb",
+    "text": "NON-SPEC. Tous les paramètres de configuration, globaux et par domaine, chaque valeur sensible étant masquée. Reflète GET /admin/config-dump."
   },
   "stsmetadata.endpoints./admin-api/config/:action.what": {
     "en": "0493cb479489bbd8",
@@ -3943,8 +3951,12 @@
     "en": "24ece2f78749cf6a",
     "text": "un paramètre"
   },
-  "stsmetadata.endpoints./favicon.ico.what": {
-    "en": "18aea3253b0f21a8",
-    "text": "NON-SPEC. L’icône qu’un navigateur demande de lui-même sur chaque page : la marque carrée du logo (common/favicon.ico). Servie sur chaque écouteur ; conservée un jour."
+  "stsmetadata.endpoints./admin-api/malware-scanning.what": {
+    "en": "14ed85bab8488344",
+    "text": "NON-SPEC (#1501). GET /admin/malware-scanning en JSON : si les fichiers téléversés sont analysés et le service ICAP qui les analyse. Ne modifie rien."
+  },
+  "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
+    "en": "1bf7c4937a9313c4",
+    "text": "NON-SPEC (#1501). Envoie au service ICAP configuré le fichier de test EICAR et ne réussit que si le service le signale."
   }
 }

@@ -758,7 +758,7 @@ async function signInScreen(jar, start, username, password) {
   assert.ok(first.status >= 300 && first.status < 400 && first.location,
     "the authorization request did not send the browser to a sign-in " +
     "screen: " + first.status + " " + said(first.text));
-  assert.ok(/\/authn\/login\?authn=/.test(first.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(first.location),
     "no sign-in screen at " + first.location);
   const screen = { status: 0, text: "" };
   const posted = await postScreen(jar, first.location, username, password);

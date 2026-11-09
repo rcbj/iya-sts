@@ -7495,8 +7495,10 @@ function proxy(entry, req, res, atGeneration, ticket, timing, body) {
     errorCodes.mark(res, 'STS-WORKER-0030');
     res.status(502);
     res.type('text/plain');
-    res.send('The request worker handling this request went away (' +
-             err.message + '). A worker holds no state of its own that this ' +
+    res.send('The request worker handling this request went away' +
+             (require('./mode').hidesFailureDetail() ? '' :
+              ' (' + err.message + ')') +
+             '. A worker holds no state of its own that this ' +
              'request needed, so it can simply be made again.\n');
     log.debug("Leaving gaveUp().");
   };

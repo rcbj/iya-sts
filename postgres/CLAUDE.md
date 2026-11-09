@@ -1,5 +1,10 @@
 # CLAUDE.md — `postgres/`
 
+**`schema.sql` is generated since #1390.** Its tables and indexes come from
+`models/persistence/persistence.tsp` and the rest from
+`models/persistence/schema.template.sql`. Edit those and run
+`tests/tools/regenerate-model-docs.sh`; `tests/model_typespec.js` fails otherwise.
+
 **Four files the database container runs, and nothing else. None of them is
 run by this service**, and nothing in this repository requires them —
 `docker-compose.yml` mounts them into the PostgreSQL image. It was two until

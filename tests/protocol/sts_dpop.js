@@ -971,7 +971,7 @@ async function signIn() {
         sentToService.status + ": " +
         String(await sentToService.text()).slice(0, 200));
   var screenUrl = sentToService.headers.get("location");
-  assert.ok(/\/authn\/login\?authn=/.test(screenUrl),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(screenUrl),
     "expected the sign-in screen, got " + screenUrl);
   // THE SCREEN OVER `/authn-api` (#571), through the one helper: the
   // shell, the view and the act. The act's answer names where to go, and
@@ -983,7 +983,7 @@ async function signIn() {
   assert.strictEqual(loggedIn.next, "redirect",
     "the sign-in should answer where to go, got " + loggedIn.status + " " +
     JSON.stringify(loggedIn.json));
-  var cookie = (loggedIn.cookie.match(/(?:^|; )(sts_session=[^;]*)/) ||
+  var cookie = (loggedIn.cookie.match(/(?:^|; )((?:__Host-)?sts_session=[^;]*)/) ||
                 [])[1] || "";
   assert.ok(cookie, "signing in should establish a session.");
   log.debug("Leaving signIn().");

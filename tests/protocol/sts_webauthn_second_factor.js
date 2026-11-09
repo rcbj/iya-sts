@@ -354,7 +354,7 @@ async function reachTheSignInScreen(b) {
       code_challenge: challenge.challenge,
       code_challenge_method: challenge.method
     }));
-  assert.ok(/\/authn\/login\?authn=/.test(started.location),
+  assert.ok(/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(started.location),
     "the authorization endpoint did not send us to the sign-in screen: " +
     started.status + " " + started.location);
   log.debug("Leaving reachTheSignInScreen().");

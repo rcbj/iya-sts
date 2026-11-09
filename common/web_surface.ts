@@ -72,6 +72,7 @@
 // ---------------------------------------------------------------------------
 
 import WebPage = require('./web_page');
+import WebSafeDom = require('./web_safe_dom');
 import WebI18n = require('./web_i18n');
 import webMessages = require('./web_messages');
 import WebAccounts = require('./web_accounts');
@@ -220,8 +221,9 @@ class WebSurface extends WebPage {
     const slot = doc && doc.getElementById
       ? doc.getElementById('sts-accounts-slot') : null;
     if (slot) {
-      slot.innerHTML = WebSurface.realmLinks(
-        WebAccounts.controlHtml(after, this.t), this.prefix);
+      WebSafeDom.render(slot,
+        WebSurface.realmLinks(
+        WebAccounts.controlHtml(after, this.t), this.prefix));
     }
   }
 
@@ -282,6 +284,15 @@ class WebSurface extends WebPage {
   }
 
   /**
+   * The parameters this page was reached with.
+   *
+   * @returns them
+   */
+  pageQuery(): Json {
+    return WebPage.queryOf(this.env.location.search);
+  }
+
+  /**
    * The path and query being shown, without the realm prefix.
    *
    * @returns the path and query
@@ -329,8 +340,9 @@ class WebSurface extends WebPage {
     doc.title = title + (brand.name ? ' — ' + brand.name
       : (this.options.brand === undefined ? ' — IYA STS'
                                           : this.options.brand));
-    doc.body.innerHTML = WebSurface.realmLinks(
-      WebSurface.brandHeader(brand) + framed, this.prefix);
+    WebSafeDom.render(doc.body,
+      WebSurface.realmLinks(
+      WebSurface.brandHeader(brand) + framed, this.prefix));
     this.drawnAt = this.env.location.pathname + this.env.location.search;
     this.targetFragment();
     // A PAGE AFTER THE FIRST follows an act or a navigation, which may have
@@ -351,7 +363,7 @@ class WebSurface extends WebPage {
    * @returns nothing
    */
   drawProblem(title: string, detail: string): void {
-    const ctx = this.context(WebPage.queryOf(this.env.location.search));
+    const ctx = this.context(this.pageQuery());
     this.put(title, '<div class="card"><h1>' + WebSurface.esc(title) +
       '</h1><div class="err">' + WebSurface.esc(detail) + '</div></div>',
       ctx);
@@ -387,7 +399,7 @@ class WebSurface extends WebPage {
   async route(): Promise<void> {
     const path = this.surfacePath(this.env.location.pathname) ||
       this.options.base;
-    const query = WebPage.queryOf(this.env.location.search);
+    const query = this.pageQuery();
     this.t = await this.i18n.load({ uiLocales: query.ui_locales || '' });
     const page = this.find(path);
     if (!page) {

@@ -86,9 +86,9 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 COPY package*.json .npmrc ./
 COPY node-ldapjs ./node-ldapjs
-RUN npm install --omit=dev --ignore-scripts && npm cache clean --force
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 COPY tests/package*.json ./tests/
-RUN npm install --prefix ./tests && npm cache clean --force
+RUN npm ci --prefix ./tests && npm cache clean --force
 COPY . ./
 RUN STS_IN_IMAGE_BUILD=1 ./build-typescript.sh --strip \
  && STS_IN_IMAGE_BUILD=1 ./build-native.sh \
@@ -170,7 +170,8 @@ COPY package*.json ./
 # build which loses the .npmrc does not quietly start shipping them.
 COPY .npmrc ./
 COPY node-ldapjs ./node-ldapjs
-RUN npm install --omit=dev && npm cache clean --force
+RUN npm ci --omit=dev && npm cache clean --force
+RUN npm sbom --package-lock-only --omit=dev --sbom-format=cyclonedx --sbom-type=application > /usr/src/sts/sbom.cdx.json
 
 
 # THE WHOLE SOURCE TREE IN ONE LINE, and that is deliberate rather than lazy.
@@ -293,6 +294,7 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
       curl -fsSL "${STS_DATABASE_CA_URL}" -o /opt/sts-sdk/database-ca.pem \
       && grep -q 'BEGIN CERTIFICATE' /opt/sts-sdk/database-ca.pem; \
     fi
+RUN cd /opt/sts-sdk && npm sbom --omit=dev --sbom-format=cyclonedx --sbom-type=application > /usr/src/sts/sbom-sdks.cdx.json
 # ---------------------------------------------------------------------------
 # AND THE SUITE BACK OUT AGAIN, WHICH .dockerignore USED TO DO.
 #
@@ -360,7 +362,7 @@ RUN if [ -n "${STS_CLOUD_SDKS}" ]; \
 # container built from its own directory: the click-through demonstrations
 # the service ships none of. It is in the context because that directory is
 # in the repository, and nothing of it may reach this image.
-RUN rm -rf ./tests ./xacml-pep ./README.md ./docker-compose.yml ./Dockerfile \
+RUN rm -rf ./tests ./xacml-pep ./README.md ./SECURITY.md ./docker-compose.yml ./Dockerfile \
            ./.github ./docs ./docker-compose-run-tests.yml ./deploy \
            ./build-typescript.sh ./rust ./companion
 

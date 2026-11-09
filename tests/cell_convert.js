@@ -718,7 +718,7 @@ async function asTheConvertTask(t) {
   fs.writeFileSync(kek, require('crypto').randomBytes(32).toString('hex'));
   const riskDir = path.join(dir, 'risk-uploads-not-mounted');
   const env = Object.assign({}, process.env, {
-    STS_MODE: 'product', STS_PERSISTENCE_MODE: 'postgres',
+    STS_MODE: 'product', STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR: 'true', STS_ADMIN_LOG_BOOTSTRAP_PASSWORD: 'true', STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE: 'true', STS_CRYPTO_ALLOW_LEGACY_HASHES: 'true', STS_SECURITY_ALLOW_UNSCOPED_PEOPLE: 'true', STS_ADMIN_ALLOW_DEFAULT_USERNAME: 'true', STS_PERSISTENCE_MODE: 'postgres',
     STS_KEYS_SOURCE: 'persisted', STS_KEYS_KEK_PROVIDER: 'file',
     STS_KEYS_KEK_REF: kek, STS_CELL_ID: 'usw2', STS_CELL_JURISDICTION: 'us',
     STS_PUBLIC_BASE_URL: 'https://sts.example.test',

@@ -25,6 +25,17 @@ const log = require("bunyan").createLogger({ name: "service_facts",
 
 const cache = {};
 
+// A SENSITIVE PARAMETER IS MASKED ON `GET /admin-api/config` (#1478), and these
+// are the development fixtures a job signs in or derives keys with. A
+// deployment that changes one is product mode, where no job reads them.
+const MASKED_FIXTURES = {
+  "krb5.userPassword": "password!",
+  "krb5.servicePassword": "service-account-password",
+  "krb5.autoServicePassword": "auto-service-password",
+  "krb5.krbtgtPassword": "krbtgt-mock-password",
+  "scim.digestPassword": "password!"
+};
+
 // Every setting of the realm `apiBase` (…/admin-api or …/realm/x/admin-api)
 // names, as { key: value }. Read once per API base per process.
 async function settings(apiBase) {
@@ -41,7 +52,7 @@ async function settings(apiBase) {
     const out = {};
     (body.groups || []).forEach(function (group) {
       (group.settings || []).forEach(function (row) {
-        out[row.key] = row.value;
+        out[row.key] = row.masked ? MASKED_FIXTURES[row.key] : row.value;
       });
     });
     cache[apiBase] = out;

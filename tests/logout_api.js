@@ -133,7 +133,7 @@ function childMain() {
          'API from \'self\' only', csp);
     r = await get({}, '/logout');
     note(r.status === 302 &&
-         /\/authn\/login\?authn=/.test(String(r.headers.location || '')),
+         /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(String(r.headers.location || '')),
          '1c. a browser with no session is sent to sign in first, as it ' +
          'always was', r.status + ' ' + r.headers.location);
     const named = {};
@@ -262,6 +262,9 @@ function childMain() {
     note(!ann.jar.sts_session && !authn.sessionById(annSession),
          '5b. the browser\'s own session ended, and its cookie was cleared ' +
          'on the answer', JSON.stringify(ann.jar));
+    note(r.headers['clear-site-data'] === '"storage"',
+         '5c. the answer tells the browser to drop storage, and not cookies ' +
+         '(#1440)', r.headers['clear-site-data']);
 
     // --- 6. a sign-out that fans out: the signed-out document ---------------
     const cy = await signIn('la-cy');

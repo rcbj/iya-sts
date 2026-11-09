@@ -197,19 +197,19 @@ class ClaimsProvidersApi {
         mirrors: 'GET /admin/claim-providers',
         parameters: [
           { name: 'providersPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of the providers. Clamped, like every ' +
                          'page parameter here.' },
           { name: 'linkq', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
+            schema: { type: 'string', maxLength: 256, examples: ['alice'] },
             description: 'Narrows the links to those whose person, ' +
                          'provider or subject there contains this.' },
           { name: 'linksPage', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [1] },
             description: 'Which page of the matched links. It shares ' +
                          '`per` with the providers.' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page of each list, capped.' }
         ],
         responseDescription: 'The register and the links.',

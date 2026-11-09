@@ -162,8 +162,20 @@ async function submitFormHolding(driver, tab, selector, fields) {
       "arguments[1];", form, fields[name]);
   }
   const before = await driver.getCurrentUrl();
+  const action = await (await form.findElement(
+    By.css("input[name='action']"))).getAttribute("value");
   await (await form.findElement(By.css("button[type='submit']"))).click();
-  await driver.sleep(1500);
+  // UNTIL THE ANSWER HAS ARRIVED, NOT FOR A FIXED TIME. The console fetches the
+  // API document before it sends a form, about 0.8s on an idle stack. After a
+  // fixed 1.5s on a busy machine the next read found Remove not yet done, and
+  // a navigation that soon cancels the request. The browser records the POST
+  // when its answer is in, refused or not.
+  await driver.wait(function () {
+    return driver.executeScript(
+      "const path = '/admin-api/pki/trust/' + arguments[0];" +
+      "return performance.getEntriesByType('resource')" +
+      ".some(function (one) { return one.name.endsWith(path); });", action);
+  }, 30000, "no answer to the " + action + " form");
   await waitForDrawn(driver);
   log.debug("Leaving submitFormHolding(). From " + before);
 }
@@ -245,6 +257,14 @@ async function test() {
     await tabText(driver, "signers");
     await submitFormHolding(driver, "signers", "textarea[name='certificates']",
                             { certificates: minted.certPem });
+    // The refusal is drawn just after its answer arrives.
+    await driver.wait(async function () {
+      return /is a leaf/.test(String(await driver.executeScript(
+        "return document.body.innerText;")));
+    }, 15000).catch(function (e) {
+      // The check below reports what the page said instead.
+      log.debug("Caught waiting for the refusal: " + ((e && e.message) || e));
+    });
     const leafRefused = await driver.executeScript(
       "return document.body.innerText;");
     check("a leaf is refused by name, and is not in the table", function () {

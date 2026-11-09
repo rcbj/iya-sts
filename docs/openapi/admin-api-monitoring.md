@@ -38,6 +38,13 @@ Everything Monitoring → Audit export draws: each destination without its secre
 
 Scope: `admin:read`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **200**: The destinations and this process's counters.
 
 | Member | Type | Required | What it is |
@@ -120,6 +127,7 @@ Scope: `admin:read`.
 | `settings.groups[].settings[].group` | string |  | The protocol it belongs to, and the console's section heading. |
 | `settings.groups[].settings[].key` | string |  | The dot path, which is BOTH the name every operation here takes and the path in the appconfig file. `oid4vci.batchSize` is `appconfig.oid4vci.batchSize`. |
 | `settings.groups[].settings[].label` | string |  |  |
+| `settings.groups[].settings[].masked` | boolean |  | Present, true, when a sensitive value here was replaced. |
 | `settings.groups[].settings[].max` | number |  | The highest value it will take. |
 | `settings.groups[].settings[].min` | number |  | The lowest value POST /config/set will take, on an int setting that declares one. |
 | `settings.groups[].settings[].ordered` | boolean |  | Present, true, on a `csv` setting whose order is a preference: the first value is the most preferred. |
@@ -174,6 +182,13 @@ Creates a destination. A secret that will not seal is refused. A private address
 **Mirrors** `POST /admin/audit-export` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -327,6 +342,13 @@ The job stops visiting it and keeps the cursor. Audited.
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -456,6 +478,13 @@ The next run delivers to it. A destination that was never enabled is backfilled 
 **Mirrors** `POST /admin/audit-export` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -587,6 +616,13 @@ Deletes the destination and this process's cursor. Audited.
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -717,6 +753,13 @@ Validates the destination and sends one synthetic event. That event is not an au
 
 Scope: `admin:write`.
 
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
 **Request body**
 
 | Member | Type | Required | What it is |
@@ -846,6 +889,13 @@ The members given replace the destination's. An empty token or secret header kee
 **Mirrors** `POST /admin/audit-export` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -1011,6 +1061,8 @@ Scope: `admin:read`.
 | `cibaPage` | query | integer |  | Which page of one kind's rows; each kind moves on its own parameter, its `paging.param`. |
 | `cellOpsPage` | query | integer |  | Which page of one kind's rows; each kind moves on its own parameter, its `paging.param`. |
 | `providerCommandsPage` | query | integer |  | Which page of one kind's rows; each kind moves on its own parameter, its `paging.param`. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The kinds.
 
@@ -1086,6 +1138,13 @@ A new generation of the delivery: a fresh attempt budget and the client's curren
 **Mirrors** `POST /admin/deliveries` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body**
 
@@ -1216,6 +1275,8 @@ Scope: `admin:read`.
 | `page` | query | integer |  | Which page of `list.rows`. |
 | `per` | query | integer |  | Rows per page. |
 | `from` | query | string |  | Where `page` starts: the `nextFrom` the page before answered. Without it a page is found by reading from the start. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The report.
 
@@ -1380,6 +1441,8 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `username` | query | string | yes |  |
 | `credentialId` | query | string | yes |  |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The RFC 4998 EvidenceRecord and archived data.
 
@@ -1424,6 +1487,8 @@ Scope: `admin:read`.
 | `lane` | query | one of `classical`, `pqc` |  | With `list=algorithm`: only keys made in this lane (#643). |
 | `aaguid` | query | string |  | With `list=model`: the AAGUID, or `unreported` for keys whose authenticator named none. |
 | `format` | query | one of `csv`, `json` |  | `csv` (the default) or `json`. |
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **200**: The file, as an attachment.
 
@@ -1476,6 +1541,13 @@ Queues a run of the `passkeys.report-recount` job for this realm on the schedule
 **Mirrors** `POST /admin/passkey-report` on the admin console.
 
 Scope: `admin:write`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
 
 **Request body** (optional)
 

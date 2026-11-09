@@ -181,7 +181,7 @@ function childMain() {
         // password. A static surface over `/authn-api` since #571: signed
         // in as its page does, and its answer followed with a GET.
         if (r.status >= 300 && r.status < 400 &&
-            /\/authn\/login\?authn=/.test(at)) {
+            /\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(at)) {
           const sent = await authnScreen.submit({ port: port, jar: jar,
             at: new URL(at, base).pathname + new URL(at, base).search,
             fields: { action: 'login', username: username,

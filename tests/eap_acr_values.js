@@ -559,7 +559,7 @@ function childMain() {
       const b = browser(port);
       const first = await authorize(b, client, extra);
       const at = String(first.headers.location || '');
-      if (!/\/authn\/login\?authn=/.test(at)) {
+      if (!/\/authn\/login(?:\?app=[^#]*)?[?#]authn=/.test(at)) {
         return { first: first, final: first };
       }
       const page = await authnScreen.open({ port: port, jar: b.jar, at: at });

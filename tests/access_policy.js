@@ -191,6 +191,68 @@ function run(t) {
           'assertions above are about the POLICY and not about the gate ' +
           'being unreachable');
 
+  config.clearOverride('xacml.enforceAccess');
+
+  // -----------------------------------------------------------------------
+  // A DECISION THAT CANNOT BE MADE (#1450, ASVS 5.0.0 8.2.1).
+  // -----------------------------------------------------------------------
+  t.log.info('=== a fault in the gate is a refusal in product ===');
+  const mode = require('../common/mode');
+  const installed = gate.deciderInstalled ? gate.deciderInstalled() : false;
+  t.equal(installed, true, 'the embedded PEP is the decider');
+  const realFault = mode.failsOpenOnPolicyFault;
+  t.equal(decide({ action: gate.ACTION.MANAGE_OWN, subject: alice }).allowed,
+          true, 'development allows a check that names no resource');
+  mode.failsOpenOnPolicyFault = function () {
+    return false;
+  };
+  t.equal(decide({ action: gate.ACTION.MANAGE_OWN, subject: alice }).allowed,
+          false, 'product refuses a check that names no resource');
+  t.equal(decide({ resource: gate.RESOURCE.PORTAL, subject: alice }).allowed,
+          false, 'and one that names no action');
+  mode.failsOpenOnPolicyFault = realFault;
+  const gateWith = function (open) {
+    log.debug("Entering gateWith().");
+    log.debug("Leaving gateWith().");
+    return new gate.AccessGate(Object.assign({},
+      gate.AccessGate.defaultDeps(), { mode: {
+        failsOpenOnPolicyFault: function () {
+          return open;
+        } } }));
+  };
+  const asked = { resource: gate.RESOURCE.PORTAL,
+                  action: gate.ACTION.MANAGE_OWN, subject: alice };
+  [false, true].forEach(function (open) {
+    const word = open ? 'development allows' : 'product refuses';
+    const fresh = gateWith(open);
+    t.equal(fresh.check(asked).allowed, open, word + ' with no decider');
+    fresh.setDecider(function () {
+      throw new Error('a probe');
+    });
+    t.equal(fresh.check(asked).allowed, open, word + ' when the decider throws');
+    fresh.setDecider(function () {
+      return null;
+    });
+    t.equal(fresh.check(asked).allowed, open, word + ' on an empty answer');
+  });
+  const decided = gateWith(false);
+  decided.setDecider(function () {
+    return { allowed: true, decision: 'Permit', why: 'a probe', policy: '' };
+  });
+  t.equal(decided.check(asked).allowed, true,
+          'a real Permit is still a Permit in product');
+
+  // The two switches stay, and turning one off shows on /admin/mode.
+  t.check(mode.REQUIREMENTS.some(function (row) {
+    return row.id === 'access-decisions-fail-closed';
+  }), 'the requirement is described to /admin/mode');
+  t.equal(mode.accessEnforcementWaivers().length, 0,
+          'no switch off, nothing to report');
+  config.setOverride('xacml.enforceAccess', 'false');
+  t.equal(mode.accessEnforcementWaivers().map(function (one) {
+    return one.setting;
+  }).join(','), 'xacml.enforceAccess', 'a switch off is reported by name');
+
   // **CLEARED RATHER THAN WRITTEN BACK**, which is this suite's rule: writing
   // the old value back records an OVERRIDE where there may have been none, and
   // the next file to read the setting then sees a runtime override with the

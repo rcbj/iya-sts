@@ -2094,7 +2094,8 @@ class OAuth2Server {
       authorization_signing_alg_values_supported: jarm.SIGNING_ALGS,
       authorization_encryption_alg_values_supported:
         helpers.offeredJweAlgs(jarm.ENCRYPTION_ALGS),
-      authorization_encryption_enc_values_supported: jarm.ENCRYPTION_ENCS,
+      authorization_encryption_enc_values_supported:
+        applications.permittedEncs(jarm.ENCRYPTION_ENCS),
       // Only what the token endpoint below actually implements — the metadata
       // should not promise a grant this server would refuse. The device_code
       // grant (#150) is added below only where its endpoint is on.
@@ -2167,7 +2168,7 @@ class OAuth2Server {
       assertion_encryption_alg_values_supported:
         helpers.decryptableJweAlgs(stsCrypto.JWE_DECRYPT_ALGS),
       assertion_encryption_enc_values_supported:
-        Object.keys(stsCrypto.JWE_ENCS),
+        applications.permittedEncs(Object.keys(stsCrypto.JWE_ENCS)),
       // RFC 9396. OID4VCI's openid_credential — its other way of saying which
       // credential is wanted — and every type an application in this realm
       // declares as a resource server (`oauthAuthorizationDetailsType`).
@@ -2244,7 +2245,7 @@ class OAuth2Server {
       introspection_encryption_alg_values_supported:
         helpers.offeredJweAlgs(introspectionJwt.ENCRYPTION_ALGS),
       introspection_encryption_enc_values_supported:
-        introspectionJwt.ENCRYPTION_ENCS,
+        applications.permittedEncs(introspectionJwt.ENCRYPTION_ENCS),
       // RFC 9101 AND OPENID CONNECT DISCOVERY (2026-09-13). A request object by
       // value and by reference; a request_uri fetched only when the client
       // registered it, which is exactly what require_request_uri_registration
@@ -2265,7 +2266,7 @@ class OAuth2Server {
       request_object_encryption_alg_values_supported:
         helpers.decryptableJweAlgs(applications.REQUEST_OBJECT_ENCRYPTION_ALGS),
       request_object_encryption_enc_values_supported:
-        applications.REQUEST_OBJECT_ENCRYPTION_ENCS,
+        applications.permittedEncs(applications.REQUEST_OBJECT_ENCRYPTION_ENCS),
       // RFC 9126 SECTION 5 (2026-09-13). The endpoint, and the global policy.
       // `pushed_authorization_request_endpoint` is removed below where
       // `oauth2.pushedAuthorizationRequests` is off, because the endpoint then
@@ -3149,7 +3150,8 @@ class OAuth2Server {
       // The ML-KEM and HPKE algorithms only where `keys.offerKemEncryption`
       // is on (helpers.offeredJweAlgs(), 2026-09-28), for all four lists.
       userinfo_encryption_alg_values_supported: helpers.offeredJweAlgs(),
-      userinfo_encryption_enc_values_supported: Object.keys(stsCrypto.JWE_ENCS),
+      userinfo_encryption_enc_values_supported:
+        applications.permittedEncs(Object.keys(stsCrypto.JWE_ENCS)),
       //
       // `public`: the `sub` userFor() gives — the person's urn:uuid:<entryUUID>
       // since 2026-09-14 — the same value for every client that asks. And
@@ -3164,7 +3166,8 @@ class OAuth2Server {
       // argues the rest. A Logout Token follows the same registration.
       id_token_encryption_alg_values_supported:
         helpers.offeredJweAlgs(idTokenEncryption.ALGS),
-      id_token_encryption_enc_values_supported: idTokenEncryption.ENCS,
+      id_token_encryption_enc_values_supported:
+        applications.permittedEncs(idTokenEncryption.ENCS),
       // OIDC Core section 3.1.3.7: a client may register
       // `id_token_signed_response_alg`. This service holds a key for every
       // asymmetric algorithm in the table and can use a client's own secret for
@@ -3435,7 +3438,9 @@ class OAuth2Server {
                 'could not publish the JWKS: ' + e.message);
       errorCodes.mark(res, 'STS-OAUTH-0184');
       res.status(500).type('application/json')
-        .send(JSON.stringify({ error: e.message }));
+        .send(JSON.stringify({ error:
+          require('../common/mode').hidesFailureDetail()
+            ? 'server_error' : e.message }));
       log.debug("Leaving the JWKS endpoint. The keys could not be made.");
     });
     log.debug("Leaving the JWKS endpoint. Answering.");
@@ -3596,7 +3601,9 @@ class OAuth2Server {
       errorCodes.mark(res, 'STS-OAUTH-0184');
       res.status(500)
          .type('application/json')
-         .send(JSON.stringify({ error: e.message }));
+         .send(JSON.stringify({ error:
+           require('../common/mode').hidesFailureDetail()
+             ? 'server_error' : e.message }));
       log.debug("Leaving OAuth2Server.sendJwks(). It failed.");
     }
     log.debug("Leaving OAuth2Server.sendJwks().");
@@ -3669,6 +3676,18 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.idTokenTtl().");
     return applications.settingFor(clientId || '', 'oauth2.idTokenTtlS',
                                    config);
+  }
+
+  // A refresh token's `exp`: its own lifetime, but never past the chain's
+  // absolute limit (ASVS 5.0.0 10.4.8). Past that the token has expired like any
+  // other, so the person signs in again.
+  private refreshExpiry(clientId: Json, iat: number, chainIat: number): number {
+    const { log, config } = this.deps;
+    log.debug("Entering OAuth2Server.refreshExpiry().");
+    const own = iat + Number(this.refreshTokenTtl(clientId));
+    const limit = Number(config.value('oauth2.refreshTokenMaxChainS'));
+    log.debug("Leaving OAuth2Server.refreshExpiry().");
+    return limit > 0 ? Math.min(own, chainIat + limit) : own;
   }
 
   private refreshTokenTtl(clientId: Json): Json {
@@ -4552,7 +4571,11 @@ class OAuth2Server {
       // being renewed.
       resources: (opts.resources && opts.resources.length) ? opts.resources :
                   undefined,
-      iat: iat, nbf: iat, exp: iat + self.refreshTokenTtl(opts.client_id),
+      iat: iat, nbf: iat,
+      // ASVS 5.0.0 10.4.8: when this chain of renewals began, carried from each
+      // token to the next so renewing cannot outrun the absolute limit.
+      chain_iat: opts.chainIat || iat,
+      exp: self.refreshExpiry(opts.client_id, iat, opts.chainIat || iat),
       // RFC 9449 section 5: a refresh token issued to a PUBLIC client alongside
       // a DPoP-bound access token is itself bound to the same key — and one
       // issued to a CONFIDENTIAL client is NOT: "they are already
@@ -5941,6 +5964,7 @@ class OAuth2Server {
         Object.assign({}, issuing, {
           access_jti: self.jtiOf(access),
           access_exp: this.deps.nowSec() + Number(body.expires_in || 0),
+          chainIat: opts.chainIat,
           scope: hasGrantScope ? String(opts.grantScope || '') :
                  (opts.scope || ''),
           resources: hasGrantResources ? opts.grantResources :
@@ -11062,6 +11086,19 @@ class OAuth2Server {
     // checked against by the schema, because it comes off the entry and an
     // `ldapmodify` reaches the entry without passing any check at all.
     const registeredClient = applications.clientConfigOf(q.client_id);
+    // RFC 6749 section 3.1 forbids repeats; product refuses them as OAuth 2.1
+    // mode does (ASVS 5.0.0 15.3.7).
+    if (!oauth21.enabled() &&
+        require('../common/mode').refusesRepeatedTokenParameters()) {
+      const repeated = oauth21.repeatedParameterRefusal(
+          opts.repeated || oauth21.repeatedNames(req.query),
+          opts.what || 'authorization request', true);
+      if (repeated) {
+        log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). A repeat.");
+        return refuse(repeated.errorCode || 'STS-OAUTH-0285', repeated.error,
+                      repeated.description);
+      }
+    }
     if (oauth21.enabled()) {
       const repeated = oauth21.repeatedParameterRefusal(
           opts.repeated || oauth21.repeatedNames(req.query),
@@ -11597,6 +11634,20 @@ class OAuth2Server {
         JSON.stringify(declaredFlows.response_types) + ', and this ' +
         'request asks for "' + q.response_type + '" (RFC 7591 section 2).');
     }
+    // A CLIENT THAT DECLARES NO RESPONSE TYPES (#1479, ASVS 5.0.0 10.4.4): in
+    // product it has RFC 7591 section 2's default, `code`, as the token
+    // endpoint holds it to the code flow. One that declared the `implicit`
+    // grant asked for the response types that grant answers with.
+    if (askedType && askedType !== 'code' && mode.narrowsUndeclaredGrants() &&
+        !(declaredFlows && declaredFlows.response_types) &&
+        !(declaredFlows && declaredFlows.grant_types &&
+          declaredFlows.grant_types.indexOf('implicit') >= 0)) {
+      log.debug("Leaving OAuth2Server.vetAuthorizationRequest(). No response " +
+                "types declared.");
+      return redirectable('STS-OAUTH-0597', 'unauthorized_client',
+        'Client "' + q.client_id + '" declares no response_types, so it may ' +
+        'use response_type=code alone (RFC 7591 section 2).');
+    }
     const requestCheck = bcp.checkAuthorizationRequest({ query: q, types: types,
                                                          client:
                                                            registeredClient });
@@ -11921,6 +11972,14 @@ class OAuth2Server {
                why: 'the id_token_hint was issued to ' +
                JSON.stringify(claims.aud) + ', not to client "' + clientId +
                '".' };
+    }
+    // ASVS 5.0.0 9.2.2: a Logout Token this realm signed for the same client
+    // is not an ID Token, so its sid may not stand in for one.
+    if (claims.events !== undefined ||
+        /logout\+jwt|at\+jwt/i.test(String(header.typ || ''))) {
+      log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Not an ID Token.");
+      return { ok: false, reason: 'signature',
+               why: 'the id_token_hint is not an ID Token.' };
     }
     log.debug("Leaving OAuth2Server.verifyIdTokenHint(). Verified.");
     return { ok: true, sub: String(claims.sub || ''), claims: claims };
@@ -12543,6 +12602,7 @@ class OAuth2Server {
           clientId: String(q.client_id || ''),
           clientName: (entry && entry.name) || String(q.client_id || ''),
           scopes: decision.outstanding,
+          resources: [].concat(q.resource || []).map(String),
           authorizationDetails: detailsOutstanding
             ? richAuthorization.describe(consentDetails.details) : [],
           detailsDigest: detailsOutstanding ? detailsDigest : '',
@@ -13177,7 +13237,17 @@ class OAuth2Server {
     }
     const hintIsThisSession = !!(hinted && session && hinted.sid &&
                                  String(hinted.sid) === String(session.id));
+    // A GET THAT IS NOT A TOP-LEVEL NAVIGATION ENDS NOTHING (#1443, ASVS 5.0.0
+    // 3.5.3): an image or a script is asked, as a request with no verified
+    // hint is. A client that sends no Sec-Fetch-* is unaffected, and
+    // RP-Initiated Logout's own flow is a navigation.
+    const fetchDest = String((req.headers || {})['sec-fetch-dest'] || '');
+    const fetchMode = String((req.headers || {})['sec-fetch-mode'] || '');
+    const notNavigating = req.method === 'GET' &&
+      ((!!fetchDest && fetchDest !== 'document') ||
+       (!!fetchMode && fetchMode !== 'navigate'));
     const mustAsk = !confirmed && (
+      (session && notNavigating) ||
       (session && !(hintIsThisSession &&
                     self.logoutHintMatches(session, q.logout_hint))) ||
       (!session && req.method === 'POST' && !cookiePresented));
@@ -13201,6 +13271,9 @@ class OAuth2Server {
     // The session the request resolved to, where the browser holds several
     // (#561); `endSession()` ignores it with the setting off.
     const ended = endSession(req, res, several && session ? session.id : '');
+    if (session) {
+      authn.clearSiteDataAfterSignOut(req, res);
+    }
     // WHAT THE PAGE'S ENDING SHOWS where the return was refused (#1326).
     const partly = unfollowed ? {
       clientId: clientId, uri: unfollowed.uri, state: q.state,
@@ -13701,8 +13774,8 @@ class OAuth2Server {
     // refusing is the difference between reading the registration as written
     // and making every client spell out something the spec already decided.
     const encEnc = encAlg
-      ? String(registered.userinfo_encrypted_response_enc || 'A128CBC-HS256') :
-                   '';
+      ? String(registered.userinfo_encrypted_response_enc ||
+               applications.defaultJweEnc()) : '';
 
     if (signAlg === 'none' && !encAlg) {
       log.debug("Leaving OAuth2Server.protectUserinfo(). Plain JSON.");
@@ -14140,6 +14213,9 @@ class OAuth2Server {
       client_id: fingerprint.client_id,
       fingerprint: fingerprint,
       jtis: jtis,
+      // The refresh family this code began (#1467, ASVS 5.0.0 10.4.2): a
+      // replay ends what was refreshed from it too, not only the first set.
+      family: self.familyOfIssued(issued),
       // Only under `oauth2.codeReplayIdempotent` (#614): nothing else reads
       // the tokens again, and the replay refusal revokes by jti.
       ...(self.deps.bcp.codeRedemptionRelaxed() ? { response: issued } : {})
@@ -14247,6 +14323,27 @@ class OAuth2Server {
     log.debug("Leaving OAuth2Server.spendPresentedCode(). Spent; claim " +
               (claim.ok ? 'held' : 'refused (' + claim.reason + ')') + ".");
     return { code: code, record: record, claim: claim };
+  }
+
+  // The refresh family of a token set, or '' where it has no refresh token.
+  private familyOfIssued(response: Json): string {
+    const { log, stsCrypto, refreshTokenCrypto, bcp } = this.deps;
+    log.debug("Entering OAuth2Server.familyOfIssued().");
+    const token = response && response.refresh_token;
+    let family = '';
+    try {
+      const claims = !token ? null
+        : (refreshTokenCrypto.isEncrypted(token)
+          ? refreshTokenCrypto.claimsOfIssued(token)
+          : stsCrypto.decodeJws(token));
+      family = claims ? String(bcp.familyOfRefresh(claims) || '') : '';
+    } catch (e) {
+      log.debug("Caught in OAuth2Server.familyOfIssued(): " +
+                ((e && e.message) || e));
+      family = '';
+    }
+    log.debug("Leaving OAuth2Server.familyOfIssued().");
+    return family;
   }
 
   // The jtis of a token set this service issued, to revoke it later: read
@@ -14400,6 +14497,23 @@ class OAuth2Server {
                'the repeat is refused and what the code bought revoked.');
     }
     if (!replay.ok || nothingToReplay) {
+      if (done.family) {
+        // WHAT WAS REFRESHED FROM IT (#1489, ASVS 5.0.0 10.4.2), through the
+        // same act as the first set below: `stats.revoke()` fills the grant's
+        // CAEP session-revoked and, for a replay, its risk-level-change.
+        self.deps.bcp.grantMembersOf(done.family).forEach(function (jti: string) {
+          stats.revoke(jti, 'RFC 9700 section 4.5: an authorization code was ' +
+                            'presented twice',
+                       { initiatingEntity: 'policy',
+                         replay: 'authorization-code-replay' });
+        });
+        self.deps.bcp.revokeFamily(done.family, done.client_id).catch(
+          function (e) {
+            log.error(errorCodes.tag('STS-OAUTH-0518') + 'oauth2: the refresh ' +
+                      'family of a replayed code could not be revoked: ' +
+                      ((e && e.message) || e));
+          });
+      }
       (replay.ok ? done.jtis : (replay.revoke || [])).forEach(function (jti) {
         // A POLICY's act and a security event (#239): the grant is reported
         // ended by `policy`, with the risk it was replayed under.
@@ -15104,6 +15218,20 @@ class OAuth2Server {
     // OAUTH 2.1 — two refusals about the SHAPE of the request, before anything
     // in it is believed: a repeated parameter (sections 3.1 and 3.2) and more
     // than one client authentication method (section 2.4).
+    // RFC 6749 section 3.2: a parameter MUST NOT appear more than once. Product
+    // refuses it outright, as OAuth 2.1 mode does below (ASVS 5.0.0 15.3.7).
+    if (!oauth21.enabled() &&
+        require('../common/mode').refusesRepeatedTokenParameters()) {
+      const repeated = oauth21.repeatedParameterRefusal(
+          oauth21.repeatedNames(null, typeof req.body === 'string' ? req.body :
+                                      ''), 'token request', true);
+      if (repeated) {
+        log.debug("Leaving the token endpoint. A repeated parameter.");
+        errorCodes.mark(res, repeated.errorCode || 'STS-OAUTH-0285');
+        log.debug("Leaving OAuth2Server.tokenGrant().");
+        return self.oauthError(res, 400, repeated.error, repeated.description);
+      }
+    }
     if (oauth21.enabled()) {
       const repeated = oauth21.repeatedParameterRefusal(
           oauth21.repeatedNames(null, typeof req.body === 'string' ? req.body :
@@ -15679,6 +15807,20 @@ class OAuth2Server {
     // that declares no list is not.
     const declaredFlows = client.client_id
       ? applications.declaredFlowsOf(client.client_id) : null;
+    // A CLIENT THAT DECLARES NOTHING (#1453, ASVS 5.0.0 10.4.4): in product it
+    // has the RFC 7591 section 2 default, the code flow, and its refresh.
+    const undeclared = !!client.client_id &&
+      !(declaredFlows && declaredFlows.grant_types);
+    if (undeclared && mode.narrowsUndeclaredGrants() &&
+        ['authorization_code', 'refresh_token'].indexOf(
+          String(body.grant_type || '')) < 0) {
+      log.debug("Leaving the token endpoint. A grant no list declares.");
+      errorCodes.mark(res, 'STS-OAUTH-0598');
+      log.debug("Leaving OAuth2Server.tokenGrant().");
+      return self.oauthError(res, 400, 'unauthorized_client',
+        'Client "' + client.client_id + '" declares no grant_types, so it ' +
+        'may use authorization_code and refresh_token alone.');
+    }
     if (declaredFlows && declaredFlows.grant_types &&
         declaredFlows.grant_types.indexOf(
           String(body.grant_type || '')) < 0) {
@@ -17110,6 +17252,7 @@ class OAuth2Server {
         // the paragraph on refreshToken() in tokenSet() — RFC 6749 section 6.
         grantScope: claims.scope || '',
         grantResources: grantedResources,
+        chainIat: claims.chain_iat,
         // The session the REFRESHED token came from, looked up by the refresh
         // token's own jti. Nothing on the wire carries it — a refresh token
         // names no session — so without this every second-generation token

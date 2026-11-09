@@ -647,6 +647,12 @@ const CODES = [
       'line a minute at most.',
     spec: 'HTTP 501 text/plain (HTTP/2, or HTTP/1.1 with the connection ' +
       'closed)' },
+  { code: 'STS-HTTP-0026',
+    summary: 'HTTP parsing refused a request before any route saw it: its ' +
+      'request line or headers were past the limit (431), or it was not ' +
+      'well-formed HTTP (400). The first is logged, and the rest are ' +
+      'counted into one line a minute at most (#1500).',
+    spec: 'HTTP 431, 408 or 400, then the connection closes' },
   // ===== PROXY =============================================================
   { code: 'STS-PROXY-0001',
     summary: 'A connection from an address outside global.trustedProxies ' +
@@ -1220,6 +1226,27 @@ const CODES = [
       'the file was left out of the build. The browser shows no icon; nothing ' +
       'else is affected.',
     spec: 'none — HTTP 404' },
+  { code: 'STS-CORE-0167',
+    summary: 'A product-mode process was configured with global.https off ' +
+      'and did not start (#1457).',
+    spec: '' },
+  { code: 'STS-CORE-0168',
+    summary: 'The malware scanner flagged a file (ASVS 5.0.0 5.4.3).',
+    spec: 'HTTP 422' },
+  { code: 'STS-CORE-0169',
+    summary: 'A file could not be scanned because the malware scanner did not answer.',
+    spec: 'HTTP 503' },
+  { code: 'STS-CORE-0170',
+    summary: 'An action on the malware scanning page was not one it has.',
+    spec: 'HTTP 400' },
+  { code: 'STS-CORE-0171',
+    summary: 'A setting\'s value, or a realm\'s name or description, holds ' +
+      'a NUL character or half of a surrogate pair, which the store\'s ' +
+      'columns can never hold; refused before anything is written (#1463).',
+    spec: 'a refusal naming the setting or field, never the value' },
+  { code: 'STS-CORE-0172',
+    summary: 'A request was refused because its address made too many in a minute.',
+    spec: 'HTTP 429' },
   { code: 'STS-WORKER-0001',
     summary: 'The IPC channel to a post-quantum worker process failed, so a ' +
       'job sent to it may not arrive or its answer may not come back.' +
@@ -2017,7 +2044,16 @@ const CODES = [
       'this process\'s memory and is absent from the store until the ' +
       'process restarts; the next flush does not send the same value again.',
     spec: 'none — logged; the request that wrote it was already answered' },
+  { code: 'STS-STORE-0169',
+    summary: 'A realm or settings save dropped one value the database can ' +
+      'never store (a NUL, half of a surrogate pair, or another permanent ' +
+      'data error) and committed everything else in the flush (#1463). The ' +
+      'value stays in this process\'s memory and is absent from the store ' +
+      'until the process restarts; the next flush does not send it again.',
+    spec: 'none — logged; the request that wrote it was already answered' },
   // ===== CLUSTER ===========================================================
+  { code: 'STS-STORE-0170',
+    summary: 'The service did not start because the database password is a well-known default.' },
   { code: 'STS-CLUSTER-0001',
     summary: 'A write transaction was refused by the fence: this node\'s ' +
       'membership row had expired, or a lease the write needed was no longer ' +
@@ -3629,6 +3665,14 @@ const CODES = [
     summary: 'A write to tls.signatureAlgorithms names a signature algorithm ' +
       'this service has no row for.',
     spec: 'none — a write refused at the console or the API (#1368)' },
+  { code: 'STS-KEYS-0195',
+    summary: 'An XML element encrypted with AES-CBC was refused in ' +
+      'product mode (#1455).',
+    spec: '' },
+  { code: 'STS-KEYS-0196',
+    summary: 'An XML element whose key is wrapped with OAEP over SHA-1 ' +
+      'was refused: crypto.allowLegacyHashes is off (#1469).',
+    spec: '' },
   { code: 'STS-PKI-0001',
     summary: 'A certificate-authority use case prefers a key algorithm this ' +
       'service cannot use, so its Issuing CA was built with the ' +
@@ -4972,6 +5016,11 @@ const CODES = [
       'is (#1421, #1432).',
     spec: 'Console refusal banner; /admin-api HTTP 400 with {ok:false, ' +
       'errors}' },
+  { code: 'STS-PKI-0271',
+    summary: 'A certificate was asked to be validated for a realm that does ' +
+      'not exist, one removed a moment ago included; refused rather than ' +
+      'judged by the policy of whichever realm was ambient (#1147).',
+    spec: 'the caller\'s own refusal' },
   { code: 'STS-ENROLL-0001',
     summary: 'A certificate request named a profile that is not one of the nine issued over an enrollment protocol.',
     spec: 'the protocol\'s refusal: ACME malformed / badCSR, EST HTTP 400, SCEP failInfo badRequest' },
@@ -5624,6 +5673,10 @@ const CODES = [
       'process; node 24 or later is required.',
     spec: 'SCEP CertRep FAILURE badMessageCheck (the content does not ' +
       'decrypt)' },
+  { code: 'STS-SCEP-0067',
+    summary: 'A SCEP request reached a product-mode realm with ' +
+      'scep.allowInProduct off (#1455).',
+    spec: 'HTTP 503' },
   // ===== AUTHN =============================================================
   { code: 'STS-AUTHN-0001',
     summary: 'A request to the sign-in screen or the federation chooser ' +
@@ -7912,6 +7965,25 @@ const CODES = [
     summary: 'A sign-in logo\'s link (branding.logoLinkUrl) was not saved: ' +
       'it is not an absolute https URL (#717).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-AUTHN-0552',
+    summary: 'A sign-in step was asked about from a browser other than the ' +
+      'one that holds it (#1454).',
+    spec: 'HTTP 400' },
+  { code: 'STS-AUTHN-0553',
+    summary: 'A /authn-api request named a query parameter its operation ' +
+      'does not declare, and was refused before the handler ran (#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-AUTHN-0554',
+    summary: 'A query parameter of a /authn-api request held a value its ' +
+      'declared type does not, and was refused before the handler ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-AUTHN-0555',
+    summary: 'A /authn-api request carried a custom header that its ' +
+      'operation does not declare and no specification or known proxy, CDN ' +
+      'or tracing family defines, and was refused before the handler ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
   { code: 'STS-OAUTH-0001',
     summary: 'A JWT client assertion could not be read as a JWT (its header ' +
       'is not base64url JSON).',
@@ -11423,6 +11495,20 @@ const CODES = [
       'response type that oauth2.dynamicRegistrationTokenResponseTypes does ' +
       'not list (#1296).',
     spec: 'invalid_client_metadata (HTTP 400)' },
+  { code: 'STS-OAUTH-1000',
+    summary: 'A client assertion was verified by a certificate from the ' +
+      'realm\'s authority that was not issued to that client (ASVS ' +
+      '5.0.0 9.1.3).',
+    spec: 'invalid_client' },
+  { code: 'STS-OAUTH-1001',
+    summary: 'An RFC 7523 assertion was verified by a certificate from ' +
+      'the realm\'s authority that was not issued to its issuer ' +
+      '(ASVS 5.0.0 9.1.3).',
+    spec: 'invalid_grant' },
+  { code: 'STS-OAUTH-1002',
+    summary: 'A confidential client sent no code_challenge, in product ' +
+      '(ASVS 5.0.0 10.4.6).',
+    spec: 'invalid_request' },
   { code: 'STS-SAML-0001',
     summary: 'A SAML 2.0 sign-in resumed with a held-request id that is ' +
       'unknown or has expired (saml2.requestTtlMin), so there is no ' +
@@ -12444,6 +12530,10 @@ const CODES = [
       '#Kerberosv5APREQSHA1 key identifier (#658).',
     spec: 'SOAP Fault wst:FailedAuthentication (HTTP 500), WS-Trust 1.4 ' +
       'section 11' },
+  { code: 'STS-WSTRUST-0070',
+    summary: 'A UsernameToken was refused without being checked: too many ' +
+      'recent failures for that identity (#1448).',
+    spec: 'SOAP FailedAuthentication' },
   { code: 'STS-WSFED-0001',
     summary: 'A wsignin1.0 request carried wreqptr, which this service ' +
       'refuses to dereference (fetching a URL from a query parameter ' +
@@ -13640,7 +13730,22 @@ const CODES = [
       'was no longer believed: the DID\'s data server no longer names this ' +
       'issuer, or could not be asked (#746).',
     spec: 'HTTP 401 page' },
+  { code: 'STS-FED-0237',
+    summary: 'A federated answer arrived in a browser other than the one ' +
+      'that started the flow, in product (ASVS 5.0.0 10.1.2).',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0238',
+    summary: 'A federated answer names another issuer, or arrived for ' +
+      'another relationship than its state (ASVS 5.0.0 10.2.2).',
+    spec: 'HTTP 401' },
+  { code: 'STS-FED-0239',
+    summary: 'An unsolicited SAML assertion was presented a second time ' +
+      '(ASVS 5.0.0 6.8.3).',
+    spec: 'HTTP 401' },
   // ===== OIDFED ============================================================
+  { code: 'STS-FED-0240',
+    summary: 'A federated sign-in was refused because the partner authenticated the person too long ago.',
+    spec: 'HTTP 401' },
   { code: 'STS-OIDFED-0001',
     summary: 'A metadata_policy is not the three levels of JSON objects ' +
       'section 6.1.2 describes, or an operator\'s value is of a type ' +
@@ -15122,6 +15227,18 @@ const CODES = [
       'realm (#658) and reaching it took more crossings than ' +
       'krb5.maxReferralHops allows.',
     spec: 'none (the caller answers its own protocol\'s refusal)' },
+  { code: 'STS-KRB-0255',
+    summary: 'Pre-authentication was refused without being checked: too ' +
+      'many recent failures for that principal (#1448).',
+    spec: 'KDC_ERR_PREAUTH_FAILED' },
+  { code: 'STS-KRB-0256',
+    summary: 'An S4U2Self request was refused: its PA-FOR-USER checksum ' +
+      'is HMAC-MD5 and crypto.allowLegacyHashes is off (#1469).',
+    spec: 'KDC_ERR_POLICY' },
+  { code: 'STS-KRB-0257',
+    summary: 'A person whose password must be changed asked for a ticket, ' +
+      'in product (ASVS 5.0.0 6.4.1).',
+    spec: 'KDC_ERR_KEY_EXPIRED' },
   { code: 'STS-LDAP-0001',
     summary: 'An LDAP simple bind presented the reserved password this ' +
       'service refuses in every protocol.',
@@ -16571,6 +16688,10 @@ const CODES = [
     summary: 'The identity gate threw on a verified client certificate, so it ' +
       'was not taken as a SCIM credential (#1360).',
     spec: 'the caller\'s 401: another scheme, or none' },
+  { code: 'STS-SCIM-0089',
+    summary: 'An HTTP Basic credential was refused without being checked: ' +
+      'too many recent failures (#1448).',
+    spec: 'HTTP 401' },
   { code: 'STS-SPIFFE-0001',
     summary: 'A SPIFFE gRPC handler failed with something that was not a ' +
       'gRPC status, which is a defect in this service (or the request ' +
@@ -17602,6 +17723,14 @@ const CODES = [
       'reached this process within tls.resumedChainWaitMs. The next full ' +
       'handshake settles it (#1360).',
     spec: 'none (logged): the certificate is treated as unverified' },
+  { code: 'STS-TLS-0059',
+    summary: 'GET /tls/sign-in was asked for by a browser other than as a ' +
+      'navigation typed by the person or sent from this origin, in ' +
+      'product (ASVS 5.0.0 3.5.3).',
+    spec: 'HTTP 403' },
+  { code: 'STS-TLS-0060',
+    summary: 'A certificate sign-in started no session because the person owes a second factor.',
+    spec: 'HTTP 200' },
   { code: 'STS-VC-0001',
     summary: 'An oid4vci encryption setting names no content encryption ' +
       '(enc) this issuer implements, so the implemented list is ' +
@@ -19111,6 +19240,18 @@ const CODES = [
     summary: 'An announcement broadcast could not be sent in a realm: ' +
       'building or queueing its Security Event Token failed (#1086).',
     spec: 'none: logged; the answer names the realm' },
+  { code: 'STS-SSF-0156',
+    summary: 'An HTTP Basic credential was refused without being checked: ' +
+      'too many recent failures (#1448).',
+    spec: 'HTTP 401' },
+  { code: 'STS-SSF-0157',
+    summary: 'A person authenticated by HTTP Basic holds no console role, ' +
+      'in product (ASVS 5.0.0 8.2.1).',
+    spec: 'HTTP 403' },
+  { code: 'STS-SSF-0158',
+    summary: 'A push delivery address is internal or could not be ' +
+      'resolved, in product (ASVS 5.0.0 1.3.6).',
+    spec: 'the delivery fails' },
   // ===== RISK ==============================================================
   { code: 'STS-RISK-0001',
     summary: 'A dataset import was refused before anything was loaded: the ' +
@@ -19400,6 +19541,14 @@ const CODES = [
       'read it again could not be recorded. The others keep the standing ' +
       'they hold until risk.standingValidMinutes runs out (#666).',
     spec: 'none — a warning in the log' },
+  { code: 'STS-RISK-0055',
+    summary: 'A dataset upload\'s file name does not fit the format it was ' +
+      'sent as (ASVS 5.0.0 5.2.2).',
+    spec: 'HTTP 400' },
+  { code: 'STS-RISK-0056',
+    summary: 'Too many lines of a dataset file were not rows of its ' +
+      'format (ASVS 5.0.0 5.2.2).',
+    spec: 'the version is refused' },
   // ===== MAIL ==============================================================
   { code: 'STS-MAIL-0001',
     summary: 'A message was not queued because no mail transport is ' +
@@ -19651,6 +19800,9 @@ const CODES = [
       '(appLocalePolicy) or a group (stsLocalePolicy) of this realm still ' +
       'names it (#1238).',
     spec: 'HTTP 400 (management API)' },
+  { code: 'STS-I18N-0015',
+    summary: 'POST /authn/language came from a page of another site (#1442).',
+    spec: 'HTTP 403' },
   { code: 'STS-GNAP-0001',
     summary: 'A GNAP key names a proofing method this authorization server ' +
       'does not implement, in string or object form.',
@@ -22137,8 +22289,8 @@ const CODES = [
       'function; every access decision is allowed.',
     spec: '' },
   { code: 'STS-XACML-0051',
-    summary: 'The access gate\'s decider threw; access was ALLOWED because a ' +
-      'throw is a defect rather than a decision.',
+    summary: 'The access gate\'s decider threw: refused in product mode, ' +
+      'allowed in development (#1450).',
     spec: '' },
   { code: 'STS-XACML-0052',
     summary: 'The issuance gate\'s decider threw; issuance was ALLOWED ' +
@@ -22390,6 +22542,19 @@ const CODES = [
       'outside certificate authority that is stored in userCertificate ' +
       'on more than one entry of the realm (#1061).',
     spec: 'HTTP 403 access_denied' },
+  { code: 'STS-XACML-0181',
+    summary: 'The access gate had no decider, or its decider answered ' +
+      'nothing: refused in product mode, allowed in development (#1450).',
+    spec: '' },
+  { code: 'STS-XACML-0182',
+    summary: 'An access check named no resource or no action, a defect at ' +
+      'the call site: refused in product mode, allowed in development ' +
+      '(#1450).',
+    spec: '' },
+  { code: 'STS-XACML-0183',
+    summary: 'The issuance gate refused because no decision could be ' +
+      'made, in product (ASVS 5.0.0 16.5.3).',
+    spec: 'the token is not issued' },
   // ===== XPEP ==============================================================
   { code: 'STS-XPEP-0001',
     summary: 'The error-code registry could not be loaded from ./error_codes ' +
@@ -24868,6 +25033,13 @@ const CODES = [
     summary: 'set-row was refused by the settings write path, or a use case ' +
       'an add named is not one this service has (#1360).',
     spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ADMIN-0915',
+    summary: 'A software statement was asked for with a lifetimeSeconds that ' +
+      'puts its expiry past the last date this service can write (#1470).',
+    spec: 'a refusal naming the field' },
+  { code: 'STS-ADMIN-0916',
+    summary: 'A second factor was not cleared because the administrator did not say how the person was verified.',
+    spec: 'HTTP 400' },
   { code: 'STS-API-0001',
     summary: 'A management API request carried no Bearer access token while ' +
       'adminApi.authRequired is on.',
@@ -25319,6 +25491,25 @@ const CODES = [
     summary: 'An action of /admin-api/pki/trust threw rather than answering ' +
       '(#1360).',
     spec: 'HTTP 500 with {ok:false, errors}' },
+  { code: 'STS-API-0142',
+    summary: 'A management API request named a query parameter its ' +
+      'operation does not declare, and was refused before the handler ran ' +
+      '(#1476).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-API-0143',
+    summary: 'A query parameter of a management API request held a value ' +
+      'its declared type does not, and was refused before the handler ran ' +
+      '(#1476).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-API-0144',
+    summary: 'A management API request carried a custom header that its ' +
+      'operation does not declare and no specification or known proxy, CDN ' +
+      'or tracing family defines, and was refused before the handler ran ' +
+      '(#1476).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-API-0145',
+    summary: 'A change to how somebody signs in was refused because the administrator did not sign in recently enough.',
+    spec: 'HTTP 401 (RFC 9470)' },
   { code: 'STS-PORTAL-0001',
     summary: 'A user portal request\'s query string or form body did not ' +
       'match the shape its route accepts, and was refused before ' +
@@ -25960,6 +26151,21 @@ const CODES = [
   { code: 'STS-ACCOUNT-0019',
     summary: 'An /account-api operation threw; answered 500.',
     spec: 'HTTP 500' },
+  { code: 'STS-ACCOUNT-0020',
+    summary: 'An /account-api request named a query parameter its operation ' +
+      'does not declare, and was refused before the handler ran (#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ACCOUNT-0021',
+    summary: 'A query parameter of an /account-api request held a value its ' +
+      'declared type does not, and was refused before the handler ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
+  { code: 'STS-ACCOUNT-0022',
+    summary: 'An /account-api request carried a custom header that its ' +
+      'operation does not declare and no specification or known proxy, CDN ' +
+      'or tracing family defines, and was refused before the handler ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 with {ok:false, errors}' },
   { code: 'STS-LOGOUT-0001',
     summary: 'A sign-out named somebody other than the caller while naming ' +
       'another person is closed (logout.anyUser off, or product ' +
@@ -26026,7 +26232,14 @@ const CODES = [
       'realm with authn.multipleAccounts off, where a browser holds one ' +
       'session and there is no account to choose.',
     spec: 'HTTP 400 from /authn-api/logout/accounts' },
+  { code: 'STS-LOGOUT-0014',
+    summary: 'POST /logout in its JSON form came from a page of another ' +
+      'site (#1442).',
+    spec: 'HTTP 403' },
   // ===== LAUNCH ============================================================
+  { code: 'STS-LOGOUT-0015',
+    summary: 'Ending another session was refused because the sign-in was not recent enough.',
+    spec: 'HTTP 403' },
   { code: 'STS-LAUNCH-0001',
     summary: 'A /launch/{app} link named no application this realm has ' +
       '(#713).',
@@ -27321,6 +27534,21 @@ const CODES = [
       'owner is not a person of the realm it runs in, and a search runs ' +
       'as its owner (#1176).',
     spec: 'unavailable or forbidden (the job fails)' },
+  { code: 'STS-REPORT-0056',
+    summary: 'A /report-api request named a query parameter its operation ' +
+      'does not declare, and was refused before the operation ran (#1483).',
+    spec: 'HTTP 400 {error:invalid_query, error_description}' },
+  { code: 'STS-REPORT-0057',
+    summary: 'A query parameter of a /report-api request held a value its ' +
+      'declared type does not, and was refused before the operation ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 {error:invalid_query, error_description}' },
+  { code: 'STS-REPORT-0058',
+    summary: 'A /report-api request carried a custom header that its ' +
+      'operation does not declare and no specification or known proxy, CDN ' +
+      'or tracing family defines, and was refused before the operation ran ' +
+      '(#1483).',
+    spec: 'HTTP 400 {error:invalid_query, error_description}' },
   { code: 'STS-AUDIT-0001',
     summary: 'An audit export destination was refused because its ' +
       'configuration is not usable: an unknown action or type, a missing ' +
@@ -27397,7 +27625,10 @@ const CODES = [
       'itself (HTTP 400). That event is counted permanently failed and the ' +
       'cursor moves past it. The destination is not paused for the events ' +
       'after it (#641).',
-    spec: 'none (that event is dropped; later events are still delivered)' }
+    spec: 'none (that event is dropped; later events are still delivered)' },
+  { code: 'STS-AUDIT-0016',
+    summary: 'A syslog audit destination was refused because product mode needs tls.',
+    spec: 'HTTP 400' }
   // ===== END ===============================================================
 ];
 

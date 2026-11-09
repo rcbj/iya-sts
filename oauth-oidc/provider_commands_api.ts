@@ -244,19 +244,19 @@ class ProviderCommandsApi {
         parameters: ['clients', 'accounts', 'runs', 'deliveries']
           .map(function (name: string): Json {
             return { name: name + 'Page', in: 'query', required: false,
-                     schema: { type: 'integer', minimum: 1 },
+                     schema: { type: 'integer', minimum: 1, examples: [1] },
                      description: 'Which page of `' + name + '`. Each list ' +
                        'moves on its own parameter and they share `per`.' };
           }).concat([
             { name: 'state', in: 'query', required: false,
-              schema: { type: 'string', maxLength: 16 },
+              schema: { type: 'string', maxLength: 16, examples: ['pending'] },
               description: 'Only deliveries in this state: pending, ' +
                            'sent or dead.' },
             { name: 'q', in: 'query', required: false,
-              schema: { type: 'string', maxLength: 256 },
+              schema: { type: 'string', maxLength: 256, examples: ['alice'] },
               description: 'Narrows the deliveries.' },
             { name: 'per', in: 'query', required: false,
-              schema: { type: 'integer', minimum: 1 },
+              schema: { type: 'integer', minimum: 1, examples: [10] },
               description: 'Rows per page of each list, capped.' }]),
         responseDescription: 'The report.',
         responseSchema: { type: 'object', additionalProperties: true,
@@ -358,23 +358,23 @@ class ProviderCommandsApi {
         mirrors: 'GET /admin/deliveries',
         parameters: [
           { name: 'state', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 16 },
+            schema: { type: 'string', maxLength: 16, examples: ['pending'] },
             description: 'Only deliveries in this state: pending, sent or ' +
                          'dead; empty for every state.' },
           { name: 'kind', in: 'query', required: false,
             schema: { type: 'string', maxLength: 64 },
             description: 'Only this kind.' },
           { name: 'q', in: 'query', required: false,
-            schema: { type: 'string', maxLength: 256 },
+            schema: { type: 'string', maxLength: 256, examples: ['alice'] },
             description: 'Narrows the deliveries.' },
           { name: 'per', in: 'query', required: false,
-            schema: { type: 'integer', minimum: 1 },
+            schema: { type: 'integer', minimum: 1, examples: [10] },
             description: 'Rows per page of each kind, capped.' }
         ].concat(loadOutbound().KINDS
           .map(ProviderCommandsApi.kindParam)
           .map(function (name: string): Json {
             return { name: name, in: 'query', required: false,
-                     schema: { type: 'integer', minimum: 1 },
+                     schema: { type: 'integer', minimum: 1, examples: [1] },
                      description: 'Which page of one kind\'s rows; each ' +
                        'kind moves on its own parameter, its `paging.param`.' };
           })),

@@ -99,6 +99,7 @@
 // answering 500 with `baseUrlOf is not defined`, found by the job that
 // drives all 273 operations and by nothing else.
 import helpers = require('../common/helpers');
+import configDump = require('./config_dump');
 // The policy references a group may make (#1235, rule 3cx): a leaf.
 import PolicySelection = require('../common/policy_selection');
 import InstanceSlot = require('../common/instance_slot');
@@ -3585,7 +3586,9 @@ class AdminViews {
     log.debug("Entering AdminViews.realmSettingRows(). realm=" + realm.id);
     const rows = Object.keys(realm.overrides).sort().map(function (key) {
       const setting = configSettingFor(key);
-      return { key: key, value: String(realm.overrides[key]),
+      // A sensitive parameter's value never leaves in an answer (#1478).
+      return { key: key,
+               value: configDump.maskKeyed(key, String(realm.overrides[key])),
                label: setting ? setting.label : key,
                group: setting ? setting.group : '' };
     });

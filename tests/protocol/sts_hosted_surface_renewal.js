@@ -422,7 +422,8 @@ async function theSignOnSessionRunningOut(held) {
               "response_type=code&scope=openid&redirect_uri=" +
               encodeURIComponent(base + R + "/portal/callback"),
               { redirect: "manual",
-                headers: { cookie: "sts_session=" + held.signOnCookie } });
+                headers: { cookie: "sts_session=" + held.signOnCookie +
+                  "; __Host-sts_session=" + held.signOnCookie } });
   const rows = await sessionsIn(realmApi);
   check("the sign-on session has ended", function () {
     assert.ok(!rows.some(function (s) {

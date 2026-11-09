@@ -295,12 +295,11 @@ class PortalClaimSources {
    * @returns the header line
    */
   bindingCookie(req: Json, secret: string, clear: boolean): string {
-    const { log, baseUrlOf } = this.deps;
+    const { log } = this.deps;
     log.debug("Entering PortalClaimSources.bindingCookie(). clear=" + clear);
-    const path = new URL(baseUrlOf(req)).pathname.replace(/\/+$/, '') +
-                 CALLBACK;
     log.debug("Leaving PortalClaimSources.bindingCookie().");
-    return BINDING_COOKIE + '=' + (clear ? '' : secret) + '; Path=' + path +
+    // Path=/ so that it can carry the __Host- prefix (ASVS 5.0.0 3.3.3).
+    return BINDING_COOKIE + '=' + (clear ? '' : secret) + '; Path=/' +
       '; Max-Age=' + (clear ? 0 : BINDING_MAX_AGE_S) +
       '; HttpOnly; SameSite=Lax' + (this.deps.https() ? '; Secure' : '');
   }
@@ -470,18 +469,7 @@ class PortalClaimSources {
     log.debug("Entering PortalClaimSources.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/claim-sources',
-        operationId: 'getClaimSources', tag: 'Claim sources',
-        access: 'person', mirrors: 'GET ' + ctx.PORTAL + '/claim-sources',
-        summary: 'The Claims Providers you can link, and your links',
-        description: '`providers`: one page (`paging`, moved by ' +
-          '`page`) of the Claims Providers this realm registered — each ' +
-          'one\'s id, name, issuer, the claims it supplies and whether ' +
-          'they are aggregated or distributed — with your `link` (when, ' +
-          'and whether it has gone `stale`) or null. `linked` counts your ' +
-          'links over every page. `done` and `problem`, which the ' +
-          'provider\'s callback sends back, come back as `notice` and ' +
-          '`problem`.',
-        query: PAGE_QUERY,
+        operationId: 'getClaimSources', access: 'person', query: PAGE_QUERY,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           const view = self.view(caller.username, input.query.page || 1);
@@ -494,16 +482,7 @@ class PortalClaimSources {
           return ctx.json(res, 200, view);
         } },
       { method: 'POST', path: ctx.BASE + '/claim-sources',
-        operationId: 'linkClaimSource', tag: 'Claim sources',
-        access: 'person', mirrors: 'POST ' + ctx.PORTAL + '/claim-sources',
-        summary: 'Links or unlinks a Claims Provider',
-        description: '`link` answers `location`, the provider\'s ' +
-          'authorization endpoint (code flow with PKCE): send the browser ' +
-          'there. The answer sets the `sts_claim_link` cookie, scoped to ' +
-          '/portal/claim-sources/callback, which finishes the link only in ' +
-          'the browser holding it, while the sign-on session this token ' +
-          'was issued on is live. `unlink` removes the link.',
-        body: LINK_FORM,
+        operationId: 'linkClaimSource', access: 'person', body: LINK_FORM,
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return self.act(ctx, req, res, caller, input.body);
