@@ -275,3 +275,87 @@ export function checkDomains(concepts, directory, secretNames) {
   log.debug("Leaving checkDomains(). " + problems.length);
   return problems;
 }
+
+/**
+ * A sentence as comment lines of at most 80 columns.
+ *
+ * @param text - the sentence
+ * @param indent - what goes before each line
+ * @returns the lines
+ */
+function commentLines(text, indent) {
+  log.debug("Entering commentLines().");
+  const lines = [];
+  let line = '';
+  String(text).split(/\s+/).forEach(function (word) {
+    if (line && (indent + ' * ' + line + ' ' + word).length > 80) {
+      lines.push(indent + ' * ' + line);
+      line = word;
+    } else {
+      line = line ? line + ' ' + word : word;
+    }
+  });
+  lines.push(indent + ' * ' + line);
+  log.debug("Leaving commentLines().");
+  return [indent + '/**'].concat(lines, indent + ' */');
+}
+
+/**
+ * The TypeScript type of one field.
+ *
+ * @param field - a field from `readDomains()`
+ * @returns the type's text
+ */
+function fieldType(field) {
+  log.debug("Entering fieldType().");
+  let type = { string: 'string', boolean: 'boolean', integer: 'number',
+    dateTime: 'string', url: 'string' }[field.type] || field.concept;
+  if (field.values) {
+    type = field.values.map(function (one) {
+      return JSON.stringify(one);
+    }).join(' | ');
+  }
+  log.debug("Leaving fieldType().");
+  return field.array ? (field.values ? '(' + type + ')[]' : type + '[]') : type;
+}
+
+/**
+ * The declarations of every concept, for the type check.
+ *
+ * A secret field is optional whatever the model says, because `DomainMap`
+ * leaves it out unless a caller names it. A derived field is optional too,
+ * because a caller may not have supplied it.
+ *
+ * @param concepts - from `readDomains()`
+ * @returns the text of `types/domain.generated.d.ts`
+ */
+export function renderTypes(concepts) {
+  log.debug("Entering renderTypes().");
+  const lines = ['// SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, ' +
+    'LLC', '// SPDX-License-Identifier: BUSL-1.1', '//',
+  '// GENERATED from models/domain/ (#1390). Do not edit: change the model and',
+  '// run tests/tools/regenerate-model-docs.sh. tests/model_domain.js fails',
+  '// when this differs.', '', 'declare namespace IyaDomain {'];
+  concepts.forEach(function (concept, index) {
+    if (index > 0) {
+      lines.push('');
+    }
+    lines.push.apply(lines, commentLines(concept.what, '  '));
+    lines.push('  interface ' + concept.name + ' {');
+    concept.fields.forEach(function (field) {
+      const secret = (field.from && field.from.secret) ||
+        (field.held && field.held.secret);
+      const optional = field.optional || secret || field.derived;
+      lines.push('    ' + field.name + (optional ? '?' : '') + ': ' +
+        fieldType(field) + ';');
+    });
+    lines.push('  }');
+  });
+  lines.push('', '  interface Concepts {');
+  concepts.forEach(function (concept) {
+    lines.push('    ' + concept.name + ': ' + concept.name + ';');
+  });
+  lines.push('  }', '}', '');
+  log.debug("Leaving renderTypes().");
+  return lines.join('\n');
+}

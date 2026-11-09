@@ -19,7 +19,8 @@ import path from 'path';
 import url from 'url';
 import bunyan from 'bunyan';
 import { documents } from '../lib/api_lib.mjs';
-import { checkDomains, readDomains } from '../lib/domain_lib.mjs';
+import { checkDomains, readDomains, renderTypes }
+  from '../lib/domain_lib.mjs';
 import { fieldsOf, linksIn, readDirectory, readPersistence, readSpellings,
   renderScript, schemaOf } from '../lib/model_lib.mjs';
 
@@ -76,6 +77,7 @@ async function generate() {
   }
   fs.writeFileSync(path.join(out, 'domain.json'),
     JSON.stringify({ concepts: concepts }));
+  fs.writeFileSync(path.join(out, 'domain.d.ts'), renderTypes(concepts));
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects }));

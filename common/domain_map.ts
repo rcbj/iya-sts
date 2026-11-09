@@ -118,8 +118,9 @@ class DomainMap {
    * @param path - the field path so far, for a nested concept
    * @returns the concept
    */
-  static fromEntry(name: string, attributes: Record<string, unknown>,
-      options?: FromOptions, path?: string): any {
+  static fromEntry<K extends keyof IyaDomain.Concepts>(name: K,
+      attributes: Record<string, unknown>, options?: FromOptions,
+      path?: string): IyaDomain.Concepts[K] {
     log.debug("Entering DomainMap.fromEntry().");
     const concept = DomainMap.catalogue().get(name);
     if (!concept) {
@@ -127,7 +128,7 @@ class DomainMap {
       throw new TypeError('No domain model is named ' + name);
     }
     const asked = (options && options.secrets) || [];
-    const out: Record<string, unknown> = {};
+    const out: any = {};
     concept.fields.forEach(function (field: any) {
       const here = (path ? path + '.' : '') + field.name;
       if (field.embedded) {
@@ -180,8 +181,8 @@ class DomainMap {
    * @param path - the field path so far, for a nested concept
    * @returns the concept
    */
-  static fromRecord(name: string, record: any, options?: FromOptions,
-      path?: string): any {
+  static fromRecord<K extends keyof IyaDomain.Concepts>(name: K, record: any,
+      options?: FromOptions, path?: string): IyaDomain.Concepts[K] {
     log.debug("Entering DomainMap.fromRecord().");
     const concept = DomainMap.catalogue().get(name);
     if (!concept) {
@@ -189,7 +190,7 @@ class DomainMap {
       throw new TypeError('No domain model is named ' + name);
     }
     const asked = (options && options.secrets) || [];
-    const out: Record<string, unknown> = {};
+    const out: any = {};
     const fits = function (field: any, value: unknown): boolean {
       const wanted = field.type === 'integer' ? 'number' : field.type;
       return field.type === 'concept' ?
@@ -238,7 +239,8 @@ class DomainMap {
    * @param value - what `fromEntry()` answered
    * @returns the field names
    */
-  static missing(name: string, value: Record<string, unknown>): string[] {
+  static missing(name: keyof IyaDomain.Concepts,
+      value: Record<string, unknown>): string[] {
     log.debug("Entering DomainMap.missing().");
     const absent = DomainMap.catalogue().get(name).fields
       .filter(function (field: any) {

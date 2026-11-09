@@ -14,6 +14,7 @@
 // the real directory objects, and an entry is mapped end to end.
 // ---------------------------------------------------------------------------
 
+const fs = require('fs');
 const path = require('path');
 const url = require('url');
 
@@ -94,6 +95,20 @@ function refusals(t, checkDomains) {
   t.check(/may not have/.test(one(field({ type: 'unknown' }), {})),
     'a type a concept may not have is refused');
   log.debug("Leaving refusals().");
+}
+
+function declarations(t) {
+  log.debug("Entering declarations().");
+  const committed = fs.readFileSync(path.join(ROOT, 'types',
+    'domain.generated.d.ts'), 'utf8');
+  const built = fs.readFileSync(path.join(ROOT, 'models', 'generated',
+    'domain.d.ts'), 'utf8');
+  t.check(committed === built, 'types/domain.generated.d.ts is what the ' +
+    'model generates (tests/tools/regenerate-model-docs.sh)');
+  t.check(/interface User \{/.test(built) &&
+    !/interface User \{[^}]*password/i.test(built),
+  'the User declaration has no password');
+  log.debug("Leaving declarations().");
 }
 
 function catalogue(t) {
@@ -229,6 +244,7 @@ async function run(t) {
     'domain_lib.mjs')).href);
   refusals(t, lib.checkDomains);
   catalogue(t);
+  declarations(t);
   mapping(t);
   await records(t);
   log.debug("Leaving run().");
