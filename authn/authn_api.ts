@@ -82,6 +82,7 @@ import cors = require('../common/cors');
 // THE SIGN-IN SERVICE, whose views and acts these are, and the reason this
 // file is below #8 in the require order.
 import authn = require('./authn');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 
@@ -93,65 +94,17 @@ const CSRF_HEADER = 'x-csrf-token';
 
 const API = authn.AUTHN_API_PATH;
 
-// ---------------------------------------------------------------------------
-// THE BODIES, ONE PER OPERATION. Closed shapes: a field this API does not
-// take is refused (`.strict()`), because these are this service's own
-// operations answering to no specification, and a field that decides
-// whether a credential is issued must not arrive under a name nobody reads.
-//
-// They are the sign-in form's fields as they were (the form is gone), and
-// `screenAct()` receives them as the form handler did, its `action` set by
-// the operation. What each field is:
-//
-//   * `username` — `vt.name`, a BOUND and no control characters, and
-//     deliberately not `vt.identifier`: this service accepts any name, and
-//     narrowing it would refuse people whose names are none of its business.
-//   * `password` — bounded and nothing else: its content is
-//     `credentials.ts`'s business in product mode and nobody's in
-//     development, and a scrypt should not be asked to hash a megabyte.
-//   * `use_webauthn`, `webauthn_only` — the two passkey boxes; the record,
-//     not the body, decides where a demand or a configuration fixed them.
-//   * `remember_browser` (#265), `device_fp` (#62 P6, FingerprintJS's
-//     visitorId, hex; empty where the realm asks for none).
-//   * `credential` — a passkey ceremony's result (#474), bounded and parsed
-//     downstream as the WebAuthn page's is.
-// ---------------------------------------------------------------------------
-const FLAG = vt.opt(vt.flag);
-const FINGERPRINT = vz.string().max(64).regex(/^[A-Za-z0-9]*$/).optional();
+const PASSWORD_BODY = ModelZod.body('authn', 'signInWithPassword');
 
-const PASSWORD_BODY = vz.object({
-  username: vt.opt(vt.name),
-  password: vz.string().max(1024).optional(),
-  use_webauthn: FLAG,
-  webauthn_only: FLAG,
-  remember_browser: FLAG,
-  device_fp: FINGERPRINT
-}).strict();
+const EMPTY_BODY = ModelZod.body('authn', 'cancelSignIn');
 
-const EMPTY_BODY = vz.object({}).strict();
+const ANONYMOUS_BODY = ModelZod.body('authn', 'continueAnonymously');
 
-const ANONYMOUS_BODY = vz.object({
-  remember_browser: FLAG,
-  device_fp: FINGERPRINT
-}).strict();
+const EMAIL_BODY = ModelZod.body('authn', 'signInByEmail');
 
-const EMAIL_BODY = vz.object({
-  username: vt.opt(vt.name),
-  kind: vt.oneOf(['code', 'link']),
-  remember_browser: FLAG,
-  device_fp: FINGERPRINT
-}).strict();
+const PASSKEY_BODY = ModelZod.body('authn', 'signInWithPasskey');
 
-const PASSKEY_BODY = vz.object({
-  credential: vz.string().max(validation.CAP.TEXT).optional(),
-  remember_browser: FLAG,
-  device_fp: FINGERPRINT
-}).strict();
-
-const PASSWORD_CHANGE_BODY = vz.object({
-  new_password: vz.string().max(1024).optional(),
-  confirm_password: vz.string().max(1024).optional()
-}).strict();
+const PASSWORD_CHANGE_BODY = ModelZod.body('authn', 'changePassword');
 
 // THE SECOND-FACTOR AND EMAILED-FACTOR STEPS' BODIES (#572, #573): the
 // fields their forms posted, `mfa_id` gone into the path.
@@ -164,54 +117,26 @@ const PASSWORD_CHANGE_BODY = vz.object({
 //   * `credential` — a ceremony's result, bounded and parsed downstream.
 //   * `key` — the passkey a person chose (#534), a credential id.
 //   * `t` — a mailed link's token, as the link carried it.
-const CODE_BODY = vz.object({
-  code: vz.string().max(32).optional()
-}).strict();
+const CODE_BODY = ModelZod.body('authn', 'checkCode');
 
-const BACKUP_CODE_BODY = vz.object({
-  code: vz.string().max(64).optional()
-}).strict();
+const BACKUP_CODE_BODY = ModelZod.body('authn', 'spendRecoveryCode');
 
-const FACTOR_PASSWORD_BODY = vz.object({
-  password: vz.string().max(1024).optional()
-}).strict();
+const FACTOR_PASSWORD_BODY = ModelZod.body('authn', 'checkFactorPassword');
 
-const KEY_BODY = vz.object({
-  key: vt.opt(vt.base64url),
-  // THE LANE A REGISTRATION IS MADE IN (#643): `classical` or `pqc`, where
-  // the realm offers both. Kept on the step; the answer never names it.
-  lane: vt.opt(vt.oneOf(['classical', 'pqc'])),
-  // THE CLASSICAL RETRY (#944): `classical` asks for a registration with
-  // the classical algorithms only, after an ML-DSA-first one failed on the
-  // device. Refused where the realm forbids a classical passkey
-  // (STS-AUTHN-0420); kept on the step otherwise.
-  algorithms: vt.opt(vt.oneOf(['classical']))
-}).strict();
+const KEY_BODY = ModelZod.body('authn', 'passkeyStepOptions');
 
-const CREDENTIAL_BODY = vz.object({
-  credential: vz.string().max(validation.CAP.TEXT).optional()
-}).strict();
+const CREDENTIAL_BODY = ModelZod.body('authn', 'finishPasskeyStep');
 
-const SEND_BODY = vz.object({
-  kind: vt.oneOf(['code', 'link'])
-}).strict();
+const SEND_BODY = ModelZod.body('authn', 'sendEmailedFactor');
 
-const OPEN_BODY = vz.object({
-  t: vt.opt(vt.base64url)
-}).strict();
+const OPEN_BODY = ModelZod.body('authn', 'spendEmailedLink');
 
 // The pages a step's view is asked for (`?page=`), and the passkey chosen.
 const MFA_PAGES = ['totp', 'webauthn', 'backup-code', 'password', 'setup',
                    'email-code', 'email-link', 'email-link-open',
                    'post-login'];
 
-const MFA_QUERY = vz.object({
-  page: vt.opt(vt.oneOf(MFA_PAGES))
-    .describe('Which of the step\'s pages; the step\'s own where left out.'),
-  key: vt.opt(vt.base64url)
-    .describe('The passkey a person chose, where the passkey policy offers ' +
-              'them one by one (#534).')
-});
+const MFA_QUERY = ModelZod.query('authn', 'getStep');
 
 const ID_PARAMS = vz.object({
   id: vt.base64url
@@ -222,18 +147,7 @@ const ID_PARAMS = vz.object({
 // enrolment's `enrol`, `login_hint` and `did_act`. The act names the rest of
 // what `oid4vc/vc_signin.ts`'s `QUERY` admits (`state`, `response_code`,
 // `wallet`, `qr`), which belong to that door's shells and are not this API's.
-const WALLET_VIEW_QUERY = vz.object({
-  authn: vt.opt(vt.opaque).describe('A pending sign-in.'),
-  mfa: vt.opt(vt.opaque).describe('A second-factor step.'),
-  siop: vt.opt(vt.oneOf(['1']))
-    .describe('`1` for a self-issued ID Token rather than a presentation.'),
-  enrol: vt.opt(vt.oneOf(['1']))
-    .describe('`1` to enrol a key from a session rather than to sign in.'),
-  login_hint: vt.opt(vt.opaque)
-    .describe('Which of this browser\'s accounts an enrolment is for.'),
-  did_act: vt.opt(vt.opaque)
-    .describe('A published DID\'s wallet act, on an enrolment (#1291).')
-});
+const WALLET_VIEW_QUERY = ModelZod.query('authn', 'getWalletStart');
 
 // THE CODE OF EACH WAY A REQUEST'S SHAPE IS REFUSED (#1483).
 const SHAPE_CODES: Record<string, string> = {
@@ -256,27 +170,11 @@ const WALLET_IDS = {
   enrol: vt.opt(vt.oneOf(['1']))
 };
 
-const WALLET_START_BODY = vz.object(Object.assign({}, WALLET_IDS, {
-  siop: vt.opt(vt.oneOf(['1'])),
-  wallet: vt.opt(vt.uri),
-  // An enrolment's account among this browser's (2026-10-20): the portal's
-  // Enrol link names it, and `oid4vc/vc_signin.ts`'s startable() hints it.
-  login_hint: vt.opt(vt.opaque),
-  // A published DID's wallet act, on an enrolment (#1291): `publish`,
-  // `authorize-add.<rid>`, `authorize-rotate.<rid>` or `key.<rid>`
-  // (`oid4vc/person_did.ts`, `actProblem()`).
-  did_act: vt.opt(vt.opaque)
-})).strict();
+const WALLET_START_BODY = ModelZod.body('authn', 'startWalletSignIn');
 
-const WALLET_STATUS_BODY = vz.object(Object.assign({}, WALLET_IDS, {
-  response_code: vt.opt(vt.opaque)
-})).strict();
+const WALLET_STATUS_BODY = ModelZod.body('authn', 'walletStatus');
 
-const WALLET_DC_API_BODY = vz.object(Object.assign({}, WALLET_IDS, {
-  response: vz.union([vz.string().max(1024 * 1024),
-                      vz.object({ protocol: vz.string().max(200),
-                                  data: vz.any() })]).optional()
-})).strict();
+const WALLET_DC_API_BODY = ModelZod.body('authn', 'answerWalletDcApi');
 
 // ---------------------------------------------------------------------------
 // THE SIGN-OUT'S BODY AND QUERY (#577). The act's fields are what the
@@ -290,32 +188,13 @@ const WALLET_DC_API_BODY = vz.object(Object.assign({}, WALLET_IDS, {
 // it: an account's KEY, read only with `authn.multipleAccounts` on, choosing
 // only among this browser's own accounts. `login_hint` preselects one at the
 // step and chooses nothing.
-const LOGOUT_BODY = vz.object({
-  scope: vt.opt(vt.oneOf(['global', 'selected'])),
-  select: vz.array(vz.string().max(validation.CAP.TOKEN)).max(10000)
-    .optional(),
-  username: vt.opt(vt.name),
-  account: vz.string().min(1).max(600).optional()
-}).strict();
+const LOGOUT_BODY = ModelZod.body('authn', 'signOut');
 
-const LOGOUT_QUERY = vz.object({
-  username: vt.opt(vt.name)
-    .describe('Whom the page is about, where naming somebody is open ' +
-              '(development mode and `logout.anyUser`), or the caller\'s ' +
-              'own name; the browser\'s session otherwise.'),
-  account: vz.string().min(1).max(600).optional()
-    .describe('With authn.multipleAccounts on (#561): one of this ' +
-              'browser\'s signed-in accounts, by its key.'),
-  login_hint: vz.string().max(512).optional()
-    .describe('With authn.multipleAccounts on (#561): the account the ' +
-              'sign-out\'s account step preselects.')
-});
+const LOGOUT_QUERY = ModelZod.query('authn', 'getSignOut');
 
 // THE SIGN-OUT'S ACCOUNT STEP (#561): an account's key, or `all` — every
 // account in this browser.
-const LOGOUT_ACCOUNT_BODY = vz.object({
-  account: vz.string().min(1).max(600)
-}).strict();
+const LOGOUT_ACCOUNT_BODY = ModelZod.body('authn', 'chooseSignOutAccount');
 
 // ---------------------------------------------------------------------------
 // THE ACCOUNT PICKER'S BODY (#561): the account's KEY — its subject, or
@@ -323,9 +202,7 @@ const LOGOUT_ACCOUNT_BODY = vz.object({
 // `keyOf()`) — and nothing else. Never a sid: the picker is drawn without
 // one and the server finds the session by the key in this browser's set.
 // ---------------------------------------------------------------------------
-const ACCOUNT_BODY = vz.object({
-  account: vz.string().min(1).max(600)
-}).strict();
+const ACCOUNT_BODY = ModelZod.body('authn', 'selectAccount');
 
 /**
  * One operation of the API.
@@ -593,9 +470,7 @@ const LIMIT_VALUE = vz.union([vz.string().max(1024),
 
 // The answer itself, checked closed once the limit controls are taken off.
 // Documented open, since the controls are beside it.
-const CONSENT_BODY = vz.object({
-  action: vt.oneOf(['allow', 'deny'])
-});
+const CONSENT_BODY = ModelZod.body('authn', 'answerConsent');
 
 const CONSENT_OPERATIONS: Operation[] = [
   { method: 'GET', path: API + '/consent/:id', operationId: 'getConsent',

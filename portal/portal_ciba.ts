@@ -60,6 +60,7 @@ import stepUp = require('../oauth-oidc/step_up');
 // #432 phase 5: a waiting right's limits, drawn and read back as the approval
 // page does. A static utility class that loads nothing of GNAP's engine.
 import LimitsForm = require('../common/limits_form');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -100,14 +101,7 @@ const FORM = vz.object({
   subject: vt.opt(vt.oneOf(['yes']))
 });
 
-const QUERY = vz.object({
-  stepup: vz.string().max(256).optional()
-    .describe('A CIBA request id: answered `stepUp`, the sign-in again its ' +
-              'acr values need.'),
-  gnapstepup: vz.string().max(256).optional()
-    .describe('A waiting GNAP request id: answered `stepUp`, the sign-in ' +
-              'again its rights need.')
-});
+const QUERY = ModelZod.query('account', 'getSignInRequests');
 
 /**
  * `/portal/ciba`'s account API operations: where a person approves or

@@ -53,6 +53,7 @@
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -74,15 +75,9 @@ const PER_PAGE = 20;
 // `grant` is a grant identifier this service minted (base64url, a cell's
 // stamp included where there is one), checked against the person's own
 // grants, which is the rule that matters.
-const REVOKE_FORM = vz.object({
-  grant: vt.base64url.describe('The grant to end, from the list.'),
-  page: vt.opt(vt.integer(1, 100000))
-    .describe('The page of the list the form was on.')
-});
+const REVOKE_FORM = ModelZod.body('account', 'revokeGnapGrant');
 
-const GNAP_QUERY = vz.object({
-  page: vt.opt(vt.integer(1, 100000))
-});
+const GNAP_QUERY = ModelZod.query('account', 'getGnapGrants');
 
 /**
  * `/portal/gnap`'s account API operations: the GNAP grants a person gave,

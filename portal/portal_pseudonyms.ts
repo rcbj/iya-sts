@@ -26,6 +26,7 @@ import InstanceSlot = require('../common/instance_slot');
 import mail = require('../common/mail');
 import validation = require('../common/validation');
 import rules = require('../ldap/pseudonym_rules');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -47,23 +48,12 @@ interface PortalPseudonymDeps {
   mail: Json;
 }
 
-const FORM = vz.object({
-  action: vt.opt(vt.oneOf(['add', 'remove', 'cancel-pending']))
-    .describe('`add` adds `value`; `remove` drops it; `cancel-pending` ' +
-              'drops a name that is waiting for its link.'),
-  value: vz.string().max(254).optional()
-    .describe('The name, for `add` and `remove`.')
-});
+const FORM = ModelZod.body('account', 'postPseudonyms');
 
 // THE GET'S QUERY (#1454): the token arrives in `X-Link-Token`, never in a URL.
-const LINK_QUERY = vz.object({
-  user: vt.opt(vt.name).describe('The username the link names.')
-});
+const LINK_QUERY = ModelZod.query('account', 'getPseudonymVerification');
 
-const LINK = vz.object({
-  user: vt.opt(vt.name).describe('The username the link names.'),
-  token: vt.opt(vt.token).describe('The link\'s single-use secret.')
-});
+const LINK = ModelZod.body('account', 'verifyPseudonym');
 
 /**
  * The sign-in names a person holds, as account API operations (#644).
@@ -356,7 +346,7 @@ class PortalPseudonyms {
     log.debug("Entering PortalPseudonyms.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/pseudonyms',
-        operationId: 'getPseudonyms', access: 'person', query: vz.object({}),
+        operationId: 'getPseudonyms', access: 'person', query: ModelZod.query('account', 'getPseudonyms'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           const view = self.listView(caller.username);

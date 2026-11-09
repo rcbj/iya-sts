@@ -71,6 +71,8 @@
     "@noble/post-quantum": "^0.4.1",
     "@types/express": "4.17.25",
     "@types/node": "24.13.5",
+    "@stoplight/spectral-core": "1.24.1",
+    "@stoplight/spectral-rulesets": "1.23.1",
     "@typespec/compiler": "1.17.0",
     "acorn": "^8.18.0",
     "commander": "^14.0.2",

@@ -5656,7 +5656,7 @@ op `getWalletStart`(@js(#{`$raw`:#{`anyOf`:#[#{`type`:"string",`const`:""},#{`ty
 @js(#{`const`:""}) @hoisted scalar post_authn_api_wallet_b_application_json_wallet_v0_h75 extends string;
   
 
-@js(#{`minLength`:1,`maxLength`:2048}) @hoisted scalar post_authn_api_wallet_b_application_json_wallet_v1_h76 extends string;
+@js(#{`minLength`:1,`maxLength`:2048,`format`:"uri"}) @hoisted scalar post_authn_api_wallet_b_application_json_wallet_v1_h76 extends string;
   
 
 @hoisted union post_authn_api_wallet_b_application_json_wallet_h77 {

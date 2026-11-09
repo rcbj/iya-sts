@@ -30362,7 +30362,7 @@ op `getListeners`(`responses/200/content/application~1json/schema`: {
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   
 
-@js(#{`$noItems`:true}) @hoisted model post_admin_api_listeners_set_listeners_b_application_json_value_v1_h2304 is unknown[];
+@hoisted model post_admin_api_listeners_set_listeners_b_application_json_value_v1_h2304 is unknown[];
   
 
 @js(#{

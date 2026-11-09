@@ -52,6 +52,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
 import config = require('../common/config');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -78,19 +79,9 @@ interface PortalConnectedAccountsDeps {
   directory: () => Json;
 }
 
-const ACT_FORM = vz.object({
-  action: vt.oneOf(['connect', 'disconnect'])
-    .describe('`connect` starts the provider\'s sign-in; `disconnect` ' +
-              'removes the connection.'),
-  id: vz.string().max(64).describe('The provider relationship\'s id.')
-});
+const ACT_FORM = ModelZod.body('account', 'connectAccount');
 
-const PAGE_QUERY = vz.object({
-  done: vz.string().max(200).optional()
-    .describe('The provider a finished connect connected, from its return.'),
-  problem: vz.string().max(400).optional()
-    .describe('Why a connect could not be finished, from its return.')
-});
+const PAGE_QUERY = ModelZod.query('account', 'getConnectedAccounts');
 
 /**
  * `/portal/connected-accounts`' account API operations (#565).

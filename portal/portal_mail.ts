@@ -47,6 +47,7 @@ import realms = require('../common/realms');
 import mail = require('../common/mail');
 import mailUses = require('../common/mail_uses');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -68,46 +69,18 @@ interface PortalMailDeps {
 // twenty and silently stopped there. It pages on `sentPage`, twenty a page.
 const SENT_PER_PAGE = 20;
 
-const EMAIL_QUERY = vz.object({
-  sentPage: vt.opt(vt.integer(1, 100000))
-    .describe('Which page of `sent`, newest first. Clamped to the last.')
-});
+const EMAIL_QUERY = ModelZod.query('account', 'getEmail');
 
-const EMAIL_FORM = vz.object({
-  // `change` (#64, D5): a new address, pending until its link is used.
-  action: vt.opt(vt.oneOf(['verify', 'preferences', 'change']))
-    .describe('`verify` sends a link to the address on your entry; ' +
-              '`change` sends one to `address`; `preferences` saves ' +
-              '`notification`.'),
-  address: vz.string().max(254).optional()
-    .describe('The new address, for `change`.'),
-  notification: vt.opt(vt.flag)
-    .describe('`on` to be sent notifications, for `preferences`.')
-});
+const EMAIL_FORM = ModelZod.body('account', 'postEmail');
 
 // THE LINK'S TWO VALUES, in the query of the GET and the body of the POST.
 // The token rides in the body, for the activation form's reason.
 // THE GET'S QUERY (#1454): the token arrives in `X-Link-Token`, never in a URL.
-const LINK_QUERY = vz.object({
-  user: vt.opt(vt.name).describe('The username the link names.')
-});
+const LINK_QUERY = ModelZod.query('account', 'getEmailVerification');
 
-const LINK = vz.object({
-  user: vt.opt(vt.name).describe('The username the link names.'),
-  token: vt.opt(vt.token).describe('The link\'s single-use secret.')
-});
+const LINK = ModelZod.body('account', 'verifyEmail');
 
-const FORGOT_FORM = vz.object({
-  account: vz.string().max(256).optional()
-    .describe('Your username, or the address on your account.'),
-  // #64, D4: the address on the account and one recovery code, asked for
-  // while `mail.resetRequiresBackupCode` is on.
-  address: vz.string().max(254).optional()
-    .describe('The address on your account, where a recovery code is asked ' +
-              'for.'),
-  code: vz.string().max(64).optional()
-    .describe('One of your recovery codes, where one is asked for.')
-});
+const FORGOT_FORM = ModelZod.body('account', 'requestPasswordReset');
 
 // The refusal where a forgotten password cannot be reset from here.
 const NOT_OFFERED = 'A forgotten password cannot be reset from here. Ask ' +
@@ -481,7 +454,7 @@ class PortalMail {
           return self.verify(ctx, req, res, input.body, true);
         } },
       { method: 'GET', path: ctx.BASE + '/forgot-password',
-        operationId: 'getForgotPassword', access: 'public', query: vz.object({}),
+        operationId: 'getForgotPassword', access: 'public', query: ModelZod.query('account', 'getForgotPassword'),
         handler: function (req: Json, res: Json): unknown {
           if (!mailUses.resetOffered()) {
             return self.notOffered(ctx, res);

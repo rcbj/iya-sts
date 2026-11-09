@@ -26,6 +26,7 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import credentials = require('../common/credentials');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -44,12 +45,7 @@ interface PortalDelegateDeps {
 // `uid`. Its length below three is refused by the handler, with a code of
 // its own, rather than by the schema: the page says why in the person's
 // language, and a generic validation failure would not.
-const SEARCH_QUERY = vz.object({
-  q: vz.string().max(256)
-    .describe('Part of a username (`uid`), at least three characters. ' +
-              'Matched as a contains against the RDN value of the people ' +
-              'in this realm\'s `ou=users`.')
-});
+const SEARCH_QUERY = ModelZod.query('account', 'findDelegateCandidates');
 
 // The fewest characters a search takes. The directory refuses fewer too
 // (`ldap_server.js`, DELEGATE_CANDIDATE_MIN); this is the door's answer.
@@ -65,13 +61,7 @@ const SEARCH_MIN = 3;
 // time.
 const SEARCH_LIMIT = { identity: 30, address: 120 };
 
-const DELEGATE_FORM = vz.object({
-  action: vt.opt(vt.oneOf(['set', 'clear']))
-    .describe('`set` names the delegate; `clear` removes it.'),
-  delegate: vz.string().max(1024).optional()
-    .describe('The DN of a person or an application in this realm, for ' +
-              '`action=set`.')
-});
+const DELEGATE_FORM = ModelZod.body('account', 'setDelegate');
 
 /**
  * `/portal/delegate`'s account API operations: the one party who may act for
@@ -247,7 +237,7 @@ class PortalDelegate {
     log.debug("Entering PortalDelegate.accountOperations().");
     const rows: AccountOperation[] = [
       { method: 'GET', path: ctx.BASE + '/delegate',
-        operationId: 'getDelegate', access: 'person', query: vz.object({}),
+        operationId: 'getDelegate', access: 'person', query: ModelZod.query('account', 'getDelegate'),
         handler: function (req: Json, res: Json,
                            caller: AccountCaller): unknown {
           return ctx.json(res, 200, self.view(caller.username));

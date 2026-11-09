@@ -67,6 +67,7 @@ import responseChecks = require('../common/response_models');
 import ProfilePhoto = require('../common/profile_photo');
 // What a request may name and hold (#1483): a leaf that registers nothing.
 import RequestHeaders = require('../common/request_headers');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -591,8 +592,7 @@ class AccountApi {
       // PAGE'S DOOR either: the banner it feeds is drawn over every page.
       { method: 'GET', path: BASE + '/announcements',
         operationId: 'getAnnouncements', access: 'person',
-        query: z.object({ since: z.string().regex(/^[0-9]{1,16}$/)
-          .optional() }),
+        query: ModelZod.query('account', 'getAnnouncements'),
         handler: function (req: Json, res: Json, caller: AccountCaller | null,
                            input: Json): unknown {
           const since = Number((input && input.query &&
@@ -602,7 +602,7 @@ class AccountApi {
         } },
       { method: 'GET', path: BASE + '/locale', operationId: 'getLocale',
         access: 'public',
-        query: z.object({}),
+        query: ModelZod.query('account', 'getLocale'),
         handler: function (req: Json, res: Json): unknown {
           return self.json(res, 200, { locale: self.localeData(''),
                                        version: self.versionData() });

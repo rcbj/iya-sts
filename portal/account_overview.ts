@@ -46,6 +46,7 @@ import accountSignals = require('../ssf/account_signals');
 import risc = require('../ssf/risc');
 import validation = require('../common/validation');
 import ProfilePhoto = require('../common/profile_photo');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -85,56 +86,33 @@ const SCAN_LIMIT = 1000;
 const PER_PAGE = 20;
 
 // `done` is accepted and ignored: an old bookmark carrying one still draws.
-const PORTAL_QUERY = vz.object({
-  done: vz.string().max(200).optional()
-});
+const PORTAL_QUERY = ModelZod.query('account', 'getOverview');
 
 // `page` is an INTEGER through `vt.integer()`: a handler never parses a query
 // string itself. The bound is generous; the view clamps to the last real
 // page, which is what a bookmark to page 40 of a list that shrank should do.
-const PAGED_QUERY = vz.object({
-  done: vz.string().max(200).optional(),
-  page: vt.opt(vt.integer(1, 100000))
-    .describe('The page of the list, 1 for the first.')
-});
+const PAGED_QUERY = ModelZod.query('account', 'getApplications');
 
 // THE LANGUAGE ON THE PERSON'S OWN ENTRY (#539). One field, the tag — empty
 // for "use my browser's language", which removes the attribute.
-const LANGUAGE_FORM = vz.object({
-  lang: vz.string().max(64).optional()
-    .describe('A BCP 47 tag this service has a catalog for, or empty to ' +
-              'follow the browser.')
-});
+const LANGUAGE_FORM = ModelZod.body('account', 'setLanguage');
 
 // A PERSON'S OWN PROFILE PHOTO (#719): the file, base64-encoded. The browser
 // has already cropped and scaled it, and the bytes are judged again here; 3 MiB
 // of file is `profilePhoto.maxStoredBytes`' largest value, and four base64
 // characters carry three bytes.
-const PHOTO_FORM = vz.object({
-  image: vz.string().max(4194304)
-    .describe('The JPEG or PNG file, base64-encoded.')
-});
+const PHOTO_FORM = ModelZod.body('account', 'setProfilePhoto');
 
 // A PERSON'S OWN VALUES OF ONE CUSTOM ATTRIBUTE (#700): the attribute and
 // the values it is to hold afterwards — every one, so an empty list (or no
 // `values`) clears it. A form's boxes are each a `values`; an empty box is
 // no value. At most 100, each the person editor's longest value.
-const ATTRIBUTE_FORM = vz.object({
-  attribute: vz.string().max(64)
-    .describe('The custom attribute\'s name, one this realm\'s definition ' +
-              'lets you edit on the portal.'),
-  values: vt.opt(vt.repeatable(vz.string().max(1024)).max(100))
-    .describe('Every value the attribute is to hold afterwards; none ' +
-              'clears it. A single-valued attribute takes one.')
-});
+const ATTRIBUTE_FORM = ModelZod.body('account', 'setCustomAttribute');
 
 // THE ACCOUNT HOLDER'S RISC PARTICIPATION (#146): one of section 2.8's three
 // moves a person may make. opt-out-effective is not among them — only the
 // scheduler job makes that move, after risc.optOutDelayHours.
-const PARTICIPATION_FORM = vz.object({
-  move: vz.enum(['optOutInitiated', 'optOutCancelled', 'optIn']).optional()
-    .describe('The move: start opting out, cancel that, or opt back in.')
-});
+const PARTICIPATION_FORM = ModelZod.body('account', 'moveRiscParticipation');
 
 interface AccountOverviewDeps {
   log: typeof helpers.log;

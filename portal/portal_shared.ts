@@ -33,6 +33,7 @@ import errorCodes = require('../common/error_codes');
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
@@ -45,45 +46,11 @@ const vt = validation.types;
 // Rows per page.
 const PER_PAGE = 20;
 
-const QUERY = vz.object({
-  page: vt.opt(vt.integer(1, 100000))
-});
+const QUERY = ModelZod.query('account', 'getShared');
 
 // THE ONE FORM'S FIELDS, every action's: the 2d check holds every field a
 // portal form sends to one its operation takes.
-const SHARE_FORM = vz.object({
-  action: vt.oneOf(['share', 'unshare', 'alfa', 'approve', 'refuse'])
-    .describe('share adds a share; unshare removes one; alfa replaces the ' +
-              'whole document, where the realm allows it; approve and ' +
-              'refuse answer a request waiting for you.'),
-  pending: vt.opt(vt.identifier)
-    .describe('approve, refuse: the waiting request\'s id, from the list.'),
-  resource: vt.opt(vt.identifier)
-    .describe('share: the resource\'s _id, one of yours.'),
-  scope: vt.opt(vz.union([vt.name, vt.repeatable(vt.name)]))
-    .describe('share: the scopes, each one the resource was registered ' +
-              'with.'),
-  recipientKind: vt.opt(vt.oneOf(['person', 'group', 'realm', 'claim']))
-    .describe('share: who the share is with.'),
-  recipient: vt.opt(vt.name)
-    .describe('share: the username, the group\'s name, or the claim\'s ' +
-              'value.'),
-  claim: vt.opt(vt.name)
-    .describe('share, recipientKind claim: the claim\'s name.'),
-  expires: vt.opt(vt.name)
-    .describe('share: an optional date the share ends.'),
-  acr: vt.opt(vt.name)
-    .describe('share: an optional authentication level the requesting ' +
-              'party\'s session must meet.'),
-  askMe: vt.opt(vt.flag)
-    .describe('share: ask the owner each time.'),
-  share: vt.opt(vt.identifier)
-    .describe('unshare: the share\'s id, from the list.'),
-  alfa: vt.opt(vt.text)
-    .describe('alfa: the whole document, as ALFA.'),
-  page: vt.opt(vt.integer(1, 100000))
-    .describe('The page of the list the form was on.')
-});
+const SHARE_FORM = ModelZod.body('account', 'actShared');
 
 interface PortalSharedDeps {
   errorCodes: typeof errorCodes;
