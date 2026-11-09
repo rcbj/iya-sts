@@ -102,6 +102,8 @@ undeclared one is a compile error. A new fact about an attribute is added there.
   their sources. `emit()` there returns the bytes it was given, so a test that
   compares it to those bytes proves nothing.
 
+**What every operation of a document takes is stated once, as `x-iya-every-operation` in its `@apiDocument`** (#1476, #1483), and `lib/api_lib.mjs` adds it to each operation after the operation's own parameters: `DPoP` and `cell` on the Management API and Admin Console API OpenAPI documents, `DPoP` and `X-Requested-With` on the Account API and Reports API OpenAPI documents, `X-Requested-With` on the Authentication API OpenAPI document. **Examples live on the operation in the model** (#1475, #1483): a routing row has no use for one, and an operation that deliberately has none says why in a comment above its `@endpoint`, because an example is executed.
+
 **What is not done**, in the order it is owed: the real OID root (#1471); rows built by helper functions in `mgmt-api/admin_api.ts` still carrying a summary
 the model now overrides; a class
 for each request and response body; domain models distinct from directory entries;
