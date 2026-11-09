@@ -219,6 +219,10 @@ function codeMemberSection(t) {
      { method: "GET", path: "/admin-api/secrets", status: 200,
        body: JSON.stringify({ notes: { "previous-kek": {
          without: CODE } } }) }],
+    ["a seeded policy document in the editor", 0,
+     { method: "GET", path: "/admin-api/xacml/editor", status: 200,
+       body: JSON.stringify({ document: CODE, alfa: CODE,
+         tree: [{ label: CODE, detail: CODE }] }) }],
     ["but a cache's name is not help text", 1,
      { method: "GET", path: "/admin-api/caches", status: 200,
        body: JSON.stringify({ caches: [{ name: CODE }] }) }],
