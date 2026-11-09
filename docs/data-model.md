@@ -18,10 +18,10 @@ policy's settings are there too: their types, defaults, limits, and labels. So a
 people, groups, the registers that keep one JSON value, and the directory's lists of
 attribute spellings and of the attributes it withholds. The PostgreSQL and MariaDB
 tables and indexes are too, and they generate both the statements the service runs
-and the scripts an owner runs. The API still
-runs from the code and SQL files it always has, and the model is read from those
-files and checked against them. An object switches only after what the model
-generates is shown to be the same as what is there.
+and the scripts an owner runs. The API is modelled but has not
+switched: the service still builds its documents from its route tables, and the
+model is written from those and checked against them. An object switches only
+after what the model generates is shown to be the same as what is there.
 
 [![The current state: code and SQL are read into TypeSpec, the compiler checks it, and what it generates is compared with the code and SQL it came from](data-model.svg)](data-model.svg)
 
@@ -36,7 +36,7 @@ generates is shown to be the same as what is there.
 | Directory and table classes, with validators | Yes | Compiled and run | No |
 | PostgreSQL tables and indexes, and `postgres/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
 | MariaDB tables and indexes, and `mariadb/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
-| OpenAPI documents | No | | |
+| OpenAPI documents | Yes, but the route tables in code are still the source | Equal to all five served documents | No |
 
 ## Changing what a directory object holds
 
@@ -71,9 +71,8 @@ Each directory object moves to the model the same way:
 reading form: the container, the object classes, and each attribute,
 with how many values it holds and where the name comes from.
 [Persistence models](data-model-persistence.md) is every PostgreSQL
-table in the model, column by column. The API models are the
-[OpenAPI reference](openapi/). The API has no TypeSpec models yet, so
-those pages stay the reading form.
+table in the model, column by column. The API models are under `models/api/`, and the
+[OpenAPI reference](openapi/) is their reading form.
 
 The directory and persistence pages are rewritten whenever their
 TypeSpec is written. On a checkout that command is
@@ -139,9 +138,14 @@ except a derived name, which must not be an attribute.
 
 ## API
 
-The API namespace is not written in TypeSpec yet. The five documents this
-service serves are built by code, as they always were, and the
-[OpenAPI reference](openapi/) is their reading form.
+The API namespace is the five OpenAPI documents, written as TypeSpec under
+`models/api/`. Compiling those files gives each document back, and a test
+requires it to equal the one the service serves.
+
+The direction is still from the code to the model: the service builds its
+documents from its route tables, and `tests/tools/regenerate-model-docs.sh`
+writes the TypeSpec from them. The [OpenAPI reference](openapi/) is their
+reading form.
 
 | Document | What it is |
 |---|---|

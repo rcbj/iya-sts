@@ -19,6 +19,7 @@ MariaDB table and index is in `persistence/*.tsp`.
 | `directory/person.tsp`, `group.tsp`, `operational.tsp`, `attribute_source.tsp`, `oidfed.tsp`, `claim_provider.tsp`, `kerberos_trust.tsp`, `trust_anchor.tsp`, `signer_trust_anchor.tsp` | The objects no module owned. `common/directory_model_catalog.ts` reads their generated tables for the collector | by hand |
 | `directory/names.tsp` | The directory's name lists, generated into `directory.names.json`, which `ldap/ldap_server.js` reads. A row with no sentence takes the comment above its name here | by hand |
 | `persistence/persistence.tsp`, `persistence_mariadb.tsp` | **The source of every table and index**, one file per engine because their types, keys and indexes differ. Each generates what the driver runs and the owner's script | by hand |
+| `api/*.tsp`, `lib/api_lib.*`, `tools/import_openapi.mjs` | **The five OpenAPI documents, 838 operations, as TypeSpec.** Models, unions and `op`s; `@js` carries what a type cannot say. `documents()` writes OpenAPI back, and `tests/model_openapi.js` requires each document to equal the one served. **Written from the route tables and response models, which are still the source**, so a change to the API owes `tests/tools/regenerate-model-docs.sh` | `import_openapi.mjs` |
 | `persistence/schema.template.sql`, `mariadb.template.sql` | Everything else in `postgres/schema.sql` and `mariadb/schema.sql`: comments, `psql` commands, grants, routines, the upgrade block. `--@table name` and `--@index name` lines are where the model's go | by hand |
 | `tools/generate.mjs` | Compiles the model and writes `generated/<id>.schema.json` for each object written by hand. Run by `build-typescript.sh`, so only inside an image build | by hand |
 
@@ -101,9 +102,10 @@ undeclared one is a compile error. A new fact about an attribute is added there.
   their sources. `emit()` there returns the bytes it was given, so a test that
   compares it to those bytes proves nothing.
 
-**What is not done**, in the order it is owed: the real OID root (#1471); the API
-namespace in TypeSpec, then OpenAPI from it; domain models distinct from
-directory entries; the CI gates (Spectral, oasdiff).
+**What is not done**, in the order it is owed: the real OID root (#1471); the switch of the API, so that TypeSpec is the source
+and the route metadata and `response_models_*.ts` are generated from it; a class
+for each request and response body; domain models distinct from directory entries;
+the CI gates (Spectral, oasdiff).
 
 `tests/tools/regenerate-model-docs.sh` rewrites the TypeSpec and the reading
 pages, and a change to the model owes it. `tests/model_directory.js` and

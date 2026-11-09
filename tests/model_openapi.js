@@ -22,6 +22,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const url = require('url');
 const { spawnSync } = require('child_process');
 
 const log = require('bunyan').createLogger({
@@ -222,6 +223,7 @@ function served(t, OpenApiImport, ModelEmit) {
       model.name + ' indexes each operation once');
   });
   log.debug("Leaving served().");
+  return docs;
 }
 
 function sameText(t, actual, expected, what) {
@@ -243,12 +245,55 @@ function sameText(t, actual, expected, what) {
   log.debug("Leaving sameText(). Differ.");
 }
 
+// `required` is a set, so its order is not a difference. Object keys are
+// sorted for the same reason; arrays keep theirs.
+function canonical(value) {
+  log.debug("Entering canonical().");
+  const text = JSON.stringify(value, function (key, held) {
+    if (!held || typeof held !== 'object' || Array.isArray(held)) {
+      return held;
+    }
+    const out = {};
+    Object.keys(held).sort().forEach(function (name) {
+      out[name] = name === 'required' && Array.isArray(held[name]) ?
+        held[name].slice().sort() : held[name];
+    });
+    return out;
+  });
+  log.debug("Leaving canonical().");
+  return text;
+}
+
+async function typeSpec(t, docs) {
+  log.debug("Entering typeSpec().");
+  const compiler = await import(url.pathToFileURL(path.join(__dirname,
+    'node_modules', '@typespec', 'compiler', 'dist', 'src', 'index.js')).href);
+  const lib = await import(url.pathToFileURL(path.join(ROOT, 'models', 'lib',
+    'api_lib.mjs')).href);
+  const program = await compiler.compile(compiler.NodeHost,
+    path.join(ROOT, 'models', 'api', 'main.tsp'), { noEmit: true });
+  t.equal(program.diagnostics.filter(function (one) {
+    return one.severity === 'error';
+  }).map(function (one) {
+    return one.code + ': ' + one.message;
+  }).join('\n'), '', 'models/api compiles with the TypeSpec compiler');
+  const built = lib.documents(program);
+  ['management', 'console', 'account', 'authn', 'report'].forEach(
+    function (name) {
+      sameText(t, canonical(built[name]), canonical(docs[name]),
+        name + ' from the compiled model is the served document. A change ' +
+        'to the API owes tests/tools/regenerate-model-docs.sh');
+    });
+  log.debug("Leaving typeSpec().");
+}
+
 async function run(t) {
   log.debug("Entering run().");
   const OpenApiImport = require('../common/openapi_import');
   const ModelEmit = require('../common/model_emit');
   fixture(t, OpenApiImport);
-  served(t, OpenApiImport, ModelEmit);
+  const docs = served(t, OpenApiImport, ModelEmit);
+  await typeSpec(t, docs);
   log.debug("Leaving run().");
 }
 

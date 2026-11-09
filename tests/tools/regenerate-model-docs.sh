@@ -11,6 +11,7 @@
 #
 #   postgres/schema.sql
 #   mariadb/schema.sql
+#   models/api/*.tsp
 #   docs/data-model-directory.md
 #   docs/data-model-persistence.md
 #
@@ -23,18 +24,22 @@ tests/tools/corpora-preflight.sh
 # shellcheck disable=SC2046
 docker build -q $(tests/tools/mirror-contexts.sh) -f tests/Dockerfile \
   -t "${TAG}" . > /dev/null
-mkdir -p docs postgres mariadb
+mkdir -p docs postgres mariadb models/api
 docker run --rm --label com.docker.compose.project=none \
   -v "${PWD}/docs:/out/docs" \
   -v "${PWD}/postgres:/out/postgres" \
   -v "${PWD}/mariadb:/out/mariadb" \
+  -v "${PWD}/models/api:/out/api" \
   "${TAG}" bash -c \
   "node common/model_emit.js --docs && \
    cp docs/data-model-directory.md docs/data-model-persistence.md /out/docs/ && \
    cp models/generated/schema.sql /out/postgres/schema.sql && \
    cp models/generated/mariadb.schema.sql /out/mariadb/schema.sql && \
+   LOG_LEVEL=fatal STS_LOG_LEVEL=fatal node tests/model_openapi.js --build /tmp/documents.json && \
+   node models/tools/import_openapi.mjs /tmp/documents.json /out/api && \
    chown $(id -u):$(id -g) \
      /out/docs/data-model-directory.md \
      /out/docs/data-model-persistence.md \
      /out/postgres/schema.sql \
-     /out/mariadb/schema.sql"
+     /out/mariadb/schema.sql \
+     /out/api/*.tsp"
