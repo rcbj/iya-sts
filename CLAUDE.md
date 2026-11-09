@@ -902,9 +902,9 @@ routes do not exist, and the drift check below reports every description of
 them as a path that is not registered.
 
 **A new operation on `/admin-api`, `/account-api`, `/authn-api` or `/report-api`
-also owes a closed response model, and a new member of an answer owes a line in
-it in the same commit** (#1353): every answer is validated against its model,
-always, and one that does not match is a 500 (`common/CLAUDE.md` 3dc;
+also owes its entry in `models/api/*.tsp`, and a new member of an answer owes a
+line there in the same commit** (#1353, #1390): every answer is validated against
+that model, always, and one that does not match is a 500 (`common/CLAUDE.md` 3dc;
 `tests/openapi_response_models.js`). **Either one also owes
 `tests/tools/regenerate-openapi-pages.sh`** (`docs/openapi/`, the public
 reference); `tests/openapi_pages.js` fails otherwise.

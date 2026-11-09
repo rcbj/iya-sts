@@ -19,8 +19,7 @@ MariaDB table and index is in `persistence/*.tsp`.
 | `directory/person.tsp`, `group.tsp`, `operational.tsp`, `attribute_source.tsp`, `oidfed.tsp`, `claim_provider.tsp`, `kerberos_trust.tsp`, `trust_anchor.tsp`, `signer_trust_anchor.tsp` | The objects no module owned. `common/directory_model_catalog.ts` reads their generated tables for the collector | by hand |
 | `directory/names.tsp` | The directory's name lists, generated into `directory.names.json`, which `ldap/ldap_server.js` reads. A row with no sentence takes the comment above its name here | by hand |
 | `persistence/persistence.tsp`, `persistence_mariadb.tsp` | **The source of every table and index**, one file per engine because their types, keys and indexes differ. Each generates what the driver runs and the owner's script | by hand |
-| `api/report.tsp`, `api/authn.tsp`, `api/account.tsp` | **The Reports API, Authentication API and Account API OpenAPI documents, switched.** Each is the source: the build generates the document, the service serves it and holds every answer to it. A routing row keeps the path, the handler and what it accepts; the test holds what it accepts to the model, and the row's name, tag and summary are read from the model | by hand |
-| `api/management.tsp`, `console.tsp`, `lib/api_lib.*`, `tools/import_openapi.mjs` | **The Management API and Admin Console API OpenAPI documents as TypeSpec.** Models, unions and `op`s; `@js` carries what a type cannot say. `documents()` writes OpenAPI back, and `tests/model_openapi.js` requires each to equal the one served. **Written from the route tables and response models, which are still their source**, so a change to one of those APIs owes `tests/tools/regenerate-model-docs.sh` | `import_openapi.mjs` |
+| `api/management.tsp`, `console.tsp`, `account.tsp`, `authn.tsp`, `report.tsp`, `lib/api_lib.*` | **The Management API, Admin Console API, Account API, Authentication API and Reports API OpenAPI documents, all switched.** Each is the source: the build generates the document, the service serves it, validates each request body against it (Management and Admin Console), and holds every answer to it. **A change to an API is made here.** A routing row in code keeps the path, the handler, what it mirrors and its parameters | by hand |
 | `persistence/schema.template.sql`, `mariadb.template.sql` | Everything else in `postgres/schema.sql` and `mariadb/schema.sql`: comments, `psql` commands, grants, routines, the upgrade block. `--@table name` and `--@index name` lines are where the model's go | by hand |
 | `tools/generate.mjs` | Compiles the model and writes `generated/<id>.schema.json` for each object written by hand. Run by `build-typescript.sh`, so only inside an image build | by hand |
 
@@ -103,8 +102,8 @@ undeclared one is a compile error. A new fact about an attribute is added there.
   their sources. `emit()` there returns the bytes it was given, so a test that
   compares it to those bytes proves nothing.
 
-**What is not done**, in the order it is owed: the real OID root (#1471); the switch of the other two OpenAPI documents, so that TypeSpec is the source
-and the route metadata and `response_models_*.ts` are generated from it; a class
+**What is not done**, in the order it is owed: the real OID root (#1471); rows built by helper functions in `mgmt-api/admin_api.ts` still carrying a summary
+the model now overrides; a class
 for each request and response body; domain models distinct from directory entries;
 the CI gates (Spectral, oasdiff).
 

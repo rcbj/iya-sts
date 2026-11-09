@@ -18,10 +18,7 @@ policy's settings are there too: their types, defaults, limits, and labels. So a
 people, groups, the registers that keep one JSON value, and the directory's lists of
 attribute spellings and of the attributes it withholds. The PostgreSQL and MariaDB
 tables and indexes are too, and they generate both the statements the service runs
-and the scripts an owner runs. Of the five OpenAPI documents,
-the Reports API's, the Authentication API's, and the Account API's have switched;
-the service still builds the other two from its
-route tables, and their models are written from those and checked against them. An object switches only
+and the scripts an owner runs. All five OpenAPI documents have switched too. An object switches only
 after what the model generates is shown to be the same as what is there.
 
 [![The current state: code and SQL are read into TypeSpec, the compiler checks it, and what it generates is compared with the code and SQL it came from](data-model.svg)](data-model.svg)
@@ -37,8 +34,7 @@ after what the model generates is shown to be the same as what is there.
 | Directory and table classes, with validators | Yes | Compiled and run | No |
 | PostgreSQL tables and indexes, and `postgres/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
 | MariaDB tables and indexes, and `mariadb/schema.sql` | Yes, and TypeSpec is the source | The same statements as those they replaced | **Yes** |
-| Reports API, Authentication API, and Account API OpenAPI documents | Yes, and TypeSpec is the source | Equal to the documents they replaced | **Yes** |
-| Management API and Admin Console API OpenAPI documents | Yes, but the route tables in code are still the source | Equal to each served document | No |
+| All five OpenAPI documents | Yes, and TypeSpec is the source | Equal to the documents they replaced | **Yes** |
 
 ## Changing what a directory object holds
 
@@ -144,11 +140,9 @@ The API namespace is the service's five OpenAPI documents, written as TypeSpec
 under `models/api/`. Compiling those files gives each document back, and a test
 requires it to equal the one the service serves.
 
-The Reports API, Authentication API, and Account API OpenAPI documents have
-switched: their files under `models/api/` are the source, and the service serves
-and validates against what the image build generates. For the other two the direction is still from the code to the model:
-the service builds them from its route tables, and
-`tests/tools/regenerate-model-docs.sh` writes the TypeSpec from those tables. The [OpenAPI reference](openapi/) is their
+All five have switched: their files under `models/api/` are the source, and the
+service serves and validates against what the image build generates. To change an
+operation or a schema, edit its file. The [OpenAPI reference](openapi/) is their
 reading form.
 
 | Document | What it is |

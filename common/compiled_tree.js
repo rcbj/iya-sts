@@ -56,7 +56,9 @@ const GENERATED = ['application', 'role', 'device', 'serviceAccount', 'spiffe',
     'models/generated/persistence.mariadb.json',
     'models/generated/openapi.report.json',
     'models/generated/openapi.authn.json',
-    'models/generated/openapi.account.json']);
+    'models/generated/openapi.account.json',
+    'models/generated/openapi.management.json',
+    'models/generated/openapi.console.json']);
 
 /**
  * The top-level directories that are not the service's own sources, as the

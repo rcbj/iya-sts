@@ -15265,7 +15265,7 @@ response is validated against it, always.** There is no setting, in either mode.
   of the shape; the operator gets `STS-API-0139` once per distinct failure, naming
   the operation, the status and where, with key names and never a value.
 * **THE MODELS ARE IN ONE FILE PER FAMILY**, keyed by operationId
-  (`mgmt-api/response_models_*.ts`, `models/api/account.tsp` (since #1390),
+  (`models/api/management.tsp` since #1390, `models/api/account.tsp` (since #1390),
   `authn/authn_response_models.ts`), and in `report/openapi.ts` itself. A new
   operation owes a model; `tests/openapi_response_models.js` fails otherwise, at
   any depth. **A new member of an answer owes a line in its model in the same

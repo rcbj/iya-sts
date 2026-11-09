@@ -1,5 +1,12 @@
 # mgmt-api/
 
+**The Management API and Admin Console API OpenAPI documents are written in
+`models/api/management.tsp` and `console.tsp` since #1390**, and `response_models*.ts`
+and the schemas in `admin_api_spec.ts` are gone. A route row keeps the path, the
+handler, what it mirrors and its parameters; `AdminApiSpec.named()` gives it the
+summary and the request-body schema from the model when the table is built. To change
+an operation or a schema, edit the `.tsp`.
+
 The management API at `/admin-api`, its generated OpenAPI document, and the
 browser-side explorer.
 
