@@ -63,6 +63,9 @@ function refusals(t, checkDomains) {
     'a secret attribute read without saying so is refused');
   t.check(/does not say secret/.test(one(field(), { withheld: true })),
     'a withheld attribute read without saying so is refused');
+  t.check(/does not say secret/.test(checkDomains(concept(field()),
+    directory({}), ['A']).join(';')),
+  'an attribute on the withheld list read without saying so is refused');
   t.check(/not marked sensitive/.test(
     one(field({ from: { attr: 'a', secret: true } }), {})),
   'a secret claimed of an ordinary attribute is refused');
@@ -87,8 +90,10 @@ function catalogue(t) {
   const names = concepts.map(function (one) {
     return one.name;
   });
-  ['User', 'Application', 'OAuthClient', 'SamlServiceProvider',
-    'WsFederationRelyingParty'].forEach(function (name) {
+  ['User', 'Credential', 'Group', 'ServiceAccount', 'Device', 'Application',
+    'OAuthClient', 'SamlServiceProvider', 'WsFederationRelyingParty', 'Role',
+    'XacmlPolicy', 'FederationRelationship', 'TrustAnchor',
+    'SignerTrustAnchor'].forEach(function (name) {
     t.check(names.indexOf(name) >= 0, name + ' is in the catalogue');
   });
   concepts.forEach(function (one) {

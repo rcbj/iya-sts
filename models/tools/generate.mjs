@@ -69,7 +69,7 @@ async function generate() {
   fs.writeFileSync(path.join(out, 'directory.links.json'),
     JSON.stringify(linksIn(objects)));
   const concepts = readDomains(program);
-  const problems = checkDomains(concepts, objects);
+  const problems = checkDomains(concepts, objects, names.secret);
   if (problems.length > 0) {
     log.debug("Leaving generate(). A domain model is wrong.");
     throw new Error('The domain models are wrong: ' + problems.join('; '));

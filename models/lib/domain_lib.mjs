@@ -161,9 +161,10 @@ function attributesOf(object) {
  * @param concept - the concept
  * @param field - the field
  * @param objects - by id
+ * @param withheld - names withheld from every reader, in lower case
  * @returns the sentences
  */
-function fieldProblems(concept, field, objects) {
+function fieldProblems(concept, field, objects, withheld) {
   log.debug("Entering fieldProblems().");
   const where = concept.name + '.' + field.name;
   const states = [field.from, field.derived, field.embedded]
@@ -199,7 +200,8 @@ function fieldProblems(concept, field, objects) {
   }
   const problems = [];
   const marked = attribute.sensitive === true || attribute.secret === true ||
-    attribute.withheld === true;
+    attribute.withheld === true ||
+    withheld.has(field.from.attr.toLowerCase());
   if (marked !== (field.from.secret === true)) {
     problems.push(where + (marked ? ' reads a sensitive attribute and does ' +
       'not say secret: true' : ' says secret: true of an attribute that ' +
@@ -222,10 +224,15 @@ function fieldProblems(concept, field, objects) {
  *
  * @param concepts - from `readDomains()`
  * @param directory - objects from `readDirectory()`
+ * @param secretNames - the directory's list of attributes withheld from
+ *   every reader
  * @returns the problems, empty when there are none
  */
-export function checkDomains(concepts, directory) {
+export function checkDomains(concepts, directory, secretNames) {
   log.debug("Entering checkDomains().");
+  const withheld = new Set((secretNames || []).map(function (one) {
+    return one.toLowerCase();
+  }));
   const objects = new Map(directory.map(function (object) {
     return [object.id, object];
   }));
@@ -240,7 +247,8 @@ export function checkDomains(concepts, directory) {
       problems.push(concept.name + ' names no area of the catalogue');
     }
     concept.fields.forEach(function (field) {
-      problems.push.apply(problems, fieldProblems(concept, field, objects));
+      problems.push.apply(problems,
+        fieldProblems(concept, field, objects, withheld));
     });
   });
   log.debug("Leaving checkDomains(). " + problems.length);
