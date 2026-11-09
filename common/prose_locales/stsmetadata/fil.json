@@ -3958,5 +3958,9 @@
   "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
     "en": "1bf7c4937a9313c4",
     "text": "NON-SPEC (#1501). Ipinapadala sa naka-configure na ICAP service ang EICAR test file at nagtatagumpay lamang kung na-flag ito ng service."
+  },
+  "stsmetadata.endpoints./admin-api/audit/integrity.what": {
+    "en": "80d0dc13ebf1f23b",
+    "text": "Inihahambing ang bawat naka-imbak na audit row sa keyed checksum nito at iniuulat ang mga hindi na tugma. Walang binabago."
   }
 }

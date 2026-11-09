@@ -2470,5 +2470,9 @@
   "endpoints.route./admin-api/malware-scanning/:action.name": {
     "en": "5fea7fc18a3a67b9",
     "text": "Testa skannern"
+  },
+  "endpoints.route./admin-api/audit/integrity.name": {
+    "en": "79de5da36fba17bd",
+    "text": "Kontrollera granskningsloggens integritet"
   }
 }

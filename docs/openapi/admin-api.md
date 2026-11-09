@@ -28,7 +28,7 @@ Every answer is checked against the model shown here before it is sent, and no a
 | [ACME](admin-api-acme.html) | 8 |  |
 | [Admin roles](admin-api-admin-roles.html) | 3 |  |
 | [Applications](admin-api-applications.html) | 47 |  |
-| [Audit log](admin-api-audit-log.html) | 2 | What happened here, in order — history rather than state, and read-only. It carries no credential of any kind and has no clear operation: an erase control on an administrative surface would make an audit log unable to answer the one question it exists for. |
+| [Audit log](admin-api-audit-log.html) | 3 | What happened here, in order — history rather than state, and read-only. It carries no credential of any kind and has no clear operation: an erase control on an administrative surface would make an audit log unable to answer the one question it exists for. |
 | [Authorization servers](admin-api-authorization-servers.html) | 6 |  |
 | [CAEP](admin-api-caep.html) | 5 |  |
 | [Cluster](admin-api-cluster.html) | 1 |  |

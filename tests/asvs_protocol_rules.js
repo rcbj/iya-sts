@@ -170,6 +170,24 @@ async function run(t) {
   t.equal(Sched.clockFar, true, 'a clock a minute off the database is noted');
   Sched.noteClockSkew(Date.now());
   t.equal(Sched.clockFar, false, 'and its return');
+  // The audit checksum: a row altered after it was written is found.
+  const auditLog = require(ROOT + '/common/audit');
+  const keystore = require(ROOT + '/common/keystore');
+  const realKeyed = keystore.keyedDigest;
+  keystore.keyedDigest = function (label, text) {
+    return require('crypto').createHmac('sha256', 'k').update(label + text)
+      .digest('hex');
+  };
+  auditLog.audit({ category: 'admin', action: 'admin.test', summary: 'mac' });
+  const held = auditLog.list()[0];
+  t.check(!!held.mac, 'an audit row carries a checksum');
+  t.equal(auditLog.verifyIntegrity().altered.length, 0, 'and it verifies');
+  const honest = held.summary;
+  held.summary = 'rewritten';
+  t.equal(auditLog.verifyIntegrity().altered.indexOf(held.seq) >= 0, true,
+          'a row rewritten afterwards is reported');
+  held.summary = honest;
+  keystore.keyedDigest = realKeyed;
   const budget = require(ROOT + '/common/request_budget');
   const at = Date.now();
   t.equal(budget.allowed('198.51.100.7', 2, at), true, 'a first request passes');

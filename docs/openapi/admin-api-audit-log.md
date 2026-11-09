@@ -93,6 +93,7 @@ Scope: `admin:read`.
 | `events[].channel` | string |  |  |
 | `events[].detail` | any JSON |  | What this one kind of event recorded about its own act: several hundred call sites each name their members, and values are trimmed by `detailOf()`. What this one kind of event recorded about its own act: several hundred call sites each name their members, and values are trimmed by `detailOf()`. |
 | `events[].errorCode` | string, or null |  |  |
+| `events[].mac` | string |  |  |
 | `events[].origin` | string, or null |  |  |
 | `events[].outcome` | string |  |  |
 | `events[].protocol` | string |  |  |
@@ -210,6 +211,32 @@ Scope: `admin:read`.
 | `errors[]` | string |  |  |
 | `message` | string |  |  |
 | `ok` | boolean |  |  |
+
+## GET /admin-api/audit/integrity
+
+`getAuditIntegrity`
+
+**Check the held audit rows against their checksums**
+
+Each row carries a keyed checksum whose key is not in the database. `altered` lists the seq of any row that no longer matches. `unsigned` counts rows written with no key-encryption key in the process.
+
+Scope: `admin:read`.
+
+**Parameters**
+
+| Name | In | Type | Required | What it is |
+|---|---|---|---|---|
+| `DPoP` | header | string |  | RFC 9449: the proof of possession for a DPoP-bound access token, as `Authorization: DPoP <token>` requires. |
+| `cell` | query | string |  | The cell to answer this request, where this service runs as several. Ignored in a service that runs as one. |
+
+**200**: The result.
+
+| Member | Type | Required | What it is |
+|---|---|---|---|
+| `altered` | list | yes |  |
+| `altered[]` | integer |  |  |
+| `checked` | integer | yes |  |
+| `unsigned` | integer | yes |  |
 
 ## GET /admin-api/error-codes
 
