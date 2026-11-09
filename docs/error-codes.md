@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5388** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5389** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -100,7 +100,7 @@ is an ordinary outcome.
 * [Registries (`STS-REG`)](#sts-reg) — 185
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 * [Reporting (`STS-REPORT`)](#sts-report) — 57
-* [Audit export (`STS-AUDIT`)](#sts-audit) — 15
+* [Audit export (`STS-AUDIT`)](#sts-audit) — 16
 
 ## STS-HTTP
 
@@ -6147,6 +6147,7 @@ Raised from: common/audit_export.ts, mgmt-api/audit_export_api.ts.
 | `STS-AUDIT-0014` | A webhook or Splunk HEC destination answered a redirect. Audit export does not follow it. The cursor stays and the destination pauses (#641). | none (the destination retries; the audited operation is unaffected) |
 | `STS-AUDIT-0015` | A webhook or Splunk HEC destination rejected the event itself (HTTP 400). That event is counted permanently failed and the cursor moves past it. The destination is not paused for the events after it (#641). | none (that event is dropped; later events are still delivered) |
 | `STS-AUDIT-0016` | A syslog audit destination was refused because product mode needs tls. | HTTP 400 |
+| `STS-AUDIT-0017` | A realm in product mode has no audit export destination, so its audit log stays with the service. | — |
 
 ## Adding a code
 

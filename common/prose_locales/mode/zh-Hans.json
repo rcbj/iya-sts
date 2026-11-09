@@ -1358,5 +1358,17 @@
   "mode.requirements.no-known-secrets.product": {
     "en": "a037c255a759deb1",
     "text": "请求日志在任何级别都不包含凭据和正文；默认数据库密码会使服务停止，除非开启 persistence.allowDefaultDatabasePassword。"
+  },
+  "mode.requirements.audit-destination.what": {
+    "en": "93abf5e422347728",
+    "text": "审计日志应发送到此服务之外"
+  },
+  "mode.requirements.audit-destination.development": {
+    "en": "9e4a085d4195578e",
+    "text": "不提示审计导出。"
+  },
+  "mode.requirements.audit-destination.product": {
+    "en": "e082de544e11ddcb",
+    "text": "请添加审计导出目标，使日志副本在此服务遭入侵时不受影响。在添加之前，服务会为该信任域记录警告。"
   }
 }
