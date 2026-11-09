@@ -73,11 +73,11 @@ model PolicyPostLogin {
     what: "Which named post-login profile wins where several are named for one sign-in — by the application and by the person's groups: the lowest, from 1 to 1000.",
     selector: #{key: "precedence"}
   })
-  stsPostLoginPrecedence?: unknown;
+  stsPostLoginPrecedence?: DirectoryInteger;
   @attr(#{
     what: "What the profile is for, for the next person."
   })
-  description?: unknown;
+  description?: (string)[];
   @attr(#{
     what: "Retired (#1135): the role a person with no passkey registered one in. A passkey has no role; nothing reads it."
   })

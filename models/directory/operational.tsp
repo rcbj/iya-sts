@@ -23,15 +23,15 @@ namespace IyaSts.Directory;
 })
 model Operational {
   @attr(#{what: "RFC 4530. Assigned at creation and kept through a rename."})
-  entryUUID?: unknown;
+  entryUUID?: string;
   @attr(#{what: "RFC 4512 generalized time."})
-  createTimestamp?: unknown;
+  createTimestamp?: string;
   @attr(#{what: "RFC 4512 generalized time."})
-  modifyTimestamp?: unknown;
+  modifyTimestamp?: string;
   @attr(#{what: "RFC 5020. Computed at search time."})
-  entryDN?: unknown;
+  entryDN?: string;
   @attr(#{what: "The losing entryUUID of a two-process create race."})
-  stsEntryUuidAlias?: unknown;
+  stsEntryUuidAlias?: (string)[];
   @attr(#{what: "A person's groups, derived from member. Never stored."})
-  memberOf?: unknown;
+  memberOf?: (DirectoryDn)[];
 }

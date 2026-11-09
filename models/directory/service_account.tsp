@@ -39,49 +39,49 @@ model ServiceAccountOnPerson {
   @attr(#{
     what: "TRUE on a service account. Absent: an ordinary person. Asked through common/service_accounts.ts's isServiceAccount(), never read directly."
   })
-  stsServiceAccount?: unknown;
+  stsServiceAccount?: DirectoryBoolean;
   @attr(#{
     what: "The DN of a person or group answerable for the account; one value per owner."
   })
-  stsServiceAccountOwner?: unknown;
+  stsServiceAccountOwner?: (DirectoryDn)[];
   @attr(#{
     what: "The DN of the application entry (a push destination) a rotated password is written to."
   })
-  stsSecretDestination?: unknown;
+  stsSecretDestination?: string;
   @attr(#{
     what: "The name or path of the secret at that destination. It must already exist: a push never creates one."
   })
-  stsSecretName?: unknown;
+  stsSecretName?: string;
   @attr(#{
     what: "When the password was last rotated (GeneralizedTime)."
   })
-  stsPasswordRotatedAt?: unknown;
+  stsPasswordRotatedAt?: DirectoryTime;
   @attr(#{
     what: "The previous password's scrypt hash, accepted until stsPreviousPasswordExpires. Withheld from every read."
   })
-  stsPreviousPassword?: unknown;
+  stsPreviousPassword?: string;
   @attr(#{
     what: "When the previous password stops being accepted (ms since the epoch)."
   })
-  stsPreviousPasswordExpires?: unknown;
+  stsPreviousPasswordExpires?: DirectoryTime;
   @attr(#{
     what: "Consecutive failed rotations, reset by a success."
   })
-  stsRotationFailures?: unknown;
+  stsRotationFailures?: DirectoryInteger;
   @attr(#{
     what: "The error code of the last failed rotation."
   })
-  stsRotationLastError?: unknown;
+  stsRotationLastError?: string;
   @attr(#{
     what: "When the rotation job last tried this account (ms)."
   })
-  stsRotationLastAttempt?: unknown;
+  stsRotationLastAttempt?: DirectoryTime;
   @attr(#{
     what: "TRUE: the account's owners may not administer it through /admin-api (#607) — an administrator's mark, read by the access-control policy's owner rule. Absent is FALSE."
   })
-  stsOwnerProtected?: unknown;
+  stsOwnerProtected?: DirectoryBoolean;
   @attr(#{
     what: "The named service-account policy that governs this account (#1240): `default` or a policy in ou=serviceAccountPolicies of this realm. Absent is `default`. Only a service account may hold it, and it is cleared with stsServiceAccount."
   })
-  stsServiceAccountPolicy?: unknown;
+  stsServiceAccountPolicy?: string;
 }

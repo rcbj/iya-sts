@@ -34,13 +34,13 @@ namespace IyaSts.Directory;
 })
 model SignerTrustAnchor {
   @attr(#{})
-  stsTrustAnchorCertificate?: unknown;
+  stsTrustAnchorCertificate?: string;
   @attr(#{})
-  stsTrustAnchorFingerprint?: unknown;
+  stsTrustAnchorFingerprint?: string;
   @attr(#{})
-  stsTrustAnchorAddedBy?: unknown;
+  stsTrustAnchorAddedBy?: string;
   @attr(#{})
-  stsSignerTrustAnchorKind?: unknown;
+  stsSignerTrustAnchorKind?: string;
   @attr(#{})
-  stsSignerTrustAnchorPurpose?: unknown;
+  stsSignerTrustAnchorPurpose?: (string)[];
 }

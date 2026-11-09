@@ -64,7 +64,7 @@ model Credential {
   passwordHash?: string;
 
   @fromAttr(#{attr: "stsTotpCredential", secret: true})
-  authenticatorApp?: string[];
+  authenticatorApp?: string;
 
   @fromAttr(#{attr: "stsWebauthnCredential"})
   passkeys?: string[];
@@ -73,7 +73,7 @@ model Credential {
   recoveryCodes?: string;
 
   @fromAttr(#{attr: "stsAppPassword", secret: true})
-  appPasswords?: string[];
+  appPasswords?: string;
 
   @fromAttr(#{attr: "pwdChangedTime", transform: "first"})
   passwordChanged?: string;
@@ -122,7 +122,7 @@ model ServiceAccount {
   owners?: string[];
 
   @fromAttr(#{attr: "stsSecretDestination"})
-  secretDestinations?: string[];
+  secretDestination?: string;
 
   @fromAttr(#{attr: "stsSecretName", transform: "first"})
   secretName?: string;

@@ -207,12 +207,14 @@ function fieldProblems(concept, field, objects, withheld) {
       'not say secret: true' : ' says secret: true of an attribute that ' +
       'is not marked sensitive'));
   }
-  if (attribute.kind === 'multi' && !field.array &&
+  const kind = attribute.kind === 'unspecified' ? attribute.storedAs :
+    attribute.kind;
+  if (kind === 'multi' && !field.array &&
       field.from.transform !== 'first') {
     problems.push(where + ' is one value of a multi-valued attribute and ' +
       'does not say transform: "first"');
   }
-  if (attribute.kind === 'single' && field.array) {
+  if (kind === 'single' && field.array) {
     problems.push(where + ' is a list and its attribute holds one value');
   }
   log.debug("Leaving fieldProblems().");

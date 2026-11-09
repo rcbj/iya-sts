@@ -40,31 +40,31 @@ model PolicyServiceAccount {
   @attr(#{
     what: "A bind on 389 or 636 (RFC 4513). Off, a service account's right password is refused there as a wrong one is."
   })
-  stsSvcAcctAllowLdapBind?: unknown;
+  stsSvcAcctAllowLdapBind?: DirectoryBoolean;
   @attr(#{
     what: "A WS-Security UsernameToken sent to the security token service. Off, a service account's right password is refused there as a wrong one is."
   })
-  stsSvcAcctAllowWsTrust?: unknown;
+  stsSvcAcctAllowWsTrust?: DirectoryBoolean;
   @attr(#{
     what: "HTTP Basic at /scim/v2 (RFC 7617). Off, a service account's right password is refused there as a wrong one is."
   })
-  stsSvcAcctAllowScim?: unknown;
+  stsSvcAcctAllowScim?: DirectoryBoolean;
   @attr(#{
     what: "HTTP Basic at the /ssf endpoints (RFC 7617). Off, a service account's right password is refused there as a wrong one is."
   })
-  stsSvcAcctAllowSsf?: unknown;
+  stsSvcAcctAllowSsf?: DirectoryBoolean;
   @attr(#{
     what: "HTTP Basic at /.well-known/est (RFC 7030 section 3.2.3). Off, a service account's right password is refused there as a wrong one is."
   })
-  stsSvcAcctAllowEst?: unknown;
+  stsSvcAcctAllowEst?: DirectoryBoolean;
   @attr(#{
     what: "An AS-REQ whose pre-authentication proves the password's key (RFC 4120), and MS-KKDCP. Off, a service account's right password is refused there as a wrong one is."
   })
-  stsSvcAcctAllowKerberos?: unknown;
+  stsSvcAcctAllowKerberos?: DirectoryBoolean;
   @attr(#{
     what: "grant_type=password at the token endpoint (RFC 6749 section 4.3), where the realm allows the grant at all. Off, a service account's right password is refused there as a wrong one is."
   })
-  stsSvcAcctAllowPasswordGrant?: unknown;
+  stsSvcAcctAllowPasswordGrant?: DirectoryBoolean;
   @attr(#{
     what: "OFF BY DEFAULT. On, the service-accounts.rotate job gives every service account that names a push destination a new generated password each interval: pushed to the destination FIRST, its hash committed only after the push succeeds, the previous password kept for the overlap below. A failed push changes nothing. Cannot be turned on while this realm has no push destination.",
     field: #{key: "rotationEnabled", type: "bool", dflt: false, label: "Rotate service-account passwords automatically"}
@@ -99,9 +99,9 @@ model PolicyServiceAccount {
     what: "Which named service-account policy wins where several are named: the lowest, from 1 to 1000. A service account names one policy, so today it decides nothing.",
     selector: #{key: "precedence"}
   })
-  stsServiceAccountPrecedence?: unknown;
+  stsServiceAccountPrecedence?: DirectoryInteger;
   @attr(#{
     what: "What the profile is for, for the next person."
   })
-  description?: unknown;
+  description?: (string)[];
 }

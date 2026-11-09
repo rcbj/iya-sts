@@ -11,6 +11,19 @@ using TypeSpec.Reflection;
 
 namespace IyaSts.ModelLib;
 
+/**
+ * What an attribute's text means. LDAP stores all of these as strings, so
+ * each extends string: the directory says how it is held, and a domain model
+ * says what it becomes. `unknown` is kept only where the code does not settle
+ * whether an attribute holds one value or several.
+ */
+scalar DirectoryBoolean extends string;
+scalar DirectoryInteger extends string;
+scalar DirectoryTime extends string;
+scalar DirectoryJson extends string;
+scalar DirectoryDn extends string;
+scalar DirectoryBase64 extends string;
+
 /** One object class on a directory entry, with what its RFC states. */
 model ClassRow {
   name: string;

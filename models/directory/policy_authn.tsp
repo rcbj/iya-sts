@@ -48,63 +48,63 @@ model PolicyAuthn {
   @attr(#{
     what: "A password on the sign-in screen. As a SECOND factor it is the password asked for after a wallet or other passwordless first factor."
   })
-  stsAuthnPasswordPrimary?: unknown;
+  stsAuthnPasswordPrimary?: DirectoryBoolean;
   @attr(#{
     what: "A password on the sign-in screen. As a SECOND factor it is the password asked for after a wallet or other passwordless first factor."
   })
-  stsAuthnPasswordSecondFactor?: unknown;
+  stsAuthnPasswordSecondFactor?: DirectoryBoolean;
   @attr(#{
     what: "Any passkey (WebAuthn credential) the person holds, signing them in with no password. A passkey has no role: this row says, at each sign-in, whether any of them may be a first factor in this realm, unless the first factors of the authentication policy an application names (appAuthnPolicy) say otherwise."
   })
-  stsAuthnPasskeyPrimary?: unknown;
+  stsAuthnPasskeyPrimary?: DirectoryBoolean;
   @attr(#{
     what: "Any passkey (WebAuthn credential) the person holds, asked for after a first factor. A passkey has no role: this row says, at each sign-in, whether any of them may be a second factor in this realm, unless the second factors of the authentication policy an application names (appAuthnPolicy) say otherwise."
   })
-  stsAuthnSecurityKeySecondFactor?: unknown;
+  stsAuthnSecurityKeySecondFactor?: DirectoryBoolean;
   @attr(#{
     what: "An RFC 6238 one-time code. Never a first factor: this service holds the same shared secret the app does. Off here, nobody may ENROL one; a person who already holds one is still asked for it, because an off switch that downgraded every enrolled account to a password alone would do something other than it says (this row replaced totp.enabled, and keeps its contract)."
   })
-  stsAuthnTotpSecondFactor?: unknown;
+  stsAuthnTotpSecondFactor?: DirectoryBoolean;
   @attr(#{
     what: "A single-use code from a set the person generated. Off here, no new set may be generated; a set already held still works (this row replaced backupCodes.enabled, and keeps its contract)."
   })
-  stsAuthnRecoveryCodeSecondFactor?: unknown;
+  stsAuthnRecoveryCodeSecondFactor?: DirectoryBoolean;
   @attr(#{
     what: "A six-digit code mailed to the person's VERIFIED address. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk."
   })
-  stsAuthnEmailCodePrimary?: unknown;
+  stsAuthnEmailCodePrimary?: DirectoryBoolean;
   @attr(#{
     what: "A six-digit code mailed to the person's VERIFIED address. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk."
   })
-  stsAuthnEmailCodeSecondFactor?: unknown;
+  stsAuthnEmailCodeSecondFactor?: DirectoryBoolean;
   @attr(#{
     what: "A single-use link mailed to the person's VERIFIED address, which completes the sign-in only in the browser that started it. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk."
   })
-  stsAuthnEmailLinkPrimary?: unknown;
+  stsAuthnEmailLinkPrimary?: DirectoryBoolean;
   @attr(#{
     what: "A single-use link mailed to the person's VERIFIED address, which completes the sign-in only in the browser that started it. NIST SP 800-63B-4 section 3.1.3.1: \"Email SHALL NOT be used for out-of-band authentication\", because a mailbox may be reached with a password alone, and mail may be read in transit or rerouted. Off by default for that reason; turn it on only where that is an accepted risk."
   })
-  stsAuthnEmailLinkSecondFactor?: unknown;
+  stsAuthnEmailLinkSecondFactor?: DirectoryBoolean;
   @attr(#{
     what: "A verified TLS client certificate: GET /tls/sign-in, or Continue with your certificate on the sign-in screen."
   })
-  stsAuthnCertificatePrimary?: unknown;
+  stsAuthnCertificatePrimary?: DirectoryBoolean;
   @attr(#{
     what: "GET /authn/spnego with a Kerberos ticket."
   })
-  stsAuthnKerberosPrimary?: unknown;
+  stsAuthnKerberosPrimary?: DirectoryBoolean;
   @attr(#{
     what: "/authn/wallet with a credential this realm issued, or a SIOPv2 self-issued ID Token from an enrolled key. As a SECOND factor, the wallet presented after a password."
   })
-  stsAuthnWalletPrimary?: unknown;
+  stsAuthnWalletPrimary?: DirectoryBoolean;
   @attr(#{
     what: "/authn/wallet with a credential this realm issued, or a SIOPv2 self-issued ID Token from an enrolled key. As a SECOND factor, the wallet presented after a password."
   })
-  stsAuthnWalletSecondFactor?: unknown;
+  stsAuthnWalletSecondFactor?: DirectoryBoolean;
   @attr(#{
     what: "A sign-in asserted by a configured federation partner."
   })
-  stsAuthnFederationPrimary?: unknown;
+  stsAuthnFederationPrimary?: DirectoryBoolean;
   @attr(#{
     what: "From the moment it is sent. At most ten minutes, NIST SP 800-63B-4 section 3.1.3.2's bound for an out-of-band secret.",
     field: #{key: "emailCodeTtlS", type: "int", dflt: 300, min: 60, max: 600, unit: "seconds", email: true, label: "How long an emailed code or link is valid"}
@@ -143,19 +143,19 @@ model PolicyAuthn {
   @attr(#{
     what: "What the profile is for, for the next person."
   })
-  description?: unknown;
+  description?: (string)[];
   @attr(#{
     what: "On a NAMED authentication policy (#1148, #1237): a first-factor mechanism a sign-in it applies to allows — where the application (appAuthnPolicy) or one of the person's groups (stsAuthnPolicy) names it and its precedence is the lowest named — password, password-mfa, webauthn, spnego, wallet or federation, one value each. None allows every one the realm allows."
   })
-  stsAuthnPolicyMechanism?: unknown;
+  stsAuthnPolicyMechanism?: (string)[];
   @attr(#{
     what: "On a NAMED authentication policy (#1148, #1237): a second factor a sign-in it applies to allows — where the application (appAuthnPolicy) or one of the person's groups (stsAuthnPolicy) names it and its precedence is the lowest named — password, securityKey, totp, recoveryCode, emailCode, emailLink or wallet, one value each. None leaves the realm's authentication policy as it is."
   })
-  stsAuthnPolicySecondFactor?: unknown;
+  stsAuthnPolicySecondFactor?: (string)[];
   @attr(#{
     what: "On a NAMED authentication policy (#1237): which one applies where several are named for one sign-in — by the application (appAuthnPolicy) and by the person's groups (stsAuthnPolicy) — the lowest, from 1 to 1000, ties by name. 100 when absent."
   })
-  stsAuthnPolicyPrecedence?: unknown;
+  stsAuthnPolicyPrecedence?: DirectoryInteger;
 }
 
 @entry(#{
@@ -165,7 +165,7 @@ model PolicyAuthn {
 })
 model PolicyAuthnOnPerson {
   @attr(#{what: "Which emailed second factor this person opted in to: `code` or `link`. Absent: none. Set on /portal/mfa, cleared on /admin/mfa and after too many consecutive failures."})
-  stsMailFactor?: unknown;
+  stsMailFactor?: string;
   @attr(#{what: "Consecutive failed emailed codes or links, reset by a success. Maintained by this service."})
-  stsMailFactorFailures?: unknown;
+  stsMailFactorFailures?: DirectoryInteger;
 }

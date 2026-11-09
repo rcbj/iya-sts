@@ -34,19 +34,19 @@ namespace IyaSts.Directory;
 })
 model KerberosTrust {
   @attr(#{})
-  stsKrb5TrustData?: unknown;
+  stsKrb5TrustData?: DirectoryJson;
   @attr(#{})
-  stsKrb5TrustKeys?: unknown;
+  stsKrb5TrustKeys?: string;
   @attr(#{})
-  trustPartner?: unknown;
+  trustPartner?: string;
   @attr(#{})
-  flatName?: unknown;
+  flatName?: string;
   @attr(#{})
-  securityIdentifier?: unknown;
+  securityIdentifier?: string;
   @attr(#{})
-  trustDirection?: unknown;
+  trustDirection?: DirectoryInteger;
   @attr(#{})
-  trustAttributes?: unknown;
+  trustAttributes?: DirectoryInteger;
   @attr(#{})
-  trustType?: unknown;
+  trustType?: DirectoryInteger;
 }

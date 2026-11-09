@@ -38,7 +38,7 @@ model PolicyPassword {
   @attr(#{
     what: "The attribute this policy governs: `userPassword`."
   })
-  pwdAttribute?: unknown;
+  pwdAttribute?: (string)[];
   @attr(#{
     what: "The shortest password this service will set, counted in characters (Unicode code points, so an emoji is one). The attribute is draft-behera-ldap-password-policy's. Twelve is the default; NIST SP 800-63B asks for at least 8, and 15 where a password is the only factor.",
     field: #{key: "minLength", type: "int", dflt: 12, min: 1, max: 1024, label: "Minimum length", unit: "characters"}
@@ -126,11 +126,11 @@ model PolicyPassword {
     what: "Which named password policy wins where several are named for one person: the lowest, from 1 to 1000.",
     selector: #{key: "precedence"}
   })
-  stsPasswordPrecedence?: unknown;
+  stsPasswordPrecedence?: DirectoryInteger;
   @attr(#{
     what: "What the profile is for, for the next person."
   })
-  description?: unknown;
+  description?: (string)[];
 }
 
 @entry(#{
@@ -140,7 +140,7 @@ model PolicyPassword {
 })
 model PolicyPasswordOnPerson {
   @attr(#{what: "One value per remembered previous password, in the draft's form `time#syntaxOID#length#data` — the data being the hash that password was stored under, never the password. Maintained by this service and refused on an LDAP add or modify, because a history anybody can edit is a history anybody can empty."})
-  pwdHistory?: unknown;
+  pwdHistory?: (string)[];
   @attr(#{what: "When the password was last set, as a GeneralizedTime. Maintained by this service."})
-  pwdChangedTime?: unknown;
+  pwdChangedTime?: string;
 }

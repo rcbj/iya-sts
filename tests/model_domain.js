@@ -75,6 +75,12 @@ function refusals(t, checkDomains) {
     { kind: 'multi' }), '', 'and may, by saying transform: first');
   t.check(/holds one value/.test(one(field({ array: true }), {})),
     'a list over a single-valued attribute is refused');
+  t.check(/holds one value/.test(one(field({ array: true }),
+    { kind: 'unspecified', storedAs: 'single' })),
+  'a stated type says one value where the kind is silent');
+  t.check(/transform/.test(one(field(),
+    { kind: 'unspecified', storedAs: 'multi' })),
+  'and says several');
   t.check(/exactly one/.test(one(field({ derived: 'x' }), {})),
     'a field with two sources is refused');
   t.check(/exactly one/.test(one({ name: 'f', type: 'string' }, {})),

@@ -49,248 +49,248 @@ namespace IyaSts.Directory;
 })
 model Person {
   @attr(#{what: "Named on the People section."})
-  uid?: unknown;
+  uid?: (string)[];
   @attr(#{what: "Named on the People section."})
-  cn?: unknown;
+  cn?: (string)[];
   @attr(#{what: "Named on the People section."})
-  sn?: unknown;
+  sn?: (string)[];
   @attr(#{what: "Named on the People section."})
-  givenName?: unknown;
+  givenName?: (string)[];
   @attr(#{what: "Named on the People section."})
-  displayName?: unknown;
+  displayName?: string;
   @attr(#{what: "Named on the People section."})
-  mail?: unknown;
+  mail?: (string)[];
   @attr(#{what: "Named on the People section."})
-  userCertificate?: unknown;
+  userCertificate?: (string)[];
   @attr(#{what: "Named on the People section."})
-  title?: unknown;
+  title?: (string)[];
   @attr(#{what: "Named on the People section."})
-  employeeType?: unknown;
+  employeeType?: (string)[];
   @attr(#{what: "Named on the People section."})
-  telephoneNumber?: unknown;
+  telephoneNumber?: (string)[];
   @attr(#{what: "Named on the People section."})
-  mobile?: unknown;
+  mobile?: (string)[];
   @attr(#{what: "Named on the People section."})
-  street?: unknown;
+  street?: (string)[];
   @attr(#{what: "Named on the People section."})
-  l?: unknown;
+  l?: (string)[];
   @attr(#{what: "Named on the People section."})
-  st?: unknown;
+  st?: (string)[];
   @attr(#{what: "Named on the People section."})
-  postalCode?: unknown;
+  postalCode?: (string)[];
   @attr(#{what: "Named on the People section."})
-  c?: unknown;
+  c?: string;
   @attr(#{what: "Named on the People section."})
-  postalAddress?: unknown;
+  postalAddress?: (string)[];
   @attr(#{what: "Named on the People section."})
-  o?: unknown;
+  o?: (string)[];
   @attr(#{what: "Named on the People section."})
-  ou?: unknown;
+  ou?: (string)[];
   @attr(#{what: "Named on the People section."})
-  departmentNumber?: unknown;
+  departmentNumber?: (string)[];
   @attr(#{what: "Named on the People section."})
-  employeeNumber?: unknown;
+  employeeNumber?: string;
   @attr(#{what: "Named on the People section."})
-  preferredLanguage?: unknown;
+  preferredLanguage?: string;
   @attr(#{what: "Named on the People section."})
-  labeledURI?: unknown;
+  labeledURI?: (string)[];
   @attr(#{what: "Named on the People section."})
   @link(#{to: "person", cardinality: "single", owns: false, what: "RFC 2798 manager, a DN."})
-  manager?: unknown;
+  manager?: (string)[];
   @attr(#{what: "Named on the People section."})
-  schacDateOfBirth?: unknown;
+  schacDateOfBirth?: string;
   @attr(#{what: "Named on the People section."})
-  schacCountryOfCitizenship?: unknown;
+  schacCountryOfCitizenship?: (string)[];
   @attr(#{what: "Named on the People section."})
-  schacPersonalTitle?: unknown;
+  schacPersonalTitle?: (string)[];
   @attr(#{what: "Named on the People section."})
-  salutation?: unknown;
+  salutation?: (string)[];
   @attr(#{what: "Named on the People section."})
-  birthFamilyName?: unknown;
+  birthFamilyName?: (string)[];
   @attr(#{what: "Named on the People section."})
-  birthGivenName?: unknown;
+  birthGivenName?: (string)[];
   @attr(#{what: "Named on the People section."})
-  birthMiddleName?: unknown;
+  birthMiddleName?: (string)[];
   @attr(#{what: "Named on the People section."})
-  alsoKnownAs?: unknown;
+  alsoKnownAs?: (string)[];
   @attr(#{what: "Named on the People section."})
-  placeOfBirthCountry?: unknown;
+  placeOfBirthCountry?: string;
   @attr(#{what: "Named on the People section."})
-  placeOfBirthRegion?: unknown;
+  placeOfBirthRegion?: string;
   @attr(#{what: "Named on the People section."})
-  placeOfBirthLocality?: unknown;
+  placeOfBirthLocality?: string;
   @attr(#{what: "Named on the People section."})
-  schacGender?: unknown;
+  schacGender?: string;
   @attr(#{what: "Named on the People section."})
-  middleName?: unknown;
+  middleName?: string;
   @attr(#{what: "Named on the People section."})
-  timeZone?: unknown;
+  timeZone?: string;
   @attr(#{what: "Named on the People section."})
-  pictureUrl?: unknown;
+  pictureUrl?: string;
   @attr(#{what: "Named on the People section."})
-  profileUrl?: unknown;
+  profileUrl?: string;
   @attr(#{what: "Named on the People section."})
-  scimExternalId?: unknown;
+  scimExternalId?: string;
   @attr(#{what: "Named on the People section."})
   userPrincipalName?: unknown;
   @attr(#{what: "Named on the People section."})
-  stsWebauthnCredential?: unknown;
+  stsWebauthnCredential?: (DirectoryJson)[];
   @attr(#{what: "Named on the People section."})
-  stsKrb5KeyInfo?: unknown;
+  stsKrb5KeyInfo?: DirectoryJson;
   @attr(#{what: "Named on the People section."})
-  hobaPublicKey?: unknown;
+  hobaPublicKey?: (string)[];
   @attr(#{what: "Named on the People section."})
-  stsActivationExpires?: unknown;
+  stsActivationExpires?: DirectoryTime;
   @attr(#{what: "Named on the People section."})
-  stsPasswordResetExpires?: unknown;
+  stsPasswordResetExpires?: DirectoryTime;
   @attr(#{what: "Named on the People section."})
-  pwdChangedTime?: unknown;
+  pwdChangedTime?: string;
   @attr(#{what: "Named on the People section."})
-  pwdHistory?: unknown;
+  pwdHistory?: (string)[];
   @attr(#{what: "Named on the People section."})
-  pwdReset?: unknown;
+  pwdReset?: string;
   @attr(#{what: "Named on the People section."})
-  pwdAccountLockedTime?: unknown;
+  pwdAccountLockedTime?: string;
   @attr(#{what: "Named on the People section."})
-  stsBackupCodes?: unknown;
+  stsBackupCodes?: DirectoryJson;
   @attr(#{what: "Named on the People section."})
-  stsActivationToken?: unknown;
+  stsActivationToken?: string;
   @attr(#{what: "Named on the People section as withheld or sealed.", sensitive: true})
-  userPassword?: unknown;
+  userPassword?: (string)[];
   @attr(#{what: "Named on the People section as withheld or sealed.", sensitive: true})
-  stsProfilePhoto?: unknown;
+  stsProfilePhoto?: DirectoryJson;
   @attr(#{what: "Named on the People section as withheld or sealed.", sensitive: true})
-  stsTotpCredential?: unknown;
+  stsTotpCredential?: DirectoryJson;
   @attr(#{what: "Named on the People section as withheld or sealed.", sensitive: true})
-  stsAppPassword?: unknown;
+  stsAppPassword?: DirectoryJson;
   @attr(#{what: "Named on the People section as withheld or sealed.", sensitive: true})
-  stsPasswordResetToken?: unknown;
+  stsPasswordResetToken?: string;
   @attr(#{what: "Named on the People section as withheld or sealed.", sensitive: true})
-  stsKrb5Keys?: unknown;
+  stsKrb5Keys?: string;
   @attr(#{what: "Named on the People section as withheld or sealed.", sensitive: true})
-  stsSelfIssuedSubject?: unknown;
+  stsSelfIssuedSubject?: (DirectoryJson)[];
   @attr(#{what: "Named on the People section as withheld or sealed.", sensitive: true})
-  stsPublishedDid?: unknown;
+  stsPublishedDid?: (DirectoryJson)[];
   @attr(#{what: "Named on the People section as withheld or sealed.", sensitive: true})
-  stsCibaUserCode?: unknown;
+  stsCibaUserCode?: string;
   @attr(#{})
-  x509subject?: unknown;
+  x509subject?: (DirectoryDn)[];
   @attr(#{})
-  x509issuer?: unknown;
+  x509issuer?: (DirectoryDn)[];
   @attr(#{})
-  x509serialNumber?: unknown;
+  x509serialNumber?: (string)[];
   @attr(#{})
-  x509notBefore?: unknown;
+  x509notBefore?: (string)[];
   @attr(#{})
-  x509notAfter?: unknown;
+  x509notAfter?: (string)[];
   @attr(#{})
-  x509fingerprint256?: unknown;
+  x509fingerprint256?: (string)[];
   @attr(#{})
-  x509svidsIssued?: unknown;
+  x509svidsIssued?: DirectoryInteger;
   @attr(#{})
-  x509firstIssued?: unknown;
+  x509firstIssued?: DirectoryTime;
   @attr(#{})
-  x509lastIssued?: unknown;
+  x509lastIssued?: DirectoryTime;
   @attr(#{})
-  didSubject?: unknown;
+  didSubject?: (string)[];
   @attr(#{})
-  didMethod?: unknown;
+  didMethod?: (string)[];
   @attr(#{})
-  spiffeSubject?: unknown;
+  spiffeSubject?: (string)[];
   @attr(#{})
-  spiffePath?: unknown;
+  spiffePath?: string;
   @attr(#{})
-  spiffeTrustDomain?: unknown;
+  spiffeTrustDomain?: string;
   @attr(#{})
-  spiffeCredentialStatus?: unknown;
+  spiffeCredentialStatus?: string;
   @attr(#{})
-  spiffeCredentialStatusReason?: unknown;
+  spiffeCredentialStatusReason?: string;
   @attr(#{})
-  spiffeRevokedAt?: unknown;
+  spiffeRevokedAt?: DirectoryTime;
   @attr(#{})
-  authnMethod?: unknown;
+  authnMethod?: (string)[];
   @attr(#{})
-  mfaAuthenticated?: unknown;
+  mfaAuthenticated?: DirectoryBoolean;
   @attr(#{})
-  mfaLastAuthTime?: unknown;
+  mfaLastAuthTime?: DirectoryTime;
   @attr(#{})
-  federationIssuer?: unknown;
+  federationIssuer?: (string)[];
   @attr(#{})
-  federationLink?: unknown;
+  federationLink?: (string)[];
   @attr(#{})
-  federationLastSeen?: unknown;
+  federationLastSeen?: DirectoryTime;
   @attr(#{})
-  federationAttribute?: unknown;
+  federationAttribute?: (string)[];
   @attr(#{})
-  stsProvisionedBy?: unknown;
+  stsProvisionedBy?: string;
   @attr(#{})
-  oauthConsent?: unknown;
+  oauthConsent?: (string)[];
   @attr(#{})
-  oauthConsentWithdrawn?: unknown;
+  oauthConsentWithdrawn?: (string)[];
   @attr(#{})
-  oauthConsentApplied?: unknown;
+  oauthConsentApplied?: (string)[];
   @attr(#{})
-  stsAndroidAttestedCredential?: unknown;
+  stsAndroidAttestedCredential?: (string)[];
   @attr(#{})
-  stsWebauthnUserHandle?: unknown;
+  stsWebauthnUserHandle?: DirectoryBase64;
   @attr(#{})
-  stsWebauthnPqcUserHandle?: unknown;
+  stsWebauthnPqcUserHandle?: DirectoryBase64;
   @attr(#{})
   stsBootstrapAdministrator?: unknown;
   @attr(#{})
-  stsConsoleClaimedAt?: unknown;
+  stsConsoleClaimedAt?: DirectoryTime;
   @attr(#{})
-  stsMfaRequired?: unknown;
+  stsMfaRequired?: DirectoryBoolean;
   @attr(#{})
-  stsNotDelegated?: unknown;
+  stsNotDelegated?: DirectoryBoolean;
   @attr(#{})
-  stsMayAct?: unknown;
+  stsMayAct?: string;
   @attr(#{})
-  stsDelegationSemantics?: unknown;
+  stsDelegationSemantics?: (string)[];
   @attr(#{})
-  stsDefaultDelegationSemantics?: unknown;
+  stsDefaultDelegationSemantics?: string;
   @attr(#{})
-  stsMailVerified?: unknown;
+  stsMailVerified?: string;
   @attr(#{})
-  stsMailVerifyToken?: unknown;
+  stsMailVerifyToken?: string;
   @attr(#{})
-  stsMailVerifyExpires?: unknown;
+  stsMailVerifyExpires?: DirectoryTime;
   @attr(#{})
-  stsMailVerifyAddress?: unknown;
+  stsMailVerifyAddress?: string;
   @attr(#{})
-  stsPseudonym?: unknown;
+  stsPseudonym?: (string)[];
   @attr(#{})
-  stsPseudonymVerifyToken?: unknown;
+  stsPseudonymVerifyToken?: string;
   @attr(#{})
-  stsPseudonymVerifyExpires?: unknown;
+  stsPseudonymVerifyExpires?: DirectoryTime;
   @attr(#{})
-  stsPseudonymVerifyAddress?: unknown;
+  stsPseudonymVerifyAddress?: string;
   @attr(#{})
-  stsAssertionIssuer?: unknown;
+  stsAssertionIssuer?: (string)[];
   @attr(#{})
-  stsAssertionKeyPair?: unknown;
+  stsAssertionKeyPair?: (DirectoryJson)[];
   @attr(#{})
-  stsAssertionPrivateKey?: unknown;
+  stsAssertionPrivateKey?: (string)[];
   @attr(#{})
-  stsSamlAssertionIssuer?: unknown;
+  stsSamlAssertionIssuer?: (string)[];
   @attr(#{})
-  stsSamlAssertionKeyPair?: unknown;
+  stsSamlAssertionKeyPair?: (DirectoryJson)[];
   @attr(#{})
-  stsSamlAssertionPrivateKey?: unknown;
+  stsSamlAssertionPrivateKey?: (string)[];
   @attr(#{})
-  stsEnrolledCertificate?: unknown;
+  stsEnrolledCertificate?: (DirectoryJson)[];
   @attr(#{})
-  stsEnrolledPrivateKey?: unknown;
+  stsEnrolledPrivateKey?: (string)[];
   @attr(#{})
-  stsAcmeEabKey?: unknown;
+  stsAcmeEabKey?: (DirectoryJson)[];
   @attr(#{})
-  stsScepChallenge?: unknown;
+  stsScepChallenge?: (DirectoryJson)[];
   @attr(#{})
-  stsCertificateHostName?: unknown;
+  stsCertificateHostName?: (string)[];
   @attr(#{})
-  stsIdaVerification?: unknown;
+  stsIdaVerification?: DirectoryJson;
   @attr(#{})
-  stsAudSub?: unknown;
+  stsAudSub?: (string)[];
   @attr(#{})
-  stsClaimSourceTokens?: unknown;
+  stsClaimSourceTokens?: DirectoryJson;
 }
