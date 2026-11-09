@@ -584,8 +584,8 @@
     "text": "此应用定义的每个权限所依附的基础 URI，也是使这里的权限名称全局唯一的东西。权限由此值后跟其名称来标识——基础 `https://example.com/` 加名称 `write` 就是权限 `https://example.com/write`——这是客户端放入 `scope` 的内容，访问令牌随后也以它为受众。Entra ID 称之为 Application ID URI，并写作 `api://<guid>`；形式相同，这里并不要求该协议方案。\n\n通过本模块写入时，它会被规范化为以分隔符结尾——末尾不是 `/`、`#` 或 `:` 时会添加一个 `/`——因为基础加名称是简单的拼接，否则 `https://example.com` 加 `write` 会得到 `https://example.comwrite`。`ldapmodify` 与对其他属性一样也能访问此属性，并且不会被规范化，因此手动写入的基础就严格按其字面含义。\n\n单值，它是这一组中唯一一个不先作出决定就无法扩展的属性：两个基础意味着条目上的每个权限都有两个标识符，而将作用域转换为受众的查找就必须选一个放入 `aud`。"
   },
   "applications.schema.attributes.oauthPermission.what": {
-    "en": "0c47fe049bbc6c7b",
-    "text": "此应用公开的一个权限，每个值一个。值是权限的名称——`read`、`write`、`Widgets.ReadWrite.All`——后面可选择跟 `|` 和描述：`write|Change widgets on somebody's behalf`。第一个 `|` 是分隔符，之后的每一个都属于描述，因此描述可以包含该字符，名称则不能。\n\n名称必须是合法的 OAuth 作用域令牌（RFC 6749 第 3.3 节——不含空格、双引号或反斜杠），因为这是客户端将放入 `scope` 参数的内容，也是令牌的 `scope` 声明中返回的内容。`ldapmodify` 写入时不会强制这一点；本模块和两个控制台会强制。\n\n权限必须先存在，才能授予任何人，这是此功能唯一的顺序规则，并在 updateApplication() 中检查，以便控制台表单和管理 API 不会对此产生分歧。它在授予时检查，而不是在这里：此属性是定义，一个尚未有人使用的定义是正常的第一步，而不是错误。"
+    "en": "7eb690e390462f2d",
+    "text": "此应用公开的一个权限，每个值一个。值是权限的名称——`read`、`write`、`Widgets.ReadWrite.All`——后面可选择跟 `|` 和描述：`write|Change widgets on somebody's behalf`。第一个 `|` 是分隔符，之后的每一个都属于描述，因此描述可以包含该字符，名称则不能。\n\n名称必须是合法的 OAuth 作用域令牌（RFC 6749 第 3.3 节——不含空格、双引号或反斜杠），因为这是客户端将放入 `scope` 参数的内容，也是令牌的 `scope` 声明中返回的内容。包含操作员错误代码的名称或描述也会被拒绝：两者都会在列出该权限的每个页面上返回，而错误代码只记录、不发送。`ldapmodify` 写入该值时不会强制这两条规则；本模块和两个控制台会强制。\n\n权限必须先存在，才能授予任何人，这是此功能唯一的顺序规则，并在 updateApplication() 中检查，以便控制台表单和管理 API 不会对此产生分歧。它在授予时检查，而不是在这里：此属性是定义，一个尚未有人使用的定义是正常的第一步，而不是错误。"
   },
   "applications.schema.attributes.oauthRoleGatedPermission.what": {
     "en": "fa1c86d8fb8ce2fb",

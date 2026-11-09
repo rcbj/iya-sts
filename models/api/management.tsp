@@ -29901,6 +29901,13 @@ op `getCells`(@js(#{`examples`:#["cell-a"]}) `parameters/0/schema`: string,
     },
     `parameters`:#[
       #{
+        `name`:"cell",
+        `in`:"query",
+        `required`:true,
+        `schema`:null,
+        `description`:"The other cell's id."
+      },
+      #{
         `name`:"after",
         `in`:"query",
         `required`:false,
@@ -29910,7 +29917,8 @@ op `getCells`(@js(#{`examples`:#["cell-a"]}) `parameters/0/schema`: string,
     ],
     `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
   })
-op `getCellPeople`(@js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/0/schema`: string,
+op `getCellPeople`(@js(#{`minLength`:1,`maxLength`:16,`examples`:#["cell-a"]}) `parameters/0/schema`: string,
+  @js(#{`maxLength`:256,`examples`:#["alice"]}) `parameters/1/schema`: string,
   `responses/200/content/application~1json/schema`: `SharedModel22`,
   `responses/default/content/application~1json/schema`: `SharedModel1`): void;
   

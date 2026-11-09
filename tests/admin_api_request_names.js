@@ -147,6 +147,30 @@ function childMain() {
     }).map(function (entry) {
       return entry.operationId || entry.path || entry.route;
     });
+    // What the refusals read and what the document states are one list
+    // (#1476): the routing rows' parameters are held to the model's.
+    report.rows.modelParameters = (function () {
+      const Spec = require(ROOT_DIR + '/mgmt-api/admin_api_spec').AdminApiSpec;
+      const paths = Spec.merged().paths;
+      const shape = function (list) {
+        return JSON.stringify((list || []).map(function (one) {
+          return [one.in, one.name, !!one.required].join(' ');
+        }).sort());
+      };
+      const drift = [];
+      api.ROUTES.forEach(function (entry) {
+        Spec.keysOf(entry).forEach(function (key) {
+          const stated = paths[key.path] && paths[key.path][key.method];
+          const own = (entry.parameters || []).concat(
+            (key.action && key.action.parameters) || []);
+          if (stated && shape(stated.parameters) !== shape(own)) {
+            drift.push(key.method + ' ' + key.path + ': the model says ' +
+                       shape(stated.parameters) + ', the row ' + shape(own));
+          }
+        });
+      });
+      return drift;
+    })();
     report.rows.queryNames = api.operationSummaries('all')
       .filter(function (row) {
         return row.method === 'GET';
@@ -330,6 +354,9 @@ function wrapper(t) {
           refused(r.postHeader, 'x-sts-garbage', 'STS-API-0144'),
           'a POST refuses both too', JSON.stringify([r.postUnknown,
                                                      r.postHeader]));
+  t.equal(JSON.stringify(r.modelParameters.slice(0, 5)), '[]',
+          'every routing row declares the parameters the model states (' +
+          r.modelParameters.length + ' drifted)');
   t.equal(JSON.stringify(r.implicit), '[]',
           'every operation declares DPoP and cell');
   t.equal(JSON.stringify(r.queryNames), '[]',

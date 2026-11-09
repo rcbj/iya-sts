@@ -288,6 +288,20 @@ function authnBodies(t, docs) {
     sameText(t, canonical(stated), canonical(Spec.jsonSchemaOf(op.body)),
       op.operationId + ': the body it accepts is the one the model states');
   });
+  // The refusal reads the operation's own list and the document states the
+  // same one (#1483), so the two are held equal. An example is the model's.
+  authnApi.operations().forEach(function (op) {
+    const path = String(op.path).replace(/:([A-Za-z]+)/g, '{$1}');
+    const entry = docs.authn.paths[path][op.method.toLowerCase()];
+    const stated = (entry.parameters || []).map(function (one) {
+      const copy = Object.assign({}, one);
+      delete copy.example;
+      return copy;
+    });
+    sameText(t, canonical(stated),
+      canonical(authnApi.AuthnApi.parametersOf(op)),
+      op.operationId + ': the parameters are the ones the model states');
+  });
   log.debug("Leaving authnBodies().");
 }
 
