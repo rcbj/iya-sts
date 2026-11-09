@@ -52,6 +52,7 @@ const GENERATED = ['application', 'role', 'device', 'serviceAccount', 'spiffe',
   }).concat(POLICY_KINDS.map(function (id) {
     return 'models/generated/' + id + '.fields.json';
   })).concat(['models/generated/directory.names.json',
+    'models/generated/domain.json',
     'models/generated/persistence.postgres.json',
     'models/generated/persistence.mariadb.json',
     'models/generated/openapi.report.json',

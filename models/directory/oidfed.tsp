@@ -34,13 +34,13 @@ namespace IyaSts.Directory;
 })
 model Oidfed {
   @attr(#{})
-  stsOidfedKind?: unknown;
+  stsOidfedKind?: string;
   @attr(#{})
-  stsOidfedEntityId?: unknown;
+  stsOidfedEntityId?: string;
   @attr(#{})
-  stsOidfedData?: unknown;
+  stsOidfedData?: DirectoryJson;
   @attr(#{})
-  stsOidfedKeys?: unknown;
+  stsOidfedKeys?: (DirectoryJson)[];
   @attr(#{})
-  stsOidfedEvent?: unknown;
+  stsOidfedEvent?: (DirectoryJson)[];
 }

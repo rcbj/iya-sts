@@ -34,11 +34,11 @@ namespace IyaSts.Directory;
 })
 model AttributeSource {
   @attr(#{what: "The source id, the RDN."})
-  cn?: unknown;
+  cn?: (string)[];
   @attr(#{jsonBlob: true, what: "The whole definition as one JSON value. No password."})
-  stsAttributeSourceData?: unknown;
+  stsAttributeSourceData?: DirectoryJson;
   @attr(#{what: "On a person: <source>:<attribute> a source wrote."})
-  stsAttributeSourced?: unknown;
+  stsAttributeSourced?: (string)[];
   @attr(#{what: "On a person: <source>=<time> of the last read."})
-  stsAttributeSourceSeen?: unknown;
+  stsAttributeSourceSeen?: (string)[];
 }

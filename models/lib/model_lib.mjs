@@ -87,6 +87,13 @@ function attributeOf(program, property, index) {
   if (options.kind === undefined) {
     attribute.kind = 'unspecified';
   }
+  // The stated type says one or several where `kind` is silent. It is kept
+  // apart from `kind` because a row in a SCHEMA table carries `kind`.
+  if (property.type.kind === 'Scalar') {
+    attribute.storedAs = 'single';
+  } else if (property.type.kind === 'Model' && property.type.indexer) {
+    attribute.storedAs = 'multi';
+  }
   log.debug("Leaving attributeOf().");
   return attribute;
 }
