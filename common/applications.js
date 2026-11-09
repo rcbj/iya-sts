@@ -8209,7 +8209,8 @@ function normaliseFields(value) {
     // which creates an entry WITH its permissions, would have done for any
     // document naming an unusable scope. The same rules and the same codes as
     // the update: the base absolute, each name a scope token, no name twice,
-    // and no permission on an entry with no base to identify it by.
+    // no operator error code in the name or the description (#1426), and no
+    // permission on an entry with no base to identify it by.
     if (name === 'oauthPermissionBaseUri') {
       const problem = permissionBaseProblem(values[0]);
       if (problem) {
@@ -8223,6 +8224,15 @@ function normaliseFields(value) {
       const permissionProblems = [];
       values.forEach(function (one) {
         const parsed = parsePermissionValue(one);
+        // Before the name check: its illegal-token sentence quotes the
+        // name, and a quoted code in a 400 body is sent (#1426).
+        const coded = permissionOperatorCodeProblem(parsed.name,
+                                                    parsed.description);
+        if (coded) {
+          permissionProblems.push(coded);
+          code = code || 'STS-REG-0367';
+          return;
+        }
         const problem = permissionNameProblem(parsed.name);
         if (problem) {
           permissionProblems.push(problem);
@@ -12342,6 +12352,15 @@ function updateApplication(identifier, change) {
   }
   if (attribute === 'oauthPermission' && mode === 'add') {
     const parsed = parsePermissionValue(value);
+    // Before the name check: its illegal-token sentence quotes the name,
+    // and a quoted code in a 400 body is sent (#1426).
+    const coded = permissionOperatorCodeProblem(parsed.name,
+                                                parsed.description);
+    if (coded) {
+      log.debug("Leaving updateApplication(). The permission carries an " +
+                "operator error code.");
+      return errorCodes.mark({ ok: false, errors: [coded] }, 'STS-REG-0367');
+    }
     const problem = permissionNameProblem(parsed.name);
     if (problem) {
       log.debug("Leaving updateApplication(). The permission name is not " +
@@ -16118,6 +16137,43 @@ function permissionNameProblem(name) {
   return '';
 }
 
+// AN OPERATOR ERROR CODE IN THE NAME OR THE DESCRIPTION IS REFUSED (#1426).
+//
+// Both are returned on every page that lists the permission — the register,
+// the delegation picture, the directory read — so a code stored in one is
+// SENT, which this service never does. A setting's own description is
+// allowed to name a code, and a paste of that sentence lands in a permission
+// description; the name can be a code too, because `STS-AUTHN-0294` is a
+// legal scope token, so `permissionNameProblem()` accepts it. The sentence
+// below quotes neither value: a refusal body is scanned raw, and a quoted
+// code is the same finding as a stored one. Checked BEFORE
+// `permissionNameProblem()`, whose illegal-token sentence quotes the name.
+//
+// An `ldapmodify` still writes the attribute unchecked, as the schema row
+// says. The two doors that do check are the add in `updateApplication()` and
+// the create walk, which never reaches that function.
+/**
+ * Refuses a permission whose name or description contains an operator
+ * error code.
+ *
+ * @param name - the name
+ * @param description - the description
+ * @returns the refusal sentence, or ''
+ */
+function permissionOperatorCodeProblem(name, description) {
+  log.debug("Entering permissionOperatorCodeProblem().");
+  const text = String(name == null ? '' : name) + '\n' +
+               String(description == null ? '' : description);
+  if (/STS-[A-Z]+-[0-9]{4}/.test(text)) {
+    log.debug("Leaving permissionOperatorCodeProblem(). A code.");
+    return 'A permission name or description may not contain an operator ' +
+           'error code. That value is returned on every page that lists ' +
+           'the permission, and a code is recorded rather than sent.';
+  }
+  log.debug("Leaving permissionOperatorCodeProblem().");
+  return '';
+}
+
 // ---------------------------------------------------------------------------
 // RFC 6749 SECTION 3.3'S `scope-token`, ON ITS OWN, BECAUSE TWO ATTRIBUTES NOW
 // NEED IT AND THEY NEED DIFFERENT THINGS AROUND IT.
@@ -18502,6 +18558,8 @@ module.exports = {
   parsePermissionValue: parsePermissionValue,
   permissionValueOf: permissionValueOf,
   permissionNameProblem: permissionNameProblem,
+  // #1426: the name or the description, before any sentence that quotes it.
+  permissionOperatorCodeProblem: permissionOperatorCodeProblem,
   // The RFC 6749 section 3.3 grammar on its own, for common/consent.ts — see
   // the block above it for why the schema owner owns this rule.
   scopeTokenProblem: scopeTokenProblem,

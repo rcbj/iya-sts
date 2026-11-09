@@ -552,6 +552,13 @@ module.exports = {
          'the same permission twice'],
         [{ oauthPermission: ['read'] }, 'STS-REG-0015',
          'permissions with no base URI'],
+        [{ oauthPermissionBaseUri: 'https://a.example',
+           oauthPermission: ['read|kept off the token (STS-AUTHN-0294)'] },
+         'STS-REG-0367',
+         'a permission description that contains an operator error code'],
+        [{ oauthPermissionBaseUri: 'https://a.example',
+           oauthPermission: ['STS-AUTHN-0294'] }, 'STS-REG-0367',
+         'a permission name that is an operator error code'],
         [{ oauthPermissionBaseUri: 'not a uri' }, 'STS-REG-0012',
          'a base URI that is not absolute'],
         [{ oauthResourceMetadata: '[1]' }, 'STS-REG-0089',
@@ -592,6 +599,25 @@ module.exports = {
         attribute: 'oauthResourceMetadata', mode: 'set', value: '{"a":1}' });
       t.equal(codeOf(errorCodes, badUpdate), 'STS-REG-0089',
               'an UPDATE refuses a document with no resource too');
+      const codedUpdate = applications.updateApplication('prm-created', {
+        attribute: 'oauthPermission', mode: 'add',
+        value: 'admin|refused (STS-AUTHN-0294)' });
+      t.equal(codeOf(errorCodes, codedUpdate), 'STS-REG-0367',
+              'an UPDATE refuses a permission description that contains an ' +
+              'operator error code');
+      t.check(codedUpdate.ok === false &&
+              !/STS-[A-Z]+-[0-9]{4}/.test(
+                JSON.stringify(codedUpdate.errors || '')),
+              'and that refusal does not repeat the code',
+              JSON.stringify(codedUpdate.errors || ''));
+      const codedName = applications.updateApplication('prm-created', {
+        attribute: 'oauthPermission', mode: 'add', value: 'STS-AUTHN-0294' });
+      t.equal(codeOf(errorCodes, codedName), 'STS-REG-0367',
+              'an UPDATE refuses a permission name that is an operator ' +
+              'error code');
+      t.check(JSON.stringify((entries['prm-created'] || {}).attributes || '')
+                .indexOf('STS-AUTHN-0294') < 0,
+              'and neither refused value was written');
     } finally {
       applications.setDirectory(beforeDirectory);
     }

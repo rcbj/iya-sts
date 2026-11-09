@@ -449,10 +449,42 @@ async function chooser(t) {
     return one.dn + ':' + one.found;
   }).join(','), 'cn=team-03:true,cn=team-07:true,cn=nope:false',
     'the list is resolved, a missing group marked');
-  t.equal(require('../common/post_login_activities')
+  const activitiesMod = require('../common/post_login_activities');
+  t.equal(activitiesMod
     .groupNamesOf(['a; b', '', 'cn=c\\;d,ou=x;']).join('|'),
     'a|b|cn=c\\;d,ou=x',
     'groupNamesOf splits on `;`, keeps an escaped one, drops empties');
+  const cap = activitiesMod.GROUPS_QUERY_MAX;
+  t.equal(cap, 4096, 'the groups query cap is 4096 characters');
+  const name = 'cn=' + 'n'.repeat(40) + ',ou=groups,dc=example,dc=test';
+  const fifty = [];
+  for (let i = 0; i < 50; i++) {
+    fifty.push(name);
+  }
+  const joined = fifty.join(';');
+  t.check(joined.length <= cap &&
+    activitiesMod.groupsQueryProblem({ groups: joined }) === null,
+    'fifty ordinary group names fit in the groups query',
+    String(joined.length));
+  const exact = 'e'.repeat(cap);
+  t.equal(activitiesMod.groupsQueryProblem({ groups: exact }), null,
+    'a groups query of exactly the cap is accepted');
+  t.equal(activitiesMod.groupNamesOf(exact).length, 1,
+    'a legal string of the cap is one name');
+  const marker = 'GROUPSQUERYMARKER';
+  const tooLong = marker + 'a'.repeat(cap);
+  const refused = activitiesMod.groupsQueryProblem({ groups: tooLong });
+  const sentence = refused && refused.errors && refused.errors[0];
+  t.check(refused && refused.ok === false &&
+    !/STS-[A-Z]+-[0-9]{4}/.test(String(sentence)) &&
+    String(sentence).indexOf(marker) < 0 &&
+    String(sentence).indexOf(String(cap)) >= 0,
+    'a longer groups query is refused, with no code and without the value',
+    JSON.stringify(refused));
+  const parts = ['aa', 'bbb', 'c'.repeat(cap)];
+  t.check(activitiesMod.groupsQueryProblem({ groups: parts }) &&
+    activitiesMod.groupsQueryProblem({ groups: parts }).ok === false,
+    'repeated groups parameters are summed');
   log.debug("Leaving chooser().");
 }
 
@@ -584,6 +616,15 @@ function childMain() {
          r.json.activities.indexOf('pqc-passkey-migration') >= 0,
          'B2. GET /admin-api/post-login-activities answers the view',
          brief(r));
+    const marker = 'GROUPSQUERYMARKER';
+    const tooLong = marker + 'a'.repeat(activities.GROUPS_QUERY_MAX);
+    r = await call(port, 'GET', '/admin-api/post-login-activities?groups=' +
+                   encodeURIComponent(tooLong), admin);
+    const shown = JSON.stringify(r.json || {});
+    note(r.status === 400 && r.json && r.json.ok === false &&
+         !/STS-[A-Z]+-[0-9]{4}/.test(shown) && shown.indexOf(marker) < 0,
+         'B2a. a groups query longer than one request line can carry is ' +
+         'refused 400, with no code and without the value', brief(r));
     r = await call(port, 'POST', '/admin-api/post-login-activities/start',
                    admin, { activity: 'pqc-passkey-migration',
                             intervalDays: 0 });

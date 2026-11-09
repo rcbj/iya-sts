@@ -898,7 +898,7 @@ Scope: `admin:read`.
 |---|---|---|---|---|
 | `groupq` | query | string |  | The group search: a substring of a group's cn or DN, case-insensitive; empty for every group. |
 | `groupfrom` | query | string |  | Where the page of the group search starts. |
-| `groups` | query | string |  | The groups chosen so far, cns or DNs separated by `;` (a DN's commas stay intact; a `;` inside a DN value is escaped, `\;`); resolved into `groupChooser.chosen` and left out of the search. |
+| `groups` | query | string |  | The groups chosen so far, cns or DNs separated by `;` (a DN's commas stay intact; a `;` inside a DN value is escaped, `\;`); resolved into `groupChooser.chosen` and left out of the search. At most 4096 characters, which is as much as one request line can carry; fifty ordinary group names fit. |
 
 **200**: The started activities and the chooser.
 
