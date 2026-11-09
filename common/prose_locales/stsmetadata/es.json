@@ -3958,5 +3958,9 @@
   "stsmetadata.endpoints./admin-api/malware-scanning/:action.what": {
     "en": "1bf7c4937a9313c4",
     "text": "NON-SPEC (#1501). Envía al servicio ICAP configurado el archivo de prueba EICAR y solo tiene éxito si el servicio lo marca."
+  },
+  "stsmetadata.endpoints./admin-api/audit/integrity.what": {
+    "en": "80d0dc13ebf1f23b",
+    "text": "Compara cada fila de auditoría conservada con su suma de verificación con clave e informa de las que ya no coinciden. No cambia nada."
   }
 }
