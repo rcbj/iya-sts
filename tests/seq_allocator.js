@@ -211,7 +211,9 @@ async function run(t) {
   const delegation = require('../common/delegation');
   const realms = require('../common/realms');
   realms.run(realms.DEFAULT_REALM, function () {
-    const before = audit.list().length;
+    // The newest row's seq and not the list's length: the ring is bounded,
+    // and full by this point in a single-process run (#1147).
+    const newestBefore = (audit.list()[0] || {}).seq || 0;
     audit.audit({ category: 'admin', action: 'admin.test',
                   summary: 'seq_allocator test' });
     const event = audit.list()[0];
@@ -220,8 +222,8 @@ async function run(t) {
       outcome: delegation.OUTCOMES[0], initial: { presented: 'sa-alice' },
       intermediary: { presented: 'sa-front', application: 'sa-front' },
       target: { application: 'sa-back' }, authorizedBy: 'a test' });
-    t.check(audit.list().length === before + 1 &&
-            typeof event.seq === 'number' && event.seq > 0 &&
+    t.check(event.summary === 'seq_allocator test' &&
+            typeof event.seq === 'number' && event.seq > newestBefore &&
             Object.prototype.hasOwnProperty.call(event, 'origin') &&
             act && typeof act.seq === 'number' && act.seq > 0 &&
             Object.prototype.hasOwnProperty.call(act, 'origin'),
