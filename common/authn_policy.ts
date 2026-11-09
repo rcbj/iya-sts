@@ -839,6 +839,22 @@ class AuthnPolicy {
       ? 'always' : String(rules.requireSecondFactor);
   }
 
+  /**
+   * The realm's rule as configured, without product mode's "everybody": a
+   * service account is held to this one, having no person to answer a second
+   * factor.
+   *
+   * @param profile - a profile already read; read afresh when omitted
+   * @returns the configured value
+   */
+  configuredSecondFactor(profile?: AuthnProfile | null): string {
+    const { log } = this.deps;
+    log.debug("Entering AuthnPolicy.configuredSecondFactor().");
+    const rules = profile || this.read(DEFAULT_PROFILE);
+    log.debug("Leaving AuthnPolicy.configuredSecondFactor().");
+    return String(rules.requireSecondFactor);
+  }
+
   // `if-held`, `offer` or `always` (#246): what an administrator who holds
   // no second factor meets at sign-in. `credentials.mfaRequirementFor()`
   // is the one reader that decides with it.
@@ -1684,6 +1700,7 @@ export = {
   active: slot.forward('active'),
   mailUsable: slot.forward('mailUsable'),
   requireSecondFactor: slot.forward('requireSecondFactor'),
+  configuredSecondFactor: slot.forward('configuredSecondFactor'),
   requireSecondFactorForAdministrators:
     slot.forward('requireSecondFactorForAdministrators'),
   emailSettings: slot.forward('emailSettings'),

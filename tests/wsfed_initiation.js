@@ -395,6 +395,7 @@ function childMain() {
       mail: 'paula@wsfed-initiation.example' } });
     credentials.setPassword(PERSON_P, PASSWORD_P);
     config.setOverride('global.mode', 'product');
+    config.setOverride('authn.allowOptionalSecondFactor', 'true');
     config.setOverride('risk.assessSignIns', false);
     try {
       note(config.value('global.mode') === 'product',
@@ -471,6 +472,7 @@ function childMain() {
       }
     } finally {
       config.clearOverride('risk.assessSignIns');
+      config.clearOverride('authn.allowOptionalSecondFactor');
       config.clearOverride('global.mode');
     }
 

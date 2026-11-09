@@ -485,6 +485,7 @@ function childMain() {
       // an automated client's sign-in as risky (`isbot`), which would make
       // the sign-in itself the step-up.
       config.setOverride('global.mode', 'product');
+      config.setOverride('authn.allowOptionalSecondFactor', 'true');
       userAgent = BROWSER_UA;
       try {
         const spProduct = party('idp-on-p', 'saml2-service-provider',
@@ -509,6 +510,7 @@ function childMain() {
              startedWrong.status + ' ' + wrong.status + ' ' + wrong.next);
       } finally {
         userAgent = '';
+        config.clearOverride('authn.allowOptionalSecondFactor');
         config.clearOverride('global.mode');
       }
 
