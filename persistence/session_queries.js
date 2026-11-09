@@ -151,9 +151,12 @@ const MARIADB = {
   'session.oldest': 'SELECT `key`, last_seen_at, started_at FROM ' +
     'sts_sessions WHERE realm = $1 AND subject_key = $2 AND chosen ORDER BY ' +
     'last_seen_at, started_at',
+  // `last_seen_at < $3` BEFORE `$3 > 0`: PostgreSQL types a parameter at its
+  // first use, and against the literal 0 that is int4, which a millisecond
+  // time does not fit once an idle timeout is set (STS-AUTHN-0338).
   'session.expired': 'SELECT `key` FROM sts_sessions WHERE realm = $1 AND (' +
     '(expires_at IS NOT NULL AND expires_at <= $2) OR ' +
-    '(chosen AND $3 > 0 AND last_seen_at < $3))',
+    '(chosen AND last_seen_at < $3 AND $3 > 0))',
   'session.subjectRows': 'SELECT `key`, subject_key, last_seen_at, ' +
     'started_at FROM sts_sessions WHERE realm = $1 AND chosen AND ' +
     'subject_key <> \'\' AND (subject_key, `key`) > ($2, $3) ORDER BY ' +
