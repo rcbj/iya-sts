@@ -41,16 +41,12 @@ import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
 import core = require('../common/cert_enrollment');
 import monitor = require('../common/enrollment_monitor');
-import validation = require('../common/validation');
 import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
-
-const vz = validation.z;
-const vt = validation.types;
 
 interface PortalCertificatesDeps {
   log: { debug(message: string): void; info(message: string): void };
@@ -74,11 +70,23 @@ interface Fresh {
 
 /**
  * The RFC 5280 revocation reasons a person may give when revoking their own
- * certificate.
+ * certificate: the values `changeCertificates`' `reason` takes in the model
+ * (#1579), so the page offers what the request accepts.
+ *
+ * @returns the reasons, in the model's order
  */
-const REVOCATION_REASONS = ['unspecified', 'keyCompromise',
-                            'affiliationChanged', 'superseded',
-                            'cessationOfOperation'];
+function revocationReasons(): string[] {
+  helpers.log.debug("Entering revocationReasons().");
+  const reason = ModelZod.operation('account', 'changeCertificates')
+    .requestBody.content['application/json'].schema.properties.reason;
+  const listed = (reason.anyOf || [reason]).filter(function (one: Json) {
+    return Array.isArray(one.enum);
+  })[0];
+  helpers.log.debug("Leaving revocationReasons().");
+  return listed.enum.slice();
+}
+
+const REVOCATION_REASONS = revocationReasons();
 
 /**
  * `/portal/certificates`' account API operations: what ACME and SCEP need to
@@ -89,8 +97,6 @@ class PortalCertificates {
    * The revocation reasons a person may give for their own certificate.
    */
   static readonly REVOCATION_REASONS = REVOCATION_REASONS;
-
-  private form: Json = null;
 
   /**
    * Builds the module over its dependencies.
@@ -121,38 +127,6 @@ class PortalCertificates {
         return require('../common/pki_revocation');
       }
     };
-  }
-
-  /**
-   * The body's schema, built once from the core's profiles.
-   *
-   * @returns the zod object
-   */
-  formSchema(): Json {
-    const { log, core } = this.deps;
-    log.debug("Entering PortalCertificates.formSchema().");
-    if (!this.form) {
-      this.form = vz.object({
-        action: vt.opt(vt.oneOf(['create-eab', 'delete-eab',
-                                 'create-challenge', 'delete-challenge',
-                                 'revoke']))
-          .describe('What to do.'),
-        kid: vz.string().max(600).regex(/^[A-Za-z0-9_-]*$/).optional()
-          .describe('The account binding key to delete.'),
-        id: vz.string().max(600).regex(/^[A-Za-z0-9_-]*$/).optional()
-          .describe('The challenge password to delete.'),
-        // `device` (#164 phase 2): a SCEP challenge for a device of theirs.
-        profile: vt.opt(vt.oneOf(core.PROFILE_IDS.concat(
-          [core.DEVICE_PROFILE])))
-          .describe('The profile a new SCEP challenge is for.'),
-        serial: vz.string().max(80).regex(/^[0-9A-Fa-f:]*$/).optional()
-          .describe('The serial of the certificate to revoke.'),
-        reason: vt.opt(vt.oneOf(REVOCATION_REASONS))
-          .describe('The RFC 5280 reason for a revocation.')
-      });
-    }
-    log.debug("Leaving PortalCertificates.formSchema().");
-    return this.form;
   }
 
   /**

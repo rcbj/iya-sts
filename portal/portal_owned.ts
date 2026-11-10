@@ -40,15 +40,12 @@
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
-import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 
 type Json = any;
 type AccountOperation = import('../types/account-api').AccountOperation;
 type AccountContext = import('../types/account-api').AccountContext;
 type AccountCaller = import('../types/account-api').AccountCaller;
-
-const vz = validation.z;
-const vt = validation.types;
 
 interface PortalOwnedDeps {
   log: { debug(message: string): void };
@@ -72,11 +69,6 @@ const KINDS = ['roles', 'groups', 'service-accounts', 'applications'];
 
 // A page of rows at a time, the portal's lists' size.
 const PER_PAGE = 20;
-
-const PAGE_QUERY = vz.object({
-  page: vt.opt(vt.integer(1, 100000))
-    .describe('Which page of `rows`. Clamped to the last.')
-});
 
 // A DN as it is compared: case and the spaces around a comma do not matter.
 function dnKey(dn: unknown): string {
@@ -327,7 +319,7 @@ class PortalOwned {
           'groups of yours it names. Since #607 an owner may administer ' +
           'what they own through /admin-api with owner:read and ' +
           'owner:write.',
-        query: PAGE_QUERY,
+        query: ModelZod.query('account', ids[kind]),
         handler: function (req: Json, res: Json, caller: AccountCaller,
                            input: Json): unknown {
           return ctx.json(res, 200,

@@ -16,6 +16,20 @@
 // IT REFUSES A KEYWORD IT DOES NOT UNDERSTAND. A validator that ignored one
 // would accept what the document forbids.
 //
+// What it understands grew with #1579, when the last hand-written validators
+// in front of modelled operations went: `oneOf` (exactly one option holds),
+// `patternProperties` (a member whose name matches is held to that schema),
+// `uniqueItems`, OpenAPI 3.0's `nullable` (and a `null` among an `enum`'s
+// values), and a `$ref` to one of the document's components, recursive ones
+// included. `component()` is a component's own validator, which is how the
+// Reports API holds a query document that arrives inside a definition as well
+// as on its own.
+//
+// A QUERY STRING OR A FORM HOLDS TEXT, A JSON DOCUMENT IS TYPED. An integer is
+// coerced from "300" unless the caller asks for `typed`, where a string is
+// not a number: the Reports API's documents are read that way, as they were
+// before the check was generated.
+//
 // A LEAF: it requires zod and `model_tables`, and `validation` only for the
 // one format JSON Schema cannot state.
 // ---------------------------------------------------------------------------
@@ -31,11 +45,50 @@ const log = bunyan.createLogger({
 
 const z: any = zodModule;
 
-// Words a reader needs and a check does not.
+// Words a reader needs and a check does not. An OpenAPI extension (`x-…`)
+// is one too: it never constrains a value.
 const ANNOTATIONS = new Set(['description', 'examples', 'example', 'title',
   'default']);
 
 type Json = Record<string, any>;
+
+/**
+ * What one build carries down the schema: the document a `$ref` resolves in,
+ * whether a number is coerced, and the components already built, so that a
+ * recursive one is built once and reached lazily.
+ */
+interface Context {
+  document: string;
+  typed: boolean;
+  built: Map<string, any>;
+  building: Set<string>;
+}
+
+/**
+ * True for a keyword that only annotates.
+ *
+ * @param key - the keyword
+ * @returns whether a check may ignore it
+ */
+function annotation(key: string): boolean {
+  // No Entering/Leaving pair: asked once per keyword of every schema built,
+  // which would drown the log.
+  return ANNOTATIONS.has(key) || key.indexOf('x-') === 0;
+}
+
+/**
+ * A context for one build.
+ *
+ * @param document - the document's file name part
+ * @param typed - true where a number must arrive as one
+ * @returns the context
+ */
+function contextOf(document: string, typed: boolean): Context {
+  log.debug("Entering contextOf().");
+  log.debug("Leaving contextOf().");
+  return { document: document, typed: typed, built: new Map(),
+           building: new Set() };
+}
 
 // Each document's operations by id, built on first use.
 const INDEX = new Map<string, Map<string, Json>>();
@@ -53,7 +106,7 @@ class ModelZod {
   static onlyKnown(schema: Json, known: string[]): void {
     log.debug("Entering ModelZod.onlyKnown().");
     Object.keys(schema).forEach(function (key) {
-      if (known.indexOf(key) < 0 && !ANNOTATIONS.has(key)) {
+      if (known.indexOf(key) < 0 && key !== 'nullable' && !annotation(key)) {
         log.debug("Leaving ModelZod.onlyKnown(). Refused.");
         throw new TypeError('No validator can be generated for the keyword ' +
           key + ' in ' + JSON.stringify(schema).slice(0, 200));
@@ -84,7 +137,12 @@ class ModelZod {
     } else if (schema.const !== undefined) {
       out = z.literal(schema.const);
     } else if (schema.enum) {
-      out = z.enum(schema.enum);
+      // OpenAPI 3.0 lists null among a nullable value's values; `of()`
+      // makes the value nullable, so it is not one of the strings.
+      const values = schema.enum.filter(function (one: unknown) {
+        return one !== null;
+      });
+      out = values.length === 1 ? z.literal(values[0]) : z.enum(values);
     } else {
       out = z.string();
       if (schema.minLength !== undefined) {
@@ -105,15 +163,22 @@ class ModelZod {
    * An integer or number schema.
    *
    * @param schema - the schema
+   * @param context - the build
    * @returns the zod schema
    */
-  static numberOf(schema: Json): any {
+  static numberOf(schema: Json, context: Context): any {
     log.debug("Entering ModelZod.numberOf().");
     ModelZod.onlyKnown(schema, ['type', 'minimum', 'maximum']);
     // An integer arrives as a string in a query or a form, and there is no
-    // second reading of "300".
-    let out: any = schema.type === 'integer' ? z.coerce.number().int() :
-      z.number();
+    // second reading of "300". A typed document says what it means.
+    let out: any;
+    if (schema.type !== 'integer') {
+      out = z.number();
+    } else if (context.typed) {
+      out = z.number().int();
+    } else {
+      out = z.coerce.number().int();
+    }
     if (schema.minimum !== undefined) {
       out = out.min(schema.minimum);
     }
@@ -126,28 +191,34 @@ class ModelZod {
 
   /**
    * An object schema: `additionalProperties: false` refuses a member the
-   * schema does not name, and with no such keyword a member is dropped.
+   * schema does not name, and with no such keyword a member is dropped. A
+   * member whose name a `patternProperties` pattern matches is named by it:
+   * kept, and held to that pattern's schema.
    *
    * @param schema - the schema
+   * @param context - the build
    * @returns the zod schema
    */
-  static objectOf(schema: Json): any {
+  static objectOf(schema: Json, context: Context): any {
     log.debug("Entering ModelZod.objectOf().");
     ModelZod.onlyKnown(schema, ['type', 'properties', 'required',
-      'additionalProperties']);
+      'additionalProperties', 'patternProperties']);
     const required: string[] = schema.required || [];
     const shape: Json = {};
     Object.keys(schema.properties || {}).forEach(function (name) {
-      const member = ModelZod.of(schema.properties[name]);
+      const member = ModelZod.build(schema.properties[name], context);
       shape[name] = required.indexOf(name) >= 0 ? member : member.optional();
     });
     let out: any;
-    if (schema.additionalProperties === false) {
+    if (schema.patternProperties) {
+      out = ModelZod.patternedOf(schema, shape, context);
+    } else if (schema.additionalProperties === false) {
       out = z.strictObject(shape);
     } else if (schema.additionalProperties &&
         typeof schema.additionalProperties === 'object' &&
         Object.keys(schema.additionalProperties).length > 0) {
-      out = z.object(shape).catchall(ModelZod.of(schema.additionalProperties));
+      out = z.object(shape).catchall(
+        ModelZod.build(schema.additionalProperties, context));
     } else if (schema.additionalProperties !== undefined) {
       out = z.looseObject(shape);
     } else {
@@ -159,47 +230,243 @@ class ModelZod {
   }
 
   /**
-   * The zod schema of a JSON Schema.
+   * An object with `patternProperties`. The object is loose, so a member a
+   * pattern names reaches the check; one no property and no pattern names is
+   * refused where `additionalProperties` is false and kept otherwise, which
+   * is what JSON Schema says of it.
    *
    * @param schema - the schema
+   * @param shape - the named members, built
+   * @param context - the build
    * @returns the zod schema
    */
-  static of(schema: Json): any {
-    log.debug("Entering ModelZod.of().");
+  static patternedOf(schema: Json, shape: Json, context: Context): any {
+    log.debug("Entering ModelZod.patternedOf().");
+    if (schema.additionalProperties !== undefined &&
+        schema.additionalProperties !== false) {
+      log.debug("Leaving ModelZod.patternedOf(). Refused.");
+      throw new TypeError('No validator can be generated for ' +
+        'patternProperties beside an additionalProperties schema');
+    }
+    const patterns = Object.keys(schema.patternProperties).map(
+      function (source: string) {
+        return { pattern: new RegExp(source),
+                 check: ModelZod.build(schema.patternProperties[source],
+                                       context) };
+      });
+    const closed = schema.additionalProperties === false;
+    const out = z.looseObject(shape).superRefine(
+      function (value: Json, ctx: any) {
+        Object.keys(value).forEach(function (name: string) {
+          if (Object.prototype.hasOwnProperty.call(shape, name)) {
+            return;
+          }
+          const matched = patterns.filter(function (one: Json) {
+            return one.pattern.test(name);
+          });
+          if (!matched.length && closed) {
+            ctx.addIssue({ code: 'custom', path: [name],
+                           message: 'Unrecognized key: "' + name + '"' });
+          }
+          matched.forEach(function (one: Json) {
+            const held = one.check.safeParse(value[name]);
+            if (!held.success) {
+              held.error.issues.forEach(function (issue: Json) {
+                ctx.addIssue(Object.assign({}, issue,
+                  { path: [name].concat(issue.path || []) }));
+              });
+            }
+          });
+        });
+      });
+    log.debug("Leaving ModelZod.patternedOf().");
+    return out;
+  }
+
+  /**
+   * `oneOf`: the options as a union, and exactly one of them holding. Where
+   * the options cannot both hold — a string and a list, two closed objects
+   * told apart by a value — the second half never refuses, and it is what
+   * keeps a model that grows an overlapping option honest.
+   *
+   * @param schema - the schema
+   * @param context - the build
+   * @returns the zod schema
+   */
+  static oneOfOf(schema: Json, context: Context): any {
+    log.debug("Entering ModelZod.oneOfOf().");
+    ModelZod.onlyKnown(schema, ['oneOf']);
+    const options = schema.oneOf.map(function (one: Json) {
+      return ModelZod.build(one, context);
+    });
+    const out = z.union(options).superRefine(
+      function (value: unknown, ctx: any) {
+        const holding = options.filter(function (one: any) {
+          return one.safeParse(value).success;
+        }).length;
+        if (holding > 1) {
+          ctx.addIssue({ code: 'custom',
+                         message: 'Matches more than one of the forms' });
+        }
+      });
+    log.debug("Leaving ModelZod.oneOfOf().");
+    return out;
+  }
+
+  /**
+   * An array schema.
+   *
+   * @param schema - the schema
+   * @param context - the build
+   * @returns the zod schema
+   */
+  static arrayOf(schema: Json, context: Context): any {
+    log.debug("Entering ModelZod.arrayOf().");
+    ModelZod.onlyKnown(schema, ['type', 'items', 'minItems', 'maxItems',
+      'uniqueItems']);
+    let out: any = z.array(schema.items ?
+      ModelZod.build(schema.items, context) : z.any());
+    if (schema.minItems !== undefined) {
+      out = out.min(schema.minItems);
+    }
+    if (schema.maxItems !== undefined) {
+      out = out.max(schema.maxItems);
+    }
+    if (schema.uniqueItems === true) {
+      out = out.superRefine(function (value: unknown[], ctx: any) {
+        const seen = new Set<string>();
+        value.forEach(function (one: unknown, index: number) {
+          const key = JSON.stringify(one);
+          if (seen.has(key)) {
+            ctx.addIssue({ code: 'custom', path: [index],
+                           params: { uniqueItems: true },
+                           message: 'Repeats an earlier item' });
+          }
+          seen.add(key);
+        });
+      });
+    }
+    log.debug("Leaving ModelZod.arrayOf().");
+    return out;
+  }
+
+  /**
+   * A `$ref` to one of the document's components. A component met again
+   * while it is being built is recursive, and is reached lazily.
+   *
+   * @param ref - the reference
+   * @param context - the build
+   * @returns the zod schema
+   */
+  static refOf(ref: string, context: Context): any {
+    log.debug("Entering ModelZod.refOf().");
+    const prefix = '#/components/schemas/';
+    if (ref.indexOf(prefix) !== 0) {
+      log.debug("Leaving ModelZod.refOf(). Refused.");
+      throw new TypeError('No validator can be generated for the reference ' +
+        ref);
+    }
+    const name = ref.slice(prefix.length);
+    if (context.built.has(name)) {
+      log.debug("Leaving ModelZod.refOf(). Built.");
+      return context.built.get(name);
+    }
+    if (context.building.has(name)) {
+      log.debug("Leaving ModelZod.refOf(). Recursive.");
+      return z.lazy(function () {
+        return context.built.get(name);
+      });
+    }
+    context.building.add(name);
+    const out = ModelZod.build(ModelZod.schemaOf(context.document, name),
+                               context);
+    context.building.delete(name);
+    context.built.set(name, out);
+    log.debug("Leaving ModelZod.refOf().");
+    return out;
+  }
+
+  /**
+   * The zod schema of a JSON Schema, in one build.
+   *
+   * @param schema - the schema
+   * @param context - the build
+   * @returns the zod schema
+   */
+  static build(schema: Json, context: Context): any {
+    log.debug("Entering ModelZod.build().");
     let out: any;
-    if (schema.anyOf) {
+    if (schema.$ref) {
+      ModelZod.onlyKnown(schema, ['$ref']);
+      out = ModelZod.refOf(schema.$ref, context);
+    } else if (schema.oneOf) {
+      out = ModelZod.oneOfOf(schema, context);
+    } else if (schema.anyOf) {
       ModelZod.onlyKnown(schema, ['anyOf']);
-      out = z.union(schema.anyOf.map(ModelZod.of));
+      out = z.union(schema.anyOf.map(function (one: Json) {
+        return ModelZod.build(one, context);
+      }));
     } else if (schema.type === 'string' || schema.const !== undefined ||
         (schema.enum && schema.type === undefined)) {
       out = ModelZod.stringOf(schema);
     } else if (schema.type === 'integer' || schema.type === 'number') {
-      out = ModelZod.numberOf(schema);
+      out = ModelZod.numberOf(schema, context);
     } else if (schema.type === 'boolean') {
       ModelZod.onlyKnown(schema, ['type']);
       out = z.boolean();
     } else if (schema.type === 'array') {
-      ModelZod.onlyKnown(schema, ['type', 'items', 'minItems', 'maxItems']);
-      out = z.array(schema.items ? ModelZod.of(schema.items) : z.any());
-      if (schema.minItems !== undefined) {
-        out = out.min(schema.minItems);
-      }
-      if (schema.maxItems !== undefined) {
-        out = out.max(schema.maxItems);
-      }
+      out = ModelZod.arrayOf(schema, context);
     } else if (schema.type === 'object') {
-      out = ModelZod.objectOf(schema);
-    } else if (Object.keys(schema).every(function (key) {
-      return ANNOTATIONS.has(key);
-    })) {
+      out = ModelZod.objectOf(schema, context);
+    } else if (Object.keys(schema).every(annotation)) {
       out = z.any();
     } else {
-      log.debug("Leaving ModelZod.of(). Refused.");
+      log.debug("Leaving ModelZod.build(). Refused.");
       throw new TypeError('No validator can be generated for ' +
         JSON.stringify(schema).slice(0, 200));
     }
-    log.debug("Leaving ModelZod.of().");
+    if (schema.nullable === true) {
+      out = out.nullable();
+    }
+    log.debug("Leaving ModelZod.build().");
     return schema.description ? out.describe(schema.description) : out;
+  }
+
+  /**
+   * One of a document's component schemas, as the document states it.
+   *
+   * @param document - the document's file name part
+   * @param name - the component
+   * @returns the JSON Schema
+   */
+  static schemaOf(document: string, name: string): Json {
+    log.debug("Entering ModelZod.schemaOf().");
+    const schemas = (ModelTables.file('openapi.' + document + '.json')
+      .components || {}).schemas || {};
+    if (!Object.prototype.hasOwnProperty.call(schemas, name)) {
+      log.debug("Leaving ModelZod.schemaOf(). None.");
+      throw new TypeError('The ' + document + ' document has no component ' +
+        name);
+    }
+    log.debug("Leaving ModelZod.schemaOf().");
+    return schemas[name];
+  }
+
+  /**
+   * The validator of one of a document's components.
+   *
+   * @param document - the document's file name part
+   * @param name - the component
+   * @param options - `typed: true` where a number must arrive as one
+   * @returns the zod schema
+   */
+  static component(document: string, name: string,
+                   options?: { typed?: boolean }): any {
+    log.debug("Entering ModelZod.component().");
+    const out = ModelZod.refOf('#/components/schemas/' + name,
+      contextOf(document, !!(options && options.typed)));
+    log.debug("Leaving ModelZod.component().");
+    return out;
   }
 
   /**
@@ -242,8 +509,9 @@ class ModelZod {
     log.debug("Entering ModelZod.body().");
     const schema = ModelZod.operation(document, operationId).requestBody
       .content['application/json'].schema;
+    const out = ModelZod.build(schema, contextOf(document, false));
     log.debug("Leaving ModelZod.body().");
-    return ModelZod.of(schema);
+    return out;
   }
 
   /**
@@ -268,9 +536,11 @@ class ModelZod {
           required.push(one.name);
         }
       });
+    const out = ModelZod.build({ type: 'object', properties: properties,
+                                 required: required },
+                               contextOf(document, false));
     log.debug("Leaving ModelZod.query().");
-    return ModelZod.of({ type: 'object', properties: properties,
-                         required: required });
+    return out;
   }
 }
 
