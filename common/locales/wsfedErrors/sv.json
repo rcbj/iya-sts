@@ -29,6 +29,7 @@
   "refusal.STS-WSFED-0026": "Inloggningslänken anger en svarsadress (<code>wreply</code>), och en inloggning som startar här skickas bara till adressen som är registrerad för den förlitande parten. Ta bort <code>wreply</code> från länken.",
   "refusal.STS-WSFED-0027": "Ingen användbar svarsadress är registrerad för den förlitande parten <code>{realm}</code>, så det finns ingenstans att skicka token.",
   "refusal.STS-WSFED-0028": "Den förlitande parten <code>{realm}</code> får inte starta en inloggning här: det är avstängt för den.",
+  "refusal.STS-WSFED-0031": "Du valde att inte logga in i det här programmet, så ingenting skickades till det.",
   "accepts.heading": "Vad den accepterar",
   "accepts.note": "Den nekar avsiktligt i stället för att svara med en lösenordsinloggning: <code>wauth</code> är hur en förlitande part kräver en metod, och att ignorera det skulle få kravet att se uppfyllt ut.",
   "forward.heading": "Två sätt att gå vidare",

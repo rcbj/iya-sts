@@ -263,6 +263,7 @@ import authnContext = require('./authn_context');
 // has no RequestedAuthnContext; the non-spec parameter below is the only
 // way a request carries one.
 import PhishingResistance = require('../common/phishing_resistance');
+import SsoConsent = require('../common/sso_consent');
 import documentSettings = require('./document_settings');
 // The certificate the back channel presents, as a metadata key (#248).
 import listenerKeys = require('./listener_keys');
@@ -666,6 +667,7 @@ interface Saml11SsoDeps {
   sessionEnded: typeof authn.sessionEnded;
   beginAuthentication: typeof authn.beginAuthentication;
   notePresented: typeof authn.notePresented;
+  holdPresentation: typeof authn.holdPresentation;
   noteSessionChanged: typeof authn.noteSessionChanged;
   applications: typeof applications;
   mode: typeof mode;
@@ -735,6 +737,7 @@ class Saml11Sso {
       sessionEnded: authn.sessionEnded,
       beginAuthentication: authn.beginAuthentication,
       notePresented: authn.notePresented,
+      holdPresentation: authn.holdPresentation,
       noteSessionChanged: authn.noteSessionChanged,
       applications: applications,
       mode: mode,
@@ -2415,6 +2418,42 @@ class Saml11Sso {
       log.debug("Leaving Saml11Sso.interSiteTransfer().");
       return this.samlError(res, 403, 'Refused by policy', roleAnswer.why,
         'policy', { rp: rpId, acs: acsUrl, target: carried.TARGET });
+    }
+
+    // CONSENT TO SIGN IN TO THIS RELYING PARTY (ASVS 5.0.0 7.6.2,
+    // `common/sso_consent.ts`), once, where `saml11.ssoConsent` (or the
+    // entry's `saml11SsoConsent`) asks. The flow is held and resumed by
+    // `?fid=`, as the sign-in hop's is. SAML 1.1's browser profiles have no
+    // passive request and no status to send the relying party, so a Deny is
+    // this service's page, as a policy refusal is.
+    const consentStep = SsoConsent.check({
+      setting: 'saml11.ssoConsent', application: rpId,
+      username: String((session.user || {}).username || ''),
+      passive: false,
+      denied: !!String((req.query || {}).consent_error || '') });
+    if (consentStep.action === 'ask') {
+      const waiting = held || { id: randomId(18), params: carried };
+      waiting.expires = Date.now() + this.requestTtlMs();
+      pendingFlows.set(waiting.id, waiting);
+      const toScreen = SsoConsent.begin({
+        returnTo: req.path + '?fid=' + encodeURIComponent(waiting.id),
+        username: String((session.user || {}).username || ''),
+        application: rpId, decision: consentStep.decision,
+        protocol: 'SAML 1.1',
+        details: [{ label: 'Relying party', value: rpId },
+                  { label: 'Assertion consumer service', value: acsUrl }]
+      });
+      this.deps.holdPresentation(session);
+      log.debug("Leaving Saml11Sso.interSiteTransfer(). To the consent " +
+                "screen.");
+      return res.set('Cache-Control', 'no-store').redirect(303, toScreen);
+    }
+    if (consentStep.action === 'refuse') {
+      pendingFlows.delete(String(params.fid || ''));
+      errorCodes.mark(res, 'STS-SAML-0120');
+      log.debug("Leaving Saml11Sso.interSiteTransfer(). No consent.");
+      return this.samlError(res, 403, 'Not signed in', consentStep.why,
+        undefined, { rp: rpId, acs: acsUrl, target: carried.TARGET });
     }
 
     pendingFlows.delete(String(params.fid || ''));

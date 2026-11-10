@@ -3798,7 +3798,8 @@ op `getConsent`(`parameters/0/schema`: string,
       `scopes`?: ({
         `scope`?: string;
         `permission`?: get_authn_api_consent__id__r200_application_json_view_scopes_i_permission_h150;
-        `releasesDid`?: boolean
+        `releasesDid`?: boolean;
+        `signsIn`?: boolean
       })[];
       `authorizationDetails`?: ({
         `type`?: string;

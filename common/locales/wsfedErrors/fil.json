@@ -29,6 +29,7 @@
   "refusal.STS-WSFED-0026": "May reply address (<code>wreply</code>) ang sign-in link na ito, at ang pag-sign in na nagsisimula rito ay ipinapadala lang sa address na naka-register para sa relying party. Alisin ang <code>wreply</code> sa link.",
   "refusal.STS-WSFED-0027": "Walang magagamit na reply address na naka-register para sa relying party na <code>{realm}</code>, kaya walang mapagpapadalhan ng token.",
   "refusal.STS-WSFED-0028": "Hindi maaaring magsimula ng pag-sign in dito ang relying party na <code>{realm}</code>: naka-off ito para rito.",
+  "refusal.STS-WSFED-0031": "Pinili mong hindi mag-sign in sa application na ito, kaya walang naipadala rito.",
   "accepts.heading": "Ang tinatanggap nito",
   "accepts.note": "Sinasadya nitong tumanggi sa halip na sumagot ng pag-sign in gamit ang password: ang <code>wauth</code> ang paraan ng relying party para humingi ng isang paraan, at kung babalewalain ito ay lalabas na natugunan ang hinihingi.",
   "forward.heading": "Dalawang paraan para magpatuloy",

@@ -12442,5 +12442,29 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Para lang sa listener ng Protocol debugger: http.http2MaxConcurrentStreams. Ang -1, ang default, ay sumusunod sa http.http2MaxConcurrentStreams; ang anumang iba ay nagpapasya para sa listener na ito lang. Ilang request ang puwedeng sabay-sabay na bukas sa isang HTTP/2 connection (SETTINGS_MAX_CONCURRENT_STREAMS); tinatanggihan ang stream na lampas dito hanggang may matapos. Ang 100, ang default, ang pinakamaliit na halagang inirerekomenda ng RFC 9113; walang limit ang sa node mismo, kaya madadala ng iisang connection ang trabaho ng libu-libo. Nililimitahan nito ang trabaho sa isang connection gaya ng paglimita ng http.maxConnections sa mga connection. Sinusunod agad ng bagong connection ang pagbabago, at pinapadalhan ng bagong halaga ang bukas na."
+  },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Magtanong bago i-sign in ang isang tao"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng SAML 2.0 dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang saml2SsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
+  },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Magtanong bago i-sign in ang isang tao"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng SAML 1.1 dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang saml11SsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Magtanong bago i-sign in ang isang tao"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "Kung tinatanong ang isang tao, minsan bawat application, bago siya i-sign in ng WS-Federation dito mula sa isang session na mayroon na siya (ASVS 5.0.0 7.6.2). Iniingatan ang sagot niya, kaya tatanungin lang siya ulit kung babawiin niya ito; ang global na pahintulot sa application ay sumasagot para sa lahat. Ang passive na request ay sinasagot nang walang screen, bilang request na hindi makikipag-ugnayan. NAKA-ON bilang default sa product mode, naka-off sa development; ang wsfedSsoConsent sa entry ng isang application ang nangingibabaw para sa application na iyon."
   }
 }

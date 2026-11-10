@@ -397,6 +397,9 @@ function childMain() {
     config.setOverride('global.mode', 'product');
     config.setOverride('authn.allowOptionalSecondFactor', 'true');
     config.setOverride('risk.assessSignIns', false);
+    // Product asks before single sign-on (ASVS 5.0.0 7.6.2); what is tested
+    // here is who may start a sign-in, so the question is switched off.
+    config.setOverride('wsfed.ssoConsent', false);
     try {
       note(config.value('global.mode') === 'product',
            'g0 (product). (the process is in product mode)',
@@ -472,6 +475,7 @@ function childMain() {
       }
     } finally {
       config.clearOverride('risk.assessSignIns');
+      config.clearOverride('wsfed.ssoConsent');
       config.clearOverride('authn.allowOptionalSecondFactor');
       config.clearOverride('global.mode');
     }

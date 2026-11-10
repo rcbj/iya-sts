@@ -505,6 +505,12 @@ model SamlServiceProvider {
   @fromAttr(#{attr: "saml11SpInitiatedSso"})
   `f11SpInitiatedSso`?: string;
 
+  @fromAttr(#{attr: "saml2SsoConsent"})
+  `f2SsoConsent`?: string;
+
+  @fromAttr(#{attr: "saml11SsoConsent"})
+  `f11SsoConsent`?: string;
+
   @fromAttr(#{attr: "samlAuthnRequestSigned"})
   `authnRequestSigned`?: string;
 }
@@ -529,6 +535,9 @@ model WsFederationRelyingParty {
 
   @fromAttr(#{attr: "wsfedSpInitiatedSso"})
   `spInitiatedSso`?: string;
+
+  @fromAttr(#{attr: "wsfedSsoConsent"})
+  `ssoConsent`?: string;
 
   @fromAttr(#{attr: "wsfedSignOutUri"})
   `signOutUri`?: string[];

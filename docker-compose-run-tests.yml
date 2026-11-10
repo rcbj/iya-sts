@@ -791,6 +791,14 @@ services:
       - STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE=${STS_OAUTH2_ALLOW_CONFIDENTIAL_WITHOUT_PKCE:-true}
       - LDAP_PLAIN_LISTENER=${LDAP_PLAIN_LISTENER:-true}
       - STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR=${STS_AUTHN_ALLOW_OPTIONAL_SECOND_FACTOR:-true}
+      # SINGLE SIGN-ON ASKS FOR CONSENT IN PRODUCT (ASVS 5.0.0 7.6.2), once per
+      # application. The protocol jobs sign in to SAML and WS-Federation
+      # applications with no person to press Allow, as they do without a
+      # second factor above, so the suite turns it off; a job that tests the
+      # screen sets the setting itself.
+      - STS_SAML2_SSO_CONSENT=${STS_SAML2_SSO_CONSENT:-false}
+      - STS_SAML11_SSO_CONSENT=${STS_SAML11_SSO_CONSENT:-false}
+      - STS_WSFED_SSO_CONSENT=${STS_WSFED_SSO_CONSENT:-false}
       - STS_SECURITY_REQUESTS_PER_ADDRESS_PER_MINUTE=${STS_SECURITY_REQUESTS_PER_ADDRESS_PER_MINUTE:-0}
       - STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD=${STS_PERSISTENCE_ALLOW_DEFAULT_DATABASE_PASSWORD:-true}
       - STS_SECURITY_FILE_ROOTS=${STS_SECURITY_FILE_ROOTS:-/etc/ssl,/usr/share/ca-certificates,/run/secrets,/run/sts-test,/tmp}

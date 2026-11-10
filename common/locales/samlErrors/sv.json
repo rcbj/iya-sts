@@ -46,6 +46,7 @@
   "refusal.STS-SAML-0114": "Inloggning som startas av den här förlitande parten är avstängd. Det går bara att logga in på den från en länk hos den här identitetsleverantören.",
   "refusal.STS-SAML-0115": "Den här inloggningen kräver fortfarande en starkare inloggning än den du slutförde, så ingen assertion skickades.",
   "refusal.STS-SAML-0117": "Programmet bad om en nätfiskeresistent inloggning, och den här inloggningen gav ingen sådan.",
+  "refusal.STS-SAML-0120": "Du valde att inte logga in i det här programmet, så ingenting skickades till det.",
   "refusal.STS-RISK-0017": "Den här inloggningen kräver en andra faktor eller en säkerhetsnyckel, och den här sidan kan inte be om någon.",
   "refusal.STS-CORE-0121": "Den här delen av tjänsten håller på att tas bort, så den utfärdar inte längre något.",
   "background.saml2": "Det här är en sida i stället för en SAML Response eftersom begäran aldrig kom så långt att den angav någonstans som tjänsten får skicka ett svar till. När en assertion consumer service är känd levereras ett fel dit som en Response med en statuskod, som saml-core-2.0-os avsnitt 3.2.2 kräver.",

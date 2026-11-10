@@ -1394,5 +1394,17 @@
   "mode.requirements.audit-destination.product": {
     "en": "e082de544e11ddcb",
     "text": "Ajoutez une destination d’export d’audit, afin qu’une copie du journal soit hors d’atteinte en cas de compromission. Tant qu’il n’y en a pas, le service consigne un avertissement pour ce domaine."
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "L’authentification unique demande avant de connecter une personne à une application"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "SAML 2.0, SAML 1.1 et WS-Federation connectent une personne depuis sa session sans lui demander."
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "Une personne est interrogée une fois par application avant que SAML 2.0, SAML 1.1 ou WS-Federation ne la connecte à celle-ci, et la réponse est conservée. saml2.ssoConsent, saml11.ssoConsent et wsfed.ssoConsent le désactivent par protocole, et la valeur propre d’une application les remplace."
   }
 }

@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5403** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5406** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -65,9 +65,9 @@ is an ordinary outcome.
 * [SCEP (RFC 8894) (`STS-SCEP`)](#sts-scep) — 48
 * [Sign-in, second factors and sessions (`STS-AUTHN`)](#sts-authn) — 434
 * [OAuth 2.0 and OpenID Connect (`STS-OAUTH`)](#sts-oauth) — 751
-* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 118
+* [SAML 2.0 and SAML 1.1 (`STS-SAML`)](#sts-saml) — 120
 * [WS-Trust (`STS-WSTRUST`)](#sts-wstrust) — 70
-* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 30
+* [WS-Federation (`STS-WSFED`)](#sts-wsfed) — 31
 * [Federation (`STS-FED`)](#sts-fed) — 217
 * [OpenID Federation (`STS-OIDFED`)](#sts-oidfed) — 67
 * [Kerberos and SPNEGO (`STS-KRB`)](#sts-krb) — 257
@@ -2645,6 +2645,8 @@ Raised from: saml/.
 | `STS-SAML-0116` | A SAML 2.0 AuthnRequest named only the EAP phishing-resistant class URIs (phr, or only phrh) and the session still had not earned the class after the one trip to the sign-in screen. NoAuthnContext, not a second trip. A list that also names some other class is not this refusal. #736. | Responder / NoAuthnContext |
 | `STS-SAML-0117` | A SAML 1.1 sign-in carried the non-spec authnContextClassRef parameter naming only an EAP phishing-resistant class, and the session still had not earned it after the one trip to the sign-in screen. A page, because this profile has no status to carry. #736. | HTTP 403 page |
 | `STS-SAML-0118` | A service provider's metadata reaches no trust anchor, so it was not consumed, under paranoid PKI mode (#1360). | the caller's refusal, or the refresh's recorded failure |
+| `STS-SAML-0119` | A passive SAML 2.0 request was answered NoPassive: the person has not agreed to sign in to the service provider, and a passive request cannot ask (ASVS 5.0.0 7.6.2). | NoPassive |
+| `STS-SAML-0120` | A SAML sign-in was refused because the person declined, on the consent screen, to sign in to the application (ASVS 5.0.0 7.6.2). | RequestDenied (SAML 2.0); a page (SAML 1.1) |
 
 ## STS-WSTRUST
 
@@ -2763,6 +2765,7 @@ Raised from: ws-federation/.
 | `STS-WSFED-0028` | A wsignin1.0 from a relying party for which a sign-in it starts is turned off: wsfed.spInitiatedSso, or wsfedSpInitiatedSso on its entry, is FALSE (#426, #712). | HTTP 403 error page (the profile defines no error response) |
 | `STS-WSFED-0029` | An identity-provider-initiated sign-in back from its one step-up on risk (sts_risk_retry=1) was still denied on risk by the issuance policy, and was refused rather than sent round again (#712). | HTTP 403 error page |
 | `STS-WSFED-0030` | A wsignin1.0 named an EAP phishing-resistant class URI as wauth (phr, or only phrh) and the session still had not earned that class after the one trip to the sign-in screen. A page, because this profile has no status to carry. Two class URIs in one wauth stay the unknown-method refusal (#737). | HTTP 400 error page |
+| `STS-WSFED-0031` | A WS-Federation sign-in was refused because the person declined, on the consent screen, to sign in to the relying party (ASVS 5.0.0 7.6.2). | — |
 
 ## STS-FED
 

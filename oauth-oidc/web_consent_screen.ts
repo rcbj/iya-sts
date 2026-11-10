@@ -63,6 +63,11 @@ class WebConsentScreen {
    */
   static scopeRow(one: Json, t: Json): string {
     const permission = one.permission;
+    // Single sign-on to a SAML or WS-Federation application (ASVS 5.0.0
+    // 7.6.2): no scope name means anything to a person, so the sentence only.
+    if (one.signsIn) {
+      return '<li><span>' + t.html('consent.scope.signIn') + '</span></li>';
+    }
     // The `did` scope (#693): what it releases, in a sentence.
     if (one.releasesDid) {
       return '<li><code>' + esc(one.scope) + '</code><span>' +

@@ -1394,5 +1394,17 @@
   "mode.requirements.audit-destination.product": {
     "en": "e082de544e11ddcb",
     "text": "Magdagdag ng audit export destination, para hindi maabot ang kopya ng log kung makompromiso ang service. Hangga’t wala pa, nagtatala ang service ng babala para sa realm na iyon."
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "Nagtatanong ang single sign-on bago nito i-sign in ang isang tao sa isang application"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "Sina-sign in ng SAML 2.0, SAML 1.1 at WS-Federation ang isang tao mula sa kanyang session nang hindi nagtatanong."
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "Tinatanong ang isang tao nang minsan bawat application bago siya i-sign in dito ng SAML 2.0, SAML 1.1 o WS-Federation, at iniingatan ang sagot. Pinapatay ito ng saml2.ssoConsent, saml11.ssoConsent at wsfed.ssoConsent bawat protocol, at nangingibabaw sa kanila ang sariling value ng isang application."
   }
 }

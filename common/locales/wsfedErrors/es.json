@@ -29,6 +29,7 @@
   "refusal.STS-WSFED-0026": "Este enlace de inicio de sesión indica una dirección de respuesta (<code>wreply</code>), y un inicio de sesión que empieza aquí solo se envía a la dirección registrada para la parte de confianza. Quite <code>wreply</code> del enlace.",
   "refusal.STS-WSFED-0027": "No hay ninguna dirección de respuesta utilizable registrada para la parte de confianza <code>{realm}</code>, así que no hay adónde enviar el token.",
   "refusal.STS-WSFED-0028": "La parte de confianza <code>{realm}</code> no puede iniciar un inicio de sesión aquí: está desactivado para ella.",
+  "refusal.STS-WSFED-0031": "Ha elegido no iniciar sesión en esta aplicación, así que no se le ha enviado nada.",
   "accepts.heading": "Lo que acepta",
   "accepts.note": "Rechaza a propósito en lugar de responder con un inicio de sesión con contraseña: <code>wauth</code> es la forma en que una parte de confianza exige un método, e ignorarlo haría parecer que la exigencia se cumplió.",
   "forward.heading": "Dos formas de continuar",

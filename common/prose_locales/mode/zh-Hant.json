@@ -1394,5 +1394,17 @@
   "mode.requirements.audit-destination.product": {
     "en": "e082de544e11ddcb",
     "text": "請新增稽核匯出目的地，使日誌副本在此服務遭入侵時不受影響。在新增之前，服務會為該信任領域記錄警告。"
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "單一登入在讓使用者登入某個應用程式前先詢問"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "SAML 2.0、SAML 1.1 和 WS-Federation 直接以使用者的工作階段讓其登入，不作詢問。"
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "在 SAML 2.0、SAML 1.1 或 WS-Federation 讓使用者登入某個應用程式前，每個應用程式詢問一次，並保存回答。saml2.ssoConsent、saml11.ssoConsent 和 wsfed.ssoConsent 可按協定關閉此功能，應用程式自身的值優先於它們。"
   }
 }

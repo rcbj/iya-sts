@@ -486,6 +486,11 @@ function childMain() {
       // the sign-in itself the step-up.
       config.setOverride('global.mode', 'product');
       config.setOverride('authn.allowOptionalSecondFactor', 'true');
+      // Product asks before single sign-on (ASVS 5.0.0 7.6.2); what is
+      // tested here is who may start a sign-in and the risk step-up, so the
+      // question is switched off. tests/asvs_protocol_rules.js tests it.
+      config.setOverride('saml2.ssoConsent', false);
+      config.setOverride('saml11.ssoConsent', false);
       userAgent = BROWSER_UA;
       try {
         const spProduct = party('idp-on-p', 'saml2-service-provider',
@@ -495,6 +500,28 @@ function childMain() {
         const carolName = 'si-carol-' + stamp;
         const carol = await signedInWithPassword(carolName, PASSWORD,
                                                  spProduct);
+        // ASVS 5.0.0 7.6.2: with the question on (product's default, off
+        // above for the rest of this block), single sign-on through the
+        // link anybody can send asks first, and a Deny is RequestDenied.
+        config.setOverride('saml2.ssoConsent', true);
+        try {
+          const asked = await request('GET', unsolicited(spProduct),
+                                      carol.cookie);
+          note(asked.status === 303 &&
+               String(asked.location || '').indexOf('/oauth2/consent') >= 0,
+               'D-consent (product). single sign-on to a service provider ' +
+               'the person has not agreed to goes to the consent screen',
+               asked.status + ' ' + asked.location);
+          const said = await request('GET', unsolicited(spProduct,
+            { consent_error: 'access_denied',
+              consent_error_description: 'no' }), carol.cookie);
+          note(said.code === 'STS-SAML-0120' &&
+               /status:RequestDenied"/.test(samlResponseOf(said)),
+               'D-consent (product). and a Deny is a RequestDenied Response ' +
+               '(STS-SAML-0120)', said.status + ' ' + said.code);
+        } finally {
+          config.setOverride('saml2.ssoConsent', false);
+        }
         await riskSection(' (product)', carol, spProduct, rpProduct);
         // LAST, so nothing above stands on a session a failed attempt may
         // have made riskier: the wrong password is refused at the screen.
@@ -510,6 +537,8 @@ function childMain() {
              startedWrong.status + ' ' + wrong.status + ' ' + wrong.next);
       } finally {
         userAgent = '';
+        config.clearOverride('saml2.ssoConsent');
+        config.clearOverride('saml11.ssoConsent');
         config.clearOverride('authn.allowOptionalSecondFactor');
         config.clearOverride('global.mode');
       }

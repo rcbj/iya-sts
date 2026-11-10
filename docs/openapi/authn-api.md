@@ -193,6 +193,7 @@ The door of the sign-in surface's `GET /oauth2/consent`.
 | `view.scopes[].permission.name` | string |  |  |
 | `view.scopes[].releasesDid` | boolean |  |  |
 | `view.scopes[].scope` | string |  |  |
+| `view.scopes[].signsIn` | boolean |  |  |
 | `view.username` | string |  |  |
 
 **400**: Refused: `{ ok: false, errors }` — the body, the id, or the act itself.

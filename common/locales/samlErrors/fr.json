@@ -46,6 +46,7 @@
   "refusal.STS-SAML-0114": "La connexion démarrée par cette partie de confiance est désactivée. On ne peut s’y connecter qu’à partir d’un lien de ce fournisseur d’identité.",
   "refusal.STS-SAML-0115": "Cette connexion exige encore une authentification plus forte que celle que vous avez effectuée ; aucune assertion n’a donc été envoyée.",
   "refusal.STS-SAML-0117": "L’application a demandé une connexion résistante à l’hameçonnage, et cette connexion n’en a pas fourni.",
+  "refusal.STS-SAML-0120": "Vous avez choisi de ne pas vous connecter à cette application, donc rien ne lui a été envoyé.",
   "refusal.STS-RISK-0017": "Cette connexion exige un second facteur ou une clé de sécurité, et cette page ne peut pas en demander.",
   "refusal.STS-CORE-0121": "Cette partie du service est en cours de suppression ; elle n’émet donc plus rien.",
   "background.saml2": "Il s’agit d’une page plutôt que d’une Response SAML, car la requête n’est jamais allée jusqu’à désigner un endroit où ce service peut en envoyer une. Une fois un service consommateur d’assertions connu, un échec y est remis sous forme de Response portant un code de statut, comme l’exige la section 3.2.2 de saml-core-2.0-os.",

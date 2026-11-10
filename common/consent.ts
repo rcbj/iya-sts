@@ -300,6 +300,13 @@ const GRANT_TOKEN_KINDS = ['access_token', 'refresh_token'];
  * withdrawn consent revokes what was issued under it and refuses the
  * refresh grant from then on.
  */
+// THE ONE SCOPE A SAML 2.0, SAML 1.1 OR WS-FEDERATION SIGN-IN IS CONSENTED
+// UNDER (ASVS 5.0.0 7.6.2, `common/sso_consent.ts`). Those protocols carry no
+// scope, so the register files the person's answer to "may this application
+// sign me in" under this one, beside the OAuth scopes of the same entry. A URN
+// so that no OAuth client's own scope can be mistaken for it.
+const SSO_SIGN_IN_SCOPE = 'urn:iya-sts:scope:sign-in';
+
 class Consent {
   /** The attribute on a person's entry that holds their consents. */
   static readonly USER_ATTRIBUTE = USER_ATTRIBUTE;
@@ -1129,7 +1136,11 @@ class Consent {
         // it an ordinary scope. Only the person's own answer to this row
         // releases one (`oauth-oidc/did_claim.ts`).
         releasesDid: scope === 'did' &&
-          self.deps.config.value('oauth2.didClaim') === true
+          self.deps.config.value('oauth2.didClaim') === true,
+        // SINGLE SIGN-ON TO A SAML OR WS-FEDERATION APPLICATION (ASVS 5.0.0
+        // 7.6.2): the one thing asked is whether this application may sign
+        // the person in, and the screen says that in a sentence of its own.
+        signsIn: scope === SSO_SIGN_IN_SCOPE
       };
     });
     // THE POLICY DECIDES WHICH ARE OUTSTANDING (#305): each scope with
@@ -2264,6 +2275,7 @@ slot.buildNowUnlessDeferred();
  */
 export = {
   Consent: Consent,
+  SSO_SIGN_IN_SCOPE: SSO_SIGN_IN_SCOPE,
   /**
    * Installs the instance the facades forward to, and runs its wiring.
    *

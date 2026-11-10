@@ -12442,5 +12442,29 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "Gäller bara protokollfelsökarens lyssnare: http.http2MaxConcurrentStreams. -1, standardvärdet, följer http.http2MaxConcurrentStreams; allt annat avgör bara för den här lyssnaren. Hur många begäranden en HTTP/2-anslutning får ha öppna samtidigt (SETTINGS_MAX_CONCURRENT_STREAMS); en ström utöver det avvisas tills en annan är klar. 100, standardvärdet, är det minsta värde RFC 9113 rekommenderar; nodes eget är obegränsat, vilket skulle låta en enda anslutning bära arbetet för tusentals. Det begränsar arbetet på en anslutning som http.maxConnections begränsar anslutningarna. En ny anslutning följer en ändring direkt, och en öppen skickas det nya värdet."
+  },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Fråga innan en person loggas in"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "Om en person tillfrågas, en gång per program, innan SAML 2.0 loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; saml2SsoConsent på ett programs post åsidosätter den för det programmet."
+  },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Fråga innan en person loggas in"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "Om en person tillfrågas, en gång per program, innan SAML 1.1 loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; saml11SsoConsent på ett programs post åsidosätter den för det programmet."
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "Fråga innan en person loggas in"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "Om en person tillfrågas, en gång per program, innan WS-Federation loggar in dem i det från en session de redan har (ASVS 5.0.0 7.6.2). Svaret sparas, så de tillfrågas igen bara om de drar tillbaka det; ett globalt samtycke på programmet svarar för alla. En passiv begäran besvaras utan skärmen, som en begäran som inte kan interagera. PÅ som standard i produktläge, av i utveckling; wsfedSsoConsent på ett programs post åsidosätter den för det programmet."
   }
 }

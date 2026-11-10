@@ -1394,5 +1394,17 @@
   "mode.requirements.audit-destination.product": {
     "en": "e082de544e11ddcb",
     "text": "Lägg till ett exportmål för granskningsloggen, så att en kopia är utom räckhåll vid ett intrång. Tills ett finns loggar tjänsten en varning för den sfären."
+  },
+  "mode.requirements.sso-consent.what": {
+    "en": "2b06d195aa0a395d",
+    "text": "Enkel inloggning frågar innan den loggar in en person i ett program"
+  },
+  "mode.requirements.sso-consent.development": {
+    "en": "e519a44984791111",
+    "text": "SAML 2.0, SAML 1.1 och WS-Federation loggar in en person från deras session utan att fråga."
+  },
+  "mode.requirements.sso-consent.product": {
+    "en": "0a4ee080bb81a76f",
+    "text": "En person tillfrågas en gång per program innan SAML 2.0, SAML 1.1 eller WS-Federation loggar in dem i det, och svaret sparas. saml2.ssoConsent, saml11.ssoConsent och wsfed.ssoConsent stänger av det per protokoll, och ett programs eget värde åsidosätter dem."
   }
 }

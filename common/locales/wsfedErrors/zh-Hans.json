@@ -29,6 +29,7 @@
   "refusal.STS-WSFED-0026": "此登录链接指明了一个回复地址（<code>wreply</code>），而从这里发起的登录只会发送到为该依赖方注册的地址。请从链接中删除 <code>wreply</code>。",
   "refusal.STS-WSFED-0027": "依赖方 <code>{realm}</code> 没有注册可用的回复地址，因此无处发送令牌。",
   "refusal.STS-WSFED-0028": "依赖方 <code>{realm}</code> 不能在此发起登录：该功能已为其关闭。",
+  "refusal.STS-WSFED-0031": "您选择不登录此应用程序，因此没有向它发送任何内容。",
   "accepts.heading": "它接受的内容",
   "accepts.note": "它有意拒绝，而不是以密码登录作答：<code>wauth</code> 是依赖方要求某种方式的手段，忽略它会让这一要求看似已得到满足。",
   "forward.heading": "两种继续的方式",

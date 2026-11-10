@@ -12158,6 +12158,16 @@ const CODES = [
     summary: 'A service provider\'s metadata reaches no trust anchor, so it was ' +
       'not consumed, under paranoid PKI mode (#1360).',
     spec: 'the caller\'s refusal, or the refresh\'s recorded failure' },
+  { code: 'STS-SAML-0119',
+    summary: 'A passive SAML 2.0 request was answered NoPassive: the person ' +
+      'has not agreed to sign in to the service provider, and a passive ' +
+      'request cannot ask (ASVS 5.0.0 7.6.2).',
+    spec: 'NoPassive' },
+  { code: 'STS-SAML-0120',
+    summary: 'A SAML sign-in was refused because the person declined, on ' +
+      'the consent screen, to sign in to the application (ASVS 5.0.0 ' +
+      '7.6.2).',
+    spec: 'RequestDenied (SAML 2.0); a page (SAML 1.1)' },
   { code: 'STS-WSTRUST-0001',
     summary: 'The RequestSecurityToken body is not well-formed XML (or is ' +
       'empty), so no operation could be read from it.',
@@ -12713,6 +12723,11 @@ const CODES = [
       'one wauth stay the unknown-method refusal (#737).',
     spec: 'HTTP 400 error page' },
   // ===== FED ===============================================================
+  { code: 'STS-WSFED-0031',
+    summary: 'A WS-Federation sign-in was refused because the person ' +
+      'declined, on the consent screen, to sign in to the relying party ' +
+      '(ASVS 5.0.0 7.6.2).',
+    spec: '' },
   { code: 'STS-FED-0001',
     summary: 'A federation endpoint (login or assertion consumer service) ' +
       'was reached while federation.enabled is off.',

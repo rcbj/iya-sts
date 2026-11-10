@@ -29,6 +29,7 @@
   "refusal.STS-WSFED-0026": "Ce lien de connexion indique une adresse de réponse (<code>wreply</code>), et une connexion lancée ici n’est envoyée qu’à l’adresse enregistrée pour la partie de confiance. Retirez <code>wreply</code> du lien.",
   "refusal.STS-WSFED-0027": "Aucune adresse de réponse utilisable n’est enregistrée pour la partie de confiance <code>{realm}</code> ; il n’y a donc nulle part où envoyer le jeton.",
   "refusal.STS-WSFED-0028": "La partie de confiance <code>{realm}</code> ne peut pas lancer de connexion ici : c’est désactivé pour elle.",
+  "refusal.STS-WSFED-0031": "Vous avez choisi de ne pas vous connecter à cette application, donc rien ne lui a été envoyé.",
   "accepts.heading": "Ce qu’il accepte",
   "accepts.note": "Il refuse volontairement plutôt que de répondre par une connexion par mot de passe : <code>wauth</code> est la façon dont une partie de confiance exige une méthode, et l’ignorer donnerait l’impression que l’exigence a été satisfaite.",
   "forward.heading": "Deux façons de continuer",

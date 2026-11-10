@@ -46,6 +46,7 @@
   "refusal.STS-SAML-0114": "Naka-off ang pag-sign in na sinimulan ng relying party na ito. Makakapag-sign in lamang dito mula sa isang link sa identity provider na ito.",
   "refusal.STS-SAML-0115": "Kailangan pa rin ng pag-sign in na ito ng mas malakas na pag-sign in kaysa sa kinumpleto mo, kaya walang assertion na ipinadala.",
   "refusal.STS-SAML-0117": "Humingi ang application ng pag-sign in na hindi tinatablan ng phishing, at hindi ito naibigay ng pag-sign in na ito.",
+  "refusal.STS-SAML-0120": "Pinili mong hindi mag-sign in sa application na ito, kaya walang naipadala rito.",
   "refusal.STS-RISK-0017": "Kailangan ng pag-sign in na ito ng second factor o security key, at hindi ito mahihingi ng pahinang ito.",
   "refusal.STS-CORE-0121": "Inaalis na ang bahaging ito ng serbisyo, kaya wala na itong inilalabas.",
   "background.saml2": "Pahina ito sa halip na isang SAML Response dahil hindi umabot ang request sa pagtukoy ng lugar na mapapadalhan ng serbisyong ito ng sagot. Kapag kilala na ang isang assertion consumer service, ihahatid doon ang pagkabigo bilang isang Response na may status code, gaya ng hinihingi ng saml-core-2.0-os section 3.2.2.",
