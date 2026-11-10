@@ -3,6 +3,8 @@
   "heading": "Se déconnecter",
   "startAgain": "Recommencer",
   "startAgainEnd": ".",
+  "reauthenticate.lead": "Mettre fin à vos autres sessions demande une connexion récente. Reconnectez-vous : vous reviendrez sur cette page, où vous pourrez les cocher de nouveau.",
+  "reauthenticate.signIn": "Se reconnecter",
   "inventory.holding": "Tout ce que ce service détient encore pour <code>{username}</code>, dans chacune des familles de protocoles qu’il parle.",
   "inventory.globalButton": "Déconnexion globale — tout terminer ci-dessous",
   "inventory.globalNote": "Le choix par défaut. Un POST vers <code>/logout</code> sans rien de sélectionné fait exactement ceci. Les justificatifs vérifiables, et les DID auxquels ils sont liés, restent valides.",

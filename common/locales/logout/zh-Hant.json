@@ -3,6 +3,8 @@
   "heading": "登出",
   "startAgain": "重新開始",
   "startAgainEnd": "。",
+  "reauthenticate.lead": "結束其他工作階段需要最近登入過。請重新登入，之後您會回到此頁面，可再次勾選它們。",
+  "reauthenticate.signIn": "重新登入",
   "inventory.holding": "本服務在其支援的每個協定系列中仍為 <code>{username}</code> 保留的全部內容。",
   "inventory.globalButton": "全域登出 — 結束下方的所有內容",
   "inventory.globalNote": "預設選項。向 <code>/logout</code> 傳送未選取任何內容的 POST 要求，效果與此完全相同。可驗證憑證及其所綁定的 DID 保持有效。",

@@ -204,6 +204,19 @@ class SignoutSurface extends WebSurface {
       this.drawView();
       return;
     }
+    // A REFUSAL WITH A VIEW (#1577): ending another session needs a recent
+    // sign-in, and the view says where to sign in again, so the page draws
+    // that rather than leaving the person a sentence over the old page. Every
+    // other refusal is still drawn over the page it came from.
+    if (json && !json.ok && json.view &&
+        json.view.state === 'reauthenticate') {
+      this.flash = { error: (json.errors || []).join(' ') };
+      this.view = { page: (this.view && this.view.page) ||
+                          this.find('/logout'),
+                    query: {}, json: json.view };
+      this.drawView();
+      return;
+    }
     this.flash = { error: (json && (json.errors || []).join(' ')) ||
                           'The service answered ' + answer.status + '.' };
     this.redraw();

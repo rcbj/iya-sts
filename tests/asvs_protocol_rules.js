@@ -153,6 +153,13 @@ async function run(t) {
   config.setOverride('account.recentAuthMinutes', '15');
   t.equal(owed(stale, 'clear-totp'), true, 'a stale sign-in is asked');
   t.equal(owed(stale, 'list'), false, 'but not for anything else');
+  // #1577: the two acts that clear every factor at once ask it too.
+  t.equal(owed(stale, 'disable-mfa'), true,
+          'disabling every second factor asks it');
+  t.equal(owed(stale, 'disable-primary-keys'), true,
+          'and so does disabling every passkey');
+  t.equal(owed({ kind: 'person', authTime: nowS - 60 }, 'disable-mfa'), false,
+          'which a recent sign-in passes');
   t.equal(owed({ kind: 'person', authTime: nowS - 60 }, 'set-mail'), false,
           'a recent sign-in is not asked');
   t.equal(owed({ kind: 'application' }, 'clear-totp'), false,
