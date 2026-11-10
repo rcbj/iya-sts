@@ -301,6 +301,7 @@ nothing more). `wreqptr` is refused by design.
 | `wtrealm` | any relying party; it is filed in the register | a **registered** relying party only — one an administrator, dynamic registration, an OpenID Federation or this service's seeding put there, not one the register merely recorded from an earlier sign-in. Any other is a 404 page (`STS-WSFED-0021`) before the sign-in screen, and nothing is recorded (#496) |
 | `wreply` | used as it stands; with none, the registered one, and with none registered the request is refused | must be one of the `wsfedReplyUrl` values on the `wtrealm`'s application entry, exact match; with none, the registered one. An address development merely observed is refused until an operator confirms it |
 | Password at the sign-in screen | any password but `invalid` | verified |
+| A parameter given twice, or in both the query string and the body | not refused for that reason | refused, 400 (`STS-CORE-0173`) |
 | Given name, surname, mail, display name, UPN | invented, and described that way in the metadata | read off the directory entry, or omitted — and the signed metadata describes them that way |
 
 The `wauth` step-up, the `wreqptr` refusal and `wctx` round trip behave the

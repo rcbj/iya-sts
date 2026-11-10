@@ -616,6 +616,7 @@ Under [paranoid PKI mode](pki.md#paranoid-pki-mode), on by default in product mo
 | `saml2.keyTransportAlgorithm` `rsa-oaep-mgf1p` (OAEP over SHA-1) | used | `rsa-oaep` unless `crypto.allowLegacyHashes` is on |
 | Given name, surname, mail, display name | invented | read off the directory entry, or omitted |
 | Artifact resolver authentication | not required (follows `requireSignedAuthnRequests`) | required |
+| A parameter given twice, or in both the query string and the body | not refused for that reason | refused, 400 (`STS-CORE-0173`) |
 
 A present signature, metadata expiry, a consumed ACS endpoint list and the
 one-shot artifact are enforced in **both** modes. See
