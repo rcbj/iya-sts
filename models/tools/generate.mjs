@@ -22,8 +22,8 @@ import { documents, everyOperation, projections, renderApiTypes }
   from '../lib/api_lib.mjs';
 import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
-import { factsOf, fieldsOf, linksIn, readDirectory, readPersistence, readSpellings,
-  renderScript, schemaOf } from '../lib/model_lib.mjs';
+import { checkFacts, factsOf, fieldsOf, linksIn, readDirectory, readPersistence,
+  readSpellings, renderScript, schemaOf } from '../lib/model_lib.mjs';
 
 const log = bunyan.createLogger({
   name: 'sts-model-generate',
@@ -60,6 +60,11 @@ async function generate() {
   const authored = objects.filter(function (object) {
     return object.authored === true;
   });
+  const wrong = checkFacts(objects);
+  if (wrong.length > 0) {
+    log.debug("Leaving generate(). An entry's facts are wrong.");
+    throw new Error('The directory model is wrong: ' + wrong.join('; '));
+  }
   const names = readSpellings(program);
   if (!names) {
     log.debug("Leaving generate(). No name lists.");

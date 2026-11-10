@@ -19,6 +19,20 @@ namespace IyaSts.Directory;
   container: "ou=serviceAccountPolicies",
   ownContainer: true,
   authored: true,
+  // THE PASSWORD DOORS a service account may be allowed, in the order the
+  // page draws them. `id` is what a door passes to `credentials.verify()` as
+  // `door` (`browser` and `kerberos` are answered by the sign-in funnel and the
+  // KDC); `key` is the policy setting, stsSvcAcct<Key>, built from the row by
+  // common/service_account_policy.ts, on by default.
+  doors: #[
+    #{id: "ldap", key: "allowLdapBind", label: "LDAP simple bind"},
+    #{id: "wstrust", key: "allowWsTrust", label: "WS-Trust UsernameToken"},
+    #{id: "scim", key: "allowScim", label: "SCIM HTTP Basic"},
+    #{id: "ssf", key: "allowSsf", label: "Shared Signals HTTP Basic"},
+    #{id: "est", key: "allowEst", label: "EST HTTP Basic"},
+    #{id: "kerberos", key: "allowKerberos", label: "Kerberos AS exchange"},
+    #{id: "ropc", key: "allowPasswordGrant", label: "OAuth 2.0 password grant"}
+  ],
   objectClasses: #[
     #{
       name: "stsServiceAccountPolicy",

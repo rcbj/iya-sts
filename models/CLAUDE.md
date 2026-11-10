@@ -10,7 +10,7 @@ MariaDB table and index is in `persistence/*.tsp`.
 | Path | What it is | Who writes it |
 |---|---|---|
 | `main.tsp` | What the compiler is pointed at | by hand |
-| `lib/model_lib.tsp`, `lib/model_lib.mjs` | The decorators, their closed value types, and the reader of a compiled program | by hand |
+| `lib/model_lib.tsp`, `lib/model_lib.mjs` | The decorators, their closed value types, the reader of a compiled program, and `checkFacts()` | by hand |
 | `tools/import_rfc_schema.mjs` | Reads the RFCs' LDAP definitions into `directory/rfc_schema.json` | by hand; run when an RFC is added |
 | `directory/rfc_schema.json` | Every OID, syntax, matching rule, superior and MUST/MAY the RFCs publish | the tool |
 | `directory/application.tsp`, `role.tsp`, `device.tsp`, `service_account.tsp`, `spiffe.tsp`, `xacml_policy.tsp`, `xacml_pep.tsp`, `federation_relationship.tsp`, `policy_*.tsp` | **The source of each object's `SCHEMA`**, and of a policy's settings. A row added here is a row the service has | by hand |
@@ -30,21 +30,35 @@ bytes for `Application`. Only then was the literal removed. The object goes in
 `compiled_tree.js`'s `GENERATED`, which refuses a tree without the file
 (`STS-CORE-0093`). The module then asks `ModelTables.schema(id)`. `@entry`'s `authored: true` says `kind` is the author's.
 
-**Three places where the code still holds part of a table, each on purpose.**
+**Where the code still holds part of a table, on purpose.**
 
 * **A policy's `FIELDS` is the model's `field` values** (`ModelTables.fields()`),
   which is where type, default, min, max, label and allowed values live now. A
   value the code computes, such as a limit `common/crypto.js` owns, is not in the
   TypeSpec: the module passes it in by row key.
-* **`authn_policy.ts`'s `MECHANISMS` and `service_account_policy.ts`'s `DOORS`**
-  are registers the code branches on, and the rows built from them stay built
-  there (`computed` in `ModelTables.fields()`). The published table repeats each
-  one's sentence, and `tests/model_typespec.js` holds the two equal.
-* **`federation/federation.js`'s lists** (`SUBJECT_POLICY_IDS`, the key and content
-  algorithms, `MECHANISM_IDS`) are in the model as each row's `allowed`, and the
-  code validates against constants with finer structure than one row can state. The
-  same test holds them equal. It is a second writing until a validator is generated
-  from the model.
+
+**A register the code branches on is the model's too (#1579).** `@entry` takes
+`terms` (a closed list whose values carry a label and a sentence; its ids are a
+list as well, so `allowedFrom` may name it), `pairings` (for each value of some
+lists, the values of others it permits), `mechanisms` and `doors`. They are
+generated into `directory.facts.json`, which `ModelTables.facts()` reads:
+federation's `MECHANISMS`, `SUBJECT_POLICIES` and `MANAGEMENT_FOR_KEY`, the
+authentication policy's `MECHANISMS` and the service-account policy's `DOORS`
+are the model's rows, and the code keeps only what each id DOES. The policies'
+per-mechanism and per-door settings are still built by the module from those
+rows (the `computed` argument of `ModelTables.fields()`), each taking its
+sentence from its attribute: that is a projection of model data, not a second
+writing. `generate.mjs` refuses a pairing whose value is in none of the lists
+it names, a key it says nothing of, and an id stated twice (`checkFacts()`).
+`tests/model_registers.js` holds each register to its behaviour: every id has a
+reader in the service source, and every literal at the named call sites is an
+id.
+
+**What a console may change is each row's `editable`** (`set`, `multi`), under
+`@entry`'s `editing: true`, which gives every row of the table an `editable`,
+last, false where the row says nothing. `application.tsp` and
+`federation_relationship.tsp` carry it, with the reasoning that headed the
+`EDITABLE` tables the two modules used to merge onto their rows after loading.
 
 **`postgres/schema.sql` and `mariadb/schema.sql` are generated files that are
 committed**, because `docker-compose.yml` mounts one from the host. A change to a
@@ -55,10 +69,9 @@ after a table first shipped is marked `@column(#{added: true})`, and the driver'
 migrations stay in the driver (`SCHEMA_UPGRADES`, the routines): they are history,
 not shape, and the test holds each upgrade to the column the model says the table has.
 
-**Things that can catch you.** `common/applications.js` adds `editable` to each
-row after loading, from its `EDITABLE` table; that is not in the TypeSpec, and
-the test compares the generated file rather than the loaded table.
-`--strip` removes `models/lib`, `models/tools` and every `.tsp` from the shipped
+**Things that can catch you.** A module may not add to a table it loads:
+`tests/model_typespec.js` holds every authored object's loaded table to its
+generated file. `--strip` removes `models/lib`, `models/tools` and every `.tsp` from the shipped
 image, which keeps `models/generated/`.
 
 **The equivalence, and the test that holds it.** The importers read the
