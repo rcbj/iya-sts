@@ -2166,10 +2166,26 @@ class WebPages {
         ? 'href="' + path + query + '#' + tab + '"'
         : 'href="/admin/saml2' + query + '#' + tab + '"';
     };
+    // A fragment that already names a SAML tab is where the link was going
+    // (the IdP-Initiated SSO tab's turn-it-on link names Global settings).
+    // A list anchor other than `#list-page` lives inside one panel, and the
+    // tab stylesheet opens the panel that holds `:target`, so the anchor is
+    // the tab. `#list-page` is the exception: the SAML 2.0 and SAML 1.1
+    // tables share the paging parameter `page`, so that anchor is not unique
+    // and the path's own tab is what tells them apart. Putting that tab in
+    // front of a fragment this rewrite did not consume is what sent the
+    // IdP-Initiated SSO pager to SAML 2.0 (#749).
     html = html.replace(
-      /href="(\/admin\/saml2|\/admin\/saml11|\/admin\/saml-assertions|\/admin\/saml-attributes)(\?[^"#]*)?"/g,
-      function (_match: string, path: string, query: string): string {
-        return tabHref(path, query || '');
+      /href="(\/admin\/saml2|\/admin\/saml11|\/admin\/saml-assertions|\/admin\/saml-attributes)(\?[^"#]*)?(#[^"]*)?"/g,
+      function (_match: string, path: string, query: string,
+                fragment: string): string {
+        const q = query || '';
+        if (fragment && (fragment.indexOf('#saml-tab-') === 0 ||
+            (fragment.indexOf('#list-') === 0 &&
+             fragment !== '#list-page'))) {
+          return 'href="/admin/saml2' + q + fragment + '"';
+        }
+        return tabHref(path, q);
       });
     html = html.replace(
       /<form\b([^>]*)>/gi,

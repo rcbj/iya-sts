@@ -217,9 +217,13 @@ It also reads the SESSION store, which `../authn/authn.ts` owns.
    settings and Custom SAML attributes. IdP-Initiated SSO is composed from
    `GET /admin-api/saml-idp-initiated` on every view (`composeAlways`), paged
    on `idpInitiatedPage` so its pager does not move the SAML 2.0 tab's
-   `page`; which applications it lists is the `/launch` door's own question
-   (`launch/CLAUDE.md`). The profile notes and combined
-   endpoint list are on Metadata; Global settings holds each profile's own
+   `page`. The combined page's link rewrite keeps that pager's list anchor
+   (`#list-idpInitiatedPage`) and any link that already names a SAML tab, so
+   a page turn stays on IdP-Initiated SSO; `#list-page` is still rewritten,
+   because the two identity-provider tables share it. Which applications the
+   tab lists is the `/launch` door's own question (`launch/CLAUDE.md`).
+   The profile notes and combined endpoint list are on Metadata; Global
+   settings holds each profile's own
    defaults, while the shared `SAML` configuration group and assertion
    defaults have tabs of their own. The page is a direct Protocols item
    labelled `SAML`, not a nested leaf. The former SAML list leaves are no
