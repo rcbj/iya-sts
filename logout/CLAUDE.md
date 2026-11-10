@@ -130,6 +130,14 @@ coverage notes.
 5.0.0 7.4.1)**, in `Authn.dropSession()`: this service is what consults them, so
 that much can be recalled. The rest of this paragraph stands.
 
+**ENDING SOMEBODY'S OTHER SESSIONS NEEDS A RECENT SIGN-IN; LEAVING NEVER DOES
+(#1521, ASVS 5.0.0 7.5.2).** `Logout.reauthenticationOwed()` asks, at `POST
+/logout`, whether a selection names a session other than the caller's own, and
+refuses it (403, `STS-LOGOUT-0015`) when the latest authentication event is
+older than `account.recentAuthMinutes`. A global sign-out and the caller's own
+session are never asked, whatever else a global sign-out ends: nothing may
+stand between a person and leaving.
+
 **THIS SERVICE DOES NOT RECALL ANYTHING IT HAS ALREADY ISSUED** — a SAML
 assertion, a Kerberos service ticket, an X509-SVID. **Still true, and QUALIFIED
 since 2026-09-05: it now DISOWNS them.** A sign-out marks each revoked in this

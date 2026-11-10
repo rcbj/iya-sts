@@ -71,6 +71,13 @@ session.
 A request from a page of another site is refused with `403`. A program that
 sends no `Origin` or `Sec-Fetch-Site` header is not affected.
 
+**Ending your OTHER sessions needs a recent sign-in** in product mode: one within
+`account.recentAuthMinutes` (15 minutes by default in product, not asked in
+development). A request that names another session of yours is otherwise refused
+with `403` and `"error": "reauthentication_required"`; sign in again at
+`/authn/login` and send it again. Signing yourself out never needs one, and nor
+does a Global logout, which ends everything, this browser's session included.
+
 ```bash
 # global logout for whoever holds this cookie
 curl -k -b cookies.txt -X POST https://localhost:8081/logout \
@@ -280,7 +287,10 @@ or any other, the answer carries `Clear-Site-Data: "storage"`. Other accounts an
 other realms share this origin's storage, so while one is signed in the header is
 not sent. The console, the portal and the report
 application also clear their own tab's storage before they leave for `/logout`,
-so a sign-out that never gets an answer still leaves nothing behind. Cookies
+so a sign-out that never gets an answer still leaves no token behind. The one
+thing a tab keeps is the name of the account it was signed in as, so that its
+next sign-in asks for that account rather than becoming another account still
+signed in to the browser. Cookies
 are expired one by one instead of through `Clear-Site-Data`, which would reach
 every other realm's cookies on the same domain.
 
@@ -335,7 +345,10 @@ The three above are keyed on ONE identity. `/admin/sessions` — with
 `GET /admin-api/sessions` and `POST /admin-api/sessions/revoke` beside it — is
 the same model asked across the whole service: every session it is holding right
 now, in the three protocols that have one, with a Revoke on each row that calls
-the same termination.
+the same termination. **End every session in this realm**, below the list
+(`POST /admin-api/sessions/end-all`), ends every sign-on session started before
+that moment, yours included; it revokes no token. See
+[Sessions](sessions.md#how-one-ends).
 
 | Kind | Why it is a session | When it expires |
 |---|---|---|
