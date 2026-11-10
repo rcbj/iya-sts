@@ -519,6 +519,19 @@ function childMain() {
                /status:RequestDenied"/.test(samlResponseOf(said)),
                'D-consent (product). and a Deny is a RequestDenied Response ' +
                '(STS-SAML-0120)', said.status + ' ' + said.code);
+          // Allow, filed as the screen files it (consent.record()), and the
+          // same link signs in rather than asking again: no loop.
+          const consentMod = require(ROOT + '/common/consent');
+          const filed = consentMod.record(carolName, spProduct,
+                                          [consentMod.SSO_SIGN_IN_SCOPE]);
+          const allowed = await request('GET', unsolicited(spProduct),
+                                        carol.cookie);
+          note(filed.stored && allowed.status === 200 &&
+               /status:Success"/.test(samlResponseOf(allowed)),
+               'D-consent (product). and after an Allow the same link ' +
+               'signs in, without asking again',
+               JSON.stringify(filed.stored) + ' ' + allowed.status + ' ' +
+               allowed.location);
         } finally {
           config.setOverride('saml2.ssoConsent', false);
         }

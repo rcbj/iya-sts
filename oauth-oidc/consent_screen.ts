@@ -867,7 +867,10 @@ class ConsentScreen {
     audit.record({
       action: 'consent.grant', actor: record.username,
       target: record.clientId,
-      protocol: 'OAuth 2.0 / OIDC', channel: 'http',
+      // The protocol that sent the person here: single sign-on to a SAML or
+      // WS-Federation application asks on this screen too (ASVS 7.6.2).
+      protocol: String(record.protocol || 'OAuth 2.0 / OIDC'),
+      channel: 'http',
       outcome: written.stored ? 'success' : 'warning',
       detail: 'consented ' + names.join(', ') +
               (written.stored ? '' :
