@@ -475,14 +475,15 @@ async function product(plainHost) {
   const secure = await clientHost(await testCa.listenerCertificate(ca, HOST));
   try {
     await makeClient(PROD, secure);
-    // A PRODUCT REALM NEVER FETCHES A KEY FROM A PRIVATE ADDRESS (2026-10-13).
-    // The jwks_uri goes through the federation outbound policy, which in
-    // product resolves the name once and refuses a loopback, private,
-    // link-local or reserved address (`mode.dialsInternalAddresses()`), with
-    // no override. The compose stacks' `tests` container is such an address,
-    // so there the product half asserts that refusal; only a job host with a
-    // public address can see the object verified (the first full run on
-    // develop 754d4c29 failed asserting the success).
+    // A PRODUCT REALM DIALS NOTHING AT A PRIVATE ADDRESS (2026-10-13). The
+    // jwks_uri, and since ASVS 5.0.0 1.3.6 the request_uri itself, go
+    // through the federation outbound policy, which in product resolves the
+    // name once and refuses a loopback, private, link-local or reserved
+    // address (`mode.dialsInternalAddresses()`), with no override. The
+    // compose stacks' `tests` container is such an address, so there the
+    // product half asserts that refusal; only a job host with a public
+    // address can see the object verified (the first full run on develop
+    // 754d4c29 failed asserting the success).
     if (await isPrivateHost(HOST)) {
       await privateKeysRefused(PROD, secure);
     } else {
@@ -526,25 +527,31 @@ async function isPrivateHost(host) {
   return answer;
 }
 
-// The product half where the job's host is private: the object is refused,
-// because the key it must be verified with is at an address product will not
-// dial — and the refusal says so.
+// The product half where the job's host is private: the request_uri is not
+// fetched, because it is at an address product will not dial — and the
+// refusal says so. (Until ASVS 5.0.0 1.3.6 the object was fetched and then
+// refused invalid_request_object, its jwks_uri being at the same address.)
 async function privateKeysRefused(realm, host) {
   log.debug("Entering privateKeysRefused(). " + realm);
   const rb = realmBase(realm);
   const issuer = (await call("GET", rb +
     "/.well-known/oauth-authorization-server")).json.issuer;
   host.objects.good = signed(ES, requestClaims(issuer).claims);
+  const dialled = host.hits.length;
   const r = await browser().go("GET", "/realm/" + realm +
     "/oauth2/authorize?" + form({ client_id: APP,
                                   request_uri: host.origin + "/req/good",
                                   state: "from-the-query" }));
   const said = String(r.text || "") + " " + String(r.location || "");
-  check(realm + ": a jwks_uri at a private address is not dialled in " +
-        "product, so the object cannot be verified and is refused",
+  check(realm + ": a request_uri at a private address is not dialled in " +
+        "product, and the request is refused invalid_request_uri",
         function () {
     assert.ok(!sentToSignIn(r), shown(r));
-    assert.ok(/invalid_request_object/.test(said), shown(r));
+    assert.ok(/invalid_request_uri/.test(said), shown(r));
+  });
+  check(realm + ": and nothing reached the host", function () {
+    assert.strictEqual(host.hits.length, dialled,
+                       JSON.stringify(host.hits.slice(-3)));
   });
   check(realm + ": and the refusal names the outbound policy's internal-" +
         "address rule", function () {

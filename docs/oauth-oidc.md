@@ -1667,7 +1667,12 @@ hex characters), because the store keeps no `request_uri`. **Withdraw**, and
 An authorization request may arrive as a signed and optionally encrypted
 `request` object, or as a `request_uri`. **A `request_uri` is fetched only when
 the client registered that exact address** (`require_request_uri_registration`
-is `true`), with no redirects, a timeout and a size cap. The object's
+is `true`), with no redirects, a timeout and a size cap. It is dialled under
+the same outbound rules as a client's `jwks_uri`: nothing is fetched while
+`federation.outbound` is off, `security.outboundAllowedHosts` applies, and in
+product mode a host that resolves to a loopback, private, link-local or
+reserved address is refused `invalid_request_uri` (`STS-OAUTH-1004`), and the
+connection is pinned to the address that was checked. The object's
 parameters **replace** the query, so every check runs on what was signed, and
 the round trip through sign-in carries the object rather than its resolved
 parameters. Each realm publishes an RSA and an EC key with `use: enc` for

@@ -136,8 +136,8 @@
     "text": "以 `none` 簽署的請求物件（OpenID Connect Core 6.1）會被接受，除非要求已簽署的請求物件——由 oauth2.requireSignedRequestObject、客戶端的項目或授權伺服器的設定檔要求。已註冊的 request_uri 可以是純 http，且可回應任何媒體類型；兩者皆會記錄。"
   },
   "mode.requirements.request-objects.product": {
-    "en": "b2ec3d6648490690",
-    "text": "請求物件必須經過簽署（RFC 9101 第 4 節），否則以 invalid_request_object 拒絕。已註冊的 request_uri 必須是 https，且必須回應 application/oauth-authz-req+jwt 或 application/jwt，否則請求以 invalid_request_uri 拒絕。在兩種模式下，只有在客戶端註冊了 request_uri 時才會擷取它。"
+    "en": "247799ea9e0595ef",
+    "text": "請求物件必須經過簽署（RFC 9101 第 4 節），否則以 invalid_request_object 拒絕。已註冊的 request_uri 必須是 https，且必須回應 application/oauth-authz-req+jwt 或 application/jwt，否則請求以 invalid_request_uri 拒絕；其主機解析為迴路、私有、鏈路本地或保留位址時同樣拒絕。在兩種模式下，只有在客戶端註冊了 request_uri 時才會擷取它。"
   },
   "mode.requirements.console-bootstrap-window.product": {
     "en": "80feb38828e08d3d",

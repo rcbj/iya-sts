@@ -357,6 +357,8 @@ and serves its request objects and key set itself. It checks that:
   key at the registered `jwks_uri`;
 * the flow ends at the client with the object's `state`, not the query's;
 * a `request_uri` that was not registered is refused and never fetched;
+* in product, a registered `request_uri` at a private address is refused and
+  never fetched;
 * an object signed with another algorithm, or with a key that is not in the
   set, is refused;
 * an unsigned object is refused while `oauthRequireSignedRequestObject` is

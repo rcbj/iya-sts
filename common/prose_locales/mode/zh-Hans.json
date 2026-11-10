@@ -716,8 +716,8 @@
     "text": "以 `none` 签名的请求对象（OpenID Connect Core 6.1）会被接受，除非要求签名——由 oauth2.requireSignedRequestObject、客户端的条目或授权服务器的配置文件要求。已注册的 request_uri 可以是纯 http，并可以任何媒体类型应答；两者都会被记录。"
   },
   "mode.requirements.request-objects.product": {
-    "en": "b2ec3d6648490690",
-    "text": "请求对象必须经过签名（RFC 9101 section 4），否则以 invalid_request_object 拒绝。已注册的 request_uri 必须是 https，并且必须以 application/oauth-authz-req+jwt 或 application/jwt 应答，否则请求以 invalid_request_uri 拒绝。在两种模式下，只有客户端注册了 request_uri 时才会获取它。"
+    "en": "247799ea9e0595ef",
+    "text": "请求对象必须经过签名（RFC 9101 section 4），否则以 invalid_request_object 拒绝。已注册的 request_uri 必须是 https，并且必须以 application/oauth-authz-req+jwt 或 application/jwt 应答，否则请求以 invalid_request_uri 拒绝；其主机解析为环回、私有、链路本地或保留地址时同样拒绝。在两种模式下，只有客户端注册了 request_uri 时才会获取它。"
   },
   "mode.requirements.management-api.what": {
     "en": "7e9bb52b567f5c3c",
