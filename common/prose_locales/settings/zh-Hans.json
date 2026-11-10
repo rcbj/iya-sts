@@ -6788,8 +6788,8 @@
     "text": "为个人发布 did:web"
   },
   "did.personPublishing|description": {
-    "en": "841dc751d16e1137",
-    "text": "允许个人在其门户的 Self-issued IDs 页面上创建一个由本领域为其发布的 did:web（#1291）：did:web:<host>[:realm:<id>]:users:<rid>，其中 <rid> 为 128 位随机数，因此没有人能通过探测地址来枚举账户，同一个人的两个 DID 也无法被关联。其文档在 /users/<rid>/did.json 提供，所有版本均保留，并且可以作为此人的首选 DID。开启后，绑定到 DID 的凭证配置（oid4vci.didHolderBinding）还会为本领域托管且此人已用钱包证明的 DID 提供 did:web。关闭：不发布任何新的 DID；已发布的 DID 无论是否停用仍继续提供，因为其地址会永久保留。在产品模式下，只有在固定的 global.publicBaseUrl 上才会发布 DID。"
+    "en": "291c209edc596dc6",
+    "text": "允许个人在其门户的 Self-issued IDs 页面上创建一个由本领域为其发布的 did:web（#1291）：did:web:<host>[:realm:<id>]:users:<rid>，其中 <rid> 为 128 位随机数，因此没有人能通过探测地址来枚举账户，同一个人的两个 DID 也无法被关联。其文档在 /users/<rid>/did.json 提供，所有版本均保留，并且可以作为此人的首选 DID。开启后，绑定到 DID 的凭证配置（oid4vci.didHolderBinding）还会为本领域托管且此人已用钱包证明的 DID 提供 did:web。关闭：不发布任何新的 DID；已发布的 DID 无论是否停用仍继续提供，因为其地址会永久保留。在产品模式下，只有在固定的 global.publicBaseUrl 上才会发布 DID。已登记用于登录的密钥不会被发布（#775）：钱包证明的是此人登录主体之外的密钥，因此该文档不是登录密钥的公开副本。更改 global.publicBaseUrl 或领域路径不会改写已发布的 DID；它保留创建时的主机和路径，若该地址不再指向本领域，则无法再被解析。"
   },
   "did.personCustody|label": {
     "en": "057d429ef011ffab",

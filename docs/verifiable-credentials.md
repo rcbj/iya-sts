@@ -110,8 +110,9 @@ credential configuration can be **bound** to it.
 Each realm publishes a `did:web` for its issuer, with a Domain Linkage
 Credential that ties it to the origin. An application can have a `did:web` of
 its own. A person's DIDs (`did:jwk`, `did:key`, `did:web`) are enrolled as
-self-issued subjects. This service does not host a `did:web` for a person;
-that is ticket #775 and is not built.
+self-issued subjects. A person can also have this realm publish a `did:web`
+for them (`did.personPublishing`, off by default). See
+[Published DIDs](person-dids.md).
 
 ## Before you start
 
@@ -947,8 +948,10 @@ and the wallet sees the specification's error (`invalid_proof`,
   else.
 * **No protocol lets this service delete a credential from a wallet.** Revoking
   it is what **Remove** does.
-* **Holder binding to a `did:web`** is not offered, and **a `did:web` hosted
-  by the realm for a person** is not built (#775).
+* **Holder binding to a `did:web`** is offered only for a `did:web` this
+  realm publishes for the person, and only while `did.personPublishing` is
+  on. A `did:web` hosted anywhere else is refused. See
+  [Published DIDs](person-dids.md).
 * **The `did` claim** is released in ID Tokens and UserInfo only, never in a
   SAML assertion.
 * **SIOPv2:** this service is only the relying party. The `fragment` response

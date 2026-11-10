@@ -41,6 +41,11 @@ the new cell's key.
 * In **development mode**, with nothing pinned, the DID is built on the
   address the request arrived at, and that address is part of it for good.
 
+Changing `global.publicBaseUrl`, or the realm's path, does **not** rewrite a
+DID already published. It keeps the host and path it was minted on, and it
+stops resolving if that address no longer reaches this realm. The setting's
+description on the console says so.
+
 ### The document
 
 The did:web method resolves the DID to
@@ -53,6 +58,17 @@ which answers `application/did+json` with `Cache-Control: no-store`, like
 every document carrying a key here. Each key is a `JsonWebKey2020`
 verification method whose fragment is the key's RFC 7638 thumbprint, listed
 under `authentication` and `assertionMethod`.
+
+The document is **public**. Anyone who learns the DID can resolve it and
+recognise the person by it, including across applications. It is a public
+signing identity, and the portal says that where it is created.
+
+The key it names is **not a key already enrolled for sign-in**. In `wallet`
+custody the wallet proves a key that is not one of the person's sign-in
+subjects (`STS-VC-0178`). The published DID is then enrolled as its own
+subject and can sign in; the document is not a public copy of a key the
+person already signed in with. A key the realm generates (`realm` and
+`download` custody) is new, so it is not one of those subjects.
 
 ### Versions
 
@@ -176,7 +192,13 @@ These are rows of `common/config.js`. The live source is the console's
   version.
 * **Two proofs for a change in `wallet` custody.** One by the current key,
   so a stolen session cannot replace the key; one by the new key, so nobody
-  publishes a key they do not hold.
+  publishes a key they do not hold. The new key is also not one already
+  enrolled for sign-in (`STS-VC-0178`). The keys the current version already
+  names are refused on their own (`STS-VC-0170`).
+* **Not a public copy of a sign-in key.** The document anyone can fetch
+  names a key. Publishing a key the person already signs in with would
+  publish that key. The published DID is its own subject and can sign in
+  afterwards.
 
 ## In the running service
 
@@ -188,7 +210,7 @@ These are rows of `common/config.js`. The live source is the console's
   (`did.person.version`), authorization (`did.person.authorized`) and
   deactivation (`did.person.deactivated`, `admin.did.deactivated`), refusals
   included, each with its [error code](error-codes.md) (`STS-VC-0161` to
-  `STS-VC-0176`).
+  `STS-VC-0178`).
 * Shared Signals: a CAEP credential-change is sent when the DID is enrolled
   as a self-issued subject, re-pinned to a new version, and removed.
 

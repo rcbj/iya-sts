@@ -1383,7 +1383,10 @@ it has to keep.
   signed AS the DID by a key its current version names, kept as `pending`
   for `PENDING_TTL_S` (600 s); then the new key, proved by the wallet's own
   did:jwk, did:key or thumbprint subject (never a did:web, never another
-  person's, never a key already in the version — `STS-VC-0170`). A new key
+  person's, never a key already in the version — `STS-VC-0170`, and never
+  a key already enrolled for this person as a sign-in key — `STS-VC-0178`,
+  #775: the published DID is its own subject and can sign in, and the
+  document does not publish a key the person already signs in with). A new key
   without a live authorization is `STS-VC-0171`, at the start and at the
   finish. Both proofs are the new version's `authorizedBy`.
 * **`realm` CUSTODY** generates with `crypto.js`'s
