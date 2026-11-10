@@ -150,6 +150,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import errorCodes = require('../common/error_codes');
 import InstanceSlot = require('../common/instance_slot');
 import inetOrgPerson = require('../common/inetorgperson');
@@ -777,18 +778,20 @@ class PersonEditor {
           : ''
       });
     });
+    // One concept of each kind for the entry (#1390). The rows above stay
+    // by attribute name: the editor is a grid of whatever the realm offers.
+    const user = Classes.User.fromEntry(person.attributes);
+    const credential = Classes.Credential.fromEntry(person.attributes);
     log.debug("Leaving PersonEditor.editorFor(). " + person.dn);
     // The address as well, withheld from the editor but drawn beside it by
     // the page, whose `set-mail` form starts from it.
     return { dn: person.dn, attributes: attributes,
              withheld: universe.withheld,
-             mail: String((person.attributes.mail || [])[0] || ''),
+             mail: user.email || '',
              // Sign-in names (#644), withheld from the attribute grid the
              // same way mail is: the page draws them beside the address.
-             pseudonyms: (person.attributes.stspseudonym || []).map(String),
-             pseudonymPending: String(
-               (person.attributes.stspseudonymverifyaddress || [])[0] ||
-               '') };
+             pseudonyms: credential.pseudonym || [],
+             pseudonymPending: credential.pseudonymVerifyAddress || '' };
   }
 
   // -------------------------------------------------------------------------

@@ -130,6 +130,7 @@ import http = require('http');
 import https = require('https');
 import fs = require('fs');
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import mode = require('../common/mode');
@@ -1164,12 +1165,23 @@ class ScimClients {
       answer = true;
     } else if (c.groupMode === 'selected') {
       answer = this.namesGroup(c.groups, { dn: group.dn,
-        cn: this.firstOf(group.attributes, 'cn') });
+        cn: this.groupNameOf(group) });
     } else {
       answer = this.membersInScope(c, group).length > 0;
     }
     log.debug("Leaving ScimClients.groupInScope(). " + answer);
     return answer;
+  }
+
+  // A group's name, as the domain model says it is (#1390); '' when the entry
+  // holds none. firstOf() below stays for entryUUID, which is read from a
+  // person or a group and which the Group concept does not carry.
+  private groupNameOf(group: Json): string {
+    const { log } = this.deps;
+    log.debug("Entering ScimClients.groupNameOf().");
+    const name = Classes.Group.fromEntry(group.attributes).name || '';
+    log.debug("Leaving ScimClients.groupNameOf().");
+    return name;
   }
 
   // The first value of an attribute, by any spelling of its name.
@@ -1712,7 +1724,7 @@ class ScimClients {
     const dir = directory();
     const group = dir.readGroupEntry(dn);
     let uuid = group ? this.uuidOf(group) : '';
-    let name = group ? this.firstOf(group.attributes, 'cn') : '';
+    let name = group ? this.groupNameOf(group) : '';
     if (!uuid) {
       const wanted = dir.normalizeDn(dn);
       const prefix = c.identifier + '|Group|';
@@ -2964,7 +2976,7 @@ class ScimClients {
       log.debug("Leaving ScimClients.syncGroup(). Not pushed.");
       return { ok: true };
     }
-    const displayName = this.firstOf(group.attributes, 'cn') || group.dn;
+    const displayName = this.groupNameOf(group) || group.dn;
     const memberIds: string[] = [];
     this.membersInScope(c, group).forEach((person: Json) => {
       const uuid = this.uuidOf(person);
@@ -3095,7 +3107,7 @@ class ScimClients {
       answer = false;
     } else if (c.groupMode === 'selected') {
       answer = this.namesGroup(c.groups, { dn: group.dn,
-        cn: this.firstOf(group.attributes, 'cn') });
+        cn: this.groupNameOf(group) });
     } else {
       answer = true;
     }
@@ -3254,7 +3266,7 @@ class ScimClients {
       if (given.recheck && this.ownerCell(c, uuid) === this.here()) {
         const link = this.linkOf(c, 'Group', uuid);
         this.enqueue(c, 'Group', uuid, group
-          ? this.firstOf(group.attributes, 'cn') : (link && link.name) || '');
+          ? this.groupNameOf(group) : (link && link.name) || '');
         this.deliverSoon();
       }
       return { members: members };
@@ -3278,7 +3290,7 @@ class ScimClients {
       group: group, defined: defined, share: share, link: link,
       owner: this.ownerCell(c, row.uuid) === this.here(),
       before: link && Array.isArray(link.members) ? link.members : [],
-      displayName: group ? (this.firstOf(group.attributes, 'cn') || group.dn)
+      displayName: group ? (this.groupNameOf(group) || group.dn)
                          : String((link && link.name) || row.name || '')
     };
     const outcome = disc.patch
@@ -3731,7 +3743,7 @@ class ScimClients {
           if (uuid && this.groupInScope(c, group)) {
             desired['Group|' + uuid] = true;
             this.enqueue(c, 'Group', uuid,
-                         this.firstOf(group.attributes, 'cn'));
+                         this.groupNameOf(group));
             result.groups++;
           }
         });

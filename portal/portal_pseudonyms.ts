@@ -22,6 +22,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 import mail = require('../common/mail');
 import validation = require('../common/validation');
@@ -114,12 +115,11 @@ class PortalPseudonyms {
       return null;
     }
     const entry = dir.existingUserEntry(username);
-    const attrs = (entry && entry.attributes) || {};
-    const pending = String((attrs.stspseudonymverifyaddress || [])[0] || '');
+    const held = Classes.Credential.fromEntry((entry && entry.attributes) ||
+                                              {});
+    const pending = held.pseudonymVerifyAddress || '';
     const view = {
-      pseudonyms: (attrs.stspseudonym || []).map(function (one: unknown) {
-        return String(one);
-      }),
+      pseudonyms: held.pseudonym || [],
       pending: pending || null,
       cap: rules.CAP,
       available: !!mail.available()
