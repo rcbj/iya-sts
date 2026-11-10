@@ -22213,7 +22213,13 @@ class OAuth2Server {
       return self.statementRefused(res, resolved);
     }
     const metadata = resolved.metadata;
-    if (metadata.redirect_uris && !Array.isArray(metadata.redirect_uris)) {
+    // THE REQUEST HELD TO THE MODEL (#1579): a member of a JSON type its
+    // definition does not allow, which no refusal below tests, is recorded
+    // and the registration goes on as it always did.
+    self.holdToModel('registration-request', metadata);
+    if (metadata.redirect_uris &&
+        !OAuthModel.memberFits('registration-request', 'redirect_uris',
+                               metadata.redirect_uris)) {
       errorCodes.mark(res, 'STS-OAUTH-0233');
       log.debug("Leaving OAuth2Server.registerClient().");
       return self.oauthError(res, 400, 'invalid_redirect_uri',
@@ -22430,6 +22436,8 @@ class OAuth2Server {
       return self.statementRefused(res, bound);
     }
     const metadata = resolved.metadata;
+    // Held to the model, as a registration is (#1579).
+    self.holdToModel('registration-request', metadata);
     // RFC 7592 SECTION 2.2 (#120): the update carries the client's own
     // client_id, and a client_secret only if it is the one issued — either
     // was overwritten silently until this date.
@@ -22452,7 +22460,9 @@ class OAuth2Server {
         'RFC 7592 section 2.2: a client_secret in the update must be the one ' +
         'this server issued.');
     }
-    if (metadata.redirect_uris && !Array.isArray(metadata.redirect_uris)) {
+    if (metadata.redirect_uris &&
+        !OAuthModel.memberFits('registration-request', 'redirect_uris',
+                               metadata.redirect_uris)) {
       log.debug("Leaving the client update endpoint. redirect_uris is not an " +
                 "array.");
       errorCodes.mark(res, 'STS-OAUTH-0233');

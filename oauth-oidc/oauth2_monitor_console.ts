@@ -62,6 +62,7 @@ import InstanceSlot = require('../common/instance_slot');
 import errorCodes = require('../common/error_codes');
 import audit = require('../common/audit');
 import validation = require('../common/validation');
+import ModelZod = require('../common/model_zod');
 import adminViews = require('../admin-core/admin_views');
 import par = require('./par');
 import monitor = require('./oauth2_monitor');
@@ -104,6 +105,16 @@ const MAX_LIMIT = 500;
 const DEFAULT_LIMIT = 50;
 
 // The query both doors accept. `format` is the console's `?format=json`.
+//
+// **NOT THE MODEL'S, AND WHY (#1579).** `getOauth2Monitor` in
+// `models/api/management.tsp` declares these parameters, but not as this
+// check takes them: the operation gives `page`, `clientsPage`,
+// `stepUpClientsPage` and `offset` no upper bound where this has one, has no
+// `format` (the console's own), and does not read an empty value as none
+// (`vt.opt()`), which a form's empty control sends. `ModelZod.query()` of the
+// operation would accept and refuse different requests, and the refusal
+// quotes zod's message. Making it the model's means changing the published
+// Management API document to say what this says — rcbj's decision.
 const QUERY = vz.looseObject({
   state: vt.opt(vt.oneOf(STATES)),
   client_id: vt.opt(vt.identifier),
@@ -119,9 +130,13 @@ const QUERY = vz.looseObject({
 // BY THE HANDLE (#614): the digest of the whole request_uri, which is what
 // the store is keyed by and the page lists. The request_uri itself is held
 // nowhere, so it cannot be what names a request here.
-const DELETE_BODY = vz.looseObject({
-  request_uri_digest: vz.string().min(1).max(64)
-});
+//
+// THE MODEL'S (#1579): `deletePushedRequest`'s body in
+// `models/api/management.tsp`, which the API door already holds a request
+// to. Both doors' bodies carry `action` beside it, which that closed body
+// does not name, so the member is checked alone; the refusal's words are
+// this module's and do not quote the validator.
+const DELETE_BODY = ModelZod.body('management', 'deletePushedRequest');
 
 /**
  * The view and the action behind the OAuth 2.0 / OIDC monitoring page and its
@@ -456,7 +471,8 @@ class OAuth2MonitorConsole {
                           action.slice(0, 60) + '". There is one: ' +
                           MONITOR_ACTIONS.join(', ') + '.');
     }
-    const parsed = DELETE_BODY.safeParse(body || {});
+    const parsed = DELETE_BODY.safeParse({
+      request_uri_digest: (body || {}).request_uri_digest });
     if (!parsed.success) {
       log.debug("Leaving OAuth2MonitorConsole.monitorAction(). No usable " +
                 "request_uri_digest.");

@@ -176,6 +176,11 @@ function memberOf(program, property) {
     required: property.optional !== true,
     cite: options.cite || ''
   };
+  // What an array's members may be, for a check that reads each one.
+  if (property.type.kind === 'Model' && property.type.name === 'Array' &&
+      property.type.indexer) {
+    out.items = jsonTypesOf(property.type.indexer.value);
+  }
   if (options.own === true) {
     out.own = true;
   }

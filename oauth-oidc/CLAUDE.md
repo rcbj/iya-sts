@@ -6457,9 +6457,33 @@ headers, body, decoded JWT claim sets) to the record taken from the tree
 before any of this changed. `OAUTH_WIRE_PRINT=1` prints a new record when the
 wire is MEANT to change.
 
-**What the wire record does not reach**: a sign-in completed in a browser
-(the authorization code, hybrid and implicit responses, JARM, the consent
-screen's answer), a DPoP-bound or certificate-bound token, a signed request
-object, a CIBA client registered for a delivery mode, a SAML assertion that
-verifies. The OpenID conformance harness and the `tests/protocol/` OAuth
-jobs reach those on a stack.
+**It reaches a signed-in browser too**, in development mode (`flows`): the
+code flow through the sign-in screen over `/authn-api`, its redemption,
+refresh and replay; the hybrid, implicit, `form_post` and JARM responses; a
+signed request object by value and pushed; a DPoP-bound token; a
+certificate-bound one over a TLS listener the child opens; a CIBA poll
+client; a verifying RFC 7522 assertion; and RP-Initiated Logout ending in
+the back-channel Logout Token a relying party in the child receives, whose
+claim set `tests/model_oauth.js` holds. And it sends each RFC 7591 member as
+a JSON type its definition does not allow. **What it still does not reach**:
+the consent screen's answer, encrypted ID Tokens and JARM, a ping or push
+CIBA delivery, and the other modes' signed-in paths; the OpenID conformance
+harness and the `tests/protocol/` OAuth jobs reach those on a stack.
+
+**A REGISTRATION'S CLIENT METADATA IS THE MODEL'S TOO.** `RegistrationRequest`
+in `models/oauth/oauth_members.tsp` states every member this service reads,
+from RFC 7591 section 2, OpenID Connect Registration section 2 and each
+extension specification, with its JSON type. Every refusal that tests a
+member's type — in `common/applications.js`'s `*MetadataProblem()` and
+`requestDefaultsProblem()`, and `redirect_uris` here — asks
+`OAuthModel.memberFits()` / `itemFits()` (`registrationTypeFits()` there)
+and keeps its own words and code; the problems that read a value's meaning
+(an algorithm this service signs with, an https URL, a delivery mode, the
+RFC 8705 subject grammar in `certificate_subject.js`) stay code. **Several
+members of a wrong type are accepted today** — `jwks: "x"`, `client_name: 5`,
+`contacts: "x"`, `client_uri: 42`, `software_id: 5`, the two
+`*_logout_session_required: "yes"`, `token_endpoint_auth_method: 5`, and
+`grant_types` / `response_types` as a string — and the wire record holds
+that. A registration and an RFC 7592 update are held to the set and each
+such member is recorded under `STS-OAUTH-1005`; refusing them would change
+the endpoint, which is rcbj's decision.

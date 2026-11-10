@@ -126,6 +126,367 @@ function childMain() {
       .toString('base64');
   }
 
+  // THE PATHS THAT NEED A SIGNED-IN BROWSER, A KEY OR A SECOND LISTENER, in
+  // development mode: the code, hybrid, implicit, form_post and JARM
+  // responses after a real sign-in through the screen over /authn-api, a
+  // signed request object, a DPoP-bound and a certificate-bound token, a
+  // CIBA client with a delivery mode, a SAML assertion that verifies, and
+  // RP-Initiated Logout ending in a back-channel Logout Token received by a
+  // relying party listening here.
+  async function flows(port) {
+    const crypto = require('crypto');
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const https = require('https');
+    const execFileSync = require('child_process').execFileSync;
+    const screen = require(ROOT + '/tests/tools/authn_screen');
+    const signer = require(ROOT + '/tests/protocol/saml_xmldsig.js');
+    const config = require(ROOT + '/common/config');
+    const applications = require(ROOT + '/common/applications');
+    const tlsServer = require(ROOT + '/tls/tls_server');
+    const BASE = 'http://127.0.0.1:' + port;
+    const SECRET = 'wire-flow-secret-0123456789abcdef0123456789';
+    const REDIRECT = 'https://rp.wire.example/cb';
+    const LOGGED_OUT = 'https://rp.wire.example/bye';
+    const VERIFIER = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk';
+    const CHALLENGE = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM';
+    const SAML_ISSUER = 'https://idp.wire.example/saml';
+    const jar = {};
+
+    // Key material, made here and never kept (no key in the tree).
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'oauth-wire-'));
+    const selfSigned = function (name) {
+      execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048',
+        '-nodes', '-keyout', path.join(dir, name + '.key'),
+        '-out', path.join(dir, name + '.crt'), '-days', '2',
+        '-subj', '/CN=' + name + '.wire.example'], { stdio: 'ignore' });
+      return { key: fs.readFileSync(path.join(dir, name + '.key'), 'utf8'),
+               cert: fs.readFileSync(path.join(dir, name + '.crt'), 'utf8') };
+    };
+    const tlsPair = selfSigned('listener');
+    const clientPair = selfSigned('client');
+    const samlPair = selfSigned('saml');
+    const ro = crypto.generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+    const roJwk = Object.assign(ro.publicKey.export({ format: 'jwk' }),
+                                { kid: 'wire-ro', use: 'sig', alg: 'ES256' });
+    const dpopKey = crypto.generateKeyPairSync('ec',
+                                               { namedCurve: 'prime256v1' });
+    const b64u = function (v) {
+      return Buffer.from(typeof v === 'string' ? v : JSON.stringify(v))
+        .toString('base64url');
+    };
+    const es256 = function (header, claims, key) {
+      const input = b64u(header) + '.' + b64u(claims);
+      return input + '.' + crypto.sign('sha256', Buffer.from(input),
+        { key: key, dsaEncoding: 'ieee-p1363' }).toString('base64url');
+    };
+    const now = function () {
+      return Math.floor(Date.now() / 1000);
+    };
+    const dpopProof = function (method, url) {
+      const jwk = dpopKey.publicKey.export({ format: 'jwk' });
+      return es256({ typ: 'dpop+jwt', alg: 'ES256',
+                     jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } },
+                   { jti: crypto.randomUUID(), htm: method, htu: url,
+                     iat: now() }, dpopKey.privateKey);
+    };
+
+    // The relying party's back-channel logout endpoint.
+    const received = [];
+    const rp = http.createServer(function (req, res) {
+      let text = '';
+      req.on('data', function (c) {
+        text += c;
+      });
+      req.on('end', function () {
+        received.push({ method: req.method,
+                        type: String(req.headers['content-type'] || ''),
+                        body: text });
+        res.writeHead(200, { 'cache-control': 'no-store' });
+        res.end();
+      });
+    });
+    await new Promise(function (r) {
+      rp.listen(0, '127.0.0.1', r);
+    });
+    config.setOverride('federation.outboundAllowHttp', true);
+    config.setOverride('oauth2.backchannelLogoutBackoffMs', 0);
+    config.setOverride('oauth2.backchannelLogoutTimeoutMs', 2000);
+
+    const make = function (id, fields, protocols) {
+      const made = applications.createApplication({ identifier: id,
+        protocols: protocols || ['oauth2'],
+        fields: Object.assign({ oauthClientId: id, oauthClientSecret: SECRET,
+          oauthRedirectUri: [REDIRECT],
+          oauthPostLogoutRedirectUri: [LOGGED_OUT],
+          oauthTokenEndpointAuthMethod: 'client_secret_basic' },
+                              fields || {}) });
+      if (!made || made.ok === false) {
+        record.problems.push('the client ' + id + ' was not made: ' +
+                             JSON.stringify(made));
+      }
+    };
+    make('wire-flow', {
+      oauthGrantType: ['authorization_code', 'implicit', 'refresh_token'],
+      oauthJwks: JSON.stringify({ keys: [roJwk] }),
+      oauthBackchannelLogoutUri: 'http://127.0.0.1:' + rp.address().port +
+        '/bc',
+      oauthBackchannelLogoutSessionRequired: 'TRUE' });
+    make('wire-ciba', {
+      oauthGrantType: ['urn:openid:params:grant-type:ciba'],
+      oauthBackchannelTokenDeliveryMode: 'poll' }, ['oauth2', 'oidc']);
+    make('wire-dpop');
+    make('wire-saml', { oauthSamlAssertionIssuer: SAML_ISSUER,
+                        oauthSamlAssertionSigningCertificate: samlPair.cert });
+    make('wire-mtls', { oauthTlsClientCertificateBoundAccessTokens: 'TRUE' });
+    const basicOf = function (id) {
+      return 'Basic ' + Buffer.from(id + ':' + SECRET).toString('base64');
+    };
+
+    // One step: through the screen's client, this browser's jar kept.
+    const step = async function (name, method, p, opts) {
+      const o = opts || {};
+      let body;
+      const headers = Object.assign({}, o.headers || {});
+      if (o.form !== undefined) {
+        body = new URLSearchParams(o.form).toString();
+        headers['content-type'] = 'application/x-www-form-urlencoded';
+      }
+      const r = await screen.call({ port: o.port || port, jar: o.noJar ? {}
+        : jar, method: method, path: p, headers: headers, body: body,
+        cert: o.cert, key: o.key });
+      const kept = {};
+      Object.keys(r.headers).sort().forEach(function (h) {
+        if (SKIPPED_HEADERS.indexOf(h) < 0) {
+          kept[h] = r.headers[h];
+        }
+      });
+      let parsed = r.text;
+      if (/json/.test(String(r.headers['content-type'] || '')) && r.text) {
+        parsed = r.json || { unparsed: r.text };
+      }
+      record.wire.push({ mode: 'flows', step: name, method: method, path: p,
+                         status: r.status, headers: kept, body: parsed });
+      return r;
+    };
+    const authorizeQuery = function (extra) {
+      return '/oauth2/authorize?' + new URLSearchParams(Object.assign({
+        response_type: 'code', client_id: 'wire-flow',
+        redirect_uri: REDIRECT, scope: 'openid profile email',
+        state: 'st-flow', nonce: 'n-flow', code_challenge: CHALLENGE,
+        code_challenge_method: 'S256' }, extra || {})).toString();
+    };
+    const codeIn = function (r) {
+      const loc = String(r.headers.location || '');
+      const at = loc.search(/[?#]/);
+      return at > 0 ? new URLSearchParams(loc.slice(at + 1)).get('code') : '';
+    };
+
+    // THE CODE FLOW, signing in through the screen.
+    let r = await step('code flow, to sign-in', 'GET', authorizeQuery());
+    const signedIn = await screen.submit({ port: port, jar: jar,
+      at: String(r.headers.location || ''),
+      fields: { action: 'login', username: 'wire-user',
+                password: 'anything' } });
+    record.wire.push({ mode: 'flows', step: 'code flow, the sign-in act',
+                       method: 'POST', path: '/authn-api/pending/{id}',
+                       status: signedIn.status,
+                       headers: {}, body: { next: signedIn.next,
+                                            location: signedIn.location } });
+    r = await step('code flow, back from sign-in', 'GET',
+                   String(signedIn.location || '')
+                     .replace(/^https?:\/\/[^/]+/, ''));
+    let tokens = await step('code flow, the code redeemed', 'POST',
+      '/oauth2/token', { noJar: true,
+        headers: { authorization: basicOf('wire-flow') },
+        form: { grant_type: 'authorization_code', code: codeIn(r),
+                redirect_uri: REDIRECT, code_verifier: VERIFIER } });
+    const codeTokens = tokens.json || {};
+    await step('code flow, userinfo', 'GET', '/oauth2/userinfo', {
+      noJar: true, headers: { authorization: 'Bearer ' +
+                                             (codeTokens.access_token || '') }
+    });
+    if (codeTokens.refresh_token) {
+      await step('code flow, refresh', 'POST', '/oauth2/token', {
+        noJar: true, headers: { authorization: basicOf('wire-flow') },
+        form: { grant_type: 'refresh_token',
+                refresh_token: codeTokens.refresh_token } });
+    }
+
+    // A code presented twice: refused, and the grant it made revoked.
+    await step('code flow, the code again', 'POST', '/oauth2/token', {
+      noJar: true, headers: { authorization: basicOf('wire-flow') },
+      form: { grant_type: 'authorization_code', code: codeIn(r),
+              redirect_uri: REDIRECT, code_verifier: VERIFIER } });
+    await step('code flow, userinfo after the replay', 'GET',
+               '/oauth2/userinfo', { noJar: true,
+                 headers: { authorization: 'Bearer ' +
+                                           (codeTokens.access_token || '') } });
+
+    // THE OTHER RESPONSES, on the session.
+    await step('hybrid, code id_token', 'GET',
+               authorizeQuery({ response_type: 'code id_token' }));
+    await step('hybrid, code id_token token', 'GET',
+               authorizeQuery({ response_type: 'code id_token token' }));
+    await step('implicit, id_token token', 'GET',
+               authorizeQuery({ response_type: 'id_token token',
+                                code_challenge: '',
+                                code_challenge_method: '' }));
+    await step('implicit, id_token', 'GET',
+               authorizeQuery({ response_type: 'id_token',
+                                code_challenge: '',
+                                code_challenge_method: '' }));
+    await step('form_post', 'GET',
+               authorizeQuery({ response_mode: 'form_post' }));
+    await step('JARM, query.jwt', 'GET',
+               authorizeQuery({ response_mode: 'query.jwt' }));
+    await step('JARM, jwt', 'GET', authorizeQuery({ response_mode: 'jwt' }));
+    await step('JARM, fragment.jwt', 'GET',
+               authorizeQuery({ response_type: 'code id_token',
+                                response_mode: 'fragment.jwt' }));
+    await step('prompt=none, on the session', 'GET',
+               authorizeQuery({ prompt: 'none' }));
+
+    // A SIGNED REQUEST OBJECT, by value and pushed.
+    const requestObject = es256(
+      { alg: 'ES256', kid: 'wire-ro', typ: 'oauth-authz-req+jwt' },
+      { iss: 'wire-flow', aud: BASE, client_id: 'wire-flow',
+        response_type: 'code', redirect_uri: REDIRECT, scope: 'openid',
+        state: 'st-ro', nonce: 'n-ro', code_challenge: CHALLENGE,
+        code_challenge_method: 'S256', iat: now(), nbf: now(),
+        exp: now() + 300, jti: crypto.randomUUID() }, ro.privateKey);
+    await step('request object, by value', 'GET', '/oauth2/authorize?' +
+               new URLSearchParams({ client_id: 'wire-flow',
+                                     request: requestObject }).toString());
+    await step('request object, a bad signature', 'GET',
+               '/oauth2/authorize?' + new URLSearchParams({
+                 client_id: 'wire-flow',
+                 request: requestObject.slice(0, -4) + 'AAAA' }).toString());
+    const pushedObject = es256(
+      { alg: 'ES256', kid: 'wire-ro', typ: 'oauth-authz-req+jwt' },
+      { iss: 'wire-flow', aud: BASE, client_id: 'wire-flow',
+        response_type: 'code', redirect_uri: REDIRECT, scope: 'openid',
+        state: 'st-par', nonce: 'n-par', code_challenge: CHALLENGE,
+        code_challenge_method: 'S256', iat: now(), nbf: now(),
+        exp: now() + 300, jti: crypto.randomUUID() }, ro.privateKey);
+    const pushed = await step('request object, pushed', 'POST',
+      '/oauth2/par', { noJar: true,
+        headers: { authorization: basicOf('wire-flow') },
+        form: { client_id: 'wire-flow', request: pushedObject } });
+    if (pushed.json && pushed.json.request_uri) {
+      await step('request object, the pushed one used', 'GET',
+                 '/oauth2/authorize?' + new URLSearchParams({
+                   client_id: 'wire-flow',
+                   request_uri: pushed.json.request_uri }).toString());
+    }
+
+    // A DPoP-BOUND TOKEN.
+    const dpopTokens = await step('DPoP, client_credentials', 'POST',
+      '/oauth2/token', { noJar: true, headers: {
+        authorization: basicOf('wire-dpop'),
+        dpop: dpopProof('POST', BASE + '/oauth2/token') },
+        form: { grant_type: 'client_credentials' } });
+    const dpopToken = (dpopTokens.json || {}).access_token || '';
+    await step('DPoP, introspected', 'POST', '/oauth2/introspect', {
+      noJar: true, headers: { authorization: basicOf('wire-dpop') },
+      form: { token: dpopToken } });
+    await step('DPoP, a bound token presented as Bearer', 'GET',
+               '/oauth2/userinfo', { noJar: true,
+                 headers: { authorization: 'Bearer ' + dpopToken } });
+    await step('DPoP, a proof for another URL', 'POST', '/oauth2/token', {
+      noJar: true, headers: { authorization: basicOf('wire-dpop'),
+        dpop: dpopProof('POST', BASE + '/elsewhere') },
+      form: { grant_type: 'client_credentials' } });
+
+    // A CERTIFICATE-BOUND TOKEN, over a TLS listener of its own.
+    const secure = https.createServer(Object.assign({
+      cert: tlsPair.cert, key: tlsPair.key,
+      requestCert: true, rejectUnauthorized: false
+    }, tlsServer.protocolOptions()), require(ROOT + '/common/app'));
+    await new Promise(function (resolve) {
+      secure.listen(0, '127.0.0.1', resolve);
+    });
+    const securePort = secure.address().port;
+    const bound = await step('mTLS, client_credentials', 'POST',
+      '/oauth2/token', { noJar: true, port: securePort,
+        cert: clientPair.cert, key: clientPair.key,
+        headers: { authorization: basicOf('wire-mtls') },
+        form: { grant_type: 'client_credentials' } });
+    await step('mTLS, introspected', 'POST', '/oauth2/introspect', {
+      noJar: true, headers: { authorization: basicOf('wire-mtls') },
+      form: { token: (bound.json || {}).access_token || '' } });
+    await step('mTLS, no certificate', 'POST', '/oauth2/token', {
+      noJar: true, headers: { authorization: basicOf('wire-mtls') },
+      form: { grant_type: 'client_credentials' } });
+    secure.close();
+
+    // CIBA, A CLIENT WITH A DELIVERY MODE.
+    const ciba = await step('CIBA, poll', 'POST', '/oauth2/bc-authorize', {
+      noJar: true, headers: { authorization: basicOf('wire-ciba') },
+      form: { scope: 'openid', login_hint: 'wire-user',
+              binding_message: 'wire' } });
+    await step('CIBA, pending', 'POST', '/oauth2/token', {
+      noJar: true, headers: { authorization: basicOf('wire-ciba') },
+      form: { grant_type: 'urn:openid:params:grant-type:ciba',
+              auth_req_id: (ciba.json || {}).auth_req_id || 'none' } });
+    await step('CIBA, an unknown user', 'POST', '/oauth2/bc-authorize', {
+      noJar: true, headers: { authorization: basicOf('wire-ciba') },
+      form: { scope: 'openid', login_hint: 'wire-nobody' } });
+
+    // A SAML ASSERTION THAT VERIFIES (RFC 7522).
+    const assertion = function (overrides) {
+      const built = signer.buildAssertion(Object.assign({
+        issuer: SAML_ISSUER, subject: 'wire-user',
+        audience: BASE + '/oauth2/token', recipient: BASE + '/oauth2/token',
+        authnStatement: true }, overrides || {}));
+      return signer.b64u(signer.sign(built, samlPair.key, samlPair.cert, {}));
+    };
+    await step('SAML bearer, verifying', 'POST', '/oauth2/token', {
+      noJar: true, headers: { authorization: basicOf('wire-saml') },
+      form: { grant_type: 'urn:ietf:params:oauth:grant-type:saml2-bearer',
+              assertion: assertion(), scope: 'openid' } });
+    await step('SAML bearer, another audience', 'POST', '/oauth2/token', {
+      noJar: true, headers: { authorization: basicOf('wire-saml') },
+      form: { grant_type: 'urn:ietf:params:oauth:grant-type:saml2-bearer',
+              assertion: assertion({ audience: 'https://elsewhere.example/',
+                                     recipient:
+                                       'https://elsewhere.example/' }) } });
+
+    // RP-INITIATED LOGOUT, AND THE LOGOUT TOKEN IT SENDS.
+    r = await step('logout, with the session', 'GET', '/oauth2/logout?' +
+                   new URLSearchParams({
+                     id_token_hint: codeTokens.id_token || '',
+                     post_logout_redirect_uri: LOGGED_OUT,
+                     state: 'st-out' }).toString());
+    if (/name="confirm_for"/.test(String(r.text || ''))) {
+      const form = {};
+      (String(r.text).match(/<input type="hidden"[^>]*>/g) || [])
+        .forEach(function (tag) {
+          const name = /name="([^"]+)"/.exec(tag);
+          const value = /value="([^"]*)"/.exec(tag);
+          if (name) {
+            form[name[1]] = value ? value[1].replace(/&amp;/g, '&') : '';
+          }
+        });
+      form.confirm = 'yes';
+      await step('logout, confirmed', 'POST', '/oauth2/logout',
+                 { form: form });
+    }
+    for (let i = 0; i < 100 && received.length === 0; i++) {
+      await new Promise(function (resolve) {
+        setTimeout(resolve, 50);
+      });
+    }
+    record.wire.push({ mode: 'flows', step: 'the back-channel Logout Token',
+      method: 'POST', path: '/bc', status: received.length,
+      headers: { 'content-type': received.length ? received[0].type : '' },
+      body: received.length
+        ? Object.fromEntries(new URLSearchParams(received[0].body)) : null });
+    rp.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+
   (async function () {
     require(ROOT + '/common/protocol_stack');
     const app = require(ROOT + '/common/app');
@@ -477,6 +838,52 @@ function childMain() {
       await step('register, an unknown client read', 'GET',
                  '/oauth2/register/wire-nobody',
                  { headers: { authorization: 'Bearer nope' } });
+      // RFC 7591 section 2's members, each sent as a JSON type its
+      // definition does not allow: the refusal each one gets.
+      if (mode.name === 'development') {
+        const WRONG = [
+          ['redirect_uris', 'x'], ['request_uris', 'x'], ['request_uris', [5]],
+          ['jwks_uri', 5], ['jwks', 'x'], ['backchannel_logout_uri', 5],
+          ['frontchannel_logout_uri', 5], ['initiate_login_uri', 5],
+          ['post_logout_redirect_uris', 'x'], ['sector_identifier_uri', 5],
+          ['introspection_signed_response_alg', 5],
+          ['introspection_encrypted_response_alg', 5],
+          ['id_token_signed_response_alg', 5],
+          ['id_token_encrypted_response_alg', 5],
+          ['userinfo_signed_response_alg', 5],
+          ['userinfo_encrypted_response_alg', 5],
+          ['authorization_signed_response_alg', 5],
+          ['authorization_encrypted_response_alg', 5],
+          ['request_object_signing_alg', 5],
+          ['request_object_encryption_alg', 5],
+          ['token_endpoint_auth_signing_alg', 5],
+          ['require_pushed_authorization_requests', 'yes'],
+          ['require_signed_request_object', 'yes'],
+          ['backchannel_user_code_parameter', 'yes'],
+          ['backchannel_token_delivery_mode', 5],
+          ['backchannel_client_notification_endpoint', 5],
+          ['backchannel_authentication_request_signing_alg', 5],
+          ['backchannel_logout_session_required', 'yes'],
+          ['frontchannel_logout_session_required', 'yes'],
+          ['tls_client_certificate_bound_access_tokens', 'yes'],
+          ['tls_client_auth_subject_dn', 5],
+          ['authorization_details_types', 'x'], ['default_max_age', -5],
+          ['default_max_age', 'x'], ['require_auth_time', 'yes'],
+          ['default_acr_values', 'mfa'], ['subject_type', 5],
+          ['application_type', 5], ['token_endpoint_auth_method', 5],
+          ['grant_types', 'x'], ['response_types', 'x'], ['client_name', 5],
+          ['contacts', 'x'], ['logo_uri', 42], ['client_uri', 42],
+          ['policy_uri', 42], ['tos_uri', 42], ['scope', 5],
+          ['software_id', 5], ['software_version', 5],
+          ['software_statement', 5], ['command_endpoint', 5]];
+        for (let w = 0; w < WRONG.length; w++) {
+          const doc = { redirect_uris: [REDIRECT] };
+          doc[WRONG[w][0]] = WRONG[w][1];
+          await step('register, ' + WRONG[w][0] + ' ' +
+                     JSON.stringify(WRONG[w][1]), 'POST', '/oauth2/register',
+                     { json: doc });
+        }
+      }
 
       // DEVICE AUTHORIZATION AND CIBA.
       const device = await step('device_authorization', 'POST',
@@ -556,6 +963,7 @@ function childMain() {
                                            form: { token: ccToken } });
       }
     }
+    await flows(port);
     server.close();
     require('fs').writeFileSync(OUT, JSON.stringify(record));
     process.exit(0);
@@ -574,7 +982,8 @@ const VOLATILE_MEMBERS = ['access_token', 'refresh_token', 'device_code',
   'jti', 'sid', 'at_hash', 'c_hash', 'rt_hash', 'kid', 'n', 'e', 'x', 'y',
   'x5c', 'x5t', 'x5t#S256', 'iat', 'exp', 'nbf', 'auth_time',
   'client_id_issued_at', 'client_secret_expires_at', 'dpop-nonce',
-  'signed_metadata', 'grant_id', 'device_secret', 'authn', 'idx'];
+  'signed_metadata', 'grant_id', 'device_secret', 'authn', 'idx', 'jkt',
+  'response', 's_hash'];
 
 const JWT = /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*$/;
 
@@ -641,9 +1050,24 @@ function scrub(value, name) {
     log.debug("Leaving scrub(). A volatile member.");
     return '<' + name + '>';
   }
-  if (typeof value === 'string' && /^(https?:\/\/|\/)[^ ]*\?/.test(value)) {
-    const mark = value.indexOf('?');
-    const query = new URLSearchParams(value.slice(mark + 1));
+  // Express's redirect body names the address the Location header does,
+  // and is read the same way.
+  if (typeof value === 'string' && /^Found\. Redirecting to /.test(value)) {
+    log.debug("Leaving scrub(). A redirect's body.");
+    return { redirecting: scrub(value.slice('Found. Redirecting to '.length),
+                                name) };
+  }
+  // A form a page posts (form_post, JARM's form_post.jwt): each credential
+  // it carries is a placeholder by its name.
+  if (typeof value === 'string' && value.indexOf('<form') >= 0) {
+    value = value.replace(new RegExp('(name="(' +
+      VOLATILE_MEMBERS.join('|').replace(/#/g, '\\#') +
+      ')" value=")[^"]*"', 'g'), '$1<$2>"');
+  }
+  if (typeof value === 'string' && /^(https?:\/\/|\/)[^ ]*[?#]/.test(value)) {
+    const mark = value.search(/[?#]/);
+    const query = new URLSearchParams(value.slice(mark + 1)
+      .replace(/#/g, '&'));
     const kept = [];
     query.forEach(function (v, k) {
       const one = scrub(v, k);
@@ -651,7 +1075,8 @@ function scrub(value, name) {
         : JSON.stringify(one)));
     });
     log.debug("Leaving scrub(). A URL.");
-    return { url: value.slice(0, mark), query: kept };
+    return { url: value.slice(0, mark), query: kept,
+             in: value.charAt(mark) === '#' ? 'fragment' : 'query' };
   }
   log.debug("Leaving scrub().");
   return value;
