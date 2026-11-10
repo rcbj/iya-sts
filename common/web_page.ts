@@ -242,8 +242,17 @@ class WebPage {
     if (!prefix) {
       return html;
     }
+    // THE PREFIX GOES INSIDE AN ATTRIBUTE, so it is escaped as one (Qualys
+    // QID 150938, 2026-11-10). It comes from the shell's own
+    // `data-sts-prefix` or from `location.pathname`, which a browser has
+    // already percent-encoded, so nothing could break out of the quotes; the
+    // escape makes that a property of this function rather than of its
+    // callers. `$` is doubled because the replacement is a pattern.
+    const safe = String(prefix).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/\$/g, '$$$$');
     return String(html).replace(/\b(href|action|formaction|src)="\/(?!\/)/g,
-                                '$1="' + prefix + '/');
+                                '$1="' + safe + '/');
   }
 
   /**

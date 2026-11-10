@@ -1019,16 +1019,24 @@ class RolePermissions {
     const c = claims || {};
     const scopes = (carried || []).slice(0);
     const client = this.isClientToken(c);
-    const subject: Subject = client
-      ? { kind: 'application', name: String(c.client_id || ''),
-          authenticated: true }
-      : { kind: 'user', authenticated: true,
-          // `sub` first: it cannot be reassigned and a username can (#1536).
-          name: require('./helpers').subjectIsGone(c.sub) &&
-                require('./mode').refusesTokenForGoneSubject()
-            ? '' : String(require('./helpers').nameForSubject(c.sub) ||
-                          c.username || c.preferred_username || c.sub || '') };
     return this.inRealm(tokenRealm, function () {
+      // THE SUBJECT IS RESOLVED IN THE REALM THAT ISSUED THE TOKEN (2026-11-10).
+      // A `urn:uuid:` names an entry of that realm's directory, and the
+      // resolver answers in the ambient one. Resolved outside, a service
+      // administrator's default-realm token at `/realm/<id>/admin-api` named
+      // an entry the realm does not hold, so in product (#1536's gone-subject
+      // rule) the subject was nobody and every call was 403 STS-API-0125 —
+      // a realm's console never drew for the service roster.
+      const subject: Subject = client
+        ? { kind: 'application', name: String(c.client_id || ''),
+            authenticated: true }
+        : { kind: 'user', authenticated: true,
+            // `sub` first: it cannot be reassigned and a username can (#1536).
+            name: require('./helpers').subjectIsGone(c.sub) &&
+                  require('./mode').refusesTokenForGoneSubject()
+              ? '' : String(require('./helpers').nameForSubject(c.sub) ||
+                            c.username || c.preferred_username || c.sub ||
+                            '') };
       const held = self.heldRoles(subject);
       // THE CLIENT'S CONFERRED ROLES, MIXED WITH THE PERSON'S OWN (#454),
       // read NOW in the realm that issued the token, as the person's are: a

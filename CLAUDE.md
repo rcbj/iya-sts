@@ -761,6 +761,11 @@ Two rules come out of it:
   this service set was correct and something else overwrote it. The check is "does it
   still carry the clause", not "is it the value I set", so the relaxations are
   untouched.
+* **The same flush narrows a response that is not a page** (2026-11-10, Qualys
+  QID 150207): JSON, XML other than SVG, and plain text still holding the base
+  policy get it without `style-src` and `img-src`. A route's own policy is
+  left alone. The other headers the scan asked for are in
+  `docs/oauth-security.md`, *The other response headers*.
 
 **THE ONE PAGE THAT MAY BE FRAMED IS THE OP IFRAME (#121, 2026-09-23)**, and
 it narrows the clause rather than dropping it: `app.framedContentSecurityPolicy()`

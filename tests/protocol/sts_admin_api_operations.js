@@ -3685,7 +3685,9 @@ async function theIssuedListGroupsByIssuance() {
 // accepted write and what keeps the ledger's pairing check true for them.
 // `root` names the default realm's scope, for the one token minted there.
 // ---------------------------------------------------------------------------
-const MINT_PASSWORD = "admin-api-operations-Passw0rd!-" + REALM;
+// From nothing the realm is known by: product refuses a password holding the
+// realm id (password_policy.ts, contextWords()), which this one did.
+const MINT_PASSWORD = names.passwordFor();
 const MINT_CLIENT_SECRET = "admin-api-operations-client-secret-" + REALM;
 const mintedParties = {};
 

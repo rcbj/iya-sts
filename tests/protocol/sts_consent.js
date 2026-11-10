@@ -58,6 +58,7 @@ const authnSignin = require("./authn_signin");
 const assert = require("assert");
 const { Command, Option } = require("commander");
 const { usernameFor } = require("./random_username.js");
+const facts = require("./service_facts.js");
 
 var appconfig;
 let appconfigProblem = null;
@@ -592,9 +593,25 @@ async function theScreenRefusesWhatItShould() {
 
   const stranger = browser("stranger");
   let r = await stranger.go("GET", "/oauth2/consent");
-  assert.strictEqual(r.status, 400,
-    "the screen followed bare names no pending consent and must be refused; " +
-    "got " + r.status);
+  // IN PRODUCT A STEP'S ID IS IN THE FRAGMENT (#1454, ASVS 5.0.0 14.2.1), so
+  // the server never sees it: a bare `/oauth2/consent` is the shell, for
+  // nobody yet, and the page finds the step itself (`consent_screen.ts`,
+  // `mode.hidesStepIds()`). What refuses an id nothing minted is then the
+  // view, `GET /authn-api/consent/{id}` — asserted below for the id the
+  // query names, which reaches the same check in both modes.
+  if (await facts.isProduct(api)) {
+    assert.strictEqual(r.status, 200,
+      "product: the bare consent screen is the shell, for nobody; got " +
+      r.status);
+    assert.ok(/\/oauth2\/consent\.js/.test(r.text || "") &&
+              /data-sts-step-fragment="1"/.test(r.text || ""),
+      "product: the bare shell loads the consent script and reads the " +
+      "step from the fragment; got " + String(r.text || "").slice(0, 300));
+  } else {
+    assert.strictEqual(r.status, 400,
+      "the screen followed bare names no pending consent and must be " +
+      "refused; got " + r.status);
+  }
   r = await stranger.go("GET", "/oauth2/consent?consent=never-minted-" + RUN);
   assert.strictEqual(r.status, 400,
     "and so must an id nothing ever minted; got " + r.status);

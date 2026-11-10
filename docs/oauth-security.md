@@ -1273,6 +1273,25 @@ off by default behind `oauth2.deviceAuthorization` — see
 [Signing in a device](oauth-oidc.md#signing-in-a-device-rfc-8628)), relaxes
 nothing, so it carries the same framing clauses as every other page.
 
+### The other response headers
+
+- **`Permissions-Policy`** on every response. It allows WebAuthn, the
+  Digital Credentials API, the clipboard and full screen for this origin
+  only, and denies the camera, microphone, geolocation, payment, USB, serial,
+  HID, Bluetooth, MIDI, screen capture, motion sensors and Topics to
+  everybody. A page this service frames inherits the same list.
+- **A response that is not a page** (JSON, XML other than SVG, and plain
+  text) carries a narrower policy: no `style-src` and no `img-src`, with
+  `frame-ancestors` and `base-uri` kept. Only HTML pages keep the base
+  policy's inline styles and `data:` images, which some of them use.
+- **The console, the user portal and the reports application** answer
+  `Cross-Origin-Opener-Policy: same-origin-allow-popups` and
+  `Cross-Origin-Resource-Policy: same-origin`.
+  - `same-origin-allow-popups` rather than `same-origin`, so the console's
+    re-authentication window keeps working.
+  - The sign-in screens carry neither header, because a relying party may
+    open one in a popup.
+
 ### In-browser communication (section 4.17)
 
 No authorization response is delivered by in-browser messaging. The response

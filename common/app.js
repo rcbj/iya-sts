@@ -849,6 +849,42 @@ function contentSecurityPolicy(overrides) {
 const CONTENT_SECURITY_POLICY = contentSecurityPolicy({});
 
 // ---------------------------------------------------------------------------
+// A RESPONSE THAT IS NOT A PAGE NEEDS NO STYLE AND NO IMAGE (Qualys QID
+// 150207, 2026-11-10). The base policy keeps `style-src 'unsafe-inline'` and
+// `img-src data:` for the server-drawn pages that carry an inline <style> or
+// a QR code, and until now a JSON answer, a metadata document or a plain-text
+// refusal carried them too, where they permit nothing anybody wanted. So at
+// the flush (`writeHead()` below) a response still holding the base policy
+// whose type is JSON, XML or plain text gets this one instead. An SVG keeps
+// the base policy: it is XML, and it may style itself. A route that set its
+// own policy is left alone.
+// ---------------------------------------------------------------------------
+const NOT_A_PAGE_POLICY = contentSecurityPolicy({
+  'style-src': null,
+  'img-src': null
+});
+const NOT_A_PAGE_TYPES =
+  /^\s*(?:application\/(?:[^\s;]+\+)?(?:json|xml)|text\/(?:plain|xml))\s*(?:;|$)/i;
+
+// ---------------------------------------------------------------------------
+// THE BROWSER FEATURES A PAGE OF THIS SERVICE MAY USE (Qualys QID 150248,
+// 2026-11-10): WebAuthn (the sign-in, the portal's passkeys, the console's
+// re-authentication), the Digital Credentials API (the wallet sign-in), the
+// clipboard (the console's copy buttons) and full screen, each for this
+// origin only, and nothing else for anybody. A page this service frames
+// (the OP iframe) inherits the same list. The geolocation page is a map drawn
+// on the server and never asks the browser where it is.
+// ---------------------------------------------------------------------------
+const PERMISSIONS_POLICY = [
+  'publickey-credentials-get=(self)', 'publickey-credentials-create=(self)',
+  'digital-credentials-get=(self)', 'clipboard-write=(self)',
+  'fullscreen=(self)', 'camera=()', 'microphone=()', 'geolocation=()',
+  'payment=()', 'usb=()', 'serial=()', 'hid=()', 'bluetooth=()', 'midi=()',
+  'display-capture=()', 'accelerometer=()', 'gyroscope=()',
+  'magnetometer=()', 'browsing-topics=()'
+].join(', ');
+
+// ---------------------------------------------------------------------------
 // THE ONE PAGE THAT MAY BE FRAMED, AND ONLY BY NAMED ORIGINS (#121).
 //
 // OpenID Connect Session Management 1.0's OP iframe exists to be loaded in a
@@ -945,6 +981,7 @@ app.use(function (req, res, next) {
   res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', PERMISSIONS_POLICY);
   // ---------------------------------------------------------------------
   // NO RESPONSE LEAVES THIS SERVICE WITHOUT `frame-ancestors`, INCLUDING THE
   // ONES THIS SERVICE DID NOT WRITE.
@@ -980,6 +1017,13 @@ app.use(function (req, res, next) {
     if (current.indexOf('frame-ancestors') < 0) {
       res.setHeader('Content-Security-Policy', CONTENT_SECURITY_POLICY);
       res.setHeader('X-Frame-Options', 'DENY');
+    }
+    // NOT A PAGE (`NOT_A_PAGE_POLICY` above): read after the line above, so
+    // a policy just put back is narrowed too.
+    const shown = String(res.getHeader('Content-Type') || '');
+    if (String(res.getHeader('Content-Security-Policy') || '') ===
+        CONTENT_SECURITY_POLICY && NOT_A_PAGE_TYPES.test(shown)) {
+      res.setHeader('Content-Security-Policy', NOT_A_PAGE_POLICY);
     }
     // A SIGN-IN STEP'S ID LEAVES THE ADDRESS (#1454): `common/step_address.ts`.
     const location = res.getHeader('Location');

@@ -117,7 +117,10 @@ const PROTECTION = "urn:sts:uma-protection-api:uma_protection";
 const OWNER = "uma-owner";
 const PARTY = "uma-party";
 const STRANGER = "uma-stranger";
-const PASSWORD = "Uma-" + STAMP + "-9a!";
+// From nothing the realm is known by: "Uma-<stamp>" holds the realm id
+// "uma-<stamp>", which product's password policy refuses (password_policy.ts,
+// contextWords()).
+const PASSWORD = names.passwordFor();
 const RS = "uma-rs-" + STAMP;
 const RS2 = "uma-rs2-" + STAMP;
 const CLIENT = "uma-client-" + STAMP;

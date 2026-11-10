@@ -2002,27 +2002,41 @@ class CryptoMetadata {
              'oauth2.httpSignatureResponseAlg)',
              [String(config.value('oauth2.httpSignatureResponseAlg') ||
                      'ES256')]],
-            // Narrowed to what the realm SIGNS (`keys.eddsaSigning`, #1292,
-            // and `keys.postQuantumSigning`), as discovery is: the page and
-            // the discovery document are the same table read twice.
+            // Narrowed BY THE FUNCTION DISCOVERY NARROWS WITH
+            // (`helpers.publishedSigningAlgs()`, which is
+            // `narrowSigningAlgs()` over the one member): the page and the
+            // discovery document are the same table read twice. A copy of
+            // the narrowing here drifted once already — ES256K left the
+            // accept lists in product and stayed on this page (ASVS 5.0.0
+            // 11.6.1).
             ['ID Token, when a client registers one',
-             helpers.signableJwsAlgs(oauth2.ID_TOKEN_SIGNING_ALGS)],
+             helpers.publishedSigningAlgs(
+               'id_token_signing_alg_values_supported',
+               oauth2.ID_TOKEN_SIGNING_ALGS)],
             ['UserInfo response',
-             helpers.signableJwsAlgs(oauth2.USERINFO_SIGNING_ALGS)],
+             helpers.publishedSigningAlgs(
+               'userinfo_signing_alg_values_supported',
+               oauth2.USERINFO_SIGNING_ALGS)],
             ['JWT introspection response (RFC 9701)',
-             helpers.signableJwsAlgs(introspectionJwt.SIGNING_ALGS)],
+             helpers.publishedSigningAlgs(
+               'introspection_signing_alg_values_supported',
+               introspectionJwt.SIGNING_ALGS)],
             // Narrowed to what the realm OFFERS (`keys.offerKemEncryption`,
             // 2026-09-28), as discovery is.
             ['JWT introspection response encryption (RFC 9701)',
              helpers.offeredJweAlgs(introspectionJwt.ENCRYPTION_ALGS)],
             ['Request object signature (RFC 9101)',
-             applicationRegistry.REQUEST_OBJECT_SIGNING_ALGS],
+             helpers.publishedSigningAlgs(
+               'request_object_signing_alg_values_supported',
+               applicationRegistry.REQUEST_OBJECT_SIGNING_ALGS)],
             // Narrowed to the ML-KEM and HPKE algs the realm holds a key
             // for (#82), as discovery is.
             ['Request object decryption (RFC 9101)',
              helpers.decryptableJweAlgs(
                applicationRegistry.REQUEST_OBJECT_ENCRYPTION_ALGS)],
-            ['DPoP proof', dpop.SIGNING_ALGS],
+            ['DPoP proof',
+             helpers.publishedSigningAlgs(
+               'dpop_signing_alg_values_supported', dpop.SIGNING_ALGS)],
             ['Client assertion', clientAuth.SYMMETRIC_METHODS
               .concat(clientAuth.ASYMMETRIC_METHODS)],
             // **OUT IS THE ASYMMETRIC HALF AND IN IS THE WHOLE TABLE, AND THEY
@@ -3676,6 +3690,10 @@ class CryptoMetadata {
       function (row) {
         return row.uri;
       });
+    // What DPoP accepts in THIS realm, as discovery publishes it: product
+    // leaves ES256K out of the list it is narrowed from.
+    const dpopAlgs = helpers.publishedSigningAlgs(
+      'dpop_signing_alg_values_supported', dpop.SIGNING_ALGS);
     const out = {
       jws: stsCrypto.JWS_SIGNING_ALGS.map(function (alg) {
         const spec = stsCrypto.JWS_ALGS[alg];
@@ -3688,7 +3706,7 @@ class CryptoMetadata {
           asymmetric: stsCrypto.JWS_ASYMMETRIC_ALGS.indexOf(alg) >= 0,
           postQuantum: spec.family === 'pq',
           composite: composites.indexOf(alg) >= 0,
-          dpop: dpop.SIGNING_ALGS.indexOf(alg) >= 0
+          dpop: dpopAlgs.indexOf(alg) >= 0
         };
       }),
       xml: Object.keys(xmldsig.SIG_METHODS).map(function (uri) {

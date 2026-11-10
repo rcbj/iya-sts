@@ -410,7 +410,8 @@ class Portal {
                           self.shellDocument(registered, elsewhere), {
         connect: ShellDocument.originsOf([elsewhere.oauth, elsewhere.api]),
         // A QR code is a server-drawn SVG in a `data:` image.
-        csp: { 'img-src': "'self' data:" }
+        csp: { 'img-src': "'self' data:" },
+        isolated: true
       });
       log.debug("Leaving the portal shell.");
     };

@@ -136,6 +136,17 @@ interface ServeOptions {
   compress?: boolean;
   // The realm's path prefix, for the rewrite a compressed body needs.
   prefix?: string;
+  // AN APPLICATION THAT IS NEVER OPENED BY ANOTHER SITE (Qualys QIDs 531930
+  // and 531928, 2026-11-10): the console, the portal and the reports
+  // application. `Cross-Origin-Opener-Policy: same-origin-allow-popups`, so a
+  // window another site opened cannot keep a reference to it, while the
+  // windows it opens itself keep theirs (the console's re-authentication
+  // popup, `admin-ui/web_runtime.ts`); not `same-origin`, which would cut
+  // that one off as it passes through the sign-in. And
+  // `Cross-Origin-Resource-Policy: same-origin`, since no other site embeds
+  // the document. NOT for the sign-in screens: a relying party may open
+  // those in a popup and read the answer through its opener.
+  isolated?: boolean;
 }
 
 /**
@@ -371,6 +382,10 @@ class ShellDocument {
     log.debug("Entering ShellDocument.serve().");
     const asked = options || {};
     res.set('Content-Security-Policy', ShellDocument.policy(app, asked));
+    if (asked.isolated) {
+      res.set('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
+      res.set('Cross-Origin-Resource-Policy', 'same-origin');
+    }
     res.status(200).type('text/html').set('Cache-Control', 'no-store');
     if (!asked.compress) {
       // The realm's prefix goes on the shell's links in `app.js`'s `send()`,

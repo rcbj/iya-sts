@@ -4881,9 +4881,11 @@ class OAuth2Server {
     // setting only decides whether a missing one is ASKED for.
     let consented = false;
     if (!prompted) {
+      // `recorded`: whether it is ON FILE, which a public client's
+      // ask-every-time rule (`consent.alwaysAsks()`) does not change.
       const asked = consent.outstanding({
         username: (user || {}).username, clientId: query.client_id,
-        scope: 'offline_access', all: false });
+        scope: 'offline_access', all: false, recorded: true });
       consented = asked.outstanding.length === 0;
     }
     if (!prompted && !consented) {
@@ -9602,9 +9604,11 @@ class OAuth2Server {
           log.debug("Leaving stillConsented(). Consent is not required.");
           return earlier;
         }
+        // What is ON FILE (`recorded`), which a public client's
+        // ask-every-time rule does not change.
         const gone = (consentRegister.outstanding({
           clientId: String(query.client_id), username: user.username,
-          scope: earlier }) || {}).names || [];
+          scope: earlier, recorded: true }) || {}).names || [];
         log.debug("Leaving stillConsented(). " + gone.length + " withdrawn.");
         return earlier.split(/\s+/).filter(function (one: string) {
           return one && gone.indexOf(one) < 0;
@@ -12431,10 +12435,23 @@ class OAuth2Server {
       // -------------------------------------------------------------------
       const wantsConsent = String(q.prompt || '').split(/\s+/)
                                                  .indexOf('consent') >= 0;
+      // A PUBLIC CLIENT IS ASKED EVERY TIME (ASVS 5.0.0 10.7.1,
+      // `consent.alwaysAsks()`), AND THE ANSWER TO THIS REQUEST IS SPENT ON
+      // THIS PASS, as an RFC 9396 Allow is below: the consent screen records
+      // it under the scopes' digest, and the pass that follows consumes it.
+      // Without it the second pass asked again, and the person went round
+      // for ever. A later request finds nothing to spend and is asked.
+      const scopeAnswerDigest = consent.required() &&
+        consent.alwaysAsks(String(q.client_id || '').trim())
+        ? richAuthorization.scopeAnswerDigestOf(q.scope) : '';
+      const scopesAnswered = !!scopeAnswerDigest && !wantsConsent &&
+        richAuthorization.consumeConsented((session.user || {}).username,
+                                           q.client_id, scopeAnswerDigest);
       const decision: Json = consent.required()
         ? consent.outstanding({ username: (session.user || {}).username,
                                 clientId: q.client_id,
-                                scope: q.scope, all: wantsConsent })
+                                scope: q.scope, all: wantsConsent,
+                                answered: scopesAnswered })
         : { outstanding: [], scopes: [] };
       // RFC 9396: details of a declared type are asked about EVERY time, and an
       // Allow is spent here, on the pass that follows it — see
@@ -12606,6 +12623,10 @@ class OAuth2Server {
           authorizationDetails: detailsOutstanding
             ? richAuthorization.describe(consentDetails.details) : [],
           detailsDigest: detailsOutstanding ? detailsDigest : '',
+          // The digest a public client's Allow is recorded under, for the
+          // next pass to spend; '' for every other client.
+          scopeAnswerDigest: decision.outstanding.length
+            ? scopeAnswerDigest : '',
           // The details themselves, for their limits' controls (#432 phase 5).
           rawAuthorizationDetails: detailsOutstanding
             ? consentDetails.details : [],
@@ -21216,9 +21237,11 @@ class OAuth2Server {
           log.debug("Leaving stillConsented(). Consent is not required.");
           return earlier;
         }
+        // What is ON FILE (`recorded`), which a public client's
+        // ask-every-time rule does not change.
         const gone = (consentRegister.outstanding({
           clientId: clientId, username: hinted.username,
-          scope: earlier }) || {}).names || [];
+          scope: earlier, recorded: true }) || {}).names || [];
         log.debug("Leaving stillConsented(). " + gone.length + " withdrawn.");
         return earlier.split(/\s+/).filter(function (one: string) {
           return one && gone.indexOf(one) < 0;
