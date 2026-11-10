@@ -87,6 +87,130 @@ if (USER) {
 const GUARDS_INFRA = SURFACE === "admin-api" || SURFACE === "admin-api-service";
 let protectedRefused = 0;
 
+// ===========================================================================
+// THE POLICIES THE RUN SIGNS IN THROUGH (rcbj, 2026-11-10). The name guard
+// above keeps the fuzz person and the run's clients out of a request. It does
+// not cover a change that names NOBODY and still reaches the run's own
+// sign-in. Fuzz7 rewrote the realm's issuance policy through the XACML
+// editor (STS-AUTHN-0009). In fuzz8, from 15:11:59, every console session
+// for the fuzz person was refused at start-session (STS-XACML-0039), 130 of
+// 164 re-sign-ins, though the person held every role. A realm-wide policy
+// had been changed under it.
+//
+// So, on the admin-api surface only, the proxy also refuses to forward:
+//
+//   * a write to a policy kind's realm DEFAULT profile through
+//     /admin-api/policies/* (no profile, or "default", and no other name).
+//     A named profile is still fuzzed, and so is every act on one;
+//   * any /admin-api/xacml/* request naming role-issuance or access-control,
+//     the two built-in documents this service decides its own sign-in and
+//     access with. An override created under either name replaces the
+//     built-in, so creating one is refused too;
+//   * a /admin-api/config/* request naming a setting that repoints or
+//     switches those two (xacml.issuancePolicy, xacml.accessPolicy,
+//     xacml.enabled, xacml.enforceAccess, roles.enforceIssuance), as a key
+//     or as a value.
+//
+// Refused the same way as a protected name: a synthetic 422, counted and
+// logged, never forwarded and never a finding.
+// ===========================================================================
+const BUILT_IN_POLICIES = new Set(["role-issuance", "access-control"]);
+const POLICY_SETTINGS = ["xacml.issuancePolicy", "xacml.accessPolicy",
+  "xacml.enabled", "xacml.enforceAccess", "roles.enforceIssuance"];
+
+// The door a request reaches under /admin-api, as [family, action], or null.
+function adminDoorOf(url) {
+  log.debug("Entering adminDoorOf().");
+  let pathname = "";
+  try {
+    pathname = new URL(url).pathname;
+  } catch (e) {
+    log.debug("Caught in adminDoorOf(): " + ((e && e.message) || e));
+    log.debug("Leaving adminDoorOf(). unparsed");
+    return null;
+  }
+  const m = /\/admin-api\/(policies|xacml|config)(?:\/([^/]*))?\/?$/
+    .exec(pathname);
+  log.debug("Leaving adminDoorOf(). " + (m ? m[1] : "none"));
+  return m ? [m[1], m[2] || ""] : null;
+}
+
+// What a request would change of the policies the run signs in through, as
+// a short label, or null.
+function touchesSignInPolicy(url, bodyBuf) {
+  log.debug("Entering touchesSignInPolicy().");
+  const door = adminDoorOf(url);
+  if (!door) {
+    log.debug("Leaving touchesSignInPolicy(). not a policy door");
+    return null;
+  }
+  const text = bodyBuf && bodyBuf.length > 0 ? bodyBuf.toString("utf8") : "";
+  let body = null;
+  try {
+    body = text ? JSON.parse(text) : {};
+  } catch (e) {
+    log.debug("Caught parsing body in touchesSignInPolicy(): " +
+      ((e && e.message) || e));
+    body = null;
+  }
+  let query = null;
+  try {
+    query = new URL(url).searchParams;
+  } catch (e) {
+    log.debug("Caught parsing url in touchesSignInPolicy(): " +
+      ((e && e.message) || e));
+    query = null;
+  }
+  if (door[0] === "policies") {
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      log.debug("Leaving touchesSignInPolicy(). policies, no object");
+      return null;
+    }
+    const isDefault = function (value) {
+      log.debug("Entering isDefault().");
+      const s = typeof value === "string" ? value.trim().toLowerCase() : "";
+      log.debug("Leaving isDefault().");
+      return value === undefined || value === null || s === "" ||
+        s === "default";
+    };
+    // A save or a reset (admin-core/policy_kinds.ts names them
+    // save-<kind>-policy and reset-<kind>-policy) writes the profile it is
+    // given, whatever `name` holds, so only `profile` counts for those.
+    // Another act is aimed by its `name`.
+    const savesProfile = /^(save|reset)-.+-policy$/.test(door[1]);
+    if (isDefault(body.profile) && (savesProfile || isDefault(body.name))) {
+      log.debug("Leaving touchesSignInPolicy(). default profile");
+      return "the realm-default " + (door[1] || "policy") + " profile";
+    }
+    log.debug("Leaving touchesSignInPolicy(). named profile");
+    return null;
+  }
+  if (door[0] === "xacml") {
+    let hit = null;
+    if (query) {
+      Array.from(query.values()).forEach(function (v) {
+        if (!hit && BUILT_IN_POLICIES.has(v)) {
+          hit = v;
+        }
+      });
+    }
+    if (!hit && body !== null) {
+      hit = protectedInJson(body, 20000, BUILT_IN_POLICIES);
+    }
+    log.debug("Leaving touchesSignInPolicy(). xacml " + (hit || "none"));
+    return hit ? "the built-in policy " + hit : null;
+  }
+  const haystack = text + " " + (query ? query.toString() : "");
+  for (let i = 0; i < POLICY_SETTINGS.length; i++) {
+    if (haystack.indexOf(POLICY_SETTINGS[i]) >= 0) {
+      log.debug("Leaving touchesSignInPolicy(). setting");
+      return "the setting " + POLICY_SETTINGS[i];
+    }
+  }
+  log.debug("Leaving touchesSignInPolicy(). config, none");
+  return null;
+}
+
 // The realm base the sign-in helpers drive, and the forwarding target.
 const REALM_BASE = SERVICE_BASE + REALM_PREFIX;
 const SERVICE = new URL(SERVICE_BASE + "/");
@@ -420,8 +544,9 @@ function readBody(req) {
 // input that may be a deeply nested bomb; a value only (a client id is never a
 // JSON key here), the whole tree walked iteratively so no input can overflow
 // the stack.
-function protectedInJson(value, budget) {
+function protectedInJson(value, budget, names) {
   log.debug("Entering protectedInJson().");
+  const wanted = names || PROTECTED;
   const stack = [value];
   let seen = 0;
   while (stack.length > 0) {
@@ -432,7 +557,7 @@ function protectedInJson(value, budget) {
     }
     const node = stack.pop();
     if (typeof node === "string") {
-      if (PROTECTED.has(node)) {
+      if (wanted.has(node)) {
         log.debug("Leaving protectedInJson(). hit");
         return node;
       }
@@ -496,7 +621,7 @@ async function handle(req, res) {
   const body = await readBody(req);
   const url = SERVICE_BASE + REALM_PREFIX + req.url;
   if (GUARDS_INFRA) {
-    const named = namesProtected(url, body);
+    const named = namesProtected(url, body) || touchesSignInPolicy(url, body);
     if (named) {
       protectedRefused = protectedRefused + 1;
       // Counted and logged, NOT forwarded and NOT a finding: a 4xx trips no
@@ -563,7 +688,16 @@ async function main() {
   log.debug("Leaving main().");
 }
 
-main().catch(function (e) {
-  log.error("auth_proxy failed to start: " + ((e && e.message) || e));
-  process.exit(1);
-});
+// Run as a script it serves; required (by tests/schemathesis_plan.js) it
+// answers the guard's two predicates and starts nothing.
+if (require.main === module) {
+  main().catch(function (e) {
+    log.error("auth_proxy failed to start: " + ((e && e.message) || e));
+    process.exit(1);
+  });
+} else {
+  module.exports = {
+    namesProtected: namesProtected,
+    touchesSignInPolicy: touchesSignInPolicy
+  };
+}
