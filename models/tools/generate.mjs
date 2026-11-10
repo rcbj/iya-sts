@@ -32,7 +32,7 @@ import { checkEnrollment, readEnrollment }
 import { checkSpiffe, describeProtos, readSpiffe }
   from '../lib/spiffe_lib.mjs';
 import { createRequire } from 'module';
-import { checkSaml, readSaml } from '../lib/saml_lib.mjs';
+import { checkSaml, readSaml, unclaimed } from '../lib/saml_lib.mjs';
 import { checkFacts, factsOf, fieldsOf, linksIn, readDirectory, readPersistence,
   readSpellings, renderScript, schemaOf } from '../lib/model_lib.mjs';
 
@@ -185,6 +185,21 @@ async function generate() {
     throw new Error('The SAML model is wrong: ' + samlProblems.join('; '));
   }
   fs.writeFileSync(path.join(out, 'saml.json'), JSON.stringify(saml));
+  // SOAP, WS-Trust and WS-Federation, written with SAML's decorators and
+  // read into a file of their own (#1579).
+  const ws = readSaml(program, 'ws');
+  const wsProblems = checkSaml(ws);
+  if (wsProblems.length > 0) {
+    log.debug("Leaving generate(). The WS-Trust model is wrong.");
+    throw new Error('The WS-Trust and WS-Federation model is wrong: ' +
+                    wsProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'ws.json'), JSON.stringify(ws));
+  const unclaimedIds = unclaimed(program);
+  if (unclaimedIds.length > 0) {
+    log.debug("Leaving generate(). An XML id no family claims.");
+    throw new Error('No XML family claims ' + unclaimedIds.join(', '));
+  }
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects,

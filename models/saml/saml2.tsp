@@ -328,6 +328,13 @@ model AuthnContexts {
   unspecified: "urn:oasis:names:tc:SAML:2.0:ac:classes:unspecified";
 
   /**
+   * What a WS-Trust assertion issued on a presented assertion or JWT states:
+   * the requester authenticated earlier, elsewhere (ws-trust/CLAUDE.md).
+   */
+  @term(#{ cite: "saml-authn-context-2.0-os section 3.4.18" })
+  previousSession: "urn:oasis:names:tc:SAML:2.0:ac:classes:PreviousSession";
+
+  /**
    * Microsoft's: more than one factor, what AD FS emits for it. Not an
    * OASIS class; SAML 2.0's own have no member that says this without
    * overstating a mechanism.

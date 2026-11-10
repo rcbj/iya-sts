@@ -1,9 +1,14 @@
 // SPDX-FileCopyrightText: 2026 Iya CyberSecurity Solutions, LLC
 // SPDX-License-Identifier: BUSL-1.1
 //
-// The decorators of the SAML namespace of the abstract model (#1579).
+// The decorators of the SAML namespace of the abstract model (#1579), and
+// of every other XML protocol it states: WS-Trust 1.0-1.4, the SOAP 1.1 and
+// 1.2 envelopes and WS-Federation 1.2 (`models/ws/*.tsp`) are written with
+// the same decorators, because a SOAP envelope, an RSTR and a federation
+// role are XML messages exactly as a Response is. `saml_lib.mjs` reads each
+// family into its own generated file by the ids' prefixes.
 //
-// SAML IS XML, NOT JSON, so nothing here is rendered as a JSON Schema. The
+// XML IS NOT JSON, so nothing here is rendered as a JSON Schema. The
 // model states the protocol's messages as FACTS the code reads:
 //
 // * A VOCABULARY (`@vocabulary`) is a closed list of the values a SAML
@@ -12,7 +17,10 @@
 //   SAML 1.1's QName status codes and its request types. Each property is
 //   one term: its name is what the code asks for, its TypeSpec type is the
 //   string literal it is on the wire, and `@term` says where it is defined
-//   and what this service does with it.
+//   and what this service does with it. A term whose type is ANOTHER
+//   vocabulary's property (`password: IyaSts.Saml11.AuthnMethods.password`)
+//   is that term, written once: WS-Federation's `wauth` list names SAML's
+//   authentication methods this way rather than copying their URIs.
 // * A MESSAGE (`@message`) is one XML element: its attributes and its child
 //   elements, IN THE ORDER THE SCHEMA'S SEQUENCE HAS THEM, which is the
 //   order this service writes them in. A property is an attribute
@@ -47,6 +55,13 @@ model VocabularyOptions {
    * gives one (a reader that recognises the family by it asks for it).
    */
   prefix?: string;
+
+  /**
+   * Each term is APPENDED to the namespace of the request it answers: a
+   * WS-Trust key type, request type, action or status is the request's
+   * trust namespace followed by the term, which begins with '/'.
+   */
+  relative?: boolean;
 }
 
 /** What one term is, and what this service does with it. */
@@ -87,6 +102,39 @@ model TermOptions {
 
   /** A term this service names nowhere it writes, defined for a reader. */
   readOnly?: boolean;
+
+  /**
+   * A `wauth` value (WS-Federation 1.2 section 13.2.1): the demand it is
+   * read as.
+   */
+  wauth?: "password" | "multiFactor" | "hardware";
+
+  /**
+   * A token type that asks for the token another term of the same
+   * vocabulary names, by name: an older client's spelling of one.
+   */
+  aliasOf?: string;
+
+  /** The short forms a non-spec parameter may name a token type by. */
+  shortForms?: string[];
+
+  /** A token type this identity provider offers in its metadata. */
+  offered?: boolean;
+
+  /** A claim type's display name, as the metadata offers it. */
+  display?: string;
+
+  /**
+   * A claim type's description in a realm that invents no claim value
+   * (product), as the metadata offers it.
+   */
+  description?: string;
+
+  /**
+   * A claim type's description in a realm that invents claim values
+   * (development), where it differs.
+   */
+  invented?: string;
 }
 
 /** One XML element this service reads or writes. */
@@ -100,8 +148,15 @@ model MessageOptions {
   /** The element's local name. */
   element: string;
 
-  /** Its namespace's URI. */
-  xmlns: string;
+  /** Its namespace's URI, when it has one. */
+  xmlns?: string;
+
+  /**
+   * The vocabulary whose terms are the namespaces it may be in, when it is
+   * written in the namespace of the request it answers (an RSTR echoes the
+   * RST's trust namespace). A message has `xmlns` or `namespaces`.
+   */
+  namespaces?: string;
 
   /** Whether this service reads it, writes it, or both. */
   direction: "read" | "write" | "both";
@@ -163,6 +218,24 @@ model ElementOptions {
 
   /** Read: the reader of this message acts on it. */
   read?: boolean;
+
+  /**
+   * Its namespace, where another child of the same local name stands in
+   * the same place (a SAML 1.1 and a SAML 2.0 Assertion).
+   */
+  xmlns?: string;
+
+  /**
+   * It holds ANOTHER PARTY'S token, never the requester's credential
+   * (WS-Trust's OnBehalfOf, ActAs and the three targets).
+   */
+  anotherPartys?: boolean;
+
+  /**
+   * Read off the WHOLE document, so a signed request is answered only when
+   * it is inside the Body the signature covers (WS-Trust's RST, #521).
+   */
+  inSignedBody?: boolean;
 }
 
 /** One set of parameters a binding or a profile carries. */
@@ -187,6 +260,18 @@ model ParamOptions {
 
   /** The values it may take (compared in lower case); another is refused. */
   accepts?: string[];
+
+  /**
+   * What this service does with it: `read` (it acts on it), `recorded`
+   * (logged, nothing enforced), `refused` (a request carrying it is
+   * refused), `echoed` (handed back unchanged), `written` (this service
+   * sends it), `ignored` (the specification defines it and nothing here
+   * reads it).
+   */
+  use?: "read" | "recorded" | "refused" | "echoed" | "written" | "ignored";
+
+  /** The error code a request is refused under for it, where one is. */
+  refusedAs?: string;
 }
 
 extern dec vocabulary(target: Model, options: valueof VocabularyOptions);
