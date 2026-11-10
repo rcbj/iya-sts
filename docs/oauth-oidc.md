@@ -1224,7 +1224,9 @@ the client registered (RFC 7591, OpenID Connect Core section 5.3.2):
   ECDH-ES and its three key-wrapping variants, over any of the three AES-GCM
   and three AES-CBC-HMAC content encryptions. **`enc` defaults to
   `A128CBC-HS256`** when only an `alg` is registered, as the registration
-  specification says. The recipient key comes from the client's inline `jwks`
+  specification says. In product mode, unless `crypto.allowCbcJwe` is on, the
+  AES-CBC-HMAC encryptions are neither offered nor accepted and the default is
+  `A256GCM`, and RSA-OAEP (over SHA-1) needs `crypto.allowLegacyHashes`. The recipient key comes from the client's inline `jwks`
   or its registered `jwks_uri`, fetched and cached (see
   [Client authentication](#client-authentication)).
 * Both give a **Nested JWT**, signed then encrypted, with `cty: "JWT"`.
@@ -1973,7 +1975,7 @@ and it is not recorded in `/admin/tokens`: it is a response, not a credential.
   |---|---|---|
   | `introspection_signed_response_alg` | `oauthIntrospectionSignedResponseAlg` | `RS256` — any JWS algorithm in `introspection_signing_alg_values_supported`, HMAC keyed by the client secret; never `none` |
   | `introspection_encrypted_response_alg` | `oauthIntrospectionEncryptedResponseAlg` | not encrypted — RSA-OAEP, RSA-OAEP-256 or ECDH-ES(+A*KW), to a key in the client's `jwks` or registered `jwks_uri` |
-  | `introspection_encrypted_response_enc` | `oauthIntrospectionEncryptedResponseEnc` | `A128CBC-HS256` once an `alg` is set; refused without one |
+  | `introspection_encrypted_response_enc` | `oauthIntrospectionEncryptedResponseEnc` | `A128CBC-HS256` once an `alg` is set (`A256GCM` in product mode unless `crypto.allowCbcJwe` is on); refused without one |
 
   Set them in an RFC 7591 registration (an RFC 7592 update clears a member it
   omits), on the application's console page, or with
