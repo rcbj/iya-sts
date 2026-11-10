@@ -383,7 +383,9 @@ Which key opens it depends on what the sender could possibly have had:
 | `A128KW` … `A256GCMKW`, `dir`, the three `PBES2` forms | the **client secret**, which is the only shared key that exists between this service and a client | a client that has one |
 
 Six content encryption algorithms against all sixteen: `A128GCM`, `A192GCM`,
-`A256GCM`, `A128CBC-HS256`, `A192CBC-HS384`, `A256CBC-HS512`.
+`A256GCM`, `A128CBC-HS256`, `A192CBC-HS384`, `A256CBC-HS512`. In product mode
+the three CBC-HMAC ones are refused unless `crypto.allowCbcJwe` is on, and
+`RSA-OAEP`, which is OAEP over SHA-1, unless `crypto.allowLegacyHashes` is on.
 
 **`RSA1_5` is deliberately absent and the refusal names it.** RFC 8017
 deprecated PKCS#1 v1.5 encryption, and implementing it safely means making an

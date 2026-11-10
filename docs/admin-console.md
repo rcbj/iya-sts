@@ -75,6 +75,11 @@ Switch user list and Sign out, so the way back is on the page. Switching is
 not the *Sign in again* window that appears when a session ends: that one
 signs the tab's own account in again and refuses anybody else.
 
+**A sign-in that leaves the page keeps a form's choices and nothing typed.**
+When the console sends the browser away to sign in and back, the form on the
+page comes back with its ticks, radio buttons and menus as they were. Text typed into it is
+not kept in the browser's storage, so type it again.
+
 **There is no setting that turns the gate off.** What `global.mode` changes is
 whether the password typed at the sign-in screen is *checked*:
 
@@ -459,8 +464,10 @@ attribute is a text box (empty clears it); a multi-valued one is one box per
 value, with **+** to add a box and the bin to delete one. Every box shows an
 example of a valid value, and every field's name carries a tooltip saying
 what it is and what it takes. **Save** writes what changed on that tab and
-nothing else; what one attribute refuses does not undo another, and a refused
-save comes back with every box as you left it. It needs **Admin Write**.
+nothing else, all or nothing: when one attribute is refused, what the save had
+already changed is put back, and the refusal says so (or names any value that
+could not be put back). A refused save comes back with every box as you left
+it. It needs **Admin Write**.
 `POST /admin-api/users/update-fields` is the same save, with `fields` naming
 each attribute and its value or values.
 
@@ -1683,7 +1690,8 @@ audit events, and shows how far that delivery has got. The same controls are
 a file, a webhook, Splunk HEC and LogRhythm are on
 [Audit export destinations](audit-export.md).
 
-A destination is syslog (TCP by default, or UDP, or TLS), a filesystem path,
+A destination is syslog (TCP by default, or UDP, or TLS; product mode accepts
+TLS only unless `audit.allowPlainSyslog` is on), a filesystem path,
 a webhook, Splunk HEC, or LogRhythm, which uses the syslog adapter. Each
 process delivers the events in its own audit ring. The figures on this page
 are this process: queue depth, delivered, awaiting, retrying, permanently

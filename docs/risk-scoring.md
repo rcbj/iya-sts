@@ -584,6 +584,8 @@ compressed. Several limits apply:
 | (free space) | | An upload the directory has no room for. Send a `Content-Length`: without one, the whole of `risk.uploadMaxBytes` must be free. |
 | `risk.expandedMaxBytes` | 8 GiB | A compressed file that expands past it. |
 | `risk.expansionMaxRatio` | 100 | A compressed file that expands more than this many times its size, past 16 MiB. Real datasets compress 5 to 20 times; a decompression bomb, a thousand. |
+| `risk.maxSkippedLinesPercent` | 10 | A file in which more than this share of its non-comment lines are not rows of the chosen format. Nothing of it is kept. |
+| (file name) | | On the console's form, a file whose extension does not fit the format chosen, after any `.gz` or `.zip` (`STS-RISK-0055`). The API's body has no name, so this is not asked of it. |
 
 The two expansion limits apply to a `.gz` or `.zip` from the watched
 directory and the loader too.
@@ -982,6 +984,7 @@ kept in step with `common/config.js`.
 | `risk.datasetsDirectory` | `STS_RISK_DATASETS_DIRECTORY` | *(empty)* | The directory the dataset job imports from; empty turns the job off. |
 | `risk.datasetsDirectoryScanS` | `STS_RISK_DATASETS_DIRECTORY_SCAN_S` | `300` | How often that directory is read. |
 | `risk.datasetShrinkLimitPercent` | `STS_RISK_DATASET_SHRINK_LIMIT_PERCENT` | `50` | How much smaller than the active version a new one may be before it is refused. |
+| `risk.maxSkippedLinesPercent` | `STS_RISK_MAX_SKIPPED_LINES_PERCENT` | `10` | The largest share of a file's non-comment lines that may fail to parse; past it the file is refused. `100` accepts any file holding one row. |
 | `risk.supersededRetentionDays` | `STS_RISK_SUPERSEDED_RETENTION_DAYS` | `30` | How long a superseded version's rows are kept for rollback. |
 | `risk.geoStaleAfterDays` | `STS_RISK_GEO_STALE_AFTER_DAYS` | `45` | Age after which geolocation and ASN data counts for nothing. |
 | `risk.ipListStaleAfterHours` | `STS_RISK_IP_LIST_STALE_AFTER_HOURS` | `24` | Age after which a Tor or reputation list counts for nothing. |

@@ -418,18 +418,20 @@ fields are optional in a save: one left out keeps the value in force.
 | `argon2Parallelism` | `stsPwdArgon2Parallelism` | 1 | 1 to 16 |
 | `scryptLogN` | `stsPwdScryptLogN` | 15 (N=32768) | 13 to 20 |
 | `scryptBlockSize` | `stsPwdScryptBlockSize` | 8 | 8 to 16 |
-| `scryptParallelism` | `stsPwdScryptParallelism` | 1 | 1 to 16 |
+| `scryptParallelism` | `stsPwdScryptParallelism` | 1 (at least 3 is used in product mode) | 1 to 16 |
 
 The default is scrypt at N=2^15, r=8, p=1, the parameters every password
-stored before 2026-10-22 already has. argon2id can be chosen instead; its
+stored before 2026-10-22 already has. **Product mode hashes at a parallelism of
+at least 3**, whatever the profile says, so its default is N=2^15, r=8, p=3,
+one of OWASP's pairs. argon2id can be chosen instead; its
 bounds start at the OWASP Password Storage Cheat Sheet's minimum.
 
-The scrypt default is below OWASP's scrypt table (2^17 with p=1, 2^16 with
-p=2, 2^15 with p=3, 2^14 with p=5, or 2^13 with p=10). Until
+OWASP's scrypt table is 2^17 with p=1, 2^16 with p=2, 2^15 with p=3, 2^14 with
+p=5, or 2^13 with p=10. Development mode's default, p=1, is below it, and in
+development the parallelism asked for is the one used. Until
 [#872](https://github.com/rcbj/iya-sts/issues/872) makes one of OWASP's pairs
-the default, neither the policy nor the hashing code enforces the table: a
-policy with a scrypt cost and parallelism below it is saved, and the
-parallelism asked for is the one used.
+the default everywhere, neither mode enforces the table beyond product's floor
+of p=3: a policy with a lower cost, such as 2^13, is saved and used.
 
 An argon2id hash is stored as the PHC string
 `$argon2id$v=19$m=19456,t=2,p=1$<salt>$<hash>`, and a scrypt one as
@@ -439,8 +441,9 @@ verifies and its stored hash is not the policy's algorithm and parameters, it
 is hashed again and written back. A change of parameters within one algorithm
 counts too. The rule is "different from the policy", not "weaker than the
 policy": a person whose stored hash is argon2id is hashed again with scrypt at
-their next sign-in when the policy says scrypt. That costs one scrypt hash at
-2^15, r=8, p=1 (about 100 ms) once per person. The person's password history
+their next sign-in when the policy says scrypt, and a person whose hash was
+stored at p=1 is hashed again at p=3 when product mode raises it. That costs one
+scrypt hash once per person. The person's password history
 and `pwdChangedTime` are not touched, because the password did not change.
 Development mode verifies no password, so the upgrade happens in product mode
 only.

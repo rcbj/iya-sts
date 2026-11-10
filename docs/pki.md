@@ -798,8 +798,9 @@ anything.
 (#174).** A plain `ldap:` list under the default `pki.revocationLdap=ldaps`,
 any LDAP address with it `off`, a relative name without
 `pki.revocationLdapDirectory` (or with a multi-valued RDN), a scheme that is
-never dialled, an OCSP responder that is not http(s), and any responder with
-`pki.revocationOcsp=off` are **not dialled** — and when that is all a
+never dialled, an OCSP responder that is not http(s), any responder with
+`pki.revocationOcsp=off`, and an http(s) address whose host is not in
+`security.outboundAllowedHosts`, when that list is set, are **not dialled** — and when that is all a
 certificate names, the issuer published a list that this service's own policy
 kept it from reading. Its status could not be established: hard-fail refuses it
 as `STS-PKI-0188`, with the reason naming the setting that would dial it, and

@@ -835,7 +835,13 @@ that was checked.** That check and that resolution MOVED HERE on the same day
 (`internalAddressProblem()`, `vetHost()`), because a second requester needing
 them made this module — the owner of the outbound policy — the place for one
 copy; `oauth-oidc/protected_resource_metadata.ts` now asks for them and keeps
-its own refusal codes. Everything else above holds for `deliverForm()` too:
+its own refusal codes. **`vetHost()` also holds the operator's list of hosts,
+`security.outboundAllowedHosts` (#1526, ASVS 5.0.0 13.2.4)**: set, a host on
+neither an exact name nor a leading-dot suffix is refused BEFORE it is resolved,
+and only where the internal-address check runs, so in product mode alone.
+`common/revocation_status.js` reads the same list for the CRL and OCSP addresses
+a certificate names (#1550), in either mode, because those fetches never pass
+through `vetHost()`. Everything else above holds for `deliverForm()` too:
 the kill switch, the transport policy, no redirect,
 the cap, a timeout (the caller's, `oauth2.backchannelLogoutTimeoutMs`). **Its
 URL comes off a record by an attribute name from its OWN list, `SENDABLE`**

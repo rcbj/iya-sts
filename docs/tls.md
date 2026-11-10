@@ -670,7 +670,8 @@ refusal of an application's certificate — is the same in both modes. See
 | `http.maxConnections` | `STS_HTTP_MAX_CONNECTIONS` | `0` | yes | How many connections an HTTP listener holds at once; `0` is no limit. |
 | `http.http2MaxConcurrentStreams` | `STS_HTTP_HTTP2_MAX_CONCURRENT_STREAMS` | `100` | yes | How many streams (requests) one HTTP/2 connection may have open at once; a stream past it is refused (`REFUSED_STREAM`). Node's own is unbounded. Per listener as `listener<Id>.http2MaxConcurrentStreams` and a custom listener's `tls.http2MaxConcurrentStreams`. |
 | `global.trustProxy` | `STS_TRUST_PROXY` | `false` | yes | Believe `X-Forwarded-Proto` and `X-Forwarded-Host` from a TLS-terminating proxy. |
-| `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. |
+| `global.trustedProxies` | `STS_TRUSTED_PROXIES` | *(empty)* | yes | The addresses or CIDRs forwarded headers — and PROXY protocol headers — are believed from. Empty believes forwarded headers from any caller in development and from none in product. |
+| `security.hstsIncludeSubDomains` | `STS_SECURITY_HSTS_INCLUDE_SUBDOMAINS` | `false` (`true` in product) | yes | Adds `includeSubDomains` to `Strict-Transport-Security`, which only product mode sends. |
 | `global.proxyProtocol` | `STS_PROXY_PROTOCOL` | `off` | no | `v2` expects a PROXY protocol v2 header on every TCP listener, read before TLS. |
 | `global.proxyProtocolTimeoutMs` | `STS_PROXY_PROTOCOL_TIMEOUT_MS` | `30000` | yes | How long a trusted proxy may take to send a complete header. |
 | `pki.revocationCheck` | `STS_PKI_REVOCATION_CHECK` | `auto` | yes | Whether a presented certificate is checked for revocation: `off`, `soft-fail`, `hard-fail`, or `auto` (hard in product, soft in development). |
@@ -701,10 +702,12 @@ and `/admin/mode` says so.
 ## Strict-Transport-Security
 
 In product mode, every response that arrives over TLS carries
-`Strict-Transport-Security: max-age=31536000`. It applies to the whole host
-name, every port included, and a browser that has seen it refuses an untrusted
-certificate with no way to click through, so give the service a certificate
-browsers trust before people use it in product mode. The plain-HTTP revocation
+`Strict-Transport-Security: max-age=31536000; includeSubDomains`. It applies to
+the whole host name, every port included, and to every subdomain of it. Turn off
+`security.hstsIncludeSubDomains` if a subdomain must still answer over plain
+HTTP; the header then carries `max-age` alone. A browser that has seen the
+header refuses an untrusted certificate with no way to click through, so give
+the service a certificate browsers trust before people use it in product mode. The plain-HTTP revocation
 and SCEP listener never sends the header. Development mode does not send it.
 
 ## Design decisions

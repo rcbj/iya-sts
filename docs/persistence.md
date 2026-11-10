@@ -149,9 +149,13 @@ STS_PERSISTENCE_MODE=postgres node server.js
 ```
 
 The default `persistence.databaseUrl` is
-`postgres://sts:sts@localhost:5432/sts`, which matches the Postgres service in
-this repository's `docker-compose.yml` — user, password and database all `sts`.
-Bring one up to match:
+`postgres://sts:sts@localhost:5432/sts`: user, password and database all `sts`.
+That is for development mode only. **Product mode does not start with a
+well-known database password** (`sts`, `sts_app`, `postgres` and the like) or
+one equal to the user name (`STS-STORE-0170`), unless
+`persistence.allowDefaultDatabasePassword` is on, so give the role a password
+of your own there. The compose stack generates its passwords at first start.
+Bring up a development database to match:
 
 ```bash
 docker run -d --name sts-db -p 5432:5432 \

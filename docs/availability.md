@@ -23,6 +23,7 @@ taking it down, and how it avoids making a caller wait past its own timeout.
 | **Outbound requests** | A partner may be slow or hostile | A timeout and a response cap. A fetch not needed for the answer is never awaited | `federation.outboundTimeoutMs`, `federation.maxResponseBytes` |
 | **Compressed and XML messages** | Can expand without bound | Inflated up to a fixed limit, parsed with no document type | Fixed |
 | **Request bodies** | Memory | 5 MB at most, unless a field states less | Fixed |
+| **Requests from one address** | Any endpoint, repeated | A ceiling per address per minute in each process. Past it, the answer is `429` with `Retry-After: 60`, and one warning per address per minute is logged (`STS-CORE-0172`). `/healthcheck` is not counted | `security.requestsPerAddressPerMinute` (6000 in product mode, `0`, no ceiling, in development) |
 | **Connections** | File descriptors and memory | Limited per listener | `http.maxConnections`, `http.maxRequestsPerSocket`, `http.headersTimeoutS`, `http.keepAliveTimeoutS` |
 | **Sessions and in-flight sign-ins** | Memory and store rows | Capped. At the cap a new row is refused, and nothing is ended to make room for somebody else | `authn.maxSessions` (100,000), `authn.maxSessionsPerSubject` (32), `oidcRp.maxFlows` (200) |
 | **Shared Signals push** | A slow receiver | One queue per receiver. Past it, an event is dead-lettered | `ssf.pushBacklog` (2,000) |
