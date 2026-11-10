@@ -263,8 +263,16 @@ function issued(t) {
     'oauth-authorization-server': 'authorization-server-metadata'
   };
   const problems = [];
-  const hold = function (where, id, value) {
+  // A registration that sent one member as a wrong JSON type and was
+  // accepted echoes it: the service's behaviour today, which the wire record
+  // holds and `oauth-oidc/CLAUDE.md` lists. Only that member may be off.
+  const accepted = [];
+  const hold = function (where, id, value, sentWrong) {
     OAuthModel.undeclared(id, restored(value)).forEach(function (one) {
+      if (sentWrong && one.indexOf(sentWrong + ' is not ') === 0) {
+        accepted.push(sentWrong);
+        return;
+      }
       problems.push(where + ': ' + one);
     });
   };
@@ -305,7 +313,9 @@ function issued(t) {
       Object.keys(body).forEach(function (key) {
         flat[key] = body[key] && body[key].jwt ? 'a.b.c' : body[key];
       });
-      hold(where, id, flat);
+      const probe = /^register, ([a-z_]+) /.exec(one.step);
+      hold(where, id, flat, probe && id === 'registration-response'
+        ? probe[1] : null);
       counted[id] = (counted[id] || 0) + 1;
     }
     const tokens = [];
@@ -326,6 +336,10 @@ function issued(t) {
           'C. every recorded answer, claim set and error code is the ' +
           'model\'s (' + JSON.stringify(counted) + ')',
           problems.slice(0, 20).join('\n'));
+  t.check(accepted.length > 0,
+          'C. a member of a wrong type a registration accepts is echoed, ' +
+          'and nothing else in its answer is off (' + accepted.join(', ') +
+          ')');
   ['openid-provider-metadata', 'token-response', 'error-response',
    'access-token', 'id-token', 'introspection-response',
    'registration-response', 'logout-token',
