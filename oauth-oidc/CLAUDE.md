@@ -36,6 +36,7 @@ libraries that decide things on its behalf.
 | `access_token_status.ts` | **The access-token Token Status List (#432 phase 2, rcbj's decision 4, 2026-10-03)** — one list per realm for every RFC 9068 access token AND GNAP's two JWT formats, at `/status-lists/access-tokens` with its aggregation at `/status-lists`; indexes handed out from blocks each process leases across the cluster (#820); the bit computed from the revocation register. A ROUTE MODULE AND A LIBRARY (`oid4vc/vc_status.ts`'s shape), built and registered just after `oauth2` and `grant_management`. See *The access-token status list*, below. |
 | `oauth_grant_signals.ts` | **An OAuth grant revoked is CAEP's `session-revoked` about the grant (#239, 2026-09-26).** Fills `common/admin_stats.js`'s `setRevocationObserver()` slot: one event per grant, subject `oauth-grant:<id>` beside the person, the door's own `initiating_entity`, and a replay also a `risk-level-change`. Built at 23b-vi; registers nothing. See *OAuth grants on CAEP*, below. |
 | `opaque_access_token.ts` | **Opaque OAuth access tokens (#501), off by default.** A 256-bit handle in place of the RFC 9068 JWT when `oauth2.accessTokenFormat` is `opaque`; the claims stay in the realm. A library: no route. See 3cw. |
+| `oauth_model.ts` | **The OAuth 2.0 and OpenID Connect model, as the endpoints read it (#1579).** Builds every endpoint's request validator from `models/generated/oauth.json` and holds the discovery documents, the token response and every error code to it. A leaf. See *THE REQUEST SHAPES ARE THE MODEL'S*, below. |
 
 **Everything but `oauth2.ts` — and, since 2026-09-13, the console page
 `oauth2_monitor_admin.ts`, required at 18f rather than from here, and since
@@ -6384,3 +6385,81 @@ behaviour; this is why each is shaped as it is. Every product-only rule is a
   `/report-api` and in `common/role_permissions.ts`, and in product a `sub`
   that resolves to nobody is refused rather than matched by username (#1543,
   `helpers.subjectIsGone()`), which may since name somebody else.
+
+## THE REQUEST SHAPES ARE THE MODEL'S (#1579, 2026-11-10)
+
+**`models/oauth/oauth.tsp` is the source of every endpoint's request
+parameters**: the authorization request (which PAR's body is checked as
+too), PAR's own form, the token request (every grant's parameters in one
+form), introspection, revocation, device authorization, `bc-authorize`,
+RP-Initiated Logout, UserInfo's claims request, the registered-client and
+authorization-server path parameters, and `/oauth2/consent`'s query. Each
+property is one parameter: its TypeSpec type says required (not optional),
+repeatable (an array) and integer; `@param` says the shared type of
+`common/validation.js` it is checked as (`identifier`, `name`,
+`redirectUri`, `scope`, `opaque`, `uri`, `base64url`, `integer` or a plain
+bounded `string`), its bounds, whether an empty value is no value
+(`validation.types.opt()`), and its citation. `@endpoint` says the input
+group and whether undeclared parameters PASS THROUGH (the authorization and
+token requests do, for the reasons argued above their names in `oauth2.ts`)
+or are dropped. `oauth_model.ts`'s `request(id)` builds each zod object from
+`models/generated/oauth.json` as THE SAME EXPRESSION the hand-written schema
+was — the same shared type, `min`, `max` and `regex` in the order they were
+written, `repeatable()` then `opt()` — so a refusal reads word for word as it
+did. The twelve hand-written schemas in `oauth2.ts` and the one in
+`consent_screen.ts` are gone; the reasoning about each stays above its name.
+A new parameter is added to the model, never to a zod object here.
+
+**`models/oauth/oauth_members.tsp` states the members of every answer**: the
+two discovery documents (every member either carries in any mode with every
+switch on), the token, error, introspection, registration, device
+authorization, backchannel authentication and pushed authorization
+responses, the claim sets of the ID Token, the RFC 9068 access token, the
+Logout Token and the RFC 9701 introspection response, and the error codes
+(RFC 6749 section 5.2's and every extension's this family sends). A
+`closed` set is every member that may appear; an `open` one is the members a
+specification names, others riding along (an administrator's custom claims,
+a client's own registration metadata).
+
+**THE MODEL DESCRIBES AND VALIDATES THE WIRE; IT DOES NOT RESHAPE IT.** So
+the holding RECORDS and never refuses: `sendAsMetadata()`,
+`sendOidcMetadata()` and the token endpoint's `respond()` hold their answer
+to its set (`holdToModel()`, `STS-OAUTH-1005`), and `oauthError()` holds the
+code (`STS-OAUTH-1006`); the answer is sent as built. A recorded problem is a
+model gap to close in the TypeSpec. The open claim sets and the other answers
+are held by `tests/model_oauth.js`, against every answer, decoded token and
+error code `tests/oauth_model_wire.snapshot.json` recorded in development,
+RFC 9700, OAuth 2.1 and FAPI 2.0 modes, and it builds both discovery
+documents with every `oauth2.*` switch on in each FAPI profile. **That is a
+decision rcbj may reverse**: refusing (a 500, as the published APIs do with
+`STS-API-0139`) would make the model the gate, at the cost of a client
+seeing a 500 for a member the model forgot.
+
+**WHAT STAYS IN CODE, AND READS THE GENERATED SHAPE.** What a refusal needs
+to know beyond the request's shape stays where it was, run on the value the
+generated validator produced: which client is calling and what it
+registered (`clientFrom()`, the declared methods, `oauthAllowedScope`),
+the realm's mode (`oauth2_bcp.js`'s RFC 9700 table, `oauth21.js`'s
+decisions, `fapi.js`'s profiles), and every check that compares two
+parameters or reads a store (PKCE's verifier against the stored challenge,
+a `redirect_uri` against the registered list, a `request_uri` against PAR's
+store). Each answers with its own error and code, as before. The repeated
+`resource` at the token endpoint is still read off the raw body by
+`bodyValues()`, for the reason argued above `TokenRequest`'s name.
+
+**THE WIRE IS HELD BYTE FOR BYTE.** `tests/oauth_model_wire.js` drives every
+endpoint in-process — discovery, the authorization endpoint's refusals and
+its hand-off to sign-in, PAR, every grant at the token endpoint and its
+refusals, introspection (JSON and RFC 9701), revocation, UserInfo, RFC 7591
+and RFC 7592, device authorization, CIBA, RP-Initiated Logout, grant and
+session management — in the four modes, and holds the 412 answers (status,
+headers, body, decoded JWT claim sets) to the record taken from the tree
+before any of this changed. `OAUTH_WIRE_PRINT=1` prints a new record when the
+wire is MEANT to change.
+
+**What the wire record does not reach**: a sign-in completed in a browser
+(the authorization code, hybrid and implicit responses, JARM, the consent
+screen's answer), a DPoP-bound or certificate-bound token, a signed request
+object, a CIBA client registered for a delivery mode, a SAML assertion that
+verifies. The OpenID conformance harness and the `tests/protocol/` OAuth
+jobs reach those on a stack.

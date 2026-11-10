@@ -23,6 +23,7 @@ import { documents, everyOperation, projections, renderApiTypes }
 import { checkDomains, readDomains, renderClasses, renderTypes }
   from '../lib/domain_lib.mjs';
 import { checkScim, readScim } from '../lib/scim_lib.mjs';
+import { checkOAuth, readOAuth } from '../lib/oauth_lib.mjs';
 import { checkFacts, factsOf, fieldsOf, linksIn, readDirectory, readPersistence,
   readSpellings, renderScript, schemaOf } from '../lib/model_lib.mjs';
 
@@ -96,6 +97,13 @@ async function generate() {
     throw new Error('The SCIM model is wrong: ' + scimProblems.join('; '));
   }
   fs.writeFileSync(path.join(out, 'scim.json'), JSON.stringify(scim));
+  const oauth = readOAuth(program);
+  const oauthProblems = checkOAuth(oauth);
+  if (oauthProblems.length > 0) {
+    log.debug("Leaving generate(). The OAuth model is wrong.");
+    throw new Error('The OAuth model is wrong: ' + oauthProblems.join('; '));
+  }
+  fs.writeFileSync(path.join(out, 'oauth.json'), JSON.stringify(oauth));
   const persistence = readPersistence(program);
   fs.writeFileSync(path.join(out, 'persistence.postgres.json'),
     JSON.stringify({ objects: persistence.objects,
