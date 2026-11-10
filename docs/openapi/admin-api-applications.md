@@ -171,7 +171,6 @@ Scope: `admin:read`.
 | `authenticationEvents[].detail` | map |  | What the event recorded. |
 | `authenticationEvents[].detail.{key}` | string, or number, or boolean |  |  |
 | `authenticationEvents[].errorCode` | string |  |  |
-| `authenticationEvents[].mac` | string |  |  |
 | `authenticationEvents[].origin` | string, or number, or null |  |  |
 | `authenticationEvents[].outcome` | string |  |  |
 | `authenticationEvents[].protocol` | string |  |  |

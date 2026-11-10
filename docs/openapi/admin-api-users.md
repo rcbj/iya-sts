@@ -413,7 +413,6 @@ Scope: `admin:read`.
 | `(shape 2).authenticationEvents[].channel` | string |  |  |
 | `(shape 2).authenticationEvents[].detail` | any JSON |  | What the call site that wrote the audit row chose to record, which differs at each of hundreds of them; the keys and the values are data. What the call site that wrote the audit row chose to record, which differs at each of hundreds of them; the keys and the values are data. |
 | `(shape 2).authenticationEvents[].errorCode` | string |  |  |
-| `(shape 2).authenticationEvents[].mac` | string |  |  |
 | `(shape 2).authenticationEvents[].origin` | string |  |  |
 | `(shape 2).authenticationEvents[].outcome` | string |  |  |
 | `(shape 2).authenticationEvents[].protocol` | string |  |  |

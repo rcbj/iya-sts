@@ -3668,7 +3668,6 @@ namespace IyaSts.Api.Management {
     @js(#{
       `description`:"The identity exactly as it was presented, when that differs from `actor` — a bind DN, a Kerberos principal, an X.509 subject. Both are carried because the collapse from one to the other is something an auditor has to be able to see rather than infer."
     }) `actorForm`?: string;
-     `mac`?: string;
       `mac`?: string;
     @js(#{
       `description`:"What it was done to: a DN, a request path, a session id."
@@ -45941,6 +45940,7 @@ op `getMalwareScanning`(`responses/200/content/application~1json/schema`: {
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `testMalwareScanning`(`responses/200/content/application~1json/schema`: WithOkMessage,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors3`,
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 
 @endpoint("/admin-api/sessions/end-all",
@@ -45967,5 +45967,32 @@ op `testMalwareScanning`(`responses/200/content/application~1json/schema`: WithO
     `security`:#[#{`oauth2`:#["admin:write"]},#{`bearerAuth`:#[]}]
   })
 op `endAllSessions`(`responses/200/content/application~1json/schema`: WithOkMessage,
+  `responses/400/content/application~1json/schema`: `WithOkMessageErrors3`,
+  `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
+
+@endpoint("/admin-api/audit/integrity",
+  "get",
+  #{
+    `operationId`:"getAuditIntegrity",
+    `summary`:"Check the held audit rows against their checksums",
+    `description`:"Each row carries a keyed checksum whose key is not in the database. `altered` lists the seq of any row that no longer matches. `unsigned` counts rows written with no key-encryption key in the process.",
+    `tags`:#["Audit log"],
+    `responses`:#{
+      `200`:#{
+        `description`:"The result.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      },
+      `default`:#{
+        `description`:"A refusal or a failure.",
+        `content`:#{`application/json`:#{`schema`:null}}
+      }
+    },
+    `security`:#[#{`oauth2`:#["admin:read"]},#{`bearerAuth`:#[]}]
+  })
+op `getAuditIntegrity`(`responses/200/content/application~1json/schema`: {
+    `checked`: integer;
+    `unsigned`: integer;
+    `altered`: (integer)[]
+  },
   `responses/default/content/application~1json/schema`: `RefusalFailure`): void;
 }
