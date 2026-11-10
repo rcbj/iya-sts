@@ -82,6 +82,10 @@ locals {
     { for k, p in try(local.env.spiffe_default_ports, {}) : "spiffe-${k}" => p },
   )
   ldap_host = try(local.env.public_hostname, "") != "" ? local.env.public_hostname : local.env.nlb_dns_name
+  ldap_port = try(local.env.load_balancer_ports.ldap.listener, local.env.load_balancer_ports.ldaps.listener)
+  ldap_url = format("%s://%s:%d",
+    can(local.env.load_balancer_ports.ldap) ? "ldap" : "ldaps",
+  local.ldap_host, local.ldap_port)
 
   pep_subject = "CN=remote-pep-1,OU=remote-peps,O=iya-sts"
   pep_name    = "remote-pep-1"
@@ -421,8 +425,10 @@ resource "aws_ecs_task_definition" "callbacks" {
         { name = "STS_TEST_CLUSTER_NODES", value = tostring(length(local.env.ecs_services)) },
         # The public name where there is one: LDAPS is verified against the
         # certificate, which names it and not the load balancer (#311).
-        { name = "STS_LDAP_URL", value = "ldap://${local.ldap_host}:${local.env.load_balancer_ports.ldap.listener}" },
-        { name = "STS_LDAP_PORT", value = tostring(local.env.load_balancer_ports.ldap.listener) },
+        # Plain LDAP when the environment publishes it, LDAPS on 636 when it
+        # does not (no AWS environment publishes 389 since 2026-11-10).
+        { name = "STS_LDAP_URL", value = local.ldap_url },
+        { name = "STS_LDAP_PORT", value = tostring(local.ldap_port) },
         # THE BULK LOADS AS ./run-tests.sh RUNS THEM (#311): rcbj's sizes for
         # every mode (1000 people, 10 groups of 100; tests/tools/modes.sh,
         # 2026-09-27) and the bulk lane LAST, as the cluster mode runs it —

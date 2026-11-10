@@ -92,7 +92,10 @@ locals {
     # altogether (`pki_public_url`).
     PKI_DISTRIBUTION_BASE_URL  = local.pki_public_url
     PKI_DISTRIBUTION_LDAP_HOST = local.direct_host
-    PKI_DISTRIBUTION_LDAP_PORT = tostring(local.published_ports.ldap.listener)
+    # 389 is what an ldap:// address names (RFC 4516; RFC 5280 section 8
+    # rules out ldaps://), and the load balancer no longer publishes it
+    # (locals.tf), so from outside the VPC that address does not resolve.
+    PKI_DISTRIBUTION_LDAP_PORT = "389"
 
     # REVOCATION IS NOT CONSULTED ON THESE CLUSTERS (rcbj, #371). A
     # certificate presented to a node, or registered and used, is not checked
@@ -104,6 +107,16 @@ locals {
     # /admin-api is persisted in the cluster's database and outranks this.
     STS_PKI_REVOCATION_CHECK                      = "off"
     STS_PKI_REVOCATION_REQUIRE_DISTRIBUTION_POINT = "off"
+
+    # AND SO PARANOID PKI MODE IS FORCED OFF (rcbj, 2026-11-10). Its `auto`
+    # is on in product (#1360), where it counts a revocation check that never
+    # ran as a refusal — so with the two rows above a product node refused
+    # Secrets Manager's own certificate (STS-KEYS-0044) and did not start
+    # (STS-CORE-0036). Off, every use case behaves as it did before #1360;
+    # the node logs STS-PKI-0239 once and /admin/pki/trust draws it red. An
+    # environment's `extra_environment` can set it back, together with a
+    # revocation check.
+    STS_PKI_PARANOID = "off"
 
     # The directory's ceiling, as the ENVIRONMENT's value rather than an
     # override, so resetting the override the bulk loads leave lands here

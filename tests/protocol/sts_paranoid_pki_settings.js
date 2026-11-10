@@ -329,6 +329,13 @@ async function test() {
     const made = await send("POST", "/admin-api/realms/create", {
       id: id, domain: id + ".example.net", name: id });
     assert.strictEqual(made.status, 200, made.raw.slice(0, 300));
+    // `auto` IN THE JOB'S OWN REALMS (2026-11-10): every appconfig file this
+    // repository packages forces `pki.paranoid` off (env/local.js), so a new
+    // realm inherits `off` from the stack's layer. What this job proves is
+    // how `auto` answers per mode, so it says `auto` itself, in each realm.
+    const auto = await send("POST", inRealm(id) + "/config/set",
+                            { key: "pki.paranoid", value: "auto" });
+    assert.strictEqual(auto.status, 200, auto.raw.slice(0, 300));
   }
   await theRowsAnswerTheirSwitch();
   await theAdmissionRowDecides();

@@ -86,11 +86,12 @@ locals {
 
   # EVERY PORT THE LOAD BALANCER PUBLISHES, and the node port behind it. The
   # main port is 443 outside and 8081 inside.
-  #   ldap  389   the embedded directory, in the clear (the LDAP bulk load,
-  #               sts_global_logout, the ldap:// CRL addresses) — the same
-  #               number on both sides, because a job dials the number the
-  #               service writes into what it publishes and 389 is where a
-  #               directory URL points anyway
+  #   (ldap 389, the directory in the clear, is NOT PUBLISHED since
+  #               2026-11-10, rcbj: the ASVS L2 hardening (#1490, b2452747b)
+  #               turns `ldap.plainListener` off in product, so a product node
+  #               bound nothing there, its TCP health check failed and ECS
+  #               replaced a node that was otherwise healthy. LDAPS on 636 is
+  #               the only directory port the load balancer publishes.)
   #   ldaps 636   THE SAME DIRECTORY, BEHIND TLS (2026-09-17). Also the same
   #               number on both sides, and for a reason of its own: 636 is
   #               what an LDAP client assumes when it is told ldaps://, and a
@@ -136,7 +137,6 @@ locals {
   # /healthcheck where the port speaks HTTP, a TCP connect where it does not.
   published_ports = merge({
     https = { listener = 443, container = 8081, health = "HTTPS" }
-    ldap  = { listener = 389, container = 389, health = "TCP" }
     ldaps = { listener = 636, container = 636, health = "TCP" }
     pki   = { listener = var.pki_listener_port, container = 8082, health = "HTTP" }
     }, var.publish_kerberos ? {
