@@ -97,7 +97,7 @@ async function run(t) {
   broken = copy();
   broken.mapping.group[0].ldap = 'givenName';
   refused('a Group row kept in a person\'s attribute',
-          /group row 1 .* is kept in mail/, broken);
+          /group row 1 .* is kept in givenName/, broken);
 
   broken = copy();
   attribute(attribute(schema(broken, 'User'), 'emails'), 'type')
