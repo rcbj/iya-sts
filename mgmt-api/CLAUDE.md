@@ -2918,7 +2918,8 @@ that decides a cache), `passkey-report/export`'s `page`, `per` and `from`
 `consoleOnly()` refuses first.
 
 `declareImplicitParameters()` adds `DPoP` and `cell` to every row once, in
-`wire()`. **`consoleOnly()` now runs before the query check**, so `format=svg`
+`wire()`, reading them from the model's `x-iya-every-operation`
+(`openapi.every.json`; `models/CLAUDE.md`), where they are stated once. **`consoleOnly()` now runs before the query check**, so `format=svg`
 at a management address is still told where the drawing is rather than called
 an unknown name. `tests/admin_api_request_names.js` holds the rules, the
 wrapper and every `x-sts-` name; `schemathesis_kit.js`'s
