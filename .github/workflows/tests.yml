@@ -174,6 +174,11 @@ jobs:
     # minutes building the images before any mode starts, which no mode bound
     # covers; tests/teardown_bounds.js adds thirty for it.
     #
+    # 240 SINCE 2026-11-10, with the ceiling tests/teardown_bounds.js allows:
+    # `single-node`'s own bound went from 80 to 150 minutes (tests/tools/
+    # modes.sh), and one wedged single-node mode plus the build and every
+    # teardown is 215 minutes.
+    #
     # 180 SINCE 2026-10-13, the ceiling tests/teardown_bounds.js allows: on
     # main 8fe81efa the build took 23 minutes, `memory` 56 and `single-node`
     # was still running, healthy, when 150 cancelled it — two whole modes
@@ -184,7 +189,7 @@ jobs:
     # to sit above one wedged mode plus every teardown (tests/teardown_bounds.js)
     # and above three healthy modes, measured at about 70 minutes on a
     # developer machine. 120 is that test's own ceiling.
-    timeout-minutes: 180
+    timeout-minutes: 240
     steps:
       # submodules: recursive is LOAD-BEARING, and `true` is not enough. The
       # embedded directory's library is `"ldapjs": "file:node-ldapjs"` — a git

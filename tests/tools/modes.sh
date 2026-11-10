@@ -452,6 +452,11 @@ stsModeNeedsPostgres()
 # more and nothing failing. 80 minutes is that pace with room;
 # STS_SINGLE_NODE_MODE_TIMEOUT overrides it. tests/teardown_bounds.js holds
 # the CI `tests` job's timeout above the largest of the bounds it runs.
+# 150 MINUTES SINCE 2026-11-10: run 14's single-node mode on 942307fd1 was
+# stopped by the 80-minute bound with 43 of about 1,136 jobs never started —
+# every conformance job among them — nothing wedged. The same suite's memory
+# mode took 104 minutes, 67 of them the OpenID Connect conformance job, and
+# product on postgres is slower than that.
 # ---------------------------------------------------------------------------
 stsModeTimeout()
 {
@@ -461,7 +466,7 @@ stsModeTimeout()
     # The whole suite on the second engine: it was stopped at job 948 of 1067
     # by the 3000 s a mode with no bound of its own gets, nothing wedged (#677).
     mariadb) echo "${STS_CLUSTER_MODE_TIMEOUT:-12000}" ;;
-    single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-4800}" ;;
+    single-node) echo "${STS_SINGLE_NODE_MODE_TIMEOUT:-9000}" ;;
     fuzz)     echo "${STS_FUZZ_MODE_TIMEOUT:-21600}" ;;
     *)       echo "${STS_BASE_MODE_TIMEOUT:-3000}" ;;
   esac
