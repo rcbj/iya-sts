@@ -23,6 +23,7 @@ taking it down, and how it avoids making a caller wait past its own timeout.
 | **Outbound requests** | A partner may be slow or hostile | A timeout and a response cap. A fetch not needed for the answer is never awaited | `federation.outboundTimeoutMs`, `federation.maxResponseBytes` |
 | **Compressed and XML messages** | Can expand without bound | Inflated up to a fixed limit, parsed with no document type | Fixed |
 | **Request bodies** | Memory | 5 MB at most, unless a field states less | Fixed |
+| **Requests from one address** | Any endpoint, repeated | A ceiling per address per minute in each process. Past it, the answer is `429` with `Retry-After: 60`, and one warning per address per minute is logged (`STS-CORE-0172`). `/healthcheck` is not counted | `security.requestsPerAddressPerMinute` (6000 in product mode, `0`, no ceiling, in development) |
 | **Connections** | File descriptors and memory | Limited per listener | `http.maxConnections`, `http.maxRequestsPerSocket`, `http.headersTimeoutS`, `http.keepAliveTimeoutS` |
 | **Sessions and in-flight sign-ins** | Memory and store rows | Capped. At the cap a new row is refused, and nothing is ended to make room for somebody else | `authn.maxSessions` (100,000), `authn.maxSessionsPerSubject` (32), `oidcRp.maxFlows` (200) |
 | **Shared Signals push** | A slow receiver | One queue per receiver. Past it, an event is dead-lettered | `ssf.pushBacklog` (2,000) |
@@ -49,11 +50,14 @@ upload has to arrive in that time. For a very large risk dataset, use
 
 ## What you must add
 
-The service limits credential attempts and the costly features above. It has no
-general per-client or per-address request-rate limit on other endpoints, and no
-limit on how many requests one client can run at once. Put a rate limit in front
-of the service, in your load balancer or gateway, and size the thread pool and
-the workers for your load.
+The service limits credential attempts, the costly features above and, in
+product mode, the requests one address makes in a minute. That ceiling is
+counted in each process, so a cluster allows it once per node, and it has no
+per-client limit and no limit on how many requests one client can run at once.
+Behind a proxy, set `global.trustedProxies` so that it counts the client's
+address rather than the proxy's. Put a rate limit in front of the service, in
+your load balancer or gateway, and size the thread pool and the workers for your
+load.
 
 ## Related
 
