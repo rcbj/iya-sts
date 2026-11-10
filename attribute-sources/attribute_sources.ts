@@ -50,6 +50,7 @@ import helpers = require('../common/helpers');
 // The one place this service hashes (#453).
 import stsCrypto = require('../common/crypto');
 import InstanceSlot = require('../common/instance_slot');
+import Classes = require('../common/domain_classes');
 import config = require('../common/config');
 import realms = require('../common/realms');
 import audit = require('../common/audit');
@@ -274,10 +275,11 @@ class AttributeSources {
       Json | null {
     const { log } = this.deps;
     log.debug("Entering AttributeSources.recordOf().");
-    const at = entry.attributes || {};
-    const data = (at.stsattributesourcedata || at.stsAttributeSourceData ||
-                  [])[0];
-    const cn = (at.cn || [])[0];
+    // The domain model's reading (#1390), whatever case the directory
+    // answered in, which is why neither spelling is named here any more.
+    const held = Classes.AttributeSource.fromEntry(entry.attributes || {});
+    const data = held.data;
+    const cn = (held.cn || [])[0];
     try {
       const parsed = JSON.parse(String(data || '{}'));
       log.debug("Leaving AttributeSources.recordOf().");

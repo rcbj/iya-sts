@@ -70,6 +70,7 @@
 import stsCrypto = require('../common/crypto');
 import helpers = require('../common/helpers');
 import credentials = require('../common/credentials');
+import Classes = require('../common/domain_classes');
 
 type Json = any;
 
@@ -170,22 +171,22 @@ class OidfedStore {
   private static read(stored: Json): Entry | null {
     log.debug("Entering OidfedStore.read().");
     const a = stored.attributes || {};
-    const first = function (name: string): string {
-      log.debug("Entering first(). " + name);
-      log.debug("Leaving first().");
-      return String((a[name] || [])[0] || '');
-    };
+    // The domain model's reading (#1390). The two timestamps below are the
+    // directory's own operational attributes, which this concept does not
+    // carry, and a second concept per entry for them would cost more than
+    // reading them does.
+    const held = Classes.OpenIdFederationEntity.fromEntry(a);
     let data: Json = null;
     try {
-      data = JSON.parse(first('stsoidfeddata') || 'null');
+      data = JSON.parse(held.data || 'null');
     } catch (e: any) {
       log.debug("Caught in OidfedStore.read(): " + ((e && e.message) || e));
       data = null;
     }
     const cn = (/^cn=([^,]+),/i.exec(String(stored.dn)) || [])[1] || '';
     log.debug("Leaving OidfedStore.read().");
-    return { cn: cn, kind: first('stsoidfedkind'),
-             entityId: first('stsoidfedentityid'), data: data,
+    return { cn: cn, kind: held.kind || '',
+             entityId: held.entityId || '', data: data,
              createdAt: OidfedStore.timeOf(a.createtimestamp),
              updatedAt: OidfedStore.timeOf(a.modifytimestamp) };
   }
@@ -291,11 +292,15 @@ class OidfedStore {
     log.debug("Entering OidfedStore.keyRows().");
     const all = credentials.oidfedStore('listOidfedEntries', []) || [];
     const entry = all.filter(function (stored: Json): boolean {
-      return String(((stored.attributes || {}).stsoidfedkind || [])[0]) ===
-             KINDS.KEYS;
+      return Classes.OpenIdFederationEntity.fromEntry(
+        stored.attributes || {}).kind === KINDS.KEYS;
     })[0];
     const rows: Json[] = [];
-    ((entry && entry.attributes.stsoidfedkeys) || []).forEach(function (v) {
+    // The key table is the concept's secret, asked for by name on the one
+    // entry that holds it (#1390) and on no other.
+    const keys = entry ? Classes.OpenIdFederationEntity.fromEntry(
+      entry.attributes, { secrets: ['keys'] }).keys : null;
+    (keys || []).forEach(function (v) {
       try {
         rows.push(JSON.parse(String(v)));
       } catch (e: any) {
@@ -335,8 +340,8 @@ class OidfedStore {
   static eventValues(key: string): string[] {
     log.debug("Entering OidfedStore.eventValues().");
     const stored = OidfedStore.rawEntry(OidfedStore.cnOf(KINDS.EVENTS, key));
-    const out = ((stored && stored.attributes.stsoidfedevent) || [])
-      .map(String);
+    const out = (stored ? Classes.OpenIdFederationEntity.fromEntry(
+      stored.attributes).event : null) || [];
     log.debug("Leaving OidfedStore.eventValues(). " + out.length);
     return out;
   }
