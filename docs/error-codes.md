@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5411** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5415** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -79,7 +79,7 @@ is an ordinary outcome.
 * [SPIFFE (`STS-SPIFFE`)](#sts-spiffe) — 153
 * [TLS and client certificates (`STS-TLS`)](#sts-tls) — 60
 * [OpenID4VCI, OpenID4VP and DID (`STS-VC`)](#sts-vc) — 164
-* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 137
+* [Shared Signals, CAEP and RISC (`STS-SSF`)](#sts-ssf) — 141
 * [Risk scoring (`STS-RISK`)](#sts-risk) — 54
 * [Mail (`STS-MAIL`)](#sts-mail) — 40
 * [Languages and locales (`STS-I18N`)](#sts-i18n) — 15
@@ -4248,6 +4248,10 @@ Raised from: ssf/.
 | `STS-SSF-0156` | An HTTP Basic credential was refused without being checked: too many recent failures (#1448). | HTTP 401 |
 | `STS-SSF-0157` | A person authenticated by HTTP Basic holds no console role, in product (ASVS 5.0.0 8.2.1). | HTTP 403 |
 | `STS-SSF-0158` | A push delivery address is internal or could not be resolved, in product (ASVS 5.0.0 1.3.6). | the delivery fails |
+| `STS-SSF-0159` | A Shared Signals answer — the transmitter metadata, a stream configuration, a status or a poll — carried a member its model in models/ssf/ssf.tsp does not name, one of a type the model does not allow, or lacked one it requires (#1579). The answer is sent as it was built: the model describes the wire and does not reshape it, so this is a model gap to close. | none (recorded only; the answer is unchanged) |
+| `STS-SSF-0160` | A Shared Signals refusal carried an err value models/ssf/ssf.tsp does not declare (#1579). The refusal is sent as it was built; the value is to be declared, or the refusal to use a declared one. | none (recorded only; the refusal is unchanged) |
+| `STS-SSF-0161` | A Security Event Token this service built carried a claim models/ssf/ssf.tsp does not name, one of a type it does not allow, or lacked one RFC 8417 requires (#1579). The SET is sent as it was built; this is a model gap to close. | none (recorded only; the SET is unchanged) |
+| `STS-SSF-0162` | A document this realm exchanged with a federation partner's Shared Signals transmitter is not the shape models/ssf/ssf.tsp gives it (#1579): a configuration or a SET the partner sent, or a stream request or poll this realm sent. Recorded; what was received is still judged by the receiver's own checks, and what is sent is sent unchanged. | none (recorded only) |
 
 ## STS-RISK
 

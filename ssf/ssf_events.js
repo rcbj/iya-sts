@@ -99,6 +99,9 @@ const mode = require('../common/mode');
 // library that cannot join a cycle.
 const stsCrypto = require('../common/crypto');
 const subjects = require('./ssf_subjects');
+// The catalogue, the lists and the common members (#1579).
+const SsfModel = require('./ssf_model');
+const errorCodes = require('../common/error_codes');
 
 // The URI prefix every SSF-defined event type shares. Written once because the
 // two rows below and the two vocabularies that come after it all hang off it,
@@ -131,1275 +134,422 @@ const RISC_PREFIX = 'https://schemas.openid.net/secevent/risc/event-type/';
 const SET_MEDIA_TYPE = 'secevent+jwt';
 
 // ---------------------------------------------------------------------------
-// THE CATALOGUE.
+// THE CATALOGUE, AND IT IS THE MODEL'S (#1579).
+//
+// Every event type this service knows — SSF 1.0's own two, CAEP 1.0's eight,
+// RISC 1.0's fourteen and this service's own — is a model in
+// `models/ssf/ssf_events.tsp`, whose properties are its payload members and
+// whose TypeSpec types are their shapes. The rows below are BUILT from the
+// generated table; what this file still writes is what a row DOES:
 //
 //   uri        the event type, which is the KEY in the SET's `events` map
-//   family     which specification defines it — 'ssf', 'caep' or 'risc'
-//   subject    'none' | 'optional' | 'required'. SSF's TWO ARE THE ONLY ONES
+//   family     which specification defines it — 'ssf', 'caep', 'risc' or
+//              'sts'
+//   subject    'none' | 'optional' | 'required'. SSF'S TWO ARE THE ONLY ONES
 //              IN ANY OF THE THREE VOCABULARIES WITH NO SUBJECT AT ALL, and
-//              it is worth knowing why: they are about the STREAM,
-//              not about anybody, so a receiver that insists on a subject
-//              cannot be verified.
+//              it is worth knowing why: they are about the STREAM, not about
+//              anybody, so a receiver that insists on a subject cannot be
+//              verified.
 //   subjectFormats
 //              WHICH RFC 9493 FORMATS THE SUBJECT MAY BE IN, where the
-//              specification narrows it. Only RISC's two identifier events
-//              have one — they say the subject MUST be an email address or a
-//              phone number, because the identifier IS the message — and it
-//              is a property of the ROW rather than a branch naming an event
-//              type, which is what keeps `subjectAdvice()` below from
-//              being the vocabulary leaking out of this table.
+//              specification narrows it — only RISC's two identifier events,
+//              whose identifier IS the message. A property of the ROW rather
+//              than a branch naming an event type, which is what keeps
+//              `subjectAdvice()` below from being the vocabulary leaking out
+//              of this table.
 //   deprecated the event type that replaces this one, where its own
-//              specification deprecates it. One row has it: RISC's
-//              `sessions-revoked` points at CAEP's `session-revoked`.
-//   members    the event payload's own members. `required` says which a
-//              conforming event carries; the rest are optional.
+//              specification deprecates it (RISC's `sessions-revoked`).
+//   members    the payload's own members, each `{ name, required, type,
+//              values?, what }`; `required` on the row lists the required
+//              names.
 //   generate   builds a payload from the values a caller supplied, filling
-//              what it can. Every row has one so that "send me one of these"
-//              is one call from the console, the management API and the
-//              debugger alike.
+//              what it can — `GENERATORS` below, by URI, so that "send me one
+//              of these" is one call from the console, the management API and
+//              the debugger alike. A row with no member generates `{}`; the
+//              key-rotation family's rows share one generator read off the
+//              row's own members.
+//
+// **CAEP'S FOUR COMMON MEMBERS ARE WRITTEN ONCE** (`CaepCommon`, spread onto
+// every CAEP row), because eight copies of four member descriptions is eight
+// places for a spelling to drift and there is no "unknown member" error in
+// this protocol. **RISC GIVES THREE OF THEM, NO `initiating_entity`, TO ONE
+// ROW OF FOURTEEN** (`RiscCommon`), and a reader porting CAEP's across would
+// attach members thirteen specifications do not define.
+//
+// **THE CREDENTIAL TYPES ARE ONE LIST FOR TWO SPECIFICATIONS**: RISC 1.0
+// section 2.7 defines credential-compromise's `credential_type` by reference
+// to CAEP's, so the model has one `CredentialType` union both rows name. It
+// is OPEN in both places, so a value outside it is carried with a warning.
+//
+// `event_timestamp` IS NOT THE SET's `toe` AND IT IS NOT `iat`: RFC 8417's
+// `toe` is a claim on the token, this is a member of the payload, and a
+// receiver that reads only one from a transmitter that sends only the other
+// reads nothing.
 // ---------------------------------------------------------------------------
+
 /**
- * SSF 1.0's own two event types, `verification` and `stream-updated`, as
- * catalogue rows (`uri`, `family`, `subject`, `members`, `generate`).
+ * The three stream statuses of SSF 1.0 section 8.1.2, in the order a stream
+ * moves through them: `enabled`, `paused` and `disabled`.
  */
-const SSF_EVENTS = [
-  {
-    uri: SSF_PREFIX + 'verification',
-    family: 'ssf',
-    name: 'Verification',
-    subject: 'none',
-    members: [
-      { name: 'state', required: false, type: 'string',
-        what: 'Whatever the receiver put in its verification request, ' +
-              'echoed back UNCHANGED. It is the only thing that ties this ' +
-              'event to the request that asked for it — without it a ' +
-              'receiver watching two streams cannot tell which one just ' +
-              'answered.' }
-    ],
-    required: [],
-    what: 'THE ONLY END-TO-END TEST A STREAM HAS. Everything else a ' +
-          'receiver can do — create the stream, read it back, add a subject ' +
-          '— exercises the management API and proves nothing about whether ' +
-          'an event can actually be delivered. This travels the ordinary ' +
-          'delivery path, so a 202 from the receiver\'s push endpoint (or a ' +
-          'poll that returns it) is the first evidence the pipe works.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const payload = {};
-      if (values && typeof values.state === 'string' && values.state !== '') {
-        payload.state = values.state;
-      }
-      log.debug("Leaving generate().");
-      return payload;
-    }
-  },
-  {
-    uri: SSF_PREFIX + 'stream-updated',
-    family: 'ssf',
-    name: 'Stream Updated',
-    subject: 'none',
-    members: [
-      { name: 'status', required: true, type: 'enum',
-        values: ['enabled', 'paused', 'disabled'],
-        what: 'The stream\'s new status.' },
-      { name: 'reason', required: false, type: 'string',
-        what: 'Why, in words, for a person reading a log. Nothing parses it.' }
-    ],
-    required: ['status'],
-    what: 'The stream\'s status changed and the receiver is being told IN ' +
-          'BAND. It is the one event a receiver gets without asking for it, ' +
-          'and the one whose absence is hardest to notice: a stream quietly ' +
-          'paused at the transmitter looks exactly like a service where ' +
-          'nothing has happened lately.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const asked = values || {};
-      const payload = {
-        status: STATUSES.indexOf(asked.status) >= 0 ? asked.status : 'enabled'
-      };
-      if (typeof asked.reason === 'string' && asked.reason !== '') {
-        payload.reason = asked.reason;
-      }
-      log.debug("Leaving generate().");
-      return payload;
-    }
-  }
-];
+const STATUSES = SsfModel.list('stream-statuses');
 
-// ---------------------------------------------------------------------------
-// CAEP — THE SESSION VOCABULARY (OpenID Continuous Access Evaluation Profile
-// 1.0, final 2 September 2025), AND IT IS ROWS IN THIS TABLE AND NOTHING ELSE.
-//
-// That was the promise `ssf/CLAUDE.md` and the header of this file made while
-// the table had two rows in it, and it is worth stating what kept it: the SET
-// envelope, the RFC 9493 subject grammar, the queues, the deliveries and the
-// stream management did not have to be touched to add eight event types,
-// because none of them names an event type. The only things that CHANGED
-// outside this file are the two that are genuinely not vocabulary — the
-// SESSION REGISTER (`caep.js`, which is what a CAEP event is ABOUT) and the
-// refusal in `transmit()` for an event whose row says it must carry a subject.
-//
-// **WHAT CAEP SAYS THAT SSF DOES NOT.** SSF's two events are about the PIPE.
-// These eight are about a SESSION, and the sentence they exist to carry is
-// *this session is no longer trustworthy* — which is a different sentence from
-// RISC's *this account is no longer trustworthy*, and the whole reason there
-// are two profiles rather than one.
-//
-// **THE SUBJECT IS THE HALF PEOPLE GET WRONG.** Every one of these is
-// `subject: 'required'`, and the subject a conforming transmitter sends is
-// normally SSF's COMPLEX subject rather than a plain one: the person is not
-// revoked, one session of theirs is, and a subject identifier naming only the
-// person asks a receiver to end every session that person has. `caep.js`
-// composes it and `transmit()` refuses an event that arrives without one.
-// ---------------------------------------------------------------------------
-
-// The four claims CAEP section 2 gives EVERY event, all of them optional.
-// Written once and concatenated onto each row below, because eight copies of
-// four member descriptions is eight places for a spelling to drift and there
-// is no "unknown member" error in this protocol — a receiver reading
-// `reason-admin` for `reason_admin` finds nothing and says nothing.
-//
-// `event_timestamp` IS NOT THE SET's `toe` AND IT IS NOT `iat`. RFC 8417's
-// `toe` is a claim on the token; this is a member of the event payload, and
-// CAEP is the specification that defines it. A transmitter may legitimately
-// send both, and a receiver that reads only one of them from a transmitter
-// that sends only the other reads nothing at all.
-/**
- * The four members CAEP section 2 gives every CAEP event type:
- * `event_timestamp`, `initiating_entity`, `reason_admin` and `reason_user`.
- */
-const CAEP_COMMON_MEMBERS = [
-  { name: 'event_timestamp', required: false, type: 'number',
-    what: 'When the thing described actually happened, in seconds since the ' +
-          'epoch. OPTIONAL in CAEP 1.0 section 2 — which surprises people, ' +
-          'because a receiver deciding whether to end a session wants it ' +
-          'more than it wants anything else in the payload. ' +
-          'caep.omitEventTimestamp leaves it out on purpose, so a receiver ' +
-          'that assumes one can be shown falling over.' },
-  { name: 'initiating_entity', required: false, type: 'enum',
-    values: ['admin', 'user', 'policy', 'system'],
-    what: 'Who invoked it. It is the member that lets a receiver tell "an ' +
-          'administrator revoked this" from "a risk engine did" — two facts ' +
-          'that call for two different responses, and which are ' +
-          'indistinguishable without it.' },
-  { name: 'reason_admin', required: false, type: 'langmap',
-    what: 'Why, for a log and for an auditor. **It is an OBJECT KEYED BY A ' +
-          'LANGUAGE TAG** — {"en": "Policy 4.2 was violated"} — and not a ' +
-          'string, which is the commonest way this member is got wrong. A ' +
-          'string here is refused rather than carried, because a receiver ' +
-          'indexing it by language reads nothing from one.' },
-  { name: 'reason_user', required: false, type: 'langmap',
-    what: 'The same, in words meant for the person it happened to. Two ' +
-          'members rather than one because what an auditor needs to read ' +
-          'and what may be shown on a screen are rarely the same sentence.' }
-];
-
-// One row's own members, plus the four above. A function rather than a spread
-// at each call site so that the ORDER is the same on every row — the console
-// draws them in this order, and a table whose columns move between rows is
-// harder to read than one with a column too many.
-function withCommon(members) {
-  log.debug("Entering withCommon().");
-  log.debug("Leaving withCommon().");
-  return (members || []).concat(CAEP_COMMON_MEMBERS);
-}
-
-// ---------------------------------------------------------------------------
-// THE CREDENTIAL TYPES, WRITTEN ONCE BECAUSE TWO SPECIFICATIONS SHARE THEM BY
-// REFERENCE RATHER THAN BY COINCIDENCE.
-//
-// CAEP 1.0 defines this list for `credential-change`. RISC 1.0 section 2.7
-// then says that `credential-compromise`'s `credential_type` "must be one of
-// the values specified for the similarly named field in the Credential Change
-// event defined in the CAEP Specification" — so the two lists are not merely
-// alike, they are the SAME list, and a second copy of it here would be a copy
-// that can drift out of a relationship the specification states outright.
-//
-// It is OPEN in both places: the specification allows types two parties agree
-// between themselves, so a value outside it is carried with a warning.
-// ---------------------------------------------------------------------------
 /**
  * The credential types CAEP's `credential-change` registers; the list is open,
  * and another value is carried with a warning.
  */
-const CREDENTIAL_TYPES = ['password', 'pin', 'x509', 'fido2-platform',
-  'fido2-roaming', 'fido-u2f', 'verifiable-credential', 'phone-voice',
-  'phone-sms', 'app'];
+const CREDENTIAL_TYPES = SsfModel.list('credential-types');
 
 /**
- * CAEP's eight event types, about a session, as catalogue rows.
+ * The four members CAEP section 2 gives every CAEP event type:
+ * `event_timestamp`, `initiating_entity`, `reason_admin` and `reason_user`.
  */
-const CAEP_EVENTS = [
-  {
-    uri: CAEP_PREFIX + 'session-revoked',
-    family: 'caep',
-    name: 'Session Revoked',
-    subject: 'required',
-    members: withCommon([]),
-    required: [],
-    what: 'THE EVENT THE WHOLE PROFILE EXISTS FOR. The session named by the ' +
-          'subject is no longer good, whatever its token says its lifetime ' +
-          'is. It carries NO event-specific member at all — everything it ' +
-          'has to say is in the subject and in the four common claims — and ' +
-          'that is not an oversight: there is nothing to qualify. Where the ' +
-          'subject is a COMPLEX one, the revocation applies to any session ' +
-          'matching every part of it at once.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  },
-  {
-    uri: CAEP_PREFIX + 'session-established',
-    family: 'caep',
-    name: 'Session Established',
-    subject: 'required',
-    members: withCommon([
-      { name: 'fp_ua', required: false, type: 'string',
-        what: 'A fingerprint of the user agent, computed by the ' +
-              'transmitter. Its value is comparing two of them, so what it ' +
-              'is made of is the transmitter\'s business and no receiver ' +
-              'should parse one.' },
-      { name: 'acr', required: false, type: 'string',
-        what: 'The authentication context class, with OpenID Connect\'s own ' +
-              'meaning.' },
-      { name: 'amr', required: false, type: 'strings',
-        what: 'The authentication methods, as an ARRAY of strings — OpenID ' +
-              'Connect\'s `amr`. A bare string here is refused: a session ' +
-              'authenticated by a password AND a security key has two ' +
-              'values, and a receiver that read a string would see one.' },
-      { name: 'ext_id', required: false, type: 'string',
-        what: 'The transmitter\'s own identifier for this session, for a ' +
-              'receiver correlating with something it already holds.' }
-    ]),
-    required: [],
-    what: 'A session was created. It is what CLOSES THE LOOP — without it a ' +
-          'receiver only ever hears about sessions ending, so it cannot ' +
-          'hold an inventory of what is open and cannot notice a sign-in it ' +
-          'did not expect. This service emits one on every sign-in unless ' +
-          'caep.autoEmit is off.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const asked = values || {};
-      const payload = {};
-      if (typeof asked.fp_ua === 'string' && asked.fp_ua !== '') {
-        payload.fp_ua = asked.fp_ua;
-      }
-      if (typeof asked.acr === 'string' && asked.acr !== '') {
-        payload.acr = asked.acr;
-      }
-      if (Array.isArray(asked.amr) && asked.amr.length) {
-        payload.amr = asked.amr.slice();
-      }
-      if (typeof asked.ext_id === 'string' && asked.ext_id !== '') {
-        payload.ext_id = asked.ext_id;
-      }
-      log.debug("Leaving generate().");
-      return payload;
-    }
-  },
-  {
-    uri: CAEP_PREFIX + 'session-presented',
-    family: 'caep',
-    name: 'Session Presented',
-    subject: 'required',
-    members: withCommon([
-      { name: 'fp_ua', required: false, type: 'string',
-        what: 'The user agent fingerprint observed THIS time. Comparing it ' +
-              'with the one on the session-established event is the whole ' +
-              'point of the member: the same session presented from a ' +
-              'different agent is the abnormality this event exists to ' +
-              'make visible.' },
-      { name: 'ext_id', required: false, type: 'string',
-        what: 'The transmitter\'s own identifier for the session.' }
-    ]),
-    required: [],
-    what: 'The session was USED — presented at the transmitter and honoured. ' +
-          'It is the one CAEP event about something entirely ordinary, and ' +
-          'it is there so that a receiver can see a live session it is not ' +
-          'itself being asked about, and can spot the same session in two ' +
-          'places at once. This service emits one when an authorization ' +
-          'request is answered from a session that already existed, which ' +
-          'is exactly single sign-on.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const asked = values || {};
-      const payload = {};
-      if (typeof asked.fp_ua === 'string' && asked.fp_ua !== '') {
-        payload.fp_ua = asked.fp_ua;
-      }
-      if (typeof asked.ext_id === 'string' && asked.ext_id !== '') {
-        payload.ext_id = asked.ext_id;
-      }
-      log.debug("Leaving generate().");
-      return payload;
-    }
-  },
-  {
-    uri: CAEP_PREFIX + 'token-claims-change',
-    family: 'caep',
-    name: 'Token Claims Change',
-    subject: 'required',
-    members: withCommon([
-      { name: 'claims', required: true, type: 'object',
-        what: 'The claims that changed, with their NEW values — an object, ' +
-              'and only the ones that moved. It is not a whole token and it ' +
-              'is not a diff: a receiver applies what is here over what it ' +
-              'holds. A group membership taken away is therefore the new ' +
-              'LIST rather than the group that went, which catches people.' }
-    ]),
-    required: ['claims'],
-    what: 'A claim behind the token changed while the token is still valid ' +
-          '— a role, a group, a tenant. It is the event that makes the ' +
-          'access-token lifetime argument go away: the receiver does not ' +
-          'have to wait for a refresh to find out that somebody left the ' +
-          'group that authorises them.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const asked = values || {};
-      const claims = (asked.claims && typeof asked.claims === 'object' &&
-                      !Array.isArray(asked.claims))
-        ? asked.claims
-        : { groups: ['everyone'] };
-      log.debug("Leaving generate().");
-      return { claims: claims };
-    }
-  },
-  {
-    uri: CAEP_PREFIX + 'credential-change',
-    family: 'caep',
-    name: 'Credential Change',
-    subject: 'required',
-    members: withCommon([
-      { name: 'credential_type', required: true, type: 'openenum',
-        values: CREDENTIAL_TYPES,
-        what: 'Which kind of credential. The list is CAEP\'s own and it is ' +
-              'OPEN — the specification allows types two parties agree ' +
-              'between themselves — so a value not on it is carried with a ' +
-              'warning rather than refused. Refusing would make this ' +
-              'service unable to carry a vendor\'s own type, which is ' +
-              'precisely what testing needs.' },
-      { name: 'change_type', required: true, type: 'enum',
-        values: ['create', 'revoke', 'update', 'delete'],
-        what: 'What happened to it. CLOSED, unlike the type above: these ' +
-              'four are the whole lifecycle and a fifth would be a ' +
-              'receiver guessing.' },
-      { name: 'friendly_name', required: false, type: 'string',
-        what: 'What the person calls it — "my work phone". For a screen, ' +
-              'not for a decision.' },
-      { name: 'x509_issuer', required: false, type: 'string',
-        what: 'The certificate\'s issuer (RFC 5280), where the credential ' +
-              'is an X.509 one.' },
-      { name: 'x509_serial', required: false, type: 'string',
-        what: 'The certificate\'s serial number (RFC 5280). Serial numbers ' +
-              'are unique per ISSUER and not globally, which is why this ' +
-              'member is useless without the one above it.' },
-      { name: 'fido2_aaguid', required: false, type: 'string',
-        what: 'The authenticator\'s AAGUID, where the credential is a ' +
-              'FIDO2 one. It names a MODEL of authenticator rather than ' +
-              'the individual one, which is what makes it publishable.' }
-    ]),
-    required: ['credential_type', 'change_type'],
-    what: 'A credential was enrolled, renewed, revoked or deleted. It is ' +
-          'the event a receiver acts on WITHOUT ending anything: a second ' +
-          'factor being deleted does not invalidate the session it was used ' +
-          'to establish, and it does change what that session should be ' +
-          'allowed to do next.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const asked = values || {};
-      const payload = {
-        credential_type: typeof asked.credential_type === 'string' &&
-          asked.credential_type !== '' ? asked.credential_type : 'password',
-        change_type: ['create', 'revoke', 'update', 'delete']
-          .indexOf(asked.change_type) >= 0 ? asked.change_type : 'update'
-      };
-      ['friendly_name', 'x509_issuer', 'x509_serial', 'fido2_aaguid']
-        .forEach(function (name) {
-          if (typeof asked[name] === 'string' && asked[name] !== '') {
-            payload[name] = asked[name];
-          }
-        });
-      log.debug("Leaving generate().");
-      return payload;
-    }
-  },
-  {
-    uri: CAEP_PREFIX + 'assurance-level-change',
-    family: 'caep',
-    name: 'Assurance Level Change',
-    subject: 'required',
-    members: withCommon([
-      { name: 'namespace', required: true, type: 'openenum',
-        values: ['RFC8176', 'RFC6711', 'ISO-IEC-29115', 'NIST-IAL',
-                 'NIST-AAL', 'NIST-FAL'],
-        what: 'WHICH SCALE THE TWO LEVELS BELOW ARE ON, and it is required ' +
-              'for the reason the whole event would otherwise be useless: ' +
-              '"AAL2" means nothing until you know it is NIST\'s. The list ' +
-              'is open — two parties may agree an alias — so an unlisted ' +
-              'namespace is carried with a warning.' },
-      { name: 'current_level', required: true, type: 'string',
-        what: 'The level the session is at NOW, spelt the way the ' +
-              'namespace above spells it. It is a free string precisely ' +
-              'because the namespace decides its shape.' },
-      { name: 'previous_level', required: false, type: 'string',
-        what: 'Where it was before. Optional, and worth sending: without ' +
-              'it a receiver can see that assurance changed and not ' +
-              'whether it went UP.' },
-      { name: 'change_direction', required: false, type: 'enum',
-        values: ['increase', 'decrease'],
-        what: 'Which way, said outright rather than inferred. It exists ' +
-              'because a receiver cannot order two levels it does not ' +
-              'understand the namespace of — which is the ordinary case ' +
-              'across two organisations.' }
-    ]),
-    required: ['namespace', 'current_level'],
-    what: 'The strength of the authentication behind this session moved. ' +
-          'A DECREASE is the interesting one and it is easy to forget it ' +
-          'can happen at all: a second factor that has expired, or a ' +
-          'session carried forward past the window its step-up was good ' +
-          'for, both lower assurance without anybody signing in again.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const asked = values || {};
-      const payload = {
-        namespace: typeof asked.namespace === 'string' &&
-          asked.namespace !== ''
-          ? asked.namespace
-          : String(config.value('caep.assuranceNamespace') || 'NIST-AAL'),
-        current_level: typeof asked.current_level === 'string' &&
-          asked.current_level !== '' ? asked.current_level : 'aal2'
-      };
-      if (typeof asked.previous_level === 'string' &&
-          asked.previous_level !== '') {
-        payload.previous_level = asked.previous_level;
-      }
-      if (['increase', 'decrease'].indexOf(asked.change_direction) >= 0) {
-        payload.change_direction = asked.change_direction;
-      }
-      log.debug("Leaving generate().");
-      return payload;
-    }
-  },
-  {
-    uri: CAEP_PREFIX + 'device-compliance-change',
-    family: 'caep',
-    name: 'Device Compliance Change',
-    subject: 'required',
-    members: withCommon([
-      { name: 'previous_status', required: true, type: 'enum',
-        values: ['compliant', 'not-compliant'],
-        what: 'What the device was. REQUIRED, and that is the member that ' +
-              'makes this event safe to act on out of order: a receiver ' +
-              'holding "compliant" that gets an event whose previous ' +
-              'status is "not-compliant" knows it has missed one.' },
-      { name: 'current_status', required: true, type: 'enum',
-        values: ['compliant', 'not-compliant'],
-        what: 'What it is now. The hyphen in "not-compliant" is the ' +
-              'specification\'s and is worth checking against: ' +
-              '"noncompliant" is silently ignored by a conforming ' +
-              'receiver.' }
-    ]),
-    required: ['previous_status', 'current_status'],
-    what: 'The device the session runs on fell out of, or back into, ' +
-          'compliance with whatever the estate\'s policy is. The subject ' +
-          'is normally a COMPLEX one naming the device as well as the ' +
-          'person, because the same person on a second device is ' +
-          'unaffected and a receiver cannot tell that from a subject ' +
-          'naming only them.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const asked = values || {};
-      const allowed = ['compliant', 'not-compliant'];
-      log.debug("Leaving generate().");
-      return {
-        previous_status: allowed.indexOf(asked.previous_status) >= 0
-          ? asked.previous_status : 'compliant',
-        current_status: allowed.indexOf(asked.current_status) >= 0
-          ? asked.current_status : 'not-compliant'
-      };
-    }
-  },
-  {
-    uri: CAEP_PREFIX + 'risk-level-change',
-    family: 'caep',
-    name: 'Risk Level Change',
-    subject: 'required',
-    members: withCommon([
-      { name: 'principal', required: true, type: 'openenum',
-        values: ['USER', 'DEVICE', 'SESSION', 'TENANT', 'ORG_UNIT', 'GROUP'],
-        what: 'WHAT the risk level is about, and it is required because the ' +
-              'subject alone cannot say: a complex subject names a person ' +
-              'AND a device AND a session, and "risk went to HIGH" about ' +
-              'the device is a different fact from the same sentence about ' +
-              'the person. The values are UPPER CASE here and lower case ' +
-              'in a complex subject\'s member names, which catches ' +
-              'everybody once.' },
-      { name: 'current_level', required: true, type: 'enum',
-        values: ['LOW', 'MEDIUM', 'HIGH'],
-        what: 'The level now. Three values, upper case, closed.' },
-      { name: 'previous_level', required: false, type: 'enum',
-        values: ['LOW', 'MEDIUM', 'HIGH'],
-        what: 'The level before.' },
-      { name: 'risk_reason', required: false, type: 'string',
-        what: 'What contributed. RECOMMENDED rather than required, and it ' +
-              'is the member that decides whether a receiver can do ' +
-              'anything but step up: "impossible travel" and "credential ' +
-              'seen in a breach corpus" call for different answers.' }
-    ]),
-    required: ['principal', 'current_level'],
-    what: 'A risk engine changed its mind about somebody. It is the only ' +
-          'CAEP event that is a JUDGEMENT rather than a fact — the other ' +
-          'seven report something that happened — which is why it carries ' +
-          'a reason and why a receiver is expected to weigh it rather than ' +
-          'act on it.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const asked = values || {};
-      const levels = ['LOW', 'MEDIUM', 'HIGH'];
-      const payload = {
-        principal: typeof asked.principal === 'string' &&
-          asked.principal !== '' ? asked.principal : 'SESSION',
-        current_level: levels.indexOf(asked.current_level) >= 0
-          ? asked.current_level
-          : String(config.value('caep.defaultRiskLevel') || 'MEDIUM')
-      };
-      if (levels.indexOf(asked.previous_level) >= 0) {
-        payload.previous_level = asked.previous_level;
-      }
-      if (typeof asked.risk_reason === 'string' && asked.risk_reason !== '') {
-        payload.risk_reason = asked.risk_reason;
-      }
-      log.debug("Leaving generate().");
-      return payload;
-    }
-  }
-];
+const CAEP_COMMON_MEMBERS = SsfModel.common('caep');
 
-// ---------------------------------------------------------------------------
-// RISC — THE ACCOUNT VOCABULARY (OpenID RISC Profile Specification 1.0,
-// published 29 August 2025 and final on 2 September 2025), AND IT IS ROWS IN
-// THIS TABLE AND NOTHING ELSE.
-//
-// CAEP was the first vocabulary over this pipe and its arrival cost four value
-// types in `checkMember()` and one refusal in `transmit()`. **RISC COST THIS
-// FILE'S MACHINERY NOTHING AT ALL** — not one value type, not one branch. That
-// is the sentence `ssf/CLAUDE.md` has been promising since the table had two
-// rows in it, and fourteen event types later it is finally testable rather
-// than merely asserted.
-//
-// **WHAT RISC SAYS THAT CAEP DOES NOT.** CAEP's eight are about a SESSION and
-// carry *this session is no longer trustworthy*. These fourteen are about an
-// ACCOUNT and carry *this account is no longer trustworthy*. Those are two
-// different sentences and the difference is the whole reason there are two
-// profiles: a revoked session is one sign-in of one person at one relying
-// party, and a disabled account is every session that person has anywhere, for
-// ever. CAEP is aimed WITHIN an enterprise and RISC ACROSS providers — its
-// origin is Google noticing that a consumer account was taken over and telling
-// every site that account signs in to.
-//
-// ---------------------------------------------------------------------------
-// THE FOUR THINGS ABOUT THESE ROWS THAT SURPRISE SOMEBODY WHO KNOWS CAEP.
-//
-// **ELEVEN OF THE FOURTEEN HAVE NO PAYLOAD MEMBERS AT ALL, AND ONLY ONE HAS A
-// REQUIRED ONE.** A CAEP row is mostly members; a RISC row is mostly `{}`. The
-// consequence is the one worth stating: **the subject carries the entire
-// message.** `account-purged` says nothing but its own type and who it is
-// about, so a subject naming the wrong person is not a partly-wrong event, it
-// is a completely wrong one with nothing else in it to notice by.
-//
-// **THE FOUR COMMON CLAIMS ARE NOT COMMON HERE.** CAEP section 2 gives
-// `event_timestamp`, `initiating_entity`, `reason_admin` and `reason_user` to
-// every one of its eight. RISC gives THREE of them — no `initiating_entity` —
-// and gives them to exactly ONE of its fourteen, `credential-compromise`. A
-// reader porting CAEP's `withCommon()` across would attach four members to
-// fourteen rows and produce thirteen events carrying members their
-// specification does not define. Nothing would fail: an unrecognised member is
-// carried and ignored by a conforming receiver, which is why this is written
-// down rather than left to the table.
-//
-// **ONE MEMBER NAME IN THE WHOLE OF SHARED SIGNALS USES A HYPHEN**, and it is
-// `identifier-changed`'s `new-value`. Every other member of every event in all
-// three vocabularies is `snake_case`. A transmitter that writes `new_value`
-// from habit produces an event that is well-formed, delivers, and tells the
-// receiver nothing about what the identifier changed TO — silently, because
-// the member is optional and its absence is legal.
-//
-// **AND ONE OF THE FOURTEEN IS DEPRECATED BY ITS OWN SPECIFICATION.**
-// `sessions-revoked` — plural — says every session of the account is gone, and
-// RISC 1.0 says new implementations MUST use CAEP's `session-revoked` —
-// singular — instead. The two names differ by one letter and mean different
-// things, which is exactly the pair a person types from memory. It is in this
-// table, offered, and warned about: leaving it out would make this service
-// unable to reproduce the traffic of the many deployments that still send one.
-// ---------------------------------------------------------------------------
-
-// The three claims RISC gives to `credential-compromise` and to nothing else.
-// A named list of three rather than four inlined members, because the COUNT is
-// the fact worth being able to check: `tests/risc_register.js` asserts that it
-// is three and that `initiating_entity` is not among them.
 /**
  * The three members RISC gives the event types that define them:
  * `event_timestamp`, `reason_admin` and `reason_user`.
  */
-const RISC_COMMON_MEMBERS = [
-  { name: 'event_timestamp', required: false, type: 'number',
-    what: 'When the transmitter DISCOVERED the compromise, in seconds since ' +
-          'the epoch. RISC section 2.7 words it as discovery rather than as ' +
-          'occurrence, which is not pedantry: a credential found in a breach ' +
-          'corpus was compromised long before anybody noticed, and a ' +
-          'receiver that read this as "when it happened" would date the ' +
-          'incident from the wrong end.' },
-  { name: 'reason_admin', required: false, type: 'langmap',
-    what: 'Why, for an administrator. THIS SERVICE SENDS THE LANGUAGE-MAP ' +
-          'SHAPE CAEP DEFINES — {"en": "..."} — and RISC 1.0 does not ' +
-          'actually repeat that requirement, which makes a bare string ' +
-          'arguably conforming to RISC and certainly unreadable to a ' +
-          'receiver built against CAEP. Sending the map is the reading that ' +
-          'is right under both.' },
-  { name: 'reason_user', required: false, type: 'langmap',
-    what: 'The same, in words meant for the person it happened to.' }
-];
+const RISC_COMMON_MEMBERS = SsfModel.common('risc');
 
-/**
- * RISC's fourteen event types, about an account, as catalogue rows.
- */
-const RISC_EVENTS = [
-  {
-    uri: RISC_PREFIX + 'account-credential-change-required',
-    family: 'risc',
-    name: 'Account Credential Change Required',
-    subject: 'required',
-    members: [],
-    required: [],
-    what: 'The account named by the subject was REQUIRED to change a ' +
-          'credential — a forced password reset, most often. It is not a ' +
-          'report that a credential changed: nothing here says one did, and ' +
-          'the person may never comply. What a receiver learns is that this ' +
-          'provider no longer trusts what it currently holds.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'account-purged',
-    family: 'risc',
-    name: 'Account Purged',
-    subject: 'required',
-    members: [],
-    required: [],
-    what: 'The account was PERMANENTLY DELETED. It is the one terminal ' +
-          'event in the vocabulary and the register treats it as one: ' +
-          'nothing can be said about a purged account afterwards except by ' +
-          'contradiction. The distinction from account-disabled is the ' +
-          'whole of its meaning — a disabled account may come back, and ' +
-          'this one may not.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'account-disabled',
-    family: 'risc',
-    name: 'Account Disabled',
-    subject: 'required',
-    members: [
-      { name: 'reason', required: false, type: 'openenum',
-        values: ['hijacking', 'bulk-account'],
-        what: 'Why, as one of two words RISC names — and it is worth ' +
-              'knowing what those two are FOR. "hijacking" says this one ' +
-              'account was taken over, which is a signal about a person. ' +
-              '"bulk-account" says it was one of a population created by a ' +
-              'script, which is a signal about the PROVIDER and asks a ' +
-              'receiver to look at everything else that arrived at the same ' +
-              'time. The specification says "possible values" rather than ' +
-              'closing the list, so a third word is carried with a warning.' }
-    ],
-    required: [],
-    what: 'The account was disabled and MAY BE ENABLED AGAIN. It is the ' +
-          'ordinary account-takeover signal, and the pair it forms with ' +
-          'account-enabled is what makes it different from a purge.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const asked = values || {};
-      const payload = {};
-      if (typeof asked.reason === 'string' && asked.reason !== '') {
-        payload.reason = asked.reason;
-      }
-      log.debug("Leaving generate().");
-      return payload;
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'account-enabled',
-    family: 'risc',
-    name: 'Account Enabled',
-    subject: 'required',
-    members: [],
-    required: [],
-    what: 'The account was enabled. It is RISC\'s only GOOD NEWS and it is ' +
-          'the one everybody forgets to implement: a receiver that acts on ' +
-          'account-disabled and ignores this one has locked somebody out ' +
-          'permanently on the strength of an incident that was resolved.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'identifier-changed',
-    family: 'risc',
-    name: 'Identifier Changed',
-    subject: 'required',
-    // THE SUBJECT NAMES THE OLD VALUE, WHICH IS THE OPPOSITE OF EVERY OTHER
-    // EVENT HERE. See the note on subjectFormats below.
-    subjectFormats: ['email', 'phone_number'],
-    members: [
-      { name: 'new-value', required: false, type: 'string',
-        what: 'What the identifier became. **THE ONLY HYPHENATED MEMBER ' +
-              'NAME IN ANY OF THE THREE VOCABULARIES** — everything else in ' +
-              'SSF, CAEP and RISC is snake_case — so `new_value` typed from ' +
-              'habit produces an event that delivers and says nothing. It ' +
-              'is OPTIONAL, and a transmitter that leaves it out is telling ' +
-              'a receiver that an address it holds is stale without telling ' +
-              'it what to hold instead, which is legal and nearly useless.' }
-    ],
-    required: [],
-    what: 'The identifier IN THE SUBJECT changed, and the subject carries ' +
-          'the OLD value — which is the reverse of every other event here ' +
-          'and the thing that catches everybody. RISC says only the ' +
-          'provider AUTHORITATIVE over the identifier should send this: an ' +
-          'email provider may say john.doe@ became john.roe@, and a site ' +
-          'where that address is merely a username may not — it sends ' +
-          'recovery-information-changed instead.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const asked = values || {};
-      const payload = {};
-      // **IT READS THE SPECIFICATION'S SPELLING AND ONLY THAT ONE, AND
-      // ACCEPTING `new_value` HERE WAS THE FIRST THING THIS ROW DID WRONG.**
-      // Correcting the underscore silently makes the console kind to a caller
-      // and useless to one: this service exists so that somebody can find out
-      // what their own transmitter is sending, and a mock that quietly repairs
-      // the commonest mistake in this event type is a mock that hides it.
-      // `validateEvent()` warns about the near-miss by name instead, which
-      // says what happened rather than making it not have happened.
-      if (typeof asked['new-value'] === 'string' && asked['new-value']) {
-        payload['new-value'] = asked['new-value'];
-      }
-      log.debug("Leaving generate().");
-      return payload;
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'identifier-recycled',
-    family: 'risc',
-    name: 'Identifier Recycled',
-    subject: 'required',
-    subjectFormats: ['email', 'phone_number'],
-    members: [],
-    required: [],
-    what: 'The identifier in the subject was RECYCLED and now belongs to ' +
-          'somebody else. It is the event whose absence causes the quietest ' +
-          'account takeover there is: a mail provider reissues a lapsed ' +
-          'address, a relying party keyed on the address by itself lets the ' +
-          'new owner into the old owner\'s account, and nothing anywhere ' +
-          'was compromised. It is the whole argument for keying on ' +
-          'iss_sub rather than on an email address.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'credential-compromise',
-    family: 'risc',
-    name: 'Credential Compromise',
-    subject: 'required',
-    members: [
-      { name: 'credential_type', required: true, type: 'openenum',
-        values: CREDENTIAL_TYPES,
-        what: 'Which kind of credential was found compromised. **RISC ' +
-              'SECTION 2.7 DEFINES THIS BY REFERENCE TO CAEP\'s ' +
-              'credential-change**, so the two lists are the same list ' +
-              'rather than two alike ones — which is why there is one ' +
-              'CREDENTIAL_TYPES here and not a copy per vocabulary.' }
-    ].concat(/** @type {any} */ (RISC_COMMON_MEMBERS)),
-    required: ['credential_type'],
-    what: 'A credential belonging to this account was FOUND compromised — ' +
-          'seen in a breach corpus, or reported. THE ONLY ONE OF THE ' +
-          'FOURTEEN WITH A REQUIRED MEMBER, and the only one carrying any ' +
-          'of the claims CAEP gives all eight of its own. A receiver acts ' +
-          'on it differently by type: a compromised password is a reset, ' +
-          'and a compromised hardware key is a revocation.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const asked = values || {};
-      log.debug("Leaving generate().");
-      return {
-        credential_type: typeof asked.credential_type === 'string' &&
-          asked.credential_type !== '' ? asked.credential_type : 'password'
-      };
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'opt-in',
-    family: 'risc',
-    name: 'Opt In',
-    subject: 'required',
-    members: [],
-    required: [],
-    what: 'The account is participating in RISC exchange again. It is one ' +
-          'of the four events that ARE a state transition rather than a ' +
-          'report of one — RISC section 2.8 defines each of them as "the ' +
-          'account is in the X state" — and it is the only event that may ' +
-          'be sent about an account which has opted OUT, because without it ' +
-          'a receiver would never learn that one came back.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'opt-out-initiated',
-    family: 'risc',
-    name: 'Opt Out Initiated',
-    subject: 'required',
-    members: [],
-    required: [],
-    what: 'The person asked to stop RISC exchange, AND IT CARRIES ON FOR A ' +
-          'WHILE ANYWAY. That delay is the point of the state existing at ' +
-          'all: RISC section 2.8 says it is there to stop a hijacker from ' +
-          'opting out the moment they take an account over and silencing ' +
-          'the very events that would report them.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'opt-out-cancelled',
-    family: 'risc',
-    name: 'Opt Out Cancelled',
-    subject: 'required',
-    members: [],
-    required: [],
-    what: 'The opt-out was called off and the account is back in the opt-in ' +
-          'state. **THE SPELLING IS BRITISH AND IT IS THE SPECIFICATION\'S** ' +
-          '— "cancelled" with two Ls — where a transmitter writing ' +
-          '"opt-out-canceled" produces a URI a conforming receiver silently ' +
-          'ignores, because there is no unknown-event-type error in this ' +
-          'protocol.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'opt-out-effective',
-    family: 'risc',
-    name: 'Opt Out Effective',
-    subject: 'required',
-    members: [],
-    required: [],
-    what: 'The opt-out has taken effect and no further RISC events will be ' +
-          'sent about this account. IT IS THE LAST ONE — an event announcing ' +
-          'that there will be no more events — which is what makes it the ' +
-          'one the opt-out gate in risc.js must never suppress. Suppressing ' +
-          'it would leave a receiver waiting for signals that stopped ' +
-          'without notice.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'recovery-activated',
-    family: 'risc',
-    name: 'Recovery Activated',
-    subject: 'required',
-    members: [],
-    required: [],
-    what: 'The account went through a recovery flow. It is a signal about ' +
-          'RISK rather than about a change: a recovery is how a legitimate ' +
-          'owner gets back in and it is also how an attacker who controls ' +
-          'the recovery channel takes over, and the transmitter cannot tell ' +
-          'which. A receiver is expected to weigh it, not act on it.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'recovery-information-changed',
-    family: 'risc',
-    name: 'Recovery Information Changed',
-    subject: 'required',
-    members: [],
-    required: [],
-    what: 'A recovery address or number was added, changed or removed. It ' +
-          'is what a provider sends about an identifier IT IS NOT ' +
-          'AUTHORITATIVE OVER — RISC says so where identifier-changed says ' +
-          'the opposite — so the pair of them is the same act reported by ' +
-          'two different kinds of provider. It carries no member saying ' +
-          'WHICH information moved, deliberately: that would be publishing ' +
-          'somebody\'s recovery address to every receiver on the stream.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  },
-  {
-    uri: RISC_PREFIX + 'sessions-revoked',
-    family: 'risc',
-    name: 'Sessions Revoked',
-    // RISC 1.0 section 2.11 deprecates this in favour of CAEP's
-    // `session-revoked`. It is here, offered and warned about, because a
-    // transmitter that cannot produce a deprecated event cannot be used to
-    // find out what a receiver does with one — and receivers in the field
-    // still send and expect this.
-    deprecated: CAEP_PREFIX + 'session-revoked',
-    subject: 'required',
-    members: [],
-    required: [],
-    what: 'EVERY session the account has, everywhere, is gone — which is a ' +
-          'far larger instruction than CAEP\'s session-revoked, whose ' +
-          'subject names ONE of them. **DEPRECATED by RISC 1.0 section ' +
-          '2.11**, which says new implementations MUST use CAEP\'s ' +
-          'singular event instead. The two names differ by one letter and ' +
-          'mean different things, so this is the pair to check when a ' +
-          'receiver ends more sessions than anybody intended.',
-    generate: function () {
-      log.debug("Entering generate().");
-      log.debug("Leaving generate().");
-      return {};
-    }
-  }
-];
-
-// ---------------------------------------------------------------------------
-// THIS SERVICE'S OWN VOCABULARY (2026-09-22, #42, rcbj's D4): one event, sent
-// after every rotation of a realm's signing keys, so a receiver can refresh
-// its copy of the keys at once rather than on its next poll of the JWKS.
-// A URN of this service's own, because no specification defines the event;
-// `family: 'sts'` keeps it off the CAEP and RISC pages, which read theirs by
-// family. It has NO SUBJECT: it is about the ISSUER's keys, not anybody.
-// ---------------------------------------------------------------------------
 /**
  * The URN prefix of this service's own event types.
  */
 const STS_PREFIX = 'urn:iya:sts:secevent:event-type:';
 
-/**
- * This service's own event types, about its keys and authorities; none has a
- * subject.
- */
-const STS_EVENTS = [
-  {
-    uri: STS_PREFIX + 'signing-key-rotated',
-    family: 'sts',
-    name: 'Signing Key Rotated',
-    subject: 'none',
-    members: [
-      { name: 'realm', required: true, type: 'string',
-        what: 'The trust realm whose keys rotated.' },
-      { name: 'rotated', required: true, type: 'string',
-        what: 'The units rotated, each as "<unit> <previous kid> -> <kid>".' },
-      { name: 'reason', required: true, type: 'enum',
-        values: ['scheduled', 'requested', 'emergency'],
-        what: 'Why: the schedule, an administrator, or a key presumed ' +
-              'compromised — in which case the previous key no longer ' +
-              'verifies anything.' },
-      { name: 'jwks_uri', required: false, type: 'string',
-        what: 'Where the realm\'s current keys are.' },
-      { name: 'crypto_metadata_uri', required: false, type: 'string',
-        what: 'The realm\'s crypto metadata document, which lists every ' +
-              'generation of every key.' },
-      { name: 'event_timestamp', required: false, type: 'number',
-        what: 'When the rotation happened, in seconds since the epoch.' }
-    ],
-    required: ['realm', 'rotated', 'reason'],
-    what: 'NON-SPEC, this service\'s own. A realm\'s signing keys rotated: ' +
-          'the next key of each unit named is current now, and the key it ' +
-          'replaced is retired (or, for an emergency, gone). A receiver that ' +
-          'caches this issuer\'s keys fetches them again.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const v = values || {};
-      const reasons = ['scheduled', 'requested', 'emergency'];
-      const payload = {
-        realm: String(v.realm || 'default'),
-        rotated: String(v.rotated || ''),
-        reason: reasons.indexOf(v.reason) >= 0 ? v.reason : 'requested',
-        event_timestamp: Number(v.event_timestamp) ||
-                         Math.floor(Date.now() / 1000)
-      };
-      if (typeof v.jwks_uri === 'string' && v.jwks_uri) {
-        payload.jwks_uri = v.jwks_uri;
-      }
-      if (typeof v.crypto_metadata_uri === 'string' && v.crypto_metadata_uri) {
-        payload.crypto_metadata_uri = v.crypto_metadata_uri;
-      }
-      log.debug("Leaving generate().");
-      return payload;
+// WHAT EACH ROW DOES: its payload from what a caller supplied, by URI. A row
+// with no member, and the key-rotation family, are not here (see rowOf()).
+const GENERATORS = {
+  [SSF_PREFIX + 'verification']: function (values) {
+    log.debug("Entering generate().");
+    const payload = {};
+    if (values && typeof values.state === 'string' && values.state !== '') {
+      payload.state = values.state;
     }
+    log.debug("Leaving generate().");
+    return payload;
   },
-  // #169 (2026-09-23, rcbj's decision 4): a realm's krbtgt key was rotated
-  // WITH NOTHING KEPT — Active Directory's double reset in one act — so every
-  // ticket-granting ticket its KDC issued before it is refused, and every
-  // person's Kerberos session in the realm has ended. Like the one above it
-  // has no subject: it is about the realm's KDC, not anybody. An ordinary
-  // rotation is not announced, because every TGT goes on working.
-  {
-    uri: STS_PREFIX + 'kerberos-tickets-invalidated',
-    family: 'sts',
-    name: 'Kerberos Tickets Invalidated',
-    subject: 'none',
-    members: [
-      { name: 'realm', required: true, type: 'string',
-        what: 'The trust realm whose krbtgt key was replaced.' },
-      { name: 'kerberos_realm', required: true, type: 'string',
-        what: 'The Kerberos realm its KDC answers for.' },
-      { name: 'kvno', required: true, type: 'number',
-        what: 'The krbtgt key version now current; no earlier one is kept.' },
-      { name: 'reason', required: true, type: 'enum',
-        values: ['invalidated', 'nothing-retained'],
-        what: 'Why: an administrator asked for "rotate and invalidate" ' +
-              '(invalidated), or an ordinary rotation kept no previous ' +
-              'version because krb5.retainedKeyVersions is 0 ' +
-              '(nothing-retained, #245) — the same outcome, unasked.' },
-      { name: 'event_timestamp', required: false, type: 'number',
-        what: 'When the key was replaced, in seconds since the epoch.' }
-    ],
-    required: ['realm', 'kerberos_realm', 'kvno', 'reason'],
-    what: 'NON-SPEC, this service\'s own. A realm\'s krbtgt key was ' +
-          'replaced and no previous version kept, so every Kerberos ' +
-          'ticket-granting ticket issued before this event is refused ' +
-          '(KRB_AP_ERR_BADKEYVER) at its next use, and every person signs ' +
-          'in to Kerberos again. A receiver that trusts sessions built on ' +
-          'those tickets re-checks them.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const v = values || {};
-      const payload = {
-        realm: String(v.realm || 'default'),
-        kerberos_realm: String(v.kerberos_realm || ''),
-        kvno: Number(v.kvno) || 0,
-        reason: v.reason === 'nothing-retained' ? 'nothing-retained'
-                                                : 'invalidated',
-        event_timestamp: Number(v.event_timestamp) ||
-                         Math.floor(Date.now() / 1000)
-      };
-      log.debug("Leaving generate().");
-      return payload;
+  [SSF_PREFIX + 'stream-updated']: function (values) {
+    log.debug("Entering generate().");
+    const asked = values || {};
+    const payload = {
+      status: STATUSES.indexOf(asked.status) >= 0 ? asked.status : 'enabled'
+    };
+    if (typeof asked.reason === 'string' && asked.reason !== '') {
+      payload.reason = asked.reason;
     }
+    log.debug("Leaving generate().");
+    return payload;
   },
-  // -------------------------------------------------------------------------
-  // THE OTHER KEYS A RELYING PARTY PINS OR TRUSTS (#245, 2026-09-26): a
-  // realm's OpenID Federation entity keys, its SPIFFE authorities and the
-  // listener certificate. SIBLING URNs RATHER THAN MORE UNITS OF
-  // `signing-key-rotated`, and the reason is the receiver's handling: a
-  // stream chooses what it receives BY EVENT TYPE, and each of these four
-  // types means exactly one thing to do — fetch THIS document again (the
-  // JWKS, the Entity Configuration, the SPIFFE bundle, the listener's
-  // anchor). One type with more units would hand every receiver that caches
-  // the JWKS three kinds of change it cannot act on, make it parse `rotated`
-  // to tell them apart, and carry a `jwks_uri` that is the wrong document for
-  // all three. So each keeps #42's shape — `realm`, `rotated` as
-  // "<unit> <from> -> <to>", `reason` from the same three words, the one
-  // address to fetch, `event_timestamp` — and differs only in that address.
-  // None has a subject: each is about the issuer, not anybody.
-  // -------------------------------------------------------------------------
-  keyEventRow({
-    name: 'federation-key-rotated', title: 'Federation Entity Key Rotated',
-    unitWhat: 'The keys moved, each as "federation-entity-key <previous ' +
-              'kid> -> <kid>", or "federation-entity-key <kid> -> revoked" ' +
-              'for a key that left the published set.',
-    uriMember: 'entity_configuration_uri',
-    uriWhat: 'The realm\'s Entity Configuration, whose jwks now carries the ' +
-             'keys; the Historical Keys endpoint lists every one it retired.',
-    what: 'NON-SPEC, this service\'s own. A realm\'s OpenID Federation ' +
-          'entity key rotated (or, in an emergency, the current and next ' +
-          'keys were revoked as compromised), or a retired key was revoked. ' +
-          'A receiver that resolves Trust Chains through this realm ' +
-          'fetches its Entity Configuration again; after an emergency ' +
-          'nothing the revoked keys signed verifies.'
-  }),
-  keyEventRow({
-    name: 'spiffe-authority-rotated', title: 'SPIFFE Authority Rotated',
-    unitWhat: 'The authorities moved, each as "x509-authority <previous> -> ' +
-              '<new>" or "jwt-authority <previous kid> -> <kid>".',
-    uriMember: 'bundle_uri',
-    uriWhat: 'The realm\'s SPIFFE bundle endpoint (the trust domain\'s ' +
-             'bundle), which carries the authorities a workload verifies ' +
-             'against.',
-    extra: [
-      { name: 'trust_domain', required: false, type: 'string',
-        what: 'The realm\'s SPIFFE trust domain.' },
-      { name: 'bundle_changed', required: false, type: 'boolean',
-        what: 'Whether the published bundle changed. False for an X.509 ' +
-              'authority re-issued under this service\'s Root: the bundle ' +
-              'publishes the Root, so SVIDs go on verifying and only the ' +
-              'Issuing CA in an SVID\'s chain is new.' }
-    ],
-    what: 'NON-SPEC, this service\'s own. A realm\'s SPIFFE X.509 or JWT ' +
-          'authority was rotated or re-issued — on the schedule, by an ' +
-          'administrator, or because the certificate hierarchy under it was ' +
-          'rebuilt. A receiver that caches the trust domain\'s bundle ' +
-          'fetches it again.'
-  }),
-  keyEventRow({
-    name: 'tls-certificate-changed', title: 'TLS Certificate Changed',
-    unitWhat: 'The listener certificates replaced, each as "<algorithm> ' +
-              '<previous SHA-256 fingerprint> -> <fingerprint>".',
-    uriMember: 'certificate_uri',
-    uriWhat: 'GET /tls/server-certificate, which publishes the certificate ' +
-             'the main port presents and the anchor it chains to.',
-    // `restarted` (#264): the listener key is made again at every start, so
-    // a start presents a certificate nobody was told about. Only this type
-    // can say it — a signing key, an entity key and an authority are kept
-    // across a restart.
-    reasons: ['restarted'],
-    reasonsWhat: ' For this type, "restarted": the service (or one node of ' +
-                 'it) started and presents a certificate other than the ' +
-                 'one it last announced.',
-    what: 'NON-SPEC, this service\'s own. The certificate this service\'s ' +
-          'main port (and LDAPS, and every realm\'s SPIRE Server API) ' +
-          'presents was re-issued — the certificate hierarchy it chains to ' +
-          'was rebuilt, or the service started again with a listener key ' +
-          'made at that start. A receiver that pins the certificate or its ' +
-          'anchor fetches them again. Sent to every realm\'s streams, ' +
-          'because the listener is the whole service\'s.'
-  }),
-  // AN ANNOUNCEMENT TO THE PEOPLE SIGNED IN (#1086). An administrator's
-  // short message for everybody using this service's own three
-  // applications, sent only to their internal receiver streams
-  // (`ssf/ssf_receivers.ts`) and drawn as a banner in every tab open at the
-  // time. A URN of this service's own, as the rest of this family: no
-  // specification defines the event. No subject — it is about nobody.
-  {
-    uri: STS_PREFIX + 'announcement',
-    family: 'sts',
-    name: 'Announcement',
-    subject: 'none',
-    members: [
-      { name: 'realm', required: true, type: 'string',
-        what: 'The trust realm the announcement is for.' },
-      { name: 'message', required: true, type: 'string',
-        what: 'The text to show, plain and at most ' +
-              'ssf.announcementMaxChars characters.' },
-      { name: 'surfaces', required: true, type: 'strings',
-        what: 'Which of this service\'s applications show it: ' +
-              '"admin-console", "user-portal", "report".' },
-      { name: 'event_timestamp', required: false, type: 'number',
-        what: 'When it was sent, in seconds since the epoch.' }
-    ],
-    required: ['realm', 'message', 'surfaces'],
-    what: 'NON-SPEC, this service\'s own. An administrator\'s announcement ' +
-          'for everybody signed in to this service\'s admin console, user ' +
-          'portal or reports application; each draws it as a banner in the ' +
-          'tabs open when it arrives.',
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const v = values || {};
-      const payload = {
-        realm: String(v.realm || 'default'),
-        message: String(v.message || ''),
-        surfaces: (Array.isArray(v.surfaces) ? v.surfaces : [])
-          .map(String),
-        event_timestamp: Number(v.event_timestamp) ||
-                         Math.floor(Date.now() / 1000)
-      };
-      log.debug("Leaving generate().");
-      return payload;
+  [CAEP_PREFIX + 'session-established']: function (values) {
+    log.debug("Entering generate().");
+    const asked = values || {};
+    const payload = {};
+    if (typeof asked.fp_ua === 'string' && asked.fp_ua !== '') {
+      payload.fp_ua = asked.fp_ua;
     }
-  }
-];
-
-// One row of the key-event family above: the shared shape, with the address
-// and the unit wording of its own. `rotated` is "<unit> <from> -> <to>" in
-// every one of them, `reason` the same three words as signing-key-rotated,
-// plus any a row adds of its own (`spec.reasons` — tls-certificate-changed's
-// `restarted`, #264).
-function keyEventRow(spec) {
-  log.debug("Entering keyEventRow(). " + spec.name);
-  const reasons = ['scheduled', 'requested', 'emergency']
-    .concat(spec.reasons || []);
-  const extra = spec.extra || [];
-  const row = {
-    uri: STS_PREFIX + spec.name,
-    family: 'sts',
-    name: spec.title,
-    subject: 'none',
-    members: [
-      { name: 'realm', required: true, type: 'string',
-        what: 'The trust realm the key belongs to.' },
-      { name: 'rotated', required: true, type: 'string',
-        what: spec.unitWhat },
-      { name: 'reason', required: true, type: 'enum', values: reasons,
-        what: 'Why: the schedule, an administrator, or a key presumed ' +
-              'compromised — in which case what it signed no longer ' +
-              'verifies.' + (spec.reasonsWhat || '') },
-      { name: spec.uriMember, required: false, type: 'string',
-        what: spec.uriWhat }
-    ].concat(extra).concat([
-      { name: 'event_timestamp', required: false, type: 'number',
-        what: 'When it happened, in seconds since the epoch.' }
-    ]),
-    required: ['realm', 'rotated', 'reason'],
-    what: spec.what,
-    generate: function (values) {
-      log.debug("Entering generate().");
-      const v = values || {};
-      const payload = {
-        realm: String(v.realm || 'default'),
-        rotated: String(v.rotated || ''),
-        reason: reasons.indexOf(v.reason) >= 0 ? v.reason : 'requested',
-        event_timestamp: Number(v.event_timestamp) ||
-                         Math.floor(Date.now() / 1000)
-      };
-      if (typeof v[spec.uriMember] === 'string' && v[spec.uriMember]) {
-        payload[spec.uriMember] = v[spec.uriMember];
-      }
-      extra.forEach(function (member) {
-        const value = v[member.name];
-        if (member.type === 'boolean' && typeof value === 'boolean') {
-          payload[member.name] = value;
-        } else if (member.type === 'string' && typeof value === 'string' &&
-                   value) {
-          payload[member.name] = value;
+    if (typeof asked.acr === 'string' && asked.acr !== '') {
+      payload.acr = asked.acr;
+    }
+    if (Array.isArray(asked.amr) && asked.amr.length) {
+      payload.amr = asked.amr.slice();
+    }
+    if (typeof asked.ext_id === 'string' && asked.ext_id !== '') {
+      payload.ext_id = asked.ext_id;
+    }
+    log.debug("Leaving generate().");
+    return payload;
+  },
+  [CAEP_PREFIX + 'session-presented']: function (values) {
+    log.debug("Entering generate().");
+    const asked = values || {};
+    const payload = {};
+    if (typeof asked.fp_ua === 'string' && asked.fp_ua !== '') {
+      payload.fp_ua = asked.fp_ua;
+    }
+    if (typeof asked.ext_id === 'string' && asked.ext_id !== '') {
+      payload.ext_id = asked.ext_id;
+    }
+    log.debug("Leaving generate().");
+    return payload;
+  },
+  [CAEP_PREFIX + 'token-claims-change']: function (values) {
+    log.debug("Entering generate().");
+    const asked = values || {};
+    const claims = (asked.claims && typeof asked.claims === 'object' &&
+                    !Array.isArray(asked.claims))
+      ? asked.claims
+      : { groups: ['everyone'] };
+    log.debug("Leaving generate().");
+    return { claims: claims };
+  },
+  [CAEP_PREFIX + 'credential-change']: function (values) {
+    log.debug("Entering generate().");
+    const asked = values || {};
+    const payload = {
+      credential_type: typeof asked.credential_type === 'string' &&
+        asked.credential_type !== '' ? asked.credential_type : 'password',
+      change_type: ['create', 'revoke', 'update', 'delete']
+        .indexOf(asked.change_type) >= 0 ? asked.change_type : 'update'
+    };
+    ['friendly_name', 'x509_issuer', 'x509_serial', 'fido2_aaguid']
+      .forEach(function (name) {
+        if (typeof asked[name] === 'string' && asked[name] !== '') {
+          payload[name] = asked[name];
         }
       });
-      log.debug("Leaving generate().");
-      return payload;
+    log.debug("Leaving generate().");
+    return payload;
+  },
+  [CAEP_PREFIX + 'assurance-level-change']: function (values) {
+    log.debug("Entering generate().");
+    const asked = values || {};
+    const payload = {
+      namespace: typeof asked.namespace === 'string' &&
+        asked.namespace !== ''
+        ? asked.namespace
+        : String(config.value('caep.assuranceNamespace') || 'NIST-AAL'),
+      current_level: typeof asked.current_level === 'string' &&
+        asked.current_level !== '' ? asked.current_level : 'aal2'
+    };
+    if (typeof asked.previous_level === 'string' &&
+        asked.previous_level !== '') {
+      payload.previous_level = asked.previous_level;
     }
+    if (['increase', 'decrease'].indexOf(asked.change_direction) >= 0) {
+      payload.change_direction = asked.change_direction;
+    }
+    log.debug("Leaving generate().");
+    return payload;
+  },
+  [CAEP_PREFIX + 'device-compliance-change']: function (values) {
+    log.debug("Entering generate().");
+    const asked = values || {};
+    const allowed = ['compliant', 'not-compliant'];
+    log.debug("Leaving generate().");
+    return {
+      previous_status: allowed.indexOf(asked.previous_status) >= 0
+        ? asked.previous_status : 'compliant',
+      current_status: allowed.indexOf(asked.current_status) >= 0
+        ? asked.current_status : 'not-compliant'
+    };
+  },
+  [CAEP_PREFIX + 'risk-level-change']: function (values) {
+    log.debug("Entering generate().");
+    const asked = values || {};
+    const levels = ['LOW', 'MEDIUM', 'HIGH'];
+    const payload = {
+      principal: typeof asked.principal === 'string' &&
+        asked.principal !== '' ? asked.principal : 'SESSION',
+      current_level: levels.indexOf(asked.current_level) >= 0
+        ? asked.current_level
+        : String(config.value('caep.defaultRiskLevel') || 'MEDIUM')
+    };
+    if (levels.indexOf(asked.previous_level) >= 0) {
+      payload.previous_level = asked.previous_level;
+    }
+    if (typeof asked.risk_reason === 'string' && asked.risk_reason !== '') {
+      payload.risk_reason = asked.risk_reason;
+    }
+    log.debug("Leaving generate().");
+    return payload;
+  },
+  [RISC_PREFIX + 'account-disabled']: function (values) {
+    log.debug("Entering generate().");
+    const asked = values || {};
+    const payload = {};
+    if (typeof asked.reason === 'string' && asked.reason !== '') {
+      payload.reason = asked.reason;
+    }
+    log.debug("Leaving generate().");
+    return payload;
+  },
+  [RISC_PREFIX + 'identifier-changed']: function (values) {
+    log.debug("Entering generate().");
+    const asked = values || {};
+    const payload = {};
+    // **IT READS THE SPECIFICATION'S SPELLING AND ONLY THAT ONE, AND
+    // ACCEPTING `new_value` HERE WAS THE FIRST THING THIS ROW DID WRONG.**
+    // Correcting the underscore silently makes the console kind to a caller
+    // and useless to one: this service exists so that somebody can find out
+    // what their own transmitter is sending, and a mock that quietly repairs
+    // the commonest mistake in this event type is a mock that hides it.
+    // `validateEvent()` warns about the near-miss by name instead, which
+    // says what happened rather than making it not have happened.
+    if (typeof asked['new-value'] === 'string' && asked['new-value']) {
+      payload['new-value'] = asked['new-value'];
+    }
+    log.debug("Leaving generate().");
+    return payload;
+  },
+  [RISC_PREFIX + 'credential-compromise']: function (values) {
+    log.debug("Entering generate().");
+    const asked = values || {};
+    log.debug("Leaving generate().");
+    return {
+      credential_type: typeof asked.credential_type === 'string' &&
+        asked.credential_type !== '' ? asked.credential_type : 'password'
+    };
+  },
+  [STS_PREFIX + 'signing-key-rotated']: function (values) {
+    log.debug("Entering generate().");
+    const v = values || {};
+    const reasons = ['scheduled', 'requested', 'emergency'];
+    const payload = {
+      realm: String(v.realm || 'default'),
+      rotated: String(v.rotated || ''),
+      reason: reasons.indexOf(v.reason) >= 0 ? v.reason : 'requested',
+      event_timestamp: Number(v.event_timestamp) ||
+                       Math.floor(Date.now() / 1000)
+    };
+    if (typeof v.jwks_uri === 'string' && v.jwks_uri) {
+      payload.jwks_uri = v.jwks_uri;
+    }
+    if (typeof v.crypto_metadata_uri === 'string' && v.crypto_metadata_uri) {
+      payload.crypto_metadata_uri = v.crypto_metadata_uri;
+    }
+    log.debug("Leaving generate().");
+    return payload;
+  },
+  [STS_PREFIX + 'kerberos-tickets-invalidated']: function (values) {
+    log.debug("Entering generate().");
+    const v = values || {};
+    const payload = {
+      realm: String(v.realm || 'default'),
+      kerberos_realm: String(v.kerberos_realm || ''),
+      kvno: Number(v.kvno) || 0,
+      reason: v.reason === 'nothing-retained' ? 'nothing-retained'
+                                              : 'invalidated',
+      event_timestamp: Number(v.event_timestamp) ||
+                       Math.floor(Date.now() / 1000)
+    };
+    log.debug("Leaving generate().");
+    return payload;
+  },
+  [STS_PREFIX + 'announcement']: function (values) {
+    log.debug("Entering generate().");
+    const v = values || {};
+    const payload = {
+      realm: String(v.realm || 'default'),
+      message: String(v.message || ''),
+      surfaces: (Array.isArray(v.surfaces) ? v.surfaces : [])
+        .map(String),
+      event_timestamp: Number(v.event_timestamp) ||
+                       Math.floor(Date.now() / 1000)
+    };
+    log.debug("Leaving generate().");
+    return payload;
+  }
+};
+
+// The KEY-ROTATION FAMILY's generator (#245): every one keeps #42's shape —
+// `realm`, `rotated` as "<unit> <from> -> <to>", `reason` from its own closed
+// list, the one address a receiver fetches again (the member ending `_uri`),
+// `event_timestamp` — and differs only in that address and any members of
+// its own. All of it is read off the row's members, so a new sibling URN is
+// a model and nothing here.
+function keyEventGenerator(row) {
+  log.debug("Entering keyEventGenerator(). " + row.uri);
+  const SHARED = ['realm', 'rotated', 'reason', 'event_timestamp'];
+  const reasons = (row.members.filter(function (member) {
+    return member.name === 'reason';
+  })[0] || { values: [] }).values;
+  const uriMember = (row.members.filter(function (member) {
+    return /_uri$/.test(member.name);
+  })[0] || { name: '' }).name;
+  const extra = row.members.filter(function (member) {
+    return SHARED.indexOf(member.name) < 0 && member.name !== uriMember;
+  });
+  log.debug("Leaving keyEventGenerator().");
+  return function (values) {
+    log.debug("Entering generate().");
+    const v = values || {};
+    const payload = {
+      realm: String(v.realm || 'default'),
+      rotated: String(v.rotated || ''),
+      reason: reasons.indexOf(v.reason) >= 0 ? v.reason : 'requested',
+      event_timestamp: Number(v.event_timestamp) ||
+                       Math.floor(Date.now() / 1000)
+    };
+    if (uriMember && typeof v[uriMember] === 'string' && v[uriMember]) {
+      payload[uriMember] = v[uriMember];
+    }
+    extra.forEach(function (member) {
+      const value = v[member.name];
+      if (member.type === 'boolean' && typeof value === 'boolean') {
+        payload[member.name] = value;
+      } else if (member.type === 'string' && typeof value === 'string' &&
+                 value) {
+        payload[member.name] = value;
+      }
+    });
+    log.debug("Leaving generate().");
+    return payload;
   };
-  log.debug("Leaving keyEventRow().");
+}
+
+// One catalogue row from the model's: the required names, and its generator.
+function rowOf(row) {
+  log.debug("Entering rowOf(). " + row.uri);
+  row.required = row.members.filter(function (member) {
+    return member.required;
+  }).map(function (member) {
+    return member.name;
+  });
+  if (GENERATORS[row.uri]) {
+    row.generate = GENERATORS[row.uri];
+  } else if (row.family === 'sts' && row.members.some(function (member) {
+    return member.name === 'rotated';
+  })) {
+    row.generate = keyEventGenerator(row);
+  } else {
+    row.generate = function () {
+      log.debug("Entering generate().");
+      log.debug("Leaving generate().");
+      return {};
+    };
+  }
+  log.debug("Leaving rowOf().");
   return row;
 }
 
-// THE FOUR VOCABULARIES IN ONE TABLE. SSF's own first, because they are about
-// the pipe every one of the others travels on; then CAEP's eight about a
-// SESSION, then RISC's fourteen about an ACCOUNT, then this service's own.
+// THE FOUR VOCABULARIES IN ONE TABLE, in the model's order: SSF's own first,
+// because they are about the pipe every one of the others travels on; then
+// CAEP's eight about a SESSION, then RISC's fourteen about an ACCOUNT, then
+// this service's own.
 /**
  * Every event type this service knows, SSF's first, then CAEP's, RISC's and
  * this service's own.
  */
-const EVENTS = /** @type {any[]} */ (SSF_EVENTS).concat(CAEP_EVENTS)
-  .concat(RISC_EVENTS).concat(STS_EVENTS);
+const EVENTS = SsfModel.events().map(rowOf);
+
+function familyRows(family) {
+  log.debug("Entering familyRows(). " + family);
+  log.debug("Leaving familyRows().");
+  return EVENTS.filter(function (row) {
+    return row.family === family;
+  });
+}
+
+/**
+ * SSF 1.0's own two event types, `verification` and `stream-updated`.
+ */
+const SSF_EVENTS = familyRows('ssf');
+
+/**
+ * CAEP's eight event types, about a session.
+ */
+const CAEP_EVENTS = familyRows('caep');
+
+/**
+ * RISC's fourteen event types, about an account.
+ */
+const RISC_EVENTS = familyRows('risc');
+
+/**
+ * This service's own event types, about its keys and its people; none has a
+ * subject.
+ */
+const STS_EVENTS = familyRows('sts');
 
 /**
  * The URIs of CAEP's event types.
@@ -1414,16 +564,6 @@ const CAEP_EVENT_URIS = CAEP_EVENTS.map(function (row) {
 const RISC_EVENT_URIS = RISC_EVENTS.map(function (row) {
   return row.uri;
 });
-
-
-// The three stream statuses of SSF 1.0 section 7.1.2, in the order a stream
-// moves through them. Exported because the status endpoint, the console and
-// the stream-updated event above all have to agree on the spelling.
-/**
- * The three stream statuses of SSF 1.0 section 7.1.2: `enabled`, `paused` and
- * `disabled`.
- */
-const STATUSES = ['enabled', 'paused', 'disabled'];
 
 /**
  * Every catalogue row, keyed by its event type URI.
@@ -1862,6 +1002,16 @@ function buildSet(options) {
     // only (#104): in a product realm the read answers false whatever is
     // stored.
     claims.sub = asked.subject.sub;
+  }
+  // HELD TO THE MODEL (#1579): every SET this service issues is built here,
+  // and its claims are RFC 8417 section 2.2's as `models/ssf/ssf.tsp` names
+  // them. What the model does not allow is recorded and the SET sent as it
+  // was built — the model describes the wire, it does not reshape it.
+  const problems = SsfModel.undeclared('set-claims', claims);
+  if (problems.length > 0) {
+    log.error(errorCodes.tag('STS-SSF-0161') + 'a SET\'s claims are not ' +
+              'the model\'s (models/ssf/ssf.tsp): ' + problems.join('; ') +
+              '.');
   }
   log.debug('Leaving buildSet(). jti=' + claims.jti);
   return claims;
