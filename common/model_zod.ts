@@ -19,11 +19,11 @@
 // What it understands grew with #1579, when the last hand-written validators
 // in front of modelled operations went: `oneOf` (exactly one option holds),
 // `patternProperties` (a member whose name matches is held to that schema),
-// `uniqueItems`, `maxProperties`, OpenAPI 3.0's `nullable` (and a `null` among an `enum`'s
-// values), and a `$ref` to one of the document's components, recursive ones
-// included. `component()` is a component's own validator, which is how the
-// Reports API holds a query document that arrives inside a definition as well
-// as on its own.
+// `uniqueItems`, `maxProperties`, OpenAPI 3.0's `nullable` (and a `null`
+// among an `enum`'s values), and a `$ref` to one of the document's
+// components, recursive ones included. `component()` is a component's own
+// validator, which is how the Reports API holds a query document that arrives
+// inside a definition as well as on its own.
 //
 // A QUERY STRING OR A FORM HOLDS TEXT, A JSON DOCUMENT IS TYPED. An integer is
 // coerced from "300" unless the caller asks for `typed`, where a string is
@@ -142,7 +142,7 @@ class ModelZod {
       const values = schema.enum.filter(function (one: unknown) {
         return one !== null;
       });
-      out = values.length === 1 ? z.literal(values[0]) : z.enum(values);
+      out = z.enum(values);
     } else {
       out = z.string();
       if (schema.minLength !== undefined) {
@@ -265,6 +265,13 @@ class ModelZod {
                                        context) };
       });
     const closed = schema.additionalProperties === false;
+    // The refinement is invisible to zod's own JSON Schema, which the
+    // Account and Authentication APIs' contract tests read back; the
+    // patterns, and whether the object is closed, ride along as its meta.
+    const meta: Json = { patternProperties: schema.patternProperties };
+    if (closed) {
+      meta.additionalProperties = false;
+    }
     const out = z.looseObject(shape).superRefine(
       function (value: Json, ctx: any) {
         Object.keys(value).forEach(function (name: string) {
@@ -289,7 +296,7 @@ class ModelZod {
             }
           });
         });
-      });
+      }).meta(meta);
     log.debug("Leaving ModelZod.patternedOf().");
     return out;
   }
@@ -439,8 +446,15 @@ class ModelZod {
     if (schema.nullable === true) {
       out = out.nullable();
     }
+    if (schema.description) {
+      // `describe()` would drop the meta a pattern object carries.
+      const held = out.meta();
+      out = held ? out.meta(Object.assign({}, held,
+                                          { description: schema.description }))
+                 : out.describe(schema.description);
+    }
     log.debug("Leaving ModelZod.build().");
-    return schema.description ? out.describe(schema.description) : out;
+    return out;
   }
 
   /**
