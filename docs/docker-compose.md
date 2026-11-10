@@ -219,7 +219,7 @@ from the shell or a `.env` file beside it. The ones you are likely to change:
 | `ADMIN_API_AUDIENCE`, `ADMIN_API_AUTH_REQUIRED` | unset | Passed through to the service when set |
 | `PKI_DISTRIBUTION_BASE_URL` | empty | The base URL certificates name for CRL and OCSP, when the stack is reached by a host name rather than `localhost` ([PKI](pki.md)) |
 | `STS_POSTGRES_SHARED_BUFFERS` | `2GB` | The database's `shared_buffers`. Lower it on a small machine; see [the database's settings](#the-databases-settings) |
-| `STS_DB_APP_USER`, `STS_DB_APP_PASSWORD` | `sts_app`, `sts_app` | The database role the service uses. If you change the user, change it in `STS_DATABASE_URL` too. |
+| `STS_DB_APP_USER`, `STS_DB_APP_PASSWORD` | `sts_app`, generated at first start | The database role the service uses. If you change the user, change it in `STS_DATABASE_URL` too. |
 | `STS_BAO_SEAL_KEY`, `STS_BAO_SEAL_KEY_ID` | a key generated at first start, `sts` | OpenBao's unseal key: base64 of exactly 32 bytes |
 | `STS_BAO_PRINT_CREDENTIALS` | `true` | Whether the seeder prints the operator token, and on the first run the recovery key |
 | `STS_KEYS_KEK_PROVIDER` | `vault-transit` | `vault` reads the key from KV (`STS_KEYS_KEK_REF=secret/data/sts`) instead of using the Transit key |
@@ -335,8 +335,9 @@ log (`docker compose logs postgres`).
 
 ## Things to know before relying on it
 
-* **The database passwords in the file are demonstration values**: the owner
-  `sts`/`sts` and the role `sts_app`/`sts_app`. The database is reachable only on
+* **The database passwords are generated the first time the stack starts** and
+  kept on the `sts-db-secrets` volume. Set `STS_POSTGRES_PASSWORD` or
+  `STS_DB_APP_PASSWORD` to choose your own. The database is reachable only on
   the stack's private network.
 * **OpenBao's unseal key is generated the first time the stack starts**, and is
   kept on OpenBao's volume at `/openbao/file/seal/seal.key`. Do not lose it: a
