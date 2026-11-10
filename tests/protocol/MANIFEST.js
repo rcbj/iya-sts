@@ -1843,6 +1843,9 @@ const LOCAL_HELPERS = [
   // `authn_signin.js`; it was a copy of the parent's (listed in HELPERS
   // until then).
   'consent_screen.js',
+  // A GET sent as a browser's top-level navigation (#1443), which Node's
+  // fetch cannot send: sts_backchannel_logout.js, sts_multi_account.js.
+  'navigation.js',
   // The sign-in screen over `/authn-api` (#571): the shell, the view and
   // the act, with the CSRF binding — what every job that signs somebody in
   // at /authn/login goes through since the screen became a static surface.

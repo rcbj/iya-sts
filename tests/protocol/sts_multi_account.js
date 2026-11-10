@@ -54,6 +54,7 @@
 // OWNED HERE (local: true).
 // ---------------------------------------------------------------------------
 
+const navigation = require("./navigation.js");
 const assert = require("assert");
 const nodeCrypto = require("crypto");
 const zlib = require("zlib");
@@ -214,9 +215,11 @@ function browser() {
         headers.cookie = cookie;
       }
       const absolute = new URL(String(url), base + "/").toString();
-      const r = await fetch(absolute, { method: method, redirect: "manual",
-                                        headers: headers,
-                                        body: opts.body });
+      // A link the person follows is a navigation, which `fetch` cannot say.
+      const r = opts.navigate && method === "GET"
+        ? await navigation.navigate(absolute, headers)
+        : await fetch(absolute, { method: method, redirect: "manual",
+                                  headers: headers, body: opts.body });
       keepCookies(jar, r.headers.getSetCookie ? r.headers.getSetCookie()
                                               : []);
       const text = await r.text();
@@ -777,7 +780,7 @@ async function test() {
   const elsewhere = browser();
   await elsewhere.go("GET", realmBase() + "/oauth2/logout?" +
                      form({ id_token_hint: hintedBob.idToken,
-                            client_id: APP }));
+                            client_id: APP }), { navigate: true });
   got = await silently(b, BOB);
   check("bob's id_token_hint presented by ANOTHER browser ends nothing",
         function () {
@@ -785,7 +788,8 @@ async function test() {
   });
   r = await b.go("GET", realmBase() + "/oauth2/logout?" +
                  form({ id_token_hint: hintedBob.idToken, client_id: APP,
-                        post_logout_redirect_uri: REDIRECT }));
+                        post_logout_redirect_uri: REDIRECT }),
+                 { navigate: true });
   got = await silently(b, BOB);
   const still = await silently(b, ALICE);
   check("in this browser the hint's sid ends bob's session, and alice " +
