@@ -10606,6 +10606,12 @@ reach outside it and this is the index of them:
    until a restart**, with a refusal that names the entry — which is the seeding
    rule finally having an observable consequence. — *THERE ARE THREE OF THEM
    SINCE 2026-09-06* under `applications.js`, above
+   **The console, the portal and the reports application each keep a session
+   bound of their own (#825)**: maximum authentication age, refresh lifetime
+   and refresh idle, the shorter of the application's positive number and the
+   realm's matching limit (`authn.sessionLifetimeS` for the age). The debugger
+   is not one of them. The age is enforced at authorization even when the
+   request sends no `max_age`, and it is not on `/admin/token-lifetimes`.
 2. **THE BACK CHANNEL IS A REAL HTTP REQUEST AND IS THIS REPOSITORY'S FOURTH
    OUTBOUND ONE.** It dials ITSELF, at a loopback address it computes, on a port
    it is listening on, pinned to its own TLS certificate, carrying the BROWSER'S

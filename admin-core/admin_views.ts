@@ -12474,10 +12474,13 @@ class AdminViews {
   }
 
   // THE TOKEN LIFETIMES IN FORCE FOR AN APPLICATION (2026-10-01): its OAuth
-  // tab's Token lifetimes section. The four settings it may override, each
-  // with the value in force (`applications.settingFor()`, which is what the
-  // token endpoint reads), the realm's value, and where the value came from;
-  // and the realm's clock skew, which stays realm-wide.
+  // tab's Token lifetimes section. The four token settings it may override,
+  // and the maximum authentication age (#825), which is not a token
+  // lifetime and is not on /admin/token-lifetimes. Each row carries the
+  // value in force, the realm number it is compared with, and where the
+  // value came from. The clock skew stays realm-wide. No extra member is
+  // added: the closed token-lifetime row is setting, attribute, label,
+  // value, realmValue and source.
   /**
    * Answers the token lifetimes in force for an application.
    *
@@ -12498,16 +12501,26 @@ class AdminViews {
         label: 'Refresh token' },
       { key: 'oauth2.refreshIdleSeconds',
         attribute: 'oauthRefreshIdleSeconds',
-        label: 'Refresh chain idle limit (RFC 9700 mode)' }
+        label: 'Refresh chain idle limit (RFC 9700 mode)' },
+      { key: 'oauth2.maxAuthAgeS', attribute: 'oauthMaxAuthAgeS',
+        label: 'Maximum authentication age' }
     ];
+    const hosted = applications.isHostedSessionClient(id);
     const rows = keys.map(function (one) {
       const own = String([].concat(fields[one.attribute] || [])[0] || '')
         .trim();
+      // The three hosted surfaces show the shorter of their bound and the
+      // cap. Their maximum authentication age is compared with the sign-on
+      // session lifetime, not with oauth2.maxAuthAgeS.
+      const capped = hosted && one.key === 'oauth2.maxAuthAgeS';
+      const bound = applications.hostedBoundAttribute(one.attribute);
       return {
         setting: one.key, attribute: one.attribute, label: one.label,
-        value: Number(applications.settingFor(id, one.key, config)),
-        realmValue: Number(config.value(one.key)),
-        source: own ? 'application' : 'realm'
+        value: Number(applications.hostedEffective(id, one.key, config)),
+        realmValue: Number(config.value(capped
+          ? 'authn.sessionLifetimeS' : one.key)),
+        source: own ? 'application'
+          : (hosted && bound ? 'shipped' : 'realm')
       };
     });
     const skew = Number(config.value('oauth2.clockSkewS'));

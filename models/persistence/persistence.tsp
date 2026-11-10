@@ -639,7 +639,11 @@ model StsClusterSecrets {
 // `sts_cluster_locks` — A NAMED LOCK AS A ROW (#677, schema version 30).
 // The portable cluster statements lock a row here FOR UPDATE where the
 // native ones take `pg_advisory_xact_lock`: a row lock ends with its
-// transaction on every engine, and MariaDB's GET_LOCK() does not.
+// transaction on every engine, and MariaDB's GET_LOCK() does not. Since
+// #770 every engine's fence share-locks a row here too, named with the
+// lease token or the origin reservation. The sentence `postgres/schema.sql`
+// carries is the comment in `schema.template.sql`, which is what the
+// model emits.
 @table(#{name: "sts_cluster_locks", head: "CREATE TABLE IF NOT EXISTS", driver: #{order: 49}})
 model StsClusterLocks {
   @column(#{sql: "text", clauses: "PRIMARY KEY", required: true, primaryKey: true})

@@ -1114,17 +1114,20 @@ const EDITABLE = {
   oauthPolicyUri: 'set',
   oauthTosUri: 'set',
   appLaunchProtocol: 'set',
-  // The OAuth 2.0 / OIDC per-client five, the group claim's four and
+  // The OAuth 2.0 / OIDC per-client six, the group claim's four and
   // WS-Federation's one. Same rule as the SAML ten above: `set`, because a
-  // setting has one answer.
+  // setting has one answer. oauthMaxAuthAgeS is the sixth (#825) and is not
+  // a token lifetime.
   oauthAccessTokenTtlS: 'set',
   oauthIdTokenTtlS: 'set',
   oauthRefreshTokenTtlS: 'set',
   oauthRefreshIdleSeconds: 'set',
+  oauthMaxAuthAgeS: 'set',
   oauthRevokeRefreshOnLogout: 'set',
-  // The sixth, and the first whose row carried `families`. Editable like the
-  // five above it and refused on an entry declared for neither OAuth 2.0 nor
-  // OpenID Connect — see familyRefusal(), and the block above the row itself.
+  // The one after those, and the first whose row carried `families`.
+  // Editable like the six above it and refused on an entry declared for
+  // neither OAuth 2.0 nor OpenID Connect — see familyRefusal(), and the
+  // block above the row itself.
   oauthTokenExchangeRefreshToken: 'set',
   appGroupsClaim: 'set',
   appGroupsClaimName: 'set',
@@ -3228,6 +3231,7 @@ const FIELD_EXAMPLES = {
   oauthIdTokenTtlS: '3600',
   oauthRefreshTokenTtlS: '86400',
   oauthRefreshIdleSeconds: '1800',
+  oauthMaxAuthAgeS: '3600',
   oauthTokenExchangeRefreshToken: 'true',
   appGroupsClaimName: 'groups',
   appGroupsClaimValue: 'cn',
@@ -11850,6 +11854,24 @@ function updateApplication(identifier, change) {
                                  'models/directory/application.tsp, not writing it through ' +
                                  'this.'] }, 'STS-REG-0006');
   }
+  // #825: removing a hosted session bound is a clear by another door.
+  // The single-value check below answers STS-REG-0008 for these three,
+  // because each is set rather than added, so the refusal that names the
+  // bound has to come first. A confirmed remove is still refused: a
+  // longer realm setting would lengthen the console, the portal or the
+  // reports application. A set or a clear is judged later, after an
+  // unchanged value has been allowed through without a confirmation.
+  if (mode === 'remove' && isHostedSessionClient(identifier) &&
+      hostedBoundAttribute(attribute)) {
+    log.debug("Leaving updateApplication(). A hosted session bound " +
+              "cannot be removed.");
+    return errorCodes.mark({ ok: false,
+      errors: ['"' + attribute + '" is this application\'s own ' +
+               'session bound. Removing it is refused, the same as ' +
+               'clearing it: a longer realm setting would lengthen ' +
+               'the admin console, the user portal or the reports ' +
+               'application.'] }, 'STS-REG-0369');
+  }
   // oauthConfidential is absent from EDITABLE (#466). A set that states
   // the determination heals a stale flag; anything else is refused with
   // the sentence that names the method, which the generic derived-attribute
@@ -12717,19 +12739,40 @@ function updateApplication(identifier, change) {
              application: viewAfterWrite(identifier, record),
              message: 'Nothing changed: ' + attribute + ' already said that.' };
   }
+  // #825: the three hosted surfaces cannot be cleared or set to 0, and a
+  // different number is written only when the save confirms it. Checked
+  // after the unchanged return, so a form that re-posts the current bound
+  // does not have to confirm it. A remove was refused above, before the
+  // single-value check. The copy load() returned is not saved.
+  if (isHostedSessionClient(identifier) &&
+      hostedBoundAttribute(attribute)) {
+    const bound = hostedSessionBoundRefusal(String(identifier), attribute,
+                                             value, asked.confirm, config);
+    if (bound) {
+      log.debug("Leaving updateApplication(). The hosted session bound " +
+                "was refused.");
+      return errorCodes.mark({ ok: false, errors: bound.errors },
+                             bound.code);
+    }
+  }
   record.lastAt = record.lastAt || Date.now();
   save(record, { actor: asked.actor || '' });
+  // The ATTRIBUTE is named and the value is not, because two of the editable
+  // attributes are credentials. That is the same rule every LDAP row in this
+  // service follows and it is why it is applied here rather than judged per
+  // attribute — a rule with an exception in it is one somebody will get wrong
+  // when the next credential attribute is added. hostedSessionBound names
+  // the #825 write without naming the number.
+  const detail = { identifier: String(identifier), attribute: attribute,
+                   mode: mode, editedByHand: true };
+  if (isHostedSessionClient(identifier) && hostedBoundAttribute(attribute)) {
+    detail.hostedSessionBound = true;
+  }
   audit.audit({
     action: 'application.update', actor: asked.actor || '', protocol: 'console',
     channel: 'internal', target: String(identifier),
     summary: 'Application "' + identifier + '": ' + what,
-    // The ATTRIBUTE is named and the value is not, because two of the editable
-    // attributes are credentials. That is the same rule every LDAP row in this
-    // service follows and it is why it is applied here rather than judged per
-    // attribute — a rule with an exception in it is one somebody will get wrong
-    // when the next credential attribute is added.
-    detail: { identifier: String(identifier), attribute: attribute, mode: mode,
-              editedByHand: true }
+    detail: detail
   });
   log.info('applications: "' + identifier + '" — ' + what + '.');
   if (mode === 'remove') {
@@ -15709,6 +15752,279 @@ function overridableSettings() {
 }
 
 // ---------------------------------------------------------------------------
+// THE HOSTED SURFACES' OWN SESSION BOUNDS (#825).
+//
+// The console, the portal and the reports application share one browser
+// sign-on session. Raising authn.sessionLifetimeS, oauth2.refreshTokenTtlS
+// or oauth2.refreshIdleSeconds would otherwise lengthen all three. Each
+// carries its own maximum authentication age, refresh lifetime and refresh
+// idle, and the value in force is the SHORTER of that positive number and
+// the matching positive realm limit. 0 means no limit from that side.
+//
+// The shorter-of applies ONLY to these three, and only at enforcement.
+// settingFor() is unchanged, so an ordinary client follows the realm, and
+// largestSetting() and the refresh-family revocation window keep the
+// client's own stored lifetime. The debugger is a hosted surface and is
+// not in this list: sessions-1m replaces its settings on purpose.
+//
+// An absent, unparseable or non-positive stored value uses the SHIPPED
+// number rather than the realm, so a raised realm cannot lengthen these
+// three in the window before the next start fills an empty attribute.
+// A stored positive number is kept, then shortened by the cap. Clearing
+// or storing 0 is refused at updateApplication(); fill-if-absent restores
+// a value removed outside that door. The bound is not on
+// /admin/token-lifetimes.
+// ---------------------------------------------------------------------------
+const HOSTED_SESSION_CLIENTS = Object.freeze([
+  'sts-admin-console', 'sts-user-portal', 'sts-report']);
+
+// Reports uses the console's numbers: it is an administrative surface
+// (REPORT_USE / REPORT_ADMIN). The portal is a person's own day.
+const HOSTED_SESSION_BOUNDS = Object.freeze({
+  'sts-admin-console': Object.freeze({
+    oauthMaxAuthAgeS: '3600',
+    oauthRefreshTokenTtlS: '3600',
+    oauthRefreshIdleSeconds: '900'
+  }),
+  'sts-user-portal': Object.freeze({
+    oauthMaxAuthAgeS: '28800',
+    oauthRefreshTokenTtlS: '28800',
+    oauthRefreshIdleSeconds: '3600'
+  }),
+  'sts-report': Object.freeze({
+    oauthMaxAuthAgeS: '3600',
+    oauthRefreshTokenTtlS: '3600',
+    oauthRefreshIdleSeconds: '900'
+  })
+});
+
+const HOSTED_BOUND_ATTRIBUTES = Object.freeze({
+  oauthMaxAuthAgeS: 'oauth2.maxAuthAgeS',
+  oauthRefreshTokenTtlS: 'oauth2.refreshTokenTtlS',
+  oauthRefreshIdleSeconds: 'oauth2.refreshIdleSeconds'
+});
+
+// The maximum authentication age is capped by the sign-on session's
+// lifetime, which is not the setting the attribute overrides. The other
+// two are capped by the setting itself.
+const HOSTED_REALM_CAP = Object.freeze({
+  'oauth2.maxAuthAgeS': 'authn.sessionLifetimeS',
+  'oauth2.refreshTokenTtlS': 'oauth2.refreshTokenTtlS',
+  'oauth2.refreshIdleSeconds': 'oauth2.refreshIdleSeconds'
+});
+
+/**
+ * Whether this identifier is the console, the portal or the reports
+ * application.
+ *
+ * @param identifier - the application's identifier
+ * @returns whether it keeps a hosted session bound
+ */
+function isHostedSessionClient(identifier) {
+  log.debug("Entering isHostedSessionClient().");
+  const yes = HOSTED_SESSION_CLIENTS.indexOf(String(identifier || '')) >= 0;
+  log.debug("Leaving isHostedSessionClient(). " + yes + ".");
+  return yes;
+}
+
+/**
+ * Whether the attribute is one of the three hosted session bounds.
+ *
+ * @param name - the attribute
+ * @returns whether a hosted client refuses to clear it
+ */
+function hostedBoundAttribute(name) {
+  log.debug("Entering hostedBoundAttribute().");
+  const yes = Object.prototype.hasOwnProperty.call(HOSTED_BOUND_ATTRIBUTES,
+                                                    String(name || ''));
+  log.debug("Leaving hostedBoundAttribute(). " + yes + ".");
+  return yes;
+}
+
+/**
+ * A positive finite limit, or null when the number adds no limit.
+ *
+ * @param value - the candidate
+ * @returns the number, or null
+ */
+function positiveLimit(value) {
+  log.debug("Entering positiveLimit().");
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) {
+    log.debug("Leaving positiveLimit(). Unlimited.");
+    return null;
+  }
+  log.debug("Leaving positiveLimit(). " + n + ".");
+  return n;
+}
+
+/**
+ * The shorter of two limits. A non-positive side is unlimited. Both
+ * unlimited answers 0, which is what the settings use for "no limit".
+ *
+ * @param left - one limit
+ * @param right - the other
+ * @returns the shorter positive limit, or 0
+ */
+function shorterLimit(left, right) {
+  log.debug("Entering shorterLimit().");
+  const a = positiveLimit(left);
+  const b = positiveLimit(right);
+  let out = 0;
+  if (a !== null && b !== null) {
+    out = Math.min(a, b);
+  } else if (a !== null) {
+    out = a;
+  } else if (b !== null) {
+    out = b;
+  }
+  log.debug("Leaving shorterLimit(). " + out + ".");
+  return out;
+}
+
+/**
+ * The value in force for one client. The three hosted surfaces take the
+ * shorter of their own positive bound and the realm cap; every other
+ * client is settingFor().
+ *
+ * @param identifier - the application's identifier
+ * @param settingKey - the setting
+ * @param settings - the settings module
+ * @returns the value in force
+ */
+function hostedEffective(identifier, settingKey, settings) {
+  log.debug("Entering hostedEffective(). identifier=" +
+            (identifier || '(none)') + ", setting=" + settingKey);
+  const use = settings || config;
+  if (!isHostedSessionClient(identifier) ||
+      !Object.prototype.hasOwnProperty.call(HOSTED_REALM_CAP, settingKey)) {
+    const plain = settingFor(identifier, settingKey, use);
+    log.debug("Leaving hostedEffective(). The setting decides.");
+    return plain;
+  }
+  const attribute = OVERRIDE_ATTRIBUTES[settingKey];
+  const record = get(identifier);
+  const raw = record ? valuesOf(record.fields[attribute])[0] : undefined;
+  let base = null;
+  if (raw !== undefined && String(raw).trim() !== '') {
+    const parsed = use.parseAs(settingKey, raw);
+    if (parsed.ok) {
+      base = positiveLimit(parsed.value);
+    }
+  }
+  if (base === null) {
+    const shipped = HOSTED_SESSION_BOUNDS[String(identifier)][attribute];
+    const parsedShip = use.parseAs(settingKey, shipped);
+    base = parsedShip.ok ? positiveLimit(parsedShip.value)
+                          : positiveLimit(shipped);
+  }
+  const cap = use.value(HOSTED_REALM_CAP[settingKey]);
+  const out = shorterLimit(base, cap);
+  log.debug("Leaving hostedEffective(). " + out + ".");
+  return out;
+}
+
+/**
+ * Folds a hosted or realm maximum authentication age into a step-up
+ * requirement. Does not mutate the requirement it was given.
+ *
+ * @param clientId - the client
+ * @param requirement - requirementOf()'s answer
+ * @param settings - the settings module
+ * @returns a requirement whose maxAge is the shorter bound, when there is one
+ */
+function applyClientMaxAge(clientId, requirement, settings) {
+  log.debug("Entering applyClientMaxAge().");
+  const need = requirement || {};
+  const acrValues = Array.isArray(need.acrValues) ? need.acrValues : [];
+  const copy = {
+    acrValues: acrValues,
+    maxAge: need.maxAge === undefined ? null : need.maxAge,
+    present: !!need.present
+  };
+  const bound = positiveLimit(hostedEffective(clientId,
+    'oauth2.maxAuthAgeS', settings || config));
+  if (bound === null) {
+    log.debug("Leaving applyClientMaxAge(). No bound.");
+    return copy;
+  }
+  const asked = copy.maxAge === null || copy.maxAge === undefined
+    ? null : Number(copy.maxAge);
+  copy.maxAge = asked === null || !Number.isFinite(asked)
+    ? bound : Math.min(asked, bound);
+  copy.present = acrValues.length > 0 || copy.maxAge !== null;
+  log.debug("Leaving applyClientMaxAge(). maxAge=" + copy.maxAge + ".");
+  return copy;
+}
+
+/**
+ * Whether a save said it meant to change a hosted session bound.
+ *
+ * @param value - the confirm member
+ * @returns whether it is true, "true", "on" or "1"
+ */
+function confirmAsked(value) {
+  log.debug("Entering confirmAsked().");
+  if (value === true) {
+    log.debug("Leaving confirmAsked(). Yes.");
+    return true;
+  }
+  const text = String(value === undefined || value === null ? '' : value);
+  const yes = text === 'true' || text === 'on' || text === '1';
+  log.debug("Leaving confirmAsked(). " + yes + ".");
+  return yes;
+}
+
+/**
+ * The refusal for clearing or changing a hosted session bound, or null
+ * when the write may proceed. A non-positive or unusable value is refused
+ * before a missing confirmation, so a confirmed clear still says why.
+ *
+ * @param identifier - the application
+ * @param attribute - the attribute
+ * @param value - the value being stored
+ * @param confirm - the save's confirm member
+ * @param settings - the settings module
+ * @returns null, or `{ code, errors }`
+ */
+function hostedSessionBoundRefusal(identifier, attribute, value, confirm,
+                                   settings) {
+  log.debug("Entering hostedSessionBoundRefusal().");
+  if (!isHostedSessionClient(identifier) ||
+      !hostedBoundAttribute(attribute)) {
+    log.debug("Leaving hostedSessionBoundRefusal(). Not a hosted bound.");
+    return null;
+  }
+  const settingKey = HOSTED_BOUND_ATTRIBUTES[attribute];
+  const text = String(value == null ? '' : value).trim();
+  const use = settings || config;
+  const parsed = text ? use.parseAs(settingKey, text) : { ok: false };
+  if (!text || !parsed.ok || positiveLimit(parsed.value) === null) {
+    log.debug("Leaving hostedSessionBoundRefusal(). Not a positive bound.");
+    return {
+      code: 'STS-REG-0369',
+      errors: ['"' + attribute + '" is this application\'s own session ' +
+               'bound. It cannot be cleared, and 0 is refused: either ' +
+               'would let a longer realm setting lengthen the admin ' +
+               'console, the user portal or the reports application. ' +
+               'Store a positive number of seconds.']
+    };
+  }
+  if (!confirmAsked(confirm)) {
+    log.debug("Leaving hostedSessionBoundRefusal(). Not confirmed.");
+    return {
+      code: 'STS-REG-0368',
+      errors: ['"' + attribute + '" is this application\'s own session ' +
+               'bound. Changing it needs confirm set to true, so a save ' +
+               'that did not mean to change the bound is refused and ' +
+               'nothing is written.']
+    };
+  }
+  log.debug("Leaving hostedSessionBoundRefusal(). Accepted.");
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // THE INSTANT A GLOBAL CONSENT WAS WITHDRAWN (#172), written by
 // `common/consent.ts`'s `revokeGlobal()` and by nothing else — the schema row
 // above says why it is not editable. `stamp` is the register's, so this
@@ -17573,6 +17889,11 @@ function internalApplications() {
       // `sts-management-api`, which `scope_policy.ts` reads where
       // `oauthAllowedScope` used to list the words.
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    // #825: this surface's own session bound. The shorter of
+                    // each and the realm is what is enforced.
+                    oauthMaxAuthAgeS: '3600',
+                    oauthRefreshTokenTtlS: '3600',
+                    oauthRefreshIdleSeconds: '900',
                     oauthDelegatedPermission: delegatedPermissionGrants({
                       'sts-management-api': ['admin:read', 'admin:write',
                                              'admin:security',
@@ -17647,6 +17968,10 @@ function internalApplications() {
       // `sts-account-api` and the owner pair on `sts-management-api`
       // (#1141), the client's half of each.
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    // #825: eight hours, eight hours, one hour.
+                    oauthMaxAuthAgeS: '28800',
+                    oauthRefreshTokenTtlS: '28800',
+                    oauthRefreshIdleSeconds: '3600',
                     oauthDelegatedPermission: delegatedPermissionGrants({
                       'sts-account-api': ['account:manage'],
                       'sts-management-api': ['owner:read', 'owner:write'] }),
@@ -17706,6 +18031,11 @@ function internalApplications() {
       // Delegated permission grants of both report permissions on
       // `sts-report-api` (#1141).
       attributes: { appAllowedProtocol: ['oauth2', 'oidc'],
+                    // #825: the same bound as the console. Reports is an
+                    // administrative surface.
+                    oauthMaxAuthAgeS: '3600',
+                    oauthRefreshTokenTtlS: '3600',
+                    oauthRefreshIdleSeconds: '900',
                     oauthDelegatedPermission: delegatedPermissionGrants({
                       'sts-report-api': ['report:use', 'report:admin'] }),
                     oauthGlobalConsent: ['openid', 'profile', 'email',
@@ -17876,6 +18206,56 @@ function seedInternalApplication(spec) {
   return true;
 }
 
+// Writes a hosted session bound only where the attribute is ABSENT. A
+// stored number, including one an administrator confirmed, is kept. A
+// value removed with ldapmodify is absent and comes back as the shipped
+// number. Quiet, because a start that fills what the seed already stated
+// is not a change a person made. Does not go through updateApplication(),
+// so it does not ask for confirm.
+function fillHostedSessionBounds() {
+  log.debug("Entering fillHostedSessionBounds().");
+  let wrote = 0;
+  HOSTED_SESSION_CLIENTS.forEach(function (identifier) {
+    const loaded = load(identifier);
+    if (!loaded.known) {
+      return;
+    }
+    const record = loaded.record;
+    const bounds = HOSTED_SESSION_BOUNDS[identifier];
+    const filled = [];
+    Object.keys(bounds).forEach(function (name) {
+      const have = valuesOf(record.fields[name])[0];
+      if (have !== undefined && String(have).trim() !== '') {
+        return;
+      }
+      if (setField(record, name, bounds[name])) {
+        filled.push(name);
+      }
+    });
+    if (!filled.length) {
+      return;
+    }
+    if (!save(record, { quiet: true })) {
+      log.warn(errorCodes.tag('STS-REG-0020') +
+               'applications: "' + identifier + '" was not given its ' +
+               'hosted session bound — the directory would not take the ' +
+               'write. The shipped number is still what enforcement uses.');
+      return;
+    }
+    audit.audit({
+      action: 'application.update', actor: '', protocol: 'internal',
+      channel: 'internal', target: identifier,
+      summary: 'Application "' + identifier + '" was given its hosted ' +
+               'session bound (' + filled.join(', ') + ')',
+      detail: { identifier: identifier, attribute: filled.join(', '),
+                hostedSessionBound: true, seeded: true }
+    });
+    wrote++;
+  });
+  log.debug("Leaving fillHostedSessionBounds(). " + wrote + ".");
+  return wrote;
+}
+
 // Called by `ldap_server.js` the moment it has filled setDirectory() — which is
 // the earliest point at which there is a container to write into, and the
 // latest at which the entries are there before anything can ask for them.
@@ -17918,11 +18298,16 @@ function seedInternalApplications(options) {
   rows.forEach(function (one) {
     if (seedInternalApplication(one)) made++;
   });
+  // #825: an entry that already existed is left alone by the seed above.
+  // Fill only the bound attributes that are absent, and never a number
+  // already stored.
+  const filled = fillHostedSessionBounds();
   log.info('applications: ' + made + ' of this service\'s own ' + rows.length +
            ' application(s) were seeded' +
            (wanted === 'default' ? '' : ' into this realm') +
            '. They are ORDINARY entries — edit one, or delete it, and it ' +
-           'stays that way until a restart.');
+           'stays that way until a restart. ' + filled +
+           ' hosted session bound(s) were filled where absent.');
   log.debug("Leaving seedInternalApplications(). " + made + " created.");
   return made;
 }
@@ -18537,6 +18922,14 @@ module.exports = {
   settingFor: settingFor,
   largestSetting: largestSetting,
   overridableSettings: overridableSettings,
+  // #825: the console, the portal and the reports application.
+  HOSTED_SESSION_CLIENTS: HOSTED_SESSION_CLIENTS,
+  isHostedSessionClient: isHostedSessionClient,
+  hostedBoundAttribute: hostedBoundAttribute,
+  hostedEffective: hostedEffective,
+  applyClientMaxAge: applyClientMaxAge,
+  confirmAsked: confirmAsked,
+  hostedSessionBoundRefusal: hostedSessionBoundRefusal,
   // The audience lookup, exported for the token endpoint. See its header for
   // why it is a lookup and not a check.
   forAudience: forAudience,

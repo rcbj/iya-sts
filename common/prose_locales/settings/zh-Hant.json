@@ -4439,6 +4439,14 @@
     "en": "c002260d32d033da",
     "text": "重新整理權杖的「絕對」有效期——權杖本身上的 `exp`，在兩種模式下都由重新整理授與強制執行。預設為「二十四小時」，而這「是一項變更」：過去是三十天，因此在長時間測試執行中持有重新整理權杖的用戶端，現在會在過去不會出錯的地方遇到 invalid_grant。設為 2592000 即可完全恢復舊行為。它與 oauth2.refreshIdleSeconds 不是同一項設定，後者是 RFC 9700 模式下重新整理「鏈」的「閒置」逾時，從最後一次兌換起算，而非從簽發起算：此值則是一道牆，無論鏈多麼活躍，都無法重新整理超過它。"
   },
+  "oauth2.maxAuthAgeS|label": {
+    "en": "ff5efd87e142a988",
+    "text": "最大驗證時限（秒）"
+  },
+  "oauth2.maxAuthAgeS|description": {
+    "en": "5a37fced9d4d040e",
+    "text": "用戶端在多少秒以前完成過驗證之後，授權請求必須再次進行驗證，即使該請求沒有傳送 max_age。0 是預設值，不增加自身的界限，因此一般用戶端保持不變。在每次授權請求時讀取：它不改寫已經儲存的工作階段。管理主控台（sts-admin-console）、使用者入口（sts-user-portal）和報表應用程式（sts-report）各自帶有自己的值，並取該值與 authn.sessionLifetimeS 中較短的一個，因此提高此項設定或工作階段有效期永遠不會延長這三項，而降低 authn.sessionLifetimeS 仍然會縮短它們。按用戶端覆寫的屬性是 oauthMaxAuthAgeS。這不是權杖有效期，也不在 /admin/token-lifetimes 上（#825）。"
+  },
   "oauth2.expiredTokenRetentionS|label": {
     "en": "4466b89054d69c81",
     "text": "已過期權杖在 /admin/tokens 上的保留時間（秒）"
@@ -5383,6 +5391,14 @@
     "en": "d5e8553e9978dfda",
     "text": "是否拒絕「未簽署」的 <samlp:AuthnRequest>——以及來自服務提供者的未簽署 <samlp:LogoutRequest>。**`auto` 在產品模式下為開啟，在開發模式下為關閉。**`on` 與 `off` 則不論模式直接決定；已採用之中繼資料指出 AuthnRequestsSigned=\"true\" 的服務提供者，即使此設定關閉也會受其約束。它也是此身分識別提供者中繼資料中 WantAuthnRequestsSigned 所表示的內容。\n\n「存在」的簽章在每種模式下都會被驗證——HTTP Redirect 繫結的查詢字串簽章（section 3.4.4.1）或 HTTP POST 繫結的封入式簽章——對照的是服務提供者「已註冊」的簽署憑證（samlSigningCertificate，來自其中繼資料或在 SAML 2.0 頁面上設定），絕不是要求所攜帶的憑證，而無法通過驗證的簽章會被拒絕。沒有已註冊的憑證時，簽章會記錄為未驗證，在此設定開啟時視為「未簽署」。"
   },
+  "saml2.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在讓使用者登入前先徵得同意"
+  },
+  "saml2.ssoConsent|description": {
+    "en": "1ddf528dcc7be0f8",
+    "text": "在 SAML 2.0 以使用者既有的工作階段將其登入某個應用程式之前，是否先詢問使用者，每個應用程式一次（ASVS 5.0.0 7.6.2）。使用者的回答會被保存，只有撤回後才會再次詢問；應用程式上的全域同意代表所有人回答。被動請求不顯示該頁面，按無法互動的請求回應。產品模式下預設開啟，開發模式下關閉；應用程式項目上的 saml2SsoConsent 可為該應用程式覆寫此設定。"
+  },
   "saml2.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "由身分識別提供者發起的登入"
@@ -5543,6 +5559,14 @@
     "en": "2e68718a26d4706c",
     "text": "在首次指名某個依賴方時——TARGET 抵達、擷取中繼資料文件，或解析成品——於 ou=applications 下建立應用程式項目。關閉時，瀏覽器設定檔仍可運作，而 /admin/saml11 保持空白，這是執行負載測試的人想要的，其他人都不想要。"
   },
+  "saml11.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在讓使用者登入前先徵得同意"
+  },
+  "saml11.ssoConsent|description": {
+    "en": "53f104813a60ba25",
+    "text": "在 SAML 1.1 以使用者既有的工作階段將其登入某個應用程式之前，是否先詢問使用者，每個應用程式一次（ASVS 5.0.0 7.6.2）。使用者的回答會被保存，只有撤回後才會再次詢問；應用程式上的全域同意代表所有人回答。被動請求不顯示該頁面，按無法互動的請求回應。產品模式下預設開啟，開發模式下關閉；應用程式項目上的 saml11SsoConsent 可為該應用程式覆寫此設定。"
+  },
   "saml11.idpInitiatedSso|label": {
     "en": "c2e1dbfea3f7b82f",
     "text": "由身分識別提供者發起的登入"
@@ -5654,6 +5678,14 @@
   "wsfed.idpInitiatedSso|description": {
     "en": "62f920d6663c4e4f",
     "text": "/wsfed/initiate/{rp}——以及用於 WS-Federation 的 /launch/{app}——是否讓某人登入並未提出要求的依賴方，POST 至其已註冊的 wsfedReplyUrl。預設為「關閉」；應用程式項目上的 wsfedIdpInitiatedSso 會針對該依賴方覆寫它。依賴方會收到一個它並未要求的回應，而它無法將其與被別人推入其瀏覽器的回應區分開來。"
+  },
+  "wsfed.ssoConsent|label": {
+    "en": "0234bf3af48ea8a4",
+    "text": "在讓使用者登入前先徵得同意"
+  },
+  "wsfed.ssoConsent|description": {
+    "en": "b60b06fe1664cb06",
+    "text": "在 WS-Federation 以使用者既有的工作階段將其登入某個應用程式之前，是否先詢問使用者，每個應用程式一次（ASVS 5.0.0 7.6.2）。使用者的回答會被保存，只有撤回後才會再次詢問；應用程式上的全域同意代表所有人回答。被動請求不顯示該頁面，按無法互動的請求回應。產品模式下預設開啟，開發模式下關閉；應用程式項目上的 wsfedSsoConsent 可為該應用程式覆寫此設定。"
   },
   "wsfed.spInitiatedSso|label": {
     "en": "705a2297f2762532",
@@ -12442,29 +12474,5 @@
   "listenerDebugger.http2MaxConcurrentStreams|description": {
     "en": "94c52205da70930f",
     "text": "僅適用於協定偵錯工具監聽器：http.http2MaxConcurrentStreams。預設值 -1 依循 http.http2MaxConcurrentStreams；其他任何值只對此監聽器生效。一條 HTTP/2 連線可同時開啟的請求數（SETTINGS_MAX_CONCURRENT_STREAMS）；超出的串流會被拒絕，直到有串流結束。預設值 100 是 RFC 9113 建議的最小值；node 自己的值沒有上限，這會讓一條連線承載成千上萬條連線的工作量。它限制一條連線上的工作量，正如 http.maxConnections 限制連線數。新連線會立即依循變更，已開啟的連線會收到新值。"
-  },
-  "saml2.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "在讓使用者登入前先徵得同意"
-  },
-  "saml2.ssoConsent|description": {
-    "en": "1ddf528dcc7be0f8",
-    "text": "在 SAML 2.0 以使用者既有的工作階段將其登入某個應用程式之前，是否先詢問使用者，每個應用程式一次（ASVS 5.0.0 7.6.2）。使用者的回答會被保存，只有撤回後才會再次詢問；應用程式上的全域同意代表所有人回答。被動請求不顯示該頁面，按無法互動的請求回應。產品模式下預設開啟，開發模式下關閉；應用程式項目上的 saml2SsoConsent 可為該應用程式覆寫此設定。"
-  },
-  "saml11.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "在讓使用者登入前先徵得同意"
-  },
-  "saml11.ssoConsent|description": {
-    "en": "53f104813a60ba25",
-    "text": "在 SAML 1.1 以使用者既有的工作階段將其登入某個應用程式之前，是否先詢問使用者，每個應用程式一次（ASVS 5.0.0 7.6.2）。使用者的回答會被保存，只有撤回後才會再次詢問；應用程式上的全域同意代表所有人回答。被動請求不顯示該頁面，按無法互動的請求回應。產品模式下預設開啟，開發模式下關閉；應用程式項目上的 saml11SsoConsent 可為該應用程式覆寫此設定。"
-  },
-  "wsfed.ssoConsent|label": {
-    "en": "0234bf3af48ea8a4",
-    "text": "在讓使用者登入前先徵得同意"
-  },
-  "wsfed.ssoConsent|description": {
-    "en": "b60b06fe1664cb06",
-    "text": "在 WS-Federation 以使用者既有的工作階段將其登入某個應用程式之前，是否先詢問使用者，每個應用程式一次（ASVS 5.0.0 7.6.2）。使用者的回答會被保存，只有撤回後才會再次詢問；應用程式上的全域同意代表所有人回答。被動請求不顯示該頁面，按無法互動的請求回應。產品模式下預設開啟，開發模式下關閉；應用程式項目上的 wsfedSsoConsent 可為該應用程式覆寫此設定。"
   }
 }

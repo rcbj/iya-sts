@@ -27265,6 +27265,23 @@ const CODES = [
       'permission, and a code is recorded rather than sent. At a create ' +
       'and at an attribute add (#1426).',
     spec: 'none (a console or management API refusal, HTTP 400)' },
+  // #825: the console, the portal and the reports application keep a
+  // session bound of their own. A change is confirmed; a clear or a 0 is
+  // refused, so emptying the attribute cannot follow a longer realm.
+  { code: 'STS-REG-0368',
+    summary: 'A change to the admin console, the user portal or the ' +
+      'reports application\'s own session bound (oauthMaxAuthAgeS, ' +
+      'oauthRefreshTokenTtlS or oauthRefreshIdleSeconds) was not ' +
+      'confirmed. The save is refused and nothing is written (#825).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
+  { code: 'STS-REG-0369',
+    summary: 'The admin console, the user portal or the reports ' +
+      'application\'s own session bound was cleared, or set to 0 or to a ' +
+      'value the setting does not accept. Those three keep a positive ' +
+      'number, so a longer realm setting cannot lengthen them. An ' +
+      'attribute removed outside this door is restored at the next start ' +
+      '(#825).',
+    spec: 'none (a console or management API refusal, HTTP 400)' },
   { code: 'STS-DBG-0001',
     summary: 'The debugger permission was asked for by somebody who may ' +
       'not hold it — not a person, not signed in, not in the ' +

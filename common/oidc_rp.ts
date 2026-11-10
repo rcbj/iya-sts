@@ -2936,7 +2936,10 @@ class OidcRelyingParty {
       // for this redemption becomes the key the session keeps (#34).
       const tokens = self.tokensFrom(tokenAnswer.json, claims, parentRealm,
                                      host, { dpop: dpop });
-      const refreshTtlS = Number(applications.settingFor(
+      // #825: the three hosted session clients take the shorter of their
+      // own refresh lifetime and the realm. The debugger is not one of
+      // them, so this stays the client's own setting for that surface.
+      const refreshTtlS = Number(applications.hostedEffective(
         surface.clientId, 'oauth2.refreshTokenTtlS', config));
       const renewableUntil = tokens.refreshToken && isFinite(refreshTtlS) &&
                              refreshTtlS > 0

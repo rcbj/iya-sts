@@ -236,6 +236,7 @@ var config = {
     accessTokenTtlS: 3600,                         // Access token lifetime (s)
     idTokenTtlS: 3600,                             // ID Token lifetime (s)
     refreshTokenTtlS: 86400,                       // Refresh token lifetime (s)
+    maxAuthAgeS: 0,                                // Maximum authentication age (s)
     expiredTokenRetentionS: 86400,                 // Keep an expired token on /admin/tokens for (seconds)
     accessTokenStatusListTtlS: 60,                 // Access-token status list time to live (s)
     accessTokenStatusListLifetimeS: 3600,          // Access-token status list lifetime (s)

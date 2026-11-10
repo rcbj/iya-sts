@@ -3693,9 +3693,12 @@ class OAuth2Server {
   private refreshTokenTtl(clientId: Json): Json {
     const { log, config, applications } = this.deps;
     log.debug("Entering OAuth2Server.refreshTokenTtl().");
+    // #825: the console, the portal and the reports application take the
+    // shorter of their own bound and the realm. Every other client is
+    // settingFor().
     log.debug("Leaving OAuth2Server.refreshTokenTtl().");
-    return applications.settingFor(clientId || '', 'oauth2.refreshTokenTtlS',
-                                   config);
+    return applications.hostedEffective(clientId || '',
+                                        'oauth2.refreshTokenTtlS', config);
   }
 
   // The allowance applied to `exp` and `nbf` EVERY time this file reads back a
@@ -10845,8 +10848,14 @@ class OAuth2Server {
     const jar = req.stsJar;
     // With the client's registered defaults (#120), from its attributes
     // (#290).
-    const stepping = stepUp.requirementOf(q,
-      this.deps.applications.clientConfigOf(q.client_id)).present ||
+    // #825: a hosted surface's own maximum authentication age, even when
+    // the request sends no max_age. applyClientMaxAge does not mutate the
+    // requirement it was given.
+    const stepping = this.deps.applications.applyClientMaxAge(
+      String(q.client_id || ''),
+      stepUp.requirementOf(q,
+        this.deps.applications.clientConfigOf(q.client_id)),
+      this.deps.config).present ||
       this.detailAcrsOf(q, req).length > 0;
     if (!jar) {
       log.debug("Leaving OAuth2Server.authorizationReturnQuery(). A plain " +
@@ -12318,8 +12327,13 @@ class OAuth2Server {
     // OpenID Connect Registration section 2's default_max_age and
     // default_acr_values apply where the request names neither (#120) — read
     // from the client's attributes (#290), whoever set them.
-    const stepUpNeed = stepUp.requirementOf(q,
-      applications.clientConfigOf(q.client_id));
+    // #825: the same fold as authorizationReturnQuery(), so the return
+    // trip and this pass agree on whether the session is still young enough
+    // for the console, the portal or the reports application.
+    const stepUpNeed = applications.applyClientMaxAge(
+      String(q.client_id || ''),
+      stepUp.requirementOf(q, applications.clientConfigOf(q.client_id)),
+      this.deps.config);
     // AND EVERY AUTHORIZATION DETAIL TYPE'S acr (#432 phase 6): the
     // access-type catalogue GNAP shares declares the level a right of a type
     // needs, and a grant of two types is a grant of both — so each is

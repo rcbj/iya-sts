@@ -10,7 +10,7 @@ nav_order: 18
 # Error codes
 
 Every way this service can fail or refuse has a code of the form
-`STS-<SUBSYSTEM>-<NNNN>`. There are **5410** of them, in **52** subsystems.
+`STS-<SUBSYSTEM>-<NNNN>`. There are **5412** of them, in **52** subsystems.
 
 ## Where a code appears
 
@@ -97,7 +97,7 @@ is an ordinary outcome.
 * [Account API (`STS-ACCOUNT`)](#sts-account) — 23
 * [Sign-out (`STS-LOGOUT`)](#sts-logout) — 15
 * [Identity-provider-initiated sign-in (`STS-LAUNCH`)](#sts-launch) — 7
-* [Registries (`STS-REG`)](#sts-reg) — 185
+* [Registries (`STS-REG`)](#sts-reg) — 187
 * [Protocol debugger (`STS-DBG`)](#sts-dbg) — 28
 * [Reporting (`STS-REPORT`)](#sts-report) — 58
 * [Audit export (`STS-AUDIT`)](#sts-audit) — 16
@@ -6040,6 +6040,8 @@ Raised from: common/applications.js, common/consent.ts, common/app_permissions.t
 | `STS-REG-0365` | A logo_uri, policy_uri or tos_uri (oauthLogoUri, oauthPolicyUri, oauthTosUri) is not an absolute https URL with a host and no credentials: the sign-in and consent screens draw it (OpenID Connect Registration section 2, #1300). At registration, an RFC 7592 update, a create and an attribute write. | HTTP 400 {error: invalid_client_metadata} at registration; a console or management API refusal otherwise |
 | `STS-REG-0366` | A realm's custom attribute is named as a claim of the directory attribute catalogue is (a custom birthdate, say), so it is not offered to the claim sets: the catalogue's claim would be overwritten. An attribute claim can carry it under another name (#700). | log line; the attribute is absent from every claim set |
 | `STS-REG-0367` | An oauthPermission name or description contains an operator error code. Both are returned on every page that lists the permission, and a code is recorded rather than sent. At a create and at an attribute add (#1426). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0368` | A change to the admin console, the user portal or the reports application's own session bound (oauthMaxAuthAgeS, oauthRefreshTokenTtlS or oauthRefreshIdleSeconds) was not confirmed. The save is refused and nothing is written (#825). | none (a console or management API refusal, HTTP 400) |
+| `STS-REG-0369` | The admin console, the user portal or the reports application's own session bound was cleared, or set to 0 or to a value the setting does not accept. Those three keep a positive number, so a longer realm setting cannot lengthen them. An attribute removed outside this door is restored at the next start (#825). | none (a console or management API refusal, HTTP 400) |
 
 ## STS-DBG
 

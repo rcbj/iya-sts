@@ -597,6 +597,7 @@ declare namespace IyaDomain {
     idTokenTtlS?: string;
     refreshTokenTtlS?: string;
     refreshIdleSeconds?: string;
+    maxAuthAgeS?: string;
     claimsAccessToken?: string;
     claimsIdToken?: string;
     claimsUserinfo?: string;

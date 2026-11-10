@@ -9020,6 +9020,29 @@ const SETTINGS = [
                  'issuance: this one is a wall a chain cannot be refreshed ' +
                  'past however busy it is.' },
 
+  // #825: not a token lifetime, and deliberately not on
+  // /admin/token-lifetimes. The page, its OpenAPI body and its catalogs say
+  // six token settings. This one is enforced at the authorization endpoint.
+  { key: 'oauth2.maxAuthAgeS', group: 'OAuth 2.0 / OIDC per-client',
+    label: 'Maximum authentication age (s)',
+    env: 'STS_OAUTH2_MAX_AUTH_AGE_S', type: 'int', dflt: 0,
+    min: 0, max: 2592000, step: 30, runtime: true,
+    description: 'How long ago a client was authenticated, in seconds, ' +
+                 'before an authorization request must authenticate again, ' +
+                 'even when the request sends no max_age. 0, the default, ' +
+                 'adds no bound of its own, so an ordinary client is ' +
+                 'unchanged. Read on each authorization request: it does ' +
+                 'not rewrite a session already stored. The admin console ' +
+                 '(sts-admin-console), the user portal (sts-user-portal) ' +
+                 'and the reports application (sts-report) each carry ' +
+                 'their own value and take the shorter of it and ' +
+                 'authn.sessionLifetimeS, so raising this setting or the ' +
+                 'session lifetime never lengthens those three, and ' +
+                 'lowering authn.sessionLifetimeS still shortens them. A ' +
+                 'per-client override is oauthMaxAuthAgeS. This is not a ' +
+                 'token lifetime and it is not on /admin/token-lifetimes ' +
+                 '(#825).' },
+
   // The fourth is not a lifetime, and it is deliberately NOT folded into
   // `oauth2.clientAssertionSkewS` beside it: that one is how far out a CLIENT'S
   // assertion may be (RFC 7523, a credential somebody else's clock stamped),

@@ -5768,7 +5768,10 @@ the decisions rcbj made on #118:
   is a step-up requirement: `step_up.ts`'s `essentialAcrValuesOf()`.
 * **A forced second sign-in says why (#1302)**: where a person WITH a
   session is sent to sign in because of `prompt=login`, or because the
-  session is older than `max_age` (the request's, or `default_max_age`),
+  session is older than `max_age` (the request's, or `default_max_age`,
+  or, for the console, the portal and the reports application, the shorter
+  of `oauth2.maxAuthAgeS` and `authn.sessionLifetimeS` even when the
+  request sends none, #825),
   `beginAuthentication()` is given `reauthentication: 'prompt_login'` or
   `'max_age'`, and the sign-in screen draws one line for it
   (`authn/CLAUDE.md`, *Why a second sign-in*). Nothing for a first sign-in,

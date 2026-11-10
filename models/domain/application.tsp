@@ -300,6 +300,9 @@ model OAuthClient {
   @fromAttr(#{attr: "oauthRefreshIdleSeconds"})
   `refreshIdleSeconds`?: string;
 
+  @fromAttr(#{attr: "oauthMaxAuthAgeS"})
+  `maxAuthAgeS`?: string;
+
   @fromAttr(#{attr: "oauthClaimsAccessToken"})
   `claimsAccessToken`?: string;
 
