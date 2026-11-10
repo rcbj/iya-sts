@@ -40,7 +40,12 @@ network except through audit export.
   is logged and the operation continues.
 * **An error code is recorded and never sent to a client**, apart from pages
   and fixed help text that are themselves for administrators.
-* **An audit row records who acted.** Reading the audit log is itself recorded.
+* **An audit row records who acted.** On `/account-api` and `/report-api` that
+  is the access token's subject, not whoever the browser's sign-on cookie names.
+  Reading the audit log is itself recorded.
+* **An audit row can be checked.** Each row carries a keyed checksum under a key
+  that is not in the database. `GET /admin-api/audit/integrity` (`admin:read`)
+  lists the rows that no longer match, and counts rows written without one.
 
 ## Log level
 
@@ -48,8 +53,10 @@ The shipped configuration runs at `info`. `global.logLevel` can be changed at
 run time.
 
 > **Warning.** At `debug` or `trace` the service log receives every request and
-> response, headers and bodies included, and every token and assertion before and
-> after it is signed. Nothing is removed. That is Restricted and Bearer data.
+> response, and every token and assertion before and after it is signed. That is
+> Restricted and Bearer data. In development mode nothing is removed. Product mode
+> leaves out the `Authorization`, `Cookie`, `Set-Cookie`, `DPoP` and `X-API-Key`
+> headers and withholds bodies, but the tokens and assertions are still written.
 > Product mode does not refuse the setting, so use it only on a deployment with
 > no real data.
 
@@ -74,4 +81,6 @@ to a destination that provides one. See [Audit export](audit-export.md).
 
 Every timestamp is in UTC. Run the service on hosts whose clocks are synchronized
 with NTP, so that timestamps agree across nodes and with the systems you send logs
-to.
+to. With a database store, a node whose clock differs from the database's by more
+than five seconds logs a warning, `STS-SCHED-0022`, once, and a line when the two
+agree again.
