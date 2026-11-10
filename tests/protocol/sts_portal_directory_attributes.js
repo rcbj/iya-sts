@@ -607,6 +607,18 @@ async function theCredentialsAreNotOnIt(b) {
   // `account-credential-change-required` (#233), and the portal is a Shared
   // Signals receiver whose default signal-response policy ends the person's
   // sessions on it. The password is untouched, so it still signs them in.
+  //
+  // **NOT IN THE SAME SECOND AS THE LINK (2026-11-10).** The signal reaches
+  // the portal by its poll, a moment after this answer, and what it revokes
+  // is bounded by the event's time in WHOLE SECONDS, a token issued in the
+  // event's own second being revoked as the side to err on
+  // (`ssf/ssf_receivers.ts`, `actOn()`). A sign-in 300 ms after the link
+  // landed in that second and lost its token to the poll 250 ms later
+  // (product single-node). So the sign-in waits for the next second; the
+  // service's clock and this one are the same host's.
+  await new Promise(function (resolve) {
+    setTimeout(resolve, 1050 - (Date.now() % 1000));
+  });
   b = await signIn(OWNER, PROBE_PASSWORD);
   await b.client.act("/portal/mfa", { action: "start" });
   // DRAWN AGAIN FOR A MOMENT (cluster, 2026-10-28): the started enrolment
