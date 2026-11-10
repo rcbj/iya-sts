@@ -211,7 +211,8 @@ interface Operation {
   method: 'GET' | 'POST';
   // The express path, `:id` a path parameter.
   path: string;
-  operationId: string;
+  // The model's (#1579): `models/api/authn.tsp` declares the operation.
+  operationId: keyof IyaApi.Authn.Operations;
   // `pending` — keyed by a pending sign-in's id; `step` — a password change
   // step's id; `mfa` — a second-factor or emailed-factor step's id (#572,
   // #573); `wallet` — a wallet sign-in's transaction (#574), keyed by its
@@ -243,7 +244,7 @@ interface Operation {
 
 // THE ANSWERS, DOCUMENTED ONCE for the OpenAPI document.
 
-const OPERATIONS: Operation[] = [
+const SCREEN_OPERATIONS = [
   { method: 'GET', path: API, operationId: 'getIndex', access: 'public',
     handler: 'index' },
   { method: 'GET', path: API + '/openapi.json', operationId: 'getOpenApi',
@@ -354,7 +355,10 @@ const OPERATIONS: Operation[] = [
   { method: 'POST', path: API + '/mfa/:id/start-over',
     operationId: 'startOver', access: 'mfa',
     action: 'start-over', handler: 'mfaAct', body: EMPTY_BODY }
-];
+] as const satisfies readonly Operation[];
+
+// Every operation, the tables below appended to the screen's.
+const OPERATIONS: Operation[] = SCREEN_OPERATIONS.slice();
 
 // ---------------------------------------------------------------------------
 // THE WALLET SIGN-IN'S OPERATIONS (#574): `/authn/wallet` and
@@ -365,7 +369,7 @@ const OPERATIONS: Operation[] = [
 // tickets extend in theirs.
 // ---------------------------------------------------------------------------
 
-const WALLET_OPERATIONS: Operation[] = [
+const WALLET_OPERATIONS = [
   { method: 'GET', path: API + '/wallet', operationId: 'getWalletStart',
     access: 'wallet', handler: 'wallet',
     walletAct: 'startView', query: WALLET_VIEW_QUERY },
@@ -383,7 +387,7 @@ const WALLET_OPERATIONS: Operation[] = [
     operationId: 'answerWalletDcApi', access: 'wallet',
     handler: 'wallet',
     walletAct: 'dcApi', body: WALLET_DC_API_BODY, refusedCode: 'STS-VC-0069' }
-];
+] as const satisfies readonly Operation[];
 
 OPERATIONS.push.apply(OPERATIONS, WALLET_OPERATIONS);
 
@@ -396,7 +400,7 @@ OPERATIONS.push.apply(OPERATIONS, WALLET_OPERATIONS);
 // (`signOutView()`, `signOutAct()`), reached when an operation arrives.
 // ---------------------------------------------------------------------------
 
-const LOGOUT_OPERATIONS: Operation[] = [
+const LOGOUT_OPERATIONS = [
   { method: 'GET', path: API + '/logout', operationId: 'getSignOut',
     access: 'session', handler: 'logoutView', query: LOGOUT_QUERY },
   { method: 'POST', path: API + '/logout', operationId: 'signOut',
@@ -412,7 +416,7 @@ const LOGOUT_OPERATIONS: Operation[] = [
     action: 'account',
     handler: 'logoutAccountsAct', body: LOGOUT_ACCOUNT_BODY,
     refusedCode: 'STS-LOGOUT-0003' }
-];
+] as const satisfies readonly Operation[];
 
 OPERATIONS.push.apply(OPERATIONS, LOGOUT_OPERATIONS);
 
@@ -424,7 +428,7 @@ OPERATIONS.push.apply(OPERATIONS, LOGOUT_OPERATIONS);
 // `browserAccounts()`); every act is bound as every act here is.
 // ---------------------------------------------------------------------------
 
-const ACCOUNT_OPERATIONS: Operation[] = [
+const ACCOUNT_OPERATIONS = [
   { method: 'GET', path: API + '/pending/:id/accounts',
     operationId: 'getAccountChoice', access: 'pending',
     handler: 'accountsGet' },
@@ -442,7 +446,7 @@ const ACCOUNT_OPERATIONS: Operation[] = [
     handler: 'accountsPost', body: ACCOUNT_BODY, refusedCode: 'STS-AUTHN-0342' },
   { method: 'GET', path: API + '/accounts', operationId: 'getAccounts',
     access: 'session', handler: 'accountsList' }
-];
+] as const satisfies readonly Operation[];
 
 OPERATIONS.push.apply(OPERATIONS, ACCOUNT_OPERATIONS);
 
@@ -472,15 +476,31 @@ const LIMIT_VALUE = vz.union([vz.string().max(1024),
 // Documented open, since the controls are beside it.
 const CONSENT_BODY = ModelZod.body('authn', 'answerConsent');
 
-const CONSENT_OPERATIONS: Operation[] = [
+const CONSENT_OPERATIONS = [
   { method: 'GET', path: API + '/consent/:id', operationId: 'getConsent',
     access: 'consent', handler: 'consent' },
   { method: 'POST', path: API + '/consent/:id', operationId: 'answerConsent',
     access: 'consent', handler: 'consent',
     body: CONSENT_BODY }
-];
+] as const satisfies readonly Operation[];
 
 OPERATIONS.push.apply(OPERATIONS, CONSENT_OPERATIONS);
+
+// A HANDLER IS TYPED BY THE OPERATIONS WHOSE ROWS NAME IT (#1579): the
+// tables above, read as the checker reads them, say which of the model's
+// operations (`IyaApi.Authn.Operations`, `types/api.generated.d.ts`) each
+// handler serves, and its request and response are typed by those —
+// the body and query names it may read, and what `answerJson()` may answer
+// at a literal 2xx status (`types/api-handlers.d.ts`).
+type AuthnRow = (typeof SCREEN_OPERATIONS)[number] |
+  (typeof WALLET_OPERATIONS)[number] | (typeof LOGOUT_OPERATIONS)[number] |
+  (typeof ACCOUNT_OPERATIONS)[number] | (typeof CONSENT_OPERATIONS)[number];
+type AuthnServed<H extends AuthnRow['handler']> =
+  IyaApi.Authn.Operations[Extract<AuthnRow, { handler: H }>['operationId']];
+type AuthnRequest<H extends AuthnRow['handler']> =
+  IyaApi.RequestTo<AuthnServed<H>>;
+type AuthnAnswering<H extends AuthnRow['handler']> =
+  IyaApi.Answering<AuthnServed<H>>;
 
 // THE NAMES OF EACH OPERATION ARE IN THE MODEL (#1390): `models/api/authn.tsp`.
 // What is left above is the routing: the path, the handler, what it accepts.
@@ -707,7 +727,7 @@ class AuthnApi {
    * @param res - the response
    * @returns nothing
    */
-  index(req: Json, res: Json): void {
+  index(req: AuthnRequest<'index'>, res: AuthnAnswering<'index'>): void {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.index().");
     void req;
@@ -730,7 +750,7 @@ class AuthnApi {
    * @param res - the response
    * @returns nothing
    */
-  openApi(req: Json, res: Json): void {
+  openApi(req: AuthnRequest<'openApi'>, res: AuthnAnswering<'openApi'>): void {
     const { log, authn, helpers } = this.deps;
     log.debug("Entering AuthnApi.openApi().");
     authn.answerJson(res, 200, AuthnApi.document({
@@ -746,7 +766,7 @@ class AuthnApi {
    * @param res - the response
    * @returns nothing
    */
-  screen(req: Json, res: Json): void {
+  screen(req: AuthnRequest<'screen'>, res: AuthnAnswering<'screen'>): void {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.screen().");
     const record = this.pendingOf(req, res);
@@ -771,7 +791,8 @@ class AuthnApi {
    * @param res - the response
    * @returns nothing
    */
-  partners(req: Json, res: Json): void {
+  partners(req: AuthnRequest<'partners'>,
+           res: AuthnAnswering<'partners'>): void {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.partners().");
     const record = this.pendingOf(req, res);
@@ -802,7 +823,9 @@ class AuthnApi {
    * @param op - the operation
    * @returns a promise settled when the answer is sent
    */
-  async act(req: Json, res: Json, op: Operation): Promise<void> {
+  async act(req: AuthnRequest<'act'>,
+            res: AuthnAnswering<'act'>,
+            op: Operation): Promise<void> {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.act(). " + op.operationId);
     if (this.idOf(req, res) === null || !this.bound(req, res)) {
@@ -841,7 +864,9 @@ class AuthnApi {
    * @param op - the operation
    * @returns nothing
    */
-  async passkeyOptions(req: Json, res: Json, op: Operation): Promise<void> {
+  async passkeyOptions(req: AuthnRequest<'passkeyOptions'>,
+                       res: AuthnAnswering<'passkeyOptions'>,
+                       op: Operation): Promise<void> {
     const { log, authn, errorCodes, websecurity } = this.deps;
     log.debug("Entering AuthnApi.passkeyOptions().");
     if (this.idOf(req, res) === null || !this.bound(req, res) ||
@@ -908,7 +933,8 @@ class AuthnApi {
    * @param res - the response
    * @returns nothing
    */
-  passwordChange(req: Json, res: Json): void {
+  passwordChange(req: AuthnRequest<'passwordChange'>,
+                 res: AuthnAnswering<'passwordChange'>): void {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.passwordChange().");
     const found = this.stepOf(req, res);
@@ -933,7 +959,9 @@ class AuthnApi {
    * @param op - the operation
    * @returns a promise settled when the answer is sent
    */
-  async changePassword(req: Json, res: Json, op: Operation): Promise<void> {
+  async changePassword(req: AuthnRequest<'changePassword'>,
+                       res: AuthnAnswering<'changePassword'>,
+                       op: Operation): Promise<void> {
     const { log, authn, errorCodes } = this.deps;
     log.debug("Entering AuthnApi.changePassword().");
     const asked = this.deps.validation.checkParsed(req.params || {},
@@ -971,7 +999,9 @@ class AuthnApi {
    * @param op - the operation
    * @returns nothing
    */
-  passwordChangeStartOver(req: Json, res: Json, op: Operation): void {
+  passwordChangeStartOver(req: AuthnRequest<'passwordChangeStartOver'>,
+                          res: AuthnAnswering<'passwordChangeStartOver'>,
+                          op: Operation): void {
     const { log, authn, errorCodes } = this.deps;
     log.debug("Entering AuthnApi.passwordChangeStartOver().");
     const asked = this.deps.validation.checkParsed(req.params || {},
@@ -1012,7 +1042,7 @@ class AuthnApi {
    * @param res - the response
    * @returns nothing
    */
-  mfaStep(req: Json, res: Json): void {
+  mfaStep(req: AuthnRequest<'mfaStep'>, res: AuthnAnswering<'mfaStep'>): void {
     const { log, authn, validation, errorCodes } = this.deps;
     log.debug("Entering AuthnApi.mfaStep().");
     const id = this.idOf(req, res);
@@ -1091,7 +1121,9 @@ class AuthnApi {
    * @param op - the operation
    * @returns a promise settled when the answer is sent
    */
-  async mfaAct(req: Json, res: Json, op: Operation): Promise<void> {
+  async mfaAct(req: AuthnRequest<'mfaAct'>,
+               res: AuthnAnswering<'mfaAct'>,
+               op: Operation): Promise<void> {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.mfaAct(). " + op.operationId);
     const id = this.idOf(req, res);
@@ -1205,7 +1237,8 @@ class AuthnApi {
    * @param res - the response
    * @returns nothing
    */
-  accountsGet(req: Json, res: Json): void {
+  accountsGet(req: AuthnRequest<'accountsGet'>,
+              res: AuthnAnswering<'accountsGet'>): void {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.accountsGet().");
     const record = this.accountsPendingOf(req, res);
@@ -1234,7 +1267,9 @@ class AuthnApi {
    * @param op - the operation
    * @returns nothing
    */
-  accountsPost(req: Json, res: Json, op: Operation): void {
+  accountsPost(req: AuthnRequest<'accountsPost'>,
+               res: AuthnAnswering<'accountsPost'>,
+               op: Operation): void {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.accountsPost(). " + op.operationId);
     if (this.idOf(req, res) === null || !this.bound(req, res)) {
@@ -1264,7 +1299,8 @@ class AuthnApi {
    * @param res - the response
    * @returns nothing
    */
-  accountsList(req: Json, res: Json): void {
+  accountsList(req: AuthnRequest<'accountsList'>,
+               res: AuthnAnswering<'accountsList'>): void {
     const { log, authn } = this.deps;
     log.debug("Entering AuthnApi.accountsList().");
     const listed = authn.browserAccounts(req);
@@ -1289,7 +1325,8 @@ class AuthnApi {
    * @param res - the response
    * @returns nothing
    */
-  logoutView(req: Json, res: Json): void {
+  logoutView(req: AuthnRequest<'logoutView'>,
+             res: AuthnAnswering<'logoutView'>): void {
     const { log, authn, validation, errorCodes } = this.deps;
     log.debug("Entering AuthnApi.logoutView().");
     const asked = validation.checkParsed(req.query || {}, 'query',
@@ -1319,7 +1356,8 @@ class AuthnApi {
    * @param res - the response
    * @returns nothing
    */
-  logoutAccountsView(req: Json, res: Json): void {
+  logoutAccountsView(req: AuthnRequest<'logoutAccountsView'>,
+                     res: AuthnAnswering<'logoutAccountsView'>): void {
     const { log, authn, validation, errorCodes } = this.deps;
     log.debug("Entering AuthnApi.logoutAccountsView().");
     const asked = validation.checkParsed(req.query || {}, 'query',
@@ -1347,7 +1385,9 @@ class AuthnApi {
    * @param op - the operation
    * @returns nothing
    */
-  logoutAccountsAct(req: Json, res: Json, op: Operation): void {
+  logoutAccountsAct(req: AuthnRequest<'logoutAccountsAct'>,
+                    res: AuthnAnswering<'logoutAccountsAct'>,
+                    op: Operation): void {
     const { log, authn, errorCodes } = this.deps;
     log.debug("Entering AuthnApi.logoutAccountsAct().");
     if (!this.bound(req, res)) {
@@ -1375,7 +1415,9 @@ class AuthnApi {
    * @param op - the operation
    * @returns nothing
    */
-  logoutAct(req: Json, res: Json, op: Operation): void {
+  logoutAct(req: AuthnRequest<'logoutAct'>,
+            res: AuthnAnswering<'logoutAct'>,
+            op: Operation): void {
     const { log, authn, errorCodes } = this.deps;
     log.debug("Entering AuthnApi.logoutAct().");
     if (!this.bound(req, res)) {
@@ -1415,7 +1457,9 @@ class AuthnApi {
    * @param op - the operation
    * @returns a promise settled when the answer is sent
    */
-  async wallet(req: Json, res: Json, op: Operation): Promise<void> {
+  async wallet(req: AuthnRequest<'wallet'>,
+               res: AuthnAnswering<'wallet'>,
+               op: Operation): Promise<void> {
     const { log } = this.deps;
     log.debug("Entering AuthnApi.wallet(). " + op.operationId);
     let body: Json = null;
@@ -1469,7 +1513,9 @@ class AuthnApi {
    * @param op - the operation
    * @returns nothing
    */
-  consent(req: Json, res: Json, op: Operation): void {
+  consent(req: AuthnRequest<'consent'>,
+          res: AuthnAnswering<'consent'>,
+          op: Operation): void {
     const { log, authn, validation, errorCodes, helpers } = this.deps;
     log.debug("Entering AuthnApi.consent(). " + op.operationId);
     const asked = validation.checkParsed(req.params || {}, 'params',
