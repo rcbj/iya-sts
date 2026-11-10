@@ -74,6 +74,7 @@
 
 import helpers = require('../common/helpers');
 import InstanceSlot = require('../common/instance_slot');
+import SpiffeModel = require('./spiffe_model');
 const { log } = helpers;
 
 // The scheme, written once. Compared case-insensitively when reading (a URI
@@ -81,7 +82,12 @@ const { log } = helpers;
 /**
  * The SPIFFE URI scheme, always written lower-case.
  */
-const SCHEME = 'spiffe';
+// THE GRAMMAR IS THE MODEL'S since #1579 (`models/spiffe/spiffe.tsp`,
+// `@idGrammar`): the scheme, both byte bounds, both character classes and the
+// reserved prefix below are read from it, and this module keeps the parse —
+// the order the clauses are asked in and the sentence each refusal says.
+const GRAMMAR = SpiffeModel.grammar();
+const SCHEME: string = GRAMMAR.scheme;
 /**
  * `spiffe://`, the text every SPIFFE ID starts with.
  */
@@ -92,18 +98,18 @@ const PREFIX = SCHEME + '://';
 /**
  * The longest SPIFFE ID the specification allows, in bytes.
  */
-const MAX_ID_BYTES = 2048;
+const MAX_ID_BYTES: number = GRAMMAR.maxBytes;
 /**
  * The longest trust domain name the specification allows, in bytes.
  */
-const MAX_TRUST_DOMAIN_BYTES = 255;
+const MAX_TRUST_DOMAIN_BYTES: number = GRAMMAR.maxTrustDomainBytes;
 
 // The two character classes, as they are written in the specification rather
 // than as the shortest regular expression that happens to match them. The trust
 // domain has NO upper case in it and the path does — that asymmetry is real and
 // is the single most common thing to get wrong here.
-const TRUST_DOMAIN_CHARS = /^[a-z0-9.\-_]+$/;
-const PATH_SEGMENT_CHARS = /^[a-zA-Z0-9.\-_]+$/;
+const TRUST_DOMAIN_CHARS = new RegExp(GRAMMAR.trustDomainPattern);
+const PATH_SEGMENT_CHARS = new RegExp(GRAMMAR.pathSegmentPattern);
 
 // The reserved path prefix. Everything under it belongs to the SPIFFE
 // implementation itself — the server, the agents it attests, and the join
@@ -113,7 +119,10 @@ const PATH_SEGMENT_CHARS = /^[a-zA-Z0-9.\-_]+$/;
  * The path prefix reserved for the SPIFFE implementation itself: the server,
  * its agents and its join tokens.
  */
-const RESERVED_PREFIX = '/spire';
+const RESERVED_PREFIX: string = GRAMMAR.reservedPrefix;
+
+// The reserved prefix as the path segment it is.
+const RESERVED_SEGMENT: string = RESERVED_PREFIX.slice(1);
 
 // What `SpiffeId` needs from the rest of the service: the modules this file
 // used to reach for itself, passed in so that the composition root can build
@@ -450,7 +459,7 @@ class SpiffeId {
       return false;
     }
     log.debug("Leaving SpiffeId.isReservedPath().");
-    return parsed.segments.length > 0 && parsed.segments[0] === 'spire';
+    return parsed.segments.length > 0 && parsed.segments[0] === RESERVED_SEGMENT;
   }
 
   // This service's own identifier as a SPIFFE server. SPIRE uses exactly this
@@ -466,7 +475,7 @@ class SpiffeId {
     const { log } = this.deps;
     log.debug("Entering SpiffeId.serverId().");
     log.debug("Leaving SpiffeId.serverId().");
-    return this.make(trustDomain, '/spire/server');
+    return this.make(trustDomain, RESERVED_PREFIX + '/server');
   }
 
   // An attested agent's identifier. The shape is SPIRE's —
@@ -490,7 +499,8 @@ class SpiffeId {
                      'unknown';
     const tail = String(suffix == null ? '' : suffix).trim() || 'unnamed';
     log.debug("Leaving SpiffeId.agentId().");
-    return this.make(trustDomain, '/spire/agent/' + attestor + '/' + tail);
+    return this.make(trustDomain, RESERVED_PREFIX + '/agent/' + attestor + '/' +
+                     tail);
   }
 
   /**
@@ -505,7 +515,7 @@ class SpiffeId {
     const parsed = this.parse(value);
     log.debug("Leaving SpiffeId.isAgentId().");
     return parsed.ok && parsed.segments.length >= 3 &&
-           parsed.segments[0] === 'spire' && parsed.segments[1] === 'agent';
+           parsed.segments[0] === RESERVED_SEGMENT && parsed.segments[1] === 'agent';
   }
 
   /**
@@ -520,7 +530,7 @@ class SpiffeId {
     const parsed = this.parse(value);
     log.debug("Leaving SpiffeId.isServerId().");
     return parsed.ok && parsed.segments.length === 2 &&
-           parsed.segments[0] === 'spire' && parsed.segments[1] === 'server';
+           parsed.segments[0] === RESERVED_SEGMENT && parsed.segments[1] === 'server';
   }
 
   // ---------------------------------------------------------------------------
