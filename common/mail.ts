@@ -94,6 +94,7 @@
 
 import os = require('os');
 import helpers = require('./helpers');
+import Classes = require('./domain_classes');
 // The one place this service hashes and draws random values (#453).
 import stsCrypto = require('./crypto');
 // Which application a mailed link opens, and where it is advertised (#472).
@@ -706,21 +707,17 @@ class Mail {
       return null;
     }
     const attrs = entry.attributes || {};
-    const first = function (name: string): string {
-      log.debug("Entering first().");
-      const values = attrs[name.toLowerCase()] || [];
-      log.debug("Leaving first().");
-      return values.length ? String(values[0]) : '';
-    };
-    const address = first('mail').trim();
-    const verified = first('stsMailVerified').trim();
+    const user = Classes.User.fromEntry(attrs);
+    const record = Classes.PersonRecord.fromEntry(attrs);
+    const address = (user.email || '').trim();
+    const verified = (record.mailVerified || '').trim();
     log.debug("Leaving Mail.recipient().");
     return {
       username: String(username),
       address: address,
       verified: !!address && verified.toLowerCase() === address.toLowerCase(),
-      language: first('preferredLanguage'),
-      name: first('displayName') || first('cn') || String(username)
+      language: user.preferredLanguage || '',
+      name: user.displayName || (user.cn || [])[0] || String(username)
     };
   }
 
@@ -762,7 +759,9 @@ class Mail {
       }
       return '';
     };
+    // `mail` is the one read left by name: the Group concept has no address.
     const address = first('mail').trim();
+    const group = Classes.Group.fromEntry(attrs);
     log.debug("Leaving Mail.groupRecipient().");
     return {
       username: String(dn),
@@ -771,7 +770,7 @@ class Mail {
       // verify it against, and a notice is sent to it as given.
       verified: !!address,
       language: '',
-      name: first('cn') || String(dn),
+      name: group.name || String(dn),
       group: true
     };
   }
@@ -1233,7 +1232,7 @@ class Mail {
     const entry = directory && req.username
       ? directory.personEntry(String(req.username)) : null;
     const pending = entry
-      ? String(((entry.attributes || {}).stsmailverifyaddress || [])[0] || '')
+      ? Classes.Credential.fromEntry(entry.attributes).mailVerifyAddress || ''
       : '';
     if (!pending) {
       out.error = 'no address change is pending';
@@ -1301,8 +1300,8 @@ class Mail {
     const entry = directory && req.username
       ? directory.personEntry(String(req.username)) : null;
     const pending = entry
-      ? String(((entry.attributes || {}).stspseudonymverifyaddress ||
-                [])[0] || '')
+      ? Classes.Credential.fromEntry(entry.attributes)
+        .pseudonymVerifyAddress || ''
       : '';
     if (!pending) {
       out.error = 'no sign-in name is pending';

@@ -150,6 +150,7 @@
 
 import ModelTables = require('./model_tables');
 import helpers = require('./helpers');
+import Classes = require('./domain_classes');
 import realms = require('./realms');
 import errorCodes = require('./error_codes');
 import InstanceSlot = require('./instance_slot');
@@ -637,15 +638,6 @@ class AttributePolicy {
   }
 
   // A stored TRUE/FALSE flag (#700): TRUE only where it says so.
-  private flagOf(attributes: Record<string, unknown>, name: string): boolean {
-    const { log } = this.deps;
-    log.debug("Entering AttributePolicy.flagOf(). " + name);
-    const out = String(this.valuesOf(attributes, name)[0] || '')
-      .toUpperCase() === 'TRUE';
-    log.debug("Leaving AttributePolicy.flagOf(). " + out);
-    return out;
-  }
-
   // A yes/no as sent (#700): a boolean, or a form's or a caller's text.
   // Absent is `undefined`, so an update can tell "unchanged" from "off";
   // anything else is `null`, a value refused by the caller.
@@ -814,7 +806,8 @@ class AttributePolicy {
     const at = entry ? (entry.attributes || {}) : {};
     const offered = this.offeredNames();
     const problems: string[] = [];
-    const stored = entry ? this.valuesOf(at, 'stsAttributeRequired') : null;
+    const concept = Classes.AttributePolicy.fromEntry(at);
+    const stored = entry ? (concept.required || []).filter(Boolean) : null;
     const listed = stored === null ? this.listOf(DEFAULTS.requiredAttributes)
                                    : stored;
     const kept: string[] = [];
@@ -851,7 +844,7 @@ class AttributePolicy {
       inherited: found.from === 'default-realm',
       from: found.from,
       dn: entry ? entry.dn : '',
-      description: entry ? (this.valuesOf(at, 'description')[0] || '') : '',
+      description: (concept.description || []).filter(Boolean)[0] || '',
       sources: { requiredAttributes: found.from === 'realm' ? 'directory'
         : found.from === 'default-realm' ? 'default realm' : 'built-in' },
       problems: problems,
@@ -936,7 +929,7 @@ class AttributePolicy {
       out.attributes = attributes || {};
     }
     if (out.uid === undefined) {
-      out.uid = PolicySelection.valuesOf(out.attributes, 'uid')[0] || '';
+      out.uid = Classes.User.fromEntry(out.attributes).username || '';
     }
     log.debug("Leaving AttributePolicy.subjectOf().");
     return out;
@@ -1678,24 +1671,26 @@ class AttributePolicy {
     try {
       rows = this.directory.allAttributeDefinitions().map((entry) => {
         const at = entry.attributes || {};
-        const syntax = (this.valuesOf(at, 'stsAttributeSyntax')[0] ||
-                        'string').toLowerCase();
+        const concept = Classes.AttributePolicy.fromEntry(at);
+        const syntax = (concept.syntax || 'string').toLowerCase();
         return {
           name: String(entry.name || ''),
-          label: this.valuesOf(at, 'stsAttributeLabel')[0] ||
-                 String(entry.name || ''),
+          label: concept.label || String(entry.name || ''),
           syntax: SYNTAXES.some(function (one) {
             return one.id === syntax;
           }) ? syntax : 'string',
+          // By name, not `concept.singleValued`: a value that is neither
+          // TRUE nor FALSE reads as multi-valued here, and the concept
+          // leaves it out, which could not be told from absent.
           multi: String(this.valuesOf(at, 'stsAttributeSingleValued')[0] ||
                         'TRUE').toUpperCase() !== 'TRUE',
-          description: this.valuesOf(at, 'description')[0] || '',
+          description: (concept.description || []).filter(Boolean)[0] || '',
           // #700: absent is FALSE. Editable implies visible, also on read,
           // so an entry an LDAP client wrote with only the second flag is
           // answered as every door here writes it.
-          portalVisible: this.flagOf(at, 'stsAttributePortalVisible') ||
-                         this.flagOf(at, 'stsAttributePortalEditable'),
-          portalEditable: this.flagOf(at, 'stsAttributePortalEditable'),
+          portalVisible: concept.portalVisible === true ||
+                         concept.portalEditable === true,
+          portalEditable: concept.portalEditable === true,
           dn: entry.dn
         };
       }).filter(function (one) {

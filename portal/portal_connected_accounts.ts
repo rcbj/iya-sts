@@ -49,6 +49,7 @@
 // ===========================================================================
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 import validation = require('../common/validation');
 import config = require('../common/config');
@@ -152,8 +153,7 @@ class PortalConnectedAccounts {
     log.debug("Entering PortalConnectedAccounts.linksOf().");
     const entry = this.deps.directory().existingUserEntry(username);
     const values: string[] = entry
-      ? [].concat(entry.attributes.federationlink ||
-                  entry.attributes.federationLink || []).map(String)
+      ? Classes.PersonRecord.fromEntry(entry.attributes).federationLink || []
       : [];
     const links = this.deps.links();
     const out = values.map(function (value: string): Json {

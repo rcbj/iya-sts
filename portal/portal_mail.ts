@@ -42,6 +42,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 import realms = require('../common/realms');
 import mail = require('../common/mail');
@@ -149,7 +150,7 @@ class PortalMail {
     const entry = mail.directory() ? mail.directory().personEntry(username)
                                    : null;
     const pending = entry
-      ? String(((entry.attributes || {}).stsmailverifyaddress || [])[0] || '')
+      ? Classes.Credential.fromEntry(entry.attributes).mailVerifyAddress || ''
       : '';
     const changing = pending && person.address &&
                      pending.toLowerCase() !== person.address.toLowerCase()

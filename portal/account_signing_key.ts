@@ -56,6 +56,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import pki = require('../common/pki');
@@ -208,13 +209,9 @@ class AccountSigningKey {
       // No directory to ask: the certificate is issued with no address.
       entry = null;
     }
-    const attributes = (entry && entry.attributes) || {};
-    const key = Object.keys(attributes).filter(function (one) {
-      return one.toLowerCase() === 'mail';
-    })[0];
-    const values = key ? [].concat(attributes[key]) : [];
+    const user = Classes.User.fromEntry((entry && entry.attributes) || {});
     log.debug("Leaving AccountSigningKey.mailOf().");
-    return values.length ? String(values[0]) : '';
+    return user.email || '';
   }
 
   // THE TLS CLIENT CERTIFICATE CARD'S FACTS: the person's certificates, what

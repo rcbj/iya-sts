@@ -28,6 +28,7 @@
 // ---------------------------------------------------------------------------
 
 import helpers = require('../common/helpers');
+import Classes = require('../common/domain_classes');
 import InstanceSlot = require('../common/instance_slot');
 import config = require('../common/config');
 import credentials = require('../common/credentials');
@@ -500,11 +501,8 @@ class AccountOverview {
   languageOf(entry: Json): Json {
     const { log } = this.deps;
     log.debug("Entering AccountOverview.languageOf().");
-    const attributes = (entry && entry.attributes) || {};
-    const key = Object.keys(attributes).filter(function (one) {
-      return one.toLowerCase() === 'preferredlanguage';
-    })[0];
-    const held = key ? String([].concat(attributes[key])[0] || '') : '';
+    const held = Classes.User.fromEntry((entry && entry.attributes) || {})
+      .preferredLanguage || '';
     log.debug("Leaving AccountOverview.languageOf(). " + (held || 'none'));
     return { held: held, offered: i18n.offered().map(function (one: Json) {
       return { tag: String(one.tag), name: String(one.name) };
