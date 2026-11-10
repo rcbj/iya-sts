@@ -573,7 +573,12 @@ function normalise(record) {
     ['handle', /(\/gnap\/(?:continue|token|interact|app|approve)\/)[A-Za-z0-9_.~-]+/g],
     ['usercode', /"code": "[A-Z0-9]{4}-?[A-Z0-9]{4}"/g],
     ['thumbprint', /urn:ietf:params:oauth:jwk-thumbprint:sha-256:[A-Za-z0-9_-]+/g],
-    ['random', /(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*[A-Z])(?=[A-Za-z0-9_-]*[0-9])[A-Za-z0-9_-]{20,}/g]
+    ['random', /(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*[A-Z])(?=[A-Za-z0-9_-]*[0-9])[A-Za-z0-9_-]{20,}/g],
+    // A long random value that happened to draw no digit, or no capital
+    // (#1579: an interact `finish` nonce escaped the rule above once). At
+    // 32 characters and over, only a random value holds a capital or a
+    // digit; the snake_case member names that long hold neither.
+    ['random', /(?<![A-Za-z0-9_-])(?=[A-Za-z0-9_-]*[A-Z0-9])[A-Za-z0-9_-]{32,}/g]
   ];
   const text = JSON.stringify(scrub(record), null, 1);
   let out = text;
