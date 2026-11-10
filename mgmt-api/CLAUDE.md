@@ -325,7 +325,7 @@ single-valued one given several values.
 change with the same lesson as everything else here: making six identifier
 attributes multi-valued moved six names from one sentence to the other, and
 neither sentence noticed. A hand-written list of what an operation accepts is a
-second definition of the `EDITABLE` table, and it goes stale in the document a
+second definition of the `editable` rows, and it goes stale in the document a
 caller trusts most — the same reason the enum above is read off the service
 rather than written here.
 

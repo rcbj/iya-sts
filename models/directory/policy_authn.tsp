@@ -22,6 +22,30 @@ namespace IyaSts.Directory;
   container: "ou=authnPolicies",
   ownContainer: true,
   authored: true,
+  // THE MECHANISMS the policy decides on, each with its built-in setting as a
+  // first factor (`primary`) and as a second (`secondFactor`); `null` where it
+  // can never take that role, so it has no setting at all. The policy's
+  // stsAuthn<Id>Primary and stsAuthn<Id>SecondFactor rows are built from these
+  // by common/authn_policy.ts, which says nothing else about them; the order is
+  // the order a page draws them in.
+  mechanisms: #[
+    #{id: "password", label: "Password", primary: true, secondFactor: true},
+    // TWO ROWS AND ONE KIND OF KEY (#1135). Until then `passkey` was a key
+    // enrolled in the `primary` role and `securityKey` one in the `mfa` role.
+    // A key has no role now: both rows are asked at each sign-in, of every key
+    // a person holds (`webauthnPolicy.useAllowed()`), and a key may be enrolled
+    // while either accepts one. The ids are stored attribute names and stay.
+    #{id: "passkey", label: "Passkey (passwordless)", primary: true, secondFactor: null},
+    #{id: "securityKey", label: "Passkey (second factor)", primary: null, secondFactor: true},
+    #{id: "totp", label: "Authenticator app (TOTP)", primary: null, secondFactor: true},
+    #{id: "recoveryCode", label: "Recovery code", primary: null, secondFactor: true},
+    #{id: "emailCode", label: "Emailed six-digit code", primary: false, secondFactor: false, email: true},
+    #{id: "emailLink", label: "Emailed sign-in link", primary: false, secondFactor: false, email: true},
+    #{id: "certificate", label: "TLS client certificate", primary: true, secondFactor: null},
+    #{id: "kerberos", label: "Kerberos (SPNEGO)", primary: true, secondFactor: null},
+    #{id: "wallet", label: "Wallet presentation", primary: true, secondFactor: true},
+    #{id: "federation", label: "Federation partner", primary: true, secondFactor: null}
+  ],
   objectClasses: #[
     #{
       name: "stsAuthnPolicy",

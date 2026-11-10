@@ -557,8 +557,8 @@ const CREDENTIAL_ADMIN_ACTIONS = ['reset-password', 'issue-password-reset',
 // both are visible to the other immediately because nothing caches.
 //
 // **What may be changed is DECLARED and not DERIVED**, and that line is drawn
-// in `applications.js`'s EDITABLE table rather than here: redirect URIs, grant
-// types, scopes, the secret, whether the client is confidential —
+// in the application table's `editable` rows rather than here: redirect URIs,
+// grant types, scopes, the secret, whether the client is confidential —
 // configuration, which is what RFC 9700 mode reads — but never the counters,
 // the sightings, the kinds or the protocols, which are what happened. LDAP can
 // still reach those; the difference between offering an operation and merely

@@ -32,9 +32,8 @@ const log = bunyan.createLogger({
  */
 class ModelTables {
   /**
-   * One object's table. A module may add to what it gets, as
-   * `common/applications.js` adds each row's `editable`, so each caller has
-   * its own copy.
+   * One object's table, as the model states it. Each caller has its own
+   * copy.
    *
    * @param id - the object id, such as `application`
    * @returns the table

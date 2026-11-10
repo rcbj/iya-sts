@@ -214,14 +214,6 @@ const NIST_EMAIL_WARNING =
   'default for that reason; turn it on only where that is an accepted risk.';
 
 // ---------------------------------------------------------------------------
-// THE MECHANISMS. The rows below are generated from this list, so a mechanism
-// is one line here.
-// ---------------------------------------------------------------------------
-/**
- * The sign-in mechanisms the policy decides on, each with the roles it can take
- * (first factor, second factor) and its default in each.
- */
-// ---------------------------------------------------------------------------
 // THE SENTENCES `describe()` MAKES, as templates (#543 phase 2) — one copy,
 // filled there with `ServerProse.fill()` and matched by
 // `common/server_prose.ts` to refill in a console reader's language. A
@@ -242,34 +234,20 @@ const SENTENCES: Readonly<Record<string, string>> = Object.freeze({
     'INACTIVE: this realm cannot send mail'
 });
 
-const MECHANISMS: Mechanism[] = [
-  { id: 'password', label: 'Password', primary: true, secondFactor: true },
-  // TWO ROWS AND ONE KIND OF KEY (#1135). Until then `passkey` was a key
-  // enrolled in the `primary` role and `securityKey` one in the `mfa` role.
-  // A key has no role now: both rows are asked at each sign-in, of every key
-  // a person holds (`webauthnPolicy.useAllowed()`), and a key may be enrolled
-  // while either accepts one. The ids are stored attribute names and stay.
-  { id: 'passkey', label: 'Passkey (passwordless)',
-    primary: true, secondFactor: null },
-  { id: 'securityKey', label: 'Passkey (second factor)', primary: null,
-    secondFactor: true },
-  { id: 'totp', label: 'Authenticator app (TOTP)', primary: null,
-    secondFactor: true },
-  { id: 'recoveryCode', label: 'Recovery code', primary: null,
-    secondFactor: true },
-  { id: 'emailCode', label: 'Emailed six-digit code', primary: false,
-    secondFactor: false, email: true },
-  { id: 'emailLink', label: 'Emailed sign-in link', primary: false,
-    secondFactor: false, email: true },
-  { id: 'certificate', label: 'TLS client certificate', primary: true,
-    secondFactor: null },
-  { id: 'kerberos', label: 'Kerberos (SPNEGO)', primary: true,
-    secondFactor: null },
-  { id: 'wallet', label: 'Wallet presentation', primary: true,
-    secondFactor: true },
-  { id: 'federation', label: 'Federation partner', primary: true,
-    secondFactor: null }
-];
+// ---------------------------------------------------------------------------
+// THE MECHANISMS, written in models/directory/policy_authn.tsp as its
+// `mechanisms` (#1579): each one's label and built-in setting in each role.
+// The rows below are built from them, so a mechanism is one line there; what
+// a mechanism DOES is the code that asks `allows()` of its id.
+// ---------------------------------------------------------------------------
+/**
+ * The sign-in mechanisms the policy decides on, each with the roles it can take
+ * (first factor, second factor) and its default in each.
+ */
+const MECHANISMS: Mechanism[] = ModelTables.facts('policy.authn').mechanisms
+  .map(function (row: Mechanism) {
+    return Object.assign({}, row);
+  });
 
 const MECHANISM_BY_ID: Record<string, Mechanism> = {};
 MECHANISMS.forEach(function (m) {
