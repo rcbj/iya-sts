@@ -16,7 +16,7 @@ the running Express router and cannot go stale, `GET /oauth2/rfc9700` publishes
 every requirement with what is and is not enforced, `GET /spiffe` publishes the
 forty-two SPIRE methods with a reason for each of the six that are unimplemented,
 `GET /admin/ldap/service` says the directory is schemaless, and `GET /admin-api/openapi.json`
-is generated from the operation table. A page that copies any of those lists is a
+is generated from the model in `models/api/` (#1390). A page that copies any of those lists is a
 second copy that will be wrong within a month — LINK to them and say what a
 reader should look for.
 
