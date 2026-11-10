@@ -91,8 +91,9 @@ the partner back channels.
 
 **To limit these requests to hosts you name**, set
 `security.outboundAllowedHosts` to a comma-separated list: an exact host name, or
-a leading dot for a whole domain (`.example.com`). In product mode a request to
-any other host is refused before its name is resolved. Empty, the default,
+a leading dot for a whole domain (`.example.com`). A request to any other host
+is refused before its name is resolved, in either mode; in development a listed
+host is still dialled even when it is an internal address. Empty, the default,
 allows any public host. The CRL and OCSP addresses a certificate names obey the
 same list in either mode: an http(s) address whose host is not on it is not
 dialled. See [PKI](pki.md).

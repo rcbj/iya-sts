@@ -838,7 +838,12 @@ copy; `oauth-oidc/protected_resource_metadata.ts` now asks for them and keeps
 its own refusal codes. **`vetHost()` also holds the operator's list of hosts,
 `security.outboundAllowedHosts` (#1526, ASVS 5.0.0 13.2.4)**: set, a host on
 neither an exact name nor a leading-dot suffix is refused BEFORE it is resolved,
-and only where the internal-address check runs, so in product mode alone.
+**in either mode since #1577** — until then it sat after the development
+return, so a list an operator set was ignored in development, while the
+setting's own description says it binds. Development still skips the
+internal-address check and the pin after the list, so a listed internal host is
+dialled. The refusal keeps `kind: 'internal'`, so each caller marks it with its
+internal-address code, as product always did.
 `common/revocation_status.js` reads the same list for the CRL and OCSP addresses
 a certificate names (#1550), in either mode, because those fetches never pass
 through `vetHost()`. Everything else above holds for `deliverForm()` too:

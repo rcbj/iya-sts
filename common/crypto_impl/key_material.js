@@ -715,7 +715,9 @@ async function buildPkcs12(options) {
   await pfx.parsedValue.authenticatedSafe.makeInternalValues({ safeContents: [{
       }, {}] });
   await pfx.makeInternalValues({ password: strBuf(opts.password),
-                               iterations: 600000,
+                               // #1512: the one export figure, beside
+                               // pbes2JweEncrypt()'s (jose_jwe.js says why).
+                               iterations: jose.PBKDF2_EXPORT_ITERATIONS,
                                pbkdf2HashAlgorithm: 'SHA-256',
                                hmacHashAlgorithm: 'SHA-256' });
   log.debug("Leaving buildPkcs12().");

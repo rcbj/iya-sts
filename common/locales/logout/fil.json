@@ -3,6 +3,8 @@
   "heading": "Mag-sign out",
   "startAgain": "Magsimulang muli",
   "startAgainEnd": ".",
+  "reauthenticate.lead": "Kailangan ng kamakailang pag-sign in para tapusin ang iba mong session. Mag-sign in ulit at babalik ka sa page na ito, kung saan mo sila mamarkahan ulit.",
+  "reauthenticate.signIn": "Mag-sign in ulit",
   "inventory.holding": "Lahat ng hawak pa ng serbisyong ito para kay <code>{username}</code>, sa bawat protocol family na sinasalita nito.",
   "inventory.globalButton": "Global logout — tapusin ang lahat sa ibaba",
   "inventory.globalNote": "Ang default. Ganito mismo ang ginagawa ng isang POST sa <code>/logout</code> na walang napili. Mananatiling balido ang mga verifiable credential, at ang mga DID na nakatali sa mga ito.",

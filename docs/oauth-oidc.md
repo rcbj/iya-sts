@@ -1279,7 +1279,9 @@ derived from the same table, so what is advertised is what is accepted.
 
 * **The traditional keys**: RSA, P-256, P-384, P-521, secp256k1, Ed25519 and
   Ed448, all published in `/oauth2/jwks` (RSA first, since the default
-  signature is RS256). ES256K's signature is the R‖S concatenation RFC 7518
+  signature is RS256). In product mode the secp256k1 key is published, and
+  ES256K offered, only where `keys.signingAlgorithms` lists it (see
+  [Limiting a realm to named signing algorithms](#limiting-a-realm-to-named-signing-algorithms)). ES256K's signature is the R‖S concatenation RFC 7518
   section 3.4 requires, not OpenSSL's DER.
 * **Eleven post-quantum algorithms**: ML-DSA at three parameter sets (FIPS 204,
   RFC 9964), SLH-DSA at two (FIPS 205), and the six composite ML-DSA +
@@ -1357,7 +1359,11 @@ keys as `oauth2.eddsaCurve` says.
 
 **`keys.signingAlgorithms`** (Key material, per realm, **empty by default**)
 names the JWS algorithms the realm signs with and publishes keys for. Empty
-leaves every algorithm the realm otherwise has. A list must include `RS256`,
+leaves every algorithm the realm otherwise has, except that in product mode
+`ES256K` is left out: secp256k1 is not an approved curve, so with no list a
+product realm publishes no secp256k1 signing key, names `ES256K` in none of the
+lists below, and refuses a signature with it (`STS-KEYS-0166`). List it to use
+it. A list must include `RS256`,
 which OpenID Connect Discovery requires and which is the default for ID Tokens
 and access tokens; anything else is refused (`STS-KEYS-0167`). With a list:
 
